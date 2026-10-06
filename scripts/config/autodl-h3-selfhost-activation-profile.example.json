@@ -1,0 +1,59 @@
+{
+  "schema": "autodl_h3_selfhost_activation.v1",
+  "evidence_id": "h3-v26-live-20260821-480p-2k",
+  "verified_at": "2026-08-21T12:17:04+08:00",
+  "video": {
+    "duration_options": [5, 10, 15],
+    "direct_verified_combinations": ["480p|5|16:9", "480p|10|16:9", "2K|15|16:9"],
+    "default_duration": 15,
+    "default_resolution": "2K",
+    "resolutions": {
+      "480p": {
+        "label": "480p 原生",
+        "enabled": true,
+        "verified": true,
+        "verification_mode": "direct",
+        "evidence_id": "h3-live-20260821-u02-u03-480p",
+        "gateway_output_tier": "base",
+        "input_pixel_size_by_aspect_ratio": {
+          "16:9": "864x480"
+        },
+        "output_pixel_size_by_aspect_ratio": {
+          "16:9": "864x480"
+        }
+      },
+      "1080p": {
+        "label": "1080p增强",
+        "enabled": false,
+        "verified": false,
+        "verification_mode": "disabled"
+      },
+      "2K": {
+        "label": "2K增强",
+        "enabled": true,
+        "verified": true,
+        "verification_mode": "direct",
+        "evidence_id": "gateway-h3-15s-2k-result-20260821",
+        "gateway_output_tier": "2K",
+        "input_pixel_size_by_aspect_ratio": {
+          "16:9": "864x480"
+        },
+        "output_pixel_size_by_aspect_ratio": {
+          "16:9": "2560x1440"
+        }
+      }
+    }
+  },
+  "image": {
+    "enabled": true,
+    "verified": true,
+    "resolution": "2K",
+    "evidence_id": "h3-live-20260821-a01-2k",
+    "request_pixel_size_by_aspect_ratio": {
+      "16:9": "1280x720"
+    },
+    "output_pixel_size_by_aspect_ratio": {
+      "16:9": "3640x2048"
+    }
+  }
+}

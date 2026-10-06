@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+import { createRequire } from 'node:module';
+const nativeRequire = createRequire(import.meta.url);
+let requested;
+let responseFactory;
+function load(file) {
+  const compiled = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const module = { exports: {} };
+  const require = name => {
+    if (name === './safe-media-fetch') return { safeMediaFetch: async (url, options) => { requested = { url, options }; return { response: responseFactory() }; } };
+    if (name === './file-upload-security') return load('src/lib/file-upload-security.ts');
+    return nativeRequire(name);
+  };
+  new Function('require', 'module', 'exports', compiled)(require, module, module.exports);
+  return module.exports;
+}
+const api = load('src/lib/video-provider-result.ts');
+const endpoint = 'https://provider.example/v1';
+assert.equal(api.resolveVideoProviderResultUrl('/v1/h3/videos/task/content', endpoint), 'https://provider.example/v1/h3/videos/task/content');
+assert.equal(api.resolveVideoProviderResultUrl('https://cdn.example/a.mp4', endpoint), 'https://cdn.example/a.mp4');
+assert.throws(() => api.resolveVideoProviderResultUrl('file:///secret', endpoint));
+assert.throws(() => api.resolveVideoProviderResultUrl(['https://', 'user:password@provider.example/a'].join(''), endpoint));
+const mp4 = fs.readFileSync('.codex-evidence/video-real-e2e-20260902/paper-video.mp4').subarray(0, 1024);
+responseFactory = () => new Response(mp4, { headers: { 'content-type': 'video/mp4', 'content-length': String(mp4.length) } });
+const result = await api.readVideoProviderResult('/v1/task/content', endpoint, 'fixture-key');
+assert.equal(result.buffer.length, mp4.length);
+assert.equal(result.contentType, 'video/mp4');
+assert.equal(requested.options.authorization.origin, 'https://provider.example');
+assert.equal(requested.options.headers.Authorization, undefined);
+await api.readVideoProviderResult('https://cdn.example/a.mp4', endpoint, 'fixture-key');
+assert.equal(requested.options.authorization.origin, 'https://provider.example', 'Credentials stay scoped to provider, never CDN');
+responseFactory = () => new Response(mp4, { headers: { 'content-type': 'video/mp4', 'content-length': '1025' } });
+await assert.rejects(api.readVideoProviderResult('/content', endpoint, '', 2048), /LENGTH_INVALID/);
+responseFactory = () => new Response(mp4, { headers: { 'content-type': 'video/mp4' } });
+await assert.rejects(api.readVideoProviderResult('/content', endpoint, '', 100), /TOO_LARGE/);
+responseFactory = () => new Response('denied', { status: 403 });
+await assert.rejects(api.readVideoProviderResult('/content', endpoint, ''), /HTTP_403/);
+responseFactory = () => new Response('<html>error</html>', { headers: { 'content-type': 'text/html' } });
+await assert.rejects(api.readVideoProviderResult('/content', endpoint, ''), /CONTENT_INVALID/);
+responseFactory = () => new Response('<html>not mp4</html>', { headers: { 'content-type': 'video/mp4' } });
+await assert.rejects(api.readVideoProviderResult('/content', endpoint, ''));
+console.log('PASS provider result: relative URLs, scoped credentials, MP4 signature, bounded/truncated bodies, HTTP and MIME rejection');

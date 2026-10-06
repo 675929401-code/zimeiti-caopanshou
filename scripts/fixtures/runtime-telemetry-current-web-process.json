@@ -1,0 +1,140 @@
+{
+  "ok": true,
+  "schemaVersion": 1,
+  "scope": "current_web_process",
+  "readOnly": true,
+  "asOf": "2026-10-03T00:00:15.000Z",
+  "freshness": {
+    "state": "fresh",
+    "ageMs": 250,
+    "staleAfterMs": 15000
+  },
+  "nextRefreshAt": "2026-10-03T00:00:30.000Z",
+  "cacheStatus": "background_sample_hit",
+  "rateLimit": {
+    "scope": "process-local-admin",
+    "policy": "authenticated_admin_process_memory",
+    "minimumIntervalMs": 15000,
+    "remainingMs": 15000,
+    "retryAfterSeconds": 15
+  },
+  "idlePolicy": {
+    "idleAfterMs": 300000,
+    "state": "running",
+    "lastReadAt": "2026-10-03T00:00:15.000Z",
+    "idleAt": "2026-10-03T00:05:15.000Z",
+    "suspendsTimer": true,
+    "disablesEventLoopDelay": true,
+    "resumesOnRead": true,
+    "resumedOnThisRead": false
+  },
+  "sampling": {
+    "intervalMs": 5000,
+    "retentionSamples": 60,
+    "retainedSamples": 1,
+    "persistence": "process_memory_only",
+    "startedAt": "2026-10-03T00:00:10.000Z"
+  },
+  "current": {
+    "sampledAt": "2026-10-03T00:00:15.000Z",
+    "intervalMs": 5000,
+    "cpuDelta": {
+      "status": "available",
+      "userMicros": 110000,
+      "systemMicros": 15000,
+      "totalMicros": 125000,
+      "percentOfSingleCore": 2.5
+    },
+    "memory": {
+      "rssBytes": 268435456,
+      "heapUsedBytes": 134217728,
+      "heapTotalBytes": 201326592,
+      "externalBytes": 10485760,
+      "arrayBuffersBytes": 4194304
+    },
+    "eventLoop": {
+      "status": "available",
+      "utilization": 0.125,
+      "utilizationPercent": 12.5,
+      "delayMeanMs": 1.25,
+      "delayP50Ms": 1.1,
+      "delayP95Ms": 3.75,
+      "delayMaxMs": 6.5
+    },
+    "uptimeSeconds": 3600.25
+  },
+  "series": [
+    {
+      "sampledAt": "2026-10-03T00:00:15.000Z",
+      "intervalMs": 5000,
+      "cpuDelta": {
+        "status": "available",
+        "userMicros": 110000,
+        "systemMicros": 15000,
+        "totalMicros": 125000,
+        "percentOfSingleCore": 2.5
+      },
+      "memory": {
+        "rssBytes": 268435456,
+        "heapUsedBytes": 134217728,
+        "heapTotalBytes": 201326592,
+        "externalBytes": 10485760,
+        "arrayBuffersBytes": 4194304
+      },
+      "eventLoop": {
+        "status": "available",
+        "utilization": 0.125,
+        "utilizationPercent": 12.5,
+        "delayMeanMs": 1.25,
+        "delayP50Ms": 1.1,
+        "delayP95Ms": 3.75,
+        "delayMaxMs": 6.5
+      },
+      "uptimeSeconds": 3600.25
+    }
+  ],
+  "unavailable": {
+    "hostCpuTotal": {
+      "status": "unavailable",
+      "reason": "not_collected_in_phase_1",
+      "scope": "host",
+      "label": "宿主机 CPU 总量"
+    },
+    "hostMemoryTotal": {
+      "status": "unavailable",
+      "reason": "not_collected_in_phase_1",
+      "scope": "host",
+      "label": "宿主机总内存"
+    },
+    "disk": {
+      "status": "unavailable",
+      "reason": "not_collected_in_phase_1",
+      "scope": "storage",
+      "label": "磁盘容量与吞吐"
+    },
+    "network": {
+      "status": "unavailable",
+      "reason": "not_collected_in_phase_1",
+      "scope": "network",
+      "label": "主机网络流量"
+    },
+    "databasePool": {
+      "status": "unavailable",
+      "reason": "not_collected_in_phase_1",
+      "scope": "database",
+      "label": "数据库连接池"
+    },
+    "sharedWorkerHeartbeat": {
+      "status": "unavailable",
+      "reason": "not_collected_in_phase_1",
+      "scope": "shared_worker",
+      "label": "共享 Worker 心跳"
+    }
+  },
+  "privacy": {
+    "includesSecrets": false,
+    "includesUserData": false,
+    "includesRoutes": false,
+    "includesHostIdentity": false
+  }
+}

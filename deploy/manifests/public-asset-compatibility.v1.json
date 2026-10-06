@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "public-asset-compatibility-aliases",
+  "policy": "Retain each legacy path until the previous production release is no longer a rollback target and the longest CDN/browser cache TTL has expired.",
+  "aliases": [
+    { "legacyPath": "public/youcai-media/v1/images/cmmwclfuh003u51n07kjpo1dj.png", "canonicalPath": "public/youcai-media/v1/images/cmmwclfuh003u51n07kjpo1dj.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmmwck1mi003k51n0dhc7tvpf.png", "canonicalPath": "public/youcai-media/v1/images/cmmwck1mi003k51n0dhc7tvpf.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmok186sz05wu110szov6wsch.png", "canonicalPath": "public/youcai-media/v1/images/cmok186sz05wu110szov6wsch.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmok07gen05ht110sbkxh4h81.png", "canonicalPath": "public/youcai-media/v1/images/cmok07gen05ht110sbkxh4h81.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmocpormm00jyq3xdrol15ok4.png", "canonicalPath": "public/youcai-media/v1/images/cmocpormm00jyq3xdrol15ok4.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmo4ocgnh0022dhagitth37ip.png", "canonicalPath": "public/youcai-media/v1/images/cmo4ocgnh0022dhagitth37ip.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmnizoy0g006p724w7l5dp931.png", "canonicalPath": "public/youcai-media/v1/images/cmnizoy0g006p724w7l5dp931.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmnizc0q4003l724wxibond4q.png", "canonicalPath": "public/youcai-media/v1/images/cmnizc0q4003l724wxibond4q.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmnbbd1ke00z6g7h0jkg03g0d.png", "canonicalPath": "public/youcai-media/v1/images/cmnbbd1ke00z6g7h0jkg03g0d.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmnaalqoi003ug7h0c9d84moo.png", "canonicalPath": "public/youcai-media/v1/images/cmnaalqoi003ug7h0c9d84moo.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmnaaitu6003ag7h0jxo2u1wj.png", "canonicalPath": "public/youcai-media/v1/images/cmnaaitu6003ag7h0jxo2u1wj.jpg" },
+    { "legacyPath": "public/youcai-media/v1/images/cmna79p7u00atmf7s5lclspx7.png", "canonicalPath": "public/youcai-media/v1/images/cmna79p7u00atmf7s5lclspx7.jpg" }
+  ]
+}

@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /admin
+Disallow: /api/
+Disallow: /profile
+Disallow: /payment/
+Disallow: /youcai/profile
+Disallow: /youcai/recharge
+Allow: /

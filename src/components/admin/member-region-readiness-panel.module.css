@@ -1,0 +1,433 @@
+.panel {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  color: var(--foreground);
+}
+
+.commandCenter {
+  --foreground: #17201d;
+  --muted-foreground: #5f6d68;
+  --card: #fffefa;
+  --muted: #eef4f0;
+  --border: #bfd0c9;
+  --primary: #0b7466;
+  color-scheme: light;
+  border: 1px solid #bfd0c9;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 82% 0%, rgb(11 116 102 / 9%), transparent 34%),
+    linear-gradient(145deg, #fffefa, #f3f4ef 58%, #f7f8f4);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 86%), 0 18px 50px rgb(23 32 29 / 9%);
+  padding: 16px;
+}
+
+.commandCenter .readyBadge {
+  border-color: rgb(11 107 88 / 34%);
+  background: rgb(11 107 88 / 9%);
+  color: #0b6b58;
+}
+
+.commandCenter .unavailableBadge {
+  border-color: rgb(128 83 0 / 34%);
+  background: rgb(128 83 0 / 9%);
+  color: #805300;
+}
+
+.commandCenter .error {
+  border-color: rgb(180 35 24 / 34%);
+  background: rgb(180 35 24 / 8%);
+  color: #b42318;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.title,
+.sectionHeading h4,
+.cardHeading h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.privacyBadge,
+.readyBadge,
+.unavailableBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.privacyBadge {
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  color: var(--primary);
+}
+
+.readyBadge {
+  border: 1px solid color-mix(in srgb, #16a34a 30%, transparent);
+  background: color-mix(in srgb, #16a34a 9%, var(--card));
+  color: #15803d;
+}
+
+.unavailableBadge {
+  border: 1px solid color-mix(in srgb, #d97706 32%, transparent);
+  background: color-mix(in srgb, #d97706 9%, var(--card));
+  color: #b45309;
+}
+
+.description {
+  max-width: 850px;
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.refreshButton {
+  min-width: 128px;
+  min-height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, opacity 150ms ease;
+}
+
+.refreshButton:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border));
+  background: color-mix(in srgb, var(--primary) 6%, var(--card));
+}
+
+.refreshButton:focus-visible,
+.sourceDetails summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 75%, white);
+  outline-offset: 2px;
+}
+
+.refreshButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.notice,
+.error {
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.notice {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 54%, transparent);
+  color: var(--muted-foreground);
+}
+
+.error {
+  border: 1px solid color-mix(in srgb, #dc2626 30%, transparent);
+  background: color-mix(in srgb, #dc2626 8%, var(--card));
+  color: #b91c1c;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 84%, transparent);
+  padding: 9px 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.dimensionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dimensionCard,
+.evidenceCard,
+.sourceDetails {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 10px 24px color-mix(in srgb, #000 5%, transparent);
+}
+
+.dimensionCard {
+  min-width: 0;
+  padding: 14px;
+}
+
+.dimensionCard[data-state="unavailable"] {
+  border-color: color-mix(in srgb, #d97706 28%, var(--border));
+}
+
+.dimensionCard[data-state="stale"] {
+  border-color: color-mix(in srgb, #dc2626 25%, var(--border));
+}
+
+.cardHeading,
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardHeading span,
+.sectionHeading span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.primaryValue {
+  margin: 12px 0;
+  min-height: 29px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.metricList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.metricList div {
+  min-width: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--muted) 46%, transparent);
+  padding: 8px 9px;
+}
+
+.metricList dt {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.metricList dd {
+  margin: 4px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.definition,
+.boundary,
+.boundaryNote {
+  margin: 10px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.boundary {
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding-top: 9px;
+}
+
+.initialState {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 34px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-align: center;
+}
+
+.lowerGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr);
+  gap: 10px;
+}
+
+.evidenceCard {
+  min-width: 0;
+  padding: 14px;
+}
+
+.inputMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.inputMetrics div {
+  min-width: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--muted) 46%, transparent);
+  padding: 9px;
+}
+
+.inputMetrics span {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.inputMetrics strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mapEmpty {
+  margin-top: 11px;
+  border: 1px dashed color-mix(in srgb, #d97706 28%, var(--border));
+  border-radius: 11px;
+  background: color-mix(in srgb, #d97706 5%, var(--card));
+  padding: 18px;
+  text-align: center;
+}
+
+.mapEmpty strong {
+  font-size: 12px;
+}
+
+.mapEmpty p {
+  max-width: 620px;
+  margin: 7px auto 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.tableWrap {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  padding: 8px 7px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table th {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.table td:nth-child(n + 3),
+.table th:nth-child(n + 3) {
+  text-align: right;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.sourceDetails {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sourceDetails summary {
+  padding: 11px 14px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.sourceDetails[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+}
+
+.sourceItem {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.sourceItem > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sourceItem strong,
+.sourceItem span {
+  font-size: 12px;
+}
+
+.sourceItem span {
+  color: var(--muted-foreground);
+}
+
+.sourceItem p,
+.sourceItem small {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.emptySources {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 18px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refreshButton {
+    transition: none;
+  }
+}

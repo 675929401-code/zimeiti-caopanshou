@@ -1,0 +1,1300 @@
+.page {
+  --toolbox-crystal-panel: var(--card);
+  --toolbox-crystal-panel-strong: color-mix(in srgb, var(--card) 92%, var(--muted));
+  --toolbox-crystal-field: color-mix(in srgb, var(--background) 88%, var(--card));
+  --toolbox-crystal-line: var(--border);
+  --toolbox-crystal-line-strong: color-mix(in srgb, var(--primary) 42%, var(--border));
+  --toolbox-crystal-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --toolbox-crystal-shadow-focus: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+  --toolbox-glow-line: var(--primary);
+  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
+  font-size: 16px;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.main {
+  width: min(1760px, 100%);
+  margin: 0 auto;
+  padding: 14px 20px 18px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workbenchFrame {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 312px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, .08);
+}
+
+.toolRail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-right: 1px solid var(--toolbox-crystal-line);
+  background: color-mix(in srgb, var(--card) 94%, var(--muted));
+  padding: 16px 12px;
+}
+
+.railHeader {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid var(--toolbox-crystal-line);
+  padding: 0 4px 14px;
+}
+
+.railHeader > span {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.railHeader > strong {
+  color: var(--foreground);
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.railHeader > small {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.stage {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+}
+
+.stageHeader {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  border-bottom: 1px solid var(--toolbox-crystal-line);
+  background: var(--card);
+  padding: 12px 16px;
+}
+
+.stageIcon,
+.tabIcon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--toolbox-crystal-line);
+  background: color-mix(in srgb, var(--primary) 9%, var(--card));
+  color: var(--primary);
+}
+
+.stageIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.stageIcon > svg { width: 20px; height: 20px; }
+
+.stageHeader > div { min-width: 0; }
+.stageHeader h1 { margin: 0; color: var(--foreground); font-size: 20px; font-weight: 760; line-height: 1.3; }
+.stageHeader p { margin: 3px 0 0; color: var(--muted-foreground); font-size: 13px; line-height: 1.5; }
+
+.processingState {
+  margin-left: auto;
+  flex: 0 0 auto;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 7%, var(--card));
+  color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground));
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.intro {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 2px 4px;
+}
+
+.intro h1 {
+  margin: 0;
+  font-size: clamp(24px, 1.95vw, 34px);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+}
+.intro p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 580;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
+}
+.intro > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
+  white-space: nowrap;
+}
+
+.tabs {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tabs button {
+  position: relative;
+  min-width: 0;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 10px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--card) 96%, var(--muted));
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.tabs button:hover { color: var(--foreground); border-color: var(--toolbox-crystal-line-strong); background: color-mix(in srgb, var(--muted) 62%, var(--card)); transform: translateY(-1px); }
+.tabs button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tabIcon { width: 38px; height: 38px; border-radius: 9px; }
+.tabIcon > svg { width: 19px; height: 19px; }
+.tabs button > span { min-width: 0; text-align: left; }
+.tabs strong, .tabs small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0; }
+.tabs strong { font-size: 16px; font-weight: 740; color: inherit; }
+.tabs small { margin-top: 4px; font-size: 13px; line-height: 1.5; font-weight: 520; color: var(--muted-foreground); }
+.tabs .activeTab {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+}
+.tabs .activeTab::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--primary);
+}
+.tabs .activeTab .tabIcon { border-color: color-mix(in srgb, var(--primary) 42%, var(--border)); }
+.tabs .activeTab small { color: color-mix(in srgb, var(--primary) 32%, var(--foreground)); }
+.tabs .activeTab strong { font-weight: 760; }
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.toolPanel {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.toolPanel[hidden] { display: none; }
+
+.workspace :global(.toolbox-embedded-workspace) {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: transparent;
+}
+
+.workspace :global(.toolbox-embedded-workspace .rounded-xl),
+.workspace :global(.toolbox-embedded-workspace .rounded-2xl) {
+  border-radius: 8px;
+}
+
+.workspace :global(.toolbox-embedded-toolbar) {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 8px;
+  background: var(--toolbox-crystal-panel-strong);
+  box-shadow: none;
+  width: min(calc(100% - 32px), 1160px);
+  margin: 12px auto 0;
+}
+
+.workspace :global(.toolbox-embedded-toolbar p:first-child) {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.workspace :global(.toolbox-embedded-toolbar p + p) {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.workspace :global(.toolbox-toolbar-scroll) {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+/* Segment duration presets carry both a duration and a character range. Keep
+   every preset visible on desktop instead of hiding the final choices behind
+   an unlabelled horizontal scroll area. */
+.workspace :global(.toolbox-embedded-toolbar:has(.toolbox-option-chip > span)) {
+  align-items: flex-start;
+}
+
+.workspace :global(.toolbox-toolbar-scroll:has(.toolbox-option-chip > span)) {
+  flex-wrap: wrap;
+  row-gap: 6px;
+  overflow-x: visible;
+}
+
+.workspace :global(.toolbox-embedded-toolbar:has(.toolbox-option-chip > span) .toolbox-toolbar-action) {
+  align-self: flex-start;
+}
+
+.workspace :global(.toolbox-toolbar-label) {
+  flex: none;
+  color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
+  font-size: 13px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.workspace :global(.toolbox-option-chip),
+.workspace :global(.toolbox-toolbar-action),
+.workspace :global(.toolbox-info-chip),
+.workspace :global(.toolbox-check-chip) {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--toolbox-crystal-field) 88%, transparent);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.workspace :global(.toolbox-option-chip),
+.workspace :global(.toolbox-toolbar-action),
+.workspace :global(.toolbox-check-chip) {
+  cursor: pointer;
+}
+
+.workspace :global(.toolbox-option-chip) {
+  min-height: 40px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  color: color-mix(in srgb, var(--foreground) 76%, var(--muted-foreground));
+  font-size: 14px;
+  font-weight: 720;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+/* 时长chip：主标签与字数区间用竖线分隔，留足呼吸间距 */
+.workspace :global(.toolbox-option-chip span) {
+  font-size: 12px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
+  margin-left: 9px;
+  padding-left: 9px;
+  border-left: 1px solid var(--toolbox-crystal-line);
+}
+.workspace :global(.toolbox-toolbar-action) { min-height: 36px; padding: 6px 10px; }
+.workspace :global(.toolbox-info-chip) { min-height: 26px; padding: 3px 8px; }
+.workspace :global(.toolbox-check-chip) { padding: 4px 8px; }
+
+.workspace :global(.toolbox-format-toolbar) {
+  min-height: 54px;
+  justify-content: space-between;
+}
+
+.workspace :global(.toolbox-fixed-rule) {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.workspace :global(.toolbox-fixed-rule strong) {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace :global(.toolbox-fixed-rule small) {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.workspace :global(.toolbox-duration-toolbar) {
+  min-height: 58px;
+  flex-wrap: nowrap;
+}
+
+.workspace :global(.toolbox-duration-control) {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: auto minmax(350px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.workspace :global(.toolbox-duration-options) {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(46px, 1fr));
+  gap: 5px;
+}
+
+.workspace :global(.toolbox-duration-chip) {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 8px;
+  background: var(--toolbox-crystal-field);
+  color: color-mix(in srgb, var(--foreground) 76%, var(--muted-foreground));
+  font-size: 13px;
+  font-weight: 720;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.workspace :global(.toolbox-duration-chip:hover) {
+  border-color: var(--toolbox-crystal-line-strong);
+  color: var(--foreground);
+  transform: translateY(-1px);
+}
+
+.workspace :global(.toolbox-duration-chip:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.workspace :global(.toolbox-duration-chip[data-active="true"]) {
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  color: var(--foreground);
+  box-shadow: inset 0 -2px var(--primary);
+}
+
+.workspace :global(.toolbox-duration-summary) {
+  min-width: 150px;
+  color: color-mix(in srgb, var(--foreground) 76%, var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 650;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.workspace :global(.toolbox-option-chip[data-active="true"]),
+.workspace :global(.toolbox-check-chip[data-active="true"]) {
+  border-color: color-mix(in srgb, var(--toolbox-glow-line) 74%, transparent);
+  background: color-mix(in srgb, var(--primary) 11%, var(--toolbox-crystal-field));
+  color: var(--foreground);
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.workspace :global(.toolbox-option-chip[data-active="true"] span) {
+  color: color-mix(in srgb, var(--foreground) 88%, var(--toolbox-glow-line));
+  border-left-color: color-mix(in srgb, var(--toolbox-glow-line) 50%, transparent);
+}
+
+.workspace :global(.toolbox-option-chip:hover),
+.workspace :global(.toolbox-toolbar-action:hover),
+.workspace :global(.toolbox-check-chip:hover) {
+  border-color: var(--toolbox-crystal-line-strong);
+  color: var(--foreground);
+  transform: translateY(-1px);
+}
+
+.workspace :global(.toolbox-option-chip:focus-visible),
+.workspace :global(.toolbox-toolbar-action:focus-visible),
+.workspace :global(.toolbox-check-chip:focus-within) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.workspace :global(.toolbox-inline-options) {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--toolbox-crystal-line);
+  color: var(--muted-foreground);
+  scrollbar-width: thin;
+}
+
+.workspace :global(.toolbox-operation-options) {
+  margin: 0 0 10px;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 8px;
+  background: var(--toolbox-crystal-field);
+  padding: 6px 9px;
+}
+
+.workspace :global(.toolbox-toolbar-note) {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  font-weight: 520;
+  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
+  white-space: nowrap;
+}
+
+.workspace :global(.toolbox-input-surface),
+.workspace :global(.toolbox-results-block),
+.workspace :global(.toolbox-state-surface) {
+  border-color: var(--toolbox-crystal-line);
+  background: var(--toolbox-crystal-panel);
+  box-shadow: var(--toolbox-crystal-shadow);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.workspace :global(.toolbox-input-surface:hover),
+.workspace :global(.toolbox-results-block:hover),
+.workspace :global(.toolbox-state-surface:hover) {
+  border-color: var(--toolbox-crystal-line-strong);
+}
+
+.workspace :global(.toolbox-input-surface:focus-within) {
+  border-color: var(--toolbox-crystal-line-strong);
+  box-shadow: var(--toolbox-crystal-shadow-focus);
+}
+
+.workspace :global(.toolbox-extract-card) {
+  width: 100%;
+  padding: 14px 16px;
+}
+
+.workspace :global(.toolbox-extract-heading) {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.workspace :global(.toolbox-extract-heading h3) {
+  min-width: 0;
+  margin: 0;
+  line-height: 1.4;
+  font-size: 16px;
+  font-weight: 720;
+  color: var(--foreground);
+}
+
+.workspace :global(.toolbox-extract-paste-button) {
+  min-width: 92px;
+  border-color: var(--toolbox-crystal-line);
+  background: color-mix(in srgb, var(--toolbox-crystal-field) 90%, transparent);
+  color: var(--foreground);
+}
+
+.workspace :global(.toolbox-extract-paste-button:hover) {
+  border-color: var(--toolbox-crystal-line-strong);
+  background: color-mix(in srgb, var(--primary) 11%, var(--toolbox-crystal-field));
+}
+
+.workspace :global(.toolbox-extract-paste-button:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.workspace :global(.toolbox-extract-textarea) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 13px;
+  line-height: 1.55;
+  font-size: 16px;
+  color: var(--foreground);
+  scrollbar-width: thin;
+}
+
+.workspace :global(.toolbox-extract-textarea::placeholder) {
+  color: color-mix(in srgb, var(--foreground) 44%, var(--muted-foreground));
+  opacity: 1;
+}
+
+.workspace :global(.toolbox-input-heading h3),
+.workspace :global(.toolbox-results-heading h3),
+.workspace :global(.toolbox-results-block > h3) {
+  font-size: 17px;
+  font-weight: 740;
+  color: var(--foreground);
+}
+
+.workspace :global(.toolbox-input-title) {
+  min-width: 0;
+  letter-spacing: 0.01em;
+}
+
+.workspace :global(.toolbox-input-title span) {
+  font-size: 16px;
+  font-weight: 740;
+  line-height: 1.35;
+}
+
+.workspace :global(.toolbox-input-meta),
+.workspace :global(.toolbox-results-footer),
+.workspace :global(.toolbox-state-surface p) {
+  font-size: 13px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--foreground) 74%, var(--muted-foreground));
+}
+
+.workspace :global(.toolbox-command-row > button) {
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.workspace :global(.toolbox-card-actions) {
+  min-height: 60px;
+  border-top: 1px solid var(--toolbox-crystal-line);
+  padding: 10px 14px;
+}
+
+.workspace :global(.toolbox-card-actions.toolbox-command-row-two) {
+  display: grid;
+  grid-template-columns: minmax(96px, 120px) minmax(220px, 300px);
+  justify-content: end;
+}
+
+.workspace :global(.toolbox-card-actions.toolbox-command-row-three) {
+  display: grid;
+  grid-template-columns: minmax(96px, 120px) minmax(220px, 1fr) minmax(110px, auto);
+}
+
+.workspace :global(.toolbox-card-actions > .toolbox-command-row-three) {
+  display: grid;
+  grid-template-columns: minmax(96px, 120px) minmax(220px, 300px) minmax(108px, 132px);
+  justify-content: end;
+}
+
+.workspace :global(.toolbox-card-actions > .toolbox-command-row-two) {
+  display: grid;
+  grid-template-columns: minmax(96px, 120px) minmax(220px, 300px);
+  justify-content: end;
+}
+
+.workspace :global(.toolbox-extract-card .toolbox-card-actions) {
+  min-height: 52px;
+  margin-top: 12px;
+  border-top: 0;
+  padding: 0;
+}
+
+.workspace :global(.toolbox-card-notice) {
+  margin: 0 14px 12px;
+}
+
+.workspace :global(.toolbox-command-row > button:disabled) {
+  opacity: 1;
+  filter: none;
+}
+
+.workspace :global(.toolbox-inline-notice) {
+  margin: 0;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--card));
+  color: color-mix(in srgb, var(--foreground) 76%, var(--muted-foreground));
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace :global(.toolbox-primary-action) {
+  min-height: 46px;
+  border: 1px solid color-mix(in srgb, var(--toolbox-glow-line) 72%, transparent);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.workspace :global(.toolbox-primary-action:hover:not(:disabled)) {
+  filter: saturate(112%) brightness(105%);
+}
+
+.workspace :global(.toolbox-input-heading),
+.workspace :global(.toolbox-results-heading),
+.workspace :global(.toolbox-results-footer) {
+  border-color: var(--toolbox-crystal-line);
+}
+
+.workspace :global(.toolbox-field) {
+  border-color: var(--toolbox-crystal-line);
+  background: var(--toolbox-crystal-field);
+}
+
+.workspace :global(.toolbox-field:focus-visible) {
+  border-color: var(--toolbox-crystal-line-strong);
+  outline: 2px solid color-mix(in srgb, var(--primary) 66%, transparent);
+  outline-offset: 1px;
+}
+
+.workspace :global(.toolbox-two-column) {
+  width: 100%;
+  max-width: 1160px;
+  height: auto;
+  margin-inline: auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  /* A short desktop viewport must scroll the stacked cards instead of
+     shrinking both auto tracks until their contents overlap. */
+  grid-template-rows: max-content max-content;
+  align-content: start;
+  align-items: start;
+  gap: 16px;
+  overflow: visible;
+}
+
+.workspace :global(.toolbox-primary-pane),
+.workspace :global(.toolbox-result-pane) {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+}
+
+.workspace :global(.toolbox-primary-pane) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: visible;
+}
+
+.workspace :global(.toolbox-primary-pane > .toolbox-input-surface) {
+  flex: none;
+  min-height: 0;
+  height: auto;
+}
+
+.workspace :global(.toolbox-result-pane) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: auto;
+  overflow: visible;
+}
+
+.workspace :global(.toolbox-result-pane > .toolbox-results-block),
+.workspace :global(.toolbox-result-pane > .toolbox-empty-result),
+.workspace :global(.toolbox-result-pane > .toolbox-state-surface) {
+  flex: 1;
+  min-height: 260px;
+  height: auto;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.workspace :global(.toolbox-empty-result) {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  border: 1px dashed var(--toolbox-crystal-line);
+  border-radius: 8px;
+  background: var(--toolbox-crystal-panel);
+  box-shadow: var(--toolbox-crystal-shadow);
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.workspace :global(.toolbox-empty-result h3) {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.workspace :global(.toolbox-empty-result p) {
+  max-width: 360px;
+  margin: 6px auto 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--foreground) 74%, var(--muted-foreground));
+}
+
+/* Embedded workbench tabs must be readable on the first rendered frame. The
+   global entrance animation starts at opacity:0 and made an already mounted
+   empty state look disabled during ordinary tool switching. */
+.workspace :global(.toolbox-empty-result.animate-fade-up) {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+.workspace :global(.toolbox-input-surface textarea) {
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.75;
+  color: color-mix(in srgb, var(--foreground) 94%, transparent);
+  text-rendering: optimizeLegibility;
+}
+
+.workspace :global(.toolbox-input-surface textarea::placeholder) {
+  color: color-mix(in srgb, var(--foreground) 52%, var(--muted-foreground));
+  opacity: 1;
+}
+
+/* Desktop production layout: one compact operation card above one result card. */
+.workspace :global(.toolbox-format-layout) {
+  --toolbox-format-action-space: 0px;
+}
+
+.workspace :global(.toolbox-format-layout .toolbox-result-pane) {
+  padding-bottom: var(--toolbox-format-action-space);
+}
+
+.workspace :global(.toolbox-format-layout .toolbox-format-panel) {
+  border-color: var(--toolbox-crystal-line);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.workspace :global(.toolbox-format-layout .toolbox-empty-result) {
+  border-style: solid;
+}
+
+.workspace :global(.toolbox-format-layout) {
+  scrollbar-color: color-mix(in srgb, var(--primary) 38%, var(--border)) transparent;
+}
+
+.workspace :global(.toolbox-balanced-layout) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: max-content max-content;
+  height: max-content;
+  flex: none;
+  overflow: visible;
+  gap: 16px;
+}
+
+.workspace :global(.toolbox-balanced-layout .toolbox-primary-pane),
+.workspace :global(.toolbox-balanced-layout .toolbox-result-pane) {
+  height: max-content;
+  align-self: start;
+  overflow: hidden;
+}
+
+.workspace :global(.toolbox-balanced-layout .toolbox-primary-pane) {
+  display: block;
+}
+
+.workspace :global(.toolbox-balanced-layout .toolbox-primary-pane > .toolbox-input-surface) {
+  min-height: 0;
+  height: auto;
+}
+
+.workspace :global(.toolbox-balanced-panel) {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace :global(.toolbox-balanced-textarea) {
+  min-height: 0;
+  flex: 1;
+}
+
+.workspace :global(.toolbox-balanced-layout .toolbox-primary-pane .toolbox-balanced-textarea) {
+  min-height: 132px;
+  height: 132px;
+  max-height: 132px;
+  flex: none;
+  overflow-y: auto;
+}
+
+.workspace :global(.toolbox-balanced-layout .toolbox-results-block),
+.workspace :global(.toolbox-balanced-layout .toolbox-empty-result) {
+  min-height: 260px;
+  height: auto;
+}
+
+.workspace :global(.toolbox-segment-shell) {
+  overflow: visible;
+}
+
+.workspace :global(.toolbox-segment-result-list) {
+  min-height: 0;
+  max-height: 420px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.workspace :global(.toolbox-result-empty-card) {
+  display: flex;
+  flex-direction: column;
+  place-items: stretch;
+  padding: 0;
+  text-align: left;
+}
+
+.workspace :global(.toolbox-empty-heading) {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--toolbox-crystal-line);
+  color: var(--primary);
+  padding: 0 18px;
+  font-size: 14px;
+  font-weight: 740;
+}
+
+.workspace :global(.toolbox-empty-body) {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+@media (max-width: 1320px) {
+  .workspace :global(.toolbox-duration-control) {
+    grid-template-columns: auto minmax(315px, 1fr) auto;
+    gap: 7px;
+  }
+
+  .workspace :global(.toolbox-duration-summary) {
+    min-width: 130px;
+    font-size: 11px;
+  }
+}
+
+.workspace :global(.toolbox-embedded-workspace:has(.toolbox-format-layout) .toolbox-embedded-toolbar) {
+  border-color: var(--toolbox-crystal-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.workspace :global(.toolbox-grid-span) { width: 100%; grid-column: 1 / -1; }
+
+.workspace :global(.toolbox-extract-layout) {
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: max-content max-content;
+}
+
+.workspace :global(.toolbox-extract-main) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspace :global(.toolbox-extract-panel-host) {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+}
+
+/* Video extraction uses the shared stacked workbench. Result media stays
+   portrait-first because short-video sources are predominantly 9:16. */
+.workspace :global(.toolbox-video-layout) {
+  height: auto;
+  align-content: start;
+}
+
+.workspace :global(.toolbox-video-layout) > :global(.toolbox-primary-pane),
+.workspace :global(.toolbox-video-layout) > :global(.toolbox-result-pane) {
+  min-height: 0;
+  height: auto;
+  align-self: start;
+  overflow: visible;
+}
+
+.workspace :global(.toolbox-video-layout) > :global(.toolbox-result-pane) > :global(.toolbox-results-block),
+.workspace :global(.toolbox-video-layout) > :global(.toolbox-result-pane) > :global(.toolbox-empty-result) {
+  min-height: 260px;
+  height: auto;
+  flex: none;
+  overflow: hidden;
+}
+
+.workspace :global(.toolbox-video-layout .toolbox-video-input-card) {
+  min-height: 0;
+  height: auto;
+  flex: none;
+}
+
+.workspace :global(.toolbox-video-layout .toolbox-video-textarea) {
+  min-height: 104px;
+  height: 104px;
+  max-height: 104px;
+  flex: none;
+}
+
+.workspace :global(.toolbox-platform-summary) {
+  min-width: 0;
+  color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.workspace :global(.toolbox-video-results) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 10px;
+}
+
+.workspace :global(.toolbox-video-results-heading) {
+  min-height: 52px;
+  margin: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--toolbox-crystal-line);
+}
+
+.workspace :global(.toolbox-text-result-pane) {
+  min-height: 260px;
+  max-height: 520px;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 8px;
+  background: var(--toolbox-crystal-panel);
+  box-shadow: var(--toolbox-crystal-shadow);
+  overflow: hidden;
+}
+
+.workspace :global(.toolbox-result-pane-heading) {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  border-bottom: 1px solid var(--toolbox-crystal-line);
+  padding: 0 16px;
+  color: var(--primary);
+  font-size: 16px;
+  font-weight: 740;
+}
+
+.workspace :global(.toolbox-text-result-pane > .toolbox-results-block),
+.workspace :global(.toolbox-text-result-pane > .toolbox-empty-result),
+.workspace :global(.toolbox-text-result-pane > .toolbox-state-surface) {
+  min-height: 208px;
+  height: auto;
+  max-height: 468px;
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-y: auto;
+}
+
+.workspace :global(.toolbox-video-results-heading small) {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.workspace :global(.toolbox-video-grid) {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.workspace :global(.toolbox-video-empty-body) {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.workspace :global(.toolbox-video-empty-body p) {
+  max-width: 320px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.workspace :global(.toolbox-video-card) {
+  min-width: 0;
+  border: 1px solid var(--toolbox-crystal-line);
+  background: color-mix(in srgb, var(--card) 96%, var(--primary) 4%);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+
+.workspace :global(.toolbox-video-card[data-video-layout="media"]) {
+  display: grid;
+  grid-template-columns: clamp(148px, 32%, 176px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "media meta"
+    "media actions";
+}
+
+.workspace :global(.toolbox-video-media) {
+  grid-area: media;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 9 / 16;
+  align-self: start;
+  border-right: 1px solid var(--toolbox-crystal-line);
+  background: #07090d;
+}
+
+.workspace :global(.toolbox-video-media > video),
+.workspace :global(.toolbox-video-media > div) {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.workspace :global(.toolbox-video-meta) {
+  grid-area: meta;
+  min-width: 0;
+  padding: 16px 16px 8px;
+}
+
+.workspace :global(.toolbox-video-meta > p:first-of-type) {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.workspace :global(.toolbox-video-platform) {
+  background: color-mix(in srgb, var(--primary) 9%, var(--card));
+  color: var(--foreground);
+}
+
+.workspace :global(.toolbox-video-success) {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+
+.workspace :global(.toolbox-video-actions) {
+  grid-area: actions;
+  min-width: 0;
+  margin: 0 16px;
+  padding: 11px 0 14px;
+  border-top: 1px solid var(--toolbox-crystal-line);
+}
+
+.workspace :global(.toolbox-video-actions button) {
+  min-height: 34px;
+  padding-inline: 12px;
+  border: 1px solid var(--toolbox-crystal-line);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workspace :global(.toolbox-primary-actions) {
+  position: static;
+}
+
+.loading { min-height: 100vh; display: grid; place-items: center; background: var(--background); color: var(--muted-foreground); }
+
+@media (max-width: 1024px) {
+  .main { padding-inline: 14px; }
+  .tabs small { display: none; }
+  .workspace :global(.toolbox-two-column) { gap: 9px; }
+}
+
+/* /youcai/tools/utility reuses the legacy utility route inside the dedicated
+   Manju shell. Restore its compact horizontal tab bar so the shared module's
+   new 312px rail rules cannot squeeze or hide the protected workspace. */
+@media (min-width: 1200px) {
+  :global([data-testid="manju-content"]) .page[data-page="tools-utility"] .main {
+    padding-inline: 12px;
+  }
+
+  :global([data-testid="manju-content"]) .page[data-page="tools-utility"] .tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    flex: none;
+    gap: 8px;
+  }
+
+  :global([data-testid="manju-content"]) .page[data-page="tools-utility"] .tabs button {
+    min-height: 64px;
+  }
+
+  :global([data-testid="manju-content"]) .page[data-page="tools-utility"] .workspace {
+    flex: 1 1 0%;
+    min-height: 0;
+  }
+}
+
+@media (min-width: 1200px) and (max-width: 1399px) {
+  :global([data-testid="manju-content"]) .page[data-page="tools-utility"] .workspace :global(.toolbox-two-column) {
+    grid-template-columns: minmax(260px, 44fr) minmax(330px, 56fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .main { padding: 10px 10px 14px; gap: 8px; }
+  .intro { min-height: 52px; }
+  .intro h1 { font-size: 20px; }
+  .intro p { max-width: 78vw; font-size: 12px; }
+  .intro > span { display: none; }
+  .tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 3px; overflow: visible; }
+  .tabs button { min-width: 0; min-height: 44px; gap: 4px; padding: 4px 2px; }
+  .tabs button > svg { width: 14px; height: 14px; }
+  .tabs button > span { text-align: center; }
+  .tabs strong { font-size: 12px; }
+  .tabs small { display: none; }
+  .workspace { border-radius: 6px; }
+  .workspace :global(.toolbox-embedded-toolbar) { min-height: 48px; padding-inline: 8px; }
+  .workspace :global(.toolbox-option-chip span),
+  .workspace :global(.toolbox-toolbar-note) { display: none; }
+  .workspace :global(.toolbox-toolbar-action) { min-height: 44px; }
+  .workspace :global(.toolbox-two-column) {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .workspace :global(.toolbox-format-layout .toolbox-result-pane) { padding-bottom: 0; }
+  .workspace :global(.toolbox-primary-pane) { min-height: 0; }
+  .workspace :global(.toolbox-result-pane),
+  .workspace :global(.toolbox-result-pane > .toolbox-results-block),
+  .workspace :global(.toolbox-result-pane > .toolbox-empty-result),
+  .workspace :global(.toolbox-result-pane > .toolbox-state-surface) { min-height: 200px; }
+  .workspace :global(.toolbox-grid-span) { order: -1; }
+
+  .workspace :global(.toolbox-extract-card) { padding: 11px; }
+  .workspace :global(.toolbox-extract-heading) { gap: 8px; margin-bottom: 8px; }
+  .workspace :global(.toolbox-extract-heading h3) { font-size: 12px; }
+  .workspace :global(.toolbox-extract-paste-button) {
+    min-width: 90px;
+    min-height: 40px;
+    padding-inline: 9px;
+  }
+  .workspace :global(.toolbox-extract-textarea) { padding: 10px 11px; }
+
+  .workspace :global(.toolbox-input-heading) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title paste"
+      "meta meta";
+    align-items: center;
+    gap: 7px 10px;
+    padding: 9px 10px;
+  }
+
+  .workspace :global(.toolbox-input-title) {
+    grid-area: title;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .workspace :global(.toolbox-input-title span) { white-space: nowrap; }
+
+  .workspace :global(.toolbox-input-meta) {
+    grid-area: meta;
+    min-width: 0;
+    font-size: 10px;
+    line-height: 1.35;
+    white-space: normal;
+  }
+
+  .workspace :global(.toolbox-paste-button) {
+    grid-area: paste;
+    min-width: 64px;
+    min-height: 44px;
+    justify-content: center;
+    padding-inline: 10px;
+    white-space: nowrap;
+  }
+
+  .workspace :global(.toolbox-command-row) {
+    width: 100%;
+    display: grid;
+    gap: 6px;
+  }
+
+  .workspace :global(.toolbox-command-row-three) {
+    grid-template-columns: minmax(70px, auto) minmax(118px, 1fr) minmax(88px, auto);
+  }
+
+  .workspace :global(.toolbox-command-row-two) {
+    grid-template-columns: minmax(86px, auto) minmax(132px, 1fr);
+  }
+
+  .workspace :global(.toolbox-command-row > button) {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding-inline: 8px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs button { transition-duration: 0.01ms; }
+}

@@ -1,0 +1,3 @@
+import {notFound} from 'next/navigation';
+import {CommerceWorkspace} from '../../../commerce/components/commerce-agent/workspace';
+export default async function WorkspaceRoute({params}:{params:Promise<{view:string[]}>}){const {view}=await params;if(!['agent-chat','toolbox/video-generation','toolbox/image-generation','canvas','assets','toolbox/video-watermark-remove','toolbox/video-subtitle-erase','toolbox/video-quality-enhance','toolbox/video-face-mosaic','toolbox/video-editor','toolbox/ecommerce-image-set','toolbox/depth-video-clone','toolbox/hot-video-remix','toolbox/voice-synthesis'].includes(view.join('/')))notFound();return <CommerceWorkspace/>;}

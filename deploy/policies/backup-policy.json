@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "projectId": "zimeiti-caopanshou",
+  "principles": {
+    "gitIsDatabaseBackup": false,
+    "gitIsAssetBackup": false,
+    "deploymentMayOverwriteMutableData": false,
+    "backupSuccessRequiresRestoreEvidence": true
+  },
+  "classes": [
+    {
+      "id": "source",
+      "systemOfRecord": "private Git origin",
+      "backup": "independent private Git mirror plus signed release tags",
+      "rpo": "24h",
+      "rto": "4h"
+    },
+    {
+      "id": "artifacts",
+      "systemOfRecord": "immutable artifact registry or COS",
+      "backup": "versioning plus cross-account or cross-region copy",
+      "rpo": "per release",
+      "rto": "1h"
+    },
+    {
+      "id": "public-assets",
+      "systemOfRecord": "versioned COS/CDN objects",
+      "backup": "content hashes, object versioning, inventory and independent copy",
+      "rpo": "24h",
+      "rto": "4h"
+    },
+    {
+      "id": "database",
+      "systemOfRecord": "managed production database",
+      "backup": "PITR plus encrypted logical backup with schema coverage verification",
+      "rpo": "5m",
+      "rto": "2h"
+    },
+    {
+      "id": "wallet-ledger",
+      "systemOfRecord": "production database append-only ledger",
+      "backup": "PITR plus daily encrypted immutable snapshot and reconciliation",
+      "rpo": "1m",
+      "rto": "4h"
+    },
+    {
+      "id": "user-assets",
+      "systemOfRecord": "private object storage plus database metadata",
+      "backup": "object versioning plus database/object joint inventory",
+      "rpo": "15m",
+      "rto": "4h"
+    },
+    {
+      "id": "secrets",
+      "systemOfRecord": "secret manager or protected server environment",
+      "backup": "controlled encrypted recovery package and key rotation history",
+      "rpo": "24h",
+      "rto": "2h"
+    }
+  ],
+  "restoreDrills": {
+    "database": "monthly",
+    "objects": "monthly",
+    "artifactRollback": "quarterly",
+    "fullDisasterRecovery": "semiannual"
+  },
+  "implementationStatus": {
+    "localPolicyAndManifests": "configured",
+    "privateOrigin": "pending external repository URL and authorization",
+    "independentRemoteBackup": "pending external repository URL and authorization",
+    "databasePitr": "must be verified on provider",
+    "objectVersioningAndReplication": "must be verified on provider",
+    "productionRestoreDrill": "not yet executed"
+  }
+}

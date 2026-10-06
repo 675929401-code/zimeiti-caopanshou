@@ -1,0 +1,454 @@
+.panel {
+  --esm-bg: #f3f4ef;
+  --esm-surface: rgba(255, 254, 250, 0.96);
+  --esm-surface-strong: rgba(247, 248, 244, 0.98);
+  --esm-line: rgba(11, 116, 102, 0.2);
+  --esm-line-strong: rgba(11, 116, 102, 0.48);
+  --esm-text: #17201d;
+  --esm-muted: #5f6d68;
+  --esm-blue: #2e6f96;
+  --esm-cyan: #0b7466;
+  --esm-green: #0b6b58;
+  --esm-amber: #805300;
+  --esm-red: #b42318;
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--esm-line);
+  border-radius: 16px;
+  padding: 16px;
+  color: var(--esm-text);
+  color-scheme: light;
+  background:
+    radial-gradient(circle at 82% -8%, rgba(11, 116, 102, 0.09), transparent 36%),
+    linear-gradient(148deg, rgba(255, 254, 250, 0.99), var(--esm-bg));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84), 0 18px 42px rgba(23, 32, 29, 0.09);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.titleRow h3,
+.sectionHeading h4,
+.checkHeader h4 {
+  margin: 0;
+  color: var(--esm-text);
+  font-size: 16px;
+  font-weight: 820;
+  letter-spacing: 0.01em;
+}
+
+.header > div > p {
+  max-width: 920px;
+  margin: 7px 0 0;
+  color: var(--esm-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.scopeBadge,
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.scopeBadge {
+  border: 1px solid var(--esm-line);
+  color: var(--esm-blue);
+  background: rgba(46, 111, 150, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.05em;
+}
+
+.statusBadge,
+.checkHeader span,
+.sourceCard li span {
+  border: 1px solid rgba(95, 109, 104, 0.28);
+  color: var(--esm-muted);
+  background: rgba(95, 109, 104, 0.08);
+}
+
+.panel [data-tone="healthy"] {
+  border-color: rgba(11, 107, 88, 0.34) !important;
+  color: #0b6b58 !important;
+  background: rgba(11, 107, 88, 0.08) !important;
+}
+
+.panel [data-tone="warning"] {
+  border-color: rgba(128, 83, 0, 0.34) !important;
+  color: #805300 !important;
+  background: rgba(128, 83, 0, 0.08) !important;
+}
+
+.panel [data-tone="danger"] {
+  border-color: rgba(180, 35, 24, 0.34) !important;
+  color: #b42318 !important;
+  background: rgba(180, 35, 24, 0.08) !important;
+}
+
+.refreshButton {
+  min-width: 148px;
+  min-height: 40px;
+  flex: 0 0 auto;
+  border: 1px solid var(--esm-line-strong);
+  border-radius: 10px;
+  padding: 8px 13px;
+  color: #fffefa;
+  background: linear-gradient(135deg, #2e6f96, #0b7466);
+  box-shadow: 0 8px 22px rgba(11, 116, 102, 0.18);
+  font-size: 13px;
+  font-weight: 760;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+.refreshButton:hover:not(:disabled) {
+  border-color: rgba(11, 116, 102, 0.86);
+  box-shadow: 0 10px 28px rgba(11, 116, 102, 0.24);
+}
+
+.refreshButton:focus-visible,
+.targetTabs button:focus-visible {
+  outline: 2px solid #2e6f96;
+  outline-offset: 3px;
+}
+
+.refreshButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+.notice,
+.error,
+.activationGap {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.notice,
+.activationGap {
+  border: 1px solid rgba(128, 83, 0, 0.3);
+  color: var(--esm-amber);
+  background: rgba(128, 83, 0, 0.08);
+}
+
+.error {
+  border: 1px solid rgba(180, 35, 24, 0.32);
+  color: var(--esm-red);
+  background: rgba(180, 35, 24, 0.08);
+}
+
+.activationGap {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.activationGap strong,
+.activationGap span,
+.activationGap p {
+  font-size: 12px;
+}
+
+.activationGap span {
+  border-radius: 6px;
+  padding: 2px 7px;
+  color: var(--esm-amber);
+  background: rgba(128, 83, 0, 0.07);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.activationGap p {
+  margin: 0;
+  color: var(--esm-muted);
+}
+
+.metaRow,
+.targetHeading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  border: 1px solid var(--esm-line);
+  border-radius: 10px;
+  padding: 9px 11px;
+  color: var(--esm-muted);
+  background: rgba(247, 248, 244, 0.88);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.targetTabs {
+  display: flex;
+  max-width: 100%;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.targetTabs button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid var(--esm-line);
+  border-radius: 9px;
+  padding: 7px 10px;
+  color: var(--esm-text);
+  background: rgba(255, 254, 250, 0.9);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.targetTabs button small {
+  color: var(--esm-muted);
+  font-size: 12px;
+}
+
+.targetTabs .targetActive {
+  border-color: var(--esm-line-strong);
+  color: var(--esm-text);
+  background: rgba(11, 116, 102, 0.1);
+}
+
+.targetHeading {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.targetHeading div {
+  min-width: 0;
+}
+
+.targetHeading span,
+.targetHeading strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.targetHeading span {
+  color: var(--esm-muted);
+  font-size: 12px;
+}
+
+.targetHeading strong {
+  margin-top: 4px;
+  color: var(--esm-text);
+  font-size: 13px;
+}
+
+.checkGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.checkCard,
+.sourceCard {
+  min-width: 0;
+  border: 1px solid var(--esm-line);
+  border-radius: 13px;
+  background: linear-gradient(144deg, var(--esm-surface-strong), var(--esm-surface));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.checkCard {
+  position: relative;
+  overflow: hidden;
+  padding: 13px;
+}
+
+.checkCard::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  content: "";
+  background: linear-gradient(to bottom, var(--esm-blue), var(--esm-cyan));
+  box-shadow: 0 0 14px rgba(46, 111, 150, 0.25);
+}
+
+.panel[data-activation="active"] .checkCard::before {
+  animation: externalMonitorGlow 3.2s ease-in-out 1;
+}
+
+.checkHeader,
+.sectionHeading,
+.sourceCard li > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.checkHeader h4,
+.sectionHeading h4 {
+  font-size: 13px;
+}
+
+.checkHeader span,
+.sourceCard li span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.checkValue {
+  display: block;
+  margin-top: 12px;
+  overflow: hidden;
+  color: var(--esm-text);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkCard > p {
+  display: -webkit-box;
+  min-height: 42px;
+  margin: 7px 0 0;
+  overflow: hidden;
+  color: var(--esm-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lowerGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.sourceCard {
+  padding: 14px;
+}
+
+.sectionHeading {
+  margin-bottom: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--esm-line);
+}
+
+.sectionHeading span {
+  color: var(--esm-muted);
+  font-size: 12px;
+}
+
+.sourceCard ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sourceCard li {
+  border: 1px solid var(--esm-line);
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: rgba(247, 248, 244, 0.86);
+}
+
+.sourceCard li strong {
+  color: var(--esm-text);
+  font-size: 12px;
+}
+
+.sourceCard li p,
+.boundaryList li,
+.emptySource {
+  margin: 5px 0 0;
+  color: var(--esm-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.boundaryList li {
+  position: relative;
+  margin: 0;
+  padding: 8px 9px 8px 25px;
+}
+
+.boundaryList li::before {
+  position: absolute;
+  top: 13px;
+  left: 10px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  content: "";
+  background: var(--esm-cyan);
+  box-shadow: 0 0 9px rgba(11, 116, 102, 0.24);
+}
+
+@keyframes externalMonitorGlow {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; box-shadow: 0 0 22px rgba(11, 116, 102, 0.32); }
+}
+
+@media (max-width: 1280px) {
+  .checkGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .refreshButton {
+    align-self: flex-start;
+  }
+
+  .checkGrid,
+  .lowerGrid,
+  .targetHeading {
+    grid-template-columns: 1fr;
+  }
+
+  .activationGap {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refreshButton {
+    transition: none;
+  }
+
+  .panel[data-activation="active"] .checkCard::before {
+    animation: none;
+  }
+}

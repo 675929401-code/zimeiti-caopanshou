@@ -1,0 +1,687 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useApp } from "@/contexts/app-context";
+import { usePersistedState } from "@/hooks/use-persisted-state";
+import { SubPageHeader } from "@/components/sub-page-header";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { RechargeDialog } from "@/components/recharge-dialog";
+import { reportCoverGenerateFailed } from "@/lib/diagnostic-sentry";
+import {
+  Sparkles,
+  Loader2,
+  Download,
+  Image,
+  Wallet,
+  Type,
+  PenLine,
+  RotateCcw,
+  Trash2,
+  Check,
+  DownloadCloud,
+} from "lucide-react";
+
+// ── 风格预设 ──────────────────────────────────────────
+interface StylePreset {
+  id: string;
+  name: string;
+  keyword: string;
+  description: string;
+  icon: string;
+  color: string;
+}
+
+const STYLE_PRESETS: StylePreset[] = [
+  { id: "3d_cartoon", name: "精致3D卡通", keyword: "3D cartoon, soft lighting, cute 3D render", description: "立体萌趣 光影柔和", icon: "🎮", color: "from-pink-400 to-purple-500" },
+  { id: "chinese", name: "国风", keyword: "Chinese ink painting, traditional style, elegant", description: "水墨丹青 古韵悠长", icon: "🏮", color: "from-red-500 to-amber-500" },
+  { id: "tech", name: "科技感", keyword: "futuristic tech, cyber style, neon glow", description: "未来科技 冷冽锋芒", icon: "🚀", color: "from-cyan-400 to-blue-600" },
+  { id: "healing", name: "治愈风", keyword: "warm cozy, pastel colors, soft lighting", description: "温暖治愈 柔光浅色", icon: "☁️", color: "from-amber-300 to-orange-400" },
+  { id: "funny_cartoon", name: "搞笑卡通", keyword: "funny cartoon, exaggerated expression, comic style", description: "夸张逗趣 漫画风", icon: "🤣", color: "from-yellow-400 to-green-400" },
+  { id: "retro", name: "复古风", keyword: "retro vintage, old film grain, nostalgic", description: "胶片质感 怀旧滤镜", icon: "📷", color: "from-amber-600 to-yellow-700" },
+  { id: "cyberpunk", name: "赛博朋克", keyword: "cyberpunk neon, dark city, futuristic", description: "霓虹暗夜 未来都市", icon: "🌃", color: "from-purple-600 to-pink-500" },
+  { id: "hand_drawn", name: "手绘风", keyword: "hand drawn illustration, sketch style, artistic", description: "笔触生动 艺术插画", icon: "✏️", color: "from-emerald-400 to-teal-500" },
+  { id: "minimalist", name: "极简风", keyword: "minimalist clean, simple geometric, white space", description: "留白极简 几何构成", icon: "⬜", color: "from-gray-300 to-gray-500" },
+  { id: "guochao", name: "国潮风", keyword: "Chinese trendy, bold colors, traditional modern mix", description: "国潮配色 传统新潮", icon: "🐉", color: "from-red-600 to-orange-500" },
+  { id: "dark", name: "暗黑风", keyword: "dark moody, shadow dramatic, low key", description: "暗调戏剧 光影对比", icon: "🌑", color: "from-gray-700 to-gray-900" },
+  { id: "sweet_cool", name: "甜酷风", keyword: "sweet and cool, candy colors with edge", description: "甜美酷飒 双面风格", icon: "🍬", color: "from-pink-400 to-violet-500" },
+  { id: "fresh", name: "清新风", keyword: "fresh natural, light green, clean bright", description: "清新自然 明亮干净", icon: "🍃", color: "from-green-300 to-emerald-500" },
+  { id: "american_cartoon", name: "美式卡通", keyword: "American cartoon style, bold outlines, vibrant", description: "粗线明色 美式漫画", icon: "🇺🇸", color: "from-blue-500 to-red-500" },
+  { id: "vaporwave", name: "蒸汽波", keyword: "vaporwave aesthetic, pink cyan gradient, retro digital", description: "粉青渐变 复古数字", icon: "🌊", color: "from-pink-400 to-cyan-400" },
+  { id: "anime", name: "二次元", keyword: "anime style, Japanese animation, vivid colors", description: "日系动漫 鲜艳明快", icon: "⚡", color: "from-blue-400 to-pink-400" },
+  { id: "business", name: "商务风", keyword: "professional business, clean corporate, formal", description: "专业正式 简洁商务", icon: "💼", color: "from-blue-700 to-indigo-700" },
+  { id: "food", name: "美食写实", keyword: "food photography, realistic delicious, warm lighting", description: "诱人食欲 暖光写实", icon: "🍜", color: "from-orange-400 to-red-400" },
+  { id: "cute", name: "萌系可爱", keyword: "kawaii cute, adorable, soft pastel", description: "软萌可爱 糖果色调", icon: "🧸", color: "from-pink-300 to-rose-400" },
+  { id: "street", name: "潮酷街头", keyword: "street style, urban cool, graffiti vibe", description: "街头涂鸦 酷感潮流", icon: "🎧", color: "from-yellow-500 to-red-600" },
+];
+
+// ── 尺寸预设 ──────────────────────────────────────────
+interface SizePreset {
+  id: string;
+  ratio: string;
+  label: string;
+  description: string;
+  width: number;
+  height: number;
+  orientation: "landscape" | "portrait";
+}
+
+const SIZE_PRESETS: SizePreset[] = [
+  { id: "3:4", ratio: "3:4", label: "3:4", description: "抖音竖版", width: 768, height: 1024, orientation: "portrait" },
+  { id: "9:16", ratio: "9:16", label: "9:16", description: "手机全屏", width: 576, height: 1024, orientation: "portrait" },
+  { id: "4:3", ratio: "4:3", label: "4:3", description: "横版封面", width: 1024, height: 768, orientation: "landscape" },
+  { id: "16:9", ratio: "16:9", label: "16:9", description: "宽屏封面", width: 1024, height: 576, orientation: "landscape" },
+];
+
+// ── 生成记录 ──────────────────────────────────────────
+interface GeneratedImage {
+  url: string;
+  aspectRatio: string;
+  width: number;
+  height: number;
+  timestamp: number;
+  style: string;
+  prompt: string;
+}
+
+export default function CoverPage() {
+  const { state, dispatch } = useApp();
+  const isAdmin = state.auth?.user?.role === "admin";
+  const [prompt, setPrompt] = usePersistedState("cover_prompt", "");
+  const [coverText, setCoverText] = usePersistedState("cover_text", "");
+  const [selectedStyle, setSelectedStyle] = usePersistedState<string>("cover_style_v3", "3d_cartoon");
+  const [selectedSize, setSelectedSize] = usePersistedState<string>("cover_size_v3", "3:4");
+  const [selectedModelId, setSelectedModelId] = usePersistedState<string>("cover_model_v3", "");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [history, setHistory] = usePersistedState<GeneratedImage[]>("cover_history_v2", []);
+  const [error, setError] = useState<string | null>(null);
+  const [cashBalance, setCashBalance] = useState(0);
+  const [cashRechargeOpen, setCashRechargeOpen] = useState(false);
+  const [models, setModels] = useState<CoverModel[]>([]);
+  const [generatingProgress, setGeneratingProgress] = useState("");
+  const [styleSearch, setStyleSearch] = useState("");
+
+  // ── Backspace 防护 ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Backspace" || e.key === "Delete") {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag !== "INPUT" && tag !== "TEXTAREA" && !(e.target as HTMLElement)?.isContentEditable) {
+          e.preventDefault();
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // 加载封面模型
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const token = localStorage.getItem("auth_token");
+        const res = await fetch("/api/cover-models", token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+        if (res.ok) {
+          const data = await res.json();
+          const modelList = (data.models || []).map((m: CoverModel) => ({
+            id: m.id,
+            name: m.name,
+            model_name: m.model_name,
+            selling_price: Number(m.selling_price) || 0,
+          }));
+          setModels(modelList);
+          if (modelList.length > 0 && !selectedModelId) {
+            setSelectedModelId(modelList[0].id);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    loadModels();
+  }, [selectedModelId, setSelectedModelId]);
+
+  // 加载现金余额
+  useEffect(() => {
+    const loadBalance = async () => {
+      try {
+        const token = localStorage.getItem("auth_token");
+        if (!token) return;
+        const res = await fetch("/api/cash/balance", { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const data = await res.json();
+          setCashBalance(data.balance ?? 0);
+        }
+      } catch { /* ignore */ }
+    };
+    loadBalance();
+  }, []);
+
+  // 当前选中
+  const currentModel = models.find((m) => m.id === selectedModelId) || models[0] || null;
+  const currentStyle = STYLE_PRESETS.find((s) => s.id === selectedStyle);
+  const currentSize = SIZE_PRESETS.find((s) => s.id === selectedSize) || SIZE_PRESETS[0];
+
+  // 横屏/竖屏分类
+  const landscapeImages = history.filter((img) => img.width >= img.height);
+  const portraitImages = history.filter((img) => img.height > img.width);
+
+  // 过滤风格
+  const filteredStyles = styleSearch.trim()
+    ? STYLE_PRESETS.filter(
+        (s) =>
+          s.name.includes(styleSearch) ||
+          s.keyword.toLowerCase().includes(styleSearch.toLowerCase()) ||
+          s.description.includes(styleSearch)
+      )
+    : STYLE_PRESETS;
+
+  // 生成封面
+  const handleGenerate = useCallback(async () => {
+    if (!prompt.trim()) return;
+
+    const style = STYLE_PRESETS.find((s) => s.id === selectedStyle);
+    const sizePreset = SIZE_PRESETS.find((s) => s.id === selectedSize) || SIZE_PRESETS[0];
+    const model = models.find((m) => m.id === selectedModelId) || models[0];
+    if (!model) {
+      setError("请选择生成模型");
+      return;
+    }
+
+    let fullPrompt = prompt.trim();
+    if (coverText.trim()) {
+      fullPrompt += `, with text "${coverText.trim()}" on the cover`;
+    }
+    fullPrompt += `, ${style?.keyword || ""}, cover design, high quality, professional layout`;
+
+    setIsGenerating(true);
+    setGeneratingProgress("正在提交生成请求...");
+    setError(null);
+
+    try {
+      const token = localStorage.getItem("auth_token");
+      if (!token) {
+        setError("请先登录后再生成封面");
+        return;
+      }
+
+      setGeneratingProgress("模型生成中，请稍候...");
+
+      const response = await fetch("/api/image/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          prompt: fullPrompt,
+          mode: "local",
+          modelId: model.id,
+          style: style?.name || "",
+          sizes: [{ width: sizePreset.width, height: sizePreset.height, label: sizePreset.ratio }],
+          aspectRatio: sizePreset.ratio,
+          coverText: coverText.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // 402余额不足 → 自动弹出充值弹窗
+        if (response.status === 402 && typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("insufficient-balance", { detail: { mode: "cash" } }));
+        }
+        setError(data.error || "生成失败");
+        reportCoverGenerateFailed("local", data.error || "生成失败");
+        return;
+      }
+
+      if (data.images?.length > 0) {
+        const newImages: GeneratedImage[] = data.images.map(
+          (img: { url: string; aspectRatio: string; width: number; height: number }) => ({
+            url: img.url,
+            aspectRatio: img.aspectRatio as string,
+            width: img.width,
+            height: img.height,
+            timestamp: Date.now(),
+            style: style?.name || "",
+            prompt: prompt.trim(),
+          })
+        );
+        setHistory((prev) => [...newImages, ...prev]);
+      }
+
+      // 刷新余额
+      if (data.cashRemaining !== undefined) {
+        setCashBalance(data.cashRemaining);
+      } else {
+        try {
+          const authToken = localStorage.getItem("auth_token");
+          if (authToken) {
+            const balRes = await fetch("/api/cash/balance", { headers: { Authorization: `Bearer ${authToken}` } });
+            if (balRes.ok) {
+              const balData = await balRes.json();
+              setCashBalance(balData.balance ?? 0);
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    } catch (err) {
+      console.error("生成失败:", err);
+      const errMsg = err instanceof Error ? err.message : "网络错误，请稍后重试";
+      setError(errMsg);
+      reportCoverGenerateFailed("local", errMsg);
+    } finally {
+      setIsGenerating(false);
+      setGeneratingProgress("");
+    }
+  }, [prompt, coverText, selectedStyle, selectedSize, selectedModelId, models, setHistory]);
+
+  // 下载单张
+  const handleDownload = useCallback(async (img: GeneratedImage) => {
+    if (!img.url) return;
+    try {
+      const response = await fetch(img.url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `cover-${img.aspectRatio.replace(":", "x")}-${Date.now()}.png`;
+      link.click();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(img.url, "_blank");
+    }
+  }, []);
+
+  // 一键下载全部
+  const handleDownloadAll = useCallback(async () => {
+    for (const img of history) {
+      await handleDownload(img);
+      // 间隔避免浏览器拦截
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }, [history, handleDownload]);
+
+  // 清除历史
+  const handleClearHistory = useCallback(() => {
+    setHistory([]);
+  }, [setHistory]);
+
+  return (
+    <div className="voice-studio-root vs-workbench h-full flex flex-col">
+      {/* 顶部导航 */}
+      <SubPageHeader
+        title="封面制作"
+        rightSlot={
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)]">
+            <Wallet className="w-5 h-5 text-[var(--primary)]" />
+            <span className="text-base font-semibold text-[var(--foreground)]">
+              ¥{cashBalance.toFixed(2)}
+            </span>
+            <span className="text-xs text-[var(--text-secondary)]">余额</span>
+            <button
+              onClick={() => setCashRechargeOpen(true)}
+              className="ml-1 px-3 py-1 text-xs rounded-md bg-[var(--primary)] text-white hover:opacity-90 transition-opacity"
+            >
+              充值
+            </button>
+          </div>
+        }
+      />
+
+      {/* ═══ 主内容：竖向长方形卡片 ═══ */}
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+        <div className="max-w-[1400px] mx-auto">
+
+          {/* ┌──────────────────────────────────────┐
+              │  上半部分：参数设定                      │
+              └──────────────────────────────────────┘ */}
+          <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm overflow-hidden">
+
+            {/* ── 1. 风格选择 ── */}
+            <div className="px-4 sm:px-6 pt-5 pb-4">
+              <div className="flex items-center gap-2.5 mb-3">
+                <span className="text-sm font-bold text-[var(--foreground)] tracking-wide">① 选择风格</span>
+                {currentStyle && (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] font-medium">
+                    {currentStyle.icon} {currentStyle.name}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {filteredStyles.map((style) => (
+                  <button
+                    key={style.id}
+                    onClick={() => setSelectedStyle(style.id)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all border ${
+                      selectedStyle === style.id
+                        ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
+                        : "border-transparent bg-[var(--background)] text-[var(--foreground)]/70 hover:bg-[var(--primary)]/5 hover:text-[var(--foreground)]"
+                    }`}
+                  >
+                    <span className="text-base">{style.icon}</span>
+                    <span>{style.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 分隔线 */}
+            <div className="mx-4 sm:mx-6 border-t border-[var(--border)]" />
+
+            {/* ── 2. 尺寸 + 模型 ── */}
+            <div className="px-4 sm:px-6 py-4">
+              <div className="flex items-center gap-2.5 mb-3">
+                <span className="text-sm font-bold text-[var(--foreground)] tracking-wide">② 尺寸与模型</span>
+              </div>
+              <div className="flex items-start gap-4 sm:gap-6 flex-wrap sm:flex-nowrap">
+                {/* 尺寸 */}
+                <div className="shrink-0">
+                  <div className="grid grid-cols-2 gap-2">
+                    {SIZE_PRESETS.map((size) => (
+                      <button
+                        key={size.id}
+                        onClick={() => setSelectedSize(size.id)}
+                        className={`flex flex-col items-center gap-1.5 py-3 px-4 rounded-xl border-2 transition-all ${
+                          selectedSize === size.id
+                            ? "border-[var(--primary)] bg-[var(--primary)]/8"
+                            : "border-[var(--border)] bg-[var(--background)] hover:border-[var(--primary)]/30"
+                        }`}
+                      >
+                        <div
+                          className={`border-2 rounded-sm transition-colors ${
+                            selectedSize === size.id
+                              ? "border-[var(--primary)] bg-[var(--primary)]/20"
+                              : "border-[var(--muted-foreground)]/30 bg-[var(--muted-foreground)]/5"
+                          }`}
+                          style={{
+                            width: size.ratio === "9:16" ? 10 : size.ratio === "16:9" ? 25 : size.ratio === "4:3" ? 22 : 17,
+                            height: size.ratio === "9:16" ? 17 : size.ratio === "16:9" ? 13 : size.ratio === "4:3" ? 17 : 22,
+                          }}
+                        />
+                        <span className={`text-xs font-semibold leading-none ${selectedSize === size.id ? "text-[var(--primary)]" : "text-[var(--foreground)]"}`}>
+                          {size.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 模型 */}
+                <div className="flex-1 min-w-0 space-y-2">
+                  {models.map((model) => (
+                    <button
+                      key={model.id}
+                      onClick={() => setSelectedModelId(model.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 transition-all text-left ${
+                        selectedModelId === model.id
+                          ? "border-[var(--primary)] bg-[var(--primary)]/6"
+                          : "border-[var(--border)] bg-[var(--background)] hover:border-[var(--primary)]/30"
+                      }`}
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shrink-0">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <span className="flex-1 text-sm font-medium text-[var(--foreground)] truncate">{model.name}</span>
+                      <span className={`text-xs font-bold ${isAdmin ? "text-green-500" : "text-[var(--primary)]"}`}>
+                        {isAdmin ? "免费" : `¥${(model.selling_price ?? 0).toFixed(2)}`}
+                      </span>
+                      {selectedModelId === model.id && <Check className="w-4 h-4 text-[var(--primary)] shrink-0" />}
+                    </button>
+                  ))}
+                  {models.length === 0 && (
+                    <div className="text-center py-2 text-sm text-[var(--text-secondary)]">暂无可用模型</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 分隔线 */}
+            <div className="mx-4 sm:mx-6 border-t border-[var(--border)]" />
+
+            {/* ── 3. 内容输入 ── */}
+            <div className="px-4 sm:px-6 py-4">
+              <div className="flex items-center gap-2.5 mb-3">
+                <span className="text-sm font-bold text-[var(--foreground)] tracking-wide">③ 填写内容</span>
+              </div>
+              <div className="space-y-3">
+                {/* 封面文字 */}
+                <div className="flex items-center gap-2.5">
+                  <div className="shrink-0 w-7 h-7 rounded-lg bg-[var(--primary)]/10 flex items-center justify-center">
+                    <Type className="w-4 h-4 text-[var(--primary)]" />
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      value={coverText}
+                      onChange={(e) => setCoverText(e.target.value)}
+                      placeholder="封面文字（如：限时特惠 ¥29.9 / 30天学会英语）"
+                      className="bg-[var(--background)] border-[var(--border)] text-sm h-10"
+                      maxLength={50}
+                    />
+                  </div>
+                </div>
+
+                {/* 画面描述 */}
+                <div className="flex items-start gap-2.5">
+                  <div className="shrink-0 w-7 h-7 mt-2 rounded-lg bg-[var(--primary)]/10 flex items-center justify-center">
+                    <PenLine className="w-4 h-4 text-[var(--primary)]" />
+                  </div>
+                  <div className="flex-1">
+                    <Textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      placeholder="描述你想要的封面画面，例如：一瓶淡蓝色洗衣液放在白云上，背景是蓝天和彩虹..."
+                      className="h-[88px] min-h-0 resize-none overflow-y-auto field-sizing-fixed bg-[var(--background)] border-[var(--border)] text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* 生成按钮 */}
+                <Button
+                  onClick={handleGenerate}
+                  disabled={!prompt.trim() || isGenerating || !currentModel}
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]/90 text-white h-11 text-sm font-semibold gap-2 rounded-xl"
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {generatingProgress || "生成中..."}
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      生成封面
+                      {currentModel && (
+                        <span className="text-xs opacity-80 ml-1">
+                          {isAdmin ? "免费" : `¥${(currentModel?.selling_price ?? 0).toFixed(2)}`}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* 错误提示 */}
+            {error && (
+              <div className="mx-4 sm:mx-6 mb-4 flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800">
+                <span className="text-sm text-red-600 dark:text-red-400 flex-1">{error}</span>
+                <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-xs">关闭</button>
+              </div>
+            )}
+          </div>
+
+          {/* ┌──────────────────────────────────────┐
+              │  生成中提示                            │
+              └──────────────────────────────────────┘ */}
+          {isGenerating && (
+            <div className="mt-5 bg-[var(--card)] rounded-2xl border border-[var(--border)] p-10 flex flex-col items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-[var(--primary)]/10 flex items-center justify-center">
+                <Loader2 className="w-7 h-7 text-[var(--primary)] animate-spin" />
+              </div>
+              <div className="text-center">
+                <p className="text-base font-medium text-[var(--primary)]">封面生成中</p>
+                <p className="text-xs text-[var(--text-secondary)] mt-1">
+                  {currentStyle?.icon} {currentStyle?.name} · {currentSize.label} · {currentModel?.name}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ┌──────────────────────────────────────┐
+              │  下半部分：产出结果                     │
+              └──────────────────────────────────────┘ */}
+          {!isGenerating && history.length > 0 && (
+            <div className="mt-5 bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-sm overflow-hidden">
+              {/* 标题栏 */}
+              <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-[var(--border)]">
+                <div className="flex items-center gap-2.5">
+                  <Image className="w-5 h-5 text-[var(--primary)]" />
+                  <span className="text-sm font-bold text-[var(--foreground)]">生成结果</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] font-medium">
+                    {history.length}张
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleDownloadAll}
+                    className="text-[var(--primary)] hover:text-[var(--primary)]/80 gap-1.5 text-xs h-7 px-3"
+                  >
+                    <DownloadCloud className="w-4 h-4" />
+                    一键下载
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClearHistory}
+                    className="text-[var(--text-secondary)] hover:text-red-500 gap-1.5 text-xs h-7 px-3"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    清除
+                  </Button>
+                </div>
+              </div>
+
+              {/* 左横屏 右竖屏 */}
+              <div className="grid grid-cols-2 divide-x divide-[var(--border)]">
+                {/* 横屏区 */}
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-5 h-4 rounded-sm border-2 border-[var(--primary)]/40" />
+                    <span className="text-xs font-semibold text-[var(--foreground)]/60">横屏</span>
+                    {landscapeImages.length > 0 && (
+                      <span className="text-[11px] text-[var(--text-secondary)]">{landscapeImages.length}张</span>
+                    )}
+                  </div>
+                  {landscapeImages.length > 0 ? (
+                    <div className="space-y-4">
+                      {landscapeImages.map((img: GeneratedImage, idx: number) => (
+                        <div key={img.timestamp + idx} className="group">
+                          <div
+                            className="relative rounded-xl overflow-hidden border border-[var(--border)] hover:border-[var(--primary)]/50 transition-all bg-[var(--background)] group-hover:shadow-lg cursor-pointer"
+                            style={{ aspectRatio: `${img.width}/${img.height}` }}
+                            onClick={() => handleDownload(img)}
+                          >
+                            <img src={img.url} alt={`横屏封面 ${img.aspectRatio}`} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-gray-800 text-xs font-medium shadow">
+                                <Download className="w-3.5 h-3.5" />
+                                下载
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-1.5 text-[11px] text-[var(--text-secondary)]/60 px-0.5 truncate">
+                            {img.aspectRatio} · {img.style}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-28 text-xs text-[var(--text-secondary)]/30">
+                      暂无横屏封面
+                    </div>
+                  )}
+                </div>
+
+                {/* 竖屏区 */}
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-4 h-5 rounded-sm border-2 border-[var(--primary)]/40" />
+                    <span className="text-xs font-semibold text-[var(--foreground)]/60">竖屏</span>
+                    {portraitImages.length > 0 && (
+                      <span className="text-[11px] text-[var(--text-secondary)]">{portraitImages.length}张</span>
+                    )}
+                  </div>
+                  {portraitImages.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {portraitImages.map((img: GeneratedImage, idx: number) => (
+                        <div key={img.timestamp + idx} className="group">
+                          <div
+                            className="relative rounded-xl overflow-hidden border border-[var(--border)] hover:border-[var(--primary)]/50 transition-all bg-[var(--background)] group-hover:shadow-md cursor-pointer"
+                            style={{ aspectRatio: `${img.width}/${img.height}` }}
+                            onClick={() => handleDownload(img)}
+                          >
+                            <img src={img.url} alt={`竖屏封面 ${img.aspectRatio}`} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/90 text-gray-800 text-xs font-medium shadow">
+                                <Download className="w-3.5 h-3.5" />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-1.5 text-[11px] text-[var(--text-secondary)]/60 px-0.5 truncate">
+                            {img.aspectRatio} · {img.style}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-28 text-xs text-[var(--text-secondary)]/30">
+                      暂无竖屏封面
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 空状态 */}
+          {!isGenerating && history.length === 0 && (
+            <div className="mt-5 bg-[var(--card)] rounded-2xl border border-[var(--border)] p-14 flex flex-col items-center gap-4">
+              <div className="w-20 h-20 rounded-2xl bg-[var(--primary)]/5 flex items-center justify-center">
+                <Image className="w-10 h-10 opacity-15" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-[var(--text-secondary)]/40">选择风格、尺寸和模型，填写内容后生成封面</p>
+                <p className="text-xs text-[var(--text-secondary)]/25 mt-1.5">生成结果将显示在这里，横屏竖屏分区展示</p>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* 充值弹窗 */}
+      <RechargeDialog
+        open={cashRechargeOpen}
+        onOpenChange={setCashRechargeOpen}
+        credits={0}
+        cashBalance={cashBalance}
+        mode="cash"
+        onCashUpdated={(newCash: number) => {
+          setCashBalance(newCash);
+          dispatch({ type: "SET_CASH_BALANCE", payload: newCash });
+        }}
+      />
+    </div>
+  );
+}
+
+// ── 封面模型 ──────────────────────────────────────────
+interface CoverModel {
+  id: string;
+  name: string;
+  model_name: string;
+  selling_price: number;
+}

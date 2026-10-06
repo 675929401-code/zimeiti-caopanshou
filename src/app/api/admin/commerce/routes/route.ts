@@ -1,0 +1,6 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { requireCommerceAdmin } from '@/lib/commerce-admin-auth';
+import { commerceAdminOverview, saveRouteDraft } from '@/commerce/server/configuration-admin';
+export const runtime='nodejs'; export const dynamic='force-dynamic';
+export async function GET(request:NextRequest){const auth=await requireCommerceAdmin(request,{requiredPermissions:['models.view'],operation:'commerce_model_route_view'});if('response'in auth)return auth.response;try{const data=await commerceAdminOverview();return NextResponse.json({ok:true,routes:data.routes},{headers:{'Cache-Control':'no-store'}});}catch(error){return NextResponse.json({ok:false,error:error instanceof Error?error.message:'读取失败'},{status:503});}}
+export async function POST(request:NextRequest){const auth=await requireCommerceAdmin(request,{mutation:true,requiredPermissions:['models.manage'],stepUpPermissions:['models.manage'],operation:'commerce_model_route_manage'});if('response'in auth)return auth.response;try{return NextResponse.json({ok:true,version:await saveRouteDraft(auth.actor.userId,await request.json())},{status:201});}catch(error){return NextResponse.json({ok:false,error:error instanceof Error?error.message:'保存失败'},{status:400});}}

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">知澜引擎标志</title>
+  <desc id="desc">由知识浪潮和向前箭头组成的多彩 Z 形标志</desc>
+  <defs>
+    <linearGradient id="waveTop" x1="14" y1="39" x2="114" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E5BFF"/>
+      <stop offset="0.52" stop-color="#087BFF"/>
+      <stop offset="1" stop-color="#27E4D1"/>
+    </linearGradient>
+    <linearGradient id="waveMid" x1="23" y1="101" x2="105" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#19DCC7"/>
+      <stop offset="0.46" stop-color="#0787FF"/>
+      <stop offset="1" stop-color="#174BEE"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="69" y1="53" x2="99" y2="75" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD43B"/>
+      <stop offset="0.5" stop-color="#FF8738"/>
+      <stop offset="1" stop-color="#FF2F71"/>
+    </linearGradient>
+    <linearGradient id="waveBottom" x1="18" y1="94" x2="112" y2="102" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD63D"/>
+      <stop offset="0.35" stop-color="#FF8A32"/>
+      <stop offset="0.72" stop-color="#FF3D68"/>
+      <stop offset="1" stop-color="#D80B82"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#waveTop)" d="M13.5 40.7C29.8 15.5 58.2 8.2 83.4 16.7c15.8 5.3 25.6 9.1 35.4 3.7-6.6 16.2-22.1 24.7-39.7 23.2-19.2-1.7-34.2-12.4-47.8-11.2-6.2.5-11.8 3.1-17.8 8.3Z"/>
+  <path fill="url(#waveMid)" d="M18.2 101.8C36 80.3 52.5 65.7 76.4 51.7l-9.9-4.4 45.7-11.6-17.7 42-4-12.6C68.6 75 51.3 90.7 29 109.3l-10.8-7.5Z"/>
+  <path fill="url(#signal)" d="M75.9 52.1 103.7 44 91.9 72.3l-4-11.6-12-8.6Z"/>
+  <path fill="url(#waveBottom)" d="M17.4 97.2c13.6-15.3 31.5-16.6 50-6.9 19.3 10.2 35.5 8 50.3-7.2-7.6 25.5-31.8 38.2-57 34-18.6-3.1-34.2-10.4-43.3-19.9Z"/>
+  <path fill="#FFFFFF" fill-opacity=".14" d="M22.6 97.2c13.1-9.5 27.5-9.1 43.2-1.5 15.8 7.7 30.2 8.2 43.7-.5-10.4 15.5-29.3 21.6-48 18.4-16.5-2.8-29.7-8.4-38.9-16.4Z"/>
+</svg>

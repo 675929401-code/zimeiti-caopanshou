@@ -1,0 +1,853 @@
+.adminRoot {
+  --panel: color-mix(in srgb, var(--card, #fffefa) 94%, transparent);
+  --panel-strong: color-mix(in srgb, var(--secondary, #e7ece6) 96%, transparent);
+  --line: color-mix(in srgb, var(--border, #d0d8d2) 78%, transparent);
+  --muted: var(--muted-foreground, #66716d);
+  color-scheme: light;
+  min-height: 100vh;
+  padding: 18px;
+  color: var(--foreground, #17201d);
+  background:
+    radial-gradient(circle at 88% 4%, color-mix(in srgb, var(--primary, #0b7466) 9%, transparent), transparent 34rem),
+    var(--background, #f3f4ef);
+}
+
+.adminRoot,
+.adminRoot * {
+  box-sizing: border-box;
+}
+
+.adminRoot button,
+.adminRoot input,
+.adminRoot select,
+.adminRoot textarea {
+  font: inherit;
+}
+
+.adminRoot button,
+.adminRoot a,
+.adminRoot input,
+.adminRoot select,
+.adminRoot textarea {
+  outline: none;
+}
+
+.adminRoot button:focus-visible,
+.adminRoot a:focus-visible,
+.adminRoot input:focus-visible,
+.adminRoot select:focus-visible,
+.adminRoot textarea:focus-visible {
+  box-shadow: 0 0 0 2px var(--background, #f3f4ef), 0 0 0 4px var(--primary, #0b7466);
+}
+
+.centerState {
+  min-height: 72vh;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  padding: 28px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.centerState a {
+  color: var(--primary, #0b7466);
+}
+
+.spin {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--line);
+  border-top-color: var(--primary, #0b7466);
+  border-radius: 50%;
+  animation: helpAdminSpin 0.8s linear infinite;
+}
+
+@keyframes helpAdminSpin {
+  to { transform: rotate(1turn); }
+}
+
+.adminHeader {
+  width: min(1560px, 100%);
+  min-height: 64px;
+  margin: 0 auto 12px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+}
+
+.adminHeader > div:first-child {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.adminHeader a,
+.adminHeader button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: inherit;
+  background: color-mix(in srgb, var(--panel-strong) 86%, transparent);
+  cursor: pointer;
+}
+
+.adminHeader a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  text-decoration: none;
+}
+
+.adminHeader h1 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adminHeader p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.adminShell {
+  width: min(1560px, 100%);
+  min-height: calc(100vh - 112px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(236px, 0.72fr) minmax(500px, 1.75fr) minmax(260px, 0.8fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.articleRail,
+.editor,
+.mediaLibrary,
+.versionPanel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+}
+
+.articleRail {
+  position: sticky;
+  top: 18px;
+  max-height: calc(100vh - 36px);
+  overflow: hidden;
+}
+
+.panelHeading,
+.editorHeader {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panelHeading h2,
+.panelHeading h3,
+.editorHeader h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.panelHeading button,
+.versionPanel button,
+.repeater button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: inherit;
+  background: color-mix(in srgb, var(--panel-strong) 90%, transparent);
+  cursor: pointer;
+}
+
+.adminArticleList {
+  max-height: calc(100vh - 102px);
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+.adminArticleList li + li {
+  margin-top: 5px;
+}
+
+.adminArticleList button {
+  width: 100%;
+  min-height: 54px;
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.adminArticleList button:hover {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--panel-strong) 75%, transparent);
+}
+
+.adminArticleList button > span:last-child {
+  min-width: 0;
+}
+
+.adminArticleList strong,
+.adminArticleList small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adminArticleList strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.adminArticleList small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.selectedArticle {
+  border-color: color-mix(in srgb, var(--primary, #0b7466) 58%, var(--line)) !important;
+  background: color-mix(in srgb, var(--primary, #0b7466) 10%, var(--panel-strong)) !important;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #f59e0b 14%, transparent);
+}
+
+.publishedDot {
+  background: #34d399;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #34d399 14%, transparent);
+}
+
+.editor {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editorHeader {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: color-mix(in srgb, var(--panel-strong) 97%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.editorHeader > div:first-child {
+  min-width: 0;
+}
+
+.editorHeader h1 {
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorStatus {
+  margin: 4px 0 0;
+  color: #fbbf24;
+  font-size: 12px;
+}
+
+.editorPublished {
+  color: #6ee7b7;
+}
+
+.saveButton {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid color-mix(in srgb, var(--primary, #0b7466) 68%, transparent);
+  border-radius: 6px;
+  color: var(--primary-foreground, #ffffff);
+  font-weight: 750;
+  background: var(--primary, #0b7466);
+  cursor: pointer;
+}
+
+.saveButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.feedback {
+  margin: 10px 12px 0;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, #34d399 48%, transparent);
+  border-radius: 6px;
+  color: #9df2cd;
+  background: color-mix(in srgb, #34d399 9%, transparent);
+  font-size: 12px;
+}
+
+.feedbackError {
+  border-color: color-mix(in srgb, #fb7185 52%, transparent);
+  color: #fecdd3;
+  background: color-mix(in srgb, #fb7185 9%, transparent);
+}
+
+.formSections {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.formCard {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--panel-strong) 55%, transparent);
+}
+
+.formCard > h3 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+.metaGrid,
+.twoColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.field {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field:has(textarea),
+.field:has(input[type="text"]) {
+  align-content: start;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--foreground, #17201d);
+  background: color-mix(in srgb, var(--background, #f3f4ef) 74%, transparent);
+}
+
+.field textarea {
+  min-height: 92px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+}
+
+.checks label {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--foreground, #17201d);
+  font-size: 12px;
+}
+
+.checks input {
+  accent-color: var(--primary, #0b7466);
+}
+
+.stack,
+.repeater {
+  display: grid;
+  gap: 8px;
+}
+
+.repeaterHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.repeaterHeading h4 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.repeatRow {
+  min-width: 0;
+  padding: 9px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--background, #f3f4ef) 38%, transparent);
+}
+
+.repeatRow > button:last-child {
+  justify-self: end;
+  color: #fecdd3;
+}
+
+.safetyBar {
+  padding: 10px;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  border: 1px solid color-mix(in srgb, #f59e0b 42%, transparent);
+  border-radius: 6px;
+  color: #fde68a;
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mediaLibrary {
+  padding-bottom: 8px;
+}
+
+.mediaOptions {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+}
+
+.mediaOptions button {
+  min-height: 48px;
+  padding: 8px 9px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.mediaOptions button:hover {
+  border-color: var(--line);
+}
+
+.mediaOptions strong,
+.mediaOptions small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mediaOptions small {
+  color: var(--muted);
+}
+
+.mediaActive {
+  border-color: color-mix(in srgb, var(--primary, #0b7466) 55%, var(--line)) !important;
+  background: color-mix(in srgb, var(--primary, #0b7466) 9%, transparent) !important;
+}
+
+.mediaPreview {
+  width: calc(100% - 16px);
+  aspect-ratio: 16 / 10;
+  margin: 0 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #05080e;
+}
+
+.mediaPreview img,
+.mediaPreview video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.mediaInfo {
+  margin: 8px;
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.versionPanel {
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+.versionList {
+  margin: 0;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  list-style: none;
+}
+
+.versionList article {
+  padding: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.versionList strong,
+.versionList small {
+  display: block;
+}
+
+.versionList small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.noVersions {
+  margin: 0;
+  padding: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.adminHeader > div:first-child {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.adminHeader > div:first-child > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.adminHeader > div:first-child > span > span {
+  min-width: 0;
+  display: grid;
+}
+
+.adminHeader > div:first-child > span strong,
+.adminHeader > div:first-child > span small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adminHeader > div:first-child > span strong {
+  font-size: 16px;
+}
+
+.adminHeader > div:first-child > span small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.adminHeader > div:first-child > div {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adminHeader em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.articleRail > header,
+.articleRail > footer {
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.articleRail > header {
+  border-bottom: 1px solid var(--line);
+}
+
+.articleRail > footer {
+  border-top: 1px solid var(--line);
+}
+
+.articleRail > header > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.articleRail > header strong,
+.articleRail > header small {
+  display: block;
+}
+
+.articleRail > header small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.articleRail > header button,
+.articleRail > footer button,
+.editorHeader button {
+  min-height: 36px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: inherit;
+  background: color-mix(in srgb, var(--panel-strong) 90%, transparent);
+  cursor: pointer;
+}
+
+.articleRail > footer button {
+  width: 100%;
+}
+
+.editorHeader > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editorHeader h1 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.editorHeader p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.panelHeading > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panelHeading > div > span {
+  min-width: 0;
+  display: grid;
+}
+
+.panelHeading small,
+.panelHeading em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.mediaOptions > article {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.mediaOptions > article > button {
+  width: 100%;
+}
+
+.mediaOptions dl {
+  margin: 0;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.mediaOptions dl div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.mediaOptions dt,
+.mediaOptions dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1180px) {
+  .adminShell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .adminShell > aside:last-child {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .versionPanel {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 780px) {
+  .adminRoot {
+    padding: 10px;
+  }
+
+  .adminHeader {
+    align-items: flex-start;
+  }
+
+  .adminHeader p {
+    display: none;
+  }
+
+  .adminShell {
+    min-height: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .articleRail {
+    position: static;
+    max-height: none;
+  }
+
+  .adminArticleList {
+    max-height: 230px;
+  }
+
+  .adminShell > aside:last-child {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .editorHeader {
+    top: 0;
+  }
+
+  .editorHeader h1 {
+    max-width: 58vw;
+  }
+}
+
+@media (max-width: 520px) {
+  .adminRoot {
+    padding: 8px;
+  }
+
+  .adminHeader {
+    min-height: 54px;
+    padding: 8px;
+  }
+
+  .adminHeader > div:first-child > span strong {
+    font-size: 15px;
+  }
+
+  .adminHeader a span {
+    display: none;
+  }
+
+  .adminHeader em {
+    display: none;
+  }
+
+  .metaGrid,
+  .twoColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .formSections,
+  .formCard {
+    padding: 9px;
+  }
+
+  .editorHeader {
+    align-items: flex-start;
+  }
+
+  .editorHeader h1 {
+    max-width: 54vw;
+  }
+
+  .saveButton {
+    min-height: 38px;
+    padding: 0 10px;
+  }
+
+  .checks {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 1.8s;
+  }
+}

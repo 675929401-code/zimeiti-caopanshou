@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "projectId": "zimeiti-caopanshou",
+  "kind": "local-migration-semantic-adoption",
+  "candidateState": "superseded-by-local-database-migration-closure",
+  "supersededBy": "deploy/manifests/local-database-migration-closure.v1.json",
+  "targetClass": "local-loopback-only",
+  "targetHost": "127.0.0.1",
+  "containsSecrets": false,
+  "productionDatabaseContacted": false,
+  "currentSemanticCheckVersion": "catalog-and-transaction-noop.v2",
+  "migrationManifestSha256": "6f88d7bd3f93be6b88419d40bcacce38ea7388a6765d89df83a22c9eabee62ec",
+  "initialLedger": {
+    "applied": 16,
+    "pending": 24,
+    "hashDrifts": 0
+  },
+  "adoption": {
+    "semanticCheckVersion": "catalog-and-transaction-noop.v1",
+    "receiptFile": "2026-09-04T01-01-20-497Z-semantic-check.json",
+    "receiptSha256": "83ad694f0ef870c37cf42d638d4903a32cb6a7f0b7dd7fc35fd2fafc68eb86ea",
+    "adoptedCount": 15,
+    "committedMigrationSql": 0,
+    "adoptedVersions": [
+      "20260825170854",
+      "20260827120000",
+      "20260829220000",
+      "20260901153000",
+      "20260902203000",
+      "20260903011000",
+      "20260903063000",
+      "20260903084500",
+      "20260903091500",
+      "20260903092000",
+      "20260903101500",
+      "20260903103000",
+      "20260903113000",
+      "20260903161000",
+      "20260903165000"
+    ]
+  },
+  "preAdoptionBackup": {
+    "format": "postgres-custom",
+    "file": "local-pre-semantic-adopt-20260904-090148.dump",
+    "bytes": 31465344,
+    "sha256": "c2d381227d9e650667165e6a4cd8b71fd059bc5af07fdaae79693e61f324e2eb"
+  },
+  "currentLedger": {
+    "applied": 31,
+    "pending": 9,
+    "hashDrifts": 0
+  },
+  "currentProbe": {
+    "semanticCheckVersion": "catalog-and-transaction-noop.v2",
+    "receiptFile": "2026-09-04T01-04-52-476Z-semantic-check.json",
+    "receiptSha256": "ebb2e6d22c28f6df03b9581c3253e842f1fb298c46b24f42e2e6bf58739da928",
+    "eligible": 0,
+    "blocked": 9,
+    "databaseWrites": 0,
+    "committedMigrationSql": 0
+  },
+  "blockedMigrations": [
+    {
+      "version": "20260825123000",
+      "errorCode": "42P07",
+      "target": "relation:manju_config_revisions",
+      "disposition": "forward-only-full-object-reconciliation"
+    },
+    {
+      "version": "20260825173500",
+      "target": "function:finalize_voice_training_authorization_atomic",
+      "difference": "function-definition-hash",
+      "disposition": "forward-only-function-contract-reconciliation"
+    },
+    {
+      "version": "20260827093000",
+      "errorCode": "42723",
+      "target": "function:skill_runtime_actor_valid",
+      "disposition": "forward-only-full-object-reconciliation"
+    },
+    {
+      "version": "20260829223000",
+      "errorCode": "42P07",
+      "target": "relation:manju_config_storage_state",
+      "disposition": "forward-only-full-object-reconciliation"
+    },
+    {
+      "version": "20260902134000",
+      "errorCode": "42723",
+      "target": "function:create_skill_package_next_draft",
+      "disposition": "forward-only-function-contract-reconciliation"
+    },
+    {
+      "version": "20260903021000",
+      "errorCode": "42P07",
+      "target": "relation:image_model_validations",
+      "disposition": "forward-only-full-object-reconciliation"
+    },
+    {
+      "version": "20260903074000",
+      "errorCode": "42710",
+      "target": "constraint:users_credit_reservation_balance_check",
+      "disposition": "forward-only-constraint-and-function-reconciliation"
+    },
+    {
+      "version": "20260903153500",
+      "target": "function:reserve_video_generation_task_atomic",
+      "difference": "integer-signature-removed-and-numeric-signature-changed",
+      "disposition": "forward-only-function-contract-reconciliation"
+    },
+    {
+      "version": "20260903212000",
+      "errorCode": "42P07",
+      "target": "relation:digital_video_dispatch_jobs",
+      "disposition": "forward-only-full-object-reconciliation"
+    }
+  ],
+  "adoptionRules": [
+    "run every pending migration inside a transaction and always roll it back",
+    "require zero object-level catalog changes and zero transaction DML changes",
+    "require receipt sha256, target fingerprint, target host, manifest sha256 and backup confirmation",
+    "re-run every eligible migration immediately before writing its ledger row",
+    "never execute migration SQL during semantic adoption",
+    "never adopt a duplicate-object or changed-definition result without a dedicated reviewed reconciliation receipt"
+  ]
+}

@@ -1,0 +1,22 @@
+.root {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.root select,
+.root input {
+  width: 100%;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.description {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

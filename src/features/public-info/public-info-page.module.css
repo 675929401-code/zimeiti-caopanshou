@@ -1,0 +1,167 @@
+.page {
+  min-height: 100vh;
+  padding: clamp(28px, 5vw, 72px);
+  color: #0f172a;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(59, 130, 246, 0.1), transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(168, 85, 247, 0.09), transparent 30%),
+    #f8fafc;
+}
+
+.hero {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: clamp(38px, 7vw, 86px) 0 56px;
+  text-align: center;
+}
+
+.eyebrow {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 7px 13px;
+  color: #4f46e5;
+  background: #eef2ff;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.hero h1 {
+  max-width: 850px;
+  margin: 22px auto 18px;
+  color: #0f172a;
+  font-size: clamp(38px, 6vw, 68px);
+  line-height: 1.08;
+  letter-spacing: -0.055em;
+}
+
+.hero > p {
+  max-width: 760px;
+  margin: 0 auto;
+  color: #64748b;
+  font-size: 17px;
+  line-height: 1.9;
+}
+
+.actions {
+  margin-top: 30px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.actions a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 13px;
+  padding: 0 18px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.primaryAction {
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb, #8b5cf6);
+  box-shadow: 0 15px 36px rgba(79, 70, 229, 0.2);
+}
+
+.secondaryAction {
+  border: 1px solid #dbe2ea;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.cardGrid {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card {
+  min-height: 230px;
+  border: 1px solid #e2e8f0;
+  border-radius: 22px;
+  padding: 25px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.055);
+}
+
+.cardIcon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #4f46e5;
+  background: #eef2ff;
+}
+
+.card h2 {
+  margin: 22px 0 10px;
+  color: #172033;
+  font-size: 18px;
+}
+
+.card p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.truthSection {
+  width: min(1180px, 100%);
+  margin: 24px auto 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 20px;
+  padding: 22px 24px;
+  color: #2563eb;
+  background: rgba(239, 246, 255, 0.9);
+}
+
+.truthSection h2 {
+  margin: 0 0 5px;
+  color: #172033;
+  font-size: 16px;
+}
+
+.truthSection p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.truthSection > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #4338ca;
+  font-size: 13px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+@media (max-width: 1060px) {
+  .cardGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .page { padding: 24px 14px 44px; }
+  .hero { padding-top: 38px; }
+  .hero h1 { font-size: 38px; }
+  .hero > p { font-size: 15px; }
+  .cardGrid { grid-template-columns: 1fr; }
+  .card { min-height: 0; }
+  .truthSection { grid-template-columns: auto 1fr; }
+  .truthSection > a { grid-column: 2; justify-self: start; }
+}

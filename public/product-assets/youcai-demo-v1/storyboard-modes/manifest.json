@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "kind": "curated-storyboard-mode-covers",
+  "assetReleaseId": "youcai-demo-v1",
+  "sourceReviewId": "three-directors-golden-v53",
+  "sourceRecordSha256": "f134fd5812a139aea769124efd187707456ed17c098c11b75845e546bf73b63f",
+  "curatedAt": "2026-08-28T00:00:00.000Z",
+  "cards": [
+    {
+      "id": "exaggerated",
+      "label": "故事版导演｜高能夸张",
+      "imageStatus": "ready",
+      "imagePath": "/product-assets/youcai-demo-v1/storyboard-modes/exaggerated.webp",
+      "alt": "高能夸张故事板封面，展示金毛等待主人回家的连续镜头",
+      "path": "/product-assets/youcai-demo-v1/storyboard-modes/exaggerated.webp",
+      "bytes": 177510,
+      "sha256": "5576636e227ec31f3906f620ea69511cf1b3949e3f6b01818ce160835557e590",
+      "mime": "image/webp",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": "cinematic",
+      "label": "故事版导演｜电影叙事",
+      "imageStatus": "ready",
+      "imagePath": "/product-assets/youcai-demo-v1/storyboard-modes/cinematic.webp",
+      "alt": "影视叙事故事板封面，展示玄关空间内主人离开与金毛等待",
+      "path": "/product-assets/youcai-demo-v1/storyboard-modes/cinematic.webp",
+      "bytes": 143796,
+      "sha256": "ab7ce5863a05656c8e1df1dc3d0c0e72db1a939ed43883d0e07a630df7a3bc12",
+      "mime": "image/webp",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": "lyrical",
+      "label": "故事版导演｜抒情情感",
+      "imageStatus": "ready",
+      "imagePath": "/product-assets/youcai-demo-v1/storyboard-modes/lyrical.webp",
+      "alt": "抒情情感故事板封面，展示金毛守着拖鞋等待主人回家",
+      "path": "/product-assets/youcai-demo-v1/storyboard-modes/lyrical.webp",
+      "bytes": 128510,
+      "sha256": "9af142b4015c0145041c7e7dd3c79f726e3567b17efa8b33affb35fdf540269a",
+      "mime": "image/webp",
+      "width": 1280,
+      "height": 720
+    }
+  ]
+}

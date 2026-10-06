@@ -1,0 +1,239 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  adoptImageValidationAttempt, buildImageValidationPublishRequest, fetchImageValidationAsset,
+  imageValidationInputsForDto, imageValidationIsTerminal, imageValidationSafeError,
+  readImageValidationAttempt, recoverImageValidation, sameImageValidationProof, saveImageValidationAttempt,
+  submitImageValidation, updateImageValidationReceipt,
+  type ImageValidationAttempt, type ImageValidationDto, type ImageValidationInputs,
+} from "./admin-image-validation-state";
+
+type Props = { modelId: string; modelName: string; token: string; onClose: () => void; onPublished: () => void };
+const phases: Record<ImageValidationAttempt["status"], string> = {
+  submitting: "正在提交", processing: "正在生成", finalizing: "图片已生成，正在确认保存", unknown: "等待确认原任务",
+  rejected: "本次请求已被明确拒绝", completed: "验证图片已完成", published: "已启用此配置",
+};
+const fieldClass = "w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm";
+const buttonClass = "rounded-lg border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-50";
+const primaryClass = "rounded-lg bg-[var(--primary)] px-4 py-2 text-sm text-white disabled:opacity-50";
+
+/** A changed token immediately unmounts private state before checking the new current account. */
+export default function AdminImageValidationDialog(props: Props) {
+  const [identity, setIdentity] = useState<{ userId: string; token: string } | null>(null);
+  const [failure, setFailure] = useState<{ token: string; error: string } | null>(null);
+  useEffect(() => {
+    let active = true; const controller = new AbortController();
+    void fetch("/api/auth/me", { headers: { Authorization: `Bearer ${props.token}` }, cache: "no-store", redirect: "error", signal: controller.signal })
+      .then(async response => { const data = await response.json();
+        if (!response.ok || data.user?.role !== "admin" || !data.user?.id) throw new Error("请使用当前有效管理员账号登录");
+        if (active) { setIdentity({ userId: String(data.user.id), token: props.token }); setFailure(null); }
+      }).catch(() => { if (active) setFailure({ token: props.token, error: "请使用当前有效管理员账号登录" }); });
+    return () => { active = false; controller.abort(); };
+  }, [props.token]);
+  const current = identity?.token === props.token ? identity : null;
+  if (current) return <ImageValidationContent key={`${current.userId}:${props.modelId}`} {...props} userId={current.userId} />;
+  return <ImageValidationFrame title={props.modelName} onClose={props.onClose}><p role={failure?.token === props.token ? "alert" : "status"}>{failure?.token === props.token ? failure.error : "正在确认管理员身份…"}</p></ImageValidationFrame>;
+}
+
+function ImageValidationFrame({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const dialog = useRef<HTMLDivElement>(null), close = useRef(onClose);
+  useEffect(() => { close.current = onClose; }, [onClose]);
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog.current?.focus();
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close.current();
+      if (event.key !== "Tab") return;
+      const all = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled):not([type="file"]),textarea:not(:disabled),select:not(:disabled),a[href]') || []);
+      const first = all[0], last = all[all.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", keyboard);
+    return () => { document.removeEventListener("keydown", keyboard); previous?.focus(); };
+  }, []);
+  return <div className="admin-image-validation fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
+    <div ref={dialog} role="dialog" data-testid="admin-image-validation-dialog" aria-modal="true" aria-labelledby="image-validation-title" tabIndex={-1}
+      style={{ backgroundColor: "rgb(from var(--background) r g b / 1)" }} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[var(--border)] p-5 text-[var(--foreground)] shadow-xl">
+      <div className="mb-4 flex items-start justify-between gap-4"><div><h2 id="image-validation-title" className="text-lg font-bold">生图模型真实验证</h2><p className="mt-1 break-words text-sm font-medium">{title}</p></div>
+        <button type="button" onClick={onClose} className={buttonClass} aria-label="关闭生图验证">关闭</button></div>
+      {children}
+    </div>
+  </div>;
+}
+
+function ImageValidationContent({ modelId, modelName, token, userId, onClose, onPublished }: Props & { userId: string }) {
+  const [dto, setDto] = useState<ImageValidationDto | null>(null), [attempt, setAttempt] = useState<ImageValidationAttempt | null>(null);
+  const [inputs, setInputs] = useState<ImageValidationInputs | null>(null), [error, setError] = useState("");
+  const [busy, setBusy] = useState(true), [uploading, setUploading] = useState(false), [confirmed, setConfirmed] = useState(false);
+  const [reason, setReason] = useState(""), [preparedReason, setPreparedReason] = useState("");
+  const [preview, setPreview] = useState<{ url: string; blob: Blob; extension: string } | null>(null);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+  const mounted = useRef(true), lock = useRef(false), previewRef = useRef("");
+  const headers = useCallback(() => ({ Authorization: `Bearer ${token}` }), [token]);
+  const getDto = useCallback(async (retestReason = "") => {
+    const query = new URLSearchParams({ modelId }); if (retestReason) query.set("retestReason", retestReason);
+    const response = await fetch(`/api/admin/cover-models/validation?${query}`, { headers: headers(), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(30000) });
+    const data = await response.json();
+    if (!response.ok || data.modelId !== modelId) throw new Error(imageValidationSafeError(data.error, "当前模型验证配置暂不可读取"));
+    return data as ImageValidationDto;
+  }, [headers, modelId]);
+  const store = useCallback((next: ImageValidationAttempt) => {
+    saveImageValidationAttempt(localStorage, next); if (mounted.current) setAttempt(next);
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    void (async () => {
+      try {
+        const original = readImageValidationAttempt(localStorage, userId, modelId);
+        const saved = original?.status === "submitting" ? { ...original, status: "unknown" as const, error: "原验证仍在确认，请检查原任务" } : original;
+        if (saved && mounted.current) setAttempt(saved);
+        const data = await getDto();
+        const restored = adoptImageValidationAttempt(data, userId, saved);
+        if (!mounted.current) return;
+        setDto(data); setInputs(imageValidationInputsForDto(data));
+        if (restored) store(restored);
+      } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "")); }
+      finally { if (mounted.current) setBusy(false); }
+    })();
+    return () => { mounted.current = false; if (previewRef.current) URL.revokeObjectURL(previewRef.current); };
+  }, [getDto, modelId, store, userId]);
+
+  const checkOriginal = useCallback(async (original = attempt) => {
+    if (!original || lock.current) return;
+    lock.current = true;
+    try {
+      const params = new URLSearchParams({ clientIdempotencyKey: original.proof.clientIdempotencyKey, clientTraceId: original.proof.clientTraceId });
+      const response = await fetch(`/api/image/status?${params}`, { headers: headers(), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(30000) });
+      const data = await response.json(); let next = updateImageValidationReceipt(original, data, response.ok);
+      // Status remains readable with the original key even if the model has since changed.
+      try { const current = await getDto(); const adopted = adoptImageValidationAttempt(current, userId, next);
+        if (adopted) next = adopted; if (mounted.current) setDto(current);
+      } catch { /* Retain the original key and status when current configuration is unavailable. */ }
+      store(next);
+    } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "")); }
+    finally { lock.current = false; }
+  }, [attempt, getDto, headers, store, userId]);
+  useEffect(() => {
+    if (!attempt || attempt.status === "submitting" || (imageValidationIsTerminal(attempt) && attempt.imageRecordId)) return;
+    const timer = setTimeout(() => void checkOriginal(), 5000); return () => clearTimeout(timer);
+  }, [attempt, checkOriginal]);
+
+  const completedAssetId = attempt && ["completed", "published"].includes(attempt.status) ? attempt.assetId : "";
+  useEffect(() => {
+    let active = true; setPreview(null); setDimensions(null);
+    if (previewRef.current) { URL.revokeObjectURL(previewRef.current); previewRef.current = ""; }
+    if (!completedAssetId) return;
+    void fetchImageValidationAsset(completedAssetId, token).then(result => {
+      if (!active || !mounted.current) return;
+      const url = URL.createObjectURL(result.blob); previewRef.current = url; setPreview({ ...result, url });
+    }).catch(cause => { if (active && mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "", "验证图片暂不可读取")); });
+    return () => { active = false; };
+  }, [completedAssetId, token]);
+
+  const submit = async () => {
+    if (!dto || !inputs || !confirmed || busy || uploading || lock.current) return;
+    lock.current = true; setBusy(true); setError("");
+    try {
+      const perform = () => submitImageValidation(dto, inputs, userId, { storage: localStorage, token, fetcher: fetch,
+        onChange: next => { if (mounted.current) { setAttempt(next); setPreparedReason(""); } } }, preparedReason);
+      const next = navigator.locks ? await navigator.locks.request(`admin-image-validation:${userId}:${modelId}`, perform) : await perform();
+      lock.current = false; if (mounted.current) { setPreparedReason(""); await checkOriginal(next); }
+    } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "")); }
+    finally { lock.current = false; if (mounted.current) setBusy(false); }
+  };
+  const upload = async (file: File, index: number) => {
+    if (uploading || (attempt && !preparedReason) || !inputs) return;
+    if (file.size <= 0 || file.size > 5 * 1024 * 1024 || !["image/png", "image/jpeg", "image/webp"].includes(file.type)) { setError("请选择 5MB 以内的 PNG、JPG 或 WebP 图片"); return; }
+    setUploading(true); setError("");
+    try {
+      const body = new FormData(); body.set("file", file);
+      const response = await fetch("/api/upload", { method: "POST", headers: headers(), body, redirect: "error", signal: AbortSignal.timeout(60000) });
+      const data = await response.json();
+      if (!response.ok || typeof data.url !== "string") throw new Error(imageValidationSafeError(data.error, "参考图上传失败"));
+      const url = new URL(data.url); if (url.protocol !== "https:" || url.username || url.password) throw new Error("参考图地址无效");
+      if (mounted.current) setInputs(current => current ? { ...current, referenceImageUrls: current.referenceImageUrls.map((value, item) => item === index ? data.url : value) } : current);
+    } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "")); }
+    finally { if (mounted.current) setUploading(false); }
+  };
+  const prepareRetest = async () => {
+    if (!attempt || attempt.status !== "rejected" || busy || lock.current) return;
+    const text = reason.trim(); if (text.length < 8 || text.length > 300) { setError("请填写 8 至 300 字的复测原因"); return; }
+    lock.current = true; setBusy(true); setError("");
+    try { const current = await getDto(text);
+      if (current.busy || !current.validationKey || sameImageValidationProof(attempt.proof, current)) throw new Error("原请求尚不可复测，请先核对配置和拒绝原因");
+      if (mounted.current) { setDto(current); setInputs(imageValidationInputsForDto(current)); setPreparedReason(text); setConfirmed(false); }
+    } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "")); }
+    finally { lock.current = false; if (mounted.current) setBusy(false); }
+  };
+  const publish = async () => {
+    if (!attempt || busy || lock.current) return;
+    lock.current = true; setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/admin/cover-models/validation/publish", { method: "POST", headers: { ...headers(), "Content-Type": "application/json" },
+        body: JSON.stringify(buildImageValidationPublishRequest(attempt)), redirect: "error", signal: AbortSignal.timeout(60000) });
+      const data = await response.json();
+      if (!response.ok || data.success !== true || data.modelId !== modelId || data.imageRecordId !== attempt.imageRecordId || data.assetId !== attempt.assetId) throw new Error(imageValidationSafeError(data.error, "启用结果暂未确认，请检查原记录"));
+      store({ ...attempt, status: "published", error: "", errorCode: "" }); if (mounted.current) onPublished();
+    } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "", "启用结果暂未确认，请保留原验证记录")); }
+    finally { lock.current = false; if (mounted.current) setBusy(false); }
+  };
+  const recover = async () => {
+    if (!attempt || !attempt.body || !attempt.canRecover || attempt.status !== "finalizing" || busy || lock.current) return;
+    lock.current = true; setBusy(true); setError("");
+    try {
+      const perform = () => recoverImageValidation(attempt, { storage: localStorage, token, fetcher: fetch, onChange: next => { if (mounted.current) setAttempt(next); } });
+      const next = navigator.locks ? await navigator.locks.request(`admin-image-validation:${userId}:${modelId}`, perform) : await perform();
+      lock.current = false; if (mounted.current) await checkOriginal(next);
+    } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "")); }
+    finally { lock.current = false; if (mounted.current) setBusy(false); }
+  };
+  const download = () => {
+    if (!preview) return;
+    const link = document.createElement("a"); link.href = preview.url;
+    link.download = `${(attempt?.model.name || modelName).replace(/[\\/:*?"<>|]/gu, "_").slice(0, 80)}-验证.${preview.extension}`; link.click();
+  };
+  const showForm = !!dto && !!inputs && (!attempt || !!preparedReason);
+  return <ImageValidationFrame title={attempt?.model.name || dto?.name || modelName} onClose={onClose}>
+    {(attempt?.model.upstream || dto?.modelName) && <p className="mb-3 break-words text-xs text-[var(--muted-foreground)]">{attempt?.model.upstream || dto?.modelName}</p>}
+    {error && <p role="alert" className="mb-3 rounded-lg bg-red-500/10 p-3 text-sm text-red-600">{error}</p>}
+    {!dto && busy && <p role="status">正在读取模型能力…</p>}
+    {attempt && !preparedReason && <div className="space-y-3" data-testid="image-validation-attempt" data-model-id={attempt.model.id} data-status={attempt.status}>
+      <p role="status" className="font-medium">{phases[attempt.status]}</p>
+      {attempt.error && <p className="text-sm text-red-600">{attempt.model.name}：{attempt.error}</p>}
+      {attempt.errorCode && <p className="break-all text-xs text-[var(--muted-foreground)]">{attempt.errorCode}</p>}
+      {preview && <div><img src={preview.url} alt={`${attempt.model.name} 的原验证图片`} className="max-h-96 w-full rounded-lg object-contain" onLoad={event => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => setError("原验证图片无法解码，请检查下载结果")} />
+        <p className="mt-2 text-xs text-[var(--muted-foreground)]">{dimensions ? `${dimensions.width} × ${dimensions.height} · ` : ""}{Math.round(preview.blob.size / 1024)} KB</p></div>}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => void checkOriginal()} disabled={busy} className={buttonClass}>检查原任务</button>
+        {attempt.status === "finalizing" && attempt.canRecover && attempt.body && <button type="button" onClick={() => void recover()} disabled={busy} className={buttonClass}>恢复原结果保存</button>}
+        {preview && <button type="button" onClick={download} className={buttonClass}>下载验证图片</button>}
+        {attempt.status === "completed" && <button type="button" onClick={() => void publish()} disabled={busy || !attempt.imageRecordId || !preview || !dimensions} className={primaryClass}>{busy ? "正在启用…" : "启用此配置"}</button>}
+      </div>
+      {!imageValidationIsTerminal(attempt) && <p className="text-xs text-[var(--muted-foreground)]">原任务已保留，关闭后可再次打开查看进度。</p>}
+      {attempt.status === "rejected" && dto?.canRequestRetest && <div className="space-y-2"><label className="block text-sm">复测原因<textarea value={reason} onChange={event => setReason(event.target.value)} rows={2} maxLength={300} className={`${fieldClass} mt-1`} placeholder="说明已修正的问题，保留原失败记录" /></label>
+        <button type="button" onClick={() => void prepareRetest()} disabled={busy} className={buttonClass}>准备一次复测</button></div>}
+    </div>}
+    {showForm && dto && inputs && <div className="space-y-4" data-testid="image-validation-form" data-model-id={dto.modelId}>
+      <label className="block space-y-1 text-sm"><span>验证图片描述</span><textarea value={inputs.prompt} onChange={event => setInputs({ ...inputs, prompt: event.target.value })} rows={3} maxLength={10000} className={fieldClass} placeholder="描述一张简单图片，核对当前模型的生成效果" /></label>
+      <div className="grid grid-cols-2 gap-3"><label className="space-y-1 text-sm"><span>清晰度</span><select aria-label="清晰度" value={inputs.resolution} onChange={event => setInputs({ ...inputs, resolution: event.target.value as ImageValidationInputs["resolution"] })} className={fieldClass}>{dto.capabilities.resolutionOptions.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label className="space-y-1 text-sm"><span>画面比例</span><select aria-label="画面比例" value={inputs.aspectRatio} onChange={event => setInputs({ ...inputs, aspectRatio: event.target.value })} className={fieldClass}>{["1:1", "3:4", "4:3", "9:16", "16:9"].map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
+      {dto.capabilities.supportsReferenceInput && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={inputs.referenceMode} onChange={event => setInputs({ ...inputs, referenceMode: event.target.checked, referenceImageUrls: inputs.referenceImageUrls.length ? inputs.referenceImageUrls : [""] })} />使用参考图验证</label>}
+      {inputs.referenceMode && dto.capabilities.supportsReferenceInput && <div className="space-y-3">
+        {inputs.referenceImageUrls.map((value, index) => <div key={index} className="space-y-2"><label className="block space-y-1 text-sm"><span>参考图片 {index + 1}</span><input type="url" value={value} onChange={event => setInputs({ ...inputs, referenceImageUrls: inputs.referenceImageUrls.map((item, slot) => slot === index ? event.target.value : item) })} className={fieldClass} placeholder="HTTPS 图片链接，或选择图片上传" /></label>
+          <input id={`image-validation-upload-${index}`} type="file" className="hidden" tabIndex={-1} aria-hidden="true" accept="image/png,image/jpeg,image/webp" disabled={uploading} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file, index); event.target.value = ""; }} />
+          <div className="flex gap-2"><button type="button" disabled={uploading} className={buttonClass} onClick={() => document.getElementById(`image-validation-upload-${index}`)?.click()}>选择图片上传</button>
+            {inputs.referenceImageUrls.length > 1 && <button type="button" className={buttonClass} onClick={() => setInputs({ ...inputs, referenceImageUrls: inputs.referenceImageUrls.filter((_, slot) => slot !== index) })}>移除</button>}</div></div>)}
+        {inputs.referenceImageUrls.length < Math.min(8, dto.capabilities.maxReferenceImages) && <button type="button" className={buttonClass} onClick={() => setInputs({ ...inputs, referenceImageUrls: [...inputs.referenceImageUrls, ""] })}>添加参考图</button>}
+        <p className="text-xs text-[var(--muted-foreground)]">PNG、JPG、WebP，单张不超过 5MB。</p>
+      </div>}
+      {uploading && <p role="status" className="text-sm">正在上传参考图…</p>}
+      {dto.busy && <p role="status" className="text-sm">此配置已有验证正在进行，请稍后检查。</p>}
+      {(!dto.credentialReady || !dto.priceReady) && <p className="text-sm text-amber-600">请先补齐当前模型的密钥和价格配置。</p>}
+      {dto.requiresComputeReadiness && <p className="text-xs text-[var(--muted-foreground)]">此模型需要专属算力就绪后验证。</p>}
+      <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>确认使用当前模型生成一张验证图片{typeof dto.quotedPriceYuan === "number" ? `（本次按标价 ¥${dto.quotedPriceYuan.toFixed(2)} 结算）` : ""}；成功交付后写入钱包与收益账务。</span></label>
+      <button type="button" className={primaryClass} disabled={!confirmed || busy || uploading || dto.busy || !dto.credentialReady || !dto.priceReady} onClick={() => void submit()}>{busy ? "正在提交…" : "提交一次真实验证"}</button>
+    </div>}
+  </ImageValidationFrame>;
+}

@@ -1,0 +1,376 @@
+# 链接克隆功能 — 开发设计文档
+
+> 版本：v1.0 | 日期：2026-07-20
+> 功能：「粘贴短视频链接 → 自动提取音频 → 一键声音克隆」
+
+---
+
+## 一、火山引擎声音复刻API限制（必须遵守）
+
+| 参数 | 要求 | 来源 |
+|------|------|------|
+| **音频格式** | **WAV**（必须） | 官方最佳实践 |
+| **音频时长** | **14~30秒**（最佳） | 官方最佳实践 |
+| **声道** | **单声道（mono）** | 官方要求 |
+| **人声** | **单人声**，发音清晰 | 官方要求 |
+| **噪声** | **低噪声**，背景干净 | 官方要求 |
+| **情绪** | **基本一致**，不要太起伏 | 官方要求 |
+| **文件大小** | 未明确限制，但base64不宜过大 | 推测 <10MB |
+| **采样率** | 未明确，建议 16kHz 或 24kHz | 常见标准 |
+| **语言** | 中文/英文，中英混即可 | 代码中 language=0 |
+| **训练时间** | 通常1~3分钟 | 实测经验 |
+
+> 📌 **核心约束**：音频必须 ≥14秒且 ≤30秒，WAV格式，单人声。链接提取的音频需要满足这些条件才能克隆。
+
+---
+
+## 二、数据流设计（完整链路）
+
+```
+用户粘贴链接
+      │
+      ▼
+┌──────────────┐
+│  Step 1: 解析│  PPT6 API（或备用源）
+│  获取视频信息 │  GET → { title, video_url, type }
+└──────┬───────┘
+       │ video_url (MP4直链)
+       ▼
+┌──────────────┐
+│  Step 2: 提取│  iyuns MP4→MP3 API（或 ffmpeg）
+│  音频转MP3   │  GET → { data: mp3_url }
+└──────┬───────┘
+       │ mp3_url
+       ▼
+┌──────────────┐
+│  Step 3: 下载│  服务器下载MP3到内存
+│  音频到服务器 │  → Buffer
+└──────┬───────┘
+       │ Buffer
+       ▼
+┌──────────────┐
+│  Step 4: 处理│  ffmpeg 截取 20-25秒片段
+│  音频预处理   │  → 转 WAV 单声道 16kHz
+│               │  → 轻微降噪
+│               │  → 音量归一化
+└──────┬───────┘
+       │ WAV Buffer
+       ▼
+┌──────────────┐
+│  Step 5: 编码│  Buffer → Base64
+│  转Base64     │
+└──────┬───────┘
+       │ base64 + speakerId
+       ▼
+┌──────────────┐
+│  Step 6: 克隆│  调用 volcengine.cloneVoice()
+│  提交火山API  │  → 返回 speakerId + status
+└──────┬───────┘
+       │ speakerId
+       ▼
+┌──────────────┐
+│  Step 7: 存储│  prisma.voice.create()
+│  记录到数据库 │  → type='cloned', userId
+└──────┬───────┘
+       │
+       ▼
+   返回 speakerId 给前端
+   （可立即用于合成）
+```
+
+---
+
+## 三、新增文件（不影响现有功能）
+
+### 3.1 文件清单
+
+```
+新增文件（3个）:
+├── src/app/api/voice/link-clone/route.ts   # 新API端点
+├── src/lib/link-extractor.ts               # 链接解析+音频处理工具库
+└── src/components/LinkCloneForm.tsx         # 链接克隆前端组件
+
+修改文件（1个，仅新增Tab）:
+└── src/app/clone/page.tsx                   # +「链接克隆」Tab
+
+无需修改文件:
+✅ src/lib/volcengine.ts     (复用 cloneVoice)
+✅ src/lib/auth.ts           (复用认证)
+✅ src/lib/billing.ts        (扣费不变)
+✅ src/lib/prisma.ts         (复用)
+✅ src/components/FileUpload.tsx  (不动)
+✅ 其他所有现有路由和组件       (完全不动)
+```
+
+### 3.2 前端 Tab 结构
+
+```
+声音复刻页面 /clone
+├── Tab 0: 「上传音频」（原有，完全不变）
+│   └── FileUpload → voiceName → language → 开始训练
+│
+└── Tab 1: 「链接克隆」（新增，独立模块）
+    └── 输入链接 → 解析视频 → 预览 → 一键克隆
+```
+
+---
+
+## 四、API设计
+
+### 4.1 新建 API：`POST /api/voice/link-clone`
+
+```typescript
+// 请求体
+{
+  "url": "https://v.douyin.com/xxxxx",     // 短视频分享链接（必填）
+  "name": "科普大叔",                       // 克隆音色名称（可选，默认取视频标题）
+  "userId": "cm8p0wfes0001qvgk7h4y9ojp",  // 用户ID（主站传入）
+  "duration": 20                            // 截取秒数（可选，默认20，范围14-30）
+}
+
+// 成功响应
+{
+  "success": true,
+  "data": {
+    "speakerId": "S_1755323888777",
+    "videoTitle": "量子力学入门：薛定谔的猫",
+    "videoCover": "https://...",
+    "status": 1,                      // 0=排队,1=训练中,2=成功,3=失败
+    "message": "链接克隆已提交，预计2-5分钟完成"
+  }
+}
+
+// 错误响应
+{
+  "success": false,
+  "message": "链接解析失败：该平台暂不支持",
+  "code": "LINK_PARSE_ERROR"
+}
+```
+
+### 4.2 处理流程（route.ts 核心逻辑）
+
+```typescript
+export async function POST(request: NextRequest) {
+  // 1. 认证（支持 JWT + X-Site-API-Key 双模式）
+  const userId = await authenticate(request);
+  
+  // 2. 参数校验
+  const { url, name, duration = 20 } = await request.json();
+  if (!url) return errorResponse('请输入视频链接');
+  if (duration < 14 || duration > 30) return errorResponse('时长范围为14-30秒');
+  
+  // 3. 解析链接 → 获取视频直链
+  const videoInfo = await extractVideoUrl(url);
+  if (!videoInfo.videoUrl) return errorResponse('链接解析失败');
+  
+  // 4. MP4→MP3 转换
+  const mp3Url = await convertVideoToMp3(videoInfo.videoUrl);
+  if (!mp3Url) return errorResponse('音频提取失败');
+  
+  // 5. 下载 + 预处理（ffmpeg 截取+转换）
+  const wavBase64 = await downloadAndProcess(mp3Url, duration);
+  if (!wavBase64) return errorResponse('音频处理失败');
+  
+  // 6. 调用火山引擎声音复刻（复用现有 cloneVoice）
+  const speakerId = `S_${Date.now()}`;
+  const result = await cloneVoice({
+    speakerId,
+    audioBase64: wavBase64,
+    audioFormat: 'wav',
+    language: 0,
+  });
+  
+  // 7. 创建数据库记录
+  await prisma.voice.create({
+    data: {
+      speakerId,
+      name: name || videoInfo.title || `链接克隆_${Date.now()}`,
+      type: 'cloned',
+      category: 'custom',
+      language: 'zh-cn',
+      isActive: true,
+      userId,
+    },
+  });
+  
+  // 8. 扣费
+  if (userId) {
+    await deductBalance(userId, 0, `clone-${speakerId}`, '链接克隆');
+  }
+  
+  return successResponse({ speakerId, videoTitle: videoInfo.title, status: result.status });
+}
+```
+
+---
+
+## 五、link-extractor.ts 工具库设计
+
+```typescript
+// src/lib/link-extractor.ts
+
+/**
+ * 解析短视频链接，获取视频信息
+ * 多源支持，按优先级尝试
+ */
+export async function extractVideoUrl(link: string): Promise<VideoInfo> {
+  // 根据链接域名判断平台
+  if (isXiaohongshu(link)) return extractXiaohongshu(link);
+  if (isDouyin(link)) return extractDouyin(link);
+  // 兜底：尝试通用解析
+  return extractGeneric(link);
+}
+
+interface VideoInfo {
+  videoUrl: string;    // MP4直链
+  title: string;        // 视频标题
+  cover: string;        // 封面图
+  platform: string;     // 平台名称
+}
+
+/**
+ * 视频MP4转MP3
+ * 方案A: iyuns API（免费，优先）
+ * 方案B: 服务器本地 ffmpeg（备选）
+ */
+export async function convertVideoToMp3(videoUrl: string): Promise<string> {
+  // 先试 iyuns API
+  const result = await fetch(`https://api.iyuns.com/api/mp4tomp3?url=${encodeURIComponent(videoUrl)}`);
+  const data = await result.json();
+  if (data.code === 200 && data.data) return data.data;
+  
+  // 降级：下载后用 ffmpeg 本地转换
+  throw new Error('音频提取失败，请稍后重试');
+}
+
+/**
+ * 下载MP3并预处理为标准格式
+ * 1. 下载MP3到内存
+ * 2. ffmpeg 截取指定秒数
+ * 3. 转WAV单声道16kHz
+ * 4. 轻微降噪
+ * 5. 转Base64
+ */
+export async function downloadAndProcess(
+  mp3Url: string, 
+  duration: number = 20
+): Promise<string> {
+  // ... ffmpeg 处理逻辑
+}
+```
+
+---
+
+## 六、支持的平台
+
+| 平台 | 链接格式 | PPT6支持度 | 备用方案 |
+|------|---------|-----------|---------|
+| 小红书 | `xhslink.com/xxx` | ✅ 主要支持 | - |
+| 抖音 | `v.douyin.com/xxx` | ⚠️ 不稳定 | yt-dlp |
+| B站 | `b23.tv/xxx` | ❌ 不支持 | yt-dlp |
+| YouTube | `youtu.be/xxx` | ❌ 不支持 | yt-dlp |
+
+**初期MVP**：先支持小红书链接（PPT6稳定），后续迭代加 yt-dlp 覆盖抖音/B站。
+
+---
+
+## 七、预置10条科普音色（手动采集方案）
+
+由于PPT6对抖音支持不稳定，预置音色采用**手动采集**方式：
+
+### 7.1 采集流程
+```
+1. 在抖音手动搜索科普/知识类TOP博主
+2. 下载代表性视频（15-30秒纯人声片段）
+3. 用 ffmpeg 转 WAV 单声道
+4. 通过现有克隆接口 /api/voice/clone 提交
+5. 生成 speakerId 存入音色库
+```
+
+### 7.2 10条音色规划
+
+| # | 音色名 | 博主类型 | 性别 | 适用场景 |
+|---|--------|---------|------|---------|
+| 1 | 知识讲解·理性男声 | 科学科普 | 男 | 科普视频、知识解说 |
+| 2 | 治愈陪伴·温柔女声 | 情感心理 | 女 | 情感疗愈、睡前故事 |
+| 3 | 深度解读·磁性男声 | 历史文化 | 男 | 纪录片、深度内容 |
+| 4 | 生活妙招·活力女声 | 生活技巧 | 女 | 生活百科、短知识 |
+| 5 | 财经分析·成熟男声 | 财经商业 | 男 | 财经解说、商业分析 |
+| 6 | 文学朗读·知性女声 | 读书分享 | 女 | 有声书、文学朗读 |
+| 7 | 科技前沿·青春男声 | 数码科技 | 男 | 科技产品、数码测评 |
+| 8 | 健康养生·醇厚女声 | 医疗健康 | 女 | 健康科普、养生知识 |
+| 9 | 历史讲述·严谨男声 | 历史人文 | 男 | 历史故事、文化解说 |
+| 10 | 亲子育儿·甜美女声 | 亲子教育 | 女 | 儿童故事、亲子内容 |
+
+---
+
+## 八、音频预处理标准（ffmpeg命令）
+
+```bash
+# 下载并处理音频的标准命令
+ffmpeg -i input.mp3 \
+  -ss 2 \              # 跳过开头2秒（避免片头音乐）
+  -t 20 \              # 截取20秒
+  -ac 1 \              # 转单声道
+  -ar 16000 \          # 16kHz采样率
+  -sample_fmt s16 \    # 16bit位深
+  -af "highpass=f=80, lowpass=f=8000, loudnorm, silenceremove=1:0:-50dB" \
+  output.wav
+```
+
+参数说明：
+- `-ss 2`：跳过前2秒（避开片头音效）
+- `-t 20`：提取20秒（14-30秒范围中间值）
+- `-ac 1`：单声道（火山API要求）
+- `-ar 16000`：16kHz（降低文件大小）
+- `highpass/lowpass`：过滤环境噪声
+- `loudnorm`：音量归一化
+
+---
+
+## 九、错误处理矩阵
+
+| 错误场景 | HTTP状态码 | 错误码 | 用户提示 |
+|---------|-----------|--------|---------|
+| 链接为空 | 400 | `MISSING_URL` | "请输入视频链接" |
+| 链接格式不对 | 400 | `INVALID_URL` | "请输入有效的短视频链接" |
+| 平台不支持 | 400 | `PLATFORM_UNSUPPORTED` | "暂不支持该平台" |
+| 解析失败 | 502 | `LINK_PARSE_ERROR` | "视频解析失败，请检查链接" |
+| 不是视频 | 400 | `NOT_VIDEO` | "该链接不是视频，无法提取音频" |
+| 无音频流 | 400 | `NO_AUDIO` | "该视频没有音频轨道" |
+| 音频<14秒 | 400 | `AUDIO_TOO_SHORT` | "视频人声不足14秒" |
+| 音频>30秒被截 | 200 | - | "已自动截取前30秒" |
+| 转换失败 | 502 | `AUDIO_CONVERT_ERROR` | "音频提取失败，请稍后重试" |
+| 克隆失败 | 500 | `CLONE_ERROR` | "声音克隆失败" |
+| 余额不足 | 402 | `INSUFFICIENT_BALANCE` | "余额不足" |
+
+---
+
+## 十、实施计划
+
+### Day 1：链路验证 + 工具库
+- [ ] 安装 ffmpeg 到服务器
+- [ ] 实现 `link-extractor.ts` 核心工具库
+- [ ] PPT6 → iyuns → ffmpeg 全链路单测
+- [ ] 手动测试1-2个真实链接
+
+### Day 2：API + 前端
+- [ ] 实现 `/api/voice/link-clone` 接口
+- [ ] 实现 `LinkCloneForm.tsx` 组件
+- [ ] clone/page.tsx 添加 Tab
+- [ ] 全链路端到端测试
+
+### Day 3：预置音色 + 优化
+- [ ] 手动采集10条科普博主音频
+- [ ] 生成10条预置音色
+- [ ] 错误处理完善
+- [ ] 文档更新
+
+---
+
+> 🎯 **核心设计原则**：
+> - **零侵入**：现有克隆功能一行代码不改
+> - **模块化**：新功能通过独立API+组件添加
+> - **免费优先**：PPT6 + iyuns 全免费链路
+> - **标准处理**：严格遵循火山API的14-30秒/WAV/单声道要求

@@ -1,0 +1,1806 @@
+{
+  "schemaVersion": "commerce-canvas-gap-matrix/v1",
+  "generatedAt": "2026-09-15T09:37:37.245Z",
+  "source": {
+    "catalogPath": "F:\\总项目文件\\Skill存储系统\\运行数据\\自媒体操盘手\\local-data-20260902\\preview-runtime\\commerce-discovery\\catalog.json",
+    "catalogSha256": "98324a07fc7b9e2a097dc43353ddb92fd083d1a26fc50f79cde8eef0dd91b1d7",
+    "capturedAt": "2026-09-08T04:52:50.034Z"
+  },
+  "summary": {
+    "publicCanvasCases": 18,
+    "snapshotRecoveryReady": 3,
+    "executionBlocked": 15,
+    "regenerationReady": 0,
+    "providerRequests": 0,
+    "jobsCreated": 0,
+    "paidCalls": 0,
+    "networkCalls": 0
+  },
+  "closureOrder": [
+    {
+      "order": 1,
+      "phase": "map-model-and-bind-references",
+      "safeWithoutProvider": true
+    },
+    {
+      "order": 2,
+      "phase": "adapt-reference-order",
+      "safeWithoutProvider": true
+    },
+    {
+      "order": 3,
+      "phase": "replace-nonpublic-semantics",
+      "safeWithoutProvider": true
+    },
+    {
+      "order": 4,
+      "phase": "restore-public-assets",
+      "safeWithoutProvider": true
+    },
+    {
+      "order": 5,
+      "phase": "certify-layout-and-execution",
+      "safeWithoutProvider": true
+    },
+    {
+      "order": 6,
+      "phase": "real-member-provider-canary",
+      "safeWithoutProvider": false,
+      "requiresExplicitPaidAuthorization": true
+    }
+  ],
+  "blockerTotals": [
+    {
+      "code": "MODEL_MAPPING_REQUIRED",
+      "cases": 18,
+      "occurrences": 120,
+      "phase": "map-model-and-bind-references"
+    },
+    {
+      "code": "LAYOUT_PROVENANCE_SIDECAR",
+      "cases": 18,
+      "occurrences": 18,
+      "phase": "certify-layout-and-execution"
+    },
+    {
+      "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+      "cases": 18,
+      "occurrences": 18,
+      "phase": "certify-layout-and-execution"
+    },
+    {
+      "code": "REFERENCE_BINDING_UNRESOLVED",
+      "cases": 15,
+      "occurrences": 175,
+      "phase": "map-model-and-bind-references"
+    },
+    {
+      "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+      "cases": 15,
+      "occurrences": 15,
+      "phase": "certify-layout-and-execution"
+    },
+    {
+      "code": "REFERENCE_ORDER_NOT_PUBLIC",
+      "cases": 14,
+      "occurrences": 143,
+      "phase": "adapt-reference-order"
+    },
+    {
+      "code": "GENERATION_PROMPT_NOT_PUBLIC",
+      "cases": 9,
+      "occurrences": 41,
+      "phase": "replace-nonpublic-semantics"
+    },
+    {
+      "code": "DERIVATIVE_NOT_PORTABLE",
+      "cases": 6,
+      "occurrences": 24,
+      "phase": "replace-nonpublic-semantics"
+    },
+    {
+      "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+      "cases": 6,
+      "occurrences": 6,
+      "phase": "replace-nonpublic-semantics"
+    },
+    {
+      "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+      "cases": 4,
+      "occurrences": 18,
+      "phase": "adapt-reference-order"
+    },
+    {
+      "code": "IMAGE_SKILL_REQUIRES_MAPPING",
+      "cases": 3,
+      "occurrences": 6,
+      "phase": "map-model-and-bind-references"
+    },
+    {
+      "code": "MISSING_PUBLIC_ASSET",
+      "cases": 1,
+      "occurrences": 1,
+      "phase": "restore-public-assets"
+    }
+  ],
+  "rows": [
+    {
+      "itemId": "e5cd2a24-4b85-432f-a420-678162d31fcf",
+      "title": "2.5｜服装 分镜复刻",
+      "sourceSha256": "1dd66c0e4dda3cb86fc7c7625b44a6b87bed703332e1ddd190428b559739caa5",
+      "structure": {
+        "nodes": 12,
+        "edges": 28,
+        "groups": 1,
+        "assets": 10
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 2,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MISSING_PUBLIC_ASSET",
+          "occurrences": 1,
+          "phase": "restore-public-assets"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 5,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 21,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 2,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MISSING_PUBLIC_ASSET",
+          "occurrences": 1,
+          "phase": "restore-public-assets"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 5,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 21,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "6b98667c-0052-4741-9961-3fd343ba5036",
+      "title": "网感跳舞｜抖音",
+      "sourceSha256": "5195f26921ce96d4343d9baceb8b2dcd8b321cc8adbe9c91dcecf10a4fe25797",
+      "structure": {
+        "nodes": 8,
+        "edges": 11,
+        "groups": 1,
+        "assets": 8
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 5,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 11,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 5,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 11,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "9ad082b5-8e5a-4497-bb79-6fdc7417692f",
+      "title": "服饰1:1复刻",
+      "sourceSha256": "02960be89284b2af601266a995a756ec92813aadfc35302292b285d7c673a1bb",
+      "structure": {
+        "nodes": 12,
+        "edges": 21,
+        "groups": 3,
+        "assets": 11
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 5,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 2,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 12,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 5,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 2,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 12,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "e4c34e3a-4c29-49ae-860a-20545e4b5bd3",
+      "title": "自建人脸（模特库）",
+      "sourceSha256": "9401e847b077a6b962a42e02ef5fa2bf2eaea128329a0b8d2c0224f749a6c4c6",
+      "structure": {
+        "nodes": 5,
+        "edges": 10,
+        "groups": 1,
+        "assets": 5
+      },
+      "snapshotRecovery": {
+        "ready": true,
+        "mode": "materialized-snapshot",
+        "billingMode": "zero-cost-owned-assets"
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [],
+      "regenerationBlockers": [
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 3,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 3,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "d2c561c3-2e6c-4bcf-b2a0-e377b1adbb94",
+      "title": "热点-娃娃穿搭换装",
+      "sourceSha256": "787a160906cd0f067597fcb604ea1547d245e90af0f07f24194c6349c520d78b",
+      "structure": {
+        "nodes": 7,
+        "edges": 12,
+        "groups": 1,
+        "assets": 8
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 1,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+          "occurrences": 1,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 1,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+          "occurrences": 1,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "3fd559e7-4fbe-4bbc-a607-54b8a1b32bbb",
+      "title": "类目：个护 品牌：白惜 复刻 类型：koc",
+      "sourceSha256": "d542939d04bd632b79709e7f217aaa9dc7d7579ee38c4895fd03becfb4483057",
+      "structure": {
+        "nodes": 10,
+        "edges": 12,
+        "groups": 2,
+        "assets": 13
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 3,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 7,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 10,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 3,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 7,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 10,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "894be74e-7816-4fb7-b66d-58d5f1dd2575",
+      "title": "服饰｜一键种草展示视频",
+      "sourceSha256": "b72dc31d7936a026e48587df42d358caf7a08412a21f79ba9b1c34159f224a73",
+      "structure": {
+        "nodes": 5,
+        "edges": 7,
+        "groups": 1,
+        "assets": 5
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 2,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "IMAGE_SKILL_REQUIRES_MAPPING",
+          "occurrences": 1,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 4,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 5,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 2,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "IMAGE_SKILL_REQUIRES_MAPPING",
+          "occurrences": 1,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 4,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 5,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "21f7626b-294f-40fb-b569-a0ef69343b2f",
+      "title": "个护沐浴露｜爆款短剧带货",
+      "sourceSha256": "aed090845cb2b300352f0fdc7e06d108d47110b7ea489f22a1fb43fe28927431",
+      "structure": {
+        "nodes": 7,
+        "edges": 12,
+        "groups": 1,
+        "assets": 10
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 12,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 7,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 12,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 7,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "d576a571-a40c-4adc-9b68-d32218b3bea9",
+      "title": "内裤类目｜一键换脸复刻爆款",
+      "sourceSha256": "11c1b3c9d99b9369fa40fc5cfff5be39b44c74e7a1d36ecc8dc9a354dee09646",
+      "structure": {
+        "nodes": 10,
+        "edges": 9,
+        "groups": 1,
+        "assets": 13
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 3,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 10,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 3,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 10,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "06ee61a1-9988-4ee3-8a2d-ec14bb4c4e1f",
+      "title": "食品饮料｜创意动画带货视频",
+      "sourceSha256": "323bcb58efae522235920f28355f925a0b90af1c525338f566418b0f141d99f9",
+      "structure": {
+        "nodes": 6,
+        "edges": 16,
+        "groups": 1,
+        "assets": 9
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 5,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 8,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 6,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 5,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 8,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 6,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "c6ee02ae-09b3-45d9-9dc3-268f89141ede",
+      "title": "真人感演技｜抖音热点",
+      "sourceSha256": "3e4bab820700760e767eeb174ce20c6cfed39c19ac0b8e623af722774d7f9f87",
+      "structure": {
+        "nodes": 2,
+        "edges": 1,
+        "groups": 1,
+        "assets": 3
+      },
+      "snapshotRecovery": {
+        "ready": true,
+        "mode": "materialized-snapshot",
+        "billingMode": "zero-cost-owned-assets"
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [],
+      "regenerationBlockers": [
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 2,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 2,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "8376e4d6-823a-411e-a1d2-d24e0235a172",
+      "title": "日用品｜风扇 卖点可视化",
+      "sourceSha256": "c48ef1d5afb991d933fb8d3a530afe3cbd2937a6d497dad428909f7d827093fc",
+      "structure": {
+        "nodes": 4,
+        "edges": 5,
+        "groups": 1,
+        "assets": 4
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 2,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "IMAGE_SKILL_REQUIRES_MAPPING",
+          "occurrences": 1,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 3,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 3,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 4,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 2,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "IMAGE_SKILL_REQUIRES_MAPPING",
+          "occurrences": 1,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 3,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 3,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 4,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "16e9d15d-0718-4c0b-8d77-149e3ea6ed14",
+      "title": "鞋服｜一键换脸",
+      "sourceSha256": "9f34e3591afc5606ae90c35329a904cb942f3fbde5a215cbeb0e9cfe1de0ada0",
+      "structure": {
+        "nodes": 8,
+        "edges": 7,
+        "groups": 2,
+        "assets": 10
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 4,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 2,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 8,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 4,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 2,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 8,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "f5ab438e-9125-43d3-94f2-b658caae1209",
+      "title": "个护｜牙膏邵氏风格剧情带货",
+      "sourceSha256": "735f9464e47301744cfa0b024334bca0396a049008cd3dd2ac0e31bb570e0967",
+      "structure": {
+        "nodes": 5,
+        "edges": 6,
+        "groups": 1,
+        "assets": 7
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 4,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 4,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 6,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 5,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "73c68cc6-0ceb-4bfa-a7e9-e180e2519085",
+      "title": "fdr复刻工作流",
+      "sourceSha256": "e46206baa45b76e8a5a11a649ac0162e486a814b1284fb7e2527fbce9974a3c6",
+      "structure": {
+        "nodes": 17,
+        "edges": 32,
+        "groups": 1,
+        "assets": 16
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 3,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 8,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 34,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+          "occurrences": 7,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 3,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 8,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 34,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_REQUIRES_ADAPTER",
+          "occurrences": 7,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "5d877132-eb49-4e79-b2be-39d6b4ea654d",
+      "title": "力士沐浴露爆款",
+      "sourceSha256": "28be2beb27117bcc153884e6b45b187cd82ac447277273fdabb6df53da099296",
+      "structure": {
+        "nodes": 21,
+        "edges": 56,
+        "groups": 1,
+        "assets": 21
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 6,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 11,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 26,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 21,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 6,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 11,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 26,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 21,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "6ca453a1-57c1-4577-bdfc-7e07dce4adc6",
+      "title": "一键电商套图 （完整版）",
+      "sourceSha256": "fd113bdbdda2373213be3659b8651d3d78997c9c595b9adb7bd7d3634ce5a2cb",
+      "structure": {
+        "nodes": 22,
+        "edges": 41,
+        "groups": 3,
+        "assets": 15
+      },
+      "snapshotRecovery": {
+        "ready": true,
+        "mode": "materialized-snapshot",
+        "billingMode": "zero-cost-owned-assets"
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [],
+      "regenerationBlockers": [
+        {
+          "code": "GENERATION_PROMPT_NOT_PUBLIC",
+          "occurrences": 21,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 21,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "OUTPUT_TEXT_REFERENCES_REQUIRE_REVIEW",
+          "occurrences": 1,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 22,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    },
+    {
+      "itemId": "0bc42688-ac77-45bc-bf4e-d39e58b7c39c",
+      "title": "1111",
+      "sourceSha256": "10a7939026d36503fe9be59e0b0c36cac48fa14323da421201de30535539cd30",
+      "structure": {
+        "nodes": 26,
+        "edges": 59,
+        "groups": 0,
+        "assets": 26
+      },
+      "snapshotRecovery": {
+        "ready": false,
+        "mode": "review-required",
+        "billingMode": null
+      },
+      "regeneration": {
+        "ready": false,
+        "providerVerified": false,
+        "jobVerified": false,
+        "billingVerified": false
+      },
+      "executionBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 11,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "IMAGE_SKILL_REQUIRES_MAPPING",
+          "occurrences": 4,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 19,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 27,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 26,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "regenerationBlockers": [
+        {
+          "code": "DERIVATIVE_NOT_PORTABLE",
+          "occurrences": 11,
+          "phase": "replace-nonpublic-semantics"
+        },
+        {
+          "code": "DISCOVERY_CANVAS_EXECUTION_NOT_ADAPTED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "IMAGE_SKILL_REQUIRES_MAPPING",
+          "occurrences": 4,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "LAYOUT_PROVENANCE_SIDECAR",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "MODEL_MAPPING_REQUIRED",
+          "occurrences": 19,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "PUBLIC_WORKFLOW_NOT_EXECUTION_CERTIFIED",
+          "occurrences": 1,
+          "phase": "certify-layout-and-execution"
+        },
+        {
+          "code": "REFERENCE_BINDING_UNRESOLVED",
+          "occurrences": 27,
+          "phase": "map-model-and-bind-references"
+        },
+        {
+          "code": "REFERENCE_ORDER_NOT_PUBLIC",
+          "occurrences": 26,
+          "phase": "adapt-reference-order"
+        }
+      ],
+      "nextSafePhase": "map-model-and-bind-references"
+    }
+  ]
+}

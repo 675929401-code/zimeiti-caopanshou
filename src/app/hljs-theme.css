@@ -1,0 +1,183 @@
+/* highlight.js theme — mapped from GitHub Primer prettylights variables */
+/* This ensures syntax highlighting colors match our markdown-body CSS exactly */
+
+/* ===== Light mode ===== */
+html .hljs {
+  color: var(--color-fg-default, #24292f);
+  background: transparent;
+}
+
+html .hljs-comment,
+html .hljs-quote {
+  color: var(--color-prettylights-syntax-comment, #6e7781);
+  font-style: italic;
+}
+
+html .hljs-keyword,
+html .hljs-selector-tag,
+html .hljs-type {
+  color: var(--color-prettylights-syntax-keyword, #cf222e);
+}
+
+html .hljs-string,
+html .hljs-addition,
+html .hljs-template-tag,
+html .hljs-template-variable {
+  color: var(--color-prettylights-syntax-string, #0a3069);
+}
+
+html .hljs-number,
+html .hljs-literal,
+html .hljs-variable,
+html .hljs-template-variable,
+html .hljs-tag .hljs-attr {
+  color: var(--color-prettylights-syntax-variable, #953800);
+}
+
+html .hljs-title,
+html .hljs-section,
+html .hljs-selector-id {
+  color: var(--color-prettylights-syntax-markup-heading, #0550ae);
+  font-weight: 600;
+}
+
+html .hljs-built_in,
+html .hljs-class .hljs-title,
+html .hljs-class {
+  color: var(--color-prettylights-syntax-entity, #8250df);
+}
+
+html .hljs-name,
+html .hljs-tag {
+  color: var(--color-prettylights-syntax-entity-tag, #116329);
+}
+
+html .hljs-attr,
+html .hljs-attribute,
+html .hljs-selector-class {
+  color: var(--color-prettylights-syntax-constant, #0550ae);
+}
+
+html .hljs-regexp,
+html .hljs-link {
+  color: var(--color-prettylights-syntax-string-regexp, #116329);
+}
+
+html .hljs-symbol,
+html .hljs-bullet {
+  color: var(--color-prettylights-syntax-variable, #953800);
+}
+
+html .hljs-meta {
+  color: var(--color-prettylights-syntax-comment, #6e7781);
+}
+
+html .hljs-deletion {
+  color: var(--color-prettylights-syntax-markup-deleted-text, #82071e);
+  background-color: var(--color-prettylights-syntax-markup-deleted-bg, #ffebe9);
+}
+
+html .hljs-addition {
+  color: var(--color-prettylights-syntax-markup-inserted-text, #116329);
+  background-color: var(--color-prettylights-syntax-markup-inserted-bg, #dafbe1);
+}
+
+html .hljs-emphasis {
+  font-style: italic;
+  color: var(--color-prettylights-syntax-markup-italic, #24292f);
+}
+
+html .hljs-strong {
+  font-weight: 700;
+  color: var(--color-prettylights-syntax-markup-bold, #24292f);
+}
+
+/* ===== Dark mode ===== */
+html.dark .hljs {
+  color: var(--color-fg-default, #c9d1d9);
+  background: transparent;
+}
+
+html.dark .hljs-comment,
+html.dark .hljs-quote {
+  color: var(--color-prettylights-syntax-comment, #8b949e);
+  font-style: italic;
+}
+
+html.dark .hljs-keyword,
+html.dark .hljs-selector-tag,
+html.dark .hljs-type {
+  color: var(--color-prettylights-syntax-keyword, #ff7b72);
+}
+
+html.dark .hljs-string,
+html.dark .hljs-template-tag,
+html.dark .hljs-template-variable {
+  color: var(--color-prettylights-syntax-string, #a5d6ff);
+}
+
+html.dark .hljs-number,
+html.dark .hljs-literal,
+html.dark .hljs-variable,
+html.dark .hljs-template-variable,
+html.dark .hljs-tag .hljs-attr {
+  color: var(--color-prettylights-syntax-variable, #ffa657);
+}
+
+html.dark .hljs-title,
+html.dark .hljs-section,
+html.dark .hljs-selector-id {
+  color: var(--color-prettylights-syntax-markup-heading, #1f6feb);
+  font-weight: 600;
+}
+
+html.dark .hljs-built_in,
+html.dark .hljs-class .hljs-title,
+html.dark .hljs-class {
+  color: var(--color-prettylights-syntax-entity, #d2a8ff);
+}
+
+html.dark .hljs-name,
+html.dark .hljs-tag {
+  color: var(--color-prettylights-syntax-entity-tag, #7ee787);
+}
+
+html.dark .hljs-attr,
+html.dark .hljs-attribute,
+html.dark .hljs-selector-class {
+  color: var(--color-prettylights-syntax-constant, #79c0ff);
+}
+
+html.dark .hljs-regexp,
+html.dark .hljs-link {
+  color: var(--color-prettylights-syntax-string-regexp, #7ee787);
+}
+
+html.dark .hljs-symbol,
+html.dark .hljs-bullet {
+  color: var(--color-prettylights-syntax-variable, #ffa657);
+}
+
+html.dark .hljs-meta {
+  color: var(--color-prettylights-syntax-comment, #8b949e);
+}
+
+html.dark .hljs-deletion {
+  color: var(--color-prettylights-syntax-markup-deleted-text, #ffdcd7);
+  background-color: var(--color-prettylights-syntax-markup-deleted-bg, #67060c);
+}
+
+html.dark .hljs-addition {
+  color: var(--color-prettylights-syntax-markup-inserted-text, #aff5b4);
+  background-color: var(--color-prettylights-syntax-markup-inserted-bg, #033a16);
+}
+
+html.dark .hljs-emphasis {
+  font-style: italic;
+  color: var(--color-prettylights-syntax-markup-italic, #c9d1d9);
+}
+
+html.dark .hljs-strong {
+  font-weight: 700;
+  color: var(--color-prettylights-syntax-markup-bold, #c9d1d9);
+}

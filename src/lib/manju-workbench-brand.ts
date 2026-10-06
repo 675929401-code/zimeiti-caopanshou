@@ -1,0 +1,6 @@
+export const MANJU_WORKBENCH_BRAND = "漫剧工作台";
+
+export const MANJU_WORKBENCH_DEFAULT_TITLE = `${MANJU_WORKBENCH_BRAND} — AI 创作平台`;
+
+export const MANJU_WORKBENCH_TITLE_TEMPLATE = `%s — ${MANJU_WORKBENCH_BRAND}`;
+

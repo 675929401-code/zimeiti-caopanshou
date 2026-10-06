@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "monitorKind": "external_site_monitor",
+  "probeRunId": "018fca65-1223-7dd4-9e35-0b18ce433f50",
+  "schedulerId": "fixture-external-cron",
+  "vantage": {
+    "kind": "external",
+    "id": "fixture-cn-east-01",
+    "region": "cn-east",
+    "provider": "fixture-only"
+  },
+  "target": {
+    "hostname": "monitor.zimeiti.cn",
+    "origin": "https://monitor.zimeiti.cn",
+    "loginPath": "/admin/superzhujunguo"
+  },
+  "startedAt": "2026-10-03T08:00:00.000Z",
+  "completedAt": "2026-10-03T08:00:02.250Z",
+  "overallStatus": "passed",
+  "checks": {
+    "dns": {
+      "state": "passed",
+      "durationMs": 18.5,
+      "ipv4Count": 2,
+      "ipv6Count": 1,
+      "answerSetSha256": "4040404040404040404040404040404040404040404040404040404040404040",
+      "errorCode": null
+    },
+    "tls": {
+      "state": "passed",
+      "durationMs": 74.2,
+      "negotiatedProtocol": "TLSv1.3",
+      "certificateFingerprintSha256": "5050505050505050505050505050505050505050505050505050505050505050",
+      "sanSetSha256": "6060606060606060606060606060606060606060606060606060606060606060",
+      "certificateNotBefore": "2026-09-15T00:00:00.000Z",
+      "certificateNotAfter": "2026-12-14T23:59:59.000Z",
+      "daysRemaining": 72.67,
+      "errorCode": null
+    },
+    "https": {
+      "state": "passed",
+      "durationMs": 126.4,
+      "statusCode": 200,
+      "finalUrlSha256": "7070707070707070707070707070707070707070707070707070707070707070",
+      "contentType": "text/html; charset=utf-8",
+      "bytesSampled": 32768,
+      "errorCode": null
+    },
+    "staticAssets": {
+      "state": "passed",
+      "discoveredCount": 2,
+      "checkedCount": 2,
+      "items": [
+        {
+          "path": "/_next/static/chunks/app.js",
+          "state": "passed",
+          "statusCode": 206,
+          "durationMs": 58.3,
+          "contentType": "application/javascript",
+          "errorCode": null
+        },
+        {
+          "path": "/favicon.ico",
+          "state": "passed",
+          "statusCode": 200,
+          "durationMs": 42.1,
+          "contentType": "image/x-icon",
+          "errorCode": null
+        }
+      ],
+      "errorCode": null
+    },
+    "loginDom": {
+      "state": "passed",
+      "probeMode": "server_html_dom",
+      "durationMs": 93.8,
+      "statusCode": 200,
+      "documentSha256": "8080808080808080808080808080808080808080808080808080808080808080",
+      "markers": [
+        {
+          "label": "登录标题",
+          "present": true
+        },
+        {
+          "label": "密码输入框",
+          "present": true
+        }
+      ],
+      "errorCode": null
+    }
+  },
+  "privacy": {
+    "rawResolvedAddressesIncluded": false,
+    "responseBodyIncluded": false,
+    "credentialsIncluded": false
+  },
+  "evidenceSha256": "a4b01b7c476236fe64b4ff9f7e5ab2aee0bd786dac4570731ef6208008c9eeae"
+}

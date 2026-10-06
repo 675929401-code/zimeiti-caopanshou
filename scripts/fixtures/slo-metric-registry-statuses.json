@@ -1,0 +1,25 @@
+{
+  "available": {
+    "value": 18,
+    "status": "healthy",
+    "partial": false,
+    "sourceIds": ["fixture.available"]
+  },
+  "partial": {
+    "value": 7,
+    "status": "warning",
+    "partial": true,
+    "sourceIds": ["fixture.partial"]
+  },
+  "unavailable": {
+    "value": null,
+    "status": "unavailable",
+    "partial": true,
+    "sourceIds": []
+  },
+  "history": {
+    "state": "unavailable",
+    "reasonCode": "HISTORY_MIGRATION_NOT_APPLIED",
+    "points": []
+  }
+}

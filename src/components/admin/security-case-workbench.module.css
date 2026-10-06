@@ -1,0 +1,839 @@
+.workbench {
+  --case-bg: #06101d;
+  --case-panel: rgba(9, 24, 42, 0.94);
+  --case-panel-strong: rgba(13, 32, 55, 0.98);
+  --case-line: rgba(87, 153, 222, 0.25);
+  --case-line-strong: rgba(93, 175, 255, 0.55);
+  --case-text: #edf7ff;
+  --case-muted: #a8bfd4;
+  --case-blue: #69adff;
+  --case-cyan: #55e0e6;
+  --case-green: #4de2b4;
+  --case-amber: #f5c868;
+  --case-orange: #ff9c56;
+  --case-red: #ff6e80;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 14px;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid var(--case-line);
+  border-radius: 18px;
+  color: var(--case-text);
+  color-scheme: dark;
+  background:
+    radial-gradient(circle at 80% -8%, rgba(38, 118, 204, 0.23), transparent 35%),
+    linear-gradient(145deg, rgba(8, 22, 39, 0.99), var(--case-bg));
+  box-shadow: inset 0 1px 0 rgba(175, 218, 255, 0.06), 0 22px 50px rgba(0, 7, 16, 0.27);
+}
+
+.header,
+.titleRow,
+.sectionHeading,
+.caseCardTop,
+.railHeading,
+.actionTop,
+.pagination,
+.toolbarMeta {
+  display: flex;
+  align-items: center;
+}
+
+.header {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.titleRow {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.header h3,
+.caseHeader h4,
+.sectionHeading h4 {
+  margin: 0;
+  color: #f7fbff;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.header h3 {
+  font-size: 19px;
+}
+
+.caseHeader h4 {
+  margin-top: 10px;
+  font-size: 20px;
+}
+
+.sectionHeading h4 {
+  font-size: 15px;
+}
+
+.header p,
+.caseHeader p,
+.sectionHeading p {
+  margin: 6px 0 0;
+  color: var(--case-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.schemaBadge,
+.executorBadge,
+.riskBadge,
+.statusBadge,
+.revisionBadge,
+.entityBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.schemaBadge,
+.revisionBadge {
+  border: 1px solid var(--case-line);
+  color: #bfdbf5;
+  background: rgba(63, 131, 199, 0.13);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.executorBadge {
+  border: 1px solid rgba(245, 200, 104, 0.43);
+  color: #f8d78c;
+  background: rgba(137, 90, 19, 0.24);
+}
+
+.statusBadge,
+.entityBadge {
+  border: 1px solid rgba(85, 224, 230, 0.32);
+  color: #8ef0f3;
+  background: rgba(26, 132, 142, 0.17);
+}
+
+.riskBadge {
+  border: 1px solid var(--case-line);
+}
+
+.risk_low {
+  border-color: rgba(77, 226, 180, 0.38);
+  color: #75ebc8;
+  background: rgba(28, 139, 107, 0.18);
+}
+
+.risk_medium {
+  border-color: rgba(245, 200, 104, 0.38);
+  color: #f6d27f;
+  background: rgba(141, 98, 23, 0.2);
+}
+
+.risk_high {
+  border-color: rgba(255, 156, 86, 0.43);
+  color: #ffbd8c;
+  background: rgba(160, 72, 20, 0.21);
+}
+
+.risk_critical {
+  border-color: rgba(255, 110, 128, 0.47);
+  color: #ff9aa8;
+  background: rgba(157, 34, 55, 0.23);
+}
+
+.refreshButton,
+.unlockButton,
+.controlRow button,
+.actionComposer button,
+.pagination button,
+.cancelButton {
+  min-height: 38px;
+  border: 1px solid var(--case-line-strong);
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: #f2f8ff;
+  background: linear-gradient(135deg, rgba(40, 111, 202, 0.76), rgba(26, 143, 182, 0.7));
+  box-shadow: 0 8px 22px rgba(22, 93, 169, 0.2);
+  font-size: 12px;
+  font-weight: 780;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease, filter 150ms ease, transform 150ms ease;
+}
+
+.refreshButton {
+  min-width: 140px;
+  flex: 0 0 auto;
+}
+
+.refreshButton:hover:not(:disabled),
+.unlockButton:hover:not(:disabled),
+.controlRow button:hover:not(:disabled),
+.actionComposer button:hover:not(:disabled),
+.pagination button:hover:not(:disabled),
+.cancelButton:hover:not(:disabled) {
+  border-color: #8bc8ff;
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+.refreshButton:focus-visible,
+.unlockButton:focus-visible,
+.controlRow button:focus-visible,
+.actionComposer button:focus-visible,
+.pagination button:focus-visible,
+.cancelButton:focus-visible,
+.caseCard:focus-visible,
+.toolbar input:focus-visible,
+.toolbar select:focus-visible,
+.reasonField input:focus-visible,
+.controlRow input:focus-visible,
+.controlRow select:focus-visible,
+.actionComposer select:focus-visible {
+  outline: 2px solid #91ccff;
+  outline-offset: 3px;
+}
+
+.refreshButton:disabled,
+.unlockButton:disabled,
+.controlRow button:disabled,
+.actionComposer button:disabled,
+.pagination button:disabled,
+.cancelButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+  box-shadow: none;
+  transform: none;
+}
+
+.boundaryBanner,
+.pauseNotice,
+.errorNotice,
+.successNotice {
+  border-radius: 11px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.boundaryBanner {
+  border: 1px solid rgba(245, 200, 104, 0.34);
+  color: #f6d99a;
+  background: rgba(114, 76, 16, 0.22);
+}
+
+.boundaryBanner code,
+.inlineMeta,
+.entityList code,
+.auditList code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.pauseNotice {
+  border: 1px solid rgba(245, 200, 104, 0.34);
+  color: #f5d18a;
+  background: rgba(116, 76, 16, 0.2);
+}
+
+.errorNotice {
+  border: 1px solid rgba(255, 110, 128, 0.42);
+  color: #ffd0d7;
+  background: rgba(136, 28, 46, 0.24);
+}
+
+.successNotice {
+  border: 1px solid rgba(77, 226, 180, 0.39);
+  color: #a4f4dc;
+  background: rgba(21, 121, 92, 0.21);
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: 160px 160px minmax(250px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  border: 1px solid rgba(83, 151, 222, 0.2);
+  border-radius: 13px;
+  padding: 12px;
+  background: rgba(5, 16, 29, 0.7);
+}
+
+.toolbar label,
+.reasonField,
+.actionComposer label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #bed1e3;
+  font-size: 12px;
+  font-weight: 730;
+}
+
+.toolbar select,
+.toolbar input,
+.reasonField input,
+.controlRow input,
+.controlRow select,
+.actionComposer select {
+  min-width: 0;
+  min-height: 39px;
+  border: 1px solid rgba(96, 159, 221, 0.31);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #ecf6ff;
+  background: rgba(6, 18, 33, 0.93);
+  font-size: 12px;
+  outline: none;
+}
+
+.toolbarMeta {
+  align-self: stretch;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: #a9bfd3;
+  font-size: 12px;
+}
+
+.workspaceGrid {
+  display: grid;
+  grid-template-columns: minmax(300px, 355px) minmax(0, 1fr);
+  min-width: 0;
+  gap: 12px;
+}
+
+.caseRail,
+.detailSurface,
+.controlPanel,
+.detailCard,
+.actionPanel,
+.auditPanel {
+  min-width: 0;
+  border: 1px solid var(--case-line);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(13, 31, 53, 0.96), rgba(7, 19, 34, 0.96));
+  box-shadow: inset 0 1px 0 rgba(165, 212, 255, 0.04);
+}
+
+.caseRail {
+  display: grid;
+  grid-template-rows: auto minmax(320px, 1fr) auto;
+  max-height: 990px;
+  overflow: hidden;
+}
+
+.railHeading {
+  justify-content: space-between;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--case-line);
+  color: #e7f4ff;
+  font-size: 13px;
+}
+
+.railHeading span {
+  color: var(--case-muted);
+  font-size: 12px;
+}
+
+.caseList {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(95, 161, 224, 0.45) transparent;
+}
+
+.caseCard {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(83, 151, 222, 0.2);
+  border-radius: 11px;
+  padding: 11px;
+  color: var(--case-text);
+  text-align: left;
+  background: rgba(8, 22, 39, 0.84);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.caseCard:hover {
+  border-color: rgba(104, 182, 255, 0.56);
+  background: rgba(15, 37, 62, 0.93);
+  transform: translateY(-1px);
+}
+
+.caseCardActive {
+  border-color: rgba(93, 181, 255, 0.8);
+  background: linear-gradient(135deg, rgba(26, 70, 115, 0.76), rgba(10, 34, 58, 0.94));
+  box-shadow: inset 3px 0 0 var(--case-cyan), 0 10px 24px rgba(5, 55, 101, 0.2);
+}
+
+.caseCardTop {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.caseCard > strong {
+  overflow: hidden;
+  color: #f4f9ff;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caseSummary {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #b4c8db;
+  font-size: 12px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.caseMeta {
+  overflow: hidden;
+  color: #91a9c0;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pagination {
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--case-line);
+  color: var(--case-muted);
+  font-size: 12px;
+}
+
+.pagination button {
+  min-height: 34px;
+  padding: 6px 10px;
+  box-shadow: none;
+}
+
+.detailSurface {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 13px;
+  animation: case-detail-arrive 260ms ease both;
+}
+
+.emptyDetail,
+.emptyState {
+  display: grid;
+  place-items: center;
+  min-height: 88px;
+  padding: 16px;
+  color: #9eb5ca;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.caseHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 18px;
+  border: 1px solid rgba(93, 162, 231, 0.23);
+  border-radius: 12px;
+  padding: 14px;
+  background: rgba(7, 20, 36, 0.73);
+}
+
+.caseFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.caseFacts div,
+.evidenceGrid div {
+  min-width: 0;
+  border: 1px solid rgba(81, 147, 211, 0.18);
+  border-radius: 9px;
+  padding: 8px;
+  background: rgba(5, 16, 29, 0.69);
+}
+
+.caseFacts dt,
+.evidenceGrid dt {
+  color: #8ca7c0;
+  font-size: 12px;
+}
+
+.caseFacts dd,
+.evidenceGrid dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: #e0edf8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.controlPanel,
+.actionPanel,
+.auditPanel,
+.detailCard {
+  padding: 13px;
+}
+
+.sectionHeading {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.unlockButton {
+  border-color: rgba(245, 200, 104, 0.48);
+  color: #ffdda0;
+  background: rgba(128, 82, 14, 0.32);
+  box-shadow: none;
+}
+
+.reasonField {
+  margin-bottom: 10px;
+}
+
+.controlRows {
+  display: grid;
+  gap: 8px;
+}
+
+.controlRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(110px, 0.56fr)) auto;
+  align-items: end;
+  gap: 8px;
+  border: 1px solid rgba(80, 147, 215, 0.19);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(5, 17, 31, 0.62);
+}
+
+.controlRow > div {
+  display: grid;
+  align-self: center;
+  gap: 4px;
+}
+
+.controlRow strong {
+  color: #eaf5ff;
+  font-size: 13px;
+}
+
+.controlRow span {
+  color: #9fb6cc;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.7fr);
+  gap: 12px;
+}
+
+.timeline,
+.entityList,
+.auditList {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline > li {
+  position: relative;
+  min-width: 0;
+  padding: 10px 10px 10px 22px;
+  border-left: 1px solid rgba(85, 224, 230, 0.31);
+  background: rgba(5, 16, 30, 0.48);
+}
+
+.timelineDot {
+  position: absolute;
+  top: 16px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--case-cyan);
+  box-shadow: 0 0 12px rgba(85, 224, 230, 0.72);
+}
+
+.timelineTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.timelineTop strong,
+.entityList strong,
+.actionTop strong,
+.auditList strong {
+  color: #eaf5ff;
+  font-size: 13px;
+}
+
+.timelineTop time,
+.entityList time,
+.actionTop time,
+.auditList time {
+  color: #91aac1;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline p,
+.actionQueue p,
+.auditList p {
+  margin: 6px 0;
+  color: #b7cadc;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.inlineMeta {
+  color: #8faac2;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.evidenceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0 0;
+}
+
+.entityList li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: start;
+  border: 1px solid rgba(82, 149, 215, 0.2);
+  border-radius: 10px;
+  padding: 9px;
+  background: rgba(5, 16, 30, 0.55);
+}
+
+.entityList li > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.entityList code {
+  overflow: hidden;
+  color: #9fb8cf;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entityList time {
+  grid-column: 2;
+}
+
+.actionComposer {
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) minmax(170px, auto) auto auto;
+  align-items: end;
+  gap: 8px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(92, 163, 232, 0.22);
+  border-radius: 11px;
+  padding: 10px;
+  background: rgba(5, 17, 31, 0.68);
+}
+
+.actionIntent {
+  display: flex;
+  align-items: center;
+  min-height: 39px;
+  border: 1px solid rgba(85, 224, 230, 0.23);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #9beff1;
+  background: rgba(19, 101, 112, 0.16);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.pendingButton {
+  border-color: rgba(245, 200, 104, 0.52) !important;
+  color: #ffe0a3 !important;
+  background: linear-gradient(135deg, rgba(142, 91, 15, 0.75), rgba(117, 68, 15, 0.75)) !important;
+}
+
+.previewCard {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(85, 224, 230, 0.3);
+  border-radius: 10px;
+  padding: 10px;
+  color: #b7dce9;
+  background: rgba(16, 95, 112, 0.15);
+  font-size: 12px;
+}
+
+.previewCard strong {
+  color: #92f0f3;
+}
+
+.previewCard ul {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+
+.actionQueue {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.actionQueue article {
+  min-width: 0;
+  border: 1px solid rgba(245, 200, 104, 0.24);
+  border-radius: 11px;
+  padding: 10px;
+  background: rgba(67, 46, 12, 0.16);
+}
+
+.actionTop {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.actionTop > div {
+  display: grid;
+  gap: 4px;
+}
+
+.actionTop span {
+  color: #f6cf7b;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.actionBoundary {
+  margin-top: 8px;
+  border-radius: 8px;
+  padding: 8px;
+  color: #f6d99a;
+  background: rgba(132, 87, 17, 0.22);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cancelButton {
+  min-height: 34px;
+  margin-top: 8px;
+  border-color: rgba(255, 110, 128, 0.42);
+  color: #ffc2cb;
+  background: rgba(122, 25, 42, 0.28);
+  box-shadow: none;
+}
+
+.auditList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.auditList li {
+  display: grid;
+  grid-template-columns: minmax(145px, auto) minmax(150px, 0.7fr) minmax(140px, auto);
+  align-items: center;
+  gap: 5px 12px;
+  min-width: 0;
+  border: 1px solid rgba(83, 149, 216, 0.19);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(5, 16, 30, 0.52);
+}
+
+.auditList p,
+.auditList code {
+  grid-column: 1 / -1;
+}
+
+.auditList span,
+.auditList code {
+  color: #9eb7cd;
+  font-size: 12px;
+}
+
+@keyframes case-detail-arrive {
+  from { opacity: 0.74; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 1260px) {
+  .workspaceGrid {
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  }
+
+  .toolbar {
+    grid-template-columns: 145px 145px minmax(210px, 1fr);
+  }
+
+  .toolbarMeta {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .caseHeader,
+  .detailGrid,
+  .actionQueue {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .controlRow,
+  .actionComposer {
+    grid-template-columns: minmax(190px, 1fr) minmax(160px, 0.8fr) auto;
+  }
+
+  .controlRow > input:nth-of-type(2),
+  .actionComposer .pendingButton {
+    grid-column: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detailSurface,
+  .refreshButton,
+  .unlockButton,
+  .controlRow button,
+  .actionComposer button,
+  .pagination button,
+  .cancelButton,
+  .caseCard {
+    animation: none !important;
+    transition: none !important;
+  }
+}

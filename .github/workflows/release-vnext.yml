@@ -1,0 +1,232 @@
+name: release-vnext-build
+
+# This workflow deliberately stops at immutable CI artifacts. Production
+# deployment is a separate, protected, explicitly approved transaction.
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Service artifact to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - web
+          - voice
+  push:
+    tags:
+      - "web-v*.*.*"
+      - "voice-v*.*.*"
+      - "full-v*.*.*"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-vnext-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PUPPETEER_SKIP_DOWNLOAD: "true"
+
+jobs:
+  preflight:
+    name: Source and release-contract preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out the immutable source candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The first clean-source import intentionally preserves historical
+      # whitespace. New pull requests must not add any more whitespace debt.
+      - name: Check whitespace only in the proposed change
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+
+      - name: Install pnpm 9.0.0
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+          run_install: false
+
+      - name: Install Node.js 24.19.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            voice-platform/pnpm-lock.yaml
+
+      - name: Install root dependencies from the frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check and lint the source candidate
+        run: pnpm run validate
+
+      - name: Verify release and runtime-data contracts
+        run: pnpm run release:vnext:verify
+
+      - name: Audit the clean source snapshot and pinned asset manifest
+        run: pnpm run release:vnext:audit
+
+      - name: Confirm CI did not mutate source
+        run: git diff --exit-code && test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+  package:
+    name: Build ${{ matrix.service }} immutable artifact
+    if: github.event_name != 'pull_request'
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - web
+          - voice
+
+    steps:
+      - name: Select requested service
+        id: selection
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_SERVICE: ${{ inputs.service }}
+          MATRIX_SERVICE: ${{ matrix.service }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          selected=true
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$REQUESTED_SERVICE" != "all" && "$REQUESTED_SERVICE" != "$MATRIX_SERVICE" ]]; then
+            selected=false
+          elif [[ "$EVENT_NAME" == "push" && "$REF_NAME" == web-v* && "$MATRIX_SERVICE" != "web" ]]; then
+            selected=false
+          elif [[ "$EVENT_NAME" == "push" && "$REF_NAME" == voice-v* && "$MATRIX_SERVICE" != "voice" ]]; then
+            selected=false
+          elif [[ "$EVENT_NAME" == "push" && "$REF_NAME" != web-v* && "$REF_NAME" != voice-v* && "$REF_NAME" != full-v* ]]; then
+            selected=false
+          fi
+          echo "selected=$selected" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the immutable source candidate
+        if: steps.selection.outputs.selected == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pnpm 9.0.0
+        if: steps.selection.outputs.selected == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+          run_install: false
+
+      - name: Install Node.js 24.19.0
+        if: steps.selection.outputs.selected == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            voice-platform/pnpm-lock.yaml
+
+      - name: Install root dependencies from the frozen lockfile
+        if: steps.selection.outputs.selected == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Voice dependencies from the frozen lockfile
+        if: steps.selection.outputs.selected == 'true' && matrix.service == 'voice'
+        working-directory: voice-platform
+        run: pnpm --ignore-workspace install --frozen-lockfile
+
+      - name: Verify release contracts before building
+        if: steps.selection.outputs.selected == 'true'
+        run: |
+          pnpm run release:vnext:verify
+          pnpm run release:vnext:audit
+
+      - name: Derive an auditable release identity
+        if: steps.selection.outputs.selected == 'true'
+        id: identity
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          safe_ref="$(printf '%s' "$REF_NAME" | tr -cs 'A-Za-z0-9._-' '-')"
+          safe_ref="${safe_ref#-}"
+          safe_ref="${safe_ref%-}"
+          short_sha="${COMMIT_SHA:0:12}"
+          release_id="${safe_ref:-manual}-${short_sha}-r${RUN_NUMBER}"
+          if [[ ! "$release_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$ ]]; then
+            echo "Unsafe release id: $release_id" >&2
+            exit 2
+          fi
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
+      - name: Build the service on Linux
+        if: steps.selection.outputs.selected == 'true'
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: pnpm run release:vnext:build:${{ matrix.service }}
+
+      - name: Package the standalone immutable artifact
+        if: steps.selection.outputs.selected == 'true'
+        env:
+          RELEASE_ID: ${{ steps.identity.outputs.release_id }}
+          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          SERVICE: ${{ matrix.service }}
+        run: |
+          artifact_dir="$RUNNER_TEMP/${SERVICE}-${RELEASE_ID}"
+          archive_path="$RUNNER_TEMP/${SERVICE}-${RELEASE_ID}.tar.gz"
+          node scripts/package-standalone-artifact.mjs \
+            --service "$SERVICE" \
+            --output "$artifact_dir" \
+            --release-id "$RELEASE_ID" \
+            --commit "$DEPLOY_COMMIT_SHA" \
+            --archive \
+            --archive-path "$archive_path"
+          checksum_path="$archive_path.sha256"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum -c "$(basename "$checksum_path")"
+          )
+          test -s "$archive_path"
+          test -s "$checksum_path"
+          printf 'artifact_path=%s\n' "$archive_path" >> "$GITHUB_ENV"
+          printf 'checksum_path=%s\n' "$checksum_path" >> "$GITHUB_ENV"
+
+      - name: Confirm build outputs did not mutate tracked source
+        if: steps.selection.outputs.selected == 'true'
+        run: git diff --exit-code && test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Upload the immutable CI artifact and external checksum
+        if: steps.selection.outputs.selected == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.service }}-${{ steps.identity.outputs.release_id }}
+          path: |
+            ${{ env.artifact_path }}
+            ${{ env.checksum_path }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          overwrite: false

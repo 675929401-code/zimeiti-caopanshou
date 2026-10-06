@@ -1,0 +1,87 @@
+{
+  "version": "public-preview-assets.v1",
+  "generatedAt": "2026-08-30T16:31:14.943Z",
+  "assets": [
+    {
+      "source": "/short-drama/hero-dream-floral-v2.png",
+      "preview": "/short-drama/previews/hero-dream-floral-v2.webp",
+      "role": "homepage hero poster preview",
+      "width": 1280,
+      "originalBytes": 2016138,
+      "previewBytes": 48176,
+      "savedBytes": 1967962
+    },
+    {
+      "source": "/short-drama/hero-pipeline-v1.png",
+      "preview": "/short-drama/previews/hero-pipeline-v1.webp",
+      "role": "pipeline card and banner preview",
+      "width": 960,
+      "originalBytes": 1553899,
+      "previewBytes": 19582,
+      "savedBytes": 1534317
+    },
+    {
+      "source": "/short-drama/inspiration-silent-pet-v1.png",
+      "preview": "/short-drama/previews/inspiration-silent-pet-v1.webp",
+      "role": "silent pet card preview",
+      "width": 720,
+      "originalBytes": 1896231,
+      "previewBytes": 23730,
+      "savedBytes": 1872501
+    },
+    {
+      "source": "/short-drama/inspiration-paper-fox-v1.png",
+      "preview": "/short-drama/previews/inspiration-paper-fox-v1.webp",
+      "role": "paper fox card preview",
+      "width": 720,
+      "originalBytes": 2071908,
+      "previewBytes": 31232,
+      "savedBytes": 2040676
+    },
+    {
+      "source": "/short-drama/inspiration-product-film-v1.png",
+      "preview": "/short-drama/previews/inspiration-product-film-v1.webp",
+      "role": "product film card preview",
+      "width": 720,
+      "originalBytes": 1635157,
+      "previewBytes": 20076,
+      "savedBytes": 1615081
+    },
+    {
+      "source": "/short-drama/inspiration-moon-observatory-v1.png",
+      "preview": "/short-drama/previews/inspiration-moon-observatory-v1.webp",
+      "role": "moon observatory card preview",
+      "width": 720,
+      "originalBytes": 2364871,
+      "previewBytes": 33278,
+      "savedBytes": 2331593
+    },
+    {
+      "source": "/short-drama/film-studio-promo-bg-v2.png",
+      "preview": "/short-drama/previews/film-studio-promo-bg-v2.webp",
+      "role": "film studio promo preview",
+      "width": 960,
+      "originalBytes": 1723301,
+      "previewBytes": 24518,
+      "savedBytes": 1698783
+    },
+    {
+      "source": "/short-drama/film-studio-promo-bg-v3.png",
+      "preview": "/short-drama/previews/film-studio-promo-bg-v3.webp",
+      "role": "film studio promo v3 preview",
+      "width": 960,
+      "originalBytes": 1883477,
+      "previewBytes": 29672,
+      "savedBytes": 1853805
+    },
+    {
+      "source": "/product-assets/youcai-demo-v1/clean-v21/03-shot-02.png",
+      "preview": "/product-assets/youcai-demo-v1/clean-v21/previews/03-shot-02.webp",
+      "role": "music card preview",
+      "width": 640,
+      "originalBytes": 641125,
+      "previewBytes": 16612,
+      "savedBytes": 624513
+    }
+  ]
+}

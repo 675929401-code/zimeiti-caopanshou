@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "../next-env.d.ts",
+    "../src/lib/image-failure-history.ts",
+    "../src/lib/image-exactly-once.ts",
+    "../src/app/api/image/generate/route.ts",
+    "../src/app/api/image-workbench/failure-history/route.ts",
+    "../src/components/image-workbench.tsx",
+    "./verify-image-failure-history-contract.ts"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../.next",
+    "../backups",
+    "../任务快照"
+  ]
+}

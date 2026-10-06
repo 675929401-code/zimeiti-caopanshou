@@ -1,0 +1,3 @@
+import {discoveryMedia,DiscoveryError} from '../../../../../commerce/server/discovery';
+export const runtime='nodejs';export const dynamic='force-dynamic';
+export async function GET(_request:Request,{params}:{params:Promise<{file:string}>}){try{const {file}=await params,value=await discoveryMedia(file);return new Response(new Uint8Array(value.bytes),{headers:{'Content-Type':value.mimeType,'Content-Length':String(value.bytesLength),'ETag':`"${value.sha256}"`,'Cache-Control':'public, max-age=31536000, immutable','X-Content-Type-Options':'nosniff'}});}catch(error){if(error instanceof DiscoveryError)return Response.json({error:error.message,code:error.code},{status:error.status});return Response.json({error:'案例媒体读取失败',code:'DISCOVERY_MEDIA_FAILED'},{status:500});}}

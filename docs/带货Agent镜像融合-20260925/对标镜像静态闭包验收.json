@@ -1,0 +1,336 @@
+{
+  "schemaVersion": "maolong.mirror-static-closure/v1",
+  "generatedAt": "2026-09-25T07:22:58.730Z",
+  "passed": true,
+  "scope": "Authorized browser-delivered client code, rendered responses, sanitized GET catalogs and explicitly referenced media runtime files.",
+  "excludes": [
+    "Private server implementation source",
+    "database schema and live records beyond separately authorized read-only evidence",
+    "provider credentials",
+    "paid generation",
+    "production deployment"
+  ],
+  "roots": [
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-full",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-closure1",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-closure2",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-static-closure",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-closure3",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-closure4",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-closure5",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-conditional-entries\\capture",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-runtime-payload-supplemental\\capture",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-canvas-detail-api-supplemental\\capture",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-canvas-detail-closure\\capture",
+    "F:\\总项目文件\\Skill存储系统\\01_网页开发项目\\应用仓库\\08_隔离运行\\maolong-live-mirror-20260925-canvas-detail-closure2\\capture"
+  ],
+  "summary": {
+    "captureRoots": 13,
+    "manifestResponses": 1104,
+    "unionResponseRows": 1107,
+    "successfulSavedUrls": 333,
+    "pagesObserved": 153,
+    "runtimeMappings": 7,
+    "referencedLazyIds": 7,
+    "absoluteStaticReferences": 0,
+    "uniqueApiSignatures": 254,
+    "uniqueUnresolvedApiTemplates": 1,
+    "uniqueAstNodes": 5661085,
+    "observedAstNodesIncludingDuplicateCaptures": 15920871,
+    "sourceMaps": 0
+  },
+  "checks": {
+    "manifestsPresent": {
+      "passed": true,
+      "expected": 13,
+      "actual": 13
+    },
+    "savedBodyIntegrity": {
+      "passed": true,
+      "failures": 0
+    },
+    "businessWriteIsolation": {
+      "passed": true,
+      "allowed": 0,
+      "blocked": 81
+    },
+    "rechargeCardNewPage": {
+      "passed": true
+    },
+    "webpackRuntimeMappings": {
+      "passed": true,
+      "mappings": 7,
+      "missing": 0,
+      "conflicts": 0
+    },
+    "deepMediaStaticDependencies": {
+      "passed": true,
+      "required": 5,
+      "missing": 0
+    },
+    "heifWasm2JsFallback": {
+      "passed": true
+    },
+    "recursiveStaticDependencyGraph": {
+      "passed": true,
+      "edges": 7,
+      "missing": 0,
+      "optionalJustified": 1
+    },
+    "astParse": {
+      "passed": true,
+      "diagnostics": 0
+    },
+    "apiMethodResolution": {
+      "passed": true,
+      "unresolvedMethods": 0
+    },
+    "toolRegistry": {
+      "passed": true,
+      "activeRegistry": 9
+    },
+    "toolRenderers": {
+      "passed": true,
+      "renderers": 10
+    },
+    "imageSkillCatalog": {
+      "passed": true,
+      "skills": 16
+    },
+    "directorCatalog": {
+      "passed": true,
+      "skills": 19
+    }
+  },
+  "pageRequirement": {
+    "route": "/affiliate/recharge-cards/new",
+    "observations": [
+      {
+        "route": "/affiliate/recharge-cards/new",
+        "startedAt": "2026-09-25T05:41:31.571Z",
+        "status": 200,
+        "finalPath": "/affiliate/recharge-cards/new",
+        "title": "我的联盟",
+        "captureRoot": "maolong-live-mirror-20260925-closure3"
+      }
+    ],
+    "passed": true
+  },
+  "runtime": {
+    "expected": [
+      {
+        "chunkId": "185",
+        "hash": "7ed0a50dafb3a2e8",
+        "url": "https://daai-static.da-ai.vip/_next/static/chunks/185.7ed0a50dafb3a2e8.js"
+      },
+      {
+        "chunkId": "902",
+        "hash": "32b12b486befbc74",
+        "url": "https://daai-static.da-ai.vip/_next/static/chunks/902.32b12b486befbc74.js"
+      },
+      {
+        "chunkId": "1845",
+        "hash": "4ab943bddca8e541",
+        "url": "https://daai-static.da-ai.vip/_next/static/chunks/1845.4ab943bddca8e541.js"
+      },
+      {
+        "chunkId": "2735",
+        "hash": "d89d8198f177ac24",
+        "url": "https://daai-static.da-ai.vip/_next/static/chunks/2735.d89d8198f177ac24.js"
+      },
+      {
+        "chunkId": "3093",
+        "hash": "06205bf76a974e9f",
+        "url": "https://daai-static.da-ai.vip/_next/static/chunks/3093.06205bf76a974e9f.js"
+      },
+      {
+        "chunkId": "6043",
+        "hash": "f9807fe4b246eafa",
+        "url": "https://daai-static.da-ai.vip/_next/static/chunks/6043.f9807fe4b246eafa.js"
+      },
+      {
+        "chunkId": "6330",
+        "hash": "112433100ba63c94",
+        "url": "https://daai-static.da-ai.vip/_next/static/chunks/6330.112433100ba63c94.js"
+      }
+    ],
+    "missing": [],
+    "conflicts": [],
+    "referencedLazyWithoutRuntimeMapping": [
+      "2398"
+    ]
+  },
+  "staticReferences": {
+    "requiredDeepMediaUrls": [
+      "https://daai-static.da-ai.vip/_next/static/media/soundtouch-processor.88137476.js",
+      "https://daai-asset.da-ai.vip/ffmpeg/ffmpeg-core.js",
+      "https://daai-asset.da-ai.vip/ffmpeg/ffmpeg-core.wasm.gz",
+      "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/worker.js",
+      "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js"
+    ],
+    "missingRequiredDeepMedia": [],
+    "heifWasm2JsFallback": {
+      "file": "F:/总项目文件/Skill存储系统/01_网页开发项目/应用仓库/08_隔离运行/maolong-live-mirror-20260925-closure5/responses/maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js",
+      "isWasm2js": true,
+      "primesEmptyBinary": true,
+      "synchronousEmbeddedInstantiation": true,
+      "optionalUnfetchedUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.wasm",
+      "optionalUrlObservedStatus": 404,
+      "conclusion": "The published libheif.js is an embedded wasm2js build. It primes an empty binary and its local WebAssembly shim ignores that binary, so libheif.wasm is a dead fallback name rather than a required browser fetch.",
+      "passed": true
+    },
+    "recursiveStaticDependencyGraph": {
+      "roots": [
+        "https://daai-static.da-ai.vip/_next/static/media/soundtouch-processor.88137476.js",
+        "https://daai-asset.da-ai.vip/ffmpeg/ffmpeg-core.js",
+        "https://daai-asset.da-ai.vip/ffmpeg/ffmpeg-core.wasm.gz",
+        "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/worker.js",
+        "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js"
+      ],
+      "edges": [
+        {
+          "kind": "module-import",
+          "sourceUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/worker.js",
+          "targetUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js",
+          "sourceFile": "F:/总项目文件/Skill存储系统/01_网页开发项目/应用仓库/08_隔离运行/maolong-live-mirror-20260925-closure5/responses/maolong.da-ai.cc/image-decode/heif-1.22.2-v1/worker.js",
+          "byteStart": 163,
+          "byteEnd": 182
+        },
+        {
+          "kind": "explicit-runtime-anchor",
+          "sourceUrl": null,
+          "targetUrl": "https://daai-static.da-ai.vip/_next/static/media/soundtouch-processor.88137476.js",
+          "sourceFile": null,
+          "byteStart": null,
+          "byteEnd": null
+        },
+        {
+          "kind": "explicit-runtime-anchor",
+          "sourceUrl": null,
+          "targetUrl": "https://daai-asset.da-ai.vip/ffmpeg/ffmpeg-core.js",
+          "sourceFile": null,
+          "byteStart": null,
+          "byteEnd": null
+        },
+        {
+          "kind": "explicit-runtime-anchor",
+          "sourceUrl": null,
+          "targetUrl": "https://daai-asset.da-ai.vip/ffmpeg/ffmpeg-core.wasm.gz",
+          "sourceFile": null,
+          "byteStart": null,
+          "byteEnd": null
+        },
+        {
+          "kind": "explicit-runtime-anchor",
+          "sourceUrl": null,
+          "targetUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/worker.js",
+          "sourceFile": null,
+          "byteStart": null,
+          "byteEnd": null
+        },
+        {
+          "kind": "explicit-runtime-anchor",
+          "sourceUrl": null,
+          "targetUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js",
+          "sourceFile": null,
+          "byteStart": null,
+          "byteEnd": null
+        },
+        {
+          "kind": "wasm-fallback-name",
+          "sourceUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js",
+          "targetUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.wasm",
+          "sourceFile": "F:/总项目文件/Skill存储系统/01_网页开发项目/应用仓库/08_隔离运行/maolong-live-mirror-20260925-closure5/responses/maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js",
+          "byteStart": null,
+          "byteEnd": null
+        }
+      ],
+      "missing": [],
+      "optionalJustified": [
+        {
+          "kind": "wasm-fallback-name",
+          "sourceUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js",
+          "targetUrl": "https://maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.wasm",
+          "sourceFile": "F:/总项目文件/Skill存储系统/01_网页开发项目/应用仓库/08_隔离运行/maolong-live-mirror-20260925-closure5/responses/maolong.da-ai.cc/image-decode/heif-1.22.2-v1/libheif.js",
+          "byteStart": null,
+          "byteEnd": null,
+          "justification": "embedded-wasm2js-dead-fallback"
+        }
+      ],
+      "passed": true
+    },
+    "allAbsolute": [],
+    "missingAbsoluteStaticReferences": []
+  },
+  "catalogs": {
+    "activeRegistry": [
+      "depth-video-clone",
+      "digital-human",
+      "ecommerce-image-set",
+      "hot-video-remix",
+      "image-generation",
+      "video-generation",
+      "video-quality-enhance",
+      "video-subtitle-erase",
+      "video-watermark-remove"
+    ],
+    "renderers": [
+      "depth-video-clone",
+      "digital-human",
+      "ecommerce-image-set",
+      "hot-video-remix",
+      "image-generation",
+      "reference-video-split",
+      "video-generation",
+      "video-quality-enhance",
+      "video-subtitle-erase",
+      "video-watermark-remove"
+    ],
+    "imageSkills": [
+      "background-change",
+      "change-cloth",
+      "change-face",
+      "character-face-turnaround",
+      "character-fullbody-sheet",
+      "default",
+      "dual-face-fusion",
+      "element-replace",
+      "model-product-try-on",
+      "portrait-realism-enhance",
+      "product-consistency-reference",
+      "product-refine",
+      "product-white-background",
+      "script-storyboard",
+      "storyboard-element-replace",
+      "video-reference-first-frame"
+    ],
+    "directorSkills": [
+      "advertising-brand-proposition",
+      "advertising-brand-story",
+      "advertising-creative-concept",
+      "advertising-lifestyle",
+      "default-director",
+      "ecommerce-function-demo",
+      "ecommerce-pain-point-solution",
+      "ecommerce-promotion-conversion",
+      "ecommerce-scene-seeding",
+      "ecommerce-spoken-selling",
+      "local-store-discovery",
+      "local-store-group-buy-conversion",
+      "local-store-signature-experience",
+      "local-store-visit-record",
+      "short-drama-dialogue",
+      "short-drama-emotional",
+      "short-drama-product-placement",
+      "short-drama-reversal",
+      "short-drama-suspense"
+    ]
+  },
+  "integrityFailures": [],
+  "limitations": [
+    "No JavaScript source maps were published, so minified bundles are indexed by AST node and UTF-8 byte interval rather than original source line.",
+    "Dynamic detail pages require IDs observed in authorized list responses; absent IDs are not guessed.",
+    "HTTP 200 client pages and complete static assets do not prove private server workers, database transactions, provider execution or billing terminal states."
+  ]
+}

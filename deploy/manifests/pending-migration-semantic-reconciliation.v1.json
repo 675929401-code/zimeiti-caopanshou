@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "kind": "pending-migration-semantic-reconciliation-plan",
+  "generatedAt": "2026-09-04T01:51:39.712Z",
+  "scope": "local-loopback-database-only",
+  "state": "completed",
+  "supersededBy": "deploy/manifests/local-database-migration-closure.v1.json",
+  "snapshot": {
+    "path": "任务快照/pending-9-semantic-reconciliation-20260904-093746",
+    "manifestSha256": "ce2223c5cc03dd5442094df4dbd440c7d7e426017077b7e9744a7737aa2a2a79"
+  },
+  "currentLocalLedger": {
+    "releaseMigrationCount": 43,
+    "appliedCount": 33,
+    "pendingCount": 10,
+    "hashDriftCount": 0,
+    "databaseWritesDuringThisAudit": 0,
+    "migrationLedgerWritesDuringThisAudit": 0
+  },
+  "semanticEvidence": {
+    "phase": "pre-reconciliation",
+    "verifier": "scripts/verify-pending-migration-semantics.mjs",
+    "verifierSha256": "a9fc7edfa085504af9631de38db607829da0eec7cd99df38a2a8d51997e2b6f3",
+    "version": "pending-migration-object-coverage.v1",
+    "receiptPath": ".codex-evidence/db-migration-release/2026-09-04T01-51-39-712Z-pending-semantic-coverage.json",
+    "receiptSha256": "18628f0b466a167de9c4a7507456031f4e39f1e36663dbf26b2d6231eda608f4",
+    "evidenceFileSha256": "dedf25a6180e64deb4d131073d3d12296a1c8485787172f84419092f7c38d5c3",
+    "profileCount": 9,
+    "passedProfiles": 7,
+    "blockedProfiles": 2,
+    "targetClass": "local-loopback-only"
+  },
+  "profiles": [
+    {
+      "file": "20260825123000_manju_config_control_plane.sql",
+      "sourceSha256": "46e25899d128bbdc054a5c8d134b7a0510e039f9e2e039538f6c3e6a56d3b11f",
+      "result": "semantically-proven",
+      "checks": "194/194"
+    },
+    {
+      "file": "20260825173500_voice_atomic_authorization_purchase.sql",
+      "sourceSha256": "ae9ead1db49bb8a8ea41453c2bb69982b648e7587a0c785823bd48a23addb82d",
+      "result": "requires-forward-reconciliation",
+      "checks": "69/72"
+    },
+    {
+      "file": "20260827093000_skill_packages_runtime.sql",
+      "sourceSha256": "33c9367af7a87456a3f49470b46826aad61387c3558ae343e307b5e6af89266f",
+      "result": "semantically-proven",
+      "checks": "406/406"
+    },
+    {
+      "file": "20260829223000_manju_config_storage_state.sql",
+      "sourceSha256": "f6adfafdbb80ed8ab15a58fe808311cac810a70dd6dbea5348699e7e8bdffd8a",
+      "result": "semantically-proven",
+      "checks": "83/83"
+    },
+    {
+      "file": "20260902134000_skill_next_draft_cas.sql",
+      "sourceSha256": "ce3788edbf72f8eb8a2a97e314365c75f8dff0af9c5bd79d1fa665a01dccaeb3",
+      "result": "semantically-proven",
+      "checks": "10/10"
+    },
+    {
+      "file": "20260903021000_image_model_validation_governance.sql",
+      "sourceSha256": "71a420f06b69dc838d02fc3af9c107d4cbf65bef099998b3b3a5cca8a87477dc",
+      "result": "semantically-proven",
+      "checks": "110/110"
+    },
+    {
+      "file": "20260903074000_llm_stream_credit_reservations.sql",
+      "sourceSha256": "d22b069ac51f31ad35837c29e64e09da307e362ef36248f97abc091081fc800c",
+      "result": "requires-forward-reconciliation",
+      "checks": "71/72"
+    },
+    {
+      "file": "20260903153500_video_fractional_duration.sql",
+      "sourceSha256": "5979185fe604c56193383624519dd61c6717554a88455299af6209a475be5caf",
+      "result": "semantically-proven",
+      "checks": "11/11"
+    },
+    {
+      "file": "20260903212000_digital_video_dispatch_queue.sql",
+      "sourceSha256": "9dddc7eda94e4fd8d22602df1b7dd3d59722816f7f14f8bb6194e510c4585e37",
+      "result": "semantically-proven",
+      "checks": "71/71"
+    }
+  ],
+  "provenDifferences": [
+    {
+      "object": "public.user_voices.source_info",
+      "difference": "missing NOT NULL and default",
+      "currentNullRows": 0,
+      "repair": "set jsonb default and NOT NULL"
+    },
+    {
+      "object": "public.user_voices.is_active",
+      "difference": "missing NOT NULL",
+      "currentNullRows": 0,
+      "repair": "preserve existing default and set NOT NULL"
+    },
+    {
+      "object": "public.user_voices.updated_at",
+      "difference": "missing NOT NULL",
+      "currentNullRows": 0,
+      "repair": "preserve existing default and set NOT NULL"
+    },
+    {
+      "object": "public.apply_wallet_operation_atomic(text,text,text,numeric,text,jsonb)",
+      "difference": "credit debit guard does not subtract credits_reserved",
+      "currentBodySha256": "be32b5eb416455cbf8c0d4ca08a3bea0f89eda9cd9d6b376e6611739c8ef7f3d",
+      "requiredBodySha256": "6a5ab98a17baf012dde4c127943c27063e3b0e63a957d7b79bc8b6dcb20c9368",
+      "repair": "replace with the reservation-aware body and reassert service_role-only execution"
+    }
+  ],
+  "forwardReconciliation": {
+    "file": "supabase/migrations/20260904031000_reconcile_pending_legacy_semantics.sql",
+    "sha256": "6d6726f4468fba80d3c3d4d9d3cec78210b630019c442af76634bdac7619f8a4",
+    "transactionMode": "self-contained",
+    "applicationAuthorized": true,
+    "applied": true,
+    "expectedDataBackfillRowsAtAuditTime": 0
+  },
+  "requiredExecutionOrder": [
+    "wait until active media tasks are terminal and source migration files are stable",
+    "create and verify a fresh pre-migration database backup receipt",
+    "confirm the local loopback target host, target fingerprint and current migration manifest hash",
+    "apply only the reviewed forward reconciliation through a separately authorized migration channel",
+    "rerun the read-only pending semantic verifier and require 9 of 9 profiles to pass",
+    "only then create a reviewed legacy-ledger adoption receipt and adopt the nine historical versions",
+    "run migration status again and require zero hash drift before any remaining forward migration"
+  ],
+  "failClosedRules": [
+    "never mark a legacy migration applied only because its tables exist",
+    "never adopt when any object, function body, permission, RLS policy, constraint, index or trigger check differs",
+    "never apply the reconciliation without a backup receipt and explicit authorization",
+    "never use the ordinary prefix-closure apply command to bypass the unresolved historical migrations",
+    "never connect this local rehearsal verifier to a non-loopback database"
+  ],
+  "credentialsPrinted": false,
+  "paidModelCalls": 0
+}

@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "../next-env.d.ts",
+    "../src/components/manual-canvas.tsx",
+    "../src/app/api/canvas/route.ts",
+    "./verify-canvas-server-persistence.ts"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../.next",
+    "../backups"
+  ]
+}

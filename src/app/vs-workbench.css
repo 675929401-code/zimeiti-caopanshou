@@ -1,0 +1,47 @@
+/* ============================================
+   工作台风格桥接（vs-workbench）
+   --------------------------------------------
+   用途：让主站工具页（文案提取 / 应用广场 / 分段工具 /
+   视频制作 / 封面制作）复用「智音工坊」的配色体系与工作台宽度。
+
+   用法：页面最外层容器同时挂 `voice-studio-root vs-workbench` 两个类。
+   - voice-studio-root 提供 --vs-* 变量、深色科技蓝背景，
+     并随 [data-theme]/[data-mode] 自动适配明暗与多主题（voice-studio.css）
+   - vs-workbench 把主站变量（--background/--primary 等）桥接到 --vs-*，
+     页面内所有 var(--xxx) 引用与 shadcn 组件零改动即可统一风格。
+
+   设计约束（铁律一）：
+   - 全部样式限定在 .vs-workbench 作用域内，不污染主站其他页面
+   - 不修改 voice-studio.css 的任何现有规则
+   ============================================ */
+
+.vs-workbench {
+  /* 主站变量 → 智音工坊 --vs-* 桥接 */
+  --background: var(--vs-bg);
+  --foreground: var(--vs-text);
+  --card: var(--vs-card);
+  --card-foreground: var(--vs-text);
+  --popover: var(--vs-card);
+  --popover-foreground: var(--vs-text);
+  --primary: var(--vs-primary);
+  --secondary: var(--vs-surface);
+  --secondary-foreground: var(--vs-text-secondary);
+  --muted: var(--vs-surface);
+  --muted-foreground: var(--vs-text-muted);
+  --accent: var(--vs-surface-hover);
+  --accent-foreground: var(--vs-text);
+  --border: var(--vs-border);
+  --input: var(--vs-border);
+  --ring: var(--vs-primary);
+  --text-secondary: var(--vs-text-secondary);
+  --theme-glow: color-mix(in srgb, var(--vs-glow) 15%, transparent);
+  --hover-bg: color-mix(in srgb, var(--vs-primary) 8%, transparent);
+  color: var(--vs-text);
+}
+
+/* 顶栏内容与工作台主体同宽（1400px）
+   仅作用域内生效：chat-view / announcements 等其他使用
+   SubPageHeader 的页面不受影响 */
+.vs-workbench > header > .max-w-7xl {
+  max-width: 1400px;
+}

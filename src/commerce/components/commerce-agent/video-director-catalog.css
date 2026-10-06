@@ -1,0 +1,31 @@
+.ca-video-director-catalog{grid-column:1/-1;width:100%;flex:none;padding:14px 15px 15px;border:1px solid #dfe6f0;border-radius:14px;background:linear-gradient(135deg,#fbfdff 0%,#f6f8fc 56%,#f8f5ff 100%);box-shadow:0 8px 24px #22395b0a;color:#283447}
+.ca-video-director-catalog>header{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:12px}
+.ca-video-director-catalog>header>div:first-child{min-width:0}
+.ca-video-director-kicker{display:inline-flex;align-items:center;gap:6px;color:#64748b;font-size:11px;font-weight:650;letter-spacing:.04em}
+.ca-video-director-catalog h2{display:flex;align-items:baseline;gap:9px;margin-top:3px!important;font-size:18px!important;line-height:1.25}
+.ca-video-director-catalog h2 small{color:#667085;font-size:11px;font-weight:550}
+.ca-video-director-catalog p{margin-top:4px!important;color:#68768a;font-size:11px;line-height:1.55}
+.ca-video-director-actions{display:flex;flex:none;gap:8px}
+.ca-video-director-actions>button{min-height:43px;padding:7px 10px;border:1px solid #dce4ef;border-radius:10px;background:#fff;text-align:left;color:#3d4a5d}
+.ca-video-director-actions>button>span{display:block;min-width:0}
+.ca-video-director-actions strong{display:block;font-size:12px;line-height:1.35}
+.ca-video-director-actions small{display:block;margin-top:2px;color:#758297;font-size:11px;line-height:1.35;white-space:nowrap}
+.ca-video-director-actions>button.selected{border-color:#8eb6f4;background:#edf5ff;color:#2769bd}
+.ca-video-director-actions>.ca-video-clone-entry{border-color:#d8c9f4;background:#faf7ff;color:#6847a4}
+.ca-video-director-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
+.ca-video-director-grid>button{position:relative;display:flex;justify-content:flex-start;min-width:0;min-height:60px;padding:8px 8px 8px 7px;border:1px solid #e3e8f0;border-radius:11px;background:#fff;text-align:left;color:#334155;overflow:hidden}
+.ca-video-director-grid>button:hover{border-color:#afc7eb;background:#f8fbff;box-shadow:0 4px 12px #315d9a0d}
+.ca-video-director-grid>button.selected{border-color:#6e9ee8;background:#edf5ff;color:#205da9;box-shadow:inset 0 0 0 1px #6e9ee826}
+.ca-video-director-avatar{display:flex;align-items:center;justify-content:center;width:38px;height:42px;flex:none;border-radius:8px;background:#edf1f7;color:#718096;overflow:hidden}
+.ca-video-director-avatar img{width:100%;height:100%;object-fit:cover}
+.ca-video-director-copy{min-width:0;flex:1;padding-left:7px;padding-right:3px}
+.ca-video-director-copy>span{display:flex;align-items:center;gap:5px;min-width:0}
+.ca-video-director-copy strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.4}
+.ca-video-director-copy em{flex:none;padding:1px 4px;border-radius:4px;background:#fff0df;color:#ad6500;font-size:9px;font-style:normal}
+.ca-video-director-copy small{display:-webkit-box;margin-top:3px;overflow:hidden;color:#788599;font-size:11px;line-height:1.35;-webkit-box-orient:vertical;-webkit-line-clamp:1}
+.ca-video-director-category{position:absolute;right:5px;top:4px;max-width:58px;overflow:hidden;color:#98a2b3;font-size:9px;line-height:1;text-overflow:ellipsis;white-space:nowrap;opacity:0;transition:opacity .15s}
+.ca-video-director-grid>button:hover .ca-video-director-category,.ca-video-director-grid>button:focus-visible .ca-video-director-category{opacity:1}
+@media(max-width:1350px){.ca-video-director-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media(max-width:1120px){.ca-video-director-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:950px){.ca-video-director-catalog>header{align-items:flex-start;flex-direction:column}.ca-video-director-actions{width:100%;flex-wrap:wrap}.ca-video-director-actions>button{flex:1;min-width:170px}.ca-video-director-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.ca-video-director-catalog{padding:12px 10px}.ca-video-director-catalog h2{font-size:16px!important}.ca-video-director-catalog h2 small{display:block}.ca-video-director-actions{display:grid;grid-template-columns:1fr}.ca-video-director-actions>button{min-width:0}.ca-video-director-actions small{white-space:normal}.ca-video-director-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.ca-video-director-grid>button{min-height:66px;padding:7px 6px}.ca-video-director-avatar{width:34px;height:40px}.ca-video-director-copy{padding-left:6px}.ca-video-director-copy strong{font-size:12px;line-height:1.45}}

@@ -1,0 +1,1380 @@
+{
+  "observedAt": "2026-09-25T05:15:13.385Z",
+  "images": [
+    {
+      "key": "character-face-turnaround",
+      "name": "脸部三视图",
+      "default": false,
+      "version": 10,
+      "category": "人物",
+      "description": "生成正脸、侧脸、半侧脸参考",
+      "hint": "上传清晰人脸图，可补充角色气质、表情或写实程度。",
+      "icon": "/commerce/reference/3ce3907b9ad2701f.png",
+      "recommended": true,
+      "order": 10,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "face",
+          "label": "人脸",
+          "min": 1,
+          "max": 3,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/2ce534269f81f718.png"
+        }
+      ],
+      "example": {
+        "title": "脸部三视图效果示例",
+        "description": "生成正脸、侧脸、半侧脸参考",
+        "images": [
+          "/commerce/reference/9ecb4f94f8702576.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "85117b0328d11ffeac8f471e982da2df53fcc75f81dd11868ea068b5873b8070",
+      "benchmarkSkillPackVersionId": "9d8591db-abbf-4466-b2c3-86daba40206c",
+      "recommendationOrder": 1
+    },
+    {
+      "key": "character-fullbody-sheet",
+      "name": "人物四视图",
+      "default": false,
+      "version": 10,
+      "category": "人物",
+      "description": "生成全身三视角与脸部特写",
+      "hint": "上传包含脸部和身形的人物图，可补充穿搭与人物气质。",
+      "icon": "/commerce/reference/571026c291ca4079.png",
+      "recommended": false,
+      "order": 20,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "model",
+          "label": "模特",
+          "min": 1,
+          "max": 5,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/2ce534269f81f718.png"
+        }
+      ],
+      "example": {
+        "title": "人物四视图效果示例",
+        "description": "生成全身三视角与脸部特写",
+        "images": [
+          "/commerce/reference/ea2f6bb0d3dae083.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "25512dbcd8270adc80286471ab18fcc133ae148f95600436eb55b8076b2f90b0",
+      "benchmarkSkillPackVersionId": "0bec97be-00ac-4d84-bc84-fcb73b4920bb",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "change-face",
+      "name": "模特换脸",
+      "default": false,
+      "version": 7,
+      "category": "人物",
+      "description": "一键替换面部与发型",
+      "hint": "可补充表情、妆容、发型细节等要求，例如：自然微笑、淡妆、保留刘海。",
+      "icon": "/commerce/reference/02ae8370a1ae5342.png",
+      "recommended": true,
+      "order": 30,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "model",
+          "label": "模特",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/3562617e7ff6a3ba.png"
+        },
+        {
+          "key": "face",
+          "label": "人脸",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/2ce534269f81f718.png"
+        }
+      ],
+      "example": {
+        "title": "模特换脸效果示例",
+        "description": "一键替换面部与发型",
+        "images": [
+          "/commerce/reference/ccc1ddaa3571697c.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "bdd1075fba720e9a72036b74be7f520c297aec431504436d1fb1d3c5c8fab8ec",
+      "benchmarkSkillPackVersionId": "e6757b33-e45f-4ed0-9ab7-a23708f0828d",
+      "recommendationOrder": 2
+    },
+    {
+      "key": "dual-face-fusion",
+      "name": "人脸融合",
+      "default": false,
+      "version": 8,
+      "category": "人物",
+      "description": "融合两张人脸生成全新虚拟头像资产",
+      "hint": "可补充融合比例、年龄感、气质、表情等要求，例如：更偏向图1、约 25 岁、清冷感、自然微笑。",
+      "icon": "/commerce/reference/0b8b35b6193652f0.png",
+      "recommended": false,
+      "order": 100,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "face_1",
+          "label": "人脸1",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/2ce534269f81f718.png"
+        },
+        {
+          "key": "face_2",
+          "label": "人脸2",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/2ce534269f81f718.png"
+        }
+      ],
+      "example": {
+        "title": "人脸融合效果示例",
+        "description": "融合两张人脸生成全新虚拟头像资产",
+        "images": [
+          "/commerce/reference/b2500f485e336319.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "e82eb5780893863e8e6e03343c39b5848e2d2addba8f80d257456d75d4cde9fe",
+      "benchmarkSkillPackVersionId": "b20ad246-aa6a-41b2-bb55-1be696b4b0f2",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "change-cloth",
+      "name": "服装上身",
+      "default": false,
+      "version": 15,
+      "category": "商品",
+      "description": "替换模特身上的服装衣物",
+      "hint": "可补充模特姿势、动作、穿搭效果、场景氛围等，例如：自然站立、双手插兜、衣服更宽松一些。",
+      "icon": "/commerce/reference/69b4969b9168a7cb.png",
+      "recommended": true,
+      "order": 30,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "model",
+          "label": "模特",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/3562617e7ff6a3ba.png"
+        },
+        {
+          "key": "cloth",
+          "label": "上身/全身装",
+          "min": 0,
+          "max": 3,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/2133dea5a5133096.png"
+        },
+        {
+          "key": "pants",
+          "label": "下装",
+          "min": 0,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/72686702e2ab925a.png"
+        }
+      ],
+      "example": {
+        "title": "服装上身效果示例",
+        "description": "替换模特身上的服装衣物",
+        "images": [
+          "/commerce/reference/53c1a221d0f347b3.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "9e7766402f359c759cf800faa444c3efcd0811254c407f32e253ce815ac35733",
+      "benchmarkSkillPackVersionId": "80cedd40-61c8-44f5-9cee-ba121b146df5",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "model-product-try-on",
+      "name": "商品使用",
+      "default": false,
+      "version": 10,
+      "category": "商品",
+      "description": "生成真人试用与使用场景",
+      "hint": "上传产品与人物参考图，可补充使用动作、场景和构图。",
+      "icon": "/commerce/reference/de1c9f31b3d66e68.png",
+      "recommended": true,
+      "order": 30,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "model",
+          "label": "模特",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/3562617e7ff6a3ba.png"
+        },
+        {
+          "key": "product",
+          "label": "商品",
+          "min": 1,
+          "max": 5,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/e8bc4ce001e3de1f.png"
+        }
+      ],
+      "example": {
+        "title": "商品使用效果示例",
+        "description": "生成真人试用与使用场景",
+        "images": [
+          "/commerce/reference/bf4df233d823f678.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "94f101a2199cd3609c03e996a2f5d606aa71ec90607e3098f8cac5cbbd531e54",
+      "benchmarkSkillPackVersionId": "98ac0988-68d8-453a-8553-b11a22a50dbd",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "product-white-background",
+      "name": "商品白底图",
+      "default": false,
+      "version": 14,
+      "category": "商品",
+      "description": "生成高级白底商品图与多角度资产",
+      "hint": "可补充拍摄角度、和需要保留的细节等",
+      "icon": "/commerce/reference/6c41ed04dcf4b0e7.png",
+      "recommended": true,
+      "order": 60,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "product",
+          "label": "产品",
+          "min": 1,
+          "max": 9,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/e8bc4ce001e3de1f.png"
+        }
+      ],
+      "example": {
+        "title": "商品白底图效果示例",
+        "description": "生成高级白底商品图与多角度资产",
+        "images": [
+          "/commerce/reference/ec62091c78453770.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "86fd32892b326912e43811cc3d90c48bd84acf4bb2ff31d50a5a5c92c810ab7d",
+      "benchmarkSkillPackVersionId": "41d04fbe-d709-404b-9733-597c1ec1afbf",
+      "recommendationOrder": 3
+    },
+    {
+      "key": "element-replace",
+      "name": "服装改款",
+      "default": false,
+      "version": 7,
+      "category": "商品",
+      "description": "替换服装的面料、印花等",
+      "hint": "可补充面料描述，印花位置等描述",
+      "icon": "/commerce/reference/b18b816670e812db.png",
+      "recommended": false,
+      "order": 100,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "product",
+          "label": "服装",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/2133dea5a5133096.png"
+        },
+        {
+          "key": "material",
+          "label": "面料",
+          "min": 0,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "printing",
+          "label": "印花",
+          "min": 0,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        }
+      ],
+      "example": {
+        "title": "服装改款效果示例",
+        "description": "替换服装的面料、印花等",
+        "images": [
+          "/commerce/reference/dcd9bffa5a3d7b6c.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "89714c550c7d92f8fa7041fba4d11e5601ab1bdf644637e3875cbde9f7987f67",
+      "benchmarkSkillPackVersionId": "467e1f9a-04e4-4f3f-9cdd-ed70485ca725",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "script-storyboard",
+      "name": "脚本故事版",
+      "default": false,
+      "version": 3,
+      "category": "分镜故事版",
+      "description": "根据脚本和素材生成产品故事分镜图。",
+      "hint": "连接图片和脚本卡，补充时长、平台、卖点和视觉要求。",
+      "icon": "",
+      "recommended": false,
+      "order": 70,
+      "surfaces": [
+        "canvas"
+      ],
+      "promptRequired": true,
+      "slots": [
+        {
+          "key": "references",
+          "label": "参考图片",
+          "min": 1,
+          "max": 9,
+          "kinds": [
+            "image"
+          ],
+          "cover": ""
+        }
+      ],
+      "example": {
+        "title": "",
+        "description": "",
+        "images": []
+      },
+      "benchmarkConfigVersion": "79b317e2ec7012fb7864bab5efcbde6a20ea15687c7c0da36ac4a5c94cb32fb4",
+      "benchmarkSkillPackVersionId": "b8d97f84-6bfc-432a-b148-9c7269131a2b",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "storyboard-element-replace",
+      "name": "一键替换分镜",
+      "default": false,
+      "version": 5,
+      "category": "分镜故事版",
+      "description": "保留参考分镜构图，替换人货场元素。",
+      "hint": "上传参考分镜和替换素材，可补充需要替换的人物、产品或背景。",
+      "icon": "",
+      "recommended": false,
+      "order": 80,
+      "surfaces": [
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "nine_grid",
+          "label": "宫格图",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": ""
+        },
+        {
+          "key": "references",
+          "label": "参考素材",
+          "min": 1,
+          "max": 6,
+          "kinds": [
+            "image"
+          ],
+          "cover": ""
+        }
+      ],
+      "example": {
+        "title": "",
+        "description": "",
+        "images": []
+      },
+      "benchmarkConfigVersion": "5ba5a8c6b3f01481d840312586af1c88b44d3679f3ea24523863d5ee3c0b813c",
+      "benchmarkSkillPackVersionId": "e21dcfc4-1329-4cec-bb16-d2900d0a5e36",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "video-reference-first-frame",
+      "name": "视频参考首帧",
+      "default": false,
+      "version": 3,
+      "category": "分镜故事版",
+      "description": "生成适合图生视频的超真实首帧。",
+      "hint": "上传参考图，可补充动作起点、运动方向、主体和画幅要求。",
+      "icon": "",
+      "recommended": false,
+      "order": 90,
+      "surfaces": [
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "references",
+          "label": "参考图片",
+          "min": 1,
+          "max": 9,
+          "kinds": [
+            "image"
+          ],
+          "cover": ""
+        }
+      ],
+      "example": {
+        "title": "",
+        "description": "",
+        "images": []
+      },
+      "benchmarkConfigVersion": "ba3a1b031fde9c7e83981e39b82e4b88da07b15c9b1e2ca55164b8b34f8e13cc",
+      "benchmarkSkillPackVersionId": "63c436d3-efa5-4540-8695-8764df622fbf",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "background-change",
+      "name": "人物入景",
+      "default": false,
+      "version": 6,
+      "category": "场景",
+      "description": "替换模特图背景",
+      "hint": "可补充人物姿势，位置等描述",
+      "icon": "/commerce/reference/f0abaaa0a57822f9.png",
+      "recommended": false,
+      "order": 100,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "model",
+          "label": "模特",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/3562617e7ff6a3ba.png"
+        },
+        {
+          "key": "backround",
+          "label": "背景",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/9b927110420e244f.png"
+        }
+      ],
+      "example": {
+        "title": "人物入景效果示例",
+        "description": "替换模特图背景",
+        "images": [
+          "/commerce/reference/da1d5ce76c34c3b6.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "245eac487a838a012c0f755e7dd77715b44aca28da3fc500a6117d6b9864ddf5",
+      "benchmarkSkillPackVersionId": "d2133391-1e79-42d1-a921-116e73253ec2",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "portrait-realism-enhance",
+      "name": "人物真人感",
+      "default": false,
+      "version": 8,
+      "category": "增强",
+      "description": "AI虚拟人添加真实感",
+      "hint": "上传待优化的人像，可说明需要加强的脸部、手部、发丝或光影。",
+      "icon": "/commerce/reference/ed3fb41b247cf32c.png",
+      "recommended": false,
+      "order": 40,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "model",
+          "label": "模特",
+          "min": 1,
+          "max": 9,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/3562617e7ff6a3ba.png"
+        }
+      ],
+      "example": {
+        "title": "人物真人感效果示例",
+        "description": "AI虚拟人添加真实感",
+        "images": [
+          "/commerce/reference/ab08a5e0dcc76aa1.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "6d089df7496e9fac55cc75eeeaf67e8de8f53e42efa8e529b236b294661c04b2",
+      "benchmarkSkillPackVersionId": "3b296099-fc9b-4dc5-9db9-949550654834",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "product-consistency-reference",
+      "name": "产品一致性",
+      "default": false,
+      "version": 5,
+      "category": "增强",
+      "description": "锁定产品结构、材质、包装和比例。",
+      "hint": "上传产品主图或细节图，可补充需要保留的颜色、包装、logo 和比例。",
+      "icon": "",
+      "recommended": false,
+      "order": 50,
+      "surfaces": [
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "product",
+          "label": "产品",
+          "min": 1,
+          "max": 9,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/10d842c5612f4d97.png"
+        }
+      ],
+      "example": {
+        "title": "",
+        "description": "",
+        "images": []
+      },
+      "benchmarkConfigVersion": "c1f25c78c98483eb986c535a7521611422ecf9dc5796056230b9dc6e8a80f5d6",
+      "benchmarkSkillPackVersionId": "c0f14611-6beb-4667-8431-cb151fc3f14d",
+      "recommendationOrder": 100
+    },
+    {
+      "key": "product-refine",
+      "name": "图片精修",
+      "default": false,
+      "version": 8,
+      "category": "增强",
+      "description": "修复画质、光影和清晰度",
+      "hint": "可补充精修图片的要求，比如瘦脸、美颜等",
+      "icon": "/commerce/reference/3bb031f5f643d941.png",
+      "recommended": true,
+      "order": 100,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": false,
+      "slots": [
+        {
+          "key": "product",
+          "label": "产品",
+          "min": 1,
+          "max": 1,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        }
+      ],
+      "example": {
+        "title": "图片精修效果示例",
+        "description": "修复画质、光影和清晰度",
+        "images": [
+          "/commerce/reference/b10ce07a12303f17.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "c9fd9803c548ec9c58b4bb41c81d19e8b7c797d5d1f308ac7dce583b5c7ece74",
+      "benchmarkSkillPackVersionId": "eaf1b2a2-1276-4dfe-9056-821f820efe88",
+      "recommendationOrder": 4
+    },
+    {
+      "key": "default",
+      "name": "图片默认素材",
+      "default": true,
+      "version": 8,
+      "category": "默认",
+      "description": "工具未选择技能时使用的默认参考素材配置。",
+      "hint": "输入对图片的生成和修改的描述",
+      "icon": "",
+      "recommended": false,
+      "order": 0,
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "promptRequired": true,
+      "slots": [
+        {
+          "key": "product",
+          "label": "图片",
+          "min": 0,
+          "max": 9,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        }
+      ],
+      "example": {
+        "title": "图片创作",
+        "description": "上传参考图片，描述你的想法",
+        "images": [
+          "/commerce/reference/3fadbb70e959fef1.jpg"
+        ]
+      },
+      "benchmarkConfigVersion": "666f4b55851f0556629339d2b3209a5dad4712a8ce6b7483621bb3097d4a6648",
+      "benchmarkSkillPackVersionId": "4473151b-b1d4-4662-a99a-4996ca5f9537",
+      "recommendationOrder": 100
+    }
+  ],
+  "directors": [
+    {
+      "key": "ecommerce-spoken-selling",
+      "name": "口播带货",
+      "description": "真人推荐，建立购买信任",
+      "category": "电商带货",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/reference/e95bf0aa13236d0d.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "67574e6db01c625282b0b20b93d35836542b7b20f17adc42b0ed44596f6f6247",
+      "sortOrder": 10,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "ecommerce-promotion-conversion",
+      "name": "促销转化",
+      "description": "放大优惠，推动立即下单",
+      "category": "电商带货",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/reference/263277855b2b5238.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "fb9bb6737d856132367173ed8ec252d87a085146de2985299d3e15fbd10863e6",
+      "sortOrder": 20,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "ecommerce-scene-seeding",
+      "name": "场景种草",
+      "description": "植入场景，激发使用需求",
+      "category": "电商带货",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/a5db26e469048e54.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "2f71f106e9d2c9b4cea3cadf399764d44fd3ffc3aa1c05dc56c1010eb865c982",
+      "sortOrder": 30,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "ecommerce-pain-point-solution",
+      "name": "痛点解决",
+      "description": "直击痛点，展示解决效果",
+      "category": "电商带货",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/f5f454a30ad7cc68.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "2f81ae1c952035337785997ff7591a5add2ab3adba3471cf818173599cf4c650",
+      "sortOrder": 40,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "ecommerce-function-demo",
+      "name": "功能演示",
+      "description": "演示功能，证明产品价值",
+      "category": "电商带货",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/4aa2a7f18c8e54f2.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "255b48fb754f818a25e4ad5e56a19b0967b817c08d5cae250987ea5684a58a7a",
+      "sortOrder": 50,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "local-store-discovery",
+      "name": "门店发现",
+      "description": "突出特色，制造到店理由",
+      "category": "同城到店",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/de0685208ba51a26.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "04ee39fb12fb66672a3cbdc092c64cbd1a989970a0186bbceacd107f5ad19dc0",
+      "sortOrder": 10,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "local-store-visit-record",
+      "name": "到店实录",
+      "description": "真实体验，建立消费信任",
+      "category": "同城到店",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/reference/e160dffc79895d52.jpg",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "6c64d19e057a100a00c795fe5715ea599bfa70aa94da9ccfa651778945fa5cf0",
+      "sortOrder": 21,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "local-store-signature-experience",
+      "name": "招牌体验",
+      "description": "聚焦招牌，证明门店价值",
+      "category": "同城到店",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/28d476eae11e2b2a.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "e77770b54b9a6f2359e273bb69dfcf82583581d4e1cf816ba68f055e95042a3b",
+      "sortOrder": 30,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "local-store-group-buy-conversion",
+      "name": "同城团购",
+      "description": "突出优惠，推动到店核销",
+      "category": "同城到店",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/reference/d4dafa3aebe90ddb.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "62d80b92ec1151dd654612a558019f6587da61d553b004ba7fb6a108047ff108",
+      "sortOrder": 50,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "advertising-brand-proposition",
+      "name": "品牌主张",
+      "description": "传递理念，建立价值认同",
+      "category": "品牌广告",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/15788e0e51bc0789.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "a97e73676f20fc86c6539c85d3dc87f2cfc648af935f3c3d09981c95ce24906c",
+      "sortOrder": 10,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "advertising-brand-story",
+      "name": "品牌故事",
+      "description": "讲述故事，强化品牌信任",
+      "category": "品牌广告",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/0b51e687fb57313b.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "caad8efddff20e5e3bf7549dbfdd546adcb18497c5eb035a6b1805e89713b33b",
+      "sortOrder": 30,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "advertising-lifestyle",
+      "name": "生活方式",
+      "description": "塑造场景，建立品牌向往",
+      "category": "品牌广告",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/d8fbdd85dbf7dd20.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "ecacb1ff3ff5ab82314c4026bdeb30d05d3adbc0e30b7df5b55532480918cf51",
+      "sortOrder": 40,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "advertising-creative-concept",
+      "name": "创意概念",
+      "description": "创意表达，强化品牌记忆",
+      "category": "品牌广告",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/ae8dda87e28f6a02.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "cb3025d6d72a630d9f9f82ea1345e7ad0b2120cbf260e5cd4b9ea965f392260c",
+      "sortOrder": 50,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "short-drama-dialogue",
+      "name": "对话短剧",
+      "description": "人物冲突，推动剧情发展",
+      "category": "剧情短片",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/4519d065fa8bbe3d.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "67be5e884acbf3ba61650d1fcb8f408fda62a8e396aa669e916f93497c0a6415",
+      "sortOrder": 10,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "short-drama-reversal",
+      "name": "反转短剧",
+      "description": "剧情反转，制造传播记忆",
+      "category": "剧情短片",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/reference/bd49a3004bcfa924.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "c8bf2392113cd3fdf2ab7b6800122448503efdb0918209fc9599ef190ceeadf5",
+      "sortOrder": 20,
+      "recommendationOrder": 200
+    },
+    {
+      "key": "short-drama-suspense",
+      "name": "悬念短剧",
+      "description": "设置悬念，持续吸引观看",
+      "category": "剧情短片",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/39fca0ff3fbbe129.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "daf7051568d156d5b43ce6bce52003f29abc3021f9f5e7eaf894159f910da37a",
+      "sortOrder": 30,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "short-drama-emotional",
+      "name": "情绪短片",
+      "description": "情绪共鸣，强化内容感染",
+      "category": "剧情短片",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/reference/7aff4082badd4a3b.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "f9595c0712cc36202dd0766302b5f81629aaeb1718a32b27e38291aaadaf3af5",
+      "sortOrder": 40,
+      "recommendationOrder": 200
+    },
+    {
+      "key": "short-drama-product-placement",
+      "name": "产品植入",
+      "description": "融入剧情，自然传递价值",
+      "category": "剧情短片",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/f7c97a6046a11b55.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 0,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "2c145382decf80eb2cdc4c3fac03f327db63ea767f5840dbabdfcd8111b5f035",
+      "sortOrder": 50,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "default-director",
+      "name": "默认",
+      "description": "传递理念，建立价值认同",
+      "category": "默认",
+      "recommended": false,
+      "default": true,
+      "icon": "/commerce/reference/15788e0e51bc0789.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 0,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "e4a4f1ec69194aec6cf3a117f59392e70baf5131677b0ed94f94686e99f7b77a",
+      "sortOrder": 10,
+      "recommendationOrder": 100
+    }
+  ],
+  "genericImage": "/commerce/reference/3fadbb70e959fef1.jpg",
+  "upload": "/commerce/reference/0baf8d3046981003.png",
+  "sound": "/commerce/reference/050cec83605f5db4.png",
+  "directorGuide": "/commerce/reference/8def9ca7c2b30f7e.png",
+  "imageCatalogSchemaVersion": 4,
+  "imageCatalogRevision": 1337841977
+}

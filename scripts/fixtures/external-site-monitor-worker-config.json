@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "schedulerId": "fixture-external-cron",
+  "vantage": {
+    "id": "fixture-cn-east-01",
+    "region": "cn-east",
+    "provider": "fixture-only"
+  },
+  "targets": [
+    {
+      "key": "primary",
+      "origin": "https://monitor.zimeiti.cn",
+      "loginPath": "/admin/superzhujunguo",
+      "staticPaths": [
+        "/favicon.ico"
+      ],
+      "loginMarkers": [
+        {
+          "label": "登录标题",
+          "literal": "登录管理后台"
+        },
+        {
+          "label": "密码输入框",
+          "literal": "type=\"password\""
+        }
+      ]
+    }
+  ],
+  "ingest": {
+    "endpoint": "https://ops.zimeiti.cn/api/internal/external-site-monitor/ingest",
+    "keyId": "fixture-probe-v1"
+  }
+}

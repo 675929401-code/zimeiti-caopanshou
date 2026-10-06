@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "paths": {
+      "@/*": ["../src/*"],
+      "sharp": ["../node_modules/sharp/lib/index.d.ts"]
+    }
+  },
+  "include": [
+    "../src/lib/cover-durable-attempt.ts",
+    "../src/lib/cover-generation-attempt.ts",
+    "../src/app/api/cover/attempt/route.ts",
+    "../src/app/api/cover/history/route.ts",
+    "../src/app/api/image/status/route.ts",
+    "../src/components/cover-studio.tsx",
+    "./verify-cover-durable-attempt.ts"
+  ]
+}

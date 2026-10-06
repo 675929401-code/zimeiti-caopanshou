@@ -1,0 +1,635 @@
+{
+  "schemaVersion": 1,
+  "kind": "commerce-configuration-identity-readonly-audit",
+  "checkedAt": "2026-09-25T04:25:06.668Z",
+  "sources": [
+    {
+      "name": "shared-cloud",
+      "urlOriginHash": "935da8553e65",
+      "keyHash": "713066474147",
+      "reachable": true,
+      "releases": [
+        {
+          "id": "5d2d3149-7eba-42bb-a587-0fd9425a573e",
+          "releaseVersion": 2,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "8ffabb741d3849706f26a992bdc0fae66e242dd7710c4d402359ab766f8b8eee",
+          "createdAt": "2026-09-20T22:54:28.320882+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "52ce7a93-fb7f-4a09-9542-a2b46bec8caa",
+          "releaseVersion": 1,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "cc19eeeaa718e7c0d6bddf7a80876f060f49fc0f0d81d395fcb18bb4f447af29",
+          "createdAt": "2026-09-20T21:47:17.796209+08:00",
+          "publishedAt": null
+        }
+      ],
+      "counts": {
+        "total": 2,
+        "draft": 2,
+        "current": 0,
+        "published": 0
+      },
+      "duplicateCurrent": false
+    },
+    {
+      "name": "local-acceptance",
+      "urlOriginHash": "a43416c82b48",
+      "keyHash": "0cd23a13130e",
+      "reachable": true,
+      "releases": [
+        {
+          "id": "50d8e4ad-4b35-42ee-9df9-b660ea5cec16",
+          "releaseVersion": 64,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "f9b3e1c2a5708e9780990b0163b3b88ef3b09d73847d78e491d8b2dc1046e90d",
+          "createdAt": "2026-09-20T08:32:40.193347+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "4b35c8d2-40a4-4267-b197-14bad1433c71",
+          "releaseVersion": 63,
+          "status": "published",
+          "isCurrent": true,
+          "manifestSha256": "c6d6c63819190070b0f12d3a543578e5088388b2e435b784891394f4bcf39d2b",
+          "createdAt": "2026-09-15T15:22:55.752217+08:00",
+          "publishedAt": "2026-09-15T21:12:09.393558+08:00"
+        },
+        {
+          "id": "c10814a4-e9a5-4bc3-b15c-a57f6a0e1cc1",
+          "releaseVersion": 62,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "de0f0f4d4250ac935c256c7038d99151aae6ca6d776204b2346159aff9c52d0d",
+          "createdAt": "2026-09-15T15:20:56.697023+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "12a89dd5-fa02-40e8-8f8e-c980ed81544b",
+          "releaseVersion": 61,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "6ae7c34b6decca7b1c5d137861334df86978b54dec383d2834b6854a5d2c9a8c",
+          "createdAt": "2026-09-15T15:17:47.110847+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "77a42cb9-a42e-4e8b-9ab3-d7b4cb8cce1b",
+          "releaseVersion": 60,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "321cacbd67c7517328d34c0e57dd8aa02eb8336b1a24bbc610e7960d54b2e447",
+          "createdAt": "2026-09-15T15:14:44.193566+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "1f74ad97-49ef-4981-bd53-4dbb8cb0e82d",
+          "releaseVersion": 59,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "4272a040182071ce6775e6c97d437ad4dfbecf051afc10a75e95bd36ab29959c",
+          "createdAt": "2026-09-15T14:57:13.441654+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "d70adfa6-cb1d-4014-a41c-26058304a3f9",
+          "releaseVersion": 58,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "0e2b0ac7a380a04b6f2d7476728942a952930f6edbcef5bb5030e5167a46c1da",
+          "createdAt": "2026-09-15T14:54:07.840656+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "78209220-f43d-4e5c-bf65-114c7b851107",
+          "releaseVersion": 57,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "e9447f4fe4a735ec6c59671cad4766f7f4a5e8619ae9a87398d7d1eb3fff97bf",
+          "createdAt": "2026-09-15T14:50:32.191137+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "02edc6b6-84f9-409d-8298-f5f5d6d99359",
+          "releaseVersion": 56,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "bd0dd8b5671263004bb41edf204e24c863fccdcc5e4ebfdf3a81e83dacecda01",
+          "createdAt": "2026-09-15T14:48:42.826159+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "96b717cb-7fb6-4179-a738-ed44b6300624",
+          "releaseVersion": 55,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "1b9382ba646cb4ecc431cf985dd1e0c4c281240a1965e6d4d6ec7dd5c8c8d6f7",
+          "createdAt": "2026-09-15T14:46:32.467622+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "9a72f114-db5e-4058-8446-985cbc0a6f25",
+          "releaseVersion": 54,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "37b55588d62a696aec7c54462274af5b00191603f865ee7a01e50f5d0747fed4",
+          "createdAt": "2026-09-15T14:42:16.676889+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "75862e17-2795-4d5b-a54d-cdf42b6a10d0",
+          "releaseVersion": 53,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "9413a9b9d509e4fe0d4f773843966668dc55afa827c99f9664750bfec17351bf",
+          "createdAt": "2026-09-15T14:40:38.660892+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "ffd6cf3b-11e2-4165-8f89-a07a7c8577f8",
+          "releaseVersion": 52,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "2908e71f70fa50aba58504b212a5d86c96b98fbfa95de5915d25f42d7a982456",
+          "createdAt": "2026-09-15T14:38:43.53292+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "45200b2e-bcdc-418c-ad70-5a4cbf12d0cf",
+          "releaseVersion": 51,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "31f71c0abc183f1a0e539071ab56edd088f426f39c84372f69a22a8ec2772ba0",
+          "createdAt": "2026-09-15T14:35:58.734986+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "1632b9aa-71a1-4ed1-837f-9b9509d1ad46",
+          "releaseVersion": 50,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "4d0f65d0d9391db844a92e0d34195f4a0777b044fef39e9237328b9c1b33d4e9",
+          "createdAt": "2026-09-15T14:30:00.936422+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "a90e0577-eeee-4e4b-a840-1ad6b9cea542",
+          "releaseVersion": 49,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "8e1034c5b40a98caad1e054f666832ae1869fbbc1af6cbd3c861b2eeac21df1d",
+          "createdAt": "2026-09-15T14:27:50.495856+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "e609c111-c257-46fc-9d46-1c57ac84b70e",
+          "releaseVersion": 48,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "da1f162f509decfcaabe2b31bb9730dfa4cd8c6d9e74bd043f8a3454caa38c77",
+          "createdAt": "2026-09-15T14:24:26.170217+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "07465b40-7b60-4225-bf9f-f26be17255c2",
+          "releaseVersion": 47,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "1e65c10db5a8e9153afeb2a39f30ee1419e4702a9fbb9eddcef6d6e3a3f69e3b",
+          "createdAt": "2026-09-15T14:21:45.183195+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "7f74c359-8edd-4f57-ba01-2bb86ed71349",
+          "releaseVersion": 46,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "a046b5b07f7acfdc8bd1112227b4fc694446f88246faf67cd3d48873e1d0f5ae",
+          "createdAt": "2026-09-15T14:18:55.14954+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "96c7427d-9f27-4fd9-831a-4780cdab40ab",
+          "releaseVersion": 45,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "669a220b0d3060c2f720e39cc79884708e8bffb4501383b62d61236fef78f09e",
+          "createdAt": "2026-09-15T14:11:54.120792+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "d79a4c12-e289-4430-bf45-a10c1df9abb1",
+          "releaseVersion": 44,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "96042728aa2335a69599ea8a1cdbe39895de827b820d32e42c9b501c0f0a1082",
+          "createdAt": "2026-09-15T14:09:32.583042+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "17b756c1-6469-44ff-92b2-4ed963779835",
+          "releaseVersion": 43,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "70da974076de5821b91a621c5341dc337bc69babdb3f51f2dfc76c411dd791fc",
+          "createdAt": "2026-09-15T14:05:50.793328+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "1ccc7957-8736-40b3-b5b5-0d2f064441ae",
+          "releaseVersion": 42,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "58683d1ca9df0dfbf6e3e4e1935bbd6cd0fba5ce52ca9229ab2d595d6fa0446a",
+          "createdAt": "2026-09-15T14:03:05.353367+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "f2051789-df24-4614-9c15-84212f8b0c49",
+          "releaseVersion": 41,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "7e61eaa529b5bbb23e88f8e89e1da18a4dea602e3df8025a249dc82c4a5b75b6",
+          "createdAt": "2026-09-15T14:00:40.888847+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "dbf60249-c141-49e6-b7ec-1c8ead1cb471",
+          "releaseVersion": 40,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "56bb152f399c3e7ef9a3e5423f4108b0fe1cc73c95882e3be857bf771a6e7c11",
+          "createdAt": "2026-09-15T13:59:09.256273+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "0e8932fc-056d-48a3-9560-16a346b14043",
+          "releaseVersion": 39,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "56e3a940fee99fc234f66de8d85a166252fe6149a2fca353f4873b260bcab520",
+          "createdAt": "2026-09-15T13:56:57.551935+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "24c49736-7ca4-4114-8177-7adcd38874e8",
+          "releaseVersion": 38,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "8c186e82a7786cfc82e6e4ff0968f35eb5abf6c6cc0cb33232511608d3faaddf",
+          "createdAt": "2026-09-15T13:55:03.978236+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "e51b0ca4-049a-40c8-b585-852650730429",
+          "releaseVersion": 37,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "a2425f8660cf24ea85be4e19e3476699fc7d500588670495e29408ac7ef803ed",
+          "createdAt": "2026-09-15T13:49:57.184399+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "019fd308-a4a1-4d2f-8ad1-52b693010a14",
+          "releaseVersion": 36,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "03fb4f7b4be9554b4405356b0cdaf446374e8158ab8458d6ae415945a7adbc4c",
+          "createdAt": "2026-09-15T13:44:04.648281+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "913e62c8-13da-49f5-b616-e555f477442b",
+          "releaseVersion": 35,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "6fefa01c8eb4bdb87b2722257868f1356589958b7f40f71c14f6fc4e0ff3dc43",
+          "createdAt": "2026-09-15T13:41:32.828954+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "7a4434e6-a510-49b2-ad7e-d6a337e9ad9e",
+          "releaseVersion": 34,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "045bf8f25b6827bc3bffdfbded09220e3152cdaa7074fbc3556ac4f4423d71e1",
+          "createdAt": "2026-09-15T13:38:59.746836+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "de1d5b32-df6d-4591-9640-7cb543ab9451",
+          "releaseVersion": 33,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "ae852d4e4a659edd06703616dd587a355c28d748d7faf9ba0e5a1dc4318a7a7b",
+          "createdAt": "2026-09-15T13:34:39.749007+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "2c63d4dc-b292-4c7b-9be0-b73e0c510475",
+          "releaseVersion": 32,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "be15efceb016f6e07446e9948be55a0e9e920f6d6a98dfbcc6f11127ae8ec2e3",
+          "createdAt": "2026-09-15T13:32:34.708856+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "8d53d40a-46bc-495b-9fd2-f9458e740eef",
+          "releaseVersion": 31,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "f54f26621b0acc88d756f855aef7496ad0dec21a32a863fad6c45f8ef2abe649",
+          "createdAt": "2026-09-15T13:30:20.942065+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "80dd48db-5325-407a-8cd9-28489f2db887",
+          "releaseVersion": 30,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "ea7f51b9e265b9d78084aa1d0b0460d8bc95a03ca8eb616248da08787efb708e",
+          "createdAt": "2026-09-15T13:19:44.544758+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "062e09d2-bb1a-4a69-8d6a-5200da4274d0",
+          "releaseVersion": 29,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "f9336ee9b4989c240667427639e5dfa9340b0948b347f85f20ce99622c3bc262",
+          "createdAt": "2026-09-15T13:17:51.337061+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "b310b250-6b31-42ac-a6af-71b522b51f30",
+          "releaseVersion": 28,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "d4bf45b2cca0e4ea5a398c92c7b5e20374d10960701f15bc510651199bb67e94",
+          "createdAt": "2026-09-15T13:14:57.176841+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "a77ecf21-9551-4cc8-a170-23975e2ca186",
+          "releaseVersion": 27,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "b31d4b96fc7adfe5bf099cd84a658f2d9218946940cf35fb7aba2aecefe400de",
+          "createdAt": "2026-09-15T13:08:34.330625+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "96261d91-7d49-420e-8488-3fbece624d5a",
+          "releaseVersion": 26,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "7bc273922dc964c6246b2414e10ac9254536eeb068819aeda90f07f8533bf59c",
+          "createdAt": "2026-09-15T13:06:48.946078+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "45f0d40e-3658-4575-9ef7-4ab66a0e910f",
+          "releaseVersion": 25,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "5560323914999b54bb939d026277791662e748c55ddc8eda7234742425a817ae",
+          "createdAt": "2026-09-15T13:01:09.091117+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "380a7979-0775-4b4f-85bb-501d5cbb8f3d",
+          "releaseVersion": 24,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "b92e375ff892bee070775d04632b805f0aae50bc8c9dc22c2005c59b89c3ee18",
+          "createdAt": "2026-09-15T12:58:05.218977+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "9af32a1a-bf04-4490-9289-d49b0bffd09c",
+          "releaseVersion": 23,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "04d09bad4dd806ee24ce079f9b78d24868b4dfb330f9e2656a090cc5464deda5",
+          "createdAt": "2026-09-15T12:54:35.548029+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "880376ad-d6f2-4693-814d-4357344f029d",
+          "releaseVersion": 22,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "b781c23f7c211bed8452c24262648d117317cc9e68a00331d36292c908232e63",
+          "createdAt": "2026-09-15T12:49:14.322746+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "26a94d67-5389-4449-a483-673587f6a47d",
+          "releaseVersion": 21,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "6f767e2518bae99fab9691d0e2e07d2ff4cdc76de99462c43cecbb0e7bb295a3",
+          "createdAt": "2026-09-15T12:43:14.394+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "4e1b661c-da7e-4544-859a-13117c7ee2dc",
+          "releaseVersion": 20,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "a4255358bc4a06520e3cdb42724727ae038a732f569c56f9220fe2af77784df1",
+          "createdAt": "2026-09-15T12:40:31.834262+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "8cac6e03-17d2-4ee8-939e-36386e35c0a7",
+          "releaseVersion": 19,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "63b24decc835e3b2f4ac2ec8bde543838dd45125915ee737bbbf77b6c3b8a214",
+          "createdAt": "2026-09-15T12:36:47.385468+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "93d1e4d2-4864-47b0-b5bc-c1b5fd04a073",
+          "releaseVersion": 18,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "fec211dabfd812e04993557784e86454e148cb130ce7a915f438b3d7630dab2b",
+          "createdAt": "2026-09-15T12:35:13.628275+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "cdf204bc-7f2f-456c-9748-e49941aa4f38",
+          "releaseVersion": 17,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "56c7a893adad210269e4fdae76ee8597d885da275262ca8e30fc29956566b6ce",
+          "createdAt": "2026-09-15T12:26:42.365889+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "c69d75e0-5976-4315-b2c6-5eed9e09ffe5",
+          "releaseVersion": 16,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "b4402067807b2e5cb5a863babc1d8b52508001c4f20ac0afd056a7de60e76ff8",
+          "createdAt": "2026-09-15T12:12:55.53697+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "e1ba0d0d-ff33-4b08-b221-73e203ba4b8a",
+          "releaseVersion": 15,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "41fbcc864f4a12b22e2e10583a782cb68ba26c777810555976da9fbb59ed130e",
+          "createdAt": "2026-09-15T12:05:08.243178+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "6b0cb9d6-698b-4d3b-98e8-c7f9630be00c",
+          "releaseVersion": 14,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "9e0c114abf5728e59b69f47397f5670a1a09b102edc17b3dd005993ce35539f5",
+          "createdAt": "2026-09-15T11:59:48.004719+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "b8972b21-64f6-4fa2-a541-dd709ceee5d0",
+          "releaseVersion": 13,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "fc81b59f72013e58b3fce998a74db23640c7cac346ac878417fb297f1df93548",
+          "createdAt": "2026-09-15T11:21:46.467671+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "de0bdfb7-be11-4965-bfeb-1d8abbe14641",
+          "releaseVersion": 12,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "693821a89b30fb1906062044b99b4d939fb1a53a4e75bd345f424e26391f6c2d",
+          "createdAt": "2026-09-15T11:19:35.375748+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "512a97c1-9f28-4920-a4cc-bbc5635fc161",
+          "releaseVersion": 11,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "aac749a03c65f638478c68e249097d9d88bae90270a76659dea101dff85cc6cd",
+          "createdAt": "2026-09-15T11:17:49.266875+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "ff01f662-460b-46e1-a4e5-f84fa3ac5252",
+          "releaseVersion": 10,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "48978ab470217c3f2108681d1ebef51c512fc2d41db1d4095ee5ec1f48da2228",
+          "createdAt": "2026-09-15T11:15:38.763602+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "835338a9-316a-43af-b855-742dd2f29cf4",
+          "releaseVersion": 9,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "03f4b31d86f731748f18e9ead0580f7c67ead13d1450a32850a020d7e36b1af6",
+          "createdAt": "2026-09-15T11:12:43.449405+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "1816e061-d2e3-4c0e-81a4-40c7d1b87b2d",
+          "releaseVersion": 8,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "79bf7ce301acace9c0a7b648d3c56524422facb69bfd4ecc57785ac5aab5f23e",
+          "createdAt": "2026-09-15T10:26:25.377706+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "5ea5c59e-4078-40fa-9ae7-d205032737b1",
+          "releaseVersion": 7,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "7c473bd459a17bda0421c6e2d89d2f002b2c02ff62fcd358b0fe4241dc7f75fd",
+          "createdAt": "2026-09-15T10:22:19.347711+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "86a1db32-f748-433a-8d36-a1d5a7ddf1c9",
+          "releaseVersion": 6,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "bf561be31df4ed5258a84727d6451ddc91bdcfa79f0d0f6e835596d5b36bbcd4",
+          "createdAt": "2026-09-15T10:14:50.141594+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "a59e0994-44dc-4faa-80e4-f43f327f48c1",
+          "releaseVersion": 5,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "c7e8cea5faf751b8ba66f4d11c1d82bceebea7a9d9c4c9408b47bf83ef7c6b50",
+          "createdAt": "2026-09-15T10:01:32.781731+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "314e37e0-a409-4a0e-b0c9-ee381e33f6c1",
+          "releaseVersion": 4,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "8c73ba0018b4044d875480a514c07c62b0ee408bf3ca2ea516866f6ccd0c8031",
+          "createdAt": "2026-09-15T09:20:47.017255+08:00",
+          "publishedAt": null
+        },
+        {
+          "id": "7961111f-04f8-4ac1-b62b-3038a0bdd7eb",
+          "releaseVersion": 3,
+          "status": "superseded",
+          "isCurrent": false,
+          "manifestSha256": "a01fda9229e3beb7b5b88aef77db8fffb83c15da135aa01c906a2eb8b89ac4be",
+          "createdAt": "2026-09-15T08:43:56.552194+08:00",
+          "publishedAt": "2026-09-15T08:43:56.815568+08:00"
+        },
+        {
+          "id": "d14b4fa8-d82d-409d-8794-f8bb933dc827",
+          "releaseVersion": 2,
+          "status": "superseded",
+          "isCurrent": false,
+          "manifestSha256": "a43dc6491e2d0aab18ab5b712441ebdd81bf3afe44f195eb37d3ced8f18644fa",
+          "createdAt": "2026-09-15T08:00:29.780106+08:00",
+          "publishedAt": "2026-09-15T08:18:31.69364+08:00"
+        },
+        {
+          "id": "79bb5c0a-55da-4813-93a5-d40a4e0e6b73",
+          "releaseVersion": 1,
+          "status": "draft",
+          "isCurrent": false,
+          "manifestSha256": "872cef4275a364eb9773bf43af329f22cbae2db885779372ec2d86859b294377",
+          "createdAt": "2026-09-15T04:38:05.923675+08:00",
+          "publishedAt": null
+        }
+      ],
+      "counts": {
+        "total": 64,
+        "draft": 61,
+        "current": 1,
+        "published": 1
+      },
+      "duplicateCurrent": false
+    }
+  ],
+  "identityConclusion": "shared-cloud 与 local-acceptance 是不同持久化身份；只能分别报告，不能把 release 数量串成同一时间线。",
+  "writes": 0,
+  "providerCalls": 0,
+  "paidGenerationCalls": 0
+}

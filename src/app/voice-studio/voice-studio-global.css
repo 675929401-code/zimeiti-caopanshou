@@ -1,0 +1,47 @@
+/* ============================================
+   智音工坊 — 路由级全局规则（html/body）
+   --------------------------------------------
+   本文件包含无法限定在 .voice-studio-root 作用域内的
+   html/body 级规则（滚动条、overflow）。
+   仅由 voice-studio/layout.tsx 导入，只在 /voice-studio/*
+   路由下加载，不会污染主站其他页面。
+   （从 voice-studio.css 末尾迁移而来，规则内容保持不变）
+   ============================================ */
+
+/* ===== 苹果风标准滚动条 [用户最右 · 内容够时不显示] ===== */
+html, body {
+  /* Firefox: 标准灰色，内容超出时显示 */
+  scrollbar-width: auto;
+  scrollbar-color: rgba(127, 127, 127, 0.45) transparent;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: transparent;
+}
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.35);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.2s ease;
+}
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 127, 127, 0.65);
+  background-clip: padding-box;
+}
+html::-webkit-scrollbar-thumb:active,
+body::-webkit-scrollbar-thumb:active {
+  background: rgba(127, 127, 127, 0.85);
+  background-clip: padding-box;
+}
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner {
+  background: transparent;
+}

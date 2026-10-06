@@ -1,0 +1,127 @@
+# 智音工坊 V3.0 — 腾讯云服务器部署指令
+
+## 给 Coze 智能体（复制以下全部内容）
+
+```
+请帮我把智音工坊部署到腾讯云服务器，接入主站 zyuani8.com。
+
+=== 第1步：服务器部署 ===
+
+1. 连接服务器（SSH）
+   ssh root@你的服务器IP
+
+2. 安装 Node.js（如已安装则跳过）
+   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+   apt-get install -y nodejs
+   node --version  # 确认 v22.x
+
+3. 克隆项目
+   cd /var/www
+   git clone https://gitee.com/zhujunguo/voice-platform-20250719.git voice-studio
+   cd voice-studio
+
+4. 安装依赖并初始化
+   npm install
+   npx prisma generate
+   npx prisma db push
+   npx prisma db seed
+
+5. 生产构建并启动
+   npm run build
+   nohup npm start > /var/log/voice-studio.log 2>&1 &
+
+6. 验证
+   curl http://localhost:3000   # 应返回 HTML 页面
+
+=== 第2步：Nginx 反向代理 ===
+
+1. 安装 Nginx（如已安装则跳过）
+   apt-get install -y nginx
+
+2. 配置反向代理
+   编辑 /etc/nginx/sites-available/zyuani8.com.conf：
+
+   server {
+       listen 80;
+       server_name zyuani8.com;
+
+       # 主站静态文件
+       root /var/www/zyuani8.com;
+       index index.html;
+
+       # 智音工坊 — 反向代理到 /voice 路径
+       location /voice {
+           proxy_pass http://127.0.0.1:3000;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection 'upgrade';
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_cache_bypass $http_upgrade;
+       }
+   }
+
+3. 启用配置
+   ln -sf /etc/nginx/sites-available/zyuani8.com.conf /etc/nginx/sites-enabled/
+   nginx -t            # 测试配置
+   systemctl reload nginx
+
+=== 第3步：主站导航栏加按钮 ===
+
+在 zyuani8.com 的主页 HTML 导航栏中，添加：
+   <a href="/voice" class="nav-link">语音合成</a>
+
+文件位置（根据实际主站目录调整）：
+   /var/www/zyuani8.com/index.html
+
+=== 第4步：验证 ===
+
+浏览器访问：
+   https://zyuani8.com/voice
+   - 应打开智音工坊完整页面
+   - 音色库、语音合成、音色模仿 均可正常使用
+
+=== 端口说明 ===
+- 智音工坊: localhost:3000（不对外暴露）
+- 用户访问: zyuani8.com/voice → Nginx → localhost:3000
+
+=== 管理员账号 ===
+邮箱: admin@voicestudio.com
+密码: admin123456
+```
+
+## 如果已有 Nginx 主站配置
+
+如果 zyuani8.com 已有 Nginx 配置，只需在原有 server 块中添加 location：
+```
+location /voice {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection 'upgrade';
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache_bypass $http_upgrade;
+}
+```
+
+## 重启服务
+
+如果服务器重启，智音工坊需要手动启动：
+```bash
+cd /var/www/voice-studio
+export PORT=3000
+nohup npm start > /var/log/voice-studio.log 2>&1 &
+```
+
+建议后续配置 PM2 做进程守护：
+```bash
+npm install -g pm2
+pm2 start npm --name voice-studio -- start
+pm2 save
+pm2 startup   # 开机自启
+```

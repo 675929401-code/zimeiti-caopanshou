@@ -1,0 +1,507 @@
+/* P2-B visual layer. It is intentionally isolated from workbench-specific CSS. */
+
+[data-theme="nocturne"],
+[data-theme="aurora"] {
+  --ui-surface: color-mix(in srgb, var(--card) 82%, transparent);
+  --ui-surface-strong: color-mix(in srgb, var(--card) 94%, transparent);
+  --ui-line: color-mix(in srgb, var(--border) 82%, transparent);
+  --ui-line-strong: color-mix(in srgb, var(--primary) 32%, var(--border));
+  --ui-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.18);
+  --ui-shadow-md: 0 16px 42px rgba(0, 0, 0, 0.26);
+  --ui-focus: 0 0 0 3px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+
+[data-theme="aurora"] {
+  --ui-surface: rgba(8, 24, 45, 0.72);
+  --ui-surface-strong: rgba(6, 19, 38, 0.93);
+  --ui-line: rgba(126, 218, 255, 0.18);
+  --ui-line-strong: rgba(87, 230, 255, 0.38);
+}
+
+/* Keyboard focus is explicit without changing pointer interactions. */
+[data-theme] :where(
+  .nav-pill,
+  .category-tab,
+  .agent-card-hover,
+  .sidebar-quick-btn,
+  .sidebar-conv-item,
+  .theme-switcher-trigger,
+  .sub-page-header button,
+  .login-form-shell button,
+  .login-form-shell input,
+  .announcement-dialog button
+):focus-visible {
+  outline: 2px solid var(--primary) !important;
+  outline-offset: 2px;
+  box-shadow: var(--ui-focus) !important;
+}
+
+/* Sidebar and navigation: preserve information architecture, refine grouping. */
+[data-theme] .sidebar-shell {
+  border-color: var(--ui-line) !important;
+}
+
+[data-theme] :where(.sidebar-brand-card, .sidebar-tool-card, .sidebar-glass-card) {
+  border: 1px solid var(--ui-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+[data-theme] .sidebar-conv-item {
+  min-height: 38px;
+  border: 1px solid transparent;
+}
+
+[data-theme] .sidebar-conv-item:hover,
+[data-theme] .sidebar-conv-item.active {
+  border-color: var(--ui-line);
+}
+
+[data-theme] .sidebar-tool-heading {
+  letter-spacing: 0;
+}
+
+[data-theme] :where(.sidebar-bell-btn, .theme-switcher-trigger) {
+  min-width: 40px;
+  min-height: 40px;
+  border: 1px solid transparent;
+}
+
+[data-theme] :where(.sidebar-bell-btn, .theme-switcher-trigger):hover,
+[data-theme] :where(.sidebar-bell-btn, .theme-switcher-trigger)[data-state="open"] {
+  border-color: var(--ui-line-strong);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--foreground);
+}
+
+.theme-switcher-menu {
+  border-radius: 8px !important;
+  box-shadow: var(--ui-shadow-md);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.theme-switcher-option {
+  border-radius: 6px !important;
+}
+
+@media (max-width: 640px) {
+  [data-theme] .theme-switcher-trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Main navigation keeps every existing destination, with clearer grouping. */
+[data-theme] .nav-bar-wrapper {
+  margin: 8px 16px 4px !important;
+  border: 1px solid var(--ui-line) !important;
+  border-radius: 8px !important;
+  background: var(--ui-surface-strong) !important;
+  box-shadow: var(--ui-shadow-sm) !important;
+}
+
+[data-theme] .nav-bar-container {
+  min-height: 44px;
+  padding-inline: 8px !important;
+}
+
+[data-theme] .nav-pill {
+  min-height: 36px;
+  border-radius: 6px !important;
+  letter-spacing: 0 !important;
+}
+
+[data-theme] .nav-group-divider {
+  height: 22px;
+  opacity: 0.72;
+}
+
+[data-theme] .marketplace-category-bar {
+  margin: 8px 16px 10px !important;
+  border: 1px solid var(--ui-line) !important;
+  border-radius: 8px !important;
+  background: var(--ui-surface) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14) !important;
+}
+
+[data-theme] .category-tab {
+  border-radius: 6px !important;
+  letter-spacing: 0 !important;
+}
+
+/* Marketplace: same ordering and column formula, more breathing room and stable content. */
+[data-theme] .marketplace-scroll {
+  scrollbar-gutter: stable;
+}
+
+[data-theme] .marketplace-agent-grid {
+  align-items: stretch;
+  padding-block: 4px 28px;
+}
+
+[data-theme] .marketplace-agent-grid > * {
+  min-width: 0;
+}
+
+[data-theme] .marketplace-agent-grid .agent-card-hover {
+  min-height: 112px;
+  height: 100%;
+  border-radius: 8px !important;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+[data-theme] .marketplace-agent-avatar {
+  border-radius: 8px !important;
+}
+
+[data-theme] .marketplace-agent-title,
+[data-theme] .marketplace-agent-description {
+  overflow-wrap: anywhere;
+  letter-spacing: 0 !important;
+}
+
+[data-theme] .marketplace-agent-title {
+  line-height: 1.3 !important;
+}
+
+[data-theme] .marketplace-agent-description {
+  max-width: 68ch;
+}
+
+[data-theme="aurora"] .marketplace-agent-grid .agent-card-hover {
+  border-color: var(--ui-line) !important;
+  background:
+    linear-gradient(145deg, rgba(14, 35, 62, 0.78), rgba(6, 19, 37, 0.72)),
+    var(--ui-surface) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    var(--ui-shadow-sm);
+}
+
+[data-theme="aurora"] .marketplace-agent-grid .agent-card-hover:hover,
+[data-theme="aurora"] .marketplace-agent-grid .agent-card-hover:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--ui-line-strong) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    var(--ui-shadow-md),
+    0 0 20px rgba(87, 230, 255, 0.07) !important;
+}
+
+/* Shared secondary page header. No workbench card selectors live here. */
+[data-theme] .sub-page-header {
+  --subpage-header-height: 60px;
+  --subpage-header-inline: clamp(12px, 2.2vw, 30px);
+  --subpage-header-bg: linear-gradient(92deg, rgba(7, 27, 40, 0.58), rgba(9, 17, 38, 0.5));
+  --subpage-header-border: rgba(150, 218, 232, 0.18);
+  --subpage-control-bg: rgba(9, 25, 39, 0.34);
+  --subpage-control-bg-hover: rgba(18, 46, 65, 0.54);
+  --subpage-control-border: rgba(158, 220, 235, 0.18);
+  --subpage-control-border-hover: rgba(105, 231, 255, 0.34);
+  --subpage-control-text: color-mix(in srgb, var(--foreground) 68%, transparent);
+  --subpage-control-muted: color-mix(in srgb, var(--muted-foreground) 86%, transparent);
+  border-color: var(--subpage-header-border) !important;
+  background: var(--subpage-header-bg) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 10px 28px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(22px) saturate(1.16);
+  -webkit-backdrop-filter: blur(22px) saturate(1.16);
+}
+
+[data-theme] .sub-page-header-inner {
+  width: min(1480px, calc(100vw - 24px));
+  min-width: 0;
+  height: var(--subpage-header-height);
+  padding-inline: var(--subpage-header-inline);
+  gap: clamp(8px, 1.4vw, 16px);
+}
+
+[data-theme] .sub-page-left,
+[data-theme] .sub-page-actions {
+  gap: 8px;
+}
+
+[data-theme] :where(.sub-page-back, .sub-page-open, .sub-page-nav-button) {
+  height: 40px;
+  min-height: 40px;
+  border: 1px solid var(--subpage-control-border);
+  border-radius: 12px !important;
+  background: var(--subpage-control-bg);
+  color: var(--subpage-control-muted);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.052),
+    0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme] :where(.sub-page-back, .sub-page-open, .sub-page-nav-button):hover {
+  border-color: var(--subpage-control-border-hover);
+  background: var(--subpage-control-bg-hover);
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    0 10px 24px rgba(0, 0, 0, 0.14),
+    0 0 18px color-mix(in srgb, var(--primary) 9%, transparent);
+}
+
+[data-theme] .sub-page-back {
+  gap: 7px;
+  min-width: 104px;
+  padding-inline: 13px;
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--subpage-control-border));
+  background: color-mix(in srgb, var(--primary) 9%, transparent);
+  color: color-mix(in srgb, var(--primary) 82%, var(--foreground));
+}
+
+[data-theme] .sub-page-open {
+  gap: 6px;
+  padding-inline: 12px;
+}
+
+[data-theme] .sub-page-back-icon {
+  width: 15px;
+  height: 15px;
+}
+
+[data-theme] .sub-page-open-icon {
+  width: 14px;
+  height: 14px;
+}
+
+[data-theme] .sub-page-nav-button {
+  padding-inline: 12px;
+}
+
+[data-theme] .sub-page-nav-button[data-variant="primary"] {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--subpage-control-border));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: color-mix(in srgb, var(--primary) 82%, var(--foreground));
+}
+
+[data-theme] .sub-page-nav-button[data-active="true"] {
+  border-color: color-mix(in srgb, var(--primary) 48%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 24%, transparent), rgba(105, 231, 255, 0.12));
+  color: var(--foreground);
+}
+
+[data-theme] .sub-page-nav-icon {
+  width: 14px;
+  height: 14px;
+}
+
+[data-theme] .sub-page-heading {
+  overflow: hidden;
+  gap: 8px;
+}
+
+[data-theme] .sub-page-heading > span svg {
+  width: 20px;
+  height: 20px;
+}
+
+[data-theme] .sub-page-title {
+  color: var(--foreground) !important;
+  font-size: 18px;
+  letter-spacing: 0 !important;
+  line-height: 1.12;
+}
+
+[data-theme] .sub-page-subtitle {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.25;
+  letter-spacing: 0.02em !important;
+  opacity: 0.82;
+}
+
+[data-theme] .sub-page-actions {
+  max-width: min(40%, 520px);
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+[data-theme] .sub-page-actions::-webkit-scrollbar {
+  display: none;
+}
+
+[data-theme] .sub-page-inline-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+[data-theme] .sub-page-wallet-pill {
+  display: inline-flex;
+  height: 40px;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--subpage-control-border);
+  border-radius: 12px;
+  background: var(--subpage-control-bg);
+  color: var(--subpage-control-text);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme] .sub-page-wallet-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+[data-theme] .sub-page-wallet-pill span {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+[data-theme] .sub-page-mini-action {
+  display: inline-flex;
+  height: 30px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Login surface: visual-only; form fields and submit handlers remain unchanged. */
+[data-theme] .login-panel {
+  border-radius: 8px !important;
+  border-color: var(--ui-line) !important;
+  background: var(--ui-surface-strong) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    var(--ui-shadow-md) !important;
+}
+
+[data-theme] .login-form-shell :where(input, button, [role="tab"]) {
+  border-radius: 8px !important;
+}
+
+[data-theme="aurora"] .login-panel {
+  background:
+    linear-gradient(145deg, rgba(13, 35, 62, 0.9), rgba(4, 16, 32, 0.94)),
+    var(--ui-surface-strong) !important;
+}
+
+/* Announcement visual layer stays scoped to its dialog. */
+[data-theme] .announcement-dialog {
+  border-radius: 8px !important;
+  border-color: var(--ui-line) !important;
+  background: var(--ui-surface-strong) !important;
+  box-shadow: var(--ui-shadow-md) !important;
+}
+
+@media (max-width: 767px) {
+  [data-theme] .marketplace-scroll {
+    padding-left: 12px !important;
+  }
+
+  [data-theme] .nav-bar-wrapper,
+  [data-theme] .marketplace-category-bar {
+    margin-inline: 10px !important;
+  }
+
+  [data-theme] .nav-bar-container {
+    min-height: 42px;
+    padding-inline: 4px !important;
+  }
+
+  [data-theme] .marketplace-scroll > div {
+    padding-right: 12px !important;
+  }
+
+  [data-theme] .marketplace-agent-grid {
+    padding-bottom: 20px;
+  }
+
+  [data-theme] .sub-page-header-inner {
+    width: calc(100vw - 20px);
+    height: 56px;
+    padding-inline: 10px;
+    gap: 8px;
+  }
+
+  [data-theme] .sub-page-back {
+    min-width: 36px;
+    width: 36px;
+    height: 40px;
+    padding-inline: 0;
+  }
+
+  [data-theme] .sub-page-open {
+    display: none;
+  }
+
+  [data-theme] .sub-page-heading {
+    justify-content: center;
+  }
+
+  [data-theme] .sub-page-title {
+    font-size: 15px;
+    max-width: 100%;
+  }
+
+  [data-theme] .sub-page-heading > span {
+    display: none;
+  }
+
+  [data-theme] .sub-page-heading > div {
+    min-width: 0;
+    width: 100%;
+    align-items: center;
+  }
+
+  [data-theme] .sub-page-subtitle {
+    display: none;
+  }
+
+  [data-theme] .sub-page-actions {
+    max-width: 44%;
+  }
+
+  [data-theme] .sub-page-wallet-pill {
+    padding-inline: 8px;
+  }
+
+  [data-theme] .sub-page-wallet-pill .sub-page-mini-action {
+    display: none;
+  }
+
+  [data-theme] .login-form-shell {
+    padding-inline: 12px;
+  }
+
+  [data-theme] .login-panel {
+    padding: 22px 18px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme] :where(.agent-card-hover, .nav-pill, .category-tab, .sidebar-conv-item) {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms !important;
+  }
+
+  [data-theme] .marketplace-agent-grid .agent-card-hover:hover {
+    transform: none;
+  }
+}

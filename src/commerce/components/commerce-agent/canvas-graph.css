@@ -1,0 +1,8 @@
+.ca-live-inspector>fieldset{border:0;margin:0;padding:0;min-width:0}
+.ca-live-canvas .ca-canvas-tools{flex-wrap:wrap;min-height:42px}
+.ca-graph-group{width:100%;height:100%;border:1px dashed #b5becd;border-radius:12px;background:#e7ecf52e;min-width:1px;position:relative}
+.ca-graph-group.selected{border:2px solid #678ad3;background:#dae5fa38}
+.ca-graph-group>strong{position:absolute;left:12px;top:10px;max-width:calc(100% - 24px);font-size:12px;color:#54657e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.react-flow__node-canvasGroup{background:transparent;box-shadow:none;padding:0;border:0}
+.ca-graph-edge-settings{border:1px solid #e1e6ee;border-radius:8px;padding:8px;margin:9px 0;font-size:12px}
+.ca-live-canvas .ca-canvas-tools button:disabled{opacity:.4}

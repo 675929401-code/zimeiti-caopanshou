@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { autoDetectVideoProtocol } from "../src/lib/video-protocol-detector";
+import { modelEndpointError, resolveVideoDetectionDraft } from "../src/lib/model-endpoint";
+import { SafeFetchError } from "../src/lib/safe-fetch";
+
+async function main() {
+  assert.ok(modelEndpointError("admin@example.com"));
+  const invalidUrl = new URL("https://example.com/v1");
+  invalidUrl.username = "fixture-user";
+  invalidUrl.password = "fixture-password";
+  assert.ok(modelEndpointError(invalidUrl.href));
+  invalidUrl.username = "";
+  invalidUrl.password = "";
+  invalidUrl.searchParams.set("key", "fixture-value");
+  assert.ok(modelEndpointError(invalidUrl.href));
+  assert.equal(modelEndpointError("https://gaorui.cc/v1"), null);
+  const stored = { api_endpoint: "https://gaorui.cc/v1", api_key: "fixture-only", model_name: "old", protocol_type: "gaorui_video" };
+  assert.equal(resolveVideoDetectionDraft({ model_name: "new", api_endpoint: stored.api_endpoint, api_key: "" }, stored).modelName, "new");
+  assert.equal(resolveVideoDetectionDraft({ api_endpoint: stored.api_endpoint, api_key: "replacement", model_name: "new" }, stored).apiKey, "replacement");
+  assert.throws(() => resolveVideoDetectionDraft({ api_endpoint: "https://another.example/v1", model_name: "new" }, stored), /站点已改变/);
+  assert.equal(resolveVideoDetectionDraft({ api_endpoint: "https://another.example/v1", model_name: "new", api_key: "new-fixture" }, stored).apiEndpoint, "https://another.example/v1");
+  let calls = 0;
+  const reader = async (url: string) => { calls++; assert.equal(url, "https://gaorui.cc/v1/models"); return { data: [{ id: "omni_flash_10s" }] }; };
+  const request = { apiEndpoint: "https://gaorui.cc/v1", apiKey: "fixture-only", modelName: "omni_flash_10s" };
+  const match = await autoDetectVideoProtocol(request, reader);
+  assert.equal(match.success, true); assert.equal(match.protocolType, "gaorui_video"); assert.equal(match.liveTest?.tested, false);
+  const typo = await autoDetectVideoProtocol({ ...request, modelName: "omni_flash" }, reader);
+  assert.equal(typo.success, false); assert.equal(typo.modelName, "omni_flash"); assert.equal(typo.candidateModels[0], "omni_flash_10s");
+  const before = calls;
+  assert.equal((await autoDetectVideoProtocol({ ...request, apiEndpoint: "https://unknown.example/v1" }, reader)).success, false);
+  assert.equal((await autoDetectVideoProtocol({ ...request, apiEndpoint: "https://gaorui.cc.attacker.example/v1" }, reader)).success, false);
+  assert.equal((await autoDetectVideoProtocol({ ...request, apiEndpoint: "admin@example.com" }, reader)).success, false);
+  assert.equal(calls, before);
+  const denied = await autoDetectVideoProtocol(request, async () => { throw new SafeFetchError("private upstream text", "UPSTREAM_STATUS", 502, { upstreamStatus: 403 }); });
+  assert.match(denied.error || "", /无访问权限/); assert.equal(denied.keyValid, false); assert.ok(!JSON.stringify(denied).includes("private upstream text"));
+  const html = await autoDetectVideoProtocol(request, async () => "login page");
+  assert.equal(html.success, false); assert.equal(html.keyValid, false);
+  console.log("PASS: endpoint validation, draft precedence, cross-site credential protection, exact model matching, channel C, read-only discovery and sanitized errors; no network or generation requests.");
+}
+void main();

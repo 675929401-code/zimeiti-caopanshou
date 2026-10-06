@@ -1,0 +1,575 @@
+/* ChatView only: one continuous glass stage with restrained message layers. */
+[data-chat-surface="unified-glass"] {
+  --chat-font: "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --chat-stage: linear-gradient(142deg, rgba(5, 22, 42, .82), rgba(7, 21, 40, .76));
+  --chat-sheet: rgba(11, 31, 53, .44);
+  --chat-sheet-strong: rgba(13, 37, 62, .58);
+  --chat-glass-composer: linear-gradient(145deg, rgba(14, 37, 65, .72), rgba(7, 24, 47, .62));
+  --chat-glass-border: rgba(135, 205, 226, .22);
+  --chat-glass-border-strong: rgba(140, 224, 231, .38);
+  --chat-glass-highlight: rgba(255, 255, 255, .10);
+  --chat-glass-composer-shadow: 0 22px 54px -34px rgba(0, 5, 19, .82), inset 0 1px 0 var(--chat-glass-highlight);
+  --chat-user: linear-gradient(142deg, rgba(63, 166, 178, .29), rgba(75, 112, 181, .24));
+  --chat-line: rgba(137, 207, 225, .17);
+  --chat-line-strong: rgba(139, 226, 229, .35);
+  --chat-highlight: rgba(255, 255, 255, .075);
+  --chat-accent: #62ddd3;
+  --chat-shadow: 0 18px 48px -38px rgba(0, 4, 16, .78), inset 0 1px 0 var(--chat-highlight);
+  --chat-fog-left: rgba(54, 219, 204, .16);
+  --chat-fog-right: rgba(115, 119, 238, .15);
+  --chat-grid: rgba(124, 210, 220, .06);
+  --chat-text: #edf7f8;
+  --chat-muted: #9fb7c1;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: var(--chat-text);
+  background: var(--chat-stage) !important;
+  font-family: var(--chat-font);
+  backdrop-filter: blur(26px) saturate(1.14);
+  -webkit-backdrop-filter: blur(26px) saturate(1.14);
+}
+
+html[data-theme="soft-white"] [data-chat-surface="unified-glass"] {
+  --chat-stage: linear-gradient(142deg, rgba(248, 252, 249, .84), rgba(243, 249, 247, .78));
+  --chat-sheet: rgba(255, 255, 255, .44);
+  --chat-sheet-strong: rgba(255, 255, 255, .64);
+  /* Accepted R598 soft-white composer: preserve the original surface verbatim. */
+  --chat-glass-composer: linear-gradient(145deg, rgba(255, 255, 255, .80), rgba(247, 251, 248, .67));
+  --chat-glass-border: rgba(78, 126, 117, .18);
+  --chat-glass-border-strong: rgba(40, 132, 118, .34);
+  --chat-glass-highlight: rgba(255, 255, 255, .86);
+  --chat-glass-composer-shadow: 0 22px 48px -34px rgba(52, 84, 77, .32), inset 0 1px 0 var(--chat-glass-highlight);
+  --chat-user: linear-gradient(142deg, rgba(69, 166, 149, .20), rgba(92, 142, 184, .16));
+  --chat-line: rgba(68, 120, 111, .16);
+  --chat-line-strong: rgba(36, 137, 119, .31);
+  --chat-highlight: rgba(255, 255, 255, .88);
+  --chat-accent: #188e7b;
+  --chat-shadow: 0 18px 46px -38px rgba(47, 78, 71, .30), inset 0 1px 0 var(--chat-highlight);
+  --chat-fog-left: rgba(72, 198, 175, .15);
+  --chat-fog-right: rgba(111, 150, 205, .12);
+  --chat-grid: rgba(55, 128, 115, .065);
+  --chat-text: #203936;
+  --chat-muted: #647773;
+}
+
+html[data-theme="crystal-aurora"] [data-chat-surface="unified-glass"] {
+  --chat-stage: linear-gradient(142deg, rgba(13, 23, 18, .88), rgba(18, 31, 25, .82));
+  --chat-sheet: rgba(29, 43, 36, .45);
+  --chat-sheet-strong: rgba(38, 53, 44, .6);
+  --chat-glass-composer: linear-gradient(145deg, rgba(38, 53, 44, .78), rgba(20, 33, 27, .7));
+  --chat-glass-border: rgba(255, 184, 95, .22);
+  --chat-glass-border-strong: rgba(255, 190, 105, .4);
+  --chat-glass-highlight: rgba(255, 250, 236, .075);
+  --chat-glass-composer-shadow: 0 22px 54px -34px rgba(2, 8, 5, .86), inset 0 1px 0 var(--chat-glass-highlight);
+  --chat-user: linear-gradient(142deg, rgba(192, 112, 37, .26), rgba(77, 151, 126, .2));
+  --chat-line: rgba(179, 198, 183, .15);
+  --chat-line-strong: rgba(255, 183, 89, .32);
+  --chat-highlight: rgba(255, 250, 237, .06);
+  --chat-accent: #ffb85f;
+  --chat-shadow: 0 18px 48px -38px rgba(2, 8, 5, .84), inset 0 1px 0 var(--chat-highlight);
+  --chat-fog-left: rgba(255, 173, 74, .14);
+  --chat-fog-right: rgba(78, 177, 144, .12);
+  --chat-grid: rgba(132, 161, 140, .052);
+  --chat-text: #f5f4ec;
+  --chat-muted: #a8b4ab;
+}
+
+/* The legacy light-mode shell makes .chat-stage transparent with a stronger
+   selector. Keep the scoped glass sheet above the shared page atmosphere so a
+   page-level corner glow can never bleed into the bottom of the conversation. */
+html[data-theme] [data-chat-surface="unified-glass"].chat-stage {
+  background: var(--chat-stage) !important;
+}
+
+[data-chat-surface="unified-glass"]::before,
+[data-chat-surface="unified-glass"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+[data-chat-surface="unified-glass"]::before {
+  background:
+    radial-gradient(760px 440px at 2% -10%, var(--chat-fog-left), transparent 69%),
+    radial-gradient(720px 420px at 98% -9%, var(--chat-fog-right), transparent 70%);
+}
+
+[data-chat-surface="unified-glass"]::after {
+  opacity: .76;
+  background-image:
+    linear-gradient(var(--chat-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--chat-grid) 1px, transparent 1px);
+  background-size: 72px 72px;
+  /* Keep one uninterrupted theme plane behind the transcript and composer.
+     Fading the grid at the viewport edge created an opaque-looking bottom band. */
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+[data-chat-surface="unified-glass"] > * { position: relative; z-index: 1; }
+
+[data-chat-surface="unified-glass"] .chat-stage-header {
+  background: color-mix(in srgb, var(--chat-sheet) 82%, transparent) !important;
+  border-color: var(--chat-line) !important;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--chat-highlight) 70%, transparent);
+  backdrop-filter: blur(24px) saturate(1.16) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.16) !important;
+}
+
+/* Theme files can paint their own page background on .chat-canvas.  Keep the
+ * transcript and the non-scrolling composer dock on the single stage plane so
+ * the dock never becomes a full-width shelf in light mode. */
+html[data-theme] [data-chat-surface="unified-glass"] .chat-canvas,
+html[data-theme] [data-chat-surface="unified-glass"] .chat-input-dock,
+html[data-theme] [data-chat-surface="unified-glass"] .chat-canvas::before,
+html[data-theme] [data-chat-surface="unified-glass"] .chat-canvas::after,
+html[data-theme] [data-chat-surface="unified-glass"] .chat-input-dock::before,
+html[data-theme] [data-chat-surface="unified-glass"] .chat-input-dock::after { background: transparent !important; }
+
+[data-chat-surface="unified-glass"] .chat-canvas::before,
+[data-chat-surface="unified-glass"] .chat-canvas::after,
+[data-chat-surface="unified-glass"] .chat-input-dock::before,
+[data-chat-surface="unified-glass"] .chat-input-dock::after { content: none !important; }
+
+[data-chat-surface="unified-glass"] .chat-canvas.chat-scroll {
+  scrollbar-gutter: auto !important;
+  scrollbar-width: none !important;
+}
+
+[data-chat-surface="unified-glass"] .chat-canvas.chat-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+[data-chat-surface="unified-glass"] .chat-shared-rail {
+  box-sizing: border-box;
+  width: calc(100% - 48px) !important;
+  margin-inline: auto !important;
+}
+
+/* Theme files used to narrow only the transcript by 16px. Keep this selector
+ * above those legacy theme contracts in specificity so all three chat rails
+ * share one exact visual edge. */
+html[data-theme] [data-chat-surface="unified-glass"] .chat-shared-rail {
+  width: calc(100% - 48px) !important;
+}
+
+html[data-theme] [data-chat-surface="unified-glass"] .chat-shared-rail.max-w-4xl { max-width: 56rem !important; }
+html[data-theme] [data-chat-surface="unified-glass"] .chat-shared-rail.max-w-5xl { max-width: 64rem !important; }
+html[data-theme] [data-chat-surface="unified-glass"] .chat-shared-rail.max-w-6xl { max-width: 72rem !important; }
+html[data-theme] [data-chat-surface="unified-glass"] .chat-shared-rail.max-w-full { max-width: 100% !important; }
+
+html[data-theme] [data-chat-surface="unified-glass"] .chat-content-rail {
+  width: calc(100% - 96px) !important;
+  padding-inline: 0 !important;
+  padding-top: 26px !important;
+  padding-bottom: 30px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Keep the transcript slightly narrower than the composer while preserving
+ * one shared center axis. This improves Chinese line length without creating
+ * a second card or a detached column. */
+html[data-theme] [data-chat-surface="unified-glass"] .chat-content-rail.max-w-4xl { max-width: 52rem !important; }
+html[data-theme] [data-chat-surface="unified-glass"] .chat-content-rail.max-w-5xl { max-width: 60rem !important; }
+html[data-theme] [data-chat-surface="unified-glass"] .chat-content-rail.max-w-6xl { max-width: 68rem !important; }
+html[data-theme] [data-chat-surface="unified-glass"] .chat-content-rail.max-w-full { max-width: calc(100% - 96px) !important; }
+
+[data-chat-surface="unified-glass"] .chat-message-row {
+  position: relative;
+  padding-top: 10px !important;
+  padding-bottom: 12px !important;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-row-assistant + .chat-message-row-user,
+[data-chat-surface="unified-glass"] .chat-message-row-user + .chat-message-row-assistant { margin-top: 5px; }
+
+[data-chat-surface="unified-glass"] .chat-message-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  margin-bottom: 2px;
+  color: var(--chat-muted);
+  font-family: var(--chat-font);
+  font-size: 12px;
+  font-weight: 620;
+  letter-spacing: .012em;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-identity-avatar {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--chat-line);
+  box-shadow: 0 6px 18px -12px rgba(2, 24, 34, .55);
+}
+
+/* A continuous reading surface must not briefly shrink each new row like a
+ * detached card. Preserve a quiet entrance without changing horizontal edges. */
+@keyframes chat-continuous-message-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+[data-chat-surface="unified-glass"] .msg-animate {
+  animation: chat-continuous-message-enter 280ms ease-out both;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-bubble-user,
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant,
+[data-chat-surface="unified-glass"] .chat-composer-rainbow {
+  font-family: var(--chat-font);
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+/* The reply and composer share one centered rail. Messages stay frameless so
+   the whole history reads as one continuous glass document, not stacked cards. */
+html[data-theme] [data-chat-surface="unified-glass"] .chat-message-bubble-assistant.chat-message-bubble-assistant {
+  padding: 13px 4px 15px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: var(--chat-text) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme] [data-chat-surface="unified-glass"] .chat-message-row-assistant:hover .chat-message-bubble-assistant {
+  background: transparent !important;
+}
+
+/* Keep prose at a calm Chinese reading width while allowing tables, code and
+ * media to use the wider transcript rail. */
+html[data-theme] [data-chat-surface="unified-glass"] .chat-message-bubble-assistant .markdown-body :where(
+  .render-layer-final, .render-layer-streaming
+) > :where(
+  p, ul, ol, h1, h2, h3, h4, h5, h6, blockquote, hr
+) {
+  max-width: 55rem;
+}
+
+/* Direction and spacing identify the user's turn; no second floating card. */
+html[data-theme] [data-chat-surface="unified-glass"] .chat-message-bubble-user.chat-message-bubble-user {
+  max-width: min(78%, 55rem) !important;
+  padding: 10px 4px 11px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: var(--chat-text) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme] [data-chat-surface="unified-glass"] .chat-message-row-user:hover .chat-message-bubble-user {
+  background: transparent !important;
+  transform: none;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-bubble-user::before,
+[data-chat-surface="unified-glass"] .chat-message-bubble-user::after,
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant::before { content: none !important; }
+
+[data-chat-surface="unified-glass"] .chat-message-bubble-user :where(.user-message-content, .user-pasted-copy-card, .user-pasted-copy-card *),
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant :where(.markdown-body, .render-layer-final, .render-layer-streaming) {
+  color: var(--chat-text) !important;
+  font-family: var(--chat-font);
+  text-shadow: none !important;
+}
+
+[data-chat-surface="unified-glass"] .user-message-content,
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant .markdown-body {
+  font-size: 17px;
+  line-height: 1.76;
+  letter-spacing: .006em;
+  font-weight: 400;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant .markdown-body :where(p, li) { line-height: 1.76; }
+
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant .markdown-body :where(
+  p, p *, li, li *, ul, ol, h1, h1 *, h2, h2 *, h3, h3 *, h4, h4 *,
+  blockquote, blockquote *, table, table *, span:not(code span)
+) { color: var(--chat-text) !important; }
+
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant .markdown-body :where(h1, h2, h3, h4) {
+  color: var(--chat-text) !important;
+  font-family: var(--chat-font);
+  font-weight: 660;
+  letter-spacing: -.015em;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant .markdown-body :where(blockquote, table, pre, .code-block-wrapper) {
+  border-color: var(--chat-line) !important;
+  background: color-mix(in srgb, var(--chat-sheet-strong) 72%, transparent) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--chat-highlight) 65%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+[data-chat-surface="unified-glass"] .chat-message-bubble-assistant .markdown-body a {
+  color: color-mix(in srgb, var(--chat-accent) 82%, var(--chat-text)) !important;
+  text-underline-offset: .18em;
+}
+
+[data-chat-surface="unified-glass"] [data-testid="chat-output-status"] {
+  width: fit-content;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--chat-line) 82%, transparent);
+  border-radius: 999px;
+  color: var(--chat-muted) !important;
+  background: color-mix(in srgb, var(--chat-sheet) 60%, transparent);
+}
+
+[data-chat-surface="unified-glass"] [data-testid="chat-output-status"][data-state="failed"],
+[data-chat-surface="unified-glass"] [data-testid="chat-output-status"][data-state="unknown"] {
+  color: var(--chat-text) !important;
+  border-color: color-mix(in srgb, #ef4444 42%, var(--chat-line));
+  background: color-mix(in srgb, #ef4444 11%, var(--chat-sheet-strong));
+}
+
+[data-chat-surface="unified-glass"] [data-testid="chat-output-status"][data-state="unknown"] {
+  border-color: color-mix(in srgb, #f59e0b 48%, var(--chat-line));
+  background: color-mix(in srgb, #f59e0b 12%, var(--chat-sheet-strong));
+}
+
+[data-chat-surface="unified-glass"] .chat-message-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 55rem);
+  margin-top: 9px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, #ef4444 38%, var(--chat-line));
+  border-radius: 14px;
+  color: var(--chat-text);
+  background: color-mix(in srgb, #ef4444 9%, var(--chat-sheet-strong));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--chat-highlight) 56%, transparent);
+}
+
+[data-chat-surface="unified-glass"] .chat-message-state-unknown {
+  border-color: color-mix(in srgb, #f59e0b 44%, var(--chat-line));
+  background: color-mix(in srgb, #f59e0b 10%, var(--chat-sheet-strong));
+}
+
+[data-chat-surface="unified-glass"] .chat-message-state-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-state-copy span {
+  color: var(--chat-muted);
+  font-size: 12px;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-state-action {
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--chat-accent) 36%, var(--chat-line));
+  border-radius: 10px;
+  color: var(--chat-text);
+  background: color-mix(in srgb, var(--chat-accent) 12%, var(--chat-sheet-strong));
+  font-size: 12px;
+  font-weight: 650;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-state-action:hover {
+  border-color: color-mix(in srgb, var(--chat-accent) 68%, var(--chat-line));
+  background: color-mix(in srgb, var(--chat-accent) 18%, var(--chat-sheet-strong));
+  transform: translateY(-1px);
+}
+
+[data-chat-surface="unified-glass"] .chat-message-state-action:focus-visible,
+[data-chat-surface="unified-glass"] .chat-message-action:focus-visible,
+[data-chat-surface="unified-glass"] .chat-composer-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--chat-accent) 76%, white);
+  outline-offset: 2px;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-actions {
+  min-height: 32px;
+}
+
+[data-chat-surface="unified-glass"] .chat-message-action {
+  min-width: 30px;
+  min-height: 30px;
+}
+
+[data-chat-surface="unified-glass"] .chat-input-dock {
+  padding-top: 18px !important;
+  padding-bottom: 8px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-chat-surface="unified-glass"] .chat-composer-rail {
+  width: auto !important;
+  padding-inline: 1.25rem !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme] [data-chat-surface="unified-glass"] .chat-composer-rainbow.chat-composer-rainbow {
+  border: 1px solid var(--chat-glass-border) !important;
+  background: var(--chat-glass-composer) !important;
+  box-shadow: var(--chat-glass-composer-shadow) !important;
+  backdrop-filter: blur(22px) saturate(1.16) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.16) !important;
+}
+
+[data-chat-surface="unified-glass"] .chat-composer-rainbow:focus-within {
+  border-color: var(--chat-glass-border-strong) !important;
+  box-shadow: var(--chat-glass-composer-shadow), 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent) !important;
+}
+
+[data-chat-surface="unified-glass"] .chat-composer-rainbow textarea {
+  color: var(--chat-text) !important;
+  font-family: var(--chat-font);
+  font-size: 16px !important;
+  line-height: 1.72 !important;
+  letter-spacing: .006em;
+}
+
+[data-chat-surface="unified-glass"] .chat-composer-rainbow textarea::placeholder { color: var(--chat-muted) !important; }
+
+[data-chat-surface="unified-glass"] .chat-send-button:disabled {
+  color: color-mix(in srgb, white 72%, var(--chat-muted)) !important;
+  background: color-mix(in srgb, var(--chat-muted) 34%, transparent) !important;
+  box-shadow: none !important;
+  opacity: .54 !important;
+}
+
+@keyframes chat-latest-wave {
+  0%, 60%, 100% { transform: translateY(0); opacity: .42; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-jump {
+  left: 50%;
+  right: auto;
+  bottom: 8px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--chat-line-strong);
+  border-radius: 999px;
+  color: var(--chat-text);
+  background: color-mix(in srgb, var(--chat-sheet-strong) 90%, transparent);
+  box-shadow: 0 10px 30px -16px rgba(2, 24, 34, .58), inset 0 1px 0 var(--chat-highlight);
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  transform: translateX(-50%);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-jump:hover,
+[data-chat-surface="unified-glass"] .chat-latest-jump:focus-visible {
+  border-color: color-mix(in srgb, var(--chat-accent) 72%, transparent);
+  box-shadow: 0 14px 34px -16px rgba(2, 24, 34, .68), inset 0 1px 0 var(--chat-highlight);
+  transform: translate(-50%, -2px);
+  outline: none;
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-jump:active { transform: translateX(-50%); }
+
+[data-chat-surface="unified-glass"] .chat-latest-dots,
+[data-chat-surface="unified-glass"] .chat-latest-arrow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 180ms ease;
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--chat-accent);
+  animation: chat-latest-wave 1.05s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-dot:nth-child(2) { animation-delay: 120ms; }
+[data-chat-surface="unified-glass"] .chat-latest-dot:nth-child(3) { animation-delay: 240ms; }
+
+[data-chat-surface="unified-glass"] .chat-latest-arrow {
+  width: 18px;
+  height: 18px;
+  color: var(--chat-muted);
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming .chat-latest-dots {
+  opacity: 1;
+  left: auto;
+  right: 5px;
+  top: 5px;
+  gap: 1px;
+  padding: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chat-sheet-strong) 88%, transparent);
+  transform: none;
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming .chat-latest-dot {
+  animation-play-state: running;
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming .chat-latest-arrow {
+  opacity: 1;
+  color: var(--chat-text);
+  transform: translate(-50%, -50%);
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming:hover .chat-latest-dots,
+[data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming:focus-visible .chat-latest-dots {
+  opacity: 1;
+  transform: none;
+}
+
+[data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming:hover .chat-latest-arrow,
+[data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming:focus-visible .chat-latest-arrow {
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-chat-surface="unified-glass"] .chat-agent-online-ping { animation: none !important; }
+  [data-chat-surface="unified-glass"] .msg-animate { animation: none !important; }
+  [data-chat-surface="unified-glass"] .chat-message-bubble-user,
+  [data-chat-surface="unified-glass"] .chat-message-bubble-assistant,
+  [data-chat-surface="unified-glass"] .chat-composer-rainbow,
+  [data-chat-surface="unified-glass"] .chat-latest-jump,
+  [data-chat-surface="unified-glass"] .chat-latest-dots,
+  [data-chat-surface="unified-glass"] .chat-latest-arrow { transition: none !important; }
+
+  [data-chat-surface="unified-glass"] .chat-latest-dot { animation: none !important; }
+}

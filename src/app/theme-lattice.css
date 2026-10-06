@@ -1,0 +1,1007 @@
+/*
+ * Lattice / 深空晶
+ * 独立主题视觉层。只使用 [data-theme="lattice"] 作用域，方便整套或按模块回滚。
+ * /cover 使用自身不透明根容器和局部变量，不在本文件覆盖。
+ */
+
+html[data-theme="lattice"] {
+  color-scheme: dark;
+  --primary: #68c7b4;
+  --primary-foreground: #071412;
+  --ring: #68c7b4;
+  --background: #0d141a;
+  --foreground: #f2f5f4;
+  --font-title-color: #f2f5f4;
+  --font-body-color: #bac4c1;
+  --font-aux-color: #8c9b97;
+  --card: #131e25;
+  --card-foreground: #f2f5f4;
+  --card-desc-opacity: 1;
+  --popover: #18262e;
+  --popover-foreground: #f2f5f4;
+  --secondary: #17242b;
+  --secondary-foreground: #bac4c1;
+  --muted: #17242b;
+  --muted-foreground: #8c9b97;
+  --text-secondary: #bac4c1;
+  --accent: #1b2c32;
+  --accent-foreground: #d9eee9;
+  --destructive: #f17872;
+  --border: #2a3a41;
+  --input: #3e565c;
+  --sidebar: #111c22;
+  --sidebar-foreground: #bac4c1;
+  --sidebar-border: #2a3a41;
+  --sidebar-primary: #68c7b4;
+  --sidebar-primary-foreground: #071412;
+  --sidebar-ring: #68c7b4;
+  --sidebar-accent: #1b2c32;
+  --sidebar-accent-foreground: #f2f5f4;
+  --sidebar-primary-button-shadow: 0 10px 24px rgba(55, 145, 128, 0.22);
+  --success: #54c796;
+  --warning: #e5a84b;
+  --error: #f17872;
+  --info: #73a7e8;
+  --price: #d0b06e;
+  --chart-1: #68c7b4;
+  --chart-2: #73a7e8;
+  --chart-3: #54c796;
+  --chart-4: #a899d5;
+  --chart-5: #d0b06e;
+  --theme-glow: rgba(104, 199, 180, 0.1);
+  --msg-user-bg: #18312f;
+  --msg-assistant-bg: #131e25;
+  --msg-think-header-bg: #17272c;
+  --msg-think-line: #2a3a41;
+  --msg-think-border: #68c7b4;
+  --hover-bg: rgba(104, 199, 180, 0.08);
+  --scrollbar-thumb: #3e565c;
+  --scrollbar-track: #11191f;
+
+  --ui-surface: #131e25;
+  --ui-surface-strong: #17242b;
+  --ui-line: #2a3a41;
+  --ui-line-strong: #3e565c;
+  --ui-shadow-sm:
+    0 1px 0 rgba(255, 255, 255, 0.045) inset,
+    0 10px 28px rgba(0, 0, 0, 0.22);
+  --ui-shadow-md:
+    0 1px 0 rgba(255, 255, 255, 0.065) inset,
+    0 22px 58px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(72, 113, 132, 0.06);
+  --ui-focus: 0 0 0 3px rgba(104, 199, 180, 0.2);
+  --lattice-surface-low: #101a20;
+  --lattice-surface: #131e25;
+  --lattice-surface-high: #17242b;
+  --lattice-edge: #2a3a41;
+  --lattice-edge-active: #3e565c;
+  --lattice-cyan: #68c7b4;
+  --lattice-blue: #73a7e8;
+  --lattice-green: #54c796;
+  --lattice-violet: #a899d5;
+  --lattice-backdrop:
+    radial-gradient(circle at 82% 0%, rgba(104, 199, 180, 0.08), transparent 34rem),
+    linear-gradient(180deg, #0f181e 0%, #0d141a 100%);
+  --marketplace-grid-template: repeat(auto-fill, minmax(252px, 270px));
+  --marketplace-grid-gap: 13px;
+  --marketplace-grid-justify: center;
+  --marketplace-card-height: 142px;
+}
+
+html[data-theme="lattice"] body {
+  background-color: #0d141a;
+  background-image: var(--lattice-backdrop);
+  background-size: 100% 100%, 100% 100%;
+  background-attachment: fixed;
+}
+
+html[data-theme="lattice"] :where(.app-shell, .chat-canvas) {
+  background-color: transparent;
+  background-image: none;
+}
+
+html[data-theme="lattice"] .marketplace-shell {
+  background: var(--lattice-backdrop) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-attachment: fixed !important;
+}
+
+html[data-theme="lattice"] :where([data-page="tools"], .sbw-root, .help-page, .media-history-page):not(:where([data-testid="manju-content"] *)) {
+  background: var(--lattice-backdrop) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-attachment: fixed !important;
+}
+
+/* Navigation layers */
+html[data-theme="lattice"] .marketplace-shell .nav-bar-wrapper {
+  margin: 7px 14px 5px !important;
+  border-color: var(--border) !important;
+  background: #142129 !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.035) inset,
+    0 10px 28px rgba(0, 0, 0, 0.2) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+html[data-theme="lattice"] .marketplace-shell .nav-bar-container {
+  min-height: 48px !important;
+  padding: 4px 6px !important;
+  gap: 2px !important;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="lattice"] .marketplace-shell .nav-bar-container::before {
+  background: none;
+  opacity: 0;
+}
+
+html[data-theme="lattice"] .marketplace-shell .nav-pill {
+  min-height: 38px !important;
+  height: 38px;
+  padding: 0 11px !important;
+  gap: 7px !important;
+  border-radius: 6px !important;
+  border: 1px solid transparent;
+  font-size: 15px !important;
+  line-height: 1 !important;
+  font-weight: 620 !important;
+  color: #a9b6b2;
+  background: transparent;
+}
+
+html[data-theme="lattice"] .marketplace-shell .nav-pill :where(svg, img) {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .nav-pill:hover {
+  color: var(--foreground);
+  border-color: var(--border);
+  background: var(--accent);
+}
+
+html[data-theme="lattice"] .marketplace-shell .nav-pill:is(.active, [aria-current="page"], [data-active="true"]),
+html[data-theme="lattice"] .marketplace-shell .nav-pill[aria-expanded="true"] {
+  color: #e9f6f3;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="lattice"] .marketplace-shell .nav-group-divider {
+  border-color: rgba(171, 204, 220, 0.15);
+  opacity: 1;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-category-bar {
+  margin: 6px 14px 9px !important;
+  min-height: 42px;
+  padding: 5px 8px !important;
+  border-color: #223139 !important;
+  background: #0c151a !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.045) inset,
+    0 10px 26px rgba(0, 0, 0, 0.18) !important;
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+}
+
+html[data-theme="lattice"] .marketplace-shell .category-tab {
+  min-height: 30px;
+  padding: 0 10px !important;
+  border: 1px solid transparent;
+  border-radius: 6px !important;
+  color: #91a19c !important;
+  font-size: 14px !important;
+  background: transparent;
+}
+
+html[data-theme="lattice"] .marketplace-shell .category-tab:hover {
+  color: #dce9e5 !important;
+  border-color: rgba(171, 204, 220, 0.14);
+  background: rgba(255, 255, 255, 0.032);
+}
+
+html[data-theme="lattice"] .marketplace-shell .category-tab:is(.category-tab-active, [aria-pressed="true"], [aria-selected="true"], [data-active="true"]) {
+  color: #e9f8f4 !important;
+  border-color: rgba(104, 199, 180, 0.38) !important;
+  background: #1a3331 !important;
+}
+
+/* Sidebar and shared floating surfaces */
+html[data-theme="lattice"] :where(.app-sidebar-frame, .sidebar-drawer) {
+  border-color: var(--sidebar-border) !important;
+  background-color: var(--sidebar) !important;
+  background-image: none !important;
+  box-shadow:
+    12px 0 36px rgba(0, 0, 0, 0.2),
+    inset -1px 0 rgba(255, 255, 255, 0.025) !important;
+}
+
+html[data-theme="lattice"] .sidebar-shell {
+  border-color: var(--sidebar-border) !important;
+  background: #111c22 !important;
+  box-shadow:
+    16px 0 46px rgba(0, 0, 0, 0.16),
+    inset -1px 0 rgba(104, 199, 180, 0.05);
+  backdrop-filter: blur(24px) saturate(1.15);
+  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+}
+
+html[data-theme="lattice"] :where(.sidebar-brand-card, .sidebar-tool-card, .sidebar-glass-card) {
+  border-color: rgba(139, 207, 219, 0.13) !important;
+  background-color: rgba(9, 24, 36, 0.5) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.035) inset,
+    0 8px 22px rgba(0, 0, 0, 0.08);
+}
+
+html[data-theme="lattice"] .sidebar-shell .sidebar-shortcut-card {
+  background: #142229 !important;
+}
+
+html[data-theme="lattice"] .sidebar-shell .sidebar-shortcut-card:hover {
+  border-color: color-mix(in srgb, var(--shortcut-accent, var(--primary)) 36%, var(--sidebar-border)) !important;
+  background: #192a31 !important;
+  color: #eef6f4 !important;
+}
+
+html[data-theme="lattice"] .sidebar-shell .sidebar-shortcut-card[aria-current="page"] {
+  border-color: color-mix(in srgb, var(--shortcut-accent, var(--primary)) 40%, var(--sidebar-border)) !important;
+  background: #19302f !important;
+  box-shadow: inset 2px 0 color-mix(in srgb, var(--shortcut-accent, var(--primary)) 70%, transparent) !important;
+}
+
+html[data-theme="lattice"] .sidebar-tool-card::before {
+  background: linear-gradient(128deg, rgba(104, 199, 180, 0.075), transparent 38%);
+}
+
+html[data-theme="lattice"] .sidebar-shell .sidebar-conv-item {
+  border-color: rgba(137, 203, 215, 0.1) !important;
+  background: rgba(7, 18, 29, 0.4) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025) inset;
+}
+
+html[data-theme="lattice"] .sidebar-shell .sidebar-conv-item:hover {
+  border-color: rgba(102, 220, 217, 0.2) !important;
+  background: rgba(7, 40, 49, 0.52) !important;
+}
+
+html[data-theme="lattice"] .sidebar-shell .sidebar-conv-item.active {
+  border-color: rgba(104, 199, 180, 0.34) !important;
+  background: linear-gradient(102deg, rgba(31, 86, 76, 0.55), rgba(19, 43, 45, 0.44)) !important;
+  box-shadow:
+    inset 2px 0 rgba(104, 199, 180, 0.72),
+    0 8px 22px rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme="lattice"] .sidebar-shell :where(.sidebar-conv-name, .sidebar-tool-heading) {
+  color: #dbe8ed;
+}
+
+html[data-theme="lattice"] .sidebar-shell :where(.sidebar-conv-time, .sb-credit-label, .sb-user-caption) {
+  color: #829aa8;
+}
+
+html[data-theme="lattice"] :where(
+  .theme-switcher-menu,
+  .toolbox-menu-content,
+  .login-panel,
+  .announcement-dialog,
+  .sub-page-header
+) {
+  border-color: rgba(171, 204, 220, 0.16);
+  background: rgba(8, 13, 21, 0.78);
+  box-shadow: var(--ui-shadow-md);
+  backdrop-filter: blur(20px) saturate(1.14);
+  -webkit-backdrop-filter: blur(20px) saturate(1.14);
+}
+
+/*
+ * Full-site lattice bridge
+ * Tool pages historically inherit the opaque Voice Studio palette. Rebind those
+ * tokens here so their existing components gain the same crystal surfaces without
+ * changing page structure or generation behavior.
+ */
+html[data-theme="lattice"] .voice-studio-root:not(:where([data-testid="manju-content"] *)) {
+  --vs-primary: #68c7b4;
+  --vs-primary-hover: #83d1c1;
+  --vs-secondary: #54c796;
+  --vs-accent: #73a7e8;
+  --vs-bg: #0d141a;
+  --vs-bg-secondary: #101a20;
+  --vs-surface: #131e25;
+  --vs-surface-hover: #1b2c32;
+  --vs-text: #f2f5f4;
+  --vs-text-secondary: #bac4c1;
+  --vs-text-muted: #8c9b97;
+  --vs-border: #2a3a41;
+  --vs-card: #131e25;
+  --vs-card-hover: #17242b;
+  --vs-glow: #68c7b4;
+  --vs-glass-bg: #131e25;
+  --vs-glass-border: #2a3a41;
+  --vs-glass-border-hover: #3e565c;
+  --vs-glass-shadow: 0 18px 54px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --vs-glass-shadow-hover: 0 22px 60px rgba(0, 0, 0, 0.3), 0 0 28px rgba(104, 199, 180, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --vs-input-bg: #101a20;
+  --vs-input-border: #3e565c;
+  --vs-input-focus-shadow: 0 0 0 3px rgba(104, 199, 180, 0.18);
+  --vs-radial-1: none;
+  --vs-radial-2: none;
+  --vs-grid-color: rgba(104, 199, 180, 0.1);
+  --vs-grid-color-strong: rgba(104, 199, 180, 0.15);
+  --vs-skeleton-base: rgba(11, 25, 40, 0.54);
+  --vs-skeleton-shine: rgba(104, 199, 180, 0.13);
+  --vs-gradient-text: #edf4f8;
+  --vs-card-hover-shadow: 0 20px 52px rgba(0, 0, 0, 0.28), 0 0 24px rgba(104, 199, 180, 0.06);
+  --vs-card-hover-border: rgba(104, 199, 180, 0.42);
+}
+
+html[data-theme="lattice"] .voice-studio-root:not(.marketplace-shell):not(:where([data-testid="manju-content"] *)) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+html[data-theme="lattice"] .vs-workbench:not(:where([data-testid="manju-content"] *)) {
+  --background: rgba(5, 10, 18, 0.18);
+  --card: var(--vs-card);
+  --popover: rgba(7, 13, 22, 0.92);
+  --secondary: var(--vs-surface);
+  --muted: rgba(11, 25, 39, 0.5);
+  --accent: var(--vs-surface-hover);
+  --border: var(--vs-border);
+  --input: rgba(157, 213, 229, 0.22);
+}
+
+html[data-theme="lattice"] :where(
+  .secondary-workbench,
+  .voice-studio-root:not(.marketplace-shell),
+  .vs-workbench:not(.marketplace-shell),
+  .chat-stage,
+  .chat-canvas,
+  .chat-input-dock
+):not(:where([data-testid="manju-content"] *)) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+html[data-theme="lattice"] :where(
+  .chat-message-bubble-assistant,
+  .chat-msg-assistant
+) {
+  border: 1px solid rgba(149, 211, 225, 0.15);
+  border-radius: 8px;
+  background: rgba(7, 17, 28, 0.38);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.035) inset,
+    0 14px 34px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+
+html[data-theme="lattice"] .chat-message-bubble-assistant {
+  padding: 14px 16px;
+}
+
+html[data-theme="lattice"] :where(.chat-msg-think, .reasoning-block) {
+  border-color: rgba(104, 199, 180, 0.22);
+  background: rgba(9, 24, 37, 0.46);
+}
+
+html[data-theme="lattice"] .chat-composer-rainbow {
+  border-color: rgba(104, 199, 180, 0.32) !important;
+  background: rgba(7, 16, 27, 0.68) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.055) inset,
+    0 18px 46px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(104, 199, 180, 0.045) !important;
+  backdrop-filter: blur(22px) saturate(1.16);
+  -webkit-backdrop-filter: blur(22px) saturate(1.16);
+}
+
+html[data-theme="lattice"] :where(
+  .toolbox-embedded-toolbar,
+  .toolbox-input-surface,
+  .toolbox-results-block,
+  .toolbox-empty-result
+):not(:where([data-testid="manju-content"] *)) {
+  border-color: rgba(148, 215, 229, 0.2) !important;
+  background: var(--card) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.045) inset,
+    0 12px 30px rgba(0, 0, 0, 0.14);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="lattice"] :where(
+  .help-shell,
+  .media-history-shell,
+  .login-form-shell
+):not(:where([data-testid="manju-content"] *)) {
+  border-color: rgba(148, 215, 229, 0.2) !important;
+  background-color: rgba(7, 18, 30, 0.48) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.045) inset,
+    0 16px 40px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+}
+
+/* Agent marketplace surfaces. Width is wired through the marketplace component separately. */
+html[data-theme="lattice"] .marketplace-agent-grid {
+  gap: var(--marketplace-grid-gap) !important;
+  align-content: start;
+  justify-content: var(--marketplace-grid-justify) !important;
+  padding-block: 3px 30px;
+}
+
+html[data-theme="lattice"] .marketplace-scroll {
+  padding-left: 18px !important;
+  scrollbar-gutter: stable;
+}
+
+html[data-theme="lattice"] .marketplace-scroll > div {
+  padding-right: 18px !important;
+}
+
+html[data-theme="lattice"] .marketplace-depth {
+  background: linear-gradient(180deg, rgba(4, 9, 16, 0.04), rgba(4, 9, 16, 0.14)) !important;
+}
+
+html[data-theme="lattice"] .marketplace-agent-grid .agent-card-hover {
+  height: var(--marketplace-card-height) !important;
+  min-height: var(--marketplace-card-height) !important;
+  padding: 13px !important;
+  gap: 11px !important;
+  border-radius: 8px !important;
+  border-color: rgba(161, 190, 184, 0.2) !important;
+  background: rgba(19, 30, 37, 0.78) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.065) inset,
+    0 15px 38px rgba(0, 0, 0, 0.22),
+    0 0 0 1px rgba(104, 199, 180, 0.03) !important;
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+}
+
+html[data-theme="lattice"] .marketplace-agent-grid .agent-card-hover::before {
+  background: linear-gradient(118deg, rgba(104, 199, 180, 0.09), transparent 42%);
+  opacity: 0.8;
+}
+
+html[data-theme="lattice"] .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="lattice"] .marketplace-agent-grid .agent-card-hover:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(104, 199, 180, 0.4) !important;
+  background: rgba(23, 38, 43, 0.9) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.075) inset,
+    0 22px 48px rgba(0, 0, 0, 0.32),
+    0 0 24px rgba(104, 199, 180, 0.055);
+}
+
+html[data-theme="lattice"] .marketplace-agent-avatar {
+  width: 90px !important;
+  height: 90px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(188, 219, 232, 0.18);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+}
+
+html[data-theme="lattice"] .marketplace-agent-title {
+  color: #f1f7fa !important;
+  font-size: 15px !important;
+  line-height: 1.28 !important;
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+html[data-theme="lattice"] .marketplace-agent-description {
+  color: #91a7b5 !important;
+  font-size: 12px !important;
+  line-height: 1.55 !important;
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3 !important;
+  overflow: hidden;
+}
+
+/* Shared secondary pages. Route-local workbench CSS still owns dimensions and behavior. */
+html[data-theme="lattice"] :where(
+  .tools-page,
+  .segmenter-page,
+  .formatter-page,
+  .extract-page,
+  .help-page,
+  .media-history-page,
+  .storyboard-workbench-page,
+  .voice-studio-page
+):not(:where([data-testid="manju-content"] *)) {
+  background-color: transparent;
+}
+
+html[data-theme="lattice"] :where(
+  .toolbox-embedded-workspace,
+  .help-shell,
+  .media-history-shell,
+  .login-form-shell
+):not(:where([data-testid="manju-content"] *)) :where(input, textarea, select) {
+  border-color: rgba(171, 204, 220, 0.16);
+  background: rgba(5, 9, 15, 0.6);
+}
+
+html[data-theme="lattice"] :where(button, a, input, textarea, select):not(:where(.commerce-root *, [data-testid="manju-content"] *)):focus-visible {
+  outline-color: #68c7b4;
+  box-shadow: var(--ui-focus);
+}
+
+@media (min-width: 1600px) {
+  html[data-theme="lattice"] {
+    --marketplace-grid-template: repeat(4, minmax(0, 1fr));
+    --marketplace-grid-justify: center;
+  }
+
+  html[data-theme="lattice"] .marketplace-agent-avatar {
+    width: 108px !important;
+    height: 108px !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  html[data-theme="lattice"] {
+    --marketplace-grid-template: repeat(auto-fill, minmax(258px, 1fr));
+    --marketplace-card-height: 140px;
+  }
+
+  html[data-theme="lattice"] body {
+    --lattice-grid-size: 34px;
+  }
+}
+
+@media (max-width: 767px) {
+  html[data-theme="lattice"] .nav-bar-wrapper,
+  html[data-theme="lattice"] .marketplace-category-bar {
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  html[data-theme="lattice"] .marketplace-agent-grid {
+    --marketplace-grid-template: minmax(0, 1fr);
+    --marketplace-grid-gap: 12px;
+  }
+
+  html[data-theme="lattice"] .marketplace-agent-grid .agent-card-hover {
+    --marketplace-card-height: 138px;
+    min-height: var(--marketplace-card-height) !important;
+    padding: 12px !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-agent-avatar {
+    width: 58px !important;
+    height: 58px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="lattice"] .marketplace-agent-grid .agent-card-hover,
+  html[data-theme="lattice"] :where(.nav-pill, .category-tab) {
+    transition: none;
+  }
+}
+
+/* Unified thin glass secondary headers for the deep-space lattice theme. */
+html[data-theme="lattice"] .sub-page-header {
+  --subpage-header-bg: linear-gradient(92deg, rgba(17, 38, 40, 0.72), rgba(15, 25, 31, 0.72));
+  --subpage-header-border: rgba(104, 199, 180, 0.16);
+  --subpage-control-bg: rgba(16, 31, 36, 0.62);
+  --subpage-control-bg-hover: rgba(24, 47, 46, 0.72);
+  --subpage-control-border: rgba(156, 186, 179, 0.18);
+  --subpage-control-border-hover: rgba(104, 199, 180, 0.34);
+  background: var(--subpage-header-bg) !important;
+  border-color: var(--subpage-header-border) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 10px 30px rgba(0, 0, 0, 0.18) !important;
+  backdrop-filter: blur(22px) saturate(1.16) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.16) !important;
+}
+
+html[data-theme="lattice"] :where(.sub-page-back, .sub-page-nav-button[data-active="true"]) {
+  color: #dff7f1 !important;
+}
+
+html[data-theme="lattice"] .sub-page-title {
+  color: #e7f2f6 !important;
+}
+
+html[data-theme="lattice"] .sub-page-subtitle {
+  color: #8da2ad !important;
+}
+
+/*
+ * Final marketplace backdrop guard.
+ * The marketplace also mounts the shared voice-studio/workbench classes, so this
+ * rule intentionally lives last to prevent secondary-page transparency bridges
+ * from clearing its aurora lattice backdrop.
+ */
+html[data-theme="lattice"] .marketplace-shell {
+  background-color: var(--background) !important;
+  background-image: var(--lattice-backdrop) !important;
+  background-size: 100% 100%, 100% 100% !important;
+  background-position: center, center !important;
+  background-attachment: fixed !important;
+}
+
+/*
+ * Chat messages should sit on the canvas instead of looking like nested cards.
+ * Keep spacing for readability, but remove the lattice assistant surface so
+ * user and assistant content share one continuous visual plane.
+ */
+html[data-theme="lattice"] :where(
+  .chat-message-bubble-user,
+  .chat-message-bubble-assistant,
+  .chat-msg-assistant
+) {
+  background: transparent !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="lattice"] .chat-message-bubble-user,
+html[data-theme="lattice"] .chat-message-bubble-assistant {
+  padding: 8px 0 !important;
+}
+
+html[data-theme="lattice"] .chat-message-bubble-user {
+  padding-left: 2px !important;
+  padding-right: 2px !important;
+}
+
+/* The legacy dark-mode polish uses a more specific, important shadow rule.
+ * Repeat the class in this final theme guard so lattice remains authoritative. */
+html[data-theme="lattice"] .chat-message-bubble-assistant.chat-message-bubble-assistant,
+html[data-theme="lattice"] .chat-message-bubble-user.chat-message-bubble-user {
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="lattice"] .chat-message-bubble-assistant::before,
+html[data-theme="lattice"] .chat-message-bubble-user::before,
+html[data-theme="lattice"] .chat-message-bubble-user::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Softer lattice typography: reduce the high-contrast blue-white glare while
+ * keeping a cool, slightly mineral hierarchy between messages and links. */
+html[data-theme="lattice"] .chat-message-bubble-assistant.chat-message-bubble-assistant,
+html[data-theme="lattice"] .chat-message-bubble-user.chat-message-bubble-user {
+  color: #c4d0d8 !important;
+  text-shadow: none !important;
+}
+
+html[data-theme="lattice"] .chat-message-bubble-assistant.chat-message-bubble-assistant
+  :where(.markdown-body, .render-layer-final, .render-layer-streaming),
+html[data-theme="lattice"] .chat-message-bubble-user.chat-message-bubble-user
+  :where(.user-message-content, .user-pasted-copy-card) {
+  color: #c4d0d8 !important;
+  text-shadow: none !important;
+}
+
+html[data-theme="lattice"] .chat-message-bubble-assistant.chat-message-bubble-assistant
+  .markdown-body :where(p, li, ul, ol, h1, h2, h3, h4, h5, h6, blockquote, strong, em, span:not(code span)),
+html[data-theme="lattice"] .chat-message-bubble-user.chat-message-bubble-user
+  :where(.user-message-content, .user-pasted-copy-card, .user-pasted-copy-card *) {
+  color: #c4d0d8 !important;
+  text-shadow: none !important;
+}
+
+html[data-theme="lattice"] .chat-message-bubble-assistant.chat-message-bubble-assistant
+  .markdown-body a {
+  color: #8fc4d1 !important;
+}
+
+/* Keep the transcript rail and composer rail on one exact center line. The
+ * width control still comes from the existing max-w-* utility on each rail. */
+html[data-theme="lattice"] :where(.chat-content-rail, .chat-composer-rail) {
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin-inline: auto !important;
+  min-width: 0 !important;
+}
+
+/* The transcript sits above the composer with a small, intentional breathing
+ * gap: eight pixels on each side keeps long output from feeling wider than the
+ * input frame while both rails remain on the same center line. */
+html[data-theme="lattice"] .chat-content-rail {
+  width: calc(100% - 16px) !important;
+}
+
+html[data-theme="lattice"] .chat-content-rail.max-w-4xl {
+  max-width: calc(56rem - 16px) !important;
+}
+
+html[data-theme="lattice"] .chat-content-rail.max-w-5xl {
+  max-width: calc(64rem - 16px) !important;
+}
+
+html[data-theme="lattice"] .chat-content-rail.max-w-6xl {
+  max-width: calc(72rem - 16px) !important;
+}
+
+html[data-theme="lattice"] .chat-content-rail.max-w-full {
+  max-width: calc(100% - 16px) !important;
+}
+
+/*
+ * Restored coloured lattice.
+ * This keeps the stable `lattice` id while bringing back the cyan-blue-violet
+ * square field that originally made the main workspace recognisable.
+ */
+html[data-theme="lattice"][data-mode="dark"] {
+  --primary: #6ee7e0;
+  --primary-foreground: #02100f;
+  --ring: #69e7ff;
+  --background: #10243a;
+  --foreground: #f2f7fa;
+  --font-title-color: #f8fbfd;
+  --font-body-color: #d7e2ea;
+  --font-aux-color: #91a4b3;
+  --card: rgba(13, 31, 48, .82);
+  --card-foreground: #f2f7fa;
+  --popover: rgba(8, 21, 36, .96);
+  --popover-foreground: #f2f7fa;
+  --secondary: rgba(27, 50, 72, .78);
+  --secondary-foreground: #c9d8e2;
+  --muted: rgba(22, 43, 63, .78);
+  --muted-foreground: #91a4b3;
+  --text-secondary: #becdd8;
+  --accent: rgba(38, 70, 94, .76);
+  --accent-foreground: #e9fffd;
+  --border: rgba(164, 211, 226, .24);
+  --input: rgba(178, 220, 233, .31);
+  --sidebar: rgba(4, 14, 25, .92);
+  --sidebar-foreground: #c4d4df;
+  --sidebar-border: rgba(128, 204, 218, .2);
+  --sidebar-primary: #6ee7e0;
+  --sidebar-primary-foreground: #02100f;
+  --sidebar-ring: #69e7ff;
+  --sidebar-accent: rgba(26, 58, 78, .82);
+  --sidebar-accent-foreground: #eff9fc;
+  --sidebar-primary-button-shadow: 0 12px 30px rgba(77, 221, 215, .23);
+  --chart-1: #6ee7e0;
+  --chart-2: #69a7ff;
+  --chart-3: #50d7a4;
+  --chart-4: #b08dff;
+  --chart-5: #f0bd58;
+  --theme-glow: rgba(110, 231, 224, .14);
+  --msg-user-bg: rgba(18, 78, 89, .72);
+  --msg-assistant-bg: rgba(8, 24, 40, .74);
+  --msg-think-header-bg: rgba(15, 46, 63, .8);
+  --msg-think-line: rgba(151, 211, 225, .22);
+  --msg-think-border: #69e7ff;
+  --hover-bg: rgba(110, 231, 224, .1);
+  --scrollbar-thumb: rgba(130, 179, 198, .5);
+  --scrollbar-track: rgba(3, 11, 20, .58);
+  --ui-surface: rgba(10, 28, 45, .78);
+  --ui-surface-strong: rgba(7, 20, 34, .92);
+  --ui-line: rgba(164, 211, 226, .21);
+  --ui-line-strong: rgba(110, 231, 224, .44);
+  --ui-focus: 0 0 0 3px rgba(105, 231, 255, .22);
+  --lattice-cyan: #6ee7e0;
+  --lattice-blue: #69a7ff;
+  --lattice-green: #50d7a4;
+  --lattice-violet: #b08dff;
+  --lattice-edge: rgba(164, 211, 226, .22);
+  --lattice-edge-active: rgba(110, 231, 224, .48);
+  --lattice-grid-size: 42px;
+  --lattice-backdrop:
+    linear-gradient(rgba(148, 216, 226, .22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 216, 226, .22) 1px, transparent 1px),
+    linear-gradient(112deg, rgba(0, 143, 158, .52) 0%, rgba(3, 95, 119, .35) 34%, transparent 62%),
+    linear-gradient(250deg, rgba(105, 77, 210, .52) 0%, rgba(49, 78, 174, .34) 35%, transparent 65%),
+    radial-gradient(ellipse at 73% -10%, rgba(105, 167, 255, .25), transparent 38rem),
+    linear-gradient(180deg, #1a3449 0%, #142f49 46%, #112540 100%);
+}
+
+html[data-theme="lattice"][data-mode="dark"] body,
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell {
+  background-color: #112540 !important;
+  background-image: var(--lattice-backdrop) !important;
+  background-size:
+    var(--lattice-grid-size) var(--lattice-grid-size),
+    var(--lattice-grid-size) var(--lattice-grid-size),
+    100% 100%, 100% 100%, 100% 100%, 100% 100% !important;
+  background-position: 0 0, 0 0, center, center, center, center !important;
+  background-attachment: fixed !important;
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-depth {
+  background: linear-gradient(180deg, rgba(2, 10, 19, .04), rgba(2, 10, 19, .13)) !important;
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .nav-bar-wrapper,
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-category-bar {
+  border-color: rgba(150, 215, 228, .2) !important;
+  background: linear-gradient(105deg, rgba(5, 18, 31, .82), rgba(11, 20, 45, .76)) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .07), 0 16px 38px rgba(0, 0, 0, .24) !important;
+  backdrop-filter: blur(22px) saturate(1.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell :where(
+  .nav-pill.nav-pill-active,
+  .nav-pill[aria-current="page"],
+  .nav-pill[data-active="true"],
+  .category-tab.category-tab-active,
+  .category-tab[aria-pressed="true"],
+  .category-tab[aria-selected="true"],
+  .category-tab[data-active="true"]
+) {
+  border-color: rgba(110, 231, 224, .44) !important;
+  color: #effffd !important;
+  background: linear-gradient(108deg, rgba(18, 104, 109, .63), rgba(64, 70, 151, .5)) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .09), 0 10px 24px rgba(18, 125, 143, .18) !important;
+}
+
+html[data-theme="lattice"][data-mode="dark"] :where(.app-sidebar-frame, .sidebar-drawer, .sidebar-shell):not([data-youcai="true"]) {
+  border-color: rgba(128, 204, 218, .2) !important;
+  background-color: rgba(3, 12, 22, .92) !important;
+  background-image:
+    linear-gradient(rgba(134, 211, 222, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(134, 211, 222, .055) 1px, transparent 1px),
+    linear-gradient(142deg, rgba(0, 134, 151, .2), rgba(38, 42, 100, .16)) !important;
+  background-size: 42px 42px, 42px 42px, 100% 100% !important;
+  box-shadow: 16px 0 48px rgba(0, 0, 0, .3), inset -1px 0 rgba(110, 231, 224, .08) !important;
+  backdrop-filter: blur(24px) saturate(1.18);
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+}
+
+html[data-theme="lattice"][data-mode="dark"] .sidebar-shell :where(.sidebar-shortcut-card, .sidebar-tool-card, .sidebar-conv-item) {
+  border-color: rgba(136, 205, 220, .17) !important;
+  background: rgba(7, 22, 36, .72) !important;
+}
+
+html[data-theme="lattice"][data-mode="dark"] .sidebar-shell :where(.sidebar-shortcut-card[aria-current="page"], .sidebar-tool-card[aria-current="page"], .sidebar-conv-item.active) {
+  border-color: rgba(110, 231, 224, .42) !important;
+  background: linear-gradient(104deg, rgba(15, 91, 101, .67), rgba(47, 50, 112, .58)) !important;
+  box-shadow: inset 2px 0 #6ee7e0, 0 12px 28px rgba(0, 0, 0, .2) !important;
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  border-color: rgba(110, 231, 224, .28) !important;
+  background: linear-gradient(135deg, rgba(12, 36, 55, .86), rgba(8, 21, 39, .8)) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .08), 0 18px 42px rgba(0, 0, 0, .24) !important;
+  backdrop-filter: blur(18px) saturate(1.14);
+  -webkit-backdrop-filter: blur(18px) saturate(1.14);
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 2) .agent-card-hover { border-color: rgba(105, 167, 255, .3) !important; }
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 3) .agent-card-hover { border-color: rgba(176, 141, 255, .3) !important; }
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 4) .agent-card-hover { border-color: rgba(240, 189, 88, .28) !important; }
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover::before {
+  opacity: .9;
+  background: linear-gradient(118deg, rgba(110, 231, 224, .13), transparent 36%, transparent 68%, rgba(176, 141, 255, .1));
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(110, 231, 224, .54) !important;
+  background: linear-gradient(135deg, rgba(18, 49, 69, .92), rgba(12, 29, 50, .88)) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .1), 0 25px 56px rgba(0, 0, 0, .34), 0 0 28px rgba(105, 231, 255, .08) !important;
+}
+
+html[data-theme="lattice"][data-mode="dark"] .soft-white-home {
+  --swh-paper: #112540;
+  --swh-paper-strong: rgba(8, 24, 40, .84);
+  --swh-ink: #f2f7fa;
+  --swh-ink-soft: #c2d0da;
+  --swh-line: rgba(164, 211, 226, .22);
+  --swh-line-strong: rgba(110, 231, 224, .44);
+  --swh-jade: #6ee7e0;
+  --swh-jade-dark: #43c9c3;
+  --swh-proof-bg: rgba(4, 19, 32, .92);
+  --swh-jade-soft: rgba(22, 83, 92, .45);
+  --swh-on-jade: #02100f;
+  --swh-gold: #f0bd58;
+  --swh-header-bg: rgba(5, 16, 29, .78);
+  --swh-grid-line: rgba(148, 216, 226, .17);
+  --swh-surface: rgba(8, 26, 43, .76);
+  --swh-surface-muted: rgba(7, 21, 37, .94);
+  --swh-surface-tag: rgba(21, 52, 72, .88);
+  --swh-inverse: #050d18;
+  --swh-inverse-text: #f2f7fa;
+  --swh-inverse-soft: #c2d0da;
+  --swh-inverse-muted: #8fa2b1;
+  --swh-shadow: rgba(0, 0, 0, .34);
+  --swh-jade-glow: rgba(24, 187, 183, .2);
+  --swh-gold-glow: rgba(118, 89, 226, .19);
+  background-color: #112540;
+  background-image: var(--lattice-backdrop);
+  background-size: 42px 42px, 42px 42px, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+  background-attachment: fixed;
+}
+
+html[data-theme="lattice"][data-mode="dark"] .soft-white-home::before {
+  opacity: .42;
+  background-size: 42px 42px;
+}
+
+html[data-theme="lattice"][data-mode="dark"] :where(.swh-header, .swh-loop, .swh-available, .swh-planned, .swh-business-grid article) {
+  backdrop-filter: blur(20px) saturate(1.16);
+  -webkit-backdrop-filter: blur(20px) saturate(1.16);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .065), 0 24px 62px rgba(0, 0, 0, .24);
+}
+
+html[data-theme="lattice"][data-mode="dark"] .voice-studio-root:not(:where([data-testid="manju-content"] *)) {
+  --vs-primary: #6ee7e0;
+  --vs-primary-hover: #92f3ec;
+  --vs-secondary: #69a7ff;
+  --vs-accent: #b08dff;
+  --vs-bg: rgba(4, 15, 26, .3);
+  --vs-bg-secondary: rgba(7, 22, 37, .72);
+  --vs-surface: rgba(10, 31, 49, .76);
+  --vs-surface-hover: rgba(22, 55, 76, .84);
+  --vs-text: #f2f7fa;
+  --vs-text-secondary: #c2d0da;
+  --vs-text-muted: #8fa2b1;
+  --vs-border: rgba(164, 211, 226, .22);
+  --vs-card: rgba(8, 27, 45, .8);
+  --vs-card-hover: rgba(15, 42, 62, .88);
+  --vs-input-bg: rgba(3, 15, 27, .72);
+  --vs-input-border: rgba(164, 211, 226, .3);
+  --vs-glow: #69e7ff;
+  --vs-on-accent: #02100f;
+}
+
+html[data-theme="lattice"][data-mode="dark"] :where(button, a, input, textarea, select):not(:where(.commerce-root *, [data-testid="manju-content"] *)):focus-visible {
+  outline-color: #69e7ff;
+  box-shadow: var(--ui-focus);
+}
+
+/* Homepage signature: luminous grid, measured scanning light and crisp glass. */
+html[data-theme="lattice"][data-mode="dark"] .soft-white-home {
+  --swh-ambient-one: rgba(37, 222, 210, .24);
+  --swh-ambient-two: rgba(112, 101, 255, .24);
+  --swh-ambient-three: rgba(67, 145, 255, .18);
+  --swh-sweep: rgba(114, 238, 255, .46);
+  --swh-panel-highlight: rgba(218, 251, 255, .11);
+  --swh-card-glow: rgba(60, 224, 217, .15);
+  --swh-title-start: #6ee7e0;
+  --swh-title-end: #b08dff;
+  --swh-atmosphere-blend: screen;
+  --swh-pointer-color: rgba(71, 231, 229, .18);
+}
+
+html[data-theme="lattice"][data-mode="dark"] .swh-header {
+  background: linear-gradient(96deg, rgba(4, 18, 31, .91), rgba(10, 21, 49, .88));
+}
+
+html[data-theme="lattice"][data-mode="dark"] .swh-loop {
+  border-radius: 18px 46px 18px 18px;
+  background:
+    linear-gradient(rgba(139, 220, 232, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 220, 232, .035) 1px, transparent 1px),
+    linear-gradient(145deg, rgba(7, 28, 47, .91), rgba(11, 24, 51, .86));
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+}
+
+html[data-theme="lattice"][data-mode="dark"] .swh-value-grid,
+html[data-theme="lattice"][data-mode="dark"] :where(.swh-available, .swh-planned, .swh-business-grid article) {
+  background-image: linear-gradient(132deg, rgba(110, 231, 224, .045), transparent 42%, rgba(176, 141, 255, .045));
+}

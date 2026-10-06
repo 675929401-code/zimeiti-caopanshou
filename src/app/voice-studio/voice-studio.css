@@ -1,0 +1,1159 @@
+/* 智音工坊作用域样式 — 从原 voice-platform globals.css 迁移 */
+/* 所有样式限制在 .voice-studio-root 内，不污染主站 */
+/* Tailwind 已在根 layout globals.css 导入，不再重复 */
+
+/* ============ 暗色主题变量（默认） ============ */
+.voice-studio-root {
+  /* 科技蓝工作台配色 - 深色主题 */
+  --vs-primary: #38BDF8;
+  --vs-primary-hover: #7DD3FC;
+  --vs-secondary: #0EA5E9;
+  --vs-accent: #3B82F6;
+  --vs-bg: #050B18;
+  --vs-bg-secondary: #07111F;
+  --vs-surface: #081B35;
+  --vs-surface-hover: #0A2245;
+  --vs-text: #E2EAF5;
+  --vs-text-secondary: #B5C5DD;
+  --vs-text-muted: #8FA3BF;
+  --vs-border: #1B3358;
+  --vs-card: #0A1A30;
+  --vs-card-hover: #0F2444;
+  --vs-glow: #38BDF8;
+  --vs-glass-bg: rgba(8, 27, 53, 0.64);
+  --vs-glass-border: rgba(56, 189, 248, 0.16);
+  --vs-glass-border-hover: rgba(56, 189, 248, 0.36);
+  --vs-glass-shadow: 0 18px 60px rgba(2, 6, 23, 0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+  --vs-glass-shadow-hover: 0 18px 60px rgba(2, 6, 23, 0.42), 0 0 34px rgba(56, 189, 248, 0.10), inset 0 1px 0 rgba(255,255,255,0.08);
+  --vs-input-bg: rgba(7, 17, 31, 0.7);
+  --vs-input-border: rgba(56, 189, 248, 0.2);
+  --vs-input-focus-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+  --vs-radial-1: radial-gradient(ellipse 70% 45% at 48% -18%, rgba(56, 189, 248, 0.12), transparent);
+  --vs-radial-2: radial-gradient(ellipse 55% 45% at 85% 100%, rgba(14, 165, 233, 0.08), transparent);
+  --vs-grid-color: rgba(56, 189, 248, 0.04);
+  --vs-grid-color-strong: rgba(56, 189, 248, 0.06);
+  --vs-skeleton-base: rgba(8, 27, 53, 0.5);
+  --vs-skeleton-shine: rgba(56, 189, 248, 0.12);
+  --vs-gradient-text: #E5EEF8;
+  --vs-card-hover-shadow: 0 20px 60px rgba(2, 6, 23, 0.45), 0 0 34px rgba(56, 189, 248, 0.12);
+  --vs-card-hover-border: rgba(56, 189, 248, 0.45);
+  --vs-glow-border-1: rgba(56,189,248,0.5);
+  --vs-glow-border-2: rgba(14,165,233,0.3);
+
+  background: var(--vs-bg);
+  color: var(--vs-text);
+  background-image: var(--vs-radial-1), var(--vs-radial-2);
+  background-attachment: fixed;
+  /* min-height: 100vh 已移除 — 应用广场的 .voice-studio-root 使用 h-full + minHeight:0
+     由 flex 布局精确控制高度；100vh 会导致组件溢出父容器产生多余滚动空间。
+     智音工坊等独立页面如需 100vh 由各自的内联 style 或独立 CSS 控制 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============ 亮色主题变量覆盖 ============ */
+[data-mode="light"] .voice-studio-root {
+  --vs-primary: #0891B2;
+  --vs-primary-hover: #06B6D4;
+  --vs-secondary: #0EA5E9;
+  --vs-accent: #2563EB;
+  --vs-bg: #F5F7FA;
+  --vs-bg-secondary: #EDF0F5;
+  --vs-surface: #FFFFFF;
+  --vs-surface-hover: #F8FAFC;
+  --vs-text: #1E293B;
+  --vs-text-secondary: #475569;
+  --vs-text-muted: #64748B;
+  --vs-border: #E2E8F0;
+  --vs-card: #FFFFFF;
+  --vs-card-hover: #F1F5F9;
+  --vs-glow: #0891B2;
+  --vs-glass-bg: rgba(255, 255, 255, 0.72);
+  --vs-glass-border: rgba(8, 145, 178, 0.15);
+  --vs-glass-border-hover: rgba(8, 145, 178, 0.30);
+  --vs-glass-shadow: 0 18px 60px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255,255,255,0.8);
+  --vs-glass-shadow-hover: 0 18px 60px rgba(0, 0, 0, 0.08), 0 0 24px rgba(8, 145, 178, 0.08), inset 0 1px 0 rgba(255,255,255,0.9);
+  --vs-input-bg: rgba(241, 245, 249, 0.9);
+  --vs-input-border: rgba(8, 145, 178, 0.2);
+  --vs-input-focus-shadow: 0 0 0 2px rgba(8, 145, 178, 0.15);
+  --vs-radial-1: radial-gradient(ellipse 70% 45% at 48% -18%, rgba(8, 145, 178, 0.06), transparent);
+  --vs-radial-2: radial-gradient(ellipse 55% 45% at 85% 100%, rgba(14, 165, 233, 0.04), transparent);
+  --vs-grid-color: rgba(8, 145, 178, 0.06);
+  --vs-grid-color-strong: rgba(8, 145, 178, 0.08);
+  --vs-skeleton-base: rgba(241, 245, 249, 0.8);
+  --vs-skeleton-shine: rgba(8, 145, 178, 0.08);
+  --vs-gradient-text: #1E293B;
+  --vs-card-hover-shadow: 0 20px 60px rgba(0, 0, 0, 0.08), 0 0 20px rgba(8, 145, 178, 0.06);
+  --vs-card-hover-border: rgba(8, 145, 178, 0.30);
+  --vs-glow-border-1: rgba(8, 145, 178, 0.35);
+  --vs-glow-border-2: rgba(14, 165, 233, 0.2);
+}
+
+/* ============ 曜夜紫 (Nocturne Violet) — 智音工坊适配 ============ */
+[data-theme="nocturne"] .voice-studio-root {
+  --vs-primary: #7C5CFF;
+  --vs-primary-hover: #9D85FF;
+  --vs-secondary: #69E7FF;
+  --vs-accent: #62FAD3;
+  --vs-bg: #070A14;
+  --vs-bg-secondary: #0A0F1E;
+  --vs-surface: #0D1424;
+  --vs-surface-hover: #131C33;
+  --vs-text: #F7FAFF;
+  --vs-text-secondary: #C2CFE8;
+  --vs-text-muted: #9AA7C7;
+  --vs-border: rgba(124, 92, 255, 0.16);
+  --vs-card: #0F1730;
+  --vs-card-hover: #141E3D;
+  --vs-glow: #7C5CFF;
+  --vs-glass-bg: rgba(13, 20, 36, 0.64);
+  --vs-glass-border: rgba(124, 92, 255, 0.16);
+  --vs-glass-border-hover: rgba(124, 92, 255, 0.36);
+  --vs-glass-shadow: 0 18px 60px rgba(2, 4, 12, 0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+  --vs-glass-shadow-hover: 0 18px 60px rgba(2, 4, 12, 0.5), 0 0 34px rgba(124, 92, 255, 0.12), inset 0 1px 0 rgba(255,255,255,0.08);
+  --vs-input-bg: rgba(10, 15, 30, 0.7);
+  --vs-input-border: rgba(124, 92, 255, 0.2);
+  --vs-input-focus-shadow: 0 0 0 2px rgba(124, 92, 255, 0.2);
+  --vs-radial-1: radial-gradient(ellipse 70% 45% at 48% -18%, rgba(124, 92, 255, 0.14), transparent);
+  --vs-radial-2: radial-gradient(ellipse 55% 45% at 85% 100%, rgba(105, 231, 255, 0.08), transparent);
+  --vs-grid-color: rgba(124, 92, 255, 0.04);
+  --vs-grid-color-strong: rgba(124, 92, 255, 0.06);
+  --vs-skeleton-base: rgba(13, 20, 36, 0.5);
+  --vs-skeleton-shine: rgba(124, 92, 255, 0.12);
+  --vs-gradient-text: #EDE9FE;
+  --vs-card-hover-shadow: 0 20px 60px rgba(2, 4, 12, 0.5), 0 0 34px rgba(124, 92, 255, 0.14);
+  --vs-card-hover-border: rgba(124, 92, 255, 0.45);
+  --vs-glow-border-1: rgba(124, 92, 255, 0.5);
+  --vs-glow-border-2: rgba(105, 231, 255, 0.3);
+}
+[data-theme="nocturne"][data-mode="light"] .voice-studio-root {
+  --vs-primary: #7C5CFF;
+  --vs-primary-hover: #9D85FF;
+  --vs-secondary: #0EA5E9;
+  --vs-accent: #0D9488;
+  --vs-bg: #F6F4FF;
+  --vs-bg-secondary: #EDE9FE;
+  --vs-surface: #FFFFFF;
+  --vs-surface-hover: #FAF8FF;
+  --vs-text: #1A1433;
+  --vs-text-secondary: #4C3F7E;
+  --vs-text-muted: #7C6FAE;
+  --vs-border: #DDD6FE;
+  --vs-card: #FFFFFF;
+  --vs-card-hover: #F4F0FF;
+  --vs-glow: #7C5CFF;
+  --vs-glass-bg: rgba(255, 255, 255, 0.72);
+  --vs-glass-border: rgba(124, 92, 255, 0.15);
+  --vs-glass-border-hover: rgba(124, 92, 255, 0.32);
+  --vs-glass-shadow: 0 18px 60px rgba(76, 29, 149, 0.08), inset 0 1px 0 rgba(255,255,255,0.8);
+  --vs-glass-shadow-hover: 0 18px 60px rgba(76, 29, 149, 0.1), 0 0 24px rgba(124, 92, 255, 0.1), inset 0 1px 0 rgba(255,255,255,0.9);
+  --vs-input-bg: rgba(237, 233, 254, 0.7);
+  --vs-input-border: rgba(124, 92, 255, 0.22);
+  --vs-input-focus-shadow: 0 0 0 2px rgba(124, 92, 255, 0.15);
+  --vs-radial-1: radial-gradient(ellipse 70% 45% at 48% -18%, rgba(124, 92, 255, 0.07), transparent);
+  --vs-radial-2: radial-gradient(ellipse 55% 45% at 85% 100%, rgba(14, 165, 233, 0.04), transparent);
+  --vs-grid-color: rgba(124, 92, 255, 0.05);
+  --vs-grid-color-strong: rgba(124, 92, 255, 0.07);
+  --vs-skeleton-base: rgba(237, 233, 254, 0.8);
+  --vs-skeleton-shine: rgba(124, 92, 255, 0.08);
+  --vs-gradient-text: #2E1065;
+  --vs-card-hover-shadow: 0 20px 60px rgba(76, 29, 149, 0.1), 0 0 20px rgba(124, 92, 255, 0.08);
+  --vs-card-hover-border: rgba(124, 92, 255, 0.32);
+  --vs-glow-border-1: rgba(124, 92, 255, 0.35);
+  --vs-glow-border-2: rgba(105, 231, 255, 0.2);
+}
+
+/* ============ 晨溪 (Morning Creek) — 智音工坊适配：晨雾白 + 溪水青 ============ */
+[data-theme="creek"] .voice-studio-root,
+[data-theme="creek"][data-mode="light"] .voice-studio-root {
+  --vs-primary: #0E7490;
+  --vs-primary-hover: #06B6D4;
+  --vs-secondary: #0EA5E9;
+  --vs-accent: #0891B2;
+  --vs-bg: #F5F9FA;
+  --vs-bg-secondary: #EDF5F6;
+  --vs-surface: #FFFFFF;
+  --vs-surface-hover: #F0F7F8;
+  --vs-text: #10333F;
+  --vs-text-secondary: #164E5E;
+  --vs-text-muted: #64748B;
+  --vs-border: #DBE8EC;
+  --vs-card: #FFFFFF;
+  --vs-card-hover: #F0F7F8;
+  --vs-glow: #0891B2;
+  --vs-glass-bg: rgba(255, 255, 255, 0.72);
+  --vs-glass-border: rgba(8, 145, 178, 0.15);
+  --vs-glass-border-hover: rgba(8, 145, 178, 0.32);
+  --vs-glass-shadow: 0 18px 60px rgba(8, 60, 75, 0.08), inset 0 1px 0 rgba(255,255,255,0.8);
+  --vs-glass-shadow-hover: 0 18px 60px rgba(8, 60, 75, 0.10), 0 0 24px rgba(8, 145, 178, 0.10), inset 0 1px 0 rgba(255,255,255,0.9);
+  --vs-input-bg: rgba(228, 240, 243, 0.7);
+  --vs-input-border: rgba(8, 145, 178, 0.22);
+  --vs-input-focus-shadow: 0 0 0 2px rgba(8, 145, 178, 0.15);
+  --vs-radial-1: radial-gradient(ellipse 70% 45% at 48% -18%, rgba(8, 145, 178, 0.07), transparent);
+  --vs-radial-2: radial-gradient(ellipse 55% 45% at 85% 100%, rgba(14, 165, 233, 0.05), transparent);
+  --vs-grid-color: rgba(8, 145, 178, 0.05);
+  --vs-grid-color-strong: rgba(8, 145, 178, 0.07);
+  --vs-skeleton-base: rgba(228, 240, 243, 0.8);
+  --vs-skeleton-shine: rgba(8, 145, 178, 0.08);
+  --vs-gradient-text: #0E7490;
+  --vs-card-hover-shadow: 0 20px 60px rgba(8, 60, 75, 0.10), 0 0 20px rgba(8, 145, 178, 0.08);
+  --vs-card-hover-border: rgba(8, 145, 178, 0.32);
+  --vs-glow-border-1: rgba(8, 145, 178, 0.35);
+  --vs-glow-border-2: rgba(14, 165, 233, 0.2);
+}
+[data-theme="creek"][data-mode="dark"] .voice-studio-root {
+  /* 深色兜底：工坊深青系 */
+  --vs-primary: #06B6D4;
+  --vs-primary-hover: #22D3EE;
+  --vs-secondary: #0EA5E9;
+  --vs-accent: #38BDF8;
+  --vs-bg: #050B18;
+  --vs-bg-secondary: #07111F;
+  --vs-surface: #081B35;
+  --vs-surface-hover: #0A2245;
+  --vs-text: #E2EAF5;
+  --vs-text-secondary: #B5C5DD;
+  --vs-text-muted: #8FA3BF;
+  --vs-border: #1B3358;
+  --vs-card: #0A1A30;
+  --vs-card-hover: #0F2444;
+  --vs-glow: #06B6D4;
+  --vs-glass-bg: rgba(8, 27, 53, 0.64);
+  --vs-glass-border: rgba(6, 182, 212, 0.16);
+  --vs-glass-border-hover: rgba(6, 182, 212, 0.36);
+  --vs-glass-shadow: 0 18px 60px rgba(2, 6, 23, 0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+  --vs-glass-shadow-hover: 0 18px 60px rgba(2, 6, 23, 0.42), 0 0 34px rgba(6, 182, 212, 0.10), inset 0 1px 0 rgba(255,255,255,0.08);
+  --vs-input-bg: rgba(7, 17, 31, 0.7);
+  --vs-input-border: rgba(6, 182, 212, 0.2);
+  --vs-input-focus-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+  --vs-radial-1: radial-gradient(ellipse 70% 45% at 48% -18%, rgba(6, 182, 212, 0.12), transparent);
+  --vs-radial-2: radial-gradient(ellipse 55% 45% at 85% 100%, rgba(14, 165, 233, 0.08), transparent);
+  --vs-grid-color: rgba(6, 182, 212, 0.04);
+  --vs-grid-color-strong: rgba(6, 182, 212, 0.06);
+  --vs-skeleton-base: rgba(8, 27, 53, 0.5);
+  --vs-skeleton-shine: rgba(6, 182, 212, 0.12);
+  --vs-gradient-text: #E5EEF8;
+  --vs-card-hover-shadow: 0 20px 60px rgba(2, 6, 23, 0.45), 0 0 34px rgba(6, 182, 212, 0.12);
+  --vs-card-hover-border: rgba(6, 182, 212, 0.45);
+  --vs-glow-border-1: rgba(6, 182, 212, 0.5);
+  --vs-glow-border-2: rgba(14, 165, 233, 0.3);
+}
+/* ==== 幻境极光/深空曜金/夜幕翡冷 已于 2026-07-26 下线，适配块已移除 ==== */
+
+/* 科技风网格背景 */
+.voice-studio-root .tech-grid {
+  background-image:
+    linear-gradient(var(--vs-grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--vs-grid-color) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.voice-studio-root .tech-blue-grid {
+  background-image:
+    linear-gradient(var(--vs-grid-color-strong) 1px, transparent 1px),
+    linear-gradient(90deg, var(--vs-grid-color-strong) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-position: -1px -1px;
+}
+
+/* 玻璃拟态卡片 */
+.voice-studio-root .glass-card {
+  background: var(--vs-glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--vs-glass-border);
+  box-shadow: var(--vs-glass-shadow);
+}
+.voice-studio-root .glass-card:hover {
+  border-color: var(--vs-glass-border-hover);
+  box-shadow: var(--vs-glass-shadow-hover);
+}
+
+/* 霓虹按钮 */
+.voice-studio-root .neon-btn {
+  background: linear-gradient(135deg, var(--vs-primary), var(--vs-accent));
+  box-shadow: 0 0 20px color-mix(in srgb, var(--vs-glow) 40%, transparent), inset 0 1px 0 rgba(255,255,255,0.1);
+  transition: all 0.3s ease;
+}
+.voice-studio-root .neon-btn:hover {
+  box-shadow: 0 0 30px color-mix(in srgb, var(--vs-glow) 60%, transparent), inset 0 1px 0 rgba(255,255,255,0.2);
+  transform: translateY(-1px);
+}
+
+/* 渐变文字 */
+.voice-studio-root .gradient-text { color: var(--vs-gradient-text); }
+
+/* 发光边框 */
+.voice-studio-root .glow-border { position: relative; }
+.voice-studio-root .glow-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--vs-glow-border-1), var(--vs-glow-border-2), transparent);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* 卡片hover发光 */
+.voice-studio-root .card-hover { transition: all 0.3s ease; }
+.voice-studio-root .card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--vs-card-hover-shadow);
+  border-color: var(--vs-card-hover-border);
+}
+
+/* 作用域内输入框 */
+.voice-studio-root input,
+.voice-studio-root textarea,
+.voice-studio-root select {
+  background: var(--vs-input-bg);
+  border-color: var(--vs-input-border);
+  color: var(--vs-text);
+}
+.voice-studio-root input:focus,
+.voice-studio-root textarea:focus,
+.voice-studio-root select:focus {
+  border-color: var(--vs-primary);
+  box-shadow: var(--vs-input-focus-shadow);
+}
+.voice-studio-root input::placeholder,
+.voice-studio-root textarea::placeholder {
+  color: var(--vs-text-muted);
+}
+
+/* ============ 动画 ============ */
+@keyframes vsFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.voice-studio-root .animate-fadeIn { animation: vsFadeIn 0.3s ease-out; }
+
+@keyframes vsSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.voice-studio-root .animate-slideUp { animation: vsSlideUp 0.4s ease-out; }
+
+@keyframes vsPulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.voice-studio-root .animate-pulse-dot { animation: vsPulseDot 1.5s ease-in-out infinite; }
+
+@keyframes vsSpin { to { transform: rotate(360deg); } }
+.voice-studio-root .animate-spin-slow { animation: vsSpin 2s linear infinite; }
+
+/* 声波动画 */
+@keyframes vsWave {
+  0%, 100% { height: 6px; }
+  50% { height: 20px; }
+}
+.voice-studio-root .wave-bar { animation: vsWave 0.8s ease-in-out infinite; }
+
+/* 骨架屏 */
+.voice-studio-root .skeleton {
+  background: linear-gradient(90deg, var(--vs-skeleton-base) 25%, var(--vs-skeleton-shine) 50%, var(--vs-skeleton-base) 75%);
+  background-size: 200% 100%;
+  animation: vsShimmer 1.5s infinite;
+}
+@keyframes vsShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 频谱条脉冲 */
+@keyframes audioPulse {
+  0%, 100% { transform: scaleY(0.35); opacity: 0.55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+.voice-studio-root .audio-pulse {
+  transform-origin: bottom;
+  animation: audioPulse 1.4s ease-in-out infinite;
+}
+
+/* 轨道旋转 */
+@keyframes blueOrbit {
+  from { transform: rotate(0deg) scale(1); opacity: 0.5; }
+  50% { transform: rotate(180deg) scale(1.08); opacity: 0.8; }
+  to { transform: rotate(360deg) scale(1); opacity: 0.5; }
+}
+.voice-studio-root .blue-orbit {
+  border-style: dashed;
+  animation: blueOrbit 18s linear infinite;
+}
+.voice-studio-root .blue-orbit-delay {
+  animation-duration: 26s;
+  animation-direction: reverse;
+}
+.voice-studio-root .blue-orbit-slow {
+  animation-duration: 34s;
+}
+
+/* 扫描线 */
+@keyframes scanLine {
+  0% { transform: translateY(-100%); opacity: 0; }
+  20% { opacity: 0.6; }
+  80% { opacity: 0.6; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+.voice-studio-root .scan-line { animation: scanLine 4s ease-in-out infinite; }
+
+/* ===== 精致滚动条 [精致滚动核心] ===== */
+.voice-studio-root * {
+  /* Firefox 滚动条 */
+  scrollbar-width: thin;
+  scrollbar-color:
+    color-mix(in srgb, var(--vs-primary) 42%, transparent)
+    color-mix(in srgb, var(--vs-text-muted) 7%, transparent);
+}
+.voice-studio-root *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.voice-studio-root *::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--vs-text-muted) 6%, transparent);
+  border-radius: 999px;
+  margin: 4px 0;
+}
+.voice-studio-root *::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--vs-primary) 48%, transparent) 0%,
+    color-mix(in srgb, var(--vs-secondary) 48%, transparent) 100%
+  );
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--vs-primary) 16%, transparent);
+}
+.voice-studio-root *::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--vs-primary) 72%, transparent) 0%,
+    color-mix(in srgb, var(--vs-secondary) 72%, transparent) 100%
+  );
+  box-shadow: 0 0 12px color-mix(in srgb, var(--vs-primary) 36%, transparent);
+}
+.voice-studio-root *::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--vs-primary) 92%, transparent) 0%,
+    color-mix(in srgb, var(--vs-secondary) 92%, transparent) 100%
+  );
+}
+.voice-studio-root *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ===== 应用广场滚动条（用户要求：完全隐藏，保留滚动能力） =====
+   原彩色细滚动条样式已被用户取消，现在滚动条不显示，但 overflow-y-auto
+   仍在生效，鼠标滚轮/触摸板/方向键仍可滚动浏览所有应用卡片 */
+.marketplace-scroll {
+  scrollbar-width: none !important;
+  scrollbar-color: transparent transparent !important;
+  -ms-overflow-style: none !important;
+  overscroll-behavior: contain;
+}
+.marketplace-scroll::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+.marketplace-scroll::-webkit-scrollbar-track,
+.marketplace-scroll::-webkit-scrollbar-thumb,
+.marketplace-scroll::-webkit-scrollbar-thumb:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* 滚动条悬浮时的辉光轨道（排除 marketplace-scroll，其滚动条已完全隐藏） */
+.voice-studio-root *:not(.marketplace-scroll)::-webkit-scrollbar-track:hover {
+  background: color-mix(in srgb, var(--vs-primary) 7%, transparent);
+}
+
+/* 注：html/body 级滚动条规则已迁移至 voice-studio-global.css
+   （仅由 voice-studio/layout.tsx 导入），以便本文件可安全全局共享 */
+
+/* Unified thin glass header for Voice Studio secondary pages. */
+.voice-studio-root .vs-studio-header {
+  border-bottom: 1px solid rgba(143, 217, 234, 0.16);
+  background: linear-gradient(92deg, rgba(4, 39, 49, 0.54), rgba(11, 17, 42, 0.48));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 10px 30px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(22px) saturate(1.16);
+  -webkit-backdrop-filter: blur(22px) saturate(1.16);
+}
+
+.voice-studio-root .vs-studio-header-inner {
+  width: min(1480px, calc(100vw - 24px));
+  height: 56px;
+  gap: 10px;
+  padding-inline: clamp(12px, 2.2vw, 30px);
+}
+
+.voice-studio-root .vs-studio-logo {
+  gap: 9px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 4px 8px;
+}
+
+.voice-studio-root .vs-studio-logo:hover {
+  border-color: rgba(143, 217, 234, 0.14);
+  background: rgba(9, 25, 39, 0.3);
+}
+
+.voice-studio-root .vs-studio-logo-mark-wrap,
+.voice-studio-root .vs-studio-logo-mark {
+  width: 36px;
+  height: 36px;
+}
+
+.voice-studio-root .vs-studio-logo-mark {
+  border-radius: 12px;
+}
+
+.voice-studio-root .vs-studio-logo-mark svg {
+  width: 18px;
+  height: 18px;
+}
+
+.voice-studio-root .vs-studio-logo-title {
+  font-size: 15px;
+  line-height: 1.05;
+}
+
+.voice-studio-root .vs-studio-logo-subtitle {
+  font-size: 11px;
+  letter-spacing: 0.17em;
+}
+
+.voice-studio-root .vs-studio-home {
+  height: 34px;
+  min-height: 34px;
+  border-color: rgba(143, 217, 234, 0.17);
+  border-radius: 12px;
+  background: rgba(9, 25, 39, 0.34);
+  padding: 0 13px;
+  color: color-mix(in srgb, var(--vs-text-secondary) 80%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.052),
+    0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.voice-studio-root .vs-studio-home:hover {
+  border-color: rgba(103, 217, 239, 0.34);
+  background: rgba(14, 45, 62, 0.52);
+  color: var(--vs-text);
+}
+
+.voice-studio-root .vs-studio-home svg {
+  width: 14px;
+  height: 14px;
+}
+
+.voice-studio-root .vs-studio-home span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.voice-studio-root .vs-studio-nav-wrap {
+  min-width: 0;
+}
+
+.voice-studio-root .vs-studio-nav {
+  min-width: 0;
+  height: 40px;
+  border-color: rgba(143, 217, 234, 0.17);
+  border-radius: 16px;
+  background: rgba(9, 25, 39, 0.32);
+  padding: 3px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.voice-studio-root .vs-studio-nav-indicator {
+  top: 3px;
+  bottom: 3px;
+  border-color: color-mix(in srgb, var(--vs-primary) 28%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--vs-primary) 13%, transparent),
+    color-mix(in srgb, var(--vs-secondary) 9%, transparent)
+  );
+}
+
+.voice-studio-root .vs-studio-nav-link {
+  height: 32px;
+  gap: 7px;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.voice-studio-root .vs-studio-nav-link svg {
+  width: 17px;
+  height: 17px;
+}
+
+.voice-studio-root .vs-studio-mobile-toggle {
+  display: none;
+  height: 34px;
+  width: 34px;
+  border: 1px solid rgba(143, 217, 234, 0.17);
+  background: rgba(9, 25, 39, 0.34);
+}
+
+.voice-studio-root .vs-studio-mobile-menu {
+  border-color: rgba(143, 217, 234, 0.15);
+  background: rgba(6, 18, 30, 0.62);
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+}
+
+@media (min-width: 901px) {
+  .voice-studio-root .vs-studio-mobile-menu {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .voice-studio-root .vs-studio-header-inner {
+    height: 52px;
+    width: calc(100vw - 20px);
+    padding-inline: 10px;
+  }
+
+  .voice-studio-root .vs-studio-nav-wrap {
+    display: none;
+  }
+
+  .voice-studio-root .vs-studio-mobile-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .voice-studio-root .vs-studio-logo-mark-wrap,
+  .voice-studio-root .vs-studio-logo-mark {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+@media (max-width: 520px) {
+  .voice-studio-root .vs-studio-logo {
+    padding-inline: 4px;
+  }
+
+  .voice-studio-root .vs-studio-logo-title {
+    font-size: 14px;
+  }
+
+  .voice-studio-root .vs-studio-logo-subtitle {
+    display: none;
+  }
+
+  .voice-studio-root .vs-studio-home {
+    padding-inline: 10px;
+  }
+}
+
+/* Readability floor shared by the voice workspace, voice library and aliases. */
+.voice-studio-root .vs-studio-logo-subtitle {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.voice-studio-root .vs-studio-home {
+  height: 40px;
+  min-height: 40px;
+}
+
+.voice-studio-root .vs-studio-home span { font-size: 13px; }
+.voice-studio-root .vs-studio-nav { height: 44px; }
+.voice-studio-root .vs-studio-nav-link { height: 36px; font-size: 14px; }
+
+.voice-studio-root [class~="text-[9px]"] {
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+}
+
+.voice-studio-root [class~="text-[10px]"],
+.voice-studio-root [class~="text-[11px]"] {
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+}
+
+/* 视频任务头部状态需要在窄卡片中保持精简；局部覆盖共享工作台的 12px 可读性下限。 */
+.voice-studio-root .video-task-status-label {
+  font-size: 11px !important;
+  line-height: 1 !important;
+}
+
+.voice-studio-root .text-xs {
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+/* ============ Unified commercial desktop shell ============ */
+.voice-studio-root {
+  --vs-shell-width: 1440px;
+  --vs-control-bg: color-mix(in srgb, var(--vs-surface) 88%, var(--vs-bg));
+  --vs-control-hover: color-mix(in srgb, var(--vs-surface-hover) 88%, var(--vs-primary) 12%);
+  --vs-header-bg: color-mix(in srgb, var(--vs-surface) 94%, var(--vs-bg));
+  --vs-divider: color-mix(in srgb, var(--vs-border) 82%, transparent);
+  --vs-focus: color-mix(in srgb, var(--vs-primary) 35%, transparent);
+  --vs-on-accent: #061a1f;
+  font-family: var(--font-sans), "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
+  background-image: none;
+  background-attachment: initial;
+}
+
+[data-mode="light"] .voice-studio-root {
+  --vs-bg: #f6f8fa;
+  --vs-bg-secondary: #eef3f4;
+  --vs-surface: #ffffff;
+  --vs-surface-hover: #f0f6f6;
+  --vs-text: #102a32;
+  --vs-text-secondary: #334f58;
+  --vs-text-muted: #526871;
+  --vs-border: #d8e3e6;
+  --vs-card: #ffffff;
+  --vs-card-hover: #f3f7f8;
+  --vs-on-accent: #ffffff;
+}
+
+.voice-studio-root.vs-studio-shell {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  background: var(--vs-bg);
+}
+
+.voice-studio-root .voice-studio-root {
+  min-height: 0 !important;
+  background: transparent;
+  background-image: none;
+}
+
+.voice-studio-root .vs-studio-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.voice-studio-root .vs-page-container {
+  width: min(var(--vs-shell-width), calc(100vw - 48px));
+  margin-inline: auto;
+  padding: 28px 0 36px;
+}
+
+.voice-studio-root .vs-page-hero {
+  margin-bottom: 24px;
+}
+
+.voice-studio-root .vs-page-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 9px;
+  color: var(--vs-primary);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .16em;
+}
+
+.voice-studio-root .vs-page-kicker::before {
+  content: '';
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.voice-studio-root .vs-page-title {
+  margin: 0;
+  color: var(--vs-text);
+  font-size: clamp(30px, 2.25vw, 38px);
+  font-weight: 760;
+  letter-spacing: -.035em;
+  line-height: 1.16;
+}
+
+.voice-studio-root .vs-page-description {
+  max-width: 860px;
+  margin-top: 10px;
+  color: var(--vs-text-secondary);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.voice-studio-root :where(input, textarea, select) {
+  min-height: 38px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.voice-studio-root :where(input, textarea)::placeholder {
+  color: var(--vs-text-muted);
+  opacity: .86;
+}
+
+.voice-studio-root .vs-studio-header {
+  border-bottom: 1px solid var(--vs-divider);
+  background: var(--vs-header-bg);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--vs-bg) 16%, transparent);
+  backdrop-filter: blur(16px) saturate(1.05);
+  -webkit-backdrop-filter: blur(16px) saturate(1.05);
+}
+
+.voice-studio-root .vs-studio-header-inner {
+  display: flex;
+  width: min(var(--vs-shell-width), calc(100vw - 48px));
+  height: 64px;
+  margin-inline: auto;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+}
+
+.voice-studio-root .vs-studio-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  border: 0;
+  padding: 0 4px 0 0;
+  color: var(--vs-text);
+  text-decoration: none;
+}
+
+.voice-studio-root .vs-studio-logo:hover { background: transparent; }
+
+.voice-studio-root .vs-studio-logo-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--vs-primary) 35%, var(--vs-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--vs-primary) 13%, var(--vs-surface));
+  color: var(--vs-primary);
+  box-shadow: none;
+}
+
+.voice-studio-root .vs-studio-logo-mark svg { width: 20px; height: 20px; }
+.voice-studio-root .vs-studio-brand-copy { display: flex; min-width: 86px; flex-direction: column; line-height: 1.05; }
+.voice-studio-root .vs-studio-brand-copy strong { font-size: 16px; font-weight: 760; letter-spacing: -.02em; }
+.voice-studio-root .vs-studio-brand-copy small { margin-top: 5px; color: var(--vs-text-muted); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+
+.voice-studio-root .vs-studio-home {
+  display: inline-flex;
+  height: 38px;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  border: 1px solid var(--vs-border);
+  border-radius: 11px;
+  background: var(--vs-control-bg);
+  padding: 0 13px;
+  color: var(--vs-text-secondary);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 650;
+  transition: border-color .18s ease, background-color .18s ease, color .18s ease, transform .18s ease;
+}
+.voice-studio-root .vs-studio-home svg { width: 16px; height: 16px; }
+.voice-studio-root .vs-studio-home:hover { border-color: color-mix(in srgb, var(--vs-primary) 46%, var(--vs-border)); background: var(--vs-control-hover); color: var(--vs-text); transform: translateY(-1px); }
+
+.voice-studio-root .vs-studio-nav {
+  display: flex;
+  height: 44px;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  border: 1px solid var(--vs-border);
+  border-radius: 13px;
+  background: var(--vs-control-bg);
+  padding: 4px;
+  box-shadow: none;
+}
+
+.voice-studio-root .vs-studio-nav-link {
+  position: relative;
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9px;
+  padding: 0 16px;
+  color: var(--vs-text-secondary);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+  transition: color .18s ease, background-color .18s ease, transform .18s ease;
+}
+.voice-studio-root .vs-studio-nav-link svg { width: 18px; height: 18px; color: color-mix(in srgb, var(--vs-primary) 74%, var(--vs-text-secondary)); }
+.voice-studio-root .vs-studio-nav-link:hover { background: var(--vs-control-hover); color: var(--vs-text); }
+.voice-studio-root .vs-studio-nav-link[data-active="true"] { background: color-mix(in srgb, var(--vs-primary) 15%, var(--vs-surface)); color: var(--vs-primary); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vs-primary) 24%, transparent); }
+.voice-studio-root .vs-studio-nav-link[data-active="true"]::after { content: ''; position: absolute; right: 14px; bottom: -5px; left: 14px; height: 2px; border-radius: 999px; background: var(--vs-primary); }
+
+.voice-studio-root .vs-studio-footer {
+  border-top: 1px solid var(--vs-divider);
+  background: color-mix(in srgb, var(--vs-surface) 92%, var(--vs-bg));
+  color: var(--vs-text-muted);
+}
+.voice-studio-root .vs-studio-footer-inner { display: flex; width: min(var(--vs-shell-width), calc(100vw - 48px)); min-height: 76px; margin-inline: auto; align-items: center; gap: 28px; }
+.voice-studio-root .vs-studio-footer-brand { display: flex; align-items: center; gap: 10px; }
+.voice-studio-root .vs-studio-footer-mark { width: 8px; height: 24px; border-radius: 999px; background: var(--vs-primary); }
+.voice-studio-root .vs-studio-footer-brand div { display: flex; flex-direction: column; gap: 2px; }
+.voice-studio-root .vs-studio-footer-brand strong { color: var(--vs-text); font-size: 14px; }
+.voice-studio-root .vs-studio-footer-brand span, .voice-studio-root .vs-studio-footer-note { font-size: 12px; }
+.voice-studio-root .vs-studio-footer nav { display: flex; gap: 18px; margin-left: auto; }
+.voice-studio-root .vs-studio-footer nav a { color: var(--vs-text-secondary); font-size: 13px; text-decoration: none; transition: color .18s ease; }
+.voice-studio-root .vs-studio-footer nav a:hover { color: var(--vs-primary); }
+.voice-studio-root .vs-studio-footer-note { padding-left: 24px; border-left: 1px solid var(--vs-border); }
+
+.voice-studio-root button:focus-visible,
+.voice-studio-root a:focus-visible,
+.voice-studio-root input:focus-visible,
+.voice-studio-root textarea:focus-visible,
+.voice-studio-root select:focus-visible {
+  outline: 3px solid var(--vs-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-studio-root *, .voice-studio-root *::before, .voice-studio-root *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* Platform theme contract: exact primary and surface tokens for the two public themes. */
+html[data-theme="lattice"][data-mode="dark"] .voice-studio-root {
+  --vs-primary: #68c7b4;
+  --vs-primary-hover: #85d4c3;
+  --vs-secondary: #73a7e8;
+  --vs-accent: #a899d5;
+  --vs-bg: #0d141a;
+  --vs-bg-secondary: #101a20;
+  --vs-surface: #131e25;
+  --vs-surface-hover: #17242b;
+  --vs-text: #f2f5f4;
+  --vs-text-secondary: #bac4c1;
+  --vs-text-muted: #8c9b97;
+  --vs-border: #2a3a41;
+  --vs-card: #131e25;
+  --vs-card-hover: #17242b;
+  --vs-input-bg: #101a20;
+  --vs-input-border: #3e565c;
+  --vs-glow: #68c7b4;
+  --vs-on-accent: #071412;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .voice-studio-root {
+  --vs-primary: #17675a;
+  --vs-primary-hover: #125548;
+  --vs-secondary: #245b9e;
+  --vs-accent: #8759a8;
+  --vs-bg: #f5f3ee;
+  --vs-bg-secondary: #ece9e1;
+  --vs-surface: #fffefb;
+  --vs-surface-hover: #f2f5f1;
+  --vs-text: #17201d;
+  --vs-text-secondary: #46534f;
+  --vs-text-muted: #66716d;
+  --vs-border: #d8d3c9;
+  --vs-card: #fffefb;
+  --vs-card-hover: #f2f5f1;
+  --vs-input-bg: #ffffff;
+  --vs-input-border: #b8c7c1;
+  --vs-glow: #17675a;
+  --vs-on-accent: #ffffff;
+}
+
+/* Workspace density and scrolling contract. The application root locks the
+   document scroll, so the voice shell owns the vertical scroll port. */
+.voice-studio-root.vs-studio-shell {
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
+.voice-studio-root .vs-studio-main {
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.voice-studio-root .vs-page-container {
+  padding-top: 20px;
+}
+
+.voice-studio-root .vs-page-intro {
+  position: relative;
+  min-height: 104px;
+  margin-bottom: 14px;
+  padding-right: 60px;
+}
+
+.voice-studio-root .vs-page-intro .vs-page-hero {
+  margin-bottom: 0;
+}
+
+.voice-studio-root .vs-page-intro .vs-page-kicker {
+  margin-bottom: 6px;
+}
+
+.voice-studio-root .vs-page-intro .vs-page-description {
+  margin-top: 7px;
+}
+
+.voice-studio-root .vs-history-flyout {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 32;
+  width: 44px;
+  max-width: calc(100vw - 48px);
+}
+
+.voice-studio-root .vs-history-flyout:has(button[aria-expanded="true"]) {
+  width: min(760px, calc(100vw - 48px));
+}
+
+.voice-studio-root .vs-history-flyout > section {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--vs-primary) 32%, var(--vs-border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--vs-card) 94%, transparent);
+  padding: 0;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--vs-bg) 54%, transparent);
+  backdrop-filter: blur(16px) saturate(1.08);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  transition: width .18s ease, height .18s ease, box-shadow .18s ease;
+}
+
+.voice-studio-root .vs-history-flyout:has(button[aria-expanded="true"]) > section {
+  width: min(760px, calc(100vw - 48px));
+  height: auto;
+  max-height: min(68dvh, 620px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 14px;
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--vs-bg) 72%, transparent);
+}
+
+.voice-studio-root .vs-history-flyout > section > div:first-child {
+  min-height: 42px;
+}
+
+.voice-studio-root .vs-history-flyout button[aria-expanded="false"] {
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  font-size: 0;
+}
+
+.voice-studio-root .vs-history-flyout button[aria-expanded="true"] {
+  min-height: 38px;
+  padding-left: 34px;
+}
+
+.voice-studio-root .vs-history-flyout-icon {
+  position: absolute;
+  top: 11px;
+  right: 11px;
+  z-index: 34;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--vs-primary);
+  pointer-events: none;
+  transition: left .18s ease, right .18s ease, top .18s ease;
+}
+
+.voice-studio-root .vs-history-flyout-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.voice-studio-root .vs-history-flyout:has(button[aria-expanded="true"]) .vs-history-flyout-icon {
+  top: 24px;
+  right: auto;
+  left: 23px;
+}
+
+.voice-studio-root .vs-pricing-status:empty {
+  display: none;
+}
+
+.voice-studio-root .vs-model-toolbar {
+  min-height: 64px;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--vs-bg) 24%, transparent);
+}
+
+/* Let writing controls consume their full grid track and keep the result
+   surface absent until a durable result exists. */
+.voice-studio-root .vs-text-input-card,
+.voice-studio-root .vs-text-input-control,
+.voice-studio-root .vs-output-panel {
+  min-width: 0;
+  width: 100%;
+}
+
+.voice-studio-root .vs-text-input-control {
+  min-height: 0;
+}
+
+.voice-studio-root .vs-output-card {
+  border-color: color-mix(in srgb, var(--vs-primary) 28%, var(--vs-border));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--vs-primary) 7%, var(--vs-card)), var(--vs-card));
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--vs-bg) 38%, transparent);
+}
+
+.voice-studio-root .vs-output-card audio {
+  width: 100%;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .voice-studio-root {
+  --vs-primary: #54e3d2;
+  --vs-primary-hover: #79eee0;
+  --vs-secondary: #5fa8bc;
+  --vs-accent: #8bbab7;
+  --vs-bg: #050d11;
+  --vs-bg-secondary: #07151b;
+  --vs-surface: #0a1b22;
+  --vs-surface-hover: #10252d;
+  --vs-text: #f2fbfa;
+  --vs-text-secondary: #b5c9c7;
+  --vs-text-muted: #849d9b;
+  --vs-border: #27464d;
+  --vs-card: rgba(10, 27, 34, .92);
+  --vs-card-hover: rgba(16, 37, 45, .96);
+  --vs-input-bg: #07151b;
+  --vs-input-border: #365a61;
+  --vs-glow: #54e3d2;
+  --vs-glass-border-hover: rgba(84, 227, 210, .43);
+  --vs-grid-color: rgba(84, 227, 210, .065);
+  --vs-grid-color-strong: rgba(84, 227, 210, .1);
+  --vs-card-hover-shadow: 0 20px 64px rgba(0, 0, 0, .48), 0 0 34px rgba(84, 227, 210, .14);
+  --vs-card-hover-border: rgba(84, 227, 210, .5);
+  --vs-on-accent: #031311;
+}

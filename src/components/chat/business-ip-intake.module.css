@@ -1,0 +1,9 @@
+.surface.surface {
+  background: #101b2b !important;
+  color: var(--foreground);
+  isolation: isolate;
+}
+
+:global(html[data-mode="light"]) .surface.surface {
+  background: #ffffff !important;
+}

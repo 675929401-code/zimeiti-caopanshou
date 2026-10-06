@@ -1,0 +1,817 @@
+{
+  "schemaVersion": "maolong.deep-media-chain-audit/v1",
+  "generatedAtUtc": "2026-09-25T07:22:59.084Z",
+  "status": "evidence-validated-runtime-pending",
+  "boundary": {
+    "sourceDiscoveryFixedPoint": true,
+    "conditionalEntryFixedPoint": "query-entries-passed-dynamic-canvas-page-failed-write-execution-unverified",
+    "runtimePayloadFixedPoint": "observable-readonly-payload-and-dynamic-controller-closure-passed",
+    "privateServerSourceDownloaded": false,
+    "buildOrBrowserAcceptanceThisAudit": false,
+    "paidGeneration": false,
+    "deployment": false
+  },
+  "verdict": "浏览器媒体内核、动态 Canvas 和请求状态机覆盖很深；本站已补普通 Commerce 常驻协调，但供应商适配、对标私有 worker、数据库事务、计费终态、统一资产与全局临时清理仍不能从镜像推断。继续融合本站，不全量覆盖。",
+  "rows": [
+    {
+      "id": "browser-multitrack-editor",
+      "trigger": "任务结果编辑、资产编辑或恢复本地剪辑任务",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/7958-117b0a3bee948bdf.js",
+          "fileSha256": "154f83b9fa0f3b5a99a44ff75d84bfe6338ef438678f4bf5a0e8207c464edb91",
+          "byteStart": 6567,
+          "byteEnd": 397617,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "多轨视频/音频、拆分/修剪/重排/裁剪/音量/变速/静音/音视频分离；FFmpeg WASM 导出；IndexedDB 草稿与中断恢复",
+      "coordination": "本地编辑状态→导出→上传→资产回读；远端 batch 另行结算",
+      "localEvidence": [
+        {
+          "file": "src/lib/local-media-processor.ts",
+          "line": 83,
+          "exists": true,
+          "needle": "export async function processLocalMedia",
+          "needleFound": true
+        }
+      ],
+      "status": "镜像浏览器引擎直接证据；本站只有服务端局部媒体处理，未等价复建完整编辑器",
+      "gap": "入口挂载、浏览器导出、CORS、远端 batch/计费终态未验收",
+      "priority": "P1"
+    },
+    {
+      "id": "video-segment-retake",
+      "trigger": "视频编辑器选择片段后重拍",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/7958-117b0a3bee948bdf.js",
+          "fileSha256": "154f83b9fa0f3b5a99a44ff75d84bfe6338ef438678f4bf5a0e8207c464edb91",
+          "byteStart": 6567,
+          "byteEnd": 31137,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "不足4秒扩展 handle；非整段先 FFmpeg 裁私有 reference MP4；上传后报价并创建任务",
+      "coordination": "prepare→cut→upload→quote→confirm→queued/processing/succeeded/failed；本地中断任务下次标失败",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/jobs.ts",
+          "line": 106,
+          "exists": true,
+          "needle": "export async function runJob",
+          "needleFound": true
+        }
+      ],
+      "status": "镜像行为合同已取证；本站无同等片段重拍工作台闭环",
+      "gap": "provider、资产终态、扣费与失败退款未验证",
+      "priority": "P1"
+    },
+    {
+      "id": "subtitle-erase",
+      "trigger": "/toolbox/video-subtitle-erase",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 683597,
+          "byteEnd": 692882,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "框选字幕区并交给服务端媒体处理任务",
+      "coordination": "上传→任务→轮询→结果资产/历史",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/media-tools.ts",
+          "line": 11,
+          "exists": true,
+          "needle": "tool:'trim'|'enhance'|'watermark'|'subtitle'|'mosaic'",
+          "needleFound": true
+        },
+        {
+          "file": "src/commerce/server/media-tools.ts",
+          "line": 70,
+          "exists": true,
+          "needle": "filters.push(`delogo=",
+          "needleFound": true
+        }
+      ],
+      "status": "本站可执行 FFmpeg delogo 局部实现；不等同对标服务端处理",
+      "gap": "对标 provider/修复算法、报价和计费终态不可见",
+      "priority": "P1"
+    },
+    {
+      "id": "watermark-remove",
+      "trigger": "/toolbox/video-watermark-remove",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 692883,
+          "byteEnd": 703217,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "框选水印区域并提交服务端 inpaint 类任务",
+      "coordination": "区域校验→任务→结果资产",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/media-tools.ts",
+          "line": 64,
+          "exists": true,
+          "needle": "if(tool==='watermark'",
+          "needleFound": true
+        },
+        {
+          "file": "src/commerce/server/media-tools.ts",
+          "line": 70,
+          "exists": true,
+          "needle": "delogo=x=",
+          "needleFound": true
+        }
+      ],
+      "status": "本站局部可用；算法不等价",
+      "gap": "delogo 不能标成 inpaint/provider 等价复用",
+      "priority": "P0"
+    },
+    {
+      "id": "video-quality-enhance",
+      "trigger": "/toolbox/video-quality-enhance",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 703218,
+          "byteEnd": 714864,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "1080p/插帧等增强参数进入服务端任务；当前只读模型路由无 active profile",
+      "coordination": "报价/创建→队列→资产",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/media-tools.ts",
+          "line": 86,
+          "exists": true,
+          "needle": "hqdn3d=1.5:1.5:3:3",
+          "needleFound": true
+        }
+      ],
+      "status": "本站 FFmpeg 降噪+缩放+锐化增强；对标运行配置本身未就绪",
+      "gap": "不得把界面 renderer 写成对标可执行，也不得把 FFmpeg filter 写成 provider 等价",
+      "priority": "P0"
+    },
+    {
+      "id": "reference-video-split",
+      "trigger": "内部 renderer reference-video-split；非顶层导航卡",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 669013,
+          "byteEnd": 683596,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "智能拆条、分段参数和结果预览",
+      "coordination": "source upload→split task→clip assets",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/depth-video-preprocess.ts",
+          "line": 3,
+          "exists": true,
+          "needle": "export",
+          "needleFound": true
+        }
+      ],
+      "status": "镜像隐藏 renderer 已取证；本站仅有切镜证据帧/PCM 保留基础",
+      "gap": "尚未生成带音频连续性的分段视频资产；worker/临时清理未闭环",
+      "priority": "P0"
+    },
+    {
+      "id": "hot-video-remix",
+      "trigger": "/toolbox/hot-video-remix",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 647970,
+          "byteEnd": 669012,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "最多3个源视频、选片、BGM、自动拆分后重组",
+      "coordination": "多源上传→分析/拆分→生成→资产",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/jobs.ts",
+          "line": 106,
+          "exists": true,
+          "needle": "export async function runJob",
+          "needleFound": true
+        }
+      ],
+      "status": "镜像客户端流程已取证；本站无完整等价执行链",
+      "gap": "clip 编排、BGM 连续、durable queue、计费和资产终态缺失",
+      "priority": "P0"
+    },
+    {
+      "id": "keyframe-extraction",
+      "trigger": "视频参考、画布关键帧拆解或导演素材分析",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/185.7ed0a50dafb3a2e8.js",
+          "fileSha256": "b5a056d671b53b35fee03cbb0b75cc3ed0a45a634c72445dc8af11e682affe22",
+          "byteStart": 0,
+          "byteEnd": 143043,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "Mediabunny/浏览器媒体读取与关键帧提取懒模块",
+      "coordination": "文件探测→时间点/帧→引用素材",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/creative-video-evidence.ts",
+          "line": 29,
+          "exists": true,
+          "needle": "frame",
+          "needleFound": true
+        }
+      ],
+      "status": "双方均有基础；尚未做同一视频确定性对照",
+      "gap": "音频转写、时间轴一致性与大文件取消需验收",
+      "priority": "P1"
+    },
+    {
+      "id": "browser-h264-transcode",
+      "trigger": "上传兼容和编辑器导出",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/3093.06205bf76a974e9f.js",
+          "fileSha256": "c4b9675c644a23d7ebe0f17776be9929908b2e041e0fc8d38168a20a7ff4835d",
+          "byteStart": 0,
+          "byteEnd": 6919,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "偶数宽高、libx264、veryfast、crf23、yuv420p、可选 AAC128、faststart；支持取消与临时清理",
+      "coordination": "init→transcode→cancel/release",
+      "localEvidence": [
+        {
+          "file": "src/lib/local-media-processor.ts",
+          "line": 100,
+          "exists": true,
+          "needle": "libx264",
+          "needleFound": true
+        },
+        {
+          "file": "src/commerce/server/media-tools.ts",
+          "line": 89,
+          "exists": true,
+          "needle": "'-movflags','+faststart'",
+          "needleFound": true
+        }
+      ],
+      "status": "镜像参数直接证据；本站服务端 FFmpeg 参数相近但非同一浏览器链",
+      "gap": "Mediabunny/FFmpeg.wasm 上传兼容尚未接入 Commerce UI",
+      "priority": "P1"
+    },
+    {
+      "id": "heif-browser-decode",
+      "trigger": "HEIF/HEIC 图片进入浏览器素材链",
+      "benchmarkEvidence": [
+        {
+          "file": "image-decode/heif-1.22.2-v1/libheif.js",
+          "fileSha256": "356068bb64947a76f1490ee139b2cab52f62e5e60d1945413aed9ab94c09e754",
+          "byteStart": 2517,
+          "byteEnd": 3013645,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "worker 加载 libheif.js；该文件以 EMSCRIPTEN_START_ASM 内嵌 wasm2js 实现，重定义 WebAssembly.Module 为空构造并设置 isWasm2js=true、wasmBinary=[]；libheif.wasm 精确 URL 虽返回 404，但同步实例化的 binary 参数被 shim 忽略",
+      "coordination": "file→worker→embedded wasm2js decoder→bitmap/result",
+      "localEvidence": [
+        {
+          "file": "package.json",
+          "line": 171,
+          "exists": true,
+          "needle": "\"sharp\": \"0.35.0\"",
+          "needleFound": true
+        }
+      ],
+      "status": "静态运行依赖闭包通过；404 是死回退文件名，不能据此判定解码失败",
+      "gap": "尚未用真实 HEIF 样本验证解码、内存上限、取消和失败清理；本站 Sharp 是否支持目标 HEIF 编码需单独运行验收",
+      "priority": "P1"
+    },
+    {
+      "id": "soundtouch-audio",
+      "trigger": "编辑器音频变速/变调",
+      "benchmarkEvidence": [
+        {
+          "file": "soundtouch-processor.88137476.js",
+          "fileSha256": "54b199ccf77e4c2b81f263b3e2c7f4dc8d91039959ae962407688ff88d94d999",
+          "byteStart": 0,
+          "byteEnd": 31661,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "AudioWorklet SoundTouch 时长与音高处理",
+      "coordination": "worklet load→stream process→release",
+      "localEvidence": [
+        {
+          "file": "src/lib/local-media-processor.ts",
+          "line": 83,
+          "exists": true,
+          "needle": "export async function processLocalMedia",
+          "needleFound": true
+        }
+      ],
+      "status": "镜像运行文件完整保存；本站未提供同等交互能力",
+      "gap": "变调/变速质量、长音频连续性和取消释放未验证",
+      "priority": "P1"
+    },
+    {
+      "id": "asr-and-subtitle-timeline",
+      "trigger": "参考视频理解、字幕编辑和配音对齐",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/7958-117b0a3bee948bdf.js",
+          "fileSha256": "154f83b9fa0f3b5a99a44ff75d84bfe6338ef438678f4bf5a0e8207c464edb91",
+          "byteStart": 6567,
+          "byteEnd": 397617,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "编辑器时间轴与字幕/音轨状态；私有 ASR 服务端不可见",
+      "coordination": "audio extract→ASR→timed segments→edit/burn/export",
+      "localEvidence": [
+        {
+          "file": "src/lib/extract-transcript.ts",
+          "line": 2,
+          "exists": true,
+          "needle": "export",
+          "needleFound": true
+        }
+      ],
+      "status": "主站已有 ASR 能力线索；Commerce 参考链未桥接且审计标记未执行",
+      "gap": "参考音频转写、字幕时间轴和导演输入未闭环",
+      "priority": "P1"
+    },
+    {
+      "id": "depth-video-clone",
+      "trigger": "/toolbox/depth-video-clone / Commerce 深度复刻",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 714865,
+          "byteEnd": 743436,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "人物/产品/背景/声音多槽位、不可变报价、任务结果",
+      "coordination": "refs→quote→confirm→batch→asset/history",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/depth-video-clone-model-profiles.ts",
+          "line": 38,
+          "exists": true,
+          "needle": "executionConnected",
+          "needleFound": true
+        },
+        {
+          "file": "src/app/api/commerce-model-gateway/route.ts",
+          "line": 109,
+          "exists": true,
+          "needle": "autodl",
+          "needleFound": true
+        }
+      ],
+      "status": "本站 schema/规划/报价基础存在；真实 source-video 执行未接通",
+      "gap": "Ref2VA executionConnected=false；普通 H3 明确不能冒充 source-video",
+      "priority": "P0"
+    },
+    {
+      "id": "rolling-long-video",
+      "trigger": "30/60/70/80秒 Commerce 视频",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 743437,
+          "byteEnd": 823505,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "api/v1/batches/{video-id}.json",
+          "fileSha256": "47ab032c5d7ab398cf9c705f5808a71b2d166b660caded087fcbdbffa0a4e61f",
+          "byteStart": 0,
+          "byteEnd": 49510,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "一个历史 default-director 成功样本记录 planner→4段生成→3次尾帧续接→stitch，结果 60.133 秒，临时连续帧组 deleted=true",
+      "coordination": "本站 parent→segments→真实尾帧续接→stitch→cleanup/retry",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/rolling-video-worker.ts",
+          "line": 21,
+          "exists": true,
+          "needle": "claimCommerceRollingLease",
+          "needleFound": true
+        },
+        {
+          "file": "src/commerce/server/rolling-video.ts",
+          "line": 106,
+          "exists": true,
+          "needle": "cleanupRollingTailAssets",
+          "needleFound": true
+        }
+      ],
+      "status": "对标历史 60 秒任务级样本已取证；本站增强已有 durable lease worker 和清理重试源码",
+      "gap": "单个历史样本不证明19编导或30/70/80秒；本站当前构建、真实模型、音频连续性与30/60/70/80秒运行验收未完成",
+      "priority": "P0"
+    },
+    {
+      "id": "benchmark-video-route-drift",
+      "trigger": "历史 60 秒任务的逻辑路由与真实段执行身份",
+      "benchmarkEvidence": [
+        {
+          "file": "api/v1/batches/{video-id}.json",
+          "fileSha256": "47ab032c5d7ab398cf9c705f5808a71b2d166b660caded087fcbdbffa0a4e61f",
+          "byteStart": 0,
+          "byteEnd": 49510,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "input_summary 声明 video.mini / mini-260615；四段 provider 请求记录 260128；planner 为 Gemini 3.7 Flash",
+      "coordination": "quote route identity→planner identity→segment request model→result/ledger lineage",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/jobs.ts",
+          "line": 44,
+          "exists": true,
+          "needle": "modelConfigHash:string",
+          "needleFound": true
+        },
+        {
+          "file": "src/commerce/server/quotes.ts",
+          "line": 121,
+          "exists": true,
+          "needle": "modelConfigHash: model.configHash",
+          "needleFound": true
+        }
+      ],
+      "status": "已发现对标历史样本内逻辑路由与执行模型 ID 不一致",
+      "gap": "对标未给解释；本站必须把报价模型、实际提交模型和每段回执逐级绑定，不能只保存显示名",
+      "priority": "P0"
+    },
+    {
+      "id": "ordinary-commerce-jobs",
+      "trigger": "普通 agent/image/video/media/frame/depth 作业",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/9614-bf3c574bcd443d05.js",
+          "fileSha256": "a9a5dab6f2e112952855f98b5dd45b7f60c04418a358cae8e3556512c094828c",
+          "byteStart": 337,
+          "byteEnd": 23242,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "对标客户端展示 batch queue/status/error；私有 worker 不可见",
+      "coordination": "本站常驻 worker 扫描普通任务、媒体编辑、抽帧和深度准备；数据库 lease/fencing；与请求 after()/轮询的原子 claim 互斥",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/ordinary-worker.ts",
+          "line": 47,
+          "exists": true,
+          "needle": "claimCommerceOrdinaryLease",
+          "needleFound": true
+        },
+        {
+          "file": "src/lib/media-queue-worker-runtime.ts",
+          "line": 10,
+          "exists": true,
+          "needle": "startCommerceOrdinaryWorker",
+          "needleFound": true
+        },
+        {
+          "file": "scripts/verify-commerce-ordinary-worker-p0.ts",
+          "line": 39,
+          "exists": true,
+          "needle": "candidate scan covers all four durable Commerce families",
+          "needleFound": true
+        }
+      ],
+      "status": "本站增强已实现；10/10 零费用租约、去重和恢复合同通过",
+      "gap": "当前数据库只读核对、worker 进程重启恢复和 runningLatest 构建验收尚未执行",
+      "priority": "P0"
+    },
+    {
+      "id": "digital-human",
+      "trigger": "/toolbox/digital-human / 主站数字人",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 823506,
+          "byteEnd": 839650,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "图片说话/视频口型、音色选择/合成、报价、任务、历史",
+      "coordination": "主站已有普通队列和长数字人 worker；Commerce gateway 未桥接",
+      "localEvidence": [
+        {
+          "file": "src/lib/digital-video-queue-worker.ts",
+          "line": 115,
+          "exists": true,
+          "needle": "startDigitalVideoQueueWorker",
+          "needleFound": true
+        },
+        {
+          "file": "src/lib/digital-human-long-worker.ts",
+          "line": 259,
+          "exists": true,
+          "needle": "startDigitalHumanLongWorker",
+          "needleFound": true
+        },
+        {
+          "file": "src/app/api/commerce-model-gateway/route.ts",
+          "line": 109,
+          "exists": true,
+          "needle": "digital_human",
+          "needleFound": true
+        }
+      ],
+      "status": "主站增强基础较强；Commerce 一体化未完成",
+      "gap": "分句边界、声音资产、Commerce→主站任务/历史/计费桥接未验证",
+      "priority": "P0"
+    },
+    {
+      "id": "voice-catalog-and-tts",
+      "trigger": "数字人/配音/声音选择",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 823506,
+          "byteEnd": 839650,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "系统/克隆/合成声音目录、合成请求；只读快照仅证明48个系统音色",
+      "coordination": "catalog→quote/billing→synthesis→audio asset/history",
+      "localEvidence": [
+        {
+          "file": "src/app/api/commerce/voice-synthesis/route.ts",
+          "line": 17,
+          "exists": true,
+          "needle": "VOICE_BILLING_NOT_READY",
+          "needleFound": true
+        },
+        {
+          "file": "src/app/api/voice/tts/route.ts",
+          "line": 545,
+          "exists": true,
+          "needle": "VOICE_PRICE_NOT_CONFIGURED",
+          "needleFound": true
+        }
+      ],
+      "status": "主站 TTS 链较完整；Commerce 入口硬 503",
+      "gap": "Commerce 目录、报价、扣费、生成、资产读回缺闭环；0 用户音色证据",
+      "priority": "P0"
+    },
+    {
+      "id": "voice-clone-design-policy",
+      "trigger": "声音克隆/声音设计",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/9614-bf3c574bcd443d05.js",
+          "fileSha256": "a9a5dab6f2e112952855f98b5dd45b7f60c04418a358cae8e3556512c094828c",
+          "byteStart": 337,
+          "byteEnd": 23242,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "客户端合同存在 voice profile create/delete/synthesize",
+      "coordination": "本站主站相关训练入口按当前策略返回 410",
+      "localEvidence": [
+        {
+          "file": "src/app/api/voice/clone/route.ts",
+          "line": 82,
+          "exists": true,
+          "needle": "VOICE_FEATURE_RETIRED",
+          "needleFound": true
+        },
+        {
+          "file": "src/app/api/voice/design/route.ts",
+          "line": 56,
+          "exists": true,
+          "needle": "VOICE_FEATURE_RETIRED",
+          "needleFound": true
+        }
+      ],
+      "status": "产品策略未对齐",
+      "gap": "需明确继续退役还是恢复；不能把保留源码写成可用",
+      "priority": "P0"
+    },
+    {
+      "id": "minimax-h3",
+      "trigger": "本站增强模型配置",
+      "benchmarkEvidence": [],
+      "browserAlgorithm": "对标 bundle 无 MiniMax/H3 证据",
+      "coordination": "本站 H3 可用于其真实声明的多图/音频能力；source-video 另需专用执行器",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/depth-video-clone-model-profiles.ts",
+          "line": 123,
+          "exists": true,
+          "needle": "MiniMax H3 Ref2VA",
+          "needleFound": true
+        },
+        {
+          "file": "src/app/api/commerce-model-gateway/route.ts",
+          "line": 242,
+          "exists": true,
+          "needle": "VIDEO_REFERENCE_UNSUPPORTED",
+          "needleFound": true
+        }
+      ],
+      "status": "本站增强，非镜像复用",
+      "gap": "按真实 capability GET/本地合同验收；Ref2VA executionConnected=false 时禁止宣称视频参考已接通",
+      "priority": "P0"
+    },
+    {
+      "id": "asset-identity-bridge",
+      "trigger": "主站素材进入 Commerce；Commerce 结果回主站",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/9614-bf3c574bcd443d05.js",
+          "fileSha256": "a9a5dab6f2e112952855f98b5dd45b7f60c04418a358cae8e3556512c094828c",
+          "byteStart": 337,
+          "byteEnd": 23242,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "对标统一 assets/groups/history 客户端合同",
+      "coordination": "本站 main→Commerce 有属主校验/有界读取/去重记录；反向桥接缺失",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/main-asset-bridge.ts",
+          "line": 28,
+          "exists": true,
+          "needle": "mainSourceId",
+          "needleFound": true
+        },
+        {
+          "file": "src/commerce/server/assets.ts",
+          "line": 10,
+          "exists": true,
+          "needle": "export async function storeAsset",
+          "needleFound": true
+        }
+      ],
+      "status": "单向已实现，双向未闭环",
+      "gap": "Commerce→主站资产、历史、声音、数字人统一身份和幂等写入缺失",
+      "priority": "P0"
+    },
+    {
+      "id": "billing-and-terminal-state",
+      "trigger": "任何付费模型任务",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/9614-bf3c574bcd443d05.js",
+          "fileSha256": "a9a5dab6f2e112952855f98b5dd45b7f60c04418a358cae8e3556512c094828c",
+          "byteStart": 337,
+          "byteEnd": 23242,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "api/v1/batches/{image-id}.json",
+          "fileSha256": "7f697e897ce7a851caa4283eeb3eab8115737a75e58273a70991cd88c30d7eae",
+          "byteStart": 0,
+          "byteEnd": 6934,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "api/v1/batches/{video-id}.json",
+          "fileSha256": "47ab032c5d7ab398cf9c705f5808a71b2d166b660caded087fcbdbffa0a4e61f",
+          "byteStart": 0,
+          "byteEnd": 49510,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "api/v1/usage/ledger.json",
+          "fileSha256": "a82fc35a7077ca0ec9275779a5bdfd04ea2fed780ed6219ab485f1fb0b786616",
+          "byteStart": 0,
+          "byteEnd": 13055,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "api/v1/usage/summary.json",
+          "fileSha256": "8ad447799e72a4506b62d71969d90daee319ddaa22c6f0e43f1ad8d51462ed3e",
+          "byteStart": 0,
+          "byteEnd": 7188,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "历史图像和60秒视频详情保存 estimated=actual、refund=0；近期 video-creator 账本保存 freeze→consume→settled；客户端另有 quote/create/status/error 分支",
+      "coordination": "报价快照→授权/冻结→provider→资产→消费/退款/成本",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/jobs.ts",
+          "line": 74,
+          "exists": true,
+          "needle": "applyTerminalBilling",
+          "needleFound": true
+        },
+        {
+          "file": "src/app/api/voice/tts/route.ts",
+          "line": 951,
+          "exists": true,
+          "needle": "VOICE_RESULT_NOT_DELIVERABLE",
+          "needleFound": true
+        }
+      ],
+      "status": "对标已有有限成功和结算样本；本站已有多条计费基础，跨 Commerce/主站终态未统一验收",
+      "gap": "没有当前 quote POST/quote_receipt、失败退款、SSE或19/16技能逐项 lineage；历史批次详情也未与近期 video-creator 账本串成同一链",
+      "priority": "P0"
+    },
+    {
+      "id": "temporary-asset-lifecycle",
+      "trigger": "滚动尾帧、分段视频、编辑器临时导出和失败任务",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/7958-117b0a3bee948bdf.js",
+          "fileSha256": "154f83b9fa0f3b5a99a44ff75d84bfe6338ef438678f4bf5a0e8207c464edb91",
+          "byteStart": 6567,
+          "byteEnd": 397617,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "api/v1/batches/{video-id}.json",
+          "fileSha256": "47ab032c5d7ab398cf9c705f5808a71b2d166b660caded087fcbdbffa0a4e61f",
+          "byteStart": 0,
+          "byteEnd": 49510,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "browserAlgorithm": "客户端有取消/release/local cleanup；历史60秒样本记录连续帧临时组 deleted=true；全局服务端 reaper仍不可见",
+      "coordination": "create temp→refcount/ownership→terminal cleanup→retry/reaper",
+      "localEvidence": [
+        {
+          "file": "src/commerce/server/assets.ts",
+          "line": 8,
+          "exists": true,
+          "needle": "temporary?:{kind:'rolling-tail'",
+          "needleFound": true
+        },
+        {
+          "file": "src/commerce/server/rolling-video-worker.ts",
+          "line": 61,
+          "exists": true,
+          "needle": "temporaryAssetsCleanupStatus",
+          "needleFound": true
+        }
+      ],
+      "status": "对标单任务尾帧清理和本站滚动尾帧专项清理均有证据；全局孤儿资产策略未闭环",
+      "gap": "片段/上传/浏览器草稿/COS 对象的 TTL、refcount、孤儿 reaper 缺统一合同",
+      "priority": "P1"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "missingLocal": [],
+    "missingSha": []
+  }
+}

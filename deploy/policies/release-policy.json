@@ -1,0 +1,462 @@
+{
+  "schemaVersion": 1,
+  "projectId": "zimeiti-caopanshou",
+  "source": {
+    "maxBytes": 104857600,
+    "maxFileBytes": 10485760,
+    "topLevelFiles": [
+      ".coze",
+      ".cozeignore",
+      ".dockerignore",
+      ".env.example",
+      ".gitattributes",
+      ".gitignore",
+      ".releaseignore",
+      "AGENTS.md",
+      "components.json",
+      "DESIGN.md",
+      "Dockerfile",
+      "ecosystem.config.js",
+      "eslint.config.mjs",
+      "INTEGRATION-PLAN.md",
+      "next-env.d.ts",
+      "next.config.ts",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "postcss.config.mjs",
+      "README.md",
+      "tsconfig.json",
+      "VERSION.txt"
+    ],
+    "roots": [
+      ".github",
+      "deploy",
+      "docs",
+      "prompts",
+    "public",
+    "runtime-tools",
+    "scripts",
+      "src",
+      "supabase",
+      "tests",
+      "voice-platform"
+    ],
+    "excludeGlobs": [
+      "**/*.bak",
+      "**/*.backup",
+      "**/*.db",
+      "**/*.db-*",
+      "**/*.old",
+      "**/*.orig",
+      "**/*.rej",
+      "**/*.sqlite",
+      "**/*.sqlite-*",
+      "**/*.sqlite3",
+      "**/*.sqlite3-*",
+      "**/*~",
+      "docs/EMERGENCY-RESTORE.md",
+      "runtime-tools/model-audit-*/**",
+      "scripts/tencent_key",
+      "scripts/verify-p0-security-stage2.ts",
+      "scripts/verify-autodl-hosted-result-persistence.ts",
+      "tests/test-formguard.js",
+      "tests/e2e-history-test.js",
+      "voice-platform/scripts/voices-full-backup.json",
+      "voice-platform/*.md",
+      "voice-platform/*.txt"
+    ],
+    "excludeDirectoryNames": [
+      ".git",
+      ".next",
+      ".secure",
+      ".tmp",
+      "backups",
+      "coverage",
+      "dist",
+      "logs",
+      "node_modules",
+      "tmp"
+    ],
+    "excludeFileNames": [
+      ".npmrc",
+      "dev.db",
+      "tsconfig.tsbuildinfo"
+    ],
+    "publicSourcePaths": [
+      "public/model-brands/bytedance.svg",
+      "public/model-brands/generic.svg",
+      "public/model-brands/google.svg",
+      "public/model-brands/openai.svg",
+      "public/model-brands/xai.svg",
+      "public/product-assets/youcai-demo-v1/clean-v21/previews/03-shot-02.webp",
+      "public/robots.txt",
+      "public/short-drama/previews/film-studio-promo-bg-v2.webp",
+      "public/short-drama/previews/film-studio-promo-bg-v3.webp",
+      "public/short-drama/previews/hero-dream-floral-v2.webp",
+      "public/short-drama/previews/hero-pipeline-v1.webp",
+      "public/short-drama/previews/inspiration-moon-observatory-v1.webp",
+      "public/short-drama/previews/inspiration-paper-fox-v1.webp",
+      "public/short-drama/previews/inspiration-product-film-v1.webp",
+      "public/short-drama/previews/inspiration-silent-pet-v1.webp",
+      "public/short-drama/previews/manifest.json",
+      "public/version.json",
+      "public/youcai-media/v1/source-manifest.json"
+    ],
+    "requiredBuildPaths": [
+      "public/model-brands/bytedance.svg",
+      "public/model-brands/generic.svg",
+      "public/model-brands/google.svg",
+      "public/model-brands/openai.svg",
+      "public/model-brands/xai.svg",
+      "public/product-assets/youcai-demo-v1/clean-v21/previews/03-shot-02.webp",
+      "public/robots.txt",
+      "public/short-drama/previews/film-studio-promo-bg-v2.webp",
+      "public/short-drama/previews/film-studio-promo-bg-v3.webp",
+      "public/short-drama/previews/hero-dream-floral-v2.webp",
+      "public/short-drama/previews/hero-pipeline-v1.webp",
+      "public/short-drama/previews/inspiration-moon-observatory-v1.webp",
+      "public/short-drama/previews/inspiration-paper-fox-v1.webp",
+      "public/short-drama/previews/inspiration-product-film-v1.webp",
+      "public/short-drama/previews/inspiration-silent-pet-v1.webp",
+      "public/short-drama/previews/manifest.json",
+      "public/version.json",
+      "public/youcai-media/v1/source-manifest.json"
+    ],
+    "preSnapshotVerifiers": [
+      "scripts/verify-public-asset-contract.mjs",
+      "scripts/verify-runtime-data-vnext.mjs"
+    ]
+  },
+  "assets": {
+    "root": "public",
+    "manifest": "deploy/manifests/public-assets.v1.json",
+    "readinessReceipt": "deploy/manifests/public-assets.ready.v1.json",
+    "releaseDirectory": "shared/assets/releases",
+    "currentPointer": "shared/assets/current",
+    "externalRoots": [
+      "public/product-assets",
+      "public/youcai-media",
+      "public/short-drama",
+      "public/cover-references",
+      "public/avatars",
+      "public/cover-presets",
+      "public/help",
+      "public/cover-assets",
+      "public/cover-generated-samples",
+      "public/official-home",
+      "public/downloads",
+      "public/model-brands"
+    ],
+    "forbiddenPublicRoots": [
+      "public/storyboard-reviews",
+      "public/demo-assets"
+    ],
+    "forbiddenCuratedJsonMarkers": [
+      "http://",
+      "https://",
+      "q-sign-",
+      "/api/video/proxy",
+      "127.0.0.1"
+    ],
+    "binaryExtensions": [
+      ".aac",
+      ".avi",
+      ".flac",
+      ".gif",
+      ".ico",
+      ".jpeg",
+      ".jpg",
+      ".m4a",
+      ".m4v",
+      ".mkv",
+      ".mov",
+      ".mp3",
+      ".mp4",
+      ".mpeg",
+      ".mpg",
+      ".ogg",
+      ".pdf",
+      ".png",
+      ".svg",
+      ".wav",
+      ".webm",
+      ".webp",
+      ".zip"
+    ],
+    "requiredPaths": [
+      "public/avatars/cute-semantic/agent-cute-01.webp",
+      "public/avatars/cute-semantic/agent-cute-10.webp",
+      "public/avatars/cute-semantic/agent-cute-33.webp",
+      "public/avatars/agent-cyber-01.png",
+      "public/youcai-media/v1/featured/homepage-hero-seedance-2.mp4",
+      "public/youcai-media/v1/featured/canvas-banner-youcai.mp4",
+      "public/short-drama/inspiration-media/v1/official-film-showcase-v1.mp4",
+      "public/help/storyboard-video-case.mp4",
+      "public/product-assets/youcai-demo-v1/clean-v21/graph.json",
+      "public/product-assets/youcai-demo-v1/clean-v21/03-shot-02.png",
+      "public/product-assets/youcai-demo-v1/storyboard-v260/video.mp4",
+      "public/product-assets/youcai-demo-v1/storyboard-v260/poster.webp",
+      "public/product-assets/youcai-demo-v1/storyboard-modes/manifest.json",
+      "public/product-assets/youcai-demo-v1/storyboard-modes/exaggerated.webp",
+      "public/product-assets/youcai-demo-v1/storyboard-modes/cinematic.webp",
+      "public/product-assets/youcai-demo-v1/storyboard-modes/lyrical.webp"
+    ]
+  },
+  "runtime": {
+    "mutablePaths": [
+      "data",
+      ".logs",
+      "logs",
+      "public/uploads",
+      "backups",
+      "voice-platform/public/reference-audio",
+      "voice-platform/dev.db",
+      "voice-platform/prisma/dev.db"
+    ],
+    "requiredServerMounts": [
+      "shared/voice/voice.db",
+      "shared/data",
+      "shared/runtime",
+      "shared/runtime/commerce-agent",
+      "shared/runtime/commerce-discovery",
+      "shared/assets/releases",
+      "shared/assets/current",
+      "shared/uploads",
+      "shared/logs",
+      "shared/backups",
+      "shared/voice/reference-audio"
+    ],
+    "requiredDataFiles": [
+      "engine-configs.json",
+      "custom-voices.json",
+      "service-cards.json",
+      "studio-config.json",
+      "voices.json",
+      "voice-studio/service-cards.json",
+      "voice-studio/voices.json"
+    ],
+    "requiredDataShapes": {
+      "engine-configs.json": "array",
+      "custom-voices.json": "array",
+      "service-cards.json": "array",
+      "studio-config.json": "object",
+      "voices.json": "array",
+      "voice-studio/service-cards.json": "array",
+      "voice-studio/voices.json": "array"
+    },
+    "secretPaths": [
+      ".env.local",
+      ".env.production",
+      ".npmrc",
+      ".secure",
+      "scripts/tencent_key"
+    ]
+  },
+  "database": {
+    "contract": "deploy/policies/database-contract.v1.json",
+    "migrationRoot": "supabase/migrations",
+    "excludedForwardMigrations": [
+      "20260822032000_aid_integration_bridge.sql"
+    ],
+    "excludedForwardMigrationReason": "AID feature retired; historical bridge remains source evidence and must not be applied by the current release runner",
+    "rollbackRoot": "supabase/rollbacks",
+    "rollbackSafetyVerification": "scripts/verify-db-migration-release.mjs",
+    "criticalMigrationOrder": [
+      "20260825121000_atomic_wallet_payment_fulfillment.sql",
+      "20260825174500_image_generation_exactly_once.sql",
+      "20260825180000_video_terminal_billing_p0.sql",
+      "20260825202000_payment_provider_evidence_atomic_fulfillment.sql",
+      "20260901093000_extraction_attempts_exactly_once.sql",
+      "20260901160000_video_channel_health_release_protocol.sql",
+      "20260901170000_llm_request_attempts_exactly_once.sql",
+      "20260903074000_llm_stream_credit_reservations.sql",
+      "20260903091500_extraction_confirmed_business_failure.sql",
+      "20260903092000_extraction_account_history.sql",
+      "20260903101500_extraction_provider_checkpoint.sql",
+      "20260903153500_video_fractional_duration.sql",
+      "20260903161000_digital_human_account_slot.sql",
+      "20260903212000_digital_video_dispatch_queue.sql",
+      "20260904013000_digital_human_long_video_jobs.sql",
+      "20260904023000_digital_human_long_video_runtime.sql",
+      "20260904024500_remove_legacy_video_integer_duration_overload.sql",
+      "20260904025000_digital_human_long_submission_attempt_accounting.sql",
+      "20260904025500_video_provider_failure_terminal.sql",
+      "20260904193000_payment_refund_exactly_once.sql",
+      "20260915231500_image_generation_failure_history.sql",
+      "20260915233000_digital_human_long_history_visibility.sql",
+      "20260915233500_extraction_request_snapshot.sql",
+      "20260915234500_short_drama_script_history.sql",
+      "20260915235500_autodl_h3_revenue_profit.sql"
+    ],
+    "rollbackStrategies": {
+      "llm": {
+        "mode": "manual-destructive-guarded",
+        "rollback": "supabase/rollbacks/20260901170000_llm_request_attempts_exactly_once.rollback.sql",
+        "blockedByDependentMigration": "20260903074000_llm_stream_credit_reservations.sql",
+        "requiresEmptyEvidenceTables": true,
+        "requiresTransaction": true
+      },
+      "video": {
+        "mode": "manual-destructive-guarded",
+        "rollback": "supabase/rollbacks/20260825180000_video_terminal_billing_p0.rollback.sql",
+        "blockedByDependentMigrations": [
+          "20260903212000_digital_video_dispatch_queue.sql",
+          "20260904013000_digital_human_long_video_jobs.sql",
+          "20260904025500_video_provider_failure_terminal.sql"
+        ],
+        "requiresEmptyTaskTable": true,
+        "requiresTransaction": true
+      },
+      "refund": {
+        "mode": "manual-destructive-guarded",
+        "rollback": "supabase/rollbacks/20260904193000_payment_refund_exactly_once.rollback.sql",
+        "requiresEmptyEvidenceTables": true,
+        "requiresTransaction": true
+      },
+      "image": {
+        "mode": "forward-repair-only-after-activation",
+        "reason": "image request snapshots, terminal failure history, retry eligibility and billing evidence must not be deleted"
+      },
+      "extraction": {
+        "mode": "forward-repair-only-after-activation",
+        "reason": "durable extraction attempts, reconciliation evidence and history must not be deleted"
+      },
+      "digitalHuman": {
+        "mode": "forward-repair-only-after-activation",
+        "reason": "long-job, segment, submission and wallet evidence must not be deleted"
+      },
+      "generalScript": {
+        "mode": "forward-repair-only-after-activation",
+        "reason": "general-script request, result and billing snapshots must not be deleted after activation"
+      },
+      "h3Revenue": {
+        "mode": "forward-repair-only-after-activation",
+        "reason": "H3 settlement, wallet, task and revenue audit evidence must remain consistent after activation"
+      }
+    },
+    "readinessProbe": "scripts/verify-production-schema-readiness.ts",
+    "probeMode": "read-only-postgrest-openapi",
+    "requireTablesColumnsRpcsAndArguments": true,
+    "requireForbiddenRpcAbsence": true,
+    "requireReferenceDataBeforeActivation": true,
+    "migrationExecutionMode": "separate-reviewed-forward-only",
+    "nonCommerceRepairPack": {
+      "planTool": "scripts/prepare-noncommerce-migration-pack.mjs",
+      "verification": "scripts/verify-noncommerce-migration-pack.ts",
+      "executionMode": "isolated-migration-root-with-existing-runner",
+      "legacyOnlySelectorAllowed": false,
+      "migrationCount": 5,
+      "objectCount": 11,
+      "migrations": [
+        "20260915231500_image_generation_failure_history.sql",
+        "20260915233000_digital_human_long_history_visibility.sql",
+        "20260915233500_extraction_request_snapshot.sql",
+        "20260915234500_short_drama_script_history.sql",
+        "20260915235500_autodl_h3_revenue_profit.sql"
+      ],
+      "requires": [
+        "exact target host",
+        "runner plan manifest SHA-256",
+        "recoverable pre-migration backup receipt",
+        "explicit apply authorization"
+      ]
+    },
+    "migrationRunner": "scripts/db-migration-release.mjs",
+    "migrationVerification": "scripts/verify-db-migration-release.mjs",
+    "migrationPlanCommand": "pnpm deploy:db:plan",
+    "migrationStatusCommand": "pnpm deploy:db:status",
+    "migrationSemanticCheckCommand": "node scripts/db-migration-release.mjs semantic-check --write-evidence",
+    "migrationSemanticAdoptCommand": "node scripts/db-migration-release.mjs adopt --semantic-receipt=<receipt-path> --confirm-semantic-receipt-sha256=<receipt-sha256> --confirm-target-fingerprint=<target-fingerprint> --confirm-target-host=<database-host> --confirm-manifest-sha256=<plan-manifest-sha256> --confirm-backup=<backup-receipt-or-path>",
+    "migrationSemanticCheckVersion": "catalog-and-transaction-noop.v2",
+    "migrationPendingSemanticVerification": "scripts/verify-pending-migration-semantics.mjs",
+    "migrationPendingSemanticCheckCommand": "node scripts/verify-pending-migration-semantics.mjs --write-evidence",
+    "migrationPendingSemanticCheckVersion": "pending-migration-object-coverage.v1",
+    "migrationPendingSemanticReconciliation": {
+      "forwardMigration": "20260904031000_reconcile_pending_legacy_semantics.sql",
+      "executionMode": "separate-reviewed-forward-only",
+      "requires": [
+        "pre-migration database backup receipt",
+        "confirmed loopback target fingerprint for local rehearsal",
+        "reviewed current impact counts",
+        "explicit application authorization"
+      ],
+      "legacyAdoptionRule": "all-nine-profiles-must-pass-after-reconciliation-before-ledger-adoption",
+      "evidencedAdoptionTool": "scripts/adopt-evidenced-migrations.mjs",
+      "evidencedAdoptionExecution": "explicit-execute-flag-after-successful-no-write-plan",
+      "evidencedAdoptionRules": [
+        "exact pending set",
+        "zero migration hash drift",
+        "live 9-of-9 semantic recheck",
+        "live 0255 function body and permission recheck",
+        "confirmed backup archive and receipt hashes",
+        "confirmed single-file 0310 application receipt",
+        "migration SQL replay forbidden",
+        "single advisory-locked ledger transaction"
+      ]
+    },
+    "migrationApplyCommand": "pnpm deploy:db:apply -- --confirm-target-host=<database-host> --confirm-manifest-sha256=<plan-manifest-sha256> --confirm-backup=<backup-receipt-or-path>",
+    "migrationDatabaseUrlEnv": ["DEPLOY_DATABASE_URL", "SUPABASE_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL"],
+    "migrationApplyConfirmations": ["--confirm-target-host", "--confirm-manifest-sha256", "--confirm-backup"],
+    "applicationManagedMigrationsAllowed": false,
+    "preMigrationBackupRequired": true,
+    "freshBootstrapStatus": "baseline-schema-not-yet-captured",
+    "freshBootstrapRequiredBeforeDisasterRecoverySignoff": true
+  },
+  "services": {
+    "web": {
+      "sourcePrefixes": ["src/", "public/", "next.config.ts", "package.json", "pnpm-lock.yaml"],
+      "buildDirectory": ".next",
+      "standaloneDirectory": ".next/standalone",
+      "healthPath": "/api/version",
+      "readinessPath": "/api/release-readiness",
+      "port": 5000
+    },
+    "voice": {
+      "sourcePrefixes": ["voice-platform/"],
+      "buildDirectory": "voice-platform/.next",
+      "standaloneDirectory": "voice-platform/.next/standalone",
+      "healthPath": "/voice-platform",
+      "readinessPath": "/voice-platform/api/release-readiness",
+      "port": 5001
+    }
+  },
+  "git": {
+    "primaryBranch": "main",
+    "workBranchPrefix": "codex/",
+    "requiredRemotes": ["origin", "backup"],
+    "allowLocalRemotes": false,
+    "requireDistinctRemoteHosts": true,
+    "deploymentRemoteAllowed": false,
+    "forcePushAllowed": false
+  },
+  "release": {
+    "modes": ["DOCS", "ASSET", "WEB", "VOICE", "FULL"],
+    "immutable": true,
+    "serverBuildAllowed": false,
+    "isolatedSameHostBuilder": {
+      "allowed": true,
+      "root": "/data/direct-deploy/builders",
+      "user": "zimeiti-build",
+      "requiredSandbox": "systemd-rootdirectory-v1",
+      "productionMountsAllowed": false,
+      "productionSecretsAllowed": false,
+      "applicationBuildNetworkAllowed": false,
+      "dependencyFetchIgnoreScripts": true,
+      "requiresCurrentNegativeProbe": true,
+      "requiresImmutableSourceEnvelope": true,
+      "gitUsage": "local-only-provenance-no-fetch-pull-push"
+    },
+    "serverGitCheckoutAllowed": false,
+    "atomicSwitch": true,
+    "productionBuild": {
+      "platform": "linux",
+      "architectures": ["x64"],
+      "nodeMajor": 24,
+      "nodeVersion": "24.19.0",
+      "pnpmVersion": "9.0.0",
+      "requireCleanGit": true,
+      "requireFrozenLockfile": true
+    }
+  }
+}

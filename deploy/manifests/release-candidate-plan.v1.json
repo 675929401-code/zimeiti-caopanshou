@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "projectId": "zimeiti-caopanshou",
+  "kind": "release-candidate-plan",
+  "candidateState": "local-verified-git-pushed-awaiting-production-database-linux-build-dns-and-restore-gates",
+  "planningOnly": true,
+  "containsSecrets": false,
+  "sourceFreezeRequiredBeforeRefresh": false,
+  "managedSourceMetadataRefreshDeferred": false,
+  "remoteWriteAuthorized": true,
+  "serverMutationAuthorized": true,
+  "gates": [
+    {
+      "id": "local-release-preflight",
+      "state": "pass",
+      "evidenceCommand": "node scripts/release-preflight.mjs --mode prepare"
+    },
+    {
+      "id": "historical-migration-immutability",
+      "state": "pass",
+      "evidenceCommand": "node scripts/release-workflow.mjs audit"
+    },
+    {
+      "id": "database-migration-ledger",
+      "state": "local-pass-production-contract-blocked",
+      "evidenceCommand": "node scripts/db-migration-release.mjs semantic-check --write-evidence"
+    },
+    {
+      "id": "managed-source-metadata",
+      "state": "pass",
+      "evidenceCommand": "node scripts/release-workflow.mjs audit"
+    },
+    {
+      "id": "public-asset-readiness-receipt",
+      "state": "local-manifest-pass-remote-transport-pending",
+      "evidenceCommand": "node scripts/verify-public-asset-release.mjs"
+    },
+    {
+      "id": "formal-release-repository",
+      "state": "pass-immutable-release-branch-pushed",
+      "evidenceCommand": "node scripts/release-workflow.mjs repo"
+    },
+    {
+      "id": "production-environment",
+      "state": "readonly-preflight-blocked-by-database-contract-and-primary-domain-dns",
+      "evidenceCommand": "node scripts/verify-production-environment.mjs --json"
+    },
+    {
+      "id": "linux-standalone-build",
+      "state": "blocked-non-production-linux-runner-unavailable",
+      "evidenceCommand": "node scripts/verify-deploy-standard.mjs"
+    },
+    {
+      "id": "production-restore-drill",
+      "state": "pending",
+      "evidenceCommand": "node scripts/verify-release-operational-capacity.mjs --mode=production --probe-origin=http://127.0.0.1:5000"
+    }
+  ],
+  "historicalMigrationDisposition": [
+    {
+      "file": "supabase/migrations/20260825121000_atomic_wallet_payment_fulfillment.sql",
+      "action": "completed-restore-head-and-create-forward-migration",
+      "forwardChange": "Restrict wallet table access and grant read-only service-role access in a new migration."
+    },
+    {
+      "file": "supabase/migrations/20260825173500_voice_atomic_authorization_purchase.sql",
+      "action": "completed-restore-head-and-create-forward-migration",
+      "forwardChange": "Replace the voice finalizer in a new migration with a user identifier variable bound to the existing column type."
+    },
+    {
+      "file": "supabase/migrations/20260825174500_image_generation_exactly_once.sql",
+      "action": "completed-restore-head-and-create-forward-migration",
+      "forwardChange": "Replace the image delivery finalizer in a new migration with a user identifier variable bound to the existing column type."
+    },
+    {
+      "file": "supabase/migrations/20260825180000_video_terminal_billing_p0.sql",
+      "action": "completed-restore-head-only",
+      "forwardChange": "No duplicate repair migration is needed because the later fractional-duration and digital-human slot migrations already carry the typed user identifier fix."
+    }
+  ],
+  "orderedReleasePhases": [
+    "restore historical migration bytes and add only required forward migration",
+    "complete product verification and freeze source changes",
+    "refresh managed source metadata and regenerate the immutable source snapshot",
+    "verify and transport public assets, then create the readiness receipt",
+    "materialize a clean release repository with independent origin and backup remotes",
+    "build Linux standalone artifacts with the pinned runtime and frozen lockfile",
+    "take a database backup, create a migration plan, verify its hash, and apply reviewed forward migrations",
+    "upload artifacts to the incoming directory and verify the sealed candidate",
+    "perform an atomic release switch, production smoke tests, and rollback rehearsal"
+  ],
+  "forbiddenUntilAllBlockingGatesPass": [
+    "bulk-stage-the-working-tree",
+    "apply-production-migrations",
+    "activate-production-release"
+  ]
+}

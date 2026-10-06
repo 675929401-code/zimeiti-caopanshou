@@ -1,0 +1,1478 @@
+/*
+ * 应用广场外壳的最终约束层。
+ * 必须在主题样式之后加载，保证后台可配置尺寸不会造成导航遮挡或移动端溢出。
+ */
+.marketplace-shell .nav-bar-wrapper {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden !important;
+}
+
+.marketplace-shell .primary-nav-rail {
+  order: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  flex: 1 1 0%;
+  width: 0;
+  min-width: 0;
+  gap: 4px;
+}
+
+.marketplace-shell .marketplace-nav-actions {
+  position: static !important;
+  inset: auto !important;
+  order: 2;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+html[data-theme] .marketplace-shell .nav-bar-container {
+  order: 1;
+  flex: 1 1 0% !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  gap: var(--market-nav-gap, 3px) !important;
+  overflow-x: auto !important;
+  scrollbar-width: none;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+html[data-theme] .marketplace-shell .primary-nav-rail .nav-bar-container {
+  order: initial;
+  width: auto !important;
+}
+
+.marketplace-shell .nav-scroll-control {
+  display: inline-flex;
+  width: 28px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, var(--primary));
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 8%, transparent);
+  transition: width 180ms ease, opacity 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.marketplace-shell .primary-nav-rail[data-nav-overflow="false"] .nav-scroll-control {
+  width: 0;
+  border-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.marketplace-shell .nav-scroll-control:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
+  background: var(--accent);
+}
+
+.marketplace-shell .nav-scroll-control:disabled {
+  color: var(--muted-foreground);
+  opacity: 0.36;
+}
+
+.marketplace-shell .nav-scroll-control svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.marketplace-shell .nav-scroll-control:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.marketplace-shell .nav-pill-add,
+.marketplace-shell .nav-pill-add > span {
+  font-size: 15px !important;
+  line-height: 1.2;
+}
+
+/* 最终字号层：优先级高于各主题，同时用更窄留白抵消字号增长。 */
+html[data-theme] .marketplace-shell .nav-pill {
+  min-height: 38px !important;
+  height: auto !important;
+  gap: var(--market-nav-gap, 3px) !important;
+  padding: var(--market-nav-padding-y, 7px) var(--market-nav-padding-x, 8px) !important;
+  border-radius: var(--market-nav-radius, 10px) !important;
+  font-size: var(--market-nav-font-size, 15px) !important;
+  line-height: 1.2 !important;
+  font-weight: 600 !important;
+  transition-duration: 200ms !important;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+}
+
+html[data-theme] .marketplace-shell .nav-pill :where(svg, img),
+html[data-theme] .marketplace-shell .nav-pill .nav-pill-icon {
+  width: var(--market-nav-icon-size, 17px) !important;
+  height: var(--market-nav-icon-size, 17px) !important;
+  font-size: var(--market-nav-icon-size, 17px) !important;
+  color: var(--nav-icon-color, currentColor) !important;
+  filter: none !important;
+}
+
+html[data-theme] .marketplace-shell .nav-pill-indicator {
+  top: auto !important;
+  bottom: 2px !important;
+  height: 2px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--primary) !important;
+  box-shadow: none !important;
+  opacity: 0.95;
+  transition:
+    left 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 180ms ease !important;
+}
+
+html[data-theme] .marketplace-shell .nav-pill[data-nav-pending="true"] .nav-pill-icon {
+  animation: marketplace-route-icon-settle 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+html[data-theme] .marketplace-shell .nav-bar-container[data-nav-pending] .nav-pill-indicator {
+  animation: marketplace-route-indicator-settle 220ms ease-out both;
+}
+
+@keyframes marketplace-route-icon-settle {
+  0% { opacity: 0.62; transform: scale(0.9); }
+  70% { opacity: 1; transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes marketplace-route-indicator-settle {
+  0% { opacity: 0.32; }
+  100% { opacity: 0.95; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] .marketplace-shell .nav-pill-indicator,
+  html[data-theme] .marketplace-shell .nav-pill[data-nav-pending="true"] .nav-pill-icon {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .marketplace-shell .nav-scroll-control {
+    transition: none !important;
+  }
+}
+
+html[data-theme] .marketplace-shell .marketplace-category-inner {
+  gap: 8px !important;
+  padding-inline: 12px !important;
+}
+
+html[data-theme] .marketplace-shell .marketplace-search {
+  width: clamp(160px, 14vw, 200px) !important;
+}
+
+html[data-theme] .marketplace-shell .category-tab {
+  min-height: 36px !important;
+  gap: var(--market-category-gap, 5px) !important;
+  padding: var(--market-category-padding-y, 6px) var(--market-category-padding-x, 9px) !important;
+  border-radius: var(--market-category-radius, 8px) !important;
+  font-size: var(--market-category-font-size, 14px) !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+}
+
+html[data-theme] .marketplace-shell .category-tab :where(svg, img) {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+/* 黑曜霓彩不在 CSS 中重写 --nav-icon-color；每个功能使用组件定义的
+ * 独立语义色，后台排序或选中状态都不会把图标刷成同一种颜色。 */
+
+html[data-theme="stellar-blue"] .marketplace-shell .nav-pill {
+  --nav-icon-color: color-mix(in srgb, var(--primary) 74%, var(--muted-foreground)) !important;
+}
+
+html[data-theme="stellar-blue"] .marketplace-shell .nav-pill-active {
+  --nav-icon-color: var(--primary) !important;
+}
+
+html[data-theme="stellar-blue"] .marketplace-shell .category-tab .cat-tab-icon,
+html[data-theme="stellar-blue"] .marketplace-shell .category-tab .cat-tab-icon :where(svg, img) {
+  color: color-mix(in srgb, var(--primary) 74%, var(--muted-foreground)) !important;
+}
+
+html[data-theme="stellar-blue"] .marketplace-shell .category-tab-active .cat-tab-icon,
+html[data-theme="stellar-blue"] .marketplace-shell .category-tab-active .cat-tab-icon :where(svg, img) {
+  color: var(--primary) !important;
+}
+
+/* 黑曜霓彩的快捷导航使用更饱和、可辨识的九色谱。作用在网格项而非
+   数据颜色上，后台排序后仍保持一格一色，不会被接口里的浅色值刷淡。 */
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n + 1) { --shortcut-accent: #22d3ee !important; }
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n + 2) { --shortcut-accent: #a78bfa !important; }
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n + 3) { --shortcut-accent: #3b82f6 !important; }
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n + 4) { --shortcut-accent: #f59e0b !important; }
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n + 5) { --shortcut-accent: #10b981 !important; }
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n + 6) { --shortcut-accent: #ec4899 !important; }
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n + 7) { --shortcut-accent: #fb923c !important; }
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n + 8) { --shortcut-accent: #8b5cf6 !important; }
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid > :nth-child(9n) { --shortcut-accent: #f43f5e !important; }
+
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-shortcut-grid .sidebar-shortcut-icon {
+  color: var(--shortcut-accent) !important;
+  border-color: color-mix(in srgb, var(--shortcut-accent) 52%, #14282e) !important;
+  background: color-mix(in srgb, var(--shortcut-accent) 20%, #071116) !important;
+  box-shadow: inset 0 0 12px color-mix(in srgb, var(--shortcut-accent) 10%, transparent) !important;
+}
+
+html[data-theme="stellar-blue"] .sidebar-shell .sidebar-shortcut-card {
+  --shortcut-accent: var(--primary) !important;
+}
+
+.sidebar-shell .sidebar-shortcut-grid {
+  gap: 8px;
+}
+
+.sidebar-shell .sidebar-shortcut-grid .sidebar-tool-card {
+  min-height: 64px;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  transition-duration: 180ms;
+}
+
+.sidebar-shell .sidebar-shortcut-grid .sidebar-tool-card:hover {
+  transform: translateY(-1px);
+}
+
+.sidebar-shell .sidebar-shortcut-grid .sidebar-shortcut-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: var(--shortcut-accent, var(--primary));
+  border: 1px solid color-mix(in srgb, var(--shortcut-accent, var(--primary)) 24%, var(--border));
+  background: color-mix(in srgb, var(--shortcut-accent, var(--primary)) 10%, var(--card));
+}
+
+.sidebar-shell :where(.sb-credit-label, .sb-user-caption) {
+  font-size: 12px !important;
+  line-height: 1.3;
+}
+
+.sidebar-shell .sidebar-tool-card > span:last-child {
+  font-size: clamp(13px, calc(13px * var(--sidebar-scale, 1)), 15px) !important;
+}
+
+.sidebar-shell .sidebar-conv-item {
+  min-height: 48px !important;
+  gap: 10px !important;
+  padding-block: 6px !important;
+}
+
+.sidebar-shell .sidebar-conv-name {
+  font-size: clamp(13px, calc(14px * var(--sidebar-scale, 1)), 17px) !important;
+  line-height: 1.3 !important;
+}
+
+.sidebar-shell .sidebar-conv-time {
+  font-size: clamp(11px, calc(12px * var(--sidebar-scale, 1)), 14px) !important;
+  line-height: 1.2 !important;
+  opacity: 0.82;
+}
+
+@media (max-width: 767px) {
+  .sidebar-shell .sidebar-shortcut-grid .sidebar-tool-card {
+    min-height: 60px;
+    gap: 3px;
+  }
+
+  .sidebar-shell .sidebar-shortcut-grid .sidebar-shortcut-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+
+  .marketplace-shell .nav-bar-wrapper {
+    gap: 6px;
+    padding-left: 54px !important;
+    padding-right: 8px !important;
+  }
+
+  html[data-theme] .marketplace-shell .nav-pill {
+    min-height: 42px !important;
+    padding: 8px !important;
+    font-size: 16px !important;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-category-inner {
+    padding-inline: 8px !important;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-search {
+    width: 116px !important;
+  }
+
+  html[data-theme] .marketplace-shell .category-tab {
+    min-height: 38px !important;
+    padding: 7px 8px !important;
+    font-size: 15px !important;
+  }
+}
+
+/*
+ * Desktop marketplace depth language shared by all three themes.
+ * The grid moves slowly enough to read as spatial depth, while the cards keep
+ * their theme-owned colors and gain a clearly visible lift above the grid.
+ */
+@keyframes marketplace-grid-flight {
+  from {
+    background-position: 0 0, 0 0, 50% 100%;
+  }
+  to {
+    background-position:
+      var(--marketplace-space-grid-size) var(--marketplace-space-grid-size),
+      var(--marketplace-space-grid-size) var(--marketplace-space-grid-size),
+      50% 82%;
+  }
+}
+
+html[data-theme="lattice"] .marketplace-depth {
+  --marketplace-space-grid-size: 42px;
+  --marketplace-space-grid-line: rgba(110, 231, 224, .13);
+  --marketplace-space-grid-glow: rgba(105, 167, 255, .16);
+  --marketplace-space-grid-opacity: .72;
+}
+
+html[data-theme="soft-white"] .marketplace-depth {
+  --marketplace-space-grid-size: 48px;
+  --marketplace-space-grid-line: rgba(11, 122, 107, .09);
+  --marketplace-space-grid-glow: rgba(147, 97, 30, .1);
+  --marketplace-space-grid-opacity: .64;
+}
+
+html[data-theme="crystal-aurora"] .marketplace-depth {
+  --marketplace-space-grid-size: 64px;
+  --marketplace-space-grid-line: rgba(114, 230, 210, .14);
+  --marketplace-space-grid-glow: rgba(95, 168, 188, .2);
+  --marketplace-space-grid-opacity: .82;
+}
+
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  html[data-theme] .marketplace-shell .marketplace-depth {
+    position: relative;
+    isolation: isolate;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-depth::before {
+    position: absolute;
+    z-index: 0;
+    inset: -22% -8% -12%;
+    content: "";
+    pointer-events: none;
+    opacity: var(--marketplace-space-grid-opacity);
+    background-image:
+      linear-gradient(var(--marketplace-space-grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--marketplace-space-grid-line) 1px, transparent 1px),
+      radial-gradient(ellipse at 50% 100%, var(--marketplace-space-grid-glow), transparent 58%);
+    background-size:
+      var(--marketplace-space-grid-size) var(--marketplace-space-grid-size),
+      var(--marketplace-space-grid-size) var(--marketplace-space-grid-size),
+      100% 100%;
+    transform: perspective(920px) rotateX(54deg) scale(1.16);
+    transform-origin: 50% 100%;
+    mask-image: linear-gradient(to top, #000 4%, rgba(0, 0, 0, .76) 58%, transparent 96%);
+    animation: marketplace-grid-flight 18s linear infinite;
+    will-change: background-position;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-depth > div {
+    position: relative;
+    z-index: 1;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid {
+    perspective: 1200px;
+    transform-style: preserve-3d;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id] {
+    overflow: visible !important;
+    transform-style: preserve-3d;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:is(:hover, :focus-within) {
+    z-index: 4;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+    --marketplace-float-edge: var(--primary);
+    animation: none;
+    transform-origin: 50% 58%;
+    transform-style: preserve-3d;
+    will-change: transform, box-shadow;
+    transition:
+      transform 300ms cubic-bezier(.2, .82, .2, 1),
+      border-color 240ms ease,
+      background 240ms ease,
+      box-shadow 300ms cubic-bezier(.2, .82, .2, 1) !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 1) .agent-card-hover { --marketplace-float-edge: #6ee7e0; }
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 2) .agent-card-hover { --marketplace-float-edge: #69a7ff; }
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 3) .agent-card-hover { --marketplace-float-edge: #b08dff; }
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 4) .agent-card-hover { --marketplace-float-edge: #f0bd58; }
+
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 1) .agent-card-hover { --marketplace-float-edge: #55d8cd; }
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 2) .agent-card-hover { --marketplace-float-edge: #5fa8bc; }
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 3) .agent-card-hover { --marketplace-float-edge: #8bc7c0; }
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 4) .agent-card-hover { --marketplace-float-edge: #d0ad66; }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    transform: translate3d(0, -2px, 8px) scale(1.004) !important;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover .marketplace-agent-avatar {
+    transition: transform 300ms cubic-bezier(.2, .82, .2, 1), box-shadow 300ms ease;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) .marketplace-agent-avatar {
+    transform: translateY(-2px) scale(1.025);
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--marketplace-float-edge) 72%, white) !important;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, .12),
+      0 30px 68px rgba(0, 0, 0, .4),
+      0 0 34px color-mix(in srgb, var(--marketplace-float-edge) 16%, transparent) !important;
+  }
+
+  html[data-theme="soft-white"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    border-color: #78b7a7 !important;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, .94),
+      0 26px 58px rgba(31, 45, 40, .18),
+      0 0 30px rgba(11, 122, 107, .1) !important;
+  }
+
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--marketplace-float-edge) 70%, white) !important;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, .13),
+      0 32px 72px rgba(0, 0, 0, .46),
+      0 0 36px color-mix(in srgb, var(--marketplace-float-edge) 15%, transparent) !important;
+  }
+}
+
+/* Administrator surfaces are a product-owned soft-white workspace.
+ * They deliberately ignore the public theme, user preference and OS mode.
+ * The body flag only extends the same palette to Radix/Sonner portals that
+ * render outside the administration DOM subtree. */
+.admin-light-shell[data-admin-theme="soft-white"],
+body[data-admin-surface-active="true"] :is(
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="select-content"],
+  [data-slot="hover-card-content"],
+  [data-slot="menubar-content"],
+  [data-slot="menubar-sub-content"],
+  [data-slot="tooltip-content"],
+  [data-sonner-toaster]
+) {
+  color-scheme: light;
+  --background: #f3f4ef;
+  --foreground: #17201d;
+  --card: #fffefa;
+  --card-foreground: #17201d;
+  --popover: #ffffff;
+  --popover-foreground: #17201d;
+  --primary: #0b7466;
+  --primary-foreground: #ffffff;
+  --secondary: #e7ece6;
+  --secondary-foreground: #46534f;
+  --muted: #ebece6;
+  --muted-foreground: #66716d;
+  --accent: #dfece7;
+  --accent-foreground: #125548;
+  --destructive: #b42318;
+  --border: #d0d8d2;
+  --input: #adc7bf;
+  --ring: #0b7466;
+  --sidebar: #fbfaf6;
+  --sidebar-foreground: #46534f;
+  --sidebar-border: #d0d8d2;
+  --sidebar-accent: #dfece7;
+  --sidebar-accent-foreground: #125548;
+  --sidebar-primary: #0b7466;
+  --sidebar-primary-foreground: #ffffff;
+  --font-title-color: #17201d;
+  --font-body-color: #43534e;
+  --font-aux-color: #62716c;
+  --scrollbar-track: #ebe7df;
+  --scrollbar-thumb: #b8c7c1;
+  --scrollbar-thumb-hover: #8e9f99;
+  --chart-1: #0b7466;
+  --chart-2: #2e6f96;
+  --chart-3: #6c8f47;
+  --chart-4: #b86b2d;
+  --chart-5: #7656a6;
+  --admin-grid-line: rgba(11, 116, 102, .075);
+  --admin-grid-glow: rgba(46, 111, 150, .11);
+  --admin-panel-inset: rgba(255, 255, 255, .94);
+  --admin-card-shadow: rgba(31, 45, 40, .16);
+}
+
+html body .admin-light-shell[data-admin-theme="soft-white"] {
+  color: var(--foreground) !important;
+  background-color: var(--background) !important;
+  background-image:
+    linear-gradient(var(--admin-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--admin-grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 88% 4%, var(--admin-grid-glow), transparent 34rem) !important;
+  background-position: 0 0, 0 0, 0 0;
+  background-size: 52px 52px, 52px 52px, 100% 100%;
+  background-attachment: local, local, local;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] > header {
+  border-color: var(--border) !important;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--card) 96%, transparent) !important;
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--admin-card-shadow) 52%, transparent);
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] > div {
+  background-color: transparent !important;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] > div > aside {
+  border-color: var(--border) !important;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--card) 96%, transparent) !important;
+  box-shadow:
+    12px 0 34px color-mix(in srgb, var(--admin-card-shadow) 68%, transparent),
+    inset -1px 0 var(--admin-panel-inset);
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] main {
+  background-color: transparent;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] :where(
+  button,
+  input,
+  select,
+  textarea
+),
+body[data-admin-surface-active="true"] :is(
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="select-content"],
+  [data-slot="hover-card-content"],
+  [data-slot="menubar-content"],
+  [data-slot="menubar-sub-content"]
+) :where(button, input, select, textarea) {
+  color-scheme: light;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] :where(option, optgroup),
+body[data-admin-surface-active="true"] :is(
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"],
+  [data-slot="popover-content"],
+  [data-slot="select-content"]
+) :where(option, optgroup) {
+  color: var(--foreground);
+  background: var(--popover);
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] :where(
+  [class~="text-[#101828]"],
+  [class~="text-[#344054]"],
+  [class~="text-[#172033]"],
+  [class~="text-[#475467]"]
+) {
+  color: var(--foreground) !important;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] :where(
+  [class~="text-[#667085]"],
+  [class~="text-[#98a2b3]"]
+) {
+  color: var(--muted-foreground) !important;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] :where(
+  [class~="border-[#e4e7ec]"],
+  [class~="border-[#eaecf0]"],
+  [class~="border-[#d0d5dd]"]
+) {
+  border-color: var(--border) !important;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] aside button[aria-current="page"] {
+  color: var(--primary) !important;
+  background: color-mix(in srgb, var(--primary) 12%, var(--card)) !important;
+  box-shadow: inset 3px 0 var(--primary);
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] aside button:not([aria-current="page"]):hover {
+  color: var(--foreground) !important;
+  background: color-mix(in srgb, var(--primary) 7%, var(--card)) !important;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] main :where(
+  [class~="bg-white"],
+  [class~="bg-[var(--card)]"]
+) {
+  box-shadow:
+    inset 0 1px var(--admin-panel-inset),
+    0 16px 42px color-mix(in srgb, var(--admin-card-shadow) 52%, transparent);
+}
+
+/* Tailwind dark variants key off the outer html element. Neutralize the
+ * finite set used by administration modules so an OS/public dark mode cannot
+ * recolor text or badges inside this explicitly light workspace. */
+body[data-admin-surface-active="true"] :is(
+  .admin-light-shell[data-admin-theme="soft-white"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"]
+) :where([class~="dark:bg-green-900/30"]) {
+  background-color: #dcfae6 !important;
+}
+
+body[data-admin-surface-active="true"] :is(
+  .admin-light-shell[data-admin-theme="soft-white"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"]
+) :where([class~="dark:bg-gray-800"]) {
+  background-color: #f2f4f7 !important;
+}
+
+body[data-admin-surface-active="true"] :is(
+  .admin-light-shell[data-admin-theme="soft-white"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"]
+) :where([class~="dark:bg-red-900/20"]) {
+  background-color: #fef3f2 !important;
+}
+
+body[data-admin-surface-active="true"] :is(
+  .admin-light-shell[data-admin-theme="soft-white"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"]
+) :where([class~="dark:text-amber-400"]) {
+  color: #b54708 !important;
+}
+
+body[data-admin-surface-active="true"] :is(
+  .admin-light-shell[data-admin-theme="soft-white"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"]
+) :where(
+  [class~="dark:text-green-400"],
+  [class~="dark:text-emerald-400"],
+  [class~="dark:text-emerald-300"]
+) {
+  color: #067647 !important;
+}
+
+body[data-admin-surface-active="true"] :is(
+  .admin-light-shell[data-admin-theme="soft-white"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"]
+) :where(
+  [class~="dark:text-red-400"]
+) {
+  color: #b42318 !important;
+}
+
+body[data-admin-surface-active="true"] :is(
+  .admin-light-shell[data-admin-theme="soft-white"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"]
+) :where(
+  [class~="dark:text-gray-400"]
+) {
+  color: #667085 !important;
+}
+
+body[data-admin-surface-active="true"] :is(
+  .admin-light-shell[data-admin-theme="soft-white"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"]
+) :where(
+  [class~="dark:text-sky-400"],
+  [class~="dark:text-sky-300"]
+) {
+  color: #175cd3 !important;
+}
+
+body[data-admin-surface-active="true"] :is(
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="select-content"],
+  [data-slot="hover-card-content"],
+  [data-slot="menubar-content"],
+  [data-slot="menubar-sub-content"],
+  [data-slot="tooltip-content"]
+) {
+  color: var(--popover-foreground);
+  border-color: var(--border);
+  background-color: var(--popover);
+}
+
+body[data-admin-surface-active="true"] [data-sonner-toast] {
+  color: var(--popover-foreground) !important;
+  border-color: var(--border) !important;
+  background: var(--popover) !important;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] [data-slot="chart"] {
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] :where(
+  .recharts-cartesian-axis-tick text,
+  .recharts-polar-angle-axis-tick text,
+  .recharts-legend-item-text
+) {
+  fill: var(--muted-foreground) !important;
+  color: var(--muted-foreground) !important;
+}
+
+.admin-light-shell[data-admin-theme="soft-white"] :where(
+  .recharts-cartesian-grid line,
+  .recharts-polar-grid line
+) {
+  stroke: var(--border) !important;
+}
+/* Theme-aware marketplace finish. The retained lattice theme keeps its original
+ * perspective flight; the three redesigned themes use a still orthogonal grid. */
+html[data-theme="stellar-blue"] .marketplace-depth {
+  --marketplace-space-grid-size: 50px;
+  --marketplace-space-grid-line: rgba(88, 224, 220, .13);
+  --marketplace-space-grid-glow: rgba(58, 161, 181, .2);
+  --marketplace-space-grid-opacity: .82;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-depth {
+  --marketplace-card-inset: rgba(255, 255, 255, .94);
+  --marketplace-card-shadow: rgba(31, 45, 40, .18);
+}
+
+html[data-theme="soft-white"][data-mode="dark"] .marketplace-depth {
+  --marketplace-space-grid-line: rgba(115, 199, 179, .09);
+  --marketplace-space-grid-glow: rgba(214, 176, 106, .1);
+  --marketplace-card-inset: rgba(255, 255, 255, .09);
+  --marketplace-card-shadow: rgba(0, 0, 0, .42);
+}
+
+html[data-theme="crystal-aurora"][data-mode="light"] .marketplace-depth {
+  --marketplace-space-grid-line: rgba(20, 124, 114, .105);
+  --marketplace-space-grid-glow: rgba(77, 135, 145, .15);
+  --marketplace-card-inset: rgba(255, 255, 255, .94);
+  --marketplace-card-shadow: rgba(28, 76, 69, .22);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-depth {
+  --marketplace-space-grid-line: rgba(84, 227, 210, .13);
+  --marketplace-space-grid-glow: rgba(95, 168, 188, .2);
+  --marketplace-card-inset: rgba(255, 255, 255, .16);
+  --marketplace-card-shadow: rgba(0, 0, 0, .52);
+}
+
+html[data-theme="stellar-blue"][data-mode="light"] .marketplace-depth {
+  --marketplace-space-grid-line: rgba(11, 116, 128, .105);
+  --marketplace-space-grid-glow: rgba(58, 141, 153, .15);
+  --marketplace-card-inset: rgba(255, 255, 255, .94);
+  --marketplace-card-shadow: rgba(16, 56, 68, .23);
+}
+
+html[data-theme="stellar-blue"][data-mode="dark"] .marketplace-depth {
+  --marketplace-space-grid-line: rgba(88, 224, 220, .14);
+  --marketplace-space-grid-glow: rgba(58, 161, 181, .22);
+  --marketplace-card-inset: rgba(255, 255, 255, .13);
+  --marketplace-card-shadow: rgba(0, 8, 20, .56);
+}
+
+/* Protected workbenches keep their own control rendering inside the shared
+   shell. The global theme may style the surrounding navigation only. */
+html[data-theme="lattice"] body .commerce-root select {
+  color-scheme: light !important;
+}
+
+html[data-theme="lattice"] body .commerce-root select option,
+html[data-theme="lattice"] body .commerce-root select optgroup {
+  color: #292c33 !important;
+  background-color: #ffffff !important;
+}
+
+/*
+ * 聊天输入框的焦点反馈由圆角外层容器负责。
+ * lattice 主题的通用 textarea 焦点环是矩形，会在输入区四周及工具栏上方形成直线。
+ */
+.chat-composer-rainbow textarea:focus,
+.chat-composer-rainbow textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/*
+ * 深色主题下原生 select 的选项面板由浏览器绘制，Tailwind 的文字变量不一定会传入。
+ * 统一给普通选项和不可选提示提供明确的深色底与高对比文字，覆盖弹窗、后台、画布和视频页。
+ */
+html[data-theme="lattice"] body select {
+  color-scheme: dark;
+}
+
+html[data-theme="lattice"] body select option,
+html[data-theme="lattice"] body select optgroup {
+  color: #edf7fb !important;
+  background-color: #101c29 !important;
+}
+
+html[data-theme="lattice"] body select option:disabled {
+  color: #b9cbd6 !important;
+  background-color: #172634 !important;
+  opacity: 1 !important;
+}
+
+/*
+ * 应用广场卡片布局。
+ * 只限定 marketplace-shell，避免影响工具页、聊天卡片和后台布局。
+ */
+html[data-theme="lattice"] .marketplace-shell .marketplace-scroll {
+  padding-inline: 18px !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-scroll > div {
+  padding-right: 0 !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid {
+  --marketplace-grid-template: repeat(4, minmax(0, 1fr));
+  --marketplace-grid-gap: 18px;
+  --marketplace-card-height: 124px;
+  max-width: 1840px !important;
+  margin-inline: auto !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  flex-direction: row !important;
+  align-items: center !important;
+  min-height: var(--marketplace-card-height) !important;
+  height: var(--marketplace-card-height) !important;
+  gap: 12px !important;
+  padding: 12px !important;
+  border-radius: 16px !important;
+  border-color: rgba(168, 211, 224, 0.2) !important;
+  background:
+    linear-gradient(135deg, rgba(24, 43, 62, 0.9), rgba(12, 25, 40, 0.84)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    0 18px 42px rgba(0, 0, 0, 0.24) !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(113, 224, 219, 0.42) !important;
+  background:
+    linear-gradient(135deg, rgba(30, 53, 75, 0.92), rgba(16, 31, 49, 0.88)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 24px 54px rgba(0, 0, 0, 0.32),
+    0 0 28px rgba(105, 231, 255, 0.07) !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-copy {
+  order: 2;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: left !important;
+  transform: none !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-avatar-wrap {
+  position: static !important;
+  inset: auto !important;
+  order: 1;
+  flex: 0 0 auto;
+  margin: 0 !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-avatar {
+  width: 96px !important;
+  height: 96px !important;
+  border-radius: 13px !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-avatar img {
+  border-radius: 12px !important;
+  object-position: center top;
+}
+
+/* 语义头像沿用可爱卡片造型，但压低亮度与饱和度，和深空晶的深色界面保持协调。 */
+html[data-theme="lattice"] img[src*="/avatars/cute-semantic/agent-cute-"] {
+  filter: brightness(0.82) saturate(0.88) contrast(1.04);
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-title {
+  font-size: 17px !important;
+  line-height: 1.35 !important;
+  -webkit-line-clamp: 2;
+}
+
+html[data-theme="lattice"] .marketplace-shell .marketplace-agent-description {
+  margin-top: 7px !important;
+  color: #9eb1bd !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  -webkit-line-clamp: 3 !important;
+}
+
+@media (min-width: 1760px) {
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid {
+    --marketplace-grid-template: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* 黑曜霓彩的桌面密度保护层。 */
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill {
+  gap: 6px !important;
+  padding: 7px clamp(10px, 1vw, 16px) !important;
+  border-radius: 10px !important;
+  font-size: clamp(13px, 1vw, 15px) !important;
+  font-weight: 600 !important;
+}
+
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill :where(svg, img),
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill .nav-pill-icon {
+  width: 18px !important;
+  height: 18px !important;
+  color: #45d5ce !important;
+}
+
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill-active :where(svg, img),
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill-active .nav-pill-icon {
+  color: #ffffff !important;
+}
+
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill-indicator {
+  background: linear-gradient(90deg, #28d5c0, #2f70e8) !important;
+  box-shadow: 0 0 20px rgba(40, 213, 192, .22), 0 0 28px rgba(47, 112, 232, .16) !important;
+}
+
+html[data-theme="crystal-aurora"] .marketplace-shell .category-tab .cat-tab-icon,
+html[data-theme="crystal-aurora"] .marketplace-shell .category-tab .cat-tab-icon :where(svg, img) {
+  color: #45d5ce !important;
+}
+
+html[data-theme="crystal-aurora"] .marketplace-shell .category-tab-active .cat-tab-icon,
+html[data-theme="crystal-aurora"] .marketplace-shell .category-tab-active .cat-tab-icon :where(svg, img) {
+  color: #ffffff !important;
+}
+
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-tool-card > span:last-child {
+  font-size: clamp(12px, calc(13px * var(--sidebar-scale, 1)), 14px) !important;
+}
+
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-conv-name {
+  font-size: clamp(13px, calc(13px * var(--sidebar-scale, 1)), 15px) !important;
+}
+
+html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-conv-time {
+  font-size: clamp(11px, calc(11px * var(--sidebar-scale, 1)), 12px) !important;
+}
+
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-depth::before {
+    animation: none !important;
+  }
+
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    transform: translateY(-2px) !important;
+  }
+}
+
+@media (min-width: 1200px) and (max-width: 1759px) {
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid {
+    --marketplace-card-height: 120px;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+    gap: 10px !important;
+    padding: 10px !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-avatar {
+    width: 88px !important;
+    height: 88px !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-title {
+    font-size: 16px !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-description {
+    font-size: 12px !important;
+    -webkit-line-clamp: 3 !important;
+  }
+}
+
+@media (max-width: 1199px) {
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid {
+    --marketplace-grid-template: repeat(2, minmax(0, 1fr));
+    --marketplace-card-height: 124px;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-avatar {
+    width: 88px !important;
+    height: 88px !important;
+  }
+}
+
+@media (max-width: 767px) {
+  html[data-theme="lattice"] .marketplace-shell .marketplace-scroll {
+    padding-inline: 10px !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid {
+    --marketplace-grid-template: minmax(0, 1fr);
+    --marketplace-grid-gap: 12px;
+    --marketplace-card-height: 108px;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+    --marketplace-card-height: 108px !important;
+    min-height: 108px !important;
+    height: 108px !important;
+    gap: 12px !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-avatar {
+    width: 78px !important;
+    height: 78px !important;
+    border-radius: 11px !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-title {
+    font-size: 15px !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-description {
+    margin-top: 5px !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+    -webkit-line-clamp: 2 !important;
+  }
+}
+
+/* Final desktop interaction layer; keep this after the lattice sizing rules. */
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    transform: translate3d(0, -2px, 8px) scale(1.004) !important;
+  }
+
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--marketplace-float-edge) 72%, white) !important;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, .12),
+      0 30px 68px rgba(0, 0, 0, .4),
+      0 0 34px color-mix(in srgb, var(--marketplace-float-edge) 16%, transparent) !important;
+  }
+
+  html[data-theme="soft-white"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    border-color: #78b7a7 !important;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, .94),
+      0 26px 58px rgba(31, 45, 40, .18),
+      0 0 30px rgba(11, 122, 107, .1) !important;
+  }
+
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--marketplace-float-edge) 70%, white) !important;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, .13),
+      0 32px 72px rgba(0, 0, 0, .46),
+      0 0 36px color-mix(in srgb, var(--marketplace-float-edge) 15%, transparent) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] .marketplace-shell .marketplace-depth::before,
+  html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover,
+  html[data-theme] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id].animate-card-enter {
+    animation: none !important;
+    translate: none !important;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible),
+  html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) .marketplace-agent-avatar {
+    transform: none !important;
+  }
+}
+
+@media (min-width: 1200px) {
+  html:is(
+    [data-theme="soft-white"],
+    [data-theme="crystal-aurora"],
+    [data-theme="stellar-blue"]
+  ) .marketplace-shell .marketplace-depth {
+    position: relative;
+    isolation: isolate;
+  }
+
+  html:is(
+    [data-theme="soft-white"],
+    [data-theme="crystal-aurora"],
+    [data-theme="stellar-blue"]
+  ) .marketplace-shell .marketplace-depth::before {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    opacity: var(--marketplace-space-grid-opacity);
+    background-image:
+      linear-gradient(var(--marketplace-space-grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--marketplace-space-grid-line) 1px, transparent 1px),
+      radial-gradient(ellipse at 50% 100%, var(--marketplace-space-grid-glow), transparent 58%);
+    background-position: 0 0, 0 0, 50% 100%;
+    background-size:
+      var(--marketplace-space-grid-size) var(--marketplace-space-grid-size),
+      var(--marketplace-space-grid-size) var(--marketplace-space-grid-size),
+      100% 100%;
+    transform: none;
+    transform-origin: 50% 50%;
+    mask-image: none;
+    -webkit-mask-image: none;
+    animation: none;
+    will-change: auto;
+  }
+
+  html:is(
+    [data-theme="soft-white"],
+    [data-theme="crystal-aurora"],
+    [data-theme="stellar-blue"]
+  ) .marketplace-shell .marketplace-depth > div {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  html[data-theme="stellar-blue"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 1) .agent-card-hover { --marketplace-float-edge: var(--stellar-card-spectrum-1); }
+  html[data-theme="stellar-blue"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 2) .agent-card-hover { --marketplace-float-edge: var(--stellar-card-spectrum-2); }
+  html[data-theme="stellar-blue"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 3) .agent-card-hover { --marketplace-float-edge: var(--stellar-card-spectrum-3); }
+  html[data-theme="stellar-blue"] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:nth-child(4n + 4) .agent-card-hover { --marketplace-float-edge: var(--stellar-card-spectrum-4); }
+
+  html:is(
+    [data-theme="soft-white"],
+    [data-theme="crystal-aurora"],
+    [data-theme="stellar-blue"]
+  ) .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--marketplace-float-edge) 70%, var(--foreground)) !important;
+    box-shadow:
+      inset 0 1px var(--marketplace-card-inset),
+      0 30px 68px var(--marketplace-card-shadow),
+      0 0 34px color-mix(in srgb, var(--marketplace-float-edge) 15%, transparent) !important;
+  }
+}
+
+/* 2026-09-30 merged theme finish. The product workspace uses the same fixed
+   grid and top-left signature light as the public homepage. */
+html[data-theme="lattice"][data-mode="dark"] {
+  --lattice-grid-size: 64px;
+  --marketplace-space-grid-size: 64px;
+  --lattice-backdrop:
+    linear-gradient(rgba(149, 224, 235, .25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(149, 224, 235, .25) 1px, transparent 1px),
+    radial-gradient(circle at 3% -7%, rgba(22, 226, 211, .38), transparent 42rem),
+    radial-gradient(circle at 97% 0%, rgba(139, 103, 255, .31), transparent 50rem),
+    linear-gradient(124deg, #0a2a3c 0%, #0f3c57 48%, #17375f 100%);
+}
+
+html[data-theme="soft-white"][data-mode="light"] {
+  --soft-white-grid-size: 68px;
+  --marketplace-space-grid-size: 68px;
+  --soft-white-grid-line: rgba(11, 116, 102, .14);
+  --soft-white-grid-glow-one: rgba(28, 166, 140, .2);
+  --soft-white-grid-glow-two: rgba(65, 123, 159, .13);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] {
+  --aurora-grid-size: 64px;
+  --marketplace-space-grid-size: 64px;
+  --crystal-grid-line: rgba(86, 211, 190, .16);
+  --crystal-grid-glow-one: rgba(38, 214, 190, .27);
+  --crystal-grid-glow-two: rgba(51, 132, 120, .18);
+  --aurora-backdrop:
+    linear-gradient(rgba(86, 211, 190, .075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(86, 211, 190, .075) 1px, transparent 1px),
+    radial-gradient(circle at 4% -8%, rgba(38, 214, 190, .18), transparent 39rem),
+    radial-gradient(circle at 94% 2%, rgba(70, 146, 232, .16), transparent 46rem),
+    linear-gradient(142deg, #05070a 0%, #071315 52%, #080d18 100%);
+}
+
+html[data-theme="lattice"] .marketplace-depth {
+  --marketplace-signature-left: rgba(27, 227, 215, .3);
+  --marketplace-signature-right: rgba(132, 99, 255, .24);
+}
+
+html[data-theme="soft-white"] .marketplace-depth {
+  --marketplace-signature-left: rgba(30, 164, 138, .16);
+  --marketplace-signature-right: rgba(70, 127, 160, .1);
+}
+
+html[data-theme="crystal-aurora"] .marketplace-depth {
+  --marketplace-signature-left: rgba(37, 211, 188, .22);
+  --marketplace-signature-right: rgba(70, 146, 178, .15);
+}
+
+@media (min-width: 1200px) {
+  html:is(
+    [data-theme="lattice"],
+    [data-theme="soft-white"],
+    [data-theme="crystal-aurora"]
+  ) .marketplace-shell .marketplace-depth::before {
+    inset: 0;
+    opacity: 1;
+    background-image:
+      radial-gradient(circle at 3% -9%, var(--marketplace-signature-left), transparent 39rem),
+      radial-gradient(circle at 97% 0%, var(--marketplace-signature-right), transparent 46rem);
+    background-position: center;
+    background-size: 100% 100%;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    transform: none;
+    mask-image: none;
+    -webkit-mask-image: none;
+    animation: none;
+    will-change: auto;
+  }
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  border-color: rgba(128, 220, 229, .32) !important;
+  background: linear-gradient(138deg, rgba(9, 41, 60, .76), rgba(8, 25, 45, .7)) !important;
+  box-shadow:
+    inset 0 1px rgba(233, 254, 255, .12),
+    0 22px 52px rgba(0, 7, 18, .32),
+    0 0 0 1px rgba(91, 208, 223, .035) !important;
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  border-color: rgba(89, 144, 128, .25) !important;
+  background: rgba(255, 255, 252, .82) !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .98),
+    0 20px 46px rgba(27, 63, 52, .13),
+    0 0 0 1px rgba(22, 105, 89, .025) !important;
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  border-color: rgba(94, 213, 192, .27) !important;
+  background: linear-gradient(138deg, rgba(9, 21, 23, .94), rgba(6, 11, 17, .94)) !important;
+  box-shadow:
+    inset 0 1px rgba(228, 255, 249, .1),
+    0 22px 54px rgba(0, 9, 7, .38),
+    0 0 0 1px rgba(87, 218, 194, .025) !important;
+  backdrop-filter: blur(22px) saturate(1.16);
+  -webkit-backdrop-filter: blur(22px) saturate(1.16);
+}
+
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  html:is(
+    [data-theme="lattice"],
+    [data-theme="soft-white"],
+    [data-theme="crystal-aurora"]
+  ) .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    transform: translate3d(0, -3px, 10px) scale(1.005) !important;
+  }
+}
+
+/* 黑曜霓彩最终保护：一级导航保留组件语义色，快捷导航保留九色谱。 */
+
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill :where(svg, img),
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill .nav-pill-icon {
+  color: var(--nav-icon-color, currentColor) !important;
+}
+
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill-active :where(svg, img),
+html[data-theme="crystal-aurora"] .marketplace-shell .nav-pill-active .nav-pill-icon {
+  color: var(--nav-icon-color, currentColor) !important;
+}
+
+@media (min-width: 1200px) {
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-depth::before {
+    content: "" !important;
+    inset: 0 !important;
+    opacity: .9 !important;
+    background-image:
+      linear-gradient(var(--crystal-grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--crystal-grid-line) 1px, transparent 1px),
+      radial-gradient(circle at 3% -9%, var(--marketplace-signature-left), transparent 39rem),
+      radial-gradient(circle at 97% 0%, var(--marketplace-signature-right), transparent 46rem) !important;
+    background-position: 0 0, 0 0, 0 0, 0 0 !important;
+    background-size:
+      var(--marketplace-space-grid-size) var(--marketplace-space-grid-size),
+      var(--marketplace-space-grid-size) var(--marketplace-space-grid-size),
+      100% 100%,
+      100% 100% !important;
+    background-repeat: repeat, repeat, no-repeat, no-repeat !important;
+    transform: none !important;
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
+    animation: none !important;
+  }
+}
+
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  html[data-theme="crystal-aurora"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
+    transform: translateY(-2px) !important;
+  }
+}
+
+/* 一级导航统一为无包裹的 plain tabs；页面跳转本身已表达当前位置，
+   三个正式主题均不再显示滑动下划线。 */
+html:is(
+  [data-theme="lattice"],
+  [data-theme="soft-white"],
+  [data-theme="crystal-aurora"]
+) .marketplace-shell [data-primary-nav-style="plain-tabs"] {
+  --market-nav-font-size: 17px;
+  --market-nav-icon-size: 18px;
+  --market-nav-gap: 5px;
+  --market-nav-padding-x: 5px;
+  --market-nav-padding-y: 8px;
+  gap: 0 !important;
+}
+
+html:is(
+  [data-theme="lattice"],
+  [data-theme="soft-white"],
+  [data-theme="crystal-aurora"]
+) .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill {
+  min-height: 42px !important;
+  gap: var(--market-nav-gap) !important;
+  padding: var(--market-nav-padding-y) var(--market-nav-padding-x) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: var(--market-nav-font-size) !important;
+  font-weight: 650 !important;
+}
+
+html:is(
+  [data-theme="lattice"],
+  [data-theme="soft-white"],
+  [data-theme="crystal-aurora"]
+) .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill:is(
+  :hover,
+  :active,
+  .nav-pill-active,
+  [aria-current="page"],
+  [data-active="true"]
+) {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html:is(
+  [data-theme="lattice"],
+  [data-theme="soft-white"],
+  [data-theme="crystal-aurora"]
+) .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill:is(
+  .nav-pill-active,
+  [aria-current="page"],
+  [data-active="true"]
+) {
+  color: var(--primary) !important;
+}
+
+html:is(
+  [data-theme="lattice"],
+  [data-theme="soft-white"],
+  [data-theme="crystal-aurora"]
+) .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill:is(
+  .nav-pill-active,
+  [aria-current="page"],
+  [data-active="true"]
+) :where(svg, img, .nav-pill-icon) {
+  color: var(--nav-icon-color, currentColor) !important;
+}
+
+html:is(
+  [data-theme="lattice"],
+  [data-theme="soft-white"],
+  [data-theme="crystal-aurora"]
+) .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill-indicator {
+  display: none !important;
+}
+

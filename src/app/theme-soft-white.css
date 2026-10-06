@@ -1,0 +1,938 @@
+/*
+ * Soft White / 柔光白
+ *
+ * `soft-white` 是独立主题 id；浅色为暖瓷纸面，深色为墨瓷玉影。
+ * 明暗由 data-mode 独立决定，稳定主题 id 不随模式变化。
+ * 本文件在主题层最后加载；其后仅允许 ui-shell-fixes.css 的跨主题
+ * 可读性、触控尺寸与响应式保护规则，不再追加业务页面视觉覆盖。
+ */
+
+html[data-theme="soft-white"][data-mode="light"] {
+  color-scheme: light;
+  --primary: #0b7466;
+  --primary-foreground: #ffffff;
+  --ring: #0b7466;
+  --background: #f3f4ef;
+  --foreground: #17201d;
+  --font-title-color: #17201d;
+  --font-body-color: #43534e;
+  --font-aux-color: #62716c;
+  --card: #fffefa;
+  --card-foreground: #17201d;
+  --card-desc-opacity: 1;
+  --popover: #ffffff;
+  --popover-foreground: #17201d;
+  --secondary: #e7ece6;
+  --secondary-foreground: #46534f;
+  --muted: #ebece6;
+  --muted-foreground: #66716d;
+  --text-secondary: #46534f;
+  --accent: #dfece7;
+  --accent-foreground: #125548;
+  --destructive: #b42318;
+  --border: #d0d8d2;
+  --input: #adc7bf;
+  --sidebar: #fbfaf6;
+  --sidebar-foreground: #46534f;
+  --sidebar-border: #d0d8d2;
+  --sidebar-primary: #0b7466;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #0b7466;
+  --sidebar-accent: #dfece7;
+  --sidebar-accent-foreground: #125548;
+  --sidebar-primary-button-shadow: 0 10px 24px rgba(11, 116, 102, 0.18);
+  --success: #157a55;
+  --warning: #8a5416;
+  --error: #b42318;
+  --info: #245b9e;
+  --price: #8a5416;
+  --chart-1: #0b7466;
+  --chart-2: #2e6f96;
+  --chart-3: #157a55;
+  --chart-4: #99661f;
+  --chart-5: #8759a8;
+  --theme-glow: rgba(11, 116, 102, 0.12);
+  --msg-user-bg: #dfede8;
+  --msg-assistant-bg: #fffefa;
+  --msg-think-header-bg: #eeebe4;
+  --msg-think-line: #d0d8d2;
+  --msg-think-border: #74b8a7;
+  --hover-bg: rgba(11, 116, 102, 0.08);
+  --scrollbar-thumb: #b8c7c1;
+  --scrollbar-thumb-hover: #8e877d;
+  --scrollbar-track: #ebe7df;
+
+  --ui-surface: #fffefa;
+  --ui-surface-strong: #ffffff;
+  --ui-line: #d0d8d2;
+  --ui-line-strong: #adc7bf;
+  --ui-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --ui-shadow-md: 0 14px 34px rgba(23, 49, 42, 0.1);
+  --ui-focus: 0 0 0 3px rgba(11, 116, 102, 0.2);
+  --lattice-surface-low: #f3f4ef;
+  --lattice-surface: #fffefa;
+  --lattice-surface-high: #ffffff;
+  --lattice-edge: #d0d8d2;
+  --lattice-edge-active: #adc7bf;
+  --lattice-cyan: #0b7466;
+  --lattice-blue: #2e6f96;
+  --lattice-green: #157a55;
+  --lattice-violet: #8759a8;
+  --lattice-backdrop: none;
+
+  --crystal-surface: #fffefa;
+  --crystal-surface-strong: #ffffff;
+  --crystal-tint: transparent;
+  --crystal-tint-2: transparent;
+  --crystal-border: #d0d8d2;
+  --crystal-border-strong: #adc7bf;
+  --crystal-highlight: transparent;
+  --crystal-shadow: rgba(16, 24, 40, 0.08);
+  --crystal-text-soft: #46534f;
+}
+
+html[data-theme="soft-white"][data-mode="light"] body,
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .app-shell,
+  .app-main-stage,
+  .marketplace-shell,
+  .marketplace-depth,
+  .chat-canvas,
+  .secondary-workbench,
+  [data-page="tools"],
+  .sbw-root,
+  .help-page,
+  .media-history-page
+):not(:where([data-testid="manju-content"] *)) {
+  background-color: var(--background) !important;
+  background-image:
+    linear-gradient(var(--soft-white-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--soft-white-grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 88% -10%, var(--soft-white-grid-glow-two), transparent 34rem),
+    radial-gradient(circle at 7% -8%, var(--soft-white-grid-glow-one), transparent 30rem) !important;
+  background-size:
+    var(--soft-white-grid-size) var(--soft-white-grid-size),
+    var(--soft-white-grid-size) var(--soft-white-grid-size),
+    100% 100%,
+    100% 100% !important;
+  background-position: 0 0, 0 0, center, center !important;
+  background-attachment: fixed !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] body {
+  color: var(--foreground);
+}
+
+/* Top navigation and shared headers */
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .chat-header,
+  .sub-page-header,
+  .chat-input-area
+) {
+  border-color: var(--border) !important;
+  background: linear-gradient(110deg, rgba(255, 254, 250, .97), rgba(245, 248, 244, .94)) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .92) inset, 0 12px 32px rgba(23, 49, 42, .06) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .nav-bar-wrapper {
+  border-color: #d9d4c9 !important;
+  background: linear-gradient(105deg, #fffefa, #f5f8f4) !important;
+  box-shadow: 0 1px 2px rgba(31, 45, 40, 0.045), 0 12px 30px -26px rgba(31, 45, 40, 0.36) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .marketplace-category-bar {
+  border-color: #d9d4c9 !important;
+  background: linear-gradient(100deg, #ebece6, #e3ebe6) !important;
+  box-shadow: 0 1px 2px rgba(31, 45, 40, 0.035) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .nav-bar-container,
+  .nav-bar-container::before,
+  .category-tab::before
+) {
+  background: transparent !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .nav-pill {
+  color: #55615d;
+  font-weight: 620 !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .nav-pill .nav-pill-icon {
+  color: color-mix(in srgb, var(--nav-icon-color, currentColor) 68%, #17201d) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .nav-pill:hover {
+  color: var(--foreground);
+  border-color: var(--border);
+  background: var(--accent);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .nav-pill:is(.active, [aria-current="page"], [data-active="true"]),
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .nav-pill[aria-expanded="true"] {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .nav-group-divider {
+  border-color: var(--border);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .category-tab {
+  color: #606b67 !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .category-tab:hover {
+  color: var(--foreground);
+  border-color: var(--border);
+  background: var(--accent) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell .category-tab:is(.category-tab-active, [aria-pressed="true"], [aria-selected="true"], [data-active="true"]) {
+  color: #114f45 !important;
+  border-color: #a9c8be !important;
+  background: #dcebe6 !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sub-page-header {
+  --subpage-header-bg: #ffffff;
+  --subpage-header-border: var(--border);
+  --subpage-control-bg: #ffffff;
+  --subpage-control-bg-hover: var(--accent);
+  --subpage-control-border: var(--border);
+  --subpage-control-border-hover: #b8c7c1;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(.sub-page-back, .sub-page-nav-button[data-active="true"]) {
+  color: var(--primary) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sub-page-title {
+  color: var(--foreground) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sub-page-subtitle {
+  color: var(--muted-foreground) !important;
+}
+
+/* Sidebar */
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .app-sidebar-frame,
+  .sidebar-drawer,
+  .sidebar-shell
+) {
+  border-color: var(--sidebar-border) !important;
+  background-color: #fbfaf6 !important;
+  background-image: linear-gradient(180deg, #fffefa 0%, #f3f5f0 100%) !important;
+  box-shadow: 8px 0 24px rgba(16, 24, 40, 0.05) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .sidebar-brand-card,
+  .sidebar-tool-card,
+  .sidebar-glass-card
+) {
+  border-color: var(--border) !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.035) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-shortcut-card {
+  border-color: #ddd8ce !important;
+  background: #fffefb !important;
+  color: #4e5b57 !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-shortcut-card:hover {
+  border-color: color-mix(in srgb, var(--shortcut-accent, var(--primary)) 32%, #d8d3c9) !important;
+  background: #f6f4ee !important;
+  color: #263530 !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-shortcut-card[aria-current="page"] {
+  border-color: color-mix(in srgb, var(--shortcut-accent, var(--primary)) 40%, #d8d3c9) !important;
+  background: #edf3f0 !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--shortcut-accent, var(--primary)) 10%, transparent) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .sidebar-tool-card::before,
+  .sidebar-scroll
+) {
+  background: transparent !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-conv-list {
+  gap: 4px;
+  padding-block: 6px 10px;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-conv-item {
+  min-height: 48px;
+  margin-bottom: 0;
+  border-radius: 8px;
+  border-color: #e7ebf0 !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.035),
+    0 7px 18px -18px rgba(16, 24, 40, 0.28) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-conv-item:hover {
+  border-color: #b8c7c1 !important;
+  background: #f4f7f5 !important;
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 8px 18px -14px rgba(23, 103, 90, 0.2) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-conv-item.active {
+  border-color: #b8c7c1 !important;
+  background: #e7f0ed !important;
+  box-shadow:
+    inset 3px 0 #17675a,
+    0 8px 20px -15px rgba(23, 103, 90, 0.3) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-conv-item [data-slot="avatar"] {
+  border: 1px solid rgba(152, 162, 179, 0.28);
+  box-shadow: 0 2px 6px rgba(16, 24, 40, 0.11);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-conv-item.active .sidebar-conv-name {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell :where(.sidebar-conv-name, .sidebar-tool-heading) {
+  color: var(--foreground);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell :where(.sidebar-conv-time, .sb-credit-label, .sb-user-caption) {
+  color: var(--muted-foreground);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sidebar-shell .sidebar-conv-delete {
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: -12px 0 12px 5px rgba(255, 255, 255, 0.94);
+}
+
+/* Workbench token bridge */
+html[data-theme="soft-white"][data-mode="light"] .voice-studio-root:not(:where([data-testid="manju-content"] *)) {
+  --vs-primary: #17675a;
+  --vs-primary-hover: #125548;
+  --vs-secondary: #157a55;
+  --vs-accent: #8a5416;
+  --vs-bg: #f5f3ee;
+  --vs-bg-secondary: #ece9e1;
+  --vs-surface: #ffffff;
+  --vs-surface-hover: #f4f7f5;
+  --vs-text: #17201d;
+  --vs-text-secondary: #46534f;
+  --vs-text-muted: #66716d;
+  --vs-border: #d8d3c9;
+  --vs-card: #ffffff;
+  --vs-card-hover: #f8f6f1;
+  --vs-glow: #17675a;
+  --vs-glass-bg: #ffffff;
+  --vs-glass-border: #d8d3c9;
+  --vs-glass-border-hover: #b8c7c1;
+  --vs-glass-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  --vs-glass-shadow-hover: 0 8px 22px rgba(16, 24, 40, 0.09);
+  --vs-input-bg: #ffffff;
+  --vs-input-border: #b8c7c1;
+  --vs-input-focus-shadow: 0 0 0 3px rgba(23, 103, 90, 0.16);
+  --vs-radial-1: none;
+  --vs-radial-2: none;
+  --vs-grid-color: transparent;
+  --vs-grid-color-strong: transparent;
+  --vs-skeleton-base: #edf0f3;
+  --vs-skeleton-shine: #ffffff;
+  --vs-gradient-text: #17201d;
+  --vs-card-hover-shadow: 0 8px 22px rgba(16, 24, 40, 0.09);
+  --vs-card-hover-border: #b8c7c1;
+  color: var(--vs-text);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .voice-studio-root:not(.marketplace-shell):not(:where([data-testid="manju-content"] *)),
+html[data-theme="soft-white"][data-mode="light"] .vs-workbench:not(.marketplace-shell):not(:where([data-testid="manju-content"] *)) {
+  background-color: var(--background) !important;
+  background-image: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .vs-workbench:not(:where([data-testid="manju-content"] *)) {
+  --background: var(--vs-bg);
+  --foreground: var(--vs-text);
+  --card: var(--vs-card);
+  --card-foreground: var(--vs-text);
+  --popover: #ffffff;
+  --popover-foreground: var(--vs-text);
+  --secondary: #f2f4f7;
+  --muted: #f2f4f7;
+  --accent: #e7f0ed;
+  --border: var(--vs-border);
+  --input: var(--vs-input-border);
+}
+
+/* Storyboard refinements */
+html[data-theme="soft-white"][data-mode="light"] .sbw-model-rail:not(:where([data-testid="manju-content"] *)),
+html[data-theme="soft-white"][data-mode="light"] .sbw-toolbar:not(:where([data-testid="manju-content"] *)) {
+  background: #ffffff !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sbw-model-section:not(:where([data-testid="manju-content"] *)) > header span {
+  color: var(--text-secondary);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sbw-rail-summary:not(:where([data-testid="manju-content"] *)) > span,
+html[data-theme="soft-white"][data-mode="light"] .sbw-model-icon:not(:where([data-testid="manju-content"] *)) {
+  color: var(--primary);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sbw-model-list:not(:where([data-testid="manju-content"] *)) > button {
+  background: #ffffff;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sbw-model-list:not(:where([data-testid="manju-content"] *)) > button:hover {
+  border-color: #b8c7c1;
+  background: #f4f7f5;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sbw-model-list:not(:where([data-testid="manju-content"] *)) > button.is-active {
+  border-color: color-mix(in srgb, var(--primary) 56%, var(--border));
+  background: #e7f0ed;
+  box-shadow: inset 3px 0 var(--primary);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sbw-model-icon:not(:where([data-testid="manju-content"] *)) {
+  background: #e7f0ed;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .sbw-model-price:not(:where([data-testid="manju-content"] *)) {
+  color: #a15c00;
+}
+
+/* Marketplace cards retain their compact layout but use neutral surfaces. */
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell {
+  background-color: var(--background) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-depth {
+  background: transparent !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-grid .agent-card-hover {
+  border-radius: 8px !important;
+  border-color: var(--border) !important;
+  background: #ffffff !important;
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 10px 24px -20px rgba(16, 24, 40, 0.34) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-grid .agent-card-hover::before {
+  content: none !important;
+  display: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-grid .agent-card-hover:focus-visible {
+  transform: translateY(-2px);
+  border-color: #b8c7c1 !important;
+  background: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(16, 24, 40, 0.09) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-avatar {
+  border-color: var(--border) !important;
+  background: #f4f2ed !important;
+  box-shadow: 0 2px 7px rgba(16, 24, 40, 0.08) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] img[src*="/avatars/cute-semantic/agent-cute-"] {
+  filter: none;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-title {
+  color: var(--foreground) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-description {
+  color: var(--muted-foreground) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .theme-switcher-trigger {
+  border-color: var(--border) !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.045);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .theme-switcher-trigger:hover,
+html[data-theme="soft-white"][data-mode="light"] .theme-switcher-trigger[data-state="open"] {
+  border-color: #b8c7c1 !important;
+  background: #f4f7f5 !important;
+}
+
+/* Dialogs, tool surfaces and inputs */
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .theme-switcher-menu,
+  .toolbox-menu-content,
+  .login-panel,
+  .announcement-dialog,
+  .toolbox-embedded-toolbar,
+  .toolbox-input-surface,
+  .toolbox-results-block,
+  .toolbox-empty-result,
+  .help-shell,
+  .media-history-shell,
+  .login-form-shell
+):not(:where([data-testid="manju-content"] *)) {
+  border-color: var(--border) !important;
+  background: #ffffff !important;
+  box-shadow: var(--ui-shadow-md) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(input, textarea, select):not(:where(.commerce-root *, [data-testid="manju-content"] *)) {
+  color-scheme: light;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .toolbox-embedded-workspace,
+  .help-shell,
+  .media-history-shell,
+  .login-form-shell
+):not(:where([data-testid="manju-content"] *)) :where(input, textarea, select),
+html[data-theme="soft-white"][data-mode="light"] .chat-composer-rainbow:not(:where([data-testid="manju-content"] *)) {
+  border-color: var(--input) !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] body select option:not(:where(.commerce-root *, [data-testid="manju-content"] *)),
+html[data-theme="soft-white"][data-mode="light"] body select optgroup:not(:where(.commerce-root *, [data-testid="manju-content"] *)) {
+  color: var(--foreground) !important;
+  background-color: #ffffff !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] body select option:disabled:not(:where(.commerce-root *, [data-testid="manju-content"] *)) {
+  color: #98a2b3 !important;
+  background-color: #f2f4f7 !important;
+  opacity: 1 !important;
+}
+
+/* Chat transcript */
+html[data-theme="soft-white"][data-mode="light"] .chat-message-bubble-assistant.chat-message-bubble-assistant,
+html[data-theme="soft-white"][data-mode="light"] .chat-message-bubble-user.chat-message-bubble-user,
+html[data-theme="soft-white"][data-mode="light"] .chat-message-bubble-assistant.chat-message-bubble-assistant
+  :where(.markdown-body, .render-layer-final, .render-layer-streaming),
+html[data-theme="soft-white"][data-mode="light"] .chat-message-bubble-user.chat-message-bubble-user
+  :where(.user-message-content, .user-pasted-copy-card) {
+  color: var(--text-secondary) !important;
+  text-shadow: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .chat-message-bubble-assistant.chat-message-bubble-assistant
+  .markdown-body :where(p, li, ul, ol, h1, h2, h3, h4, h5, h6, blockquote, strong, em, span:not(code span)),
+html[data-theme="soft-white"][data-mode="light"] .chat-message-bubble-user.chat-message-bubble-user
+  :where(.user-message-content, .user-pasted-copy-card, .user-pasted-copy-card *) {
+  color: var(--text-secondary) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .chat-message-bubble-assistant.chat-message-bubble-assistant .markdown-body a {
+  color: var(--info) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(button, a, input, textarea, select):not(:where(.commerce-root *, [data-testid="manju-content"] *)):focus-visible {
+  outline-color: #17675a;
+  box-shadow: var(--ui-focus);
+}
+
+/* Premium paper surfaces. Kept inside the soft-white theme so the default theme is untouched. */
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .chat-header,
+  .sub-page-header,
+  .chat-input-area
+) {
+  background-color: rgba(255, 253, 248, 0.94) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(
+  .app-sidebar-frame,
+  .sidebar-drawer,
+  .sidebar-shell
+) {
+  background-color: #fbfaf6 !important;
+  box-shadow: 8px 0 28px rgba(31, 45, 40, 0.06) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-grid .agent-card-hover {
+  border-color: #ddd7cb !important;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(11, 116, 102, .065), transparent 42%),
+    linear-gradient(145deg, #fffefa, #f8faf6) !important;
+  box-shadow: 0 1px 2px rgba(31, 45, 40, 0.04), 0 14px 30px -24px rgba(31, 45, 40, 0.32) !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="soft-white"][data-mode="light"] .marketplace-agent-grid .agent-card-hover:focus-visible {
+  border-color: #9ec9be !important;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(11, 116, 102, .1), transparent 44%),
+    linear-gradient(145deg, #ffffff, #f5faf6) !important;
+  box-shadow: 0 14px 30px rgba(31, 45, 40, 0.1) !important;
+}
+
+/* Login uses a dark ink panel inside the light theme. This restores contrast for every login mode. */
+html[data-theme="soft-white"][data-mode="light"] .login-form-shell {
+  color: #f7f4ee !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .login-form-shell .login-panel {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: linear-gradient(155deg, #182520 0%, #101916 100%) !important;
+  box-shadow: 0 26px 70px rgba(15, 25, 21, 0.28) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .login-form-shell :where(input, textarea, select) {
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.19) !important;
+  background: rgba(255, 255, 255, 0.09) !important;
+  box-shadow: none !important;
+  caret-color: #ffffff;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .login-form-shell :where(input, textarea)::placeholder {
+  color: rgba(255, 255, 255, 0.46) !important;
+  opacity: 1;
+}
+
+html[data-theme="soft-white"][data-mode="light"] .login-form-shell > p {
+  color: #5f6864 !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="soft-white"][data-mode="light"] :where(
+    .marketplace-agent-grid .agent-card-hover,
+    .nav-pill,
+    .category-tab
+  ) {
+    transition: none !important;
+  }
+}
+
+/* Homepage signature: warm porcelain, jade light and restrained editorial depth. */
+html[data-theme="soft-white"][data-mode="light"] .soft-white-home {
+  --swh-ambient-one: rgba(34, 145, 123, .17);
+  --swh-ambient-two: rgba(190, 137, 56, .13);
+  --swh-ambient-three: rgba(76, 126, 156, .1);
+  --swh-sweep: rgba(255, 255, 255, .72);
+  --swh-panel-highlight: rgba(255, 255, 255, .82);
+  --swh-card-glow: rgba(23, 103, 90, .09);
+  --swh-title-start: #12685b;
+  --swh-title-end: #93611e;
+  --swh-atmosphere-blend: multiply;
+  --swh-pointer-color: rgba(34, 145, 123, .12);
+  background-color: #f5f3ee;
+  background-image:
+    radial-gradient(ellipse at 77% -4%, rgba(117, 175, 159, .17), transparent 33rem),
+    radial-gradient(ellipse at 5% 35%, rgba(201, 156, 83, .1), transparent 28rem),
+    linear-gradient(180deg, #f8f6f1 0%, #f3f0e9 100%);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .swh-header {
+  background: rgba(249, 247, 242, .88);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .swh-loop {
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, .95), rgba(251, 248, 241, .84)),
+    #fffefb;
+}
+
+html[data-theme="soft-white"][data-mode="light"] :where(.swh-value-grid, .swh-available, .swh-planned, .swh-business-grid article) {
+  border-color: #d9d2c5;
+  background-color: rgba(255, 254, 250, .82);
+}
+
+/* Dark companion: ink porcelain, jade structure and a restrained bronze note. */
+html[data-theme="soft-white"][data-mode="dark"] {
+  color-scheme: dark;
+  --primary: #73c7b3;
+  --primary-foreground: #07130f;
+  --ring: #73c7b3;
+  --background: #111713;
+  --foreground: #f3f6f2;
+  --font-title-color: #f3f6f2;
+  --font-body-color: #c7d1cc;
+  --font-aux-color: #9baaa3;
+  --card: #18201b;
+  --card-foreground: #f3f6f2;
+  --card-desc-opacity: 1;
+  --popover: #1c2721;
+  --popover-foreground: #f3f6f2;
+  --secondary: #202b25;
+  --secondary-foreground: #c7d1cc;
+  --muted: #202b25;
+  --muted-foreground: #9baaa3;
+  --text-secondary: #b9c5bf;
+  --accent: #213a32;
+  --accent-foreground: #cfe7df;
+  --destructive: #ff8278;
+  --border: #34443c;
+  --input: #4a6056;
+  --sidebar: #0e1511;
+  --sidebar-foreground: #c3cec8;
+  --sidebar-border: #2d3b34;
+  --sidebar-primary: #73c7b3;
+  --sidebar-primary-foreground: #07130f;
+  --sidebar-ring: #73c7b3;
+  --sidebar-accent: #1d312a;
+  --sidebar-accent-foreground: #edf7f2;
+  --sidebar-primary-button-shadow: 0 12px 30px rgba(83, 175, 153, .24);
+  --success: #67cf9d;
+  --warning: #d6b06a;
+  --error: #ff8278;
+  --info: #83aedd;
+  --price: #d6b06a;
+  --chart-1: #73c7b3;
+  --chart-2: #83aedd;
+  --chart-3: #67cf9d;
+  --chart-4: #d6b06a;
+  --chart-5: #a992c6;
+  --theme-glow: rgba(115, 199, 179, .14);
+  --msg-user-bg: #203e36;
+  --msg-assistant-bg: #18201b;
+  --msg-think-header-bg: #1c2f28;
+  --msg-think-line: #34443c;
+  --msg-think-border: #73c7b3;
+  --hover-bg: rgba(115, 199, 179, .09);
+  --scrollbar-thumb: #41554b;
+  --scrollbar-thumb-hover: #5d756a;
+  --scrollbar-track: #0d1410;
+  --ui-surface: rgba(24, 32, 27, .9);
+  --ui-surface-strong: rgba(28, 39, 33, .96);
+  --ui-line: #34443c;
+  --ui-line-strong: #4a6056;
+  --ui-shadow-sm: 0 1px 0 rgba(255, 255, 255, .045) inset, 0 12px 30px rgba(0, 0, 0, .24);
+  --ui-shadow-md: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 24px 62px rgba(0, 0, 0, .36);
+  --ui-focus: 0 0 0 3px rgba(115, 199, 179, .22);
+  --lattice-surface-low: #111713;
+  --lattice-surface: #18201b;
+  --lattice-surface-high: #1c2721;
+  --lattice-edge: #34443c;
+  --lattice-edge-active: #4a6056;
+  --lattice-cyan: #73c7b3;
+  --lattice-blue: #83aedd;
+  --lattice-green: #67cf9d;
+  --lattice-violet: #a992c6;
+  --crystal-surface: #18201b;
+  --crystal-surface-strong: #1c2721;
+  --crystal-border: #34443c;
+  --crystal-border-strong: #4a6056;
+  --crystal-shadow: rgba(0, 0, 0, .28);
+  --crystal-text-soft: #b9c5bf;
+}
+
+html[data-theme="soft-white"][data-mode="light"] {
+  --soft-white-grid-size: 48px;
+  --soft-white-grid-line: rgba(11, 116, 102, .11);
+  --soft-white-grid-glow-one: rgba(11, 116, 102, .15);
+  --soft-white-grid-glow-two: rgba(46, 111, 150, .16);
+}
+
+html[data-theme="soft-white"][data-mode="dark"] {
+  --soft-white-grid-size: 48px;
+  --soft-white-grid-line: rgba(115, 199, 179, .14);
+  --soft-white-grid-glow-one: rgba(83, 175, 153, .19);
+  --soft-white-grid-glow-two: rgba(91, 166, 206, .18);
+}
+
+/* The authenticated product uses a static square field. The animated homepage
+   atmosphere is scoped to operating-home-v2.css and remains unchanged. */
+html[data-theme="soft-white"] :where(
+  .app-shell,
+  .app-main-stage,
+  .marketplace-shell,
+  .marketplace-depth,
+  .chat-canvas,
+  .secondary-workbench,
+  [data-page="tools"],
+  .sbw-root,
+  .help-page,
+  .media-history-page
+):not(:where([data-testid="manju-content"] *)) {
+  background-color: var(--background) !important;
+  background-image:
+    linear-gradient(var(--soft-white-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--soft-white-grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 88% -10%, var(--soft-white-grid-glow-two), transparent 34rem),
+    radial-gradient(circle at 7% -8%, var(--soft-white-grid-glow-one), transparent 30rem) !important;
+  background-size:
+    var(--soft-white-grid-size) var(--soft-white-grid-size),
+    var(--soft-white-grid-size) var(--soft-white-grid-size),
+    100% 100%,
+    100% 100% !important;
+  background-position: 0 0, 0 0, center, center !important;
+  background-attachment: fixed !important;
+}
+
+html[data-theme="soft-white"] body {
+  color: var(--foreground);
+  background-color: var(--background);
+  background-image:
+    linear-gradient(var(--soft-white-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--soft-white-grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 88% -10%, var(--soft-white-grid-glow-two), transparent 34rem),
+    radial-gradient(circle at 7% -8%, var(--soft-white-grid-glow-one), transparent 30rem);
+  background-size:
+    var(--soft-white-grid-size) var(--soft-white-grid-size),
+    var(--soft-white-grid-size) var(--soft-white-grid-size),
+    100% 100%,
+    100% 100%;
+  background-position: 0 0, 0 0, center, center;
+  background-attachment: fixed;
+}
+
+html[data-theme="soft-white"] :where(
+  .marketplace-shell .nav-bar-wrapper,
+  .marketplace-shell .marketplace-category-bar,
+  .theme-switcher-menu,
+  .toolbox-menu-content,
+  .announcement-dialog,
+  .sub-page-header
+) {
+  border-color: var(--border) !important;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--card) 93%, transparent) !important;
+  box-shadow: var(--ui-shadow-sm) !important;
+}
+
+html[data-theme="soft-white"] :where(.app-sidebar-frame, .sidebar-drawer, .sidebar-shell):not([data-youcai="true"]) {
+  border-color: var(--sidebar-border) !important;
+  color: var(--sidebar-foreground) !important;
+  background: color-mix(in srgb, var(--sidebar) 97%, transparent) !important;
+  box-shadow: 8px 0 30px color-mix(in srgb, var(--background) 34%, transparent) !important;
+}
+
+html[data-theme="soft-white"] .sidebar-shell :where(.sidebar-shortcut-card, .sidebar-tool-card, .sidebar-glass-card, .sidebar-conv-item) {
+  border-color: var(--sidebar-border) !important;
+  background: color-mix(in srgb, var(--card) 76%, transparent) !important;
+}
+
+html[data-theme="soft-white"] .sidebar-shell :where(.sidebar-shortcut-card, .sidebar-conv-item):hover {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--sidebar-border)) !important;
+  background: var(--sidebar-accent) !important;
+}
+
+html[data-theme="soft-white"] .sidebar-shell :where(.sidebar-shortcut-card[aria-current="page"], .sidebar-conv-item.active) {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--sidebar-border)) !important;
+  background: color-mix(in srgb, var(--primary) 12%, var(--sidebar)) !important;
+  box-shadow: inset 3px 0 var(--sidebar-primary) !important;
+}
+
+html[data-theme="soft-white"] .marketplace-agent-grid .agent-card-hover {
+  border-color: var(--border) !important;
+  background: color-mix(in srgb, var(--card) 95%, transparent) !important;
+  box-shadow: var(--ui-shadow-sm) !important;
+  transition: transform 180ms cubic-bezier(.2, .8, .2, 1), border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease !important;
+}
+
+html[data-theme="soft-white"] .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="soft-white"] .marketplace-agent-grid .agent-card-hover:focus-visible {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border)) !important;
+  background: color-mix(in srgb, var(--primary) 5%, var(--card)) !important;
+  box-shadow: var(--ui-shadow-md) !important;
+}
+
+html[data-theme="soft-white"] :where(.marketplace-agent-title, .sub-page-title) { color: var(--foreground) !important; }
+html[data-theme="soft-white"] :where(.marketplace-agent-description, .sub-page-subtitle) { color: var(--muted-foreground) !important; }
+
+html[data-theme="soft-white"] :where(.chat-message-bubble-assistant, .chat-msg-assistant) {
+  border-color: var(--border) !important;
+  background: var(--msg-assistant-bg) !important;
+}
+
+html[data-theme="soft-white"] .chat-message-bubble-user {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border)) !important;
+  background: var(--msg-user-bg) !important;
+}
+
+html[data-theme="soft-white"] :where(.chat-msg-think, .reasoning-block) {
+  border-color: var(--msg-think-line) !important;
+  background: var(--msg-think-header-bg) !important;
+}
+
+html[data-theme="soft-white"] .sub-page-header {
+  --subpage-header-bg: color-mix(in srgb, var(--card) 92%, transparent);
+  --subpage-header-border: var(--border);
+  --subpage-control-bg: color-mix(in srgb, var(--secondary) 86%, transparent);
+  --subpage-control-bg-hover: var(--accent);
+  --subpage-control-border: var(--border);
+  --subpage-control-border-hover: color-mix(in srgb, var(--primary) 44%, var(--border));
+}
+
+html[data-theme="soft-white"][data-mode="dark"] .login-form-shell {
+  color: #f3f6f2 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="soft-white"][data-mode="dark"] .login-form-shell .login-panel {
+  border-color: rgba(115, 199, 179, .22) !important;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(115, 199, 179, .11), transparent 18rem),
+    #141d18 !important;
+  box-shadow: 0 28px 76px rgba(0, 0, 0, .36), inset 0 1px rgba(255, 255, 255, .05) !important;
+}
+
+html[data-theme="soft-white"][data-mode="dark"] .login-form-shell :where(input, textarea, select) {
+  color: #ffffff !important;
+  border-color: rgba(199, 222, 211, .2) !important;
+  background: rgba(255, 255, 255, .075) !important;
+  caret-color: #ffffff;
+}
+
+html[data-theme="soft-white"][data-mode="dark"] .login-form-shell :where(input, textarea)::placeholder {
+  color: rgba(231, 241, 236, .48) !important;
+  opacity: 1;
+}
+
+html[data-theme="soft-white"] :where(button, a, input, textarea, select):not(:where(.commerce-root *, [data-testid="manju-content"] *)):focus-visible {
+  outline-color: var(--ring);
+  box-shadow: var(--ui-focus);
+}
+
+html[data-theme="soft-white"][data-mode="dark"] body select { color-scheme: dark; }
+html[data-theme="soft-white"][data-mode="light"] body select { color-scheme: light; }
+html[data-theme="soft-white"] body select :where(option, optgroup) {
+  color: var(--popover-foreground);
+  background: var(--popover);
+}

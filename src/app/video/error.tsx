@@ -1,0 +1,45 @@
+"use client";
+
+import { useEffect } from "react";
+
+/**
+ * 视频生成页错误边界
+ * 视频页崩溃时显示，不影响对话和主页
+ */
+export default function VideoError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    console.error("[VideoError] 视频页异常:", error.message);
+  }, [error]);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center bg-background">
+      <div className="w-16 h-16 mb-4 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+        <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+      </div>
+      <h3 className="text-lg font-medium text-foreground mb-2">视频生成页加载异常</h3>
+      <p className="text-sm text-muted-foreground mb-4">视频功能暂时不可用，其他功能不受影响</p>
+      <div className="flex gap-3">
+        <button
+          onClick={reset}
+          className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors"
+        >
+          重试
+        </button>
+        <a
+          href="/"
+          className="px-4 py-2 text-sm font-medium text-primary border border-primary rounded-lg hover:bg-primary/5 transition-colors"
+        >
+          返回首页
+        </a>
+      </div>
+    </div>
+  );
+}

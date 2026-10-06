@@ -1,0 +1,937 @@
+/*
+ * 黑曜霓彩 / crystal-aurora
+ *
+ * 稳定内部 key 保持不变。主题采用近黑底座，并以青绿和曜蓝形成
+ * 克制的双色结构光；功能图标保留各自语义色。
+ */
+
+html[data-theme="crystal-aurora"][data-mode="dark"] {
+  color-scheme: dark;
+
+  --primary: #28d5c0;
+  --primary-foreground: #021815;
+  --ring: #35d8cd;
+  --background: #05070a;
+  --foreground: #f1fefd;
+  --font-title-color: #f1fefd;
+  --font-body-color: #a9c6c7;
+  --font-aux-color: #76999c;
+  --card: #0a1518;
+  --card-foreground: #f1fefd;
+  --card-desc-opacity: 1;
+  --popover: #0b171c;
+  --popover-foreground: #f1fefd;
+  --secondary: #0c1c22;
+  --secondary-foreground: #b9d1d1;
+  --muted: #0a171c;
+  --muted-foreground: #82a3a6;
+  --text-secondary: #a9c6c7;
+  --accent: #10252b;
+  --accent-foreground: #effdfc;
+  --destructive: #ff7e88;
+  --border: rgba(94, 181, 188, .24);
+  --input: rgba(113, 198, 203, .34);
+
+  --sidebar: #060a0e;
+  --sidebar-foreground: #b5d0d1;
+  --sidebar-border: rgba(88, 176, 181, .22);
+  --sidebar-primary: #28d5c0;
+  --sidebar-primary-foreground: #021815;
+  --sidebar-ring: #35d8cd;
+  --sidebar-accent: #0d2025;
+  --sidebar-accent-foreground: #f1fefd;
+  --sidebar-primary-button-shadow: 0 16px 34px rgba(16, 107, 154, .28);
+
+  --success: #5bd8aa;
+  --warning: #ffc766;
+  --error: #ff7e88;
+  --info: #4a92ff;
+  --price: #35d8cd;
+  --chart-1: #28d5c0;
+  --chart-2: #2f8cc3;
+  --chart-3: #4a92ff;
+  --chart-4: #5bd8aa;
+  --chart-5: #35a6cc;
+  --theme-glow: rgba(40, 213, 192, .17);
+  --msg-user-bg: rgba(12, 76, 80, .76);
+  --msg-assistant-bg: rgba(5, 29, 36, .9);
+  --msg-think-header-bg: rgba(8, 43, 51, .92);
+  --msg-think-line: rgba(53, 216, 205, .3);
+  --msg-think-border: #28d5c0;
+  --hover-bg: rgba(40, 213, 192, .085);
+  --scrollbar-thumb: #24535b;
+  --scrollbar-track: #060a0e;
+  --scrollbar-thumb-hover: #3b7279;
+
+  --crystal-brand-gradient: linear-gradient(112deg, #0f8f87 0%, #168fa6 48%, #2f70e8 100%);
+  --crystal-brand-gradient-vivid: linear-gradient(112deg, #20cdb8 0%, #239fc2 52%, #3b82f6 100%);
+  --crystal-brand-gradient-soft: linear-gradient(112deg, rgba(40, 213, 192, .2), rgba(35, 159, 194, .17) 52%, rgba(47, 112, 232, .16));
+  --ui-surface: rgba(8, 17, 21, .9);
+  --ui-surface-strong: rgba(9, 22, 27, .97);
+  --ui-line: rgba(94, 181, 188, .22);
+  --ui-line-strong: rgba(54, 211, 204, .46);
+  --ui-shadow-sm: 0 1px 0 rgba(255, 255, 255, .055) inset, 0 14px 34px rgba(0, 7, 10, .27);
+  --ui-shadow-md: 0 1px 0 rgba(255, 255, 255, .075) inset, 0 28px 68px rgba(0, 7, 10, .42), 0 0 0 1px rgba(47, 112, 232, .055);
+  --ui-focus: 0 0 0 3px rgba(40, 213, 192, .24);
+  --aurora-grid-size: 64px;
+  --aurora-backdrop:
+    linear-gradient(rgba(73, 159, 166, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(73, 159, 166, .055) 1px, transparent 1px),
+    radial-gradient(ellipse at 9% -8%, rgba(40, 213, 192, .14), transparent 34rem),
+    radial-gradient(ellipse at 91% -2%, rgba(47, 112, 232, .14), transparent 42rem),
+    linear-gradient(135deg, #05070a 0%, #071315 52%, #080d18 100%);
+
+  --marketplace-grid-template: repeat(4, minmax(0, 1fr));
+  --marketplace-grid-gap: 16px;
+  --marketplace-grid-justify: stretch;
+  --marketplace-card-height: 124px;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] body {
+  color: var(--foreground);
+  background-color: var(--background);
+  background-image: var(--aurora-backdrop);
+  background-size:
+    var(--aurora-grid-size) var(--aurora-grid-size),
+    var(--aurora-grid-size) var(--aurora-grid-size),
+    100% 100%,
+    100% 100%,
+    100% 100%;
+  background-attachment: fixed;
+}
+
+/* One continuous product field. Page-specific workbenches keep their layout. */
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .app-shell,
+  .app-main-stage,
+  .marketplace-shell,
+  .marketplace-depth,
+  .chat-stage,
+  .chat-canvas,
+  .secondary-workbench,
+  [data-page="tools"],
+  .sbw-root,
+  .help-page,
+  .media-history-page
+):not(:where([data-testid="manju-content"] *)) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .app-main-stage,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell {
+  background:
+    radial-gradient(circle at 15% -12%, rgba(32, 195, 179, .12), transparent 36rem),
+    radial-gradient(circle at 94% 0%, rgba(47, 112, 232, .13), transparent 42rem),
+    linear-gradient(rgba(73, 159, 166, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(73, 159, 166, .055) 1px, transparent 1px),
+    linear-gradient(135deg, #05070a 0%, #071315 52%, #080d18 100%) !important;
+  background-size: 100% 100%, 100% 100%, 64px 64px, 64px 64px, 100% 100% !important;
+}
+
+/* Sidebar: the same dark material, with a restrained brand line. */
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(.app-sidebar-frame, .sidebar-drawer, .sidebar-shell):not([data-youcai="true"]) {
+  border-color: var(--sidebar-border) !important;
+  color: var(--sidebar-foreground) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(40, 213, 192, .11), transparent 18rem),
+    linear-gradient(180deg, rgba(7, 20, 23, .99), rgba(5, 8, 13, .995)) !important;
+  box-shadow: 14px 0 46px rgba(0, 7, 10, .28), inset -1px 0 rgba(63, 156, 163, .1) !important;
+  backdrop-filter: blur(24px) saturate(1.14);
+  -webkit-backdrop-filter: blur(24px) saturate(1.14);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell {
+  --sb-primary: #20cdb8;
+  --sb-primary-bright: #32dfca;
+  --sb-blue: #3b82f6;
+  --sb-gradient: var(--crystal-brand-gradient-vivid);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell::before {
+  height: 220px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(40, 213, 192, .12), transparent 14rem),
+    linear-gradient(180deg, rgba(30, 122, 129, .08), transparent 78%);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-brand-card {
+  border-bottom-color: rgba(88, 176, 181, .23) !important;
+  background: linear-gradient(108deg, rgba(11, 113, 107, .09), rgba(47, 112, 232, .075)) !important;
+  box-shadow: 0 10px 28px rgba(0, 9, 13, .13) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-brand-card::after {
+  position: absolute;
+  right: 14px;
+  bottom: -1px;
+  left: 14px;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, transparent, #28d5c0 24%, #2f70e8 72%, transparent);
+  opacity: .64;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell :where(
+  .sidebar-shortcut-card,
+  .sidebar-tool-card,
+  .sidebar-glass-card,
+  .sidebar-conv-item
+) {
+  border-color: rgba(87, 168, 174, .2) !important;
+  background: rgba(8, 42, 49, .72) !important;
+  box-shadow: 0 10px 24px rgba(0, 8, 11, .11) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell :where(.sidebar-shortcut-card, .sidebar-conv-item):hover {
+  border-color: rgba(52, 216, 202, .4) !important;
+  color: var(--foreground) !important;
+  background: rgba(13, 57, 65, .88) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell :where(.sidebar-shortcut-card[aria-current="page"], .sidebar-conv-item.active) {
+  border-color: rgba(63, 177, 207, .52) !important;
+  background: var(--crystal-brand-gradient-soft) !important;
+  box-shadow: inset 3px 0 #28d5c0, 0 12px 28px rgba(0, 9, 13, .18) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .new-chat-btn {
+  color: #ffffff !important;
+  border-color: rgba(83, 204, 218, .44) !important;
+  background: var(--crystal-brand-gradient) !important;
+  box-shadow: 0 14px 30px rgba(16, 107, 154, .28) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .new-chat-btn:hover {
+  filter: brightness(1.09) saturate(1.06);
+}
+
+/* Primary and secondary navigation are a matched pair of compact glass bars. */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-bar-wrapper {
+  height: 58px;
+  margin: 10px 14px 6px;
+  padding-inline: 8px;
+  border: 1px solid rgba(94, 181, 188, .25) !important;
+  border-radius: 17px !important;
+  background:
+    linear-gradient(112deg, rgba(7, 24, 25, .94), rgba(6, 13, 19, .97) 50%, rgba(8, 15, 30, .95)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .07) inset, 0 16px 38px rgba(0, 7, 10, .25) !important;
+  backdrop-filter: blur(22px) saturate(1.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-bar {
+  margin: 0 14px 8px !important;
+  padding: 6px 8px !important;
+  border: 1px solid rgba(91, 172, 179, .2) !important;
+  border-radius: 14px !important;
+  background: linear-gradient(110deg, rgba(7, 20, 22, .94), rgba(6, 10, 17, .96)) !important;
+  box-shadow: 0 12px 30px rgba(0, 7, 10, .2) !important;
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill-indicator {
+  background: var(--crystal-brand-gradient-vivid) !important;
+  box-shadow: 0 0 20px rgba(40, 213, 192, .22), 0 0 28px rgba(59, 130, 246, .16) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell :where(.nav-pill, .category-tab) {
+  border-color: transparent !important;
+  color: #9bb9bb !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell :where(.nav-pill:hover, .category-tab:hover) {
+  color: #effdfc !important;
+  border-color: rgba(52, 216, 202, .24) !important;
+  background: rgba(18, 69, 77, .64) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell :where(
+  .nav-pill-active,
+  .nav-pill[aria-current="page"],
+  .nav-pill[data-active="true"],
+  .category-tab-active,
+  .category-tab[aria-selected="true"],
+  .category-tab[aria-pressed="true"]
+) {
+  color: #ffffff !important;
+  border-color: rgba(82, 205, 216, .38) !important;
+  background: var(--crystal-brand-gradient) !important;
+  box-shadow: 0 10px 24px rgba(14, 101, 145, .24), inset 0 1px rgba(255, 255, 255, .12) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .theme-switcher-menu,
+  .toolbox-menu-content,
+  .announcement-dialog,
+  .sub-page-header
+) {
+  color: var(--foreground) !important;
+  border-color: var(--ui-line) !important;
+  background: rgba(7, 38, 45, .96) !important;
+  box-shadow: var(--ui-shadow-md) !important;
+  backdrop-filter: blur(22px) saturate(1.16);
+  -webkit-backdrop-filter: blur(22px) saturate(1.16);
+}
+
+/* Agent catalogue: quiet deep cards, one gradient edge, content stays dominant. */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-scroll {
+  padding-inline: 14px !important;
+  scrollbar-gutter: stable;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-scroll > div {
+  padding-right: 0 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid {
+  grid-template-columns: var(--marketplace-grid-template) !important;
+  gap: var(--marketplace-grid-gap) !important;
+  width: 100%;
+  max-width: 1840px !important;
+  margin-inline: auto !important;
+  align-content: start;
+  justify-content: var(--marketplace-grid-justify) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  position: relative;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px !important;
+  height: var(--marketplace-card-height) !important;
+  min-height: var(--marketplace-card-height) !important;
+  padding: 12px !important;
+  overflow: hidden;
+  border: 1px solid rgba(80, 166, 172, .23) !important;
+  border-radius: 16px !important;
+  background:
+    radial-gradient(circle at 0 0, rgba(40, 213, 192, .095), transparent 46%),
+    linear-gradient(145deg, rgba(9, 21, 23, .96), rgba(6, 11, 17, .96)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .055) inset, 0 15px 36px rgba(0, 7, 10, .24) !important;
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  pointer-events: none;
+  content: "";
+  background: linear-gradient(90deg, #28d5c0, #3096db 54%, transparent 88%);
+  opacity: .72;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(55, 205, 207, .48) !important;
+  background:
+    radial-gradient(circle at 0 0, rgba(40, 213, 192, .14), transparent 48%),
+    linear-gradient(145deg, rgba(11, 30, 31, .98), rgba(7, 15, 24, .98)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .075) inset, 0 24px 52px rgba(0, 6, 10, .38), 0 0 28px rgba(47, 112, 232, .08) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-copy {
+  order: 2;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: left !important;
+  transform: none !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-avatar-wrap {
+  position: static !important;
+  inset: auto !important;
+  order: 1;
+  flex: 0 0 auto;
+  margin: 0 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-avatar {
+  width: 88px !important;
+  height: 88px !important;
+  border: 1px solid rgba(74, 188, 201, .34) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, .04) !important;
+  box-shadow: 0 12px 28px rgba(0, 7, 10, .34) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-avatar img {
+  border-radius: 13px !important;
+  object-position: center top;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-agent-title {
+  color: #f3fffe !important;
+  font-size: 16px !important;
+  line-height: 1.35 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-agent-description {
+  margin-top: 6px !important;
+  color: #8fb0b2 !important;
+  font-size: 12px !important;
+  line-height: 1.55 !important;
+  -webkit-line-clamp: 3 !important;
+}
+
+/* Shared product surfaces, chat, secondary pages and voice workbench. */
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .chat-composer-rainbow,
+  .toolbox-embedded-toolbar,
+  .toolbox-input-surface,
+  .toolbox-results-block,
+  .toolbox-empty-result,
+  .help-shell,
+  .media-history-shell
+):not(:where([data-testid="manju-content"] *)) {
+  border-color: var(--ui-line) !important;
+  background: linear-gradient(145deg, rgba(9, 43, 51, .92), rgba(5, 27, 34, .9)) !important;
+  box-shadow: var(--ui-shadow-sm) !important;
+  backdrop-filter: blur(20px) saturate(1.12);
+  -webkit-backdrop-filter: blur(20px) saturate(1.12);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .chat-message-bubble-user {
+  border-color: rgba(43, 209, 195, .4) !important;
+  background: var(--msg-user-bg) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(.chat-message-bubble-assistant, .chat-msg-assistant) {
+  border-color: var(--border) !important;
+  background: var(--msg-assistant-bg) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(.chat-msg-think, .reasoning-block) {
+  border-color: var(--msg-think-line) !important;
+  background: var(--msg-think-header-bg) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sub-page-header {
+  --subpage-header-bg: linear-gradient(108deg, rgba(9, 48, 55, .92), rgba(7, 34, 43, .9));
+  --subpage-header-border: var(--ui-line);
+  --subpage-control-bg: rgba(12, 53, 61, .78);
+  --subpage-control-bg-hover: rgba(17, 67, 76, .9);
+  --subpage-control-border: var(--ui-line);
+  --subpage-control-border-hover: var(--ui-line-strong);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .voice-studio-root:not(:where([data-testid="manju-content"] *)) {
+  --vs-primary: #28d5c0;
+  --vs-primary-hover: #50e4d2;
+  --vs-secondary: #2f8cc3;
+  --vs-accent: #4a92ff;
+  --vs-bg: #031519;
+  --vs-bg-secondary: #061f26;
+  --vs-surface: #08282f;
+  --vs-surface-hover: #0d3941;
+  --vs-text: #effdfc;
+  --vs-text-secondary: #b9d1d1;
+  --vs-text-muted: #82a3a6;
+  --vs-border: rgba(102, 185, 190, .25);
+  --vs-card: rgba(8, 40, 47, .92);
+  --vs-card-hover: rgba(13, 57, 65, .96);
+  --vs-input-bg: #041b20;
+  --vs-input-border: rgba(113, 198, 203, .34);
+  --vs-glow: #28d5c0;
+  --vs-on-accent: #021815;
+}
+
+/* Public homepage and login use the exact same dark brand language. */
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] {
+  --oh-page: #021216;
+  --oh-page-deep: #061e29;
+  --oh-surface: rgba(7, 36, 43, .8);
+  --oh-surface-solid: rgba(8, 42, 50, .92);
+  --oh-surface-strong: rgba(8, 47, 55, .95);
+  --oh-section: #051c22;
+  --oh-text: #f1fefd;
+  --oh-text-soft: #a9c6c7;
+  --oh-text-faint: #76999c;
+  --oh-line: rgba(94, 181, 188, .24);
+  --oh-line-strong: rgba(54, 211, 204, .48);
+  --oh-accent: #2bd4c1;
+  --oh-accent-strong: #1eae9f;
+  --oh-accent-two: #4a92ff;
+  --oh-accent-three: #35a6cc;
+  --oh-on-accent: #021815;
+  --oh-header: rgba(3, 24, 30, .84);
+  --oh-grid: rgba(77, 167, 173, .095);
+  --oh-glow-one: rgba(40, 213, 192, .2);
+  --oh-glow-two: rgba(47, 112, 232, .2);
+  --oh-glow-three: rgba(31, 160, 191, .12);
+  --oh-shadow: rgba(0, 7, 10, .42);
+  --oh-card-sheen: rgba(224, 255, 253, .075);
+  --oh-chip: rgba(40, 213, 192, .095);
+  --oh-chip-text: #8ff8ed;
+  --oh-motion-grid-opacity: .46;
+  --oh-data-stream-opacity: .25;
+  --oh-particle-opacity: .7;
+  --swh-proof-bg: #062b33;
+  --swh-sweep: rgba(72, 214, 222, .24);
+  --swh-atmosphere-blend: screen;
+  --swh-pointer-color: rgba(53, 181, 201, .15);
+  color-scheme: dark;
+  background:
+    linear-gradient(var(--oh-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--oh-grid) 1px, transparent 1px),
+    radial-gradient(circle at 7% -8%, var(--oh-glow-one), transparent 38rem),
+    radial-gradient(circle at 94% 0%, var(--oh-glow-two), transparent 46rem),
+    linear-gradient(135deg, var(--oh-page), var(--oh-page-deep)) !important;
+  background-size: 68px 68px, 68px 68px, 100% 100%, 100% 100%, 100% 100% !important;
+  background-attachment: fixed !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-header {
+  border-bottom-color: rgba(88, 176, 181, .2) !important;
+  background: rgba(3, 24, 30, .86) !important;
+  box-shadow: 0 14px 40px rgba(0, 7, 10, .16) !important;
+  backdrop-filter: blur(22px) saturate(1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop {
+  overflow: hidden;
+  color: #ffffff;
+  border-color: rgba(98, 211, 220, .34) !important;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(102, 255, 235, .16), transparent 42%),
+    var(--crystal-brand-gradient) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .14) inset, 0 30px 76px rgba(4, 69, 112, .34) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop::before {
+  background: linear-gradient(90deg, rgba(153, 255, 242, .9), rgba(121, 194, 255, .56), transparent 88%) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop :where(
+  .swh-loop-heading > strong,
+  .swh-loop-heading p,
+  .swh-loop-kicker small,
+  li strong,
+  li small,
+  .swh-console-stats strong,
+  .swh-console-stats small
+) {
+  color: #ffffff !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop li,
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-console-stats {
+  border-color: rgba(255, 255, 255, .18) !important;
+  background: rgba(2, 22, 32, .18) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop li > span {
+  color: #e8fffc !important;
+  background: rgba(2, 34, 43, .52) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] :where(
+  .swh-value-grid article,
+  .swh-production-grid article,
+  .swh-available,
+  .swh-planned,
+  .swh-business-grid article,
+  .swh-login-drawer
+) {
+  border-color: var(--oh-line) !important;
+  background: linear-gradient(145deg, rgba(9, 44, 52, .9), rgba(5, 28, 35, .86)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .055) inset, 0 24px 58px rgba(0, 7, 10, .28) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell {
+  color: var(--foreground) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell .login-panel {
+  border-color: rgba(83, 194, 201, .3) !important;
+  background:
+    radial-gradient(circle at 94% 0%, rgba(47, 112, 232, .2), transparent 22rem),
+    radial-gradient(circle at 6% 100%, rgba(40, 213, 192, .16), transparent 20rem),
+    linear-gradient(145deg, rgba(8, 45, 53, .97), rgba(3, 25, 33, .98)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .08) inset, 0 32px 84px rgba(0, 6, 10, .52), 0 0 0 1px rgba(47, 112, 232, .055) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell .login-panel::before {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 2px;
+  content: "";
+  background: linear-gradient(90deg, transparent, #28d5c0 24%, #2f70e8 72%, transparent);
+  opacity: .82;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell :where(input, textarea, select) {
+  color: #effdfc !important;
+  border-color: rgba(97, 184, 190, .26) !important;
+  background: rgba(2, 23, 29, .72) !important;
+  caret-color: #effdfc;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell :where(input, textarea)::placeholder {
+  color: #6f9296 !important;
+  opacity: 1;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell :where(.login-primary-action, .login-security-action) {
+  color: #ffffff !important;
+  background: var(--crystal-brand-gradient) !important;
+  box-shadow: 0 14px 32px rgba(12, 93, 141, .3) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(button, a, input, textarea, select):not(:where(.commerce-root *, [data-testid="manju-content"] *)):focus-visible {
+  outline-color: var(--ring);
+  box-shadow: var(--ui-focus);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] body select { color-scheme: dark; }
+html[data-theme="crystal-aurora"][data-mode="dark"] body select :where(option, optgroup) {
+  color: var(--popover-foreground);
+  background: var(--popover);
+}
+
+@media (min-width: 1600px) {
+  html[data-theme="crystal-aurora"][data-mode="dark"] {
+    --marketplace-grid-template: repeat(4, minmax(0, 1fr));
+    --marketplace-grid-gap: 18px;
+  }
+}
+
+@media (min-width: 1760px) {
+  html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-avatar {
+    width: 94px !important;
+    height: 94px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-agent-grid .agent-card-hover,
+  html[data-theme="crystal-aurora"][data-mode="dark"] :where(.nav-pill, .category-tab) {
+    transition: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * 已撤销的暗夜黑设计层（保留为本地回滚证据，不参与任何视口渲染）
+ * Stable storage key remains crystal-aurora so existing account preferences
+ * migrate without a database rewrite. This final scoped layer intentionally
+ * owns the visible palette for the shell, marketplace, homepage and login.
+ * ------------------------------------------------------------------------ */
+@media (max-width: 0px) and (min-width: 1px) {
+html[data-theme="crystal-aurora"][data-mode="dark"] .app-main-stage,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell {
+  background:
+    radial-gradient(circle at 10% -10%, rgba(255, 173, 74, .12), transparent 35rem),
+    radial-gradient(circle at 93% 0%, rgba(67, 166, 133, .12), transparent 42rem),
+    linear-gradient(rgba(132, 161, 140, .052) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(132, 161, 140, .052) 1px, transparent 1px),
+    linear-gradient(135deg, #0b130f 0%, #111d18 52%, #14221c 100%) !important;
+  background-size: 100% 100%, 100% 100%, 68px 68px, 68px 68px, 100% 100% !important;
+  background-attachment: fixed !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(.app-sidebar-frame, .sidebar-drawer, .sidebar-shell):not([data-youcai="true"]) {
+  border-color: rgba(173, 194, 178, .18) !important;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 173, 74, .085), transparent 18rem),
+    linear-gradient(180deg, rgba(20, 31, 26, .99), rgba(12, 21, 17, .995)) !important;
+  box-shadow: 14px 0 46px rgba(2, 8, 5, .3), inset -1px 0 rgba(180, 204, 185, .08) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell {
+  --sb-primary: #ffad4a;
+  --sb-primary-bright: #ffc56a;
+  --sb-blue: #67d9b8;
+  --sb-gradient: var(--crystal-brand-gradient-vivid);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-brand-card {
+  border-bottom-color: rgba(174, 196, 179, .18) !important;
+  background: linear-gradient(108deg, rgba(255, 173, 74, .075), rgba(72, 154, 127, .055)) !important;
+  box-shadow: 0 10px 28px rgba(2, 8, 5, .13) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-brand-card::after {
+  background: linear-gradient(90deg, transparent, #ffad4a 22%, #67d9b8 76%, transparent);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell :where(
+  .sidebar-shortcut-card,
+  .sidebar-tool-card,
+  .sidebar-glass-card,
+  .sidebar-conv-item
+) {
+  border-color: rgba(166, 190, 171, .17) !important;
+  background: rgba(26, 39, 33, .78) !important;
+  box-shadow: 0 10px 24px rgba(2, 8, 5, .12) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell :where(.sidebar-shortcut-card, .sidebar-conv-item):hover {
+  border-color: rgba(255, 173, 74, .36) !important;
+  background: rgba(38, 51, 43, .92) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell :where(.sidebar-shortcut-card[aria-current="page"], .sidebar-conv-item.active) {
+  border-color: rgba(255, 183, 89, .46) !important;
+  background: var(--crystal-brand-gradient-soft) !important;
+  box-shadow: inset 3px 0 #ffad4a, 0 12px 28px rgba(2, 8, 5, .18) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .new-chat-btn {
+  color: #241306 !important;
+  border-color: rgba(255, 204, 120, .46) !important;
+  background: var(--crystal-brand-gradient-vivid) !important;
+  box-shadow: 0 14px 30px rgba(176, 93, 27, .28) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-bar-wrapper {
+  border-color: rgba(170, 194, 175, .2) !important;
+  background: linear-gradient(112deg, rgba(34, 47, 39, .87), rgba(24, 37, 31, .9) 52%, rgba(30, 47, 39, .86)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .055) inset, 0 16px 38px rgba(2, 8, 5, .25) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-bar {
+  border-color: rgba(165, 188, 170, .17) !important;
+  background: rgba(18, 29, 24, .88) !important;
+  box-shadow: 0 12px 30px rgba(2, 8, 5, .2) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill-indicator {
+  background: var(--crystal-brand-gradient-vivid) !important;
+  box-shadow: 0 0 20px rgba(255, 173, 74, .2), 0 0 28px rgba(103, 217, 184, .12) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell :where(.nav-pill, .category-tab) {
+  color: #a5b1a8 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell :where(.nav-pill:hover, .category-tab:hover) {
+  color: #fff8ec !important;
+  border-color: rgba(255, 173, 74, .22) !important;
+  background: rgba(47, 58, 48, .7) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell :where(
+  .nav-pill-active,
+  .nav-pill[aria-current="page"],
+  .nav-pill[data-active="true"],
+  .category-tab-active,
+  .category-tab[aria-selected="true"],
+  .category-tab[aria-pressed="true"]
+) {
+  color: #241306 !important;
+  border-color: rgba(255, 207, 129, .42) !important;
+  background: var(--crystal-brand-gradient-vivid) !important;
+  box-shadow: 0 10px 24px rgba(177, 96, 28, .23), inset 0 1px rgba(255, 255, 255, .17) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill:not(.nav-pill-active):is(
+  [data-nav-key="marketplace"],
+  [data-nav-key="toolbox"],
+  [data-nav-key="storyboard_workbench"],
+  [data-nav-key="voice"]
+) :where(svg, .nav-pill-icon) { color: #67d9b8 !important; }
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill:not(.nav-pill-active):is(
+  [data-nav-key="create"],
+  [data-nav-key="cover"],
+  [data-nav-key="commerce_agent"]
+) :where(svg, .nav-pill-icon) { color: #ffb85f !important; }
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill:not(.nav-pill-active):is(
+  [data-nav-key="image_workbench"],
+  [data-nav-key="youcai"]
+) :where(svg, .nav-pill-icon) { color: #76bddd !important; }
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .category-tab:not(.category-tab-active) .cat-tab-icon { color: #67d9b8 !important; }
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell :where(.nav-pill-active, .category-tab-active) :where(svg, .nav-pill-icon, .cat-tab-icon) { color: #241306 !important; }
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .theme-switcher-menu,
+  .toolbox-menu-content,
+  .announcement-dialog,
+  .sub-page-header
+) {
+  background: rgba(24, 37, 31, .97) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  border-color: rgba(165, 190, 170, .18) !important;
+  background:
+    radial-gradient(circle at 0 0, rgba(255, 173, 74, .075), transparent 46%),
+    linear-gradient(145deg, rgba(29, 43, 36, .96), rgba(17, 29, 24, .94)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .045) inset, 0 15px 36px rgba(2, 8, 5, .24) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover::before {
+  background: linear-gradient(90deg, #ffad4a, #67d9b8 58%, transparent 90%);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:focus-visible {
+  border-color: rgba(255, 180, 82, .42) !important;
+  background:
+    radial-gradient(circle at 0 0, rgba(255, 173, 74, .12), transparent 48%),
+    linear-gradient(145deg, rgba(39, 53, 44, .98), rgba(22, 35, 29, .97)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .065) inset, 0 24px 52px rgba(2, 8, 5, .36), 0 0 28px rgba(255, 173, 74, .065) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-agent-title { color: #fff8ed !important; }
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-agent-description { color: #9eaba2 !important; }
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .chat-composer-rainbow,
+  .toolbox-embedded-toolbar,
+  .toolbox-input-surface,
+  .toolbox-results-block,
+  .toolbox-empty-result,
+  .help-shell,
+  .media-history-shell
+):not(:where([data-testid="manju-content"] *)) {
+  background: linear-gradient(145deg, rgba(29, 42, 36, .94), rgba(17, 29, 24, .92)) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sub-page-header {
+  --subpage-header-bg: linear-gradient(108deg, rgba(34, 48, 40, .94), rgba(20, 33, 27, .92));
+  --subpage-control-bg: rgba(40, 53, 44, .82);
+  --subpage-control-bg-hover: rgba(53, 66, 55, .94);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .voice-studio-root:not(:where([data-testid="manju-content"] *)) {
+  --vs-primary: #ffad4a;
+  --vs-primary-hover: #ffc56a;
+  --vs-secondary: #67d9b8;
+  --vs-accent: #76bddd;
+  --vs-bg: #0c1411;
+  --vs-bg-secondary: #111b17;
+  --vs-surface: #18231f;
+  --vs-surface-hover: #26342d;
+  --vs-text: #f5f4ec;
+  --vs-text-secondary: #c8d1ca;
+  --vs-text-muted: #8d9b92;
+  --vs-border: rgba(175, 193, 179, .2);
+  --vs-card: rgba(24, 35, 31, .94);
+  --vs-card-hover: rgba(38, 52, 45, .98);
+  --vs-input-bg: #101915;
+  --vs-input-border: rgba(198, 211, 201, .28);
+  --vs-glow: #ffad4a;
+  --vs-on-accent: #241306;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] {
+  --oh-page: #0a120f;
+  --oh-page-deep: #14211b;
+  --oh-surface: rgba(25, 37, 31, .84);
+  --oh-surface-solid: rgba(29, 43, 36, .94);
+  --oh-surface-strong: rgba(37, 51, 43, .97);
+  --oh-section: #101a16;
+  --oh-text: #f7f5ed;
+  --oh-text-soft: #bdc7c0;
+  --oh-text-faint: #87958c;
+  --oh-line: rgba(172, 192, 177, .19);
+  --oh-line-strong: rgba(255, 173, 74, .44);
+  --oh-accent: #ffad4a;
+  --oh-accent-strong: #e7842e;
+  --oh-accent-two: #67d9b8;
+  --oh-accent-three: #f4cf67;
+  --oh-on-accent: #241306;
+  --oh-header: rgba(13, 22, 18, .9);
+  --oh-grid: rgba(132, 161, 140, .062);
+  --oh-glow-one: rgba(255, 173, 74, .15);
+  --oh-glow-two: rgba(62, 157, 125, .14);
+  --oh-glow-three: rgba(244, 207, 103, .08);
+  --oh-shadow: rgba(2, 8, 5, .44);
+  --oh-card-sheen: rgba(255, 250, 235, .055);
+  --oh-chip: rgba(255, 173, 74, .09);
+  --oh-chip-text: #ffcb82;
+  --swh-proof-bg: #1b2922;
+  --swh-sweep: rgba(255, 173, 74, .2);
+  --swh-pointer-color: rgba(103, 217, 184, .12);
+  background:
+    linear-gradient(var(--oh-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--oh-grid) 1px, transparent 1px),
+    radial-gradient(circle at 7% -8%, var(--oh-glow-one), transparent 38rem),
+    radial-gradient(circle at 94% 0%, var(--oh-glow-two), transparent 46rem),
+    linear-gradient(135deg, var(--oh-page), var(--oh-page-deep)) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-header {
+  border-bottom-color: rgba(171, 193, 176, .16) !important;
+  background: rgba(13, 22, 18, .9) !important;
+  box-shadow: 0 14px 40px rgba(2, 8, 5, .18) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop {
+  border-color: rgba(179, 201, 183, .22) !important;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(255, 173, 74, .12), transparent 40%),
+    radial-gradient(circle at 92% 100%, rgba(103, 217, 184, .11), transparent 42%),
+    linear-gradient(145deg, #30382e 0%, #1e2d26 58%, #18271f 100%) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .1) inset, 0 30px 76px rgba(2, 8, 5, .35) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop::before {
+  background: linear-gradient(90deg, #ffad4a, #f4cf67 48%, #67d9b8 82%, transparent) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop li,
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-console-stats {
+  border-color: rgba(224, 231, 220, .14) !important;
+  background: rgba(10, 19, 15, .24) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] .swh-loop li > span {
+  color: #ffe0af !important;
+  background: rgba(84, 49, 18, .5) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landing-version="v2"] :where(
+  .swh-value-grid article,
+  .swh-production-grid article,
+  .swh-available,
+  .swh-planned,
+  .swh-business-grid article,
+  .swh-login-drawer
+) {
+  background: linear-gradient(145deg, rgba(30, 44, 37, .94), rgba(17, 29, 24, .9)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .045) inset, 0 24px 58px rgba(2, 8, 5, .28) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell .login-panel {
+  border-color: rgba(255, 181, 86, .27) !important;
+  background:
+    radial-gradient(circle at 94% 0%, rgba(103, 217, 184, .12), transparent 22rem),
+    radial-gradient(circle at 6% 100%, rgba(255, 173, 74, .11), transparent 20rem),
+    linear-gradient(145deg, rgba(30, 44, 37, .98), rgba(14, 25, 20, .99)) !important;
+  box-shadow: 0 1px rgba(255, 255, 255, .07) inset, 0 32px 84px rgba(2, 8, 5, .52), 0 0 0 1px rgba(255, 173, 74, .04) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell .login-panel::before {
+  background: linear-gradient(90deg, transparent, #ffad4a 24%, #67d9b8 74%, transparent);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell :where(input, textarea, select) {
+  color: #f5f4ec !important;
+  border-color: rgba(185, 203, 189, .22) !important;
+  background: rgba(12, 22, 17, .76) !important;
+  caret-color: #ffad4a;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell :where(input, textarea)::placeholder {
+  color: #7f8e84 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .login-form-shell :where(.login-primary-action, .login-security-action) {
+  color: #241306 !important;
+  background: var(--crystal-brand-gradient-vivid) !important;
+  box-shadow: 0 14px 32px rgba(176, 93, 27, .28) !important;
+}
+}

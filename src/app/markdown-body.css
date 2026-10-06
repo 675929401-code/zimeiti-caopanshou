@@ -1,0 +1,1708 @@
+/**
+ * 🔒 核心底层代码 — 锁定保护
+ * 
+ * 本文件是 Markdown 渲染样式，对标 AIWeb 的 md-editor-v3 样式。
+ * 修改此文件需要用户明确同意，详见 AGENTS.md "核心底层代码保护规则" 章节。
+ * 
+ * 锁定范围：
+ * - .markdown-body 基础样式
+ * - .code-block-wrapper / .code-block-header / .code-copy-btn（代码块样式，AIWeb风格，无macOS圆点）
+ * - .markdown-body-generate（流式呼吸光标）
+ * - @keyframes breathes（呼吸动画）
+ * 
+ * 锁定原因：渲染视觉一致性，对标 AIWeb 的 GitHub 风格 markdown 样式
+ */
+
+/* GitHub markdown-body CSS — extracted from competitor platform (identical to GitHub's markdown-body) */
+/* This provides the exact same markdown rendering as the competitor platform */
+
+/* ===== Light mode variables ===== */
+html .markdown-body {
+  color-scheme: light;
+  --color-prettylights-syntax-comment: #6e7781;
+  --color-prettylights-syntax-constant: #0550ae;
+  --color-prettylights-syntax-entity: #8250df;
+  --color-prettylights-syntax-storage-modifier-import: #24292f;
+  --color-prettylights-syntax-entity-tag: #116329;
+  --color-prettylights-syntax-keyword: #cf222e;
+  --color-prettylights-syntax-string: #0a3069;
+  --color-prettylights-syntax-variable: #953800;
+  --color-prettylights-syntax-brackethighlighter-unmatched: #82071e;
+  --color-prettylights-syntax-invalid-illegal-text: #f6f8fa;
+  --color-prettylights-syntax-invalid-illegal-bg: #82071e;
+  --color-prettylights-syntax-carriage-return-text: #f6f8fa;
+  --color-prettylights-syntax-carriage-return-bg: #cf222e;
+  --color-prettylights-syntax-string-regexp: #116329;
+  --color-prettylights-syntax-markup-list: #3b2300;
+  --color-prettylights-syntax-markup-heading: #0550ae;
+  --color-prettylights-syntax-markup-italic: #24292f;
+  --color-prettylights-syntax-markup-bold: #24292f;
+  --color-prettylights-syntax-markup-deleted-text: #82071e;
+  --color-prettylights-syntax-markup-deleted-bg: #ffebe9;
+  --color-prettylights-syntax-markup-inserted-text: #116329;
+  --color-prettylights-syntax-markup-inserted-bg: #dafbe1;
+  --color-prettylights-syntax-markup-changed-text: #953800;
+  --color-prettylights-syntax-markup-changed-bg: #ffd8b5;
+  --color-prettylights-syntax-markup-ignored-text: #eaeef2;
+  --color-prettylights-syntax-markup-ignored-bg: #0550ae;
+  --color-prettylights-syntax-meta-diff-range: #8250df;
+  --color-prettylights-syntax-brackethighlighter-angle: #57606a;
+  --color-prettylights-syntax-sublimeliner-gutter-mark: #8c959f;
+  --color-prettylights-syntax-constant-other-reference-link: #0a3069;
+  --color-fg-default: var(--foreground, #24292f);
+  --color-fg-muted: var(--text-secondary, var(--muted-foreground, #57606a));
+  --color-fg-subtle: #6e7781;
+  --color-canvas-default: transparent;
+  --color-canvas-subtle: var(--muted, #f6f8fa);
+  --color-border-default: var(--border, #d0d7de);
+  --color-border-muted: var(--border, hsl(210, 18%, 87%));
+  --color-neutral-muted: rgba(175, 184, 193, .2);
+  --color-accent-fg: var(--primary, #0969da);
+  --color-accent-emphasis: var(--primary, #0969da);
+  --color-attention-subtle: #fff8c5;
+  --color-danger-fg: #cf222e;
+  --base-text-weight-semibold: 600;
+}
+
+/* ===== Dark mode variables ===== */
+html.dark .markdown-body,
+html[data-mode="dark"] .markdown-body {
+  color-scheme: dark;
+  --color-prettylights-syntax-comment: #8b949e;
+  --color-prettylights-syntax-constant: #79c0ff;
+  --color-prettylights-syntax-entity: #d2a8ff;
+  --color-prettylights-syntax-storage-modifier-import: #c9d1d9;
+  --color-prettylights-syntax-entity-tag: #7ee787;
+  --color-prettylights-syntax-keyword: #ff7b72;
+  --color-prettylights-syntax-string: #a5d6ff;
+  --color-prettylights-syntax-variable: #ffa657;
+  --color-prettylights-syntax-brackethighlighter-unmatched: #f85149;
+  --color-prettylights-syntax-invalid-illegal-text: #f0f6fc;
+  --color-prettylights-syntax-invalid-illegal-bg: #8e1519;
+  --color-prettylights-syntax-carriage-return-text: #f0f6fc;
+  --color-prettylights-syntax-carriage-return-bg: #b62324;
+  --color-prettylights-syntax-string-regexp: #7ee787;
+  --color-prettylights-syntax-markup-list: #f2cc60;
+  --color-prettylights-syntax-markup-heading: #1f6feb;
+  --color-prettylights-syntax-markup-italic: #c9d1d9;
+  --color-prettylights-syntax-markup-bold: #c9d1d9;
+  --color-prettylights-syntax-markup-deleted-text: #ffdcd7;
+  --color-prettylights-syntax-markup-deleted-bg: #67060c;
+  --color-prettylights-syntax-markup-inserted-text: #aff5b4;
+  --color-prettylights-syntax-markup-inserted-bg: #033a16;
+  --color-prettylights-syntax-markup-changed-text: #ffdfb6;
+  --color-prettylights-syntax-markup-changed-bg: #5a1e02;
+  --color-prettylights-syntax-markup-ignored-text: #c9d1d9;
+  --color-prettylights-syntax-markup-ignored-bg: #1158c7;
+  --color-prettylights-syntax-meta-diff-range: #d2a8ff;
+  --color-prettylights-syntax-brackethighlighter-angle: #8b949e;
+  --color-prettylights-syntax-sublimelinter-gutter-mark: #484f58;
+  --color-prettylights-syntax-constant-other-reference-link: #a5d6ff;
+  --color-fg-default: var(--foreground, #c9d1d9);
+  --color-fg-muted: var(--text-secondary, var(--muted-foreground, #8b949e));
+  --color-fg-subtle: #6e7681;
+  --color-canvas-default: transparent;
+  --color-canvas-subtle: var(--muted, #161b22);
+  --color-border-default: var(--border, #30363d);
+  --color-border-muted: var(--border, #21262d);
+  --color-neutral-muted: rgba(110, 118, 129, .4);
+  --color-accent-fg: var(--primary, #58a6ff);
+  --color-accent-emphasis: var(--primary, #1f6feb);
+  --color-attention-subtle: rgba(187, 128, 9, .15);
+  --color-danger-fg: #f85149;
+  --base-text-weight-semibold: 600;
+}
+
+/* ===== Base ===== */
+.markdown-body {
+  -ms-text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  margin: 0;
+  color: var(--color-fg-default);
+  background-color: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Noto Sans, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 17px;
+  line-height: 1.78;
+  letter-spacing: .006em;
+  text-wrap: pretty;
+  word-wrap: break-word;
+  position: relative;
+  /* Prevent layout recalculation when streaming state changes (markdown-body-generate add/remove) */
+/* 注意：移除 contain: layout，它在流式输出时阻止代码块容器回流，导致内容与容器分离 */
+  contain: style;
+}
+
+/* Keep technical content metrically stable while prose uses optical spacing. */
+.markdown-body :where(pre, code, kbd, samp) {
+  letter-spacing: normal;
+}
+
+/* ===== 中文长文阅读排版：段落呼吸感与行距 ===== */
+.markdown-body p {
+  margin-top: 0;
+  margin-bottom: 0.95em;
+  line-height: 1.84;
+  color: var(--font-body-color, var(--color-fg-default));
+}
+
+/* ===== First/Last child margin reset — CRITICAL for compact rendering ===== */
+.markdown-body > *:first-child {
+  margin-top: 0 !important;
+}
+.markdown-body > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ===== Block elements ===== */
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin-top: 28px;
+  margin-bottom: 14px;
+  color: var(--font-title-color, var(--color-fg-default));
+  font-family: var(--font-sans-theme, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-weight: var(--base-text-weight-semibold, 600);
+  line-height: 1.32;
+  text-wrap: balance;
+}
+
+/* ===== 标题体系 ===== */
+/* 字号梯度：h1→h4 形成清晰视觉层级，加粗+留白+字号三重区分 */
+.markdown-body h1 {
+  margin: 1.15em 0 .52em;
+  font-weight: 760;
+  font-size: 1.62em;
+  padding-bottom: 0;
+  border-bottom: none;
+  letter-spacing: -.018em;
+}
+
+.markdown-body h2 {
+  margin: 1.15em 0 .55em;
+  padding-bottom: .42em;
+  font-weight: 730;
+  font-size: 1.32em;
+  color: var(--font-title-color, var(--color-fg-default));
+  border-bottom: 1px solid var(--border);   /* 分节下划线：长文扫读锚点 */
+  letter-spacing: -.012em;
+}
+
+.markdown-body h3 {
+  margin: 1em 0 .4em;
+  font-weight: 680;
+  font-size: 1.13em;
+  letter-spacing: -.006em;
+}
+
+.markdown-body h4 {
+  margin: .85em 0 .32em;
+  font-weight: 660;
+  font-size: 1em;           /* ≈17px，与正文同字号靠加粗区分 */
+}
+
+.markdown-body h5 {
+  margin: .3em 0 .15em;
+  font-size: .875em;
+}
+
+.markdown-body h6 {
+  margin: .3em 0 .15em;
+  font-size: .85em;
+  color: var(--color-fg-muted);
+}
+
+/* Headings inside details/summary */
+.markdown-body summary h1,
+.markdown-body summary h2,
+.markdown-body summary h3,
+.markdown-body summary h4,
+.markdown-body summary h5,
+.markdown-body summary h6 {
+  display: inline-block;
+}
+
+.markdown-body summary h1,
+.markdown-body summary h2 {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* Code inside headings */
+.markdown-body h1 tt,
+.markdown-body h1 code,
+.markdown-body h2 tt,
+.markdown-body h2 code,
+.markdown-body h3 tt,
+.markdown-body h3 code,
+.markdown-body h4 tt,
+.markdown-body h4 code,
+.markdown-body h5 tt,
+.markdown-body h5 code,
+.markdown-body h6 tt,
+.markdown-body h6 code {
+  padding: 0 .2em;
+  font-size: inherit;
+}
+
+/* ===== Octicon / Anchor (heading link icons) ===== */
+.markdown-body .octicon {
+  display: inline-block;
+  fill: currentColor;
+  vertical-align: text-bottom;
+}
+
+.markdown-body .anchor {
+  float: left;
+  padding-right: 4px;
+  margin-left: -20px;
+  line-height: 1;
+}
+
+.markdown-body .anchor:focus {
+  outline: none;
+}
+
+.markdown-body h1 .octicon-link,
+.markdown-body h2 .octicon-link,
+.markdown-body h3 .octicon-link,
+.markdown-body h4 .octicon-link,
+.markdown-body h5 .octicon-link,
+.markdown-body h6 .octicon-link {
+  color: var(--color-fg-default);
+  vertical-align: middle;
+  visibility: hidden;
+}
+
+.markdown-body h1:hover .anchor,
+.markdown-body h2:hover .anchor,
+.markdown-body h3:hover .anchor,
+.markdown-body h4:hover .anchor,
+.markdown-body h5:hover .anchor,
+.markdown-body h6:hover .anchor {
+  text-decoration: none;
+}
+
+.markdown-body h1:hover .anchor .octicon-link,
+.markdown-body h2:hover .anchor .octicon-link,
+.markdown-body h3:hover .anchor .octicon-link,
+.markdown-body h4:hover .anchor .octicon-link,
+.markdown-body h5:hover .anchor .octicon-link,
+.markdown-body h6:hover .anchor .octicon-link {
+  visibility: visible;
+}
+
+/* ===== g-emoji ===== */
+.markdown-body g-emoji {
+  display: inline-block;
+  min-width: 1ch;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  font-size: 1em;
+  font-style: normal !important;
+  font-weight: var(--base-text-weight-normal, 400);
+  line-height: 1;
+  vertical-align: -0.075em;
+}
+
+.markdown-body g-emoji img {
+  width: 1em;
+  height: 1em;
+}
+
+/* ===== Paragraph rhythm ===== */
+.markdown-body p {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+
+/* Keep generated long-form copy calm and scannable. */
+.markdown-body p,
+.markdown-body blockquote,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body dl,
+.markdown-body details {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+
+.markdown-body table,
+.markdown-body pre {
+  margin-top: 4px;
+  margin-bottom: 18px;
+}
+
+/* ===== Lists ===== */
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.45em;
+  line-height: 1.76;
+}
+
+.markdown-body ul ul,
+.markdown-body ul ol,
+.markdown-body ol ol,
+.markdown-body ol ul {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* 竞品对标：列表内段落间距紧凑 */
+.markdown-body li > p {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.markdown-body li + li {
+  margin-top: 8px;
+}
+
+.markdown-body dd {
+  margin-left: 0;
+}
+
+/* ===== Blockquote ===== */
+.markdown-body blockquote {
+  padding: .7em 1em .72em 1.05em;
+  color: var(--color-fg-muted);
+  border-left: .25em solid var(--color-border-default);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--muted) 58%, transparent);
+}
+
+.markdown-body blockquote > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* ===== Code — AIWeb合并规则: .highlight pre, pre { padding:16px; overflow:auto; font-size:85%; line-height:1.45; background-color:var(--color-canvas-subtle); border-radius:6px } ===== */
+.markdown-body code,
+.markdown-body kbd,
+.markdown-body pre,
+.markdown-body samp {
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 1em;
+}
+
+.markdown-body tt,
+.markdown-body code,
+.markdown-body samp {
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 12px;
+}
+
+.markdown-body code,
+.markdown-body tt {
+  padding: .2em .4em;
+  margin: 0;
+  font-size: 85%;
+  white-space: break-spaces;
+  background-color: var(--color-neutral-muted);
+  border-radius: 6px;
+}
+
+.markdown-body code br,
+.markdown-body tt br {
+  display: none;
+}
+
+.markdown-body del code {
+  text-decoration: inherit;
+}
+
+.markdown-body pre {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  word-wrap: normal;
+}
+
+.markdown-body .highlight pre,
+.markdown-body pre {
+  padding: 16px 16px 8px 16px;
+  overflow: auto;
+  font-size: 85%;
+  line-height: 1.45;
+  background-color: var(--color-canvas-subtle);
+  border-radius: 6px;
+}
+
+.markdown-body .highlight {
+  margin-bottom: 16px;
+}
+
+.markdown-body .highlight pre {
+  margin-bottom: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.markdown-body pre code {
+  font-size: 100%;
+}
+
+.markdown-body pre > code {
+  padding: 0;
+  margin: 0;
+  white-space: pre;
+  background: transparent;
+  border: 0;
+}
+
+.markdown-body pre code,
+.markdown-body pre tt {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+  overflow-x: scroll;
+  line-height: inherit;
+  word-wrap: normal;
+  background-color: transparent;
+  border: 0;
+}
+
+/* Heading内嵌code保持字号 */
+.markdown-body h1 tt,
+.markdown-body h1 code,
+.markdown-body h2 tt,
+.markdown-body h2 code,
+.markdown-body h3 tt,
+.markdown-body h3 code,
+.markdown-body h4 tt,
+.markdown-body h4 code,
+.markdown-body h5 tt,
+.markdown-body h5 code,
+.markdown-body h6 tt,
+.markdown-body h6 code {
+  padding: 0 .2em;
+  font-size: inherit;
+}
+
+/* ===== Table ===== */
+.markdown-body .table-wrapper {
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.markdown-body table {
+  border-spacing: 0;
+  border-collapse: collapse;
+  display: table;
+  width: 100%;
+  animation: fadeInTable 0.3s ease-out;
+}
+
+/* 流式期间禁用表格 fadeIn 动画 — 防止每帧 DOM 重建触发重复 fadeIn 导致高频闪烁 */
+.markdown-body-generate table {
+  animation: none;
+}
+
+@keyframes fadeInTable {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+.markdown-body th {
+  font-weight: var(--base-text-weight-semibold, 600);
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 13px;
+  border: 1px solid var(--color-border-default);
+}
+
+.markdown-body tr {
+  background-color: var(--color-canvas-default);
+  border-top: 1px solid var(--color-border-muted);
+}
+
+.markdown-body tr:nth-child(2n) {
+  background-color: var(--color-canvas-subtle);
+}
+
+/* ===== HR ===== */
+.markdown-body hr {
+  box-sizing: content-box;
+  overflow: hidden;
+  background: transparent;
+  border-bottom: 1px solid var(--color-border-muted);
+  height: .25em;
+  padding: 0;
+  margin: 24px 0;
+  background-color: var(--color-border-default);
+  border: 0;
+}
+
+.markdown-body hr::before {
+  display: table;
+  content: "";
+}
+
+.markdown-body hr::after {
+  display: table;
+  clear: both;
+  content: "";
+}
+
+/* ===== Links ===== */
+.markdown-body a {
+  background-color: transparent;
+  color: var(--color-accent-fg);
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+/* ===== Strong ===== */
+.markdown-body b,
+.markdown-body strong {
+  font-weight: var(--base-text-weight-semibold, 600);
+}
+
+/* ===== Images ===== */
+.markdown-body img {
+  border-style: none;
+  max-width: 100%;
+  box-sizing: content-box;
+  background-color: var(--color-canvas-default);
+}
+
+.markdown-body table img {
+  background-color: transparent;
+}
+
+.markdown-body img[align="right"] {
+  padding-left: 20px;
+}
+
+.markdown-body img[align="left"] {
+  padding-right: 20px;
+}
+
+/* ===== Misc ===== */
+.markdown-body mark {
+  background-color: var(--color-attention-subtle);
+  color: var(--color-fg-default);
+}
+
+.markdown-body small {
+  font-size: 90%;
+}
+
+.markdown-body sub,
+.markdown-body sup {
+  font-size: 75%;
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+}
+
+.markdown-body sub {
+  bottom: -.25em;
+}
+
+.markdown-body sup {
+  top: -.5em;
+}
+
+.markdown-body figure {
+  margin: 1em 40px;
+}
+
+.markdown-body details,
+.markdown-body figcaption,
+.markdown-body figure {
+  display: block;
+}
+
+.markdown-body summary {
+  display: list-item;
+}
+
+.markdown-body [hidden] {
+  display: none !important;
+}
+
+.markdown-body abbr[title] {
+  border-bottom: none;
+  -webkit-text-decoration: underline dotted;
+  text-decoration: underline dotted;
+}
+
+.markdown-body dfn {
+  font-style: italic;
+}
+
+/* ===== Table display fix for ::before/::after ===== */
+.markdown-body::before {
+  display: table;
+  content: "";
+}
+
+.markdown-body::after {
+  display: table;
+  clear: both;
+  content: "";
+}
+
+/* ===== Streaming cursor — inline at end of last text element ===== */
+/* The cursor dot must appear INLINE at the very end of the last paragraph,
+   directly after the last character — exactly like chatai8/AIWeb.
+   
+   Strategy: target the last child of the streaming render layer and add
+   an inline ::after pseudo-element. This way the dot sits right after
+   the text, on the same line, not on a new line. */
+
+/* Make streaming render layer "transparent" so its children (p, h1, etc.)
+   participate directly in the parent markdown-body layout. */
+.render-layer-streaming {
+  display: contents;
+}
+
+/* Inline cursor — solid breathing dot at the end of the last streaming element.
+   Targets the last element inside render-layer-streaming via its parent
+   .markdown-body-generate. Because render-layer-streaming has display:contents,
+   its children are layout children of .markdown-body-generate, but CSS selectors
+   still traverse the DOM tree through render-layer-streaming.
+   
+   Only show cursor after text elements (p, h1-h6, li). Hide when last child
+   is a code block or copyable block — those have their own streaming indicators. */
+.markdown-body-generate > .render-layer-streaming > :last-child::after {
+  content: "";
+  display: inline;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  border-radius: 1px;
+  animation: streaming-cursor-blink 1s step-end infinite;
+  vertical-align: text-bottom;
+  /* Light mode: gradient cursor bar */
+  background: linear-gradient(180deg, rgb(99 102 241) 0%, rgb(139 92 246) 100%);
+  box-shadow: 0 0 6px 1px rgba(99, 102, 241, 0.35);
+}
+
+/* Hide cursor when last child is a code-block-wrapper or copyable-block
+   (those have their own internal streaming cursor) */
+.markdown-body-generate > .render-layer-streaming > .code-block-wrapper:last-child::after,
+.markdown-body-generate > .render-layer-streaming > .copyable-block:last-child::after,
+.markdown-body-generate > .render-layer-streaming > pre:last-child::after {
+  content: none;
+}
+
+/* Dark mode: gradient cursor bar */
+[data-mode="dark"] .markdown-body-generate > .render-layer-streaming > :last-child::after {
+  background: linear-gradient(180deg, rgb(129 140 248) 0%, rgb(167 139 250) 100%);
+  box-shadow: 0 0 6px 1px rgba(129, 140, 248, 0.4);
+}
+
+/* 流式光标闪烁动画 — 渐变竖线式光标，带发光效果 */
+@keyframes streaming-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 呼吸光标动画 — 1:1 对标 chatai8/AIWeb */
+@keyframes breathes {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(.75); opacity: .75; }
+}
+
+@keyframes blink {
+  to { visibility: hidden; }
+}
+
+.animate-breath {
+  animation: breathes 2s ease-in-out infinite;
+}
+
+/* ===== 流式打字机渐变动画 ===== */
+/* 只让最新的一段做极短的淡入，配合 RAF 高速推进形成“打字机+渐变”。
+   其余段落保持稳定，避免 markdown 结构变化时整段闪烁。 */
+.markdown-body-generate > .render-layer-streaming > * {
+  animation: none !important;
+}
+
+.markdown-body-generate > .render-layer-streaming > :last-child {
+  animation: streaming-text-fade-in-fast 90ms ease-out both !important;
+  will-change: opacity, filter;
+}
+
+@keyframes streaming-text-fade-in-fast {
+  from {
+    opacity: 0.84;
+    filter: blur(0.35px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes streaming-text-settle {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-body-generate > .render-layer-streaming > :last-child {
+    animation: none !important;
+    filter: none !important;
+  }
+}
+
+/* ===== 流式期间渲染稳定性 — 防止表格/代码框高频闪烁 ===== */
+/* 根因：流式每帧 dangerouslySetInnerHTML 整体替换 DOM，触发元素上的 animation/transition 重复执行 */
+/* 修复：流式期间对所有非光标类动画/过渡统一禁用 */
+.markdown-body-generate .code-block-wrapper {
+  animation: none;
+  transition: none;
+}
+.markdown-body-generate .code-block-header {
+  animation: none;
+  transition: none;
+}
+.markdown-body-generate .table-wrapper {
+  animation: none;
+  transition: none;
+}
+.markdown-body-generate .table-copy-btn {
+  transition: none;
+}
+
+/* ===== Code block wrapper — 1:1 NextChat: pre作为主容器, position:relative ===== */
+.markdown-body .code-block-wrapper {
+  margin: 8px 0 16px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: visible;
+  background: var(--muted);
+  position: relative;
+}
+
+/* Language label + Copy button — 独立header行，不遮挡代码 */
+.markdown-body .code-block-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--muted) 80%, transparent);
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  pointer-events: auto;
+  transition: opacity 0.2s;
+}
+.markdown-body .code-block-lang {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, var(--muted-foreground));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  pointer-events: none;
+}
+.markdown-body .code-block-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* pre 不再需要为浮层预留 padding */
+.markdown-body .code-block-wrapper pre {
+  padding-top: 12px !important;
+}
+
+/* ===== Copy button — 独立header行内右侧，始终可见 ===== */
+.markdown-body .copy-code-button,
+.markdown-body .send-video-task-button,
+.markdown-body .send-image-workbench-button {
+  position: relative;
+  width: auto;
+  min-width: auto;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background-color 0.15s;
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text-secondary, var(--muted-foreground));
+  font-size: 0;
+  z-index: 10;
+  padding: 0 8px;
+}
+/* 流式输出期间禁用复制按钮过渡动画，防止 innerHTML 替换导致闪烁 */
+.markdown-body-generate .copy-code-button,
+.markdown-body-generate .send-video-task-button,
+.markdown-body-generate .send-image-workbench-button {
+  transition: none;
+}
+.markdown-body .copy-code-button::before,
+.markdown-body .send-video-task-button::before,
+.markdown-body .send-image-workbench-button::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='14' x='8' y='8' rx='2' ry='2'/%3E%3Cpath d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+.markdown-body .send-video-task-button::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 2 11 13'/%3E%3Cpath d='m22 2-7 20-4-9-9-4Z'/%3E%3C/svg%3E");
+}
+.markdown-body .send-image-workbench-button::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='18' x='3' y='3' rx='2' ry='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpath d='m21 15-5-5L5 21'/%3E%3C/svg%3E");
+}
+.markdown-body .copy-code-button::after {
+  content: "复制";
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.markdown-body .send-video-task-button::after {
+  content: "发送";
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.markdown-body .send-image-workbench-button::after {
+  content: "推送图片";
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.markdown-body .copy-code-button:hover,
+.markdown-body .send-video-task-button:hover,
+.markdown-body .send-image-workbench-button:hover {
+  opacity: 1 !important;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--accent);
+}
+.markdown-body .copy-code-button.copied,
+.markdown-body .send-video-task-button.sent,
+.markdown-body .send-image-workbench-button.sent {
+  opacity: 1 !important;
+  background: rgba(34,197,94,0.12);
+  color: #16a34a;
+  border-color: rgba(34,197,94,0.25);
+}
+.markdown-body .copy-code-button.copied::before,
+.markdown-body .send-video-task-button.sent::before,
+.markdown-body .send-image-workbench-button.sent::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2316a34a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+}
+.markdown-body .copy-code-button.copied::after {
+  content: "已复制";
+}
+.markdown-body .send-video-task-button.sent::after {
+  content: "已发送";
+}
+.markdown-body .send-image-workbench-button.sent::after {
+  content: "已推送";
+}
+/* wrapper hover时高亮复制按钮 */
+.markdown-body .code-block-wrapper:hover .copy-code-button,
+.markdown-body .code-block-wrapper:hover .send-video-task-button,
+.markdown-body .code-block-wrapper:hover .send-image-workbench-button {
+  opacity: 0.85;
+}
+
+.markdown-body .code-block-wrapper:not(.code-block-plaintext) .send-video-task-button {
+  display: none;
+}
+.markdown-body .code-block-wrapper:not(.code-block-plaintext) .send-image-workbench-button {
+  display: none;
+}
+
+.markdown-body-generate .send-video-task-button,
+.markdown-body-generate .send-image-workbench-button {
+  pointer-events: none;
+  opacity: 0.35;
+}
+
+/* ===== Show/Hide button — 已禁用折叠，保留 CSS 以兼容旧缓存 ===== */
+/* 折叠态/展开态样式已不使用，代码块始终全量显示 */
+
+/* ===== txt/plain/markdown code blocks: pre-wrap (1:1 NextChat PreCode) ===== */
+.markdown-body .code-block-wrapper.code-block-plaintext pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.markdown-body .code-block-wrapper.code-block-plaintext pre code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== Code block max-height — 3级高度等级 ===== */
+/* 短代码(≤10行)：紧凑 ~200px | 中代码(11-25行)：~380px | 长代码(>25行)：~500px */
+/* 流式代码块：不限高，内容自然增长，配合聊天气泡自动滚动到最新内容 */
+.markdown-body .code-block-wrapper:not(.code-block-streaming).code-block-h-sm .code-block-pre {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.markdown-body .code-block-wrapper:not(.code-block-streaming).code-block-h-md .code-block-pre {
+  max-height: 380px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.markdown-body .code-block-wrapper:not(.code-block-streaming).code-block-h-lg .code-block-pre {
+  max-height: 500px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.markdown-body .code-block-wrapper.code-block-streaming .code-block-pre {
+  max-height: none;
+  overflow-y: visible;
+}
+/* 代码块内滚动条样式 — 清晰可见 */
+.markdown-body .code-block-pre::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.markdown-body .code-block-pre::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 5px;
+}
+.markdown-body .code-block-pre::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 5px;
+  border: 2px solid var(--scrollbar-track);
+}
+.markdown-body .code-block-pre::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ===== Streaming code block — 流式期间未闭合代码块 ===== */
+/* 使用与 code-block-wrapper 相同的 DOM 骨架，仅添加 code-block-streaming 类标识 */
+/* 流式期间代码内容用纯文本显示（不调 highlight.js），闭合后自动切换为高亮 */
+.markdown-body .code-block-wrapper.code-block-streaming pre code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--card-foreground);
+}
+/* ===== Copyable Block (:::copy 容器) — 文档输出卡片 ===== */
+/* AI 输出 :::keyword 文档卡片（:::copy / :::text / :::article / :::文案 等） */
+/* 短内容（≤1000字）：折叠卡片 + 固定高度 + 滚动条 */
+/* 长内容（>1000字）：完全展开，无尺寸限制 */
+.markdown-body .copyable-block {
+  margin: 6px 0 10px 0;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-canvas-default);
+  overflow-y: visible;
+  overflow-x: auto;
+  width: 100%;
+}
+.markdown-body .copyable-block.copyable-block-fragment {
+  margin: 0 0 8px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+.markdown-body .copyable-block.copyable-block-fragment .copyable-block-content {
+  padding: 0;
+  max-height: none;
+  overflow: visible;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.markdown-body .copyable-block.copyable-block-fragment .copyable-block-content p {
+  margin-bottom: 8px;
+}
+.markdown-body .copyable-block.copyable-block-fragment .copyable-block-footer,
+.markdown-body .copyable-block.copyable-block-fragment .copyable-block-header {
+  display: none;
+}
+/* 短内容：折叠卡片样式 */
+.markdown-body .copyable-block:not(.copyable-block-long) .copyable-block-content {
+  max-height: 50vh;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+/* 长内容：同样限高50vh，可滚动查看 */
+.markdown-body .copyable-block.copyable-block-long .copyable-block-content {
+  max-height: 50vh;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+/* 自定义滚动条 — 清晰可见 */
+.markdown-body .copyable-block::-webkit-scrollbar {
+  width: 10px;
+}
+.markdown-body .copyable-block::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 5px;
+}
+.markdown-body .copyable-block::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 5px;
+  border: 2px solid var(--scrollbar-track);
+}
+.markdown-body .copyable-block::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+/* 流式期间不限制高度，让打字机效果自然增长 */
+.markdown-body .copyable-block.copyable-block-streaming {
+  min-height: unset;
+  max-height: unset;
+  overflow-y: visible;
+}
+
+/* ===== :::text 文档卡内部去套娃：代码块/表格融入文档卡 ===== */
+/* 文档卡内的代码块：去掉独立背景和边框，用左侧竖线标识 */
+.markdown-body .copyable-block .code-block-wrapper {
+  margin: 6px 0;
+  border-radius: 4px;
+  border: none;
+  border-left: 3px solid color-mix(in srgb, var(--color-fg-muted) 40%, transparent);
+  background: color-mix(in srgb, var(--color-canvas-subtle) 50%, transparent);
+  overflow: visible;
+}
+/* 文档卡内代码块的 header 更紧凑 */
+.markdown-body .copyable-block .code-block-header {
+  padding: 4px 10px;
+}
+/* 文档卡内代码块的复制按钮 */
+.markdown-body .copyable-block .copy-code-button {
+  opacity: 0.6;
+  height: 22px;
+}
+.markdown-body .copyable-block .code-block-wrapper:hover .copy-code-button {
+  opacity: 0.85;
+}
+/* 文档卡内的表格：去掉外边框，用细分隔线 */
+.markdown-body .copyable-block table {
+  border: none;
+}
+.markdown-body .copyable-block table th,
+.markdown-body .copyable-block table td {
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-default) 60%, transparent);
+}
+.markdown-body .copyable-block table tr:last-child td {
+  border-bottom: none;
+}
+.markdown-body .copyable-block table th {
+  border-bottom: 2px solid color-mix(in srgb, var(--color-border-default) 80%, transparent);
+}
+/* 文档卡内的引用块：更紧凑 */
+.markdown-body .copyable-block blockquote {
+  border-left-color: color-mix(in srgb, var(--color-fg-muted) 40%, transparent);
+  margin: 4px 0;
+  padding: 2px 12px;
+}
+/* 文档卡内的水平线：更淡 */
+.markdown-body .copyable-block hr {
+  border-color: color-mix(in srgb, var(--color-border-default) 50%, transparent);
+  margin: 8px 0;
+}
+.markdown-body .copyable-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--color-canvas-subtle);
+  border-bottom: 1px solid var(--color-border-default);
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.markdown-body .copyable-block-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+.markdown-body .copyable-block-content {
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-fg-default);
+}
+/* 内容区内部 markdown 元素间距紧凑 */
+.markdown-body .copyable-block-content > *:first-child {
+  margin-top: 0 !important;
+}
+.markdown-body .copyable-block-content > *:last-child {
+  margin-bottom: 0 !important;
+}
+.markdown-body .copyable-block-content p {
+  margin-bottom: 6px;
+}
+.markdown-body .copyable-block-content p:last-child {
+  margin-bottom: 0;
+}
+/* 复制图片按钮区域 */
+.markdown-body .copyable-block-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-top: 1px solid var(--color-border-default);
+  background: var(--color-canvas-subtle);
+}
+.markdown-body .copyable-block-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  opacity: 0.6;
+}
+.markdown-body-generate .copyable-block-copy-btn {
+  transition: none;
+}
+.markdown-body .copyable-block-copy-btn:hover {
+  color: var(--color-fg-default);
+  opacity: 1;
+  background: var(--color-canvas-default);
+}
+.markdown-body .copyable-block-copy-btn.copied {
+  color: #22c55e;
+  opacity: 1;
+}
+/* 表格复制按钮 — 与代码块复制按钮同风格 */
+.markdown-body .table-wrapper {
+  position: relative;
+  overflow-x: auto;
+}
+.markdown-body .table-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-canvas-default, #fff);
+  color: var(--color-fg-muted, #656d76);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.markdown-body-generate .table-copy-btn {
+  transition: none;
+}
+.markdown-body .table-wrapper:hover .table-copy-btn {
+  opacity: 0.6;
+}
+.markdown-body .table-copy-btn:hover {
+  opacity: 1 !important;
+  color: var(--color-fg-default);
+  background: var(--color-canvas-default, #fff);
+}
+.markdown-body .table-copy-btn.copied {
+  color: #22c55e;
+  opacity: 1 !important;
+}
+.markdown-body-generate .copy-code-button,
+.markdown-body-generate .copyable-block-copy-btn,
+.markdown-body-generate .table-copy-btn {
+  visibility: visible;
+  pointer-events: auto;
+}
+/* copyable-block 内的表格不需要独立复制按钮（footer已有整体复制） */
+.markdown-body .copyable-block-content .table-copy-btn {
+  display: none;
+}
+/* 流式期间未闭合 :::keyword — 轻量显示，同时覆盖 max-height 避免内容截断 */
+.markdown-body .copyable-block.copyable-block-streaming .copyable-block-content {
+  font-size: 13px;
+  line-height: 1.55;
+  max-height: none;
+  overflow-y: visible;
+}
+	/* 流式期间文档卡内部最后一个元素后面显示渐变光标，防止光标飘到容器外面 */
+.markdown-body.markdown-body-generate .copyable-block-streaming .copyable-block-content > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  border-radius: 1px;
+  vertical-align: text-bottom;
+  background: linear-gradient(180deg, rgb(99 102 241) 0%, rgb(139 92 246) 100%);
+  box-shadow: 0 0 4px 1px rgba(99, 102, 241, 0.3);
+  animation: streaming-cursor-blink 1s step-end infinite;
+}
+[data-mode="dark"] .markdown-body.markdown-body-generate .copyable-block-streaming .copyable-block-content > :last-child::after {
+  background: linear-gradient(180deg, rgb(129 140 248) 0%, rgb(167 139 250) 100%);
+  box-shadow: 0 0 4px 1px rgba(129, 140, 248, 0.35);
+}
+/* 文档块内部代码块 — 无独立外框，防止"框中框" */
+/* 文档卡片本身就是外框，内部代码只需简单渲染 */
+.markdown-body .copyable-block-content .copyable-inner-pre {
+  background: var(--color-canvas-subtle);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 4px 0;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.markdown-body .copyable-block-content .copyable-inner-code {
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* 文档块内部表格 — 紧凑样式 */
+.markdown-body .copyable-block-content table {
+  font-size: 13px;
+  border-collapse: collapse;
+  display: table;
+  width: 100%;
+  margin: 4px 0;
+}
+.markdown-body .copyable-block-content th,
+.markdown-body .copyable-block-content td {
+  border: 1px solid var(--color-border-default);
+  padding: 4px 8px;
+  text-align: left;
+}
+.markdown-body .copyable-block-content th {
+  background: var(--color-canvas-subtle);
+  font-weight: 600;
+}
+
+.markdown-body .inline-code {
+  padding: .2em .4em;
+  border-radius: 6px;
+  background: var(--color-neutral-muted);
+  font-size: 85%;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+}
+/* Code block content area — auto-expanding height (like NextChat: grows with content) */
+/* NextChat exact params: padding 16px 16px 8px 16px, line-height 1.45, no max-height */
+.markdown-body .code-block-wrapper pre {
+  padding: 10px 12px 5px 12px;
+  background: transparent;
+  border-radius: 0;
+  margin: 0;
+  font-size: 85%;
+  overflow-x: auto;
+  overflow-y: visible;
+  max-height: none;
+}
+.markdown-body .code-block-wrapper code {
+  font-size: inherit;
+  line-height: 1.3;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+}
+
+
+
+/* ===== Streaming table hint (shown during streaming, replaced by full table after) ===== */
+.markdown-body .streaming-table-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin: 8px 0;
+  background: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary, var(--muted-foreground));
+  font-size: 13px;
+}
+.markdown-body .streaming-table-icon {
+  font-size: 16px;
+  opacity: 0.7;
+  animation: breathe-icon 1.5s ease-in-out infinite;
+}
+@keyframes breathe-icon {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+
+/* ===== Task list items (GitHub Primer) ===== */
+.markdown-body .contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown-body .task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25em;
+}
+
+.markdown-body .task-list-item input[type="checkbox"] {
+  margin-top: 0.25em;
+  accent-color: var(--color-accent-emphasis);
+}
+
+/* ===== Definition lists (GitHub Primer) ===== */
+.markdown-body dl {
+  padding: 0;
+}
+
+.markdown-body dl dt {
+  padding: 0;
+  margin-top: 16px;
+  font-size: 1em;
+  font-style: italic;
+  font-weight: var(--base-text-weight-semibold, 600);
+}
+
+.markdown-body dl dd {
+  padding: 0 16px;
+  margin-bottom: 16px;
+}
+
+/* ===== Keyboard input (GitHub Primer) ===== */
+.markdown-body kbd {
+  display: inline-block;
+  padding: 3px 5px;
+  font: 11px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  line-height: 10px;
+  color: var(--color-fg-default);
+  vertical-align: middle;
+  background-color: var(--color-canvas-subtle);
+  border: 1px solid var(--color-border-muted);
+  border-radius: 6px;
+  box-shadow: inset 0 -1px 0 var(--color-border-muted);
+}
+
+/* ===== Alerts/Admonitions (GitHub Primer) ===== */
+.markdown-body .markdown-alert {
+  padding: 8px 16px;
+  margin-bottom: 16px;
+  border-left: .25em solid var(--color-border-default);
+}
+
+.markdown-body .markdown-alert > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body .markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: var(--base-text-weight-semibold, 600);
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.markdown-body .markdown-alert.note {
+  border-left-color: var(--color-accent-fg);
+}
+
+.markdown-body .markdown-alert.note .markdown-alert-title {
+  color: var(--color-accent-fg);
+}
+
+.markdown-body .markdown-alert.tip {
+  border-left-color: #1a7f37;
+}
+
+.markdown-body .markdown-alert.tip .markdown-alert-title {
+  color: #1a7f37;
+}
+
+.markdown-body .markdown-alert.important {
+  border-left-color: #8250df;
+}
+
+.markdown-body .markdown-alert.important .markdown-alert-title {
+  color: #8250df;
+}
+
+.markdown-body .markdown-alert.warning {
+  border-left-color: #9a6700;
+}
+
+.markdown-body .markdown-alert.warning .markdown-alert-title {
+  color: #9a6700;
+}
+
+.markdown-body .markdown-alert.caution {
+  border-left-color: var(--color-danger-fg);
+}
+
+.markdown-body .markdown-alert.caution .markdown-alert-title {
+  color: var(--color-danger-fg);
+}
+
+/* ===== Footnotes (GitHub Primer) ===== */
+.markdown-body .footnotes {
+  font-size: .85em;
+  color: var(--color-fg-muted);
+  border-top: 1px solid var(--color-border-default);
+}
+
+.markdown-body .footnotes ol {
+  padding-left: 2em;
+}
+
+.markdown-body .footnotes li {
+  margin-top: .25em;
+}
+
+.markdown-body .data-footnote-backref {
+  font-family: "Segoe UI Emoji";
+  text-decoration: none;
+}
+
+/* ===== Highlight.js integration for code blocks ===== */
+.markdown-body pre code.hljs {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-body code.hljs {
+  padding: 0.2em 0.4em;
+  background: transparent;
+}
+
+/* ===== Prettylights syntax classes (AIWeb compatibility) ===== */
+.markdown-body .pl-c { color: var(--color-prettylights-syntax-comment) }
+.markdown-body .pl-c1, .markdown-body .pl-s .pl-v { color: var(--color-prettylights-syntax-constant) }
+.markdown-body .pl-e, .markdown-body .pl-en { color: var(--color-prettylights-syntax-entity) }
+.markdown-body .pl-smi, .markdown-body .pl-s .pl-s1 { color: var(--color-prettylights-syntax-storage-modifier-import) }
+.markdown-body .pl-ent { color: var(--color-prettylights-syntax-entity-tag) }
+.markdown-body .pl-k { color: var(--color-prettylights-syntax-keyword) }
+.markdown-body .pl-s, .markdown-body .pl-pds, .markdown-body .pl-s .pl-pse .pl-s1,
+.markdown-body .pl-sr, .markdown-body .pl-sr .pl-cce, .markdown-body .pl-sr .pl-sre,
+.markdown-body .pl-sr .pl-sra { color: var(--color-prettylights-syntax-string) }
+.markdown-body .pl-v, .markdown-body .pl-smw { color: var(--color-prettylights-syntax-variable) }
+.markdown-body .pl-bu { color: var(--color-prettylights-syntax-brackethighlighter-unmatched) }
+.markdown-body .pl-ii { color: var(--color-prettylights-syntax-invalid-illegal-text); background-color: var(--color-prettylights-syntax-invalid-illegal-bg) }
+.markdown-body .pl-c2 { color: var(--color-prettylights-syntax-carriage-return-text); background-color: var(--color-prettylights-syntax-carriage-return-bg) }
+.markdown-body .pl-sr .pl-cce { font-weight: 700; color: var(--color-prettylights-syntax-string-regexp) }
+.markdown-body .pl-ml { color: var(--color-prettylights-syntax-markup-list) }
+.markdown-body .pl-mh, .markdown-body .pl-mh .pl-en, .markdown-body .pl-ms { font-weight: 700; color: var(--color-prettylights-syntax-markup-heading) }
+.markdown-body .pl-mi { font-style: italic; color: var(--color-prettylights-syntax-markup-italic) }
+.markdown-body .pl-mb { font-weight: 700; color: var(--color-prettylights-syntax-markup-bold) }
+.markdown-body .pl-md { color: var(--color-prettylights-syntax-markup-deleted-text); background-color: var(--color-prettylights-syntax-markup-deleted-bg) }
+.markdown-body .pl-mi1 { color: var(--color-prettylights-syntax-markup-inserted-text); background-color: var(--color-prettylights-syntax-markup-inserted-bg) }
+.markdown-body .pl-mc { color: var(--color-prettylights-syntax-markup-changed-text); background-color: var(--color-prettylights-syntax-markup-changed-bg) }
+.markdown-body .pl-mi2 { color: var(--color-prettylights-syntax-markup-ignored-text); background-color: var(--color-prettylights-syntax-markup-ignored-bg) }
+.markdown-body .pl-mdr { font-weight: 700; color: var(--color-prettylights-syntax-meta-diff-range) }
+.markdown-body .pl-ba { color: var(--color-prettylights-syntax-brackethighlighter-angle) }
+.markdown-body .pl-sg { color: var(--color-prettylights-syntax-sublimelinter-gutter-mark) }
+.markdown-body .pl-corl { text-decoration: underline; color: var(--color-prettylights-syntax-constant-other-reference-link) }
+
+/* ===== Details/Summary (collapsible sections) ===== */
+.markdown-body details {
+  display: block;
+}
+
+.markdown-body summary {
+  display: list-item;
+}
+
+.markdown-body details:not([open]) > :not(summary) {
+  display: none !important;
+}
+
+.markdown-body details summary {
+  cursor: pointer;
+  padding: 0.5em 0;
+}
+
+/* ===== Subscript/Superscript ===== */
+.markdown-body sub,
+.markdown-body sup {
+  font-size: 75%;
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+}
+
+.markdown-body sub { bottom: -0.25em }
+.markdown-body sup { top: -0.5em }
+
+/* ===== Abbreviation / Definition ===== */
+.markdown-body abbr[title] {
+  border-bottom: none;
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.markdown-body dfn {
+  font-style: italic;
+}
+
+/* ===== CSV Data Tables ===== */
+.markdown-body .csv-data td,
+.markdown-body .csv-data th {
+  padding: 5px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.markdown-body .csv-data .blob-num {
+  padding: 10px 8px 9px;
+  text-align: right;
+  background: var(--color-canvas-default);
+  border: 0;
+}
+
+.markdown-body .csv-data tr { border-top: 0 }
+
+.markdown-body .csv-data th {
+  font-weight: 600;
+  background: var(--color-canvas-subtle);
+  border-top: 0;
+}
+
+/* Copy controls are semantic: fragments stay clean, long copy/table/code keep one scoped action. */
+.markdown-body .copyable-block-fragment .copyable-block-copy-btn {
+  display: none;
+}
+
+.markdown-body .copywriting-output-shell {
+  position: relative;
+}
+
+.markdown-body .copywriting-output-shell-copyable {
+  padding-top: 2px;
+}
+
+.markdown-body .copywriting-output-copy-btn {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--color-border-default) 75%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-canvas-default) 92%, transparent);
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+  opacity: 0.78;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.markdown-body .copywriting-output-copy-btn:hover {
+  opacity: 1;
+  color: var(--color-fg-default);
+  border-color: var(--color-accent-fg, var(--color-border-default));
+}
+
+.markdown-body .copywriting-output-copy-btn.copied {
+  opacity: 1;
+  color: #16a34a;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.markdown-body .copywriting-output-shell-copyable .render-layer-final {
+  padding-right: 92px;
+}
+
+/* Compact code viewport: fit content first, scroll only when the block is genuinely long. */
+.markdown-body .code-block-wrapper .code-block-pre {
+  height: auto !important;
+  max-height: min(420px, 52vh) !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.markdown-body .code-block-wrapper.code-block-h-sm .code-block-pre {
+  height: auto !important;
+  max-height: min(220px, 52vh) !important;
+}
+
+.markdown-body .code-block-wrapper.code-block-h-md .code-block-pre {
+  height: auto !important;
+  max-height: min(340px, 52vh) !important;
+}
+
+.markdown-body .code-block-wrapper.code-block-h-lg .code-block-pre {
+  height: auto !important;
+  max-height: min(420px, 52vh) !important;
+}
+
+.markdown-body .code-block-wrapper.code-block-h-stream .code-block-pre {
+  height: auto !important;
+  max-height: min(420px, 52vh) !important;
+}
+
+.markdown-body .code-block-wrapper.code-block-streaming .code-block-pre {
+  overflow-y: auto !important;
+}
+
+.markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre {
+  overflow-x: hidden !important;
+}
+
+@media (max-width: 680px) {
+  .markdown-body .code-block-wrapper .code-block-pre,
+  .markdown-body .code-block-wrapper.code-block-h-sm .code-block-pre,
+  .markdown-body .code-block-wrapper.code-block-h-md .code-block-pre,
+  .markdown-body .code-block-wrapper.code-block-h-lg .code-block-pre,
+  .markdown-body .code-block-wrapper.code-block-h-stream .code-block-pre {
+    height: auto !important;
+    max-height: min(360px, 50vh) !important;
+  }
+}
+
+/* 纯文本提示词只负责阅读/复制，不需要横向滚动；长行自动换行，避免滚动条突兀地贴在卡片底部。 */
+.markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre,
+.markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre code {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+
+.markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre {
+  overflow-x: hidden !important;
+  scrollbar-width: none;
+}
+
+.markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

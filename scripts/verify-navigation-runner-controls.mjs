@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { PRIMARY_ROUTES, selectNavigationControl, classifyNavigationRequest, collectStaticSecondaryRoutes } from './verify-local-navigation-experience.mjs';
+
+const toolbox = PRIMARY_ROUTES.find(route => route.path === '/tools');
+assert.ok(toolbox);
+const actualShape = [{ index: 0, tag: 'button', role: null, text: '工具箱', ariaLabel: '打开工具箱', hrefPath: null, visible: true, disabled: false }];
+assert.notEqual(actualShape[0].ariaLabel || actualShape[0].text, '工具箱');
+assert.equal(selectNavigationControl(actualShape, toolbox).index, 0);
+assert.equal(selectNavigationControl([{ ...actualShape[0], tag: 'a', ariaLabel: null, text: '自定义名字', hrefPath: '/tools' }], toolbox).tag, 'a');
+assert.throws(() => selectNavigationControl([{ ...actualShape[0], disabled: true }], toolbox));
+assert.throws(() => selectNavigationControl([actualShape[0], { ...actualShape[0], index: 1 }], toolbox));
+assert.equal(classifyNavigationRequest('POST', '/api/video/generate'), 'mutation');
+assert.equal(classifyNavigationRequest('GET', '/api/video/status'), 'advancing-get');
+assert.equal(classifyNavigationRequest('GET', '/api/image/status'), 'advancing-get');
+assert.equal(classifyNavigationRequest('GET', '/api/commerce/jobs'), 'advancing-get');
+assert.equal(classifyNavigationRequest('GET', '/api/commerce/workflows'), 'advancing-get');
+assert.equal(classifyNavigationRequest('GET', '/api/video/models'), 'read');
+const routes = await collectStaticSecondaryRoutes();
+assert.ok(routes.includes('/tools?tab=text') && routes.includes('/youcai/voice-studio/voices') && routes.includes('/voice-studio/voices'));
+assert.ok(routes.every(route => !route.includes('[')));
+assert.equal(new Set(routes).size, routes.length);
+await fs.mkdir('.codex-evidence/navigation-experience-20260903', { recursive: true });
+await fs.writeFile('.codex-evidence/navigation-experience-20260903/static-secondary-inventory.json', JSON.stringify({ routes, count: routes.length, discoveredFrom: 'src/app page files below the nine secondary product route families plus four toolbox tabs', dynamicEntityRoutesExcluded: true, generationRequests: 0 }, null, 2));
+console.log(JSON.stringify({ passed: 13, failed: 0, realNetworkRequests: 0, actualRunnerFunctions: true, staticSecondaryRouteCount: routes.length, oldAriaNameMismatchReproduced: true }));

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="AI model">
+  <defs><linearGradient id="g" x1="6" y1="6" x2="42" y2="42"><stop stop-color="#22d3ee"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+  <rect x="5" y="5" width="38" height="38" rx="11" fill="#0b1324"/>
+  <path d="M24 10l3.4 10.6L38 24l-10.6 3.4L24 38l-3.4-10.6L10 24l10.6-3.4L24 10z" fill="url(#g)"/>
+</svg>

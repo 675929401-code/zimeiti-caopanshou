@@ -1,0 +1,35 @@
+# 智音工坊 — Coze 部署指令
+
+## 给 Coze 智能体的指令（复制以下全部内容）
+
+```
+请帮我把智音工坊部署到本地：
+
+1. 解压部署包
+   文件路径: E:\WorkBuddy\volcano-tts-web-complete.tar.gz
+   解压到: E:\WorkBuddy\voice-studio\
+   
+2. 启动服务
+   进入目录: E:\WorkBuddy\voice-studio\recovered\
+   执行: npm run db:push
+   执行: npm run db:seed
+   执行: npm run dev
+   
+3. 验证
+   打开浏览器访问: http://localhost:3000
+```
+
+## 关键信息
+
+| 项目 | 值 |
+|------|-----|
+| 部署包 | E:\WorkBuddy\volcano-tts-web-complete.tar.gz |
+| 解压到 | E:\WorkBuddy\voice-studio\recovered |
+| 访问地址 | http://localhost:3000 |
+| 管理员 | admin@voicestudio.com / admin123456 |
+| TTS API Key | 6f16a90d-8d46-4cfb-bbf8-607e30d506e9 |
+
+## 注意
+- 部署包已含 node_modules 和数据库，解压即用
+- 如果端口3000被占用，修改 package.json 或 .env 中的端口
+- 旧版备份路径: E:\WorkBuddy\voice-studio-backup

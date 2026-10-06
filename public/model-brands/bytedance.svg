@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="ByteDance">
+  <rect width="48" height="48" rx="12" fill="#0b1020"/>
+  <path d="M10 30c7-7 13-4 19-10 4-4 6-7 9-10" fill="none" stroke="#25f4ee" stroke-width="5" stroke-linecap="round"/>
+  <path d="M10 36c7-7 13-4 19-10 4-4 6-7 9-10" fill="none" stroke="#fe2c55" stroke-width="5" stroke-linecap="round"/>
+  <path d="M10 33c7-7 13-4 19-10 4-4 6-7 9-10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "kind": "local-database-migration-ledger-closure",
+  "completedAt": "2026-09-04T02:16:06.864Z",
+  "targetClass": "local-loopback-only",
+  "targetHost": "127.0.0.1",
+  "targetPort": 54322,
+  "migrationManifestSha256": "daa7c082d7f30672c618d162f422b50f85abbada292e09753bdb8f70025433fd",
+  "sourceSnapshots": [
+    {
+      "path": "任务快照/pending-9-semantic-reconciliation-20260904-093746",
+      "manifestSha256": "ce2223c5cc03dd5442094df4dbd440c7d7e426017077b7e9744a7737aa2a2a79"
+    },
+    {
+      "path": "任务快照/ledger-receipt-adoption-20260904-101121",
+      "manifestSha256": "69ced07c5663e8f40e5d8d94860639930ccbe0032f06a9f8e364a9cfcbe17d29"
+    }
+  ],
+  "backup": {
+    "archivePath": "backups/db-migration/pre-reconciliation-20260904-101025/zimeiti-local-full.dump",
+    "archiveFormat": "PostgreSQL custom",
+    "archiveBytes": 30619995,
+    "archiveSha256": "455ff232ef721d9af6c7aceac0767d8b7a0ac6e537bcca5155068dd5fc2b39f4",
+    "archiveMagic": "PGDMP",
+    "pgRestoreEntryCount": 1140,
+    "receiptPath": "backups/db-migration/pre-reconciliation-20260904-101025/backup-receipt.json",
+    "receiptFileSha256": "508f78bc6b500d05b19ca5dae9a137bf64803d17098ca0473695a2729d3f8875",
+    "readable": true
+  },
+  "forwardReconciliation": {
+    "migration": "supabase/migrations/20260904031000_reconcile_pending_legacy_semantics.sql",
+    "migrationSha256": "6d6726f4468fba80d3c3d4d9d3cec78210b630019c442af76634bdac7619f8a4",
+    "executionMethod": "psql-single-reviewed-file",
+    "prefixExpansionUsed": false,
+    "applicationReceiptPath": "backups/db-migration/pre-reconciliation-20260904-101025/0310-application-receipt.json",
+    "applicationReceiptFileSha256": "45c42157f6eca8d4dd9786c6785f37ef92078a4eb57db295d1480e8551593830",
+    "psqlExitCode": 0,
+    "applied": true
+  },
+  "historicalSemanticCoverage": {
+    "verifier": "scripts/verify-pending-migration-semantics.mjs",
+    "verifierSha256": "a9fc7edfa085504af9631de38db607829da0eec7cd99df38a2a8d51997e2b6f3",
+    "semanticCheckVersion": "pending-migration-object-coverage.v1",
+    "adoptionReceiptPath": ".codex-evidence/db-migration-release/2026-09-04T02-11-00-459Z-pending-semantic-coverage.json",
+    "adoptionReceiptFileSha256": "0d74fab03881a1ff9cf7fd26ba2fadb046476cf3cfef7207b407d3afeff86564",
+    "adoptionReceiptSha256": "ce5a80627bb79f535b6b4b15c04f9871e047944a603414680dd5481ccaded2b0",
+    "postClosureReceiptPath": ".codex-evidence/db-migration-release/2026-09-04T02-16-06-864Z-pending-semantic-coverage.json",
+    "postClosureReceiptFileSha256": "144a55697a61b132a4caa76bba98fda94139c8267d113581172cd3e71df4ac43",
+    "postClosureReceiptSha256": "e2395a06249e0e1a993c148745d62cc25cf6675d6aa1fdb40c067ec5221e0926",
+    "profileCount": 9,
+    "passedProfiles": 9,
+    "blockedProfiles": 0
+  },
+  "executedMigrationEvidence": {
+    "migration": "supabase/migrations/20260904025500_video_provider_failure_terminal.sql",
+    "migrationSha256": "184ca563446dbeb2d87c90dd188d4cf435b31e5947d570619336cb9f5c3b2c8f",
+    "liveFunctionBodySha256": "64a0c1b8cc55a9942f996eabd37cd513fb973d06fa20012566fdfcc83705ff69",
+    "expectedFunctionBodySha256": "64a0c1b8cc55a9942f996eabd37cd513fb973d06fa20012566fdfcc83705ff69",
+    "functionPermission": "service_role-only",
+    "migrationSqlReplayed": false
+  },
+  "ledgerAdoption": {
+    "tool": "scripts/adopt-evidenced-migrations.mjs",
+    "toolSha256": "179467388f1d2569316fd8b62beda7735f2c2fc61ca9369d5e03cf2d3841fe0a",
+    "planReceiptPath": ".codex-evidence/db-migration-release/2026-09-04T02-15-36-468Z-evidenced-adoption-plan.json",
+    "planReceiptFileSha256": "55843d77d9bcee3f5b28baa042dd21e1b0720566dae6349005ee7ac956f5bb4c",
+    "executeReceiptPath": ".codex-evidence/db-migration-release/2026-09-04T02-15-52-158Z-evidenced-adoption-execute.json",
+    "executeReceiptFileSha256": "e68047218031a5fac2d328df35c8a1e1a76e7485e1054a1d0f74a9b70109f4fa",
+    "historicalSemanticAdoptions": 9,
+    "liveEffectAdoptions": 1,
+    "reviewedSingleFileAdoptions": 1,
+    "migrationSqlExecutedDuringAdoption": 0,
+    "ledgerRowsWritten": 11,
+    "singleTransaction": true
+  },
+  "finalStatus": {
+    "releaseMigrationCount": 44,
+    "appliedCount": 44,
+    "pendingCount": 0,
+    "hashDriftCount": 0,
+    "invalidMigrationCount": 0
+  },
+  "runtimeActions": {
+    "port5000Restarted": false,
+    "gitPushed": false,
+    "serverConnected": false,
+    "serverModified": false,
+    "paidModelCalls": 0
+  },
+  "credentialsPrinted": false
+}

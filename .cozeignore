@@ -1,0 +1,79 @@
+# .cozeignore — Coze 平台部署排除规则
+# 排除非运行时必要的大体积文件，加速部署打包
+
+# assets/ — 上传的图片/文件（171MB+），仅供对话参考，非运行时依赖
+assets/
+
+# 备份目录
+backups/
+.codex-backups/
+.codex-runtime-backups/
+.codex-snapshots/
+.codex-task-snapshots/
+.codex-designs/
+.codex-screenshots/
+.codex-temp/
+.logs/
+tmp/
+项目备份/
+自媒体操盘手/  # Git 版本化备份目录，运行时不依赖
+
+# 历史敏感记录只保留在本地工作区，不进入部署包
+STANDARD.md
+docs/EMERGENCY-RESTORE.md
+
+# 独立子项目（各自有独立 .coze 部署配置，不应打包进主服务）
+# voice-platform: 智音工坊独立服务（605MB+），主服务通过 rewrite 代理到 localhost:5001
+voice-platform/
+# main-site: 主站独立 Next.js 项目（203MB+），独立部署
+main-site/  
+
+# public 下的非必要文件（截图、tar.gz、临时文件、文档等）
+public/uploads/
+public/admin-screenshot.png
+public/admin-screenshot2.png
+public/agents_screenshot.png
+public/agent-hub-sync.tar.gz
+public/ange-agent-workspace-src.tar.gz
+public/agent-hub-source.tar.gz
+public/aiweb-*.png
+public/ref-*.png
+public/temp-right.jpg
+public/temp-small.jpg
+public/grok-video-3-10s-protocol.txt
+public/prompt-replacer-standard.md
+public/prompt-standard-v1.md
+public/video-generation-result.json
+public/文生视频Prompt专家-完整提示词.md
+
+# 开发缓存（由 build.sh 生成，无需打包）
+.next/
+
+# Git 历史（280MB+，非运行时依赖）
+.git/
+
+# 浏览器下载（puppeteer/playwright 的 Chromium，300MB+，运行时不需要）
+node_modules/.pnpm/*/node_modules/puppeteer/.local-chromium/
+node_modules/.pnpm/*/node_modules/playwright-core/.local-browsers/
+
+# 测试相关（运行时不需要）
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+scripts/verify-p0-security-stage2.ts
+scripts/verify-autodl-hosted-result-persistence.ts
+
+# JS/TS bundlers & build outputs（运行时不需缓存）
+.nuxt
+.turbo
+.vercel
+.parcel-cache
+.cache
+coverage
+storybook-static
+
+# Package manager artifacts（pnpm-lock.yaml 必须保留）
+package-lock.json
+yarn.lock

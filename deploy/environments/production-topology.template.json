@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "projectId": "zimeiti-caopanshou",
+  "decision": {
+    "owner": "Codex",
+    "decidedAt": "2026-08-30",
+    "goal": "让本地修改、Git 推送、数据库迁移、素材发布、服务器覆盖部署形成可重复闭环，避免大杂烩式上线。"
+  },
+  "git": {
+    "primaryRemote": {
+      "name": "origin",
+      "recommendedProvider": "Gitee private repository",
+      "repositoryName": "zimeiti-caopanshou-source-vnext",
+      "purpose": "产品源码主仓；服务器部署、CI 和人工审计都以它的不可变 commit 为准。",
+      "urlPlaceholder": "git@gitee.com:<account>/zimeiti-caopanshou-source-vnext.git"
+    },
+    "backupRemote": {
+      "name": "backup",
+      "recommendedProvider": "GitHub, GitLab, Coding, or another independent private Git provider",
+      "repositoryName": "zimeiti-caopanshou-source-vnext-backup",
+      "purpose": "源码异地备份；必须与 origin 不同故障域，避免一处故障导致源码和备份同时不可用。",
+      "urlPlaceholder": "git@github.com:<account>/zimeiti-caopanshou-source-vnext-backup.git"
+    },
+    "localArchive": {
+      "name": "local-archive",
+      "purpose": "本机快速归档；不能替代 origin 或 backup，不能作为正式上线门禁。"
+    },
+    "rules": [
+      "仓库必须是私有仓库。",
+      "正式远程 URL 不得包含密码、token 或个人访问令牌。",
+      "origin 与 backup 必须不同 host。",
+      "同一个 commit 必须同时能推到 origin 与 backup，才进入生产部署门禁。"
+    ]
+  },
+  "database": {
+    "migrationUrlEnv": "DEPLOY_DATABASE_URL",
+    "storageRule": "数据库密码只放本机环境变量、CI Secret 或服务器 Secret，不写入 Git、不发到聊天。",
+    "migrationMode": "separate-reviewed-forward-only",
+    "backupRequiredBeforeApply": true,
+    "protectedData": [
+      "会员账号",
+      "钱包流水",
+      "订单记录",
+      "用户自建 Skill",
+      "用户上传素材",
+      "画布文档",
+      "生成历史"
+    ]
+  },
+  "assets": {
+    "shortTerm": {
+      "strategy": "服务器 shared/assets/releases + shared/assets/current",
+      "useCase": "内置演示素材、官方示例、随版本发布的公共资产。"
+    },
+    "longTerm": {
+      "strategy": "COS/OSS/S3 object storage + CDN",
+      "useCase": "用户上传素材、生成结果、参考图、可增长媒体库。",
+      "reason": "降低服务器磁盘与带宽压力，提升首屏和列表加载速度，并支持版本化、跨区备份与 CDN 缓存。"
+    },
+    "frontendRule": "前端列表优先加载缩略图，原图/视频按需加载，素材索引由 manifest 或数据库记录驱动。"
+  },
+  "serverDeploy": {
+    "mode": "immutable-artifact-overwrite-app-only",
+    "recommended": true,
+    "description": "服务器只接收已构建、已校验、带 commit 身份的制品；覆盖应用目录，不覆盖持久化目录。",
+    "protectedPaths": [
+      ".env",
+      ".env.local",
+      ".env.production",
+      "shared/data",
+      "shared/uploads",
+      "shared/assets/current",
+      "shared/assets/releases",
+      "shared/logs",
+      "shared/backups",
+      "shared/runtime",
+      "shared/runtime/commerce-agent",
+      "shared/runtime/commerce-discovery",
+      "shared/voice"
+    ],
+    "forbidden": [
+      "服务器现场 npm install 后直接跑构建",
+      "部署时自动执行数据库 DDL",
+      "把用户上传素材放进源码仓",
+      "用旧服务器裸仓替代正式 origin",
+      "用本机 local-archive 冒充异地 backup"
+    ]
+  },
+  "environmentTemplates": {
+    "productionEnvExample": "deploy/environments/production.env.example",
+    "verificationCommand": "npm run deploy:env:verify",
+    "privateEnvRule": "真实生产变量只能存在于本机私有文件、CI Secret 或服务器 Secret，不得提交 Git。"
+  },
+  "nextOperatorSteps": [
+    "创建空的 Gitee 私有主仓：zimeiti-caopanshou-source-vnext。",
+    "创建空的独立私有备份仓：zimeiti-caopanshou-source-vnext-backup。",
+    "运行 npm run deploy:remotes 先检查地址。",
+    "运行 npm run deploy:remotes:apply 写入 origin 与 backup。",
+    "运行 npm run deploy:close-loop:push 推送同一 commit。",
+    "配置 DEPLOY_DATABASE_URL 并完成数据库备份后，再执行迁移门禁。",
+    "生产门禁 PASS 后，才执行服务器应用目录覆盖部署。"
+  ]
+}

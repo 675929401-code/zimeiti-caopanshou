@@ -1,0 +1,844 @@
+{
+  "schemaVersion": 1,
+  "kind": "authorized-readonly-live-image-skill-catalog-evidence",
+  "capturedAt": "2026-09-25T05:15:01.049Z",
+  "source": {
+    "origin": "https://maolong.da-ai.cc",
+    "endpoint": "/api/v1/tools/image-generation/skill-packs",
+    "method": "GET",
+    "httpStatus": 200,
+    "sanitizedBodySha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c"
+  },
+  "catalog": {
+    "schemaVersion": 4,
+    "revision": 1337841977,
+    "toolSlug": "image-generation",
+    "itemCount": 16,
+    "items": [
+      {
+        "key": "character-face-turnaround",
+        "label": "脸部三视图",
+        "version": 10,
+        "configVersion": "85117b0328d11ffeac8f471e982da2df53fcc75f81dd11868ea068b5873b8070",
+        "skillPackVersionId": "9d8591db-abbf-4466-b2c3-86daba40206c",
+        "isDefault": false,
+        "category": {
+          "key": "character",
+          "label": "人物",
+          "order": 10
+        },
+        "sortOrder": 10,
+        "recommended": true,
+        "recommendationOrder": 1,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 10,
+          "mediaMaxCount": {
+            "image": 3,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "face",
+              "label": "人脸",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 3,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "character-fullbody-sheet",
+        "label": "人物四视图",
+        "version": 10,
+        "configVersion": "25512dbcd8270adc80286471ab18fcc133ae148f95600436eb55b8076b2f90b0",
+        "skillPackVersionId": "0bec97be-00ac-4d84-bc84-fcb73b4920bb",
+        "isDefault": false,
+        "category": {
+          "key": "character",
+          "label": "人物",
+          "order": 10
+        },
+        "sortOrder": 20,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 10,
+          "mediaMaxCount": {
+            "image": 5,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "model",
+              "label": "模特",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 5,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "change-face",
+        "label": "模特换脸",
+        "version": 7,
+        "configVersion": "bdd1075fba720e9a72036b74be7f520c297aec431504436d1fb1d3c5c8fab8ec",
+        "skillPackVersionId": "e6757b33-e45f-4ed0-9ab7-a23708f0828d",
+        "isDefault": false,
+        "category": {
+          "key": "character",
+          "label": "人物",
+          "order": 10
+        },
+        "sortOrder": 30,
+        "recommended": true,
+        "recommendationOrder": 2,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 7,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "model",
+              "label": "模特",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            },
+            {
+              "key": "face",
+              "label": "人脸",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "dual-face-fusion",
+        "label": "人脸融合",
+        "version": 8,
+        "configVersion": "e82eb5780893863e8e6e03343c39b5848e2d2addba8f80d257456d75d4cde9fe",
+        "skillPackVersionId": "b20ad246-aa6a-41b2-bb55-1be696b4b0f2",
+        "isDefault": false,
+        "category": {
+          "key": "character",
+          "label": "人物",
+          "order": 10
+        },
+        "sortOrder": 100,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 8,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "face_1",
+              "label": "人脸1",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            },
+            {
+              "key": "face_2",
+              "label": "人脸2",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "change-cloth",
+        "label": "服装上身",
+        "version": 15,
+        "configVersion": "9e7766402f359c759cf800faa444c3efcd0811254c407f32e253ce815ac35733",
+        "skillPackVersionId": "80cedd40-61c8-44f5-9cee-ba121b146df5",
+        "isDefault": false,
+        "category": {
+          "key": "product",
+          "label": "商品",
+          "order": 20
+        },
+        "sortOrder": 30,
+        "recommended": true,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 15,
+          "mediaMaxCount": {
+            "image": 6,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "model",
+              "label": "模特",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            },
+            {
+              "key": "cloth",
+              "label": "上身/全身装",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 0,
+              "maxCount": 3,
+              "required": false
+            },
+            {
+              "key": "pants",
+              "label": "下装",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 0,
+              "maxCount": 1,
+              "required": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "model-product-try-on",
+        "label": "商品使用",
+        "version": 10,
+        "configVersion": "94f101a2199cd3609c03e996a2f5d606aa71ec90607e3098f8cac5cbbd531e54",
+        "skillPackVersionId": "98ac0988-68d8-453a-8553-b11a22a50dbd",
+        "isDefault": false,
+        "category": {
+          "key": "product",
+          "label": "商品",
+          "order": 20
+        },
+        "sortOrder": 30,
+        "recommended": true,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 10,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "model",
+              "label": "模特",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            },
+            {
+              "key": "product",
+              "label": "商品",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 5,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "product-white-background",
+        "label": "商品白底图",
+        "version": 14,
+        "configVersion": "86fd32892b326912e43811cc3d90c48bd84acf4bb2ff31d50a5a5c92c810ab7d",
+        "skillPackVersionId": "41d04fbe-d709-404b-9733-597c1ec1afbf",
+        "isDefault": false,
+        "category": {
+          "key": "product",
+          "label": "商品",
+          "order": 20
+        },
+        "sortOrder": 60,
+        "recommended": true,
+        "recommendationOrder": 3,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 14,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "product",
+              "label": "产品",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 9,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "element-replace",
+        "label": "服装改款",
+        "version": 7,
+        "configVersion": "89714c550c7d92f8fa7041fba4d11e5601ab1bdf644637e3875cbde9f7987f67",
+        "skillPackVersionId": "467e1f9a-04e4-4f3f-9cdd-ed70485ca725",
+        "isDefault": false,
+        "category": {
+          "key": "product",
+          "label": "商品",
+          "order": 20
+        },
+        "sortOrder": 100,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 7,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "product",
+              "label": "服装",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            },
+            {
+              "key": "material",
+              "label": "面料",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 0,
+              "maxCount": 1,
+              "required": false
+            },
+            {
+              "key": "printing",
+              "label": "印花",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 0,
+              "maxCount": 1,
+              "required": false
+            }
+          ]
+        }
+      },
+      {
+        "key": "script-storyboard",
+        "label": "脚本故事版",
+        "version": 3,
+        "configVersion": "79b317e2ec7012fb7864bab5efcbde6a20ea15687c7c0da36ac4a5c94cb32fb4",
+        "skillPackVersionId": "b8d97f84-6bfc-432a-b148-9c7269131a2b",
+        "isDefault": false,
+        "category": {
+          "key": "storyboard",
+          "label": "分镜故事版",
+          "order": 30
+        },
+        "sortOrder": 70,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": true,
+          "min_text_references": 1
+        },
+        "referenceSlots": {
+          "profileVersion": 3,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "references",
+              "label": "参考图片",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 9,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "storyboard-element-replace",
+        "label": "一键替换分镜",
+        "version": 5,
+        "configVersion": "5ba5a8c6b3f01481d840312586af1c88b44d3679f3ea24523863d5ee3c0b813c",
+        "skillPackVersionId": "e21dcfc4-1329-4cec-bb16-d2900d0a5e36",
+        "isDefault": false,
+        "category": {
+          "key": "storyboard",
+          "label": "分镜故事版",
+          "order": 30
+        },
+        "sortOrder": 80,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 5,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "nine_grid",
+              "label": "宫格图",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            },
+            {
+              "key": "references",
+              "label": "参考素材",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 6,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "video-reference-first-frame",
+        "label": "视频参考首帧",
+        "version": 3,
+        "configVersion": "ba3a1b031fde9c7e83981e39b82e4b88da07b15c9b1e2ca55164b8b34f8e13cc",
+        "skillPackVersionId": "63c436d3-efa5-4540-8695-8764df622fbf",
+        "isDefault": false,
+        "category": {
+          "key": "storyboard",
+          "label": "分镜故事版",
+          "order": 30
+        },
+        "sortOrder": 90,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 3,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "references",
+              "label": "参考图片",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 9,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "background-change",
+        "label": "人物入景",
+        "version": 6,
+        "configVersion": "245eac487a838a012c0f755e7dd77715b44aca28da3fc500a6117d6b9864ddf5",
+        "skillPackVersionId": "d2133391-1e79-42d1-a921-116e73253ec2",
+        "isDefault": false,
+        "category": {
+          "key": "scene",
+          "label": "场景",
+          "order": 30
+        },
+        "sortOrder": 100,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 6,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "model",
+              "label": "模特",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            },
+            {
+              "key": "backround",
+              "label": "背景",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "portrait-realism-enhance",
+        "label": "人物真人感",
+        "version": 8,
+        "configVersion": "6d089df7496e9fac55cc75eeeaf67e8de8f53e42efa8e529b236b294661c04b2",
+        "skillPackVersionId": "3b296099-fc9b-4dc5-9db9-949550654834",
+        "isDefault": false,
+        "category": {
+          "key": "quality",
+          "label": "增强",
+          "order": 50
+        },
+        "sortOrder": 40,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 8,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "model",
+              "label": "模特",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 9,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "product-consistency-reference",
+        "label": "产品一致性",
+        "version": 5,
+        "configVersion": "c1f25c78c98483eb986c535a7521611422ecf9dc5796056230b9dc6e8a80f5d6",
+        "skillPackVersionId": "c0f14611-6beb-4667-8431-cb151fc3f14d",
+        "isDefault": false,
+        "category": {
+          "key": "quality",
+          "label": "增强",
+          "order": 50
+        },
+        "sortOrder": 50,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 5,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "product",
+              "label": "产品",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 9,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "product-refine",
+        "label": "图片精修",
+        "version": 8,
+        "configVersion": "c9fd9803c548ec9c58b4bb41c81d19e8b7c797d5d1f308ac7dce583b5c7ece74",
+        "skillPackVersionId": "eaf1b2a2-1276-4dfe-9056-821f820efe88",
+        "isDefault": false,
+        "category": {
+          "key": "quality",
+          "label": "增强",
+          "order": 50
+        },
+        "sortOrder": 100,
+        "recommended": true,
+        "recommendationOrder": 4,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": false,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 8,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "product",
+              "label": "产品",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 1,
+              "maxCount": 1,
+              "required": true
+            }
+          ]
+        }
+      },
+      {
+        "key": "default",
+        "label": "图片默认素材",
+        "version": 8,
+        "configVersion": "666f4b55851f0556629339d2b3209a5dad4712a8ce6b7483621bb3097d4a6648",
+        "skillPackVersionId": "4473151b-b1d4-4662-a99a-4996ca5f9537",
+        "isDefault": true,
+        "category": {
+          "key": "default",
+          "label": "默认",
+          "order": 100
+        },
+        "sortOrder": 0,
+        "recommended": false,
+        "recommendationOrder": 100,
+        "surfaces": [
+          "toolbox",
+          "canvas"
+        ],
+        "inputContract": {
+          "prompt_required": true,
+          "min_text_references": 0
+        },
+        "referenceSlots": {
+          "profileVersion": 8,
+          "mediaMaxCount": {
+            "image": 9,
+            "video": 0,
+            "audio": 0
+          },
+          "slots": [
+            {
+              "key": "product",
+              "label": "图片",
+              "mediaTypes": [
+                "image"
+              ],
+              "resourceKind": "asset",
+              "minCount": 0,
+              "maxCount": 9,
+              "required": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "effects": {
+    "networkGetRequests": 1,
+    "writeRequests": 0,
+    "businessWrites": 0,
+    "databaseWrites": 0,
+    "providerCalls": 0,
+    "walletCalls": 0,
+    "paidGeneration": 0
+  }
+}

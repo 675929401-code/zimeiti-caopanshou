@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": [
+    "../next-env.d.ts",
+    "../src/types/**/*.d.ts",
+    "../src/features/digital-human/client-state.ts",
+    "../src/app/digital-human/page.tsx",
+    "../src/app/api/video/history/route.ts",
+    "../src/lib/digital-human-long-repository.ts",
+    "../src/app/api/digital-human/long-history/route.ts",
+    "./verify-digital-human-history-restore.ts"
+  ]
+}

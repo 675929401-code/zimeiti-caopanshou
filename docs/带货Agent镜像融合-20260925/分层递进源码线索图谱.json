@@ -1,0 +1,2730 @@
+{
+  "schemaVersion": "maolong.progressive-evidence-map/v1",
+  "generatedAtUtc": "2026-09-25T16:54:06.625Z",
+  "principle": "Each clue is followed downward until the next implementation boundary; minified one-line bundles use AST nodes and UTF-8 byte intervals.",
+  "stopRule": "Only call a layer closed after repeated scans add no route, chunk, API, catalog entry, prompt/config version, status branch or referenced runtime file. Private server source is an explicit external boundary, never inferred as downloaded.",
+  "layers": [
+    {
+      "depth": 0,
+      "name": "来源与身份",
+      "findings": [
+        "13 个授权只读抓取根",
+        "代码发现闭包 通过",
+        "29 个安全 query 条件入口已全部抓取",
+        "可观察 GET 载荷和动态 Canvas 控制器 12/12 闭合",
+        "真实 Canvas ID 的 API 可读但页面语义失败",
+        "4 个 canvas-only 技能提交因业务写入/可能付费而未执行",
+        "业务写入允许 0"
+      ],
+      "next": "逐页面和静态资源身份"
+    },
+    {
+      "depth": 1,
+      "name": "可见UI与路由",
+      "findings": [
+        "72 个路由",
+        "页面观察 153 次",
+        "11 个图片技能 query 入口和 18 个编导 query 入口均已返回 200",
+        "/canvas/{workspace_id} 专属控制器、详情 JSON 和后续依赖均已捕获",
+        "该真实 ID 页面返回 HTTP 200 但正文为“页面未找到”，且自然详情请求为 0",
+        "布局、尺寸、断点和交互状态已有独立UI审计"
+      ],
+      "next": "组件、事件和状态机"
+    },
+    {
+      "depth": 2,
+      "name": "组件与压缩源码节点",
+      "findings": [
+        "5661085 个唯一内容 AST 节点",
+        "重复抓取观察总节点 15920871",
+        "64 个唯一单行压缩JS",
+        "parse diagnostics=0"
+      ],
+      "next": "网络合同和隐藏懒加载"
+    },
+    {
+      "depth": 3,
+      "name": "API与状态合同",
+      "findings": [
+        "254 个具体方法/路径",
+        "方法未决=0",
+        "动态首段未决模板=1"
+      ],
+      "next": "服务、模型路由、队列和错误终态"
+    },
+    {
+      "depth": 4,
+      "name": "隐藏模块与媒体运行依赖",
+      "findings": [
+        "7 个webpack懒块",
+        "SoundTouch AudioWorklet",
+        "FFmpeg core JS + gzip WASM",
+        "Mediabunny/H264/关键帧模块",
+        "HEIF worker + libheif wasm2js；libheif.wasm 是已证明不加载的回退名",
+        "共享多轨视频编辑器含 IndexedDB 草稿、FFmpeg 导出与片段重拍预处理"
+      ],
+      "next": "编解码参数、提帧、拼接、音轨处理和临时资产"
+    },
+    {
+      "depth": 5,
+      "name": "技能、提示词与模型约束",
+      "findings": [
+        "16 个图片技能",
+        "19 个编导配置",
+        "共用底座+专项约束/节拍+输出协议"
+      ],
+      "next": "发布版本、读回、路由和模型能力准入"
+    },
+    {
+      "depth": 6,
+      "name": "本站服务与持久化落点",
+      "findings": [
+        "任务、资产、历史、计费和失败恢复已有多条源码链",
+        "Commerce配音已可安全导入主站数字人；其他类型的完整双向资产/历史仍需逐类验收",
+        "普通任务、媒体编辑、提帧、深度视频准备、热门改编、语音合成和语音应用视频已接入常驻worker与删除保护",
+        "教程补充链 314/314，UI/API/service/storage 四层断言与八类零副作用成立",
+        "当前 F 盘 5 页面、10 视图只读浏览器验收通过"
+      ],
+      "next": "失败/退款实例、真实付费终态和生产发布"
+    },
+    {
+      "depth": 7,
+      "name": "外部不可下载边界",
+      "findings": [
+        "对标私有服务端源码未下发",
+        "数据库事务和队列worker实现不可见",
+        "供应商密钥与付费终态未执行"
+      ],
+      "next": "以客户端合同和本站基础设施做行为等价实现并明确标记"
+    }
+  ],
+  "featureChains": [
+    {
+      "featureId": "route-family.account",
+      "surface": "visible-or-linked-client-route",
+      "routes": [
+        "/account",
+        "/account/api-keys",
+        "/account/invoices"
+      ],
+      "deepestObservedLayer": "compiled-client-route-and-rendered-response",
+      "localTargets": [
+        "src/commerce/server/voice-bridge.ts",
+        "src/commerce/server/voice-jobs.ts",
+        "src/app/api/commerce/voice-synthesis/route.ts",
+        "src/commerce/components/commerce-agent/voice-synthesis-studio.tsx",
+        "src/app/api/admin/commerce/voice-reconciliation/route.ts",
+        "src/commerce/server/voice-replace.ts",
+        "src/app/api/commerce/voice-replace/route.ts"
+      ],
+      "status": "evidence-mapped-runtime-not-fully-verified"
+    },
+    {
+      "featureId": "route-family.admin",
+      "surface": "visible-or-linked-client-route",
+      "routes": [
+        "/admin",
+        "/admin/affiliate",
+        "/admin/affiliate/commission-ledger",
+        "/admin/affiliate/configurations",
+        "/admin/affiliate/configurations?inspection=true",
+        "/admin/affiliate/partners",
+        "/admin/affiliate/partners/{N}?{param}",
+        "/admin/affiliate/partners/{param}",
+        "/admin/affiliate/partners?status=submitted",
+        "/admin/affiliate/partners{param}",
+        "/admin/affiliate/referred-users",
+        "/admin/affiliate/settings",
+        "/admin/affiliate/settlements",
+        "/admin/affiliate/settlements?status=draft",
+        "/admin/assets",
+        "/admin/assets/g/{param}",
+        "/admin/audit",
+        "/admin/batches",
+        "/admin/credit-topup-packages",
+        "/admin/discover",
+        "/admin/invite-codes",
+        "/admin/invoices",
+        "/admin/kyc-asset-groups",
+        "/admin/operation-notices",
+        "/admin/payments",
+        "/admin/recharge-cards",
+        "/admin/recharge-packages",
+        "/admin/skill-packages",
+        "/admin/task-reports",
+        "/admin/user-growth",
+        "/admin/users",
+        "/admin/users/{param}",
+        "/admin/video-creator-skills"
+      ],
+      "deepestObservedLayer": "compiled-client-route-and-rendered-response",
+      "localTargets": [
+        "src/commerce/server/jobs.ts",
+        "src/commerce/server/rolling-video.ts",
+        "src/commerce/server/rolling-video-worker.ts",
+        "src/app/api/commerce/commerce-model-gateway/route.ts",
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts",
+        "src/commerce/server/voice-bridge.ts",
+        "src/commerce/server/voice-jobs.ts",
+        "src/app/api/commerce/voice-synthesis/route.ts",
+        "src/commerce/components/commerce-agent/voice-synthesis-studio.tsx",
+        "src/app/api/admin/commerce/voice-reconciliation/route.ts",
+        "src/commerce/server/voice-replace.ts",
+        "src/app/api/commerce/voice-replace/route.ts",
+        "contract-evidence-only:no-direct-commerce-runtime-equivalent"
+      ],
+      "status": "evidence-mapped-runtime-not-fully-verified"
+    },
+    {
+      "featureId": "route-family.affiliate",
+      "surface": "visible-or-linked-client-route",
+      "routes": [
+        "/affiliate",
+        "/affiliate/apply",
+        "/affiliate/commissions",
+        "/affiliate/commissions?view=collaboration",
+        "/affiliate/commissions?view=direct",
+        "/affiliate/direct-partners",
+        "/affiliate/performance",
+        "/affiliate/profile",
+        "/affiliate/recharge-cards",
+        "/affiliate/recharge-cards/new",
+        "/affiliate/settlements",
+        "/affiliate/settlements/{param}",
+        "/affiliate/settlements/{param}/withdraw",
+        "/affiliate/settlements/{param}?from=earnings",
+        "/affiliate/status"
+      ],
+      "deepestObservedLayer": "compiled-client-route-and-rendered-response",
+      "localTargets": [
+        "contract-evidence-only:no-direct-commerce-runtime-equivalent"
+      ],
+      "status": "evidence-mapped-runtime-not-fully-verified"
+    },
+    {
+      "featureId": "route-family.assets",
+      "surface": "visible-or-linked-client-route",
+      "routes": [
+        "/assets",
+        "/assets/g/{param}",
+        "/assets/generated"
+      ],
+      "deepestObservedLayer": "compiled-client-route-and-rendered-response",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "evidence-mapped-runtime-not-fully-verified"
+    },
+    {
+      "featureId": "route-family.canvas",
+      "surface": "visible-or-linked-client-route",
+      "routes": [
+        "/canvas",
+        "/canvas/{param}"
+      ],
+      "deepestObservedLayer": "compiled-client-route-and-rendered-response",
+      "localTargets": [
+        "src/commerce/server/canvas-storage.ts",
+        "src/commerce/components/commerce-agent/canvas-live.tsx"
+      ],
+      "status": "evidence-mapped-runtime-not-fully-verified"
+    },
+    {
+      "featureId": "route-family.privacy",
+      "surface": "visible-or-linked-client-route",
+      "routes": [
+        "/privacy"
+      ],
+      "deepestObservedLayer": "compiled-client-route-and-rendered-response",
+      "localTargets": [],
+      "status": "evidence-mapped-runtime-not-fully-verified"
+    },
+    {
+      "featureId": "route-family.terms",
+      "surface": "visible-or-linked-client-route",
+      "routes": [
+        "/terms"
+      ],
+      "deepestObservedLayer": "compiled-client-route-and-rendered-response",
+      "localTargets": [],
+      "status": "evidence-mapped-runtime-not-fully-verified"
+    },
+    {
+      "featureId": "route-family.toolbox",
+      "surface": "visible-or-linked-client-route",
+      "routes": [
+        "/toolbox/depth-video-clone",
+        "/toolbox/ecommerce-image-set",
+        "/toolbox/image-generation",
+        "/toolbox/image-generation?skill_pack=product-refine",
+        "/toolbox/video-generation",
+        "/toolbox/video-generation?skill=advertising-brand-proposition&skill_panel=open&skill_category=advertising-tvc",
+        "/toolbox/video-generation?skill=ecommerce-spoken-selling&skill_panel=open&skill_category=ecommerce",
+        "/toolbox/video-generation?skill=local-store-discovery&skill_panel=open&skill_category=local-store",
+        "/toolbox/video-generation?skill=short-drama-dialogue&skill_panel=open&skill_category=short-drama",
+        "/toolbox/video-quality-enhance",
+        "/toolbox/video-subtitle-erase",
+        "/toolbox/video-watermark-remove",
+        "/toolbox/{i}?{param}={param}",
+        "/toolbox/{param}"
+      ],
+      "deepestObservedLayer": "compiled-client-route-and-rendered-response",
+      "localTargets": [
+        "src/commerce/image-input-contract.ts",
+        "src/commerce/server/prompts.ts",
+        "src/commerce/server/jobs.ts",
+        "src/commerce/components/commerce-agent/workspace.tsx",
+        "src/commerce/server/rolling-video.ts",
+        "src/commerce/server/rolling-video-worker.ts",
+        "src/app/api/commerce/commerce-model-gateway/route.ts",
+        "src/commerce/server/detail-sets.ts",
+        "src/commerce/components/commerce-agent/detail-set-studio.tsx",
+        "src/commerce/server/media-tools.ts",
+        "src/commerce/components/commerce-agent/media-tools.tsx",
+        "src/lib/local-media-processor.ts"
+      ],
+      "status": "evidence-mapped-runtime-not-fully-verified"
+    },
+    {
+      "featureId": "api-family.admin.affiliate",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/affiliate/commission-ledger{param}",
+        "GET /api/v1/admin/affiliate/overview",
+        "GET /api/v1/admin/affiliate/partners/{param}",
+        "GET /api/v1/admin/affiliate/partners/{param}/brand-site",
+        "GET /api/v1/admin/affiliate/partners/{param}/commission-periods",
+        "GET /api/v1/admin/affiliate/partners/{param}/growth-report{param}",
+        "GET /api/v1/admin/affiliate/partners/{param}/recharge-discount",
+        "GET /api/v1/admin/affiliate/partners{param}",
+        "GET /api/v1/admin/affiliate/referral-candidates{param}",
+        "GET /api/v1/admin/affiliate/referred-users/{param}/bind-preview{param}",
+        "GET /api/v1/admin/affiliate/referred-users{param}",
+        "GET /api/v1/admin/affiliate/settings",
+        "GET /api/v1/admin/affiliate/settlements/{param}",
+        "GET /api/v1/admin/affiliate/settlements/{param}/void-preview",
+        "GET /api/v1/admin/affiliate/settlements{param}",
+        "PATCH /api/v1/admin/affiliate/commission-periods/{param}",
+        "PATCH /api/v1/admin/affiliate/partners/{param}",
+        "PATCH /api/v1/admin/affiliate/partners/{param}/recharge-discount",
+        "PATCH /api/v1/admin/affiliate/settings",
+        "POST /api/v1/admin/affiliate/commission-periods/{param}/terminate",
+        "POST /api/v1/admin/affiliate/partners/{param}/brand-site/{param}",
+        "POST /api/v1/admin/affiliate/partners/{param}/commission-periods",
+        "POST /api/v1/admin/affiliate/partners/{param}/reveal-bank-account",
+        "POST /api/v1/admin/affiliate/partners/{param}/{param}",
+        "POST /api/v1/admin/affiliate/referred-users/{param}/bind",
+        "POST /api/v1/admin/affiliate/referred-users/{param}/detach",
+        "POST /api/v1/admin/affiliate/settlements/{param}/approve",
+        "POST /api/v1/admin/affiliate/settlements/{param}/cancel",
+        "POST /api/v1/admin/affiliate/settlements/{param}/complete-proof-upload",
+        "POST /api/v1/admin/affiliate/settlements/{param}/proof-upload-policy",
+        "POST /api/v1/admin/affiliate/settlements/{param}/reveal-bank-account",
+        "POST /api/v1/admin/affiliate/settlements/{param}/void",
+        "PUT /api/v1/admin/affiliate/partners/{param}/brand-site",
+        "PUT /api/v1/admin/affiliate/partners/{param}/settlement-info",
+        "PUT /api/v1/admin/affiliate/settlement-policy"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "contract-evidence-only:no-direct-commerce-runtime-equivalent"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.audit{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/audit{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.batches{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/batches{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.batches",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/batches/filter-options",
+        "GET /api/v1/admin/batches/{param}",
+        "POST /api/v1/admin/batches/{param}/cancel",
+        "POST /api/v1/admin/batches/{param}/repair-outputs"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.character-tags",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/admin/character-tags/{param}",
+        "GET /api/v1/admin/character-tags",
+        "PATCH /api/v1/admin/character-tags/{param}",
+        "POST /api/v1/admin/character-tags"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.characters",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/admin/characters/{param}",
+        "PATCH /api/v1/admin/characters/{param}",
+        "POST /api/v1/admin/characters",
+        "POST /api/v1/admin/characters/import-package",
+        "POST /api/v1/admin/characters/{param}/publish",
+        "POST /api/v1/admin/characters/{param}/retry-face-check",
+        "POST /api/v1/admin/characters/{param}/unpublish"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.characters{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/characters{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.credits",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/credits/accounts/{param}/ledger{param}",
+        "GET /api/v1/admin/credits/recharge-preview{param}",
+        "POST /api/v1/admin/credits/debit",
+        "POST /api/v1/admin/credits/recharge"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.dashboard",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/dashboard/credit-report",
+        "GET /api/v1/admin/dashboard/generation-trends{param}",
+        "GET /api/v1/admin/dashboard/hourly-comparison",
+        "GET /api/v1/admin/dashboard/metrics",
+        "GET /api/v1/admin/dashboard/overview{param}",
+        "GET /api/v1/admin/dashboard/skill-report?media={param}&stage={param}&days={param}",
+        "GET /api/v1/admin/dashboard/usage-breakdown{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.discover",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/admin/discover/items/{param}",
+        "GET /api/v1/admin/discover/items/{param}",
+        "GET /api/v1/admin/discover/items{param}",
+        "PATCH /api/v1/admin/discover/items/{param}",
+        "POST /api/v1/admin/discover/items/{param}/approve",
+        "POST /api/v1/admin/discover/items/{param}/reject",
+        "POST /api/v1/admin/discover/items/{param}/remove"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.image-common-prompts",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/image-common-prompts"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/image-input-contract.ts",
+        "src/commerce/server/prompts.ts",
+        "src/commerce/server/jobs.ts",
+        "src/commerce/components/commerce-agent/workspace.tsx"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.invite-codes{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/invite-codes{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.invite-codes",
+      "surface": "client-network-contract",
+      "apis": [
+        "POST /api/v1/admin/invite-codes/generate"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.invoices",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/invoices/requests/export-pending{param}",
+        "GET /api/v1/admin/invoices/requests/{param}",
+        "GET /api/v1/admin/invoices/requests{param}",
+        "POST /api/v1/admin/invoices/requests/{param}/complete-upload",
+        "POST /api/v1/admin/invoices/requests/{param}/upload",
+        "POST /api/v1/admin/invoices/requests/{param}/upload-policy"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/voice-bridge.ts",
+        "src/commerce/server/voice-jobs.ts",
+        "src/app/api/commerce/voice-synthesis/route.ts",
+        "src/commerce/components/commerce-agent/voice-synthesis-studio.tsx",
+        "src/app/api/admin/commerce/voice-reconciliation/route.ts",
+        "src/commerce/server/voice-replace.ts",
+        "src/app/api/commerce/voice-replace/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.kyc-asset-groups{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/kyc-asset-groups{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.kyc-asset-groups",
+      "surface": "client-network-contract",
+      "apis": [
+        "POST /api/v1/admin/kyc-asset-groups/{param}/accept",
+        "POST /api/v1/admin/kyc-asset-groups/{param}/reject"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.operation-notices",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/operation-notices",
+        "PATCH /api/v1/admin/operation-notices/{param}",
+        "POST /api/v1/admin/operation-notices",
+        "POST /api/v1/admin/operation-notices/{param}/archive",
+        "POST /api/v1/admin/operation-notices/{param}/publish"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.payments{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/payments{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.payments",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/payments/bills{param}",
+        "GET /api/v1/admin/payments/recharge-orders/{param}",
+        "GET /api/v1/admin/payments/recharge-packages",
+        "PATCH /api/v1/admin/payments/recharge-packages/{param}",
+        "POST /api/v1/admin/payments/alipay-page/bills/download",
+        "POST /api/v1/admin/payments/recharge-packages",
+        "POST /api/v1/admin/payments/wechat/bills/download",
+        "POST /api/v1/admin/payments/{param}/resolve-review",
+        "POST /api/v1/admin/payments/{param}/retry-grant",
+        "POST /api/v1/admin/payments/{param}/sync"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.public-asset-groups",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/admin/public-asset-groups/{param}",
+        "GET /api/v1/admin/public-asset-groups",
+        "PATCH /api/v1/admin/public-asset-groups/{param}",
+        "POST /api/v1/admin/public-asset-groups"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.public-assets{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/public-assets{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.public-assets",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/admin/public-assets/{param}",
+        "GET /api/v1/admin/public-assets/{param}",
+        "PATCH /api/v1/admin/public-assets/{param}",
+        "POST /api/v1/admin/public-assets/batch-publish",
+        "POST /api/v1/admin/public-assets/complete",
+        "POST /api/v1/admin/public-assets/upload-policy",
+        "POST /api/v1/admin/public-assets/{param}/publish",
+        "POST /api/v1/admin/public-assets/{param}/unpublish"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.recharge-cards{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/recharge-cards{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.recharge-cards",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/recharge-cards/affiliate-partners{param}",
+        "POST /api/v1/admin/recharge-cards/generate",
+        "POST /api/v1/admin/recharge-cards/invalidate"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "contract-evidence-only:no-direct-commerce-runtime-equivalent"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.skill-packages",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/admin/skill-packages/{param}",
+        "GET /api/v1/admin/skill-packages",
+        "GET /api/v1/admin/skill-packages/{param}/versions",
+        "PATCH /api/v1/admin/skill-packages/{param}/draft",
+        "POST /api/v1/admin/skill-packages",
+        "POST /api/v1/admin/skill-packages/{param}/preview",
+        "POST /api/v1/admin/skill-packages/{param}/publish",
+        "POST /api/v1/admin/skill-packages/{param}/validate",
+        "POST /api/v1/admin/skill-packages/{param}/versions/{param}/rollback",
+        "POST /api/v1/admin/skill-packages/{param}/{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.user-growth{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/user-growth{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.user-growth",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/user-growth/export{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.users{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/users{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.admin.users",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/admin/users/{param}{param}",
+        "PATCH /api/v1/admin/users/{param}/roles",
+        "PATCH /api/v1/admin/users/{param}/status",
+        "POST /api/v1/admin/users/{param}/force-logout"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.affiliate",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/affiliate/commissions{param}",
+        "GET /api/v1/affiliate/growth-report{param}",
+        "GET /api/v1/affiliate/me",
+        "GET /api/v1/affiliate/partner/brand-site",
+        "GET /api/v1/affiliate/recharge-cards/overview",
+        "GET /api/v1/affiliate/recharge-orders{param}",
+        "GET /api/v1/affiliate/recharge/packages",
+        "GET /api/v1/affiliate/referred-users{param}",
+        "GET /api/v1/affiliate/review-history",
+        "GET /api/v1/affiliate/settlements/{param}",
+        "GET /api/v1/affiliate/settlements{param}",
+        "GET /api/v1/affiliate/workspace-summary",
+        "POST /api/v1/affiliate/partner/brand-site/assets/complete",
+        "POST /api/v1/affiliate/partner/brand-site/assets/upload-policy",
+        "POST /api/v1/affiliate/partner/brand-site/submit",
+        "POST /api/v1/affiliate/partner/submit",
+        "POST /api/v1/affiliate/recharge-cards/batches",
+        "POST /api/v1/affiliate/recharge-cards/batches/{param}/codes",
+        "POST /api/v1/affiliate/recharge-cards/cards/export",
+        "POST /api/v1/affiliate/recharge-cards/cards/search",
+        "POST /api/v1/affiliate/recharge-cards/invalidate",
+        "POST /api/v1/affiliate/recharge-cards/preview",
+        "POST /api/v1/affiliate/recharge/orders",
+        "PUT /api/v1/affiliate/partner/brand-site",
+        "PUT /api/v1/affiliate/partner/settlement-info"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts",
+        "contract-evidence-only:no-direct-commerce-runtime-equivalent"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.agent",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/agent/conversations/{param}",
+        "GET /api/v1/agent/conversations/{param}?{param}",
+        "GET /api/v1/agent/conversations?{param}",
+        "GET /api/v1/agent/skills",
+        "POST /api/v1/agent/conversations",
+        "POST /api/v1/agent/conversations/{param}/stream"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.asset-groups",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/asset-groups/{param}",
+        "GET /api/v1/asset-groups/{param}",
+        "PATCH /api/v1/asset-groups/{param}",
+        "POST /api/v1/asset-groups",
+        "POST /api/v1/asset-groups/{param}/attach-assets",
+        "POST /api/v1/asset-groups/{param}/auth-link/refresh",
+        "POST /api/v1/asset-groups/{param}/real-auth/poll",
+        "POST /api/v1/asset-groups/{param}/sync",
+        "POST /api/v1/asset-groups/{param}/sync-assets"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.asset-groups{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/asset-groups{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.assets{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/assets{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.assets",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/assets/{param}",
+        "GET /api/v1/assets/{param}",
+        "GET /api/v1/assets/{param}/metadata-probe/{param}",
+        "PATCH /api/v1/assets/{param}",
+        "POST /api/v1/assets/complete",
+        "POST /api/v1/assets/upload-policy",
+        "POST /api/v1/assets/{param}/metadata-probe"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.auth",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/auth/me",
+        "POST /api/v1/auth/login-or-register-by-email-code",
+        "POST /api/v1/auth/login-or-register-by-phone",
+        "POST /api/v1/auth/refresh",
+        "POST /api/v1/auth/send-email-code",
+        "POST /api/v1/auth/send-sms-code"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.batches",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/batches/{param}",
+        "DELETE /api/v1/batches/{param}/tags/{param}",
+        "GET /api/v1/batches/{param}",
+        "PATCH /api/v1/batches/{param}/ecommerce-image-set/analysis-row",
+        "POST /api/v1/batches",
+        "POST /api/v1/batches/{param}/ecommerce-image-set/regeneration-quote",
+        "POST /api/v1/batches/{param}/ecommerce-image-set/regenerations",
+        "POST /api/v1/batches/{param}/ecommerce-image-set/row-generations",
+        "POST /api/v1/batches/{param}/ecommerce-image-set/row-quote",
+        "POST /api/v1/batches/{param}/tags/{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/detail-sets.ts",
+        "src/commerce/components/commerce-agent/detail-set-studio.tsx"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.batches{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/batches{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.canvas-group-templates{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/canvas-group-templates{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/canvas-storage.ts",
+        "src/commerce/components/commerce-agent/canvas-live.tsx"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.canvas-group-templates",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/canvas-group-templates/{param}",
+        "POST /api/v1/canvas-group-templates/{param}/instances"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/canvas-storage.ts",
+        "src/commerce/components/commerce-agent/canvas-live.tsx"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.canvas-shares",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/canvas-shares/{param}",
+        "GET /api/v1/canvas-shares/{param}/acceptance",
+        "POST /api/v1/canvas-shares/{param}/accept"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/canvas-storage.ts",
+        "src/commerce/components/commerce-agent/canvas-live.tsx"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.canvases",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/canvases/{param}",
+        "DELETE /api/v1/canvases/{param}/edges/{param}{param}",
+        "DELETE /api/v1/canvases/{param}/nodes/{param}{param}",
+        "DELETE /api/v1/canvases/{param}/share-link",
+        "GET /api/v1/canvases/{param}",
+        "GET /api/v1/canvases/{param}/credit-usage",
+        "GET /api/v1/canvases/{param}/nodes/{param}",
+        "GET /api/v1/canvases/{param}/share-link",
+        "PATCH /api/v1/canvases/{param}",
+        "PATCH /api/v1/canvases/{param}/groups/{param}",
+        "PATCH /api/v1/canvases/{param}/nodes/{param}",
+        "PATCH /api/v1/canvases/{param}/snapshot",
+        "POST /api/v1/canvases",
+        "POST /api/v1/canvases/{param}/duplicate",
+        "POST /api/v1/canvases/{param}/edges",
+        "POST /api/v1/canvases/{param}/edges/bulk",
+        "POST /api/v1/canvases/{param}/groups",
+        "POST /api/v1/canvases/{param}/groups/{param}/runs",
+        "POST /api/v1/canvases/{param}/groups/{param}/runs/pause{param}",
+        "POST /api/v1/canvases/{param}/groups/{param}/runs/resume-paused{param}",
+        "POST /api/v1/canvases/{param}/groups/{param}/templates",
+        "POST /api/v1/canvases/{param}/groups/{param}/ungroup{param}",
+        "POST /api/v1/canvases/{param}/media-derivatives",
+        "POST /api/v1/canvases/{param}/media-derivatives/quote",
+        "POST /api/v1/canvases/{param}/nodes",
+        "POST /api/v1/canvases/{param}/nodes/delete",
+        "POST /api/v1/canvases/{param}/nodes/duplicate",
+        "POST /api/v1/canvases/{param}/nodes/restore",
+        "POST /api/v1/canvases/{param}/nodes/with-edge",
+        "POST /api/v1/canvases/{param}/share-link",
+        "POST /api/v1/canvases/{param}/video-keyframe-breakdowns"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/canvas-storage.ts",
+        "src/commerce/components/commerce-agent/canvas-live.tsx"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.canvases{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/canvases{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/canvas-storage.ts",
+        "src/commerce/components/commerce-agent/canvas-live.tsx"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.characters",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/characters/{param}",
+        "GET /api/v1/characters/tags",
+        "GET /api/v1/characters/{param}",
+        "PATCH /api/v1/characters/{param}",
+        "POST /api/v1/characters",
+        "POST /api/v1/characters/creation-quote"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.characters{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/characters{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.credits",
+      "surface": "client-network-contract",
+      "apis": [
+        "POST /api/v1/credits/quote"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.discover",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/discover/home{param}",
+        "GET /api/v1/discover/items/{param}",
+        "POST /api/v1/discover/items",
+        "POST /api/v1/discover/items/{param}/copy",
+        "POST /api/v1/discover/items/{param}/events"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.invoices",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/invoices/profiles/{param}",
+        "GET /api/v1/invoices/items{param}",
+        "GET /api/v1/invoices/profiles",
+        "GET /api/v1/invoices/requests",
+        "GET /api/v1/invoices/summary",
+        "PATCH /api/v1/invoices/profiles/{param}",
+        "POST /api/v1/invoices/profiles",
+        "POST /api/v1/invoices/requests"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/voice-bridge.ts",
+        "src/commerce/server/voice-jobs.ts",
+        "src/app/api/commerce/voice-synthesis/route.ts",
+        "src/commerce/components/commerce-agent/voice-synthesis-studio.tsx",
+        "src/app/api/admin/commerce/voice-reconciliation/route.ts",
+        "src/commerce/server/voice-replace.ts",
+        "src/app/api/commerce/voice-replace/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.me",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/me/api-keys/{param}",
+        "GET /api/v1/me/api-keys",
+        "GET /api/v1/me/profile",
+        "PATCH /api/v1/me/api-keys/{param}",
+        "POST /api/v1/me/api-keys",
+        "POST /api/v1/me/bind-email",
+        "POST /api/v1/me/bind-phone"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.model-routes",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/model-routes/public{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.operation-notices",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/operation-notices/current"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.payments",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/payments/recharge-orders/{param}",
+        "GET /api/v1/payments/recharge-packages",
+        "POST /api/v1/payments/recharge-orders",
+        "POST /api/v1/payments/recharge-orders/{param}/close",
+        "POST /api/v1/payments/recharge-orders/{param}/sync"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.recharge-cards",
+      "surface": "client-network-contract",
+      "apis": [
+        "POST /api/v1/recharge-cards/redeem"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.resources{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/resources{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/assets.ts",
+        "src/commerce/server/main-asset-bridge.ts",
+        "src/app/api/commerce/assets/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.tools",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/tools/{param}/skill-packs{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/image-input-contract.ts",
+        "src/commerce/server/prompts.ts",
+        "src/commerce/server/jobs.ts",
+        "src/commerce/components/commerce-agent/workspace.tsx"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.usage",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/usage/ledger{param}",
+        "GET /api/v1/usage/summary"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.user-prompts",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/user-prompts/{param}",
+        "PATCH /api/v1/user-prompts/{param}",
+        "POST /api/v1/user-prompts"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.user-prompts{param}",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/user-prompts{param}"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.video-creator",
+      "surface": "client-network-contract",
+      "apis": [
+        "GET /api/v1/video-creator/conversations/{param}?{param}",
+        "GET /api/v1/video-creator/skills",
+        "POST /api/v1/video-creator/conversations",
+        "POST /api/v1/video-creator/conversations/{param}/script/stream"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/jobs.ts",
+        "src/commerce/server/rolling-video.ts",
+        "src/commerce/server/rolling-video-worker.ts",
+        "src/app/api/commerce/commerce-model-gateway/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.video-segment-retake",
+      "surface": "client-network-contract",
+      "apis": [
+        "POST /api/v1/video-segment-retake/quote"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "api-family.voice-profiles",
+      "surface": "client-network-contract",
+      "apis": [
+        "DELETE /api/v1/voice-profiles/{param}",
+        "GET /api/v1/voice-profiles",
+        "GET /api/v1/voice-profiles/system-voices",
+        "POST /api/v1/voice-profiles",
+        "POST /api/v1/voice-profiles/system-voices/synthesize",
+        "POST /api/v1/voice-profiles/{param}/synthesize"
+      ],
+      "deepestObservedLayer": "method-path-contract-and-observed-readonly-status",
+      "localTargets": [
+        "src/commerce/server/voice-bridge.ts",
+        "src/commerce/server/voice-jobs.ts",
+        "src/app/api/commerce/voice-synthesis/route.ts",
+        "src/commerce/components/commerce-agent/voice-synthesis-studio.tsx",
+        "src/app/api/admin/commerce/voice-reconciliation/route.ts",
+        "src/commerce/server/voice-replace.ts",
+        "src/app/api/commerce/voice-replace/route.ts"
+      ],
+      "status": "contract-observed-private-handler-source-unavailable"
+    },
+    {
+      "featureId": "tool.depth-video-clone",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 714865,
+          "byteEnd": 743436
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 714865,
+          "byteEnd": 743436
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 714865,
+          "byteEnd": 743436
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3468,
+          "byteEnd": 3705
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3468,
+          "byteEnd": 3705
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 1149,
+          "byteEnd": 1386
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3468,
+          "byteEnd": 3705
+        }
+      ],
+      "localTargets": [
+        "src/commerce/server/jobs.ts",
+        "src/commerce/server/rolling-video.ts",
+        "src/commerce/server/rolling-video-worker.ts",
+        "src/app/api/commerce/commerce-model-gateway/route.ts"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.digital-human",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 823506,
+          "byteEnd": 839650
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 823506,
+          "byteEnd": 839650
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 823506,
+          "byteEnd": 839650
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3155,
+          "byteEnd": 3358
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3155,
+          "byteEnd": 3358
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 836,
+          "byteEnd": 1039
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3155,
+          "byteEnd": 3358
+        }
+      ],
+      "localTargets": [
+        "src/app/digital-human/page.tsx",
+        "src/app/api/digital-human/generate/route.ts",
+        "src/lib/digital-human-long-worker.ts",
+        "src/commerce/server/digital-human-audio-candidates.ts",
+        "src/app/api/commerce/digital-human-audio-assets/route.ts",
+        "src/features/digital-human/commerce-audio-bridge.ts",
+        "src/features/digital-human/CommerceAudioAssetPicker.tsx"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.ecommerce-image-set",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 621088,
+          "byteEnd": 647969
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 621088,
+          "byteEnd": 647969
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 621088,
+          "byteEnd": 647969
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 2936,
+          "byteEnd": 3154
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 2936,
+          "byteEnd": 3154
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 617,
+          "byteEnd": 835
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 2936,
+          "byteEnd": 3154
+        }
+      ],
+      "localTargets": [
+        "src/commerce/server/detail-sets.ts",
+        "src/commerce/components/commerce-agent/detail-set-studio.tsx"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.hot-video-remix",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 647970,
+          "byteEnd": 669012
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 647970,
+          "byteEnd": 669012
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 647970,
+          "byteEnd": 669012
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3706,
+          "byteEnd": 3929
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3706,
+          "byteEnd": 3929
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 1387,
+          "byteEnd": 1610
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3706,
+          "byteEnd": 3929
+        }
+      ],
+      "localTargets": [
+        "src/commerce/server/jobs.ts",
+        "src/commerce/server/rolling-video.ts",
+        "src/commerce/server/rolling-video-worker.ts",
+        "src/app/api/commerce/commerce-model-gateway/route.ts",
+        "src/commerce/server/hot-video-remix.ts",
+        "src/app/api/commerce/hot-video-remix/route.ts",
+        "src/commerce/components/commerce-agent/hot-video-remix-studio.tsx",
+        "src/commerce/server/ordinary-worker.ts"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.image-generation",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 584577,
+          "byteEnd": 621087
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 584577,
+          "byteEnd": 621087
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 584577,
+          "byteEnd": 621087
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 5240,
+          "byteEnd": 5403
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 5240,
+          "byteEnd": 5403
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 2921,
+          "byteEnd": 3084
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 5240,
+          "byteEnd": 5403
+        }
+      ],
+      "localTargets": [
+        "src/commerce/image-input-contract.ts",
+        "src/commerce/server/prompts.ts",
+        "src/commerce/server/jobs.ts",
+        "src/commerce/components/commerce-agent/workspace.tsx"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.reference-video-split",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 669013,
+          "byteEnd": 683596
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 669013,
+          "byteEnd": 683596
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 669013,
+          "byteEnd": 683596
+        }
+      ],
+      "localTargets": [
+        "src/commerce/server/jobs.ts",
+        "src/commerce/server/rolling-video.ts",
+        "src/commerce/server/rolling-video-worker.ts",
+        "src/app/api/commerce/commerce-model-gateway/route.ts"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.video-generation",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 743437,
+          "byteEnd": 823505
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 743437,
+          "byteEnd": 823505
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 743437,
+          "byteEnd": 823505
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 5072,
+          "byteEnd": 5239
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 5072,
+          "byteEnd": 5239
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 2753,
+          "byteEnd": 2920
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 5072,
+          "byteEnd": 5239
+        }
+      ],
+      "localTargets": [
+        "src/commerce/server/jobs.ts",
+        "src/commerce/server/rolling-video.ts",
+        "src/commerce/server/rolling-video-worker.ts",
+        "src/app/api/commerce/commerce-model-gateway/route.ts"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.video-quality-enhance",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 703218,
+          "byteEnd": 714864
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 703218,
+          "byteEnd": 714864
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 703218,
+          "byteEnd": 714864
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 4364,
+          "byteEnd": 4599
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 4364,
+          "byteEnd": 4599
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 2045,
+          "byteEnd": 2280
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 4364,
+          "byteEnd": 4599
+        }
+      ],
+      "localTargets": [
+        "src/commerce/server/media-tools.ts",
+        "src/commerce/components/commerce-agent/media-tools.tsx",
+        "src/lib/local-media-processor.ts"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.video-subtitle-erase",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 683597,
+          "byteEnd": 692882
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 683597,
+          "byteEnd": 692882
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 683597,
+          "byteEnd": 692882
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3930,
+          "byteEnd": 4140
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3930,
+          "byteEnd": 4140
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 1611,
+          "byteEnd": 1821
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 3930,
+          "byteEnd": 4140
+        }
+      ],
+      "localTargets": [
+        "src/commerce/server/media-tools.ts",
+        "src/commerce/components/commerce-agent/media-tools.tsx",
+        "src/lib/local-media-processor.ts"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "tool.video-watermark-remove",
+      "surface": "tool-registry-or-renderer",
+      "evidence": [
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 692883,
+          "byteEnd": 703217
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 692883,
+          "byteEnd": 703217
+        },
+        {
+          "kind": "renderer",
+          "status": null,
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 692883,
+          "byteEnd": 703217
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 4141,
+          "byteEnd": 4363
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 4141,
+          "byteEnd": 4363
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 1822,
+          "byteEnd": 2044
+        },
+        {
+          "kind": "registry",
+          "status": "active",
+          "file": "responses/daai-static.da-ai.vip/_next/static/chunks/app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 4141,
+          "byteEnd": 4363
+        }
+      ],
+      "localTargets": [
+        "src/commerce/server/media-tools.ts",
+        "src/commerce/components/commerce-agent/media-tools.tsx",
+        "src/lib/local-media-processor.ts"
+      ],
+      "status": "client-renderer-mapped"
+    },
+    {
+      "featureId": "skill.video-director.advertising-brand-proposition",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "a97e73676f20fc86c6539c85d3dc87f2cfc648af935f3c3d09981c95ce24906c"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 17982,
+          "byteEnd": 19980
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.advertising-brand-story",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "caad8efddff20e5e3bf7549dbfdd546adcb18497c5eb035a6b1805e89713b33b"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 19986,
+          "byteEnd": 21978
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.advertising-creative-concept",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "cb3025d6d72a630d9f9f82ea1345e7ad0b2120cbf260e5cd4b9ea965f392260c"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 23980,
+          "byteEnd": 25978
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.advertising-lifestyle",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "ecacb1ff3ff5ab82314c4026bdeb30d05d3adbc0e30b7df5b55532480918cf51"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 21984,
+          "byteEnd": 23974
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.background-change",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "245eac487a838a012c0f755e7dd77715b44aca28da3fc500a6117d6b9864ddf5"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 26249,
+          "byteEnd": 28746
+        }
+      ],
+      "localTargets": [
+        "src/commerce/image-input-contract.ts",
+        "src/commerce/server/prompts.ts",
+        "src/commerce/server/jobs.ts",
+        "src/commerce/components/commerce-agent/workspace.tsx"
+      ],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.change-cloth",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "9e7766402f359c759cf800faa444c3efcd0811254c407f32e253ce815ac35733"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 9727,
+          "byteEnd": 12819
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.change-face",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "bdd1075fba720e9a72036b74be7f520c297aec431504436d1fb1d3c5c8fab8ec"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 4457,
+          "byteEnd": 7024
+        }
+      ],
+      "localTargets": [
+        "src/commerce/image-input-contract.ts",
+        "src/commerce/server/prompts.ts",
+        "src/commerce/server/jobs.ts",
+        "src/commerce/components/commerce-agent/workspace.tsx"
+      ],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.character-face-turnaround",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "85117b0328d11ffeac8f471e982da2df53fcc75f81dd11868ea068b5873b8070"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 117,
+          "byteEnd": 2277
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.character-fullbody-sheet",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "25512dbcd8270adc80286471ab18fcc133ae148f95600436eb55b8076b2f90b0"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 2283,
+          "byteEnd": 4451
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.default-director",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "e4a4f1ec69194aec6cf3a117f59392e70baf5131677b0ed94f94686e99f7b77a"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 35948,
+          "byteEnd": 37914
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.default",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "666f4b55851f0556629339d2b3209a5dad4712a8ce6b7483621bb3097d4a6648"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 34928,
+          "byteEnd": 36848
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.dual-face-fusion",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "e82eb5780893863e8e6e03343c39b5848e2d2addba8f80d257456d75d4cde9fe"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 7030,
+          "byteEnd": 9721
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.ecommerce-function-demo",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "255b48fb754f818a25e4ad5e56a19b0967b817c08d5cae250987ea5684a58a7a"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 7999,
+          "byteEnd": 9985
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.ecommerce-pain-point-solution",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "2f81ae1c952035337785997ff7591a5add2ab3adba3471cf818173599cf4c650"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 6001,
+          "byteEnd": 7993
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.ecommerce-promotion-conversion",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "fb9bb6737d856132367173ed8ec252d87a085146de2985299d3e15fbd10863e6"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 2011,
+          "byteEnd": 4003
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.ecommerce-scene-seeding",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "2f71f106e9d2c9b4cea3cadf399764d44fd3ffc3aa1c05dc56c1010eb865c982"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 4009,
+          "byteEnd": 5995
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.ecommerce-spoken-selling",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "67574e6db01c625282b0b20b93d35836542b7b20f17adc42b0ed44596f6f6247"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 19,
+          "byteEnd": 2005
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.element-replace",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "89714c550c7d92f8fa7041fba4d11e5601ab1bdf644637e3875cbde9f7987f67"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 17617,
+          "byteEnd": 20616
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.local-store-discovery",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "04ee39fb12fb66672a3cbdc092c64cbd1a989970a0186bbceacd107f5ad19dc0"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 9991,
+          "byteEnd": 11977
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.local-store-group-buy-conversion",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "62d80b92ec1151dd654612a558019f6587da61d553b004ba7fb6a108047ff108"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 15980,
+          "byteEnd": 17976
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.local-store-signature-experience",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "e77770b54b9a6f2359e273bb69dfcf82583581d4e1cf816ba68f055e95042a3b"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 13977,
+          "byteEnd": 15974
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.local-store-visit-record",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "6c64d19e057a100a00c795fe5715ea599bfa70aa94da9ccfa651778945fa5cf0"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 11983,
+          "byteEnd": 13971
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.model-product-try-on",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "94f101a2199cd3609c03e996a2f5d606aa71ec90607e3098f8cac5cbbd531e54"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 12825,
+          "byteEnd": 15450
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.portrait-realism-enhance",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "6d089df7496e9fac55cc75eeeaf67e8de8f53e42efa8e529b236b294661c04b2"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 28752,
+          "byteEnd": 30906
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.product-consistency-reference",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "c1f25c78c98483eb986c535a7521611422ecf9dc5796056230b9dc6e8a80f5d6"
+      ],
+      "surfaces": [
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 30912,
+          "byteEnd": 32885
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.product-refine",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "c9fd9803c548ec9c58b4bb41c81d19e8b7c797d5d1f308ac7dce583b5c7ece74"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 32891,
+          "byteEnd": 34922
+        }
+      ],
+      "localTargets": [
+        "src/commerce/image-input-contract.ts",
+        "src/commerce/server/prompts.ts",
+        "src/commerce/server/jobs.ts",
+        "src/commerce/components/commerce-agent/workspace.tsx"
+      ],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.product-white-background",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "86fd32892b326912e43811cc3d90c48bd84acf4bb2ff31d50a5a5c92c810ab7d"
+      ],
+      "surfaces": [
+        "toolbox",
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 15456,
+          "byteEnd": 17611
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.script-storyboard",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "79b317e2ec7012fb7864bab5efcbde6a20ea15687c7c0da36ac4a5c94cb32fb4"
+      ],
+      "surfaces": [
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 20622,
+          "byteEnd": 22339
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.short-drama-dialogue",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "67be5e884acbf3ba61650d1fcb8f408fda62a8e396aa669e916f93497c0a6415"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 25984,
+          "byteEnd": 27969
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.short-drama-emotional",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "f9595c0712cc36202dd0766302b5f81629aaeb1718a32b27e38291aaadaf3af5"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 31956,
+          "byteEnd": 33941
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.short-drama-product-placement",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "2c145382decf80eb2cdc4c3fac03f327db63ea767f5840dbabdfcd8111b5f035"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 33947,
+          "byteEnd": 35942
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.short-drama-reversal",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "c8bf2392113cd3fdf2ab7b6800122448503efdb0918209fc9599ef190ceeadf5"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 27975,
+          "byteEnd": 29959
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.video-director.short-drama-suspense",
+      "surface": "director-prompt-skill",
+      "configVersions": [
+        "daf7051568d156d5b43ce6bce52003f29abc3021f9f5e7eaf894159f910da37a"
+      ],
+      "surfaces": [],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/video-creator-skills.json",
+          "fileSha256": "3417173ffeb6718cb032fa9d1065971e0dfb0068b80652f00c3027e876a4c662",
+          "byteStart": 29965,
+          "byteEnd": 31950
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.storyboard-element-replace",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "5ba5a8c6b3f01481d840312586af1c88b44d3679f3ea24523863d5ee3c0b813c"
+      ],
+      "surfaces": [
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 22345,
+          "byteEnd": 24487
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    },
+    {
+      "featureId": "skill.image.video-reference-first-frame",
+      "surface": "image-prompt-skill",
+      "configVersions": [
+        "ba3a1b031fde9c7e83981e39b82e4b88da07b15c9b1e2ca55164b8b34f8e13cc"
+      ],
+      "surfaces": [
+        "canvas"
+      ],
+      "evidence": [
+        {
+          "file": "supplemental-readonly/catalogs/tools-image-generation-skill-packs.json",
+          "fileSha256": "5f445cd17a567c3430d9a9625913b2048ddec5da7e735f3694eaa71993abbc9c",
+          "byteStart": 24493,
+          "byteEnd": 26243
+        }
+      ],
+      "localTargets": [],
+      "status": "catalog-version-mapped-runtime-publish-readback-pending"
+    }
+  ],
+  "knownGaps": [
+    {
+      "priority": "P0",
+      "feature": "Commerce voice paid acceptance",
+      "evidence": "durable cash and reconciliation chain is implemented, but paid confirmation remains correctly locked until immutable real-provider acceptance evidence is published"
+    },
+    {
+      "priority": "P0",
+      "feature": "remaining Commerce to main asset/history bridge",
+      "evidence": "completed Commerce audio now bridges to digital-human safely; non-audio asset/history types still need individual end-to-end verification"
+    },
+    {
+      "priority": "P0",
+      "feature": "H3/digital-human real provider acceptance",
+      "evidence": "catalog and local bridge contracts exist; paid provider generation and persisted cost/result readback remain unexecuted"
+    },
+    {
+      "priority": "P0",
+      "feature": "outpaint/cutout/mask local editing",
+      "evidence": "no dedicated route/service contract found"
+    },
+    {
+      "priority": "P0",
+      "feature": "60-second long digital-human segmentation",
+      "evidence": "current threshold and max segment are 115 seconds; UI does not send sentence boundaries"
+    },
+    {
+      "priority": "P0",
+      "feature": "hot-video semantic scene splitting and multi-variant output",
+      "evidence": "current zero-cost implementation supports exact manual clips and deterministic automatic equal allocation, not semantic scene detection or multiple variants"
+    },
+    {
+      "priority": "P0",
+      "feature": "runtime publication and readback",
+      "evidence": "Commerce release CAS/immutability migration exists only in source; current shared-cloud identity remains 2 draft / 0 current / 0 published while local acceptance is a separate identity with 1 current / 1 published"
+    },
+    {
+      "priority": "P0",
+      "feature": "benchmark tutorial failure/refund instance",
+      "evidence": "current benchmark account exposes 24 successful historical batches and no failed/refunded instance; step 9 live failure terminal remains unverified without manufacturing a failure"
+    },
+    {
+      "priority": "P0",
+      "feature": "Dynamic Canvas page/API identity mismatch",
+      "evidence": "persisted detail API returns 200, while the exact page renders 页面未找到 and naturally requests no detail payload"
+    },
+    {
+      "priority": "P1",
+      "feature": "Canvas-only skill execution",
+      "evidence": "controller, detail payload and UI contracts are captured; four submissions remain unexecuted because they create business state and can create paid media tasks"
+    },
+    {
+      "priority": "P1",
+      "feature": "media-tool algorithm equivalence",
+      "evidence": "local delogo/fixed region and ffmpeg filters are not equivalent to benchmark paid services"
+    }
+  ],
+  "closedGaps": [
+    {
+      "feature": "dynamic canvas editor source/controller capture",
+      "evidence": "route-specific page chunk, detail JSON and dependent chunks captured read-only; page runtime remains a recorded failure"
+    },
+    {
+      "feature": "ordinary Commerce job/media-edit/frame/depth durable worker",
+      "evidence": "10/10 deterministic checks; zero provider, paid, production and deployment actions"
+    },
+    {
+      "feature": "Commerce voice durable cash and reconciliation state machine",
+      "evidence": "quote/worker/UI/admin/billing contracts pass with provider, wallet, browser and production side effects held at zero; real paid evidence remains intentionally absent"
+    },
+    {
+      "feature": "voice result applied to video",
+      "evidence": "31/31 deterministic and real local FFmpeg checks; 3.0-second video plus 0.7-second voice remains 3.0 seconds with audio; network/provider/wallet/paid effects zero"
+    },
+    {
+      "feature": "Commerce voice asset to digital-human input",
+      "evidence": "35/35 owner, main-account, byte-size, SHA256, ticket and bounded confirmation checks; no digital-human generation submitted"
+    },
+    {
+      "feature": "hot-video deterministic/manual remix",
+      "evidence": "33/33 local FFmpeg, duration, 720x1280, audio, idempotency, lease, cleanup and deletion-fence checks; semantic splitting remains open"
+    },
+    {
+      "feature": "tutorial adjunct UI/API/service/storage mapping",
+      "evidence": "314/314 checks, 181 source assertions across 19 files, steps 2/6/7/8/9, all eight side-effect classes zero"
+    }
+  ],
+  "fixedPoints": {
+    "sourceDiscovery": {
+      "status": "passed",
+      "definition": "Repeated route, chunk, AST, API, catalog and recursively referenced static-runtime scans add no missing browser-delivered dependency.",
+      "evidence": "对标镜像静态闭包验收.json"
+    },
+    "conditionalEntry": {
+      "status": "query-entries-passed-dynamic-canvas-page-failed-write-execution-unverified",
+      "definition": "Every source-proven safe query entry was opened; the safely observed dynamic Canvas ID was checked at both page and detail-API layers, preserving the semantic page failure.",
+      "verified": [
+        "11 image ?skill_pack= entries: 11/11 HTTP 200 with exact final pathname",
+        "18 video ?skill= entries: 18/18 HTTP 200 with exact final pathname",
+        "/canvas/{workspace_id} route-specific controller and dependent chunks captured from a safely observed ID",
+        "GET /api/v1/canvases/{workspace_id} returned the persisted empty document",
+        "0 business writes allowed",
+        "HEIF libheif.wasm exact URL returned 404, but libheif.js proves an embedded wasm2js runtime whose binary argument is ignored"
+      ],
+      "missing": [
+        "The real persisted Canvas ID page returned HTTP 200 but rendered 页面未找到 and issued zero natural detail GET requests",
+        "4 canvas-only skill submissions were not executed because they create business state and can create paid media tasks",
+        "A real HEIF file decode was not executed; the 404 fallback name is not itself a functional failure"
+      ]
+    },
+    "runtimePayload": {
+      "status": "observable-readonly-payload-and-dynamic-controller-closure-passed",
+      "definition": "Every observed read-only API response body and safe dynamic-detail controller required by the runtime checklist is saved, structurally profiled and hash-addressed.",
+      "verified": [
+        "agent conversation list",
+        "image-generation filtered batches",
+        "ecommerce-image-set filtered batches",
+        "at least two saved batch details",
+        "canvas list",
+        "canvas detail",
+        "current operation notice",
+        "recharge package list",
+        "usage ledger",
+        "usage summary",
+        "dynamic canvas document",
+        "dynamic canvas page chunk"
+      ],
+      "missing": [],
+      "boundary": "Write-only behavior, paid generation, provider execution, private queue workers, database transactions and server-only prompt code remain outside browser GET evidence.",
+      "evidence": "运行载荷与动态Canvas结构审计.json"
+    }
+  },
+  "statusAxes": {
+    "directMirrorReuse": "13 轮浏览器证据与依赖已隔离保存",
+    "behaviorEquivalentImplementation": "19编导、语音、热门改编、语音应用视频和数字人音频桥已通过确定性合同；5页面10视图只读浏览器基线已通过",
+    "backendVisibleEvidence": "只读目录、运行载荷、动态 Canvas、对标教程1至9步和当前配置身份已纳入",
+    "localEnhancement": "主账户绑定、现金终态、人工对账、耐久worker、删除围栏和发布CAS源代码已增加",
+    "unverified": "语义场景切分/多变体、4个Canvas-only写入、教程第9步失败/退款实例、CAS发布迁移与付费终态",
+    "externalBlocked": "私有后端源码、供应商算法及需要明确费用上限和用户授权的真实供应商终态",
+    "deployment": "未部署"
+  }
+}

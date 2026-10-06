@@ -1,0 +1,284 @@
+node_modules/
+.next/
+.next-local-acceptance/
+.logs/
+artifacts/
+backups/
+data/
+runtime/
+*.log
+.codex-evidence/
+evidence-archive/
+admin-token.txt
+voice-platform/
+voice-platform/node_modules
+logs/
+voice-platform/dev.db
+voice-platform/prisma/dev.db*
+voice-platform/prisma/prisma/dev.db*
+# SQLite databases and their WAL/SHM/journal sidecars are mutable runtime data.
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.tsbuildinfo*
+dist
+.DS_Store
+*.swp
+.git/*
+__pycache__/
+*.pyc
+.venv/*
+*.o
+*.a
+/vendor
+*.egg-info/
+/.env
+.env
+.cozeproj/reduction
+
+# JS/TS bundlers & build outputs
+.nuxt
+.turbo
+.vercel
+.parcel-cache
+.cache
+coverage
+storybook-static
+
+# Package manager artifacts
+# pnpm-lock.yaml 必须纳入 git 跟踪（扣子平台部署需要 lockfile 确定依赖版本）
+package-lock.json
+yarn.lock
+.pnp*
+.npm
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# Go tooling
+bin/
+*.test
+
+# Editor / IDE
+.vscode/
+.idea/
+*.iml
+
+# OS / misc
+Thumbs.db
+ehthumbs.db
+
+# Logs
+output.log
+logs/
+
+# Runtime data and backups must never enter a source repository.
+/backups/
+/voice-platform/scripts/voices-full-backup.json
+/data/
+/public/uploads/
+/.npmrc
+
+# Local Codex evidence, snapshots, browser state and runtime caches.
+/.codex-*/
+/snapshots/
+.codex-*.log
+/.secure/
+/assets/
+/evidence-archive/
+/runtime-tools/model-audit-*/
+
+# Local operator state is not product source. Keep the Git main repository
+# limited to reproducible code, configuration, migrations, tests and docs.
+/.release/
+/.runtime/
+/.tmp-e2e/
+/--output=.codex-evidence/
+/%SystemDrive%/
+/任务快照/
+/备份快照/
+/协作交接记录/
+/运行日志/
+/Codex续接交付包-*/
+/Codex续接启动文件-*.md
+/Codex任务清单与链路索引-*.md
+/manju-*.png
+/runtime-*.log
+/console.log*
+/{console.error*
+
+# Local acceptance evidence and mutable demo snapshots are not source or
+# deployable public assets. Curated product demos live under
+# public/product-assets and are released through the immutable asset manifest.
+/public/storyboard-reviews/
+/public/demo-assets/
+
+# Gitee 备份仓库 clone（备份统一走 Git 远程仓库，不在本地保存）
+自媒体操盘手/
+项目备份/
+
+# 旧版主站（已废弃，src 中无引用）
+main-site/
+
+# 代码图缓存
+.codegraph/
+
+# Local research/evidence migrated into the F-drive Skill storage system.
+# These files are knowledge assets, not release source, and must not be pushed
+# with the web application deployment package.
+research/
+research-output/
+public/prototype-nav.html
+public/coze-workflow-requirements.txt
+
+# 视频文件
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.mkv
+*.webm
+*.m4v
+*.mpeg
+*.mpg
+*.3gp
+*.f4v
+*.rmvb
+*.vob
+
+# Public production binaries are versioned by deploy/manifests/public-assets.v1.json
+# and stored in COS/CDN or the server shared asset directory. JSON/text manifests
+# in the same directories remain trackable because application builds import them.
+public/**/*.png
+public/**/*.jpg
+public/**/*.jpeg
+public/**/*.webp
+public/**/*.gif
+public/**/*.ico
+public/**/*.mp3
+public/**/*.wav
+public/**/*.ogg
+public/**/*.m4a
+public/**/*.aac
+public/**/*.flac
+public/**/*.pdf
+public/**/*.zip
+
+# Release-coupled lightweight previews/icons that are directly imported by
+# prerendered pages must ship with the source snapshot; large generated media
+# still belongs to deploy/manifests/public-assets.v1.json and external storage.
+!public/short-drama/previews/*.webp
+!public/product-assets/youcai-demo-v1/clean-v21/previews/*.webp
+
+# 归档文件
+*.iso
+*.dmg
+*.rar
+*.zip
+*.gz
+
+# 文档类也默认加入
+*.pdf
+*.docx
+*.doc
+*.xlsx
+*.xls
+*.ppt
+*.pptx
+*.xlsx
+*.csv
+# Dependencies
+.pnp
+.pnp.js
+# Production build
+dist/
+build/
+out/
+.rsbuild/
+# Testing
+coverage/
+*.lcov
+.nyc_output
+# Environment variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
+.env*.production
+# Deployment credential files must never be scanned by Tailwind/Turbopack.
+scripts/tencent_key
+# Legacy local fixtures/docs that contain deployment credentials and must be
+# sanitized before they can ever enter version control.
+tests/test-formguard.js
+tests/e2e-history-test.js
+voice-platform/*.md
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+node-compile-cache/
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swo
+*~
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+# OS files
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Desktop.ini
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+# Optional files
+*.tgz
+*.tar
+# TypeScript
+*.tsbuildinfo
+# Misc
+.coze-logs
+.preview
+.secure/
+.codegraph
+.next-validation/
+.next-local-acceptance-next/
+.next*/

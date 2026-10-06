@@ -1,0 +1,5055 @@
+{
+  "schema_version": "website_promoter_knowledge_snapshot.v1",
+  "agent_id": "agent-1787163730859-vecrr6",
+  "knowledge_base_id": "kb-self-media-acquisition-copy-v2",
+  "compiled_from_latest_source_at": "2026-09-23T19:33:11.952Z",
+  "source_dates": {
+    "pains": "2026-09-23T21:30:00+08:00",
+    "evidence": "2026-09-23T22:00:00+08:00",
+    "topics": "2026-09-23T19:33:11.952Z",
+    "capabilities": "2026-09-23"
+  },
+  "source_manifest_sha256": "3260bbc21587a2d96b33f0053404ce4314be49fe17f19a493671eeea8e346436",
+  "source_files": [
+    {
+      "key": "capabilities",
+      "path": "知识库/数据/项目能力证据卡.v1.json",
+      "sha256": "6402fe56128139b50519e90b822597bb3bbcf61dc4428b47fc50718713597f94"
+    },
+    {
+      "key": "evidence",
+      "path": "知识库/数据/抖音达人作品研究样本.v1.json",
+      "sha256": "753b8b39da7f7147d21918660210f03b4d3d63842e5d80d41ec6abdece5a4c81"
+    },
+    {
+      "key": "pains",
+      "path": "知识库/数据/自媒体用户痛点总库.v2.json",
+      "sha256": "063c340bc6107850d00c6bae8da8c82572e36eef01f6c626daeca17ea6cd6b49"
+    },
+    {
+      "key": "topics",
+      "path": "热点库/当前选题菜单.v1.json",
+      "sha256": "d48e1857ea125575d5024d5af3f757d028fdae6c1195084ada64f30a3d594dd4"
+    }
+  ],
+  "counts": {
+    "pains": 160,
+    "evidence": 65,
+    "topics": 12,
+    "capabilities": 7
+  },
+  "runtime_contract": {
+    "knowledge_mode": "bundled_snapshot_retrieval",
+    "agent_id": "agent-1787163730859-vecrr6",
+    "isolation": "exact_agent_id",
+    "route": "/api/llm",
+    "max_context_characters": 8500
+  },
+  "topic_snapshot": {
+    "menu_id": "menu-self-media-20260923-initial",
+    "chain_id": "chain.self_media_growth_copy.v1",
+    "status": "historical",
+    "valid_until": "2026-09-30T14:00:00.000Z",
+    "limitations": [
+      "这是2026-09-23研究快照生成的周度增量校准菜单，有效期168小时，不是抖音实时排行榜",
+      "trend_signal=0表示未完成跨来源趋势核验，不代表热度为零",
+      "分数是按公开样本、业务相关性和编辑判断形成的候选优先级，不是平台流量预测",
+      "business证据仍为hypothesis，不能推断播放量或成交",
+      "本文件只有首批12条；下一批通过next_cursor从常青候选池继续生成，不能把展示批次解释为知识库容量"
+    ]
+  },
+  "pains": [
+    {
+      "pain_id": "PAIN-001",
+      "category_id": "P01_START",
+      "category": "想开始但迟迟不敢开始",
+      "stage": "准备期",
+      "question": "普通人现在做抖音是不是已经晚了？",
+      "scene": "刷到别人做自媒体赚钱，自己收藏了很多教程却一直没有发布第一条",
+      "emotions": [
+        "焦虑",
+        "怕丢脸",
+        "怕失败",
+        "信息过载"
+      ],
+      "job": "用低成本、可执行的第一步开始验证",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-002",
+      "category_id": "P01_START",
+      "category": "想开始但迟迟不敢开始",
+      "stage": "准备期",
+      "question": "没有经验、没有粉丝，第一条到底该发什么？",
+      "scene": "刷到别人做自媒体赚钱，自己收藏了很多教程却一直没有发布第一条",
+      "emotions": [
+        "焦虑",
+        "怕丢脸",
+        "怕失败",
+        "信息过载"
+      ],
+      "job": "用低成本、可执行的第一步开始验证",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-003",
+      "category_id": "P01_START",
+      "category": "想开始但迟迟不敢开始",
+      "stage": "准备期",
+      "question": "设备不好、环境普通，能不能先开始？",
+      "scene": "刷到别人做自媒体赚钱，自己收藏了很多教程却一直没有发布第一条",
+      "emotions": [
+        "焦虑",
+        "怕丢脸",
+        "怕失败",
+        "信息过载"
+      ],
+      "job": "用低成本、可执行的第一步开始验证",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-004",
+      "category_id": "P01_START",
+      "category": "想开始但迟迟不敢开始",
+      "stage": "准备期",
+      "question": "我什么都懂一点，但不知道哪个方向值得长期做？",
+      "scene": "刷到别人做自媒体赚钱，自己收藏了很多教程却一直没有发布第一条",
+      "emotions": [
+        "焦虑",
+        "怕丢脸",
+        "怕失败",
+        "信息过载"
+      ],
+      "job": "用低成本、可执行的第一步开始验证",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-005",
+      "category_id": "P01_START",
+      "category": "想开始但迟迟不敢开始",
+      "stage": "准备期",
+      "question": "怕熟人刷到、怕被评价，怎么迈过出镜和发布这一关？",
+      "scene": "刷到别人做自媒体赚钱，自己收藏了很多教程却一直没有发布第一条",
+      "emotions": [
+        "焦虑",
+        "怕丢脸",
+        "怕失败",
+        "信息过载"
+      ],
+      "job": "用低成本、可执行的第一步开始验证",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-006",
+      "category_id": "P01_START",
+      "category": "想开始但迟迟不敢开始",
+      "stage": "准备期",
+      "question": "白天上班，只有晚上零碎时间还能不能做起来？",
+      "scene": "刷到别人做自媒体赚钱，自己收藏了很多教程却一直没有发布第一条",
+      "emotions": [
+        "焦虑",
+        "怕丢脸",
+        "怕失败",
+        "信息过载"
+      ],
+      "job": "用低成本、可执行的第一步开始验证",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-007",
+      "category_id": "P01_START",
+      "category": "想开始但迟迟不敢开始",
+      "stage": "准备期",
+      "question": "应该先学完所有运营知识，还是边做边学？",
+      "scene": "刷到别人做自媒体赚钱，自己收藏了很多教程却一直没有发布第一条",
+      "emotions": [
+        "焦虑",
+        "怕丢脸",
+        "怕失败",
+        "信息过载"
+      ],
+      "job": "用低成本、可执行的第一步开始验证",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-008",
+      "category_id": "P01_START",
+      "category": "想开始但迟迟不敢开始",
+      "stage": "准备期",
+      "question": "怎样用7天验证自己适不适合做自媒体？",
+      "scene": "刷到别人做自媒体赚钱，自己收藏了很多教程却一直没有发布第一条",
+      "emotions": [
+        "焦虑",
+        "怕丢脸",
+        "怕失败",
+        "信息过载"
+      ],
+      "job": "用低成本、可执行的第一步开始验证",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-009",
+      "category_id": "P02_POSITIONING",
+      "category": "定位和目标人群不清",
+      "stage": "准备期",
+      "question": "我会的东西很多，账号到底应该选哪一个定位？",
+      "scene": "主页内容很多但主题分散，用户看完不知道为什么要关注",
+      "emotions": [
+        "迷茫",
+        "犹豫",
+        "害怕选错"
+      ],
+      "job": "明确卖给谁、解决什么问题、长期讲什么",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-010",
+      "category_id": "P02_POSITIONING",
+      "category": "定位和目标人群不清",
+      "stage": "准备期",
+      "question": "个人兴趣、专业能力和赚钱方向冲突时怎么选？",
+      "scene": "主页内容很多但主题分散，用户看完不知道为什么要关注",
+      "emotions": [
+        "迷茫",
+        "犹豫",
+        "害怕选错"
+      ],
+      "job": "明确卖给谁、解决什么问题、长期讲什么",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-011",
+      "category_id": "P02_POSITIONING",
+      "category": "定位和目标人群不清",
+      "stage": "准备期",
+      "question": "为什么内容看起来都不错，主页却留不住人？",
+      "scene": "主页内容很多但主题分散，用户看完不知道为什么要关注",
+      "emotions": [
+        "迷茫",
+        "犹豫",
+        "害怕选错"
+      ],
+      "job": "明确卖给谁、解决什么问题、长期讲什么",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-012",
+      "category_id": "P02_POSITIONING",
+      "category": "定位和目标人群不清",
+      "stage": "准备期",
+      "question": "账号能不能同时讲生活、创业、产品和行业知识？",
+      "scene": "主页内容很多但主题分散，用户看完不知道为什么要关注",
+      "emotions": [
+        "迷茫",
+        "犹豫",
+        "害怕选错"
+      ],
+      "job": "明确卖给谁、解决什么问题、长期讲什么",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-013",
+      "category_id": "P02_POSITIONING",
+      "category": "定位和目标人群不清",
+      "stage": "准备期",
+      "question": "怎么判断目标用户愿不愿意为这个问题付费？",
+      "scene": "主页内容很多但主题分散，用户看完不知道为什么要关注",
+      "emotions": [
+        "迷茫",
+        "犹豫",
+        "害怕选错"
+      ],
+      "job": "明确卖给谁、解决什么问题、长期讲什么",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-014",
+      "category_id": "P02_POSITIONING",
+      "category": "定位和目标人群不清",
+      "stage": "准备期",
+      "question": "做个人IP还是做纯干货账号更适合我？",
+      "scene": "主页内容很多但主题分散，用户看完不知道为什么要关注",
+      "emotions": [
+        "迷茫",
+        "犹豫",
+        "害怕选错"
+      ],
+      "job": "明确卖给谁、解决什么问题、长期讲什么",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-015",
+      "category_id": "P02_POSITIONING",
+      "category": "定位和目标人群不清",
+      "stage": "准备期",
+      "question": "实体店账号应该突出老板、商品还是门店场景？",
+      "scene": "主页内容很多但主题分散，用户看完不知道为什么要关注",
+      "emotions": [
+        "迷茫",
+        "犹豫",
+        "害怕选错"
+      ],
+      "job": "明确卖给谁、解决什么问题、长期讲什么",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-016",
+      "category_id": "P02_POSITIONING",
+      "category": "定位和目标人群不清",
+      "stage": "准备期",
+      "question": "已经发了很多杂内容，是否需要重新起号？",
+      "scene": "主页内容很多但主题分散，用户看完不知道为什么要关注",
+      "emotions": [
+        "迷茫",
+        "犹豫",
+        "害怕选错"
+      ],
+      "job": "明确卖给谁、解决什么问题、长期讲什么",
+      "bridges": [
+        "行业专属智能体",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-017",
+      "category_id": "P03_NICHE",
+      "category": "赛道选择与变现判断",
+      "stage": "准备期",
+      "question": "现在还有哪些适合普通人的低门槛赛道？",
+      "scene": "看到宠物、育儿、女装、知识口播等赛道都有人做，不知道怎样判断机会",
+      "emotions": [
+        "机会焦虑",
+        "怕竞争",
+        "怕投入后不能变现"
+      ],
+      "job": "用能力、素材、需求、竞争和变现路径判断赛道",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-018",
+      "category_id": "P03_NICHE",
+      "category": "赛道选择与变现判断",
+      "stage": "准备期",
+      "question": "热门赛道竞争大，冷门赛道又怕没人看，怎么选？",
+      "scene": "看到宠物、育儿、女装、知识口播等赛道都有人做，不知道怎样判断机会",
+      "emotions": [
+        "机会焦虑",
+        "怕竞争",
+        "怕投入后不能变现"
+      ],
+      "job": "用能力、素材、需求、竞争和变现路径判断赛道",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-019",
+      "category_id": "P03_NICHE",
+      "category": "赛道选择与变现判断",
+      "stage": "准备期",
+      "question": "宠物、育儿、美甲、女装和本地生活哪个更适合AI内容？",
+      "scene": "看到宠物、育儿、女装、知识口播等赛道都有人做，不知道怎样判断机会",
+      "emotions": [
+        "机会焦虑",
+        "怕竞争",
+        "怕投入后不能变现"
+      ],
+      "job": "用能力、素材、需求、竞争和变现路径判断赛道",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-020",
+      "category_id": "P03_NICHE",
+      "category": "赛道选择与变现判断",
+      "stage": "准备期",
+      "question": "一个赛道能获得流量，但没有产品可卖，还值得做吗？",
+      "scene": "看到宠物、育儿、女装、知识口播等赛道都有人做，不知道怎样判断机会",
+      "emotions": [
+        "机会焦虑",
+        "怕竞争",
+        "怕投入后不能变现"
+      ],
+      "job": "用能力、素材、需求、竞争和变现路径判断赛道",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-021",
+      "category_id": "P03_NICHE",
+      "category": "赛道选择与变现判断",
+      "stage": "准备期",
+      "question": "怎样判断一个赛道是短期热点还是长期需求？",
+      "scene": "看到宠物、育儿、女装、知识口播等赛道都有人做，不知道怎样判断机会",
+      "emotions": [
+        "机会焦虑",
+        "怕竞争",
+        "怕投入后不能变现"
+      ],
+      "job": "用能力、素材、需求、竞争和变现路径判断赛道",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-022",
+      "category_id": "P03_NICHE",
+      "category": "赛道选择与变现判断",
+      "stage": "准备期",
+      "question": "没有真实拍摄素材，哪些赛道仍然可以持续生产？",
+      "scene": "看到宠物、育儿、女装、知识口播等赛道都有人做，不知道怎样判断机会",
+      "emotions": [
+        "机会焦虑",
+        "怕竞争",
+        "怕投入后不能变现"
+      ],
+      "job": "用能力、素材、需求、竞争和变现路径判断赛道",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-023",
+      "category_id": "P03_NICHE",
+      "category": "赛道选择与变现判断",
+      "stage": "准备期",
+      "question": "做知识付费、带货还是本地获客，内容打法有什么不同？",
+      "scene": "看到宠物、育儿、女装、知识口播等赛道都有人做，不知道怎样判断机会",
+      "emotions": [
+        "机会焦虑",
+        "怕竞争",
+        "怕投入后不能变现"
+      ],
+      "job": "用能力、素材、需求、竞争和变现路径判断赛道",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-024",
+      "category_id": "P03_NICHE",
+      "category": "赛道选择与变现判断",
+      "stage": "准备期",
+      "question": "新手应该先做大赛道细分，还是直接做小众赛道？",
+      "scene": "看到宠物、育儿、女装、知识口播等赛道都有人做，不知道怎样判断机会",
+      "emotions": [
+        "机会焦虑",
+        "怕竞争",
+        "怕投入后不能变现"
+      ],
+      "job": "用能力、素材、需求、竞争和变现路径判断赛道",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-025",
+      "category_id": "P04_TOPIC_SUPPLY",
+      "category": "选题枯竭和日更压力",
+      "stage": "生产期",
+      "question": "为什么我每天都觉得没有内容可讲？",
+      "scene": "每天打开文档不知道发什么，选题时间比写作和拍摄还长",
+      "emotions": [
+        "脑子空白",
+        "拖延",
+        "断更焦虑"
+      ],
+      "job": "建立源源不断且和业务相关的问题库",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-026",
+      "category_id": "P04_TOPIC_SUPPLY",
+      "category": "选题枯竭和日更压力",
+      "stage": "生产期",
+      "question": "同一个行业讲久了，怎样避免选题重复？",
+      "scene": "每天打开文档不知道发什么，选题时间比写作和拍摄还长",
+      "emotions": [
+        "脑子空白",
+        "拖延",
+        "断更焦虑"
+      ],
+      "job": "建立源源不断且和业务相关的问题库",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-027",
+      "category_id": "P04_TOPIC_SUPPLY",
+      "category": "选题枯竭和日更压力",
+      "stage": "生产期",
+      "question": "去哪里找目标用户真正会问的问题？",
+      "scene": "每天打开文档不知道发什么，选题时间比写作和拍摄还长",
+      "emotions": [
+        "脑子空白",
+        "拖延",
+        "断更焦虑"
+      ],
+      "job": "建立源源不断且和业务相关的问题库",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-028",
+      "category_id": "P04_TOPIC_SUPPLY",
+      "category": "选题枯竭和日更压力",
+      "stage": "生产期",
+      "question": "怎样把评论区的一句话变成一条完整选题？",
+      "scene": "每天打开文档不知道发什么，选题时间比写作和拍摄还长",
+      "emotions": [
+        "脑子空白",
+        "拖延",
+        "断更焦虑"
+      ],
+      "job": "建立源源不断且和业务相关的问题库",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-029",
+      "category_id": "P04_TOPIC_SUPPLY",
+      "category": "选题枯竭和日更压力",
+      "stage": "生产期",
+      "question": "热点很多，怎么判断哪个能和自己的业务连接？",
+      "scene": "每天打开文档不知道发什么，选题时间比写作和拍摄还长",
+      "emotions": [
+        "脑子空白",
+        "拖延",
+        "断更焦虑"
+      ],
+      "job": "建立源源不断且和业务相关的问题库",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-030",
+      "category_id": "P04_TOPIC_SUPPLY",
+      "category": "选题枯竭和日更压力",
+      "stage": "生产期",
+      "question": "同行都讲过的题，还能从什么新角度切入？",
+      "scene": "每天打开文档不知道发什么，选题时间比写作和拍摄还长",
+      "emotions": [
+        "脑子空白",
+        "拖延",
+        "断更焦虑"
+      ],
+      "job": "建立源源不断且和业务相关的问题库",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-031",
+      "category_id": "P04_TOPIC_SUPPLY",
+      "category": "选题枯竭和日更压力",
+      "stage": "生产期",
+      "question": "怎样一次准备一个月的选题又不过时？",
+      "scene": "每天打开文档不知道发什么，选题时间比写作和拍摄还长",
+      "emotions": [
+        "脑子空白",
+        "拖延",
+        "断更焦虑"
+      ],
+      "job": "建立源源不断且和业务相关的问题库",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-032",
+      "category_id": "P04_TOPIC_SUPPLY",
+      "category": "选题枯竭和日更压力",
+      "stage": "生产期",
+      "question": "选题是追求高播放，还是优先吸引精准客户？",
+      "scene": "每天打开文档不知道发什么，选题时间比写作和拍摄还长",
+      "emotions": [
+        "脑子空白",
+        "拖延",
+        "断更焦虑"
+      ],
+      "job": "建立源源不断且和业务相关的问题库",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-033",
+      "category_id": "P05_HOOK_RETENTION",
+      "category": "前三秒和停留不足",
+      "stage": "发布期",
+      "question": "为什么别人同样的话题能爆，我的开头却没人停留？",
+      "scene": "作品获得曝光但用户快速划走，正文还没开始就失去观众",
+      "emotions": [
+        "挫败",
+        "困惑",
+        "急于找万能钩子"
+      ],
+      "job": "让正确的人立刻知道内容与自己有关",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-034",
+      "category_id": "P05_HOOK_RETENTION",
+      "category": "前三秒和停留不足",
+      "stage": "发布期",
+      "question": "前三秒到底应该先说结果、痛点还是冲突？",
+      "scene": "作品获得曝光但用户快速划走，正文还没开始就失去观众",
+      "emotions": [
+        "挫败",
+        "困惑",
+        "急于找万能钩子"
+      ],
+      "job": "让正确的人立刻知道内容与自己有关",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-035",
+      "category_id": "P05_HOOK_RETENTION",
+      "category": "前三秒和停留不足",
+      "stage": "发布期",
+      "question": "数字钩子怎样写才不显得虚假和套路？",
+      "scene": "作品获得曝光但用户快速划走，正文还没开始就失去观众",
+      "emotions": [
+        "挫败",
+        "困惑",
+        "急于找万能钩子"
+      ],
+      "job": "让正确的人立刻知道内容与自己有关",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-036",
+      "category_id": "P05_HOOK_RETENTION",
+      "category": "前三秒和停留不足",
+      "stage": "发布期",
+      "question": "怎样开头既尖锐又不冒犯目标用户？",
+      "scene": "作品获得曝光但用户快速划走，正文还没开始就失去观众",
+      "emotions": [
+        "挫败",
+        "困惑",
+        "急于找万能钩子"
+      ],
+      "job": "让正确的人立刻知道内容与自己有关",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-037",
+      "category_id": "P05_HOOK_RETENTION",
+      "category": "前三秒和停留不足",
+      "stage": "发布期",
+      "question": "为什么用了热门开头，完播率还是很低？",
+      "scene": "作品获得曝光但用户快速划走，正文还没开始就失去观众",
+      "emotions": [
+        "挫败",
+        "困惑",
+        "急于找万能钩子"
+      ],
+      "job": "让正确的人立刻知道内容与自己有关",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-038",
+      "category_id": "P05_HOOK_RETENTION",
+      "category": "前三秒和停留不足",
+      "stage": "发布期",
+      "question": "什么样的反差能吸引人，又不变成标题党？",
+      "scene": "作品获得曝光但用户快速划走，正文还没开始就失去观众",
+      "emotions": [
+        "挫败",
+        "困惑",
+        "急于找万能钩子"
+      ],
+      "job": "让正确的人立刻知道内容与自己有关",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-039",
+      "category_id": "P05_HOOK_RETENTION",
+      "category": "前三秒和停留不足",
+      "stage": "发布期",
+      "question": "实体店视频开头怎样快速圈定同城顾客？",
+      "scene": "作品获得曝光但用户快速划走，正文还没开始就失去观众",
+      "emotions": [
+        "挫败",
+        "困惑",
+        "急于找万能钩子"
+      ],
+      "job": "让正确的人立刻知道内容与自己有关",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-040",
+      "category_id": "P05_HOOK_RETENTION",
+      "category": "前三秒和停留不足",
+      "stage": "发布期",
+      "question": "一条文案应该准备几个不同机制的开头测试？",
+      "scene": "作品获得曝光但用户快速划走，正文还没开始就失去观众",
+      "emotions": [
+        "挫败",
+        "困惑",
+        "急于找万能钩子"
+      ],
+      "job": "让正确的人立刻知道内容与自己有关",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-041",
+      "category_id": "P06_COPYWRITING",
+      "category": "不会写口播文案",
+      "stage": "生产期",
+      "question": "脑子里有观点，为什么一写出来就很生硬？",
+      "scene": "知道想讲什么，但写出来像作文、广告或培训课，自己也念不顺",
+      "emotions": [
+        "自我怀疑",
+        "表达焦虑",
+        "怕不专业"
+      ],
+      "job": "把专业内容写成能听懂、愿意听完、可以直接说出口的文案",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-042",
+      "category_id": "P06_COPYWRITING",
+      "category": "不会写口播文案",
+      "stage": "生产期",
+      "question": "怎样把专业术语改成普通人听得懂的话？",
+      "scene": "知道想讲什么，但写出来像作文、广告或培训课，自己也念不顺",
+      "emotions": [
+        "自我怀疑",
+        "表达焦虑",
+        "怕不专业"
+      ],
+      "job": "把专业内容写成能听懂、愿意听完、可以直接说出口的文案",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-043",
+      "category_id": "P06_COPYWRITING",
+      "category": "不会写口播文案",
+      "stage": "生产期",
+      "question": "口播文案多长合适，怎样控制30秒或60秒？",
+      "scene": "知道想讲什么，但写出来像作文、广告或培训课，自己也念不顺",
+      "emotions": [
+        "自我怀疑",
+        "表达焦虑",
+        "怕不专业"
+      ],
+      "job": "把专业内容写成能听懂、愿意听完、可以直接说出口的文案",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-044",
+      "category_id": "P06_COPYWRITING",
+      "category": "不会写口播文案",
+      "stage": "生产期",
+      "question": "为什么文案信息很多，用户却记不住重点？",
+      "scene": "知道想讲什么，但写出来像作文、广告或培训课，自己也念不顺",
+      "emotions": [
+        "自我怀疑",
+        "表达焦虑",
+        "怕不专业"
+      ],
+      "job": "把专业内容写成能听懂、愿意听完、可以直接说出口的文案",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-045",
+      "category_id": "P06_COPYWRITING",
+      "category": "不会写口播文案",
+      "stage": "生产期",
+      "question": "一条文案怎样做到只解决一个问题？",
+      "scene": "知道想讲什么，但写出来像作文、广告或培训课，自己也念不顺",
+      "emotions": [
+        "自我怀疑",
+        "表达焦虑",
+        "怕不专业"
+      ],
+      "job": "把专业内容写成能听懂、愿意听完、可以直接说出口的文案",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-046",
+      "category_id": "P06_COPYWRITING",
+      "category": "不会写口播文案",
+      "stage": "生产期",
+      "question": "怎样加入情绪，又不变成空喊焦虑？",
+      "scene": "知道想讲什么，但写出来像作文、广告或培训课，自己也念不顺",
+      "emotions": [
+        "自我怀疑",
+        "表达焦虑",
+        "怕不专业"
+      ],
+      "job": "把专业内容写成能听懂、愿意听完、可以直接说出口的文案",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-047",
+      "category_id": "P06_COPYWRITING",
+      "category": "不会写口播文案",
+      "stage": "生产期",
+      "question": "没有故事经历，能不能写出有代入感的文案？",
+      "scene": "知道想讲什么，但写出来像作文、广告或培训课，自己也念不顺",
+      "emotions": [
+        "自我怀疑",
+        "表达焦虑",
+        "怕不专业"
+      ],
+      "job": "把专业内容写成能听懂、愿意听完、可以直接说出口的文案",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-048",
+      "category_id": "P06_COPYWRITING",
+      "category": "不会写口播文案",
+      "stage": "生产期",
+      "question": "怎样让AI写出的文案更像我的说话方式？",
+      "scene": "知道想讲什么，但写出来像作文、广告或培训课，自己也念不顺",
+      "emotions": [
+        "自我怀疑",
+        "表达焦虑",
+        "怕不专业"
+      ],
+      "job": "把专业内容写成能听懂、愿意听完、可以直接说出口的文案",
+      "bridges": [
+        "选题与文案能力",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-049",
+      "category_id": "P07_BENCHMARK",
+      "category": "对标、改写与原创边界",
+      "stage": "研究期",
+      "question": "爆款文案到底可以学什么，绝不能抄什么？",
+      "scene": "找到高赞作品却只会替换近义词，既怕抄袭又怕改完失去爆点",
+      "emotions": [
+        "版权担忧",
+        "怕改坏",
+        "依赖模板"
+      ],
+      "job": "保留传播机制，重建观点、证据、语言和商业连接",
+      "bridges": [
+        "爆款原创改写",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-050",
+      "category_id": "P07_BENCHMARK",
+      "category": "对标、改写与原创边界",
+      "stage": "研究期",
+      "question": "为什么逐句同义改写仍然很像原文？",
+      "scene": "找到高赞作品却只会替换近义词，既怕抄袭又怕改完失去爆点",
+      "emotions": [
+        "版权担忧",
+        "怕改坏",
+        "依赖模板"
+      ],
+      "job": "保留传播机制，重建观点、证据、语言和商业连接",
+      "bridges": [
+        "爆款原创改写",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-051",
+      "category_id": "P07_BENCHMARK",
+      "category": "对标、改写与原创边界",
+      "stage": "研究期",
+      "question": "怎样判断一条爆款是选题强还是账号本身强？",
+      "scene": "找到高赞作品却只会替换近义词，既怕抄袭又怕改完失去爆点",
+      "emotions": [
+        "版权担忧",
+        "怕改坏",
+        "依赖模板"
+      ],
+      "job": "保留传播机制，重建观点、证据、语言和商业连接",
+      "bridges": [
+        "爆款原创改写",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-052",
+      "category_id": "P07_BENCHMARK",
+      "category": "对标、改写与原创边界",
+      "stage": "研究期",
+      "question": "只看高赞作品会不会得出错误结论？",
+      "scene": "找到高赞作品却只会替换近义词，既怕抄袭又怕改完失去爆点",
+      "emotions": [
+        "版权担忧",
+        "怕改坏",
+        "依赖模板"
+      ],
+      "job": "保留传播机制，重建观点、证据、语言和商业连接",
+      "bridges": [
+        "爆款原创改写",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-053",
+      "category_id": "P07_BENCHMARK",
+      "category": "对标、改写与原创边界",
+      "stage": "研究期",
+      "question": "同一个爆款结构如何迁移到不同的行业？",
+      "scene": "找到高赞作品却只会替换近义词，既怕抄袭又怕改完失去爆点",
+      "emotions": [
+        "版权担忧",
+        "怕改坏",
+        "依赖模板"
+      ],
+      "job": "保留传播机制，重建观点、证据、语言和商业连接",
+      "bridges": [
+        "爆款原创改写",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-054",
+      "category_id": "P07_BENCHMARK",
+      "category": "对标、改写与原创边界",
+      "stage": "研究期",
+      "question": "怎样保留开头冲击力又不复制标志性表达？",
+      "scene": "找到高赞作品却只会替换近义词，既怕抄袭又怕改完失去爆点",
+      "emotions": [
+        "版权担忧",
+        "怕改坏",
+        "依赖模板"
+      ],
+      "job": "保留传播机制，重建观点、证据、语言和商业连接",
+      "bridges": [
+        "爆款原创改写",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-055",
+      "category_id": "P07_BENCHMARK",
+      "category": "对标、改写与原创边界",
+      "stage": "研究期",
+      "question": "对标文案没有数据和评论时还能分析什么？",
+      "scene": "找到高赞作品却只会替换近义词，既怕抄袭又怕改完失去爆点",
+      "emotions": [
+        "版权担忧",
+        "怕改坏",
+        "依赖模板"
+      ],
+      "job": "保留传播机制，重建观点、证据、语言和商业连接",
+      "bridges": [
+        "爆款原创改写",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-056",
+      "category_id": "P07_BENCHMARK",
+      "category": "对标、改写与原创边界",
+      "stage": "研究期",
+      "question": "怎样把对标内容自然连接到自己的项目而不硬塞？",
+      "scene": "找到高赞作品却只会替换近义词，既怕抄袭又怕改完失去爆点",
+      "emotions": [
+        "版权担忧",
+        "怕改坏",
+        "依赖模板"
+      ],
+      "job": "保留传播机制，重建观点、证据、语言和商业连接",
+      "bridges": [
+        "爆款原创改写",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-057",
+      "category_id": "P08_CAMERA",
+      "category": "不敢出镜和表现力不足",
+      "stage": "生产期",
+      "question": "不真人出镜还能不能在抖音建立信任？",
+      "scene": "文案写好了但对着镜头紧张、表情僵硬、反复重录",
+      "emotions": [
+        "尴尬",
+        "自卑",
+        "怕熟人评价",
+        "镜头恐惧"
+      ],
+      "job": "选择适合自己的呈现形式并降低出镜门槛",
+      "bridges": [
+        "动画与AI短视频",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-058",
+      "category_id": "P08_CAMERA",
+      "category": "不敢出镜和表现力不足",
+      "stage": "生产期",
+      "question": "口播总是卡词，是文案问题还是表现力问题？",
+      "scene": "文案写好了但对着镜头紧张、表情僵硬、反复重录",
+      "emotions": [
+        "尴尬",
+        "自卑",
+        "怕熟人评价",
+        "镜头恐惧"
+      ],
+      "job": "选择适合自己的呈现形式并降低出镜门槛",
+      "bridges": [
+        "动画与AI短视频",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-059",
+      "category_id": "P08_CAMERA",
+      "category": "不敢出镜和表现力不足",
+      "stage": "生产期",
+      "question": "害怕熟人刷到，怎样先用低压力方式开始？",
+      "scene": "文案写好了但对着镜头紧张、表情僵硬、反复重录",
+      "emotions": [
+        "尴尬",
+        "自卑",
+        "怕熟人评价",
+        "镜头恐惧"
+      ],
+      "job": "选择适合自己的呈现形式并降低出镜门槛",
+      "bridges": [
+        "动画与AI短视频",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-060",
+      "category_id": "P08_CAMERA",
+      "category": "不敢出镜和表现力不足",
+      "stage": "生产期",
+      "question": "声音不好听、普通话不好能不能做内容？",
+      "scene": "文案写好了但对着镜头紧张、表情僵硬、反复重录",
+      "emotions": [
+        "尴尬",
+        "自卑",
+        "怕熟人评价",
+        "镜头恐惧"
+      ],
+      "job": "选择适合自己的呈现形式并降低出镜门槛",
+      "bridges": [
+        "动画与AI短视频",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-061",
+      "category_id": "P08_CAMERA",
+      "category": "不敢出镜和表现力不足",
+      "stage": "生产期",
+      "question": "动画、数字人、画外音分别适合哪些内容？",
+      "scene": "文案写好了但对着镜头紧张、表情僵硬、反复重录",
+      "emotions": [
+        "尴尬",
+        "自卑",
+        "怕熟人评价",
+        "镜头恐惧"
+      ],
+      "job": "选择适合自己的呈现形式并降低出镜门槛",
+      "bridges": [
+        "动画与AI短视频",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-062",
+      "category_id": "P08_CAMERA",
+      "category": "不敢出镜和表现力不足",
+      "stage": "生产期",
+      "question": "AI视频会不会因为不真实而影响成交？",
+      "scene": "文案写好了但对着镜头紧张、表情僵硬、反复重录",
+      "emotions": [
+        "尴尬",
+        "自卑",
+        "怕熟人评价",
+        "镜头恐惧"
+      ],
+      "job": "选择适合自己的呈现形式并降低出镜门槛",
+      "bridges": [
+        "动画与AI短视频",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-063",
+      "category_id": "P08_CAMERA",
+      "category": "不敢出镜和表现力不足",
+      "stage": "生产期",
+      "question": "真人和AI混合呈现应该怎样分工？",
+      "scene": "文案写好了但对着镜头紧张、表情僵硬、反复重录",
+      "emotions": [
+        "尴尬",
+        "自卑",
+        "怕熟人评价",
+        "镜头恐惧"
+      ],
+      "job": "选择适合自己的呈现形式并降低出镜门槛",
+      "bridges": [
+        "动画与AI短视频",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-064",
+      "category_id": "P08_CAMERA",
+      "category": "不敢出镜和表现力不足",
+      "stage": "生产期",
+      "question": "哪些高信任内容最好仍然由真人表达？",
+      "scene": "文案写好了但对着镜头紧张、表情僵硬、反复重录",
+      "emotions": [
+        "尴尬",
+        "自卑",
+        "怕熟人评价",
+        "镜头恐惧"
+      ],
+      "job": "选择适合自己的呈现形式并降低出镜门槛",
+      "bridges": [
+        "动画与AI短视频",
+        "选题与文案能力"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-065",
+      "category_id": "P09_MATERIAL",
+      "category": "缺素材、不会拍和制作成本高",
+      "stage": "生产期",
+      "question": "只有几张商品图片，能不能做出可发布的视频？",
+      "scene": "只有少量商品图或门店照片，无法持续拍摄复杂视频",
+      "emotions": [
+        "无力",
+        "嫌麻烦",
+        "担心成本"
+      ],
+      "job": "用现有授权素材形成可持续的视频表达",
+      "bridges": [
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-066",
+      "category_id": "P09_MATERIAL",
+      "category": "缺素材、不会拍和制作成本高",
+      "stage": "生产期",
+      "question": "没有团队，一个人怎样完成脚本、素材和剪辑？",
+      "scene": "只有少量商品图或门店照片，无法持续拍摄复杂视频",
+      "emotions": [
+        "无力",
+        "嫌麻烦",
+        "担心成本"
+      ],
+      "job": "用现有授权素材形成可持续的视频表达",
+      "bridges": [
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-067",
+      "category_id": "P09_MATERIAL",
+      "category": "缺素材、不会拍和制作成本高",
+      "stage": "生产期",
+      "question": "农作物生长、宠物科普等长期过程素材怎么解决？",
+      "scene": "只有少量商品图或门店照片，无法持续拍摄复杂视频",
+      "emotions": [
+        "无力",
+        "嫌麻烦",
+        "担心成本"
+      ],
+      "job": "用现有授权素材形成可持续的视频表达",
+      "bridges": [
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-068",
+      "category_id": "P09_MATERIAL",
+      "category": "缺素材、不会拍和制作成本高",
+      "stage": "生产期",
+      "question": "同一批素材怎样多次使用而不显得重复？",
+      "scene": "只有少量商品图或门店照片，无法持续拍摄复杂视频",
+      "emotions": [
+        "无力",
+        "嫌麻烦",
+        "担心成本"
+      ],
+      "job": "用现有授权素材形成可持续的视频表达",
+      "bridges": [
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-069",
+      "category_id": "P09_MATERIAL",
+      "category": "缺素材、不会拍和制作成本高",
+      "stage": "生产期",
+      "question": "AI生成画面怎样避免商品失真和误导？",
+      "scene": "只有少量商品图或门店照片，无法持续拍摄复杂视频",
+      "emotions": [
+        "无力",
+        "嫌麻烦",
+        "担心成本"
+      ],
+      "job": "用现有授权素材形成可持续的视频表达",
+      "bridges": [
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-070",
+      "category_id": "P09_MATERIAL",
+      "category": "缺素材、不会拍和制作成本高",
+      "stage": "生产期",
+      "question": "实体店上门拍一次，应该采集哪些素材才够用？",
+      "scene": "只有少量商品图或门店照片，无法持续拍摄复杂视频",
+      "emotions": [
+        "无力",
+        "嫌麻烦",
+        "担心成本"
+      ],
+      "job": "用现有授权素材形成可持续的视频表达",
+      "bridges": [
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-071",
+      "category_id": "P09_MATERIAL",
+      "category": "缺素材、不会拍和制作成本高",
+      "stage": "生产期",
+      "question": "探店、口播、剧情和产品展示需要的素材有什么区别？",
+      "scene": "只有少量商品图或门店照片，无法持续拍摄复杂视频",
+      "emotions": [
+        "无力",
+        "嫌麻烦",
+        "担心成本"
+      ],
+      "job": "用现有授权素材形成可持续的视频表达",
+      "bridges": [
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-072",
+      "category_id": "P09_MATERIAL",
+      "category": "缺素材、不会拍和制作成本高",
+      "stage": "生产期",
+      "question": "批量生成视频前，为什么要先验证一条内容？",
+      "scene": "只有少量商品图或门店照片，无法持续拍摄复杂视频",
+      "emotions": [
+        "无力",
+        "嫌麻烦",
+        "担心成本"
+      ],
+      "job": "用现有授权素材形成可持续的视频表达",
+      "bridges": [
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-073",
+      "category_id": "P10_DISTRIBUTION",
+      "category": "低播放、标签和分发困惑",
+      "stage": "发布期",
+      "question": "播放量低到底是账号问题还是内容问题？",
+      "scene": "连续发布后播放仍低，用户把原因归结为限流、账号权重或发布时间",
+      "emotions": [
+        "委屈",
+        "猜疑",
+        "急躁"
+      ],
+      "job": "用可观察信号诊断内容、人群和分发问题",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-074",
+      "category_id": "P10_DISTRIBUTION",
+      "category": "低播放、标签和分发困惑",
+      "stage": "发布期",
+      "question": "发了几十条还在几百播放，先改哪一项？",
+      "scene": "连续发布后播放仍低，用户把原因归结为限流、账号权重或发布时间",
+      "emotions": [
+        "委屈",
+        "猜疑",
+        "急躁"
+      ],
+      "job": "用可观察信号诊断内容、人群和分发问题",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-075",
+      "category_id": "P10_DISTRIBUTION",
+      "category": "低播放、标签和分发困惑",
+      "stage": "发布期",
+      "question": "账号标签不精准会出现什么可观察表现？",
+      "scene": "连续发布后播放仍低，用户把原因归结为限流、账号权重或发布时间",
+      "emotions": [
+        "委屈",
+        "猜疑",
+        "急躁"
+      ],
+      "job": "用可观察信号诊断内容、人群和分发问题",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-076",
+      "category_id": "P10_DISTRIBUTION",
+      "category": "低播放、标签和分发困惑",
+      "stage": "发布期",
+      "question": "换发布时间和话题标签真的能解决低播放吗？",
+      "scene": "连续发布后播放仍低，用户把原因归结为限流、账号权重或发布时间",
+      "emotions": [
+        "委屈",
+        "猜疑",
+        "急躁"
+      ],
+      "job": "用可观察信号诊断内容、人群和分发问题",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-077",
+      "category_id": "P10_DISTRIBUTION",
+      "category": "低播放、标签和分发困惑",
+      "stage": "发布期",
+      "question": "新号应该追热点还是先建立垂直内容？",
+      "scene": "连续发布后播放仍低，用户把原因归结为限流、账号权重或发布时间",
+      "emotions": [
+        "委屈",
+        "猜疑",
+        "急躁"
+      ],
+      "job": "用可观察信号诊断内容、人群和分发问题",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-078",
+      "category_id": "P10_DISTRIBUTION",
+      "category": "低播放、标签和分发困惑",
+      "stage": "发布期",
+      "question": "低粉爆款为什么比大号爆款更值得研究？",
+      "scene": "连续发布后播放仍低，用户把原因归结为限流、账号权重或发布时间",
+      "emotions": [
+        "委屈",
+        "猜疑",
+        "急躁"
+      ],
+      "job": "用可观察信号诊断内容、人群和分发问题",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-079",
+      "category_id": "P10_DISTRIBUTION",
+      "category": "低播放、标签和分发困惑",
+      "stage": "发布期",
+      "question": "作品偶尔爆一条却不涨粉，说明了什么？",
+      "scene": "连续发布后播放仍低，用户把原因归结为限流、账号权重或发布时间",
+      "emotions": [
+        "委屈",
+        "猜疑",
+        "急躁"
+      ],
+      "job": "用可观察信号诊断内容、人群和分发问题",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-080",
+      "category_id": "P10_DISTRIBUTION",
+      "category": "低播放、标签和分发困惑",
+      "stage": "发布期",
+      "question": "付费投流前，怎样判断内容本身是否值得放大？",
+      "scene": "连续发布后播放仍低，用户把原因归结为限流、账号权重或发布时间",
+      "emotions": [
+        "委屈",
+        "猜疑",
+        "急躁"
+      ],
+      "job": "用可观察信号诊断内容、人群和分发问题",
+      "bridges": [
+        "选题与文案能力",
+        "爆款原创改写",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-081",
+      "category_id": "P11_CONSISTENCY",
+      "category": "更新不稳定和内容生产效率低",
+      "stage": "运营期",
+      "question": "为什么做一条视频就耗尽一天？",
+      "scene": "一条视频耗费数小时，工作一忙就断更，无法形成稳定测试量",
+      "emotions": [
+        "疲惫",
+        "内耗",
+        "坚持困难"
+      ],
+      "job": "把内容生产拆成可重复的轻量流程",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-082",
+      "category_id": "P11_CONSISTENCY",
+      "category": "更新不稳定和内容生产效率低",
+      "stage": "运营期",
+      "question": "怎样把选题、写稿、制作和发布变成固定流程？",
+      "scene": "一条视频耗费数小时，工作一忙就断更，无法形成稳定测试量",
+      "emotions": [
+        "疲惫",
+        "内耗",
+        "坚持困难"
+      ],
+      "job": "把内容生产拆成可重复的轻量流程",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-083",
+      "category_id": "P11_CONSISTENCY",
+      "category": "更新不稳定和内容生产效率低",
+      "stage": "运营期",
+      "question": "日更是不是必须，什么频率更适合自己的资源？",
+      "scene": "一条视频耗费数小时，工作一忙就断更，无法形成稳定测试量",
+      "emotions": [
+        "疲惫",
+        "内耗",
+        "坚持困难"
+      ],
+      "job": "把内容生产拆成可重复的轻量流程",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-084",
+      "category_id": "P11_CONSISTENCY",
+      "category": "更新不稳定和内容生产效率低",
+      "stage": "运营期",
+      "question": "怎样建立选题库存而不是每天临时想？",
+      "scene": "一条视频耗费数小时，工作一忙就断更，无法形成稳定测试量",
+      "emotions": [
+        "疲惫",
+        "内耗",
+        "坚持困难"
+      ],
+      "job": "把内容生产拆成可重复的轻量流程",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-085",
+      "category_id": "P11_CONSISTENCY",
+      "category": "更新不稳定和内容生产效率低",
+      "stage": "运营期",
+      "question": "哪些环节适合AI批量做，哪些必须人工判断？",
+      "scene": "一条视频耗费数小时，工作一忙就断更，无法形成稳定测试量",
+      "emotions": [
+        "疲惫",
+        "内耗",
+        "坚持困难"
+      ],
+      "job": "把内容生产拆成可重复的轻量流程",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-086",
+      "category_id": "P11_CONSISTENCY",
+      "category": "更新不稳定和内容生产效率低",
+      "stage": "运营期",
+      "question": "批量产出为什么常常变成批量低质量？",
+      "scene": "一条视频耗费数小时，工作一忙就断更，无法形成稳定测试量",
+      "emotions": [
+        "疲惫",
+        "内耗",
+        "坚持困难"
+      ],
+      "job": "把内容生产拆成可重复的轻量流程",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-087",
+      "category_id": "P11_CONSISTENCY",
+      "category": "更新不稳定和内容生产效率低",
+      "stage": "运营期",
+      "question": "一个人运营多个账号怎样避免重复劳动？",
+      "scene": "一条视频耗费数小时，工作一忙就断更，无法形成稳定测试量",
+      "emotions": [
+        "疲惫",
+        "内耗",
+        "坚持困难"
+      ],
+      "job": "把内容生产拆成可重复的轻量流程",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-088",
+      "category_id": "P11_CONSISTENCY",
+      "category": "更新不稳定和内容生产效率低",
+      "stage": "运营期",
+      "question": "怎样用数据决定下周继续什么、停止什么？",
+      "scene": "一条视频耗费数小时，工作一忙就断更，无法形成稳定测试量",
+      "emotions": [
+        "疲惫",
+        "内耗",
+        "坚持困难"
+      ],
+      "job": "把内容生产拆成可重复的轻量流程",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-089",
+      "category_id": "P12_INTERACTION",
+      "category": "没有评论、收藏和用户反馈",
+      "stage": "发布期",
+      "question": "为什么用户看完不点赞也不评论？",
+      "scene": "视频有人观看但互动很少，创作者无法知道用户真正关心什么",
+      "emotions": [
+        "冷清",
+        "被忽视",
+        "不知道怎么改"
+      ],
+      "job": "让用户愿意表达问题、立场和下一步需求",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-090",
+      "category_id": "P12_INTERACTION",
+      "category": "没有评论、收藏和用户反馈",
+      "stage": "发布期",
+      "question": "什么问题能引导真实讨论而不是机械扣数字？",
+      "scene": "视频有人观看但互动很少，创作者无法知道用户真正关心什么",
+      "emotions": [
+        "冷清",
+        "被忽视",
+        "不知道怎么改"
+      ],
+      "job": "让用户愿意表达问题、立场和下一步需求",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-091",
+      "category_id": "P12_INTERACTION",
+      "category": "没有评论、收藏和用户反馈",
+      "stage": "发布期",
+      "question": "用户愿意收藏一条运营视频的原因是什么？",
+      "scene": "视频有人观看但互动很少，创作者无法知道用户真正关心什么",
+      "emotions": [
+        "冷清",
+        "被忽视",
+        "不知道怎么改"
+      ],
+      "job": "让用户愿意表达问题、立场和下一步需求",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-092",
+      "category_id": "P12_INTERACTION",
+      "category": "没有评论、收藏和用户反馈",
+      "stage": "发布期",
+      "question": "怎样从评论区识别下一批高价值选题？",
+      "scene": "视频有人观看但互动很少，创作者无法知道用户真正关心什么",
+      "emotions": [
+        "冷清",
+        "被忽视",
+        "不知道怎么改"
+      ],
+      "job": "让用户愿意表达问题、立场和下一步需求",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-093",
+      "category_id": "P12_INTERACTION",
+      "category": "没有评论、收藏和用户反馈",
+      "stage": "发布期",
+      "question": "评论很多但都是同行，说明内容哪里出了问题？",
+      "scene": "视频有人观看但互动很少，创作者无法知道用户真正关心什么",
+      "emotions": [
+        "冷清",
+        "被忽视",
+        "不知道怎么改"
+      ],
+      "job": "让用户愿意表达问题、立场和下一步需求",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-094",
+      "category_id": "P12_INTERACTION",
+      "category": "没有评论、收藏和用户反馈",
+      "stage": "发布期",
+      "question": "怎样回应质疑，反而增强专业信任？",
+      "scene": "视频有人观看但互动很少，创作者无法知道用户真正关心什么",
+      "emotions": [
+        "冷清",
+        "被忽视",
+        "不知道怎么改"
+      ],
+      "job": "让用户愿意表达问题、立场和下一步需求",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-095",
+      "category_id": "P12_INTERACTION",
+      "category": "没有评论、收藏和用户反馈",
+      "stage": "发布期",
+      "question": "什么CTA会让用户反感并直接划走？",
+      "scene": "视频有人观看但互动很少，创作者无法知道用户真正关心什么",
+      "emotions": [
+        "冷清",
+        "被忽视",
+        "不知道怎么改"
+      ],
+      "job": "让用户愿意表达问题、立场和下一步需求",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-096",
+      "category_id": "P12_INTERACTION",
+      "category": "没有评论、收藏和用户反馈",
+      "stage": "发布期",
+      "question": "怎样设计低门槛互动又不承诺不存在的资料？",
+      "scene": "视频有人观看但互动很少，创作者无法知道用户真正关心什么",
+      "emotions": [
+        "冷清",
+        "被忽视",
+        "不知道怎么改"
+      ],
+      "job": "让用户愿意表达问题、立场和下一步需求",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-097",
+      "category_id": "P13_MONETIZATION",
+      "category": "有流量但没有变现路径",
+      "stage": "变现期",
+      "question": "有粉丝以后到底靠什么赚钱？",
+      "scene": "作品播放和粉丝增长尚可，却不知道卖什么、何时卖、怎么连接产品",
+      "emotions": [
+        "迷茫",
+        "着急变现",
+        "害怕伤粉"
+      ],
+      "job": "在内容开始前设计适合人群的商业闭环",
+      "bridges": [
+        "行业专属智能体",
+        "爆款原创改写",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-098",
+      "category_id": "P13_MONETIZATION",
+      "category": "有流量但没有变现路径",
+      "stage": "变现期",
+      "question": "为什么有播放量却没有咨询和成交？",
+      "scene": "作品播放和粉丝增长尚可，却不知道卖什么、何时卖、怎么连接产品",
+      "emotions": [
+        "迷茫",
+        "着急变现",
+        "害怕伤粉"
+      ],
+      "job": "在内容开始前设计适合人群的商业闭环",
+      "bridges": [
+        "行业专属智能体",
+        "爆款原创改写",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-099",
+      "category_id": "P13_MONETIZATION",
+      "category": "有流量但没有变现路径",
+      "stage": "变现期",
+      "question": "应该先做流量再想变现，还是从第一天设计？",
+      "scene": "作品播放和粉丝增长尚可，却不知道卖什么、何时卖、怎么连接产品",
+      "emotions": [
+        "迷茫",
+        "着急变现",
+        "害怕伤粉"
+      ],
+      "job": "在内容开始前设计适合人群的商业闭环",
+      "bridges": [
+        "行业专属智能体",
+        "爆款原创改写",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-100",
+      "category_id": "P13_MONETIZATION",
+      "category": "有流量但没有变现路径",
+      "stage": "变现期",
+      "question": "知识付费、带货、服务和广告分别适合什么账号？",
+      "scene": "作品播放和粉丝增长尚可，却不知道卖什么、何时卖、怎么连接产品",
+      "emotions": [
+        "迷茫",
+        "着急变现",
+        "害怕伤粉"
+      ],
+      "job": "在内容开始前设计适合人群的商业闭环",
+      "bridges": [
+        "行业专属智能体",
+        "爆款原创改写",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-101",
+      "category_id": "P13_MONETIZATION",
+      "category": "有流量但没有变现路径",
+      "stage": "变现期",
+      "question": "软广放在哪里既自然又不破坏完播？",
+      "scene": "作品播放和粉丝增长尚可，却不知道卖什么、何时卖、怎么连接产品",
+      "emotions": [
+        "迷茫",
+        "着急变现",
+        "害怕伤粉"
+      ],
+      "job": "在内容开始前设计适合人群的商业闭环",
+      "bridges": [
+        "行业专属智能体",
+        "爆款原创改写",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-102",
+      "category_id": "P13_MONETIZATION",
+      "category": "有流量但没有变现路径",
+      "stage": "变现期",
+      "question": "一条视频应该卖产品、卖服务还是卖下一步行动？",
+      "scene": "作品播放和粉丝增长尚可，却不知道卖什么、何时卖、怎么连接产品",
+      "emotions": [
+        "迷茫",
+        "着急变现",
+        "害怕伤粉"
+      ],
+      "job": "在内容开始前设计适合人群的商业闭环",
+      "bridges": [
+        "行业专属智能体",
+        "爆款原创改写",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-103",
+      "category_id": "P13_MONETIZATION",
+      "category": "有流量但没有变现路径",
+      "stage": "变现期",
+      "question": "粉丝不多时能不能先验证付费需求？",
+      "scene": "作品播放和粉丝增长尚可，却不知道卖什么、何时卖、怎么连接产品",
+      "emotions": [
+        "迷茫",
+        "着急变现",
+        "害怕伤粉"
+      ],
+      "job": "在内容开始前设计适合人群的商业闭环",
+      "bridges": [
+        "行业专属智能体",
+        "爆款原创改写",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-104",
+      "category_id": "P13_MONETIZATION",
+      "category": "有流量但没有变现路径",
+      "stage": "变现期",
+      "question": "宠物科普、动画故事怎样和带货形成闭环？",
+      "scene": "作品播放和粉丝增长尚可，却不知道卖什么、何时卖、怎么连接产品",
+      "emotions": [
+        "迷茫",
+        "着急变现",
+        "害怕伤粉"
+      ],
+      "job": "在内容开始前设计适合人群的商业闭环",
+      "bridges": [
+        "行业专属智能体",
+        "爆款原创改写",
+        "动画与AI短视频",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-105",
+      "category_id": "P14_LEADS",
+      "category": "咨询少或线索不精准",
+      "stage": "变现期",
+      "question": "怎样让视频吸引客户而不是只吸引同行？",
+      "scene": "内容有浏览，但私信的人少；或者咨询者只想免费领取资料、不具备购买意愿",
+      "emotions": [
+        "失望",
+        "怀疑流量价值",
+        "筛选疲劳"
+      ],
+      "job": "用问题和内容提前筛选真正愿意付费的人",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-106",
+      "category_id": "P14_LEADS",
+      "category": "咨询少或线索不精准",
+      "stage": "变现期",
+      "question": "为什么讲了很多干货，精准私信仍然很少？",
+      "scene": "内容有浏览，但私信的人少；或者咨询者只想免费领取资料、不具备购买意愿",
+      "emotions": [
+        "失望",
+        "怀疑流量价值",
+        "筛选疲劳"
+      ],
+      "job": "用问题和内容提前筛选真正愿意付费的人",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-107",
+      "category_id": "P14_LEADS",
+      "category": "咨询少或线索不精准",
+      "stage": "变现期",
+      "question": "什么内容会触发用户主动咨询而不是继续观望？",
+      "scene": "内容有浏览，但私信的人少；或者咨询者只想免费领取资料、不具备购买意愿",
+      "emotions": [
+        "失望",
+        "怀疑流量价值",
+        "筛选疲劳"
+      ],
+      "job": "用问题和内容提前筛选真正愿意付费的人",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-108",
+      "category_id": "P14_LEADS",
+      "category": "咨询少或线索不精准",
+      "stage": "变现期",
+      "question": "CTA写私信我为什么没有人行动？",
+      "scene": "内容有浏览，但私信的人少；或者咨询者只想免费领取资料、不具备购买意愿",
+      "emotions": [
+        "失望",
+        "怀疑流量价值",
+        "筛选疲劳"
+      ],
+      "job": "用问题和内容提前筛选真正愿意付费的人",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-109",
+      "category_id": "P14_LEADS",
+      "category": "咨询少或线索不精准",
+      "stage": "变现期",
+      "question": "怎样在文案里提前筛掉只薅资料的人？",
+      "scene": "内容有浏览，但私信的人少；或者咨询者只想免费领取资料、不具备购买意愿",
+      "emotions": [
+        "失望",
+        "怀疑流量价值",
+        "筛选疲劳"
+      ],
+      "job": "用问题和内容提前筛选真正愿意付费的人",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-110",
+      "category_id": "P14_LEADS",
+      "category": "咨询少或线索不精准",
+      "stage": "变现期",
+      "question": "播放不高但咨询精准的内容还要不要继续做？",
+      "scene": "内容有浏览，但私信的人少；或者咨询者只想免费领取资料、不具备购买意愿",
+      "emotions": [
+        "失望",
+        "怀疑流量价值",
+        "筛选疲劳"
+      ],
+      "job": "用问题和内容提前筛选真正愿意付费的人",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-111",
+      "category_id": "P14_LEADS",
+      "category": "咨询少或线索不精准",
+      "stage": "变现期",
+      "question": "怎样区分流量问题、信任问题和承接问题？",
+      "scene": "内容有浏览，但私信的人少；或者咨询者只想免费领取资料、不具备购买意愿",
+      "emotions": [
+        "失望",
+        "怀疑流量价值",
+        "筛选疲劳"
+      ],
+      "job": "用问题和内容提前筛选真正愿意付费的人",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-112",
+      "category_id": "P14_LEADS",
+      "category": "咨询少或线索不精准",
+      "stage": "变现期",
+      "question": "用户从短视频到私信需要跨过哪些心理门槛？",
+      "scene": "内容有浏览，但私信的人少；或者咨询者只想免费领取资料、不具备购买意愿",
+      "emotions": [
+        "失望",
+        "怀疑流量价值",
+        "筛选疲劳"
+      ],
+      "job": "用问题和内容提前筛选真正愿意付费的人",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-113",
+      "category_id": "P15_TRUST",
+      "category": "用户不信任AI、课程或服务",
+      "stage": "变现期",
+      "question": "AI写的文案真的能用，还是看起来都一样？",
+      "scene": "用户担心工具没效果、服务交付不清、买完不会用或再次被割韭菜",
+      "emotions": [
+        "警惕",
+        "怕被骗",
+        "怕闲置",
+        "怕学习成本"
+      ],
+      "job": "用过程、边界、试用和可核验证据降低决策风险",
+      "bridges": [
+        "会员学习服务",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-114",
+      "category_id": "P15_TRUST",
+      "category": "用户不信任AI、课程或服务",
+      "stage": "变现期",
+      "question": "买了智能体以后不会操作怎么办？",
+      "scene": "用户担心工具没效果、服务交付不清、买完不会用或再次被割韭菜",
+      "emotions": [
+        "警惕",
+        "怕被骗",
+        "怕闲置",
+        "怕学习成本"
+      ],
+      "job": "用过程、边界、试用和可核验证据降低决策风险",
+      "bridges": [
+        "会员学习服务",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-115",
+      "category_id": "P15_TRUST",
+      "category": "用户不信任AI、课程或服务",
+      "stage": "变现期",
+      "question": "为什么很多代运营和课程买完没有结果？",
+      "scene": "用户担心工具没效果、服务交付不清、买完不会用或再次被割韭菜",
+      "emotions": [
+        "警惕",
+        "怕被骗",
+        "怕闲置",
+        "怕学习成本"
+      ],
+      "job": "用过程、边界、试用和可核验证据降低决策风险",
+      "bridges": [
+        "会员学习服务",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-116",
+      "category_id": "P15_TRUST",
+      "category": "用户不信任AI、课程或服务",
+      "stage": "变现期",
+      "question": "3980元会员到底解决什么，不解决什么？",
+      "scene": "用户担心工具没效果、服务交付不清、买完不会用或再次被割韭菜",
+      "emotions": [
+        "警惕",
+        "怕被骗",
+        "怕闲置",
+        "怕学习成本"
+      ],
+      "job": "用过程、边界、试用和可核验证据降低决策风险",
+      "bridges": [
+        "会员学习服务",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-117",
+      "category_id": "P15_TRUST",
+      "category": "用户不信任AI、课程或服务",
+      "stage": "变现期",
+      "question": "算力积分为什么另行充值，如何控制使用成本？",
+      "scene": "用户担心工具没效果、服务交付不清、买完不会用或再次被割韭菜",
+      "emotions": [
+        "警惕",
+        "怕被骗",
+        "怕闲置",
+        "怕学习成本"
+      ],
+      "job": "用过程、边界、试用和可核验证据降低决策风险",
+      "bridges": [
+        "会员学习服务",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-118",
+      "category_id": "P15_TRUST",
+      "category": "用户不信任AI、课程或服务",
+      "stage": "变现期",
+      "question": "没有保证爆款，用户为什么还愿意付费？",
+      "scene": "用户担心工具没效果、服务交付不清、买完不会用或再次被割韭菜",
+      "emotions": [
+        "警惕",
+        "怕被骗",
+        "怕闲置",
+        "怕学习成本"
+      ],
+      "job": "用过程、边界、试用和可核验证据降低决策风险",
+      "bridges": [
+        "会员学习服务",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-119",
+      "category_id": "P15_TRUST",
+      "category": "用户不信任AI、课程或服务",
+      "stage": "变现期",
+      "question": "怎样用真实演示替代夸张效果承诺？",
+      "scene": "用户担心工具没效果、服务交付不清、买完不会用或再次被割韭菜",
+      "emotions": [
+        "警惕",
+        "怕被骗",
+        "怕闲置",
+        "怕学习成本"
+      ],
+      "job": "用过程、边界、试用和可核验证据降低决策风险",
+      "bridges": [
+        "会员学习服务",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-120",
+      "category_id": "P15_TRUST",
+      "category": "用户不信任AI、课程或服务",
+      "stage": "变现期",
+      "question": "用户需要看到哪些证据才愿意先体验或咨询？",
+      "scene": "用户担心工具没效果、服务交付不清、买完不会用或再次被割韭菜",
+      "emotions": [
+        "警惕",
+        "怕被骗",
+        "怕闲置",
+        "怕学习成本"
+      ],
+      "job": "用过程、边界、试用和可核验证据降低决策风险",
+      "bridges": [
+        "会员学习服务",
+        "行业专属智能体",
+        "高端提示词定制"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-121",
+      "category_id": "P16_METRICS",
+      "category": "不会看数据和复盘",
+      "stage": "复盘期",
+      "question": "播放低时应该先看哪几个数据和内容信号？",
+      "scene": "只盯播放和点赞，不知道下一条应该改变选题、开头、结构还是承接",
+      "emotions": [
+        "数据焦虑",
+        "无从下手",
+        "急于归因"
+      ],
+      "job": "用内容目标对应指标，形成下一轮可验证动作",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-122",
+      "category_id": "P16_METRICS",
+      "category": "不会看数据和复盘",
+      "stage": "复盘期",
+      "question": "高点赞低咨询意味着什么？",
+      "scene": "只盯播放和点赞，不知道下一条应该改变选题、开头、结构还是承接",
+      "emotions": [
+        "数据焦虑",
+        "无从下手",
+        "急于归因"
+      ],
+      "job": "用内容目标对应指标，形成下一轮可验证动作",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-123",
+      "category_id": "P16_METRICS",
+      "category": "不会看数据和复盘",
+      "stage": "复盘期",
+      "question": "完播高但不涨粉，问题可能在哪里？",
+      "scene": "只盯播放和点赞，不知道下一条应该改变选题、开头、结构还是承接",
+      "emotions": [
+        "数据焦虑",
+        "无从下手",
+        "急于归因"
+      ],
+      "job": "用内容目标对应指标，形成下一轮可验证动作",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-124",
+      "category_id": "P16_METRICS",
+      "category": "不会看数据和复盘",
+      "stage": "复盘期",
+      "question": "收藏多、评论少的内容值不值得继续？",
+      "scene": "只盯播放和点赞，不知道下一条应该改变选题、开头、结构还是承接",
+      "emotions": [
+        "数据焦虑",
+        "无从下手",
+        "急于归因"
+      ],
+      "job": "用内容目标对应指标，形成下一轮可验证动作",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-125",
+      "category_id": "P16_METRICS",
+      "category": "不会看数据和复盘",
+      "stage": "复盘期",
+      "question": "一条爆款能不能证明这个选题长期有效？",
+      "scene": "只盯播放和点赞，不知道下一条应该改变选题、开头、结构还是承接",
+      "emotions": [
+        "数据焦虑",
+        "无从下手",
+        "急于归因"
+      ],
+      "job": "用内容目标对应指标，形成下一轮可验证动作",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-126",
+      "category_id": "P16_METRICS",
+      "category": "不会看数据和复盘",
+      "stage": "复盘期",
+      "question": "怎样用高表现和普通作品对照找出差异？",
+      "scene": "只盯播放和点赞，不知道下一条应该改变选题、开头、结构还是承接",
+      "emotions": [
+        "数据焦虑",
+        "无从下手",
+        "急于归因"
+      ],
+      "job": "用内容目标对应指标，形成下一轮可验证动作",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-127",
+      "category_id": "P16_METRICS",
+      "category": "不会看数据和复盘",
+      "stage": "复盘期",
+      "question": "复盘时怎样避免把相关性误当因果？",
+      "scene": "只盯播放和点赞，不知道下一条应该改变选题、开头、结构还是承接",
+      "emotions": [
+        "数据焦虑",
+        "无从下手",
+        "急于归因"
+      ],
+      "job": "用内容目标对应指标，形成下一轮可验证动作",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-128",
+      "category_id": "P16_METRICS",
+      "category": "不会看数据和复盘",
+      "stage": "复盘期",
+      "question": "每发布多少条内容再决定一个方向是否可行？",
+      "scene": "只盯播放和点赞，不知道下一条应该改变选题、开头、结构还是承接",
+      "emotions": [
+        "数据焦虑",
+        "无从下手",
+        "急于归因"
+      ],
+      "job": "用内容目标对应指标，形成下一轮可验证动作",
+      "bridges": [
+        "选题与文案能力",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-129",
+      "category_id": "P17_LOCAL_BUSINESS",
+      "category": "实体店内容和同城获客",
+      "stage": "本地经营",
+      "question": "实体店为什么天天发产品却没人到店？",
+      "scene": "老板忙于经营，只会发产品、价格和促销，视频没有本地用户停留或到店",
+      "emotions": [
+        "生意焦虑",
+        "没时间",
+        "怕投钱无效"
+      ],
+      "job": "围绕本地顾客问题持续生产可转化内容",
+      "bridges": [
+        "实体商家内容服务",
+        "动画与AI短视频",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-130",
+      "category_id": "P17_LOCAL_BUSINESS",
+      "category": "实体店内容和同城获客",
+      "stage": "本地经营",
+      "question": "同城账号应该追大播放还是精准到店？",
+      "scene": "老板忙于经营，只会发产品、价格和促销，视频没有本地用户停留或到店",
+      "emotions": [
+        "生意焦虑",
+        "没时间",
+        "怕投钱无效"
+      ],
+      "job": "围绕本地顾客问题持续生产可转化内容",
+      "bridges": [
+        "实体商家内容服务",
+        "动画与AI短视频",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-131",
+      "category_id": "P17_LOCAL_BUSINESS",
+      "category": "实体店内容和同城获客",
+      "stage": "本地经营",
+      "question": "女装、美甲、童装、清洁用品分别能讲哪些问题？",
+      "scene": "老板忙于经营，只会发产品、价格和促销，视频没有本地用户停留或到店",
+      "emotions": [
+        "生意焦虑",
+        "没时间",
+        "怕投钱无效"
+      ],
+      "job": "围绕本地顾客问题持续生产可转化内容",
+      "bridges": [
+        "实体商家内容服务",
+        "动画与AI短视频",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-132",
+      "category_id": "P17_LOCAL_BUSINESS",
+      "category": "实体店内容和同城获客",
+      "stage": "本地经营",
+      "question": "没有老板出镜，门店还能怎样建立信任？",
+      "scene": "老板忙于经营，只会发产品、价格和促销，视频没有本地用户停留或到店",
+      "emotions": [
+        "生意焦虑",
+        "没时间",
+        "怕投钱无效"
+      ],
+      "job": "围绕本地顾客问题持续生产可转化内容",
+      "bridges": [
+        "实体商家内容服务",
+        "动画与AI短视频",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-133",
+      "category_id": "P17_LOCAL_BUSINESS",
+      "category": "实体店内容和同城获客",
+      "stage": "本地经营",
+      "question": "几张商品图和门店照片能产出哪些内容？",
+      "scene": "老板忙于经营，只会发产品、价格和促销，视频没有本地用户停留或到店",
+      "emotions": [
+        "生意焦虑",
+        "没时间",
+        "怕投钱无效"
+      ],
+      "job": "围绕本地顾客问题持续生产可转化内容",
+      "bridges": [
+        "实体商家内容服务",
+        "动画与AI短视频",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-134",
+      "category_id": "P17_LOCAL_BUSINESS",
+      "category": "实体店内容和同城获客",
+      "stage": "本地经营",
+      "question": "探店视频、老板口播和产品剧情该怎么选？",
+      "scene": "老板忙于经营，只会发产品、价格和促销，视频没有本地用户停留或到店",
+      "emotions": [
+        "生意焦虑",
+        "没时间",
+        "怕投钱无效"
+      ],
+      "job": "围绕本地顾客问题持续生产可转化内容",
+      "bridges": [
+        "实体商家内容服务",
+        "动画与AI短视频",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-135",
+      "category_id": "P17_LOCAL_BUSINESS",
+      "category": "实体店内容和同城获客",
+      "stage": "本地经营",
+      "question": "本地顾客最关心价格、效果、距离还是服务保障？",
+      "scene": "老板忙于经营，只会发产品、价格和促销，视频没有本地用户停留或到店",
+      "emotions": [
+        "生意焦虑",
+        "没时间",
+        "怕投钱无效"
+      ],
+      "job": "围绕本地顾客问题持续生产可转化内容",
+      "bridges": [
+        "实体商家内容服务",
+        "动画与AI短视频",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-136",
+      "category_id": "P17_LOCAL_BUSINESS",
+      "category": "实体店内容和同城获客",
+      "stage": "本地经营",
+      "question": "怎样从短视频自然引导私信、团购或到店？",
+      "scene": "老板忙于经营，只会发产品、价格和促销，视频没有本地用户停留或到店",
+      "emotions": [
+        "生意焦虑",
+        "没时间",
+        "怕投钱无效"
+      ],
+      "job": "围绕本地顾客问题持续生产可转化内容",
+      "bridges": [
+        "实体商家内容服务",
+        "动画与AI短视频",
+        "行业专属智能体"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-137",
+      "category_id": "P18_AI_WORKFLOW",
+      "category": "AI工具多但不会形成工作流",
+      "stage": "生产期",
+      "question": "为什么工具买了很多，内容效率还是没有提高？",
+      "scene": "安装或购买了多个AI工具，仍需来回复制，输出不稳定且不知道如何衔接",
+      "emotions": [
+        "工具疲劳",
+        "期待过高",
+        "流程混乱"
+      ],
+      "job": "用一个项目档案把选题、文案和内容呈现连续起来",
+      "bridges": [
+        "行业专属智能体",
+        "高端提示词定制",
+        "动画与AI短视频"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-138",
+      "category_id": "P18_AI_WORKFLOW",
+      "category": "AI工具多但不会形成工作流",
+      "stage": "生产期",
+      "question": "通用聊天模型和行业专属智能体有什么区别？",
+      "scene": "安装或购买了多个AI工具，仍需来回复制，输出不稳定且不知道如何衔接",
+      "emotions": [
+        "工具疲劳",
+        "期待过高",
+        "流程混乱"
+      ],
+      "job": "用一个项目档案把选题、文案和内容呈现连续起来",
+      "bridges": [
+        "行业专属智能体",
+        "高端提示词定制",
+        "动画与AI短视频"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-139",
+      "category_id": "P18_AI_WORKFLOW",
+      "category": "AI工具多但不会形成工作流",
+      "stage": "生产期",
+      "question": "怎样让AI记住我的行业、客户和表达风格？",
+      "scene": "安装或购买了多个AI工具，仍需来回复制，输出不稳定且不知道如何衔接",
+      "emotions": [
+        "工具疲劳",
+        "期待过高",
+        "流程混乱"
+      ],
+      "job": "用一个项目档案把选题、文案和内容呈现连续起来",
+      "bridges": [
+        "行业专属智能体",
+        "高端提示词定制",
+        "动画与AI短视频"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-140",
+      "category_id": "P18_AI_WORKFLOW",
+      "category": "AI工具多但不会形成工作流",
+      "stage": "生产期",
+      "question": "为什么同一个提示词每次输出质量差异很大？",
+      "scene": "安装或购买了多个AI工具，仍需来回复制，输出不稳定且不知道如何衔接",
+      "emotions": [
+        "工具疲劳",
+        "期待过高",
+        "流程混乱"
+      ],
+      "job": "用一个项目档案把选题、文案和内容呈现连续起来",
+      "bridges": [
+        "行业专属智能体",
+        "高端提示词定制",
+        "动画与AI短视频"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-141",
+      "category_id": "P18_AI_WORKFLOW",
+      "category": "AI工具多但不会形成工作流",
+      "stage": "生产期",
+      "question": "文案、图片和视频如何避免各做各的？",
+      "scene": "安装或购买了多个AI工具，仍需来回复制，输出不稳定且不知道如何衔接",
+      "emotions": [
+        "工具疲劳",
+        "期待过高",
+        "流程混乱"
+      ],
+      "job": "用一个项目档案把选题、文案和内容呈现连续起来",
+      "bridges": [
+        "行业专属智能体",
+        "高端提示词定制",
+        "动画与AI短视频"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-142",
+      "category_id": "P18_AI_WORKFLOW",
+      "category": "AI工具多但不会形成工作流",
+      "stage": "生产期",
+      "question": "怎样判断一个AI功能是真的可用还是演示效果？",
+      "scene": "安装或购买了多个AI工具，仍需来回复制，输出不稳定且不知道如何衔接",
+      "emotions": [
+        "工具疲劳",
+        "期待过高",
+        "流程混乱"
+      ],
+      "job": "用一个项目档案把选题、文案和内容呈现连续起来",
+      "bridges": [
+        "行业专属智能体",
+        "高端提示词定制",
+        "动画与AI短视频"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-143",
+      "category_id": "P18_AI_WORKFLOW",
+      "category": "AI工具多但不会形成工作流",
+      "stage": "生产期",
+      "question": "哪些核心判断不能交给AI自动完成？",
+      "scene": "安装或购买了多个AI工具，仍需来回复制，输出不稳定且不知道如何衔接",
+      "emotions": [
+        "工具疲劳",
+        "期待过高",
+        "流程混乱"
+      ],
+      "job": "用一个项目档案把选题、文案和内容呈现连续起来",
+      "bridges": [
+        "行业专属智能体",
+        "高端提示词定制",
+        "动画与AI短视频"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-144",
+      "category_id": "P18_AI_WORKFLOW",
+      "category": "AI工具多但不会形成工作流",
+      "stage": "生产期",
+      "question": "怎样把已经验证有效的内容批量扩展而不降质？",
+      "scene": "安装或购买了多个AI工具，仍需来回复制，输出不稳定且不知道如何衔接",
+      "emotions": [
+        "工具疲劳",
+        "期待过高",
+        "流程混乱"
+      ],
+      "job": "用一个项目档案把选题、文案和内容呈现连续起来",
+      "bridges": [
+        "行业专属智能体",
+        "高端提示词定制",
+        "动画与AI短视频"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-145",
+      "category_id": "P19_TEAM_COST",
+      "category": "团队、成本和外包决策",
+      "stage": "经营期",
+      "question": "一个人做账号最先应该外包哪个环节？",
+      "scene": "想持续做内容却不知道该自己学、招人、找代运营还是用AI",
+      "emotions": [
+        "成本压力",
+        "怕被坑",
+        "管理焦虑"
+      ],
+      "job": "按验证阶段配置最小团队和工具成本",
+      "bridges": [
+        "实体商家内容服务",
+        "行业专属智能体",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-146",
+      "category_id": "P19_TEAM_COST",
+      "category": "团队、成本和外包决策",
+      "stage": "经营期",
+      "question": "什么时候值得招聘文案、剪辑或运营？",
+      "scene": "想持续做内容却不知道该自己学、招人、找代运营还是用AI",
+      "emotions": [
+        "成本压力",
+        "怕被坑",
+        "管理焦虑"
+      ],
+      "job": "按验证阶段配置最小团队和工具成本",
+      "bridges": [
+        "实体商家内容服务",
+        "行业专属智能体",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-147",
+      "category_id": "P19_TEAM_COST",
+      "category": "团队、成本和外包决策",
+      "stage": "经营期",
+      "question": "代运营承诺播放和成交为什么需要警惕？",
+      "scene": "想持续做内容却不知道该自己学、招人、找代运营还是用AI",
+      "emotions": [
+        "成本压力",
+        "怕被坑",
+        "管理焦虑"
+      ],
+      "job": "按验证阶段配置最小团队和工具成本",
+      "bridges": [
+        "实体商家内容服务",
+        "行业专属智能体",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-148",
+      "category_id": "P19_TEAM_COST",
+      "category": "团队、成本和外包决策",
+      "stage": "经营期",
+      "question": "AI能省掉哪些重复岗位，不能替代哪些岗位？",
+      "scene": "想持续做内容却不知道该自己学、招人、找代运营还是用AI",
+      "emotions": [
+        "成本压力",
+        "怕被坑",
+        "管理焦虑"
+      ],
+      "job": "按验证阶段配置最小团队和工具成本",
+      "bridges": [
+        "实体商家内容服务",
+        "行业专属智能体",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-149",
+      "category_id": "P19_TEAM_COST",
+      "category": "团队、成本和外包决策",
+      "stage": "经营期",
+      "question": "实体商家上门拍摄服务怎样评估值不值？",
+      "scene": "想持续做内容却不知道该自己学、招人、找代运营还是用AI",
+      "emotions": [
+        "成本压力",
+        "怕被坑",
+        "管理焦虑"
+      ],
+      "job": "按验证阶段配置最小团队和工具成本",
+      "bridges": [
+        "实体商家内容服务",
+        "行业专属智能体",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-150",
+      "category_id": "P19_TEAM_COST",
+      "category": "团队、成本和外包决策",
+      "stage": "经营期",
+      "question": "算力成本如何计入单条内容和账号利润？",
+      "scene": "想持续做内容却不知道该自己学、招人、找代运营还是用AI",
+      "emotions": [
+        "成本压力",
+        "怕被坑",
+        "管理焦虑"
+      ],
+      "job": "按验证阶段配置最小团队和工具成本",
+      "bridges": [
+        "实体商家内容服务",
+        "行业专属智能体",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-151",
+      "category_id": "P19_TEAM_COST",
+      "category": "团队、成本和外包决策",
+      "stage": "经营期",
+      "question": "先做单账号验证还是直接组矩阵？",
+      "scene": "想持续做内容却不知道该自己学、招人、找代运营还是用AI",
+      "emotions": [
+        "成本压力",
+        "怕被坑",
+        "管理焦虑"
+      ],
+      "job": "按验证阶段配置最小团队和工具成本",
+      "bridges": [
+        "实体商家内容服务",
+        "行业专属智能体",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-152",
+      "category_id": "P19_TEAM_COST",
+      "category": "团队、成本和外包决策",
+      "stage": "经营期",
+      "question": "怎样避免团队只追数量却没有有效结果？",
+      "scene": "想持续做内容却不知道该自己学、招人、找代运营还是用AI",
+      "emotions": [
+        "成本压力",
+        "怕被坑",
+        "管理焦虑"
+      ],
+      "job": "按验证阶段配置最小团队和工具成本",
+      "bridges": [
+        "实体商家内容服务",
+        "行业专属智能体",
+        "会员学习服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-153",
+      "category_id": "P20_SCALE",
+      "category": "账号矩阵和规模化复制",
+      "stage": "放大期",
+      "question": "什么结果出现以后才适合做账号矩阵？",
+      "scene": "单个账号已出现有效内容，准备扩行业、扩账号或批量带货",
+      "emotions": [
+        "增长期待",
+        "怕失控",
+        "担心同质化"
+      ],
+      "job": "只复制已验证机制，并保持素材、定位和账号差异",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-154",
+      "category_id": "P20_SCALE",
+      "category": "账号矩阵和规模化复制",
+      "stage": "放大期",
+      "question": "同一赛道多个账号怎样避免内容同质化？",
+      "scene": "单个账号已出现有效内容，准备扩行业、扩账号或批量带货",
+      "emotions": [
+        "增长期待",
+        "怕失控",
+        "担心同质化"
+      ],
+      "job": "只复制已验证机制，并保持素材、定位和账号差异",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-155",
+      "category_id": "P20_SCALE",
+      "category": "账号矩阵和规模化复制",
+      "stage": "放大期",
+      "question": "矩阵应该按人群、场景、风格还是产品拆分？",
+      "scene": "单个账号已出现有效内容，准备扩行业、扩账号或批量带货",
+      "emotions": [
+        "增长期待",
+        "怕失控",
+        "担心同质化"
+      ],
+      "job": "只复制已验证机制，并保持素材、定位和账号差异",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-156",
+      "category_id": "P20_SCALE",
+      "category": "账号矩阵和规模化复制",
+      "stage": "放大期",
+      "question": "一条爆款怎样扩成系列而不是重复翻拍？",
+      "scene": "单个账号已出现有效内容，准备扩行业、扩账号或批量带货",
+      "emotions": [
+        "增长期待",
+        "怕失控",
+        "担心同质化"
+      ],
+      "job": "只复制已验证机制，并保持素材、定位和账号差异",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-157",
+      "category_id": "P20_SCALE",
+      "category": "账号矩阵和规模化复制",
+      "stage": "放大期",
+      "question": "宠物、美甲、女装等赛道如何批量测试？",
+      "scene": "单个账号已出现有效内容，准备扩行业、扩账号或批量带货",
+      "emotions": [
+        "增长期待",
+        "怕失控",
+        "担心同质化"
+      ],
+      "job": "只复制已验证机制，并保持素材、定位和账号差异",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-158",
+      "category_id": "P20_SCALE",
+      "category": "账号矩阵和规模化复制",
+      "stage": "放大期",
+      "question": "矩阵账号的数据应该单独看还是合并看？",
+      "scene": "单个账号已出现有效内容，准备扩行业、扩账号或批量带货",
+      "emotions": [
+        "增长期待",
+        "怕失控",
+        "担心同质化"
+      ],
+      "job": "只复制已验证机制，并保持素材、定位和账号差异",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-159",
+      "category_id": "P20_SCALE",
+      "category": "账号矩阵和规模化复制",
+      "stage": "放大期",
+      "question": "自动采集和批量生成怎样控制版权与真实性？",
+      "scene": "单个账号已出现有效内容，准备扩行业、扩账号或批量带货",
+      "emotions": [
+        "增长期待",
+        "怕失控",
+        "担心同质化"
+      ],
+      "job": "只复制已验证机制，并保持素材、定位和账号差异",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    },
+    {
+      "pain_id": "PAIN-160",
+      "category_id": "P20_SCALE",
+      "category": "账号矩阵和规模化复制",
+      "stage": "放大期",
+      "question": "从会员服务延伸到自营账号带货，先验证哪条链路？",
+      "scene": "单个账号已出现有效内容，准备扩行业、扩账号或批量带货",
+      "emotions": [
+        "增长期待",
+        "怕失控",
+        "担心同质化"
+      ],
+      "job": "只复制已验证机制，并保持素材、定位和账号差异",
+      "bridges": [
+        "行业专属智能体",
+        "动画与AI短视频",
+        "实体商家内容服务"
+      ],
+      "evidence_status": "research_hypothesis",
+      "evidence_refs": [],
+      "source_date": "2026-09-23T21:30:00+08:00"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "DY-001",
+      "source_type": "douyin_public_page",
+      "creator": "胡说老王",
+      "title": "短视频起号见效方法",
+      "url": "https://www.douyin.com/video/7586135735284223241",
+      "pain": "不会选题、不会写口播",
+      "hook": "结果承诺+方法",
+      "structure": "低粉爆款选题→开头→观点→填内容",
+      "visible_metrics": "9142/633/1.1万/5082",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-002",
+      "source_type": "douyin_public_page",
+      "creator": "胡说老王",
+      "title": "四步做好口播短视频",
+      "url": "https://www.douyin.com/video/7563499572484525351",
+      "pain": "没有完整创作方法",
+      "hook": "数字步骤+手把手",
+      "structure": "选题→开头→观点→内容",
+      "visible_metrics": "8763/1399/1.0万/2969",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-003",
+      "source_type": "douyin_public_page",
+      "creator": "胡说老王",
+      "title": "如何写爆款文案",
+      "url": "https://www.douyin.com/video/7508727584957893946",
+      "pain": "自己写不出文案",
+      "hook": "直接点名爆款",
+      "structure": "找选题→钩子→观点→个人表达",
+      "visible_metrics": "1/0/unknown/unknown",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-004",
+      "source_type": "douyin_public_page",
+      "creator": "胡说老王",
+      "title": "如何找对标抄作业",
+      "url": "https://www.douyin.com/video/7581662328586145064",
+      "pain": "不会找对标且担心抄袭",
+      "hook": "手把手",
+      "structure": "低粉爆款→机制提取→重组→风格化",
+      "visible_metrics": "233/32/292/71",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "爆款原创改写",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-005",
+      "source_type": "douyin_public_page",
+      "creator": "胡说老王",
+      "title": "实体店如何做好自媒体",
+      "url": "https://www.douyin.com/video/7574383968264817125",
+      "pain": "商家不知道选平台和内容",
+      "hook": "身份点名",
+      "structure": "客户年龄→平台→对标早期内容",
+      "visible_metrics": "35/0/21/7",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-006",
+      "source_type": "douyin_public_page",
+      "creator": "胡说老王",
+      "title": "普通人如何做好自媒体",
+      "url": "https://www.douyin.com/video/7577346867638950867",
+      "pain": "盲目起号且不知怎样变现",
+      "hook": "适合普通人",
+      "structure": "卖什么→卖给谁→怎么卖",
+      "visible_metrics": "38/4/15/9",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-007",
+      "source_type": "douyin_public_page",
+      "creator": "檬九",
+      "title": "抖音从0到1起号全流程",
+      "url": "https://www.douyin.com/video/7184691106116832516",
+      "pain": "新人不知道完整流程",
+      "hook": "新人小白必看",
+      "structure": "定位→对标→主页→文案选题→标签",
+      "visible_metrics": "3392/356/2334/982",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-008",
+      "source_type": "douyin_public_page",
+      "creator": "檬九",
+      "title": "素人带货选品测品方法",
+      "url": "https://www.douyin.com/video/7310193011562908965",
+      "pain": "不会选品，照搬别人仍不出单",
+      "hook": "结果案例",
+      "structure": "冷启动→分阶段选品→测品→复盘",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "行业专属智能体",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-009",
+      "source_type": "douyin_public_page",
+      "creator": "檬九",
+      "title": "涨粉不知道发什么视频",
+      "url": "https://www.douyin.com/video/7324179179262610726",
+      "pain": "选题枯竭",
+      "hook": "直接复述用户原话",
+      "structure": "创作灵感→高热话题→文案→录制",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-010",
+      "source_type": "douyin_public_page",
+      "creator": "檬九",
+      "title": "10首带货爆款背景音乐",
+      "url": "https://www.douyin.com/video/7325634697063599369",
+      "pain": "不知道配什么内容元素",
+      "hook": "数字清单+强结果",
+      "structure": "清单收藏型",
+      "visible_metrics": "4808/84/6243/1149",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-011",
+      "source_type": "douyin_public_page",
+      "creator": "王小艳是个运营",
+      "title": "从0到1起号之定位",
+      "url": "https://www.douyin.com/video/7524250075179076873",
+      "pain": "定位模糊，流量不能变现",
+      "hook": "筛选认真做号的人",
+      "structure": "商业定位→内容定位→人设定位",
+      "visible_metrics": "3179/76/2022/446",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-012",
+      "source_type": "douyin_public_page",
+      "creator": "王小艳是个运营",
+      "title": "用行业清单做大流量",
+      "url": "https://www.douyin.com/shipin/7638837589310539795",
+      "pain": "不会把行业知识内容化",
+      "hook": "爆款呈现拆解",
+      "structure": "行业信息→清单化",
+      "visible_metrics": "2369/30/1782/539",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "行业专属智能体",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-013",
+      "source_type": "douyin_public_page",
+      "creator": "董十一",
+      "title": "假发学员短视频获客案例",
+      "url": "https://www.douyin.com/video/7461477742509411620",
+      "pain": "实体店拍了内容却没有客户",
+      "hook": "具体行业+结果案例",
+      "structure": "模板→目标流量→成交理由→放大",
+      "visible_metrics": "2008 only",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-014",
+      "source_type": "douyin_public_page",
+      "creator": "董十一",
+      "title": "实体商家抖音成交核心",
+      "url": "https://www.douyin.com/video/7278135410058988836",
+      "pain": "有流量没成交",
+      "hook": "一个核心点",
+      "structure": "目标人群→成交理由→服务证据",
+      "visible_metrics": "275/45/205/202",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-015",
+      "source_type": "douyin_public_page",
+      "creator": "董十一",
+      "title": "实体为什么是最大经济体",
+      "url": "https://www.douyin.com/video/7434820151138094348",
+      "pain": "实体老板不擅长内容创造",
+      "hook": "宏大问题+平台对比",
+      "structure": "现状→心理阻碍→机会",
+      "visible_metrics": "2027/44/504/302",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-016",
+      "source_type": "douyin_public_page",
+      "creator": "董十一",
+      "title": "实体获客四个关键步骤",
+      "url": "https://jingxuan.douyin.com/m/video/7527183318518697257",
+      "pain": "内容无法批量",
+      "hook": "完全讲清楚",
+      "structure": "获客内容→模板→矩阵→AI提效",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-017",
+      "source_type": "douyin_public_page",
+      "creator": "董十一",
+      "title": "实体老板别学做网红",
+      "url": "https://jingxuan.douyin.com/m/video/7571398604369144299",
+      "pain": "把播放当经营结果",
+      "hook": "反常识劝退",
+      "structure": "目标纠偏→只学获客方法",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-018",
+      "source_type": "douyin_public_page",
+      "creator": "董十一",
+      "title": "实体老板短视频挣钱三点",
+      "url": "https://jingxuan.douyin.com/m/video/7576604077795211497",
+      "pain": "偶尔发内容且无法放大",
+      "hook": "三个关键点",
+      "structure": "有效内容→足够数量→投放放大",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-019",
+      "source_type": "douyin_public_page",
+      "creator": "黑马运营",
+      "title": "如何降低两秒跳出率",
+      "url": "https://www.douyin.com/video/7293440577541049610",
+      "pain": "开头留不住人",
+      "hook": "直接点名数据指标",
+      "structure": "诊断→替换钩子",
+      "visible_metrics": "5773/565/4701/1950",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-020",
+      "source_type": "douyin_public_page",
+      "creator": "黑马运营",
+      "title": "做抖音怎么取名字",
+      "url": "https://www.douyin.com/video/7376971812976069897",
+      "pain": "账号没有记忆点",
+      "hook": "高频小问题",
+      "structure": "可套用规则→自测互动",
+      "visible_metrics": "2.5万/3410/1.2万/6333",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-021",
+      "source_type": "douyin_public_page",
+      "creator": "黑马运营",
+      "title": "靠讲故事起号",
+      "url": "https://www.douyin.com/video/7429639934576758070",
+      "pain": "行业看似没有故事",
+      "hook": "一直不过时",
+      "structure": "故事价值→行业应用",
+      "visible_metrics": "1330/21/259/116",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-022",
+      "source_type": "douyin_public_page",
+      "creator": "黑马运营",
+      "title": "短视频运营与个人IP",
+      "url": "https://www.douyin.com/video/7386584934363761970",
+      "pain": "零播放、认真剪仍没流量、不涨粉",
+      "hook": "问题合集",
+      "structure": "评论痛点→诊断",
+      "visible_metrics": "4120/320/1609/640",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-023",
+      "source_type": "douyin_public_page",
+      "creator": "黑马运营",
+      "title": "情侣夫妻怎么拍抖音",
+      "url": "https://www.douyin.com/video/7544636746340977980",
+      "pain": "内容造假透支信任",
+      "hook": "身份点名+争议",
+      "structure": "常见套路→反对理由→价值观",
+      "visible_metrics": "8.5万/7567/2.1万/25.8万",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-024",
+      "source_type": "douyin_public_page",
+      "creator": "顺泽自媒体",
+      "title": "差异化行为形成辨识度",
+      "url": "https://www.douyin.com/video/7628150088275135754",
+      "pain": "内容同质且没有记忆点",
+      "hook": "明确结果",
+      "structure": "差异动作→行业适配",
+      "visible_metrics": "2.1万/4312/1.4万/9310",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-025",
+      "source_type": "douyin_public_page",
+      "creator": "顺泽自媒体",
+      "title": "跨界重组形成起号逻辑",
+      "url": "https://www.douyin.com/video/7631456720925003048",
+      "pain": "单一行业内容无聊",
+      "hook": "1+1大于2",
+      "structure": "行业元素+反差元素",
+      "visible_metrics": "2130/811/1224/825",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-026",
+      "source_type": "douyin_public_page",
+      "creator": "丁妍之",
+      "title": "3步用AI写爆款文案",
+      "url": "https://www.douyin.com/video/7456840221569731867",
+      "pain": "人脑写得慢且不会拆爆款",
+      "hook": "三步+大结果",
+      "structure": "提取→句子作用→按新主题重构",
+      "visible_metrics": "4025/143/4999/1607",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "爆款原创改写",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-027",
+      "source_type": "douyin_public_page",
+      "creator": "丁妍之",
+      "title": "用AI成为专业教练",
+      "url": "https://www.douyin.com/video/7490400177644211496",
+      "pain": "只复制现象，不理解逻辑",
+      "hook": "身份跃迁",
+      "structure": "提文案→问作用→抽象机制→换题",
+      "visible_metrics": "74/4/70/32",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "爆款原创改写",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-028",
+      "source_type": "douyin_public_page",
+      "creator": "丁妍之",
+      "title": "三个步骤让AI帮你工作",
+      "url": "https://www.douyin.com/video/7569151341453446440",
+      "pain": "提示词太泛导致输出空洞",
+      "hook": "三个步骤",
+      "structure": "AI提问→补信息→再输出",
+      "visible_metrics": "68/4/40/19",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "高端提示词定制",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-029",
+      "source_type": "douyin_public_page",
+      "creator": "丁妍之",
+      "title": "实体店如何跟互联网结合",
+      "url": "https://www.douyin.com/video/7563273078365490472",
+      "pain": "直播竞争不过供应链且缺持续内容",
+      "hook": "实体+互联网",
+      "structure": "短视频优先→本地半径→真实过程",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-030",
+      "source_type": "douyin_public_page",
+      "creator": "丁妍之",
+      "title": "AI时代打造数字资产",
+      "url": "https://www.douyin.com/video/7589289483401563442",
+      "pain": "不敢出镜或表现力弱",
+      "hook": "趋势+数字资产",
+      "structure": "数字人→智能体→应用",
+      "visible_metrics": "57/16/31/14",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-031",
+      "source_type": "douyin_public_page",
+      "creator": "老成常谈",
+      "title": "98%的人不知道的7天起号",
+      "url": "https://www.douyin.com/video/7148470748787543329",
+      "pain": "起号没有确定性",
+      "hook": "多数人+时间承诺",
+      "structure": "变现→选题→低粉爆款→标签",
+      "visible_metrics": "1619/43/1003/483",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-032",
+      "source_type": "douyin_public_page",
+      "creator": "疯狂",
+      "title": "想做视频赚收益却不知如何开始",
+      "url": "https://www.douyin.com/video/7280381932767087929",
+      "pain": "新手不知道装备、主页、更新和收益",
+      "hook": "直接复述提问",
+      "structure": "完整入门指南",
+      "visible_metrics": "125/21/9/9",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-033",
+      "source_type": "douyin_public_page",
+      "creator": "金策AI短视频获客",
+      "title": "23个智能体的短视频操盘系统",
+      "url": "https://www.douyin.com/video/7513898508605345043",
+      "pain": "IP打造环节多且团队成本高",
+      "hook": "功能数量",
+      "structure": "定位→调研→文案→视频→数据",
+      "visible_metrics": "4/0/1/unknown",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "行业专属智能体",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-034",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "作品为什么没有播放量",
+      "url": "https://www.douyin.com/video/7142787609092295972",
+      "pain": "新人低播放且不知问题在哪",
+      "hook": "为什么没有播放",
+      "structure": "机制解释→原因→建议",
+      "visible_metrics": "3747/1163/442/104",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-035",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "为什么你发的视频没流量",
+      "url": "https://www.douyin.com/video/7681287841540311144",
+      "pain": "冷启动失败和标签混乱",
+      "hook": "三条原因",
+      "structure": "冷启动→标签→行为",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-036",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "视频没流量为什么",
+      "url": "https://www.douyin.com/video/7392074064191360256",
+      "pain": "低播放后怀疑限流",
+      "hook": "直接问题",
+      "structure": "测试→观看表现→分发",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-037",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "发布2小时不到30播放",
+      "url": "https://www.douyin.com/video/7146342955685547275",
+      "pain": "极低播放时不会诊断",
+      "hook": "具体时间和数字",
+      "structure": "现象→检测→处理",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-038",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "50播放跑到800后的三件事",
+      "url": "https://www.douyin.com/video/7670483108143129698",
+      "pain": "只看播放不会复盘",
+      "hook": "前后变化",
+      "structure": "数据变化→三个发现→行动",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-039",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "短视频是效率游戏不是勤奋游戏",
+      "url": "https://www.douyin.com/video/7579237370709511424",
+      "pain": "努力更新但方向不对",
+      "hook": "反常识立场",
+      "structure": "标签→前三秒→信息点→立场",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-040",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "如何有效提升5秒完播率",
+      "url": "https://www.douyin.com/video/7279239015776259386",
+      "pain": "五秒留存低",
+      "hook": "点名指标",
+      "structure": "指标→钩子→应用",
+      "visible_metrics": "4293 likes/3381 saves/2168 shares",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-041",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "爆款是抄出来的吗",
+      "url": "https://jingxuan.douyin.com/m/video/7674218063343979791",
+      "pain": "照抄导致同质化",
+      "hook": "争议问题",
+      "structure": "差作诊断→跨域取结构→重组",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "爆款原创改写",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-042",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "手把手把口播做好",
+      "url": "https://www.douyin.com/video/7559496019977751843",
+      "pain": "专业人士做不好口播",
+      "hook": "手把手",
+      "structure": "选题→价值观→开头分析",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-043",
+      "source_type": "douyin_public_page",
+      "creator": "胡说老王",
+      "title": "起号难第一天就上手",
+      "url": "https://www.douyin.com/video/7589906579340791076",
+      "pain": "新号每天不知道拍什么",
+      "hook": "第一天上手",
+      "structure": "热点选题→研究→边说边写",
+      "visible_metrics": "25/unknown/7/1",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-044",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "实体店都卡在不知道拍什么",
+      "url": "https://www.douyin.com/video/7681941253437741760",
+      "pain": "门店没有内容方向",
+      "hook": "扎心点名",
+      "structure": "目的→曝光→广告型与价值型",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-045",
+      "source_type": "douyin_public_page",
+      "creator": "成哥家纺实体流量赋能",
+      "title": "家纺实体店同城短视频怎么拍",
+      "url": "https://www.douyin.com/video/7583281305215831345",
+      "pain": "门店不会做同城内容",
+      "hook": "行业+年份",
+      "structure": "需求→产品细节→真实场景",
+      "visible_metrics": "106/18/87/32",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-046",
+      "source_type": "douyin_public_page",
+      "creator": "衡水小云建筑",
+      "title": "实体店还能坚持几天",
+      "url": "https://www.douyin.com/video/7538394645299678523",
+      "pain": "追全国流量但无法到店",
+      "hook": "生存焦虑",
+      "structure": "错误认知→同城号→本地客流",
+      "visible_metrics": "32/9/2/3",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-047",
+      "source_type": "douyin_public_page",
+      "creator": "皓文哥哥",
+      "title": "服装实体店短视频同城引流",
+      "url": "https://www.douyin.com/video/7573883261911778042",
+      "pain": "传统传单低效",
+      "hook": "传统与新方式对比",
+      "structure": "传单→电子传单→矩阵→私域",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-048",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "实体商家没流量就看到最后",
+      "url": "https://www.douyin.com/video/7580356387235311473",
+      "pain": "把抖音当朋友圈，只发产品自拍",
+      "hook": "看到最后",
+      "structure": "三个问题→内容价值→改法",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-049",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "搞流量就是搞反差",
+      "url": "https://www.douyin.com/video/7670070152646365870",
+      "pain": "门店内容同质化",
+      "hook": "明确立场",
+      "structure": "行业常规→反差重写→行业套用",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-050",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "今年实体店到底要不要投流",
+      "url": "https://www.douyin.com/video/7563534964403719459",
+      "pain": "不知道是否投流和选哪个工具",
+      "hook": "是否决策",
+      "structure": "工具分场景→ROI判断",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-051",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "餐饮短视频怎么拍",
+      "url": "https://www.douyin.com/video/7507502564683025721",
+      "pain": "餐饮老板不会拍且无法持续",
+      "hook": "我来教大家",
+      "structure": "账号→真实后厨→更新→同城",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-052",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "实体老板短视频532打法",
+      "url": "https://www.douyin.com/video/7558725119377935675",
+      "pain": "硬广多且缺信任内容",
+      "hook": "方法命名+挑战",
+      "structure": "获客→人设→流量→私信",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-053",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "门店业绩整改后如何继续增长",
+      "url": "https://www.douyin.com/video/7560307965626993974",
+      "pain": "有经营经验但不会招生内容",
+      "hook": "结果案例",
+      "structure": "经营案例→知识→实景→咨询",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-054",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "接不住的流量怎么变生意",
+      "url": "https://www.douyin.com/video/7677913984309284111",
+      "pain": "私信分散和回复慢",
+      "hook": "损失提醒",
+      "structure": "流量损失→统一承接→转化",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "会员学习服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-055",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "不用真人出镜也能做口播",
+      "url": "https://www.douyin.com/video/7283453997602704675",
+      "pain": "不愿出镜但想口播",
+      "hook": "替代方案",
+      "structure": "数字人→生成→演示",
+      "visible_metrics": "724/unknown/405/210",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-056",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "不露脸也不会表达怎么做自媒体",
+      "url": "https://www.douyin.com/video/7678272600695127369",
+      "pain": "不露脸和不会表达双重门槛",
+      "hook": "双重痛点",
+      "structure": "问题→AI工作台",
+      "visible_metrics": "1273 likes/119 saves",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-057",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "哪怕不发布也拍一分钟口播",
+      "url": "https://www.douyin.com/video/7671248627386093675",
+      "pain": "害怕镜头和表达不自信",
+      "hook": "降低行动门槛",
+      "structure": "小练习→个人变化→挑战",
+      "visible_metrics": "6191/2591/unknown/unknown",
+      "metric_note": "按公开页文本快照记录；页面字段顺序可能变化，不能推断播放量",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-058",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "普通生活也能做自媒体",
+      "url": "https://www.douyin.com/video/7590934859469729189",
+      "pain": "觉得生活普通没有素材",
+      "hook": "趋势+鼓励",
+      "structure": "真实生活→允许不完美→行动",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "选题与文案能力",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-059",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "睡觉时AI自己做的视频",
+      "url": "https://www.douyin.com/video/7685344325777050934",
+      "pain": "时间少且想不露脸批量做",
+      "hook": "极端效率反差",
+      "structure": "文案到成片→批量→赛道→变现",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-060",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "学历外貌口音不是不能创作的理由",
+      "url": "https://www.douyin.com/video/7562746499140341051",
+      "pain": "因自我评价不敢创作",
+      "hook": "拆借口",
+      "structure": "价值类型→替代表达→长期信任",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-061",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "单人自媒体先搭研究系统",
+      "url": "https://jingxuan.douyin.com/m/video/7677567710586309951",
+      "pain": "一个人时间耗在找方向和资料",
+      "hook": "系统化",
+      "structure": "赛道→选题→对标→结构→成稿",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "行业专属智能体",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-062",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "一张图片制作宣传短视频",
+      "url": "https://www.douyin.com/video/7567020835345534243",
+      "pain": "实体店没有素材和剪辑能力",
+      "hook": "一张图低门槛",
+      "structure": "图片→提示词→生成",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "实体商家内容服务",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-063",
+      "source_type": "douyin_public_page",
+      "creator": "聚合页面",
+      "title": "普通人不露脸能做哪些类型",
+      "url": "https://www.douyin.com/shipin/7366226588721104896",
+      "pain": "不知道不露脸赛道",
+      "hook": "普通人+不露脸",
+      "structure": "赛道列举→案例→变现",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-064",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "不露脸可做的三种赛道",
+      "url": "https://jingxuan.douyin.com/m/video/7606883983544143114",
+      "pain": "不知选口播Vlog还是解压内容",
+      "hook": "三种赛道",
+      "structure": "比较→适合人群→变现",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    },
+    {
+      "evidence_id": "DY-065",
+      "source_type": "douyin_public_page",
+      "creator": "作者待读回",
+      "title": "AI视频员工的成本与流程",
+      "url": "https://www.douyin.com/video/7683204186447564058",
+      "pain": "写稿配音分镜动画重复耗时",
+      "hook": "巨量投入数字",
+      "structure": "痛苦→流程→成本→边界→私信",
+      "visible_metrics": "unknown",
+      "metric_note": "公开页本次未稳定显示互动字段",
+      "bridge": "动画与AI短视频",
+      "evidence_status": "observed_public_sample",
+      "source_date": "2026-09-23"
+    }
+  ],
+  "topics": [
+    {
+      "topic_id": "topic-start-from-zero",
+      "title": "为什么很多人想做抖音，却连第一步都做错了",
+      "audience": "准备起号但没有完整路径的新手",
+      "pain_id": "PAIN-002",
+      "pain": "不知道定位、选题、主页和变现应按什么顺序开始",
+      "why_now": "多名创作者都用起号流程回应同一问题，适合作为新手入口题",
+      "lifecycle": "candidate",
+      "total_score": 67.6,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "想做抖音的人，第一步通常不是拍视频"
+      ],
+      "structure": "常见错误→正确顺序→第一步行动",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接行业专属智能体的定位、选题和文案能力",
+      "evidence_refs": [
+        "DY-001",
+        "DY-007",
+        "DY-031",
+        "DY-043"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-position-before-traffic",
+      "title": "只想要流量，却没想清楚卖什么，账号很难做起来",
+      "audience": "盲目追播放但商业方向不清的人",
+      "pain_id": "PAIN-099",
+      "pain": "内容、人设、产品和目标客户彼此割裂",
+      "why_now": "定位和变现关系在多个样本中反复出现，且与项目商业能力直接相关",
+      "lifecycle": "candidate",
+      "total_score": 66.1,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "你缺的可能不是流量，而是流量来了以后卖什么"
+      ],
+      "structure": "反常识→三问定位→错误案例→行动",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接商业IP定位和项目事实梳理能力",
+      "evidence_refs": [
+        "DY-006",
+        "DY-011",
+        "DY-012"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-low-traffic-diagnosis",
+      "title": "别人发一条就起量，你发十条还没流量，问题到底在哪",
+      "audience": "长期低播放且怀疑被限流的创作者",
+      "pain_id": "PAIN-073",
+      "pain": "不知道问题出在选题、开头、标签还是内容呈现",
+      "why_now": "低播放和前几秒流失有多个公开样本，可做分层诊断而非泛讲算法",
+      "lifecycle": "candidate",
+      "total_score": 67.6,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "低播放不一定是限流，先看这三个位置"
+      ],
+      "structure": "症状→诊断顺序→示例→优先改一项",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接文案诊断、钩子重写和选题研究能力",
+      "evidence_refs": [
+        "DY-019",
+        "DY-034",
+        "DY-035",
+        "DY-040"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-no-topic-every-day",
+      "title": "每天不知道发什么，不是没灵感，而是没有选题系统",
+      "audience": "靠临时灵感创作、无法持续更新的人",
+      "pain_id": "PAIN-025",
+      "pain": "不会从用户问题、行业知识和真实场景持续产生选题",
+      "why_now": "选题枯竭与门店不知道拍什么均有样本，适合连接热点菜单能力",
+      "lifecycle": "candidate",
+      "total_score": 67.6,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "真正能日更的人，靠的通常不是灵感"
+      ],
+      "structure": "误区→选题来源→三步系统→菜单演示",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接数据链、痛点库和持续选题能力",
+      "evidence_refs": [
+        "DY-009",
+        "DY-012",
+        "DY-043",
+        "DY-044"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-benchmark-without-copying",
+      "title": "找对标不是抄文案，真正该抄的是它为什么能留住人",
+      "audience": "想借鉴爆款又担心抄袭的创作者",
+      "pain_id": "PAIN-049",
+      "pain": "只会换词，不会提取选题、钩子和论证机制",
+      "why_now": "对标、AI拆爆款和照抄同质化形成正反样本",
+      "lifecycle": "candidate",
+      "total_score": 66.1,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "爆款可以学，但最不该学的就是它的原句"
+      ],
+      "structure": "错误模仿→五个可迁移元素→原创示例",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接爆款文案原创重构能力",
+      "evidence_refs": [
+        "DY-004",
+        "DY-026",
+        "DY-041"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-ordinary-life-story",
+      "title": "觉得自己没故事的人，往往只是不会把日常变成选题",
+      "audience": "认为生活普通、没有内容可拍的人",
+      "pain_id": "PAIN-047",
+      "pain": "看不见日常经历中的冲突、选择和变化",
+      "why_now": "故事、普通生活和自我否定形成一组可迁移的共鸣题",
+      "lifecycle": "candidate",
+      "total_score": 61.4,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "你不是没故事，是把值得讲的细节都忽略了"
+      ],
+      "structure": "日常细节→冲突→意义→可复制提问",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接故事化文案和行业知识大众化能力",
+      "evidence_refs": [
+        "DY-021",
+        "DY-058",
+        "DY-060"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-ai-without-camera",
+      "title": "不敢出镜、不会表达的人，怎样先把自媒体跑起来",
+      "audience": "被镜头和表达门槛卡住的创业者",
+      "pain_id": "PAIN-057",
+      "pain": "真人出镜焦虑、素材缺失和制作步骤太多",
+      "why_now": "不露脸、数字人、一张图和AI视频流程有多条公开样本，但仍需区分适用边界",
+      "lifecycle": "candidate",
+      "total_score": 72.3,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "很多人不是不会做自媒体，而是第一关就卡在不敢出镜"
+      ],
+      "structure": "共鸣→两类原因→AI替代与训练路径→边界",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "文案先承接用户问题，再自然连接平台动画与AI短视频能力",
+      "evidence_refs": [
+        "DY-030",
+        "DY-055",
+        "DY-056",
+        "DY-057",
+        "DY-059",
+        "DY-062",
+        "DY-064",
+        "DY-065"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-entity-store-content",
+      "title": "实体店不是没有素材，是一直把抖音当朋友圈发",
+      "audience": "发产品自拍却没有到店咨询的实体老板",
+      "pain_id": "PAIN-129",
+      "pain": "只展示商品，没有用户场景、信任和同城承接",
+      "why_now": "实体店内容方向、批量生产和硬广问题在多个样本中重复出现",
+      "lifecycle": "candidate",
+      "total_score": 67.6,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "实体店最浪费的素材，往往就在每天的营业现场"
+      ],
+      "structure": "错误内容→用户想看什么→三类素材→软承接",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接同城选题、门店文案和图片生成短视频服务",
+      "evidence_refs": [
+        "DY-005",
+        "DY-014",
+        "DY-016",
+        "DY-017",
+        "DY-044",
+        "DY-048",
+        "DY-052"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-traffic-without-leads",
+      "title": "有播放却没有咨询，问题可能根本不在流量",
+      "audience": "作品有数据但没有私信和成交的人",
+      "pain_id": "PAIN-098",
+      "pain": "内容吸引的人不对，或没有清晰的信任与承接路径",
+      "why_now": "实体成交、别做网红和私信承接样本共同指向经营闭环",
+      "lifecycle": "candidate",
+      "total_score": 66.1,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "播放量上去了，生意却没变化，先别急着继续追热点"
+      ],
+      "structure": "结果反差→三层断点→自查→下一步",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接从文案到私信再到会员或商家服务的闭环设计",
+      "evidence_refs": [
+        "DY-014",
+        "DY-017",
+        "DY-054"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-local-not-national",
+      "title": "实体老板最容易犯的错：追全国流量，却忘了附近的人",
+      "audience": "需要到店转化的本地商家",
+      "pain_id": "PAIN-130",
+      "pain": "内容面向全国泛流量，无法形成同城到店",
+      "why_now": "家纺、服装、建筑和投流选择样本能形成同城策略对照",
+      "lifecycle": "candidate",
+      "total_score": 67.6,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "门店要的不是全国都看见，而是附近愿意来的人看见"
+      ],
+      "structure": "错误目标→同城场景→内容类型→承接",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接同城服务数据链和门店案例型文案",
+      "evidence_refs": [
+        "DY-045",
+        "DY-046",
+        "DY-047",
+        "DY-050"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-solo-creator-system",
+      "title": "一个人做自媒体，最先该搭的不是剪辑流程，而是研究系统",
+      "audience": "时间少、独自运营且被重复工作拖住的人",
+      "pain_id": "PAIN-082",
+      "pain": "大量时间耗在找方向、找素材、写稿和重复制作",
+      "why_now": "系统、效率和AI视频员工样本能连接母体与数据链的实际价值",
+      "lifecycle": "candidate",
+      "total_score": 67.6,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "单人做自媒体，最贵的不是工具费，是每天重新从零开始"
+      ],
+      "structure": "重复劳动→系统拆分→先搭哪一层→演示",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接行业智能体、数据链和自媒体操盘手全链路能力",
+      "evidence_refs": [
+        "DY-033",
+        "DY-039",
+        "DY-061",
+        "DY-065"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    },
+    {
+      "topic_id": "topic-account-memory-difference",
+      "title": "账号没有记忆点，再努力更新也很容易被同质内容淹没",
+      "audience": "内容同质、名称和表达没有辨识度的创作者",
+      "pain_id": "PAIN-011",
+      "pain": "用户看完记不住是谁，也看不出为什么要继续关注",
+      "why_now": "账号命名、差异化行为和跨界重组样本形成完整机制链",
+      "lifecycle": "candidate",
+      "total_score": 67.6,
+      "evidence_axes": {
+        "content": "content_observed",
+        "heat": "visible_interaction_raw",
+        "business": "hypothesis"
+      },
+      "hooks": [
+        "你的内容可能不差，只是用户看完根本记不住你"
+      ],
+      "structure": "症状→记忆机制→差异化组合→示例",
+      "formats": [
+        "口播"
+      ],
+      "bridge": "承接商业IP定位和系列化文案能力",
+      "evidence_refs": [
+        "DY-020",
+        "DY-024",
+        "DY-025",
+        "DY-049"
+      ],
+      "source_date": "2026-09-23T14:00:00.000Z",
+      "valid_until": "2026-09-30T14:00:00.000Z"
+    }
+  ],
+  "capabilities": [
+    {
+      "capability_id": "CAP-TOPIC",
+      "name": "行业痛点研究与持续选题",
+      "status": "product_building",
+      "solves": [
+        "选题枯竭",
+        "热点与业务无法连接",
+        "同行题材重复"
+      ],
+      "public_claim": "可按行业、人群、场景和内容目标生成候选选题",
+      "forbidden_claim": "保证每个选题成为爆款",
+      "evidence": [
+        "用户业务说明",
+        "智能体候选包与结构化痛点库"
+      ],
+      "cta": [
+        "体验选题",
+        "提交行业问题",
+        "领取诊断"
+      ],
+      "source_date": "2026-09-23"
+    },
+    {
+      "capability_id": "CAP-COPY",
+      "name": "口播、引流、软广与带货文案",
+      "status": "product_building",
+      "solves": [
+        "不会写开头",
+        "文案书面化",
+        "产品植入生硬"
+      ],
+      "public_claim": "可生成钩子、结构、正文、承接和CTA",
+      "forbidden_claim": "使用后必然涨粉或成交",
+      "evidence": [
+        "用户业务说明",
+        "提示词与黄金测试候选"
+      ],
+      "cta": [
+        "提交一个主题试写",
+        "诊断现有文案"
+      ],
+      "source_date": "2026-09-23"
+    },
+    {
+      "capability_id": "CAP-REWRITE",
+      "name": "爆款机制拆解与原创迁移",
+      "status": "product_building",
+      "solves": [
+        "只会同义改写",
+        "担心抄袭",
+        "爆款无法适配自己的行业"
+      ],
+      "public_claim": "提取选题、钩子、结构和互动机制，再重建观点、案例、语言与产品连接",
+      "forbidden_claim": "无损复制他人的爆款结果",
+      "evidence": [
+        "公开样本研究库",
+        "原创迁移规则"
+      ],
+      "cta": [
+        "提交对标文案",
+        "查看机制拆解"
+      ],
+      "source_date": "2026-09-23"
+    },
+    {
+      "capability_id": "CAP-VIDEO-PROMPT",
+      "name": "图片与视频提示词",
+      "status": "product_building",
+      "solves": [
+        "文案和画面脱节",
+        "不会写镜头提示词",
+        "反复消耗算力"
+      ],
+      "public_claim": "可把脚本转换为适配呈现形式的提示词和制作要求",
+      "forbidden_claim": "任何提示词都能一次生成可用成片",
+      "evidence": [
+        "用户业务说明",
+        "平台开发规划"
+      ],
+      "cta": [
+        "提交一段文案演示"
+      ],
+      "source_date": "2026-09-23"
+    },
+    {
+      "capability_id": "CAP-AI-VIDEO",
+      "name": "动画与AI短视频工作流",
+      "status": "testing",
+      "solves": [
+        "不愿出镜",
+        "素材不足",
+        "拍摄成本高"
+      ],
+      "public_claim": "可为部分题材提供动画、画外音或AI视频替代呈现",
+      "forbidden_claim": "完全替代真人信任或保证商品一致",
+      "evidence": [
+        "宠物动画当前验证线",
+        "美甲视觉测试方向"
+      ],
+      "cta": [
+        "查看功能演示",
+        "提交授权素材试做"
+      ],
+      "source_date": "2026-09-23"
+    },
+    {
+      "capability_id": "CAP-MERCHANT",
+      "name": "实体商家内容服务",
+      "status": "planned_validation",
+      "solves": [
+        "门店没团队",
+        "只会发促销",
+        "同城内容无法持续"
+      ],
+      "public_claim": "计划基于商家真实商品、门店和授权素材提供定制内容",
+      "forbidden_claim": "几张图片必然带来客流",
+      "evidence": [
+        "业务规划",
+        "目标为8至12家试单"
+      ],
+      "cta": [
+        "申请门店内容诊断",
+        "申请试单"
+      ],
+      "source_date": "2026-09-23"
+    },
+    {
+      "capability_id": "CAP-MEMBER",
+      "name": "会员学习服务",
+      "status": "commercial_design",
+      "solves": [
+        "不会独立执行",
+        "工具多但无流程",
+        "缺少答疑和复盘"
+      ],
+      "public_claim": "会员可按正式权益使用录播教程和约定范围内答疑",
+      "forbidden_claim": "保证回本、保证起号、模糊算力费用",
+      "evidence": [
+        "业务规划"
+      ],
+      "cta": [
+        "咨询正式权益",
+        "查看学习路径"
+      ],
+      "source_date": "2026-09-23"
+    }
+  ],
+  "snapshot_id": "wps-339e076b114ac57f",
+  "snapshot_sha256": "339e076b114ac57fa065591b3f52b22659910cd93729c73edd33ae2619548d84"
+}

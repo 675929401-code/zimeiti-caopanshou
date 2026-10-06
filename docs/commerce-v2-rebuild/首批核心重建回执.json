@@ -1,0 +1,91 @@
+{
+  "outcome": "failed",
+  "summary": "带货 Agent v2 首批隔离核心已实现并通过源码合同，但继承的旧站深度复刻浏览器回归因当前没有已验收可选源视频模型而失败；本回执不把外部模型配置缺口写成产品通过。",
+  "verification": "Commerce v2 确定性合同 59/59 通过；全量 TypeScript 通过；目标 ESLint 通过；旧站 19 编导目录桌面与 390px 零费用回归通过；深度复刻回归在 readyModels 断言处失败。全部验证的 providerCalls、walletCalls、paidGenerationCalls 为 0。",
+  "remaining": "完成 F 盘新构建和 /commerce/rebuild 真实浏览器验收；深度复刻需先配置并验收至少一个兼容源视频模型。部署和真实付费生成继续暂停。",
+  "changedFiles": [
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/components/workbench.css",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/components/workbench.tsx",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/domain/contracts.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/domain/director-material-contract.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/domain/parse-draft.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/domain/production-plan.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/domain/quote-contract.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/domain/task-state-machine.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/server/compile-production.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/server/director-registry.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/server/hash.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/server/material-registry.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/server/model-catalog-adapter.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/server/quote-store.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/app/api/commerce/v2/assets/route.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/app/api/commerce/v2/catalog/route.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/app/api/commerce/v2/director/route.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/app/api/commerce/v2/plan/route.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/app/api/commerce/v2/quote/route.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/app/commerce/rebuild/page.tsx",
+    "01_网页开发项目/自媒体操盘手/当前版本/docs/commerce-v2-rebuild/架构决策与重建边界.md",
+    "01_网页开发项目/自媒体操盘手/当前版本/docs/commerce-v2-rebuild/首批核心重建回执.json",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-commerce-v2-core.ts"
+  ],
+  "regressions": [
+    {
+      "fingerprint": "893ff58338eb6b409c05d1f464c55e4ccfc03cf59450c12c0088e9481d0d0134",
+      "command": "node .\\scripts\\with-local-admin-session.mjs scripts/verify-commerce-depth-clone-live.mjs",
+      "passed": false,
+      "assertions": [
+        { "name": "教程关键步骤在本地夹具中可走通且不触发付费生成", "passed": true, "evidence": "桌面和 390px 均进入深度复刻工作区并完成只读夹具检查，未触发付费生成。" },
+        { "name": "深度复刻至少有一个兼容且生成就绪的模型", "passed": false, "evidence": "失败：深度复刻没有已验收且可选的源视频模型。" },
+        { "name": "视频制作使用紧凑超级编导入口且不挤压三栏工作区", "passed": true, "evidence": "页面入口与桌面/390px 工作区均可达；失败发生在模型就绪断言。" }
+      ]
+    },
+    {
+      "fingerprint": "1fe64b8178f6e95a5c0f3d37963fd0f16bb473f9f1b45166bde052bc290f0f00",
+      "command": "node .\\scripts\\with-local-admin-session.mjs scripts/verify-commerce-depth-clone-live.mjs",
+      "passed": false,
+      "assertions": [
+        { "name": "教程关键步骤在本地夹具中可走通且不触发付费生成", "passed": true, "evidence": "桌面和 390px 均进入深度复刻工作区并完成只读夹具检查，未触发付费生成。" },
+        { "name": "深度复刻至少有一个兼容且生成就绪的模型", "passed": false, "evidence": "失败：深度复刻没有已验收且可选的源视频模型。" },
+        { "name": "视频制作使用紧凑超级编导入口且不挤压三栏工作区", "passed": true, "evidence": "页面入口与桌面/390px 工作区均可达；失败发生在模型就绪断言。" }
+      ]
+    },
+    {
+      "fingerprint": "a9f47da511657152ac82844064d6e8702e81f0b8981e0c51462f957631a2dbd6",
+      "command": "node .\\scripts\\with-local-admin-session.mjs scripts/verify-commerce-depth-clone-live.mjs",
+      "passed": false,
+      "assertions": [
+        { "name": "教程关键步骤在本地夹具中可走通且不触发付费生成", "passed": true, "evidence": "桌面和 390px 均进入深度复刻工作区并完成只读夹具检查，未触发付费生成。" },
+        { "name": "深度复刻至少有一个兼容且生成就绪的模型", "passed": false, "evidence": "失败：深度复刻没有已验收且可选的源视频模型。" },
+        { "name": "视频制作使用紧凑超级编导入口且不挤压三栏工作区", "passed": true, "evidence": "页面入口与桌面/390px 工作区均可达；失败发生在模型就绪断言。" }
+      ]
+    },
+    {
+      "fingerprint": "746282698499c760702795efd7ff91d5b37404fe7390f968292179c2c2d14e76",
+      "command": "node .\\scripts\\with-local-admin-session.mjs scripts/verify-commerce-director-catalog-live.mjs",
+      "passed": true,
+      "assertions": [
+        { "name": "桌面与手机展示全部当前编导卡", "passed": true, "evidence": "桌面与 390px 各可达 18 个当前已发布专属编导，页面无横向溢出。" },
+        { "name": "编导会话 action=open 可发生且不会触发付费生成", "passed": true, "evidence": "desktop/mobile 会话 open 均被允许，paidRequests 为空。" },
+        { "name": "除会话 open 与桌面复刻工作区 open 外无业务写入", "passed": true, "evidence": "验收器 unexpectedWrites 为空。" }
+      ]
+    }
+  ],
+  "problems": [
+    {
+      "kind": "commerce-depth-model-not-ready",
+      "rootCause": "当前发布配置和模型目录中没有同时满足源视频输入、深度复刻能力与真实生成验收的可选视频模型；新核心按能力失败关闭，不能用未验收模型冒充可用。",
+      "regressionCommand": "node .\\scripts\\with-local-admin-session.mjs scripts/verify-commerce-depth-clone-live.mjs",
+      "protectedAssertions": [
+        "教程关键步骤在本地夹具中可走通且不触发付费生成",
+        "深度复刻至少有一个兼容且生成就绪的模型",
+        "视频制作使用紧凑超级编导入口且不挤压三栏工作区"
+      ],
+      "affectedPaths": [
+        "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/server/model-catalog-adapter.ts",
+        "01_网页开发项目/自媒体操盘手/当前版本/src/app/api/commerce/v2/catalog/route.ts",
+        "01_网页开发项目/自媒体操盘手/当前版本/src/commerce-v2/components/workbench.tsx"
+      ],
+      "resources": []
+    }
+  ]
+}

@@ -1,0 +1,467 @@
+{
+  "schemaVersion": "maolong.ui-backend-chain-audit/v1",
+  "generatedAtUtc": "2026-09-25T07:22:59.084Z",
+  "status": "evidence-validated-runtime-pending",
+  "boundary": {
+    "sourceDiscoveryFixedPoint": true,
+    "conditionalEntryFixedPoint": "query-entries-passed-dynamic-canvas-page-failed-write-execution-unverified",
+    "runtimePayloadFixedPoint": "observable-readonly-payload-and-dynamic-controller-closure-passed",
+    "privateServerSourceDownloaded": false,
+    "buildOrBrowserAcceptanceThisAudit": false,
+    "paidGeneration": false,
+    "deployment": false
+  },
+  "verdict": "前端 bundle、共享组件、29 个 query 条件入口、可观察 GET 载荷和 /canvas/{workspace_id} 控制器源码已闭合；真实持久化 Canvas 的页面语义仍失败，4 个 canvas-only 提交和真实桌面/390px本站运行验收仍缺。",
+  "skillSurfaces": {
+    "topLevelTools": {
+      "count": 9,
+      "ids": [
+        "ecommerce-image-set",
+        "digital-human",
+        "depth-video-clone",
+        "hot-video-remix",
+        "video-subtitle-erase",
+        "video-watermark-remove",
+        "video-quality-enhance",
+        "video-generation",
+        "image-generation"
+      ],
+      "status": "all exact page GET 200 in existing captures"
+    },
+    "queryEntries": {
+      "status": "passed-readonly-page-capture-29-of-29",
+      "imageCount": 11,
+      "videoCount": 18,
+      "imageParameter": "skill_pack",
+      "videoParameter": "skill",
+      "result": "all HTTP 200 with exact final pathname; no new business JavaScript executor; no business writes"
+    },
+    "canvasOnlyImageSkills": {
+      "count": 4,
+      "ids": [
+        "script-storyboard",
+        "storyboard-element-replace",
+        "video-reference-first-frame",
+        "product-consistency-reference"
+      ],
+      "status": "real dynamic Canvas controller and composer contract captured; submissions intentionally unexecuted because they write business state and can create paid tasks"
+    },
+    "hiddenDefaults": {
+      "count": 2,
+      "ids": [
+        "default",
+        "default-director"
+      ],
+      "status": "configuration substrate; excluded from user-facing cards"
+    },
+    "internalActionFamilies": {
+      "ids": [
+        "video-segment-retake",
+        "video-creator",
+        "prompt-generator",
+        "canvas-video-keyframe-breakdown",
+        "reference-video-split"
+      ],
+      "status": "ledger/renderer/action names; not presented as independent toolbox pages"
+    }
+  },
+  "rows": [
+    {
+      "id": "workspace-shell",
+      "route": "/(workspace)/*",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "间接",
+      "runtimeAccepted": false,
+      "layout": "desktop >=lg 72px sidebar；mobile bottom nav + safe area；min-height 100dvh",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/layout-4636b17f0b338f53.js",
+          "fileSha256": "1d66538edda4924d8863e545fe2cf5c4b0faae9c27df79f499cd350a5fa23cd6",
+          "byteStart": 10267,
+          "byteEnd": 28032,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "桌面与390px computed-style 验收待执行"
+    },
+    {
+      "id": "toolbox-catalog",
+      "route": "/toolbox",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": false,
+      "apiContract": "客户端目录常量",
+      "runtimeAccepted": false,
+      "layout": "1列→sm 2列；视频处理 xl 4列",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/page-2819cb933e6431dc.js",
+          "fileSha256": "745f059806d535dd9e6518b3b619185e67a85950f5109f13e405dc5ad5bc964d",
+          "byteStart": 599,
+          "byteEnd": 15764,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "9张顶层卡不能代表全部内嵌技能"
+    },
+    {
+      "id": "toolbox-shared-shell",
+      "route": "/toolbox/[toolSlug]",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "按工具注入",
+      "runtimeAccepted": false,
+      "layout": "桌面三栏；mobile panel h=min(66dvh,34rem)",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/7958-117b0a3bee948bdf.js",
+          "fileSha256": "154f83b9fa0f3b5a99a44ff75d84bfe6338ef438678f4bf5a0e8207c464edb91",
+          "byteStart": 6567,
+          "byteEnd": 397617,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "需逐工具 desktop+390 溢出/折叠验收"
+    },
+    {
+      "id": "image-generation",
+      "route": "/toolbox/image-generation",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "skill-packs/model-routes/batches/assets",
+      "runtimeAccepted": false,
+      "layout": "共享三栏+目录驱动表单",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 584577,
+          "byteEnd": 621087,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "provider worker/quote settlement/asset terminal 私有"
+    },
+    {
+      "id": "ecommerce-image-set",
+      "route": "/toolbox/ecommerce-image-set",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "analysis-row/row-quote/row-generations/regenerations",
+      "runtimeAccepted": false,
+      "layout": "分析行列表/表格+预览队列",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 621088,
+          "byteEnd": 647969,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "分析 worker、逐图资产与计费终态不可见"
+    },
+    {
+      "id": "video-processors",
+      "route": "/toolbox/{hot-video-remix,subtitle,watermark,enhance,depth}",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "batches/assets/model routes",
+      "runtimeAccepted": false,
+      "layout": "共享编辑/预览/队列壳",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 647970,
+          "byteEnd": 743436,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "私有 split/edit/provider workers 不可见"
+    },
+    {
+      "id": "video-generation-director",
+      "route": "/toolbox/video-generation",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "video-creator conversations/script stream/batches/quote",
+      "runtimeAccepted": false,
+      "layout": "生成表单+导演聊天+任务/草稿/预览",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 743437,
+          "byteEnd": 823505,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "应用脚本仅证明回填生成表单；19个运行发布ID/读回待核"
+    },
+    {
+      "id": "digital-human",
+      "route": "/toolbox/digital-human",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "voice-profiles/system voices/batches/assets",
+      "runtimeAccepted": false,
+      "layout": "模式 tabs+媒体/声音选择器",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/toolbox/[toolSlug]/page-a3292bb727f8d22f.js",
+          "fileSha256": "f8687d0001dc2b97aee05deb931876b9f6c949326a018088296b2325d766700d",
+          "byteStart": 823506,
+          "byteEnd": 839650,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "客户端意图不证明声音/口型服务可用"
+    },
+    {
+      "id": "assets-workspace",
+      "route": "/assets and /assets/generated",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "upload-policy/complete/assets/groups/auth",
+      "runtimeAccepted": false,
+      "layout": "grid 3→sm4→lg5→xl6；fixed batch bar",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/9614-bf3c574bcd443d05.js",
+          "fileSha256": "a9a5dab6f2e112952855f98b5dd45b7f60c04418a358cae8e3556512c094828c",
+          "byteStart": 337,
+          "byteEnd": 23242,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "对象存储权限、生命周期与清理私有"
+    },
+    {
+      "id": "canvas-list",
+      "route": "/canvas",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "canvas CRUD/duplicate/snapshot/share",
+      "runtimeAccepted": false,
+      "layout": "grid 3→sm4→lg5→xl6；预览1280/720",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/canvas/page-a614fd1be9318067.js",
+          "fileSha256": "854de860663d1f63dc7bd49908f8d37d291a17666720f24b6b1af06ea42ac648",
+          "byteStart": 386,
+          "byteEnd": 27678,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "列表和一个真实详情 GET 已取证；本站仍需当前构建浏览器验收"
+    },
+    {
+      "id": "canvas-dynamic-editor",
+      "route": "/canvas/{workspace_id}",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "canvas detail/nodes/edges/groups/runs/templates/media derivatives/share",
+      "runtimeAccepted": false,
+      "layout": "stage/节点/边/组/小地图/缩放/拖放/预览和多轨编辑集成",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/canvas/[canvasId]/page-c51169a83d03a317.js",
+          "fileSha256": "7546917fecfbd526f3d32758e052c1b54aa2d4151e1c21cdc74791bb81055147",
+          "byteStart": 0,
+          "byteEnd": 736224,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "chunks/91dbc596-3ff73c92dac65eab.js",
+          "fileSha256": "dee0abd831fbc8f8e5c28946b5981a5d6c3ac1cd4de1f8417a4751a95ac270b9",
+          "byteStart": 0,
+          "byteEnd": 1449682,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "chunks/5405-073b3d8ddfbc5f2d.js",
+          "fileSha256": "18c423cfc5afbebfcdf6696dd76cd62edde2149cc470e5d65add618d9fe5c814",
+          "byteStart": 0,
+          "byteEnd": 31683,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "api/v1/canvases/{id}.json",
+          "fileSha256": "a82fa7ca0ad840b2c57d37816c4ff00e8caf96b760aa198359b3b6e1dd37ba60",
+          "byteStart": 0,
+          "byteEnd": 484,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "canvas/{id}.html",
+          "fileSha256": "1345d90621991a6277ec4cef891e971083f20d8fe551bc4593e2fe2b01dddc4d",
+          "byteStart": 32977,
+          "byteEnd": 32992,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "chunks/2722-ef6046d3b6683067.js",
+          "fileSha256": "f6fb56ceee98a1f69a023e4b2597ba603fee723beb1c36fef9d50d397a402b6a",
+          "byteStart": 7119,
+          "byteEnd": 221684,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "chunks/9614-bf3c574bcd443d05.js",
+          "fileSha256": "a9a5dab6f2e112952855f98b5dd45b7f60c04418a358cae8e3556512c094828c",
+          "byteStart": 337,
+          "byteEnd": 23242,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "真实持久化 ID 的 detail API 200，但精确页面正文为“页面未找到”且自然 detail GET=0；控制器源码存在，实获画布 revision=0 且 nodes/edges/groups 为空；页面接线、写操作、非空持久化、协作冲突和任务终态未通过"
+    },
+    {
+      "id": "canvas-skill-composer",
+      "route": "/canvas/{workspace_id}",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "skill catalog→composer payload→run/task→asset/node insertion",
+      "runtimeAccepted": false,
+      "layout": "@素材与/技能浮层、富文本编辑器、节点结果插入",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(workspace)/canvas/[canvasId]/page-c51169a83d03a317.js",
+          "fileSha256": "7546917fecfbd526f3d32758e052c1b54aa2d4151e1c21cdc74791bb81055147",
+          "byteStart": 0,
+          "byteEnd": 736224,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        },
+        {
+          "file": "chunks/2722-ef6046d3b6683067.js",
+          "fileSha256": "f6fb56ceee98a1f69a023e4b2597ba603fee723beb1c36fef9d50d397a402b6a",
+          "byteStart": 130011,
+          "byteEnd": 198741,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "4 个 canvas-only 技能的 UI/控制器合同已取证；提交会写业务状态且可能付费，未执行"
+    },
+    {
+      "id": "shared-video-stitch-editor",
+      "route": "共享结果/资产编辑入口",
+      "capturedPage": false,
+      "routeController": "部分入口未知",
+      "sharedRenderer": true,
+      "apiContract": "batches/assets/segment-retake",
+      "runtimeAccepted": false,
+      "layout": "full workspace z2231；left320；timeline 34vh；mobile drawers",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/7958-117b0a3bee948bdf.js",
+          "fileSha256": "154f83b9fa0f3b5a99a44ff75d84bfe6338ef438678f4bf5a0e8207c464edb91",
+          "byteStart": 6567,
+          "byteEnd": 397617,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "引擎存在不等于所有入口挂载或服务器终态可用"
+    },
+    {
+      "id": "admin-video-director-skills",
+      "route": "/admin/video-creator-skills",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": false,
+      "apiContract": "draft/validate/preview/publish/versions/rollback/enable",
+      "runtimeAccepted": false,
+      "layout": "max-w-7xl；editor h92vh",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(admin)/admin/video-creator-skills/page-0d5138efbfb637eb.js",
+          "fileSha256": "94d0e12dc188be9fb4e31e9e0c18cd4022d505e6cd10589bd5512a01eb26f74e",
+          "byteStart": 121,
+          "byteEnd": 60229,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "common policy→category root→child skill；当前 published pointer 未证明"
+    },
+    {
+      "id": "admin-image-skill-packages",
+      "route": "/admin/skill-packages",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": false,
+      "apiContract": "common prompts/package draft/validate/preview/publish/versions/rollback",
+      "runtimeAccepted": false,
+      "layout": "editors max-w-5xl/7xl、82–92vh",
+      "benchmarkEvidence": [
+        {
+          "file": "app/(admin)/admin/skill-packages/page-2e47260eee323fb6.js",
+          "fileSha256": "b423e1a58148a24acf96e14ce90c92ed140448fb6dfa4831b5837eb8fa327030",
+          "byteStart": 64,
+          "byteEnd": 63204,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "数据库 published prompt/model route/原子切换未证明"
+    },
+    {
+      "id": "affiliate-user-admin",
+      "route": "/affiliate/* and /admin/affiliate/*",
+      "capturedPage": true,
+      "routeController": true,
+      "sharedRenderer": true,
+      "apiContract": "KYC/referral/commission/settlement/recharge cards/proof/bank reveal",
+      "runtimeAccepted": false,
+      "layout": "desktop sidebar260；mobile select；tables 760–900px",
+      "benchmarkEvidence": [
+        {
+          "file": "chunks/9614-bf3c574bcd443d05.js",
+          "fileSha256": "a9a5dab6f2e112952855f98b5dd45b7f60c04418a358cae8e3556512c094828c",
+          "byteStart": 337,
+          "byteEnd": 23242,
+          "offsetContract": "UTF-8 half-open [byteStart,byteEnd)",
+          "shaPresentInIndex": true
+        }
+      ],
+      "gap": "金融/KYC/RBAC/支付幂等服务端不可见"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "missingLocal": [],
+    "missingSha": []
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "version": "media-object-retention.v1",
+  "status": "deployment_configuration_required",
+  "provider": "tencent_cos",
+  "description": "This file is the desired lifecycle contract. It does not prove that Tencent COS lifecycle rules are active.",
+  "rules": [
+    {
+      "id": "generated-and-derived-video-3d",
+      "expirationDays": 3,
+      "prefixes": [
+        "videos/generated/",
+        "videos/extracted/",
+        "videos/digital-human-long/",
+        "short-drama/final/"
+      ]
+    },
+    {
+      "id": "creative-and-reference-asset-30d",
+      "expirationDays": 30,
+      "prefixes": [
+        "images/",
+        "image-workbench/",
+        "video-inputs/",
+        "video-audio-inputs/",
+        "digital-human-inputs/"
+      ]
+    }
+  ],
+  "metadata": {
+    "retainTaskHistory": true,
+    "retainBillingRecords": true,
+    "retainUserFileRows": true,
+    "deleteDatabaseRowsWithObject": false
+  },
+  "activation": {
+    "publicBuildFlag": "NEXT_PUBLIC_MEDIA_RETENTION_ENFORCED=true",
+    "precondition": "Apply and read back every Tencent COS lifecycle prefix before enabling the public flag."
+  }
+}

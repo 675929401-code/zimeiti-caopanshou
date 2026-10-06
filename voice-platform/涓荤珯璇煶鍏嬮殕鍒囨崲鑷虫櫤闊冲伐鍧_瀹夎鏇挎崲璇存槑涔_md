@@ -1,0 +1,451 @@
+# 主站语音克隆切换至「智音工坊」— 安装替换说明书
+
+> 版本：v2.1 | 日期：2026-07-20
+> 用途：将 zyuani8.com 主站的语音克隆/合成功能切换到智音工坊
+> 密级：内部文档，勿外传
+
+---
+
+## 目录
+1. [架构概览](#一架构概览)
+2. [平台信息与密钥管理](#二平台信息与密钥管理)
+3. [API接口清单](#三api接口清单)
+4. [扣费逻辑说明](#四扣费逻辑说明)
+5. [部署步骤](#五部署步骤)
+6. [管理后台](#六管理后台)
+7. [音色库维护（一键同步）](#七音色库维护一键同步)
+8. [音色分类速查](#八音色分类速查)
+9. [常见问题](#九常见问题)
+
+---
+
+## 一、架构概览
+
+```
+┌─────────────────────────────────────────────┐
+│           zyuani8.com（主站 · Coze构建）     │
+│                                               │
+│  用户管理 │ 订单系统 │ 语音克隆 ← 本次替换   │
+│                                               │
+│   所有API调用 ───── HTTPS ──────►            │
+│   认证: X-Site-API-Key + userId              │
+└──────────────────────────────┬──────────────┘
+                               │
+┌──────────────────────────────┼──────────────┐
+│      智音工坊 voice.zyuani8.com             │
+│                              ▼               │
+│  ┌─────────┐ ┌─────────┐ ┌─────────────┐  │
+│  │ 语音合成 │ │ 声音复刻 │ │  声音设计    │  │
+│  │ (扣费)   │ │ (扣费)   │ │             │  │
+│  └─────────┘ └─────────┘ └─────────────┘  │
+│                                               │
+│  ┌─────────┐ ┌─────────┐ ┌─────────────┐  │
+│  │ 音色库   │ │ 扣费系统 │ │ 一键同步音色 │  │
+│  │ 301个    │ │ 余额/充值│ │ (火山官方)   │  │
+│  └─────────┘ └─────────┘ └─────────────┘  │
+│                                               │
+│  底层引擎: 火山引擎 Seed-TTS 2.0             │
+│  Git: gitee.com/zhujunguo/voice-platform    │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## 二、平台信息与密钥管理
+
+### 2.1 平台入口
+
+| 项目 | 链接 | 说明 |
+|------|------|------|
+| **智音工坊前台** | https://voice.zyuani8.com | 音色库/工作台/声音复刻/声音设计 |
+| **智音工坊后台** | https://voice.zyuani8.com/admin | API密钥管理/音色管理/一键同步 |
+| **主站管理后台** | https://zyuani8.com/admin | 用户管理/订单/充值 |
+| **火山引擎控制台** | https://console.volcengine.com/speech | 语音合成服务管理 |
+| **火山方舟控制台** | https://console.volcengine.com/ark | Seedream/Seedance等AI模型 |
+| **Git仓库** | https://gitee.com/zhujunguo/voice-platform-20250719 | 源代码 |
+
+### 2.2 密钥清单
+
+> ⚠️ **安全提醒**：以下密钥已在 `.env` 文件中配置。部署到新服务器时，需同步更新。
+
+| 密钥用途 | 环境变量名 | 存储位置 | 备注 |
+|---------|-----------|---------|------|
+| **火山引擎 TTS API Key** | `VOLCENGINE_API_KEY_1` | `.env` / 后台API配置表 | 语音合成/克隆/设计主密钥 |
+| **火山方舟 API Key** | `VOLCENGINE_API_KEY_2` | `.env` | Seedream文生图等扩展能力 |
+| **火山引擎 AK/SK** | `VOLCENGINE_ACCESS_KEY` / `VOLCENGINE_SECRET_KEY` | `.env` | ListSpeakers官方音色同步(V4签名) |
+| **JWT 密钥** | `AUTH_SECRET` | `.env` | ⚠️ 生产环境必须替换为随机字符串 |
+| **主站对接密钥** | `SITE_API_KEY` | `.env` | 主站调用智音工坊API的认证凭证 |
+| **数据库路径** | `DATABASE_URL` | `.env` | SQLite数据库位置 |
+
+### 2.3 环境变量模板
+
+```bash
+# .env 文件（⚠️ 生产环境需修改 AUTH_SECRET）
+
+# === 火山引擎 TTS ===
+VOLCENGINE_API_KEY_1="※见密钥清单"
+VOLCENGINE_API_BASE="https://openspeech.bytedance.com"
+
+# === 火山方舟（AI模型扩展）===
+VOLCENGINE_API_KEY_2="※见密钥清单"
+
+# === 火山引擎 ListSpeakers API（V4签名）===
+VOLCENGINE_ACCESS_KEY="※见密钥清单"
+VOLCENGINE_SECRET_KEY="※见密钥清单"
+
+# === 鉴权 ===
+AUTH_SECRET="⚠️ 请替换为随机64位字符串"
+
+# === 主站对接 ===
+SITE_API_KEY="※见密钥清单"
+
+# === 数据库 ===
+DATABASE_URL="file:./prisma/dev.db"
+```
+
+> **密钥详细值**请查阅项目根目录 `.env` 文件或后台管理面板的「API密钥配置」。
+
+---
+
+## 三、API接口清单
+
+> **认证方式**：所有接口支持两种认证。主站调用推荐方式A。
+>
+> **方式A（主站调用）：** `Header: X-Site-API-Key` + `Body: { "userId": "..." }`
+>
+> **方式B（前端直调）：** `Header: Authorization: Bearer <JWT Token>`
+
+### 3.1 语音合成
+
+| 项目 | 值 |
+|------|-----|
+| **端点** | `POST /api/tts/synthesize` |
+| **说明** | 文本转语音。登录用户自动扣费，未登录不扣费 |
+
+```json
+// 请求（方式A - 主站调用）
+{
+  "userId": "用户ID",
+  "text": "要合成的文本",
+  "speaker": "zh_female_vv_uranus_bigtts",
+  "format": "mp3",
+  "pitch": 0,
+  "speechRate": 0
+}
+
+// 响应
+{
+  "success": true,
+  "data": {
+    "audioUrl": "https://...",
+    "audioBase64": "...",
+    "format": "mp3",
+    "cost": 0.02,
+    "balance": 9.93
+  }
+}
+```
+
+### 3.2 声音克隆（复刻）
+
+| 项目 | 值 |
+|------|-----|
+| **端点** | `POST /api/voice/clone` |
+| **说明** | 上传音频样本克隆音色。返回 speakerId 用于后续合成 |
+
+```json
+// 请求
+{
+  "userId": "用户ID",
+  "speakerId": "S_1755323000000",
+  "audioBase64": "<base64音频>",
+  "audioFormat": "mp3",
+  "language": 0,
+  "name": "用户自定义音色名"
+}
+
+// 响应
+{
+  "success": true,
+  "data": { "speakerId": "S_1755323000000", "status": 2 }
+}
+```
+
+**状态码**：0=排队, 1=训练中, 2=成功, 3=失败
+
+### 3.3 查询音色状态
+
+`POST /api/voice/status` | `{ "speakerId": "S_xxx" }`
+建议每3秒轮询一次，直到 status=2 或 3。
+
+### 3.4 声音设计
+
+| 项目 | 值 |
+|------|-----|
+| **端点** | `POST /api/voice/design` |
+
+```json
+// 请求
+{
+  "userId": "用户ID",
+  "speakerId": "S_1755323000000",
+  "text": "试听demo文本",
+  "prompt": {
+    "textPrompt": "女性，年轻，声音温柔甜美，语速偏慢，适合情感陪伴"
+  },
+  "language": 0,
+  "name": "我的自定义音色"
+}
+```
+
+### 3.5 充值
+
+| 项目 | 值 |
+|------|-----|
+| **端点** | `POST /api/user/charge` |
+| **说明** | 主站用户充值后同步余额 |
+
+```json
+{ "userId": "用户ID", "amount": 10.00, "description": "主站在线充值" }
+```
+
+### 3.6 余额查询
+
+| 项目 | 值 |
+|------|-----|
+| **端点** | `POST /api/user/balance` |
+| **认证** | JWT Bearer Token |
+
+### 3.7 交易记录
+
+`POST /api/user/transactions` | `{ "page": 1, "limit": 20 }` | JWT认证
+
+### 3.8 音色列表
+
+`GET /api/voices?limit=10&type=cloned&mine=true`
+
+筛选参数：`category` / `gender` / `type` / `search` / `mine=true`
+
+### 3.9 试听（不扣费）
+
+`POST /api/voices/preview` | `{ "speakerId": "zh_female_vv_uranus_bigtts" }`
+
+### 3.10 SSE流式合成
+
+`POST /api/tts/stream-sse` | `{ "text":"...", "speaker":"...", "skipBilling": false }`
+
+---
+
+## 四、扣费逻辑说明
+
+```
+用户请求合成/克隆 → 智音工坊
+                  ↓
+          查余额 (by userId)
+          ↙ 余额不足     ↘ 余额充足
+       返回402+错误      调用火山引擎API
+                           ↓ 成功
+                        扣除费用
+                        记录交易
+                           ↓
+                    返回结果(cost + balance)
+```
+
+**定价**：成本价 ¥0.5/千字符，利润率100%，用户实际扣费 **¥1.0/千字符**。
+
+> 试听接口走独立通路，不经过扣费系统。
+
+---
+
+## 五、部署步骤
+
+### 5.1 获取代码
+```bash
+git clone https://gitee.com/zhujunguo/voice-platform-20250719.git
+cd voice-platform-20250719
+```
+
+### 5.2 配置环境变量
+将 `.env.example` 复制为 `.env`，按上方密钥清单填入实际值。
+⚠️ 生产环境务必修改 `AUTH_SECRET` 为随机字符串。
+
+### 5.3 初始化数据库
+```bash
+npm install
+npx prisma generate
+npx prisma db push
+```
+
+### 5.4 初始管理员账号
+数据库内置管理员：`admin@voicestudio.com` / `admin123456`
+⚠️ 生产环境请修改密码。
+
+### 5.5 同步音色库
+部署后进入管理后台 → 点击「同步官方音色」按钮，从火山引擎API拉取全量音色。
+
+### 5.6 启动
+```bash
+npm run build
+npm run start -p 3001
+```
+
+### 5.7 主站代码对接示例
+
+```javascript
+// === 语音合成 ===
+async function synthesizeVoice(userId, text, speakerId) {
+  const res = await fetch('https://voice.zyuani8.com/api/tts/synthesize', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Site-API-Key': SITE_API_KEY,
+    },
+    body: JSON.stringify({ userId, text, speaker: speakerId }),
+  });
+  return res.json();
+}
+
+// === 声音克隆 ===
+async function cloneVoice(userId, audioBase64, format, name) {
+  const res = await fetch('https://voice.zyuani8.com/api/voice/clone', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Site-API-Key': SITE_API_KEY,
+    },
+    body: JSON.stringify({
+      userId,
+      speakerId: `S_${Date.now()}`,
+      audioBase64,
+      audioFormat: format,
+      language: 0,
+      name,
+    }),
+  });
+  return res.json();
+}
+
+// === 充值同步 ===
+async function syncBalance(userId, amount) {
+  const res = await fetch('https://voice.zyuani8.com/api/user/charge', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Site-API-Key': SITE_API_KEY,
+    },
+    body: JSON.stringify({ userId, amount, description: '主站充值' }),
+  });
+  return res.json();
+}
+```
+
+---
+
+## 六、管理后台
+
+### 6.1 智音工坊后台
+地址：`https://voice.zyuani8.com/admin`
+
+功能面板：
+- **Dashboard**：总用户数 / 总音色数 / 今日合成量 / 活跃密钥数
+- **主站管理入口**：一键跳转到 zyuani8.com/admin（管理用户/订单/充值）
+- **API密钥管理**：火山引擎API Key的增删改查、启用/禁用、复制
+- **音色管理**：音色列表查看、上架/下架
+- **同步官方音色**：从火山引擎官方一键拉取最新音色（见下方详解）
+
+### 6.2 主站后台（需自行对接）
+主站 `/admin` 后台需要新增的功能入口：
+- 用户余额查看（调智音工坊 `/api/user/balance`）
+- 交易记录查看（调智音工坊 `/api/user/transactions`）
+- 语音克隆入口（跳转到智音工坊的克隆/设计页面）
+
+---
+
+## 七、音色库维护（一键同步）
+
+### 7.1 功能说明
+
+火山引擎官方持续上新音色。智音工坊后台提供「一键同步」功能，自动从火山引擎 `ListSpeakers` API 拉取全量音色，同步到本地数据库。
+
+**操作步骤**：
+1. 登录智音工坊后台 → `https://voice.zyuani8.com/admin`
+2. 在「音色管理」区域，点击 **🔄 同步官方音色** 按钮
+3. 系统自动调用火山引擎 ListSpeakers API（V4签名认证）
+4. 同步完成，显示新增/更新数量
+
+**同步特性**：
+- 已有音色自动更新信息（名称/分类/标签），不会重复创建
+- 新上线的官方音色自动入库
+- 已删除的音色不会从本地删除（保留历史数据）
+- 同步过程约10-30秒，取决于官方音色数量
+
+### 7.2 同步原理
+
+```
+后台点击「同步」 → POST /api/admin/sync-voices
+                          ↓
+              火山引擎 ListSpeakers API
+              (HMAC-SHA256 V4签名)
+                          ↓
+              解析返回的音色列表
+              (speaker_id / name / gender / tags)
+                          ↓
+              智能分类（根据命名规则）
+              → 影视解说 / 角色动漫 / 情感治愈 / etc.
+                          ↓
+              更新本地 Voice 表
+              (upsert, 不删除已有数据)
+                          ↓
+              返回同步统计
+              { beforeCount, afterCount, upserted, skipped }
+```
+
+### 7.3 何时执行同步
+
+| 场景 | 建议频率 |
+|------|---------|
+| 首次部署 | 部署后立即执行一次 |
+| 日常维护 | 每月检查一次火山官方是否有新音色 |
+| 用户反馈缺失某音色 | 手动触发一次同步 |
+
+---
+
+## 八、音色分类速查
+
+| 分类 | 数量 | 典型音色 |
+|------|------|---------|
+| 🔥 热门推荐 | 17 | Vivi 2.0、云舟 2.0、小何 2.0 |
+| 🎬 影视解说 | 28 | 解说男声、悬疑女声、纪录片配音 |
+| 🎭 角色动漫 | 146 | 纯真少女、温柔女神、傲娇女友 |
+| 💝 情感治愈 | 52 | 知心姐姐、和蔼奶奶、磁性男嗓 |
+| 📱 短视频配音 | 33 | 魅力女友、婆婆 2.0、奶气萌娃 |
+| 💼 商业播报 | 25 | Tina老师、专业客服、稳重男声 |
+
+---
+
+## 九、常见问题
+
+**Q: 克隆音色存在哪里？用户能调用吗？**
+A: 存在智音工坊本地数据库（Voice表），关联用户userId。克隆成功后返回 speakerId（如 S_xxx），直接传入合成API即可使用。用户的克隆音色可通过 `/api/voices?type=cloned&mine=true` 查询。
+
+**Q: 充值和扣费如何同步？**
+A: 主站收款 → 调智音工坊 `/api/user/charge` 同步余额。合成/克隆时智音工坊自动从余额扣费。
+
+**Q: 用户ID（userId）从哪来？**
+A: 主站用户在智音工坊也需要一个账号。首次使用时调 `/api/auth/register` 创建，返回的 userId 保存在主站用户资料中。后续所有API调用携带此userId。
+
+**Q: 同步音色会不会覆盖我手动修改的分类？**
+A: 同步使用 upsert 策略，会更新音色的基础信息（名称/标签/性别），但不会改变已有的分类设置。新音色会自动智能分类。
+
+**Q: 试听扣费吗？**
+A: 不扣费。试听接口直接调火山API，绕过了扣费系统。
+
+---
+
+> 📁 **相关文档**：
+> - `Coze编程对接智音工坊-完整指南.md`（含Coze代码片段）
+> - `主站扣费对接指南.md`（扣费流程详解）
+> - `src/lib/voices-data.ts`（音色数据与分类逻辑）
+> - `src/lib/billing.ts`（扣费系统源码）
+
+> 🔧 **技术支持**：智音工坊 · 火山引擎豆包语音大模型 · Seed-TTS 2.0

@@ -1,0 +1,262 @@
+# Render with scripts/render-nginx-config-vnext.mjs. The renderer validates the
+# target domains and scoped release root, replaces every placeholder atomically,
+# and rejects a config that still points at the example release root.
+# Access tickets and provider signatures may be carried in query parameters for
+# browser-native media playback. Log the normalized path without query strings
+# so short-lived credentials never enter persistent Nginx access logs.
+log_format agent_hub_no_args '$remote_addr - $remote_user [$time_local] '
+                             '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                             '"$http_referer" "$http_user_agent"';
+access_log /var/log/nginx/agent-hub-access.log agent_hub_no_args;
+
+# These zones live in Nginx shared memory, so every request is governed before
+# it reaches any Next.js process. Empty map keys are not accounted.
+map $uri $agent_hub_api_client {
+    default "";
+    ~^/api/ $binary_remote_addr;
+    ~^/voice-platform/api/ $binary_remote_addr;
+}
+
+map "$request_method:$uri" $agent_hub_login_client {
+    default "";
+    ~^POST:/api/auth/(login|register)$ $binary_remote_addr;
+}
+
+map "$request_method:$uri" $agent_hub_paid_write_client {
+    default "";
+    ~^(POST|PUT|PATCH):/api/(chat|llm|extract|image|video|cover|digital-human|segmenter|storyboard|short-drama|voice)(/|$) $binary_remote_addr;
+    ~^POST:/api/payment/create$ $binary_remote_addr;
+    ~^POST:/api/payment/refund$ $binary_remote_addr;
+    ~^(POST|PUT|PATCH):/voice-platform/api/voice/(tts|clone|design|nest)(/|$) $binary_remote_addr;
+}
+
+limit_req_zone $agent_hub_api_client zone=agent_hub_api_ip:20m rate=30r/s;
+limit_req_zone $agent_hub_login_client zone=agent_hub_login_ip:10m rate=10r/m;
+limit_req_zone $agent_hub_paid_write_client zone=agent_hub_paid_write_ip:20m rate=60r/m;
+
+upstream agent_hub_web {
+    server 127.0.0.1:5000;
+    keepalive 32;
+}
+
+upstream agent_hub_voice {
+    server 127.0.0.1:5001;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    server_name __SERVER_NAMES__;
+    server_tokens off;
+
+    client_max_body_size 200m;
+    proxy_connect_timeout 10s;
+    proxy_send_timeout 300s;
+    proxy_read_timeout 300s;
+    limit_req_status 429;
+
+    # Operational readiness includes release identity and storage/DB details.
+    # Keep it available to localhost probes only; never expose it publicly.
+    location = /api/release-readiness {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://agent_hub_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header CF-Connecting-IP "";
+        proxy_buffering off;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    }
+
+    location = /voice-platform/api/release-readiness {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://agent_hub_voice;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header CF-Connecting-IP "";
+        proxy_buffering off;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    }
+
+    # Payment providers send small signed form/JSON callbacks. Reject oversized
+    # anonymous bodies at the edge before Next.js allocates request buffers; the
+    # route independently enforces the same 64 KiB streaming ceiling.
+    location = /api/payment/notify {
+        client_max_body_size 64k;
+        client_body_buffer_size 64k;
+        limit_req zone=agent_hub_api_ip burst=20 nodelay;
+        proxy_pass http://agent_hub_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header CF-Connecting-IP "";
+        proxy_buffering off;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    }
+
+    # Administrator refunds carry only a small signed JSON command. Keep this
+    # route below the application's 16 KiB streaming ceiling and rate-limit it
+    # with the shared paid-write zone. Exact-location precedence leaves media
+    # upload APIs on the server-level 200 MiB compatibility ceiling.
+    location = /api/payment/refund {
+        client_max_body_size 16k;
+        client_body_buffer_size 16k;
+        limit_req zone=agent_hub_api_ip burst=20 nodelay;
+        limit_req zone=agent_hub_paid_write_ip burst=5 nodelay;
+        proxy_pass http://agent_hub_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header CF-Connecting-IP "";
+        proxy_buffering off;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    }
+
+    # Asset releases are immutable and live at:
+    #   shared/assets/releases/sha256-<digest>/public/...
+    # `shared/assets/current` is an atomic symlink managed by the deployer only
+    # after `.release/public-assets.ready.v1.json` passes full-SHA verification.
+    # JSON manifests must never be cached; content-pinned binaries are immutable.
+    #
+    # COS/CDN mode for heavy binary media is deliberately disabled here. Published
+    # objects live below assets/releases/<assetVersion>/public, while browser URLs
+    # remain /<path>; forwarding $request_uri unchanged would therefore return 404.
+    # Enable COS only after a deployment-controlled rewrite injects the verified
+    # assetVersion and maps each request to:
+    #   https://<verified-cdn>/assets/releases/<assetVersion>/public$request_uri
+    # If the CDN distribution instead pins that exact content-addressed prefix
+    # as its audited origin path/alias, the disabled production rule becomes:
+    #   return 302 https://assets.example.invalid$request_uri;
+    # Replace the placeholder domain; never enable it until the alias transition
+    # is coordinated with the asset/Web rollback transaction.
+    # The mapping must be versioned, audited, rollback-safe, and pass GET/HEAD,
+    # byte-Range, CORS, Content-Type and cache tests. Until then, the locations
+    # below are the complete safe disk fallback. Do not proxy large media through
+    # the application process and never enable an unversioned placeholder redirect.
+    # Test evidence is never a production asset. Keep this deny rule even when
+    # the application accidentally retains a matching route or bundled file.
+    location ~* ^/(storyboard-reviews|demo-assets)(/|$) {
+        return 404;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # Missing allowlisted asset URLs must not inherit heuristic 404 caching.
+    # A future forward-compatible release may legitimately add that same URL.
+    location @asset_not_found {
+        internal;
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        return 404;
+    }
+
+    location ~* ^/(product-assets|youcai-media|short-drama|cover-references|avatars|cover-presets|help|cover-assets|cover-generated-samples|official-home|downloads|model-brands)/.*\.(json|map|txt|vtt)$ {
+        root __RELEASE_ROOT__/shared/assets/current/public;
+        try_files $uri @asset_not_found;
+        etag on;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location ~* ^/(product-assets|youcai-media|short-drama|cover-references|avatars|cover-presets|help|cover-assets|cover-generated-samples|official-home|downloads|model-brands)/.*\.(aac|avi|flac|gif|ico|jpe?g|m4a|m4v|mkv|mov|mp3|mp4|mpeg|mpg|ogg|pdf|png|svg|wav|webm|webp|zip)$ {
+        root __RELEASE_ROOT__/shared/assets/current/public;
+        try_files $uri @asset_not_found;
+        etag on;
+        # Without `always`, only successful/redirect responses become immutable;
+        # a 404 for a URL introduced by a later compatible asset release is not
+        # cached for one year by browsers or an intermediary CDN.
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    # Unknown asset types stay revalidatable instead of inheriting an unsafe
+    # immutable policy. They are still served only from the pinned asset tree.
+    location ~ ^/(product-assets|youcai-media|short-drama|cover-references|avatars|cover-presets|help|cover-assets|cover-generated-samples|official-home|downloads|model-brands)/ {
+        root __RELEASE_ROOT__/shared/assets/current/public;
+        try_files $uri @asset_not_found;
+        etag on;
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    # User uploads are mutable business data and never belong to a code or
+    # immutable asset release. URL /uploads/a maps to shared/uploads/a. This
+    # compatibility location is for explicitly public-by-URL objects only and
+    # must never store private objects. New private uploads must use private COS
+    # with short-lived signed URLs or an authenticated application API.
+    location ^~ /uploads/ {
+        root __RELEASE_ROOT__/shared;
+        try_files $uri =404;
+        disable_symlinks on;
+        autoindex off;
+        limit_except GET {
+            deny all;
+        }
+        etag on;
+        add_header Cache-Control "private, no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Content-Security-Policy "sandbox; default-src 'none'" always;
+        add_header X-Robots-Tag "noindex, nofollow, nosnippet" always;
+    }
+
+    # Voice reference audio is mutable persistent data and is deliberately
+    # excluded from every Voice code artifact.
+    location ^~ /voice-platform/reference-audio/ {
+        alias __RELEASE_ROOT__/shared/voice/reference-audio/;
+        disable_symlinks on;
+        etag on;
+        add_header Cache-Control "private, no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location /voice-platform/ {
+        limit_req zone=agent_hub_api_ip burst=60 nodelay;
+        limit_req zone=agent_hub_paid_write_ip burst=20 nodelay;
+        proxy_pass http://agent_hub_voice;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header CF-Connecting-IP "";
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_buffering off;
+    }
+
+    location / {
+        limit_req zone=agent_hub_api_ip burst=60 nodelay;
+        limit_req zone=agent_hub_login_ip burst=8 nodelay;
+        limit_req zone=agent_hub_paid_write_ip burst=20 nodelay;
+        proxy_pass http://agent_hub_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header CF-Connecting-IP "";
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_buffering off;
+    }
+}

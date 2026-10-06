@@ -1,0 +1,247 @@
+# 智音工坊 — 安装替换说明书
+
+> **用途**: 将最新版智音工坊部署到语音克隆平台，替换旧版。  
+> **更新日期**: 2026-07-21  
+> **目标读者**: 接手部署的智能体/开发者  
+> **Git仓库**: https://gitee.com/zhujunguo/voice-platform-20250719  
+> **部署目标**: `E:\WorkBuddy\voice-studio`（需要先备份旧版）  
+> **本地开发版**: `E:\WorkBuddy\volcano-tts-web\recovered`（当前运行在 http://localhost:3001）
+
+---
+
+## 一、项目基本信息
+
+| 项目 | 值 |
+|------|-----|
+| 仓库地址 | https://gitee.com/zhujunguo/voice-platform-20250719 |
+| 本地路径 | `E:\WorkBuddy\volcano-tts-web\recovered\` |
+| 项目名称 | 智音工坊 (Voice Studio) |
+| 运行端口 | **3001** |
+| 技术栈 | Next.js 15 + React 19 + Prisma 5 + SQLite + Tailwind 4 |
+
+启动命令：
+```bash
+# ⚠️ 以下路径为部署目标，不是源码路径
+cd E:\WorkBuddy\voice-studio
+git clone https://gitee.com/zhujunguo/voice-platform-20250719.git .
+npm install
+npm run db:push        # 初始化 SQLite 数据库
+npm run db:seed        # 导入种子数据（301个音色 + 管理员用户）
+npm run dev            # 开发模式 → http://localhost:3000
+npm run build && npm start  # 生产模式
+```
+
+**⚠️ 旧版备份**（部署前执行）：
+```bash
+cp -r E:\WorkBuddy\voice-studio E:\WorkBuddy\voice-studio-backup-20260721
+```
+
+---
+
+## 二、模型体系（火山引擎 API）
+
+### 三个核心模型
+
+| 模型名称 | API model 值 | 用途 | 页面入口 |
+|----------|-------------|------|----------|
+| 语音合成 2.0 | `seed-tts-2.0-standard` / `seed-tts-2.0-expressive` | 文本→语音，用 speakerId | 语音合成工作台 `/workspace` |
+| 声音复刻 2.0 | `seed-icl-2.0` → 训练后产出 speakerId | 上传音频→训练→专属音色 | 声音复刻 `/clone` |
+| 音频生成 1.0 | `seed-audio-1.0` | 参考音频→零样本模仿 | 音色模仿 `/imitate` |
+
+### Resource ID 路由规则
+
+```
+speakerId 以 "S_" 或 "ICL_" 开头 → resource_id: "seed-icl-2.0"
+其他所有 speakerId → resource_id: "seed-tts-2.0"
+```
+
+### 模型与表现力版本匹配
+
+```
+uranus 系列音色 → model: "seed-tts-2.0-standard"
+saturn 系列音色 → model: "seed-tts-2.0-expressive"（支持语音指令 COT）
+ICL/S_ 复刻音色 → model: "seed-tts-2.0-expressive"
+```
+
+---
+
+## 三、API 密钥
+
+### TTS 合成（新版控制台）
+```
+API Key: <服务器环境变量，禁止写入文档>
+鉴权方式: X-Api-Key 头
+端点: https://openspeech.bytedance.com/api/v3/tts/unidirectional
+```
+
+### ListSpeakers（V4 签名）
+```
+AccessKey: <服务器环境变量，禁止写入文档>
+SecretKey: <服务器环境变量，禁止写入文档>
+⚠️ SecretKey 仅从服务器密钥存储读取，不得写入源码、文档、日志或浏览器。
+Service: speech_saas_prod, Region: cn-beijing
+```
+
+### Seed-Audio-1.0 特殊说明
+```
+端点: POST /api/v3/tts/create
+返回格式: {"audio":"base64wav...", "url":"https://...", "duration":xxx}
+注意: 没有外层 code 字段（与标准 TTS 不同），直接读取 url
+```
+
+---
+
+## 四、数据库
+
+**类型**: SQLite（文件: `prisma/dev.db`）
+
+### 管理员账号
+```
+邮箱: admin@voicestudio.com
+密码: admin123456
+```
+
+### 音色数据
+- 总数: **301** 个（从火山 API 同步）
+- 推荐音色: 8 个（isRecommended=true，包含 Vivi/小何/云舟/小天/少年梓辛/魅力女友/刘飞/Tina老师）
+- 热门音色: 17 个（硬编码在 `src/lib/recommended-voices.ts`，ICL真人+saturn+抖音同款）
+
+### 数据库核心表
+```
+User    — 用户（邮箱/密码/余额）
+Voice   — 音色（speakerId/名称/分类/推荐标记）
+Favorite — 收藏关系（用户↔音色）
+TTSJob  — 合成任务记录
+Transaction — 扣费交易记录
+ApiConfig — API Key 配置
+License — 声音复刻授权密钥
+```
+
+---
+
+## 五、扣费系统
+
+| 参数 | 值 |
+|------|-----|
+| 成本价 | 0.5元/千字符 |
+| 利润率 | 100%（售价 = 成本价 × 2） |
+| 扣费时机 | TTS/Seed-Audio 合成成功后 |
+| 计费单位 | 按实际合成字符数 |
+
+---
+
+## 六、关键页面路由
+
+| 路由 | 页面 | 功能 |
+|------|------|------|
+| `/` | 首页 | 跳转语音合成 |
+| `/workspace` | 语音合成 | 文本→语音，音色选择，高级参数 |
+| `/imitate` | 音色模仿 | Seed-Audio-1.0，链接提取/上传/已保存 |
+| `/clone` | 声音复刻 | 上传音频→训练→S_xxx speakerId |
+| `/design` | 声音设计 | textPrompt→新音色 |
+| `/voices` | 音色库 | 🔥推荐(8) / ⚡热门(17) / 全部(301) / 分类筛选 |
+| `/admin` | 管理后台 | APIKey管理/用户管理/音色管理/扣费设置 |
+
+---
+
+## 七、参考音频本地存储
+
+### 存储位置
+```
+public/reference-audio/
+```
+`.gitignore` 已排除此目录。
+
+### 管理 API
+```
+GET  /api/reference-audio          → 列出所有已保存音频（最多20条）
+PUT  /api/reference-audio          → 重命名 {filename, displayName}
+DELETE /api/reference-audio?filename=xxx → 删除
+```
+元数据文件: `public/reference-audio/.meta.json`
+
+### 链接提取 API
+```
+POST /api/voice/link-clone/extract-audio
+body: { url: "抖音/小红书分享链接" }
+返回: { audioUrl(视频URL), localAudioUrl(本地路径), title, cover, savedLocally }
+```
+
+---
+
+## 八、Seed-Audio-1.0 音色模仿完整调用
+
+```js
+// 1. 提取音频（可选，直接传视频URL也行）
+POST /api/voice/link-clone/extract-audio
+body: { url: "https://v.douyin.com/xxxx" }
+
+// 2. 音色模仿
+POST /api/audio-generate
+body: {
+  textPrompt: "@音频1 请用自然科普语气朗读：认知决定财富。",
+  audioUrl: "https://...视频URL...",   // 或传 audioData(base64)
+}
+// 返回: { success, data: { audioUrl, duration, originalDuration } }
+```
+
+### 最佳实践
+- 参考音频: **10-20秒** 纯人声最佳
+- 合成文案: **正文 ≤ 400 字符**（太长会加速语速导致不清）
+- 传视频URL效果优于本地mp3（火山内部做音频预处理）
+
+---
+
+## 九、推荐音色/热门音色配置
+
+文件: `src/lib/recommended-voices.ts`
+
+```ts
+// RECOMMENDED_VOICES: 8个编辑推荐（Vivi/小何/云舟/小天/少年梓辛/魅力女友/刘飞/Tina老师）
+// WEEKLY_HOT_VOICES: 17个热门（ICL接近真人 + saturn COT强指令 + 抖音同款）
+// 音色库页面标签栏前两位: 🔥推荐音色 / ⚡热门音色
+// 语音合成工作台排序: isRecommended=true → 收藏 → 使用频率 → 名称
+```
+
+---
+
+## 十、附加功能清单
+
+| 功能 | 位置 | 说明 |
+|------|------|------|
+| 全局合成任务栏 | `components/GlobalTaskBar.tsx` | 跨页面合成不中断，Header 下方横幅 |
+| 参考音频管理 | `components/ReferenceAudioSelector.tsx` | 已保存/链接提取/上传 三模式 |
+| 生成历史 | `localStorage: imitate_history` | 最近20条模仿记录 |
+| 合成历史 | `localStorage: tts_history` | 最近20条合成记录 |
+| 字幕输出 | API 参数 `enableSubtitle` | 返回字级别时间戳 |
+| 语音指令 COT | API 参数 `contextTexts` | `[#用温柔语气说#]` 格式 |
+| 多轮会话 | API 参数 `sectionId` | 同一UUID保持上下文连贯 |
+| 长文本自动切分 | API 参数 `autoSplit` | 超4500字按句号分段 |
+
+---
+
+## 十一、更换音色库推荐/热门列表
+
+编辑 `src/lib/recommended-voices.ts`，修改 `RECOMMENDED_VOICES` 和 `WEEKLY_HOT_VOICES` 数组，重启即可。
+
+新增音色到数据库：
+```bash
+POST /api/admin/voices
+body: { speakerId, name, category, type, tags, gender, language, isRecommended }
+```
+
+---
+
+## 十二、常见问题
+
+**Q: 合成按钮一直转？**
+A: 检查 `src/app/workspace/page.tsx` 第10行是否正确 import 了 `setRunningTask, clearRunningTask`
+
+**Q: "网络错误"但实际成功了？**
+A: 已修复 — 之前的 `recordUsage(speaker)` bug（speaker未定义）导致 catch 触发。现在用 try-catch 隔离。
+
+**Q: 页面切换卡顿？**
+A: Header 导航已加 `prefetch={false}`，workspace 数据加载延迟 50ms。
+
+**Q: 参考音频太多想清理？**
+A: 直接删 `public/reference-audio/` 下文件 + `.meta.json`。重启服务。

@@ -1,0 +1,23 @@
+/* Keep the six platform cards readable under existing theme/layout overrides. */
+:global(html[data-theme]) :global(.marketplace-shell) :global(.marketplace-agent-grid) .card.card {
+  height: 100% !important;
+  min-height: 150px !important;
+}
+
+:global(html[data-theme]) :global(.marketplace-shell) .card.card :global(.marketplace-agent-avatar) {
+  width: 64px !important;
+  height: 64px !important;
+}
+
+:global(html[data-theme]) :global(.marketplace-shell) .card.card :global(.marketplace-agent-title) {
+  font-size: 16px !important;
+  white-space: normal !important;
+}
+
+:global(html[data-theme]) :global(.marketplace-shell) .card.card :global(.marketplace-agent-description) {
+  display: block !important;
+  -webkit-line-clamp: unset !important;
+  overflow: visible !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+}
