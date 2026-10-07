@@ -57,7 +57,7 @@
           settings:
             commit: $CNB_COMMIT
             attachments:
-              - /workspace/.cnb-artifacts/web-release.tar.gz
-              - /workspace/.cnb-artifacts/web-release.tar.gz.sha256
-              - /workspace/.cnb-artifacts/release-manifest.json
-              - /workspace/.cnb-artifacts/cnb-build-receipt.json
+              - ./.cnb-artifacts/web-release.tar.gz
+              - ./.cnb-artifacts/web-release.tar.gz.sha256
+              - ./.cnb-artifacts/release-manifest.json
+              - ./.cnb-artifacts/cnb-build-receipt.json
