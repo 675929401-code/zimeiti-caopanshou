@@ -91,6 +91,18 @@ if [ -d "$CURRENT_TARGET/public" ]; then
   log "public inherited (no-clobber)"
 fi
 
+# ─── 2.6 并入共享资产根（硬链接，零额外磁盘） ───
+# 生产静态资产真相源是 PUBLIC_ASSET_ROOT（/data/web/shared/assets/current/public）。
+# release 自带的 public 只是精简集；缺少的文件会让 Next 内部回退成 HTML，
+# 导致 /_next/image 优化器 400（"isn't a valid image"）。用硬链接并集修复。
+SHARED_PUBLIC="${PUBLIC_ASSET_ROOT:-/data/web/shared/assets/current}/public"
+if [ -d "$SHARED_PUBLIC" ] && command -v rsync >/dev/null 2>&1; then
+  chmod -R u+w "$TARGET"
+  rsync -a --ignore-existing --link-dest="$SHARED_PUBLIC" "$SHARED_PUBLIC/" "$TARGET/public/" \
+    && log "shared asset root unioned (hardlink, from $SHARED_PUBLIC)"
+  chmod -R a-w "$TARGET"
+fi
+
 # ─── 3. 构造同身份候选 env（从当前生产进程 /proc 提取） ───
 CAND_ENV=/tmp/candidate-env-$$.json
 "$TOOLCHAIN_NODE" - "$WEB_PID" "$CANDIDATE_PORT" "$RELEASE_ID" "$TARGET" "$CAND_ENV" "$NEW_BUILD_ID" "$NEW_COMMIT_SHA" <<'NODEEOF'
