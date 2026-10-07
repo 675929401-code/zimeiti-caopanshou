@@ -25,8 +25,12 @@ fail() { echo "[activate] FATAL: $*" >&2; exit 1; }
 CURRENT_TARGET=$(readlink -f "$CURRENT") || fail "current-web unreadable"
 log "current=$CURRENT_TARGET -> new=$TARGET"
 
-WEB_PID=$(pgrep -f 'current-web/server.js' | head -1 || true)
-[ -n "$WEB_PID" ] || fail "cannot find running web process (current-web/server.js)"
+WEB_PID=""
+# next-server 会改写进程标题，按 cwd（符号链接解析后=当前 release）匹配
+for p in $(pgrep -f 'next-server' 2>/dev/null); do
+  [ "$(readlink -f "/proc/$p/cwd" 2>/dev/null)" = "$CURRENT_TARGET" ] && { WEB_PID=$p; break; }
+done
+[ -n "$WEB_PID" ] || fail "cannot find running web process (cwd=$CURRENT_TARGET)"
 log "production web pid=$WEB_PID"
 
 # ─── 1. 解包新 release ───────────────────────────────────
