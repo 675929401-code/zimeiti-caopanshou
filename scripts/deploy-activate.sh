@@ -49,6 +49,14 @@ if [ -d "$CURRENT_TARGET/runtime-tools" ]; then
   log "runtime-tools inherited"
 fi
 
+# ─── 2.5 继承旧 release 的 public 文件（只补缺，不覆盖新构建文件） ───
+if [ -d "$CURRENT_TARGET/public" ]; then
+  chmod -R u+w "$TARGET"
+  cp -an "$CURRENT_TARGET/public/." "$TARGET/public/" 2>/dev/null || true
+  chmod -R a-w "$TARGET"
+  log "public inherited (no-clobber)"
+fi
+
 # ─── 3. 构造同身份候选 env（从当前生产进程 /proc 提取） ───
 CAND_ENV=/tmp/candidate-env-$$.json
 "$TOOLCHAIN_NODE" - "$WEB_PID" "$CANDIDATE_PORT" "$RELEASE_ID" "$TARGET" "$CAND_ENV" "$NEW_BUILD_ID" "$NEW_COMMIT_SHA" <<'NODEEOF'
