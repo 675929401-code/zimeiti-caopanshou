@@ -64,7 +64,7 @@ if [ -d "$NM/.pnpm" ]; then
           rm "$link" && ln -s "$rel" "$link" && LINKS_FIXED=$((LINKS_FIXED+1))
         fi ;;
     esac
-  done < <(find "$NM/.pnpm" -maxdepth 3 -type l)
+  done < <(find "$NM/.pnpm" -maxdepth 5 -type l)
   log "pnpm links rewritten: $LINKS_FIXED"
 fi
 
@@ -148,6 +148,13 @@ cleanup_candidate() {
 READY=""
 for i in $(seq 1 24); do
   sleep 5
+  if ! kill -0 "$WRAPPER_PID" 2>/dev/null; then
+    echo "[activate] candidate process exited early; last log:" >&2
+    tail -30 "$CAND_LOG" >&2 || true
+    chmod -R u+w "$TARGET_DIR" || true
+    rm -rf "$TARGET_DIR"
+    fail "candidate crashed on start; release removed, production untouched"
+  fi
   VERSION_JSON=$(curl --noproxy '*' -fsS --connect-timeout 2 --max-time 6 "http://127.0.0.1:$CANDIDATE_PORT/api/version" 2>/dev/null) && { READY=1; break; } || true
 done
 if [ -z "$READY" ]; then
