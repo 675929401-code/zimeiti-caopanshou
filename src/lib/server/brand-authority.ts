@@ -258,10 +258,29 @@ function publicBrandingFromPublished(value: unknown): PublicPlatformBranding {
   };
 }
 
+/**
+ * 品牌控制面 schema 缺席判定（2026-10-08 R868 生产修复）。
+ * 生产数据库尚未应用 platform_brand_* 迁移时 RPC 返回 PGRST202，
+ * 语义等价于"该站点从未发布过品牌修订"——回退 legacy platform_settings
+ * 是设计内行为（与 RPC 返回 null 相同）。控制面已安装但调用失败
+ * （如连接错误、权限错误）依然 503，不触发本回退。
+ */
+function isPlatformBrandSchemaAbsent(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { code?: string; message?: string; details?: string };
+  const code = String(value.code || "");
+  const message = `${value.message || ""} ${value.details || ""}`;
+  return ["42P01", "PGRST202", "PGRST204", "PGRST205"].includes(code)
+    || /read_published_platform_brand/iu.test(message);
+}
+
 export async function readPublishedPlatformBranding(): Promise<PublicPlatformBranding> {
   try {
     const { data, error } = await getSupabaseAdminClient().rpc("read_published_platform_brand");
-    if (error) throw error;
+    if (error) {
+      if (isPlatformBrandSchemaAbsent(error)) return readLegacyPlatformBranding();
+      throw error;
+    }
     // The RPC returning null is the only authoritative proof that this site
     // has never published a brand revision. Legacy settings are strictly a
     // pre-first-publish compatibility source; control-plane failures must not
