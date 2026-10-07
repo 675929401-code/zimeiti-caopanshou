@@ -1,0 +1,57 @@
+# Tencent CNB production artifact pipeline.
+#
+# A normal push must not deploy production. Only an explicit immutable tag in
+# the form deploy/V<major>.<minor>-<12 hex source digest> is allowed to create
+# a deployable Linux artifact. Activation remains a separate candidate gate.
+$:
+  tag_push:
+    - name: build-linux-web-release
+      if: printf '%s' "$CNB_BRANCH" | grep -Eq '^deploy/V[1-9][0-9]*\.[0-9]+-[a-f0-9]{12}$'
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 8
+      docker:
+        image: node:24.19.0-bookworm
+        volumes:
+          - /root/.local/share/pnpm/store:copy-on-write
+      env:
+        NEXT_TELEMETRY_DISABLED: "1"
+        PUPPETEER_SKIP_DOWNLOAD: "1"
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        npm_config_store_dir: /root/.local/share/pnpm/store
+      stages:
+        - name: verify-locked-toolchain
+          script: |
+            set -eu
+            corepack enable
+            corepack prepare pnpm@9.0.0 --activate
+            test "$(node --version)" = "v24.19.0"
+            test "$(pnpm --version)" = "9.0.0"
+            test "$(uname -m)" = "x86_64"
+        - name: install-frozen-dependencies
+          script: |
+            set -eu
+            pnpm install --frozen-lockfile
+            node -e 'const Database=require("better-sqlite3");const db=new Database(":memory:");if(db.prepare("select 1 as ok").get().ok!==1)throw Error("SQLITE_NATIVE_NOT_READY");db.close();require("sharp");'
+        - name: verify-source-and-types
+          script: |
+            set -eu
+            node scripts/release-workflow.mjs refresh-metadata
+            pnpm exec tsc --noEmit --incremental false
+            node scripts/verify-release-secret-exposure.mjs
+        - name: build-linux-standalone
+          script: |
+            set -eu
+            pnpm run release:vnext:build:web
+        - name: package-immutable-release
+          script: |
+            set -eu
+            node scripts/ci/package-cnb-web-release.mjs
+        - name: retain-build-attachments
+          image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - /workspace/.cnb-artifacts/web-release.tar.gz
+              - /workspace/.cnb-artifacts/web-release.tar.gz.sha256
+              - /workspace/.cnb-artifacts/release-manifest.json
+              - /workspace/.cnb-artifacts/cnb-build-receipt.json

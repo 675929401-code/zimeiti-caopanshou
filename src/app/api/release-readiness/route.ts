@@ -172,6 +172,7 @@ export async function GET() {
       videoHealthProtocolVersion: referenceDataReadiness.videoHealthProtocolVersion,
       activeVideoModelCount: referenceDataReadiness.activeVideoModelCount,
       verifiedVideoModelCount: referenceDataReadiness.verifiedVideoModelCount,
+      videoModelVerificationReady: referenceDataReadiness.videoModelVerificationReady,
       unverifiedVideoModelCount: referenceDataReadiness.unverifiedVideoModelIds.length,
     };
     if (!referenceDataReadiness.ok) {

@@ -90,7 +90,7 @@ import { BrandFooter } from "@/components/brand-footer";
 import { ModelBadge } from "@/components/model-badge";
 import { useApp } from "@/contexts/app-context";
 import { RechargeDialog } from "@/components/recharge-dialog";
-import { resolveWorkbenchIdentity, type WorkbenchIdentity } from "@/lib/workbench-user-storage";
+import { resolveWorkbenchIdentity, workbenchUserStorageKey, type WorkbenchIdentity } from "@/lib/workbench-user-storage";
 import {
   clearLegacyVideoTaskTransfer,
   clearPendingVideoTaskTransfer,
@@ -478,6 +478,8 @@ interface ParsedSegment {
   theme: string;           // 段落主题（从【】提取）
 }
 
+const VIDEO_SELECTED_MODEL_PREFERENCE_KEY = "ai-video:selected-model:v1";
+
 export default function VideoPage() {
   const { state } = useApp();
   const identity = resolveWorkbenchIdentity(state.auth);
@@ -496,7 +498,13 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   const [models, setModels] = useState<VideoPageModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsLoadError, setModelsLoadError] = useState("");
-  const [selectedModelId, setSelectedModelId] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState(() => {
+    try {
+      return localStorage.getItem(workbenchUserStorageKey(VIDEO_SELECTED_MODEL_PREFERENCE_KEY, identity.userId))?.trim() || "";
+    } catch {
+      return "";
+    }
+  });
   const [historyRetryNotice, setHistoryRetryNotice] = useState("");
   const [cashBalance, setCashBalance] = useState(0);
   const [cashRechargeOpen, setCashRechargeOpen] = useState(false);
@@ -519,6 +527,12 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       clearLegacyVideoWorkflowDraft();
     } catch {}
   }, [identity.userId]);
+  useEffect(() => {
+    if (!selectedModelId) return;
+    try {
+      localStorage.setItem(workbenchUserStorageKey(VIDEO_SELECTED_MODEL_PREFERENCE_KEY, identity.userId), selectedModelId);
+    } catch {}
+  }, [identity.userId, selectedModelId]);
   const completedTaskBalanceKey = tasks.filter(task => task.status === 'completed').map(task => task.taskId).sort().join('|');
   useEffect(() => {
     if (!completedTaskBalanceKey || !auth?.token) return;

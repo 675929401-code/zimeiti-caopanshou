@@ -5,6 +5,7 @@
     "maxBytes": 104857600,
     "maxFileBytes": 10485760,
     "topLevelFiles": [
+      ".cnb.yml",
       ".coze",
       ".cozeignore",
       ".dockerignore",

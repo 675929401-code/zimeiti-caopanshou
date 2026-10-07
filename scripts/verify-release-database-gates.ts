@@ -20,7 +20,7 @@ const contract = JSON.parse(read("deploy/policies/database-contract.v1.json")) a
 const table = (name: string) => contract.tables.find((entry) => entry.name === name);
 const rpc = (name: string) => contract.rpcs.find((entry) => entry.name === name);
 
-assert.equal(contract.contractVersion, "20260915235500");
+assert.equal(contract.contractVersion, "20261001070000");
 assert.equal(contract.requiredProbeRole, "service_role");
 const referenceCheckIds = new Set(
   (JSON.parse(read("deploy/policies/database-contract.v1.json")) as {
@@ -406,8 +406,11 @@ for (const marker of [
   ".from(\"video_channel_health\")",
   ".from(\"manju_config_storage_state\")",
   "isReleaseVerifiedVideoChannelHealth",
+  "videoModelVerificationReady",
   "unverifiedVideoModelIds",
 ]) assert.ok(referenceGate.includes(marker), `reference-data gate missing ${marker}`);
+assert.doesNotMatch(referenceGate, /const ok =[\s\S]{0,320}unverifiedVideoModelIds\.length === 0/u,
+  "per-model paid acceptance must not block an unrelated whole-site release");
 assert.doesNotMatch(referenceGate, /\.insert\(|\.update\(|\.delete\(|\.rpc\(/u);
 const schemaGate = read("src/lib/production-database-readiness.ts");
 assert.match(schemaGate, /requiredProbeRole !== "service_role"/u);
@@ -418,6 +421,7 @@ for (const marker of [
   "serviceRoleConfigured",
   "missingManjuStorageDomainCount",
   "videoHealthProtocolVersion",
+  "videoModelVerificationReady",
   "unverifiedVideoModelCount",
 ]) assert.ok(releaseGate.includes(marker), `release readiness output missing ${marker}`);
 

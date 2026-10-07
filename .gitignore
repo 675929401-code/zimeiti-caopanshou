@@ -111,7 +111,11 @@ logs/
 /manju-*.png
 /runtime-*.log
 /console.log*
-/{console.error*
+/\{console.error*
+
+# CNB copies the finished Linux archive here only after the audited packager
+# has completed outside the Git worktree. Build attachments are never source.
+/.cnb-artifacts/
 
 # Local acceptance evidence and mutable demo snapshots are not source or
 # deployable public assets. Curated product demos live under

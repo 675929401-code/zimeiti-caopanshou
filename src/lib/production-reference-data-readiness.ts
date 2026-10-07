@@ -58,6 +58,7 @@ export type ProductionReferenceDataReadiness = {
   readonly videoHealthProtocolVersion: string;
   readonly activeVideoModelCount: number;
   readonly verifiedVideoModelCount: number;
+  readonly videoModelVerificationReady: boolean;
   readonly unverifiedVideoModelIds: readonly string[];
   readonly error?: string;
 };
@@ -80,6 +81,7 @@ function unavailable(
     videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
     activeVideoModelCount: 0,
     verifiedVideoModelCount: 0,
+    videoModelVerificationReady: false,
     unverifiedVideoModelIds: [],
     error,
   };
@@ -219,11 +221,14 @@ export async function probeProductionReferenceDataReadiness(): Promise<Productio
       .map((model) => model.id)
       .sort();
     const voiceActivePriceCount = (voicePriceResult.data || []).length;
+    const videoModelVerificationReady = activeVideoIds.length > 0 && unverifiedVideoModelIds.length === 0;
+    // Deployment readiness protects shared infrastructure and required reference data.
+    // Per-model paid acceptance remains visible here, but is enforced by that model's
+    // own activation/generation policy and must never block an unrelated site release.
     const ok = voiceActivePriceCount === 1
       && missingManjuDomains.length === 0
       && missingManjuStorageDomains.length === 0
-      && activeVideoIds.length > 0
-      && unverifiedVideoModelIds.length === 0;
+      && activeVideoIds.length > 0;
     return {
       ok,
       state: ok ? "ready" : "reference-data-not-ready",
@@ -238,6 +243,7 @@ export async function probeProductionReferenceDataReadiness(): Promise<Productio
       videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
       activeVideoModelCount: activeVideoIds.length,
       verifiedVideoModelCount: activeVideoIds.length - unverifiedVideoModelIds.length,
+      videoModelVerificationReady,
       unverifiedVideoModelIds,
       ...(!ok ? { error: "production reference data is incomplete" } : {}),
     };

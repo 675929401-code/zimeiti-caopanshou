@@ -228,6 +228,9 @@ const nextConfig: NextConfig = {
     },
   ],
   experimental: {
+    // Reduce webpack's peak retained heap in the constrained Linux release
+    // builder. This is Next.js' supported low-memory compilation mode.
+    webpackMemoryOptimizations: true,
     // Match the audited Nginx ceiling. Individual authenticated upload routes
     // enforce smaller limits before buffering (digital human requests: 102 MiB).
     proxyClientMaxBodySize: "200mb",
