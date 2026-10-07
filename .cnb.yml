@@ -55,6 +55,7 @@
         - name: retain-build-attachments
           image: cnbcool/attachments:latest
           settings:
+            commit: $CNB_COMMIT
             attachments:
               - /workspace/.cnb-artifacts/web-release.tar.gz
               - /workspace/.cnb-artifacts/web-release.tar.gz.sha256
