@@ -3,10 +3,9 @@
 # A normal push must not deploy production. Only an explicit immutable tag in
 # the form deploy/V<major>.<minor>-<12 hex source digest> is allowed to create
 # a deployable Linux artifact. Activation remains a separate candidate gate.
-$:
+"deploy/V*":
   tag_push:
     - name: build-linux-web-release
-      if: printf '%s' "$CNB_BRANCH" | grep -Eq '^deploy/V[1-9][0-9]*\.[0-9]+-[a-f0-9]{12}$'
       runner:
         tags: cnb:arch:amd64
         cpus: 8
@@ -36,7 +35,7 @@ $:
         - name: verify-source-and-types
           script: |
             set -eu
-            node scripts/release-workflow.mjs refresh-metadata
+            node scripts/release-workflow.mjs audit
             pnpm exec tsc --noEmit --incremental false
             node scripts/verify-release-secret-exposure.mjs
         - name: build-linux-standalone

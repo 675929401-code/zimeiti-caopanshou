@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "projectId": "zimeiti-caopanshou",
+  "kind": "managed-clean-source-repository",
+  "managedBy": "scripts/release-workflow.mjs",
+  "canonicalTextEol": "lf",
+  "mutableDataIncluded": false,
+  "publicBinaryAssetsIncluded": false
+}
