@@ -38,6 +38,10 @@ chmod -R a-w "$TARGET" || true
 log "unpacked: $(du -sh "$TARGET" | awk '{print $1}')"
 
 # ─── 2. 继承 runtime-tools（ffmpeg/ffprobe/backup-data.sh，服务器端复制零传输） ───
+NEW_BUILD_ID=$("$TOOLCHAIN_NODE" -e "const m=require('$TARGET/release-manifest.json');process.stdout.write(m.buildId||'')")
+[ -n "$NEW_BUILD_ID" ] || fail "buildId missing in release-manifest.json"
+NEW_COMMIT_SHA=$("$TOOLCHAIN_NODE" -e "const m=require('$TARGET/release-manifest.json');process.stdout.write(m.commitSha||'unknown')")
+log "new BUILD_ID=$NEW_BUILD_ID commit=$NEW_COMMIT_SHA"
 if [ -d "$CURRENT_TARGET/runtime-tools" ]; then
   chmod -R u+w "$TARGET"
   cp -a "$CURRENT_TARGET/runtime-tools" "$TARGET/runtime-tools"
@@ -47,9 +51,9 @@ fi
 
 # ─── 3. 构造同身份候选 env（从当前生产进程 /proc 提取） ───
 CAND_ENV=/tmp/candidate-env-$$.json
-"$TOOLCHAIN_NODE" - "$WEB_PID" "$CANDIDATE_PORT" "$RELEASE_ID" "$TARGET" "$CAND_ENV" <<'NODEEOF'
+"$TOOLCHAIN_NODE" - "$WEB_PID" "$CANDIDATE_PORT" "$RELEASE_ID" "$TARGET" "$CAND_ENV" "$NEW_BUILD_ID" "$NEW_COMMIT_SHA" <<'NODEEOF'
 const fs = require('fs');
-const [pid, port, releaseId, releaseRoot, outFile] = process.argv.slice(2);
+const [pid, port, releaseId, releaseRoot, outFile, buildId, commitSha] = process.argv.slice(2);
 const raw = fs.readFileSync(`/proc/${pid}/environ`);
 const skip = /^(PM2_|pm2_|NODE_CHANNEL_|BASH_FUNC_|PWD$|OLDPWD$|SHLVL$|_$|PORT$|HOSTNAME$)/;
 const env = {
@@ -69,6 +73,9 @@ env.PORT = port;
 env.HOSTNAME = '127.0.0.1';
 env.RELEASE_ID = releaseId;
 env.RELEASE_ROOT = releaseRoot;
+env.EXPECTED_BUILD_ID = buildId;
+env.DEPLOY_COMMIT_SHA = commitSha;
+env.COZE_PROJECT_ENV = 'PROD';
 fs.writeFileSync(outFile, JSON.stringify(env));
 NODEEOF
 log "candidate env prepared from production pid $WEB_PID"
@@ -128,9 +135,11 @@ ln -sfn "$TARGET" "$CURRENT.tmp.$$"
 mv -T "$CURRENT.tmp.$$" "$CURRENT"
 log "current switched -> $(readlink -f "$CURRENT")"
 
-# ─── 6. 重载生产进程（不动 voice 等其他应用） ─────────────
-pm2 reload agent-hub-web --update-env
-pm2 reload agent-hub-media-worker --update-env || log "media-worker reload returned non-zero (check manually)"
+# ─── 6. 重载生产进程（注入 release 身份三键；不动 voice 等其他应用） ─────────────
+RELEASE_ID="$RELEASE_ID" DEPLOY_COMMIT_SHA="$NEW_COMMIT_SHA" EXPECTED_BUILD_ID="$NEW_BUILD_ID" COZE_PROJECT_ENV=PROD \
+  pm2 reload agent-hub-web --update-env
+RELEASE_ID="$RELEASE_ID" DEPLOY_COMMIT_SHA="$NEW_COMMIT_SHA" EXPECTED_BUILD_ID="$NEW_BUILD_ID" COZE_PROJECT_ENV=PROD \
+  pm2 reload agent-hub-media-worker --update-env || log "media-worker reload returned non-zero (check manually)"
 sleep 5
 
 # ─── 7. 生产验证与回执 ───────────────────────────────────
