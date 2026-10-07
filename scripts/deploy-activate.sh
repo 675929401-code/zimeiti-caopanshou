@@ -38,6 +38,36 @@ mkdir -p "$TARGET"
 tar -xzf "$PKG" -C "$TARGET"
 [ -f "$TARGET/server.js" ] || fail "server.js missing in package"
 [ -f "$TARGET/release-manifest.json" ] || fail "release-manifest.json missing in package"
+
+# ─── 1.5 修复 pnpm 符号链接（Windows 打包的绝对路径链接在 Linux 悬空，重写为包内相对链接） ───
+NM="$TARGET/node_modules"
+if [ -d "$NM/.pnpm" ]; then
+  LINKS_FIXED=0
+  # 顶层及 scope 层链接（排除 .pnpm 内部）
+  while IFS= read -r link; do
+    target=$(readlink "$link")
+    case "$target" in
+      */node_modules/.pnpm/*)
+        rel=".pnpm/${target#*/node_modules/.pnpm/}"
+        rm "$link" && ln -s "$rel" "$link" && LINKS_FIXED=$((LINKS_FIXED+1)) ;;
+    esac
+  done < <(find "$NM" -maxdepth 2 -type l -not -path "*/.pnpm/*")
+  # .pnpm 内部 peer 互链（绝对路径 → 包内相对）
+  while IFS= read -r link; do
+    target=$(readlink "$link")
+    case "$target" in
+      */node_modules/.pnpm/*)
+        rest="${target#*/node_modules/.pnpm/}"
+        abs="$NM/.pnpm/$rest"
+        if [ -e "$abs" ]; then
+          rel=$(realpath --relative-to="$(dirname "$link")" "$abs")
+          rm "$link" && ln -s "$rel" "$link" && LINKS_FIXED=$((LINKS_FIXED+1))
+        fi ;;
+    esac
+  done < <(find "$NM/.pnpm" -maxdepth 3 -type l)
+  log "pnpm links rewritten: $LINKS_FIXED"
+fi
+
 chmod -R a-w "$TARGET" || true
 log "unpacked: $(du -sh "$TARGET" | awk '{print $1}')"
 
