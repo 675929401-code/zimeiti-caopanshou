@@ -4,17 +4,17 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "5f3250207df642de86c31d38622d1bc8af5f6cfea60a3d9b9fb805f49e25cdea",
-  "sourceFingerprint": "66af5e8cec950396853c6a150d5cbae7f2d9a8d80b58ea8cfc04b43b25011647",
+  "sourceFingerprint": "7acd2c0be226e164552540ca9f7970b607a77fde940f8daeb5edef4b4eb80960",
   "assetManifestSha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f",
   "assetDigest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "fileCount": 3869,
-  "totalBytes": 54537954,
+  "totalBytes": 54538219,
   "files": [
     {
       "path": ".cnb.yml",
-      "bytes": 2261,
-      "sha256": "e8ac47f76153a68d310d4d3d6b0b6d3d50a5b39311a9ed4f4f177b67b9dfa874"
+      "bytes": 2526,
+      "sha256": "f6f36ba5226de984d7ff690328301a0980daa99ba592520e2db96a4bd1ae4b00"
     },
     {
       "path": ".coze",
@@ -1179,7 +1179,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "dfc886dfcd19fd8f4d786f648f5122d3dcf295956ce4384a95bbc6d104d37c96"
+      "sha256": "7e34380aa3f88f08dd3f3f49a583efe46b9ae1b1697d2d375a43e90bd8911809"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",

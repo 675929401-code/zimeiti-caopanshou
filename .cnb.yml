@@ -46,6 +46,12 @@
           script: |
             set -eu
             node scripts/ci/package-cnb-web-release.mjs
+        - name: create-candidate-release
+          type: git:release
+          options:
+            description: "CNB 构建候选制品；生产启用必须另行通过服务器候选验收和原子切换。"
+            preRelease: true
+            latest: false
         - name: retain-build-attachments
           image: cnbcool/attachments:latest
           settings:
