@@ -33,6 +33,8 @@ const actorMigrationPath = "supabase/migrations/20260829220000_manju_config_acto
 const actorRollbackPath = "supabase/rollbacks/20260829220000_manju_config_actor_text.rollback.sql";
 const storageMigrationPath = "supabase/migrations/20260829223000_manju_config_storage_state.sql";
 const storageRollbackPath = "supabase/rollbacks/20260829223000_manju_config_storage_state.rollback.sql";
+const nativeEvidenceMigrationPath = "supabase/migrations/20261009042000_manju_native_storage_evidence_sync.sql";
+const nativeEvidenceRollbackPath = "supabase/rollbacks/20261009042000_manju_native_storage_evidence_sync.rollback.sql";
 const serverPath = "src/lib/server/manju-runtime-config.ts";
 const compatStorePath = "src/lib/server/manju-platform-settings-store.ts";
 const adminRoutePath = "src/app/api/admin/manju-config/route.ts";
@@ -54,6 +56,8 @@ const actorMigration = source(actorMigrationPath);
 const actorRollback = source(actorRollbackPath);
 const storageMigration = source(storageMigrationPath);
 const storageRollback = source(storageRollbackPath);
+const nativeEvidenceMigration = source(nativeEvidenceMigrationPath);
+const nativeEvidenceRollback = source(nativeEvidenceRollbackPath);
 const server = source(serverPath);
 const compatStore = source(compatStorePath);
 const adminRoute = source(adminRoutePath);
@@ -167,6 +171,22 @@ includesAll("migration:atomic-compat-mutation", storageMigration, [
   "PERFORM pg_advisory_xact_lock",
   "FOR UPDATE",
   "GRANT EXECUTE ON FUNCTION public.commit_manju_config_compat_envelope",
+]);
+includesAll("migration:native-active-evidence-is-atomic", nativeEvidenceMigration, [
+  "CREATE OR REPLACE FUNCTION public.manju_config_sync_native_storage_evidence",
+  "AFTER INSERT OR UPDATE OF active_release_id, active_revision_id, etag",
+  "v_state.state <> 'native'",
+  "generation = v_state.generation + 1",
+  "compat_storage_revision = NULL",
+  "native_active_release_id = NEW.active_release_id",
+  "native_active_revision_id = NEW.active_revision_id",
+  "native_payload_hash = v_revision.payload_hash",
+  "MANJU_CONFIG_NATIVE_EVIDENCE_CONFLICT",
+  "'reason', 'native-active-release-changed'",
+]);
+includesAll("rollback:native-active-evidence-sync", nativeEvidenceRollback, [
+  "DROP TRIGGER IF EXISTS manju_config_active_native_storage_evidence",
+  "DROP FUNCTION IF EXISTS public.manju_config_sync_native_storage_evidence()",
 ]);
 add(
   "migration:actor-identifiers-are-text",
@@ -375,6 +395,11 @@ includesAll("admin-route:server-storage-generation", adminRoute, [
   "storage_generation: storage.generation",
   'storage.mode === "compat"',
 ]);
+add(
+  "admin-route:native-write-reports-next-storage-generation",
+  (adminRoute.match(/storage_generation: storage\.generation \+ 1/g) ?? []).length === 2,
+  "native publish and rollback report the generation committed by the evidence-sync trigger",
+);
 includesAll("admin-route:native-fail-closed", adminRoute, [
   "CONFIG_STORE_CORRUPT",
   "revisionPayloadIsValid",

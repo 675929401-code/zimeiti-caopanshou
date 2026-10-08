@@ -630,7 +630,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       action: "publish",
       storage_mode: "native",
-      storage_generation: storage.generation,
+      storage_generation: storage.generation + 1,
       release: normalizeRpcRow(result.data),
     });
   }
@@ -730,7 +730,7 @@ export async function POST(request: NextRequest) {
     ok: true,
     action: "rollback",
     storage_mode: "native",
-    storage_generation: storage.generation,
+    storage_generation: storage.generation + 1,
     release: normalizeRpcRow(result.data),
   });
 }

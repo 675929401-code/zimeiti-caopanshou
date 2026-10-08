@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "kind": "database-semantic-contract",
   "profile": "public-runtime-contract.v1",
-  "generatedAt": "2026-10-08T21:23:40.871Z",
-  "sourceLabel": "fully-migrated-local-runtime-20261009-video-history-privilege-final",
+  "generatedAt": "2026-10-08T23:38:11.557Z",
+  "sourceLabel": "fully-migrated-local-runtime-20261009-manju-native-evidence-sync",
   "sourceDatabase": "zimeiti_local",
-  "migrationManifestSha256": "a324b7b487837a094532b8bc3127c06929b7748abe1c7e18b0ae8b7b8cef08fb",
+  "migrationManifestSha256": "c59f8395ee86670e2dc4148f67c887753667d338f1b8c18ba709c95ef0093bbf",
   "extraObjectPolicy": "structural extras warn; privilege extras block",
   "snapshot": {
     "profile": "public-runtime-contract.v1",
@@ -21567,8 +21567,8 @@
         ]
       },
       "functions": {
-        "rows": 310,
-        "sha256": "a1f4ab82730d28831015cc13a76b011259f44efaf384e37fbf8965ec5ce51662",
+        "rows": 311,
+        "sha256": "712f7d1e84c3859cb3e88ce92fc85c69fd74b6d45ab2bb7ba66c2dea819b8296",
         "exactExtras": false,
         "objects": [
           {
@@ -22162,6 +22162,10 @@
           {
             "key": "public|manju_config_reject_release_mutation|",
             "sha256": "5a7f9210d972640c5c559c77e7494e7ce3ec93436cab16cadc6c55c0726dd51e"
+          },
+          {
+            "key": "public|manju_config_sync_native_storage_evidence|",
+            "sha256": "78edfdfd3cb19656a0911a0296bee7c9d37dcd6d67e6689b1e83409638a20b56"
           },
           {
             "key": "public|manju_config_touch_revision_updated_at|",
@@ -23133,8 +23137,8 @@
         ]
       },
       "triggers": {
-        "rows": 99,
-        "sha256": "e69b40c37a69596260a6e8f7823084b542f1edd517482e89d1d770a460ef2283",
+        "rows": 100,
+        "sha256": "070eff84064df36ce495582edb857532c57020d726039c89371540d7460c61bb",
         "exactExtras": false,
         "objects": [
           {
@@ -23276,6 +23280,10 @@
           {
             "key": "public|llm_request_attempts|operation_flight_recorder",
             "sha256": "808e3c2ee48847dc89445afdc2deec4c715cba3a27e0413ba1a55488b71fe2a1"
+          },
+          {
+            "key": "public|manju_config_active|manju_config_active_native_storage_evidence",
+            "sha256": "d94d484b89f6b9504023d25b2514ef1fadac8c61f7c5a9d1637fc359f2454f7a"
           },
           {
             "key": "public|manju_config_active|manju_config_active_pointer_guard",
@@ -29671,7 +29679,7 @@
         ]
       }
     },
-    "sha256": "b82ffde9809667b73a48346a3c89825bcf7c6cca2908fad1f7137bbb2ed69238"
+    "sha256": "08321b2b595d878bbe274fbb7ccb5dc7f1f720a590dace559bf0f82d0099f67e"
   },
-  "contractSha256": "7dac3b5966701af5c556ce64e4bedf62a18bf78c02bdc8b73214dc3d42050e6c"
+  "contractSha256": "ce48b6b4b8019aab3e9cbab74fff161ac68c379842bae17c8c39bb5b073d29fd"
 }

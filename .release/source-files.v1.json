@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "54ae407e5e91424a20c54d7a15418887f9769411a510bf5d2563582c38648921",
-  "sourceFingerprint": "fc15460a9f9b29d461db0015fae472cab3268d0df6ff0e77248ae9e6094a7fb1",
+  "sourceFingerprint": "c281ae410f794f4e917972b1e1a1680be1b41b6bb364d9a7736fba7cb49e59b5",
   "assetManifestSha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f",
   "assetDigest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
-  "fileCount": 3896,
-  "totalBytes": 56494792,
+  "fileCount": 3898,
+  "totalBytes": 56501490,
   "files": [
     {
       "path": ".cnb.yml",
@@ -78,8 +78,8 @@
     },
     {
       "path": "deploy/database-repairs/20261009-production-semantic/20261009035000_migration_ledger_reconciliation.sql",
-      "bytes": 32152,
-      "sha256": "e545f24d21ee4c5ddc317791a370b94dc2992776ba7ed63b5c7e1a7442b6ffe4"
+      "bytes": 32337,
+      "sha256": "49b4c8950580e01b42b81c05629e46f69845db8822de3189f718de07ab779a58"
     },
     {
       "path": "deploy/environments/production-topology.template.json",
@@ -153,8 +153,8 @@
     },
     {
       "path": "deploy/policies/database-semantic-contract.v1.json",
-      "bytes": 1437206,
-      "sha256": "804360dc0096ff4f3a24157cc53e5968291f3e5bdf6213702b2671bb95687f2e"
+      "bytes": 1437597,
+      "sha256": "fa0479713875541182afa3861378f58770d143bacd4d19a77f5ce6c33b78c73d"
     },
     {
       "path": "deploy/policies/media-object-retention.v1.json",
@@ -1209,7 +1209,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "4611cec323739a5a9eaacc2764e7d892d8ca17f010ce9bbfe3ff78644d206d87"
+      "sha256": "ee0075642693649accdaebd8684438e5fbc0ecefc456717ceb4b236cee22a1d3"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -6548,8 +6548,8 @@
     },
     {
       "path": "scripts/verify-manju-config-control-plane.ts",
-      "bytes": 23228,
-      "sha256": "a7c6f847c361c79d28642c8fa8d1c702318e6a2b6b43f95f9fea80f2849ea31b"
+      "bytes": 24689,
+      "sha256": "1fad2ff609e20abb0ac67e19941c63cc69672c4b3016524566bfb9422cbfed8c"
     },
     {
       "path": "scripts/verify-manju-config-semantic-hash.mjs",
@@ -9313,8 +9313,8 @@
     },
     {
       "path": "src/app/api/admin/manju-config/route.ts",
-      "bytes": 25080,
-      "sha256": "2730924f4c8152ee53fbefe2882210b33353d38f7b4d5836ce95a4b66c2830e5"
+      "bytes": 25088,
+      "sha256": "a5194fe9830370259f2970b1d4b31e52eb6a91dc4566903ba26330786fe79ea1"
     },
     {
       "path": "src/app/api/admin/manju-workbench/assets/route.ts",
@@ -18457,6 +18457,11 @@
       "sha256": "31028ef40e93d1a006b5e06dbf601500a112f0e9ee6be96406915a72505a979a"
     },
     {
+      "path": "supabase/migrations/20261009042000_manju_native_storage_evidence_sync.sql",
+      "bytes": 4459,
+      "sha256": "c0495ba32f83e11da38d85883f31d163f5565d7e5814e6460336579c108af5e1"
+    },
+    {
       "path": "supabase/migrations/rollback/20261001221000_super_admin_governance.rollback.sql",
       "bytes": 1806,
       "sha256": "23d2cec78ffa7c27845fd2cc7a6eef061ae37c73baefcf4b66f7ffdd7a057b35"
@@ -18875,6 +18880,11 @@
       "path": "supabase/rollbacks/20261009040000_video_history_archive_queue.rollback.sql",
       "bytes": 788,
       "sha256": "6d211b64d4bdfbdee0aa5adbbbbbad0f722adbe8ac4d8977209ff5356508e0b0"
+    },
+    {
+      "path": "supabase/rollbacks/20261009042000_manju_native_storage_evidence_sync.rollback.sql",
+      "bytes": 194,
+      "sha256": "6d25c524601c80746be628d48d4f907f0cdf480f80adf05e90186a2226d8aa35"
     },
     {
       "path": "supabase/rollbacks/README.md",
