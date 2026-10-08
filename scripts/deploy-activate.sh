@@ -316,15 +316,6 @@ function assertState(live, saved, newRelease) {
     }
   }
 }
-function assertStartPeers(live, config) {
-  const peers = live.filter(entry => entry.name === config.name && entry.pm2_env.pm_exec_path === config.script);
-  if (peers.some(entry => !entry.pid || entry.pm2_env.status !== 'online' || entry.pm2_env.exec_mode !== 'fork_mode')) {
-    throw new Error('unsafe same-name/script peer status; refusing PM2 name-restart fallback');
-  }
-  if (new Set(peers.map(portOf)).size !== peers.length || live.some(entry => entry.name === config.name && portOf(entry) === config.env.PORT)) {
-    throw new Error('unsafe duplicate process port before start');
-  }
-}
 async function waitStarted(original, newRelease, config) {
   for (let attempt = 0; attempt < 30; attempt++) {
     try {
@@ -378,11 +369,7 @@ async function main() {
       const live = await entries();
       if (live.length !== saved.length || saved.some(original => !live.some(entry => entry.pm_id === original.id && entry.name === original.config.name && portOf(entry) === original.env.PORT))) throw new Error('process list changed after snapshot');
     }
-    for (const original of saved) {
-      const live = await entries();
-      const matches = live.filter(entry => entry.name === original.config.name && portOf(entry) === original.env.PORT);
-      if (matches.length > 1) throw new Error('ambiguous process mapping');
-      if (matches.length) await call('delete', matches[0].pm_id);
+    const prepared = saved.map(original => {
       const config = {...original.config, env: {...original.env}};
       if (action === 'activate') {
         config.cwd = target;
@@ -390,11 +377,23 @@ async function main() {
         Object.assign(config.env, {RELEASE_ID: releaseId, EXPECTED_BUILD_ID: buildId, EXPECTED_SOURCE_VERSION: sourceVersion, DEPLOY_COMMIT_SHA: commitSha, COZE_PROJECT_ENV: 'PROD'});
       }
       config.env.PWD = config.cwd;
-      // 与候选环境一致保留 RELEASE_ROOT 的 .env.local 查找位置；只调整代码路径和发布身份。
-      // PM2 7.0.1/7.0.4 对同名同路径异常进程会忽略 force 并按名称 restart。
-      // 启动前拒绝异常同组，启动后逐 PORT 验实际进程；list/start 间仍有 TOCTOU，不能视为原子隔离。
-      assertStartPeers(await entries(), config);
-      await call('start', config.script, {...config, scriptArgs: config.args});
+      return {original, config};
+    });
+    const liveBeforeStart = await entries();
+    const allowedPairs = new Set(saved.map(original => `${original.config.name}\0${original.env.PORT}`));
+    const observedPairs = new Set();
+    for (const entry of liveBeforeStart) {
+      const pair = `${entry.name}\0${portOf(entry)}`;
+      if (!allowedPairs.has(pair) || observedPairs.has(pair)) throw new Error('unsafe managed process topology before replacement');
+      observedPairs.add(pair);
+    }
+    for (const entry of liveBeforeStart) await call('delete', entry.pm_id);
+    if ((await entries()).length !== 0) throw new Error('managed processes remained after exact deletion');
+    // Pass every declaration together through PM2's JSON-configuration path.
+    // The script/options overload drops snake_case fields such as exec_mode,
+    // while separate object calls collapse the two same-name media workers.
+    await call('start', prepared.map(item => item.config));
+    for (const {original, config} of prepared) {
       await waitStarted(original, action === 'activate', config);
       console.log(`${action}: ${config.name} port=${config.env.PORT} cwd=${config.cwd}`);
     }

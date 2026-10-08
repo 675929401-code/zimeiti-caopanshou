@@ -188,9 +188,12 @@ addCheck(
     "if (Array.isArray(e.node_args)) config.node_args = [...e.node_args]",
     "if (!/^[A-Z][A-Z0-9_]*$/.test(key)",
     "EXPECTED_SOURCE_VERSION: sourceVersion",
+    "await call('start', prepared.map(item => item.config))",
   ])
     && !deployActivate.includes("const config = {...e}")
-    && !deployActivate.includes("return {...config"),
+    && !deployActivate.includes("return {...config")
+    && !deployActivate.includes("call('start', config.script")
+    && !deployActivate.includes("await call('start', config);"),
   "PM2 重建只接收显式白名单和强类型选项，禁止把 pm2_env 或进程环境整体回放为应用声明。",
 );
 
