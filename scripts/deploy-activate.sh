@@ -245,7 +245,7 @@ ROLLBACK_FAILED=0
 cat > "$TX_HELPER" <<'NODEEOF'
 const fs = require('fs');
 const path = require('path');
-const [action, modulePath, snapshotFile, target, releaseId, buildId, commitSha] = process.argv.slice(2);
+const [action, modulePath, snapshotFile, target, releaseId, buildId, commitSha, sourceVersion] = process.argv.slice(2);
 const pm2 = require(modulePath);
 const names = new Set(['agent-hub-web', 'agent-hub-media-worker']);
 const call = (method, ...args) => new Promise((resolve, reject) => pm2[method](...args, (error, result) => error ? reject(error) : resolve(result)));
@@ -257,7 +257,11 @@ function actualEnv(pid) {
     const index = line.indexOf('=');
     if (index < 1) continue;
     const key = line.slice(0, index);
-    if (/^(PM2_|pm2_|NODE_CHANNEL_|NODE_UNIQUE_ID$)/.test(key)) continue;
+    // A legacy PM2 restart polluted /proc/<pid>/environ with flattened
+    // supervisor fields (unique_id, pm_uptime, time, and many peers). Runtime
+    // configuration is an uppercase-only contract; PM2/IPC keys are rebuilt
+    // by the supervisor and must never participate in environment equality.
+    if (!/^[A-Z][A-Z0-9_]*$/.test(key) || /^(PM2_|NODE_CHANNEL_|NODE_UNIQUE_ID$)/.test(key)) continue;
     env[key] = line.slice(index + 1);
   }
   return env;
@@ -306,7 +310,7 @@ function assertState(live, saved, newRelease) {
     const env = actualEnv(entry.pid);
     const expected = {...original.env};
     delete expected.PWD;
-    if (newRelease) Object.assign(expected, {RELEASE_ID: releaseId, EXPECTED_BUILD_ID: buildId, DEPLOY_COMMIT_SHA: commitSha, COZE_PROJECT_ENV: 'PROD'});
+    if (newRelease) Object.assign(expected, {RELEASE_ID: releaseId, EXPECTED_BUILD_ID: buildId, EXPECTED_SOURCE_VERSION: sourceVersion, DEPLOY_COMMIT_SHA: commitSha, COZE_PROJECT_ENV: 'PROD'});
     for (const [key, value] of Object.entries(expected)) {
       if (env[key] !== value) throw new Error(`process environment mismatch: ${key}`);
     }
@@ -383,7 +387,7 @@ async function main() {
       if (action === 'activate') {
         config.cwd = target;
         config.script = path.join(target, 'server.js');
-        Object.assign(config.env, {RELEASE_ID: releaseId, EXPECTED_BUILD_ID: buildId, DEPLOY_COMMIT_SHA: commitSha, COZE_PROJECT_ENV: 'PROD'});
+        Object.assign(config.env, {RELEASE_ID: releaseId, EXPECTED_BUILD_ID: buildId, EXPECTED_SOURCE_VERSION: sourceVersion, DEPLOY_COMMIT_SHA: commitSha, COZE_PROJECT_ENV: 'PROD'});
       }
       config.env.PWD = config.cwd;
       // 与候选环境一致保留 RELEASE_ROOT 的 .env.local 查找位置；只调整代码路径和发布身份。
@@ -399,7 +403,7 @@ async function main() {
 main().catch(error => { console.error(error.message); process.exitCode = 1; });
 NODEEOF
 pm2_transaction() {
-  "$TOOLCHAIN_NODE" "$TX_HELPER" "$1" "$PM2_MODULE" "$TX_SNAPSHOT" "$TARGET" "$RELEASE_ID" "$NEW_BUILD_ID" "$NEW_COMMIT_SHA" >> "$TX_LOG" 2>&1
+  "$TOOLCHAIN_NODE" "$TX_HELPER" "$1" "$PM2_MODULE" "$TX_SNAPSHOT" "$TARGET" "$RELEASE_ID" "$NEW_BUILD_ID" "$NEW_COMMIT_SHA" "$EXPECTED_SOURCE_VERSION" >> "$TX_LOG" 2>&1
 }
 http_identity_transaction() {
   local action="$1"

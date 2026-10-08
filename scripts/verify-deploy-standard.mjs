@@ -186,6 +186,8 @@ addCheck(
     "typeof e.treekill === 'boolean'",
     "typeof e.windowsHide === 'boolean'",
     "if (Array.isArray(e.node_args)) config.node_args = [...e.node_args]",
+    "if (!/^[A-Z][A-Z0-9_]*$/.test(key)",
+    "EXPECTED_SOURCE_VERSION: sourceVersion",
   ])
     && !deployActivate.includes("const config = {...e}")
     && !deployActivate.includes("return {...config"),
