@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "54ae407e5e91424a20c54d7a15418887f9769411a510bf5d2563582c38648921",
-  "sourceFingerprint": "825eecb30b9769c68cb555b9a4243c8dd266c619c5b15a0d9c477d8ed7d2eb81",
+  "sourceFingerprint": "e7331713222a52f18c4bba909d53e98ed90390b3012b564bec6a6cdbef71708e",
   "assetManifestSha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f",
   "assetDigest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
-  "fileCount": 3895,
-  "totalBytes": 56492081,
+  "fileCount": 3896,
+  "totalBytes": 56492569,
   "files": [
     {
       "path": ".cnb.yml",
@@ -78,8 +78,8 @@
     },
     {
       "path": "deploy/database-repairs/20261009-production-semantic/20261009035000_migration_ledger_reconciliation.sql",
-      "bytes": 31941,
-      "sha256": "4bf727be566e9c98e9385b0ffa8fcc4543c7906dcc5520f0b909c7f711af232e"
+      "bytes": 32152,
+      "sha256": "e545f24d21ee4c5ddc317791a370b94dc2992776ba7ed63b5c7e1a7442b6ffe4"
     },
     {
       "path": "deploy/environments/production-topology.template.json",
@@ -153,8 +153,8 @@
     },
     {
       "path": "deploy/policies/database-semantic-contract.v1.json",
-      "bytes": 1437196,
-      "sha256": "4411ef2f6c016d62e4bd2998bb5b89d22543645a9d36b60468163988b48f33cf"
+      "bytes": 1437206,
+      "sha256": "804360dc0096ff4f3a24157cc53e5968291f3e5bdf6213702b2671bb95687f2e"
     },
     {
       "path": "deploy/policies/media-object-retention.v1.json",
@@ -1209,7 +1209,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "eb727eeb6ebbe038fc961e0fcaab6c02032f0b6d4c28c45c999ed953fedafc86"
+      "sha256": "521baee85382f71adb50c6a5d3eae49340ccb95ab1575197c22c8313683fd7fb"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -18450,6 +18450,11 @@
       "path": "supabase/migrations/20261009040000_video_history_archive_queue.sql",
       "bytes": 11828,
       "sha256": "ade13eacb13a3102696c0891ac06da11cb8fffa333d6f51dc05f301a2fd592b7"
+    },
+    {
+      "path": "supabase/migrations/20261009041000_video_history_archive_queue_privilege_reconcile.sql",
+      "bytes": 267,
+      "sha256": "31028ef40e93d1a006b5e06dbf601500a112f0e9ee6be96406915a72505a979a"
     },
     {
       "path": "supabase/migrations/rollback/20261001221000_super_admin_governance.rollback.sql",

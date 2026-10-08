@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "kind": "database-semantic-contract",
   "profile": "public-runtime-contract.v1",
-  "generatedAt": "2026-10-08T19:39:00.917Z",
-  "sourceLabel": "fully-migrated-local-runtime-20261009-video-history-final",
+  "generatedAt": "2026-10-08T21:23:40.871Z",
+  "sourceLabel": "fully-migrated-local-runtime-20261009-video-history-privilege-final",
   "sourceDatabase": "zimeiti_local",
-  "migrationManifestSha256": "c67b58858312d4b7be498de095035263d193a70aafd00e38e4a8c4b216e5daad",
+  "migrationManifestSha256": "a324b7b487837a094532b8bc3127c06929b7748abe1c7e18b0ae8b7b8cef08fb",
   "extraObjectPolicy": "structural extras warn; privilege extras block",
   "snapshot": {
     "profile": "public-runtime-contract.v1",
@@ -29673,5 +29673,5 @@
     },
     "sha256": "b82ffde9809667b73a48346a3c89825bcf7c6cca2908fad1f7137bbb2ed69238"
   },
-  "contractSha256": "c3ba43c93eb1803c515ad4b6e1ad3cf955f7bb203c6c806fd9ada1c4be97b945"
+  "contractSha256": "7dac3b5966701af5c556ce64e4bedf62a18bf78c02bdc8b73214dc3d42050e6c"
 }
