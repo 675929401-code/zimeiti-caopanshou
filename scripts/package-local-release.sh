@@ -46,7 +46,8 @@ echo "[0/7] 参数: releaseId=$RELEASE_ID commit=${COMMIT_SHA:0:8} buildId=$BUIL
 [ -d "$SA" ] || { echo "自检失败: $SA 不存在（先跑构建）" >&2; exit 1; }
 
 echo "[1/7] 全新暂存目录"
-rm -rf "$STAGING"; mkdir -p "$STAGING"
+[ ! -e "$STAGING" ] || { echo "自检失败: 暂存目录已存在，请使用全新目录" >&2; exit 1; }
+mkdir -p "$STAGING"
 
 echo "[2/7] standalone 核心（server.js/package.json/node_modules/.next）"
 cp "$SA/server.js" "$SA/package.json" "$STAGING/"
@@ -74,12 +75,19 @@ grep -q "$SOURCE_VERSION" "$STAGING/public/version.json" || { echo "自检失败
 
 echo "[4/7] 完整 next 覆盖"
 STG_NEXT="$STAGING/node_modules/.pnpm/$NEXTVER/node_modules/next"
-rm -rf "$STG_NEXT"
+if [ -e "$STG_NEXT" ] || [ -L "$STG_NEXT" ]; then
+  mkdir -p "$STAGING/.package-quarantine"
+  mv "$STG_NEXT" "$STAGING/.package-quarantine/next-traced"
+fi
 mkdir -p "$(dirname "$STG_NEXT")"
 cp -r "$NEXTVER_DIR" "$STG_NEXT"
 
 echo "[5/7] 删除 win32 sharp"
-rm -rf "$STAGING/node_modules/.pnpm/"@img+sharp-win32-x64@*
+mkdir -p "$STAGING/.package-quarantine"
+for platform_dir in "$STAGING/node_modules/.pnpm/"@img+sharp-win32-x64@*; do
+  [ -e "$platform_dir" ] || continue
+  mv "$platform_dir" "$STAGING/.package-quarantine/"
+done
 
 echo "[6/7] 写 release-manifest.json"
 cat > "$STAGING/release-manifest.json" << JSON
@@ -109,7 +117,7 @@ echo "[7/7] 校验 + 打包"
 ! ls -d "$STAGING/node_modules/.pnpm/"@img+sharp-win32-x64@* >/dev/null 2>&1 || { echo "自检失败: win32 sharp 未删除" >&2; exit 1; }
 
 cd "$STAGING"
-tar --force-local -czf "$OUT_TAR" .
+tar --force-local --exclude='./.package-quarantine' -czf "$OUT_TAR" .
 cd - >/dev/null
 
 echo "---- 产出 ----"
