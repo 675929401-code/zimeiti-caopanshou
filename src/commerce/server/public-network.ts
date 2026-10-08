@@ -25,7 +25,7 @@ export async function fetchPublic(url:string,init:RequestInit={}){
  const addresses=await publicAddresses(target.hostname);const address=addresses.find((a:{family:number})=>a.family===4)||addresses[0];const headers=Object.fromEntries(new Headers(init.headers));headers['accept-encoding']='identity';
  if(init.body!=null&&typeof init.body!=='string')throw Error('此接口仅支持 JSON 请求');if(typeof init.body==='string')headers['content-length']=String(Buffer.byteLength(init.body));
  return new Promise<Response>((resolve,reject)=>{
-  const request=https.request(target,{method:init.method||'GET',headers,signal:init.signal||AbortSignal.timeout(240000),lookup:((_host:unknown,options:unknown,callback:Function)=>{if((options as {all?:boolean})?.all)callback(null,[address]);else callback(null,address.address,address.family);}) as never},response=>{
+  const request=https.request(target,{method:init.method||'GET',headers,signal:init.signal||AbortSignal.timeout(240000),lookup:((_host:unknown,options:unknown,callback:(err:Error|null,address?:string|ReadonlyArray<{address:string;family:number}>,family?:number)=>void)=>{if((options as {all?:boolean})?.all)callback(null,[address]);else callback(null,address.address,address.family);}) as never},response=>{
    const resultHeaders=new Headers();for(const [name,value] of Object.entries(response.headers))if(value&&name!=='set-cookie')resultHeaders.set(name,Array.isArray(value)?value.join(', '):value);
    const status=response.statusCode||502;if(status>=300&&status<400){response.resume();reject(Error('媒体地址发生重定向，请使用最终的公开链接'));return;}
    resolve(new Response([204,205,304].includes(status)?null:Readable.toWeb(response) as ReadableStream,{status,headers:resultHeaders}));

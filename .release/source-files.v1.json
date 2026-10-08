@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "5f3250207df642de86c31d38622d1bc8af5f6cfea60a3d9b9fb805f49e25cdea",
-  "sourceFingerprint": "888a359457a9e60a1a95ae54b415108ae0cc3d7ebdb6601ccedb0d955d29d920",
+  "sourceFingerprint": "0d0e97f14b0eb67042d4d3cdc64b95bb4e5ac1aaf090818032ca4375b1cb03a5",
   "assetManifestSha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f",
   "assetDigest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "fileCount": 3875,
-  "totalBytes": 54586626,
+  "totalBytes": 54586990,
   "files": [
     {
       "path": ".cnb.yml",
@@ -43,8 +43,8 @@
     },
     {
       "path": ".github/workflows/deploy.yml",
-      "bytes": 6388,
-      "sha256": "364492dcacf2b92682e9422c38ad2af6a66307ae076c03c32c7814446c9f2646"
+      "bytes": 6553,
+      "sha256": "a30f34597c5a9ba379f84607ca2107ad4e08e5084d659c836210d5cd38d85e49"
     },
     {
       "path": ".github/workflows/release-vnext.yml",
@@ -1194,7 +1194,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "4bf0b208666090926defc1627bf5ab5c2bb1624f3a1a1ec2e5d665e876d95b76"
+      "sha256": "bafc1cea1685f46b6c1a5ca4c0badecfc9ac8ef2b9ceef79f1bc50494594a200"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2833,8 +2833,8 @@
     },
     {
       "path": "scripts/package-local-release.sh",
-      "bytes": 4909,
-      "sha256": "fe8335e8d9558db62e83950b7c75ae549edd64c9a700f874cd27d2cc28502565"
+      "bytes": 5319,
+      "sha256": "4905fee2d6641b45c4d32c07863ae775731d36f9171b1104ca9bc2ffbb52b050"
     },
     {
       "path": "scripts/package-standalone-artifact.mjs",
@@ -5328,8 +5328,8 @@
     },
     {
       "path": "scripts/verify-commerce-job-trace-boundary.ts",
-      "bytes": 9037,
-      "sha256": "cb58218c08706fd53deeecf044bf8c2b5707a609a1b397c33aa201f3b539a027"
+      "bytes": 9065,
+      "sha256": "1b2ce6eaddcdf910b7a678fa2f147750d0e6115c66890e5b3d60b8052e1086fb"
     },
     {
       "path": "scripts/verify-commerce-live-director-catalog-alignment.ts",
@@ -12228,8 +12228,8 @@
     },
     {
       "path": "src/commerce/components/commerce-agent/canvas-live.tsx",
-      "bytes": 42355,
-      "sha256": "f95d7eba41e16494e5f8c168e752d1f2cf1f9be6697c81eb0989baf28c54ea9a"
+      "bytes": 42359,
+      "sha256": "8852ac8428a4de210bcf522192c5d23aff135f3d5a6617b869d387635e97720f"
     },
     {
       "path": "src/commerce/components/commerce-agent/canvas-local-drafts.ts",
@@ -12943,8 +12943,8 @@
     },
     {
       "path": "src/commerce/server/public-network.ts",
-      "bytes": 3588,
-      "sha256": "615f94ceda34b5ad5a8065821589cbb45af520d010be248d0c398f8315f01b00"
+      "bytes": 3679,
+      "sha256": "8a89a390536737fdb040bcf84938b030308aabeb125ff6f0c84779a3a9d6e422"
     },
     {
       "path": "src/commerce/server/quotes.ts",
@@ -17933,8 +17933,8 @@
     },
     {
       "path": "supabase/migrations/20260915235500_autodl_h3_revenue_profit.sql",
-      "bytes": 8357,
-      "sha256": "eeaf5527508b8e69b383aa57a3002e09a419948f69574405f83c731114220366"
+      "bytes": 8207,
+      "sha256": "0545a551cdd9a703ebf9aff043d362d80944a8f630050c53ccc927d12402aa58"
     },
     {
       "path": "supabase/migrations/20260920104000_storyboard_image_request_snapshot_surface.sql",
@@ -17993,8 +17993,8 @@
     },
     {
       "path": "supabase/migrations/20260923183000_model_resource_visibility_invariant.sql",
-      "bytes": 2789,
-      "sha256": "2097078921359b819cf270921b8908953c6508933170bb11550cc3d5f78bb4fa"
+      "bytes": 2605,
+      "sha256": "ad2820cfbad3596b1f677f557c389f40991abda9251c0797b45ba1f72e614cb6"
     },
     {
       "path": "supabase/migrations/20260923190000_workspace_model_explicit_assignments.sql",
