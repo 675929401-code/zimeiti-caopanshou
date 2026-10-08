@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "5f3250207df642de86c31d38622d1bc8af5f6cfea60a3d9b9fb805f49e25cdea",
-  "sourceFingerprint": "fcad8ea1504b16ef71eed8f98c1e0f0d9532f45efcfe175c49d63b0ec59fbc5c",
+  "sourceFingerprint": "888a359457a9e60a1a95ae54b415108ae0cc3d7ebdb6601ccedb0d955d29d920",
   "assetManifestSha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f",
   "assetDigest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
-  "fileCount": 3872,
-  "totalBytes": 54561397,
+  "fileCount": 3875,
+  "totalBytes": 54586626,
   "files": [
     {
       "path": ".cnb.yml",
@@ -43,8 +43,8 @@
     },
     {
       "path": ".github/workflows/deploy.yml",
-      "bytes": 4287,
-      "sha256": "82c36ac0808969657fa3da440d6bc9e8681c8199890b4da201aa68616f30276e"
+      "bytes": 6388,
+      "sha256": "364492dcacf2b92682e9422c38ad2af6a66307ae076c03c32c7814446c9f2646"
     },
     {
       "path": ".github/workflows/release-vnext.yml",
@@ -110,6 +110,11 @@
       "path": "deploy/manifests/public-assets.v1.json",
       "bytes": 232299,
       "sha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f"
+    },
+    {
+      "path": "deploy/manifests/public-code-track.v1.txt",
+      "bytes": 1646,
+      "sha256": "142b3fd0b378d1afff0fa3765bb59e522bd17c730fb691fb75df00e02be90561"
     },
     {
       "path": "deploy/manifests/release-candidate-plan.v1.json",
@@ -1189,7 +1194,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "f11f8c6a5c4ffd881aa2dac71da7faed4530c5bb4fc9132ffd98fbf92e0c8b5a"
+      "sha256": "4bf0b208666090926defc1627bf5ab5c2bb1624f3a1a1ec2e5d665e876d95b76"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2138,8 +2143,8 @@
     },
     {
       "path": "scripts/deploy-activate.sh",
-      "bytes": 10833,
-      "sha256": "a5dc282c5a31132e51d35f682e43526916dc32c3920de1dc282349508da78b04"
+      "bytes": 24891,
+      "sha256": "7c9558307708a35b9abf8c6b2aa5cbf058738c1da05950faa184804ad410f3e1"
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
@@ -2825,6 +2830,11 @@
       "path": "scripts/onboard-lconai-workbook-models-local.mjs",
       "bytes": 21514,
       "sha256": "2d2a0587611b3d284963b97ecf2c6c3613012db5ef3d791334c1e8c5e08a33c5"
+    },
+    {
+      "path": "scripts/package-local-release.sh",
+      "bytes": 4909,
+      "sha256": "fe8335e8d9558db62e83950b7c75ae549edd64c9a700f874cd27d2cc28502565"
     },
     {
       "path": "scripts/package-standalone-artifact.mjs",
@@ -3710,6 +3720,11 @@
       "path": "scripts/run-manju-production-e2e.mjs",
       "bytes": 13697,
       "sha256": "71f0234dda6d03ed6a91c87ee76362716bea9de8cd0204fc57355b7f330d6cf9"
+    },
+    {
+      "path": "scripts/run-migrations.sh",
+      "bytes": 2181,
+      "sha256": "7241930fcba535eca302c963509cc8cfe6cbf5da81c3617c72eb56352e70c135"
     },
     {
       "path": "scripts/run-node-maintenance-tsx.mjs",
@@ -17918,8 +17933,8 @@
     },
     {
       "path": "supabase/migrations/20260915235500_autodl_h3_revenue_profit.sql",
-      "bytes": 8207,
-      "sha256": "0545a551cdd9a703ebf9aff043d362d80944a8f630050c53ccc927d12402aa58"
+      "bytes": 8357,
+      "sha256": "eeaf5527508b8e69b383aa57a3002e09a419948f69574405f83c731114220366"
     },
     {
       "path": "supabase/migrations/20260920104000_storyboard_image_request_snapshot_surface.sql",
@@ -17978,8 +17993,8 @@
     },
     {
       "path": "supabase/migrations/20260923183000_model_resource_visibility_invariant.sql",
-      "bytes": 2605,
-      "sha256": "ad2820cfbad3596b1f677f557c389f40991abda9251c0797b45ba1f72e614cb6"
+      "bytes": 2789,
+      "sha256": "2097078921359b819cf270921b8908953c6508933170bb11550cc3d5f78bb4fa"
     },
     {
       "path": "supabase/migrations/20260923190000_workspace_model_explicit_assignments.sql",

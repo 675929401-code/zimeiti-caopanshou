@@ -1,0 +1,177 @@
+name: build-and-deploy
+
+# 三轨制部署管线 A 轨：GitHub Actions Linux 构建 → 服务器原子切换
+# 素材走 B 轨（rsync 增量），数据走 C 轨（独立授权），本 workflow 绝不触碰业务数据。
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: '构建成功后自动部署到生产（true/false）'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  NODE_VERSION: '24.19.0'
+  PNPM_VERSION: '9.0.0'
+
+jobs:
+  build:
+    name: Linux standalone 构建
+    runs-on: ubuntu-24.04
+    env:
+      NODE_OPTIONS: '--max-old-space-size=6144'
+    outputs:
+      identity: ${{ steps.meta.outputs.identity }}
+      commit_short: ${{ steps.meta.outputs.commit_short }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
+      package_name: ${{ steps.package.outputs.package_name }}
+      source_version: ${{ steps.package.outputs.source_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: 确定制品身份
+        id: meta
+        run: |
+          SHORT=$(git rev-parse --short=12 HEAD)
+          echo "commit_short=$SHORT" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "identity=V4.0-$SHORT" >> "$GITHUB_OUTPUT"
+          echo "[meta] identity=V4.0-$SHORT"
+
+      - name: 按冻结锁文件安装依赖
+        run: pnpm install --frozen-lockfile
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: 执行类型检查与 lint
+        run: pnpm run validate
+
+      - name: 验证发布契约与源码元数据
+        run: |
+          pnpm run release:vnext:verify
+          pnpm run release:vnext:audit
+
+      - name: 执行带来源验证的 Linux 构建
+        run: pnpm run release:vnext:build:web
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          PUPPETEER_SKIP_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: 验证运行时依赖并打包 immutable 制品
+        id: package
+        env:
+          IDENTITY: ${{ steps.meta.outputs.identity }}
+          DEPLOY_COMMIT_SHA: ${{ steps.meta.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          RELEASE_ID="web-direct-$(printf '%s' "$IDENTITY" | tr 'A-Z' 'a-z')"
+          artifact_dir="$RUNNER_TEMP/$RELEASE_ID"
+          archive_path="$RUNNER_TEMP/$RELEASE_ID.tar.gz"
+          node scripts/package-standalone-artifact.mjs \
+            --service web \
+            --output "$artifact_dir" \
+            --release-id "$RELEASE_ID" \
+            --commit "$DEPLOY_COMMIT_SHA" \
+            --archive \
+            --archive-path "$archive_path"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum -c "$RELEASE_ID.tar.gz.sha256"
+          )
+          test -s "$archive_path"
+          test -s "$archive_path.sha256"
+          SOURCE_VERSION=$(node - "$artifact_dir/public/version.json" <<'NODE'
+          const fs = require('node:fs');
+          const version = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (!/^R\d{6,}-\d{8}-[a-f0-9]{8}$/.test(version.sourceVersion || '')) {
+            throw new Error('制品 public/version.json 的 sourceVersion 必须为合法 R 标识');
+          }
+          process.stdout.write(version.sourceVersion);
+          NODE
+          )
+          printf 'source_version=%s\n' "$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
+          printf 'package_name=%s.tar.gz\n' "$RELEASE_ID" >> "$GITHUB_OUTPUT"
+          printf 'artifact_path=%s\n' "$archive_path" >> "$GITHUB_ENV"
+          printf 'checksum_path=%s.sha256\n' "$archive_path" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-artifact
+          path: |
+            ${{ env.artifact_path }}
+            ${{ env.checksum_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    name: 上传并原子切换
+    needs: build
+    if: ${{ inputs.deploy == true }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PACKAGE_NAME: ${{ needs.build.outputs.package_name }}
+      EXPECTED_SOURCE_VERSION: ${{ needs.build.outputs.source_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-artifact
+          path: ${{ runner.temp }}/web-artifact
+
+      - name: 核对下载制品摘要
+        working-directory: ${{ runner.temp }}/web-artifact
+        run: |
+          set -euo pipefail
+          test -s "$PACKAGE_NAME"
+          test -s "$PACKAGE_NAME.sha256"
+          sha256sum -c "$PACKAGE_NAME.sha256"
+
+      - name: 配置 SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.SERVER_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: 上传制品到服务器 incoming
+        run: |
+          set -euo pipefail
+          PKG="$RUNNER_TEMP/web-artifact/$PACKAGE_NAME"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$PKG" "$PKG.sha256" root@134.175.87.247:/data/direct-deploy/incoming/
+          echo "uploaded=$PKG"
+
+      - name: 服务器端候选验收与原子切换
+        run: |
+          set -euo pipefail
+          PKG="$PACKAGE_NAME"
+          [[ "$PKG" =~ ^web-direct-v4\.0-[a-f0-9]{12}\.tar\.gz$ ]]
+          [[ "$EXPECTED_SOURCE_VERSION" =~ ^R[0-9]{6,}-[0-9]{8}-[a-f0-9]{8}$ ]]
+          BASE=$(basename "$PKG" .tar.gz)
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            root@134.175.87.247 \
+            "cd /data/direct-deploy/incoming && sha256sum -c '$PKG.sha256' && EXPECTED_SOURCE_VERSION='$EXPECTED_SOURCE_VERSION' bash -s -- '$BASE' '/data/direct-deploy/incoming/$PKG'" \
+            < scripts/deploy-activate.sh
