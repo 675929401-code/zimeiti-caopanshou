@@ -1,0 +1,33 @@
+# 代码轨 public 清单（tar 内随代码制品走的小体积静态资源，共 30 文件）
+# 大体积素材走 B 轨（PUBLIC_ASSET_ROOT），不进入本清单，避免每次重复上传。
+# 维护规则：新增"随代码发布的小文件"在此登记；删除文件时同步移除本行。
+# version.json 由打包脚本每次从项目根 public/version.json 强制刷新，不在此清单约束内。
+brand/zhilan-engine-mark.svg
+cover-references/gaoding-templates/templates.json
+help/storyboard-video-case.zh-CN.vtt
+model-brands/bytedance.svg
+model-brands/generic.svg
+model-brands/google.svg
+model-brands/openai.svg
+model-brands/xai.svg
+product-assets/youcai-demo-v1/clean-v21/graph.json
+product-assets/youcai-demo-v1/clean-v21/previews/03-shot-02.webp
+product-assets/youcai-demo-v1/manifest.json
+product-assets/youcai-demo-v1/storyboard-modes/manifest.json
+robots.txt
+short-drama/assets-manifest.json
+short-drama/inspiration-media/v1/source-manifest.json
+short-drama/previews/film-studio-promo-bg-v2.webp
+short-drama/previews/film-studio-promo-bg-v3.webp
+short-drama/previews/hero-dream-floral-v2.webp
+short-drama/previews/hero-pipeline-v1.webp
+short-drama/previews/inspiration-moon-observatory-v1.webp
+short-drama/previews/inspiration-paper-fox-v1.webp
+short-drama/previews/inspiration-product-film-v1.webp
+short-drama/previews/inspiration-silent-pet-v1.webp
+short-drama/previews/manifest.json
+short-drama/tool-alignment-manifest.v1.json
+youcai-media/v1/canvas-showcases/derived/manifest.json
+youcai-media/v1/canvas-showcases/official-covers/SOURCE.md
+youcai-media/v1/source-manifest.json
+youcai-media/v1/thumbnails/manifest.json

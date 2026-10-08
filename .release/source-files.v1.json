@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "5f3250207df642de86c31d38622d1bc8af5f6cfea60a3d9b9fb805f49e25cdea",
-  "sourceFingerprint": "5b37374dc76f3a2aa08f3e656835f404b5d244bcb758f42e4a285a0a53a516ba",
+  "sourceFingerprint": "fcad8ea1504b16ef71eed8f98c1e0f0d9532f45efcfe175c49d63b0ec59fbc5c",
   "assetManifestSha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f",
   "assetDigest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
-  "fileCount": 3869,
-  "totalBytes": 54538215,
+  "fileCount": 3872,
+  "totalBytes": 54561397,
   "files": [
     {
       "path": ".cnb.yml",
@@ -40,6 +40,11 @@
       "path": ".gitattributes",
       "bytes": 454,
       "sha256": "5f057ec4ca0ff48c94c372b5e4613981ec7029883009bcfab79facffe9508fc5"
+    },
+    {
+      "path": ".github/workflows/deploy.yml",
+      "bytes": 4287,
+      "sha256": "82c36ac0808969657fa3da440d6bc9e8681c8199890b4da201aa68616f30276e"
     },
     {
       "path": ".github/workflows/release-vnext.yml",
@@ -260,6 +265,11 @@
       "path": "docs/deployment/DEPLOYMENT-STANDARD-vNext.md",
       "bytes": 69831,
       "sha256": "b86992c3f86c546f60c3e5b96bb31e1036877b56d1f9d7341df9bc11b607107a"
+    },
+    {
+      "path": "docs/deployment/RUNBOOK-windows-artifact-overlay.md",
+      "bytes": 1749,
+      "sha256": "c6b828b3816543e3ba1c39bfb66bc91b8d36999c60b766bbaaeb2c54fd036bc4"
     },
     {
       "path": "docs/design-sql/admin-slo-metric-history-v1.sql",
@@ -1179,7 +1189,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "b1a6d9c35ce52d01fbe06afa53293226327d8a2e2fc9c8f2c5ae5fff14d92900"
+      "sha256": "f11f8c6a5c4ffd881aa2dac71da7faed4530c5bb4fc9132ffd98fbf92e0c8b5a"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2125,6 +2135,11 @@
       "path": "scripts/db-migration-release.mjs",
       "bytes": 43189,
       "sha256": "7e25ce150f326ceed3521ee80b0ed60565bc52b0afdf0986a0e4567115d57158"
+    },
+    {
+      "path": "scripts/deploy-activate.sh",
+      "bytes": 10833,
+      "sha256": "a5dc282c5a31132e51d35f682e43526916dc32c3920de1dc282349508da78b04"
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
@@ -14943,8 +14958,8 @@
     },
     {
       "path": "src/lib/auth-session-store.ts",
-      "bytes": 2588,
-      "sha256": "fc3926b394823ec70162e97af0096059802cac37b00c910d13a6066ebdbd079e"
+      "bytes": 5581,
+      "sha256": "8d42aed85ad78f8749153d26b3a404e5699c4c5f46c227d3d7e212cc66152cd1"
     },
     {
       "path": "src/lib/auth-snapshot-guard.ts",
@@ -16228,8 +16243,8 @@
     },
     {
       "path": "src/lib/server/brand-authority.ts",
-      "bytes": 22131,
-      "sha256": "6a3df5cc79cbb97e592f6c43a20d312a51430a341681c1718b7f0a0a25e85c90"
+      "bytes": 23089,
+      "sha256": "e56e793d32617f1669245e512c17c48ad123c52a3d059b714da6b69ae1864972"
     },
     {
       "path": "src/lib/server/business-ip-profile-store.ts",
@@ -16323,8 +16338,8 @@
     },
     {
       "path": "src/lib/server/member-permission-authority.ts",
-      "bytes": 2940,
-      "sha256": "b2afe6a16679d05fb0e6409a95711899ff58cdbc306a14865f3290aae7ff1bc3"
+      "bytes": 5302,
+      "sha256": "d2823d349be2f82d7e22c10422032226619bb4b91a198768863b131ead837b0e"
     },
     {
       "path": "src/lib/server/member-region-distribution.ts",
