@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "5f3250207df642de86c31d38622d1bc8af5f6cfea60a3d9b9fb805f49e25cdea",
-  "sourceFingerprint": "0d0e97f14b0eb67042d4d3cdc64b95bb4e5ac1aaf090818032ca4375b1cb03a5",
+  "sourceFingerprint": "9482608c5c2b1f299e80a318aaaff56321c3a10d92b51feb0adc38bb5001607a",
   "assetManifestSha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f",
   "assetDigest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "fileCount": 3875,
-  "totalBytes": 54586990,
+  "totalBytes": 54587023,
   "files": [
     {
       "path": ".cnb.yml",
@@ -17378,8 +17378,8 @@
     },
     {
       "path": "src/lib/vs/pricing.ts",
-      "bytes": 7167,
-      "sha256": "e1e8ddb18bbc7969ab7c55767ec63b64e701eb08ce0d5bf659aa513979a883f5"
+      "bytes": 7200,
+      "sha256": "eec1567f568164d95184fff984a3cc7eea89fecc5a9f067a4d17f53700f3a763"
     },
     {
       "path": "src/lib/vs/prisma.ts",
