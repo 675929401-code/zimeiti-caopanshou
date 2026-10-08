@@ -91,10 +91,10 @@ function loadRoute(file: string, modules: Record<string, unknown>) {
       esModuleInterop: true,
     },
   }).outputText;
-  const module = { exports: {} as Record<string, unknown> };
+  const routeModule = { exports: {} as Record<string, unknown> };
   vm.runInNewContext(output, {
-    module,
-    exports: module.exports,
+    module: routeModule,
+    exports: routeModule.exports,
     URL,
     Request,
     Response,
@@ -103,7 +103,7 @@ function loadRoute(file: string, modules: Record<string, unknown>) {
       return modules[id];
     },
   });
-  return module.exports as { GET(request: Request): Promise<Response> };
+  return routeModule.exports as { GET(request: Request): Promise<Response> };
 }
 
 async function main() {
