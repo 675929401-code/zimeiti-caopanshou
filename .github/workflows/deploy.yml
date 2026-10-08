@@ -4,6 +4,8 @@ name: build-and-deploy
 # 素材走 B 轨（rsync 增量），数据走 C 轨（独立授权），本 workflow 绝不触碰业务数据。
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       deploy:
@@ -11,6 +13,13 @@ on:
         required: true
         default: true
         type: boolean
+
+concurrency:
+  group: production-web-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   NODE_VERSION: '24.19.0'
@@ -122,7 +131,7 @@ jobs:
   deploy:
     name: 上传并原子切换
     needs: build
-    if: ${{ inputs.deploy == true }}
+    if: ${{ github.event_name == 'push' || inputs.deploy == true }}
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -151,9 +160,9 @@ jobs:
       - name: 配置 SSH
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "${{ secrets.SERVER_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
       - name: 上传制品到服务器 incoming
