@@ -53,6 +53,7 @@ import {
 import { safeGetItem as safeGet, safeSetItem as safeSet, safeRemoveItem as safeRemove } from "@/lib/safe-storage";
 import {
   getClientBootstrapAuthMe,
+  getClientBootstrapAgentCatalog,
   getClientBootstrapAppearance,
   getClientBootstrapLayout,
   invalidateClientBootstrapAuthMe,
@@ -957,10 +958,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const fetchAgents = useCallback(async () => {
     dispatch({ type: "SET_LOADING_AGENTS", payload: true });
     try {
-      const headers: Record<string, string> = {};
       const token = authRef.current.token || safeGet(STORAGE_KEYS.AUTH_TOKEN);
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/bots?shape=agents", { headers });
+      const res = await getClientBootstrapAgentCatalog(token || null);
       const data = await res.json();
 
       const apiAgents: Agent[] = [];
@@ -1255,7 +1254,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // 异步验证积分，不阻塞消息发送
         const userId = state.auth?.user?.id;
         if (userId) {
-          fetch(`/api/credits?user_id=${userId}`, {
+          fetch(`/api/credits?user_id=${userId}&include_transactions=0`, {
             headers: state.auth?.token ? { Authorization: `Bearer ${state.auth.token}` } : {},
           })
             .then(res => res.ok ? res.json() : null)
@@ -2837,7 +2836,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // 优先使用登录用户的积分
       const userId = authRef.current?.user?.id;
       if (userId) {
-        const res = await fetch(`/api/credits?user_id=${userId}`, {
+        const res = await fetch(`/api/credits?user_id=${userId}&include_transactions=0`, {
           headers: authRef.current?.token ? { Authorization: `Bearer ${authRef.current.token}` } : {},
         });
         if (res.ok) {
@@ -2886,7 +2885,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // 充值只能通过管理员操作，这里仅刷新本地积分
       const userId = authRef.current?.user?.id;
       if (userId) {
-        const res = await fetch(`/api/credits?user_id=${userId}`, {
+        const res = await fetch(`/api/credits?user_id=${userId}&include_transactions=0`, {
           headers: authRef.current?.token ? { Authorization: `Bearer ${authRef.current.token}` } : {},
         });
         if (res.ok) {
@@ -3206,7 +3205,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // Sync credits from server after auth confirmed
           if (authUser?.id) {
             try {
-              const creditsRes = await fetch(`/api/credits?user_id=${authUser.id}`, {
+              const creditsRes = await fetch(`/api/credits?user_id=${authUser.id}&include_transactions=0`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
               if (safeGet(STORAGE_KEYS.AUTH_TOKEN) !== token) return;

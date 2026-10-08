@@ -39,6 +39,7 @@ const report = {
   origin,
   policy: { readOnly: true, paidGenerationRequests: 0, executedBusinessWrites: 0 },
   pages: [],
+  stubbedAppearanceWrites: [],
   blocked: [],
   pageErrors: [],
   consoleErrors: [],
@@ -75,6 +76,16 @@ async function createContext(browser, viewport) {
           },
         }),
       });
+      return;
+    }
+    if (method === "PUT" && url.origin === origin && url.pathname === "/api/auth/me") {
+      const payload = request.postDataJSON();
+      report.stubbedAppearanceWrites.push({
+        theme: String(payload?.theme_preference || ""),
+        modePreference: String(payload?.theme_mode_preference || ""),
+        persisted: false,
+      });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
       return;
     }
     if ((method === "GET" && url.origin === origin && stateAdvancingRead(url.pathname)) ||
@@ -236,6 +247,10 @@ try {
   assert.equal(videoDesktop.modelRailWidth, 312, `VIDEO_MODEL_RAIL_WIDTH: ${videoDesktop.modelRailWidth}`);
   assert.equal(videoWide.taskColumns, 3, "VIDEO_WIDE_EXPECTED_THREE_COLUMNS");
   assert.ok(videoWide.taskCardWidth >= 400, `VIDEO_WIDE_CARD_TOO_NARROW: ${videoWide.taskCardWidth}`);
+  assert.deepEqual(report.stubbedAppearanceWrites.map((entry) => entry.theme), ["lattice", "soft-white"],
+    "THEME_SWITCH_MUST_USE_READ_ONLY_PERSISTENCE_STUB");
+  assert.ok(report.stubbedAppearanceWrites.every((entry) => entry.persisted === false),
+    "THEME_ACCEPTANCE_MUST_NOT_PERSIST_USER_DATA");
   assert.equal(report.pageErrors.length, 0, `PAGE_ERRORS: ${JSON.stringify(report.pageErrors)}`);
 } finally {
   await browser.close();

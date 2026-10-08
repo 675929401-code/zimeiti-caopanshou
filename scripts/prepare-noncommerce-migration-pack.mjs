@@ -17,7 +17,7 @@ const forbiddenCommerceContent = /\bcommerce\b|commerce_|shopping_|affiliate_|å¸
 const definitions = [
   {
     name: "20260915231500_image_generation_failure_history.sql",
-    expectedSha256: "5c62b68a79bb0decffb7187a40dbf01d38048d71e635a8681daa6c2e5789348c",
+    expectedSha256: "ff67c72114d4d22c913d38eea5155a53639501d796184a4f2bb2e200aadb9c72",
     objects: [
       "public.image_generation_requests.request_snapshot",
       "public.image_generation_requests.failure_hidden_at",
@@ -50,8 +50,8 @@ const definitions = [
     ],
   },
   {
-    name: "20260915235500_autodl_h3_revenue_profit.sql",
-    expectedSha256: "0545a551cdd9a703ebf9aff043d362d80944a8f630050c53ccc927d12402aa58",
+    name: "20261009033000_runtime_function_contract_reconcile.sql",
+    expectedSha256: "9a7aba4628eb0930b5d94e5542169d0ba13da78d2406ae748616bba8716c4b33",
     objects: [
       "public.autodl_h3_finalize_video(uuid,text,text,text,text,text,text,bigint,text,numeric,numeric,bigint)",
     ],
@@ -160,7 +160,7 @@ WHERE n.nspname='public' AND p.proname IN (
 ORDER BY p.proname;
 SELECT version, name, hash, applied_at
 FROM supabase_migrations.schema_migrations
-WHERE version IN ('20260915231500','20260915233000','20260915233500','20260915234500','20260915235500')
+WHERE version IN ('20260915231500','20260915233000','20260915233500','20260915234500','20261009033000')
 ORDER BY version;
 ROLLBACK;
 `;

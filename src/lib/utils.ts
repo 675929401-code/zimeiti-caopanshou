@@ -93,7 +93,8 @@ export function resolveAvatarUrl(avatar: string | undefined | null): string {
   if (isLikelyEmoji) return '';
 
   // 对象存储 key → 走代理
-  return `/api/avatars?key=${encodeURIComponent(trimmed)}`;
+  const rendition = /\.(?:gif|svg)(?:$|\?)/iu.test(trimmed) ? "" : "&w=384";
+  return `/api/avatars?key=${encodeURIComponent(trimmed)}${rendition}`;
 }
 
 /**

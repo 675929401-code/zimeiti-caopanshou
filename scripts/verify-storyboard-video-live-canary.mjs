@@ -16,7 +16,8 @@ function argument(name) {
 }
 
 function publicVideoModelId(internalId) {
-  const secret = String(process.env.PUBLIC_MODEL_ID_SECRET || process.env.JWT_SECRET || "development-public-model-id-secret");
+  const secret = String(process.env.JWT_SECRET || "").trim();
+  assert.ok(secret.length >= 16, "JWT_SECRET environment variable is required");
   const digest = createHmac("sha256", secret).update(`video:${internalId}`).digest("base64url").slice(0, 24);
   return `pm_${digest}`;
 }

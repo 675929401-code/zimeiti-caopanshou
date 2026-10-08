@@ -338,7 +338,7 @@ const nonCommerceRepairMigrations = [
     "short_drama_script_requests", "claim_short_drama_script_request_atomic",
     "finalize_short_drama_script_request_atomic",
   ]],
-  ["supabase/migrations/20260915235500_autodl_h3_revenue_profit.sql", [
+  ["supabase/migrations/20261009033000_runtime_function_contract_reconcile.sql", [
     "autodl_h3_finalize_video", "profit", "matched_h3_revenue",
   ]],
 ] as const;
@@ -347,6 +347,15 @@ for (const [file, markers] of nonCommerceRepairMigrations) {
   assert.doesNotMatch(sql, /commerce|shopping|affiliate|带货/iu, `${file} must remain non-Commerce`);
   for (const marker of markers) assert.ok(sql.includes(marker), `${file} missing ${marker}`);
 }
+const runtimeFunctionSecurityMigration = read("supabase/migrations/20261009034000_runtime_function_security_reconcile.sql");
+for (const marker of [
+  "DROP FUNCTION IF EXISTS public.publish_commerce_config_release_atomic(uuid, uuid)",
+  "publish_commerce_config_release_atomic(uuid, uuid, text, uuid, text)",
+  "claim_payment_order_creation_atomic",
+  "ingest_external_site_monitor_probe",
+  "p.prorettype = 'trigger'::regtype",
+  "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC",
+]) assert.ok(runtimeFunctionSecurityMigration.includes(marker), `runtime function security migration missing ${marker}`);
 const llmMigration = read("supabase/migrations/20260901170000_llm_request_attempts_exactly_once.sql");
 for (const name of [
   "llm_request_attempts",
@@ -450,14 +459,16 @@ const policy = JSON.parse(read("deploy/policies/release-policy.json")) as {
   };
 };
 assert.ok(policy.database?.excludedForwardMigrations?.includes("20260822032000_aid_integration_bridge.sql"));
-assert.deepEqual(policy.database?.criticalMigrationOrder?.slice(-5), [
+assert.deepEqual(policy.database?.criticalMigrationOrder?.slice(-7), [
   "20260915231500_image_generation_failure_history.sql",
   "20260915233000_digital_human_long_history_visibility.sql",
   "20260915233500_extraction_request_snapshot.sql",
   "20260915234500_short_drama_script_history.sql",
-  "20260915235500_autodl_h3_revenue_profit.sql",
+  "20261009033000_runtime_function_contract_reconcile.sql",
+  "20261009034000_runtime_function_security_reconcile.sql",
+  "20261009040000_video_history_archive_queue.sql",
 ]);
-for (const feature of ["image", "extraction", "digitalHuman", "generalScript", "h3Revenue"]) {
+for (const feature of ["image", "extraction", "digitalHuman", "generalScript", "h3Revenue", "videoHistoryArchive"]) {
   assert.equal(policy.database?.rollbackStrategies?.[feature]?.mode, "forward-repair-only-after-activation");
 }
 assert.deepEqual(policy.database?.nonCommerceRepairPack, {
@@ -467,7 +478,13 @@ assert.deepEqual(policy.database?.nonCommerceRepairPack, {
   legacyOnlySelectorAllowed: false,
   migrationCount: 5,
   objectCount: 11,
-  migrations: policy.database?.criticalMigrationOrder?.slice(-5),
+  migrations: [
+    "20260915231500_image_generation_failure_history.sql",
+    "20260915233000_digital_human_long_history_visibility.sql",
+    "20260915233500_extraction_request_snapshot.sql",
+    "20260915234500_short_drama_script_history.sql",
+    "20261009033000_runtime_function_contract_reconcile.sql",
+  ],
   requires: [
     "exact target host",
     "runner plan manifest SHA-256",

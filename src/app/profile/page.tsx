@@ -227,7 +227,7 @@ function ProfilePageContent() {
     try {
       const userId = user?.id || JSON.parse(localStorage.getItem("auth_user") || "{}").id;
       const [creditsRes, assetsRes] = await Promise.all([
-        userId ? fetch(`/api/credits?user_id=${encodeURIComponent(userId)}`, { headers }) : Promise.resolve(null),
+        userId ? fetch(`/api/credits?user_id=${encodeURIComponent(userId)}&include_transactions=0`, { headers }) : Promise.resolve(null),
         fetch("/api/user/assets", { headers }),
       ]);
       if (creditsRes && creditsRes.ok) {
@@ -366,7 +366,7 @@ function ProfilePageContent() {
       // 并行加载积分流水和公告
       const userId = userData?.id || JSON.parse(localStorage.getItem("auth_user") || "{}").id;
       const [creditsRes, announceRes] = await Promise.all([
-        userId ? fetch(`/api/credits?user_id=${encodeURIComponent(userId)}`, { headers }) : Promise.resolve(null),
+        userId ? fetch(`/api/credits?user_id=${encodeURIComponent(userId)}&include_transactions=0`, { headers }) : Promise.resolve(null),
         fetch("/api/announcements"),
       ]);
 

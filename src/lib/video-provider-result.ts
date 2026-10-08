@@ -90,6 +90,10 @@ function waitForMedia<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+function gaoruiResultSourceExpired(error: unknown) {
+  return /GAORUI_RESULT_HTTP_(?:404|410)(?:\D|$)/u.test(error instanceof Error ? error.message : String(error || ""));
+}
+
 async function readGaoruiCompleteResult(url: URL, input: { providerOrigin: string; providerApiKey: string; maxBytes: number; timeoutMs: number; requestedPaths: Set<string>; trustedHostnames: string[] }, dependencies: SafeFetchDependencies) {
   const { safeFetchStream } = await import("./safe-fetch");
   const controller = new AbortController();
@@ -167,13 +171,22 @@ export async function readGaoruiVideoProviderResult(input: {
   const settings = { providerOrigin: provider.origin, providerApiKey: input.providerApiKey, maxBytes: input.maxBytes ?? 512 * 1024 * 1024, requestedPaths: new Set<string>(), trustedHostnames };
   const sameContent = primary && content && primary.origin === content.origin && primary.pathname === content.pathname;
   if (sameContent) return readGaoruiCompleteResult(primary, { ...settings, timeoutMs: input.contentTimeoutMs ?? 120_000 }, dependencies);
+  let primaryExpired = false;
   if (primary) {
     try { return await readGaoruiCompleteResult(primary, { ...settings, timeoutMs: input.primaryTimeoutMs ?? 30_000 }, dependencies); }
-    catch { /* Do not log URLs/credentials or resubmit. Try only this task's configured content resource. */ }
+    catch (error) {
+      primaryExpired = gaoruiResultSourceExpired(error);
+      // Do not log URLs/credentials or resubmit. Try only this task's configured content resource.
+    }
   }
   if (!content) throw new Error("GAORUI_RESULT_DOWNLOAD_FAILED_NO_TASK_ID");
-  if (settings.requestedPaths.has(content.origin + content.pathname)) throw new Error("GAORUI_RESULT_DOWNLOAD_FAILED_CONTENT_UNAVAILABLE");
+  if (settings.requestedPaths.has(content.origin + content.pathname)) {
+    throw new Error(primaryExpired ? "GAORUI_RESULT_SOURCE_EXPIRED" : "GAORUI_RESULT_DOWNLOAD_FAILED_CONTENT_UNAVAILABLE");
+  }
   if (!input.providerApiKey.trim()) throw new Error("GAORUI_RESULT_CONTENT_CREDENTIAL_REQUIRED");
   try { return await readGaoruiCompleteResult(content, { ...settings, timeoutMs: input.contentTimeoutMs ?? 120_000 }, dependencies); }
-  catch { throw new Error("GAORUI_RESULT_DOWNLOAD_FAILED_CONTENT_UNAVAILABLE"); }
+  catch {
+    if (primaryExpired) throw new Error("GAORUI_RESULT_SOURCE_EXPIRED");
+    throw new Error("GAORUI_RESULT_DOWNLOAD_FAILED_CONTENT_UNAVAILABLE");
+  }
 }

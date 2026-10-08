@@ -1,6 +1,11 @@
 import 'server-only';
 import { startVideoHistoryWorker, stopVideoHistoryWorker, videoHistoryWorkerStatus } from '@/lib/video-history-worker';
 import {
+  startVideoHistoryArchiveWorker,
+  stopVideoHistoryArchiveWorker,
+  videoHistoryArchiveWorkerStatus,
+} from '@/lib/video-history-archive-worker';
+import {
   commerceRollingWorkerStatus,
   startCommerceRollingWorker,
   stopCommerceRollingWorker,
@@ -50,6 +55,7 @@ export async function stopMediaQueueWorkerRuntime(reason = 'shutdown') {
   runtime.stopping = true;
   runtime.shutdown = Promise.all([
     stopVideoHistoryWorker(drainTimeoutMs()),
+    stopVideoHistoryArchiveWorker(drainTimeoutMs()),
     stopDigitalVideoQueueWorker(drainTimeoutMs()),
     stopDigitalHumanLongWorker(drainTimeoutMs()),
     stopCommerceRollingWorker(drainTimeoutMs()),
@@ -89,16 +95,18 @@ export function startMediaQueueWorkerRuntime() {
   process.env.DIGITAL_HUMAN_LONG_WORKER = '1';
   const ordinary = startDigitalVideoQueueWorker();
   const videoHistory = startVideoHistoryWorker();
+  const videoHistoryArchive = startVideoHistoryArchiveWorker();
   const long = startDigitalHumanLongWorker();
   const commerceRolling = startCommerceRollingWorker();
   const commerceOrdinary = startCommerceOrdinaryWorker();
-  runtime.started = Boolean(ordinary || long || videoHistory || commerceRolling || commerceOrdinary);
+  runtime.started = Boolean(ordinary || long || videoHistory || videoHistoryArchive || commerceRolling || commerceOrdinary);
   installSignalHandlers();
   console.info('[MediaQueueWorker] started', {
     pid: process.pid,
     instance: process.env.NODE_APP_INSTANCE || process.env.pm_id || '0',
     ordinary: Boolean(ordinary),
     videoHistory: Boolean(videoHistory),
+    videoHistoryArchive: Boolean(videoHistoryArchive),
     long: Boolean(long),
     commerceRolling: Boolean(commerceRolling),
     commerceOrdinary: Boolean(commerceOrdinary),
@@ -113,6 +121,7 @@ export function mediaQueueWorkerRuntimeStatus() {
     stopping: runtime.stopping,
     ordinary: digitalVideoQueueWorkerStatus(),
     videoHistory: videoHistoryWorkerStatus(),
+    videoHistoryArchive: videoHistoryArchiveWorkerStatus(),
     long: digitalHumanLongWorkerStatus(),
     commerceRolling: commerceRollingWorkerStatus(),
     commerceOrdinary: commerceOrdinaryWorkerStatus(),

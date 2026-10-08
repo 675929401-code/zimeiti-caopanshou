@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
   }
+  const includeTransactions = request.nextUrl.searchParams.get("include_transactions") !== "0";
 
   if (payload.userId !== userId) {
     const memberAccess = await authorizeAdminCapability(request, "members.view", {
@@ -37,19 +38,22 @@ export async function GET(request: NextRequest) {
     if (payload.userId === userId) {
       await recoverLlmCreditReservations(userId);
     }
-    const [{ data: user, error: userError }, { data: transactions, error: transactionError }] = await Promise.all([
+    const [{ data: user, error: userError }, transactionResult] = await Promise.all([
       client
         .from("users")
         .select("credits, credits_reserved, cash_balance, member_status")
         .eq("id", userId)
         .single(),
-      client
-        .from("credit_transactions")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(100),
+      includeTransactions
+        ? client
+          .from("credit_transactions")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(100)
+        : Promise.resolve({ data: [], error: null }),
     ]);
+    const { data: transactions, error: transactionError } = transactionResult;
 
     if (userError || !user) {
       return NextResponse.json({ error: "Realtime balance unavailable" }, { status: 503 });

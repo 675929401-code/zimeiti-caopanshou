@@ -311,6 +311,7 @@ export async function GET(request: NextRequest) {
     let upstreamResp: Response | null = null;
     let usedFallback = false;
     let upstreamSourceUrl = videoUrl;
+    let sourceExpired = false;
     
     // 先真实探测供应商返回的原始地址。域名可达性会随机房和网络变化，不能永久硬编码跳过。
     try {
@@ -338,6 +339,7 @@ export async function GET(request: NextRequest) {
       upstreamSourceUrl = directResult.finalUrl;
       if (!upstreamResp.ok && upstreamResp.status !== 206) {
         const directStatus = upstreamResp.status;
+        sourceExpired = directStatus === 404 || directStatus === 410;
         await upstreamResp.body?.cancel().catch(() => undefined);
         upstreamResp = null;
         console.warn(`[视频代理] 原始地址返回 ${directStatus}，准备尝试备用接口: taskId=${taskId}`);
@@ -377,6 +379,7 @@ export async function GET(request: NextRequest) {
           upstreamResp = fallbackResult.response;
           upstreamSourceUrl = fallbackResult.finalUrl;
           usedFallback = true;
+          if (!upstreamResp.ok && [404, 410].includes(upstreamResp.status)) sourceExpired = true;
         } catch (fallbackErr) {
           console.error(`[视频代理] /content端点也失败: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`);
           upstreamResp = null;
@@ -386,16 +389,26 @@ export async function GET(request: NextRequest) {
     
     if (!upstreamResp) {
       return NextResponse.json(
-        { error: "视频源暂时不可达，请稍后重试" },
-        { status: 502 }
+        { error: sourceExpired ? "视频源已到期，请使用此前下载的文件" : "视频源暂时不可达，请稍后重试" },
+        { status: sourceExpired ? 410 : 502 }
       );
     }
 
     if (!upstreamResp.ok && upstreamResp.status !== 206) {
+      const expired = [404, 410].includes(upstreamResp.status);
       console.error(`[视频代理] 上游返回 ${upstreamResp.status}${usedFallback ? '(fallback)' : ''}: taskId=${taskId}`);
       return NextResponse.json(
-        { error: `视频源返回 ${upstreamResp.status}` },
-        { status: upstreamResp.status >= 500 ? 502 : upstreamResp.status }
+        { error: expired ? "视频源已到期，请使用此前下载的文件" : `视频源返回 ${upstreamResp.status}` },
+        { status: expired ? 410 : upstreamResp.status >= 500 ? 502 : upstreamResp.status }
+      );
+    }
+
+    const upstreamContentType = String(upstreamResp.headers.get("content-type") || "").toLowerCase();
+    if (/^(?:text\/html|application\/(?:json|problem\+json))/u.test(upstreamContentType)) {
+      await upstreamResp.body?.cancel().catch(() => undefined);
+      return NextResponse.json(
+        { error: sourceExpired ? "视频源已到期，请使用此前下载的文件" : "视频源返回的不是可播放媒体" },
+        { status: sourceExpired ? 410 : 502 },
       );
     }
 

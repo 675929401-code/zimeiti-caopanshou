@@ -275,7 +275,7 @@ export function RechargeDialog({
           return;
         }
 
-        const res = await fetch(`/api/credits?user_id=${userId}`, {
+        const res = await fetch(`/api/credits?user_id=${userId}&include_transactions=0`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         

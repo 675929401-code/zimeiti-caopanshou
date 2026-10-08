@@ -30,11 +30,24 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import { DEFAULT_CARD_LAYOUT, type PresetField, type CardLayout, getTitleFontFamily } from "@/types/coze";
+import { getClientBootstrapAgentCatalog } from "@/lib/client-bootstrap-cache";
 
 // 卡片标题默认字体：无衬线栈（衬线宋体与卡片 UI 风格割裂，仅当布局编辑器显式选字体时才用所选）
 const CARD_TITLE_FONT_FAMILY = "'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 const MARKETPLACE_EAGER_AVATAR_COUNT = 8;
 const FAVORITES_CATEGORY = "favorites";
+const GOOGLE_TITLE_FONT_QUERIES: Record<string, string> = {
+  "noto-serif-sc": "family=Noto+Serif+SC:wght@400;600;700;900",
+  "noto-sans-sc": "family=Noto+Sans+SC:wght@400;500;600;700",
+  "lxgw-wenkai": "family=LXGW+WenKai+TC:wght@400;700",
+  "ma-shan-zheng": "family=Ma+Shan+Zheng",
+  "zcool-xiaowei": "family=ZCOOL+XiaoWei",
+  "zcool-kuaile": "family=ZCOOL+KuaiLe",
+  "zcool-qingke": "family=ZCOOL+QingKe+HuangYou",
+  "long-cang": "family=Long+Cang",
+  "zhi-mang-xing": "family=Zhi+Mang+Xing",
+  "liu-jian-mao-cao": "family=Liu+Jian+Mao+Cao",
+};
 const LEARNER_AGENT_NAVIGATION_KEYS = [
   BIP_CATEGORY,
   "task:影像编导",
@@ -241,11 +254,8 @@ export function AgentMarketplace() {
 
     void (async () => {
       try {
-        const response = await fetch("/api/bots?shape=agents", {
-          headers: { Authorization: `Bearer ${auth.token}` },
-          cache: "no-store",
-          signal: controller.signal,
-        });
+        const response = await getClientBootstrapAgentCatalog(auth.token);
+        if (controller.signal.aborted) return;
         if (!response.ok) throw new Error(`HTTP_${response.status}`);
         const payload = await response.json() as {
           agents?: Array<{ id?: unknown }>;
@@ -1279,30 +1289,46 @@ export function AgentMarketplace() {
 
   // 同步标题字体 CSS 变量（布局编辑器实时修改 / 保存加载时同步）
   useEffect(() => {
-    const fontFamily = getTitleFontFamily(cl.titleFontFamily ?? null) ?? null;
-    document.documentElement.style.setProperty("--font-title", fontFamily);
+    const fontId = cl.titleFontFamily || "";
+    const fontFamily = getTitleFontFamily(fontId);
+    if (fontFamily) document.documentElement.style.setProperty("--font-title", fontFamily);
+    else document.documentElement.style.removeProperty("--font-title");
 
-    // 动态加载 Google Fonts（运行时注入 <link>，构建时无外部请求）
+    // Only fetch the selected web font. System fonts and the default stack need
+    // no external stylesheet; loading the complete catalog added ~0.5 MiB to
+    // every marketplace visit even when no custom font was selected.
     const FONT_LINK_ID = "google-fonts-link";
-    const FONT_URL = "https://fonts.googleapis.cn/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700;900&family=LXGW+WenKai+TC:wght@400;700&family=Ma+Shan+Zheng&family=ZCOOL+XiaoWei&family=ZCOOL+KuaiLe&family=ZCOOL+QingKe+HuangYou&family=Long+Cang&family=Zhi+Mang+Xing&family=Liu+Jian+Mao+Cao&display=swap";
-    if (!document.getElementById(FONT_LINK_ID)) {
-      const link = document.createElement("link");
-      link.id = FONT_LINK_ID;
-      link.rel = "stylesheet";
-      link.href = FONT_URL;
-      // preconnect 加速
-      const pc1 = document.createElement("link");
-      pc1.rel = "preconnect";
-      pc1.href = "https://fonts.googleapis.cn";
-      pc1.crossOrigin = "anonymous";
-      const pc2 = document.createElement("link");
-      pc2.rel = "preconnect";
-      pc2.href = "https://fonts.gstatic.cn";
-      pc2.crossOrigin = "anonymous";
-      document.head.appendChild(pc1);
-      document.head.appendChild(pc2);
-      document.head.appendChild(link);
+    const PRECONNECT_STYLE_ID = "google-fonts-style-preconnect";
+    const PRECONNECT_FONT_ID = "google-fonts-file-preconnect";
+    const query = GOOGLE_TITLE_FONT_QUERIES[fontId];
+    const existing = document.getElementById(FONT_LINK_ID) as HTMLLinkElement | null;
+    if (!query) {
+      existing?.remove();
+      document.getElementById(PRECONNECT_STYLE_ID)?.remove();
+      document.getElementById(PRECONNECT_FONT_ID)?.remove();
+      return;
     }
+
+    const fontUrl = `https://fonts.googleapis.cn/css2?${query}&display=swap`;
+    if (existing?.href === fontUrl) return;
+    existing?.remove();
+    for (const [id, href] of [
+      [PRECONNECT_STYLE_ID, "https://fonts.googleapis.cn"],
+      [PRECONNECT_FONT_ID, "https://fonts.gstatic.cn"],
+    ] as const) {
+      if (document.getElementById(id)) continue;
+      const preconnect = document.createElement("link");
+      preconnect.id = id;
+      preconnect.rel = "preconnect";
+      preconnect.href = href;
+      preconnect.crossOrigin = "anonymous";
+      document.head.appendChild(preconnect);
+    }
+    const link = document.createElement("link");
+    link.id = FONT_LINK_ID;
+    link.rel = "stylesheet";
+    link.href = fontUrl;
+    document.head.appendChild(link);
   }, [cl.titleFontFamily]);
 
   // 响应式网格：根据视口宽度动态计算列数

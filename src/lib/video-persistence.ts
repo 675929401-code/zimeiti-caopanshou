@@ -36,8 +36,16 @@ function toObjectUri(key: string) {
   return `${OBJECT_URI_PREFIX}${encodeURIComponent(key)}`;
 }
 
+export function persistentVideoUriForKey(key: string) {
+  const normalized = String(key || "").trim();
+  if (!normalized || normalized.startsWith("/") || normalized.includes("://") || /[\u0000\r\n\\]/u.test(normalized)) {
+    throw new Error("PERSISTENT_VIDEO_KEY_INVALID");
+  }
+  return toObjectUri(normalized);
+}
+
 function toPersistentVideoUri(result: { provider: StorageProviderType; key: string; url: string }) {
-  if (result.provider === VIDEO_PROVIDER) return toObjectUri(result.key);
+  if (result.provider === VIDEO_PROVIDER) return persistentVideoUriForKey(result.key);
   if (result.provider === "local" && result.url) return result.url;
   throw new Error(`Persistent video storage is unavailable: ${result.provider}`);
 }
@@ -155,6 +163,8 @@ export async function persistVideoFile(filePath: string, taskId: string, userId:
     "video/mp4",
     {
       providerType: VIDEO_PROVIDER,
+      strictProvider: true,
+      requireOwnershipRecord: true,
       category: "video",
       prefix: "videos/generated/",
       fileName: `${taskId}.mp4`,
@@ -206,6 +216,8 @@ export async function persistVideoFromUrl(
       media.contentType,
       {
         providerType: VIDEO_PROVIDER,
+        strictProvider: true,
+        requireOwnershipRecord: true,
         category: "video",
         prefix: "videos/generated/",
         fileName: `${taskId}.mp4`,
@@ -257,17 +269,36 @@ export async function persistVideoFromUrl(
       } catch { /* Fall through to pinned system DNS and fail closed. */ }
     }
   }
-  const result = await storageManager.uploadFromUrl(videoUrl, {
-    providerType: VIDEO_PROVIDER,
-    strictProvider: true,
-    requireOwnershipRecord: true,
-    category: "video",
-    prefix: "videos/generated/",
-    fileName: `${taskId}.mp4`,
-    userId,
-    source: "video-generation",
-    meta: { taskId },
-  }, networkOptions);
+  const downloaded = await safeFetch(videoUrl, {
+    maxBytes: 512 * 1024 * 1024,
+    timeoutMs: 5 * 60_000,
+    maxRedirects: 3,
+    allowedContentTypes: ["video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
+    ...networkOptions,
+  });
+  const declaredContentType = downloaded.contentType === "application/octet-stream"
+    ? "video/mp4"
+    : downloaded.contentType;
+  const validated = validateUploadBuffer(downloaded.buffer, declaredContentType);
+  if (!validated.contentType.startsWith("video/")) {
+    throw new Error(`VIDEO_RESULT_CONTENT_FORBIDDEN:${validated.contentType}`);
+  }
+  const result = await storageManager.upload(
+    downloaded.buffer,
+    `${taskId}.${validated.extension}`,
+    validated.contentType,
+    {
+      providerType: VIDEO_PROVIDER,
+      strictProvider: true,
+      requireOwnershipRecord: true,
+      category: "video",
+      prefix: "videos/generated/",
+      fileName: `${taskId}.${validated.extension}`,
+      userId,
+      source: "video-generation",
+      meta: { taskId },
+    },
+  );
   return toPersistentVideoUri(result);
 }
 

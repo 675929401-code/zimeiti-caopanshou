@@ -48,10 +48,10 @@ dotenv.config({ path: path.join(root, ".env.local"), quiet: true });
 const CANONICAL_MIGRATION_FILE = /^(\d{14})_([a-z0-9][a-z0-9_-]*)\.sql$/iu;
 const ROLLBACK_LIKE_MIGRATION_FILE = /(?:^|[._-])(?:rollback|down)(?:[._-]|$)/iu;
 const FORBIDDEN_FORWARD_PATTERNS = [
-  { code: "DROP_DATABASE_FORBIDDEN", expression: /\bDROP\s+DATABASE\b/iu },
-  { code: "DROP_SCHEMA_FORBIDDEN", expression: /\bDROP\s+SCHEMA\b/iu },
-  { code: "DROP_TABLE_FORBIDDEN", expression: /\bDROP\s+TABLE\b/iu },
-  { code: "TRUNCATE_FORBIDDEN", expression: /\bTRUNCATE\b/iu },
+  { code: "DROP_DATABASE_FORBIDDEN", expression: /^\s*DROP\s+DATABASE\b/imu },
+  { code: "DROP_SCHEMA_FORBIDDEN", expression: /^\s*DROP\s+SCHEMA\b/imu },
+  { code: "DROP_TABLE_FORBIDDEN", expression: /^\s*DROP\s+TABLE\b/imu },
+  { code: "TRUNCATE_FORBIDDEN", expression: /^\s*TRUNCATE\b/imu },
 ];
 const ADVISORY_LOCK_ID = "260830500011";
 const SEMANTIC_CHECK_VERSION = "catalog-and-transaction-noop.v2";
@@ -60,6 +60,7 @@ let onlySelectionReport = {
   directlyMatched: [],
   dependencyClosureAdded: [],
 };
+let applyProgress = null;
 
 function hasFlag(name) {
   return args.includes(name);
@@ -978,9 +979,21 @@ async function apply() {
   const startedAt = new Date().toISOString();
   const applied = [];
   const skipped = [];
+  applyProgress = {
+    startedAt,
+    targetHost: config.host,
+    manifestSha256: manifest.manifestSha256,
+    currentStage: "connect",
+    currentMigration: null,
+    committedMigrations: [],
+    ledgerRecordedMigrations: [],
+    committedButUnrecorded: null,
+  };
   await client.connect();
   try {
+    applyProgress.currentStage = "advisory-lock";
     await client.query("select pg_advisory_lock($1)", [ADVISORY_LOCK_ID]);
+    applyProgress.currentStage = "migration-ledger-readiness";
     await ensureMigrationLedger(client);
     const appliedRows = await readAppliedVersions(client);
     const hashDrifts = appliedMigrationHashDrifts(migrations, appliedRows);
@@ -999,7 +1012,12 @@ async function apply() {
         continue;
       }
       const sql = fs.readFileSync(path.join(root, migration.file), "utf8");
+      applyProgress.currentMigration = { version: migration.version, name: migration.name, sha256: migration.sha256 };
+      applyProgress.currentStage = "migration-sql";
       await client.query(applySql(sql, migration));
+      applyProgress.committedMigrations.push(applyProgress.currentMigration);
+      applyProgress.committedButUnrecorded = applyProgress.currentMigration;
+      applyProgress.currentStage = "migration-ledger-write";
       await client.query(
         `insert into supabase_migrations.schema_migrations
            (version, name, statements, hash, applied_by, applied_at)
@@ -1013,9 +1031,15 @@ async function apply() {
         [migration.version, migration.slug, [migration.name], migration.sha256, actor],
       );
       applied.push({ version: migration.version, name: migration.name, sha256: migration.sha256 });
+      applyProgress.ledgerRecordedMigrations.push(applyProgress.currentMigration);
+      applyProgress.committedButUnrecorded = null;
+      applyProgress.currentMigration = null;
     }
+    applyProgress.currentStage = "postgrest-schema-reload";
     await client.query("notify pgrst, 'reload schema'");
+    applyProgress.currentStage = "advisory-unlock";
     await client.query("select pg_advisory_unlock($1)", [ADVISORY_LOCK_ID]);
+    applyProgress.currentStage = "complete";
   } catch (error) {
     try {
       await client.query("select pg_advisory_unlock($1)", [ADVISORY_LOCK_ID]);
@@ -1048,7 +1072,9 @@ async function apply() {
       "confirm PostgREST schema readiness is ready",
       "restart web service only after schema readiness passes",
     ],
-    databaseWrites: applied.length + 1,
+    committedMigrationCount: applyProgress.committedMigrations.length,
+    ledgerRecordedCount: applyProgress.ledgerRecordedMigrations.length,
+    databaseWrites: applyProgress.committedMigrations.length + applyProgress.ledgerRecordedMigrations.length,
     paidModelCalls: 0,
     credentialsPrinted: false,
   };
@@ -1084,13 +1110,35 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(JSON.stringify({
+  const failure = {
     ok: false,
     mode: command,
     code: error instanceof Error ? error.message.slice(0, 240) : "UNKNOWN_ERROR",
-    databaseWrites: 0,
+    ...(command === "apply" ? {
+      startedAt: applyProgress?.startedAt || null,
+      failedAt: new Date().toISOString(),
+      targetHost: applyProgress?.targetHost || null,
+      manifestSha256: applyProgress?.manifestSha256 || null,
+      failedStage: applyProgress?.currentStage || "preflight",
+      failedMigration: applyProgress?.currentMigration || null,
+      committedMigrationCount: applyProgress?.committedMigrations?.length || 0,
+      ledgerRecordedCount: applyProgress?.ledgerRecordedMigrations?.length || 0,
+      committedButUnrecorded: applyProgress?.committedButUnrecorded || null,
+      committedMigrations: applyProgress?.committedMigrations || [],
+      ledgerRecordedMigrations: applyProgress?.ledgerRecordedMigrations || [],
+    } : {}),
+    databaseWrites: command === "apply"
+      ? (applyProgress?.committedMigrations?.length || 0) + (applyProgress?.ledgerRecordedMigrations?.length || 0)
+      : 0,
     paidModelCalls: 0,
     credentialsPrinted: false,
-  }, null, 2));
+  };
+  const json = JSON.stringify(failure, null, 2);
+  console.error(json);
+  if (writeEvidence) {
+    fs.mkdirSync(evidenceRoot, { recursive: true });
+    const fileName = `${new Date().toISOString().replace(/[:.]/gu, "-")}-${command}-failed.json`;
+    fs.writeFileSync(path.join(evidenceRoot, fileName), `${json}\n`, "utf8");
+  }
   process.exitCode = 1;
 });

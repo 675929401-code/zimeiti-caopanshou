@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 import {
   CLIENT_BOOTSTRAP_CACHE_TTL_MS,
   ClientBootstrapRequestInvalidatedError,
+  getClientBootstrapAgentCatalog,
   getClientBootstrapAuthMe,
   getClientBootstrapLayout,
   getClientBootstrapSettings,
   invalidateClientBootstrapAuthMe,
+  invalidateClientBootstrapAgentCatalog,
   invalidateClientBootstrapCache,
   invalidateClientBootstrapLayout,
 } from "../src/lib/client-bootstrap-cache";
@@ -244,24 +246,56 @@ async function verifyLayoutFreshnessContract(): Promise<number> {
   return 6;
 }
 
+async function verifyAgentCatalogCoalescing(): Promise<number> {
+  invalidateClientBootstrapCache();
+  const calls: Array<string | null> = [];
+  installFetch(async (input, init) => {
+    assert.equal(requestUrl(input), "/api/bots?shape=agents");
+    calls.push(bearerToken(init));
+    return jsonResponse({ agents: [{ id: calls.at(-1) || "guest" }] });
+  });
+
+  const [first, second] = await Promise.all([
+    getClientBootstrapAgentCatalog("token-a"),
+    getClientBootstrapAgentCatalog("token-a"),
+  ]);
+  assert.deepEqual(
+    await Promise.all([first.json(), second.json()]),
+    [{ agents: [{ id: "token-a" }] }, { agents: [{ id: "token-a" }] }],
+  );
+  assert.equal(calls.length, 1, "catalog consumers for one token must share one request");
+
+  await getClientBootstrapAgentCatalog("token-a");
+  assert.equal(calls.length, 1, "catalog remount must reuse the short token-scoped value");
+  await getClientBootstrapAgentCatalog("token-b");
+  assert.deepEqual(calls, ["token-a", "token-b"], "a token switch must fetch an isolated catalog");
+  await getClientBootstrapAgentCatalog(null);
+  assert.deepEqual(calls, ["token-a", "token-b", null], "guest catalog must use its own scope");
+  invalidateClientBootstrapAgentCatalog();
+  await getClientBootstrapAgentCatalog(null);
+  assert.equal(calls.length, 4, "catalog invalidation must force a fresh request");
+  return 7;
+}
+
 function verifySourceWiring(): number {
   const projectRoot = fileURLToPath(new URL("..", import.meta.url));
   const readSource = (relativePath: string) => readFileSync(`${projectRoot}/${relativePath}`, "utf8");
   const themeInit = readSource("src/components/theme-init.tsx");
   const appContext = readSource("src/contexts/app-context.tsx");
+  const marketplace = readSource("src/components/agent-marketplace.tsx");
   const cacheModule = readSource("src/lib/client-bootstrap-cache.ts");
 
   assert.match(themeInit, /from "@\/lib\/client-bootstrap-cache"/, "ThemeInit must use the shared module");
-  assert.match(themeInit, /getClientBootstrapSettings\(\{ force \}\)/, "ThemeInit must route settings through the shared helper");
+  assert.match(themeInit, /getClientBootstrapAppearance\(\{ force \}\)/, "ThemeInit must route appearance through the shared helper");
   assert.match(
     themeInit,
-    /handleThemeUpdated[\s\S]*invalidateClientBootstrapSettings\(\)[\s\S]*syncThemeColors\(true\)/,
-    "theme-updated must invalidate an old in-flight value and force a fresh settings read",
+    /handleThemeUpdated[\s\S]*invalidateClientBootstrapAppearance\(\)[\s\S]*syncThemeColors\(true\)/,
+    "theme-updated must invalidate an old in-flight value and force a fresh appearance read",
   );
-  assert.doesNotMatch(themeInit, /fetch\(\s*["']\/api\/settings["']/, "ThemeInit must not directly fetch settings");
-  assert.match(themeInit, /if \(!cancelled\) applyThemeColorSettings/, "ThemeInit must retain its unmount guard");
+  assert.doesNotMatch(themeInit, /fetch\(\s*["']\/api\/settings\/appearance["']/, "ThemeInit must not directly fetch appearance");
+  assert.match(themeInit, /if \(!cancelled\) \{[\s\S]{0,100}applyThemeColorSettings/, "ThemeInit must retain its unmount guard");
 
-  assert.match(appContext, /getClientBootstrapSettings\(\)/, "AppProvider theme bootstrap must share settings");
+  assert.match(appContext, /getClientBootstrapAppearance\(\)/, "AppProvider theme bootstrap must share appearance");
   assert.match(appContext, /getClientBootstrapAuthMe\(token\)/, "AppProvider theme bootstrap must share auth/me");
   assert.match(
     appContext,
@@ -291,7 +325,7 @@ function verifySourceWiring(): number {
     "terminal auth failures must still clear the stored session",
   );
   assert.match(appContext, /res\.status >= 500 && cachedUser/, "transient auth 5xx must preserve the cached-user fallback");
-  assert.doesNotMatch(appContext, /fetch\(\s*["']\/api\/settings["']/, "AppProvider must not directly GET settings");
+  assert.doesNotMatch(appContext, /fetch\(\s*["']\/api\/settings\/appearance["']/, "AppProvider must not directly GET appearance");
 
   const directAuthFetches = appContext.match(/fetch\(\s*["']\/api\/auth\/me["']/g) ?? [];
   assert.equal(directAuthFetches.length, 1, "only the explicit auth/me PUT may remain a direct fetch");
@@ -301,6 +335,9 @@ function verifySourceWiring(): number {
     "saving a user theme must remain an explicit auth/me PUT",
   );
   assert.match(appContext, /fetch\(`\/api\/credits\?user_id=/, "credits must remain a fresh dedicated request");
+  assert.match(appContext, /getClientBootstrapAgentCatalog\(token \|\| null\)/, "Agent catalog bootstrap must use the shared token-scoped helper");
+  assert.match(marketplace, /getClientBootstrapAgentCatalog\(auth\.token\)/, "marketplace permissions must share the Agent catalog request");
+  assert.doesNotMatch(marketplace, /fetch\(\s*["']\/api\/bots/, "marketplace must not duplicate the Agent catalog request");
 
   assert.match(appContext, /getClientBootstrapLayout\(\{ force \}\)/, "layout mount helper must support explicit freshness");
   assert.match(appContext, /fetchLayoutConfig\(true\)/, "layout visibility/interval refresh must force a fresh value");
@@ -315,7 +352,7 @@ function verifySourceWiring(): number {
     CLIENT_BOOTSTRAP_CACHE_TTL_MS > 0 && CLIENT_BOOTSTRAP_CACHE_TTL_MS <= 2_000,
     "bootstrap cache must stay positive and no longer than two seconds",
   );
-  return 31;
+  return 34;
 }
 
 async function main(): Promise<void> {
@@ -331,6 +368,7 @@ async function main(): Promise<void> {
     assertions += await verifyAuthTokenIsolation();
     assertions += await verifyLateAuthResponseCannotCrossToken();
     assertions += await verifyLayoutFreshnessContract();
+    assertions += await verifyAgentCatalogCoalescing();
     assertions += verifySourceWiring();
   } finally {
     invalidateClientBootstrapCache();
@@ -339,7 +377,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`PASS client bootstrap cache contract: ${assertions} grouped assertions`);
-  console.log("root request contract: authenticated settings 2->1, auth/me 2->1, credits 1->1, layout 1->1");
+  console.log("root request contract: appearance 2->1, auth/me 2->1, Agent catalog 3->1, credits 1->1, layout 1->1");
 }
 
 main().catch((error: unknown) => {

@@ -28,6 +28,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function isUpstreamErrorDocument(contentType: string) {
+  return /^(?:text\/html|application\/(?:json|problem\+json))(?:;|$)/iu.test(contentType.trim());
+}
+
 /**
  * GET /api/video/proxy-download?taskId=...&name=...&media_ticket=...
  * 服务端代理下载视频，绕过跨域限制
@@ -287,6 +291,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  let sourceExpired = false;
+
   // --- 下载辅助函数 ---
   const downloadFromUrl = async (
     downloadUrl: string,
@@ -304,11 +310,18 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
+      if ([404, 410].includes(response.status)) sourceExpired = true;
+      await response.body?.cancel().catch(() => undefined);
       throw new Error(`上游返回 ${response.status}`);
     }
 
     const contentType = response.headers.get("content-type") || "video/mp4";
     const body = response.body;
+
+    if (isUpstreamErrorDocument(contentType)) {
+      await body?.cancel().catch(() => undefined);
+      throw new Error("上游返回的不是视频文件");
+    }
 
     if (!body) {
       throw new Error("上游无响应体");
@@ -353,7 +366,7 @@ export async function GET(request: NextRequest) {
       if (cdnResponse.ok) {
         const contentType = cdnResponse.headers.get("content-type") || "video/mp4";
         const body = cdnResponse.body;
-        if (body) {
+        if (body && !isUpstreamErrorDocument(contentType)) {
           return new NextResponse(body, {
             status: 200,
             headers: {
@@ -365,6 +378,7 @@ export async function GET(request: NextRequest) {
           });
         }
       }
+      if ([404, 410].includes(cdnResponse.status)) sourceExpired = true;
       await cdnResponse.body?.cancel().catch(() => undefined);
       console.warn(`[下载代理] 原始地址返回 ${cdnResponse.status}，尝试备用接口: taskId=${taskId}`);
     } catch (cdnErr) {
@@ -394,11 +408,14 @@ export async function GET(request: NextRequest) {
     try {
       return await downloadFromUrl(effectiveUrl, providerAuthorization);
     } catch (finalErr) {
-      const message = finalErr instanceof Error ? finalErr.message : "下载代理失败";
-      return NextResponse.json({ error: message }, { status: 500 });
+      console.warn(`[下载代理] 最终取件失败: taskId=${taskId}, error=${finalErr instanceof Error ? finalErr.message : String(finalErr)}`);
+      return NextResponse.json(
+        { error: sourceExpired ? "视频源已到期，请使用此前下载的文件" : "视频源暂时不可达，请稍后重试" },
+        { status: sourceExpired ? 410 : 502 },
+      );
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "下载代理失败";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.warn(`[下载代理] 下载异常: taskId=${taskId}, error=${err instanceof Error ? err.message : String(err)}`);
+    return NextResponse.json({ error: "视频暂时无法下载" }, { status: 502 });
   }
 }

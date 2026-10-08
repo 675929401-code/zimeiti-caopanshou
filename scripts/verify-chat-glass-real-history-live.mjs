@@ -391,7 +391,7 @@ async function main() {
         const keys = Object.keys(body || {}).sort();
         assert.deepEqual(keys, ["theme_mode_preference", "theme_preference"]);
         assert.ok(Object.hasOwn(themeLabels, body.theme_preference), "UNEXPECTED_THEME_PREFERENCE");
-        assert.equal(body.theme_mode_preference, "system");
+        assert.ok(["system", "light", "dark"].includes(body.theme_mode_preference), "UNEXPECTED_THEME_MODE_PREFERENCE");
         evidence.simulatedAppearanceWrites.push({
           theme: body.theme_preference,
           modePreference: body.theme_mode_preference,
@@ -405,7 +405,11 @@ async function main() {
         });
         return;
       }
-      if (request.method() === "POST" && ["/api/operation-events", "/api/diagnostic-logs"].includes(url.pathname)) {
+      if (request.method() === "POST" && [
+        "/api/operation-events",
+        "/api/diagnostic-logs",
+        "/api/product-usage/events",
+      ].includes(url.pathname)) {
         evidence.suppressedDiagnostics.push(`${request.method()} ${url.pathname}`);
         await route.abort("blockedbyclient");
         return;

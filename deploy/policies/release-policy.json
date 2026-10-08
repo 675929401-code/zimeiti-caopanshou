@@ -258,9 +258,39 @@
     "contract": "deploy/policies/database-contract.v1.json",
     "migrationRoot": "supabase/migrations",
     "excludedForwardMigrations": [
-      "20260822032000_aid_integration_bridge.sql"
+      "20260822032000_aid_integration_bridge.sql",
+      "20260915235500_autodl_h3_revenue_profit.sql",
+      "20260923190000_workspace_model_explicit_assignments.sql",
+      "20260926133000_video_upstream_direct_delivery.sql"
     ],
-    "excludedForwardMigrationReason": "AID feature retired; historical bridge remains source evidence and must not be applied by the current release runner",
+    "excludedForwardMigrationReasons": {
+      "20260822032000_aid_integration_bridge.sql": "AID feature retired; historical bridge remains source evidence and must not be applied by the current release runner",
+      "20260915235500_autodl_h3_revenue_profit.sql": "Historical H3 profit repair replaces the finalizer with a role-exempt billing definition when replayed after later unified-billing migrations; its safe backfill and final paid contract are superseded by 20261009033000_runtime_function_contract_reconcile.sql",
+      "20260923190000_workspace_model_explicit_assignments.sql": "Historical data-only migration contains invalid CASE syntax and is superseded by 20260924090000_restore_workspace_model_assignments.sql; retain as evidence but never replay",
+      "20260926133000_video_upstream_direct_delivery.sql": "Historical migration unconditionally renames a function and fails after a partial or semantically equivalent application; superseded by idempotent 20261009032000_video_upstream_direct_delivery_reconcile.sql"
+    },
+    "semanticContract": "deploy/policies/database-semantic-contract.v1.json",
+    "semanticContractProfile": "public-runtime-contract.v1",
+    "semanticContractVerification": "scripts/database-semantic-contract.mjs",
+    "semanticContractVerifyCommand": "node scripts/database-semantic-contract.mjs verify",
+    "semanticRepairGenerator": "scripts/generate-database-semantic-repair.mjs",
+    "semanticRepairRoot": "deploy/database-repairs/20261009-production-semantic",
+    "semanticRepairMigration": "deploy/database-repairs/20261009-production-semantic/20261009030000_database_semantic_contract_repair.sql",
+    "semanticRepairExecutionMode": "full-data-candidate-first-then-reviewed-forward-only",
+    "migrationLedgerReconciliation": {
+      "generator": "scripts/render-migration-ledger-reconciliation.mjs",
+      "artifact": "deploy/database-repairs/20261009-production-semantic/20261009035000_migration_ledger_reconciliation.sql",
+      "executionMode": "semantic-contract-pass-then-single-transaction",
+      "requires": [
+        "recoverable pre-migration backup receipt",
+        "current migration manifest SHA-256",
+        "current semantic contract and snapshot SHA-256",
+        "zero blocking semantic contract differences",
+        "exact database name through zimeiti.expected_database",
+        "zero non-empty migration hash drift"
+      ],
+      "migrationSqlReplayAllowed": false
+    },
     "rollbackRoot": "supabase/rollbacks",
     "rollbackSafetyVerification": "scripts/verify-db-migration-release.mjs",
     "criticalMigrationOrder": [
@@ -288,7 +318,9 @@
       "20260915233000_digital_human_long_history_visibility.sql",
       "20260915233500_extraction_request_snapshot.sql",
       "20260915234500_short_drama_script_history.sql",
-      "20260915235500_autodl_h3_revenue_profit.sql"
+      "20261009033000_runtime_function_contract_reconcile.sql",
+      "20261009034000_runtime_function_security_reconcile.sql",
+      "20261009040000_video_history_archive_queue.sql"
     ],
     "rollbackStrategies": {
       "llm": {
@@ -298,7 +330,7 @@
         "requiresEmptyEvidenceTables": true,
         "requiresTransaction": true
       },
-      "video": {
+    "video": {
         "mode": "manual-destructive-guarded",
         "rollback": "supabase/rollbacks/20260825180000_video_terminal_billing_p0.rollback.sql",
         "blockedByDependentMigrations": [
@@ -307,8 +339,13 @@
           "20260904025500_video_provider_failure_terminal.sql"
         ],
         "requiresEmptyTaskTable": true,
-        "requiresTransaction": true
-      },
+      "requiresTransaction": true
+    },
+    "videoHistoryArchive": {
+      "mode": "forward-repair-only-after-activation",
+      "rollback": "supabase/rollbacks/20261009040000_video_history_archive_queue.rollback.sql",
+      "reason": "rollback may remove queue control objects but must preserve archived COS objects, completed tasks, wallet evidence and billing history"
+    },
       "refund": {
         "mode": "manual-destructive-guarded",
         "rollback": "supabase/rollbacks/20260904193000_payment_refund_exactly_once.rollback.sql",
@@ -354,7 +391,7 @@
         "20260915233000_digital_human_long_history_visibility.sql",
         "20260915233500_extraction_request_snapshot.sql",
         "20260915234500_short_drama_script_history.sql",
-        "20260915235500_autodl_h3_revenue_profit.sql"
+        "20261009033000_runtime_function_contract_reconcile.sql"
       ],
       "requires": [
         "exact target host",

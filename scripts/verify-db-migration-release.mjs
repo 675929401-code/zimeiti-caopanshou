@@ -19,6 +19,16 @@ const videoRollbackPath = path.join(rollbackRoot, "20260825180000_video_terminal
 const refundRollbackPath = path.join(rollbackRoot, "20260904193000_payment_refund_exactly_once.rollback.sql");
 const reconciliationMigrationName = "20260904031000_reconcile_pending_legacy_semantics.sql";
 const reconciliationMigrationPath = path.join(migrationRoot, reconciliationMigrationName);
+const semanticCatalogPath = path.join(root, "scripts", "lib", "database-semantic-catalog.mjs");
+const semanticContractScriptPath = path.join(root, "scripts", "database-semantic-contract.mjs");
+const semanticRepairGeneratorPath = path.join(root, "scripts", "generate-database-semantic-repair.mjs");
+const semanticContractPath = path.join(root, "deploy", "policies", "database-semantic-contract.v1.json");
+const semanticRepairMigrationName = "20261009030000_database_semantic_contract_repair.sql";
+const semanticRepairMigrationPath = path.join(root, "deploy", "database-repairs", "20261009-production-semantic", semanticRepairMigrationName);
+const ledgerReconciliationGeneratorPath = path.join(root, "scripts", "render-migration-ledger-reconciliation.mjs");
+const ledgerReconciliationArtifactPath = path.join(root, "deploy", "database-repairs", "20261009-production-semantic", "20261009035000_migration_ledger_reconciliation.sql");
+const h3ContractReconcilePath = path.join(migrationRoot, "20261009033000_runtime_function_contract_reconcile.sql");
+const functionSecurityReconcilePath = path.join(migrationRoot, "20261009034000_runtime_function_security_reconcile.sql");
 
 function read(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -86,6 +96,15 @@ const reconciliationMigration = read(reconciliationMigrationPath);
 const llmRollback = read(llmRollbackPath);
 const videoRollback = read(videoRollbackPath);
 const refundRollback = read(refundRollbackPath);
+const semanticCatalog = read(semanticCatalogPath);
+const semanticContractScript = read(semanticContractScriptPath);
+const semanticRepairGenerator = read(semanticRepairGeneratorPath);
+const semanticRepairMigration = read(semanticRepairMigrationPath);
+const ledgerReconciliationGenerator = read(ledgerReconciliationGeneratorPath);
+const ledgerReconciliationArtifact = read(ledgerReconciliationArtifactPath);
+const h3ContractReconcile = read(h3ContractReconcilePath);
+const functionSecurityReconcile = read(functionSecurityReconcilePath);
+const semanticContract = json(semanticContractPath);
 const policy = json(policyPath);
 const pkg = json(packagePath);
 
@@ -137,6 +156,45 @@ add("script:only-uses-prefix-closure", script.includes("dependencyClosureAdded")
 add("script:refreshes-postgrest", script.includes("notify pgrst"), "PostgREST schema reload notification is sent after apply");
 add("script:blocks-broad-destructive-ddl", ["DROP_DATABASE_FORBIDDEN", "DROP_SCHEMA_FORBIDDEN", "DROP_TABLE_FORBIDDEN", "TRUNCATE_FORBIDDEN"].every((item) => script.includes(item)), "broad destructive DDL is blocked");
 add("script:wraps-missing-transaction", script.includes("wrapped-by-runner") && script.includes("applySql"), "runner wraps migration files without explicit transaction");
+add(
+  "script:failure-reports-committed-progress",
+  ["committedMigrationCount", "ledgerRecordedCount", "committedButUnrecorded", "failedMigration", "failedStage"].every((item) => script.includes(item)),
+  "apply failures disclose committed SQL and ledger progress instead of claiming zero writes",
+);
+add(
+  "script:destructive-detector-is-statement-scoped",
+  script.includes('expression: /^\\s*TRUNCATE\\b/imu') && script.includes('expression: /^\\s*DROP\\s+TABLE\\b/imu'),
+  "GRANT TRUNCATE is not misclassified as a destructive TRUNCATE statement",
+);
+add("semantic-contract:catalog-exists", fs.existsSync(semanticCatalogPath), "normalized PostgreSQL semantic catalog exists");
+add(
+  "semantic-contract:catalog-covers-runtime-security",
+  ["constraints", "indexes", "functions", "policies", "triggers", "sequences", "table-privileges", "function-privileges"].every((item) => semanticCatalog.includes(`name: "${item}"`)),
+  "semantic contract covers data integrity, runtime behavior, RLS and grants",
+);
+add(
+  "semantic-contract:verifier-fails-closed",
+  semanticContractScript.includes("DATABASE_SEMANTIC_CONTRACT_INTEGRITY_FAILED")
+    && semanticContractScript.includes("process.exitCode = 1")
+    && semanticContractScript.includes("blockingCount"),
+  "semantic verifier validates contract integrity and fails on blocking drift",
+);
+add(
+  "semantic-repair:generator-has-target-safety",
+  semanticRepairGenerator.includes("REMOTE_TARGET_REQUIRES_ALLOW_REMOTE_TARGET")
+    && semanticRepairGenerator.includes("REFERENCE_AND_TARGET_DATABASE_MUST_DIFFER")
+    && semanticRepairGenerator.includes("OUTPUT_PATH_OUTSIDE_PROJECT"),
+  "repair generation refuses same-database and accidental remote targets",
+);
+add(
+  "semantic-repair:migration-is-transactional-forward-repair",
+  /^\s*(?:--[^\n]*\n\s*)*BEGIN;/iu.test(semanticRepairMigration)
+    && /COMMIT;\s*$/iu.test(semanticRepairMigration)
+    && !/^\s*(?:DROP\s+TABLE|TRUNCATE|DELETE\s+FROM)\b/imu.test(semanticRepairMigration)
+    && semanticRepairMigration.includes("VALIDATE CONSTRAINT")
+    && semanticRepairMigration.includes("ENABLE ROW LEVEL SECURITY"),
+  "semantic repair is one transaction, preserves business rows and validates constraints",
+);
 add("pending-semantic:script-exists", fs.existsSync(pendingSemanticPath), "dedicated pending migration semantic verifier exists");
 add(
   "pending-semantic:profiles-all-nine-legacy-migrations",
@@ -243,6 +301,32 @@ add(
 
 add("policy:runner-registered", policy.database?.migrationRunner === "scripts/db-migration-release.mjs", "release policy points to runner");
 add("policy:verification-registered", policy.database?.migrationVerification === "scripts/verify-db-migration-release.mjs", "release policy points to verifier");
+add(
+  "policy:semantic-contract-registered",
+  policy.database?.semanticContract === "deploy/policies/database-semantic-contract.v1.json"
+    && policy.database?.semanticContractVerification === "scripts/database-semantic-contract.mjs"
+    && policy.database?.semanticRepairRoot === "deploy/database-repairs/20261009-production-semantic"
+    && policy.database?.semanticRepairMigration === `deploy/database-repairs/20261009-production-semantic/${semanticRepairMigrationName}`
+    && policy.database?.semanticRepairExecutionMode === "full-data-candidate-first-then-reviewed-forward-only",
+  "release policy requires semantic contract verification and a full-data candidate rehearsal",
+);
+add(
+  "policy:ledger-reconciliation-is-semantic-and-fail-closed",
+  policy.database?.migrationLedgerReconciliation?.generator === "scripts/render-migration-ledger-reconciliation.mjs"
+    && policy.database?.migrationLedgerReconciliation?.artifact === "deploy/database-repairs/20261009-production-semantic/20261009035000_migration_ledger_reconciliation.sql"
+    && policy.database?.migrationLedgerReconciliation?.executionMode === "semantic-contract-pass-then-single-transaction"
+    && policy.database?.migrationLedgerReconciliation?.migrationSqlReplayAllowed === false,
+  "legacy production ledgers may be adopted only after the exact semantic contract passes",
+);
+add(
+  "ledger-reconciliation:generator-and-artifact-guards",
+  ledgerReconciliationGenerator.includes("SEMANTIC_CONTRACT_MIGRATION_MANIFEST_MISMATCH")
+    && ledgerReconciliationArtifact.includes("LEDGER_RECONCILIATION_EXPECTED_DATABASE_REQUIRED")
+    && ledgerReconciliationArtifact.includes("LEDGER_RECONCILIATION_HASH_DRIFT")
+    && ledgerReconciliationArtifact.includes("pg_advisory_xact_lock")
+    && ledgerReconciliationArtifact.includes("Migration SQL is not replayed"),
+  "ledger reconciliation is generated, target-bound, hash-safe and transaction-locked",
+);
 add("policy:semantic-check-registered", policy.database?.migrationSemanticCheckCommand?.includes("semantic-check --write-evidence") && policy.database?.migrationSemanticCheckVersion === "catalog-and-transaction-noop.v2", "release policy registers the semantic no-op probe");
 add("policy:semantic-adopt-confirmations", ["--semantic-receipt", "--confirm-semantic-receipt-sha256", "--confirm-target-fingerprint", "--confirm-target-host", "--confirm-manifest-sha256", "--confirm-backup"].every((item) => policy.database?.migrationSemanticAdoptCommand?.includes(item)), "release policy exposes only confirmed semantic adoption");
 add(
@@ -311,11 +395,41 @@ add(
     && script.includes("excludedForwardMigrations"),
   "retired AID bridge is excluded from the current forward release set",
 );
+add(
+  "policy:invalid-historical-assignment-migration-excluded",
+  policy.database?.excludedForwardMigrations?.includes("20260923190000_workspace_model_explicit_assignments.sql")
+    && /invalid CASE syntax/iu.test(policy.database?.excludedForwardMigrationReasons?.["20260923190000_workspace_model_explicit_assignments.sql"] || ""),
+  "invalid superseded historical DML is retained as evidence but cannot be replayed",
+);
+add(
+  "policy:superseded-h3-revenue-migration-excluded",
+  policy.database?.excludedForwardMigrations?.includes("20260915235500_autodl_h3_revenue_profit.sql")
+    && /role-exempt billing/iu.test(policy.database?.excludedForwardMigrationReasons?.["20260915235500_autodl_h3_revenue_profit.sql"] || ""),
+  "the out-of-order H3 migration cannot downgrade unified paid billing",
+);
+add(
+  "migration:h3-contract-reconcile-preserves-paid-profit-semantics",
+  h3ContractReconcile.includes("IF p_price_yuan > 0 THEN")
+    && h3ContractReconcile.includes("billing_exempt")
+    && h3ContractReconcile.includes("round((p_price_yuan - p_cost_price)::numeric, 12)")
+    && h3ContractReconcile.includes("matched_h3_revenue"),
+  "the replacement H3 migration combines safe historical repair with the final paid contract",
+);
+add(
+  "migration:function-security-reconcile-is-explicit",
+  functionSecurityReconcile.includes("DROP FUNCTION IF EXISTS public.publish_commerce_config_release_atomic(uuid, uuid)")
+    && functionSecurityReconcile.includes("p.prorettype = 'trigger'::regtype")
+    && functionSecurityReconcile.includes("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC")
+    && functionSecurityReconcile.includes("GRANT EXECUTE ON FUNCTION public.claim_payment_order_creation_atomic")
+    && functionSecurityReconcile.includes("GRANT EXECUTE ON FUNCTION public.ingest_external_site_monitor_probe"),
+  "legacy CAS access is removed, trigger helpers are private, and server RPC grants are restored",
+);
 
 add("package:db-plan-script", pkg.scripts?.["deploy:db:plan"] === "node ./scripts/db-migration-release.mjs plan", "deploy:db:plan exists");
 add("package:db-status-script", pkg.scripts?.["deploy:db:status"] === "node ./scripts/db-migration-release.mjs status", "deploy:db:status exists");
 add("package:db-apply-script", pkg.scripts?.["deploy:db:apply"] === "node ./scripts/db-migration-release.mjs apply", "deploy:db:apply exists");
 add("package:db-verify-script", pkg.scripts?.["deploy:db:verify"] === "node ./scripts/verify-db-migration-release.mjs", "deploy:db:verify exists");
+add("package:db-semantic-verify-script", pkg.scripts?.["deploy:db:semantic:verify"] === "node ./scripts/database-semantic-contract.mjs verify", "semantic contract verifier is callable from the release workflow");
 
 const migrationNames = fs.readdirSync(migrationRoot)
   .filter((name) => name.toLowerCase().endsWith(".sql"))
@@ -355,6 +469,23 @@ add("runner:plan-exits-zero", plan.status === 0, plan.stderr || "plan command ex
 add("runner:plan-json", planJson?.mode === "plan" && planJson?.databaseWrites === 0, "plan emits redacted JSON with zero writes");
 add("runner:manifest-sha", /^[a-f0-9]{64}$/u.test(planJson?.manifestSha256 || ""), "manifest sha is stable hex");
 add("runner:detects-migrations", planJson?.migrationCount === releaseMigrationNames.length, `plan sees ${planJson?.migrationCount ?? "?"} release migrations`);
+add(
+  "runner:manifest-is-bound-to-semantic-contract",
+  semanticContract?.kind === "database-semantic-contract"
+    && semanticContract?.profile === policy.database?.semanticContractProfile
+    && semanticContract?.migrationManifestSha256 === planJson?.manifestSha256,
+  "the reviewed database contract is bound to the exact migration manifest",
+);
+const ledgerArtifactVerification = runNode(["./scripts/render-migration-ledger-reconciliation.mjs"]);
+const ledgerArtifactVerificationJson = extractJsonObject(ledgerArtifactVerification.stdout);
+add(
+  "runner:ledger-reconciliation-artifact-current",
+  ledgerArtifactVerification.status === 0
+    && ledgerArtifactVerificationJson?.mode === "verify"
+    && ledgerArtifactVerificationJson?.migrationManifestSha256 === planJson?.manifestSha256
+    && ledgerArtifactVerificationJson?.migrationCount === releaseMigrationNames.length,
+  ledgerArtifactVerification.stderr || "ledger reconciliation artifact matches the current release manifest",
+);
 add(
   "runner:excludes-retired-aid-migration",
   planJson?.excludedForwardMigrations?.includes("20260822032000_aid_integration_bridge.sql")

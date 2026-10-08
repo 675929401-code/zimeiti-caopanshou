@@ -33,10 +33,9 @@ export const FALLBACK_PLATFORM_BRANDING: PublicPlatformBranding = {
   assets: {},
 };
 
-// Next publishes src/app/icon.png as a stable, version-controlled /icon.png
-// route. Keep the platform fallback on that tracked asset so a rebuild or a
-// deployment cannot lose the logo through public/**/*.png ignore rules.
-export const DEFAULT_PLATFORM_LOGO_URL = "/icon.png";
+// Keep the metadata icon lossless, while UI surfaces use a tracked display
+// derivative so a cold page does not download the full 1254px source image.
+export const DEFAULT_PLATFORM_LOGO_URL = "/brand/platform-logo-display-256.webp";
 
 const BRAND_CACHE_MAX_AGE_MS = 60_000;
 const BRAND_REFRESH_EVENT = "platform-branding:refresh";
@@ -157,12 +156,15 @@ export function platformBrandLogoUrl(
     : variant === "horizontal-light"
       ? assets.logo_horizontal_light
       : assets.logo_square;
-  return preferred?.url
+  const source = preferred?.url
     || assets.logo_square?.url
     || assets.logo_horizontal_light?.url
     || assets.logo_horizontal_dark?.url
     || branding.legacyLogoUrl
     || DEFAULT_PLATFORM_LOGO_URL;
+  if (!source.startsWith("/api/branding/assets/")) return source;
+  const width = variant === "square" ? 256 : 512;
+  return `${source}?w=${width}`;
 }
 
 export function platformBrandAssetUrl(

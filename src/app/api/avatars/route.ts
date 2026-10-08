@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { parseImageRenditionWidth, renderWebpRendition } from '@/lib/server/image-rendition';
 
 // GET - Stream avatar image by key
 // Usage: /api/avatars?key=<storage_key>
@@ -8,8 +9,42 @@ import { NextRequest, NextResponse } from 'next/server';
 //   2. Local relative paths (avatars/xxx) — reads from public/ directory
 // Streams image content directly to avoid cross-origin redirect issues with <img> tags.
 
+async function avatarResponse(
+  request: NextRequest,
+  source: Uint8Array,
+  contentType: string,
+  cacheKey: string,
+  maxAge: number,
+  renditionWidth: number | null,
+) {
+  const rendition = renditionWidth
+    ? await renderWebpRendition(source, { cacheKey, width: renditionWidth })
+    : null;
+  const body = rendition?.bytes || source;
+  const etag = rendition ? `"sha256-${rendition.sha256}"` : null;
+  const headers = new Headers({
+    'Content-Type': rendition ? 'image/webp' : contentType,
+    'Content-Length': String(body.byteLength),
+    'Cache-Control': `public, max-age=${maxAge}, immutable`,
+    'X-Accel-Buffering': 'no',
+    ...(etag ? { ETag: etag } : {}),
+  });
+  if (etag && request.headers.get('if-none-match') === etag) {
+    headers.delete('Content-Length');
+    return new NextResponse(null, { status: 304, headers });
+  }
+  return new NextResponse(new Uint8Array(body), { status: 200, headers });
+}
+
 export async function GET(request: NextRequest) {
   const key = request.nextUrl.searchParams.get('key');
+  let renditionWidth: number | null;
+
+  try {
+    renditionWidth = parseImageRenditionWidth(request.nextUrl.searchParams.get('w'));
+  } catch {
+    return NextResponse.json({ error: '无效的头像尺寸' }, { status: 400 });
+  }
 
   if (!key) {
     return NextResponse.json({ error: '缺少 key 参数' }, { status: 400 });
@@ -51,14 +86,7 @@ export async function GET(request: NextRequest) {
         : ext === '.webp' ? 'image/webp'
         : 'image/jpeg';
 
-      return new NextResponse(new Uint8Array(buffer), {
-        status: 200,
-        headers: {
-          'Content-Type': contentType,
-          'Cache-Control': 'public, max-age=604800, immutable',
-          'X-Accel-Buffering': 'no',
-        },
-      });
+      return avatarResponse(request, buffer, contentType, `local:${key}`, 604800, renditionWidth);
     } catch (localErr) {
       // Local file not found — try Supabase Storage as fallback
       console.warn('[Avatars] Local file not found, trying Supabase Storage:', key);
@@ -69,14 +97,7 @@ export async function GET(request: NextRequest) {
         if (imageResponse.ok) {
           const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
           const imageBuffer = await imageResponse.arrayBuffer();
-          return new NextResponse(imageBuffer, {
-            status: 200,
-            headers: {
-              'Content-Type': contentType,
-              'Cache-Control': 'public, max-age=86400, immutable',
-              'X-Accel-Buffering': 'no',
-            },
-          });
+          return avatarResponse(request, new Uint8Array(imageBuffer), contentType, `supabase:${key}`, 86400, renditionWidth);
         }
       } catch (supabaseErr) {
         console.warn('[Avatars] Supabase Storage fallback also failed:', supabaseErr instanceof Error ? supabaseErr.message : supabaseErr);
@@ -97,14 +118,7 @@ export async function GET(request: NextRequest) {
       : ext === 'webp' ? 'image/webp'
       : 'image/jpeg';
 
-    return new NextResponse(new Uint8Array(buffer), {
-      status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=86400, immutable',
-        'X-Accel-Buffering': 'no',
-      },
-    });
+    return avatarResponse(request, buffer, contentType, `storage:${key}`, 86400, renditionWidth);
   } catch (storageErr) {
     console.warn('[Avatars] StorageManager read failed:', storageErr instanceof Error ? storageErr.message : storageErr);
   }
@@ -131,14 +145,7 @@ export async function GET(request: NextRequest) {
         const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
         const imageBuffer = await imageResponse.arrayBuffer();
 
-        return new NextResponse(imageBuffer, {
-          status: 200,
-          headers: {
-            'Content-Type': contentType,
-            'Cache-Control': 'public, max-age=86400, immutable',
-            'X-Accel-Buffering': 'no',
-          },
-        });
+        return avatarResponse(request, new Uint8Array(imageBuffer), contentType, `s3:${key}`, 86400, renditionWidth);
       }
     } catch (s3Err) {
       console.warn('[Avatars] S3Storage fallback failed:', s3Err instanceof Error ? s3Err.message : s3Err);

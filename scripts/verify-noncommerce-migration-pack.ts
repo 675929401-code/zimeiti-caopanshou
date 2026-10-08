@@ -19,7 +19,7 @@ try {
     "20260915233000_digital_human_long_history_visibility.sql",
     "20260915233500_extraction_request_snapshot.sql",
     "20260915234500_short_drama_script_history.sql",
-    "20260915235500_autodl_h3_revenue_profit.sql",
+    "20261009033000_runtime_function_contract_reconcile.sql",
   ];
   const planRun = spawnSync(process.execPath, ["scripts/prepare-noncommerce-migration-pack.mjs", "plan"], {
     cwd: process.cwd(),
@@ -69,7 +69,7 @@ try {
   );
 
   const contractSource = JSON.parse(readFileSync("deploy/policies/database-contract.v1.json", "utf8"));
-  assert.equal(contractSource.contractVersion, "20260915235500");
+  assert.equal(contractSource.contractVersion, "20261001070000");
   const openApiFixture = {
     paths: Object.fromEntries([
       ...PRODUCTION_DATABASE_CONTRACT.tables.map((entry) => [`/${entry.name}`, { get: {} }]),
@@ -139,7 +139,7 @@ try {
   assert.ok(missingH3CostResult.missingRpcArguments.includes("autodl_h3_finalize_video.p_cost_price"));
 
   const policy = JSON.parse(readFileSync("deploy/policies/release-policy.json", "utf8"));
-  assert.deepEqual(policy.database.criticalMigrationOrder.slice(-5), expectedNames);
+  assert.deepEqual(policy.database.nonCommerceRepairPack.migrations, expectedNames);
   assert.equal(policy.database.rollbackStrategies.generalScript.mode, "forward-repair-only-after-activation");
   assert.equal(policy.database.rollbackStrategies.h3Revenue.mode, "forward-repair-only-after-activation");
   assert.deepEqual(policy.database.nonCommerceRepairPack.migrations, expectedNames);

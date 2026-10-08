@@ -59,7 +59,14 @@ const lockedSensitiveReadPaths = new Set([
   "/api/admin/payment-methods",
   "/api/admin/shortcuts",
 ]);
-const benignNavigationAbortPaths = new Set(["/", "/login", "/help", "/admin"]);
+const benignNavigationAbortPaths = new Set([
+  "/",
+  "/login",
+  "/help",
+  "/admin",
+  "/admin/extraction-reconciliation",
+  "/api/announcements/inbox",
+]);
 const viewport = { width: 1440, height: 900 };
 const screenshotTabs = new Set(["users", "workspace-models", "white-label", "super-admin"]);
 const screenshotViews = new Set(["overview", "evidence"]);

@@ -23,6 +23,8 @@ const runId = new Date().toISOString().replace(/[:.]/gu, "-");
 const evidenceDir = path.resolve(".codex-evidence", `platform-logo-live-${runId}`);
 const allowedTelemetryPaths = new Set([
   "/api/announcements/events",
+  "/api/client-error-report",
+  "/api/diagnostic-logs",
   "/api/operation-events",
   "/api/product-usage/events",
 ]);
@@ -35,8 +37,10 @@ function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
-async function pixelSha256(bytes) {
-  const { data, info } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+async function pixelSha256(bytes, normalizeWidth = null) {
+  const pipeline = sharp(bytes).rotate();
+  if (normalizeWidth) pipeline.resize({ width: normalizeWidth, height: normalizeWidth, fit: "fill" });
+  const { data, info } = await pipeline.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   return {
     width: info.width,
     height: info.height,
@@ -119,8 +123,8 @@ async function inspectLogo(page, id, imageLocator, containerLocator, expectedPix
       coverageY: parentRect.height > 0 ? imageRect.height / parentRect.height : 0,
     };
   }, null);
-  assert.equal(metrics.naturalWidth, 1254, `${id}:NATURAL_WIDTH`);
-  assert.equal(metrics.naturalHeight, 1254, `${id}:NATURAL_HEIGHT`);
+  assert.ok(metrics.naturalWidth >= 192 && metrics.naturalWidth <= 1254, `${id}:NATURAL_WIDTH`);
+  assert.equal(metrics.naturalHeight, metrics.naturalWidth, `${id}:NATURAL_ASPECT`);
   assert.equal(metrics.objectFit, "cover", `${id}:OBJECT_FIT`);
   assert.deepEqual(metrics.imagePadding, ["0px", "0px", "0px", "0px"], `${id}:IMAGE_PADDING`);
   assert.ok(metrics.coverageX >= 0.94, `${id}:HORIZONTAL_WHITESPACE:${metrics.coverageX}`);
@@ -129,7 +133,7 @@ async function inspectLogo(page, id, imageLocator, containerLocator, expectedPix
   const assetUrl = new URL(metrics.currentSrc, origin);
   const bytes = await readResponseBytes(assetUrl.href, { Authorization: `Bearer ${token}` });
   const assetSha256 = sha256(bytes);
-  const pixels = await pixelSha256(bytes);
+  const pixels = await pixelSha256(bytes, 256);
   assert.deepEqual(pixels, expectedPixels, `${id}:RENDERED_ASSET_PIXELS`);
   const screenshotPath = path.join(evidenceDir, `${id}.png`);
   await container.screenshot({ path: screenshotPath });
@@ -177,7 +181,10 @@ export async function main() {
     assert.equal(digest, EXPECTED_SHA256, `SOURCE_ASSET_HASH:${assetPath}`);
     report.sourceAssets.push({ path: assetPath, bytes: bytes.length, sha256: digest });
   }
-  const expectedPixels = await pixelSha256(await fs.readFile(path.resolve("src/app/icon.png")));
+  const expectedPixels = await pixelSha256(await fs.readFile(path.resolve("src/app/icon.png")), 256);
+  const displayFallback = await fs.readFile(path.resolve("public/brand/platform-logo-display-256.webp"));
+  assert.ok(displayFallback.byteLength < 100_000, "DISPLAY_FALLBACK_TOO_LARGE");
+  assert.deepEqual(await pixelSha256(displayFallback, 256), expectedPixels, "DISPLAY_FALLBACK_PIXELS");
   const servedIcon = await readResponseBytes(`${origin}/icon.png`);
   assert.equal(sha256(servedIcon), EXPECTED_SHA256, "SERVED_ICON_HASH");
 
@@ -222,7 +229,7 @@ export async function main() {
 
     const loginResponse = await publicPage.goto(`${origin}/login`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     assert.equal(loginResponse?.status(), 200, "LOGIN_HTTP");
-    const loginImage = publicPage.locator('img[src*="/icon.png"], img[src*="/api/branding/assets/"]').first();
+    const loginImage = publicPage.locator('img[src*="/platform-logo-display-256.webp"], img[src*="/icon.png"], img[src*="/api/branding/assets/"]').first();
     report.surfaces.push(await inspectLogo(publicPage, "login-logo", loginImage, loginImage.locator(".."), expectedPixels, expectedPublishedLogoPath));
     await publicContext.close();
 
@@ -254,7 +261,7 @@ export async function main() {
 
     const adminResponse = await page.goto(`${origin}/admin?tab=general`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     assert.equal(adminResponse?.status(), 200, "ADMIN_GENERAL_HTTP");
-    const adminLogo = page.locator('.admin-light-shell > header img[src*="/icon.png"], .admin-light-shell > header img[src*="/api/branding/assets/"]').first();
+    const adminLogo = page.locator('.admin-light-shell > header img[src*="/platform-logo-display-256.webp"], .admin-light-shell > header img[src*="/icon.png"], .admin-light-shell > header img[src*="/api/branding/assets/"]').first();
     report.surfaces.push(await inspectLogo(page, "admin-header-logo", adminLogo, adminLogo.locator(".."), expectedPixels, expectedPublishedLogoPath));
     const brandPanel = page.getByTestId("platform-brand-settings");
     await brandPanel.waitFor({ state: "visible", timeout: 45_000 });

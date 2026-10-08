@@ -73,6 +73,12 @@ function relationName(value: unknown): string {
   return "";
 }
 
+function relationObject(value: unknown): Record<string, unknown> {
+  if (Array.isArray(value)) return (value[0] as Record<string, unknown> | undefined) || {};
+  if (value && typeof value === "object") return value as Record<string, unknown>;
+  return {};
+}
+
 function publicModelBaseName(value: string, fallback: string): string {
   const cleaned = value
     .replace(/(?:\s*[·|/\-]?\s*)(?:渠道|通道|线路|channel)\s*[A-Za-z0-9一二三四五六七八九十_-]*/gi, "")
@@ -151,7 +157,7 @@ async function loadVideoRows(db: MediaDb, userId: string) {
   while (true) {
     const result = await db
       .from("video_tasks")
-      .select("id, client_request_id, model_id, task_label, aspect_ratio, duration_seconds, status, video_url, error_message, submission_error_code, billing_state, provider_result_url, provider_dispatch_receipt, provider_submission_receipt, price_charged, created_at, completed_at, storage_url, batch_id, batch_topic, card_index, video_models(name)")
+      .select("id, client_request_id, model_id, task_label, aspect_ratio, duration_seconds, status, video_url, error_message, submission_error_code, billing_state, provider_result_url, provider_dispatch_receipt, provider_submission_receipt, price_charged, created_at, completed_at, storage_url, batch_id, batch_topic, card_index, video_models(name), video_history_archive_jobs(state,attempt_count,last_error_code,source_expired_at)")
       .eq("user_id", userId)
       .is("history_hidden_at", null)
       .order("created_at", { ascending: false })
@@ -311,6 +317,38 @@ async function withMediaHistorySnapshotPermit<T>(build: () => Promise<T>): Promi
   } finally {
     release();
   }
+}
+
+async function loadShortDramaImageStorageKeys(
+  db: MediaDb,
+  userId: string,
+  ownedImageStorageKeys: readonly string[],
+): Promise<{ keys: Set<string>; failed: boolean }> {
+  const wanted = new Set(ownedImageStorageKeys);
+  const keys = new Set<string>();
+  if (wanted.size === 0) return { keys, failed: false };
+
+  const chunkSize = 200;
+  let cursor = 0;
+  while (true) {
+    const result = await db
+      .from("short_drama_assets")
+      .select("id, object_key")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(cursor, cursor + chunkSize - 1);
+    if (result.error) return { keys: new Set(), failed: true };
+    const batch = result.data || [];
+    for (const row of batch) {
+      const storageKey = String(row.object_key || "");
+      if (wanted.has(storageKey)) keys.add(storageKey);
+    }
+    if (batch.length < chunkSize || keys.size === wanted.size) break;
+    cursor += batch.length;
+  }
+  return { keys, failed: false };
 }
 
 function evictSettledMediaHistorySnapshots(): void {
@@ -573,21 +611,9 @@ async function buildMediaHistoryAccountSnapshot(
   const ownedImageStorageKeys = Array.from(new Set([...ownedImageAssetMap.values()]
     .map(asset => asset.storageKey)
     .filter(Boolean)));
-  const shortDramaImageStorageKeys = new Set<string>();
-  let shortDramaImageLookupFailed = false;
-  for (let offset = 0; offset < ownedImageStorageKeys.length; offset += 100) {
-    const result = await db
-      .from("short_drama_assets")
-      .select("object_key")
-      .eq("user_id", userId)
-      .in("object_key", ownedImageStorageKeys.slice(offset, offset + 100))
-      .is("deleted_at", null);
-    if (result.error) {
-      shortDramaImageLookupFailed = true;
-      break;
-    }
-    for (const row of result.data || []) shortDramaImageStorageKeys.add(String(row.object_key || ""));
-  }
+  const shortDramaImageLookup = await loadShortDramaImageStorageKeys(db, userId, ownedImageStorageKeys);
+  const shortDramaImageStorageKeys = shortDramaImageLookup.keys;
+  const shortDramaImageLookupFailed = shortDramaImageLookup.failed;
 
   const shortDramaBatchIds = Array.from(new Set(videoPage.rows
     .map(row => mediaHistoryProjectUuid(row.batch_id))
@@ -627,6 +653,16 @@ async function buildMediaHistoryAccountSnapshot(
     const humanTitle = row.task_label === "digital-human:video" ? "视频改口型" : "照片说话";
     const cardIndex = Number(row.card_index || 0);
     const configuredModelName = relationName(row.video_models);
+    const archiveJob = relationObject(row.video_history_archive_jobs);
+    const archiveState = String(archiveJob.state || "");
+    const hasPersistentArchive = Boolean(String(row.storage_url || "").trim());
+    const archiveDeliveryPending = !hasPersistentArchive
+      && ["leased", "retry"].includes(archiveState)
+      && Number(archiveJob.attempt_count || 0) > 0;
+    const archiveDeliveryFailed = !hasPersistentArchive && archiveState === "dead_letter";
+    const sourceExpiredAt = archiveState === "source_expired"
+      ? String(archiveJob.source_expired_at || "")
+      : "";
     const modelName = publicModelBaseName(configuredModelName, "视频模型");
     const variant = publicVariantLabel({ name: configuredModelName }, 0);
     const rawError = String(row.error_message || "");
@@ -638,10 +674,19 @@ async function buildMediaHistoryAccountSnapshot(
       || String(row.provider_result_url || "").trim()
       || String(row.video_url || "").trim(),
     );
-    const deliveryReady = rawStatus === "completed" && hasAuthenticatedDeliverySource;
+    const deliveryReady = rawStatus === "completed"
+      && hasAuthenticatedDeliverySource
+      && !archiveDeliveryPending
+      && !archiveDeliveryFailed;
     const previewPath = deliveryReady ? `/api/video/storage/${encodeURIComponent(recordId)}` : "";
     const thumbnailPath = deliveryReady ? `/api/video/thumbnail/${encodeURIComponent(recordId)}` : "";
-    const status = rawStatus === "completed" && !deliveryReady ? "failed" : rawStatus;
+    const status = archiveDeliveryPending
+      ? "processing"
+      : archiveDeliveryFailed
+        ? "failed"
+        : rawStatus === "completed" && !deliveryReady
+          ? "failed"
+          : rawStatus;
     return retainedMediaHistoryItem({
       id: `video:${recordId}`,
       kind: "video",
@@ -665,12 +710,16 @@ async function buildMediaHistoryAccountSnapshot(
       thumbnailPath,
       downloadPath: previewPath,
       preview: previewContract("video", previewPath, thumbnailPath),
-      errorMessage: rawStatus === "completed" && !hasAuthenticatedDeliverySource
-        ? "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。"
-        : rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : "",
+      errorMessage: archiveDeliveryPending
+        ? "视频已生成，正在完成历史归档；归档完成后即可稳定播放和下载。"
+        : archiveDeliveryFailed
+          ? "视频已生成，但原始取件地址已不可用，历史归档未能完成。"
+          : rawStatus === "completed" && !hasAuthenticatedDeliverySource
+            ? "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。"
+            : rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : "",
       aspectRatio: String(row.aspect_ratio || ""),
       durationSeconds: Number.isFinite(Number(row.duration_seconds)) ? Number(row.duration_seconds) : null,
-    }, upstreamMediaExpiry(row.provider_submission_receipt) || upstreamMediaExpiry(row.provider_dispatch_receipt));
+    }, sourceExpiredAt || upstreamMediaExpiry(row.provider_submission_receipt) || upstreamMediaExpiry(row.provider_dispatch_receipt));
   });
   const videos = retainedVideos.filter(entry => !entry.expired).map(entry => entry.item);
 

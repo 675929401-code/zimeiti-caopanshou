@@ -80,7 +80,9 @@ assert.match(forwardMigration, /COMMIT;\s*$/u);
 
 const unifiedBillingMigrationPath = "supabase/migrations/20260922011000_autodl_h3_unified_role_billing.sql";
 const profitAlignmentMigrationPath = "supabase/migrations/20260922012000_autodl_h3_profit_billing_alignment.sql";
+const runtimeContractMigrationPath = "supabase/migrations/20261009033000_runtime_function_contract_reconcile.sql";
 const profitAlignmentMigration = read(profitAlignmentMigrationPath);
+const runtimeContractMigration = read(runtimeContractMigrationPath);
 assert.match(profitAlignmentMigration, /^-- Preserve unified H3 billing/u);
 assert.match(profitAlignmentMigration, /profit, is_admin, billing_exempt, record_type/u);
 assert.match(profitAlignmentMigration, /round\(\(p_price_yuan - p_cost_price\)::numeric, 12\)/u);
@@ -88,6 +90,13 @@ assert.match(profitAlignmentMigration, /COALESCE\(v_user\.role, 'student'\) = 'a
 assert.match(profitAlignmentMigration, /REVOKE ALL ON FUNCTION autodl_h3_finalize_video[\s\S]*FROM PUBLIC, anon, authenticated;/u);
 assert.match(profitAlignmentMigration, /GRANT EXECUTE ON FUNCTION autodl_h3_finalize_video[\s\S]*TO service_role;/u);
 assert.match(profitAlignmentMigration, /COMMIT;\s*$/u);
+assert.match(runtimeContractMigration, /^-- Reconcile runtime RPC behavior/u);
+assert.match(runtimeContractMigration, /IF p_price_yuan > 0 THEN/u);
+assert.match(runtimeContractMigration, /profit, is_admin, billing_exempt, record_type/u);
+assert.match(runtimeContractMigration, /COALESCE\(v_user\.role, 'student'\) = 'admin', false, 'video'/u);
+assert.match(runtimeContractMigration, /REVOKE ALL ON FUNCTION public\.autodl_h3_finalize_video[\s\S]*FROM PUBLIC, anon, authenticated;/u);
+assert.match(runtimeContractMigration, /GRANT EXECUTE ON FUNCTION public\.autodl_h3_finalize_video[\s\S]*TO service_role;/u);
+assert.match(runtimeContractMigration, /COMMIT;\s*$/u);
 
 const functionStart = "CREATE OR REPLACE FUNCTION autodl_h3_finalize_video(";
 const functionEnd = "$function$;";
@@ -116,6 +125,14 @@ assert.equal(
   expectedForwardFunction,
   "the forward RPC must be byte-equivalent to the published function except for profit persistence",
 );
+assert.equal(
+  extractH3Function(runtimeContractMigration.replace(
+    "CREATE OR REPLACE FUNCTION public.autodl_h3_finalize_video(",
+    functionStart,
+  )),
+  extractH3Function(profitAlignmentMigration),
+  "the final runtime reconcile must preserve the latest unified paid-billing function",
+);
 
 const sqlRoots = ["supabase/migrations", "scripts/migrations", "deploy"];
 const directSqlInsertPaths = sqlRoots
@@ -128,6 +145,7 @@ assert.deepEqual(directSqlInsertPaths, [
   forwardMigrationPath,
   unifiedBillingMigrationPath,
   profitAlignmentMigrationPath,
+  runtimeContractMigrationPath,
 ]);
 
 const applicationSourcePaths = walk("src", [".ts", ".tsx", ".js", ".mjs", ".cjs"]);
@@ -160,6 +178,7 @@ console.log(JSON.stringify({
   sqlDirectInsertPaths: directSqlInsertPaths,
   applicationDirectInsertPaths: directApplicationInsertPaths,
   h3ForwardMigration: forwardMigrationPath,
+  h3RuntimeContractMigration: runtimeContractMigrationPath,
   digitalHumanRevenuePath: "digital-video-queue-worker -> video-terminal-finalizer -> recordRevenue",
   voiceBillingPath: "voice_generation_requests + voice_billing_records",
   networkRequests: 0,

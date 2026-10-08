@@ -38,6 +38,7 @@ const settingsEntry = createEntry();
 const appearanceEntry = createEntry();
 const authMeEntry = createEntry();
 const layoutEntry = createEntry();
+const agentCatalogEntry = createEntry();
 
 function clearEntry(entry: CachedResponseEntry): void {
   entry.generation += 1;
@@ -183,6 +184,23 @@ export function getClientBootstrapLayout(
   );
 }
 
+export function getClientBootstrapAgentCatalog(
+  token: string | null,
+  options: ClientBootstrapRequestOptions = {},
+): Promise<Response> {
+  const scopeKey = token || "guest";
+  return readResponse(
+    agentCatalogEntry,
+    scopeKey,
+    () => fetch("/api/bots?shape=agents", {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }),
+    options,
+  );
+}
+
 export function invalidateClientBootstrapSettings(): void {
   clearEntry(settingsEntry);
 }
@@ -199,10 +217,15 @@ export function invalidateClientBootstrapLayout(): void {
   clearEntry(layoutEntry);
 }
 
+export function invalidateClientBootstrapAgentCatalog(): void {
+  clearEntry(agentCatalogEntry);
+}
+
 /** Clears all page-local bootstrap state. Also used by the offline contract verifier. */
 export function invalidateClientBootstrapCache(): void {
   invalidateClientBootstrapSettings();
   invalidateClientBootstrapAppearance();
   invalidateClientBootstrapAuthMe();
   invalidateClientBootstrapLayout();
+  invalidateClientBootstrapAgentCatalog();
 }

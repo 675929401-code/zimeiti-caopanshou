@@ -31,6 +31,7 @@ const CATEGORY_KEYS = [
 ];
 const KIND_KEYS = ["all", "image", "video"];
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const TELEMETRY_PATHS = new Set(["/api/product-usage/events", "/api/operation-events", "/api/client-error-report"]);
 const MEDIA_HISTORY_PATH = "/api/media-history";
 const TICKET_PATHS = new Set([
   "/api/video/access-ticket",
@@ -255,6 +256,11 @@ async function enumerateHistory(origin, token, filter, expectedFacets, pageSize 
 async function verifyApiContract(origin, token) {
   const baselineParams = new URLSearchParams({ limit: "1", offset: "0", category: "all", kind: "all", q: "", includeTotal: "true" });
   const { payload: baselineHead } = await apiJson(origin, token, `${MEDIA_HISTORY_PATH}?${baselineParams}`);
+  assert.deepEqual(
+    Array.isArray(baselineHead.sourceFailures) ? baselineHead.sourceFailures : [],
+    [],
+    "MEDIA_HISTORY_SOURCE_FAILURES",
+  );
   const baselineTotal = finiteCount(baselineHead.totalCount, "BASELINE_TOTAL");
   const facets = assertFacetShape(baselineHead.facets, baselineTotal, "BASELINE");
   const baseline = await enumerateHistory(origin, token, { category: "all", kind: "all", q: "" }, facets, 17);
@@ -544,7 +550,11 @@ async function verifyProtectedMedia(origin, token, samples) {
       );
       const rangeResult = await fetchControlledVideoRange(target, origin, token);
       const rangeResponse = rangeResult.response;
-      assert.equal(rangeResponse.status, 206, `VIDEO_RANGE_HTTP_${rangeResponse.status}`);
+      assert.equal(
+        rangeResponse.status,
+        206,
+        `VIDEO_RANGE_HTTP_${rangeResponse.status}:${samples.completedVideo.id}:${samples.completedVideo.retentionSource || "unknown"}`,
+      );
       const contentType = String(rangeResponse.headers.get("content-type") || "");
       const contentRange = String(rangeResponse.headers.get("content-range") || "");
       assert.match(contentType, /^video\//u, "VIDEO_RANGE_CONTENT_TYPE_INVALID");
@@ -640,6 +650,10 @@ async function createReadOnlyContext(browser, origin, token, identity, theme, vi
     if (url.origin !== origin) {
       report.externalRequestsBlocked.push({ method, origin: url.origin, path: url.pathname });
       return route.abort("blockedbyclient");
+    }
+    if (method === "POST" && TELEMETRY_PATHS.has(url.pathname)) {
+      report.telemetryRequestsIntercepted.push({ method, path: url.pathname });
+      return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ accepted: true }) });
     }
     if (!SAFE_METHODS.has(method)) {
       report.writeRequestsBlocked.push({ method, path: url.pathname });
@@ -927,6 +941,7 @@ async function verifyBrowser(origin, token, identity, api) {
     videoByteRequests: [],
     videoFetchBlobViolations: [],
     tokenLeaks: [],
+    telemetryRequestsIntercepted: [],
     writeRequestsBlocked: [],
     externalRequestsBlocked: [],
     pageErrors: [],

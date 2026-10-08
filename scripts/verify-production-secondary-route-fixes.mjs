@@ -6,6 +6,7 @@ import path from "node:path";
 const root = process.cwd();
 const originArgument = process.argv.find((value) => value.startsWith("--origin="));
 const origin = (originArgument?.slice("--origin=".length) || "").replace(/\/$/u, "");
+const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
 const evidenceDir = path.join(root, ".codex-evidence", "production-secondary-route-fixes-20260904");
 const checks = [];
 
@@ -79,6 +80,8 @@ check("all retired voice aliases resolve directly to the canonical imitation rou
 
 const live = [];
 if (origin) {
+  assert.ok(token, "Authenticated local route verification requires scripts/with-local-admin-session.mjs");
+  const headers = { Authorization: `Bearer ${token}` };
   const routes = [
     ["/tools/text/formal-script", "/tools/text/general-script"],
     ["/youcai/tools/text/formal-script", "/youcai/tools/text/general-script"],
@@ -90,20 +93,21 @@ if (origin) {
     ["/youcai/voice-studio/nest", "/voice-studio/imitate"],
   ];
   for (const [route, expected] of routes) {
-    const response = await fetch(`${origin}${route}`, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
+    const response = await fetch(`${origin}${route}`, { headers, redirect: "manual", signal: AbortSignal.timeout(30_000) });
     const location = response.headers.get("location");
     const body = location ? "" : await response.text();
     const metaTarget = body.match(/http-equiv="refresh"\s+content="\d+;url=([^"]+)"/u)?.[1] || "";
-    const redirectTarget = location || metaTarget;
+    const flightTarget = body.match(/NEXT_REDIRECT;replace;([^;]+);30(?:1|2|3|7|8);/u)?.[1] || "";
+    const redirectTarget = location || metaTarget || flightTarget;
     const normalized = redirectTarget ? new URL(redirectTarget, origin).pathname : "";
     check(`live redirect ${route}`,
-      ((response.status >= 300 && response.status < 400) || (response.status === 200 && Boolean(metaTarget)))
+      ((response.status >= 300 && response.status < 400) || (response.status === 200 && Boolean(metaTarget || flightTarget)))
         && normalized === expected,
-      { status: response.status, location, metaTarget: metaTarget || null, expected });
-    live.push({ route, status: response.status, location, metaTarget: metaTarget || null, expected });
+      { status: response.status, location, metaTarget: metaTarget || null, flightTarget: flightTarget || null, expected });
+    live.push({ route, status: response.status, location, metaTarget: metaTarget || null, flightTarget: flightTarget || null, expected });
   }
   for (const canonical of ["/tools/text/general-script", "/youcai/tools/text/general-script", "/voice-studio/imitate"]) {
-    const response = await fetch(`${origin}${canonical}`, { redirect: "follow", signal: AbortSignal.timeout(30_000) });
+    const response = await fetch(`${origin}${canonical}`, { headers, redirect: "follow", signal: AbortSignal.timeout(30_000) });
     check(`live canonical ${canonical}`, response.status === 200, { status: response.status, finalUrl: response.url });
     live.push({ route: canonical, status: response.status, finalUrl: response.url });
   }
