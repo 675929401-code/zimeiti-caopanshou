@@ -69,7 +69,7 @@ function getVoicePlatformDb(): Database.Database {
   if (_db) return _db;
   _db = new Database(resolveVoiceSqlitePath(), {
     readonly: true,
-    fileMustExist: true,
+    fileMustExist: process.env.NODE_ENV === 'production',
   });
   _db.pragma('busy_timeout = 5000');
   return _db;
