@@ -264,15 +264,32 @@ function actualEnv(pid) {
 }
 function configuration(entry, env) {
   const e = entry.pm2_env;
-  const config = {...e};
-  for (const key of Object.keys(config)) {
-    if (/^(pm_|env_|axm_|vizion|monit)/.test(key) || ['status', 'restart_time', 'unstable_restarts', 'created_at', 'unique_id', 'exit_code', 'version', 'node_version', 'prev_restart_delay', 'increment_var', 'port'].includes(key)) delete config[key];
-  }
-  return {...config, name: entry.name,
+  // pm2_env also flattens every process environment variable and internal
+  // runtime field. Replaying that object as an app declaration lets values
+  // such as `time="..."` or `autorestart="true"` collide with PM2's typed
+  // options. Build a small, typed declaration from an explicit allowlist.
+  const config = {name: entry.name,
     cwd: fs.realpathSync(`/proc/${entry.pid}/cwd`), script: fs.realpathSync(e.pm_exec_path),
     interpreter: fs.realpathSync(`/proc/${entry.pid}/exe`), out_file: e.pm_out_log_path, error_file: e.pm_err_log_path,
     exec_mode: 'fork', instances: 1, force: true,
+    autorestart: typeof e.autorestart === 'boolean' ? e.autorestart : String(e.autorestart) !== 'false',
+    autostart: typeof e.autostart === 'boolean' ? e.autostart : String(e.autostart) !== 'false',
+    treekill: typeof e.treekill === 'boolean' ? e.treekill : String(e.treekill) !== 'false',
+    windowsHide: typeof e.windowsHide === 'boolean' ? e.windowsHide : String(e.windowsHide) === 'true',
     instance_var: `ACTIVATION_PM2_INSTANCE_${entry.pm_id}`, env};
+  for (const key of ['merge_logs', 'watch', 'wait_ready']) {
+    if (typeof e[key] === 'boolean') config[key] = e[key];
+  }
+  for (const key of ['kill_retry_time', 'restart_delay', 'kill_timeout', 'listen_timeout', 'max_restarts']) {
+    if (typeof e[key] === 'number' && Number.isFinite(e[key])) config[key] = e[key];
+  }
+  for (const key of ['max_memory_restart', 'min_uptime', 'namespace', 'log_date_format']) {
+    if (typeof e[key] === 'string' || typeof e[key] === 'number') config[key] = e[key];
+  }
+  if (Array.isArray(e.node_args)) config.node_args = [...e.node_args];
+  if (Array.isArray(e.args)) config.args = [...e.args];
+  else if (typeof e.args === 'string') config.args = e.args;
+  return config;
 }
 function assertState(live, saved, newRelease) {
   if (live.length !== saved.length) throw new Error('managed process count mismatch');

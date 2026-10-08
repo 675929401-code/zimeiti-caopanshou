@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "54ae407e5e91424a20c54d7a15418887f9769411a510bf5d2563582c38648921",
-  "sourceFingerprint": "e7331713222a52f18c4bba909d53e98ed90390b3012b564bec6a6cdbef71708e",
+  "sourceFingerprint": "38f7675e610a18d63441a2aa9dac7cd4a8f4c833e6a1d1152ec339c14b40878a",
   "assetManifestSha256": "41d3518d656fe3adec67f017a6b200ecec4c07aa5d11b27a29632b7bdb36476f",
   "assetDigest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
   "fileCount": 3896,
-  "totalBytes": 56492569,
+  "totalBytes": 56494398,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1209,7 +1209,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "521baee85382f71adb50c6a5d3eae49340ccb95ab1575197c22c8313683fd7fb"
+      "sha256": "f94e1a5eb80d74929f4b224fcb77a859eb7e2b923ae6bdcb50844fb65aaf3ec4"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2168,8 +2168,8 @@
     },
     {
       "path": "scripts/deploy-activate.sh",
-      "bytes": 24891,
-      "sha256": "7c9558307708a35b9abf8c6b2aa5cbf058738c1da05950faa184804ad410f3e1"
+      "bytes": 25978,
+      "sha256": "e61a540b59bea0ce717c73407b9e158575d04bb74e6678894cffe680120b4d6e"
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
@@ -5703,8 +5703,8 @@
     },
     {
       "path": "scripts/verify-deploy-standard.mjs",
-      "bytes": 11302,
-      "sha256": "e19500087ef3d7700be274a69910a7f4ed25efc90d621efec9dd27b0c7285ffb"
+      "bytes": 12044,
+      "sha256": "79d0a5db39eb76012a0f36e5ee510185f7342e42894b449ac53e4b9a7af3e1c2"
     },
     {
       "path": "scripts/verify-deploy-startup-lifecycle.mjs",

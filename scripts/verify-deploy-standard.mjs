@@ -176,6 +176,22 @@ addCheck(
   "部署、发布、导航和 LLM 流式验收入口存在，可执行闭环检查。",
 );
 
+const deployActivate = exists("scripts/deploy-activate.sh") ? readText("scripts/deploy-activate.sh") : "";
+addCheck(
+  "pm2-release-declaration-sanitized",
+  textIncludesAll(deployActivate, [
+    "Build a small, typed declaration from an explicit allowlist.",
+    "typeof e.autorestart === 'boolean'",
+    "typeof e.autostart === 'boolean'",
+    "typeof e.treekill === 'boolean'",
+    "typeof e.windowsHide === 'boolean'",
+    "if (Array.isArray(e.node_args)) config.node_args = [...e.node_args]",
+  ])
+    && !deployActivate.includes("const config = {...e}")
+    && !deployActivate.includes("return {...config"),
+  "PM2 重建只接收显式白名单和强类型选项，禁止把 pm2_env 或进程环境整体回放为应用声明。",
+);
+
 const runtimeEnv = exists("src/lib/server-runtime-env.ts") ? readText("src/lib/server-runtime-env.ts") : "";
 addCheck(
   "protected-runtime-env-loader",
