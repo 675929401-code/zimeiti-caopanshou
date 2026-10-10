@@ -349,7 +349,18 @@ function verifySharedForwardRootAdversarialFixtures() {
       legacyRollbackRelocations: [],
       gitIndexMode: "required",
     });
+    runFixtureGit(receiptRepository, ["add", "--all"]);
+    runFixtureGit(receiptRepository, ["commit", "--quiet", "-m", "commit receipt relocation"]);
+    const committedReceiptReport = inspectForwardMigrationRoot({
+      projectRoot: receiptRepository,
+      migrationRoot: path.join(receiptRepository, "supabase", "migrations"),
+      rollbackRoot: path.join(receiptRepository, "supabase", "rollbacks"),
+      legacyRollbackRelocations: [exactReceipt],
+      gitIndexMode: "required",
+    });
     fs.appendFileSync(legacyTarget, "-- tampered\n");
+    runFixtureGit(receiptRepository, ["add", "--all"]);
+    runFixtureGit(receiptRepository, ["commit", "--quiet", "-m", "tamper committed receipt"]);
     const tamperedReceiptReport = inspectForwardMigrationRoot({
       projectRoot: receiptRepository,
       migrationRoot: path.join(receiptRepository, "supabase", "migrations"),
@@ -391,6 +402,8 @@ function verifySharedForwardRootAdversarialFixtures() {
         && receiptReport.gitIndex.trackedForwardPaths.length === 1
         && receiptReport.gitIndex.untrackedNewForwardPaths.length === 1
         && receiptReport.gitIndex.uncoveredForwardPaths.length === 0
+        && committedReceiptReport.valid
+        && committedReceiptReport.gitIndex.legacyTombstonePaths.length === 1
         && !receiptMissingPolicyReport.valid
         && receiptMissingPolicyReport.gitIndex.legacyTombstonePaths.length === 0
         && !tamperedReceiptReport.valid
@@ -853,7 +866,7 @@ add(
     && adversarialForwardRootFixtures.gitThreeLayerDriftRejected
     && adversarialForwardRootFixtures.exactReceiptAccepted,
   adversarialForwardRootFixtures.gitThreeLayerDriftRejected && adversarialForwardRootFixtures.exactReceiptAccepted
-    ? "real Git fixtures reject staged modify/delete/rename, unknown nested delete, unborn HEAD and receipt-free relocation while accepting an exact staged legacy move"
+    ? "real Git fixtures reject staged modify/delete/rename, unknown nested delete, unborn HEAD and receipt-free relocation while accepting exact staged and committed legacy moves"
     : JSON.stringify(adversarialForwardRootFixtures),
 );
 

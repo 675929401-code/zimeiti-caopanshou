@@ -284,15 +284,27 @@ function verifyLegacyTombstone(receipt, context) {
   const expectedSourceIndexPath = gitPathFromProjectRelative(context.repositoryRoot, context.projectRoot, receipt.from);
   const expectedTargetIndexPath = gitPathFromProjectRelative(context.repositoryRoot, context.projectRoot, receipt.to);
   const headSource = context.headSourceEntry;
+  const headTarget = context.headTargetEntry;
   const indexTarget = context.indexTargetEntries.length === 1 ? context.indexTargetEntries[0] : undefined;
-  if (!headSource || headSource.path !== expectedSourceIndexPath || headSource.mode !== "100644" || headSource.type !== "blob") {
-    errors.push(`${receipt.from}:LEGACY_HEAD_SOURCE_MISSING_OR_INVALID`);
+  const stagedRelocation = Boolean(
+    headSource
+      && headSource.path === expectedSourceIndexPath
+      && headSource.mode === "100644"
+      && headSource.type === "blob"
+      && !headTarget,
+  );
+  const committedRelocation = Boolean(
+    !headSource
+      && headTarget
+      && headTarget.path === expectedTargetIndexPath
+      && headTarget.mode === "100644"
+      && headTarget.type === "blob",
+  );
+  if (!stagedRelocation && !committedRelocation) {
+    errors.push(`${receipt.from}:LEGACY_HEAD_RELOCATION_STATE_INVALID`);
   }
   if (context.indexSourceEntries.length !== 0) {
     errors.push(`${receipt.from}:LEGACY_SOURCE_NOT_STAGED_DELETED`);
-  }
-  if (context.headTargetEntry) {
-    errors.push(`${receipt.from}:LEGACY_TARGET_ALREADY_IN_HEAD`);
   }
   if (!indexTarget
     || indexTarget.path !== expectedTargetIndexPath
@@ -304,8 +316,9 @@ function verifyLegacyTombstone(receipt, context) {
   const indexBlob = indexTarget
     ? runGitBytes(context.repositoryRoot, ["cat-file", "blob", indexTarget.objectId])
     : { status: 1, stdout: null };
-  const headBlob = headSource
-    ? runGitBytes(context.repositoryRoot, ["cat-file", "blob", headSource.objectId])
+  const authoritativeHeadEntry = stagedRelocation ? headSource : committedRelocation ? headTarget : undefined;
+  const headBlob = authoritativeHeadEntry
+    ? runGitBytes(context.repositoryRoot, ["cat-file", "blob", authoritativeHeadEntry.objectId])
     : { status: 1, stdout: null };
   if (indexBlob.status !== 0 || !Buffer.isBuffer(indexBlob.stdout)) {
     errors.push(`${receipt.from}:LEGACY_INDEX_BLOB_UNREADABLE`);
@@ -316,6 +329,9 @@ function verifyLegacyTombstone(receipt, context) {
     errors.push(`${receipt.from}:LEGACY_HEAD_BLOB_UNREADABLE`);
   } else if (sha256(headBlob.stdout) !== receipt.sha256) {
     errors.push(`${receipt.from}:LEGACY_HEAD_BLOB_HASH_MISMATCH`);
+  }
+  if (committedRelocation && indexTarget && indexTarget.objectId !== headTarget.objectId) {
+    errors.push(`${receipt.from}:LEGACY_HEAD_INDEX_TARGET_DRIFT`);
   }
   if (context.changedWorktreePaths.has(expectedTargetIndexPath)) {
     errors.push(`${receipt.from}:LEGACY_INDEX_TARGET_WORKTREE_DRIFT`);
