@@ -181,7 +181,7 @@ async function verifyThemeSwitching(browser) {
   const page = await context.newPage();
   attachDiagnostics(page, "theme-switching");
   await page.goto(`${origin}/`, { waitUntil: "domcontentloaded", timeout: 45_000 });
-  const trigger = page.locator(".marketplace-nav-actions [data-theme-switcher-trigger]");
+  const trigger = page.locator(".sidebar-shell [data-theme-switcher-trigger]");
   await trigger.waitFor({ state: "visible", timeout: 30_000 });
 
   await trigger.click();

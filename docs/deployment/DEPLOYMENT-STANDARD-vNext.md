@@ -6,6 +6,8 @@
 >
 > 基准日期：2026-08-28。
 
+> 2026-10-10 路径校正：当前生产唯一允许的发布根为独立挂载盘 `/data/web`，制品入口为 `/data/direct-deploy/incoming`。旧 `/srv` 示例已作废；执行时还必须满足 `DEPLOY-STORAGE-CONTRACT.md` 的设备、UUID、marker、空间和 inode 门禁。
+
 ## 1. 先给结论
 
 今天的问题不是“Git 仓库天生不可靠”，也不只是某一段页面代码。根因是旧链路把本应独立的源码、依赖、构建结果、大体积素材、运行数据和服务器进程混在一次部署里：仓库过重，服务器还要临时安装和构建，静态页面又直接加载大量原图；一旦任何一环的环境、数据或资源不一致，整个发布就会变慢、失败或上线后表现异常。
@@ -251,10 +253,10 @@ CI 制品是“构建一次、处处运行”的交付单位。每个服务独�
 
 ## 5. 标准目录布局
 
-建议服务器根目录固定为 `/srv/zimeiti-caopanshou`，初始化时人工创建根标记和权限：
+服务器根目录固定为独立数据盘上的 `/data/web`，初始化时人工创建根标记和权限：
 
 ```text
-/srv/zimeiti-caopanshou/
+/data/web/
 ├── .zimeiti-release-root
 ├── releases/
 │   ├── <release-id>/web/
@@ -290,20 +292,20 @@ CI 制品是“构建一次、处处运行”的交付单位。每个服务独�
 | --- | --- | --- |
 | `NODE_ENV` | `production` | 启用生产行为 |
 | `COZE_PROJECT_ENV` | `PROD` | 主站 readiness 的环境身份 |
-| `RELEASE_ROOT` | `/srv/zimeiti-caopanshou` | 固定发布根目录 |
+| `RELEASE_ROOT` | `/data/web` | 固定发布根目录，必须位于已验明的独立挂载盘 |
 | `RELEASE_ID` | `20260828-<sha>` | 不可变发布编号 |
 | `DEPLOY_COMMIT_SHA` | 40 位 Git SHA | 源码身份 |
-| `APP_DATA_DIR` | `/srv/.../shared/data` | JSON 数据目录 |
-| `APP_RUNTIME_DIR` | `/srv/.../shared/runtime` | 幂等/运行状态目录 |
-| `IDEMPOTENCY_DIR` | `/srv/.../shared/runtime/llm-request-idempotency` | 幂等记录 |
-| `BACKUP_DIR` | `/srv/.../shared/backups` | 本机备份暂存目录 |
-| `PUBLIC_ASSET_ROOT` | `/srv/.../shared/assets/current/public` | 当前不可变资产根；迁移到 CDN 后改为明确适配层 |
+| `APP_DATA_DIR` | `/data/web/shared/data` | JSON 数据目录 |
+| `APP_RUNTIME_DIR` | `/data/web/shared/runtime` | 幂等/运行状态目录 |
+| `IDEMPOTENCY_DIR` | `/data/web/shared/runtime/llm-request-idempotency` | 幂等记录 |
+| `BACKUP_DIR` | `/data/web/shared/backups` | 本机备份暂存目录；不等于异地灾备 |
+| `PUBLIC_ASSET_ROOT` | `/data/web/shared/assets/current/public` | 当前不可变资产根；迁移到 CDN 后改为明确适配层 |
 | `ASSET_DIGEST` | 64 位 SHA-256 | Web 所需资产身份 |
 | `ASSET_MANIFEST_SHA256` | 64 位 SHA-256 | Web 所需资产清单身份 |
-| `STORAGE_LOCAL_BASE_PATH` | `/srv/.../shared/uploads` | 本地上传兼容目录 |
-| `VOICE_SQLITE_PATH` | `/srv/.../shared/voice/voice.db` | Voice 数据库绝对路径 |
-| `VOICE_DATABASE_URL` | `file:/srv/.../shared/voice/voice.db` | Prisma 连接串 |
-| `VOICE_REFERENCE_AUDIO_DIR` | `/srv/.../shared/voice/reference-audio` | 参考音频持久目录 |
+| `STORAGE_LOCAL_BASE_PATH` | `/data/web/shared/uploads` | 本地上传兼容目录 |
+| `VOICE_SQLITE_PATH` | `/data/web/shared/voice/voice.db` | Voice 数据库绝对路径 |
+| `VOICE_DATABASE_URL` | `file:/data/web/shared/voice/voice.db` | Prisma 连接串 |
+| `VOICE_REFERENCE_AUDIO_DIR` | `/data/web/shared/voice/reference-audio` | 参考音频持久目录 |
 | `PORT` | Web `5000` / Voice `5001` | PM2 服务端口 |
 
 此外，数据库、邮件、模型、COS 等真实凭据只能保存在密钥系统中；禁止放入 Git、发布制品、构建日志、截图和聊天记录。密钥应按服务分权、定期轮换，部署身份只读制品，应用身份不能删除备份。
@@ -394,7 +396,7 @@ pnpm run release:vnext:data:verify
 pnpm run release:vnext:inspiration:verify
 
 # 干净 Git 仓不携带 data/ 时上一步返回 EXTERNAL_RUNTIME_DATA_NOT_PRESENT；候选服务器必须显式验证真实 shared 挂载
-node scripts/verify-runtime-data-vnext.mjs --data-root /srv/zimeiti-caopanshou/shared/data
+node scripts/verify-runtime-data-vnext.mjs --data-root /data/web/shared/data
 
 # 灵感素材在事实源中返回 full-local-sha256-and-decode；干净 Git 仓返回 pinned-external-manifest。
 # 后者只证明 Git 清单绑定正确，不代表服务器素材 READY、CDN 可访问或已经激活。
@@ -482,7 +484,7 @@ Git 仓库是源码、锁文件、发布脚本和审计历史的灾难恢复来�
 - 固定发布根目录；
 - 与 releaseId 精确相等的一次性执行批准。
 
-服务器的代码输入只有 CI 不可变制品，不能是 Git 工作树、开发机目录或“整个仓库压缩包”。部署身份不得通过 `git pull && pnpm build` 现场生产新版本，也不得用全仓 `cp`、`scp`、`rsync` 或解压覆盖 `/srv/zimeiti-caopanshou/shared`；`shared` 只能初始化一次并按独立数据协议维护，代码发布前后必须验证其摘要和挂载身份不变。
+服务器的代码输入只有 CI 不可变制品，不能是 Git 工作树、开发机目录或“整个仓库压缩包”。部署身份不得通过 `git pull && pnpm build` 现场生产新版本，也不得用全仓 `cp`、`scp`、`rsync` 或解压覆盖 `/data/web/shared`；`shared` 只能初始化一次并按独立数据协议维护，代码发布前后必须验证其摘要和挂载身份不变。
 
 标准顺序：
 
@@ -508,20 +510,20 @@ Git 仓库是源码、锁文件、发布脚本和审计历史的灾难恢复来�
 bash scripts/deploy-artifact-vnext.sh --plan \
   --release-mode WEB \
   --service web \
-  --artifact /srv/incoming/web-<release-id>.tar.gz \
+  --artifact /data/direct-deploy/incoming/web-<release-id>.tar.gz \
   --sha256 <64-char-artifact-sha256> \
   --release-id <release-id> \
-  --root /srv/zimeiti-caopanshou
+  --root /data/web
 
 # 明确批准值必须与 releaseId 完全相等；不要把此变量写进长期环境配置
 DEPLOY_EXECUTION_APPROVED=<release-id> \
 bash scripts/deploy-artifact-vnext.sh --execute \
   --release-mode WEB \
   --service web \
-  --artifact /srv/incoming/web-<release-id>.tar.gz \
+  --artifact /data/direct-deploy/incoming/web-<release-id>.tar.gz \
   --sha256 <64-char-artifact-sha256> \
   --release-id <release-id> \
-  --root /srv/zimeiti-caopanshou
+  --root /data/web
 ```
 
 Voice 把 mode/service 改为 `VOICE`/`voice`。资产发布先通过 `verify-public-asset-release.mjs` 做磁盘全 SHA 验证，或使用 `publish-public-assets-cos-vnext.mjs` 先生成只读计划；COS 真正执行必须另行提供短期最小权限凭据和精确确认值。不要在文档命令中保存真实凭据。

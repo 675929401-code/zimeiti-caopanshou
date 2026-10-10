@@ -849,6 +849,7 @@ async function finalizeCompletedVideo(input: {
         videoTask.id,
         input.auth.userId,
         {
+          storageScope: "short-drama",
           providerProtocol: config.protocolType,
           providerEndpoint: config.apiEndpoint,
         },

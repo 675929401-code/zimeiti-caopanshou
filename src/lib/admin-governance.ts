@@ -8,6 +8,11 @@ import {
   commandCenterPermissionKeysForView,
   normalizeCommandCenterView,
 } from "@/lib/admin-command-center-domain";
+export {
+  ADMIN_STEP_UP_DURATION_MINUTES,
+  normalizeAdminStepUpDurationMinutes,
+  type AdminStepUpDurationMinutes,
+} from "@/lib/admin-step-up-contract";
 
 export type AdminLevel = "super_admin" | "admin";
 
@@ -264,6 +269,11 @@ export function adminRequirementForRequest(
     // publish/rollback. Draft saving intentionally remains permission-only.
     requireStepUp: false,
     operation: write ? "platform_brand_write_dispatch" : "platform_brand_read",
+  };
+  if (pathname === "/api/admin/white-label") return {
+    permission: "white_label.manage",
+    requireStepUp: write,
+    operation: write ? "white_label_profile_write" : "white_label_profile_read",
   };
   if (pathname.startsWith("/api/admin/canvas-prompt-presets")) return {
     permission: write ? "prompts.edit" : "prompts.view",

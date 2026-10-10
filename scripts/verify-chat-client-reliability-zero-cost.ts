@@ -197,6 +197,10 @@ async function main() {
     "buffered paid streams must emit visible progress without exposing unsettled output");
   assert.match(appContext, /data\.type === "generation_progress"[\s\S]*?streamStatus:/u,
     "the browser must consume generation progress separately from final message text");
+  assert.match(appContext, /data\.type === "stream_delivery"[\s\S]*?已连接，模型思考中/u,
+    "a live stream must acknowledge the connected thinking phase before the first text delta");
+  assert.match(appContext, /if \(!visibleContentStarted\)[\s\S]*?streamStatus: "正在生成"/u,
+    "the first visible delta must advance the status without dispatching it for every chunk");
   assert.match(messageItem, /message\.streamStatus \|\| "正在生成"/u,
     "the chat status row must render long-running generation progress");
 

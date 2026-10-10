@@ -7,7 +7,6 @@ import { STORAGE_KEYS } from "@/lib/storage-keys";
 import { safeSetItem as safeSet } from "@/lib/safe-storage";
 import {
   getClientBootstrapAppearance,
-  invalidateClientBootstrapAppearance,
 } from "@/lib/client-bootstrap-cache";
 
 export function ThemeInit() {
@@ -38,7 +37,8 @@ export function ThemeInit() {
     };
 
     const handleThemeUpdated = () => {
-      invalidateClientBootstrapAppearance();
+      // The publisher invalidates once before broadcasting. Both global
+      // consumers then join the same fresh single-flight request.
       void syncThemeColors(true);
     };
 

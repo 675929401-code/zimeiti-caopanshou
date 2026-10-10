@@ -79,16 +79,22 @@ const account = read("src/components/account-notification-center.tsx");
 const p0 = read("src/components/security-interruption-dialog.tsx");
 const layout = read("src/app/layout.tsx");
 
-assert.match(popup, /announcementAutoDisplayDecision/u);
-assert.match(popup, /announcement\.require_ack && !isRead\(announcement\)/u);
+assert.doesNotMatch(popup, /announcementAutoDisplayDecision/u);
+assert.doesNotMatch(popup, /announcement\.require_ack && !isRead\(announcement\)/u);
+assert.match(popup, /queueToast\(preservedOnlineToast \|\| unreadForToast\)/u);
+assert.match(popup, /claimAppToast\(/u);
+assert.match(popup, /receipt\?\.success !== true/u);
 assert.match(popup, /announcement-inbox-error/u);
 assert.match(account, /account-notification-inbox-error/u);
+assert.match(account, /sessionStorage\.getItem\(DELIVERY_SESSION_KEY\)/u);
+assert.match(account, /claimAppToast\(/u);
+assert.match(account, /receipt\?\.success !== true/u);
 assert.match(p0, /claimAppDialog\(active\.owner, APP_DIALOG_PRIORITY\.security\)/u);
 assert.match(layout, /<SecurityInterruptionDialog \/>/u);
 
 console.log(JSON.stringify({
   passed: true,
-  checks: 13,
+  checks: 20,
   databaseWrites: 0,
   productionWrites: 0,
 }, null, 2));

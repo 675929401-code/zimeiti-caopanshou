@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateGlobalSystemPrefixCache } from "@/app/api/llm/llm-state";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 import { isReservedPlatformSettingKey } from "@/lib/server/platform-settings-reserved";
 import { clearCozeConfigCache } from "@/lib/coze-api";
@@ -248,6 +249,22 @@ export async function PUT(request: NextRequest) {
         { onConflict: "setting_key" },
       );
       if (error) throw error;
+    }
+    if (changedKeys.includes("global_system_prefix")) {
+      const { data: persistedGlobalPrefix, error: readbackError } = await client
+        .from("platform_settings")
+        .select("setting_value")
+        .eq("setting_key", "global_system_prefix")
+        .single();
+      if (readbackError) throw readbackError;
+      if ((persistedGlobalPrefix?.setting_value || "") !== values.global_system_prefix) {
+        throw new PlatformSettingValidationError(
+          "设置已提交但数据库读回不一致，请刷新后重试",
+          "PLATFORM_SETTINGS_READBACK_MISMATCH",
+          "global_system_prefix",
+        );
+      }
+      invalidateGlobalSystemPrefixCache();
     }
     if (changedKeys.some((key) => key.startsWith("coze_"))) clearCozeConfigCache();
     for (const item of authorizations) {

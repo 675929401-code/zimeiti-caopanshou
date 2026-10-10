@@ -535,14 +535,24 @@ function validateManagedSnapshot(source, assetManifest) {
 
 function inspectMigrationWorktree() {
   const migrationRoot = normalize(policy.database?.migrationRoot || "supabase/migrations");
-  const unavailable = (reason) => ({
+  const rollbackRoot = normalize(policy.database?.rollbackRoot || "supabase/rollbacks");
+  const requestedBase = options.get("--base") || process.env.RELEASE_BASE_SHA?.trim() || null;
+  const requestedHead = options.get("--head") || process.env.RELEASE_HEAD_SHA?.trim() || null;
+  const unavailable = (reason, fatal = false) => ({
     mode: "unavailable",
     migrationRoot,
+    rollbackRoot,
+    policySha256,
+    base: null,
     head: null,
+    range: null,
+    consumedRelocationReceipts: [],
     modifiedHistoricalMigrations: [],
     deletedHistoricalMigrations: [],
+    relocatedHistoricalRollbacks: [],
+    invalidMigrationRootEntries: [],
     newForwardMigrations: [],
-    failures: [],
+    failures: fatal || requestedBase || requestedHead ? [reason] : [],
     warning: reason,
   });
   const run = (arguments_) => spawnSync("git", arguments_, {
@@ -550,46 +560,438 @@ function inspectMigrationWorktree() {
     encoding: "utf8",
     windowsHide: true,
   });
+  const runBytes = (arguments_) => spawnSync("git", arguments_, {
+    cwd: sourceRoot,
+    encoding: null,
+    windowsHide: true,
+    maxBuffer: 32 * 1024 * 1024,
+  });
   const inside = run(["rev-parse", "--is-inside-work-tree"]);
   if (inside.error || inside.status !== 0 || inside.stdout.trim() !== "true") {
     return unavailable("Git worktree is unavailable; migration immutability will be enforced by the database manifest hash gate.");
   }
-  const head = run(["rev-parse", "HEAD"]);
-  const historical = run(["ls-tree", "-r", "--name-only", "-z", "HEAD", "--", migrationRoot]);
-  const changed = run(["diff", "--name-only", "-z", "HEAD", "--", migrationRoot]);
-  const untracked = run(["ls-files", "--others", "--exclude-standard", "-z", "--", migrationRoot]);
-  for (const [label, result] of [["HEAD", head], ["historical migration inventory", historical], ["migration diff", changed], ["untracked migration inventory", untracked]]) {
-    if (result.error || result.status !== 0) {
-      return unavailable(`Unable to inspect ${label}: ${result.error?.message || result.stderr.trim() || "git command failed"}`);
+  if (Boolean(requestedBase) !== Boolean(requestedHead)) {
+    return unavailable("migration candidate audit requires both --base and --head (or RELEASE_BASE_SHA and RELEASE_HEAD_SHA)");
+  }
+  const splitPaths = (value) => Buffer.from(value).toString("utf8").split("\0").map(normalize).filter(Boolean);
+  const gitFailure = (label, result) => `${label}: ${result.error?.message || Buffer.from(result.stderr || "").toString("utf8").trim() || "git command failed"}`;
+  const resolveCommit = (revision, label) => {
+    const result = run(["rev-parse", "--verify", `${revision}^{commit}`]);
+    if (result.error || result.status !== 0) throw new Error(gitFailure(`unable to resolve ${label}`, result));
+    return result.stdout.trim();
+  };
+  const treePaths = (commit, rootPath) => {
+    const result = runBytes(["ls-tree", "-r", "--name-only", "-z", commit, "--", rootPath]);
+    if (result.error || result.status !== 0) throw new Error(gitFailure(`unable to inspect ${commit}:${rootPath}`, result));
+    return splitPaths(result.stdout).filter((entry) => entry.endsWith(".sql"));
+  };
+  const gitObject = (revision, relativePath) => {
+    const treeEntry = runBytes(["ls-tree", "-z", revision, "--", relativePath]);
+    if (treeEntry.error || treeEntry.status !== 0) throw new Error(gitFailure(`unable to inspect Git tree entry ${revision}:${relativePath}`, treeEntry));
+    if (treeEntry.stdout.length === 0) return null;
+    const record = treeEntry.stdout.subarray(0, treeEntry.stdout.length - 1).toString("utf8");
+    const tab = record.indexOf("\t");
+    const [mode, type, oid] = record.slice(0, tab).split(" ");
+    if (tab < 0 || record.slice(tab + 1) !== relativePath || type !== "blob" || !["100644", "100755"].includes(mode)) {
+      throw new Error(`Git tree entry is not a regular file: ${revision}:${relativePath}`);
+    }
+    const bytes = runBytes(["cat-file", "blob", oid]);
+    if (bytes.error || bytes.status !== 0) throw new Error(gitFailure(`unable to read Git blob ${revision}:${relativePath}`, bytes));
+    return { oid, bytes: bytes.stdout };
+  };
+  const gitIndexObject = (relativePath) => {
+    const entry = runBytes(["ls-files", "--stage", "-z", "--", relativePath]);
+    if (entry.error || entry.status !== 0) throw new Error(gitFailure(`unable to inspect index entry ${relativePath}`, entry));
+    if (entry.stdout.length === 0) return null;
+    const record = entry.stdout.subarray(0, entry.stdout.length - 1).toString("utf8");
+    const tab = record.indexOf("\t");
+    const [mode, oid, stage] = record.slice(0, tab).split(" ");
+    if (tab < 0 || record.slice(tab + 1) !== relativePath || stage !== "0" || !["100644", "100755"].includes(mode)) {
+      throw new Error(`index entry is not a regular stage-zero file: ${relativePath}`);
+    }
+    const bytes = runBytes(["cat-file", "blob", oid]);
+    if (bytes.error || bytes.status !== 0) throw new Error(gitFailure(`unable to read index blob ${relativePath}`, bytes));
+    return { oid, bytes: bytes.stdout };
+  };
+  const sameFileIdentity = (left, right) => left.dev === right.dev
+    && left.ino === right.ino
+    && left.mode === right.mode
+    && left.nlink === right.nlink
+    && left.size === right.size
+    && left.mtimeNs === right.mtimeNs
+    && left.ctimeNs === right.ctimeNs;
+  const validatePhysicalPath = (relativePath, expectedType) => {
+    const normalized = normalize(relativePath);
+    if (!normalized || normalized === ".." || normalized.startsWith("../") || path.isAbsolute(normalized)) {
+      throw new Error(`physical path escaped sourceRoot: ${relativePath}`);
+    }
+    const sourceStats = fs.lstatSync(sourceRoot);
+    if (!sourceStats.isDirectory() || sourceStats.isSymbolicLink()) {
+      throw new Error("sourceRoot is a symlink, junction, reparse point, or non-directory");
+    }
+    const sourceReal = fs.realpathSync.native(sourceRoot);
+    let lexical = sourceRoot;
+    const segments = normalized.split("/");
+    for (const [index, segment] of segments.entries()) {
+      lexical = path.join(lexical, segment);
+      const stats = fs.lstatSync(lexical);
+      if (stats.isSymbolicLink()) {
+        throw new Error(`physical path contains a symlink, junction, or reparse point: ${normalize(path.relative(sourceRoot, lexical))}`);
+      }
+      const isFinal = index === segments.length - 1;
+      if (!isFinal && !stats.isDirectory()) {
+        throw new Error(`physical path ancestor is not a directory: ${normalize(path.relative(sourceRoot, lexical))}`);
+      }
+      if (isFinal && expectedType === "directory" && !stats.isDirectory()) {
+        throw new Error(`physical path is not a directory: ${normalized}`);
+      }
+      if (isFinal && expectedType === "file" && !stats.isFile()) {
+        throw new Error(`physical path is not a regular file: ${normalized}`);
+      }
+      const real = fs.realpathSync.native(lexical);
+      const expectedReal = path.join(sourceReal, ...segments.slice(0, index + 1));
+      if (!isInside(sourceReal, real) || path.relative(expectedReal, real) !== "") {
+        throw new Error(`physical path contains a junction, mount, or reparse redirect: ${normalize(path.relative(sourceRoot, lexical))}`);
+      }
+    }
+  };
+  const readStableRegularFile = (filePath, expectedParent) => {
+    validatePhysicalPath(normalize(path.relative(sourceRoot, filePath)), "file");
+    const beforeParent = fs.lstatSync(expectedParent, { bigint: true });
+    if (!beforeParent.isDirectory() || beforeParent.isSymbolicLink()) {
+      throw new Error("expected parent is not a regular directory");
+    }
+    const beforePath = fs.lstatSync(filePath, { bigint: true });
+    if (!beforePath.isFile() || beforePath.isSymbolicLink() || beforePath.nlink !== 1n) {
+      throw new Error("path is not a single-link regular file");
+    }
+    const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    try {
+      const beforeFd = fs.fstatSync(descriptor, { bigint: true });
+      if (!sameFileIdentity(beforePath, beforeFd)) throw new Error("path identity changed before read");
+      const chunks = [];
+      const buffer = Buffer.allocUnsafe(64 * 1024);
+      while (true) {
+        const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+        if (bytesRead === 0) break;
+        chunks.push(Buffer.from(buffer.subarray(0, bytesRead)));
+      }
+      const afterFd = fs.fstatSync(descriptor, { bigint: true });
+      const afterPath = fs.lstatSync(filePath, { bigint: true });
+      const afterParent = fs.lstatSync(expectedParent, { bigint: true });
+      if (!sameFileIdentity(beforeFd, afterFd) || !sameFileIdentity(afterFd, afterPath)) {
+        throw new Error("path identity changed during read");
+      }
+      if (!sameFileIdentity(beforeParent, afterParent)) throw new Error("parent identity changed during read");
+      const realParent = fs.realpathSync(expectedParent);
+      const realFile = fs.realpathSync(filePath);
+      if (path.dirname(realFile) !== realParent) throw new Error("path resolved outside its expected parent");
+      return Buffer.concat(chunks);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+  };
+  const walkSqlFiles = (rootRelative, traversalFailures) => {
+    const rootAbsolute = absoluteFrom(sourceRoot, rootRelative);
+    if (!fs.existsSync(rootAbsolute)) return [];
+    try {
+      validatePhysicalPath(rootRelative, "directory");
+    } catch (error) {
+      traversalFailures.push(error instanceof Error ? error.message : String(error));
+      return [];
+    }
+    const found = [];
+    const pending = [rootAbsolute];
+    while (pending.length > 0) {
+      const directory = pending.pop();
+      for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
+        const absolute = path.join(directory, item.name);
+        const relative = normalize(path.relative(sourceRoot, absolute));
+        if (item.isSymbolicLink()) {
+          traversalFailures.push(`migration filesystem contains a symbolic link: ${relative}`);
+        } else if (item.isDirectory()) {
+          try {
+            validatePhysicalPath(relative, "directory");
+            pending.push(absolute);
+          } catch (error) {
+            traversalFailures.push(error instanceof Error ? error.message : String(error));
+          }
+        } else if (item.isFile() && relative.endsWith(".sql")) {
+          try {
+            validatePhysicalPath(relative, "file");
+            found.push(relative);
+          } catch (error) {
+            traversalFailures.push(error instanceof Error ? error.message : String(error));
+          }
+        }
+      }
+    }
+    return found.sort((left, right) => left.localeCompare(right, "en"));
+  };
+  const canonicalForwardName = /^\d{14}_[a-z0-9_]+\.sql$/u;
+  const legacyRollbackName = /^\d{14}_[a-z0-9_]+\.rollback\.sql$/u;
+  const isCanonicalForwardPath = (entry) => path.posix.dirname(entry) === migrationRoot
+    && canonicalForwardName.test(path.posix.basename(entry));
+  const isSafePolicyPath = (entry) => typeof entry === "string"
+    && entry === normalize(entry)
+    && !path.posix.isAbsolute(entry)
+    && entry !== ".."
+    && !entry.startsWith("../")
+    && !entry.includes("/../")
+    && !entry.includes(":")
+    && !entry.includes("\0");
+
+  const relocationPolicyFailures = [];
+  const relocationByFrom = new Map();
+  const relocationTargets = new Set();
+  const configuredRelocations = policy.database?.legacyRollbackRelocations;
+  const relocationAuditPolicy = policy.database?.legacyRollbackRelocationAudit;
+  if (!relocationAuditPolicy
+    || relocationAuditPolicy.schemaVersion !== 1
+    || relocationAuditPolicy.requireExplicitCandidateRange !== true
+    || relocationAuditPolicy.candidateMode !== "git-tree-and-blob-only"
+    || relocationAuditPolicy.dirtyMode !== "head-index-worktree-bound"
+    || relocationAuditPolicy.receiptBinding !== "base-head-policy-sha256-old-new-git-blob") {
+    relocationPolicyFailures.push("legacy rollback relocation audit policy is missing or unsupported");
+  }
+  if (configuredRelocations !== undefined && !Array.isArray(configuredRelocations)) {
+    relocationPolicyFailures.push("legacy rollback relocation policy must be an array");
+  }
+  for (const [index, candidate] of (Array.isArray(configuredRelocations) ? configuredRelocations : []).entries()) {
+    const from = candidate && typeof candidate === "object" ? candidate.from : null;
+    const to = candidate && typeof candidate === "object" ? candidate.to : null;
+    const expectedSha256 = candidate && typeof candidate === "object" ? candidate.sha256 : null;
+    const name = typeof from === "string" ? path.posix.basename(from) : "";
+    const valid = isSafePolicyPath(from)
+      && isSafePolicyPath(to)
+      && path.posix.dirname(from) === `${migrationRoot}/rollback`
+      && path.posix.dirname(to) === rollbackRoot
+      && path.posix.basename(to) === name
+      && legacyRollbackName.test(name)
+      && typeof expectedSha256 === "string"
+      && /^[0-9a-f]{64}$/u.test(expectedSha256);
+    if (!valid) {
+      relocationPolicyFailures.push(`legacy rollback relocation policy entry ${index} is invalid`);
+      continue;
+    }
+    if (relocationByFrom.has(from) || relocationTargets.has(to)) {
+      relocationPolicyFailures.push(`legacy rollback relocation policy entry ${index} duplicates a source or target`);
+      continue;
+    }
+    const receipt = { from, to, sha256: expectedSha256 };
+    relocationByFrom.set(from, receipt);
+    relocationTargets.add(to);
+  }
+
+  let base;
+  let candidateHead;
+  let mode;
+  let historicalPaths;
+  let currentPaths;
+  let readBaseObject;
+  let readCandidateObject;
+  const bindingFailures = [];
+  const traversalFailures = [];
+  try {
+    if (requestedBase && requestedHead) {
+      base = resolveCommit(requestedBase, "candidate base");
+      candidateHead = resolveCommit(requestedHead, "candidate head");
+      const ancestry = run(["merge-base", "--is-ancestor", base, candidateHead]);
+      if (ancestry.error || ancestry.status !== 0) throw new Error("candidate base is not an ancestor of candidate head");
+      const relativePolicyPath = normalize(path.relative(sourceRoot, policyPath));
+      if (!isSafePolicyPath(relativePolicyPath)) throw new Error("release policy is outside the candidate repository");
+      const candidatePolicy = gitObject(candidateHead, relativePolicyPath);
+      if (!candidatePolicy || !candidatePolicy.bytes.equals(policyBytes)) {
+        throw new Error("loaded release policy does not match the candidate-head Git blob");
+      }
+      historicalPaths = new Set(treePaths(base, migrationRoot));
+      currentPaths = treePaths(candidateHead, migrationRoot);
+      readBaseObject = (entry) => gitObject(base, entry);
+      readCandidateObject = (entry) => gitObject(candidateHead, entry);
+      mode = "git-range-candidate";
+    } else {
+      base = resolveCommit("HEAD", "HEAD baseline");
+      validatePhysicalPath(migrationRoot, "directory");
+      validatePhysicalPath(rollbackRoot, "directory");
+      const repositoryStatus = runBytes(["status", "--porcelain=v1", "-z"]);
+      if (repositoryStatus.error || repositoryStatus.status !== 0) {
+        throw new Error(gitFailure("unable to inspect repository status", repositoryStatus));
+      }
+      if (repositoryStatus.stdout.length === 0 && relocationAuditPolicy?.requireExplicitCandidateRange === true) {
+        bindingFailures.push("clean candidate requires an explicit trusted --base and --head Git commit range");
+      }
+      const staged = runBytes(["diff", "--cached", "--name-only", "-z", "HEAD", "--", migrationRoot, rollbackRoot]);
+      const unstaged = runBytes(["diff", "--name-only", "-z", "--", migrationRoot, rollbackRoot]);
+      const untracked = runBytes(["ls-files", "--others", "--exclude-standard", "-z", "--", migrationRoot, rollbackRoot]);
+      for (const [label, result] of [["staged candidate diff", staged], ["worktree candidate diff", unstaged], ["untracked candidate inventory", untracked]]) {
+        if (result.error || result.status !== 0) throw new Error(gitFailure(`unable to inspect ${label}`, result));
+      }
+      const stagedPaths = splitPaths(staged.stdout);
+      const unstagedPaths = splitPaths(unstaged.stdout);
+      const untrackedPaths = splitPaths(untracked.stdout);
+      const indexMode = stagedPaths.length > 0;
+      if (indexMode && (unstagedPaths.length > 0 || untrackedPaths.length > 0)) {
+        bindingFailures.push("index/worktree candidate mismatch: staged migration candidate must have no unstaged or untracked migration/rollback paths");
+      }
+      historicalPaths = new Set(treePaths(base, migrationRoot));
+      currentPaths = walkSqlFiles(migrationRoot, traversalFailures);
+      readBaseObject = (entry) => gitObject(base, entry);
+      if (indexMode) {
+        readCandidateObject = (entry) => gitIndexObject(entry);
+        candidateHead = "INDEX";
+        mode = "git-head-bound-index";
+      } else {
+        readCandidateObject = (entry) => {
+          const absolute = absoluteFrom(sourceRoot, entry);
+          if (!fs.existsSync(absolute)) return null;
+          const bytes = readStableRegularFile(absolute, path.dirname(absolute));
+          return { oid: `worktree-sha256:${sha256Buffer(bytes)}`, bytes };
+        };
+        candidateHead = "WORKTREE";
+        mode = "git-head-bound-worktree";
+      }
+    }
+  } catch (error) {
+    return unavailable(error instanceof Error ? error.message : String(error), true);
+  }
+
+  const currentPathSet = new Set(currentPaths);
+  const safelyReadObject = (reader, entry, label) => {
+    try {
+      return reader(entry);
+    } catch (error) {
+      bindingFailures.push(`${label} (${entry}): ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  };
+  const modifiedHistoricalMigrations = [];
+  const deletedHistoricalCandidates = [];
+  for (const entry of historicalPaths) {
+    const baseObject = safelyReadObject(readBaseObject, entry, "unable to read audit-base migration");
+    const candidateObject = currentPathSet.has(entry)
+      ? safelyReadObject(readCandidateObject, entry, "unable to read candidate migration")
+      : null;
+    if (!candidateObject) deletedHistoricalCandidates.push(entry);
+    else if (!baseObject || !baseObject.bytes.equals(candidateObject.bytes)) modifiedHistoricalMigrations.push(entry);
+  }
+  modifiedHistoricalMigrations.sort((left, right) => left.localeCompare(right, "en"));
+  deletedHistoricalCandidates.sort((left, right) => left.localeCompare(right, "en"));
+  const deletedHistoricalMigrations = [];
+  const relocatedHistoricalRollbacks = [];
+  const consumedRelocationReceipts = [];
+  const relocationFailures = [];
+  for (const entry of deletedHistoricalCandidates) {
+    const receipt = relocationByFrom.get(entry);
+    if (!receipt) {
+      deletedHistoricalMigrations.push(entry);
+      continue;
+    }
+    const sourceObject = safelyReadObject(readBaseObject, entry, "unable to read relocation source");
+    const preexistingTargetObject = safelyReadObject(readBaseObject, receipt.to, "unable to inspect relocation target in audit base");
+    const targetObject = safelyReadObject(readCandidateObject, receipt.to, "unable to read relocation target");
+    const failures = [];
+    if (!sourceObject) failures.push("base source blob is unavailable");
+    if (preexistingTargetObject) failures.push("target already existed in the audit base");
+    if (!targetObject) failures.push("target is missing from the candidate");
+    if (mode === "git-head-bound-worktree") {
+      const visible = runBytes(["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", receipt.to]);
+      if (visible.error || visible.status !== 0 || !splitPaths(visible.stdout).includes(receipt.to)) {
+        failures.push("target is not Git-visible (it may be ignored)");
+      }
+    }
+    const sourceSha256 = sourceObject ? sha256Buffer(sourceObject.bytes) : null;
+    const targetSha256 = targetObject ? sha256Buffer(targetObject.bytes) : null;
+    if (sourceSha256 !== receipt.sha256) failures.push("base source blob sha256 does not match the relocation receipt");
+    if (targetSha256 !== receipt.sha256) failures.push("target sha256 does not match the relocation receipt");
+    if (!sourceObject || !targetObject || !sourceObject.bytes.equals(targetObject.bytes)) {
+      failures.push("base source blob and relocation target bytes differ");
+    }
+    if (failures.length > 0) {
+      deletedHistoricalMigrations.push(entry);
+      relocationFailures.push(`legacy rollback relocation rejected (${entry}): ${[...new Set(failures)].join("; ")}`);
+      continue;
+    }
+    const consumedReceipt = {
+      from: receipt.from,
+      to: receipt.to,
+      sha256: receipt.sha256,
+      bytes: sourceObject.bytes.length,
+      base,
+      head: candidateHead,
+      policySha256,
+      oldBlob: sourceObject.oid,
+      newBlob: targetObject.oid,
+    };
+    relocatedHistoricalRollbacks.push(consumedReceipt);
+    consumedRelocationReceipts.push(consumedReceipt);
+  }
+  for (const receipt of relocationByFrom.values()) {
+    if (!consumedRelocationReceipts.some((entry) => entry.from === receipt.from)) {
+      relocationFailures.push(`configured legacy rollback relocation receipt was not consumed in this candidate: ${receipt.from}`);
     }
   }
-  const splitPaths = (value) => value.split("\0").map(normalize).filter((entry) => entry.endsWith(".sql"));
-  const historicalPaths = new Set(splitPaths(historical.stdout));
-  const changedPaths = splitPaths(changed.stdout);
-  const modifiedHistoricalMigrations = changedPaths
-    .filter((entry) => historicalPaths.has(entry) && fs.existsSync(absoluteFrom(sourceRoot, entry)))
+  const invalidMigrationRootEntries = [...new Set([
+    ...currentPaths.filter((entry) => !isCanonicalForwardPath(entry)),
+    ...[...historicalPaths].filter((entry) => !isCanonicalForwardPath(entry) && !relocationByFrom.has(entry)),
+  ])]
     .sort((left, right) => left.localeCompare(right, "en"));
-  const deletedHistoricalMigrations = changedPaths
-    .filter((entry) => historicalPaths.has(entry) && !fs.existsSync(absoluteFrom(sourceRoot, entry)))
+  const newForwardMigrations = currentPaths
+    .filter((entry) => !historicalPaths.has(entry) && isCanonicalForwardPath(entry))
     .sort((left, right) => left.localeCompare(right, "en"));
-  const newForwardMigrations = [...new Set([
-    ...changedPaths.filter((entry) => !historicalPaths.has(entry)),
-    ...splitPaths(untracked.stdout),
-  ])].sort((left, right) => left.localeCompare(right, "en"));
   const failures = [
-    ...modifiedHistoricalMigrations.map((entry) => `historical migration changed relative to HEAD; restore it and use a new forward-only migration: ${entry}`),
-    ...deletedHistoricalMigrations.map((entry) => `historical migration deleted relative to HEAD; restore it and use a new forward-only migration: ${entry}`),
+    ...relocationPolicyFailures,
+    ...bindingFailures,
+    ...traversalFailures,
+    ...modifiedHistoricalMigrations.map((entry) => `historical migration changed relative to audit base; restore it and use a new forward-only migration: ${entry}`),
+    ...deletedHistoricalMigrations.map((entry) => `historical migration deleted relative to audit base; restore it and use a new forward-only migration: ${entry}`),
+    ...invalidMigrationRootEntries.map((entry) => `migration root contains a non-canonical or nested SQL entry: ${entry}`),
+    ...relocationFailures,
   ];
   return {
-    mode: "git-head-forward-only",
+    mode,
     migrationRoot,
-    head: head.stdout.trim(),
+    rollbackRoot,
+    policySha256,
+    base,
+    head: candidateHead,
+    range: `${base}..${candidateHead}`,
+    consumedRelocationReceipts,
     modifiedHistoricalMigrations,
     deletedHistoricalMigrations,
+    relocatedHistoricalRollbacks,
+    invalidMigrationRootEntries,
     newForwardMigrations,
     failures,
     warning: null,
   };
+}
+
+function printMigrationAudit() {
+  const migrationSource = inspectMigrationWorktree();
+  const result = {
+    status: migrationSource.failures.length === 0 ? "PASS" : "FAIL",
+    projectId: policy.projectId,
+    migrationSource: {
+      mode: migrationSource.mode,
+      migrationRoot: migrationSource.migrationRoot,
+      rollbackRoot: migrationSource.rollbackRoot,
+      policySha256: migrationSource.policySha256,
+      base: migrationSource.base,
+      head: migrationSource.head,
+      range: migrationSource.range,
+      consumedRelocationReceipts: migrationSource.consumedRelocationReceipts,
+      historicalMigrationMutationAllowed: false,
+      modifiedHistoricalMigrations: migrationSource.modifiedHistoricalMigrations,
+      deletedHistoricalMigrations: migrationSource.deletedHistoricalMigrations,
+      relocatedHistoricalRollbacks: migrationSource.relocatedHistoricalRollbacks,
+      invalidMigrationRootEntries: migrationSource.invalidMigrationRootEntries,
+      newForwardMigrations: migrationSource.newForwardMigrations,
+      warning: migrationSource.warning,
+    },
+    failures: migrationSource.failures,
+  };
+  console.log(JSON.stringify(result, null, 2));
+  if (result.status !== "PASS") process.exitCode = 1;
 }
 
 function printAudit() {
@@ -635,10 +1037,17 @@ function printAudit() {
     migrationSource: {
       mode: migrationSource.mode,
       migrationRoot: migrationSource.migrationRoot,
+      rollbackRoot: migrationSource.rollbackRoot,
+      policySha256: migrationSource.policySha256,
+      base: migrationSource.base,
       head: migrationSource.head,
+      range: migrationSource.range,
+      consumedRelocationReceipts: migrationSource.consumedRelocationReceipts,
       historicalMigrationMutationAllowed: false,
       modifiedHistoricalMigrations: migrationSource.modifiedHistoricalMigrations,
       deletedHistoricalMigrations: migrationSource.deletedHistoricalMigrations,
+      relocatedHistoricalRollbacks: migrationSource.relocatedHistoricalRollbacks,
+      invalidMigrationRootEntries: migrationSource.invalidMigrationRootEntries,
       newForwardMigrations: migrationSource.newForwardMigrations,
       warning: migrationSource.warning,
     },
@@ -1141,6 +1550,9 @@ switch (action) {
   case "audit":
     printAudit();
     break;
+  case "migration-audit":
+    printMigrationAudit();
+    break;
   case "assets":
     createAssetManifest();
     break;
@@ -1160,5 +1572,5 @@ switch (action) {
     verifyManagedGitRepository();
     break;
   default:
-    stop(`unknown action ${action}; expected audit, assets, snapshot, refresh-metadata, sync, classify, or repo`, 2);
+    stop(`unknown action ${action}; expected audit, migration-audit, assets, snapshot, refresh-metadata, sync, classify, or repo`, 2);
 }

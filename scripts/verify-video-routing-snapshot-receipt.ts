@@ -11,6 +11,7 @@ import {
   videoModelConfigFromRoutingSnapshot,
 } from "../src/lib/video-routing-snapshot";
 import {
+  prepareVideoProviderRequest,
   videoProviderFetch,
   withVideoProviderRequestAudit,
 } from "../src/lib/video-provider-request-audit";
@@ -100,13 +101,19 @@ const db = {
     return { data: { ok: true }, error: null };
   },
 };
+const preparedDispatch = await prepareVideoProviderRequest("https://relay-a.example/v1/videos", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ model: "video-a-v1", prompt: "fixture", duration: 10, aspect_ratio: "16:9" }),
+});
+assert.ok(preparedDispatch);
 await persistVideoProviderDispatchReceipt({
   db,
   taskIdInternal: "vt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   userId: "user-a",
   requestFingerprint: "a".repeat(64),
   snapshot: parsedA,
-  receipt: { endpointHost: "relay-a.example", submittedModel: "video-a-v1", submittedWorkflow: null },
+  receipt: preparedDispatch.receipt,
 });
 await persistVideoProviderSubmissionReceipt({
   db,
@@ -135,6 +142,7 @@ try {
       async () => { throw new Error("durable receipt unavailable"); },
       () => videoProviderFetch("https://relay-a.example/v1/videos", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ model: "video-a-v1" }),
       }),
     ),
@@ -145,6 +153,7 @@ try {
     async () => undefined,
     () => videoProviderFetch("https://relay-a.example/v1/videos", {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ model: "video-a-v1" }),
     }),
   );
@@ -153,8 +162,8 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-check(reservationSource.includes("reserve_video_generation_task_routing_atomic"), "reservation and routing snapshot commit through the versioned atomic RPC");
-check(reservationSource.includes("reserve_queued_digital_video_task_routing_atomic"), "queued reservation also commits its immutable route atomically");
+check(reservationSource.includes("reserve_video_generation_task_request_snapshot_v1_atomic"), "reservation, routing and the immutable request snapshot commit through the current versioned atomic RPC");
+check(reservationSource.includes("reserve_queued_digital_video_task_request_snapshot_v1_atomic"), "queued reservation also commits its immutable route and request snapshot atomically");
 check(routeSource.includes("routingSnapshot,"), "both route reservations pass the immutable snapshot");
 check(routeSource.indexOf("if (!reservation.created)") < routeSource.indexOf("result = await submitVideoTask"), "same-key replay returns before any provider POST");
 check(routeSource.includes('!result.taskId && !result.videoUrl && result.status !== "failed"'), "success without an asset or provider id remains an unknown submission");
@@ -179,8 +188,8 @@ for (const column of ["routing_snapshot", "routing_snapshot_hash", "provider_dis
   check(videoTaskColumns.includes(column), `release database contract requires video_tasks.${column}`);
 }
 for (const rpc of [
-  "reserve_video_generation_task_routing_atomic",
-  "reserve_queued_digital_video_task_routing_atomic",
+  "reserve_video_generation_task_request_snapshot_v1_atomic",
+  "reserve_queued_digital_video_task_request_snapshot_v1_atomic",
   "record_video_provider_dispatch_receipt_atomic",
   "record_video_provider_submission_receipt_atomic",
   "expire_video_submission_confirmations_atomic",

@@ -217,14 +217,11 @@ server {
         add_header X-Robots-Tag "noindex, nofollow, nosnippet" always;
     }
 
-    # Voice reference audio is mutable persistent data and is deliberately
-    # excluded from every Voice code artifact.
+    # Voice reference audio is private mutable data. Never expose the mounted
+    # directory through Nginx; authenticated owner-scoped reads go through the
+    # Voice API below. Legacy static URLs intentionally fail closed.
     location ^~ /voice-platform/reference-audio/ {
-        alias __RELEASE_ROOT__/shared/voice/reference-audio/;
-        disable_symlinks on;
-        etag on;
-        add_header Cache-Control "private, no-cache, must-revalidate" always;
-        add_header X-Content-Type-Options "nosniff" always;
+        return 404;
     }
 
     location /voice-platform/ {

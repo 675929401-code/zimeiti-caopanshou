@@ -21,14 +21,6 @@
   gap: 4px;
 }
 
-.marketplace-shell .marketplace-nav-actions {
-  position: static !important;
-  inset: auto !important;
-  order: 2;
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
 html[data-theme] .marketplace-shell .nav-bar-container {
   order: 1;
   flex: 1 1 0% !important;

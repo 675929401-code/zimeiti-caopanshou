@@ -195,19 +195,20 @@ if (sshTarget.rootUser) {
 
 const releaseRoot = getEnv("DEPLOY_RELEASE_ROOT") || getEnv("RELEASE_ROOT");
 const incomingDir = getEnv("DEPLOY_INCOMING_DIR");
-const releaseRootSafe = linuxAbsolutePathOk(releaseRoot);
+const releaseRootSafe = linuxAbsolutePathOk(releaseRoot) && releaseRoot === "/data/web";
+const incomingDirSafe = linuxAbsolutePathOk(incomingDir) && incomingDir === "/data/direct-deploy/incoming";
 add(
   "server-release-root",
   releaseRootSafe,
   "blocker",
-  releaseRootSafe ? "release root is a scoped Linux absolute path" : "DEPLOY_RELEASE_ROOT/RELEASE_ROOT is missing or too broad",
+  releaseRootSafe ? "release root is fixed under the verified /data mount" : "DEPLOY_RELEASE_ROOT/RELEASE_ROOT must be exactly /data/web",
   { releaseRoot: releaseRoot || null },
 );
 add(
   "server-incoming-dir",
-  linuxAbsolutePathOk(incomingDir),
+  incomingDirSafe,
   "blocker",
-  linuxAbsolutePathOk(incomingDir) ? "incoming artifact directory is a scoped Linux absolute path" : "DEPLOY_INCOMING_DIR is missing or too broad",
+  incomingDirSafe ? "incoming artifacts remain under the verified /data mount" : "DEPLOY_INCOMING_DIR must be exactly /data/direct-deploy/incoming",
   { incomingDir: incomingDir || null },
 );
 
@@ -226,7 +227,8 @@ for (const [name, fallback] of [
 ]) {
   const configuredValue = getEnv(name);
   const value = configuredValue || (releaseRootSafe ? fallback : "");
-  const pathOk = linuxAbsolutePathOk(value);
+  const pathOk = linuxAbsolutePathOk(value)
+    && (value === "/data/web/shared" || value.startsWith("/data/web/shared/"));
   add(
     `runtime-path:${name}`,
     pathOk,
@@ -281,8 +283,8 @@ const result = {
     if (check.name === "git-formal-remotes") return "Create/configure origin and backup using npm run deploy:remotes / deploy:remotes:apply.";
     if (check.name === "database-migration-url") return "Set DEPLOY_DATABASE_URL in a private env/secret location after taking a database backup.";
     if (check.name === "server-ssh-target") return "Configure DEPLOY_SSH_TARGET=user@host and ensure SSH credentials are available outside chat.";
-    if (check.name === "server-release-root") return "Set DEPLOY_RELEASE_ROOT to a scoped path such as /srv/zimeiti-caopanshou.";
-    if (check.name === "server-incoming-dir") return "Set DEPLOY_INCOMING_DIR to a scoped path for uploaded artifacts.";
+    if (check.name === "server-release-root") return "Set DEPLOY_RELEASE_ROOT and RELEASE_ROOT to /data/web; never fall back to /srv/system disk.";
+    if (check.name === "server-incoming-dir") return "Set DEPLOY_INCOMING_DIR to /data/direct-deploy/incoming.";
     if (check.name.startsWith("runtime-path:")) return `Fix ${check.name.replace("runtime-path:", "")} so it points under the release root/shared tree.`;
     if (check.name === "cos-cdn-config") return "If enabling COS, configure bucket, region, CDN base URL and public asset prefix; otherwise keep disk mode.";
     return `Fix production environment check: ${check.name}.`;

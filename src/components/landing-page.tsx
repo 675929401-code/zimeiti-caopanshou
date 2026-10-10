@@ -98,7 +98,7 @@ export function LandingPage({ onEnterApp }: LandingPageProps) {
   }, []);
 
   const handleLoginClick = useCallback(() => {
-    // 如果已登录（localStorage 中有 token），直接进入应用
+    // 已登录时直接进入应用；未登录时保留首页右侧局部滑出抽屉。
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
     if (token) {
       dispatch({ type: "SET_VIEW", payload: "marketplace" });

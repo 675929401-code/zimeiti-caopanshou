@@ -21,7 +21,13 @@ const [landingSource, softSource, softCss, operatingCss, themeCss, themeCssStat]
 
 assert.match(landingSource, /themeId === "soft-white" \|\| themeId === "lattice" \|\| themeId === "crystal-aurora"[\s\S]*?<SoftWhiteLanding/u, '三套标准主题必须共用业务首页');
 assert.match(softSource, /data-landing-version="v2"/u);
-assert.match(softSource, /把一个内容想法[\s\S]*?推进到完整成片[\s\S]*?沉淀为可用资产/u);
+assert.match(softSource, /把一个内容想法/u);
+assert.match(softSource, /heroPhrases = \["推进到完整成片", "沉淀为可用资产", "让内容持续生长"\]/u);
+assert.match(softSource, /data-testid="swh-typewriter"[\s\S]*?data-full-text/u);
+assert.match(softSource, /data-swh-panel/u, '桌面首页必须声明整屏滚动面板');
+assert.doesNotMatch(softSource, /<PointerNetwork|data-pointer-motion/u, '首页不得恢复鼠标驱动全页重绘');
+assert.match(softSource, /contact_wechat_qr_primary[\s\S]*?contact_wechat_qr_secondary/u, '首页必须读取双二维码品牌资产');
+assert.match(softSource, /id="swh-contact"[\s\S]*?swh-contact-qr-grid/u, '首页必须闭合联系人和双二维码展示');
 assert.match(softSource, /少一点重复开工，多一点持续产出/u);
 assert.match(softSource, /选对呈现方式，再把每一步做到位/u);
 assert.match(softSource, /真正有用的 AI，不只回答，还要接住下一步/u);
@@ -33,6 +39,9 @@ assert.match(softSource, /继续扩展/u);
 assert.match(softCss, /\.soft-white-home/u);
 assert.match(operatingCss, /html\[data-theme="lattice"\]\[data-mode="dark"\] \.soft-white-home\[data-landing-version="v2"\]/u, '深空金必须通过私有主题 token 呈现同一业务首页');
 assert.match(operatingCss, /html\[data-theme="crystal-aurora"\]\[data-mode="dark"\] \.soft-white-home\[data-landing-version="v2"\]/u, '黑曜霓彩必须通过私有主题 token 呈现同一业务首页');
+assert.match(operatingCss, /scroll-snap-type:\s*y mandatory/u, '桌面首页必须按整屏吸附滚动');
+assert.match(operatingCss, /prefers-reduced-motion:\s*reduce[\s\S]*?\.soft-white-home\[data-landing-version="v2"\] \*[\s\S]*?animation:\s*none !important/u, '克制动效必须支持 reduced-motion');
+assert.match(operatingCss, /prefers-reduced-motion:\s*reduce[\s\S]*?\.swh-data-beam[\s\S]*?\.swh-holo-orbit/u, '主要环境与全息动效必须纳入 reduced-motion 作用域');
 assert.match(softCss, /height: 100dvh;[\s\S]*?overflow-y: auto;/u, '业务首页根容器必须恢复纵向滚动');
 assert.match(themeCss, /\.login-form-shell \.login-panel[\s\S]*?linear-gradient\(155deg, #182520/u, '柔光白登录面板必须使用深色高对比表面');
 assert.match(themeCss, /\.login-form-shell :where\(input, textarea, select\)[\s\S]*?color: #ffffff !important/u, '柔光白登录输入文字必须清晰');

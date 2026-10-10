@@ -36,8 +36,7 @@ export function createLoadedJavaScriptSentinelAudit(page, {
     if (parsed.origin !== expectedOrigin || !parsed.pathname.startsWith("/_next/") || !parsed.pathname.endsWith(".js")) return;
 
     const task = (async () => {
-      try {
-        const body = await response.body();
+      const recordSource = (body) => {
         const source = body.toString("utf8");
         const previous = scripts.get(parsed.pathname);
         const matchedSentinels = sentinels.filter((sentinel) => source.includes(sentinel));
@@ -49,11 +48,27 @@ export function createLoadedJavaScriptSentinelAudit(page, {
             ...matchedSentinels,
           ])],
         });
+      };
+      try {
+        const body = await response.body();
+        recordSource(body);
       } catch (error) {
-        failures.push({
-          path: parsed.pathname,
-          message: error instanceof Error ? error.message.slice(0, 240) : "response body unavailable",
-        });
+        try {
+          // Chromium can discard a response body during rapid client-side
+          // navigation. Re-read that exact same-origin immutable chunk so the
+          // concealment audit remains complete instead of becoming flaky.
+          const fallback = await fetch(response.url(), { signal: AbortSignal.timeout(15_000) });
+          if (!fallback.ok) throw new Error(`fallback HTTP ${fallback.status}`);
+          recordSource(Buffer.from(await fallback.arrayBuffer()));
+        } catch (fallbackError) {
+          failures.push({
+            path: parsed.pathname,
+            message: [error, fallbackError]
+              .map((item) => item instanceof Error ? item.message : "response body unavailable")
+              .join("; ")
+              .slice(0, 240),
+          });
+        }
       }
     })();
     pending.add(task);

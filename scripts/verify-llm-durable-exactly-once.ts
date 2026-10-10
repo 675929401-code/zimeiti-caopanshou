@@ -195,6 +195,12 @@ async function testStaticRouteAndMigrationContract() {
   assert.match(route, /requestFingerprintPayload[\s\S]*?fingerprintLlmRequest\(requestFingerprintPayload\)/u);
   assert.match(route, /markProviderCallStarted/u);
   assert.match(route, /completeLlmAttemptResponse/u);
+  assert.doesNotMatch(route, /modelFrequencyLimit > 0 && userId/u, "untrusted body.userId must not control LLM frequency admission");
+  assert.match(
+    route,
+    /llmRequestAttemptStore\.claim[\s\S]*?claim\.action !== "execute"[\s\S]*?llm_freq_\$\{verifiedUserId\}_\$\{useModel/u,
+    "only a newly claimed request may consume the authenticated user's model-frequency budget",
+  );
   assert.match(cozeRoute, /new DatabaseLlmRequestAttemptStore\(\)/u);
   assert.match(cozeRoute, /cozeRequestAttemptStore\.claim/u);
   assert.match(cozeRoute, /markProviderCallStarted/u);

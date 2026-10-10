@@ -12,6 +12,14 @@ export function BrandFooter({ privacyNote }: { privacyNote?: string }) {
   const branding = usePlatformBranding();
   const platformName = branding.brand.name || "自媒体操盘手";
   const platformSlogan = branding.brand.slogan || branding.brand.shortName || "AI 内容经营系统";
+  const contact = branding.brand.contact || { name: "", wechat: "", phone: "", email: "" };
+  const contactLine = contact.wechat
+    ? `微信：${contact.wechat}`
+    : contact.phone
+      ? `电话：${contact.phone}`
+      : contact.email
+        ? `邮箱：${contact.email}`
+        : platformSlogan;
   return (
     <footer
       className="mt-auto border-t"
@@ -36,7 +44,7 @@ export function BrandFooter({ privacyNote }: { privacyNote?: string }) {
             <div className="flex items-center gap-1.5">
               <MessageCircle className="w-3.5 h-3.5" style={{ color: "var(--primary)" }} />
               <span className="text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
-                {platformSlogan}
+                {contact.name ? `${contact.name} · ${contactLine}` : contactLine}
               </span>
             </div>
           </div>

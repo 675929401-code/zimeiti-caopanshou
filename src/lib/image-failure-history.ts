@@ -19,21 +19,38 @@ const IMAGE_FAILURE_HISTORY_SURFACES = new Set<string>([
 
 const REFERENCE_ID = /^ref_[a-f0-9]{32}$/u;
 const RATIO = /^\d{1,3}:\d{1,3}$/u;
-const RESOLUTION = /^(?:1K|2K|4K)$/u;
+const RESOLUTION = /^(?:0\.5K|1K|2K|3K|4K)$/u;
+const PIXEL_SIZE = /^\d{2,5}x\d{2,5}$/u;
+const PAYLOAD_FINGERPRINT = /^[a-f0-9]{64}$/u;
+const PROVIDER_PROTOCOLS = new Set([
+  "google_generate_content",
+  "chat_completions",
+  "images_generations",
+  "images_generations_async",
+  "images_edits",
+  "cover_workflow",
+]);
 
 export type ImageFailureRequestSnapshot = {
-  schema: "image_generation_request_snapshot.v1";
+  schema: "image_generation_request_snapshot.v1" | "image_generation_request_snapshot.v2";
   surface: "image-workbench" | "cover-studio" | "storyboard-workbench" | "free-canvas" | "short-drama-film-studio" | "other";
   prompt: string;
   publicModelId: string;
   modelName: string;
   mode: "text-to-image" | "image-to-image";
   aspectRatio: string;
-  resolution: "1K" | "2K" | "4K";
+  resolution: "0.5K" | "1K" | "2K" | "3K" | "4K";
   referenceAssetRefs: string[];
   quotedPriceYuan: number;
   billingExempt: boolean;
   exactCoverText?: string;
+  style?: string;
+  effectivePrompt?: string;
+  providerProtocol?: "google_generate_content" | "chat_completions" | "images_generations" | "images_generations_async" | "images_edits" | "cover_workflow";
+  outputPixelSize?: string;
+  imageCount?: 1;
+  referenceUsage?: "general" | "character-identity";
+  payloadFingerprint?: string;
 };
 
 function isImageFailureHistorySurface(value: unknown): value is ImageFailureRequestSnapshot["surface"] {
@@ -43,6 +60,7 @@ function isImageFailureHistorySurface(value: unknown): value is ImageFailureRequ
 export type ImageTerminalFailure = ImageRequestRejection;
 
 export type ImageFailureBillingState = "charged" | "not_charged" | "exempt" | "unknown";
+export type ImageFailureBillingReleaseState = "pending" | "confirmed";
 export type ImageFailureWalletOperation = {
   idempotency_key: string;
   operation_kind: string;
@@ -80,6 +98,13 @@ export function createImageFailureRequestSnapshot(input: {
   quotedPriceYuan: number;
   billingExempt: boolean;
   exactCoverText?: string;
+  style?: string;
+  effectivePrompt?: string;
+  providerProtocol?: ImageFailureRequestSnapshot["providerProtocol"];
+  outputPixelSize?: string;
+  imageCount?: 1;
+  referenceUsage?: ImageFailureRequestSnapshot["referenceUsage"];
+  payloadFingerprint?: string;
 }): ImageFailureRequestSnapshot | null {
   const prompt = input.prompt.trim();
   const publicModelId = input.publicModelId.trim();
@@ -87,8 +112,9 @@ export function createImageFailureRequestSnapshot(input: {
   const aspectRatio = input.aspectRatio.trim();
   const resolution = input.resolution.trim().toUpperCase();
   const referenceAssetRefs = [...new Set(input.referenceImageUrls.map(referenceIdentity))];
+  const hasV2Integrity = Boolean(input.payloadFingerprint);
   const snapshot: ImageFailureRequestSnapshot = {
-    schema: "image_generation_request_snapshot.v1",
+    schema: hasV2Integrity ? "image_generation_request_snapshot.v2" : "image_generation_request_snapshot.v1",
     surface: isImageFailureHistorySurface(input.surface)
       ? input.surface
       : "other",
@@ -102,6 +128,15 @@ export function createImageFailureRequestSnapshot(input: {
     quotedPriceYuan: input.quotedPriceYuan,
     billingExempt: input.billingExempt,
     ...(input.exactCoverText?.trim() ? { exactCoverText: input.exactCoverText.trim() } : {}),
+    ...(hasV2Integrity ? {
+      style: input.style?.trim() || "",
+      effectivePrompt: input.effectivePrompt?.trim() || "",
+      providerProtocol: input.providerProtocol,
+      outputPixelSize: input.outputPixelSize?.trim().toLowerCase() || "",
+      imageCount: input.imageCount || 1,
+      referenceUsage: input.referenceUsage || "general",
+      payloadFingerprint: input.payloadFingerprint,
+    } : {}),
   };
   return parseImageFailureRequestSnapshot(snapshot);
 }
@@ -109,7 +144,7 @@ export function createImageFailureRequestSnapshot(input: {
 export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRequestSnapshot | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Partial<ImageFailureRequestSnapshot>;
-  if (row.schema !== "image_generation_request_snapshot.v1"
+  if ((row.schema !== "image_generation_request_snapshot.v1" && row.schema !== "image_generation_request_snapshot.v2")
     || !isImageFailureHistorySurface(row.surface)
     || typeof row.prompt !== "string" || !row.prompt.trim() || row.prompt.length > 50_000
     || typeof row.publicModelId !== "string" || !row.publicModelId.trim() || row.publicModelId.length > 200
@@ -124,6 +159,16 @@ export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRe
     || typeof row.billingExempt !== "boolean"
     || (row.exactCoverText !== undefined && (typeof row.exactCoverText !== "string" || row.exactCoverText.length > 200))) return null;
   if ((row.mode === "text-to-image") !== (row.referenceAssetRefs.length === 0)) return null;
+  const v2 = row.schema === "image_generation_request_snapshot.v2";
+  if (v2 && (
+    typeof row.style !== "string" || row.style.length > 256
+    || typeof row.effectivePrompt !== "string" || !row.effectivePrompt.trim() || row.effectivePrompt.length > 50_000
+    || typeof row.providerProtocol !== "string" || !PROVIDER_PROTOCOLS.has(row.providerProtocol)
+    || typeof row.outputPixelSize !== "string" || !PIXEL_SIZE.test(row.outputPixelSize)
+    || row.imageCount !== 1
+    || (row.referenceUsage !== "general" && row.referenceUsage !== "character-identity")
+    || typeof row.payloadFingerprint !== "string" || !PAYLOAD_FINGERPRINT.test(row.payloadFingerprint)
+  )) return null;
   return {
     schema: row.schema,
     surface: row.surface,
@@ -137,6 +182,15 @@ export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRe
     quotedPriceYuan: Number(row.quotedPriceYuan),
     billingExempt: row.billingExempt,
     ...(row.exactCoverText ? { exactCoverText: row.exactCoverText } : {}),
+    ...(v2 ? {
+      style: row.style!,
+      effectivePrompt: row.effectivePrompt!,
+      providerProtocol: row.providerProtocol!,
+      outputPixelSize: row.outputPixelSize!,
+      imageCount: 1,
+      referenceUsage: row.referenceUsage!,
+      payloadFingerprint: row.payloadFingerprint!,
+    } : {}),
   };
 }
 
@@ -146,6 +200,8 @@ export function parseImageTerminalFailure(response: unknown, payloadFingerprint:
 
 export function imageTerminalFailureMessage(failure: ImageTerminalFailure) {
   if (failure.code === "IMAGE_BILLING_RESERVATION_REJECTED") return "本次图片预算预留未成功，未调用生成服务，也未扣费。请检查余额后重新提交。";
+  if (failure.code === "IMAGE_PROVIDER_ADMISSION_BUSY") return "上游生图通道当前繁忙，本次未调用供应商，预留费用将自动核对并释放。请稍后重新提交。";
+  if (failure.code === "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE") return "生图并发保护暂不可用，本次未调用供应商，预留费用将自动核对并释放。请稍后重新提交。";
   if (failure.code === "IMAGE_PLATFORM_REQUEST_INTERRUPTED") return "本次图片任务中断且没有取得可交付结果，费用已自动退回。请重新提交一次。";
   if (failure.source === "input") return "参考图未能安全读取，本次未提交生成。请重新上传或检查参考图后再试。";
   if (failure.code === "IMAGE_REFERENCE_REJECTED") return "参考图未通过生成服务检查，本次未生成图片。请检查参考图后重新提交。";
@@ -190,13 +246,34 @@ export function imageFailureBillingStateFromOperations(input: {
 
 export function imageFailureRetryEligibility(billingState: ImageFailureBillingState) {
   if (billingState === "not_charged" || billingState === "exempt") {
-    return { canLoadForRetry: true as const };
+    return {
+      canLoadForRetry: true as const,
+      billingHeld: false,
+      billingReleaseState: "confirmed" as const,
+      billingReconciliation: "settled" as const,
+    };
   }
   return {
     canLoadForRetry: false as const,
+    billingHeld: true,
+    billingReleaseState: "pending" as const,
+    billingReconciliation: "reconciling" as const,
     retryBlockReason: billingState === "charged"
       ? "该失败请求存在已扣费账单，请先完成对账或退款，暂不可再次提交。"
       : "该失败请求的计费状态尚未确认，请先完成对账，暂不可再次提交。",
+  };
+}
+
+/** Shared status/history projection: retry is allowed only after net release is proven. */
+export function imageFailureBillingReleaseProjection(billingState: ImageFailureBillingState) {
+  const retry = imageFailureRetryEligibility(billingState);
+  const confirmed = retry.canLoadForRetry;
+  return {
+    billingReleaseState: retry.billingReleaseState as ImageFailureBillingReleaseState,
+    billingHeld: retry.billingHeld,
+    canResubmit: confirmed,
+    reconciliationState: retry.billingReconciliation,
+    ...(!confirmed ? { retryBlockReason: retry.retryBlockReason } : {}),
   };
 }
 

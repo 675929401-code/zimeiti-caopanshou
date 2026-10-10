@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packagerPath = path.join(root, "scripts", "package-standalone-artifact.mjs");
 const deployerPath = path.join(root, "scripts", "deploy-artifact-vnext.sh");
+const verifierSource = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
 const packagerSource = fs.readFileSync(packagerPath, "utf8");
 const deployerSource = fs.readFileSync(deployerPath, "utf8");
 
@@ -41,6 +42,11 @@ function createTree(base, files) {
   }
 }
 
+function createDirectoryLink(target, link) {
+  fs.mkdirSync(path.dirname(link), { recursive: true });
+  fs.symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+}
+
 function run(executable, arguments_, options = {}) {
   return spawnSync(executable, arguments_, {
     cwd: root,
@@ -70,6 +76,8 @@ try {
     "server.js",
     "src/token-utils.js",
     ".next/server/app/api/voice/sso-token/route.js",
+    ".next/server/app/api/conversations/history/route.js",
+    ".next/server/app/api/runtime/cache/route.js",
   ]);
 
   const allowedPackager = run(process.execPath, [packagerPath, "--verify-sensitive-root", allowedRoot]);
@@ -86,8 +94,19 @@ try {
     "config/cookies.json",
     "config/credentials.json",
     "config/private.key",
+    "runtime/private.pem",
+    "runtime/public.pub",
+    "runtime/certificate.crt",
+    "runtime/certificate.cer",
+    "runtime/certificate.p7b",
+    "runtime/debug.map",
     "id_rsa",
     "node_modules/untrusted/cookie.json",
+    ".git/config",
+    ".svn/entries",
+    ".hg/store/data",
+    ".history/snapshot.json",
+    ".cache/state.bin",
   ];
   for (const [index, forbiddenPath] of forbiddenPaths.entries()) {
     const maliciousRoot = path.join(temporaryRoot, `malicious-${index}`);
@@ -100,6 +119,117 @@ try {
     const deployerResult = run(bash, ["scripts/deploy-artifact-vnext.sh", "--verify-sensitive-root", toBashPath(maliciousRoot)]);
     assert.notEqual(deployerResult.status, 0, `deployer accepted forbidden path: ${forbiddenPath}`);
     assert.match(outputOf(deployerResult), /forbidden sensitive artifact path/iu);
+  }
+
+  const pemContentRoot = path.join(temporaryRoot, "pem-content");
+  createTree(pemContentRoot, ["server.js", "runtime/blob.bin"]);
+  const privateKeyPemMarker = ["-----BEGIN ", "PRIVATE ", "KEY-----"].join("");
+  const privateKeyPemFooter = ["-----END ", "PRIVATE ", "KEY-----"].join("");
+  assert.equal(verifierSource.includes(privateKeyPemMarker), false, "complete PEM fixture marker must not be stored in verifier source");
+  assert.equal(verifierSource.includes(privateKeyPemFooter), false, "complete PEM fixture footer must not be stored in verifier source");
+  fs.writeFileSync(path.join(pemContentRoot, "runtime", "blob.bin"), `${privateKeyPemMarker}\nfixture-only\n${privateKeyPemFooter}\n`, "utf8");
+
+  const pemPackagerResult = run(process.execPath, [packagerPath, "--verify-sensitive-root", pemContentRoot]);
+  assert.notEqual(pemPackagerResult.status, 0, "packager accepted disguised private-key PEM content");
+  assert.match(outputOf(pemPackagerResult), /forbidden private-key PEM content/iu);
+
+  const pemDeployerResult = run(bash, ["scripts/deploy-artifact-vnext.sh", "--verify-sensitive-root", toBashPath(pemContentRoot)]);
+  assert.notEqual(pemDeployerResult.status, 0, "deployer accepted disguised private-key PEM content");
+  assert.match(outputOf(pemDeployerResult), /forbidden private-key PEM content/iu);
+
+  const pemMarkerOnlyRoot = path.join(temporaryRoot, "pem-marker-only");
+  createTree(pemMarkerOnlyRoot, ["server.js", "runtime/documentation.txt"]);
+  fs.writeFileSync(path.join(pemMarkerOnlyRoot, "runtime", "documentation.txt"), `documentation example: ${privateKeyPemMarker}\n`, "utf8");
+  const markerOnlyPackagerResult = run(process.execPath, [packagerPath, "--verify-sensitive-root", pemMarkerOnlyRoot]);
+  assert.equal(markerOnlyPackagerResult.status, 0, `packager rejected a marker-only documentation example:\n${outputOf(markerOnlyPackagerResult)}`);
+  const markerOnlyDeployerResult = run(bash, ["scripts/deploy-artifact-vnext.sh", "--verify-sensitive-root", toBashPath(pemMarkerOnlyRoot)]);
+  assert.equal(markerOnlyDeployerResult.status, 0, `deployer rejected a marker-only documentation example:\n${outputOf(markerOnlyDeployerResult)}`);
+
+  const materializableProject = path.join(temporaryRoot, "materializable-project");
+  const materializableStandalone = path.join(materializableProject, ".next", "standalone");
+  const trustedPackage = path.join(materializableProject, "node_modules", "trusted-package");
+  createTree(materializableStandalone, ["server.js", "runtime/debug.map"]);
+  createTree(trustedPackage, ["package.json", "index.js"]);
+  createDirectoryLink(trustedPackage, path.join(materializableStandalone, "node_modules", "trusted-package"));
+  const materializableAccepted = run(process.execPath, [
+    packagerPath,
+    "--verify-materializable-root", materializableStandalone,
+    "--root", materializableProject,
+    "--service", "web",
+  ]);
+  assert.equal(materializableAccepted.status, 0, `trusted standalone dependency link was rejected:\n${outputOf(materializableAccepted)}`);
+  assert.match(outputOf(materializableAccepted), /omittedSourceMaps=1/u);
+  assert.equal(outputOf(materializableAccepted).includes(fs.realpathSync(trustedPackage)), false, "materializable verifier exposed an absolute link target");
+
+  const finalLinkPackager = run(process.execPath, [packagerPath, "--verify-sensitive-root", materializableStandalone]);
+  assert.notEqual(finalLinkPackager.status, 0, "final packager gate accepted a symbolic link or junction");
+  assert.match(outputOf(finalLinkPackager), /forbidden symbolic link or junction/iu);
+  const finalLinkDeployer = run(bash, ["scripts/deploy-artifact-vnext.sh", "--verify-sensitive-root", toBashPath(materializableStandalone)]);
+  assert.notEqual(finalLinkDeployer.status, 0, "final deployer gate accepted a symbolic link or junction");
+  assert.match(outputOf(finalLinkDeployer), /symbolic link|symlink|junction|non-regular/iu);
+
+  const finalMapRoot = path.join(temporaryRoot, "final-map");
+  createTree(finalMapRoot, ["server.js", "runtime/debug.map"]);
+  const finalMapPackager = run(process.execPath, [packagerPath, "--verify-sensitive-root", finalMapRoot]);
+  assert.notEqual(finalMapPackager.status, 0, "final packager gate accepted a source map");
+  assert.match(outputOf(finalMapPackager), /forbidden sensitive artifact path/iu);
+  const finalMapDeployer = run(bash, ["scripts/deploy-artifact-vnext.sh", "--verify-sensitive-root", toBashPath(finalMapRoot)]);
+  assert.notEqual(finalMapDeployer.status, 0, "final deployer gate accepted a source map");
+  assert.match(outputOf(finalMapDeployer), /forbidden sensitive artifact path/iu);
+
+  const materializableCases = [
+    {
+      name: "outside",
+      pattern: /escapes trusted build roots/iu,
+      prepare(standalone) {
+        const outside = path.join(temporaryRoot, "outside-target");
+        createTree(outside, ["package.json"]);
+        createDirectoryLink(outside, path.join(standalone, "node_modules", "outside"));
+      },
+    },
+    {
+      name: "broken",
+      pattern: /broken link/iu,
+      prepare(standalone) {
+        createDirectoryLink(path.join(temporaryRoot, "missing-target"), path.join(standalone, "node_modules", "broken"));
+      },
+    },
+    {
+      name: "cycle",
+      pattern: /cyclic directory link/iu,
+      prepare(standalone) {
+        createDirectoryLink(standalone, path.join(standalone, "node_modules", "cycle"));
+      },
+    },
+    {
+      name: "sensitive-real-target-alias",
+      pattern: /forbidden sensitive target/iu,
+      prepare(standalone, project) {
+        const sensitiveTarget = path.join(project, "node_modules", ".secure");
+        createTree(sensitiveTarget, ["opaque.bin"]);
+        createDirectoryLink(sensitiveTarget, path.join(standalone, "node_modules", "safe-alias"));
+      },
+    },
+    {
+      name: "sensitive-logical-alias",
+      pattern: /forbidden sensitive materializable logical path/iu,
+      prepare(standalone, project) {
+        const safeTarget = path.join(project, "node_modules", "safe-target");
+        createTree(safeTarget, ["package.json"]);
+        createDirectoryLink(safeTarget, path.join(standalone, ".secure"));
+      },
+    },
+  ];
+  for (const fixture of materializableCases) {
+    const project = path.join(temporaryRoot, `materializable-${fixture.name}`);
+    const standalone = path.join(project, ".next", "standalone");
+    createTree(standalone, ["server.js"]);
+    fs.mkdirSync(path.join(project, "node_modules"), { recursive: true });
+    fixture.prepare(standalone, project);
+    const result = run(process.execPath, [packagerPath, "--verify-materializable-root", standalone, "--root", project, "--service", "web"]);
+    assert.notEqual(result.status, 0, `materializable verifier accepted ${fixture.name}`);
+    assert.match(outputOf(result), fixture.pattern);
+    assert.equal(outputOf(result).includes(path.join(project, "node_modules")), false, `${fixture.name} error exposed an absolute target`);
   }
 
   const packagerInventoryWalk = packagerSource.indexOf("function inventoryTree");
@@ -115,8 +245,33 @@ try {
   assert.ok(extractedGate > extraction && extractedGate < payloadValidation, "deployment extracted-tree gate must run before payload inventory validation");
   assert.match(deployerSource, /assertNotSensitive\(file\.path, "manifest inventory"\)/u);
 
+  const packagerHiddenMetadataChecks = packagerSource.match(/hiddenMetadataDirectoryNames\.has\(lowerPart\)/gu) || [];
+  const deployerHiddenMetadataChecks = deployerSource.match(/hiddenMetadataDirectoryNames\.has\(lowerPart\)/gu) || [];
+  const deployerForbiddenExtensionChecks = deployerSource.match(/forbiddenArtifactExtensions\.has\(extension\)/gu) || [];
+  assert.equal(packagerHiddenMetadataChecks.length, 1, "packager must apply the hidden metadata directory policy once");
+  assert.equal(deployerHiddenMetadataChecks.length, 2, "deployer must apply the hidden metadata directory policy to archive/tree and manifest inventory checks");
+  assert.equal(deployerForbiddenExtensionChecks.length, 2, "deployer must apply key, certificate, and source-map extension policy to archive/tree and manifest inventory checks");
+  const deployerArchiveTreePolicy = deployerSource.indexOf("hiddenMetadataDirectoryNames.has(lowerPart)", deployerSource.indexOf("verify_sensitive_artifact_paths()"));
+  const deployerArchiveTreeExtensionPolicy = deployerSource.indexOf("forbiddenArtifactExtensions.has(extension)", deployerSource.indexOf("verify_sensitive_artifact_paths()"));
+  const deployerArchiveBranch = deployerSource.indexOf('if (inputMode === "archive")', deployerArchiveTreePolicy);
+  const deployerManifestValidator = deployerSource.indexOf("validate_payload_inventory() {");
+  const deployerManifestPolicy = deployerSource.indexOf("hiddenMetadataDirectoryNames.has(lowerPart)", deployerManifestValidator);
+  const deployerManifestExtensionPolicy = deployerSource.indexOf("forbiddenArtifactExtensions.has(extension)", deployerManifestValidator);
+  const deployerManifestContentGate = deployerSource.indexOf("assertSafeContent(filePath, relativePath)", deployerManifestValidator);
+  assert.ok(deployerArchiveTreePolicy > 0 && deployerArchiveTreePolicy < deployerArchiveBranch, "deployer archive/tree preflight must share the hidden metadata directory policy");
+  assert.ok(deployerArchiveTreeExtensionPolicy > 0 && deployerArchiveTreeExtensionPolicy < deployerArchiveBranch, "deployer archive/tree preflight must apply the forbidden extension policy before extraction");
+  assert.ok(deployerManifestPolicy > deployerManifestValidator, "deployer manifest inventory must apply the hidden metadata directory policy");
+  assert.ok(deployerManifestExtensionPolicy > deployerManifestValidator, "deployer manifest inventory must apply the forbidden extension policy");
+  assert.ok(deployerManifestContentGate > deployerManifestValidator, "deployer extracted payload inventory must scan file content for private-key PEM material");
+  assert.doesNotMatch(packagerSource, /["']history["']\s*,\s*["']\.cache["']/u, "plain history directory must not be forbidden by the packager");
+  assert.doesNotMatch(packagerSource, /["']cache["']\s*\]/u, "plain cache directory must not be forbidden by the packager");
+
   console.log("PASS artifact secret gates reject sensitive names at packaging and deployment layers");
-  console.log("PASS allowed environment-neutral and source-code paths remain accepted");
+  console.log("PASS allowed environment-neutral, source-code, history, and cache paths remain accepted");
+  console.log("PASS hidden metadata directory policy covers deploy archive/tree and manifest checks");
+  console.log("PASS key/certificate paths and disguised private-key PEM content remain rejected");
+  console.log("PASS materializable standalone accepts trusted links, omits source maps, and rejects escaped, broken, cyclic, or sensitive aliases");
+  console.log("PASS final packager/deployer gates reject links and source maps");
   console.log(`PASS forbidden fixtures checked: ${forbiddenPaths.length}`);
 } finally {
   const resolvedTemporaryRoot = path.resolve(temporaryRoot);

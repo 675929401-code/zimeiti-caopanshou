@@ -10,6 +10,7 @@ import {
   normalizeAdminPermissionKeys,
   type AdminLevel,
 } from "@/lib/admin-governance";
+import { ADMIN_OWNER_ONLY_PERMISSION_KEYS } from "@/lib/admin-permission-design";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 
 export interface AdminAccessSnapshot {
@@ -70,6 +71,15 @@ function privilegedDenialDetails(access: AdminAccessSnapshot, permissionKey: str
   return access.adminLevel === "super_admin" ? { requiredPermission: permissionKey } : {};
 }
 
+const OWNER_ONLY_PERMISSION_SET = new Set<string>(ADMIN_OWNER_ONLY_PERMISSION_KEYS);
+
+export function permissionKeysForAdminLevel(adminLevel: AdminLevel | null, value: unknown): string[] {
+  const normalized = normalizeAdminPermissionKeys(value);
+  return adminLevel === "super_admin"
+    ? normalized
+    : normalized.filter((permissionKey) => !OWNER_ONLY_PERMISSION_SET.has(permissionKey));
+}
+
 export function hashAdminStepUpToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -88,13 +98,17 @@ export async function readAdminAccessSnapshot(userId: string): Promise<AdminAcce
     if (error) throw error;
     const row = (data || {}) as Record<string, unknown>;
     const status = text(row.authority_status);
+    const adminLevel = row.admin_level === "super_admin" || row.admin_level === "admin" ? row.admin_level : null;
     return {
       authorityStatus: status === "ready" || status === "missing" || status === "invalid" || status === "disabled"
         ? status
         : "unavailable",
       integrityValid: row.integrity_valid === true,
-      adminLevel: row.admin_level === "super_admin" || row.admin_level === "admin" ? row.admin_level : null,
-      permissionKeys: normalizeAdminPermissionKeys(row.permission_keys),
+      adminLevel,
+      // Defence in depth for profiles created before the owner-only policy was
+      // introduced.  Database normalization also removes these grants, but a
+      // stale row can never leak them into a browser or step-up session.
+      permissionKeys: permissionKeysForAdminLevel(adminLevel, row.permission_keys),
       revision: Number(row.revision || 0),
       checksum: text(row.checksum),
       profileActive: row.profile_active === true,
@@ -253,6 +267,26 @@ export async function authorizeAdminCapability(
       response: NextResponse.json(
         { error: "后台授权档案不可用或完整性校验失败，本次操作未放行", code: "ADMIN_AUTHORITY_NOT_READY" },
         { status: 503 },
+      ),
+    };
+  }
+
+  if (access.adminLevel !== "super_admin" && OWNER_ONLY_PERMISSION_SET.has(permissionKey)) {
+    await appendAdminGovernanceAudit({
+      actorId: admin.actor.userId,
+      actorLevel: access.adminLevel,
+      permissionKey,
+      action: options.operation || "admin_capability_check",
+      result: "denied",
+      reasonCode: "SUPER_ADMIN_REQUIRED",
+      resource: request.nextUrl.pathname,
+      request,
+    });
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "该内容仅限超级管理员访问", code: "SUPER_ADMIN_REQUIRED" },
+        { status: 403, headers: { "Cache-Control": "private, no-store" } },
       ),
     };
   }

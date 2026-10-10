@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
+import type { OperationPerformanceEvent } from "@/lib/operation-performance-trace";
 
 export const operationDomains = [
   "chat", "image", "video", "voice", "extract", "payment", "auth", "storage", "admin", "system", "other",
@@ -170,4 +171,56 @@ export async function recordBrowserOperationFlightEvent(
 export function pseudonymousUserRef(userId: unknown): string | null {
   if (typeof userId !== "string" || !userId) return null;
   return `usr_${createHash("sha256").update(userId).digest("hex").slice(0, 12)}`;
+}
+
+/**
+ * Persists a server-side performance checkpoint without exposing account IDs or
+ * accepting free-form payload metadata. Failure is intentionally converted to a
+ * false result so telemetry can never fail a customer or admin request.
+ */
+export async function recordServerOperationPerformanceEventBestEffort(
+  input: OperationPerformanceEvent,
+): Promise<boolean> {
+  try {
+    const runtime = readFlightRuntimeIdentity();
+    const route = normalizeOperationPath(input.route);
+    if (!route || route === "/api/operation-events" || route.startsWith("/api/admin/operation-events")) return false;
+    const row = {
+      trace_id: input.trace_id,
+      // The existing column is reused for indexed correlation, but only a
+      // one-way reference enters it; raw user/account identifiers never do.
+      user_id: input.user_ref || input.account_ref,
+      username: null,
+      source: "server",
+      domain: input.domain,
+      operation: input.operation,
+      phase: input.phase,
+      outcome: input.outcome,
+      duration_ms: input.duration_ms,
+      http_status: input.http_status,
+      route,
+      error_code: input.error_code,
+      error_fingerprint: input.outcome === "error" || input.error_code
+        ? createHash("sha256")
+          .update([input.domain, input.operation, input.phase, route, input.http_status || "", input.error_code || ""].join("|"))
+          .digest("hex")
+        : null,
+      summary: null,
+      metadata: {
+        request_id: input.request_id,
+        user_ref: input.user_ref,
+        account_ref: input.account_ref,
+        task_id: input.task_id,
+        agent_id: input.agent_id,
+        elapsed_ms: input.elapsed_ms,
+      },
+      source_version: runtime.sourceVersion,
+      build_id: runtime.buildId,
+      occurred_at: input.occurred_at,
+    };
+    const { error } = await getSupabaseAdminClient().from("operation_flight_events").insert(row);
+    return !error;
+  } catch {
+    return false;
+  }
 }

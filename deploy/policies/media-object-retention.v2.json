@@ -1,0 +1,64 @@
+{
+  "version": "media-object-retention.v2",
+  "status": "deployment_configuration_required",
+  "provider": "tencent_cos",
+  "description": "Ordinary provider-generated videos are not copied into platform storage. Only explicit managed-project outputs and transient creative inputs receive finite COS lifecycle rules.",
+  "ordinaryVideoDelivery": {
+    "mode": "authenticated_upstream_proxy",
+    "copyToPlatformStorage": false,
+    "fixedRetentionDays": null,
+    "expiryEvidence": [404, 410],
+    "onConfirmedExpiry": "hide_history_and_clear_delivery_urls",
+    "transientFailures": [408, 429, 500, 502, 503, 504]
+  },
+  "rules": [
+    {
+      "id": "managed-project-video-3d",
+      "expirationDays": 3,
+      "prefixes": [
+        "videos/scoped/autodl-h3/",
+        "videos/scoped/short-drama/",
+        "videos/scoped/model-acceptance/",
+        "videos/digital-human-long/",
+        "short-drama/final/"
+      ]
+    },
+    {
+      "id": "transient-creative-input-30d",
+      "expirationDays": 30,
+      "prefixes": [
+        "image-workbench/",
+        "video-inputs/",
+        "video-audio-inputs/",
+        "digital-human-inputs/"
+      ]
+    }
+  ],
+  "contentRetention": {
+    "extractionHistoryDays": 10,
+    "conversationContentDays": 30,
+    "protectedUntilUserDelete": [
+      "agents",
+      "agent_memories",
+      "text_chat_memories",
+      "role_library"
+    ],
+    "durableAuditEvidence": [
+      "billing_evidence",
+      "provider_evidence",
+      "idempotency_keys",
+      "task_identity"
+    ]
+  },
+  "metadata": {
+    "retainTaskIdentity": true,
+    "retainBillingRecords": true,
+    "retainProviderEvidence": true,
+    "deleteDatabaseRowsWithObject": false,
+    "ordinaryExtractionVideoPersistence": false
+  },
+  "activation": {
+    "publicBuildFlag": "NEXT_PUBLIC_MEDIA_RETENTION_ENFORCED=true",
+    "precondition": "Apply and read back every Tencent COS lifecycle prefix; confirm that v1 owned rules were removed before enabling the public flag."
+  }
+}

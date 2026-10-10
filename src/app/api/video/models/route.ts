@@ -67,6 +67,7 @@ interface RankedVideoModel {
   billingUnit: "per_use" | "output_second";
   workspaceSurfaces: string[];
   supportsRemoteCancel: boolean;
+  supportsGenerateAudioToggle: boolean;
   durationStep: number;
   successRate: number;
   totalRequests: number;
@@ -269,6 +270,7 @@ export async function GET(request: Request) {
       const billingUnit = protocolConfig.billing_unit === "output_second" ? "output_second" as const : "per_use" as const;
       const workspaceSurfaces = workspaceSurfaceList(m, protocolConfig);
       const supportsRemoteCancel = supportsConfirmedVideoCancellation(m.protocol_type, protocolConfig);
+      const supportsGenerateAudioToggle = protocolConfig.supports_generate_audio_toggle === true;
       const configuredDurationStep = Number(protocolConfig.duration_step);
       const durationStep = Number.isFinite(configuredDurationStep) && configuredDurationStep > 0
         ? configuredDurationStep
@@ -342,6 +344,7 @@ export async function GET(request: Request) {
         billingUnit,
         workspaceSurfaces,
         supportsRemoteCancel,
+        supportsGenerateAudioToggle,
         durationStep,
         successRate,
         totalRequests: total,
@@ -432,6 +435,7 @@ export async function GET(request: Request) {
       ...publicMediaBillingCapabilities(model.billingUnit),
       workspaceSurfaces: model.workspaceSurfaces,
       supportsRemoteCancel: model.supportsRemoteCancel,
+      supportsGenerateAudioToggle: model.supportsGenerateAudioToggle,
       durationStep: model.durationStep,
       durationMode: model.durationCapabilities.mode,
       minDuration: model.durationCapabilities.minDuration,

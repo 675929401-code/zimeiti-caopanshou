@@ -9,6 +9,13 @@ import { SignJWT } from "jose";
 import { parse as parseDotenv } from "dotenv";
 
 const projectRoot = process.cwd();
+const CUSTOMER_JWT_TTL = "30m";
+const VERIFIER_MINIMUM_SESSION_REMAINING_MS = 30 * 60_000;
+const TEMPORARY_DATABASE_SESSION_TTL_MS = 60 * 60_000;
+assert.ok(
+  TEMPORARY_DATABASE_SESSION_TTL_MS > VERIFIER_MINIMUM_SESSION_REMAINING_MS,
+  "Temporary database session must outlive the verifier minimum",
+);
 const runtimePath = process.env.LOCAL_ACCEPTANCE_RUNTIME_PATH?.trim()
   || "F:/总项目文件/Skill存储系统/运行数据/自媒体操盘手/local-data-20260902/config/runtime.json";
 const target = process.argv[2];
@@ -92,6 +99,12 @@ let temporarySessionId = "";
 if (sessionCandidates.length === 0) {
   const fixtureActor = eligibleUsers[0];
   temporarySessionId = `readonly-customer-${randomUUID()}`;
+  const temporarySessionCreatedAt = Date.now();
+  const temporarySessionExpiresAt = temporarySessionCreatedAt + TEMPORARY_DATABASE_SESSION_TTL_MS;
+  assert.ok(
+    temporarySessionExpiresAt - temporarySessionCreatedAt > VERIFIER_MINIMUM_SESSION_REMAINING_MS,
+    "Temporary database session does not have enough verifier headroom",
+  );
   const createSessionResponse = await fetch(new URL("/rest/v1/user_auth_sessions", supabase), {
     method: "POST",
     headers: {
@@ -103,8 +116,8 @@ if (sessionCandidates.length === 0) {
     body: JSON.stringify({
       user_id: fixtureActor.id,
       session_id: temporarySessionId,
-      created_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      created_at: new Date(temporarySessionCreatedAt).toISOString(),
+      expires_at: new Date(temporarySessionExpiresAt).toISOString(),
       revoked_at: null,
       revoke_reason: null,
     }),
@@ -122,8 +135,9 @@ const secrets = [...new Set([
 assert.ok(secrets.length > 0, "Local JWT secret is unavailable");
 
 // Local previews can outlive a runtime switch, so select the matching key via
-// a protected read-only endpoint. Never print or persist the candidate token,
-// and never create a customer session only for acceptance.
+// a protected read-only endpoint. Never print or persist the candidate token.
+// The temporary database session deliberately has more verifier headroom than
+// this short-lived JWT and is still deleted with an exact-id zero-row readback.
 let verifiedToken = "";
 let actor = null;
 for (const sessionCandidate of sessionCandidates) {
@@ -137,7 +151,7 @@ for (const sessionCandidate of sessionCandidates) {
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
-      .setExpirationTime("30m")
+      .setExpirationTime(CUSTOMER_JWT_TTL)
       .sign(new TextEncoder().encode(secret));
     const identity = await fetch(`${origin}/api/media-history?limit=1&offset=0&category=all&kind=all&q=&includeTotal=true`, {
       headers: { Authorization: `Bearer ${candidate}` },

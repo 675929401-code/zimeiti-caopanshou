@@ -49,29 +49,22 @@ function ToolboxWorkspace() {
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<ToolTab>(() => normalizeTab(requestedTab));
-  const [hasResolvedInitialTab, setHasResolvedInitialTab] = useState(Boolean(requestedTab));
   const [mountedPanels, setMountedPanels] = useState<Set<ToolPanel>>(
-    () => requestedTab ? new Set([panelForTab(normalizeTab(requestedTab))]) : new Set(),
+    () => new Set([panelForTab(normalizeTab(requestedTab))]),
   );
 
   useEffect(() => {
-    let normalized = normalizeTab(requestedTab);
-    if (!requestedTab) {
-      try { normalized = normalizeTab(localStorage.getItem("toolbox_active_tab")); } catch {}
-    }
+    const normalized = normalizeTab(requestedTab);
     setActiveTab((current) => current === normalized ? current : normalized);
-    setHasResolvedInitialTab(true);
     if (requestedTab !== normalized) {
       window.history.replaceState(window.history.state, "", toolHref(normalized));
     }
   }, [requestedTab]);
 
   useEffect(() => {
-    if (!hasResolvedInitialTab) return;
-    try { localStorage.setItem("toolbox_active_tab", activeTab); } catch {}
     const panel = panelForTab(activeTab);
     setMountedPanels((current) => current.has(panel) ? current : new Set([...current, panel]));
-  }, [activeTab, hasResolvedInitialTab]);
+  }, [activeTab]);
 
   useEffect(() => {
     const restoreTabFromHistory = () => {

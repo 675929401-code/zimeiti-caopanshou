@@ -5,6 +5,10 @@ import { authorizeToken, getTokenFromHeaders } from "@/lib/auth";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { publicAllowedAgentCategoryIds } from "@/lib/agent-category-access";
 import {
+  isUserProfileAvatarStorageProvider,
+  userProfileAvatarProxyUrl,
+} from "@/lib/user-profile-avatar";
+import {
   clearUserAppearancePreference,
   readUserAppearancePreference,
   saveUserAppearancePreference,
@@ -52,7 +56,7 @@ async function findCurrentUser(userId: string): Promise<UserRecord | null> {
 async function readUserAvatarUrl(userId: string): Promise<string> {
   const result = await getSupabaseClient()
     .from("user_profile_avatars")
-    .select("avatar_url")
+    .select("avatar_url,storage_provider,storage_key,source")
     .eq("user_id", userId)
     .maybeSingle();
   if (result.error) {
@@ -62,7 +66,16 @@ async function readUserAvatarUrl(userId: string): Promise<string> {
     }
     return "";
   }
-  return typeof result.data?.avatar_url === "string" ? result.data.avatar_url : "";
+  const row = result.data;
+  if (
+    row?.source === "upload"
+    && typeof row.storage_key === "string"
+    && row.storage_key.startsWith("user-profile-avatars")
+    && isUserProfileAvatarStorageProvider(row.storage_provider)
+  ) {
+    return userProfileAvatarProxyUrl(row.storage_key, row.storage_provider);
+  }
+  return typeof row?.avatar_url === "string" ? row.avatar_url : "";
 }
 
 export async function GET(request: NextRequest) {

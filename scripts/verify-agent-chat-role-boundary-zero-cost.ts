@@ -75,7 +75,7 @@ assert.match(llmRoute, /publicModelId = adminPublicId;[\s\S]*?model_overridden =
 const historyRoute = read("src/app/api/conversations/history/route.ts");
 assert.match(historyRoute, /authorizeCurrentApiUser\(request\)/u);
 assert.match(historyRoute, /\.eq\("id", singleConvId\)\s*\.eq\("user_id", userId\)/u);
-assert.match(historyRoute, /\.eq\("user_id", userId\)\s*\.order\("updated_at", \{ ascending: false \}\)/u);
+assert.match(historyRoute, /\.eq\("user_id", userId\)\s*\.gt\("updated_at", retentionCutoff\)\s*\.order\("updated_at", \{ ascending: false \}\)/u);
 assert.match(historyRoute, /Cache-Control", "private, no-store"/u);
 
 const appContext = read("src/contexts/app-context.tsx");

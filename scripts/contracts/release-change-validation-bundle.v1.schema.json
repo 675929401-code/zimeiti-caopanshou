@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zimeiti.local/contracts/release-change-validation-bundle.v1.schema.json",
+  "title": "Release change validation attestation bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bundleId",
+    "scope",
+    "subject",
+    "target",
+    "status",
+    "attestations",
+    "summary"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "zimeiti-release-change-validation-bundle.v1"},
+    "bundleId": {"type": "string", "pattern": "^validation-[a-f0-9]{24}$"},
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptId", "receiptSha256", "classification", "input", "browserAcceptance", "requiredValidations"],
+      "properties": {
+        "receiptId": {"type": "string", "pattern": "^scope-[a-f0-9]{24}$"},
+        "receiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "classification": {"enum": ["FAST", "STANDARD", "FULL"]},
+        "input": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "base", "head", "rangeMode", "trustedBase"],
+          "properties": {
+            "kind": {"enum": ["git-range", "fixture", "forced-full"]},
+            "base": {"type": ["string", "null"]},
+            "head": {"type": ["string", "null"]},
+            "rangeMode": {"type": ["string", "null"], "enum": ["merge-base", "direct", null]},
+            "trustedBase": {"type": "boolean"}
+          }
+        },
+        "requiredValidations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "browserAcceptance": {
+          "type": "object", "additionalProperties": false,
+          "required": ["preciseRoute", "requiredRoutes", "routeRuleIds", "explicitRoutesRequired", "explicitRoutesProvided", "unresolvedPaths"],
+          "properties": {
+            "preciseRoute": {"type": "string"},
+            "requiredRoutes": {"type": "array", "minItems": 3, "uniqueItems": true, "items": {"type": "string"}},
+            "routeRuleIds": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+            "explicitRoutesRequired": {"type": "boolean"},
+            "explicitRoutesProvided": {"type": "boolean"},
+            "unresolvedPaths": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "sourceVersion", "services", "builds", "buildOutputDigests", "candidatePayloads"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "sourceVersion": {"type": ["string", "null"]},
+        "services": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["web", "voice"]}},
+        "builds": {
+          "type": "object", "additionalProperties": false, "required": ["web", "voice"],
+          "properties": {"web": {"type": ["string", "null"]}, "voice": {"type": ["string", "null"]}}
+        },
+        "buildOutputDigests": {
+          "type": "object", "additionalProperties": false, "required": ["web", "voice"],
+          "properties": {
+            "web": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+            "voice": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+          }
+        },
+        "candidatePayloads": {
+          "type": "object", "additionalProperties": false, "required": ["web", "voice"],
+          "properties": {
+            "web": {"$ref": "#/$defs/candidatePayload"},
+            "voice": {"$ref": "#/$defs/candidatePayload"}
+          }
+        }
+      }
+    },
+    "target": {"enum": ["source-candidate", "release-ready"]},
+    "status": {
+      "enum": [
+        "pending-required",
+        "source-candidate-pending-required",
+        "source-candidate-complete",
+        "release-ready",
+        "failed"
+      ]
+    },
+    "attestations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["validationId", "status", "executor", "evidenceRef", "evidenceSha256", "signatureRef", "signatureSha256"],
+        "properties": {
+          "validationId": {"type": "string", "minLength": 1},
+          "status": {"enum": ["passed", "pending-required", "failed"]},
+          "executor": {"enum": ["unassigned", "ci", "external-browser", "external-verifier"]},
+          "evidenceRef": {"type": ["string", "null"]},
+          "evidenceSha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+          "signatureRef": {"type": ["string", "null"]},
+          "signatureSha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiredCount", "passedCount", "pendingCount", "failedCount"],
+      "properties": {
+        "requiredCount": {"type": "integer", "minimum": 1},
+        "passedCount": {"type": "integer", "minimum": 0},
+        "pendingCount": {"type": "integer", "minimum": 0},
+        "failedCount": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "$defs": {
+    "candidatePayload": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["releaseId", "artifactDigest", "archiveSha256", "fileCount", "totalBytes"],
+          "properties": {
+            "releaseId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$"},
+            "artifactDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "archiveSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "fileCount": {"type": "integer", "minimum": 1},
+            "totalBytes": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    }
+  }
+}

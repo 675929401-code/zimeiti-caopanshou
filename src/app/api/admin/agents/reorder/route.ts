@@ -1,98 +1,131 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { getTokenFromHeaders } from '@/lib/auth';
-import { verifyAdminToken } from "@/lib/admin-auth";
-import { invalidateBotsCache } from '@/lib/bots-cache';
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
+import { invalidateBotsCache } from "@/lib/bots-cache";
+import { invalidateAgentConfigCache } from "@/app/api/llm/llm-state";
+import {
+  agentBatchConflict,
+  agentRevisionConflict,
+  isAgentBatchConflict,
+  parseExpectedAgentRevision,
+} from "@/lib/server/agent-config-cas";
 
-/**
- * PUT /api/admin/agents/reorder
- * 批量更新智能体排序（管理员拖拽排序后持久化）
- * 
- * 请求体: { agentIds: string[] } — 按新顺序排列的智能体ID数组
- * 
- * 排序规则：
- * 1. 按分类分组，每个分类内的智能体按传入顺序分配 sort_order
- * 2. 不同分类的智能体各自独立编号（每个分类从 10 开始，步长 10）
- * 3. 前端按分类顺序 + sort_order 渲染
- */
+type ReorderEntry = { id: string; expected_revision: number };
+type ReorderAgentRow = {
+  id: string;
+  category: string | null;
+  user_access: string | null;
+  config_revision: number;
+};
+type CategoryOrderRow = { id: string; category: string | null };
+
+function normalizedCategory(value: string | null | undefined): string {
+  return String(value || "未分类");
+}
+
+/** PUT /api/admin/agents/reorder — 按分类批量更新智能体排序。 */
 export async function PUT(request: NextRequest) {
-  // 验证管理员权限
-  const token = getTokenFromHeaders(request.headers);
-  if (!token) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 });
-  }
-  const payload = await verifyAdminToken(token);
-  if (!payload || payload.role !== 'admin') {
-    return NextResponse.json({ error: '无管理员权限' }, { status: 403 });
-  }
+  const managementAccess = await authorizeAdminCapability(request, "agents.manage", {
+    operation: "agent_reorder",
+    requireStepUp: true,
+  });
+  if (!managementAccess.ok) return managementAccess.response;
 
   try {
-    const { agentIds } = await request.json();
-
-    if (!Array.isArray(agentIds) || agentIds.length === 0) {
-      return NextResponse.json({ error: 'agentIds 不能为空' }, { status: 400 });
+    const body = await request.json() as Record<string, unknown>;
+    const rawEntries = Array.isArray(body.agents) ? body.agents : [];
+    const entries: ReorderEntry[] = rawEntries.flatMap((raw) => {
+      if (!raw || typeof raw !== "object") return [];
+      const record = raw as Record<string, unknown>;
+      const revision = parseExpectedAgentRevision(record);
+      return typeof record.id === "string" && revision !== null
+        ? [{ id: record.id, expected_revision: revision }]
+        : [];
+    });
+    if (entries.length === 0 || entries.length !== rawEntries.length) {
+      return NextResponse.json({
+        error: "agents 必须包含每个智能体的 id 与 expected_revision。",
+        code: "AGENT_EXPECTED_REVISION_REQUIRED",
+      }, { status: 400 });
+    }
+    if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
+      return NextResponse.json({ error: "排序列表包含重复智能体" }, { status: 400 });
     }
 
     const client = getSupabaseClient();
-
-    // 获取所有涉及的智能体的分类信息
     const { data: agents, error: fetchError } = await client
-      .from('agents')
-      .select('id, category')
-      .in('id', agentIds)
-      .is('deleted_at', null);
-
-    if (fetchError) {
-      return NextResponse.json({ error: '获取智能体信息失败' }, { status: 500 });
+      .from("agents")
+      .select("id,category,user_access,config_revision")
+      .in("id", entries.map((entry) => entry.id))
+      .is("deleted_at", null);
+    if (fetchError) return NextResponse.json({ error: "获取智能体信息失败" }, { status: 500 });
+    if ((agents || []).length !== entries.length) {
+      return NextResponse.json({ error: "排序列表包含不存在或已删除的智能体" }, { status: 404 });
     }
 
-    // 构建 id → category 映射
-    const agentCategoryMap = new Map<string, string>();
-    (agents || []).forEach((a: { id: string; category: string | null }) => {
-      agentCategoryMap.set(a.id, a.category || '未分类');
+    const agentRows = (agents || []) as ReorderAgentRow[];
+    const affectedCategories = Array.from(new Set(agentRows.map((agent) => normalizedCategory(agent.category))));
+    const { data: completeCategoryRows, error: completeCategoryError } = await client
+      .from("agents")
+      .select("id,category")
+      .is("deleted_at", null);
+    if (completeCategoryError) {
+      return NextResponse.json({ error: "读取完整分类排序失败", updated: 0 }, { status: 500 });
+    }
+    const completeIds = new Set(((completeCategoryRows || []) as CategoryOrderRow[])
+      .filter((agent) => affectedCategories.includes(normalizedCategory(agent.category as string | null)))
+      .map((agent) => String(agent.id)));
+    const submittedIds = new Set(entries.map((entry) => entry.id));
+    if (completeIds.size !== submittedIds.size || [...completeIds].some((id) => !submittedIds.has(id))) {
+      return agentBatchConflict({
+        error: "排序必须提交受影响分类的完整智能体顺序；筛选或收藏子集不能覆盖分类排序。",
+        code: "AGENT_REORDER_CATEGORY_INCOMPLETE",
+        updated: 0,
+      });
+    }
+    const privateCategories = new Set<string>();
+    const categoryNames = Array.from(new Set(agentRows.map((agent) => String(agent.category || "")).filter(Boolean)));
+    if (categoryNames.length > 0) {
+      const { data: categories } = await client
+        .from("categories")
+        .select("name,visibility")
+        .in("name", categoryNames);
+      for (const category of categories || []) {
+        if (category.visibility === "private") privateCategories.add(String(category.name));
+      }
+    }
+    if (agentRows.some((agent) => agent.user_access === "hidden" || agent.category === "自用" || privateCategories.has(String(agent.category)))) {
+      const internalAccess = await authorizeAdminCapability(request, "internal_tools.manage", {
+        operation: "internal_agent_reorder",
+        requireStepUp: true,
+      });
+      if (!internalAccess.ok) return internalAccess.response;
+    }
+
+    const byId = new Map(agentRows.map((agent) => [String(agent.id), agent]));
+    for (const entry of entries) {
+      const current = byId.get(entry.id);
+      if (Number(current?.config_revision) !== entry.expected_revision) {
+        return agentRevisionConflict(entry.expected_revision, current?.config_revision ?? null, { agent_id: entry.id, updated: 0 });
+      }
+    }
+
+    const { data: result, error: mutationError } = await client.rpc("apply_agent_reorder_cas_v1", {
+      p_entries: entries,
     });
-
-    // 按分类分组，计算每个分类内的新 sort_order
-    const categoryOrderCounters = new Map<string, number>();
-    const updates: Array<{ id: string; sort_order: number }> = [];
-
-    for (const agentId of agentIds) {
-      const category = agentCategoryMap.get(agentId) || '未分类';
-      const currentCounter = categoryOrderCounters.get(category) ?? 0;
-      const newSortOrder = currentCounter + 10;
-      categoryOrderCounters.set(category, newSortOrder);
-      updates.push({ id: agentId, sort_order: newSortOrder });
+    if (mutationError) {
+      if (isAgentBatchConflict(mutationError)) return agentBatchConflict({ updated: 0 });
+      return NextResponse.json({ error: "排序更新失败", updated: 0 }, { status: 500 });
     }
 
-    // 批量更新 sort_order
-    // Supabase 不支持批量 update，需要逐条更新
-    const results = await Promise.allSettled(
-      updates.map(({ id, sort_order }) =>
-        client
-          .from('agents')
-          .update({ sort_order, updated_at: new Date().toISOString() })
-          .eq('id', id)
-      )
-    );
-
-    const failures = results.filter(r => r.status === 'rejected');
-    if (failures.length > 0) {
-      console.error('[reorder] Some updates failed:', failures);
-      return NextResponse.json({ 
-        error: `部分排序更新失败（${failures.length}/${updates.length}）`,
-        updated: updates.length - failures.length,
-      }, { status: 207 });
-    }
-
-    // 失效 /api/bots 缓存，确保前台即时可见新排序
+    for (const entry of entries) invalidateAgentConfigCache(entry.id);
     invalidateBotsCache();
-
-    return NextResponse.json({ 
-      success: true, 
-      updated: updates.length,
+    return NextResponse.json({
+      success: true,
+      updated: Number((result as { updated?: unknown } | null)?.updated || entries.length),
     });
   } catch (err) {
-    console.error('[reorder] Error:', err);
-    return NextResponse.json({ error: '排序更新失败' }, { status: 500 });
+    console.error("[reorder] Error:", err);
+    return NextResponse.json({ error: "排序更新失败" }, { status: 500 });
   }
 }

@@ -13,12 +13,13 @@
  */
 
 import { ImageGenerationClient, Config } from "coze-coding-dev-sdk";
-import { persistAvatar } from "@/lib/storage";
+import { discardUnclaimedGeneratedAvatar, persistAvatar } from "@/lib/storage";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { buildAvatarPrompt } from "./prompts";
 import { callImageGenerationAPI } from "@/app/api/llm/handle-image-gen";
 import { filterAvailableCoverModels } from "@/lib/retired-cover-models";
 import { invalidateBotsCache } from "@/lib/bots-cache";
+import { invalidateAgentConfigCache } from "@/app/api/llm/llm-state";
 
 // ── 生成超时（毫秒） ──
 const GENERATION_TIMEOUT = 60_000; // 60秒
@@ -137,19 +138,42 @@ async function generateAndUpdateAvatarInner(
 ): Promise<void> {
   console.log(`[AutoAvatar] Starting generation for agent "${name}" (${agentId})`);
 
+  const snapshot = await readAgentAvatarCommitSnapshot(agentId);
+  if (!snapshot || !shouldGenerateAvatar(snapshot.avatar)) return;
+
   const persistedUrl = await generateAvatarUrlForAgent(name, description, `auto-avatar-${agentId}`);
   if (!persistedUrl) return;
 
-  const result = await replaceGeneratedAvatarIfUnclaimed(agentId, persistedUrl);
+  const result = await replaceGeneratedAvatarIfUnclaimed(agentId, persistedUrl, snapshot);
   if (result === "updated") {
-    invalidateBotsCache();
     console.log(`[AutoAvatar] Successfully updated avatar for agent "${name}" (${agentId})`);
-  } else if (result === "manual-preserved") {
-    console.log(`[AutoAvatar] Manual avatar won the race for agent "${name}" (${agentId}); generated result was not applied`);
+  } else if (result === "manual-preserved" || result === "revision-conflict") {
+    console.log(`[AutoAvatar] Agent configuration won the race for agent "${name}" (${agentId}); generated result was discarded`);
   }
 }
 
-export type GeneratedAvatarCommitResult = "updated" | "manual-preserved" | "missing" | "failed";
+export type AgentAvatarCommitSnapshot = {
+  avatar: string | null;
+  configRevision: number;
+};
+
+export type GeneratedAvatarCommitResult = "updated" | "manual-preserved" | "revision-conflict" | "missing" | "failed";
+
+export async function readAgentAvatarCommitSnapshot(agentId: string): Promise<AgentAvatarCommitSnapshot | null> {
+  const { data, error } = await getSupabaseClient()
+    .from("agents")
+    .select("id,avatar,config_revision")
+    .eq("id", agentId)
+    .maybeSingle();
+  if (error || !data || !Number.isSafeInteger(Number(data.config_revision)) || Number(data.config_revision) < 1) {
+    if (error) console.error(`[AutoAvatar] DB read failed for ${agentId}:`, error.message);
+    return null;
+  }
+  return {
+    avatar: typeof data.avatar === "string" ? data.avatar : null,
+    configRevision: Number(data.config_revision),
+  };
+}
 
 /**
  * 生成完成后再次读取头像，并用 compare-and-set 提交。
@@ -158,35 +182,34 @@ export type GeneratedAvatarCommitResult = "updated" | "manual-preserved" | "miss
 export async function replaceGeneratedAvatarIfUnclaimed(
   agentId: string,
   generatedAvatar: string,
+  snapshot: AgentAvatarCommitSnapshot,
 ): Promise<GeneratedAvatarCommitResult> {
   const client = getSupabaseClient();
-  const { data: current, error: readError } = await client
-    .from("agents")
-    .select("id,avatar")
-    .eq("id", agentId)
-    .maybeSingle();
-  if (readError) {
-    console.error(`[AutoAvatar] DB read failed for ${agentId}:`, readError.message);
-    return "failed";
-  }
-  if (!current) return "missing";
-
-  const currentAvatar = typeof current.avatar === "string" ? current.avatar : null;
-  if (!shouldGenerateAvatar(currentAvatar)) return "manual-preserved";
-
   let update = client
     .from("agents")
     .update({ avatar: generatedAvatar, updated_at: new Date().toISOString() })
-    .eq("id", agentId);
-  update = currentAvatar === null
+    .eq("id", agentId)
+    .eq("config_revision", snapshot.configRevision);
+  update = snapshot.avatar === null
     ? update.is("avatar", null)
-    : update.eq("avatar", currentAvatar);
-  const { data: claimed, error: updateError } = await update.select("id").maybeSingle();
+    : update.eq("avatar", snapshot.avatar);
+  const { data: claimed, error: updateError } = await update.select("id,config_revision").maybeSingle();
   if (updateError) {
     console.error(`[AutoAvatar] DB update failed for ${agentId}:`, updateError.message);
+    await discardUnclaimedGeneratedAvatar(generatedAvatar);
     return "failed";
   }
-  return claimed ? "updated" : "manual-preserved";
+  if (claimed) {
+    invalidateAgentConfigCache(agentId);
+    invalidateBotsCache();
+    return "updated";
+  }
+
+  const latest = await readAgentAvatarCommitSnapshot(agentId);
+  await discardUnclaimedGeneratedAvatar(generatedAvatar);
+  if (!latest) return "missing";
+  if (latest.avatar !== snapshot.avatar || !shouldGenerateAvatar(latest.avatar)) return "manual-preserved";
+  return "revision-conflict";
 }
 
 export async function generateAvatarUrlForAgent(

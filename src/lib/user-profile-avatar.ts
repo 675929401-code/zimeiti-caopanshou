@@ -11,6 +11,22 @@ export const USER_PROFILE_AVATAR_PRESETS = [
 
 export type UserProfileAvatarPreset = (typeof USER_PROFILE_AVATAR_PRESETS)[number]['src'];
 
+export const USER_PROFILE_AVATAR_STORAGE_PROVIDERS = ['coze_s3', 'tencent_cos', 'local'] as const;
+export type UserProfileAvatarStorageProvider = (typeof USER_PROFILE_AVATAR_STORAGE_PROVIDERS)[number];
+
+export function isUserProfileAvatarStorageProvider(value: unknown): value is UserProfileAvatarStorageProvider {
+  return typeof value === 'string'
+    && USER_PROFILE_AVATAR_STORAGE_PROVIDERS.some((provider) => provider === value);
+}
+
+export function userProfileAvatarProxyUrl(
+  storageKey: string,
+  storageProvider: UserProfileAvatarStorageProvider,
+): string {
+  const query = new URLSearchParams({ key: storageKey, provider: storageProvider });
+  return `/api/avatars?${query.toString()}`;
+}
+
 export function isUserProfileAvatarPreset(value: unknown): value is UserProfileAvatarPreset {
   return typeof value === 'string'
     && USER_PROFILE_AVATAR_PRESETS.some((preset) => preset.src === value);

@@ -74,10 +74,23 @@ assert.match(panel, /brand-advanced-assets/u);
 assert.match(panel, /使用主 Logo 自动适配/u);
 assert.equal((panel.match(/data-testid="brand-actions-sticky"/gu) || []).length, 1);
 assert.doesNotMatch(panel, /brand-actions-bottom/u);
+assert.match(panel, /data-testid="brand-refresh-authoritative"/u, "brand settings need an explicit authoritative refresh");
+assert.match(panel, /有未保存修改/u, "brand settings need a visible dirty receipt");
+assert.match(panel, /服务器读回/u, "brand saves and publishes need a server readback receipt");
+assert.match(panel, /contact_wechat_qr_primary/u, "primary WeChat QR must remain in the draft/publish contract");
+assert.match(panel, /contact_wechat_qr_secondary/u, "secondary WeChat QR must remain in the draft/publish contract");
+assert.match(panel, /contact:\s*\{\s*name:\s*"",\s*wechat:\s*"",\s*phone:\s*"",\s*email:\s*"",\s*\}/u,
+  "unconfirmed contact details must default to blank instead of being fabricated");
+assert.doesNotMatch(panel, /wechat:\s*"Yuange1991xx"/u,
+  "the admin form must not silently prefill an unconfirmed WeChat account");
 
 assert.match(publicRoute, /readPublishedPlatformBranding/u);
-assert.match(publicAssetRoute, /readPublishedPlatformBrandAsset/u);
-assert.match(publicAssetRoute, /new NextResponse\(upstream\.body/u);
+assert.match(publicAssetRoute, /resolveDisplayBrand/u);
+assert.match(publicAssetRoute, /readResolvedPublishedAsset/u);
+assert.match(publicAssetRoute, /readVerifiedBrandAssetUpstream/u);
+assert.match(publicAssetRoute, /verifyBrandAssetBytes/u);
+assert.match(publicAssetRoute, /new NextResponse\(source, \{ status: 200, headers \}\)/u);
+assert.doesNotMatch(publicAssetRoute, /new NextResponse\(upstream\.body/u);
 assert.match(publicAssetRoute, /Cross-Origin-Resource-Policy/u);
 assert.match(migration, /JOIN public\.platform_brand_revisions revision\s+ON revision\.id = profile\.published_revision_id AND revision\.status = 'published'/u);
 assert.doesNotMatch(publicRoute, /storageKey|storage_provider|signedUrl/u);

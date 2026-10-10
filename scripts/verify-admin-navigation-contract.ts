@@ -85,8 +85,8 @@ const headerStart = source.indexOf("<header");
 const headerEnd = source.indexOf("</header>", headerStart);
 assert.ok(headerStart >= 0 && headerEnd > headerStart, "ADMIN_HEADER_NOT_FOUND");
 const header = source.slice(headerStart, headerEnd);
-assert.match(header, /permissionKeys\.includes\("deployment\.execute"\)/u, "部署入口必须受当前管理员权限控制");
-assert.match(header, /部署到线上/u, "全局后台操作区必须保留部署入口");
+assert.doesNotMatch(header, /permissionKeys\.includes\("deployment\.execute"\)/u, "顶部不得保留无闭环的部署权限分支");
+assert.doesNotMatch(header, /部署到线上/u, "全局后台操作区不得保留无实际发布闭环的部署按钮");
 assert.doesNotMatch(header, /漫剧后台|openAdminTab\("manju-workbench"\)/u, "顶部不能保留独立漫剧后台入口");
 assert.match(header, /flex-col gap-3 lg:flex-row/u, "顶部操作区必须支持桌面窗口收窄后的换行");
 

@@ -36,7 +36,6 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation";
 import type { Message } from "@/types/coze";
 import { fuzzyMatch } from "@/lib/pinyin";
-import { UserThemeSwitcher } from "@/components/user-theme-switcher";
 import {
   dispatchVideoTaskTransfer,
   inferVideoTaskOrder,
@@ -1017,8 +1016,6 @@ export function ChatView() {
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6"/></svg>
             {(state.credits?.remaining ?? 0).toLocaleString()} 积分
           </div>
-          {/* Theme switcher */}
-          <UserThemeSwitcher labeled />
         </div>
       </div>
 
@@ -1077,13 +1074,38 @@ export function ChatView() {
                 if (!state.activeAgentId) return;
                 try {
                   const token = localStorage.getItem("auth_token");
+                  if (!token) throw new Error("AUTH_TOKEN_REQUIRED");
+                  let currentAgent: { id?: unknown; config_revision?: unknown } | undefined;
+                  for (const path of ["/api/admin/agents", "/api/admin/agents?include_internal=1"]) {
+                    const revisionResponse = await fetch(path, {
+                      headers: { Authorization: `Bearer ${token}` },
+                      cache: "no-store",
+                    });
+                    if (!revisionResponse.ok) {
+                      if (path.includes("include_internal")) break;
+                      throw new Error(`AGENT_REVISION_READ_FAILED:${revisionResponse.status}`);
+                    }
+                    const revisionPayload = await revisionResponse.json() as {
+                      agents?: Array<{ id?: unknown; config_revision?: unknown }>;
+                    };
+                    currentAgent = (revisionPayload.agents || []).find((agent) => agent.id === state.activeAgentId);
+                    if (currentAgent) break;
+                  }
+                  const expectedRevision = Number(currentAgent?.config_revision);
+                  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
+                    throw new Error("AGENT_EXPECTED_REVISION_REQUIRED");
+                  }
                   const res = await fetch("/api/admin/agents", {
                     method: "PUT",
                     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ agentId: state.activeAgentId, output_style: agentOutputStyle }),
+                    body: JSON.stringify({
+                      agentId: state.activeAgentId,
+                      expected_revision: expectedRevision,
+                      output_style: agentOutputStyle,
+                    }),
                   });
-                  if (!res.ok) toast.error("保存失败");
-                } catch { toast.error("保存失败"); }
+                  if (!res.ok) toast.error(res.status === 409 ? "模板已被另一端更新，请刷新后重试" : "保存失败");
+                } catch { toast.error("无法读取最新配置版本，模板未保存"); }
               }}
               onRetry={!isChatOutcomeUnknown(msg) && ((msg.role === "assistant" && !msg.isStreaming) || (msg.role === "user" && msg.error)) ? () => {
                 if (msg.role === "assistant") {

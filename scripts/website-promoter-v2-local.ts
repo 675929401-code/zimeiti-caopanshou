@@ -36,6 +36,7 @@ type AgentRow = Record<string, unknown> & {
   model: string;
   model_id: string;
   updated_at: string;
+  config_revision: number;
   updated_at_exact?: string;
 };
 
@@ -44,10 +45,10 @@ const managedFields = [
   "system_prompt", "guide_message", "preset_fields", "is_active", "user_access", "sort_order",
   "max_context_rounds", "max_context_tokens", "max_reply_tokens", "timeout", "enable_web_search",
   "response_format", "temperature", "deep_thinking_type", "deduct_deep_think", "token_billing_enabled", "cost_per_message", "output_style",
-  "enable_knowledge_base", "knowledge_base_id", "image_parsing", "file_parsing", "updated_at", "deleted_at",
+  "enable_knowledge_base", "knowledge_base_id", "image_parsing", "file_parsing", "config_revision", "updated_at", "deleted_at",
 ] as const;
 const managedNumericFields = new Set([
-  "sort_order", "max_context_rounds", "max_context_tokens", "max_reply_tokens", "timeout",
+  "config_revision", "sort_order", "max_context_rounds", "max_context_tokens", "max_reply_tokens", "timeout",
   "temperature", "deep_thinking_type", "deduct_deep_think", "cost_per_message",
 ]);
 
@@ -355,14 +356,15 @@ async function main() {
   await writeFile(path.join(backupDir, "before.json.sha256"), `${sha256(beforeText)}\n`, { encoding: "utf8", flag: "wx" });
   await writeFile(path.join(evidenceDir, "compiled-knowledge-snapshot.json"), `${JSON.stringify(target.knowledgeSnapshot, null, 2)}\n`, "utf8");
 
-  async function casPatch(expectedUpdatedAt: string, expectedPrompt: string, patch: Json): Promise<{ row: AgentRow; updatedAtExact: string }> {
+  async function casPatch(expectedRevision: number, expectedPrompt: string, patch: Json): Promise<{ row: AgentRow; updatedAtExact: string; configRevision: number }> {
     const sql = new Client({ connectionString: String(runtime.databaseUrl), ssl: false, statement_timeout: 30_000, connectionTimeoutMillis: 10_000 });
     await sql.connect();
     try {
       await sql.query("BEGIN");
-      const locked = await sql.query("SELECT id, updated_at, updated_at::text AS updated_at_exact, system_prompt, (updated_at = $2::timestamptz) AS revision_matches FROM public.agents WHERE id = $1 FOR UPDATE", [AGENT_ID, expectedUpdatedAt]);
+      assert.ok(Number.isSafeInteger(expectedRevision) && expectedRevision > 0, "positive config_revision required for CAS");
+      const locked = await sql.query("SELECT id, config_revision, system_prompt FROM public.agents WHERE id = $1 FOR UPDATE", [AGENT_ID]);
       assert.equal(locked.rowCount, 1, "target agent disappeared during transaction");
-      assert.equal(locked.rows[0].revision_matches, true, "agent configuration changed concurrently; stopped without overwrite");
+      assert.equal(Number(locked.rows[0].config_revision), expectedRevision, "agent configuration changed concurrently; stopped without overwrite");
       assert.equal(sha256(String(locked.rows[0].system_prompt || "")), sha256(expectedPrompt), "agent prompt changed concurrently; stopped without overwrite");
       const latest = await sql.query("SELECT prompt FROM public.prompt_versions WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1", [AGENT_ID]);
       if (String(latest.rows[0]?.prompt || "") !== expectedPrompt) {
@@ -375,8 +377,8 @@ async function main() {
         return `${key} = $${index + 2}${value && typeof value === "object" ? "::jsonb" : ""}`;
       });
       const updated = await sql.query(
-        `UPDATE public.agents SET ${assignments.join(", ")}, updated_at = clock_timestamp() WHERE id = $1 RETURNING ${managedFields.join(", ")}, updated_at::text AS updated_at_exact`,
-        [AGENT_ID, ...values],
+        `UPDATE public.agents SET ${assignments.join(", ")}, updated_at = clock_timestamp() WHERE id = $1 AND config_revision = $${values.length + 2} RETURNING ${managedFields.join(", ")}, updated_at::text AS updated_at_exact`,
+        [AGENT_ID, ...values, expectedRevision],
       );
       assert.equal(updated.rowCount, 1, "transactional agent update failed");
       const nextPrompt = String(patch.system_prompt || expectedPrompt);
@@ -388,7 +390,9 @@ async function main() {
       const row = normalizePgManagedRow(updated.rows[0] as Record<string, unknown>);
       const updatedAtExact = String(row.updated_at_exact || "");
       assert.ok(updatedAtExact, "transaction did not return an exact revision timestamp");
-      return { row, updatedAtExact };
+      const configRevision = Number(row.config_revision);
+      assert.ok(Number.isSafeInteger(configRevision) && configRevision > expectedRevision, "CAS update did not advance config_revision");
+      return { row, updatedAtExact, configRevision };
     } catch (error) {
       await sql.query("ROLLBACK").catch(() => undefined);
       throw error;
@@ -477,7 +481,7 @@ async function main() {
         },
       },
     };
-    const attestedTransaction = await casPatch(current.updated_at, current.system_prompt, { output_style: attestedStyle });
+    const attestedTransaction = await casPatch(Number(current.config_revision), current.system_prompt, { output_style: attestedStyle });
     const attested = await readManagedExact();
     assert.equal(attested.updatedAtExact, attestedTransaction.updatedAtExact, "runtime attestation revision mismatch");
     assert.equal(canonical(attested.row.output_style), canonical(attestedStyle), "runtime attestation readback mismatch");
@@ -504,7 +508,7 @@ async function main() {
   let applied: AgentRow | null = null;
   let appliedUpdatedAtExact = "";
   try {
-    const appliedTransaction = await casPatch(current.updated_at, current.system_prompt, targetPatch);
+    const appliedTransaction = await casPatch(Number(current.config_revision), current.system_prompt, targetPatch);
     appliedUpdatedAtExact = appliedTransaction.updatedAtExact;
     applied = await verifyTarget();
     const rollbackTrace: Json[] = [{ phase: "v2-applied", at: new Date().toISOString(), prompt_sha256: sha256(applied.system_prompt), updated_at_exact: appliedUpdatedAtExact }];
@@ -513,7 +517,7 @@ async function main() {
       delete restorePatch.id;
       delete restorePatch.updated_at;
       delete restorePatch.deleted_at;
-      const restoredTransaction = await casPatch(appliedUpdatedAtExact, target.prompt, restorePatch);
+      const restoredTransaction = await casPatch(appliedTransaction.configRevision, target.prompt, restorePatch);
       const restored = restoredTransaction.row;
       assert.equal(sha256(restored.system_prompt), sha256(current.system_prompt), "rollback prompt readback mismatch");
       const restoredComparable = pickManaged(restored);
@@ -522,7 +526,7 @@ async function main() {
       delete currentComparable.updated_at;
       assert.equal(canonical(restoredComparable), canonical(currentComparable), "rollback managed configuration readback mismatch");
       rollbackTrace.push({ phase: "v1-restored", at: new Date().toISOString(), prompt_sha256: sha256(restored.system_prompt), updated_at_exact: restoredTransaction.updatedAtExact });
-      const reappliedTransaction = await casPatch(restoredTransaction.updatedAtExact, current.system_prompt, targetPatch);
+      const reappliedTransaction = await casPatch(restoredTransaction.configRevision, current.system_prompt, targetPatch);
       appliedUpdatedAtExact = reappliedTransaction.updatedAtExact;
       applied = await verifyTarget();
       rollbackTrace.push({ phase: "v2-reapplied", at: new Date().toISOString(), prompt_sha256: sha256(applied.system_prompt), updated_at_exact: appliedUpdatedAtExact });
@@ -583,7 +587,7 @@ async function main() {
         delete restorePatch.id;
         delete restorePatch.updated_at;
         delete restorePatch.deleted_at;
-        await casPatch(observed.updatedAtExact, target.prompt, restorePatch);
+        await casPatch(Number(observed.row.config_revision), target.prompt, restorePatch);
         const restored = await readManagedExact();
         const restoredComparable = pickManaged(restored.row);
         const currentComparable = pickManaged(current);

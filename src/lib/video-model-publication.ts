@@ -139,6 +139,7 @@ async function ensureValidationPublicationAsset(input: {
       String(input.task.id),
       input.context.userId,
       {
+        storageScope: "model-acceptance",
         trimDurationSeconds: Number(input.task.duration_seconds) || undefined,
         sourceDurationSeconds: Number(input.task.duration_seconds) || undefined,
         providerProtocol: protocolType,

@@ -8,6 +8,8 @@ import {
   StoryboardPanelModeSchema,
   StoryboardProjectSchema,
   StoryboardTargetDurationSchema,
+  StoryboardTextLayoutModeSchema,
+  storyboardTextLayoutInstruction,
 } from "@/lib/storyboard-workbench";
 import { loadStoryboardAgentConfig } from "@/lib/server/storyboard-agent-store";
 
@@ -17,6 +19,7 @@ const RequestSchema = z.object({
   ratio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).default("16:9"),
   panelMode: StoryboardPanelModeSchema.default("fixed-4"),
   targetDuration: StoryboardTargetDurationSchema.default(10),
+  textLayoutMode: StoryboardTextLayoutModeSchema.default("visual-only"),
 });
 // 模型名由服务端固定：/api/llm 的 model_overridden 覆盖要求 pm_ 公共ID，
 // 普通用户带 model_overridden 会 404；改走按名称解析（仅服务端可信名称）。
@@ -147,7 +150,7 @@ export async function POST(request: Request) {
         agentName: "10秒故事板导演",
         model: STORYBOARD_COMPILE_MODEL,
         stream: false,
-        system_prompt: config.prompt,
+        system_prompt: `${config.prompt}\n\n# 本次画面文字模式（最高优先级）\n${storyboardTextLayoutInstruction(input.textLayoutMode)}`,
         response_format: "json_object",
         deep_thinking_type: 0,
         deep_thinking_overridden: true,

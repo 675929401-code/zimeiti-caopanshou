@@ -5,8 +5,6 @@ import {
   job,
   jobs,
   publicJob,
-  runJob,
-  refreshJob,
   retrySave,
   reconcileJobBilling,
 } from '../../../../commerce/server/jobs';
@@ -22,13 +20,6 @@ export async function GET(request: Request) {
   try {
     const user = requireIdentity(request);
     const values = jobs(user.id);
-    after(async () => {
-      for (const value of values
-        .filter((item) => !item.input.rollingPlan && ['queued', 'processing', 'unknown', 'running'].includes(item.status))
-        .slice(0, 3)) {
-        await refreshJob(value.id, user.id);
-      }
-    });
     return json({ jobs: values.map(publicJob) });
   } catch (error) {
     return errorResponse(error);
@@ -75,7 +66,9 @@ export async function POST(request: Request) {
       clientRequestId: body.clientRequestId,
       inputFingerprint: body.inputFingerprint,
     });
-    after(() => runJob(value.id, user.id));
+    // Quote confirmation durably creates the queued job. Only the dedicated
+    // Commerce worker may claim and dispatch it, so concurrent web requests
+    // cannot fan out into an unbounded number of provider calls.
     return json({ job: publicJob(value) }, 202);
   } catch (error) {
     return errorResponse(error);

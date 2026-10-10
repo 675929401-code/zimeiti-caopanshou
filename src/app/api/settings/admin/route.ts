@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateGlobalSystemPrefixCache } from "@/app/api/llm/llm-state";
 import { clearCozeConfigCache } from "@/lib/coze-api";
 import {
   adminPlatformSettingKeysForScope,
@@ -192,6 +193,7 @@ export async function POST(request: NextRequest) {
         mismatchedKey,
       );
     }
+    if (changedKeys.includes("global_system_prefix")) invalidateGlobalSystemPrefixCache();
     if (changedKeys.some((key) => key.startsWith("coze_"))) clearCozeConfigCache();
 
     for (const item of authorizations) {
@@ -209,7 +211,16 @@ export async function POST(request: NextRequest) {
       .sort()
       .at(-1) || null;
     return NextResponse.json(
-      { success: true, scopes, changedKeys, ignoredKeys: patch.ignoredKeys, settings, publishedAt },
+      {
+        success: true,
+        scopes,
+        changedKeys,
+        verifiedKeys: writeKeys,
+        verification: "database-readback",
+        ignoredKeys: patch.ignoredKeys,
+        settings,
+        publishedAt,
+      },
       { headers: { "Cache-Control": "private, no-store, max-age=0, must-revalidate" } },
     );
   } catch (error) {

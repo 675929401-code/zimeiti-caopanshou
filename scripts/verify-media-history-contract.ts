@@ -52,7 +52,7 @@ assert.deepEqual(resolveMediaHistoryRetention({
   status: "completed",
   createdAt: "2026-09-25T23:59:59Z",
   now,
-}), { expiresAt: "2026-09-28T23:59:59.000Z", retentionSource: "policy", expired: true });
+}), { expiresAt: null, retentionSource: "none", expired: false });
 
 assert.deepEqual(resolveMediaHistoryRetention({
   kind: "video",
@@ -78,7 +78,7 @@ async function verifySourceContracts() {
     "mediaHistoryCategoryFromVideoSource",
     'freeCanvas ? "/free-canvas"',
     "expiredCount: snapshot.expiredCount",
-    'strategy: "upstream-expiry-then-fallback"',
+    'strategy: "image-fallback-video-upstream-lifetime"',
   ]) assert(route.includes(token), `media history route missing ${token}`);
 
   for (const forbidden of [
@@ -88,7 +88,7 @@ async function verifySourceContracts() {
     "浏览器视频副本",
   ]) assert(!page.includes(forbidden), `media history page still exposes local cache: ${forbidden}`);
 
-  assert(page.includes("图片保留两天、视频保留三天"));
+  assert(page.includes("普通视频不设平台固定天数"));
   assert(provenance.includes("delivery_asset_id,client_idempotency_key,request_snapshot"));
   assert(provenance.includes("origins.set"));
   assert(route.includes("mediaHistoryProjectUuid(row.batch_id)"));

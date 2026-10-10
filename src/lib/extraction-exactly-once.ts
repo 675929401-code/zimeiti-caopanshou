@@ -32,6 +32,7 @@ export type ExtractionAttemptRecord = {
   billingEvidence: JsonObject;
   errorCode?: string;
   errorMessage?: string;
+  contentPurgedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -52,6 +53,7 @@ type DatabaseExtractionAttemptRow = {
   billing_evidence?: JsonObject | null;
   error_code?: string | null;
   error_message?: string | null;
+  content_purged_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -144,6 +146,7 @@ function rowToRecord(row: DatabaseExtractionAttemptRow): ExtractionAttemptRecord
     billingEvidence: isPlainObject(row.billing_evidence) ? row.billing_evidence : {},
     ...(row.error_code ? { errorCode: row.error_code } : {}),
     ...(row.error_message ? { errorMessage: sanitizedErrorMessage(row.error_message) } : {}),
+    ...(row.content_purged_at ? { contentPurgedAt: row.content_purged_at } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -556,6 +559,29 @@ function pickEvidence(body: unknown, keys: string[]): JsonObject {
 }
 
 function replayResponse(record: ExtractionAttemptRecord) {
+  if ((record.state === "succeeded" || record.state === "failed") && record.contentPurgedAt) {
+    const charged = typeof record.billingEvidence.charged === "boolean"
+      ? record.billingEvidence.charged
+      : null;
+    return NextResponse.json({
+      success: false,
+      error: record.providerEvidence.content_retention === "video_transient"
+        ? "视频提取结果仅供当次预览和下载，平台不保存文件或历史结果。"
+        : "这条提取结果已超过保存期限，正文内容已按规则清理。",
+      error_code: "EXTRACTION_CONTENT_NOT_RETAINED",
+      attempt_id: record.recordId,
+      charged,
+      billing_unknown: charged === null,
+      retry_safe: false,
+    }, {
+      status: 410,
+      headers: {
+        "Cache-Control": "no-store",
+        "X-Extraction-Replayed": "true",
+        "X-Extraction-Attempt-Id": record.recordId,
+      },
+    });
+  }
   if ((record.state === "succeeded" || record.state === "failed") && record.httpStatus && record.response !== undefined) {
     return NextResponse.json(sanitizeOwnedExtractionResponse(record.response), {
       status: record.httpStatus,

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import pg from "pg";
 import {
   VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
   isReleaseVerifiedVideoChannelHealth,
@@ -8,20 +10,324 @@ import {
   PRODUCTION_DATABASE_CONTRACT,
   validateProductionDatabaseOpenApi,
 } from "../src/lib/production-database-readiness";
+import { assertSharedAgentBatchCasCandidateCaptured } from "./lib/shared-agent-batch-cas-candidate-gate";
+import { assertForwardMigrationRoot } from "./lib/forward-migration-source-validator.mjs";
+
+const { Client } = pg;
 
 const read = (file: string) => readFileSync(file, "utf8");
+const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+const migrationReleasePolicy = JSON.parse(read("deploy/policies/release-policy.json")) as {
+  database?: {
+    rollbackRoot?: string;
+    legacyRollbackRelocations?: Array<{ from: string; to: string; sha256: string }>;
+  };
+};
+const forwardMigrationRoot = assertForwardMigrationRoot({
+  projectRoot: process.cwd(),
+  migrationRoot: "supabase/migrations",
+  rollbackRoot: migrationReleasePolicy.database?.rollbackRoot || "supabase/rollbacks",
+  legacyRollbackRelocations: migrationReleasePolicy.database?.legacyRollbackRelocations || [],
+  gitIndexMode: "required",
+});
+const forwardMigrationCoverage = [
+  ...forwardMigrationRoot.gitIndex.trackedForwardPaths.map((file: string) => ({ file, source: "head-index-worktree" })),
+  ...forwardMigrationRoot.gitIndex.stagedNewForwardPaths.map((file: string) => ({ file, source: "index-new-worktree" })),
+  ...forwardMigrationRoot.gitIndex.untrackedNewForwardPaths.map((file: string) => ({ file, source: "untracked-new-worktree" })),
+].sort((left, right) => left.file.localeCompare(right.file));
+const forwardMigrationCoverageSha256 = sha256(JSON.stringify(forwardMigrationCoverage));
 const contract = JSON.parse(read("deploy/policies/database-contract.v1.json")) as {
   contractVersion: string;
   requiredProbeRole: string;
+  liveCatalogChecks?: {
+    mode: string;
+    requiredAfterMigrationApply: boolean;
+    requiredBeforeCandidateActivation: boolean;
+    migrationLedger: {
+      relation: string;
+      hashColumn: string;
+      hashAlgorithm: string;
+      requiredMigrations: Array<{ version: string; file: string; sha256: string }>;
+    };
+    relationSemantics: Array<{
+      relation: string;
+      requiredOwnerRelation?: string;
+      rlsRequired?: boolean;
+      forbiddenPrivilegePrincipals?: string[];
+      requiredColumns: Array<{ name: string; type: string }>;
+      requiredConstraints: Array<{ name: string; validated: boolean; definitionTokens: string[] }>;
+    }>;
+    triggerSemantics: Array<{
+      relation: string;
+      name: string;
+      function: string;
+      enabled: boolean;
+    }>;
+    functionSecurityGroups: Array<{
+      id: string;
+      ownerRelation: string;
+      ownerMustMatchRelationOwner: boolean;
+      securityDefinerRequired: boolean;
+      searchPath: string[];
+      requiredNonOwnerExecuteGrantees: string[];
+      allowedEffectiveExecutePrincipals: string[];
+      superuserInherentPrivilegeExcluded: boolean;
+      forbiddenExecutePrincipals: string[];
+      functions: string[];
+      requiredDefinitionTokens?: Record<string, string[]>;
+    }>;
+  };
   tables: Array<{ name: string; columns: string[] }>;
   rpcs: Array<{ name: string; arguments: string[] }>;
+  rollbackArtifacts?: Array<{
+    forwardMigration: string;
+    rollback: string;
+    rollbackSha256?: string;
+    mode: string;
+    preserves: string[];
+    blocksWhen: string[];
+  }>;
 };
+
+// Candidate-aware fail-closed gate. The formal contract is refreshed only by
+// the database control-plane owner after local apply/readiness evidence exists.
+// Until then, any release path that invokes this verifier is intentionally
+// blocked rather than silently omitting migration 1400.
+assertSharedAgentBatchCasCandidateCaptured(contract);
 
 const table = (name: string) => contract.tables.find((entry) => entry.name === name);
 const rpc = (name: string) => contract.rpcs.find((entry) => entry.name === name);
 
-assert.equal(contract.contractVersion, "20261001070000");
+assert.equal(contract.contractVersion, "20261010140000");
 assert.equal(contract.requiredProbeRole, "service_role");
+const liveCatalogChecks = (() => {
+  const configured = contract.liveCatalogChecks;
+  assert.ok(configured, "database contract missing live catalog checks");
+  return configured;
+})();
+assert.equal(liveCatalogChecks.mode, "read-only-postgresql-catalog");
+assert.equal(liveCatalogChecks.requiredAfterMigrationApply, true);
+assert.equal(liveCatalogChecks.requiredBeforeCandidateActivation, true);
+assert.equal(liveCatalogChecks.migrationLedger.relation, "supabase_migrations.schema_migrations");
+assert.equal(liveCatalogChecks.migrationLedger.hashColumn, "hash");
+assert.equal(liveCatalogChecks.migrationLedger.hashAlgorithm, "sha256-source-bytes");
+assert.deepEqual(liveCatalogChecks.relationSemantics, [
+  {
+    relation: "public.image_generation_requests",
+    requiredColumns: [
+      { name: "provider_dispatch_receipt", type: "jsonb" },
+      { name: "provider_submission_receipt", type: "jsonb" },
+    ],
+    requiredConstraints: [
+      {
+        name: "image_generation_requests_provider_receipt_order",
+        validated: true,
+        definitionTokens: ["provider_submission_receipt IS NULL", "provider_dispatch_receipt IS NOT NULL"],
+      },
+    ],
+  },
+  {
+    relation: "public.video_reference_asset_cleanup_outbox",
+    requiredOwnerRelation: "public.video_tasks",
+    rlsRequired: true,
+    forbiddenPrivilegePrincipals: ["PUBLIC", "anon", "authenticated", "service_role"],
+    requiredColumns: [
+      { name: "asset_ref", type: "text" },
+      { name: "user_file_id", type: "text" },
+      { name: "user_id", type: "text" },
+      { name: "storage_provider", type: "text" },
+      { name: "storage_key", type: "text" },
+      { name: "source", type: "text" },
+      { name: "file_category", type: "text" },
+      { name: "upload_session", type: "text" },
+      { name: "state", type: "text" },
+      { name: "attempts", type: "integer" },
+      { name: "last_error_code", type: "text" },
+      { name: "registered_at", type: "timestamp with time zone" },
+      { name: "claimed_at", type: "timestamp with time zone" },
+      { name: "object_deleted_at", type: "timestamp with time zone" },
+      { name: "completed_at", type: "timestamp with time zone" },
+      { name: "updated_at", type: "timestamp with time zone" },
+    ],
+    requiredConstraints: [],
+  },
+]);
+assert.deepEqual(liveCatalogChecks.triggerSemantics, [
+  {
+    relation: "public.video_tasks",
+    name: "video_tasks_reference_asset_reservation_guard",
+    function: "public.guard_video_reference_assets_during_reservation_v1()",
+    enabled: true,
+  },
+]);
+assert.deepEqual(liveCatalogChecks.functionSecurityGroups, [
+  {
+    id: "image-generation-request",
+    ownerRelation: "public.image_generation_requests",
+    ownerMustMatchRelationOwner: true,
+    securityDefinerRequired: true,
+    searchPath: ["public", "pg_temp"],
+    requiredNonOwnerExecuteGrantees: ["service_role"],
+    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
+    superuserInherentPrivilegeExcluded: true,
+    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
+    functions: [
+      "public.claim_image_generation_request_v2(text,text,text,text,text,text,jsonb)",
+      "public.reconcile_stale_image_generation_request_atomic(text,text,integer)",
+      "public.record_image_provider_dispatch_receipt_atomic(text,text,text,text,jsonb)",
+      "public.record_image_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)",
+    ],
+    requiredDefinitionTokens: {
+      "public.reconcile_stale_image_generation_request_atomic(text,text,integer)": ["provider_evidence_present"],
+      "public.record_image_provider_dispatch_receipt_atomic(text,text,text,text,jsonb)": [
+        "IMAGE_PROVIDER_DISPATCH_RECEIPT_INVALID", "requestProjection.referenceCount=",
+      ],
+      "public.record_image_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)": [
+        "IMAGE_PROVIDER_SUBMISSION_RECEIPT_INVALID", "providerAcknowledgementField=",
+      ],
+    },
+  },
+  {
+    id: "image-provider-reconciliation-owner-helper",
+    ownerRelation: "public.image_generation_requests",
+    ownerMustMatchRelationOwner: true,
+    securityDefinerRequired: true,
+    searchPath: ["public", "pg_temp"],
+    requiredNonOwnerExecuteGrantees: [],
+    allowedEffectiveExecutePrincipals: ["relation_owner"],
+    superuserInherentPrivilegeExcluded: true,
+    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated", "service_role"],
+    functions: [
+      "public.reconcile_stale_image_generation_request_without_provider_receipt(text,text,integer)",
+    ],
+  },
+  {
+    id: "video-generation-request-snapshot",
+    ownerRelation: "public.video_tasks",
+    ownerMustMatchRelationOwner: true,
+    securityDefinerRequired: true,
+    searchPath: ["public", "pg_temp"],
+    requiredNonOwnerExecuteGrantees: ["service_role"],
+    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
+    superuserInherentPrivilegeExcluded: true,
+    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
+    functions: [
+      "public.persist_video_generation_request_snapshot_v1_atomic(text,text,text,jsonb,text)",
+      "public.reserve_video_generation_task_request_snapshot_v1_atomic(text,text,text,text,text,numeric,numeric,text,numeric,boolean,boolean,jsonb,jsonb,text,text,text,text,text,integer,text,text,text,text,text,text,numeric,text)",
+      "public.reserve_queued_digital_video_task_request_snapshot_v1_atomic(jsonb,jsonb,jsonb,jsonb,text)",
+    ],
+  },
+  {
+    id: "video-provider-request-projection",
+    ownerRelation: "public.video_tasks",
+    ownerMustMatchRelationOwner: true,
+    securityDefinerRequired: true,
+    searchPath: ["public", "pg_temp"],
+    requiredNonOwnerExecuteGrantees: ["service_role"],
+    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
+    superuserInherentPrivilegeExcluded: true,
+    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
+    functions: [
+      "public.record_video_provider_dispatch_receipt_atomic(text,text,text,jsonb)",
+      "public.record_video_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)",
+    ],
+    requiredDefinitionTokens: {
+      "public.record_video_provider_dispatch_receipt_atomic(text,text,text,jsonb)": [
+        "wireBodySha256", "endpointPath", "attemptOrdinal", "dispatchIdentitySha256",
+        "VIDEO_PROVIDER_DISPATCH_ATTEMPT_ORDINAL_CONFLICT", "VIDEO_PROVIDER_DUPLICATE_WIRE_BODY_CONFLICT",
+      ],
+      "public.record_video_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)": [
+        "dispatchReceiptSha256", "dispatchIdentitySha256s", "dispatchAttemptCount",
+        "VIDEO_PROVIDER_SUBMISSION_RECEIPT_WITHOUT_V2_DISPATCH",
+      ],
+    },
+  },
+  {
+    id: "video-reference-asset-reservation-guard",
+    ownerRelation: "public.video_tasks",
+    ownerMustMatchRelationOwner: true,
+    securityDefinerRequired: true,
+    searchPath: ["public", "pg_temp"],
+    requiredNonOwnerExecuteGrantees: [],
+    allowedEffectiveExecutePrincipals: ["relation_owner"],
+    superuserInherentPrivilegeExcluded: true,
+    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated", "service_role"],
+    functions: ["public.guard_video_reference_assets_during_reservation_v1()"],
+    requiredDefinitionTokens: {
+      "public.guard_video_reference_assets_during_reservation_v1()": [
+        "VIDEO_REFERENCE_ASSET_CLEANUP_IN_PROGRESS",
+      ],
+    },
+  },
+  {
+    id: "video-reference-asset-cleanup",
+    ownerRelation: "public.video_tasks",
+    ownerMustMatchRelationOwner: true,
+    securityDefinerRequired: true,
+    searchPath: ["public", "pg_temp"],
+    requiredNonOwnerExecuteGrantees: ["service_role"],
+    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
+    superuserInherentPrivilegeExcluded: true,
+    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
+    functions: [
+      "public.register_video_reference_asset_guard_v1(text,text,text,text,text,text,text,text)",
+      "public.claim_video_reference_asset_cleanup_v1(text,text,text,text,text,text,text,text)",
+      "public.mark_video_reference_asset_object_deleted_v1(text,text)",
+      "public.complete_video_reference_asset_cleanup_v1(text,text,text,text,text,text)",
+      "public.record_video_reference_asset_cleanup_failure_v1(text,text,text)",
+    ],
+    requiredDefinitionTokens: {
+      "public.register_video_reference_asset_guard_v1(text,text,text,text,text,text,text,text)": [
+        "VIDEO_REFERENCE_GUARD_IDENTITY_MISMATCH",
+      ],
+      "public.claim_video_reference_asset_cleanup_v1(text,text,text,text,text,text,text,text)": [
+        "VIDEO_REFERENCE_DELETE_ACTIVE_TASK",
+      ],
+      "public.mark_video_reference_asset_object_deleted_v1(text,text)": [
+        "VIDEO_REFERENCE_DELETE_STATE_INVALID",
+      ],
+      "public.complete_video_reference_asset_cleanup_v1(text,text,text,text,text,text)": [
+        "delete from public.user_files",
+      ],
+      "public.record_video_reference_asset_cleanup_failure_v1(text,text,text)": [
+        "VIDEO_REFERENCE_DELETE_RETRY_REQUIRED",
+      ],
+    },
+  },
+  {
+    id: "shared-agent-batch-cas",
+    ownerRelation: "public.agents",
+    ownerMustMatchRelationOwner: true,
+    securityDefinerRequired: true,
+    searchPath: ["public", "pg_temp"],
+    requiredNonOwnerExecuteGrantees: ["service_role"],
+    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
+    superuserInherentPrivilegeExcluded: true,
+    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
+    functions: [
+      "public.apply_agent_reorder_cas_v1(jsonb)",
+      "public.apply_coze_agent_import_cas_v1(jsonb)",
+    ],
+    requiredDefinitionTokens: {
+      "public.apply_agent_reorder_cas_v1(jsonb)": [
+        "AGENT_REORDER_CATEGORY_INCOMPLETE", "AGENT_CONFIG_REVISION_CONFLICT",
+      ],
+      "public.apply_coze_agent_import_cas_v1(jsonb)": [
+        "pg_advisory_xact_lock", "COZE_IMPORT_INSERT_TARGET_EXISTS", "AGENT_CONFIG_REVISION_CONFLICT_AFTER_LOCK",
+      ],
+    },
+  },
+]);
+assert.deepEqual(
+  liveCatalogChecks.migrationLedger.requiredMigrations.map((entry) => entry.version),
+  [
+    "20261010023000", "20261010130000", "20261010131000", "20261010132000",
+    "20261010133000", "20261010134000", "20261010135000", "20261010140000",
+  ],
+);
+for (const migration of liveCatalogChecks.migrationLedger.requiredMigrations) {
+  assert.equal(sha256(read(migration.file)), migration.sha256, `migration source hash changed: ${migration.file}`);
+}
 const referenceCheckIds = new Set(
   (JSON.parse(read("deploy/policies/database-contract.v1.json")) as {
     referenceDataChecks?: Array<{ id: string }>;
@@ -54,6 +360,13 @@ for (const name of [
   "revenue_records",
 ]) assert.ok(table(name), `database contract missing table ${name}`);
 
+for (const name of [
+  "white_label_profiles",
+  "white_label_profile_events",
+  "white_label_assets",
+  "white_label_release_assets",
+]) assert.equal(table(name), undefined, `internal-only white-label table leaked into the public OpenAPI contract: ${name}`);
+
 for (const column of [
   "id", "user_id", "model_id", "task_id", "cost_price", "selling_price", "profit",
   "is_admin", "record_type", "credits_charged", "cash_charged", "created_at",
@@ -63,6 +376,13 @@ assert.ok(
   table("extraction_attempts")?.columns.includes("request_snapshot"),
   "extraction failure history contract missing request_snapshot",
 );
+assert.ok(
+  table("extraction_attempts")?.columns.includes("content_purged_at"),
+  "extraction retention contract missing content_purged_at",
+);
+for (const column of ["history_hidden_at", "source_expired_at"]) {
+  assert.ok(table("video_tasks")?.columns.includes(column), `video direct-delivery contract missing ${column}`);
+}
 for (const column of ["id", "user_id", "state", "billing_state", "history_hidden_at", "created_at"]) {
   assert.ok(table("digital_human_long_jobs")?.columns.includes(column), `digital-human long history contract missing ${column}`);
 }
@@ -74,8 +394,17 @@ for (const column of [
 
 for (const column of [
   "request_snapshot",
+  "provider_dispatch_receipt",
+  "provider_submission_receipt",
   "failure_hidden_at",
 ]) assert.ok(table("image_generation_requests")?.columns.includes(column), `image failure history contract missing ${column}`);
+assert.deepEqual(rpc("record_image_provider_dispatch_receipt_atomic")?.arguments, [
+  "p_record_id", "p_user_id", "p_client_trace_id", "p_payload_fingerprint", "p_receipt",
+]);
+assert.deepEqual(rpc("record_image_provider_submission_receipt_atomic")?.arguments, [
+  "p_record_id", "p_user_id", "p_client_trace_id", "p_payload_fingerprint",
+  "p_dispatch_receipt_sha256", "p_receipt",
+]);
 
 for (const column of [
   "refund_attempt_id",
@@ -122,7 +451,11 @@ for (const name of [
   "list_extraction_attempts_for_reconciliation",
   "reconcile_extraction_attempt_atomic",
   "checkpoint_extraction_request_atomic",
+  "read_extraction_account_history",
+  "mark_video_upstream_source_expired",
+  "purge_expired_user_content",
   "claim_image_generation_request_v2",
+  "reconcile_stale_image_generation_request_atomic",
   "claim_short_drama_script_request_atomic",
   "finalize_short_drama_script_request_atomic",
   "hide_digital_human_long_history_item",
@@ -141,7 +474,31 @@ for (const name of [
   "mark_payment_refund_provider_started_atomic",
   "finalize_payment_refund_attempt_atomic",
   "autodl_h3_finalize_video",
+  "save_white_label_draft_v2_atomic",
+  "register_white_label_asset_atomic",
+  "publish_white_label_draft_atomic",
+  "read_published_white_label_brand",
+  "read_published_white_label_asset",
 ]) assert.ok(rpc(name), `database contract missing RPC ${name}`);
+
+assert.deepEqual(rpc("save_white_label_draft_v2_atomic")?.arguments, [
+  "p_profile_id", "p_expected_revision", "p_brand_name", "p_brand_short_name",
+  "p_contact_name", "p_contact_wechat", "p_contact_phone", "p_contact_email",
+  "p_requested_hostname", "p_ascii_hostname", "p_unicode_hostname", "p_expected_txt_name",
+  "p_verification_token_hash", "p_verification_token_hint", "p_brand_slogan",
+  "p_brand_description", "p_asset_ids", "p_actor_id", "p_request_key",
+]);
+assert.deepEqual(rpc("register_white_label_asset_atomic")?.arguments, [
+  "p_profile_id", "p_expected_revision", "p_purpose", "p_storage_provider", "p_storage_key",
+  "p_sha256", "p_mime_type", "p_bytes", "p_width", "p_height", "p_actor_id", "p_request_key",
+]);
+assert.deepEqual(rpc("publish_white_label_draft_atomic")?.arguments, [
+  "p_profile_id", "p_expected_revision", "p_actor_id", "p_request_key",
+]);
+assert.deepEqual(rpc("read_published_white_label_brand")?.arguments, ["p_hostname"]);
+assert.deepEqual(rpc("read_published_white_label_asset")?.arguments, [
+  "p_hostname", "p_release_id", "p_asset_id",
+]);
 
 assert.deepEqual(rpc("autodl_h3_finalize_video")?.arguments, [
   "p_job_id", "p_public_task_id", "p_video_task_internal_id", "p_user_id",
@@ -153,8 +510,20 @@ assert.deepEqual(rpc("claim_image_generation_request_v2")?.arguments, [
   "p_record_id", "p_user_id", "p_user_hash", "p_client_idempotency_key",
   "p_client_trace_id", "p_payload_fingerprint", "p_request_snapshot",
 ]);
+assert.deepEqual(rpc("reconcile_stale_image_generation_request_atomic")?.arguments, [
+  "p_record_id", "p_user_id", "p_stale_after_seconds",
+]);
 assert.deepEqual(rpc("checkpoint_extraction_request_atomic")?.arguments, [
   "p_record_id", "p_user_id", "p_payload_fingerprint", "p_request_snapshot",
+]);
+assert.deepEqual(rpc("read_extraction_account_history")?.arguments, [
+  "p_user_id", "p_before", "p_before_id", "p_limit",
+]);
+assert.deepEqual(rpc("mark_video_upstream_source_expired")?.arguments, [
+  "p_task_id", "p_user_id", "p_http_status",
+]);
+assert.deepEqual(rpc("purge_expired_user_content")?.arguments, [
+  "p_conversation_days", "p_extraction_days", "p_limit",
 ]);
 assert.deepEqual(rpc("hide_digital_human_long_history_item")?.arguments, [
   "p_user_id", "p_parent_id",
@@ -206,6 +575,8 @@ for (const name of ["short_drama_script_requests", "digital_human_long_jobs"]) {
 }
 for (const [tableName, column] of [
   ["extraction_attempts", "request_snapshot"],
+  ["extraction_attempts", "content_purged_at"],
+  ["video_tasks", "source_expired_at"],
   ["digital_human_long_jobs", "history_hidden_at"],
   ["revenue_records", "profit"],
 ] as const) {
@@ -218,10 +589,18 @@ for (const [tableName, column] of [
 }
 for (const name of [
   "checkpoint_extraction_request_atomic",
+  "read_extraction_account_history",
+  "mark_video_upstream_source_expired",
+  "purge_expired_user_content",
   "hide_digital_human_long_history_item",
   "claim_short_drama_script_request_atomic",
   "finalize_short_drama_script_request_atomic",
   "autodl_h3_finalize_video",
+  "save_white_label_draft_v2_atomic",
+  "register_white_label_asset_atomic",
+  "publish_white_label_draft_atomic",
+  "read_published_white_label_brand",
+  "read_published_white_label_asset",
 ]) {
   const missing = structuredClone(openApiFixture);
   delete missing.paths[`/rpc/${name}`];
@@ -229,6 +608,9 @@ for (const name of [
     validateProductionDatabaseOpenApi(missing).missingRpcs.includes(name),
     `missing non-Commerce RPC must block readiness: ${name}`,
   );
+}
+for (const name of ["white_label_profiles", "white_label_profile_events", "white_label_assets", "white_label_release_assets"]) {
+  assert.equal(openApiFixture.paths[`/${name}`], undefined, `internal-only white-label table exposed through PostgREST fixture: ${name}`);
 }
 const withoutH3CostPrice = structuredClone(openApiFixture);
 delete withoutH3CostPrice.paths["/rpc/autodl_h3_finalize_video"]
@@ -356,6 +738,90 @@ for (const marker of [
   "p.prorettype = 'trigger'::regtype",
   "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC",
 ]) assert.ok(runtimeFunctionSecurityMigration.includes(marker), `runtime function security migration missing ${marker}`);
+const userContentRetentionMigration = read("supabase/migrations/20261009043000_user_content_retention_and_video_direct_delivery.sql");
+for (const marker of [
+  "source_expired_at",
+  "content_purged_at",
+  "scrub_transient_video_extraction_content",
+  "read_extraction_account_history",
+  "mark_video_upstream_source_expired",
+  "purge_expired_user_content",
+  "ARCHIVE_POLICY_RETIRED_DIRECT_DELIVERY",
+]) assert.ok(userContentRetentionMigration.includes(marker), `user-content retention migration missing ${marker}`);
+assert.doesNotMatch(userContentRetentionMigration, /GRANT EXECUTE ON FUNCTION public\.scrub_transient_video_extraction_content/u);
+const imageSnapshotV2Migration = read("supabase/migrations/20261010130000_image_generation_request_snapshot_v2.sql");
+for (const marker of [
+  "image_generation_request_snapshot.v2",
+  "claim_image_generation_request_v2",
+  "reconcile_stale_image_generation_request_atomic",
+  "payloadFingerprint",
+  "set search_path = public, pg_temp",
+  "grant execute on function public.claim_image_generation_request_v2",
+  "grant execute on function public.reconcile_stale_image_generation_request_atomic",
+  "to service_role",
+]) assert.ok(imageSnapshotV2Migration.includes(marker), `image snapshot v2 migration missing ${marker}`);
+const imageOwnerAlignmentMigration = read("supabase/migrations/20261010131000_image_security_definer_owner_alignment.sql");
+for (const marker of [
+  "image_generation_requests",
+  "claim_image_generation_request_v2",
+  "reconcile_stale_image_generation_request_atomic",
+  "alter function %s owner to %I",
+  "alter function %s security definer",
+  "alter function %s set search_path = public, pg_temp",
+  "revoke all on function %s from public, anon, authenticated, service_role",
+  "grant execute on function %s to service_role",
+]) assert.ok(imageOwnerAlignmentMigration.includes(marker), `image RPC owner alignment migration missing ${marker}`);
+const videoOwnerAlignmentMigration = read("supabase/migrations/20261010132000_video_snapshot_function_owner_alignment.sql");
+for (const marker of [
+  "video_tasks",
+  "persist_video_generation_request_snapshot_v1_atomic",
+  "reserve_video_generation_task_request_snapshot_v1_atomic",
+  "reserve_queued_digital_video_task_request_snapshot_v1_atomic",
+  "alter function %s owner to %I",
+  "alter function %s security definer",
+  "alter function %s set search_path = public, pg_temp",
+  "revoke all on function %s from public, anon, authenticated, service_role",
+  "grant execute on function %s to service_role",
+  "v_unexpected_effective_roles",
+  "has_function_privilege",
+]) assert.ok(videoOwnerAlignmentMigration.includes(marker), `video RPC owner alignment migration missing ${marker}`);
+assert.doesNotMatch(videoOwnerAlignmentMigration, /\b(?:insert|update|delete|truncate)\s+(?:into\s+|from\s+)?public\.video_tasks\b/iu,
+  "video owner alignment must not rewrite business rows");
+const imageProviderReceiptMigration = read("supabase/migrations/20261010133000_image_provider_dispatch_receipts.sql");
+for (const marker of [
+  "provider_dispatch_receipt",
+  "provider_submission_receipt",
+  "image_generation_requests_provider_receipt_order",
+  "record_image_provider_dispatch_receipt_atomic",
+  "record_image_provider_submission_receipt_atomic",
+  "reconcile_stale_image_generation_request_without_provider_receipt",
+  "provider_evidence_present",
+  "requestProjection.referenceCount=",
+  "providerAcknowledgementField=",
+  "alter function %s owner to %I",
+  "set search_path = public, pg_temp",
+  "IMAGE_PROVIDER_RECEIPT_EFFECTIVE_EXECUTE_ACL_INVALID",
+]) assert.ok(imageProviderReceiptMigration.includes(marker), `image provider receipt migration missing ${marker}`);
+assert.match(imageProviderReceiptMigration, /^begin;/u);
+assert.match(imageProviderReceiptMigration, /commit;\s*$/u);
+const videoProviderProjectionMigration = read("supabase/migrations/20261010134000_video_provider_request_projection.sql");
+for (const marker of [
+  "record_video_provider_dispatch_receipt_atomic",
+  "record_video_provider_submission_receipt_atomic",
+  "wireBodySha256",
+  "endpointPath",
+  "attemptOrdinal",
+  "dispatchIdentitySha256",
+  "VIDEO_PROVIDER_DUPLICATE_WIRE_BODY_CONFLICT",
+  "dispatchIdentitySha256s",
+  "dispatchAttemptCount",
+  "VIDEO_PROVIDER_SUBMISSION_RECEIPT_WITHOUT_V2_DISPATCH",
+  "alter function %s owner to %I",
+  "set search_path = public, pg_temp",
+  "VIDEO_PROVIDER_RECEIPT_UNEXPECTED_EFFECTIVE_EXECUTE",
+]) assert.ok(videoProviderProjectionMigration.includes(marker), `video provider projection migration missing ${marker}`);
+assert.match(videoProviderProjectionMigration, /^begin;/u);
+assert.match(videoProviderProjectionMigration, /commit;\s*$/u);
 const llmMigration = read("supabase/migrations/20260901170000_llm_request_attempts_exactly_once.sql");
 for (const name of [
   "llm_request_attempts",
@@ -398,6 +864,191 @@ for (const name of [
 ]) assert.ok(refundMigration.includes(name), `payment refund migration missing ${name}`);
 const refundRollback = read("supabase/rollbacks/20260904193000_payment_refund_exactly_once.rollback.sql");
 assert.ok(refundRollback.includes("ROLLBACK_BLOCKED_PAYMENT_REFUND_EVIDENCE_EXISTS"));
+
+const platformBrandContactQrRollbackContract = contract.rollbackArtifacts?.find(
+  (entry) => entry.forwardMigration === "supabase/migrations/20261009053000_platform_brand_contact_qr.sql",
+);
+assert.deepEqual(platformBrandContactQrRollbackContract, {
+  forwardMigration: "supabase/migrations/20261009053000_platform_brand_contact_qr.sql",
+  rollback: "supabase/rollbacks/20261009053000_platform_brand_contact_qr.rollback.sql",
+  mode: "guarded-semantic-revert",
+  preserves: [
+    "platform_brand_profiles",
+    "platform_brand_revisions",
+    "platform_brand_assets",
+    "platform_brand_revision_assets",
+    "platform_brand_events",
+  ],
+  blocksWhen: [
+    "platform_brand_revisions.snapshot.contact exists",
+    "platform_brand_revisions.snapshot.assetIds references contact_wechat_qr_primary or contact_wechat_qr_secondary",
+    "platform_brand_assets contains either contact WeChat QR purpose",
+    "platform_brand_revision_assets contains either contact WeChat QR purpose",
+  ],
+});
+const platformBrandContactQrRollback = read(platformBrandContactQrRollbackContract.rollback);
+assert.match(platformBrandContactQrRollback, /^BEGIN;/u);
+assert.match(platformBrandContactQrRollback, /COMMIT;\s*$/u);
+for (const marker of [
+  "ROLLBACK_BLOCKED_PLATFORM_BRAND_CONTACT_QR_DATA_EXISTS",
+  "ERRCODE = '55000'",
+  "snapshot ? 'contact'",
+  "snapshot->'assetIds'",
+  "contact_wechat_qr_primary",
+  "contact_wechat_qr_secondary",
+  "platform_brand_assets_purpose_check",
+  "platform_brand_revision_assets_purpose_check",
+  "save_platform_brand_draft_atomic(bigint,jsonb,text,uuid,text)",
+  "register_platform_brand_asset_atomic(text,text,text,text,text,bigint,integer,integer,uuid,text)",
+]) assert.ok(platformBrandContactQrRollback.includes(marker), `0530 rollback missing ${marker}`);
+for (const preservedTable of platformBrandContactQrRollbackContract.preserves) {
+  assert.doesNotMatch(
+    platformBrandContactQrRollback,
+    new RegExp(`DROP\\s+TABLE(?:\\s+IF\\s+EXISTS)?\\s+(?:public\\.)?${preservedTable}\\b`, "iu"),
+    `0530 rollback must preserve ${preservedTable}`,
+  );
+}
+assert.doesNotMatch(
+  platformBrandContactQrRollback,
+  /DROP\s+FUNCTION(?:\s+IF\s+EXISTS)?\s+public\.(?:save_platform_brand_draft_atomic|register_platform_brand_asset_atomic)/iu,
+  "0530 rollback must restore, not remove, the platform-brand RPCs",
+);
+const rollbackPurposeList = [
+  "logo_square", "logo_horizontal_light", "logo_horizontal_dark",
+  "favicon", "social_share", "login_background",
+];
+for (const purpose of rollbackPurposeList) {
+  assert.ok(platformBrandContactQrRollback.includes(`'${purpose}'`), `0530 rollback missing legacy purpose ${purpose}`);
+}
+const restoredSaveFunction = platformBrandContactQrRollback.match(
+  /CREATE OR REPLACE FUNCTION public\.save_platform_brand_draft_atomic[\s\S]*?\nEND;\n\$\$;/u,
+)?.[0] || "";
+const restoredRegisterFunction = platformBrandContactQrRollback.match(
+  /CREATE OR REPLACE FUNCTION public\.register_platform_brand_asset_atomic[\s\S]*?\nEND;\n\$\$;/u,
+)?.[0] || "";
+assert.ok(restoredSaveFunction, "0530 rollback must restore save_platform_brand_draft_atomic");
+assert.ok(restoredRegisterFunction, "0530 rollback must restore register_platform_brand_asset_atomic");
+assert.doesNotMatch(restoredSaveFunction, /contact_wechat_qr_(?:primary|secondary)/u);
+assert.doesNotMatch(restoredRegisterFunction, /contact_wechat_qr_(?:primary|secondary)/u);
+
+const videoOwnerRollbackContract = contract.rollbackArtifacts?.find(
+  (entry) => entry.forwardMigration === "supabase/migrations/20261010132000_video_snapshot_function_owner_alignment.sql",
+);
+assert.deepEqual(videoOwnerRollbackContract, {
+  forwardMigration: "supabase/migrations/20261010132000_video_snapshot_function_owner_alignment.sql",
+  rollback: "supabase/rollbacks/20261010132000_video_snapshot_function_owner_alignment.rollback.sql",
+  mode: "forward-repair-only",
+  preserves: [
+    "video_tasks",
+    "persist_video_generation_request_snapshot_v1_atomic",
+    "reserve_video_generation_task_request_snapshot_v1_atomic",
+    "reserve_queued_digital_video_task_request_snapshot_v1_atomic",
+    "supabase_migrations.schema_migrations:20261010132000",
+  ],
+  blocksWhen: [
+    "function owner differs from public.video_tasks owner",
+    "SECURITY DEFINER or search_path differs from the release contract",
+    "direct or effective EXECUTE is available to a non-owner role other than service_role",
+  ],
+});
+const videoOwnerRollback = read(videoOwnerRollbackContract.rollback);
+assert.match(videoOwnerRollback, /^begin;/u);
+assert.match(videoOwnerRollback, /commit;\s*$/u);
+for (const marker of [
+  "Forward-repair-only rollback guard",
+  "VIDEO_SNAPSHOT_SECURITY_DEFINER_OWNER_ALIGNMENT_REQUIRED",
+  "VIDEO_SNAPSHOT_EXECUTE_ACL_REQUIRED",
+  "VIDEO_SNAPSHOT_UNEXPECTED_EFFECTIVE_EXECUTE",
+  "has_function_privilege",
+]) assert.ok(videoOwnerRollback.includes(marker), `1320 rollback missing ${marker}`);
+assert.doesNotMatch(videoOwnerRollback, /\b(?:alter|drop|create|grant|revoke|insert|update|delete|truncate)\b/iu,
+  "1320 rollback must only verify and retain the forward security repair");
+assert.doesNotMatch(videoOwnerRollback, /delete\s+from\s+supabase_migrations\.schema_migrations/iu,
+  "1320 rollback must retain the migration ledger");
+
+const imageProviderRollbackContract = contract.rollbackArtifacts?.find(
+  (entry) => entry.forwardMigration === "supabase/migrations/20261010133000_image_provider_dispatch_receipts.sql",
+);
+assert.deepEqual(imageProviderRollbackContract, {
+  forwardMigration: "supabase/migrations/20261010133000_image_provider_dispatch_receipts.sql",
+  rollback: "supabase/rollbacks/20261010133000_image_provider_dispatch_receipts.rollback.sql",
+  rollbackSha256: "14195658c6a43ac836a8617effb6eccb75fdca1cb0880e01fd61e6aaf45669ea",
+  mode: "forward-repair-only",
+  preserves: [
+    "image_generation_requests.provider_dispatch_receipt",
+    "image_generation_requests.provider_submission_receipt",
+    "record_image_provider_dispatch_receipt_atomic",
+    "record_image_provider_submission_receipt_atomic",
+    "reconcile_stale_image_generation_request_atomic",
+    "supabase_migrations.schema_migrations:20261010133000",
+  ],
+  blocksWhen: [
+    "provider receipt columns or receipt-order constraint are absent",
+    "receipt-aware stale reconciliation semantics are absent",
+    "function owner, SECURITY DEFINER or search_path differs from the release contract",
+    "direct or effective EXECUTE differs from the service-role-only and owner-only helper contract",
+  ],
+});
+const imageProviderRollback = read(imageProviderRollbackContract.rollback);
+assert.equal(sha256(imageProviderRollback), imageProviderRollbackContract.rollbackSha256,
+  "1330 rollback source hash changed");
+assert.match(imageProviderRollback, /^begin;/u);
+assert.match(imageProviderRollback, /commit;\s*$/u);
+for (const marker of [
+  "IMAGE_PROVIDER_RECEIPT_FORWARD_REPAIR_REQUIRED",
+  "IMAGE_PROVIDER_RECEIPT_SECURITY_ALIGNMENT_REQUIRED",
+  "IMAGE_PROVIDER_RECEIPT_HELPER_ISOLATION_REQUIRED",
+  "provider_evidence_present",
+  "requestProjection.referenceCount=",
+  "providerAcknowledgementField=",
+  "has_function_privilege",
+]) assert.ok(imageProviderRollback.includes(marker), `1330 rollback missing ${marker}`);
+assert.doesNotMatch(imageProviderRollback, /\b(?:drop\s+(?:column|function|table)|delete\s+from|truncate\s+|insert\s+into|update\s+public\.)/iu,
+  "1330 rollback must preserve provider receipt evidence and ledger history");
+assert.doesNotMatch(imageProviderRollback, /delete\s+from\s+supabase_migrations\.schema_migrations/iu,
+  "1330 rollback must retain the migration ledger");
+
+const videoProviderRollbackContract = contract.rollbackArtifacts?.find(
+  (entry) => entry.forwardMigration === "supabase/migrations/20261010134000_video_provider_request_projection.sql",
+);
+assert.deepEqual(videoProviderRollbackContract, {
+  forwardMigration: "supabase/migrations/20261010134000_video_provider_request_projection.sql",
+  rollback: "supabase/rollbacks/20261010134000_video_provider_request_projection.rollback.sql",
+  rollbackSha256: "87cf610bc8d089f0f88ea7704d1ac90d6f6d00ca32a9a383ad672dde067ce3b0",
+  mode: "forward-repair-only",
+  preserves: [
+    "video_tasks.provider_dispatch_receipt",
+    "video_tasks.provider_submission_receipt",
+    "record_video_provider_dispatch_receipt_atomic",
+    "record_video_provider_submission_receipt_atomic",
+    "supabase_migrations.schema_migrations:20261010134000",
+  ],
+  blocksWhen: [
+    "ordered dispatch identity or duplicate wire-body conflict semantics are absent",
+    "submission receipt is not bound to V2 dispatch hashes, identities and attempt count",
+    "function owner, SECURITY DEFINER or search_path differs from the release contract",
+    "direct or effective EXECUTE is available to a non-owner role other than service_role",
+  ],
+});
+const videoProviderRollback = read(videoProviderRollbackContract.rollback);
+assert.equal(sha256(videoProviderRollback), videoProviderRollbackContract.rollbackSha256,
+  "1340 rollback source hash changed");
+assert.match(videoProviderRollback, /^begin;/u);
+assert.match(videoProviderRollback, /commit;\s*$/u);
+for (const marker of [
+  "VIDEO_PROVIDER_PROJECTION_FORWARD_REPAIR_REQUIRED",
+  "VIDEO_PROVIDER_PROJECTION_SECURITY_REPAIR_REQUIRED",
+  "VIDEO_PROVIDER_PROJECTION_ACL_REPAIR_REQUIRED",
+  "VIDEO_PROVIDER_PROJECTION_SEMANTIC_REPAIR_REQUIRED",
+  "VIDEO_PROVIDER_DUPLICATE_WIRE_BODY_CONFLICT",
+  "dispatchIdentitySha256s",
+  "dispatchAttemptCount",
+  "has_function_privilege",
+]) assert.ok(videoProviderRollback.includes(marker), `1340 rollback missing ${marker}`);
+assert.doesNotMatch(videoProviderRollback, /\b(?:drop\s+(?:column|function|table)|delete\s+from|truncate\s+|insert\s+into|update\s+public\.)/iu,
+  "1340 rollback must preserve provider request evidence and ledger history");
+assert.doesNotMatch(videoProviderRollback, /delete\s+from\s+supabase_migrations\.schema_migrations/iu,
+  "1340 rollback must retain the migration ledger");
 
 const migration = read("supabase/migrations/20260901160000_video_channel_health_release_protocol.sql");
 assert.match(migration, /verification_state = 'unverified'/u);
@@ -446,7 +1097,16 @@ const policy = JSON.parse(read("deploy/policies/release-policy.json")) as {
   database?: {
     excludedForwardMigrations?: string[];
     criticalMigrationOrder?: string[];
-    rollbackStrategies?: Record<string, { mode?: string }>;
+    migrationDatabaseUrlEnv?: string[];
+    liveCatalogVerification?: {
+      command?: string;
+      mode?: string;
+      requiredAfter?: string;
+      requiredBefore?: string;
+      requires?: string[];
+    };
+    releaseGateSequence?: string[];
+    rollbackStrategies?: Record<string, { mode?: string; rollback?: string }>;
     nonCommerceRepairPack?: {
       planTool?: string;
       verification?: string;
@@ -459,7 +1119,7 @@ const policy = JSON.parse(read("deploy/policies/release-policy.json")) as {
   };
 };
 assert.ok(policy.database?.excludedForwardMigrations?.includes("20260822032000_aid_integration_bridge.sql"));
-assert.deepEqual(policy.database?.criticalMigrationOrder?.slice(-7), [
+assert.deepEqual(policy.database?.criticalMigrationOrder?.slice(-14), [
   "20260915231500_image_generation_failure_history.sql",
   "20260915233000_digital_human_long_history_visibility.sql",
   "20260915233500_extraction_request_snapshot.sql",
@@ -467,10 +1127,58 @@ assert.deepEqual(policy.database?.criticalMigrationOrder?.slice(-7), [
   "20261009033000_runtime_function_contract_reconcile.sql",
   "20261009034000_runtime_function_security_reconcile.sql",
   "20261009040000_video_history_archive_queue.sql",
+  "20261009043000_user_content_retention_and_video_direct_delivery.sql",
+  "20261010023000_video_generation_request_snapshot_v1.sql",
+  "20261010130000_image_generation_request_snapshot_v2.sql",
+  "20261010131000_image_security_definer_owner_alignment.sql",
+  "20261010132000_video_snapshot_function_owner_alignment.sql",
+  "20261010133000_image_provider_dispatch_receipts.sql",
+  "20261010134000_video_provider_request_projection.sql",
 ]);
-for (const feature of ["image", "extraction", "digitalHuman", "generalScript", "h3Revenue", "videoHistoryArchive"]) {
+assert.deepEqual(policy.database?.liveCatalogVerification, {
+  command: "node scripts/run-node-maintenance-tsx.mjs ./scripts/verify-release-database-gates.ts --live --confirm-target-host=<database-host> --confirm-target-database=<database-name>",
+  mode: "read-only-postgresql-catalog",
+  requiredAfter: "migration-status-post-apply",
+  requiredBefore: "candidate-activation",
+  requires: [
+    "exact target host confirmation",
+    "exact target database name confirmation",
+    "20261010023000, 20261010130000, 20261010131000, 20261010132000, 20261010133000 and 20261010134000 ledger rows with current source SHA-256",
+    "image provider dispatch/submission receipt jsonb columns and validated receipt-order constraint",
+    "image claim/reconcile/provider receipt RPC owners equal to image_generation_requests owner",
+    "image legacy stale-reconciliation helper owner equal to image_generation_requests owner with owner-only EXECUTE",
+    "video request snapshot and provider receipt RPC owners equal to video_tasks owner",
+    "1330 receipt-aware reconciliation, receipt digest and acknowledgement binding semantics",
+    "1340 ordered dispatch identity, duplicate wire-body conflict and V2 submission binding semantics",
+    "SECURITY DEFINER with search_path=public, pg_temp",
+    "service_role as the only non-owner direct EXECUTE grantee",
+    "no ordinary role other than owner/service_role has effective EXECUTE",
+  ],
+});
+assert.deepEqual(policy.database?.releaseGateSequence, [
+  "migration-plan",
+  "migration-status-pre-apply",
+  "recoverable-backup-confirmed",
+  "explicit-apply-authorization",
+  "migration-apply",
+  "migration-status-post-apply",
+  "live-catalog-verification",
+  "candidate-activation",
+]);
+for (const feature of [
+  "image", "extraction", "digitalHuman", "generalScript", "h3Revenue", "videoHistoryArchive",
+  "userContentRetention", "videoSnapshotSecurity", "imageProviderReceipts", "videoProviderRequestProjection",
+]) {
   assert.equal(policy.database?.rollbackStrategies?.[feature]?.mode, "forward-repair-only-after-activation");
 }
+assert.equal(
+  policy.database?.rollbackStrategies?.imageProviderReceipts?.rollback,
+  "supabase/rollbacks/20261010133000_image_provider_dispatch_receipts.rollback.sql",
+);
+assert.equal(
+  policy.database?.rollbackStrategies?.videoProviderRequestProjection?.rollback,
+  "supabase/rollbacks/20261010134000_video_provider_request_projection.rollback.sql",
+);
 assert.deepEqual(policy.database?.nonCommerceRepairPack, {
   planTool: "scripts/prepare-noncommerce-migration-pack.mjs",
   verification: "scripts/verify-noncommerce-migration-pack.ts",
@@ -493,15 +1201,556 @@ assert.deepEqual(policy.database?.nonCommerceRepairPack, {
   ],
 });
 
-console.log(JSON.stringify({
-  ok: true,
-  contractVersion: contract.contractVersion,
-  requiredTablesChecked: 17,
-  requiredRpcsChecked: 24,
-  nonCommerceRepairObjectsChecked: 11,
-  nonCommerceMissingObjectBlockingCases: 12,
-  videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
-  networkRequests: 0,
-  databaseWrites: 0,
-  paidModelCalls: 0,
-}, null, 2));
+type LiveMigrationLedgerRow = {
+  version: string;
+  name: string;
+  hash: string;
+};
+
+type LiveFunctionSecurity = {
+  signature: string;
+  owner: string;
+  securityDefiner: boolean;
+  searchPath: string[];
+  definition: string;
+  argumentNames: string[];
+  executeGrantees: string[];
+  unexpectedEffectiveGrantees: string[];
+  privileges: {
+    anonExecute: boolean;
+    authenticatedExecute: boolean;
+    serviceExecute: boolean;
+  };
+};
+
+type LiveFunctionSecurityGroup = {
+  id: string;
+  ownerRelation: string;
+  tableOwner: string;
+  functions: LiveFunctionSecurity[];
+};
+
+type LiveRelationSemantics = {
+  relation: string;
+  owner: string;
+  requiredOwner: string;
+  rlsEnabled: boolean;
+  forbiddenPrivilegePrincipals: string[];
+  columns: Array<{ name: string; type: string }>;
+  constraints: Array<{ name: string; validated: boolean; definition: string }>;
+};
+
+type LiveTriggerSemantics = {
+  relation: string;
+  name: string;
+  function: string;
+  enabled: boolean;
+};
+
+type LiveCatalogProjection = {
+  identity: {
+    database: string;
+    currentUser: string;
+    serverAddress: string | null;
+    serverPort: number | null;
+  };
+  ledger: LiveMigrationLedgerRow[];
+  relationSemantics: LiveRelationSemantics[];
+  triggerSemantics: LiveTriggerSemantics[];
+  functionSecurityGroups: LiveFunctionSecurityGroup[];
+};
+
+const sortedUnique = (values: string[]) => [...new Set(values)].sort();
+
+function liveCatalogFailures(live: LiveCatalogProjection) {
+  const failures: string[] = [];
+  for (const expected of liveCatalogChecks.migrationLedger.requiredMigrations) {
+    const actual = live.ledger.find((row) => row.version === expected.version);
+    if (!actual) {
+      failures.push(`MIGRATION_LEDGER_ROW_MISSING:${expected.version}`);
+    } else if (actual.hash.toLowerCase() !== expected.sha256) {
+      failures.push(`MIGRATION_LEDGER_HASH_MISMATCH:${expected.version}`);
+    }
+  }
+  for (const expectedRelation of liveCatalogChecks.relationSemantics) {
+    const actualRelation = live.relationSemantics.find((entry) => entry.relation === expectedRelation.relation);
+    if (!actualRelation) {
+      failures.push(`RELATION_SEMANTICS_MISSING:${expectedRelation.relation}`);
+      continue;
+    }
+    for (const expectedColumn of expectedRelation.requiredColumns) {
+      const actualColumn = actualRelation.columns.find((entry) => entry.name === expectedColumn.name);
+      if (!actualColumn) failures.push(`RELATION_COLUMN_MISSING:${expectedRelation.relation}:${expectedColumn.name}`);
+      else if (actualColumn.type !== expectedColumn.type) {
+        failures.push(`RELATION_COLUMN_TYPE_MISMATCH:${expectedRelation.relation}:${expectedColumn.name}`);
+      }
+    }
+    if (expectedRelation.requiredOwnerRelation && actualRelation.owner !== actualRelation.requiredOwner) {
+      failures.push(`RELATION_OWNER_MISMATCH:${expectedRelation.relation}:${expectedRelation.requiredOwnerRelation}`);
+    }
+    if (expectedRelation.rlsRequired && !actualRelation.rlsEnabled) {
+      failures.push(`RELATION_RLS_REQUIRED:${expectedRelation.relation}`);
+    }
+    if (actualRelation.forbiddenPrivilegePrincipals.length > 0) {
+      failures.push(`RELATION_FORBIDDEN_PRIVILEGE:${expectedRelation.relation}:${actualRelation.forbiddenPrivilegePrincipals.join("|")}`);
+    }
+    for (const expectedConstraint of expectedRelation.requiredConstraints) {
+      const actualConstraint = actualRelation.constraints.find((entry) => entry.name === expectedConstraint.name);
+      if (!actualConstraint) {
+        failures.push(`RELATION_CONSTRAINT_MISSING:${expectedRelation.relation}:${expectedConstraint.name}`);
+        continue;
+      }
+      if (actualConstraint.validated !== expectedConstraint.validated) {
+        failures.push(`RELATION_CONSTRAINT_VALIDATION_MISMATCH:${expectedRelation.relation}:${expectedConstraint.name}`);
+      }
+      for (const token of expectedConstraint.definitionTokens) {
+        if (!actualConstraint.definition.toLowerCase().includes(token.toLowerCase())) {
+          failures.push(`RELATION_CONSTRAINT_TOKEN_MISSING:${expectedRelation.relation}:${expectedConstraint.name}:${token}`);
+        }
+      }
+    }
+  }
+  for (const expectedTrigger of liveCatalogChecks.triggerSemantics) {
+    const actualTrigger = live.triggerSemantics.find((entry) =>
+      entry.relation === expectedTrigger.relation && entry.name === expectedTrigger.name);
+    if (!actualTrigger) {
+      failures.push(`TRIGGER_MISSING:${expectedTrigger.relation}:${expectedTrigger.name}`);
+    } else if (actualTrigger.function !== expectedTrigger.function) {
+      failures.push(`TRIGGER_FUNCTION_MISMATCH:${expectedTrigger.relation}:${expectedTrigger.name}`);
+    } else if (actualTrigger.enabled !== expectedTrigger.enabled) {
+      failures.push(`TRIGGER_ENABLED_MISMATCH:${expectedTrigger.relation}:${expectedTrigger.name}`);
+    }
+  }
+  for (const expectedGroup of liveCatalogChecks.functionSecurityGroups) {
+    const actualGroup = live.functionSecurityGroups.find((entry) => entry.id === expectedGroup.id);
+    if (!actualGroup?.tableOwner) {
+      failures.push(`FUNCTION_OWNER_RELATION_MISSING:${expectedGroup.id}:${expectedGroup.ownerRelation}`);
+      continue;
+    }
+    if (actualGroup.ownerRelation !== expectedGroup.ownerRelation) {
+      failures.push(`FUNCTION_OWNER_RELATION_MISMATCH:${expectedGroup.id}`);
+    }
+    const expectedSearchPath = `search_path=${expectedGroup.searchPath.join(", ")}`;
+    for (const signature of expectedGroup.functions) {
+      const actual = actualGroup.functions.find((entry) => entry.signature === signature);
+      if (!actual) {
+        failures.push(`FUNCTION_MISSING:${signature}`);
+        continue;
+      }
+      if (actual.owner !== actualGroup.tableOwner) failures.push(`FUNCTION_OWNER_MISMATCH:${signature}`);
+      if (!actual.securityDefiner) failures.push(`FUNCTION_SECURITY_DEFINER_REQUIRED:${signature}`);
+      if (actual.searchPath.length !== 1 || actual.searchPath[0] !== expectedSearchPath) {
+        failures.push(`FUNCTION_SEARCH_PATH_MISMATCH:${signature}`);
+      }
+      for (const token of expectedGroup.requiredDefinitionTokens?.[signature] || []) {
+        if (!actual.definition.includes(token)) failures.push(`FUNCTION_SEMANTIC_TOKEN_MISSING:${signature}:${token}`);
+      }
+      const functionName = signature.match(/^public\.([^()]+)\(/u)?.[1] || "";
+      const expectedArguments = rpc(functionName)?.arguments;
+      if (expectedArguments && JSON.stringify(actual.argumentNames) !== JSON.stringify(expectedArguments)) {
+        failures.push(`FUNCTION_ARGUMENT_NAMES_MISMATCH:${signature}`);
+      }
+      const nonOwnerGrantees = sortedUnique(actual.executeGrantees.filter((name) => name !== actualGroup.tableOwner));
+      if (JSON.stringify(nonOwnerGrantees) !== JSON.stringify(expectedGroup.requiredNonOwnerExecuteGrantees)) {
+        failures.push(`FUNCTION_EXECUTE_ACL_MISMATCH:${signature}`);
+      }
+      const serviceRoleRequired = expectedGroup.requiredNonOwnerExecuteGrantees.includes("service_role");
+      if (actual.executeGrantees.includes("PUBLIC") || actual.privileges.anonExecute || actual.privileges.authenticatedExecute
+        || (!serviceRoleRequired && actual.privileges.serviceExecute)) {
+        failures.push(`FUNCTION_FORBIDDEN_EXECUTE_PRIVILEGE:${signature}`);
+      }
+      if (actual.unexpectedEffectiveGrantees.length > 0) {
+        failures.push(`FUNCTION_UNEXPECTED_EFFECTIVE_EXECUTE:${signature}:${actual.unexpectedEffectiveGrantees.join("|")}`);
+      }
+      if (serviceRoleRequired && !actual.privileges.serviceExecute) {
+        failures.push(`FUNCTION_SERVICE_ROLE_EXECUTE_REQUIRED:${signature}`);
+      }
+    }
+  }
+  return failures;
+}
+
+const fixtureOwner = "zimeiti_owner";
+const fixtureFunction = (
+  signature: string,
+  group: {
+    requiredDefinitionTokens?: Record<string, string[]>;
+    requiredNonOwnerExecuteGrantees: string[];
+  },
+): LiveFunctionSecurity => ({
+  signature,
+  owner: fixtureOwner,
+  securityDefiner: true,
+  searchPath: ["search_path=public, pg_temp"],
+  definition: (group.requiredDefinitionTokens?.[signature] || []).join("\n"),
+  argumentNames: rpc(signature.match(/^public\.([^()]+)\(/u)?.[1] || "")?.arguments || [],
+  executeGrantees: [...group.requiredNonOwnerExecuteGrantees, fixtureOwner],
+  unexpectedEffectiveGrantees: [],
+  privileges: {
+    anonExecute: false,
+    authenticatedExecute: false,
+    serviceExecute: group.requiredNonOwnerExecuteGrantees.includes("service_role"),
+  },
+});
+const validLiveFixture: LiveCatalogProjection = {
+  identity: { database: "fixture", currentUser: "fixture_reader", serverAddress: null, serverPort: null },
+  ledger: liveCatalogChecks.migrationLedger.requiredMigrations.map((entry) => ({
+    version: entry.version,
+    name: entry.file.split("/").at(-1) || entry.file,
+    hash: entry.sha256,
+  })),
+  relationSemantics: liveCatalogChecks.relationSemantics.map((relation) => ({
+    relation: relation.relation,
+    owner: fixtureOwner,
+    requiredOwner: fixtureOwner,
+    rlsEnabled: relation.rlsRequired === true,
+    forbiddenPrivilegePrincipals: [],
+    columns: relation.requiredColumns.map((column) => ({ ...column })),
+    constraints: relation.requiredConstraints.map((constraint) => ({
+      name: constraint.name,
+      validated: constraint.validated,
+      definition: constraint.definitionTokens.join(" "),
+    })),
+  })),
+  triggerSemantics: liveCatalogChecks.triggerSemantics.map((trigger) => ({ ...trigger })),
+  functionSecurityGroups: liveCatalogChecks.functionSecurityGroups.map((group) => ({
+    id: group.id,
+    ownerRelation: group.ownerRelation,
+    tableOwner: fixtureOwner,
+    functions: group.functions.map((signature) => fixtureFunction(signature, group)),
+  })),
+};
+assert.deepEqual(liveCatalogFailures(validLiveFixture), []);
+const missingLedgerFixture = structuredClone(validLiveFixture);
+missingLedgerFixture.ledger.pop();
+assert.match(liveCatalogFailures(missingLedgerFixture).join("\n"), /MIGRATION_LEDGER_ROW_MISSING/u);
+const driftedLedgerFixture = structuredClone(validLiveFixture);
+driftedLedgerFixture.ledger[0].hash = "0".repeat(64);
+assert.match(liveCatalogFailures(driftedLedgerFixture).join("\n"), /MIGRATION_LEDGER_HASH_MISMATCH/u);
+const missingProviderReceiptColumnFixture = structuredClone(validLiveFixture);
+missingProviderReceiptColumnFixture.relationSemantics[0].columns.pop();
+assert.match(liveCatalogFailures(missingProviderReceiptColumnFixture).join("\n"), /RELATION_COLUMN_MISSING/u);
+const invalidProviderReceiptConstraintFixture = structuredClone(validLiveFixture);
+invalidProviderReceiptConstraintFixture.relationSemantics[0].constraints[0].validated = false;
+assert.match(liveCatalogFailures(invalidProviderReceiptConstraintFixture).join("\n"), /RELATION_CONSTRAINT_VALIDATION_MISMATCH/u);
+const wrongRelationOwnerFixture = structuredClone(validLiveFixture);
+wrongRelationOwnerFixture.relationSemantics[1].owner = "postgres";
+assert.match(liveCatalogFailures(wrongRelationOwnerFixture).join("\n"), /RELATION_OWNER_MISMATCH/u);
+const missingRelationRlsFixture = structuredClone(validLiveFixture);
+missingRelationRlsFixture.relationSemantics[1].rlsEnabled = false;
+assert.match(liveCatalogFailures(missingRelationRlsFixture).join("\n"), /RELATION_RLS_REQUIRED/u);
+const leakedRelationPrivilegeFixture = structuredClone(validLiveFixture);
+leakedRelationPrivilegeFixture.relationSemantics[1].forbiddenPrivilegePrincipals = ["service_role"];
+assert.match(liveCatalogFailures(leakedRelationPrivilegeFixture).join("\n"), /RELATION_FORBIDDEN_PRIVILEGE/u);
+const missingTriggerFixture = structuredClone(validLiveFixture);
+missingTriggerFixture.triggerSemantics.pop();
+assert.match(liveCatalogFailures(missingTriggerFixture).join("\n"), /TRIGGER_MISSING/u);
+const wrongTriggerFunctionFixture = structuredClone(validLiveFixture);
+wrongTriggerFunctionFixture.triggerSemantics[0].function = "public.unexpected_trigger_function()";
+assert.match(liveCatalogFailures(wrongTriggerFunctionFixture).join("\n"), /TRIGGER_FUNCTION_MISMATCH/u);
+const disabledTriggerFixture = structuredClone(validLiveFixture);
+disabledTriggerFixture.triggerSemantics[0].enabled = false;
+assert.match(liveCatalogFailures(disabledTriggerFixture).join("\n"), /TRIGGER_ENABLED_MISMATCH/u);
+const wrongOwnerFixture = structuredClone(validLiveFixture);
+wrongOwnerFixture.functionSecurityGroups[0].functions[0].owner = "postgres";
+assert.match(liveCatalogFailures(wrongOwnerFixture).join("\n"), /FUNCTION_OWNER_MISMATCH/u);
+const invokerFixture = structuredClone(validLiveFixture);
+invokerFixture.functionSecurityGroups[0].functions[0].securityDefiner = false;
+assert.match(liveCatalogFailures(invokerFixture).join("\n"), /FUNCTION_SECURITY_DEFINER_REQUIRED/u);
+const unsafeSearchPathFixture = structuredClone(validLiveFixture);
+unsafeSearchPathFixture.functionSecurityGroups[0].functions[0].searchPath = [];
+assert.match(liveCatalogFailures(unsafeSearchPathFixture).join("\n"), /FUNCTION_SEARCH_PATH_MISMATCH/u);
+const publicAclFixture = structuredClone(validLiveFixture);
+publicAclFixture.functionSecurityGroups[0].functions[0].executeGrantees.push("PUBLIC");
+assert.match(liveCatalogFailures(publicAclFixture).join("\n"), /FUNCTION_EXECUTE_ACL_MISMATCH/u);
+assert.match(liveCatalogFailures(publicAclFixture).join("\n"), /FUNCTION_FORBIDDEN_EXECUTE_PRIVILEGE/u);
+const missingServiceFixture = structuredClone(validLiveFixture);
+missingServiceFixture.functionSecurityGroups[0].functions[0].executeGrantees = [fixtureOwner];
+missingServiceFixture.functionSecurityGroups[0].functions[0].privileges.serviceExecute = false;
+assert.match(liveCatalogFailures(missingServiceFixture).join("\n"), /FUNCTION_SERVICE_ROLE_EXECUTE_REQUIRED/u);
+const inheritedAclFixture = structuredClone(validLiveFixture);
+inheritedAclFixture.functionSecurityGroups[1].functions[0].unexpectedEffectiveGrantees = ["extra_runtime_role"];
+assert.match(liveCatalogFailures(inheritedAclFixture).join("\n"), /FUNCTION_UNEXPECTED_EFFECTIVE_EXECUTE/u);
+const helperServiceRoleFixture = structuredClone(validLiveFixture);
+helperServiceRoleFixture.functionSecurityGroups[1].functions[0].executeGrantees.push("service_role");
+helperServiceRoleFixture.functionSecurityGroups[1].functions[0].privileges.serviceExecute = true;
+helperServiceRoleFixture.functionSecurityGroups[1].functions[0].unexpectedEffectiveGrantees.push("service_role");
+assert.match(liveCatalogFailures(helperServiceRoleFixture).join("\n"), /FUNCTION_FORBIDDEN_EXECUTE_PRIVILEGE/u);
+const semanticDriftFixture = structuredClone(validLiveFixture);
+semanticDriftFixture.functionSecurityGroups[3].functions[0].definition = "";
+assert.match(liveCatalogFailures(semanticDriftFixture).join("\n"), /FUNCTION_SEMANTIC_TOKEN_MISSING/u);
+const argumentDriftFixture = structuredClone(validLiveFixture);
+argumentDriftFixture.functionSecurityGroups[0].functions[2].argumentNames = ["p_wrong"];
+assert.match(liveCatalogFailures(argumentDriftFixture).join("\n"), /FUNCTION_ARGUMENT_NAMES_MISMATCH/u);
+
+const argumentValue = (name: string) => {
+  const prefix = `${name}=`;
+  return process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length).trim() || "";
+};
+
+async function verifyLiveCatalog(): Promise<LiveCatalogProjection> {
+  const confirmedHost = argumentValue("--confirm-target-host").toLowerCase();
+  const confirmedDatabase = argumentValue("--confirm-target-database");
+  assert.ok(confirmedHost && !confirmedHost.includes("<"), "CONFIRM_TARGET_HOST_REQUIRED");
+  assert.ok(confirmedDatabase && !confirmedDatabase.includes("<"), "CONFIRM_TARGET_DATABASE_REQUIRED");
+  const configured = (policy.database?.migrationDatabaseUrlEnv || [])
+    .map((envName) => ({ envName, value: String(process.env[envName] || "").trim() }))
+    .find((entry) => entry.value);
+  assert.ok(configured, "MIGRATION_DATABASE_URL_REQUIRED");
+  const parsed = new URL(configured.value);
+  assert.equal(parsed.hostname.toLowerCase(), confirmedHost, "CONFIRMED_TARGET_HOST_MISMATCH");
+  const configuredDatabase = decodeURIComponent(parsed.pathname.replace(/^\//u, ""));
+  assert.equal(configuredDatabase, confirmedDatabase, "CONFIRMED_TARGET_DATABASE_MISMATCH");
+  const localHost = ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname.toLowerCase());
+  const client = new Client({
+    connectionString: configured.value,
+    ssl: localHost ? false : { rejectUnauthorized: false },
+    connectionTimeoutMillis: 10_000,
+    statement_timeout: 20_000,
+    application_name: "zimeiti-release-database-live-gate",
+  });
+  await client.connect();
+  let transactionOpen = false;
+  try {
+    await client.query("begin read only");
+    transactionOpen = true;
+    const identityRow = (await client.query(
+      "select current_database() as database_name,current_user,inet_server_addr()::text as server_address,inet_server_port() as server_port",
+    )).rows[0];
+    assert.equal(String(identityRow?.database_name || ""), confirmedDatabase, "LIVE_TARGET_DATABASE_MISMATCH");
+    const versions = liveCatalogChecks.migrationLedger.requiredMigrations.map((entry) => entry.version);
+    const ledgerRows = (await client.query(
+      `select version::text as version,coalesce(name::text,'') as name,coalesce(hash::text,'') as hash
+         from supabase_migrations.schema_migrations
+        where version::text = any($1::text[])
+        order by version::text`,
+      [versions],
+    )).rows.map((row) => ({
+      version: String(row.version || ""),
+      name: String(row.name || ""),
+      hash: String(row.hash || "").toLowerCase(),
+    }));
+    const relationSemantics: LiveRelationSemantics[] = [];
+    for (const expectedRelation of liveCatalogChecks.relationSemantics) {
+      const relationExists = Boolean((await client.query(
+        "select to_regclass($1)::text as relation_name",
+        [expectedRelation.relation],
+      )).rows[0]?.relation_name);
+      if (!relationExists) continue;
+      const relationMetadata = (await client.query(
+        `select pg_get_userbyid(relation_entry.relowner) as owner,
+                relation_entry.relrowsecurity as rls_enabled,
+                coalesce(pg_get_userbyid(required_owner_relation.relowner),'') as required_owner
+           from pg_class relation_entry
+           left join pg_class required_owner_relation on required_owner_relation.oid=to_regclass($2)
+          where relation_entry.oid=to_regclass($1)`,
+        [expectedRelation.relation, expectedRelation.requiredOwnerRelation || null],
+      )).rows[0];
+      const forbiddenPrivilegePrincipals: string[] = [];
+      for (const principal of expectedRelation.forbiddenPrivilegePrincipals || []) {
+        const hasPrivilege = principal === "PUBLIC"
+          ? (await client.query(
+            `select exists(
+               select 1
+                 from pg_class relation_entry
+                 cross join lateral aclexplode(coalesce(relation_entry.relacl,acldefault('r',relation_entry.relowner))) acl
+                where relation_entry.oid=to_regclass($1)
+                  and acl.grantee=0
+                  and acl.privilege_type in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER')
+             ) as present`,
+            [expectedRelation.relation],
+          )).rows[0]?.present === true
+          : (await client.query(
+            `select coalesce(
+               has_table_privilege(to_regrole($1),to_regclass($2),'SELECT')
+               or has_table_privilege(to_regrole($1),to_regclass($2),'INSERT')
+               or has_table_privilege(to_regrole($1),to_regclass($2),'UPDATE')
+               or has_table_privilege(to_regrole($1),to_regclass($2),'DELETE')
+               or has_table_privilege(to_regrole($1),to_regclass($2),'TRUNCATE')
+               or has_table_privilege(to_regrole($1),to_regclass($2),'REFERENCES')
+               or has_table_privilege(to_regrole($1),to_regclass($2),'TRIGGER'), false
+             ) as present`,
+            [principal, expectedRelation.relation],
+          )).rows[0]?.present === true;
+        if (hasPrivilege) forbiddenPrivilegePrincipals.push(principal);
+      }
+      const columns = (await client.query(
+        `select attribute.attname as name,format_type(attribute.atttypid,attribute.atttypmod) as type
+           from pg_attribute attribute
+          where attribute.attrelid=to_regclass($1)
+            and attribute.attnum > 0 and not attribute.attisdropped
+            and attribute.attname = any($2::text[])
+          order by attribute.attname`,
+        [expectedRelation.relation, expectedRelation.requiredColumns.map((entry) => entry.name)],
+      )).rows.map((row) => ({ name: String(row.name || ""), type: String(row.type || "") }));
+      const constraints = (await client.query(
+        `select constraint_entry.conname as name,constraint_entry.convalidated as validated,
+                pg_get_constraintdef(constraint_entry.oid,true) as definition
+           from pg_constraint constraint_entry
+          where constraint_entry.conrelid=to_regclass($1)
+            and constraint_entry.conname = any($2::text[])
+          order by constraint_entry.conname`,
+        [expectedRelation.relation, expectedRelation.requiredConstraints.map((entry) => entry.name)],
+      )).rows.map((row) => ({
+        name: String(row.name || ""),
+        validated: row.validated === true,
+        definition: String(row.definition || ""),
+      }));
+      relationSemantics.push({
+        relation: expectedRelation.relation,
+        owner: String(relationMetadata?.owner || ""),
+        requiredOwner: String(relationMetadata?.required_owner || ""),
+        rlsEnabled: relationMetadata?.rls_enabled === true,
+        forbiddenPrivilegePrincipals,
+        columns,
+        constraints,
+      });
+    }
+    const triggerSemantics: LiveTriggerSemantics[] = [];
+    for (const expectedTrigger of liveCatalogChecks.triggerSemantics) {
+      const row = (await client.query(
+        `select format('%I.%I', relation_namespace.nspname, relation_entry.relname) as relation,
+                trigger_entry.tgname as name,
+                format('%I.%I(%s)', function_namespace.nspname, function_entry.proname,
+                  pg_get_function_identity_arguments(function_entry.oid)) as function,
+                trigger_entry.tgenabled <> 'D' as enabled
+           from pg_trigger trigger_entry
+           join pg_class relation_entry on relation_entry.oid=trigger_entry.tgrelid
+           join pg_namespace relation_namespace on relation_namespace.oid=relation_entry.relnamespace
+           join pg_proc function_entry on function_entry.oid=trigger_entry.tgfoid
+           join pg_namespace function_namespace on function_namespace.oid=function_entry.pronamespace
+          where trigger_entry.tgrelid=to_regclass($1)
+            and trigger_entry.tgname=$2
+            and not trigger_entry.tgisinternal`,
+        [expectedTrigger.relation, expectedTrigger.name],
+      )).rows[0];
+      if (row) {
+        triggerSemantics.push({
+          relation: String(row.relation || ""),
+          name: String(row.name || ""),
+          function: String(row.function || ""),
+          enabled: row.enabled === true,
+        });
+      }
+    }
+    const functionSecurityGroups: LiveFunctionSecurityGroup[] = [];
+    for (const expectedGroup of liveCatalogChecks.functionSecurityGroups) {
+      const tableOwner = String((await client.query(
+        "select pg_get_userbyid(relowner) as owner from pg_class where oid=to_regclass($1)",
+        [expectedGroup.ownerRelation],
+      )).rows[0]?.owner || "");
+      const functions: LiveFunctionSecurity[] = [];
+      for (const signature of expectedGroup.functions) {
+        const row = (await client.query(
+          `select pg_get_userbyid(p.proowner) as owner,p.prosecdef as security_definer,p.proconfig,p.proargnames,
+                  pg_get_functiondef(p.oid) as definition,
+                  to_jsonb(array(
+                    select distinct coalesce(pg_get_userbyid(acl.grantee),'PUBLIC')
+                      from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+                     where acl.privilege_type='EXECUTE'
+                     order by 1
+                  )) as execute_grantees,
+                  to_jsonb(array(
+                    select role_entry.rolname
+                      from pg_roles role_entry
+                     where role_entry.oid <> p.proowner
+                       and ($2::boolean or role_entry.oid <> to_regrole('service_role'))
+                        and not role_entry.rolsuper
+                       and has_function_privilege(role_entry.oid, p.oid, 'EXECUTE')
+                     order by role_entry.rolname
+                  )) as unexpected_effective_grantees
+             from pg_proc p where p.oid=to_regprocedure($1)`,
+          [signature, !expectedGroup.allowedEffectiveExecutePrincipals.includes("service_role")],
+        )).rows[0];
+        const privileges = (await client.query(
+          `select has_function_privilege('anon',$1,'execute') as anon_execute,
+                  has_function_privilege('authenticated',$1,'execute') as authenticated_execute,
+                  has_function_privilege('service_role',$1,'execute') as service_execute`,
+          [signature],
+        )).rows[0];
+        functions.push({
+          signature,
+          owner: String(row?.owner || ""),
+          securityDefiner: row?.security_definer === true,
+          searchPath: Array.isArray(row?.proconfig) ? row.proconfig.map(String) : [],
+          definition: String(row?.definition || ""),
+          argumentNames: Array.isArray(row?.proargnames) ? row.proargnames.map(String) : [],
+          executeGrantees: Array.isArray(row?.execute_grantees) ? row.execute_grantees.map(String) : [],
+          unexpectedEffectiveGrantees: Array.isArray(row?.unexpected_effective_grantees)
+            ? row.unexpected_effective_grantees.map(String) : [],
+          privileges: {
+            anonExecute: privileges?.anon_execute === true,
+            authenticatedExecute: privileges?.authenticated_execute === true,
+            serviceExecute: privileges?.service_execute === true,
+          },
+        });
+      }
+      functionSecurityGroups.push({
+        id: expectedGroup.id,
+        ownerRelation: expectedGroup.ownerRelation,
+        tableOwner,
+        functions,
+      });
+    }
+    const live: LiveCatalogProjection = {
+      identity: {
+        database: String(identityRow?.database_name || ""),
+        currentUser: String(identityRow?.current_user || ""),
+        serverAddress: identityRow?.server_address ? String(identityRow.server_address) : null,
+        serverPort: Number.isFinite(Number(identityRow?.server_port)) ? Number(identityRow.server_port) : null,
+      },
+      ledger: ledgerRows,
+      relationSemantics,
+      triggerSemantics,
+      functionSecurityGroups,
+    };
+    const failures = liveCatalogFailures(live);
+    assert.deepEqual(failures, [], `LIVE_DATABASE_GATE_FAILED:${failures.join(",")}`);
+    await client.query("rollback");
+    transactionOpen = false;
+    return live;
+  } finally {
+    if (transactionOpen) await client.query("rollback").catch(() => undefined);
+    await client.end().catch(() => undefined);
+  }
+}
+
+async function main() {
+  const liveMode = process.argv.includes("--live");
+  const live = liveMode ? await verifyLiveCatalog() : null;
+  console.log(JSON.stringify({
+    ok: true,
+    contractVersion: contract.contractVersion,
+    contractTableCount: contract.tables.length,
+    contractRpcCount: contract.rpcs.length,
+    requiredTablesChecked: 17,
+    requiredRpcsChecked: 35,
+    internalOnlyTablesChecked: 4,
+    nonCommerceRepairObjectsChecked: 11,
+    nonCommerceMissingObjectBlockingCases: 22,
+    videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
+    liveCatalogFixtureCases: 20,
+    liveCatalogChecked: liveMode,
+    liveCatalog: live,
+    forwardMigrationCount: forwardMigrationRoot.entries.length,
+    forwardMigrationGitIndexChecked: forwardMigrationRoot.gitIndex.checked,
+    forwardMigrationLegacyTombstoneCount: forwardMigrationRoot.gitIndex.legacyTombstonePaths.length,
+    forwardMigrationInvalidIndexPathCount: forwardMigrationRoot.gitIndex.invalidPaths.length,
+    forwardMigrationStagedChangeCount: forwardMigrationRoot.gitIndex.stagedChangePaths.length,
+    forwardMigrationWorktreeDriftCount: forwardMigrationRoot.gitIndex.worktreeDriftPaths.length,
+    forwardMigrationTrackedCount: forwardMigrationRoot.gitIndex.trackedForwardPaths.length,
+    forwardMigrationStagedNewCount: forwardMigrationRoot.gitIndex.stagedNewForwardPaths.length,
+    forwardMigrationUntrackedNewCount: forwardMigrationRoot.gitIndex.untrackedNewForwardPaths.length,
+    forwardMigrationCoveredCount: forwardMigrationCoverage.length,
+    forwardMigrationCoverageSha256,
+    forwardMigrationUntrackedNewPaths: forwardMigrationRoot.gitIndex.untrackedNewForwardPaths,
+    networkRequests: liveMode ? 1 : 0,
+    databaseWrites: 0,
+    paidModelCalls: 0,
+  }, null, 2));
+}
+
+void main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

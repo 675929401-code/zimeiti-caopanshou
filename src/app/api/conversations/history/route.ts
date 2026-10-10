@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCurrentApiUser } from "@/lib/current-api-user";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { CONVERSATION_CONTENT_RETENTION_DAYS } from "@/lib/media-retention-policy";
 
 const privateNoStore = <T extends Response>(response: T): T => {
   response.headers.set("Cache-Control", "private, no-store");
@@ -16,6 +17,10 @@ const ATTACHMENT_TABLE = "conversation_message_attachments";
 const MAX_ATTACHMENT_ASSETS = 20;
 const SAFE_ASSET_ID = /^[A-Za-z0-9_-]{1,160}$/;
 const UUID_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function conversationContentCutoff(now = Date.now()) {
+  return new Date(now - CONVERSATION_CONTENT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
 
 interface ConversationMessageRow extends Record<string, unknown> {
   id: string;
@@ -148,6 +153,7 @@ async function saveOwnedImageAttachments(
     .select("id")
     .eq("id", conversationId)
     .eq("user_id", userId)
+    .gt("updated_at", conversationContentCutoff())
     .maybeSingle();
   if (ownedConversation.error) throw ownedConversation.error;
   if (!ownedConversation.data) {
@@ -172,6 +178,7 @@ async function saveOwnedImageAttachments(
     .eq("conversation_id", conversationId)
     .eq("user_id", userId)
     .eq("role", "user")
+    .gt("created_at", conversationContentCutoff())
     .order("created_at", { ascending: false })
     .limit(20);
   if (recentMessages.error) throw recentMessages.error;
@@ -225,6 +232,7 @@ export async function GET(request: NextRequest) {
     const userId = authorization.user.id;
 
     const singleConvId = request.nextUrl.searchParams.get("id");
+    const retentionCutoff = conversationContentCutoff();
 
     try {
       const supabase = getSupabaseClient();
@@ -234,6 +242,7 @@ export async function GET(request: NextRequest) {
           .select("id, user_id, agent_id, title, source, created_at, updated_at")
           .eq("id", singleConvId)
           .eq("user_id", userId)
+          .gt("updated_at", retentionCutoff)
           .maybeSingle();
 
         if (convError) throw convError;
@@ -249,6 +258,7 @@ export async function GET(request: NextRequest) {
           .select("id, role, content, reasoning_content, agent_id, created_at")
           .eq("conversation_id", singleConvId)
           .eq("user_id", userId)
+          .gt("created_at", retentionCutoff)
           .order("created_at", { ascending: true });
         if (messagesError) throw messagesError;
 
@@ -266,6 +276,7 @@ export async function GET(request: NextRequest) {
         .from("conversations")
         .select("id, user_id, agent_id, title, source, created_at, updated_at")
         .eq("user_id", userId)
+        .gt("updated_at", retentionCutoff)
         .order("updated_at", { ascending: false })
         .limit(200);
 
@@ -283,6 +294,7 @@ export async function GET(request: NextRequest) {
           .in("conversation_id", chunk)
           .eq("user_id", userId)
           .eq("role", "assistant")
+          .gt("created_at", retentionCutoff)
           .order("created_at", { ascending: false });
 
         if (error) {
@@ -382,6 +394,7 @@ export async function POST(request: NextRequest) {
             agent_id: conversation.agentId || "unknown",
             title: conversation.title || "",
             source: conversation.source || "llm",
+            updated_at: new Date().toISOString(),
           })
           .eq("id", conversation.id)
           .eq("user_id", userId);
@@ -430,7 +443,12 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "会话不存在或无权限" }, { status: 404 });
     }
 
-    await supabase.from("conversation_messages").delete().eq("conversation_id", id).eq("user_id", userId);
+    const attachmentDelete = await supabase.from(ATTACHMENT_TABLE).delete().eq("conversation_id", id).eq("user_id", userId);
+    if (attachmentDelete.error && !isMissingAttachmentTable(attachmentDelete.error)) throw attachmentDelete.error;
+    const settingDelete = await supabase.from("text_chat_conversation_settings").delete().eq("conversation_id", id).eq("user_id", userId);
+    if (settingDelete.error) throw settingDelete.error;
+    const messageDelete = await supabase.from("conversation_messages").delete().eq("conversation_id", id).eq("user_id", userId);
+    if (messageDelete.error) throw messageDelete.error;
     const { error } = await supabase.from("conversations").delete().eq("id", id).eq("user_id", userId);
 
     if (error) {

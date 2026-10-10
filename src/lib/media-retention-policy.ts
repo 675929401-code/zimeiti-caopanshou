@@ -1,10 +1,12 @@
-export const MEDIA_RETENTION_POLICY_VERSION = "media-object-retention.v1";
+export const MEDIA_RETENTION_POLICY_VERSION = "media-object-retention.v2";
 
-export const GENERATED_VIDEO_CLOUD_RETENTION_DAYS = 3;
+export const MANAGED_PROJECT_VIDEO_CLOUD_RETENTION_DAYS = 3;
 export const CREATIVE_ASSET_CLOUD_RETENTION_DAYS = 30;
+export const EXTRACTION_HISTORY_RETENTION_DAYS = 10;
+export const CONVERSATION_CONTENT_RETENTION_DAYS = 30;
 export const BROWSER_MEDIA_CACHE_DAYS = 3;
 
-export type CloudMediaRetentionClass = "generated_video" | "creative_asset";
+export type CloudMediaRetentionClass = "managed_project_video" | "creative_asset";
 
 export interface CloudMediaRetentionRule {
   id: string;
@@ -14,28 +16,29 @@ export interface CloudMediaRetentionRule {
 }
 
 /**
- * Prefixes are intentionally compatible with Tencent COS lifecycle rules.
- * Keep generated/derived video prefixes separate from reusable creative assets,
- * so applying the 3-day rule cannot remove role or reference material early.
+ * Ordinary provider-generated videos never enter these prefixes. Managed
+ * project outputs are explicit finite exceptions; broad image/role-library
+ * prefixes are deliberately excluded so user-owned roles survive until the
+ * user removes them.
  */
 export const CLOUD_MEDIA_RETENTION_RULES: readonly CloudMediaRetentionRule[] = [
   {
-    id: "generated-and-derived-video-3d",
-    retentionClass: "generated_video",
-    days: GENERATED_VIDEO_CLOUD_RETENTION_DAYS,
+    id: "managed-project-video-3d",
+    retentionClass: "managed_project_video",
+    days: MANAGED_PROJECT_VIDEO_CLOUD_RETENTION_DAYS,
     prefixes: [
-      "videos/generated/",
-      "videos/extracted/",
+      "videos/scoped/autodl-h3/",
+      "videos/scoped/short-drama/",
+      "videos/scoped/model-acceptance/",
       "videos/digital-human-long/",
       "short-drama/final/",
     ],
   },
   {
-    id: "creative-and-reference-asset-30d",
+    id: "transient-creative-input-30d",
     retentionClass: "creative_asset",
     days: CREATIVE_ASSET_CLOUD_RETENTION_DAYS,
     prefixes: [
-      "images/",
       "image-workbench/",
       "video-inputs/",
       "video-audio-inputs/",
@@ -85,6 +88,6 @@ export function cloudMediaRetentionTarget(
 
 export function generatedVideoCloudNotice(enforced: boolean): string {
   return enforced
-    ? `云端成片默认保留${GENERATED_VIDEO_CLOUD_RETENTION_DAYS}天，请在到期前下载到电脑长期保存。`
-    : "云端文件可能按存储策略到期，长期保存请下载到电脑。";
+    ? "普通视频不复制到平台存储，播放有效期跟随上游；确认失效后自动移出历史。"
+    : "视频播放有效期跟随上游，长期保存请及时下载到电脑。";
 }

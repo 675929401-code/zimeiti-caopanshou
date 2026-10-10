@@ -12,22 +12,27 @@ assert.match(
   "新版公告必须以独立阅读器状态控制长方形 Dialog",
 );
 assert.match(announcement, /<Dialog open=\{readerOpen\}/, "公告阅读器必须继续使用可访问 Dialog");
-assert.match(announcement, /width: "min\(1120px, calc\(100vw - 96px\)\)"/, "公告主弹窗必须保持桌面长方形宽度");
-assert.match(announcement, /height: "min\(680px, calc\(100vh - 120px\)\)"/, "公告主弹窗必须保持桌面长方形高度");
+assert.match(announcement, /width: "min\(920px, calc\(100vw - 80px\)\)"/, "公告主弹窗必须保持紧凑桌面长方形宽度");
+assert.match(announcement, /height: "min\(590px, calc\(100vh - 112px\)\)"/, "公告主弹窗必须保持紧凑桌面长方形高度");
 assert.match(announcement, /fetchInbox\(true\)/, "登录和可见态恢复时必须检查账号未读公告");
 assert.match(
   announcement,
-  /const newlyPushed = firstLoad[\s\S]*?!isRead\(announcement\)[\s\S]*?!knownDeliveryKeysRef\.current\.has\(deliveryKey\(announcement\)\)[\s\S]*?!dismissalsRef\.current\.has\(deliveryKey\(announcement\)\)[\s\S]*?eligibleForAutomaticDisplay\(announcement\)/u,
-  "新推送轻提示必须按未读、投递版本、当前登录关闭态与展示频控共同去重",
+  /const newlyPushed = backlogLoad[\s\S]*?\? null[\s\S]*?: items\.find\(\(announcement\) => \([\s\S]*?!isRead\(announcement\)[\s\S]*?!knownDeliveryKeysRef\.current\.has\(deliveryKey\(announcement\)\)/u,
+  "新推送轻提示必须按未读和投递版本去重",
 );
 assert.match(
   announcement,
-  /if \(allowAutoOpen && firstLoad && !readerOpenRef\.current\)[\s\S]*?!isRead\(announcement\)[\s\S]*?!dismissalsRef\.current\.has\(deliveryKey\(announcement\)\)[\s\S]*?eligibleForAutomaticDisplay\(announcement\)[\s\S]*?openReader\(candidate\.id, \{ automatic: true \}\)/u,
-  "首次自动弹窗必须跳过已读或本次登录已关闭的版本，并经过展示频控",
+  /if \(allowAutoOpen && backlogLoad && !readerOpenRef\.current\)[\s\S]*?items\.find\(\(announcement\) => !isRead\(announcement\)\)[\s\S]*?openReader\(candidate\.id, \{ automatic: true \}\)/u,
+  "登录后首次读取积压未读必须自动打开阅读器",
 );
-assert.match(announcement, /rememberDismissed\(deliveryKey\(announcement\)\)/, "关闭公告阅读器必须记录当前投递版本的会话关闭态");
+assert.match(
+  announcement,
+  /else if \(allowAutoOpen && newlyPushed\)[\s\S]*?queueToast\(newlyPushed\)/u,
+  "在线新增公告必须使用右下角轻提示",
+);
+assert.doesNotMatch(announcement, /SESSION_DISMISSALS_KEY|rememberDismissed/u, "未读公告不得被会话关闭态静默隐藏");
 assert.match(announcement, /\/api\/announcements\/\$\{encodeURIComponent\(announcement\.id\)\}\/read/, "已阅读必须写入账号级接口");
-assert.match(announcement, /data-testid="announcement-mark-read"/, "公告必须提供明确的标记已阅读动作");
+assert.match(announcement, /data-testid="announcement-mark-read"/, "公告必须提供明确的知道了动作");
 assert.equal(
   announcement.match(/localStorage\.setItem\(/gu)?.length,
   1,
@@ -60,6 +65,7 @@ const officialHome = readSource("src/features/official-home/official-home-page.t
 const appContext = readSource("src/contexts/app-context.tsx");
 const botsRoute = readSource("src/app/api/bots/route.ts");
 const conversationCache = readSource("src/lib/conversation-cache.ts");
+const clientBootstrap = readSource("src/lib/client-bootstrap-cache.ts");
 const nextConfig = readSource("next.config.ts");
 assert.match(routeShell, /let manjuRuntimeRequest: Promise<ManjuRuntimeView> \| null = null/, "runtime-config 必须合并并发请求");
 assert.match(routeShell, /let manjuRuntimeCache:/, "runtime-config 必须跨 shell 重挂载缓存");
@@ -71,7 +77,9 @@ assert.match(routeShell, /onFocus=\{\(\) => \{[\s\S]*?router\.prefetch\(item\.hr
 assert.match(officialHome, /function Link\([\s\S]*?prefetch=\{false\}/u, "漫剧首页链接不得因进入视口批量预取全部路由");
 assert.match(officialHome, /onPointerEnter=\{\(event\) => \{[\s\S]*?prefetchOnIntent\(\)/u, "漫剧首页应按鼠标意图预取单一路由");
 assert.match(officialHome, /onFocus=\{\(event\) => \{[\s\S]*?prefetchOnIntent\(\)/u, "漫剧首页应按键盘意图预取单一路由");
-assert.equal(appContext.match(/fetch\("\/api\/bots\?shape=agents"/gu)?.length, 2, "主客户端首次加载和兜底重试都应请求单数组 Agent 响应");
+assert.match(appContext, /getClientBootstrapAgentCatalog\(token \|\| null\)/u, "主客户端首次加载必须复用短时单飞 Agent 目录请求");
+assert.equal(clientBootstrap.match(/fetch\("\/api\/bots\?shape=agents"/gu)?.length, 1, "Agent 目录单飞帮助器必须请求单数组响应");
+assert.equal(appContext.match(/fetch\("\/api\/bots\?shape=agents"/gu)?.length, 1, "消息发送兜底必须直接重读单数组 Agent 响应");
 assert.match(botsRoute, /url\.searchParams\.get\("shape"\) === "agents"[\s\S]*?\? \{ agents: formattedAgents, navigationKeys:/u, "Agent 接口必须支持不重复序列化的单数组响应并返回导航权限键");
 assert.match(botsRoute, /: \{ bots: formattedAgents, agents: formattedAgents, navigationKeys:/u, "Agent 接口必须保留旧调用方兼容响应与导航权限键");
 assert.match(conversationCache, /export function isBrowserConversationCacheEnabled\(\): false \{\s*return false;/u, "浏览器对话正文缓存必须永久停用");

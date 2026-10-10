@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zimeiti.local/contracts/release-browser-acceptance-signature.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "algorithm", "issuerId", "publicKeyFingerprint", "receiptId", "nonce", "issuedAt", "expiresAt", "evidenceType", "targetSha256", "subjectCommit", "sourceVersion", "webBuildId", "voiceBuildId", "webOutputDigest", "voiceOutputDigest", "signature"],
+  "properties": {
+    "schemaVersion": {"const": "zimeiti-release-browser-acceptance-signature.v1"},
+    "algorithm": {"const": "Ed25519"},
+    "issuerId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$"},
+    "publicKeyFingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "receiptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{15,127}$"},
+    "nonce": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,128}$"},
+    "issuedAt": {"type": "string", "minLength": 20},
+    "expiresAt": {"type": "string", "minLength": 20},
+    "evidenceType": {"const": "release-browser-acceptance"},
+    "targetSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "subjectCommit": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"},
+    "sourceVersion": {"type": "string", "minLength": 1},
+    "webBuildId": {"type": "string", "minLength": 1},
+    "voiceBuildId": {"type": ["string", "null"]},
+    "webOutputDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "voiceOutputDigest": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+    "signature": {"type": "string", "minLength": 40}
+  }
+}

@@ -6,39 +6,7 @@ import { createHash, randomBytes } from 'crypto';
 import { issueUserAuthSession } from '@/lib/auth-session-store';
 import { publicAllowedAgentCategoryIds } from '@/lib/agent-category-access';
 import { readUserAppearancePreference } from '@/lib/server/user-appearance-preference';
-
-function getClientIP(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const realIP = request.headers.get('x-real-ip');
-  const cfIP = request.headers.get('cf-connecting-ip');
-  if (cfIP) return cfIP.trim();
-  if (realIP) return realIP.trim();
-  if (forwarded) {
-    const ips = forwarded.split(',').map(ip => ip.trim()).filter(Boolean);
-    if (ips.length > 0) {
-      for (let i = ips.length - 1; i >= 0; i--) {
-        const ip = ips[i];
-        if (!isPrivateIP(ip)) return ip;
-      }
-      return ips[ips.length - 1];
-    }
-  }
-  return 'unknown';
-}
-
-function isPrivateIP(ip: string): boolean {
-  if (!ip || ip === 'unknown') return true;
-  if (ip === '::1') return true;
-  const parts = ip.split('.');
-  if (parts.length !== 4) return false;
-  const first = parseInt(parts[0], 10);
-  const second = parseInt(parts[1], 10);
-  if (first === 10) return true;
-  if (first === 172 && second >= 16 && second <= 31) return true;
-  if (first === 192 && second === 168) return true;
-  if (first === 127) return true;
-  return false;
-}
+import { getAuthSessionClientIP } from '@/lib/auth-session-client-ip';
 
 function hashIP(ip: string): string {
   return createHash('sha256').update(ip + (process.env.SECURITY_INTERNAL_KEY?.trim() || process.env.JWT_SECRET?.trim() || '')).digest('hex').substring(0, 16);
@@ -63,6 +31,14 @@ export async function POST(request: NextRequest) {
     // 验证邮箱格式
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: '请输入正确的邮箱地址' }, { status: 400 });
+    }
+
+    const clientIP = getAuthSessionClientIP(request);
+    if (!clientIP) {
+      return NextResponse.json(
+        { error: '登录入口暂未获得可信网络地址，请稍后重试', code: 'CLIENT_IP_UNAVAILABLE' },
+        { status: 503 },
+      );
     }
 
     // 验证验证码
@@ -101,7 +77,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 创建 token
-    const ipHash = hashIP(getClientIP(request));
+    const ipHash = hashIP(clientIP);
     const sessionId = generateSessionId();
 
     const sessionUpdate = await issueUserAuthSession(client, {

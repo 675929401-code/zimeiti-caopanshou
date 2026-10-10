@@ -4,7 +4,8 @@
 
 ## 当前工作续接（2026-09-05）
 
-- 本轮发布授权覆盖：用户在 Codex 重启后明确要求，先完成本地修复与验收并汇报是否可推送，收到其对本次结果的明确确认后才允许推送 Git。此前广泛授权、机器验收凭据、日志和构建成功均不替代此次确认；确认前不得写 origin/backup、推远端演练分支或触发部署。继续本地工作与只读检查无需再次询问。
+- 部署唯一权威入口是 `F:\总项目文件\Skill存储系统\99_系统协议\02_操作协议\自媒体操盘手部署执行规约-当前版.md`。正式实现固定为 `.github/workflows/release-vnext.yml` build-only → `scripts/package-standalone-artifact.mjs` → `scripts/deploy-artifact-vnext.sh --plan/--execute`；历史 `deploy.yml`、本地直推、服务器 Git 队列及旧激活脚本不得作为正式入口。
+- Git commit/push、制品传输与服务器 `--plan`、生产 `--execute` 切换分别需要本轮明确授权；任何一项授权都不能推定下一项。不得自动创建或推送 stable tag。
 
 - 2026-09-28 用户最新并行规则：同一工具的多个窗口处理不同功能且实际写入文件不重叠时直接并行，不要求双窗口或并行任务握手，也不得被另一窗口的active session或stale记录阻塞。各窗口先核对目标文件现有diff并保留他人改动；同一文件、共享CSS/壳层、数据库迁移、构建、版本、部署、端口启停或跨工具接管才需要单窗口协调或选用握手工具。普通不同Agent行的配置更新和页面/API业务操作不属于数据库迁移。
 
@@ -24,7 +25,7 @@ Agent Hub — 智能体平台，基于 Next.js 16 (App Router) + React 19 + Type
 > 2026-08-23 起，本节覆盖本文后方所有旧 Git、Gitee、备份、拉取、Tag 和撤销说明；旧章节只作为历史背景，不得执行。
 
 1. `F:\总项目文件\Skill存储系统\01_网页开发项目\自媒体操盘手\当前版本` 是本地最新开发与运行的唯一事实源。
-2. 当前目录是本地开发事实源，正式推送只从相邻 `Git发布仓/zimeiti-caopanshou-source-vnext` 执行。先按 `docs/本地版本与发布协议.md` 自动更新 sourceVersion 并完成本地验收；再同步干净发布仓，核对 origin 与 backup，按会话已授权范围发布。禁止 force-push 或从远端 pull 覆盖事实源。
+2. 当前目录是本地开发事实源。先按 `docs/本地版本与发布协议.md` 更新 sourceVersion 并完成本地验收；取得本轮 Git 写入授权后，才可把精确干净提交推送到 GitHub。相邻 `Git发布仓/zimeiti-caopanshou-source-vnext` 如被使用，只是受控发布副本，不能反向覆盖事实源，也不能自行触发部署。禁止 force-push 或从远端 pull 覆盖事实源。
 3. 用户消息出现“Git”不再自动触发备份或远端写入。clone/fetch/pull/push、创建远端、重写历史分别需要当前对话明确授权。
 4. 日常开发方向固定为“本地当前版本 → 验证 → 新干净私有 origin → 独立干净 backup”；只有灾难恢复或恢复演练才从我方仓库 clone 到新目录。
 5. 禁止用 `git pull`、`git reset --hard`、`rsync --delete` 或 clone 直接覆盖本地 `当前版本/`。
@@ -65,7 +66,7 @@ grep "workspace root\|panicked" /app/work/logs/bypass//app.log | tail -5
 - 构建：`pnpm run build`
 - 生产启动：`pnpm run start`
 - 修改收尾：`node scripts/local-revision.mjs update`；正常 build 自动执行。
-- 发布流程：`docs/本地版本与发布协议.md`；同步发布仓 `sync --apply` 强制核验本地完整发布验收。旧发布脚本保持冻结。
+- 本地版本与验收：`docs/本地版本与发布协议.md`；部署执行：F 盘正式规约。`release-vnext.yml` 只产出制品，生产切换只允许 `deploy-artifact-vnext.sh --execute` 在独立授权后执行；旧发布脚本保持冻结。
 - 数据库备份：`bash scripts/backup-data.sh` 只允许生成本地加密前置快照；Git 推送分支已禁用
 - 数据库恢复：`bash scripts/restore-data.sh`
 
@@ -138,6 +139,7 @@ exit 1
 - 新增任何文案、生图、视频、语音或第三方工具接口时，第一步不是在用户界面展示，而是建立隔离记录；默认必须为 `is_active=false` 且 `is_hidden=true`。
 - 普通后台新增/编辑接口不得绕过隔离状态。只有独立的服务端验收激活通道可以发布模型；既有模型不因本规则被批量停用。
 - 上线前必须依次验证：服务端密钥可解析（不回显密钥）→ 认证端点与目标模型可达 → 协议 fixture 通过 → **真实最小 canary 达到成功终态** → 结果成功持久化且能从主站读取/播放/下载。
+- 生图、视频的真实 canary 必须由普通用户在自媒体操盘手当前环境的浏览器页面填写参数并点击生成；验收器只能被动记录浏览器请求、任务、计费、历史与媒体结果。脚本/API 直提只允许零网络、零真实任务、零计费的合同诊断，不能替代本地页面验收，更不能替代线上验收。
 - mock、静态检查、`GET /models`、HTTP 429、仅返回 task ID/queued、人工口头确认或“任务已受理”都不能替代真实 canary；不允许 canary 豁免。
 - 自租 GPU 模型还必须验证冷启动控制面：任务先耐久入库 → 官方 API 开机 → 动态隧道/网关 ready → 唯一 canary → 结果持久化 → 连续空闲至少 300 秒并二次复核后关机。
 - 任一必需密钥、实例 UUID、worker、隧道、持久化或关机证据缺失时，模型必须保持隐藏/不可用；禁止把“暖机数据链通过”描述为“自动唤醒全链通过”。

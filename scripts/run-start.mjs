@@ -7,6 +7,116 @@ import { ensureLocalDataReady } from "./local-data-readiness.mjs";
 import { verifyLocalBuildFingerprintReceipt } from "./local-build-fingerprint.mjs";
 import { LOCAL_PREVIEW_DATA_ROOT, LOCAL_PREVIEW_RUNTIME_FILE, validateLocalPreviewRuntime } from "./start-local-data-preview.mjs";
 
+export const LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE = "local-acceptance";
+export const LOCAL_RUNTIME_PROFILE_FORMAL_SHARED = "formal-local-shared";
+
+const LOOPBACK_HOSTS = new Set(["localhost", "0.0.0.0", "::", "::1", "0:0:0:0:0:0:0:0", "0:0:0:0:0:0:0:1"]);
+
+function requiredEnvironmentValue(value, code) {
+  if (typeof value !== "string" || !value.trim() || /[\r\n\0]/u.test(value)) throw new Error(code);
+  return value.trim();
+}
+
+function isLoopbackHostname(hostname) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/gu, "").replace(/\.$/u, "");
+  return LOOPBACK_HOSTS.has(normalized)
+    || normalized.endsWith(".localhost")
+    || /^127(?:\.|$)/u.test(normalized)
+    || /^::ffff:127(?:\.|$)/u.test(normalized)
+    || /^::ffff:7f[0-9a-f]{2}(?::|$)/u.test(normalized);
+}
+
+function remoteHttpsUrl(value, requiredCode, invalidCode, insecureCode) {
+  const raw = requiredEnvironmentValue(value, requiredCode);
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(invalidCode);
+  }
+  if (!parsed.hostname || parsed.protocol !== "https:" || parsed.username || parsed.password || isLoopbackHostname(parsed.hostname)) {
+    throw new Error(insecureCode);
+  }
+  return parsed;
+}
+
+export function resolveLocalRuntimeProfile(env = process.env) {
+  const requested = env.LOCAL_RUNTIME_PROFILE?.trim();
+  if (!requested || requested === LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE) return LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE;
+  if (requested === LOCAL_RUNTIME_PROFILE_FORMAL_SHARED) return LOCAL_RUNTIME_PROFILE_FORMAL_SHARED;
+  throw new Error("LOCAL_RUNTIME_PROFILE_INVALID");
+}
+
+export function validateFormalLocalSharedConfiguration(env = process.env) {
+  if (env.SHARED_CONFIGURATION_ENABLED !== "1") throw new Error("FORMAL_LOCAL_SHARED_CONFIGURATION_DISABLED");
+  const id = requiredEnvironmentValue(env.SHARED_CONFIGURATION_ID, "FORMAL_LOCAL_SHARED_CONFIGURATION_ID_REQUIRED");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(id)) throw new Error("FORMAL_LOCAL_SHARED_CONFIGURATION_ID_INVALID");
+  const key = requiredEnvironmentValue(env.SHARED_CONFIGURATION_SERVICE_ROLE_KEY, "FORMAL_LOCAL_SHARED_CONFIGURATION_KEY_REQUIRED");
+  const parsed = remoteHttpsUrl(
+    env.SHARED_CONFIGURATION_SUPABASE_URL,
+    "FORMAL_LOCAL_SHARED_CONFIGURATION_URL_REQUIRED",
+    "FORMAL_LOCAL_SHARED_CONFIGURATION_URL_INVALID",
+    "FORMAL_LOCAL_SHARED_CONFIGURATION_REQUIRES_REMOTE_HTTPS",
+  );
+  const businessServiceRoleKey = requiredEnvironmentValue(
+    env.COZE_SUPABASE_SERVICE_ROLE_KEY,
+    "FORMAL_LOCAL_CLOUD_SERVICE_ROLE_KEY_REQUIRED",
+  );
+  const businessAnonKey = requiredEnvironmentValue(
+    env.COZE_SUPABASE_ANON_KEY,
+    "FORMAL_LOCAL_CLOUD_ANON_KEY_REQUIRED",
+  );
+  const jwtSecret = requiredEnvironmentValue(env.JWT_SECRET, "FORMAL_LOCAL_CLOUD_JWT_SECRET_REQUIRED");
+  const databaseUrl = requiredEnvironmentValue(env.DATABASE_URL, "FORMAL_LOCAL_CLOUD_DATABASE_URL_REQUIRED");
+  const parsedBusinessUrl = remoteHttpsUrl(
+    env.COZE_SUPABASE_URL,
+    "FORMAL_LOCAL_CLOUD_BUSINESS_URL_REQUIRED",
+    "FORMAL_LOCAL_CLOUD_BUSINESS_URL_INVALID",
+    "FORMAL_LOCAL_CLOUD_BUSINESS_REQUIRES_REMOTE_HTTPS",
+  );
+  let parsedDatabaseUrl;
+  try {
+    parsedDatabaseUrl = new URL(databaseUrl);
+  } catch {
+    throw new Error("FORMAL_LOCAL_CLOUD_DATABASE_URL_INVALID");
+  }
+  if (
+    !["postgres:", "postgresql:"].includes(parsedDatabaseUrl.protocol)
+    || !parsedDatabaseUrl.hostname
+    || isLoopbackHostname(parsedDatabaseUrl.hostname)
+    || !["require", "verify-ca", "verify-full"].includes(parsedDatabaseUrl.searchParams.get("sslmode") || "")
+  ) {
+    throw new Error("FORMAL_LOCAL_CLOUD_DATABASE_REQUIRES_REMOTE_TLS");
+  }
+  return {
+    id,
+    url: parsed.toString(),
+    key,
+    businessUrl: parsedBusinessUrl.toString(),
+    businessServiceRoleKey,
+    businessAnonKey,
+    jwtSecret,
+    databaseUrl: parsedDatabaseUrl.toString(),
+  };
+}
+
+export function shouldStartLocalDataServices(env = process.env) {
+  return resolveLocalRuntimeProfile(env) === LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE;
+}
+
+export function localRuntimeProfileStatus(env = process.env) {
+  const runtimeProfile = resolveLocalRuntimeProfile(env);
+  if (runtimeProfile === LOCAL_RUNTIME_PROFILE_FORMAL_SHARED) validateFormalLocalSharedConfiguration(env);
+  return {
+    runtimeProfile,
+    businessData: runtimeProfile === LOCAL_RUNTIME_PROFILE_FORMAL_SHARED ? "shared-cloud" : "local-loopback",
+    authentication: runtimeProfile === LOCAL_RUNTIME_PROFILE_FORMAL_SHARED ? "shared-cloud" : "local-acceptance",
+    configuration: runtimeProfile === LOCAL_RUNTIME_PROFILE_FORMAL_SHARED ? "shared-cloud" : "local-acceptance",
+    sharedConfigurationEnabled: env.SHARED_CONFIGURATION_ENABLED === "1",
+    sharedConfigurationIdConfigured: Boolean(env.SHARED_CONFIGURATION_ID?.trim()),
+  };
+}
+
 function ensureDirectory(directory) {
   fs.mkdirSync(directory, { recursive: true });
   return directory;
@@ -53,6 +163,8 @@ export function createLocalStandaloneDatabaseEnv(runtime, baseEnv = process.env)
     SHARED_CONFIGURATION_ENABLED: "1",
     SHARED_CONFIGURATION_SUPABASE_URL: local.supabaseUrl,
     SHARED_CONFIGURATION_SERVICE_ROLE_KEY: local.serviceRoleKey,
+    SHARED_CONFIGURATION_ID: LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE,
+    LOCAL_RUNTIME_PROFILE: LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE,
     NODE_ENV: "production",
     LOCAL_ACCEPTANCE_PREVIEW: "true",
     LOCAL_VALIDATION_DIST_DIR: ".next-local-acceptance",
@@ -62,6 +174,38 @@ export function createLocalStandaloneDatabaseEnv(runtime, baseEnv = process.env)
     DIGITAL_VIDEO_QUEUE_WORKER: "1",
     DIGITAL_HUMAN_LONG_WORKER: "1",
   };
+}
+
+export function createFormalLocalSharedDatabaseEnv(_runtime, baseEnv = process.env) {
+  const shared = validateFormalLocalSharedConfiguration(baseEnv);
+  return {
+    ...baseEnv,
+    COZE_SUPABASE_URL: shared.businessUrl,
+    COZE_SUPABASE_SERVICE_ROLE_KEY: shared.businessServiceRoleKey,
+    COZE_SUPABASE_ANON_KEY: shared.businessAnonKey,
+    JWT_SECRET: shared.jwtSecret,
+    DATABASE_URL: shared.databaseUrl,
+    SHARED_CONFIGURATION_ENABLED: "1",
+    SHARED_CONFIGURATION_SUPABASE_URL: shared.url,
+    SHARED_CONFIGURATION_SERVICE_ROLE_KEY: shared.key,
+    SHARED_CONFIGURATION_ID: shared.id,
+    LOCAL_RUNTIME_PROFILE: LOCAL_RUNTIME_PROFILE_FORMAL_SHARED,
+    NODE_ENV: "production",
+    LOCAL_ACCEPTANCE_PREVIEW: "false",
+    LOCAL_VALIDATION_DIST_DIR: ".next",
+    AUTODL_H3_LIFECYCLE_ENABLED: "false",
+    // A formal local client is an interactive cloud client, not an additional
+    // production worker host. Background queues remain owned by the server.
+    MEDIA_QUEUE_WORKER_PROCESS: "0",
+    DIGITAL_VIDEO_QUEUE_WORKER: "0",
+    DIGITAL_HUMAN_LONG_WORKER: "0",
+  };
+}
+
+export function createLocalRuntimeDatabaseEnv(runtime, baseEnv = process.env) {
+  return resolveLocalRuntimeProfile(baseEnv) === LOCAL_RUNTIME_PROFILE_FORMAL_SHARED
+    ? createFormalLocalSharedDatabaseEnv(runtime, baseEnv)
+    : createLocalStandaloneDatabaseEnv(runtime, baseEnv);
 }
 
 function readLocalStandaloneRuntime() {
@@ -74,7 +218,7 @@ function readLocalStandaloneRuntime() {
 }
 
 function localProductionPreviewEnv(root, runtime, baseEnv = process.env) {
-  const localDatabaseEnv = createLocalStandaloneDatabaseEnv(runtime, baseEnv);
+  const localDatabaseEnv = createLocalRuntimeDatabaseEnv(runtime, baseEnv);
   const runtimeDir = ensureDirectory(path.join(root, ".runtime"));
   const voiceSqlitePath = baseEnv.VOICE_SQLITE_PATH?.trim()
     || firstExistingFile([
@@ -122,10 +266,13 @@ function loadLocalPreviewEnvironment(root) {
 function run(command, args, options = {}) {
   // 本地预览的供应商下载必须直连：先合并完所有 env 来源，最后统一剥离代理变量，
   // 否则 options.env 展开的 baseEnv 会把 HTTPS_PROXY/NO_PROXY 带回来（TOS/COS 经代理必失败）。
-  const { HTTP_PROXY, HTTPS_PROXY, http_proxy, https_proxy, ALL_PROXY, all_proxy, ...directEnv } = {
+  const directEnv = {
     ...process.env,
     ...options.env,
   };
+  for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"]) {
+    delete directEnv[key];
+  }
   const child = spawn(command, args, {
     stdio: "inherit",
     env: { ...directEnv, NO_PROXY: "*", no_proxy: "*" },
@@ -153,7 +300,10 @@ async function main() {
     const port = process.env.DEPLOY_RUN_PORT || process.env.PORT || "5000";
     const root = process.cwd();
     loadLocalPreviewEnvironment(root);
-    const runtime = readLocalStandaloneRuntime();
+    const startLocalDataServices = shouldStartLocalDataServices(process.env);
+    const runtime = startLocalDataServices
+      ? readLocalStandaloneRuntime()
+      : null;
     const sourceIdentity = verifyLocalBuildFingerprintReceipt(root, ".next/local-source-fingerprint.v1.json");
     const serverPath = standaloneServer(root);
     console.log(`[run-start] Windows detected: starting current-source standalone BUILD_ID=${sourceIdentity.buildId} on port ${port}.`);
@@ -162,13 +312,16 @@ async function main() {
       PORT: port,
       HOSTNAME: "127.0.0.1",
     };
-    const data = await ensureLocalDataReady({
-      executable: process.execPath,
-      cwd: root,
-      env,
-    }, { restore: true });
-    if (data.restored) {
-      console.log("[run-start] F-drive local database and REST services restored and verified.");
+    console.log(`[run-start] runtime profile ${JSON.stringify(localRuntimeProfileStatus(env))}`);
+    if (startLocalDataServices) {
+      const data = await ensureLocalDataReady({
+        executable: process.execPath,
+        cwd: root,
+        env,
+      }, { restore: true });
+      if (data.restored) {
+        console.log("[run-start] F-drive local database and REST services restored and verified.");
+      }
     }
     run(process.execPath, [serverPath], {
       cwd: path.dirname(serverPath),

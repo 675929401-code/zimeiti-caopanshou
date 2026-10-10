@@ -9,7 +9,7 @@ const task = { id: 'vt_completed_fixture', user_id: 'fixture-user', model_id: 'o
   storage_url: 'object://tencent_cos/videos%2Fowned.mp4', video_url: 'object://tencent_cos/videos%2Fowned.mp4',
   billing_price_yuan: 0.55, billing_cost_price_yuan: 0.4, billing_exempt: true, explicitly_free: false,
   billing_state: 'not_required', billing_operation_id: null, price_charged: 0 };
-let reads = 0, rpcs = 0, writes = 0, bills = 0, persist = 0, outcomes = 0;
+let reads = 0, rpcs = 0, writes = 0, bills = 0, persist = 0, outcomes = 0, revenues = 0;
 const db = { from(table) {
   assert.equal(table, 'video_tasks');
   const chain = { select() { return chain; }, eq() { return chain; }, async maybeSingle() { reads++; await Promise.resolve(); return { data: { ...task }, error: null }; },
@@ -25,6 +25,7 @@ const load = () => {
     if (name.endsWith('/supabase-client')) return { getSupabaseAdminClient: () => db };
     if (name.endsWith('/video-access-ticket')) return { createVideoAccessUrl: async () => '/owned-playback' };
     if (name.endsWith('/billing-executor')) return { executeCashDeduction: async () => { bills++; throw new Error('UNEXPECTED_BILLING'); } };
+    if (name.endsWith('/revenue')) return { recordRevenue: async () => { revenues++; } };
     if (name.endsWith('/video-persistence')) return { persistStableVideoFromUrl: async () => { persist++; throw new Error('UNEXPECTED_PERSIST'); } };
     if (name.endsWith('/video-terminal-accounting')) return { recordVideoTerminalOutcome: async () => { outcomes++; } };
     return {};
@@ -37,12 +38,14 @@ const input = { taskIdInternal: task.id, userId: task.user_id, userRole: 'admin'
 const results = await Promise.all(Array.from({ length: 12 }, (_, index) => (index % 2 ? a : b).finalizeVideoGenerationSuccess(input)));
 assert.equal(reads, 1, 'Separate route module instances share a process lock');
 assert.equal(rpcs, 1);
+assert.equal(revenues, 1, 'Concurrent completed replay must share one idempotent revenue confirmation');
 assert.ok(results.every(item => item.state === 'completed' && item.newlyCompleted === false));
 await a.finalizeVideoGenerationSuccess(input);
 assert.equal(reads, 2); assert.equal(rpcs, 2);
+assert.equal(revenues, 2, 'Sequential completed replay must re-confirm the idempotent revenue receipt');
 assert.deepEqual({ writes, bills, persist, outcomes }, { writes: 0, bills: 0, persist: 0, outcomes: 0 });
 assert.equal(task.status, 'completed');
 task.status = 'failed';
 await assert.rejects(a.finalizeVideoGenerationSuccess(input), { code: 'VIDEO_TASK_TERMINAL_CONFLICT' });
 assert.equal(writes, 0);
-console.log('PASS completed replay: 12 concurrent calls across 2 module instances, sequential replay, no state reset/billing/persistence/accounting, terminal conflict');
+console.log('PASS completed replay: 12 concurrent calls across 2 module instances, sequential replay, idempotent revenue confirmation, no state reset/billing/persistence/accounting, terminal conflict');

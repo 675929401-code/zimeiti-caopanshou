@@ -159,6 +159,11 @@ for (const [file, needle] of sourceChecks) {
 }
 
 const workspaceAdminRoute = fs.readFileSync("src/app/api/admin/workspace-models/route.ts", "utf8");
+assert.equal(
+  workspaceAdminRoute.match(/readImagePublicationStates\(db\)/gu)?.length,
+  1,
+  "workspace catalog must batch-read image publication state instead of issuing one RPC per model",
+);
 const workspaceMutations = workspaceAdminRoute.slice(workspaceAdminRoute.indexOf("async function updateAssignment"));
 assert.doesNotMatch(workspaceMutations, /platform_settings"\)\.upsert/u, "workspace mutations must not bypass the versioned control plane");
 assert.equal(workspaceMutations.match(/stageLegacyWorkspaceMutation/gu)?.length, 2, "assignment and reorder must stage versioned candidates");

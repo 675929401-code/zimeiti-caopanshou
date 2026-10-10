@@ -13,7 +13,7 @@ const viewports = [
   { name: "1440x900", width: 1440, height: 900 },
   { name: "1920x1080", width: 1920, height: 1080 },
 ];
-const landingTitleLines = ["把一个内容想法", "推进到完整成片", "沉淀为可用资产"];
+const landingTitlePhrases = ["推进到完整成片", "沉淀为可用资产", "让内容持续生长"];
 const landingSectionHeadings = [
   "少一点重复开工，多一点持续产出",
   "选对呈现方式，再把每一步做到位",
@@ -617,10 +617,11 @@ export async function main() {
     await motionPage.goto(`${origin}/`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await motionPage.waitForSelector('[data-testid="soft-white-premium-home"]', { timeout: 30_000 });
     await motionPage.mouse.move(320, 260);
-    await motionPage.waitForFunction(() => document.querySelector('[data-testid="soft-white-premium-home"]')?.getAttribute("data-pointer-motion") === "active");
-    const pointerBeforeReduce = await motionPage.locator('[data-testid="soft-white-premium-home"]').getAttribute("data-pointer-motion");
+    const motionBeforeReduce = await motionPage.evaluate(() => ({
+      pointerMotion: document.querySelector('[data-testid="soft-white-premium-home"]')?.hasAttribute("data-pointer-motion") || false,
+      orbitAnimation: getComputedStyle(document.querySelector(".swh-signal-orbit-one")).animationName,
+    }));
     await motionPage.emulateMedia({ reducedMotion: "reduce" });
-    await motionPage.waitForFunction(() => !document.querySelector('[data-testid="soft-white-premium-home"]')?.hasAttribute("data-pointer-motion"));
     await motionPage.evaluate(() => {
       const original = Element.prototype.scrollIntoView;
       window.__swhScrollBehavior = null;
@@ -635,25 +636,26 @@ export async function main() {
       const home = document.querySelector('[data-testid="soft-white-premium-home"]');
       const aura = document.querySelector(".swh-aura-one");
       const factory = document.querySelector(".swh-factory-ring-one");
-      const network = document.querySelector('[data-testid="swh-pointer-network"]');
+      const orbit = document.querySelector(".swh-signal-orbit-one");
+      const typewriterCaret = document.querySelector(".swh-typewriter > i");
       return {
-        pointerBeforeReduce: home ? "active" : null,
-        pointerAfterReduce: home?.getAttribute("data-pointer-motion") || null,
+        pointerAfterReduce: home?.hasAttribute("data-pointer-motion") || false,
         scrollBehavior: getComputedStyle(home).scrollBehavior,
         requestedScrollBehavior: window.__swhScrollBehavior || null,
         auraAnimationDuration: aura ? getComputedStyle(aura).animationDuration : "",
         factoryAnimationDuration: factory ? getComputedStyle(factory).animationDuration : "",
-        networkState: network?.getAttribute("data-network-state") || null,
-        networkPointer: network?.getAttribute("data-network-pointer") || null,
+        orbitAnimationName: orbit ? getComputedStyle(orbit).animationName : "missing",
+        typewriterCaretDisplay: typewriterCaret ? getComputedStyle(typewriterCaret).display : "missing",
       };
     });
-    reducedMotionMetrics.pointerBeforeReduce = pointerBeforeReduce;
-    assert.equal(reducedMotionMetrics.pointerBeforeReduce, "active", "POINTER_BASELINE_NOT_ACTIVE");
-    assert.equal(reducedMotionMetrics.pointerAfterReduce, null, "POINTER_REDUCED_MOTION_STILL_ACTIVE");
+    reducedMotionMetrics.motionBeforeReduce = motionBeforeReduce;
+    assert.equal(motionBeforeReduce.pointerMotion, false, "POINTER_DRIVEN_REPAINT_PRESENT");
+    assert.notEqual(motionBeforeReduce.orbitAnimation, "none", "SIGNAL_ORBIT_BASELINE_STATIC");
+    assert.equal(reducedMotionMetrics.pointerAfterReduce, false, "POINTER_REDUCED_MOTION_ATTRIBUTE_PRESENT");
     assert.equal(reducedMotionMetrics.scrollBehavior, "auto", "REDUCED_MOTION_SCROLL_STYLE_NOT_AUTO");
     assert.equal(reducedMotionMetrics.requestedScrollBehavior, "auto", "REDUCED_MOTION_SCROLL_REQUEST_NOT_AUTO");
-    assert.equal(reducedMotionMetrics.networkState, "static", "POINTER_NETWORK_REDUCED_MOTION_NOT_STATIC");
-    assert.equal(reducedMotionMetrics.networkPointer, null, "POINTER_NETWORK_REDUCED_MOTION_STILL_TRACKING");
+    assert.equal(reducedMotionMetrics.orbitAnimationName, "none", "SIGNAL_ORBIT_REDUCED_MOTION_STILL_ACTIVE");
+    assert.equal(reducedMotionMetrics.typewriterCaretDisplay, "none", "TYPEWRITER_CARET_REDUCED_MOTION_VISIBLE");
     await motionPage.screenshot({ path: path.join(outputDir, "lattice-reduced-motion-1440x900.png"), fullPage: false });
     await motionPage.evaluate(() => sessionStorage.setItem("entered_app", "1"));
     await motionPage.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
@@ -900,11 +902,12 @@ export async function main() {
           const header = document.querySelector(".swh-header");
           const atmosphere = document.querySelector('[data-testid="swh-theme-atmosphere"]');
           const aura = document.querySelector(".swh-aura-one");
-          const motionGrid = document.querySelector(".swh-motion-grid");
-          const dataStream = document.querySelector(".swh-data-stream");
-          const particleField = document.querySelector(".swh-particle-field");
-          const diagonalSweep = document.querySelector(".swh-light-sweep");
+          const signalOrbitOne = document.querySelector(".swh-signal-orbit-one");
+          const signalOrbitTwo = document.querySelector(".swh-signal-orbit-two");
+          const signalBeacons = document.querySelector(".swh-signal-beacons");
           const pointerNetwork = document.querySelector('[data-testid="swh-pointer-network"]');
+          const typewriter = document.querySelector('[data-testid="swh-typewriter"]');
+          const contact = document.querySelector("#swh-contact .swh-contact-visual");
           const accent = document.querySelector(".swh-title-accent");
           const factory = document.querySelector('[data-testid="swh-content-factory"]');
           const factoryRing = document.querySelector(".swh-factory-ring-one");
@@ -912,10 +915,7 @@ export async function main() {
           const loopStyle = loop ? getComputedStyle(loop) : null;
           const headerStyle = header ? getComputedStyle(header) : null;
           const auraStyle = aura ? getComputedStyle(aura) : null;
-          const motionGridStyle = motionGrid ? getComputedStyle(motionGrid) : null;
-          const dataStreamStyle = dataStream ? getComputedStyle(dataStream) : null;
-          const diagonalSweepStyle = diagonalSweep ? getComputedStyle(diagonalSweep) : null;
-          const maxFxAnimationNames = [motionGrid, dataStream, particleField]
+          const maxFxAnimationNames = [signalOrbitOne, signalOrbitTwo, signalBeacons]
             .map((node) => node ? getComputedStyle(node).animationName : "none");
           const accentStyle = accent ? getComputedStyle(accent) : null;
           const factoryStyle = factory ? getComputedStyle(factory) : null;
@@ -949,18 +949,17 @@ export async function main() {
             factoryPresent: !!factory && factoryStyle?.display !== "none",
             factoryAnimationName: factoryRingStyle?.animationName || "none",
             factoryTransform: factoryStyle?.transform || "none",
-            pointerColor: homeStyle?.getPropertyValue("--swh-pointer-color").trim() || "",
             paletteTokens: homeStyle ? ["--oh-page", "--oh-accent", "--oh-accent-two", "--oh-accent-three"].map((name) => homeStyle.getPropertyValue(name).trim().toLowerCase()) : [],
             staticGridBackground: home ? getComputedStyle(home, "::before").backgroundImage : "",
-            motionGridBackground: motionGridStyle?.backgroundImage || "",
-            dataStreamBackground: dataStreamStyle?.backgroundImage || "",
-            diagonalAnimationName: diagonalSweepStyle?.animationName || "none",
-            diagonalTransform: diagonalSweepStyle?.transform || "none",
             motionLayerCount: atmosphere?.children.length || 0,
-            pointerNetworkState: pointerNetwork?.getAttribute("data-network-state") || null,
+            pointerNetworkPresent: Boolean(pointerNetwork),
+            pointerMotionPresent: home?.hasAttribute("data-pointer-motion") || false,
+            panelCount: document.querySelectorAll("[data-swh-panel]").length,
+            typewriterPresent: Boolean(typewriter?.getAttribute("data-full-text")),
+            contactPresent: Boolean(contact),
             heroVisible: !!hero && getComputedStyle(hero).display !== "none" && Number.parseFloat(getComputedStyle(hero).opacity) > 0,
             heroRevealVisible: hero?.classList.contains("is-visible") || false,
-            titleLines: Array.from(document.querySelectorAll(".swh-title-line")).map((node) => (node.textContent || "").trim()),
+            titleLines: Array.from(document.querySelectorAll(".swh-title-line")).map((node) => node.getAttribute("data-full-text") || (node.textContent || "").trim()),
             sectionHeadings: Array.from(document.querySelectorAll(".swh-section-heading h2, .swh-heading-row h2")).map((node) => (node.textContent || "").trim()),
             loopSteps: document.querySelectorAll(".swh-loop li").length,
             productionModes: document.querySelectorAll(".swh-production-grid article").length,
@@ -976,22 +975,24 @@ export async function main() {
         const pointerStart = await page.locator('[data-testid="soft-white-premium-home"]').evaluate((home) => ({
           x: getComputedStyle(home).getPropertyValue("--swh-pointer-x").trim(),
           y: getComputedStyle(home).getPropertyValue("--swh-pointer-y").trim(),
+          background: getComputedStyle(home).backgroundImage,
           factoryTransform: document.querySelector('[data-testid="swh-content-factory"]')
             ? getComputedStyle(document.querySelector('[data-testid="swh-content-factory"]')).transform
             : "none",
-          active: home.getAttribute("data-pointer-motion"),
-          networkPointer: document.querySelector('[data-testid="swh-pointer-network"]')?.getAttribute("data-network-pointer") || null,
+          active: home.hasAttribute("data-pointer-motion"),
+          networkPresent: Boolean(document.querySelector('[data-testid="swh-pointer-network"]')),
         }));
         await page.mouse.move(Math.round(viewport.width * 0.82), Math.round(viewport.height * 0.68));
         await page.waitForTimeout(320);
         const pointerEnd = await page.locator('[data-testid="soft-white-premium-home"]').evaluate((home) => ({
           x: getComputedStyle(home).getPropertyValue("--swh-pointer-x").trim(),
           y: getComputedStyle(home).getPropertyValue("--swh-pointer-y").trim(),
+          background: getComputedStyle(home).backgroundImage,
           factoryTransform: document.querySelector('[data-testid="swh-content-factory"]')
             ? getComputedStyle(document.querySelector('[data-testid="swh-content-factory"]')).transform
             : "none",
-          active: home.getAttribute("data-pointer-motion"),
-          networkPointer: document.querySelector('[data-testid="swh-pointer-network"]')?.getAttribute("data-network-pointer") || null,
+          active: home.hasAttribute("data-pointer-motion"),
+          networkPresent: Boolean(document.querySelector('[data-testid="swh-pointer-network"]')),
         }));
         landingMetrics.pointerResponse = { start: pointerStart, end: pointerEnd };
         assert.equal(landingMetrics.theme, theme, `LANDING_THEME_ROOT_MISMATCH:${theme}:${viewport.name}`);
@@ -1000,40 +1001,38 @@ export async function main() {
         assert.equal(landingMetrics.landingVersion, "v2", `LANDING_V2_MARKER_MISSING:${theme}:${viewport.name}`);
         assert.equal(landingMetrics.heroVisible, true, `LANDING_HERO_MISSING:${theme}:${viewport.name}`);
         assert.equal(landingMetrics.heroRevealVisible, true, `LANDING_HERO_REVEAL_INCOMPLETE:${theme}:${viewport.name}`);
-        assert.deepEqual(landingMetrics.titleLines, landingTitleLines, `LANDING_TITLE_CHANGED:${theme}:${viewport.name}`);
+        assert.equal(landingMetrics.titleLines[0], "把一个内容想法", `LANDING_TITLE_CHANGED:${theme}:${viewport.name}`);
+        assert.ok(landingTitlePhrases.includes(landingMetrics.titleLines[1]), `LANDING_TYPEWRITER_PHRASE_CHANGED:${theme}:${viewport.name}`);
         assert.deepEqual(landingMetrics.sectionHeadings, landingSectionHeadings, `LANDING_CONTENT_CHANGED:${theme}:${viewport.name}`);
-        assert.equal(landingMetrics.loopSteps, 7, `LANDING_LOOP_COUNT_MISMATCH:${theme}:${viewport.name}`);
+        assert.equal(landingMetrics.loopSteps, 3, `LANDING_LOOP_COUNT_MISMATCH:${theme}:${viewport.name}`);
         assert.equal(landingMetrics.productionModes, 3, `LANDING_PRODUCTION_COUNT_MISMATCH:${theme}:${viewport.name}`);
         assert.equal(landingMetrics.moduleCount, 7, `LANDING_MODULE_COUNT_MISMATCH:${theme}:${viewport.name}`);
         assert.ok(landingMetrics.criticalMinimumFontSize >= 11, `LANDING_CRITICAL_TEXT_TOO_SMALL:${theme}:${viewport.name}:${landingMetrics.criticalMinimumFontSize}`);
-        assert.equal(landingMetrics.motionLayerCount, 10, `LANDING_MOTION_LAYER_MISMATCH:${theme}:${viewport.name}`);
-        assert.equal(landingMetrics.pointerNetworkState, "animated", `LANDING_POINTER_NETWORK_NOT_ANIMATED:${theme}:${viewport.name}`);
+        assert.equal(landingMetrics.motionLayerCount, 6, `LANDING_MOTION_LAYER_MISMATCH:${theme}:${viewport.name}`);
+        assert.equal(landingMetrics.pointerNetworkPresent, false, `LANDING_LEGACY_POINTER_NETWORK_PRESENT:${theme}:${viewport.name}`);
+        assert.equal(landingMetrics.pointerMotionPresent, false, `LANDING_POINTER_REPAINT_PRESENT:${theme}:${viewport.name}`);
+        assert.equal(landingMetrics.panelCount, 6, `LANDING_PANEL_COUNT_MISMATCH:${theme}:${viewport.name}`);
+        assert.equal(landingMetrics.typewriterPresent, true, `LANDING_TYPEWRITER_MISSING:${theme}:${viewport.name}`);
+        assert.equal(landingMetrics.contactPresent, true, `LANDING_CONTACT_MISSING:${theme}:${viewport.name}`);
         assert.ok((landingMetrics.staticGridBackground.match(/linear-gradient/gu) || []).length >= 2 && landingMetrics.staticGridBackground.includes("90deg"), `LANDING_STATIC_ORTHOGONAL_GRID_MISSING:${theme}:${viewport.name}`);
-        assert.ok((landingMetrics.motionGridBackground.match(/linear-gradient/gu) || []).length >= 2 && landingMetrics.motionGridBackground.includes("90deg"), `LANDING_DYNAMIC_ORTHOGONAL_GRID_MISSING:${theme}:${viewport.name}`);
-        assert.match(landingMetrics.dataStreamBackground, /repeating-linear-gradient\(90deg/iu, `LANDING_DATA_STREAM_MISSING:${theme}:${viewport.name}`);
-        assert.notEqual(landingMetrics.diagonalAnimationName, "none", `LANDING_DIAGONAL_SWEEP_MISSING:${theme}:${viewport.name}`);
-        assert.notEqual(landingMetrics.diagonalTransform, "none", `LANDING_DIAGONAL_SWEEP_TRANSFORM_MISSING:${theme}:${viewport.name}`);
         assert.notEqual(landingMetrics.auraAnimationName, "none", `LANDING_AMBIENT_MOTION_MISSING:${theme}:${viewport.name}`);
-        assert.ok(landingMetrics.maxFxAnimationNames.every((name) => name !== "none"), `LANDING_MAX_TECH_MOTION_MISSING:${theme}:${viewport.name}:${landingMetrics.maxFxAnimationNames.join(",")}`);
+        assert.ok(landingMetrics.maxFxAnimationNames.every((name) => name !== "none"), `LANDING_SIGNAL_MOTION_MISSING:${theme}:${viewport.name}:${landingMetrics.maxFxAnimationNames.join(",")}`);
         assert.equal(landingMetrics.factoryPresent, true, `LANDING_FACTORY_MISSING:${theme}:${viewport.name}`);
         assert.notEqual(landingMetrics.factoryAnimationName, "none", `LANDING_FACTORY_MOTION_MISSING:${theme}:${viewport.name}`);
         assert.notEqual(landingMetrics.factoryTransform, "none", `LANDING_FACTORY_DEPTH_MISSING:${theme}:${viewport.name}`);
-        assert.ok(landingMetrics.pointerColor, `LANDING_POINTER_COLOR_MISSING:${theme}:${viewport.name}`);
         if (theme === "stellar-blue") {
           assert.deepEqual(landingMetrics.paletteTokens, ["#06182d", "#58e0dc", "#43a8bd", "#d2a85f"], `STELLAR_RUNTIME_PALETTE_MISMATCH:${viewport.name}`);
         }
-        assert.equal(pointerStart.active, "active", `LANDING_POINTER_TRACKING_INACTIVE:${theme}:${viewport.name}`);
-        assert.equal(pointerStart.networkPointer, "active", `LANDING_POINTER_NETWORK_TRACKING_INACTIVE:${theme}:${viewport.name}`);
-        assert.notEqual(pointerStart.x, pointerEnd.x, `LANDING_POINTER_X_STATIC:${theme}:${viewport.name}`);
-        assert.notEqual(pointerStart.y, pointerEnd.y, `LANDING_POINTER_Y_STATIC:${theme}:${viewport.name}`);
-        assert.notEqual(pointerStart.factoryTransform, pointerEnd.factoryTransform, `LANDING_FACTORY_POINTER_RESPONSE_MISSING:${theme}:${viewport.name}`);
+        assert.equal(pointerStart.active, false, `LANDING_POINTER_TRACKING_PRESENT:${theme}:${viewport.name}`);
+        assert.equal(pointerStart.networkPresent, false, `LANDING_POINTER_NETWORK_PRESENT:${theme}:${viewport.name}`);
+        assert.deepEqual(pointerEnd, pointerStart, `LANDING_MOUSE_MOVE_CHANGED_PAINT:${theme}:${viewport.name}`);
         assert.match(landingMetrics.accentBackground, /gradient/iu, `LANDING_TITLE_MATERIAL_MISSING:${theme}:${viewport.name}`);
         assert.equal(landingMetrics.overflowX, 0, `LANDING_HORIZONTAL_OVERFLOW:${theme}:${viewport.name}`);
         assert.equal(landingMetrics.homeOverflowX, 0, `LANDING_ROOT_HORIZONTAL_OVERFLOW:${theme}:${viewport.name}:${landingMetrics.homeOverflowX}`);
         assert.deepEqual(landingMetrics.clippedElements, [], `LANDING_HORIZONTAL_CLIPPING:${theme}:${viewport.name}:${JSON.stringify(landingMetrics.clippedElements)}`);
         await page.screenshot({ path: path.join(outputDir, `${theme}-landing-${viewport.name}.png`), fullPage: false });
         landingMetrics.sectionDiagnostics = {};
-        for (const sectionId of ["swh-top", "swh-modules", "swh-value", "swh-production", "swh-capabilities", "swh-business", "swh-footer"]) {
+        for (const sectionId of ["swh-top", "swh-modules", "swh-value", "swh-production", "swh-capabilities", "swh-business", "swh-contact", "swh-footer"]) {
           await page.evaluate((id) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "instant" }), sectionId);
           await page.waitForFunction((id) => {
             const section = document.getElementById(id);

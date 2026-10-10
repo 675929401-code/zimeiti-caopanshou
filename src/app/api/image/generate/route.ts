@@ -45,6 +45,7 @@ import {
   resolveImageProviderContract,
 } from "@/lib/image-provider-contract";
 import { resolveImageResolutionPrice } from "@/lib/image-resolution-pricing";
+import { IMAGE_FIXED_OUTPUT_COUNT, type ImagePublishedProtocol } from "@/lib/image-parameter-contract";
 import { parseImageDimensions, type ImageDimensions } from "@/lib/image-dimensions";
 import { configuredImagePixelSizeFor, validateImageOutputContract } from "@/lib/image-output-contract";
 import { renderCoverComposition } from "@/lib/cover-composition-server";
@@ -57,8 +58,28 @@ import {
   isWorkspaceModelAssigned,
   parseWorkspaceModelAssignmentOverrides,
 } from "@/lib/workspace-model-assignment-settings";
-import { createImageFailureRequestSnapshot, parseImageFailureRequestSnapshot } from "@/lib/image-failure-history";
+import {
+  createImageFailureRequestSnapshot,
+  imageFailureBillingStateFromOperations,
+  parseImageFailureRequestSnapshot,
+  type ImageFailureWalletOperation,
+} from "@/lib/image-failure-history";
 import { resolveProviderSecret } from "@/lib/provider-secret";
+import {
+  createImageProviderSubmissionReceipt,
+  prepareImageProviderRequest,
+  type ImageProviderDispatchReceipt,
+  type ImageProviderProtocol,
+  type ImageProviderRequestProjection,
+  type ImageProviderSubmissionReceipt,
+} from "@/lib/image-provider-request-audit";
+import {
+  acquireProviderAdmission,
+  holdProviderAdmissionUntilResponseEnds,
+  ProviderAdmissionBusyError,
+  ProviderAdmissionUnavailableError,
+  type ProviderAdmissionLease,
+} from "@/lib/provider-admission-control";
 import {
   DatabaseImageExactlyOnceStore,
   ImageExactlyOnceError,
@@ -116,7 +137,22 @@ type ImageBillingReservation = {
   referenceId: string;
   clientIdempotencyKey: string;
   clientTraceId: string;
+  requiresLedgerConfirmation?: boolean;
 };
+
+async function readImageReservationBilling(reservation: ImageBillingReservation) {
+  const billing = await getSupabaseClient().from("wallet_operations")
+    .select("idempotency_key,operation_kind,amount,status")
+    .eq("user_id", reservation.userId)
+    .in("operation_kind", ["cash_charge", "cash_refund"])
+    .in("idempotency_key", [reservation.referenceId, `${reservation.referenceId}:release`]);
+  return imageFailureBillingStateFromOperations({
+    billingReferenceId: reservation.referenceId,
+    billingExempt: false,
+    operations: (billing.data || []) as ImageFailureWalletOperation[],
+    queryFailed: Boolean(billing.error),
+  });
+}
 
 type LocalCoverModelConfig = {
   id: string;
@@ -163,6 +199,43 @@ const TRUSTED_GENERATED_IMAGE_HOSTS = [
   "ark-acg-cn-beijing.tos-cn-beijing.volces.com",
 ];
 const imageExactlyOnceStore = new DatabaseImageExactlyOnceStore();
+
+function imageParameterRejection(
+  error: string,
+  code: string,
+  details: Record<string, unknown> = {},
+  status = 422,
+) {
+  return NextResponse.json({
+    error,
+    code,
+    task_submitted: false,
+    taskSubmitted: false,
+    price: 0,
+    retryable: false,
+    upstreamCalled: false,
+    billed: false,
+    ...details,
+  }, { status });
+}
+
+function imageAdmissionRejection(error: unknown): ImageRequestRejectedError | null {
+  if (error instanceof ProviderAdmissionBusyError) {
+    return new ImageRequestRejectedError({
+      source: "platform",
+      code: "IMAGE_PROVIDER_ADMISSION_BUSY",
+      retryAfterSeconds: error.retryAfterSeconds,
+      admissionScope: error.scope,
+    });
+  }
+  if (error instanceof ProviderAdmissionUnavailableError) {
+    return new ImageRequestRejectedError({
+      source: "platform",
+      code: "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE",
+    });
+  }
+  return null;
+}
 
 function exactTextPlan(coverText: string, aspectRatio: string) {
   const lines = coverText.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
@@ -427,9 +500,9 @@ function safeUpstreamTarget(url: string) {
   if (!url) return "未配置上游地址";
   try {
     const parsed = new URL(url);
-    return `${parsed.origin}${parsed.pathname}`;
+    return parsed.origin;
   } catch {
-    return url.replace(/[?&](?:key|api[_-]?key|token|signature|authorization)=[^&]+/gi, "$1=***");
+    return "上游地址格式无效";
   }
 }
 
@@ -442,19 +515,20 @@ function summarizeFetchCause(error: unknown) {
     typeof cause?.hostname === "string" ? cause.hostname : "",
     typeof cause?.message === "string" ? cause.message : "",
   ].filter(Boolean);
-  return parts.length > 0 ? `${error.message} (${parts.join(" / ")})` : error.message;
+  return summarizeUpstreamImageError(parts.length > 0 ? `${error.message} (${parts.join(" / ")})` : error.message)
+    || "unknown network error";
 }
 
 async function fetchImageUpstream(
-  url: string,
-  init: RequestInit,
+  input: string | Request,
+  init: RequestInit = {},
   context: ImageUpstreamContext = {},
   timeoutMs = 5 * 60 * 1000,
 ): Promise<Response> {
-  const target = safeUpstreamTarget(url);
+  const target = safeUpstreamTarget(typeof input === "string" ? input : input.url);
   try {
     // 断连或超时无法证明供应商未受理，所有图片模型都只能提交一次。
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    return await fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
     console.error("[Image] Upstream result unknown; automatic resubmission disabled:", {
       target,
@@ -465,6 +539,103 @@ async function fetchImageUpstream(
     });
     throw new Error("图片上游连接中断或超时，生成结果尚未确认。系统已停止自动重发，请保留追踪号查询状态或联系管理员核对，勿重复提交");
   }
+}
+
+type ImageProviderReceiptContext = {
+  recordProviderDispatchReceipt: (receipt: ImageProviderDispatchReceipt) => Promise<ImageProviderDispatchReceipt>;
+  recordProviderSubmissionReceipt: (receipt: ImageProviderSubmissionReceipt) => Promise<ImageProviderSubmissionReceipt>;
+};
+
+async function fetchAuditedImageProviderPost(input: {
+  url: string;
+  init: RequestInit;
+  providerProtocol: ImageProviderProtocol;
+  projection: ImageProviderRequestProjection;
+  idempotencyKey?: string;
+  receiptContext: ImageProviderReceiptContext;
+  upstreamContext?: ImageUpstreamContext;
+  timeoutMs?: number;
+}) {
+  const prepared = await prepareImageProviderRequest({
+    url: input.url,
+    init: input.init,
+    providerProtocol: input.providerProtocol,
+    projection: input.projection,
+    idempotencyKey: input.idempotencyKey,
+  });
+  // This durable acknowledgement is the final gate before the single paid
+  // POST. If it is missing or ambiguous, do not contact the provider.
+  const dispatchReceipt = await input.receiptContext.recordProviderDispatchReceipt(prepared.receipt);
+  try {
+    const response = await fetchImageUpstream(
+      prepared.request,
+      {},
+      input.upstreamContext,
+      input.timeoutMs,
+    );
+    return { response, dispatchReceipt };
+  } catch (error) {
+    await input.receiptContext.recordProviderSubmissionReceipt(createImageProviderSubmissionReceipt({
+      dispatchReceipt,
+      transportState: "transport_error",
+      responseBody: new Uint8Array(),
+    }));
+    throw error;
+  }
+}
+
+async function readAuditedImageProviderResponseText(input: {
+  response: Response;
+  maximumBytes: number;
+  dispatchReceipt: ImageProviderDispatchReceipt;
+  receiptContext: ImageProviderReceiptContext;
+}) {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const recordBodyFailure = async () => input.receiptContext.recordProviderSubmissionReceipt(
+    createImageProviderSubmissionReceipt({
+      dispatchReceipt: input.dispatchReceipt,
+      transportState: "response_body_error",
+      responseStatus: input.response.status,
+      responseContentType: input.response.headers.get("content-type"),
+      responseBody: chunks.length ? Buffer.concat(chunks.map(chunk => Buffer.from(chunk))) : new Uint8Array(),
+    }),
+  );
+  let bytes: Buffer;
+  let rawText: string;
+  try {
+    const contentLength = Number(input.response.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > input.maximumBytes) {
+      throw new ImageUpstreamResponseTooLargeError(input.maximumBytes);
+    }
+    if (input.response.body) {
+      const reader = input.response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value?.byteLength) continue;
+        total += value.byteLength;
+        if (total > input.maximumBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new ImageUpstreamResponseTooLargeError(input.maximumBytes);
+        }
+        chunks.push(value);
+      }
+    }
+    bytes = chunks.length ? Buffer.concat(chunks.map(chunk => Buffer.from(chunk))) : Buffer.alloc(0);
+    rawText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (error) {
+    await recordBodyFailure();
+    throw error;
+  }
+  await input.receiptContext.recordProviderSubmissionReceipt(createImageProviderSubmissionReceipt({
+    dispatchReceipt: input.dispatchReceipt,
+    transportState: "response_received",
+    responseStatus: input.response.status,
+    responseContentType: input.response.headers.get("content-type"),
+    responseBody: bytes,
+  }));
+  return rawText;
 }
 
 async function loadReferenceImage(url: string) {
@@ -496,7 +667,15 @@ async function loadReferenceImage(url: string) {
 }
 
 function summarizeUpstreamImageError(raw: string) {
-  const clean = (value: string) => value.replace(/https?:\/\/[^\s"'<>]+/giu, "[图片链接已隐藏]").replace(/\bBearer\s+\S+/giu, "[凭据已隐藏]").replace(/\s+/g, " ").slice(0, 360);
+  const clean = (value: string) => value
+    .replace(/data:[a-z0-9.+-]+\/[a-z0-9.+-]+(?:;[^,\s]*)?,[^\s"'<>]+/giu, "[内联数据已隐藏]")
+    .replace(/https?:\/\/[^\s"'<>\\]+/giu, "[上游链接已隐藏]")
+    .replace(/\bBearer\s+[^\s"',;}]+/giu, "[凭据已隐藏]")
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b/gu, "[凭据已隐藏]")
+    .replace(/((?:api[_-]?key|access[_-]?token|token|authorization|cookie|signature|secret|password)\s*["']?\s*[:=]\s*["']?)[^,\s"';&}]+/giu, "$1[凭据已隐藏]")
+    .replace(/\b[A-Za-z0-9+/]{80,}={0,2}\b/gu, "[长编码已隐藏]")
+    .replace(/\s+/gu, " ")
+    .slice(0, 360);
   const trimmed = raw.trim();
   if (!trimmed) return "";
   try {
@@ -601,8 +780,10 @@ async function generateLocalImageCandidate(options: {
   effectiveResolution: ImageResolution;
   references: string[];
   identityReferenceOnly: boolean;
+  userPrompt: string;
   fullPrompt: string;
   idempotencyKey: string;
+  receiptContext: ImageProviderReceiptContext;
   strictSingleSubmit?: boolean;
 }): Promise<string> {
   const {
@@ -611,11 +792,21 @@ async function generateLocalImageCandidate(options: {
     effectiveResolution,
     references,
     identityReferenceOnly,
+    userPrompt,
     fullPrompt,
     idempotencyKey,
+    receiptContext,
     strictSingleSubmit = false,
   } = options;
   const provider = model.provider || "vectorengine";
+  const providerContract = resolveImageProviderContract(model);
+  if (providerContract.requestProtocol === "images_edits" && references.length === 0) {
+    throw new ImageGenerationInputError(
+      "IMAGE_REFERENCE_REQUIRED",
+      "当前模型使用图片编辑协议，至少需要一张参考图",
+      422,
+    );
+  }
   // H3 的 provider/secret/model/endpoint 是一个不可拆分的安全边界。
   // 必须在 secret 解析和任何上游 fetch 之前完成校验。
   const isAutodlH3Selfhost = assertAutodlH3SelfhostModelBinding({
@@ -628,7 +819,6 @@ async function generateLocalImageCandidate(options: {
   const providerApiKey = resolveProviderSecret(model.api_key);
   const isDalle3 = model.model_name === "dall-e-3";
   const isVolcengine = provider === "volcengine";
-  const providerContract = resolveImageProviderContract(model);
   const referenceContractIssue = imageReferenceContractIssue(providerContract, references.length);
   if (referenceContractIssue) {
     throw new ImageRequestRejectedError({ source: "input", code: "IMAGE_REFERENCE_READ_FAILED" });
@@ -814,6 +1004,21 @@ async function generateLocalImageCandidate(options: {
     requestHeaders["Idempotency-Key"] = idempotencyKey;
   }
 
+  const receiptProtocol: ImageProviderProtocol = references.length > 0
+    && (providerContract.referenceTransport === "edits_multipart_single"
+      || providerContract.referenceTransport === "edits_multipart_array")
+    ? "images_edits"
+    : providerContract.requestProtocol;
+  const requestProjection: ImageProviderRequestProjection = {
+    userPromptSha256: createHash("sha256").update(userPrompt).digest("hex"),
+    effectivePromptSha256: createHash("sha256").update(fullPrompt).digest("hex"),
+    modelIdSha256: createHash("sha256").update(model.id).digest("hex"),
+    aspectRatio: ratio,
+    resolution: effectiveResolution,
+    imageCount: 1,
+    referenceCount: references.length,
+  };
+
   const upstreamContext = {
     modelId: model.id,
     modelName: model.name,
@@ -821,15 +1026,24 @@ async function generateLocalImageCandidate(options: {
   };
   const upstreamTarget = safeUpstreamTarget(apiUrl);
   let apiResp: Response;
+  let dispatchReceipt: ImageProviderDispatchReceipt;
   try {
-    apiResp = await fetchImageUpstream(apiUrl, {
-      method: "POST",
-      headers: requestHeaders,
-      body: requestBody,
-    }, upstreamContext, providerContract.requestProtocol === "google_generate_content" ? 12 * 60 * 1000 : undefined);
+    const submitted = await fetchAuditedImageProviderPost({
+      url: apiUrl,
+      init: { method: "POST", headers: requestHeaders, body: requestBody },
+      providerProtocol: receiptProtocol,
+      projection: requestProjection,
+      idempotencyKey: requestHeaders["Idempotency-Key"],
+      receiptContext,
+      upstreamContext,
+      timeoutMs: providerContract.requestProtocol === "google_generate_content" ? 12 * 60 * 1000 : undefined,
+    });
+    apiResp = submitted.response;
+    dispatchReceipt = submitted.dispatchReceipt;
   } catch (error) {
     throw new ImageCandidateFailure({
-      message: error instanceof Error ? error.message : "图片上游连接失败",
+      message: summarizeUpstreamImageError(error instanceof Error ? error.message : "")
+        || "图片上游连接失败或派发回执未确认",
       code: "IMAGE_UPSTREAM_RESULT_UNKNOWN",
       upstreamTarget,
       retryable: false,
@@ -837,7 +1051,12 @@ async function generateLocalImageCandidate(options: {
   }
 
   if (!apiResp.ok) {
-    const errText = await readImageUpstreamResponseText(apiResp, 512 * 1024).catch((error) => {
+    const errText = await readAuditedImageProviderResponseText({
+      response: apiResp,
+      maximumBytes: 512 * 1024,
+      dispatchReceipt,
+      receiptContext,
+    }).catch((error) => {
       if (error instanceof ImageUpstreamResponseTooLargeError) return "";
       throw error;
     });
@@ -863,7 +1082,12 @@ async function generateLocalImageCandidate(options: {
 
   let rawResponse: string;
   try {
-    rawResponse = await readImageUpstreamResponseText(apiResp, 40 * 1024 * 1024);
+    rawResponse = await readAuditedImageProviderResponseText({
+      response: apiResp,
+      maximumBytes: 40 * 1024 * 1024,
+      dispatchReceipt,
+      receiptContext,
+    });
   } catch (error) {
     throw new ImageCandidateFailure({
       message: error instanceof ImageUpstreamResponseTooLargeError
@@ -913,16 +1137,16 @@ async function generateLocalImageCandidate(options: {
     data?: Array<{ url?: string; b64_json?: string }>;
   };
   if (apiData.error) {
-    const message = apiData.error.message || "图片生成失败";
+    const detail = summarizeUpstreamImageError(JSON.stringify(apiData.error));
     console.error("[Image] API payload error:", {
       target: upstreamTarget,
       modelId: model.id,
       modelName: model.name,
       provider: model.provider,
-      message,
+      detail,
     });
     throw new ImageCandidateFailure({
-      message: `${model.name} 图片生成失败：${message}`,
+      message: `${model.name} 图片生成失败${detail ? `：${detail}` : ""}`,
       code: "IMAGE_UPSTREAM_PAYLOAD_ERROR",
       upstreamTarget,
     });
@@ -1196,24 +1420,24 @@ export async function POST(request: NextRequest) {
 
     const requestedTraceId = clientTraceId || "";
     if (requestedTraceId && !/^[a-zA-Z0-9_-]{8,128}$/u.test(requestedTraceId)) {
-      return NextResponse.json({ error: "图片生成追踪键格式无效" }, { status: 400 });
+      return imageParameterRejection("图片生成追踪键格式无效", "IMAGE_TRACE_ID_INVALID");
     }
     traceId = /^[a-zA-Z0-9_-]{8,128}$/u.test(requestedTraceId) ? requestedTraceId : crypto.randomUUID();
     const requestedIdempotencyKey = clientIdempotencyKey || "";
     if (requestedIdempotencyKey && !/^[a-zA-Z0-9_-]{8,128}$/u.test(requestedIdempotencyKey)) {
-      return NextResponse.json({ error: "图片生成幂等键格式无效" }, { status: 400 });
+      return imageParameterRejection("图片生成幂等键格式无效", "IMAGE_IDEMPOTENCY_KEY_INVALID");
     }
     if (!privilegedModelOperationAuthorized && !requestedIdempotencyKey) {
-      return NextResponse.json({
-        error: "图片生成请求缺少幂等键，请刷新工作台后重新提交",
-        code: "IMAGE_IDEMPOTENCY_KEY_REQUIRED",
-      }, { status: 400 });
+      return imageParameterRejection(
+        "图片生成请求缺少幂等键，请刷新工作台后重新提交",
+        "IMAGE_IDEMPOTENCY_KEY_REQUIRED",
+      );
     }
     if (!privilegedModelOperationAuthorized && !requestedTraceId) {
-      return NextResponse.json({
-        error: "图片生成请求缺少稳定追踪键，请刷新工作台后重新提交",
-        code: "IMAGE_TRACE_ID_REQUIRED",
-      }, { status: 400 });
+      return imageParameterRejection(
+        "图片生成请求缺少稳定追踪键，请刷新工作台后重新提交",
+        "IMAGE_TRACE_ID_REQUIRED",
+      );
     }
     const generationIdempotencyKey = requestedIdempotencyKey
       || `admin_${createHash("sha256").update(traceId).digest("hex").slice(0, 48)}`;
@@ -1234,9 +1458,7 @@ export async function POST(request: NextRequest) {
       referenceCount: referenceImageUrls.length,
     });
 
-    if (!prompt?.trim()) {
-      return NextResponse.json({ error: "提示词不能为空" }, { status: 400 });
-    }
+    if (!prompt?.trim()) return imageParameterRejection("提示词不能为空", "IMAGE_PROMPT_REQUIRED");
 
     const h3OperationId = requestedIdempotencyKey
       ? `h3_${createHash("sha256").update(`${userId}:${requestedIdempotencyKey}`).digest("hex").slice(0, 48)}`
@@ -1246,11 +1468,11 @@ export async function POST(request: NextRequest) {
     const effectiveMode = mode || "local";
     const ratio = aspectRatio || "3:4";
     if (!["3:4", "9:16", "4:3", "16:9", "1:1"].includes(ratio)) {
-      return NextResponse.json({ error: "图片画幅不受支持", code: "IMAGE_ASPECT_RATIO_UNSUPPORTED" }, { status: 400 });
+      return imageParameterRejection("图片画幅不受支持", "IMAGE_ASPECT_RATIO_UNSUPPORTED");
     }
     const exactCoverText = coverText || "";
     if (exactCoverText.length > 200 || /[\x00-\x08\x0b-\x1f]/u.test(exactCoverText)) {
-      return NextResponse.json({ error: "精确画面文字不能超过 200 个字符且不能包含控制字符", code: "IMAGE_EXACT_TEXT_INVALID" }, { status: 400 });
+      return imageParameterRejection("精确画面文字不能超过 200 个字符且不能包含控制字符", "IMAGE_EXACT_TEXT_INVALID");
     }
     // Input validation has already rejected malformed/empty/non-string values
     // and enforced the platform-wide count before de-duplication. Never slice
@@ -1288,7 +1510,10 @@ export async function POST(request: NextRequest) {
         || ratio !== resumeSnapshot.aspectRatio
         || String(resolution || "").toUpperCase() !== resumeSnapshot.resolution
         || (historySurface || "other") !== resumeSnapshot.surface
-        || exactCoverText.trim() !== (resumeSnapshot.exactCoverText || "")) {
+        || exactCoverText.trim() !== (resumeSnapshot.exactCoverText || "")
+        || (resumeSnapshot.schema === "image_generation_request_snapshot.v2"
+          && ((style || "").trim() !== (resumeSnapshot.style || "")
+            || (referenceUsage || "general") !== resumeSnapshot.referenceUsage))) {
         throw new ImageExactlyOnceError("IMAGE_IDEMPOTENCY_CONFLICT", "自动交付参数与原请求不一致，已停止处理", 409);
       }
     }
@@ -1421,57 +1646,55 @@ export async function POST(request: NextRequest) {
     const userVisibleImageModelLabel = publicModelLabel
       || publicModelDisplayName(modelConfig as unknown as Record<string, unknown>);
     if (!resumeSnapshot && references.length > 0 && !imageCapabilities.supportsReferenceInput) {
-      return NextResponse.json({
-        error: `${userVisibleImageModelLabel} 不支持参考图输入，请选择带“角色参考”能力的图片模型`,
-        code: "IMAGE_REFERENCE_UNSUPPORTED",
+      return imageParameterRejection(
+        `${userVisibleImageModelLabel} 不支持参考图输入，请选择带“角色参考”能力的图片模型`,
+        "IMAGE_REFERENCE_UNSUPPORTED", {
         referenceCapability: imageCapabilities.referenceCapabilityLabel,
-      }, { status: 400 });
+      });
     }
     if (!resumeSnapshot && references.length > imageCapabilities.maxReferenceImages) {
-      return NextResponse.json({
-        error: `${userVisibleImageModelLabel} 最多支持 ${imageCapabilities.maxReferenceImages} 张参考图，当前提交了 ${references.length} 张`,
-        code: "IMAGE_REFERENCE_LIMIT_EXCEEDED",
+      return imageParameterRejection(
+        `${userVisibleImageModelLabel} 最多支持 ${imageCapabilities.maxReferenceImages} 张参考图，当前提交了 ${references.length} 张`,
+        "IMAGE_REFERENCE_LIMIT_EXCEEDED", {
         maxReferenceImages: imageCapabilities.maxReferenceImages,
         submittedReferenceImages: references.length,
         referenceCapability: imageCapabilities.referenceCapabilityLabel,
-      }, { status: 400 });
+      });
     }
     if (!resumeSnapshot && modelConfig && references.length > 0) {
       const providerContract = resolveImageProviderContract(modelConfig);
       const contractIssue = imageReferenceContractIssue(providerContract, references.length);
       if (contractIssue) {
-        return NextResponse.json({
-          error: `${userVisibleImageModelLabel}：${contractIssue.message}`,
-          code: contractIssue.code,
+        return imageParameterRejection(
+          `${userVisibleImageModelLabel}：${contractIssue.message}`,
+          contractIssue.code, {
           referenceTransport: providerContract.referenceTransport,
-          upstreamCalled: false,
-          billed: false,
-        }, { status: 400 });
+        });
       }
     }
     if (!resumeSnapshot && modelConfig?.provider === AUTODL_H3_SELFHOST_PROVIDER && ratio !== "16:9") {
-      return NextResponse.json({
-        error: `${userVisibleImageModelLabel} 当前支持 16:9 画幅，请重新选择`,
-        code: "AUTODL_H3_IMAGE_ASPECT_UNVERIFIED",
+      return imageParameterRejection(
+        `${userVisibleImageModelLabel} 当前支持 16:9 画幅，请重新选择`,
+        "AUTODL_H3_IMAGE_ASPECT_UNVERIFIED", {
         supportedAspectRatios: ["16:9"],
-      }, { status: 400 });
+      });
     }
     const normalizedRequestedResolution = resolution?.toUpperCase();
     if (!resumeSnapshot && modelConfig?.provider === AUTODL_H3_SELFHOST_PROVIDER
       && normalizedRequestedResolution
       && normalizedRequestedResolution !== "2K") {
-      return NextResponse.json({
-        error: `${userVisibleImageModelLabel} 当前支持 2K 输出，请重新选择`,
-        code: "AUTODL_H3_IMAGE_RESOLUTION_UNVERIFIED",
+      return imageParameterRejection(
+        `${userVisibleImageModelLabel} 当前支持 2K 输出，请重新选择`,
+        "AUTODL_H3_IMAGE_RESOLUTION_UNVERIFIED", {
         supportedResolutions: ["2K"],
-      }, { status: 400 });
+      });
     }
     if (!resumeSnapshot && normalizedRequestedResolution && !imageCapabilities.resolutionOptions.includes(normalizedRequestedResolution as ImageResolution)) {
-      return NextResponse.json({
-        error: `${userVisibleImageModelLabel} 不支持 ${resolution}，可选：${imageCapabilities.resolutionOptions.join("、")}`,
-        code: "IMAGE_RESOLUTION_UNSUPPORTED",
+      return imageParameterRejection(
+        `${userVisibleImageModelLabel} 不支持 ${resolution}，可选：${imageCapabilities.resolutionOptions.join("、")}`,
+        "IMAGE_RESOLUTION_UNSUPPORTED", {
         supportedResolutions: imageCapabilities.resolutionOptions,
-      }, { status: 400 });
+      });
     }
     const effectiveResolution: ImageResolution = resumeSnapshot?.resolution
       || (modelConfig?.provider === AUTODL_H3_SELFHOST_PROVIDER
@@ -1486,7 +1709,7 @@ export async function POST(request: NextRequest) {
       || modelConfig?.id === STRICT_GPT_IMAGE_DATABASE_ID,
     );
     if ((noRetry || strictSingleSubmit) && effectiveMode !== "local") {
-      return NextResponse.json({ error: "严格单次提交模式只支持本地图片模型", code: "IMAGE_STRICT_MODE_UNSUPPORTED" }, { status: 400 });
+      return imageParameterRejection("严格单次提交模式只支持本地图片模型", "IMAGE_STRICT_MODE_UNSUPPORTED");
     }
     let costPrice = resumeSnapshot ? 0 : effectiveMode === "workflow"
       ? workflowCostPriceGlobal
@@ -1561,17 +1784,30 @@ export async function POST(request: NextRequest) {
         ].join("\n")
       : basePrompt;
     const fullPrompt = `${ratioConstraint}\n${scenePrompt}`;
-    const workflowPrompt = exactCoverText
+    const workflowPromptBase = exactCoverText
       ? buildCoverTextPrompt(exactCoverText, style || "", ratio, prompt)
       : (style
         ? `请生成一张抖音封面图，主题是：${prompt.trim()}，风格：${style}，尺寸比例：${ratio}`
         : `请生成一张抖音封面图，主题是：${prompt.trim()}，尺寸比例：${ratio}`);
+    const outputPixelSize = resumeSnapshot?.outputPixelSize
+      || expectedImagePixelSize(modelConfig, effectiveResolution, ratio);
+    const providerProtocol: ImagePublishedProtocol = resumeSnapshot
+      ? resumeSnapshot.providerProtocol || (effectiveMode === "workflow" ? "cover_workflow" : "images_generations")
+      : (effectiveMode === "workflow" ? "cover_workflow" : resolveImageProviderContract(modelConfig!).requestProtocol);
+    const workflowPrompt = `${workflowPromptBase}。输出画幅：${ratio}；清晰度档位：${effectiveResolution}；目标像素尺寸：${outputPixelSize}。`;
     const candidates = effectiveMode === "local" && modelConfig
       ? restrictImageCandidatesForNoRetry(
           localModelCandidates.length > 0 ? localModelCandidates : [modelConfig],
           strictImageRequest,
         )
       : [];
+    if (!resumeDeliveryOnly && effectiveMode === "local" && references.length === 0
+      && candidates.some(candidate => resolveImageProviderContract(candidate).requestProtocol === "images_edits")) {
+      return imageParameterRejection(
+        "当前模型使用图片编辑协议，至少需要一张参考图",
+        "IMAGE_REFERENCE_REQUIRED",
+      );
+    }
     const generationFingerprint = resumeDeliveryOnly && previousImageRequest
       ? previousImageRequest.payloadFingerprint
       : strictImagePayloadFingerprint({
@@ -1591,9 +1827,14 @@ export async function POST(request: NextRequest) {
         ? { appId: workflowConfig.appId, apiUrl: workflowConfig.apiUrl }
         : null,
       prompt: effectiveMode === "workflow" ? workflowPrompt : fullPrompt,
+      userPrompt: prompt.trim(),
+      style: style || "",
       exactCoverText,
       ratio,
       resolution: effectiveResolution,
+      outputPixelSize,
+      providerProtocol,
+      imageCount: IMAGE_FIXED_OUTPUT_COUNT,
       references,
       referenceUsage: referenceUsage || "general",
       costPrice,
@@ -1612,14 +1853,16 @@ export async function POST(request: NextRequest) {
       quotedPriceYuan: sellingPrice,
       billingExempt: sellingPrice === 0,
       exactCoverText,
+      style: style || "",
+      effectivePrompt: effectiveMode === "workflow" ? workflowPrompt : fullPrompt,
+      providerProtocol,
+      outputPixelSize,
+      imageCount: IMAGE_FIXED_OUTPUT_COUNT,
+      referenceUsage: referenceUsage || "general",
+      payloadFingerprint: generationFingerprint,
     });
     if (!failureRequestSnapshot) {
-      return NextResponse.json({
-        error: "生图请求快照无效，本次不会调用图片模型",
-        code: "IMAGE_REQUEST_SNAPSHOT_INVALID",
-        upstreamCalled: false,
-        billed: false,
-      }, { status: 400 });
+      return imageParameterRejection("生图请求快照无效，本次不会调用图片模型", "IMAGE_REQUEST_SNAPSHOT_INVALID");
     }
 
     // A confirmed result resumes this request's settlement/delivery, not a new
@@ -1628,8 +1871,32 @@ export async function POST(request: NextRequest) {
     if (previousImageRequest && previousImageRequest.payloadFingerprint !== generationFingerprint) {
       throw new ImageExactlyOnceError("IMAGE_IDEMPOTENCY_CONFLICT", "同一图片请求号已绑定不同参数，请保留原请求核查", 409);
     }
+    const billingReferenceId = `image:${h3OperationId}`;
     const previousRejection = previousImageRequest && getImageRequestRejection(previousImageRequest);
-    if (previousRejection) throw new ImageRequestRejectedError(previousRejection);
+    if (previousRejection) {
+      const rejectedSnapshot = parseImageFailureRequestSnapshot(previousImageRequest?.requestSnapshot);
+      if (previousRejection.code !== "IMAGE_BILLING_RESERVATION_REJECTED"
+        && (!rejectedSnapshot || (!rejectedSnapshot.billingExempt && rejectedSnapshot.quotedPriceYuan <= 0))) {
+        throw new ImageExactlyOnceError(
+          "IMAGE_BILLING_RELEASE_PENDING",
+          "图片请求已拒绝，但原费用快照不完整；确认账务释放前不可重新提交。",
+          503,
+          { canRecover: false },
+        );
+      }
+      if (rejectedSnapshot && !rejectedSnapshot.billingExempt && rejectedSnapshot.quotedPriceYuan > 0
+        && previousRejection.code !== "IMAGE_BILLING_RESERVATION_REJECTED") {
+        imageBudgetState.reservation = {
+          userId,
+          amount: rejectedSnapshot.quotedPriceYuan,
+          referenceId: billingReferenceId,
+          clientIdempotencyKey: generationIdempotencyKey,
+          clientTraceId: traceId,
+          requiresLedgerConfirmation: true,
+        };
+      }
+      throw new ImageRequestRejectedError(previousRejection);
+    }
     const resumingImageDelivery = Boolean(previousImageRequest && (
       (previousImageRequest.state === "completed" && previousImageRequest.response)
       || hasImageProviderCheckpoint(previousImageRequest)
@@ -1673,7 +1940,6 @@ export async function POST(request: NextRequest) {
     // This uses the wallet's idempotent charge as the reservation: a definite
     // provider rejection is released below, while an unknown/provider-complete
     // outcome keeps the same operation bound to the original request.
-    const billingReferenceId = `image:${h3OperationId}`;
     const userVisibleModelLabel = effectiveMode === "workflow"
       ? "工作流"
       : publicModelLabel || publicModelDisplayName(modelConfig! as unknown as Record<string, unknown>);
@@ -1729,11 +1995,12 @@ export async function POST(request: NextRequest) {
       clientTraceId: traceId,
       payloadFingerprint: generationFingerprint,
       requestSnapshot: failureRequestSnapshot,
+      ...(sellingPrice > 0 ? { rejectionBilling: { referenceId: billingReferenceId, amount: sellingPrice } } : {}),
       // runImageExactlyOnce first stores the durable intent and invokes this
       // hook only for its unique creator. Concurrent/replayed requests cannot
       // reserve the wallet or reach the provider callback.
       beforeSubmitOnce: reserveImageBudgetOnce,
-      submitOnce: async () => {
+      submitOnce: async (receiptContext) => {
         if (effectiveMode === "workflow") {
           if (!workflowConfig.apiToken || !workflowConfig.apiUrl || !workflowConfig.appId) {
             throw new ImageCandidateFailure({
@@ -1743,29 +2010,73 @@ export async function POST(request: NextRequest) {
             });
           }
           let workflowResp: Response;
+          let workflowDispatchReceipt: ImageProviderDispatchReceipt;
+          let workflowAdmissionLease: ProviderAdmissionLease | null = null;
           try {
-            workflowResp = await fetchImageUpstream(workflowConfig.apiUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${workflowConfig.apiToken}` },
-              body: JSON.stringify({
+            workflowAdmissionLease = await acquireProviderAdmission({
+              provider: "cover_workflow",
+              channel: workflowConfig.apiUrl,
+              model: workflowConfig.appId,
+            });
+            const workflowBody = JSON.stringify({
                 app_id: workflowConfig.appId,
                 user_id: userId,
                 stream: true,
                 content: { query: { prompt: [{ type: "text", content: { text: workflowPrompt } }] } },
                 type: "query",
-              }),
-            }, { modelId: `workflow:${workflowConfig.appId}`, modelName: "cover-workflow", provider: "workflow" });
+              });
+            const submitted = await fetchAuditedImageProviderPost({
+              url: workflowConfig.apiUrl,
+              init: {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${workflowConfig.apiToken}` },
+                body: workflowBody,
+              },
+              providerProtocol: "cover_workflow",
+              projection: {
+                userPromptSha256: createHash("sha256").update(prompt).digest("hex"),
+                effectivePromptSha256: createHash("sha256").update(workflowPrompt).digest("hex"),
+                modelIdSha256: createHash("sha256").update(`workflow:${workflowConfig.appId}`).digest("hex"),
+                aspectRatio: ratio,
+                resolution: effectiveResolution,
+                imageCount: 1,
+                referenceCount: references.length,
+              },
+              receiptContext,
+              upstreamContext: { modelId: `workflow:${workflowConfig.appId}`, modelName: "cover-workflow", provider: "workflow" },
+            });
+            workflowResp = submitted.response;
+            workflowDispatchReceipt = submitted.dispatchReceipt;
+            workflowResp = await holdProviderAdmissionUntilResponseEnds(workflowResp, workflowAdmissionLease);
+            workflowAdmissionLease = null;
           } catch (error) {
+            if (workflowAdmissionLease) {
+              await workflowAdmissionLease.release().catch((releaseError) => {
+                console.error("[Image] workflow admission release failed", summarizeUpstreamImageError(
+                  releaseError instanceof Error ? releaseError.message : "unknown",
+                ));
+              });
+            }
+            const admissionRejection = imageAdmissionRejection(error);
+            if (admissionRejection) throw admissionRejection;
             throw new ImageCandidateFailure({
-              message: error instanceof Error ? error.message : "图片工作流连接中断，结果无法确认",
+              message: summarizeUpstreamImageError(error instanceof Error ? error.message : "")
+                || "图片工作流连接中断或派发回执未确认，结果无法确认",
               code: "IMAGE_WORKFLOW_RESULT_UNKNOWN",
               upstreamTarget: workflowConfig.apiUrl,
               retryable: false,
             });
           }
           if (!workflowResp.ok) {
-            const errText = await readImageUpstreamResponseText(workflowResp, 512 * 1024)
-              .catch(() => "");
+            const errText = await readAuditedImageProviderResponseText({
+              response: workflowResp,
+              maximumBytes: 512 * 1024,
+              dispatchReceipt: workflowDispatchReceipt,
+              receiptContext,
+            }).catch((error) => {
+              if (error instanceof ImageUpstreamResponseTooLargeError) return "";
+              throw error;
+            });
             console.error("[Image/Workflow] API error:", {
               status: workflowResp.status,
               target: safeUpstreamTarget(workflowConfig.apiUrl),
@@ -1783,7 +2094,12 @@ export async function POST(request: NextRequest) {
           }
           let rawText: string;
           try {
-            rawText = await readImageUpstreamResponseText(workflowResp, 8 * 1024 * 1024);
+            rawText = await readAuditedImageProviderResponseText({
+              response: workflowResp,
+              maximumBytes: 8 * 1024 * 1024,
+              dispatchReceipt: workflowDispatchReceipt,
+              receiptContext,
+            });
           } catch (error) {
             throw new ImageCandidateFailure({
               message: error instanceof ImageUpstreamResponseTooLargeError
@@ -1846,15 +2162,23 @@ export async function POST(request: NextRequest) {
         let finalFailure: ImageCandidateFailure | null = null;
         for (let index = 0; index < candidates.length; index += 1) {
           const candidate = candidates[index];
+          let candidateAdmissionLease: ProviderAdmissionLease | null = null;
           try {
+            candidateAdmissionLease = await acquireProviderAdmission({
+              provider: candidate.provider || "unknown",
+              channel: candidate.api_endpoint || candidate.id,
+              model: candidate.model_name || candidate.name || candidate.id,
+            });
             const candidateImageUrl = await generateLocalImageCandidate({
               model: candidate,
               ratio,
               effectiveResolution,
               references,
               identityReferenceOnly,
+              userPrompt: prompt,
               fullPrompt,
               idempotencyKey: `image-${h3OperationId}`,
+              receiptContext,
               strictSingleSubmit: strictImageRequest,
             });
             if (index > 0) {
@@ -1879,11 +2203,13 @@ export async function POST(request: NextRequest) {
               source: candidate.provider === AUTODL_H3_SELFHOST_PROVIDER ? "autodl-h3-selfhost" : "image-generation",
             };
           } catch (error) {
+            const admissionRejection = imageAdmissionRejection(error);
+            if (admissionRejection) throw admissionRejection;
             if (error instanceof ImageRequestRejectedError) throw error;
             const failure = error instanceof ImageCandidateFailure
               ? error
               : new ImageCandidateFailure({
-                  message: error instanceof Error ? error.message : "图片生成失败",
+                  message: summarizeUpstreamImageError(error instanceof Error ? error.message : "") || "图片生成失败",
                   code: "IMAGE_GENERATION_ERROR",
                   upstreamTarget: "",
                 });
@@ -1903,6 +2229,14 @@ export async function POST(request: NextRequest) {
             });
             if (failure.retryable && hasNextCandidate) continue;
             break;
+          } finally {
+            if (candidateAdmissionLease) {
+              await candidateAdmissionLease.release().catch((releaseError) => {
+                console.error("[Image] candidate admission release failed", summarizeUpstreamImageError(
+                  releaseError instanceof Error ? releaseError.message : "unknown",
+                ));
+              });
+            }
           }
         }
         throw finalFailure || new ImageCandidateFailure({
@@ -2054,7 +2388,7 @@ export async function POST(request: NextRequest) {
     if (validationControl) await validationControl.recordOutcome();
 
     // ── 计算宽高 ──
-    const [estimatedWidth, estimatedHeight] = expectedImagePixelSize(modelConfig, effectiveResolution, ratio)
+    const [estimatedWidth, estimatedHeight] = outputPixelSize
       .split("x").map(Number);
     const verifiedDimensions = autodlH3StoredDimensions;
     const width = verifiedDimensions?.width || estimatedWidth;
@@ -2097,6 +2431,10 @@ export async function POST(request: NextRequest) {
       modelUsed: userVisibleModelLabel,
       modelIdUsed: modelId?.startsWith("pm_") ? modelId : null,
       resolution: effectiveResolution,
+      outputPixelSize,
+      imageCount: IMAGE_FIXED_OUTPUT_COUNT,
+      providerProtocol,
+      payloadFingerprint: generationFingerprint,
       idempotencyReplayed,
       // This is the total charge bound to the business request, not the delta
       // of an idempotent wallet replay (which is correctly zero internally).
@@ -2107,12 +2445,7 @@ export async function POST(request: NextRequest) {
     deductResult = imageBudgetState.deduction;
     billingReservation = imageBudgetState.reservation;
     if (error instanceof ImageGenerationInputError) {
-      return NextResponse.json({
-        error: error.message,
-        code: error.code,
-        upstreamCalled: false,
-        billed: false,
-      }, { status: error.status });
+      return imageParameterRejection(error.message, error.code, {}, error.status);
     }
     if (billingReservation) {
       const definiteNoResult = error instanceof ImageRequestRejectedError
@@ -2120,6 +2453,7 @@ export async function POST(request: NextRequest) {
           && ["IMAGE_WORKFLOW_NOT_CONFIGURED", "IMAGE_GENERATION_ERROR"].includes(error.code));
       if (definiteNoResult) {
         let providerResultDurable = false;
+        let rejectionRecord: Awaited<ReturnType<DatabaseImageExactlyOnceStore["get"]>> = null;
         try {
           const current = await imageExactlyOnceStore.get({
             userId: billingReservation.userId,
@@ -2129,6 +2463,7 @@ export async function POST(request: NextRequest) {
           providerResultDurable = Boolean(current && (
             current.state === "completed" || hasImageProviderCheckpoint(current)
           ));
+          rejectionRecord = current;
         } catch {
           return NextResponse.json({
             error: "图片生成失败，费用状态正在自动核对",
@@ -2139,20 +2474,54 @@ export async function POST(request: NextRequest) {
           }, { status: 503 });
         }
         if (!providerResultDurable) {
-          const released = await refundCash(
-            billingReservation.userId,
-            billingReservation.amount,
-            "图片上游明确失败，释放原请求预算",
-            `${billingReservation.referenceId}:release`,
-          );
+          let releaseConfirmed = false;
+          if (billingReservation.requiresLedgerConfirmation) {
+            const ledger = await readImageReservationBilling(billingReservation).catch(() => ({ state: "unknown" as const }));
+            if (ledger.state === "not_charged" || ledger.state === "exempt") {
+              releaseConfirmed = true;
+            } else if (ledger.state === "charged" && ledger.chargedAmount !== undefined) {
+              billingReservation.amount = ledger.chargedAmount;
+            } else {
+              return NextResponse.json({
+                error: "图片请求已拒绝，费用状态正在自动对账",
+                code: "IMAGE_BILLING_RELEASE_PENDING",
+                traceId,
+                state: "billing_release_pending",
+                canResubmit: false,
+                billingHeld: true,
+                billingReleaseState: "pending",
+              }, { status: 503 });
+            }
+          }
+          const released = releaseConfirmed ? { success: true } : await refundCash(
+              billingReservation.userId,
+              billingReservation.amount,
+              "图片上游明确失败，释放原请求预算",
+              `${billingReservation.referenceId}:release`,
+            ).catch(() => ({ success: false }));
           if (!released.success) {
             return NextResponse.json({
               error: "图片生成失败，费用释放正在自动核对",
               code: "IMAGE_BILLING_RELEASE_PENDING",
               traceId,
+              state: "billing_release_pending",
               canResubmit: false,
               billingHeld: true,
+              billingReleaseState: "pending",
             }, { status: 503 });
+          }
+          if (rejectionRecord) {
+            await imageExactlyOnceStore.markRejectionBillingRelease?.(rejectionRecord, {
+              schema: "image_billing_release.v1",
+              state: "confirmed",
+              referenceId: billingReservation.referenceId,
+              amount: billingReservation.amount,
+              updatedAt: new Date().toISOString(),
+            }).catch((releaseError) => {
+              console.error("[Image] billing release receipt confirmation failed", summarizeUpstreamImageError(
+                releaseError instanceof Error ? releaseError.message : "unknown",
+              ));
+            });
           }
           billingReservation = null;
           deductResult = null;
@@ -2170,21 +2539,44 @@ export async function POST(request: NextRequest) {
       nodeTitle: traceNodeTitle,
       promptHash: tracePromptHash,
       durationMs: Date.now() - traceStartedAt,
-      detail: error instanceof Error ? error.message : "图片生成失败",
+      detail: summarizeUpstreamImageError(error instanceof Error ? error.message : "") || "图片生成失败",
       ...(traceErrorCode ? { code: traceErrorCode } : {}),
     });
-    console.error("[Image] Generate error:", error);
+    console.error("[Image] Generate error:", {
+      code: traceErrorCode || "IMAGE_GENERATION_ERROR",
+      detail: summarizeUpstreamImageError(error instanceof Error ? error.message : "") || "图片生成失败",
+    });
     if (error instanceof ImageAdminValidationError) {
       return NextResponse.json({ error: error.message, code: error.code, traceId, canResubmit: false, taskSubmitted: false }, { status: error.status });
     }
     if (error instanceof ImageRequestRejectedError) {
-      return NextResponse.json({ error: error.message, code: error.code, traceId, state: "rejected",
-         canRecover: false, canResubmit: true, sameKeyCanResubmit: false,
+      const admissionRejected = error.rejection.code === "IMAGE_PROVIDER_ADMISSION_BUSY"
+        || error.rejection.code === "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE";
+      const billingReleaseConfirmed = !billingReservation;
+      return NextResponse.json({ error: billingReleaseConfirmed
+          ? error.message
+          : "图片请求已明确拒绝，费用仍在自动对账或释放；确认完成前不可使用新键重提。",
+         code: error.code, traceId, state: billingReleaseConfirmed ? "rejected" : "billing_release_pending",
+         rejectionState: "rejected",
+         canRecover: false, canResubmit: billingReleaseConfirmed, sameKeyCanResubmit: false,
          upstreamCalled: error.rejection.source === "provider",
          billed: Boolean(billingReservation),
          billingHeld: Boolean(billingReservation),
+         billingReleaseState: billingReleaseConfirmed ? "confirmed" : "pending",
+         ...(admissionRejected ? {
+           task_submitted: false,
+           taskSubmitted: false,
+           price: 0,
+           retryable: true,
+           admissionScope: error.rejection.admissionScope,
+         } : {}),
         ...(error.rejection.upstreamStatus ? { upstreamStatus: error.rejection.upstreamStatus } : {}),
-      }, { status: error.status });
+      }, {
+        status: error.status,
+        headers: error.rejection.code === "IMAGE_PROVIDER_ADMISSION_BUSY" && error.rejection.retryAfterSeconds
+          ? { "Retry-After": String(error.rejection.retryAfterSeconds) }
+          : undefined,
+      });
     }
     if (error instanceof ImageExactlyOnceError) {
       const requestSnapshotRejected = error.code === "IMAGE_REQUEST_SNAPSHOT_INVALID";
@@ -2208,10 +2600,14 @@ export async function POST(request: NextRequest) {
            canResubmit: false,
            billingHeld: Boolean(billingReservation),
           ...(retryAfterMs > 0 ? { retryAfterMs } : {}),
-        } : error.code === "IMAGE_PROVIDER_CHECKPOINT_NOT_CONFIRMED" || error.code === "IMAGE_REJECTION_RECEIPT_UNCONFIRMED" ? {
-           traceId, state: "unknown", canRecover: false, canResubmit: false,
-           billingHeld: Boolean(billingReservation),
-        } : {}),
+         } : error.code === "IMAGE_PROVIDER_CHECKPOINT_NOT_CONFIRMED" || error.code === "IMAGE_REJECTION_RECEIPT_UNCONFIRMED"
+           || error.code === "IMAGE_BILLING_RELEASE_PENDING" ? {
+            traceId,
+            state: error.code === "IMAGE_BILLING_RELEASE_PENDING" ? "billing_release_pending" : "unknown",
+            canRecover: false, canResubmit: false,
+            billingHeld: error.code === "IMAGE_BILLING_RELEASE_PENDING" || Boolean(billingReservation),
+            ...(error.code === "IMAGE_BILLING_RELEASE_PENDING" ? { billingReleaseState: "pending" } : {}),
+         } : {}),
       }, {
         status: error.status,
         headers: retryAfterMs > 0
@@ -2221,7 +2617,7 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof ImageCandidateFailure) {
       return NextResponse.json({
-        error: error.message,
+        error: summarizeUpstreamImageError(error.message) || "图片生成失败，结果无法确认",
         code: error.code,
         traceId,
          state: "failed_unknown",
@@ -2231,7 +2627,7 @@ export async function POST(request: NextRequest) {
       }, { status: 502 });
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "图片生成失败" },
+      { error: "图片生成失败，请保留追踪号并联系管理员核对" },
       { status: 500 }
     );
   }

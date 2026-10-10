@@ -1,9 +1,36 @@
 import { NextRequest } from 'next/server';
 import { successResponse, errorResponse } from '@/lib/response';
 import { getUserFromRequest } from '@/lib/auth';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { referenceAudioPublicUrl, resolveReferenceAudioDirectory } from '@/lib/runtime-paths';
+import {
+  MAX_REFERENCE_AUDIO_FILE_BYTES,
+  registerReferenceAudioOwnership,
+  resolveReferenceAudioDirectory,
+} from '@/lib/runtime-paths';
+
+async function readBodyWithinLimit(response: Response, maximumBytes: number): Promise<Buffer> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('参考音频响应没有可读取内容');
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maximumBytes) {
+        await reader.cancel('REFERENCE_AUDIO_TOO_LARGE').catch(() => undefined);
+        throw new Error('下载的参考音频超过 15MB 限制');
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, totalBytes);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,36 +69,56 @@ export async function POST(request: NextRequest) {
     let localAudioUrl: string | null = null;
     try {
       const timestamp = Date.now();
-      const ext = videoUrl.includes('.mp4') ? 'mp4' : 'mp3';
-      const filename = `${timestamp}_link_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const publicDir = resolveReferenceAudioDirectory();
-      const filepath = path.join(publicDir, filename);
 
       if (!fs.existsSync(publicDir)) {
-        fs.mkdirSync(publicDir, { recursive: true });
+        fs.mkdirSync(publicDir, { recursive: true, mode: 0o750 });
       }
 
       const downloadRes = await fetch(videoUrl, { signal: AbortSignal.timeout(60000) });
       if (downloadRes.ok) {
-        const buffer = Buffer.from(await downloadRes.arrayBuffer());
-        fs.writeFileSync(filepath, buffer);
-        localAudioUrl = referenceAudioPublicUrl(filename);
-        console.log(`[extract-audio] Saved to: ${filepath} (${buffer.length} bytes)`);
+        const declaredBytes = Number(downloadRes.headers.get('content-length') || '0');
+        if (Number.isFinite(declaredBytes) && declaredBytes > MAX_REFERENCE_AUDIO_FILE_BYTES) {
+          throw new Error('下载的参考音频超过 15MB 限制');
+        }
+        // Enforce the limit while streaming; Content-Length can be absent or false.
+        // Reading the entire untrusted body first would allow excessive memory use.
+        const buffer = await readBodyWithinLimit(downloadRes, MAX_REFERENCE_AUDIO_FILE_BYTES);
+        if (buffer.length <= 0 || buffer.length > MAX_REFERENCE_AUDIO_FILE_BYTES) {
+          throw new Error('下载的参考音频大小无效');
+        }
+        const contentType = downloadRes.headers.get('content-type')?.toLowerCase() || '';
+        const ext = contentType.includes('mp4') || videoUrl.includes('.mp4') ? 'mp4' : 'mp3';
+        const filename = `${timestamp}_link_${randomUUID()}.${ext}`;
+        const filepath = path.join(publicDir, filename);
+        const temporary = `${filepath}.uploading-${process.pid}-${randomUUID()}`;
+        fs.writeFileSync(temporary, buffer, { flag: 'wx', mode: 0o640 });
+        try {
+          fs.renameSync(temporary, filepath);
+          registerReferenceAudioOwnership(authUser.userId, filename, title.slice(0, 50), publicDir);
+        } catch (error) {
+          fs.rmSync(temporary, { force: true });
+          fs.rmSync(filepath, { force: true });
+          throw error;
+        }
+        localAudioUrl = `/voice-platform/api/reference-audio?filename=${encodeURIComponent(filename)}`;
       }
-    } catch (downErr: any) {
-      console.warn('[extract-audio] Download to local failed:', downErr.message);
+    } catch (downErr: unknown) {
+      console.warn('[extract-audio] Download to local failed:', downErr instanceof Error ? downErr.message : 'unknown error');
       // 下载失败不影响返回，fallback 到原始 URL
     }
 
     return successResponse({
+      // 上游调用继续使用供应商 URL；本地副本只通过 owner-scoped API 读取。
       audioUrl: videoUrl,
       localAudioUrl,
+      filename: localAudioUrl ? new URL(localAudioUrl, 'http://voice.local').searchParams.get('filename') : null,
       title: title.slice(0, 50),
       cover,
       source: ppt6Data.data?.type === 1 ? 'video' : 'image',
       savedLocally: !!localAudioUrl,
     });
-  } catch (err: any) {
-    return errorResponse(err.message || '提取失败', 'EXTRACT_ERROR', 500);
+  } catch (err: unknown) {
+    return errorResponse(err instanceof Error ? err.message : '提取失败', 'EXTRACT_ERROR', 500);
   }
 }

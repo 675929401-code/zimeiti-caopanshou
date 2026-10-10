@@ -666,7 +666,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
         return renderTextWithCodeBlocks(textWithoutImages);
       }
       return renderMarkdown(textWithoutImages);
-    } catch (e) {
+    } catch {
       // 降级：直接显示原始文本
       return `<p>${(textWithoutImages || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`;
     }
@@ -701,7 +701,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
         renderStreamingText(processedText, streamingRenderKey),
         streamingCaretId,
       );
-    } catch (e) {
+    } catch {
       // 降级：渲染异常时保留可读文本。
       streamingHtml = appendStreamingCaret(
         `<p>${processedText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`,
@@ -717,16 +717,21 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   const pendingMorphHtmlRef = useRef('');
   const morphTimerRef = useRef<number | null>(null);
   const lastMorphAtRef = useRef(0);
+  const firstPaintScheduledRef = useRef(false);
+  const firstPaintRafRef = useRef<number | null>(null);
+  const renderedHtml = isStreaming ? streamingHtml : finalHtml;
 
-  // 🚀 morphdom streaming update: morph DOM in-place instead of full innerHTML replacement
+  // Keep one content-layer DOM root for the whole lifecycle. Streaming frames
+  // and the final enhanced markdown both morph that root in place, so ending a
+  // stream never swaps the full subtree from a streaming shell to a final shell.
   // 使用 useLayoutEffect 而非 useEffect：useLayoutEffect 在 React commit 后、浏览器绘制前
   // 同步执行，消除了 useEffect 异步执行导致的「旧内容闪一帧再更新」的双重绘制问题。
   // 覆盖全部流式内容（普通 markdown + 代码块）：任何全量 innerHTML 替换都会让
   // :last-child 淡入动画每帧重启，这就是文字闪屏的根因。
   useLayoutEffect(() => {
-    if (!isStreaming || !streamingLayerRef.current) return;
-    pendingMorphHtmlRef.current = streamingHtml;
-    if (prevMorphHtmlRef.current === streamingHtml) return;
+    if (!streamingLayerRef.current) return;
+    pendingMorphHtmlRef.current = renderedHtml;
+    if (prevMorphHtmlRef.current === renderedHtml) return;
 
     const applyLatestMorph = () => {
       morphTimerRef.current = null;
@@ -734,7 +739,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
       const latestHtml = pendingMorphHtmlRef.current;
       if (!layer || prevMorphHtmlRef.current === latestHtml) return;
 
-      morphdom(layer, `<div class="render-layer-streaming">${latestHtml}</div>`, {
+      morphdom(layer, `<div class="render-layer">${latestHtml}</div>`, {
         childrenOnly: true,
         // 不使用 onBeforeElUpdated + isEqualNode：isEqualNode 会对每个元素做深度递归比较，
         // 在表格/代码块等大节点上开销极大，反而导致渲染延迟和闪屏。
@@ -742,7 +747,33 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
       });
       prevMorphHtmlRef.current = latestHtml;
       lastMorphAtRef.current = window.performance.now();
+
+      // Record the first browser frame after visible answer content reaches the
+      // DOM. This is observational only: it never enters message or billing data.
+      if (isStreaming && processedText && messageId && !firstPaintScheduledRef.current) {
+        firstPaintScheduledRef.current = true;
+        firstPaintRafRef.current = window.requestAnimationFrame(() => {
+          firstPaintRafRef.current = null;
+          const markName = `chat-stream:${messageId}:firstPaint`;
+          try {
+            if (window.performance.getEntriesByName(markName).length === 0) {
+              window.performance.mark(markName);
+            }
+          } catch { /* Performance Timeline is best-effort diagnostics. */ }
+        });
+      }
     };
+
+    // The final render must be applied synchronously before paint; do not leave
+    // a throttled streaming frame queued after isStreaming becomes false.
+    if (!isStreaming) {
+      if (morphTimerRef.current !== null) {
+        window.clearTimeout(morphTimerRef.current);
+        morphTimerRef.current = null;
+      }
+      applyLatestMorph();
+      return;
+    }
 
     const elapsed = window.performance.now() - lastMorphAtRef.current;
     const remaining = STREAM_MORPH_INTERVAL_MS - elapsed;
@@ -751,28 +782,22 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
     } else if (morphTimerRef.current === null) {
       morphTimerRef.current = window.setTimeout(applyLatestMorph, remaining);
     }
-  }, [streamingHtml, isStreaming]);
+  }, [isStreaming, messageId, processedText, renderedHtml]);
 
-  // Reset morph state when the stream ends so a retry/next stream starts fresh.
-  // The pending ref always holds the newest frame, so throttling cannot drop the
-  // final update while the stream is active.
+  // Timers are component resources; the morphed HTML state intentionally stays
+  // intact across the streaming -> final transition.
   useEffect(() => {
-    if (!isStreaming) {
-      if (morphTimerRef.current !== null) {
-        window.clearTimeout(morphTimerRef.current);
-        morphTimerRef.current = null;
-      }
-      prevMorphHtmlRef.current = '';
-      pendingMorphHtmlRef.current = '';
-      lastMorphAtRef.current = 0;
-    }
     return () => {
       if (morphTimerRef.current !== null) {
         window.clearTimeout(morphTimerRef.current);
         morphTimerRef.current = null;
       }
+      if (firstPaintRafRef.current !== null) {
+        window.cancelAnimationFrame(firstPaintRafRef.current);
+        firstPaintRafRef.current = null;
+      }
     };
-  }, [isStreaming]);
+  }, []);
 
   if (userContent) return userContent;
 
@@ -786,9 +811,8 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
       )}
       style={Object.keys(containerStyle).length > 0 ? containerStyle : undefined}
     >
-      {!isStreaming ? (
-        <div key="final-content" className={cn("copywriting-output-shell", shouldShowCopywritingCopy && "copywriting-output-shell-copyable")}>
-          {shouldShowCopywritingCopy && (
+      <div className={cn("copywriting-output-shell", shouldShowCopywritingCopy && "copywriting-output-shell-copyable")}>
+          {!isStreaming && shouldShowCopywritingCopy && (
             <button
               type="button"
               onClick={handleCopyCopywriting}
@@ -800,25 +824,23 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
             </button>
           )}
           <div
-            className="render-layer-final"
-            dangerouslySetInnerHTML={{ __html: finalHtml }}
+            ref={streamingLayerRef}
+            className={cn(
+              "render-layer",
+              isStreaming ? "render-layer-streaming render-layer-streaming-typewriter" : "render-layer-final",
+            )}
           />
-          <StructuredOutputInspector
-            result={structuredResult}
-            onRetry={() => {
-              const retried = parseStructuredAgentOutput(processedText, true);
-              if (retried.status === "valid") toast.success("结构解析成功");
-              else toast.error(retried.status === "invalid" ? retried.errors[0] : "未检测到稳定机器包");
-            }}
-          />
-        </div>
-      ) : (
-        <div
-          key="streaming-content"
-          ref={streamingLayerRef}
-          className="render-layer-streaming render-layer-streaming-typewriter"
-        />
-      )}
+          {!isStreaming && (
+            <StructuredOutputInspector
+              result={structuredResult}
+              onRetry={() => {
+                const retried = parseStructuredAgentOutput(processedText, true);
+                if (retried.status === "valid") toast.success("结构解析成功");
+                else toast.error(retried.status === "invalid" ? retried.errors[0] : "未检测到稳定机器包");
+              }}
+            />
+          )}
+      </div>
       {!isStreaming && tagPatterns.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {tagPatterns.map((tag, i) => (

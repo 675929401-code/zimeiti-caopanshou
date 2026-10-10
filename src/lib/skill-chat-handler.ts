@@ -22,7 +22,7 @@
  */
 
 import type { ChatRequest, LLMProxy } from "@/lib/llm-proxy";
-import { executeToolCalls, type ToolCall, type ToolResult } from "./skill-executor";
+import { executeToolCalls, type ToolCall } from "./skill-executor";
 import {
   settleLlmUsage,
   type SelectedModelBillingSnapshot,
@@ -85,6 +85,8 @@ export async function handleSkillChat(
       // 心跳定时器：每 5 秒发一次心跳，防止连接被断开
       let heartbeatTimer: NodeJS.Timeout | null = null;
       let closed = false;
+      let lastProgressAt = 0;
+      let lastProgressChars = 0;
 
       const startHeartbeat = () => {
         if (heartbeatTimer) clearInterval(heartbeatTimer);
@@ -130,6 +132,11 @@ export async function handleSkillChat(
       try {
         // 发送初始心跳
         safeEnqueue(sseHeartbeat());
+        safeEnqueue(sseData(JSON.stringify({
+          type: "stream_delivery",
+          stream_delivery: "buffered",
+          stream_delivery_reason: "skill_multi_stage_atomic_budget_unavailable",
+        })));
         startHeartbeat();
 
         // ── Step 1: 非流式调用 LLM，检测 tool_calls ──
@@ -208,6 +215,8 @@ export async function handleSkillChat(
           safeEnqueue(sseData(JSON.stringify({
             billing_complete: true,
             phase: "skill-detect",
+            stream_delivery: "buffered",
+            stream_delivery_reason: "skill_initial_call_requires_settlement",
             operation_id: firstSettlement.operationId,
             credits_charged: firstSettlement.billing?.creditsCharged || 0,
             balance_after: firstSettlement.balanceAfter,
@@ -279,15 +288,25 @@ export async function handleSkillChat(
 
         console.log(`[SkillChat] 第2次调用 LLM (流式，整合技能结果)`);
 
-        // 停止心跳，让 LLM 流式输出接管
-        stopHeartbeat();
-
-        // 获取流式响应并透传
+        // 最终回答必须在结算成功前继续缓冲；心跳和进度事件负责保活。
         let secondContent = "";
         let secondUsage: { prompt_tokens: number; completion_tokens: number; cached_tokens: number } | null = null;
         const bufferedAnswerChunks: Uint8Array[] = [];
         const secondStream = await proxy.chatStream(secondRequest, {
-          onContent: (text) => { secondContent += text; },
+          onContent: (text) => {
+            secondContent += text;
+            const now = Date.now();
+            if (lastProgressAt === 0 || now - lastProgressAt >= 800 || secondContent.length - lastProgressChars >= 240) {
+              safeEnqueue(sseData(JSON.stringify({
+                type: "generation_progress",
+                phase: "skill-answer",
+                received_chars: secondContent.length,
+                stream_delivery: "buffered",
+              })));
+              lastProgressAt = now;
+              lastProgressChars = secondContent.length;
+            }
+          },
           onUsage: (usage) => { secondUsage = usage; },
         });
 
@@ -337,6 +356,8 @@ export async function handleSkillChat(
               safeEnqueue(sseData(JSON.stringify({
                 billing_complete: true,
                 phase: "skill-answer",
+                stream_delivery: "buffered",
+                stream_delivery_reason: "skill_multi_stage_atomic_budget_unavailable",
                 operation_id: settlement.operationId,
                 credits_charged: settlement.billing?.creditsCharged || 0,
                 balance_after: settlement.balanceAfter,
@@ -390,6 +411,8 @@ export async function handleSkillChat(
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      "X-Stream-Delivery": "buffered",
+      "X-Stream-Delivery-Reason": "skill_multi_stage_atomic_budget_unavailable",
     },
   });
 }

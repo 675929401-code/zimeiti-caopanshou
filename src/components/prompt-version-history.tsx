@@ -11,6 +11,10 @@ export interface PromptVersion {
   ts: number;
   /** 提示词内容 */
   prompt: string;
+  /** 产生该快照的共享智能体配置版本 */
+  agent_revision?: number;
+  /** 精确提示词内容的 SHA-256（服务端数据库生成） */
+  prompt_hash?: string;
 }
 
 /** 暴露给父组件的方法 */
@@ -71,6 +75,7 @@ const PromptVersionHistory = forwardRef<PromptVersionHistoryHandle, PromptVersio
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [immutable, setImmutable] = useState(false);
 
     // 用 ref 稳定 authHeaders 引用，避免 useCallback 因对象引用变化无限重建
     const authHeadersRef = useRef(authHeaders);
@@ -92,6 +97,7 @@ const PromptVersionHistory = forwardRef<PromptVersionHistoryHandle, PromptVersio
         if (res.ok) {
           const data = await res.json();
           setVersions(data.versions || []);
+          setImmutable(data.immutable === true);
         } else {
           const errText = await res.text();
           console.error("[prompt-versions] load failed:", res.status, errText);
@@ -113,6 +119,10 @@ const PromptVersionHistory = forwardRef<PromptVersionHistoryHandle, PromptVersio
     // 保存新版本 — 调用 API 持久化到数据库
     const pushVersion = useCallback(
       async (prompt: string) => {
+        if (immutable) {
+          await loadVersions();
+          return;
+        }
         if (!prompt.trim() || !agentId || isTempKey) {
           console.warn("[prompt-versions] pushVersion skipped:", { hasPrompt: !!prompt.trim(), agentId, isTempKey });
           return;
@@ -145,7 +155,7 @@ const PromptVersionHistory = forwardRef<PromptVersionHistoryHandle, PromptVersio
           setSaving(false);
         }
       },
-      [agentId, isTempKey, loadVersions], // authHeaders 改用 ref
+      [agentId, immutable, isTempKey, loadVersions], // authHeaders 改用 ref
     );
 
     // 暴露给父组件
@@ -277,6 +287,14 @@ const PromptVersionHistory = forwardRef<PromptVersionHistoryHandle, PromptVersio
                             <span className="text-[10px] text-[var(--muted-foreground)] font-mono">
                               {formatTime(v.ts)}
                             </span>
+                            {Number.isSafeInteger(v.agent_revision) && (
+                              <span
+                                className="text-[9px] text-[var(--muted-foreground)] font-mono"
+                                title={v.prompt_hash ? `SHA-256 ${v.prompt_hash}` : undefined}
+                              >
+                                r{v.agent_revision}
+                              </span>
+                            )}
                             {idx === 0 && !current && (
                               <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-medium">
                                 最新
@@ -308,14 +326,16 @@ const PromptVersionHistory = forwardRef<PromptVersionHistoryHandle, PromptVersio
                               <RotateCcw className="w-3 h-3" />
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => deleteVersion(v.id)}
-                            className="p-1 rounded hover:bg-red-50 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
-                            title="删除此版本"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                          {!immutable && (
+                            <button
+                              type="button"
+                              onClick={() => deleteVersion(v.id)}
+                              className="p-1 rounded hover:bg-red-50 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                              title="删除此版本"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -323,18 +343,20 @@ const PromptVersionHistory = forwardRef<PromptVersionHistoryHandle, PromptVersio
                 </div>
 
                 {/* 底部操作栏 */}
-                {versions.length > 1 && (
+                {versions.length > 0 && (
                   <div className="flex items-center justify-between px-3 py-1.5 border-t border-[var(--border)]/50 bg-[var(--muted)]/10">
                     <span className="text-[10px] text-[var(--muted-foreground)]">
-                      共 {versions.length}/10 条版本记录，满后自动覆盖旧版本
+                      {immutable ? `共 ${versions.length} 条不可变审计记录` : `共 ${versions.length}/10 条版本记录，满后自动覆盖旧版本`}
                     </span>
-                    <button
-                      type="button"
-                      onClick={clearAll}
-                      className="text-[10px] text-red-500 hover:text-red-600 transition-colors"
-                    >
-                      清空全部
-                    </button>
+                    {!immutable && versions.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={clearAll}
+                        className="text-[10px] text-red-500 hover:text-red-600 transition-colors"
+                      >
+                        清空全部
+                      </button>
+                    )}
                   </div>
                 )}
               </>

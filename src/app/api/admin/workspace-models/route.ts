@@ -201,8 +201,9 @@ async function readImageResourcePool(
 
 async function readCatalog() {
   const db = getSupabaseAdminClient();
-  const [imageRows, videoResult, imageOrderResult, videoOrderResult, assignmentResult, candidateBlockResult] = await Promise.all([
+  const [imageRows, imagePublicationStates, videoResult, imageOrderResult, videoOrderResult, assignmentResult, candidateBlockResult] = await Promise.all([
     readImageResourcePool(db),
+    readImagePublicationStates(db),
     db.from("video_models").select("id,name,model_name,provider,protocol_type,api_endpoint,api_key,price_per_use,cost_price,duration_seconds,max_duration,supports_image_input,requires_image,is_active,is_hidden,sort_order,api_protocol_config").order("sort_order", { ascending: true }).order("id", { ascending: true }),
     db.from("platform_settings").select("setting_value").eq("setting_key", IMAGE_MODEL_SURFACE_ORDER_SETTING_KEY).maybeSingle(),
     db.from("platform_settings").select("setting_value").eq("setting_key", VIDEO_MODEL_SURFACE_ORDER_SETTING_KEY).maybeSingle(),
@@ -218,13 +219,16 @@ async function readCatalog() {
 
   const imageModels = imageRows
     .filter((model) => model.provider !== RETIRED_MODEL_PROVIDER);
-  const images = await Promise.all(imageModels.map(async (model) => {
-    const state = (await readImagePublicationStates(db, String(model.id || "")))[0] || null;
+  const imagePublicationStateById = new Map(
+    imagePublicationStates.map((state) => [String(state.model.id || ""), state]),
+  );
+  const images = imageModels.map((model) => {
+    const state = imagePublicationStateById.get(String(model.id || "")) || null;
     const mergedModel: Record<string, unknown> = state?.model
       ? { ...model, ...state.model }
       : model;
     return { model: mergedModel, state };
-  }));
+  });
   const videos = ((videoResult.data || []) as Record<string, unknown>[])
     .filter((model) => model.provider !== RETIRED_MODEL_PROVIDER);
 

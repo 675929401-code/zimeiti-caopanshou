@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
-import { createReadStream } from "fs";
-import { stat } from "fs/promises";
-import { Readable } from "stream";
 import { isPersistentVideoUri, resolvePersistentVideoUri } from "@/lib/video-persistence";
 import { trustedVideoProviderResultHostname } from "@/lib/video-provider-result-url";
 import { authorizeVideoMediaRequest } from "@/lib/video-media-auth";
@@ -17,6 +14,7 @@ import {
 } from "@/lib/safe-media-fetch";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { isAutodlComfyuiHostedProtocol } from "@/lib/video-autodl-comfyui-workflow";
+import { markVideoUpstreamSourceExpired } from "@/lib/video-source-expiry";
 import {
   AUTODL_H3_SELFHOST_GATEWAY_ORIGIN,
   AUTODL_H3_SELFHOST_VIDEO_ENDPOINT,
@@ -60,6 +58,8 @@ export async function GET(request: NextRequest) {
   let selectedFromStorage = false;
   let trustedPersistentStorageHostname = "";
   let trustedProviderResultHostname = "";
+  let taskInternalId = "";
+  let taskOwnerId = "";
   // 降级 /content 端点所需信息
   let fallbackInfo: { apiKey: string; apiEndpoint: string; taskIdExternal: string; protocolType: string } | null = null;
 
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     try {
       const supabase = getSupabaseClient();
 
-      const taskFields = "video_url, storage_url, provider_result_url, model_id, user_id, task_id_external, status";
+      const taskFields = "id, video_url, storage_url, provider_result_url, model_id, user_id, task_id_external, status, source_expired_at";
       const readTask = async (allowCrossMember: boolean) => {
         let localQuery = supabase
           .from("video_tasks")
@@ -115,6 +115,11 @@ export async function GET(request: NextRequest) {
         if (task.status !== "completed") {
           return NextResponse.json({ error: "任务尚未完成" }, { status: 409 });
         }
+        if (task.source_expired_at) {
+          return NextResponse.json({ error: "视频源已到期，请使用此前下载的文件" }, { status: 410 });
+        }
+        taskInternalId = String(task.id || taskId);
+        taskOwnerId = String(task.user_id || "");
 
         const storageUrl = task.storage_url as string | null;
         const providerResultUrl = task.provider_result_url as string | null;
@@ -129,32 +134,8 @@ export async function GET(request: NextRequest) {
             selectedFromStorage = true;
             trustedPersistentStorageHostname = new URL(effectiveUrl).hostname;
           } else if (storageUrl.startsWith("/api/video/storage/")) {
-            // 本地存储路径：验证文件是否真实存在
-            const storageId = storageUrl.split("/").pop();
-            const localDir = "/tmp/video-storage";
-            const localPath = storageId ? `${localDir}/${storageId}.mp4` : "";
-            let fileExists = false;
-            try {
-              if (localPath) await stat(localPath);
-              fileExists = true;
-            } catch { /* 文件不存在 */ }
-            if (fileExists && localPath) {
-              // 本地文件存在，流式返回，避免大文件把 Node 线程卡住
-              const fileStat = await stat(localPath);
-              const stream = Readable.toWeb(createReadStream(localPath)) as ReadableStream;
-              return new NextResponse(stream, {
-                status: 200,
-                headers: {
-                  "Content-Type": "video/mp4",
-                  "Content-Disposition": `attachment; filename="${encodeURIComponent(name)}"`,
-                  "Content-Length": String(fileStat.size),
-                  "Accept-Ranges": "bytes",
-                  "Cache-Control": "private, max-age=300",
-                  "Referrer-Policy": "no-referrer",
-                },
-              });
-            }
-            // 文件不存在，降级到 video_url
+            // Server-local video files are no longer a delivery source. Old
+            // rows fall back to the provider URL and are never recreated.
             effectiveUrl = directResultUrl || null;
           } else if (storageUrl.startsWith("http")) {
             // 对象存储 URL，直接使用
@@ -251,13 +232,22 @@ export async function GET(request: NextRequest) {
         timeoutMs: 300_000,
       });
       if (!response.ok) {
+        const expiredStatus = [404, 410].includes(response.status)
+          ? response.status as 404 | 410
+          : null;
         await response.body?.cancel().catch(() => undefined);
         console.warn("[下载代理] AutoDL H3 临时取件失败", {
           taskId,
           sourceUrl: redactedUrl,
           status: response.status,
         });
-        return NextResponse.json({ error: "H3 临时结果下载失败" }, { status: 502 });
+        if (expiredStatus && taskInternalId && taskOwnerId) {
+          await markVideoUpstreamSourceExpired({ taskId: taskInternalId, userId: taskOwnerId, httpStatus: expiredStatus });
+        }
+        return NextResponse.json(
+          { error: expiredStatus ? "视频源已到期，请使用此前下载的文件" : "H3 临时结果下载失败" },
+          { status: expiredStatus ? 410 : 502 },
+        );
       }
       const contentType = (response.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
       if (contentType !== "video/mp4" || !response.body) {
@@ -291,11 +281,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  let sourceExpired = false;
+  let directExpiryStatus: 404 | 410 | null = null;
+  let fallbackExpiryStatus: 404 | 410 | null = null;
 
   // --- 下载辅助函数 ---
   const downloadFromUrl = async (
     downloadUrl: string,
+    source: "direct" | "fallback",
     authorization?: SafeMediaAuthorization | null,
   ): Promise<NextResponse> => {
     const headers: Record<string, string> = {
@@ -310,7 +302,10 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
-      if ([404, 410].includes(response.status)) sourceExpired = true;
+      if ([404, 410].includes(response.status)) {
+        if (source === "fallback") fallbackExpiryStatus = response.status as 404 | 410;
+        else directExpiryStatus = response.status as 404 | 410;
+      }
       await response.body?.cancel().catch(() => undefined);
       throw new Error(`上游返回 ${response.status}`);
     }
@@ -378,7 +373,7 @@ export async function GET(request: NextRequest) {
           });
         }
       }
-      if ([404, 410].includes(cdnResponse.status)) sourceExpired = true;
+      if ([404, 410].includes(cdnResponse.status)) directExpiryStatus = cdnResponse.status as 404 | 410;
       await cdnResponse.body?.cancel().catch(() => undefined);
       console.warn(`[下载代理] 原始地址返回 ${cdnResponse.status}，尝试备用接口: taskId=${taskId}`);
     } catch (cdnErr) {
@@ -398,7 +393,7 @@ export async function GET(request: NextRequest) {
       console.log(`[下载代理] 降级到 /content 端点: taskId=${taskId}`);
 
       try {
-        return await downloadFromUrl(contentUrl, providerAuthorization);
+        return await downloadFromUrl(contentUrl, "fallback", providerAuthorization);
       } catch (fallbackErr) {
         console.error(`[下载代理] /content 端点也失败: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`);
       }
@@ -406,12 +401,28 @@ export async function GET(request: NextRequest) {
 
     // 尝试3: 最后兜底 — 用长超时重试原始 URL（适用于大文件慢速下载）
     try {
-      return await downloadFromUrl(effectiveUrl, providerAuthorization);
+      return await downloadFromUrl(effectiveUrl, "direct", providerAuthorization);
     } catch (finalErr) {
       console.warn(`[下载代理] 最终取件失败: taskId=${taskId}, error=${finalErr instanceof Error ? finalErr.message : String(finalErr)}`);
+      const fallbackSupported = Boolean(
+        fallbackInfo
+        && !isAutodlComfyuiHostedProtocol(fallbackInfo.protocolType)
+        && !isAutodlH3Selfhost(fallbackInfo.protocolType),
+      );
+      const confirmedExpiryStatus = directExpiryStatus
+        && (!fallbackSupported || fallbackExpiryStatus)
+        ? (fallbackExpiryStatus || directExpiryStatus)
+        : null;
+      if (confirmedExpiryStatus && taskInternalId && taskOwnerId) {
+        await markVideoUpstreamSourceExpired({
+          taskId: taskInternalId,
+          userId: taskOwnerId,
+          httpStatus: confirmedExpiryStatus,
+        });
+      }
       return NextResponse.json(
-        { error: sourceExpired ? "视频源已到期，请使用此前下载的文件" : "视频源暂时不可达，请稍后重试" },
-        { status: sourceExpired ? 410 : 502 },
+        { error: confirmedExpiryStatus ? "视频源已到期，请使用此前下载的文件" : "视频源暂时不可达，请稍后重试" },
+        { status: confirmedExpiryStatus ? 410 : 502 },
       );
     }
   } catch (err) {

@@ -191,8 +191,8 @@ async function main() {
   assert.match(styles, /\.preview\s*\{[\s\S]*?aspect-ratio:\s*16\s*\/\s*9/, "图片与视频首帧必须使用稳定预览区域，避免卡片跳动");
   assert.match(page, /confirmation:\s*"REMOVE_HISTORY"/, "从历史移除必须使用独立确认口令");
   assert.match(page, /原始对话、生成文件和账单会保留/, "移除历史前必须明确原始结果与账务仍保留");
-  assert.match(page, /图片保留两天、视频保留三天/, "页面必须说明无上游到期信息时的回退期限");
-  assert.match(page, /到期索引自动从列表清理/, "页面必须说明到期索引会自动清理");
+  assert.match(page, /普通视频不设平台固定天数/, "页面必须说明普通视频跟随原始来源有效期");
+  assert.match(page, /确认失效后自动移出历史/, "页面必须说明有证据的失效来源会自动移出历史");
   assert.match(page, /下载到电脑长期保存/, "长期保存必须引导用户显式下载到电脑");
   assert.doesNotMatch(page, /cacheVideoLocally|listUserMediaCache|保存浏览器副本|浏览器视频副本/, "作品历史不得提供类硬盘浏览器副本");
   assert.match(api, /resolveMediaHistoryRetention\(/, "服务端必须统一计算上游或回退到期时间");

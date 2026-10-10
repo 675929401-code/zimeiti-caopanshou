@@ -282,20 +282,18 @@ function verifySourceWiring(): number {
   const readSource = (relativePath: string) => readFileSync(`${projectRoot}/${relativePath}`, "utf8");
   const themeInit = readSource("src/components/theme-init.tsx");
   const appContext = readSource("src/contexts/app-context.tsx");
+  const adminPage = readSource("src/app/admin/page.tsx");
   const marketplace = readSource("src/components/agent-marketplace.tsx");
   const cacheModule = readSource("src/lib/client-bootstrap-cache.ts");
 
   assert.match(themeInit, /from "@\/lib\/client-bootstrap-cache"/, "ThemeInit must use the shared module");
   assert.match(themeInit, /getClientBootstrapAppearance\(\{ force \}\)/, "ThemeInit must route appearance through the shared helper");
-  assert.match(
-    themeInit,
-    /handleThemeUpdated[\s\S]*invalidateClientBootstrapAppearance\(\)[\s\S]*syncThemeColors\(true\)/,
-    "theme-updated must invalidate an old in-flight value and force a fresh appearance read",
-  );
+  assert.match(themeInit, /handleThemeUpdated[\s\S]{0,240}syncThemeColors\(true\)/, "ThemeInit must join the fresh event read");
+  assert.doesNotMatch(themeInit, /invalidateClientBootstrapAppearance/, "ThemeInit must not invalidate the shared event request");
   assert.doesNotMatch(themeInit, /fetch\(\s*["']\/api\/settings\/appearance["']/, "ThemeInit must not directly fetch appearance");
   assert.match(themeInit, /if \(!cancelled\) \{[\s\S]{0,100}applyThemeColorSettings/, "ThemeInit must retain its unmount guard");
 
-  assert.match(appContext, /getClientBootstrapAppearance\(\)/, "AppProvider theme bootstrap must share appearance");
+  assert.match(appContext, /getClientBootstrapAppearance\(\{ force \}\)/, "AppProvider theme bootstrap must share appearance");
   assert.match(appContext, /getClientBootstrapAuthMe\(token\)/, "AppProvider theme bootstrap must share auth/me");
   assert.match(
     appContext,
@@ -326,6 +324,13 @@ function verifySourceWiring(): number {
   );
   assert.match(appContext, /res\.status >= 500 && cachedUser/, "transient auth 5xx must preserve the cached-user fallback");
   assert.doesNotMatch(appContext, /fetch\(\s*["']\/api\/settings\/appearance["']/, "AppProvider must not directly GET appearance");
+  assert.match(appContext, /handleThemeUpdate[\s\S]{0,240}fetchTheme\(true\)/, "AppProvider must force the post-publication shared read");
+  assert.doesNotMatch(appContext, /invalidateClientBootstrapAppearance/, "AppProvider must not invalidate the shared event request");
+  assert.equal(
+    adminPage.match(/invalidateClientBootstrapAppearance\(\);\s*window\.dispatchEvent\(new Event\("theme-updated"\)\);/gu)?.length,
+    2,
+    "each admin theme publication path must invalidate exactly once before broadcasting",
+  );
 
   const directAuthFetches = appContext.match(/fetch\(\s*["']\/api\/auth\/me["']/g) ?? [];
   assert.equal(directAuthFetches.length, 1, "only the explicit auth/me PUT may remain a direct fetch");

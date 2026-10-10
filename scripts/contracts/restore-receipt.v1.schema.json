@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "restore-receipt.v1.schema.json",
+  "title": "Different-cluster isolated restore receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "restoreId",
+    "phase",
+    "targetDatabase",
+    "startedEpoch",
+    "completedEpoch",
+    "encryptedPackageSha256",
+    "productionOverwriteAttempted"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "zimeiti-restore-receipt.v1" },
+    "status": { "enum": ["complete", "failed"] },
+    "restoreId": { "type": "string", "pattern": "^restore-[0-9]{8}T[0-9]{6}Z-[0-9]+$" },
+    "phase": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "targetDatabase": { "type": "string", "pattern": "^(unknown|zimeiti_restore_[a-z0-9_]+)$" },
+    "startedEpoch": { "type": "integer", "minimum": 1 },
+    "completedEpoch": { "type": "integer", "minimum": 1 },
+    "encryptedPackageSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "productionOverwriteAttempted": { "const": false },
+    "isolatedFileRootName": { "type": "string", "pattern": "^zimeiti-restore-[A-Za-z0-9._-]+$" },
+    "backupAgeAtRestoreStartSeconds": { "type": "integer", "minimum": 0 },
+    "dataRestoreDurationSeconds": { "type": "integer", "minimum": 0 },
+    "packageHashVerifiedBeforeRestore": { "const": true },
+    "packageHashVerifiedAfterRestore": { "const": true },
+    "targetClusterDistinctFromProduction": { "const": true },
+    "targetSystemIdentifierMatchesExpected": { "const": true },
+    "provisioningNonceVerified": { "const": true },
+    "minimumPrivilegeRoleVerified": { "const": true },
+    "identityRecheckedAfterRestore": { "const": true },
+    "postgresRowCountsMatch": { "const": true },
+    "financialControlsMatch": { "const": true },
+    "commerceSqliteBytesHashAndRowsMatch": { "const": true },
+    "voiceSqliteBytesHashAndRowsMatch": { "const": true },
+    "fileManifestVerified": { "const": true },
+    "postgresGlobalsApplied": { "const": false },
+    "plaintextWorkspaceOnControlledMount": { "const": true }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["status"],
+        "properties": { "status": { "const": "complete" } }
+      },
+      "then": {
+        "required": [
+          "isolatedFileRootName",
+          "backupAgeAtRestoreStartSeconds",
+          "dataRestoreDurationSeconds",
+          "packageHashVerifiedBeforeRestore",
+          "packageHashVerifiedAfterRestore",
+          "targetClusterDistinctFromProduction",
+          "targetSystemIdentifierMatchesExpected",
+          "provisioningNonceVerified",
+          "minimumPrivilegeRoleVerified",
+          "identityRecheckedAfterRestore",
+          "postgresRowCountsMatch",
+          "financialControlsMatch",
+          "commerceSqliteBytesHashAndRowsMatch",
+          "voiceSqliteBytesHashAndRowsMatch",
+          "fileManifestVerified",
+          "postgresGlobalsApplied",
+          "plaintextWorkspaceOnControlledMount"
+        ]
+      }
+    }
+  ]
+}

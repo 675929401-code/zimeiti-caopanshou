@@ -4,6 +4,7 @@ import { clearBrowserClientAttemptsById } from '@/lib/extract-client-attempt';
 type AttemptStatus = {
   attemptId: string; clientRequestId: string; state: 'running' | 'failed_unknown' | 'failed' | 'succeeded';
   netCharged: number; billingMessage: string; checkedAt: string; response?: unknown;
+  contentRetained?: boolean; contentUnavailableReason?: string;
 };
 
 type AttemptStatusQuery = {

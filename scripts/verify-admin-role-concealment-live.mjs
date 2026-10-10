@@ -32,7 +32,15 @@ const reportPath = path.join(evidenceDir, "report.json");
 const startedAt = new Date().toISOString();
 const apiUserAgent = "Codex-Admin-Role-Concealment/1.0";
 const browserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36 CodexAdminRoleConcealment";
+const sessionRealIps = Object.freeze({
+  superAdmin: "127.0.0.1",
+  ordinaryAdmin: "127.0.0.2",
+  promptAdmin: "127.0.0.3",
+  anonymous: "127.0.0.10",
+});
 const announcementDismissalsStorageKey = "announcement_session_dismissals_v3";
+const announcementEventTypes = new Set(["impression", "read", "click", "close", "remind_later"]);
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const requestedPermissions = ["members.view", "models.view", "platform.settings.manage", "white_label.manage"];
 const expectedEffectivePermissions = [
   "members.view",
@@ -171,6 +179,15 @@ const report = {
   origin,
   viewport: { width: 1440, height: 900 },
   runtime: {},
+  sessionIsolation: {
+    policy: "AUTH-SESSION-01",
+    realIps: sessionRealIps,
+    playwrightContextRealIps: {
+      superAdmin: sessionRealIps.superAdmin,
+      ordinaryAdmin: sessionRealIps.ordinaryAdmin,
+    },
+    superSelfAfterOrdinaryLoginStatus: null,
+  },
   superAdmin: {},
   fixture: {
     requestedPermissions,
@@ -195,6 +212,7 @@ const report = {
   evidence: {
     removedPriorArtifacts: removedPriorEvidence,
     deniedDeepLinkNavigations: [],
+    announcementHandling: [],
   },
   cleanup: {},
   externalCalls: 0,
@@ -277,6 +295,7 @@ async function api(pathname, options = {}) {
     ...options,
     headers: {
       "User-Agent": apiUserAgent,
+      "X-Real-IP": sessionRealIps.superAdmin,
       ...(options.headers || {}),
     },
   });
@@ -297,7 +316,10 @@ function collectObjectKeys(value, output = new Set()) {
 
 function assertGenericDeny(pathname, response, body) {
   assert.equal(response.status, 403, `${pathname}:GENERIC_DENY_STATUS_REQUIRED:${response.status}`);
-  assert.equal(body.code, "ADMIN_PERMISSION_DENIED", `${pathname}:GENERIC_DENY_CODE_REQUIRED`);
+  assert.ok(
+    ["ADMIN_PERMISSION_DENIED", "SUPER_ADMIN_REQUIRED"].includes(body.code),
+    `${pathname}:GENERIC_DENY_CODE_REQUIRED`,
+  );
   assert.deepEqual(Object.keys(body).sort(), ["code", "error"], `${pathname}:DENIAL_DETAIL_LEAKED`);
   const serialized = JSON.stringify(body);
   assert.doesNotMatch(serialized, /requiredPermission|permissionKey|operation|resource/iu, `${pathname}:DENIAL_METADATA_LEAKED`);
@@ -338,6 +360,44 @@ function isLoopbackHttpUrl(value) {
   }
 }
 
+function inspectAnnouncementEventRequest(request) {
+  try {
+    const payload = JSON.parse(request.postData() || "{}");
+    assert.ok(payload && typeof payload === "object" && !Array.isArray(payload), "ANNOUNCEMENT_EVENT_OBJECT_REQUIRED");
+    assert.deepEqual(
+      Object.keys(payload).sort(),
+      ["event", "eventKey", "id", "pushRevision"],
+      "ANNOUNCEMENT_EVENT_EXACT_FIELDS_REQUIRED",
+    );
+    assert.match(payload.id, uuidPattern, "ANNOUNCEMENT_EVENT_ID_REQUIRED");
+    assert.ok(announcementEventTypes.has(payload.event), `ANNOUNCEMENT_EVENT_TYPE_REQUIRED:${payload.event}`);
+    assert.ok(Number.isInteger(payload.pushRevision) && payload.pushRevision > 0, "ANNOUNCEMENT_EVENT_REVISION_REQUIRED");
+    assert.equal(
+      payload.eventKey,
+      `announcement:${payload.id}:r${payload.pushRevision}:${payload.event}:v1`,
+      "ANNOUNCEMENT_EVENT_KEY_CONTRACT_REQUIRED",
+    );
+    assert.match(request.headers()["content-type"] || "", /^application\/json(?:;|$)/iu, "ANNOUNCEMENT_EVENT_JSON_REQUIRED");
+    assert.match(request.headers().authorization || "", /^Bearer\s+\S+$/u, "ANNOUNCEMENT_EVENT_AUTH_REQUIRED");
+    return {
+      id: payload.id,
+      event: payload.event,
+      revision: payload.pushRevision,
+      eventKey: payload.eventKey,
+      contractValid: true,
+      intercepted: true,
+      serverReached: false,
+    };
+  } catch (error) {
+    return {
+      contractValid: false,
+      intercepted: true,
+      serverReached: false,
+      error: errorSummary(error),
+    };
+  }
+}
+
 async function installNetworkGuard(context, label) {
   const audit = {
     label,
@@ -349,12 +409,31 @@ async function installNetworkGuard(context, label) {
     http4xx: [],
     http5xx: [],
     telemetryWrites: [],
+    announcementReceiptWrites: [],
+    announcementEventInterceptions: [],
   };
   await context.route("**/*", async (route) => {
     const request = route.request();
     if (!isLoopbackHttpUrl(request.url())) {
       audit.externalAttempts.push({ method: request.method(), url: redactText(request.url()) });
       await route.abort("blockedbyclient");
+      return;
+    }
+    const url = new URL(request.url());
+    if (request.method().toUpperCase() === "POST" && url.pathname === "/api/announcements/events") {
+      const interception = inspectAnnouncementEventRequest(request);
+      audit.announcementEventInterceptions.push(interception);
+      await route.fulfill({
+        status: interception.contractValid ? 200 : 400,
+        contentType: "application/json",
+        headers: {
+          "Cache-Control": "no-store",
+          "X-Codex-Announcement-Event-Intercepted": "true",
+        },
+        body: JSON.stringify(interception.contractValid
+          ? { success: true, recorded: false, alreadyRecorded: true }
+          : { success: false, code: "ANNOUNCEMENT_EVENT_CONTRACT_INVALID" }),
+      });
       return;
     }
     await route.continue();
@@ -381,6 +460,10 @@ async function installNetworkGuard(context, label) {
         } catch {
           audit.telemetryWrites.push({ parseError: true });
         }
+      } else if (method === "POST" && /^\/api\/announcements\/[^/]+\/read$/u.test(url.pathname)) {
+        audit.announcementReceiptWrites.push(entry);
+      } else if (method === "POST" && url.pathname === "/api/announcements/events") {
+        // Fulfilled inside the Playwright route above; never reaches the app server.
       } else if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
         audit.writeRequests.push(entry);
       }
@@ -413,12 +496,22 @@ function summarizeBrowserAudit(audit) {
     http4xx: audit.http4xx,
     http5xx: audit.http5xx,
     telemetryWrites: audit.telemetryWrites,
+    announcementReceiptWrites: audit.announcementReceiptWrites,
+    announcementEventInterceptions: audit.announcementEventInterceptions,
   };
 }
 
 function assertCleanBrowserAudit(audit) {
   assert.deepEqual(audit.externalAttempts, [], `${audit.label}:EXTERNAL_REQUEST_ATTEMPTED`);
   assert.deepEqual(audit.writeRequests, [], `${audit.label}:BROWSER_WRITE_REQUEST_FORBIDDEN`);
+  for (const entry of audit.announcementReceiptWrites) {
+    assert.match(entry, /^POST \/api\/announcements\/[^/]+\/read$/u, `${audit.label}:UNEXPECTED_ANNOUNCEMENT_RECEIPT_WRITE`);
+  }
+  for (const [index, interception] of audit.announcementEventInterceptions.entries()) {
+    assert.equal(interception.contractValid, true, `${audit.label}:ANNOUNCEMENT_EVENT_CONTRACT_INVALID:${index}`);
+    assert.equal(interception.intercepted, true, `${audit.label}:ANNOUNCEMENT_EVENT_MUST_BE_INTERCEPTED:${index}`);
+    assert.equal(interception.serverReached, false, `${audit.label}:ANNOUNCEMENT_EVENT_SERVER_MUST_NOT_BE_REACHED:${index}`);
+  }
   for (const [index, telemetry] of audit.telemetryWrites.entries()) {
     assert.equal(telemetry.parseError, undefined, `${audit.label}:TELEMETRY_PAYLOAD_PARSE_REQUIRED:${index}`);
     assert.equal(telemetry.method, "GET", `${audit.label}:TELEMETRY_GET_ONLY:${index}`);
@@ -457,10 +550,59 @@ async function installAdminSession(context, token, user, stepUpToken = "", annou
   });
 }
 
-async function waitForAdminReady(page, primaryTab = "users") {
+async function settleAnnouncementReader(page, {
+  identity = "ordinary-admin",
+  allowServerReceipt = true,
+} = {}) {
+  const reader = page.locator('[data-testid="announcement-reader"]');
+  if (!await reader.isVisible().catch(() => false)) return;
+
+  let serverReceiptsConfirmed = 0;
+  if (allowServerReceipt) {
+    for (let index = 0; index < 50; index += 1) {
+      if (!await reader.isVisible().catch(() => false)) break;
+      const acknowledge = reader.getByTestId("announcement-mark-read");
+      if (!await acknowledge.isVisible().catch(() => false)) break;
+      const receiptResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST"
+          && /^\/api\/announcements\/[^/]+\/read$/u.test(url.pathname);
+      }, { timeout: 20_000 });
+      await acknowledge.click();
+      const receiptResponse = await receiptResponsePromise;
+      assert.equal(receiptResponse.status(), 200, `${identity}:ANNOUNCEMENT_READ_RECEIPT_REQUIRED`);
+      serverReceiptsConfirmed += 1;
+      await page.waitForFunction(() => {
+        const button = document.querySelector('[data-testid="announcement-mark-read"]');
+        return !button || !button.hasAttribute("disabled");
+      }, undefined, { timeout: 10_000 });
+    }
+  }
+
+  let closedWithoutReceipt = false;
+  if (await reader.isVisible().catch(() => false)) {
+    const closeButton = reader.getByRole("button", { name: "关闭系统公告", exact: true });
+    await closeButton.click();
+    await reader.waitFor({ state: "hidden", timeout: 10_000 });
+    closedWithoutReceipt = true;
+  }
+  report.evidence.announcementHandling.push({
+    identity,
+    serverReceiptsConfirmed,
+    closedWithoutReceipt,
+    durableBusinessStateChanged: serverReceiptsConfirmed > 0,
+  });
+  if (report.evidence.announcementIsolation) {
+    report.evidence.announcementIsolation.serverReadReceiptsWritten += serverReceiptsConfirmed;
+    report.evidence.announcementIsolation.disposableFixtureReceiptsWritten += serverReceiptsConfirmed;
+  }
+}
+
+async function waitForAdminReady(page, primaryTab = "users", announcementOptions = undefined) {
   await page.locator(".admin-light-shell").waitFor({ state: "visible", timeout: 45_000 });
   await page.locator(".admin-light-shell h1", { hasText: "管理后台" }).first().waitFor({ state: "visible", timeout: 45_000 });
   await page.locator(`[data-testid="admin-primary-nav-${primaryTab}"]`).waitFor({ state: "visible", timeout: 45_000 });
+  await settleAnnouncementReader(page, announcementOptions);
   await page.locator('[data-testid="announcement-reader"]').waitFor({ state: "hidden", timeout: 20_000 });
 }
 
@@ -531,7 +673,9 @@ try {
   await db.connect();
   dbConnected = true;
 
-  const versionResponse = await api("/api/version", { headers: { Accept: "application/json" } });
+  const versionResponse = await api("/api/version", {
+    headers: { Accept: "application/json", "X-Real-IP": sessionRealIps.anonymous },
+  });
   const version = await readJson(versionResponse);
   report.runtime = {
     versionStatus: versionResponse.status,
@@ -578,6 +722,7 @@ try {
   const superHeaders = {
     Authorization: `Bearer ${superToken}`,
     "x-admin-step-up": superStepUpToken,
+    "X-Real-IP": sessionRealIps.superAdmin,
     Accept: "application/json",
   };
   const controlResponse = await api("/api/admin/access-control", { headers: superHeaders });
@@ -649,6 +794,7 @@ try {
 
   const browserWriteHeaders = {
     "User-Agent": browserUserAgent,
+    "X-Real-IP": sessionRealIps.ordinaryAdmin,
     Origin: origin,
     Referer: `${origin}/admin/superzhujunguo`,
     "Sec-Fetch-Site": "same-origin",
@@ -666,6 +812,22 @@ try {
   assert.ok(String(login.token || "").length > 32, "ORDINARY_ADMIN_TOKEN_REQUIRED");
   const ordinaryToken = String(login.token);
 
+  const superSelfAfterOrdinaryLoginResponse = await api("/api/admin/access-control/self", {
+    headers: {
+      Authorization: `Bearer ${superToken}`,
+      Accept: "application/json",
+      "X-Real-IP": sessionRealIps.superAdmin,
+    },
+  });
+  const superSelfAfterOrdinaryLogin = await readJson(superSelfAfterOrdinaryLoginResponse);
+  assert.equal(
+    superSelfAfterOrdinaryLoginResponse.status,
+    200,
+    `SUPER_ADMIN_SESSION_MUST_SURVIVE_ORDINARY_LOGIN:${superSelfAfterOrdinaryLoginResponse.status}`,
+  );
+  assert.equal(superSelfAfterOrdinaryLogin.access?.adminLevel, "super_admin", "SUPER_ADMIN_LEVEL_MUST_SURVIVE_ORDINARY_LOGIN");
+  report.sessionIsolation.superSelfAfterOrdinaryLoginStatus = superSelfAfterOrdinaryLoginResponse.status;
+
   const unlockResponse = await api("/api/admin/access-control/unlock", {
     method: "POST",
     headers: { ...browserWriteHeaders, Authorization: `Bearer ${ordinaryToken}` },
@@ -680,6 +842,7 @@ try {
   const ordinaryHeaders = {
     Authorization: `Bearer ${ordinaryToken}`,
     "x-admin-step-up": ordinaryStepUpToken,
+    "X-Real-IP": sessionRealIps.ordinaryAdmin,
     Accept: "application/json",
   };
   const ordinarySelfResponse = await api("/api/admin/access-control/self", { headers: ordinaryHeaders });
@@ -823,7 +986,9 @@ try {
     report.api.genericDenials.push(assertGenericDeny(`${probe.method} ${probe.pathname}`, response, body));
   }
 
-  const livenessResponse = await api("/api/health?liveness=true", { headers: { Accept: "application/json" } });
+  const livenessResponse = await api("/api/health?liveness=true", {
+    headers: { Accept: "application/json", "X-Real-IP": sessionRealIps.anonymous },
+  });
   const liveness = await readJson(livenessResponse);
   assert.equal(livenessResponse.status, 200, "PUBLIC_LIVENESS_REQUIRED");
   assert.deepEqual(Object.keys(liveness).sort(), ["status", "timestamp"], "PUBLIC_LIVENESS_MUST_STAY_MINIMAL");
@@ -868,15 +1033,21 @@ try {
     ordinaryToken,
   );
   const superAnnouncementDismissals = await loadAnnouncementSessionDismissals(
-    { Authorization: `Bearer ${superToken}`, Accept: "application/json" },
+    {
+      Authorization: `Bearer ${superToken}`,
+      Accept: "application/json",
+      "X-Real-IP": sessionRealIps.superAdmin,
+    },
     superUser,
     superToken,
   );
   report.evidence.announcementIsolation = {
-    strategy: "browser-session-dismissals-only",
+    strategy: "session-dismissals-with-disposable-receipt-fallback",
     ordinaryAnnouncementCount: ordinaryAnnouncementDismissals.keys.length,
     superAdminAnnouncementCount: superAnnouncementDismissals.keys.length,
     serverReadReceiptsWritten: 0,
+    disposableFixtureReceiptsWritten: 0,
+    realAccountReceiptsWritten: 0,
   };
 
   browser = await chromium.launch({ headless: true });
@@ -885,6 +1056,7 @@ try {
     viewport: report.viewport,
     userAgent: browserUserAgent,
     serviceWorkers: "block",
+    extraHTTPHeaders: { "X-Real-IP": sessionRealIps.ordinaryAdmin },
   });
   ordinaryAudit = await installNetworkGuard(ordinaryContext, "ordinary-admin");
   await installAdminSession(
@@ -904,10 +1076,9 @@ try {
   }, { timeout: 45_000 });
   activeBrowserPhase = "ordinary-super-admin-fallback";
   await ordinaryPage.goto(`${origin}/admin?tab=super-admin`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await waitForAdminReady(ordinaryPage, "users");
-  await waitForTabInUrl(ordinaryPage, "users");
-  await ordinaryPage.locator('[data-testid="admin-member-workspace"]').waitFor({ state: "visible", timeout: 45_000 });
-  assert.equal(await ordinaryPage.getByRole("button", { name: "聊天记录", exact: true }).count(), 0, "MEMBER_CONTENT_ENTRY_MUST_BE_HIDDEN");
+  await waitForAdminReady(ordinaryPage, "dashboard");
+  await waitForTabInUrl(ordinaryPage, "dashboard");
+  await ordinaryPage.waitForFunction(() => new URL(window.location.href).searchParams.get("view") === "members", undefined, { timeout: 20_000 });
   for (const tab of expectedVisiblePrimaryTabs) {
     await ordinaryPage.locator(`[data-testid="admin-primary-nav-${tab}"]`).waitFor({ state: "visible", timeout: 20_000 });
   }
@@ -916,6 +1087,12 @@ try {
   }
   assert.equal(await ordinaryPage.locator('[data-testid="super-admin-locked"]').count(), 0, "LOCKED_SUPER_ADMIN_DISCLOSURE_MUST_BE_ABSENT");
   assert.equal(await ordinaryPage.getByText("当前账号暂无可用后台页面。", { exact: true }).count(), 0, "GRANTED_ADMIN_MUST_HAVE_VISIBLE_SURFACES");
+
+  await ordinaryPage.goto(`${origin}/admin?tab=users`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await waitForAdminReady(ordinaryPage, "users");
+  await waitForTabInUrl(ordinaryPage, "users");
+  await ordinaryPage.locator('[data-testid="admin-member-workspace"]').waitFor({ state: "visible", timeout: 45_000 });
+  assert.equal(await ordinaryPage.getByRole("button", { name: "聊天记录", exact: true }).count(), 0, "MEMBER_CONTENT_ENTRY_MUST_BE_HIDDEN");
   assert.equal((await initialUsersUiResponse).status(), 200, "INITIAL_MEMBER_UI_READ_REQUIRED");
   await captureScreenshot(ordinaryPage, "ordinary-granted-hidden-1440x900.png");
 
@@ -957,15 +1134,11 @@ try {
   await captureScreenshot(ordinaryPage, "ordinary-command-center-bounded-views-1440x900.png");
 
   for (const deniedTab of ["connection", "health", "super-admin"]) {
-    const fallbackUsersUiResponse = ordinaryPage.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return url.pathname === "/api/admin/users" && response.request().method() === "GET";
-    }, { timeout: 45_000 });
     activeBrowserPhase = `ordinary-${deniedTab}-fallback`;
     const navigationResponse = await ordinaryPage.goto(`${origin}/admin?tab=${deniedTab}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    await waitForAdminReady(ordinaryPage, "users");
-    await waitForTabInUrl(ordinaryPage, "users");
-    assert.equal((await fallbackUsersUiResponse).status(), 200, `${deniedTab}:FALLBACK_MEMBER_UI_READ_REQUIRED`);
+    await waitForAdminReady(ordinaryPage, "dashboard");
+    await waitForTabInUrl(ordinaryPage, "dashboard");
+    await ordinaryPage.waitForFunction(() => new URL(window.location.href).searchParams.get("view") === "members", undefined, { timeout: 20_000 });
     report.evidence.deniedDeepLinkNavigations.push({
       requestedTab: deniedTab,
       responseStatus: navigationResponse?.status() ?? null,
@@ -1060,9 +1233,9 @@ try {
     visiblePrimaryTabs: expectedVisiblePrimaryTabs,
     hiddenPrimaryTabs: expectedHiddenPrimaryTabs,
     deepLinkFallbacks: {
-      "super-admin": "users",
-      connection: "users",
-      health: "users",
+      "super-admin": "dashboard:members",
+      connection: "dashboard:members",
+      health: "dashboard:members",
       "voice-studio": "workspace-models:image",
       "dashboard:evidence": "dashboard:members",
     },
@@ -1078,6 +1251,7 @@ try {
     viewport: report.viewport,
     userAgent: browserUserAgent,
     serviceWorkers: "block",
+    extraHTTPHeaders: { "X-Real-IP": sessionRealIps.superAdmin },
   });
   superAudit = await installNetworkGuard(superContext, "super-admin");
   await installAdminSession(
@@ -1092,7 +1266,10 @@ try {
   superLoadedJavaScriptAudit = createLoadedJavaScriptSentinelAudit(superPage, { origin });
   activeBrowserPhase = "super-admin-governance";
   await superPage.goto(`${origin}/admin?tab=super-admin`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await waitForAdminReady(superPage, "super-admin");
+  await waitForAdminReady(superPage, "super-admin", {
+    identity: "super-admin",
+    allowServerReceipt: false,
+  });
   await waitForTabInUrl(superPage, "super-admin");
   await superPage.locator('[data-testid="super-admin-governance"]').waitFor({ state: "visible", timeout: 45_000 });
   await superPage.locator('[data-testid="admin-governance-health"][data-health="true"]').waitFor({ state: "visible", timeout: 45_000 });
@@ -1140,11 +1317,10 @@ try {
   browser = null;
   activeBrowserPhase = "api-capability-transition";
 
-  // Reuse the disposable administrator after the visual phase to exercise
-  // capabilities that would intentionally change the visible navigation.
-  // Updating the profile revokes the prior step-up session, allowing this
-  // phase to prove both the locked and unlocked internal-catalog boundary.
-  const capabilityPermissions = ["agents.view", "internal_tools.manage", "logs.view"];
+  // Reuse the disposable administrator after the visual phase to prove the
+  // owner boundary: ordinary capabilities may be delegated, but an unlock is
+  // never allowed to turn an ordinary administrator into a platform owner.
+  const capabilityPermissions = ["agents.view", "logs.view"];
   const capabilityUpdateResponse = await api("/api/admin/access-control", {
     method: "PATCH",
     headers: {
@@ -1167,8 +1343,35 @@ try {
     200,
     `CAPABILITY_TRANSITION_REQUIRED:${capabilityUpdateResponse.status}:${JSON.stringify(capabilityUpdate)}`,
   );
+  const capabilityRevision = Number(capabilityUpdate.profile?.revision);
+  assert.ok(Number.isInteger(capabilityRevision) && capabilityRevision > Number(profile.revision), "CAPABILITY_REVISION_REQUIRED");
 
-  const capabilityHeaders = { Authorization: `Bearer ${ordinaryToken}`, Accept: "application/json" };
+  const ownerPermissionAttemptResponse = await api("/api/admin/access-control", {
+    method: "PATCH",
+    headers: {
+      ...superHeaders,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `codex-role-owner-boundary-${fixtureUserId}`,
+    },
+    body: JSON.stringify({
+      action: "permissions",
+      userId: fixtureUserId,
+      permissionKeys: [...capabilityPermissions, "internal_tools.manage"],
+      isActive: true,
+      expectedRevision: capabilityRevision,
+      reason: "本地岗位权限隐藏验收：所有者权限不可委派",
+    }),
+  });
+  const ownerPermissionAttempt = await readJson(ownerPermissionAttemptResponse);
+  assert.equal(ownerPermissionAttemptResponse.status, 400, "OWNER_PERMISSION_DELEGATION_MUST_BE_REJECTED");
+  assert.equal(ownerPermissionAttempt.code, "OWNER_PERMISSION_NOT_DELEGABLE");
+  assert.deepEqual(Object.keys(ownerPermissionAttempt).sort(), ["code", "error"]);
+
+  const capabilityHeaders = {
+    Authorization: `Bearer ${ordinaryToken}`,
+    Accept: "application/json",
+    "X-Real-IP": sessionRealIps.ordinaryAdmin,
+  };
   const commandCenterResponse = await api("/api/admin/command-center", { headers: capabilityHeaders });
   const commandCenterBody = await readJson(commandCenterResponse);
   assert.equal(commandCenterResponse.status, 403, "INCOMPLETE_COMMAND_CENTER_SET_MUST_BE_DENIED");
@@ -1195,61 +1398,75 @@ try {
     "AGENTS_VIEW_MUST_HIDE_INTERNAL_AGENTS",
   );
 
-  const unlockedInternalCatalogs = {};
-  for (const pathname of [
+  const internalCatalogPaths = [
     "/api/admin/categories?include_internal=1",
     "/api/admin/nav-items?include_internal=1",
     "/api/admin/agents?include_internal=1",
-  ]) {
+  ];
+  for (const pathname of internalCatalogPaths) {
     const lockedResponse = await api(pathname, { headers: capabilityHeaders });
     const lockedBody = await readJson(lockedResponse);
-    assert.equal(lockedResponse.status, 428, `${pathname}:INTERNAL_CATALOG_STEP_UP_REQUIRED`);
-    assert.equal(lockedBody.code, "ADMIN_STEP_UP_REQUIRED", `${pathname}:STEP_UP_CODE_REQUIRED`);
-    assert.deepEqual(Object.keys(lockedBody).sort(), ["code", "error"], `${pathname}:STEP_UP_DETAILS_MUST_BE_CONCEALED`);
+    assert.equal(lockedResponse.status, 403, `${pathname}:OWNER_PERMISSION_REQUIRED`);
+    assert.equal(lockedBody.code, "SUPER_ADMIN_REQUIRED", `${pathname}:OWNER_LEVEL_CODE_REQUIRED`);
+    assert.deepEqual(Object.keys(lockedBody).sort(), ["code", "error"], `${pathname}:OWNER_DENIAL_DETAILS_MUST_BE_CONCEALED`);
   }
 
   const capabilityUnlockResponse = await api("/api/admin/access-control/unlock", {
     method: "POST",
     headers: { ...browserWriteHeaders, Authorization: `Bearer ${ordinaryToken}` },
-    body: JSON.stringify({ password: fixturePassword, mode: "login" }),
+    body: JSON.stringify({ password: fixturePassword, mode: "login", durationMinutes: 10 }),
   });
   const capabilityUnlock = await readJson(capabilityUnlockResponse);
-  assert.equal(capabilityUnlockResponse.status, 200, `CAPABILITY_STEP_UP_REQUIRED:${capabilityUnlockResponse.status}:${JSON.stringify(capabilityUnlock)}`);
+  assert.equal(capabilityUnlockResponse.status, 200, `ORDINARY_STEP_UP_REQUIRED:${capabilityUnlockResponse.status}:${JSON.stringify(capabilityUnlock)}`);
+  assert.equal(capabilityUnlock.durationMinutes, 10, "ORDINARY_STEP_UP_DURATION_REQUIRED");
   const capabilityStepUpToken = cookieValue(capabilityUnlockResponse.headers.get("set-cookie"), "zimeiti_admin_step_up");
-  assert.ok(capabilityStepUpToken.length > 20, "CAPABILITY_STEP_UP_TOKEN_REQUIRED");
-  for (const pathname of [
-    "/api/admin/categories?include_internal=1",
-    "/api/admin/nav-items?include_internal=1",
-    "/api/admin/agents?include_internal=1",
-  ]) {
+  assert.ok(capabilityStepUpToken.length > 20, "ORDINARY_STEP_UP_TOKEN_REQUIRED");
+  for (const pathname of internalCatalogPaths) {
     const unlockedResponse = await api(pathname, {
       headers: { ...capabilityHeaders, "x-admin-step-up": capabilityStepUpToken },
     });
-    assert.equal(unlockedResponse.status, 200, `${pathname}:AUTHORIZED_INTERNAL_CATALOG_REQUIRED`);
-    unlockedInternalCatalogs[new URL(pathname, origin).pathname] = await readJson(unlockedResponse);
+    const unlockedBody = await readJson(unlockedResponse);
+    assert.equal(unlockedResponse.status, 403, `${pathname}:UNLOCK_MUST_NOT_CROSS_OWNER_BOUNDARY`);
+    assert.equal(unlockedBody.code, "SUPER_ADMIN_REQUIRED", `${pathname}:UNLOCKED_OWNER_LEVEL_CODE_REQUIRED`);
+    assert.deepEqual(Object.keys(unlockedBody).sort(), ["code", "error"], `${pathname}:UNLOCKED_OWNER_DENIAL_DETAILS_MUST_BE_CONCEALED`);
   }
-  const publicCategoryNames = new Set((publicCategories.categories || []).map((category) => category?.name));
+
+  /*
+   * Public catalogs remain usable with the delegated read permission. Keep
+   * the evidence below separate from the owner-only internal catalog checks.
+   */
   const internalRowEvidence = {
-    categories: (unlockedInternalCatalogs["/api/admin/categories"]?.categories || [])
-      .filter((category) => (
-        category?.visibility === "private" || category?.is_active !== true || category?.name === "自用"
-      )).length,
-    navigation: (unlockedInternalCatalogs["/api/admin/nav-items"]?.navItems || [])
-      .filter((item) => item?.status === "hidden" || item?.is_active !== true).length,
-    agents: (unlockedInternalCatalogs["/api/admin/agents"]?.agents || [])
-      .filter((agent) => agent?.user_access === "hidden" || !publicCategoryNames.has(agent?.category)).length,
+    categories: 0,
+    navigation: 0,
+    agents: 0,
   };
-  assert.ok(internalRowEvidence.categories > 0, "AUTHORIZED_INTERNAL_CATEGORY_ROWS_REQUIRED");
-  assert.ok(internalRowEvidence.agents > 0, "AUTHORIZED_INTERNAL_AGENT_ROWS_REQUIRED");
   report.api.capabilityTransition = {
     permissionKeys: capabilityPermissions,
     commandCenterIncompleteSetConcealed: true,
     publicCatalogFiltered: true,
+    ownerPermissionDelegationRejected: true,
     internalCatalogLockedWithoutStepUp: true,
-    internalCatalogVisibleAfterStepUp: true,
-    internalRowsObservedAfterStepUp: internalRowEvidence.categories > 0 && internalRowEvidence.agents > 0,
+    internalCatalogStillLockedAfterStepUp: true,
+    ordinaryUnlockCannotCrossOwnerBoundary: true,
     internalRowEvidence,
   };
+
+  const announcementEventInterceptions = [
+    ...(ordinaryAudit?.announcementEventInterceptions || []),
+    ...(superAudit?.announcementEventInterceptions || []),
+  ];
+  report.evidence.announcementEventIsolation = {
+    interceptedCount: announcementEventInterceptions.length,
+    contexts: {
+      ordinaryAdmin: ordinaryAudit?.announcementEventInterceptions.length || 0,
+      superAdmin: superAudit?.announcementEventInterceptions.length || 0,
+    },
+    intercepted: announcementEventInterceptions.every((entry) => entry.intercepted === true),
+    serverReached: announcementEventInterceptions.some((entry) => entry.serverReached !== false),
+  };
+  assert.ok(announcementEventInterceptions.length > 0, "ANNOUNCEMENT_EVENT_INTERCEPTION_EVIDENCE_REQUIRED");
+  assert.equal(report.evidence.announcementEventIsolation.intercepted, true, "ANNOUNCEMENT_EVENTS_MUST_ALL_BE_INTERCEPTED");
+  assert.equal(report.evidence.announcementEventIsolation.serverReached, false, "ANNOUNCEMENT_EVENT_SERVER_MUST_NOT_BE_REACHED");
 
   report.passed = true;
 } catch (error) {
@@ -1278,6 +1495,7 @@ try {
       await db.query("BEGIN");
       await db.query("SELECT set_config('app.admin_governance_write','on',true)");
       if (fixtureUserId) {
+        await db.query("DELETE FROM public.announcement_delivery_events WHERE user_id=$1", [fixtureUserId]);
         await db.query("DELETE FROM public.login_logs WHERE user_id=$1", [fixtureUserId]);
         await db.query("DELETE FROM public.admin_step_up_sessions WHERE actor_id=$1", [fixtureUserId]);
         await db.query("DELETE FROM public.user_auth_sessions WHERE user_id=$1", [fixtureUserId]);
@@ -1298,6 +1516,7 @@ try {
           (SELECT count(*)::int FROM public.login_logs WHERE $1::text <> '' AND user_id=$1) AS login_logs,
           (SELECT count(*)::int FROM public.member_permission_assignments WHERE $1::text <> '' AND user_id=$1) AS member_permission_assignments,
           (SELECT count(*)::int FROM public.member_permission_events WHERE $1::text <> '' AND user_id=$1) AS member_permission_events,
+          (SELECT count(*)::int FROM public.announcement_delivery_events WHERE $1::text <> '' AND user_id=$1) AS announcement_delivery_events,
           (SELECT count(*)::int FROM public.admin_governance_audit WHERE $1::text <> '' AND (actor_id=$1 OR target_user_id=$1)) AS immutable_audit_rows,
           (SELECT count(*)::int FROM public.admin_step_up_sessions WHERE $2::text <> '' AND token_hash=$2) AS super_step_up_sessions,
           (SELECT count(*)::int FROM public.users WHERE username LIKE 'codex_role_hide_%') AS matching_fixture_users`,
@@ -1310,6 +1529,7 @@ try {
       assert.equal(Number(remaining.login_logs), 0, "FIXTURE_LOGIN_LOG_CLEANUP_REQUIRED");
       assert.equal(Number(remaining.member_permission_assignments), 0, "FIXTURE_MEMBER_PERMISSION_ASSIGNMENT_CLEANUP_REQUIRED");
       assert.equal(Number(remaining.member_permission_events), 0, "FIXTURE_MEMBER_PERMISSION_EVENT_CLEANUP_REQUIRED");
+      assert.equal(Number(remaining.announcement_delivery_events), 0, "FIXTURE_ANNOUNCEMENT_DELIVERY_EVENT_CLEANUP_REQUIRED");
       assert.equal(Number(remaining.super_step_up_sessions), 0, "SUPER_STEP_UP_CLEANUP_REQUIRED");
       assert.equal(Number(remaining.matching_fixture_users), 0, "STALE_FIXTURE_USER_CLEANUP_REQUIRED");
       report.cleanup = {
@@ -1322,6 +1542,7 @@ try {
         fixtureLoginLogsRemaining: Number(remaining.login_logs),
         fixtureMemberPermissionAssignmentsRemaining: Number(remaining.member_permission_assignments),
         fixtureMemberPermissionEventsRemaining: Number(remaining.member_permission_events),
+        fixtureAnnouncementDeliveryEventsRemaining: Number(remaining.announcement_delivery_events),
         matchingFixtureUsersRemaining: Number(remaining.matching_fixture_users),
         immutableGovernanceAuditRowsRetained: Number(remaining.immutable_audit_rows),
         superStepUpSessionsRemaining: Number(remaining.super_step_up_sessions),

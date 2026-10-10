@@ -63,26 +63,30 @@ assert.match(imageRoute, /expectedPixelSize: expectedImagePixelSize/u);
 assert.match(imageRoute, /coverText: exactCoverText/u);
 assert.match(imageRoute, /billed:\s*false/u);
 
-assert.match(historyRoute, /WORKBENCH_VIDEO_HISTORY_RETENTION_DAYS\s*=\s*3/u);
 assert.match(historyRoute, /\.eq\("user_id", userId\)/u);
 assert.match(historyRoute, /task_label\.like\.分镜工作台%/u);
-assert.match(historyRoute, /\.gte\("created_at", historyCutoff\)/u);
+assert.match(historyRoute, /\.is\("source_expired_at", null\)/u);
 assert.match(historyRoute, /const terminalStatuses = \["completed", "failed", "cancelled", "expired"\]/u);
 assert.match(historyRoute, /\.in\("status", \["pending", "queued", "processing", "generating", "finalizing", "billing_pending"\]\)/u);
 assert.match(historyRoute, /createVideoAccessUrl/u);
 assert.match(historyRoute, /scope:\s*"thumbnail"/u);
 assert.match(thumbnailRoute, /authorizeVideoMediaRequest\(request, taskId, "thumbnail"\)/u);
-assert.match(thumbnailRoute, /task\.user_id !== user\.userId && user\.role !== "admin"/u);
+assert.match(thumbnailRoute, /authorizeMemberContentAccess/u);
+assert.match(thumbnailRoute, /authorizeMemberContentDiscovery/u);
+assert.match(thumbnailRoute, /task = await findTask\(false\)/u);
 assert.match(thumbnailRoute, /extractVideoThumbnail/u);
 assert.match(thumbnailRoute, /status[^\n]*completed/u);
 assert.match(accountHistorySource, /const visibleTasks = tasks/u);
-assert.match(accountHistorySource, /retentionDays=\{retainedWorkbenchHistory \? 3 : undefined\}/u);
+assert.doesNotMatch(accountHistorySource, /retentionDays/u);
 
 assert.match(videoModelsRoute, /secure_skill_doubao_seedance"\) return new Set\(\["720p"\]\)/u);
 assert.match(videoModelsRoute, /secure_skill_enterprise_video" && modelName === "seedance-2\.5"\) return new Set\(\["720p"\]\)/u);
 assert.match(videoModelsRoute, /secure_skill_seedance_video"\) return new Set\(\["480p", "720p"\]\)/u);
 assert.match(storyboardSource, /imageExactText/u);
-assert.match(storyboardSource, /sbw-progress-track/u);
+assert.match(storyboardSource, /imageTextLayoutEnabled/u);
+assert.match(storyboardSource, /默认关闭；普通生图只生成视觉画面/u);
+assert.match(storyboardSource, /\.\.\.\(requestSnapshot\.exactText \? \{ coverText: requestSnapshot\.exactText \} : \{\}\)/u);
+assert.doesNotMatch(storyboardSource, /coverText:\s*requestSnapshot\.exactText\s*\|\|\s*""/u);
 assert.match(storyboardSource, /实际图片[^`]+与 \$\{requestSnapshot\.aspectRatio\} 不一致/u);
 
 console.log(JSON.stringify({
@@ -90,10 +94,9 @@ console.log(JSON.stringify({
   paidGenerationRequests: 0,
   imageOutputContract: true,
   secureSkillResolutionTier: true,
-  nestedVideoProgress: true,
-  storyboardHistoryRetentionDays: 3,
+  storyboardHistoryRetention: "upstream-source-validity",
   storyboardHistoryUserIsolation: true,
   storyboardVideoThumbnail: "owner-scoped frame extraction",
   adapterResolutionAllowlist: true,
-  exactTextComposition: true,
+  exactTextComposition: "explicit-opt-in",
 }, null, 2));

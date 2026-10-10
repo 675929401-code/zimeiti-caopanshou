@@ -56,6 +56,30 @@ const LEARNER_AGENT_NAVIGATION_KEYS = [
   "自用",
 ] as const;
 const LEARNER_AGENT_NAVIGATION_KEY_SET = new Set<string>(LEARNER_AGENT_NAVIGATION_KEYS);
+
+async function loadAdminAgentRevisions(token: string, agentIds: string[]): Promise<Map<string, number>> {
+  const wanted = new Set(agentIds);
+  const revisions = new Map<string, number>();
+  for (const path of ["/api/admin/agents", "/api/admin/agents?include_internal=1"]) {
+    if (revisions.size === wanted.size) break;
+    const response = await fetch(path, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      if (path.includes("include_internal")) break;
+      throw new Error(`AGENT_REVISION_READ_FAILED:${response.status}`);
+    }
+    const payload = await response.json() as { agents?: Array<{ id?: unknown; config_revision?: unknown }> };
+    for (const agent of payload.agents || []) {
+      const id = String(agent.id || "");
+      const revision = Number(agent.config_revision);
+      if (wanted.has(id) && Number.isSafeInteger(revision) && revision >= 1) revisions.set(id, revision);
+    }
+  }
+  if (revisions.size !== wanted.size) throw new Error("AGENT_EXPECTED_REVISION_REQUIRED");
+  return revisions;
+}
 type LearnerPermissionSnapshot = {
   identityKey: string;
   status: "idle" | "loading" | "ready" | "error";
@@ -78,7 +102,6 @@ const CATEGORY_LUCIDE_ICONS = {
 };
 const MARKETPLACE_HIGH_PRIORITY_AVATAR_COUNT = 4;
 const MARKETPLACE_ANIMATED_CARD_COUNT = 8;
-import { UserThemeSwitcher } from "@/components/user-theme-switcher";
 import { ToolboxMenu } from "@/components/toolbox-menu";
 
 // 仅管理员进入布局编辑模式时才需要这组拖拽编辑依赖，
@@ -505,6 +528,13 @@ export function AgentMarketplace() {
   // 从服务器加载UI偏好（统一入口，服务器数据优先于localStorage）
   useEffect(() => {
     const controller = new AbortController();
+    // Forced session eviction returns to the public home with a full-page
+    // navigation. React does not get a reliable unmount cleanup in that path,
+    // so cancel this optional preference read before the browser tears it down
+    // and reports a benign `Failed to fetch` as a product error.
+    const abortForPageExit = () => controller.abort();
+    window.addEventListener("beforeunload", abortForPageExit);
+    window.addEventListener("pagehide", abortForPageExit);
     fetch("/api/settings/ui-preferences", { signal: controller.signal })
       .then((r) => r.json())
       .then((d) => {
@@ -589,11 +619,14 @@ export function AgentMarketplace() {
         }
       })
       .catch((e: unknown) => {
-        if (!controller.signal.aborted) {
-          console.error("[agent-marketplace] loadUIPrefs failed:", e instanceof Error ? e.message : e);
-        }
+        if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+        console.error("[agent-marketplace] loadUIPrefs failed:", e instanceof Error ? e.message : e);
       });
-    return () => controller.abort();
+    return () => {
+      window.removeEventListener("beforeunload", abortForPageExit);
+      window.removeEventListener("pagehide", abortForPageExit);
+      controller.abort();
+    };
   }, [isAdmin, saveUIPrefs]);
 
   useEffect(() => {
@@ -885,8 +918,16 @@ export function AgentMarketplace() {
   const handleAgentDragOver = (e: React.DragEvent, agentId: string) => { e.preventDefault(); setDragOverAgentKey(agentId); };
   const handleAgentDrop = async (targetId: string) => {
     if (!dragAgentKey || dragAgentKey === targetId) { setDragAgentKey(null); setDragOverAgentKey(null); return; }
-    // 基于当前 sortedAgents 的顺序
-    const currentIds = sortedAgentIds;
+    // Persist the complete stable order for the affected category. The
+    // displayed list may be narrowed by search/favorites/read-only filters and
+    // must never become the source of truth for a category-wide reorder.
+    const dragged = agents.find((agent) => agent.id === dragAgentKey);
+    const target = agents.find((agent) => agent.id === targetId);
+    if (!dragged || !target || dragged.category !== target.category) return;
+    const currentIds = agents
+      .filter((agent) => agent.category === dragged.category)
+      .sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0) || left.id.localeCompare(right.id))
+      .map((agent) => agent.id);
     const newOrder = [...currentIds];
     const fromIdx = newOrder.indexOf(dragAgentKey);
     const toIdx = newOrder.indexOf(targetId);
@@ -895,37 +936,37 @@ export function AgentMarketplace() {
     newOrder.splice(toIdx, 0, dragAgentKey);
 
     // 管理员：持久化排序到数据库
+    let persisted = !isAdmin;
     if (isAdmin && auth.token) {
       try {
-        await fetch("/api/admin/agents/reorder", {
+        const revisions = await loadAdminAgentRevisions(auth.token, newOrder);
+        const response = await fetch("/api/admin/agents/reorder", {
           method: "PUT",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
-          body: JSON.stringify({ agentIds: newOrder }),
+          body: JSON.stringify({
+            agents: newOrder.map((id) => ({ id, expected_revision: revisions.get(id) })),
+          }),
         });
+        persisted = response.ok;
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          toast.error(response.status === 409 ? "排序已被另一端更新，请刷新后重试" : (payload.error || "排序保存失败"));
+        }
       } catch (e) {
         console.error("[agent-marketplace] reorder failed:", e);
+        toast.error("无法读取最新配置版本，排序未保存");
       }
     }
 
-    // 立即更新本地排序（乐观更新）
-    // 计算新的 sort_order：基于目标位置前后的 sort_order 插值
-    const sortedList = [...sortedAgents];
-    const draggedAgent = sortedList.find(a => a.id === dragAgentKey);
-    if (draggedAgent) {
-      // 重新计算新位置后的 sort_order
-      const reordered = [...sortedList];
-      const srcIdx = reordered.findIndex(a => a.id === dragAgentKey);
-      const dstIdx = reordered.findIndex(a => a.id === targetId);
-      if (srcIdx !== -1 && dstIdx !== -1) {
-        reordered.splice(srcIdx, 1);
-        reordered.splice(dstIdx, 0, draggedAgent);
-        // 更新本地 agents 的 sort_order
-        reordered.forEach((agent, idx) => {
-          const original = agents.find(a => a.id === agent.id);
-          if (original) original.sort_order = idx * 10;
-        });
-        dispatch({ type: "SET_AGENTS", payload: [...agents] });
-      }
+    // Mirror the same complete category order locally. Updating only the
+    // currently displayed subset would leave duplicate/stale sort_order values
+    // until the next refresh.
+    if (persisted) {
+      newOrder.forEach((id, index) => {
+        const original = agents.find((agent) => agent.id === id);
+        if (original) original.sort_order = (index + 1) * 10;
+      });
+      dispatch({ type: "SET_AGENTS", payload: [...agents] });
     }
 
     setDragAgentKey(null);
@@ -943,10 +984,12 @@ export function AgentMarketplace() {
     const categoryName = catItem?.label || catKey;
     if (agent.category === categoryName) { setDragAgentToCatOver(null); setDragAgentKey(null); return; }
     try {
+      if (!auth.token) throw new Error("AUTH_TOKEN_REQUIRED");
+      const revisions = await loadAdminAgentRevisions(auth.token, [agent.id]);
       const res = await fetch("/api/admin/agents", {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
-        body: JSON.stringify({ agentId: agent.id, category: categoryName }),
+        body: JSON.stringify({ agentId: agent.id, expected_revision: revisions.get(agent.id), category: categoryName }),
       });
       if (res.ok) {
         // 计算新分类末尾的 sort_order
@@ -1132,10 +1175,6 @@ export function AgentMarketplace() {
       return [...filteredAgents].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
   }, [filteredAgents, visibleCatKeys, activeCategory]);
-
-  const sortedAgentIds = useMemo(() => {
-    return sortedAgents.map(a => a.id);
-  }, [sortedAgents]);
 
   const handleSelectAgent = (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
@@ -1455,10 +1494,6 @@ export function AgentMarketplace() {
       )}
       {/* 一级导航栏 */}
       <div className="nav-bar-wrapper relative shrink-0 overflow-x-auto nav-scroll-hide">
-        {/* 用户端只保留主题切换；导航管理、布局编辑和学习中心入口暂时收起。 */}
-        <div className="marketplace-nav-actions absolute top-3 right-4 z-10 flex items-center gap-2">
-          <UserThemeSwitcher />
-        </div>
         {/* 导航栏项 */}
         <div className="primary-nav-rail" data-nav-overflow={navOverflow.available ? "true" : "false"}>
           <button

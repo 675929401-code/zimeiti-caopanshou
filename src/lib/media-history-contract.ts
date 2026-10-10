@@ -16,9 +16,9 @@ export type MediaHistoryKind = "image" | "video";
 export type MediaHistoryStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
 export type MediaHistoryRetentionSource = "upstream" | "policy" | "none";
 
-export const MEDIA_HISTORY_FALLBACK_DAYS: Readonly<Record<MediaHistoryKind, number>> = {
+export const MEDIA_HISTORY_FALLBACK_DAYS: Readonly<Record<MediaHistoryKind, number | null>> = {
   image: 2,
-  video: 3,
+  video: null,
 };
 
 const TERMINAL_MEDIA_STATUSES = new Set<MediaHistoryStatus>(["completed", "failed", "cancelled"]);
@@ -73,8 +73,12 @@ export function resolveMediaHistoryRetention(input: {
 
   const anchor = validIsoTime(input.completedAt) || validIsoTime(input.createdAt);
   if (!anchor) return { expiresAt: null, retentionSource: "none", expired: false };
+  const fallbackDays = MEDIA_HISTORY_FALLBACK_DAYS[input.kind];
+  if (fallbackDays === null) {
+    return { expiresAt: null, retentionSource: "none", expired: false };
+  }
   const expiresAt = new Date(
-    Date.parse(anchor) + MEDIA_HISTORY_FALLBACK_DAYS[input.kind] * 24 * 60 * 60 * 1000,
+    Date.parse(anchor) + fallbackDays * 24 * 60 * 60 * 1000,
   ).toISOString();
   return {
     expiresAt,

@@ -2669,7 +2669,7 @@ function HistoryTab({ history, onRemove, onClear, loading, ready, error, retryRe
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] p-3 text-sm">
-        <div><p className="font-medium">账户历史</p><p role={error ? "alert" : "status"} className="mt-1 text-xs text-[var(--muted-foreground)]">{loading ? "正在读取历史…" : error || "已同步"}</p></div>
+        <div><p className="font-medium">账户历史</p><p role={error ? "alert" : "status"} className="mt-1 text-xs text-[var(--muted-foreground)]">{loading ? "正在读取历史…" : error || "文案记录保留 10 天；视频提取仅供当次预览和下载，不保存文件或历史结果"}</p></div>
         <Button type="button" size="sm" variant="outline" disabled={loading} onClick={onRefresh}>{error ? "重试" : "刷新历史"}</Button>
       </div>
       {!retryReady && retryUnavailableReason && (
@@ -2832,7 +2832,7 @@ function VideoResultCard({ item }: { item: ExtractResult }) {
         error: hasVideo ? undefined : '这次提取没有可用的视频下载链接。' };
     } else {
       item = { ...item, pending: false, attemptState: 'succeeded', status: 'error',
-        error: '任务已结束，但结果记录中没有可交付的视频。' };
+        error: attempt.data.contentUnavailableReason || '任务已结束，但结果记录中没有可交付的视频。' };
     }
   }
   if (attempt.data?.state === 'failed') {

@@ -275,6 +275,15 @@ async function installZeroCostFixtures(page: Page, evidence: {
       } }));
       return;
     }
+    if (request.method() === "GET" && url.pathname.startsWith("/api/branding/assets/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml; charset=utf-8",
+        headers: { "Cache-Control": "no-store" },
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#168D7A"/><path d="M18 42 32 16l14 26H18Z" fill="#EAF8F5"/></svg>',
+      });
+      return;
+    }
     if (url.pathname === "/api/product-usage/events" && request.method() === "POST") {
       await route.fulfill(jsonResponse({ success: true, fixture: true }));
       return;

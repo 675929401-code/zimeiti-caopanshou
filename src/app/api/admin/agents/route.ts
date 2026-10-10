@@ -1,5 +1,8 @@
 import { canonicalAgentModelBinding } from '@/lib/agent-model-binding';
-import { configurationSourceStatus } from '@/storage/database/configuration-source';
+import {
+  configurationSourceStatus,
+  sharedConfigurationEnabled,
+} from '@/storage/database/configuration-source';
 // [v2.5.1-patch] integer bug fix + hybrid image routing - 2026-08-04
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
@@ -12,6 +15,14 @@ import { invalidateBotsCache } from '@/lib/bots-cache';
 import { normalizeAgentPresetFields } from '@/lib/agent-preset-schema';
 import { visibleAdminAgentRows } from '@/lib/admin-agent-catalog-visibility';
 import { authorizeAdminCapability } from '@/lib/server/admin-governance-authority';
+import { invalidateAgentConfigCache } from '@/app/api/llm/llm-state';
+import {
+  agentRevisionConflict,
+  deleteAgentByRevision,
+  expectedAgentRevisionRequired,
+  parseExpectedAgentRevision,
+  updateAgentByRevision,
+} from '@/lib/server/agent-config-cas';
 
 const MASKED_SECRET = /^(?:[*•●·]+|已配置)$/u;
 
@@ -34,6 +45,7 @@ const AGENT_PUBLIC_COLUMNS = [
   'file_parsing',
   'cover_url',
   'guide_message',
+  'config_revision',
 ] as const;
 
 const AGENT_CONFIGURATION_COLUMNS = [
@@ -113,6 +125,35 @@ const AGENT_CONFIGURATION_INPUT_KEYS = [
   'enable_knowledge_base', 'enableKnowledgeBase',
   'knowledge_base_id', 'knowledgeBaseId',
 ] as const;
+
+const AGENT_REVISION_SCHEMA_ERROR_CODES = new Set([
+  '42703',
+  'PGRST204',
+]);
+
+function isAgentRevisionSchemaMissing(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const record = error as Record<string, unknown>;
+  const code = String(record.code || '');
+  const diagnostic = [record.message, record.details, record.hint]
+    .map((value) => String(value || ''))
+    .join(' ');
+  return AGENT_REVISION_SCHEMA_ERROR_CODES.has(code)
+    || /config_revision.*(?:schema cache|does not exist|could not find)|(?:schema cache|does not exist|could not find).*config_revision/iu.test(diagnostic);
+}
+
+function controlledLegacyAgentWritesEnabled(): boolean {
+  return !sharedConfigurationEnabled()
+    && process.env.LOCAL_ACCEPTANCE_PREVIEW === 'true'
+    && process.env.ALLOW_LEGACY_AGENT_CONFIG_WRITES === '1';
+}
+
+function agentRevisionMigrationRequired(): NextResponse {
+  return NextResponse.json({
+    error: '共享智能体配置版本字段尚未就绪，已阻止可能覆盖他人修改的保存。',
+    code: 'AGENT_CONFIG_REVISION_MIGRATION_REQUIRED',
+  }, { status: 503 });
+}
 
 function hasOwnInput(body: Record<string, unknown>, keys: readonly string[]): boolean {
   return keys.some((key) => Object.prototype.hasOwnProperty.call(body, key));
@@ -319,7 +360,18 @@ export async function GET(request: NextRequest) {
       categoryRows = categoryResult.data || [];
     }
 
-    const { data, error } = await query;
+    let queryResult = await query;
+    if (queryResult.error && isAgentRevisionSchemaMissing(queryResult.error)) {
+      if (!controlledLegacyAgentWritesEnabled()) return agentRevisionMigrationRequired();
+
+      const legacyColumns = selectedColumns.filter((column) => column !== 'config_revision');
+      let legacyQuery = client.from('agents').select(Array.from(new Set(legacyColumns)).join(','));
+      legacyQuery = showTrash
+        ? legacyQuery.not('deleted_at', 'is', null)
+        : legacyQuery.is('deleted_at', null);
+      queryResult = await legacyQuery.order('sort_order', { ascending: true });
+    }
+    const { data, error } = queryResult;
 
     if (error) {
       console.error('List agents Supabase error:', error);
@@ -431,12 +483,21 @@ export async function POST(request: NextRequest) {
       return isNaN(n) ? null : n;
     };
 
+    const client = getSupabaseClient();
+    const revisionProbe = await client.from('agents').select('config_revision').limit(1);
+    if (revisionProbe.error) {
+      if (isAgentRevisionSchemaMissing(revisionProbe.error)) {
+        if (!controlledLegacyAgentWritesEnabled()) return agentRevisionMigrationRequired();
+      } else {
+        return NextResponse.json({ error: '读取智能体配置版本失败' }, { status: 500 });
+      }
+    }
+
     // Auto-store external avatar URL to object storage
     const agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const storedAvatar = await storeAvatarIfNeeded(avatar || '', agentId, admin.userId);
     const storedCover = await assertManagedCoverReference(cover_url, admin.userId);
 
-    const client = getSupabaseClient();
     let inheritedApiToken = '';
     if (credential_source_agent_id) {
       const { data: sourceAgent } = await client
@@ -539,9 +600,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `创建智能体失败: ${error.message}` }, { status: 500 });
     }
 
-    await persistPromptVersion(client, agentId, String(data.system_prompt || ''));
+    // The revision migration records the prompt inside the same transaction as
+    // the agent insert. Only an explicitly enabled local legacy database keeps
+    // the old best-effort application-side history path.
+    if (!Number.isSafeInteger(Number(data.config_revision))) {
+      if (!controlledLegacyAgentWritesEnabled()) return agentRevisionMigrationRequired();
+      await persistPromptVersion(client, agentId, String(data.system_prompt || ''));
+    }
 
     // 新建智能体后失效前台缓存。
+    invalidateAgentConfigCache(agentId);
     invalidateBotsCache();
 
     return NextResponse.json({ success: true, agent: publicAgent(data as Record<string, unknown>) });
@@ -577,11 +645,22 @@ export async function PUT(request: NextRequest) {
     }
 
     const client = getSupabaseClient();
-    const { data: currentAgent, error: currentAgentError } = await client
+    let revisionManaged = true;
+    let currentAgentResult = await client
       .from('agents')
-      .select('id,category,user_access,avatar,cover_url')
+      .select('id,category,user_access,avatar,cover_url,config_revision')
       .eq('id', agentId)
       .maybeSingle();
+    if (currentAgentResult.error && isAgentRevisionSchemaMissing(currentAgentResult.error)) {
+      if (!controlledLegacyAgentWritesEnabled()) return agentRevisionMigrationRequired();
+      revisionManaged = false;
+      currentAgentResult = await client
+        .from('agents')
+        .select('id,category,user_access,avatar,cover_url')
+        .eq('id', agentId)
+        .maybeSingle();
+    }
+    const { data: currentAgent, error: currentAgentError } = currentAgentResult;
     if (currentAgentError) {
       return NextResponse.json({ error: '读取智能体图片状态失败' }, { status: 500 });
     }
@@ -597,6 +676,10 @@ export async function PUT(request: NextRequest) {
     ) {
       const internalAccess = await authorizeInternalAgentMutation(request, 'internal_agent_update');
       if (!internalAccess.ok) return internalAccess.response;
+    }
+    const expectedRevision = parseExpectedAgentRevision(body as Record<string, unknown>);
+    if (revisionManaged && expectedRevision === null) {
+      return expectedAgentRevisionRequired(currentAgent.config_revision);
     }
     const fields: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
@@ -734,7 +817,7 @@ export async function PUT(request: NextRequest) {
     // Preserve the prompt that is about to be replaced. This keeps the
     // administrator's cloud history usable even when the agent had no prior
     // prompt_versions rows.
-    if (fields.system_prompt !== undefined) {
+    if (!revisionManaged && fields.system_prompt !== undefined) {
       const { data: previousAgent, error: previousAgentError } = await client
         .from('agents')
         .select('system_prompt')
@@ -748,18 +831,34 @@ export async function PUT(request: NextRequest) {
       await persistPromptVersion(client, agentId, String(previousAgent?.system_prompt || ''));
     }
 
-    const { data, error } = await client
+    let updateQuery = client
       .from('agents')
       .update(fields)
-      .eq('id', agentId)
+      .eq('id', agentId);
+    if (revisionManaged) {
+      updateQuery = updateQuery.eq('config_revision', expectedRevision);
+    }
+    const { data, error } = await updateQuery
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       return NextResponse.json({ error: `更新智能体失败: ${error.message}` }, { status: 500 });
     }
+    if (!data) {
+      const latest = await client
+        .from('agents')
+        .select('config_revision')
+        .eq('id', agentId)
+        .maybeSingle();
+      return agentRevisionConflict(expectedRevision as number, latest.data?.config_revision ?? null);
+    }
 
-    if (fields.system_prompt !== undefined) {
+    // 数据库写入成功后先失效 LLM 运行缓存，确保名称、系统提示词及其他配置
+    // 在下一次请求中重新读取；失效函数不读取、返回或记录提示词明文。
+    invalidateAgentConfigCache(agentId);
+
+    if (!revisionManaged && fields.system_prompt !== undefined) {
       await persistPromptVersion(client, agentId, String(data.system_prompt || ''));
     }
 
@@ -797,23 +896,28 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const body = await request.json().catch(() => ({})) as { agentId?: string; id?: string; permanent?: boolean };
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const agentId = searchParams.get('id') || body.agentId || body.id;
     const permanentParam = searchParams.get('permanent');
     const permanent = permanentParam === '1' || permanentParam === 'true' || body.permanent === true;
 
-    if (!agentId) {
+    if (typeof agentId !== 'string' || !agentId) {
       return NextResponse.json({ error: '智能体 ID 不能为空' }, { status: 400 });
     }
 
     const client = getSupabaseClient();
     const { data: currentAgent, error: currentAgentError } = await client
       .from('agents')
-      .select('id,category,user_access')
+      .select('id,category,user_access,config_revision')
       .eq('id', agentId)
       .maybeSingle();
     if (currentAgentError) return NextResponse.json({ error: '读取智能体失败' }, { status: 500 });
     if (!currentAgent) return NextResponse.json({ error: '智能体不存在或已删除' }, { status: 404 });
+    const expectedRevision = parseExpectedAgentRevision({
+      ...body,
+      expected_revision: searchParams.get('expected_revision') ?? body.expected_revision,
+    });
+    if (expectedRevision === null) return expectedAgentRevisionRequired(currentAgent.config_revision);
     if (
       currentAgent.user_access === 'hidden'
       || await categoryRequiresInternalAccess(currentAgent.category)
@@ -822,21 +926,26 @@ export async function DELETE(request: NextRequest) {
       if (!internalAccess.ok) return internalAccess.response;
     }
     const mutation = permanent
-      ? client.from('agents').delete().eq('id', agentId).not('deleted_at', 'is', null).select('id')
-      : client.from('agents').update({ deleted_at: new Date().toISOString() }).eq('id', agentId).is('deleted_at', null).select('id');
-    const { data, error } = await mutation;
+      ? await deleteAgentByRevision({ agentId, expectedRevision, deletedScope: 'deleted' })
+      : await updateAgentByRevision({
+          agentId,
+          expectedRevision,
+          fields: { deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+          deletedScope: 'active',
+        });
+    const { data, error } = mutation;
 
     if (error) {
       return NextResponse.json({ error: `${permanent ? '永久删除' : '删除'}智能体失败: ${error.message}` }, { status: 500 });
     }
 
-    if (!data || data.length === 0) {
-      return NextResponse.json(
-        { error: permanent ? '回收站中未找到该智能体' : '智能体不存在或已删除' },
-        { status: 404 },
-      );
+    if (!data) {
+      return agentRevisionConflict(expectedRevision, mutation.currentRevision, {
+        operation: permanent ? 'permanent_delete' : 'soft_delete',
+      });
     }
 
+    invalidateAgentConfigCache(agentId);
     invalidateBotsCache();
 
     return NextResponse.json({ success: true, message: permanent ? '已永久删除' : '已移入回收站' });

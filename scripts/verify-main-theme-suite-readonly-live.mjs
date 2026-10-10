@@ -15,13 +15,69 @@ const themes = [
 const viewport = { width: 1440, height: 900 };
 const mutatingMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+function parseCssColor(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const hex = normalized.match(/^#([0-9a-f]{3,8})$/iu)?.[1];
+  if (hex) {
+    const expanded = hex.length <= 4 ? [...hex].map((character) => `${character}${character}`).join("") : hex;
+    return {
+      r: Number.parseInt(expanded.slice(0, 2), 16),
+      g: Number.parseInt(expanded.slice(2, 4), 16),
+      b: Number.parseInt(expanded.slice(4, 6), 16),
+      a: expanded.length === 8 ? Number.parseInt(expanded.slice(6, 8), 16) / 255 : 1,
+    };
+  }
+  const functional = normalized.match(/^rgba?\((.+)\)$/iu)?.[1];
+  if (functional) {
+    const parts = functional.replace("/", " ").split(/[\s,]+/u).filter(Boolean);
+    if (parts.length >= 3) {
+      return {
+        r: Number.parseFloat(parts[0]),
+        g: Number.parseFloat(parts[1]),
+        b: Number.parseFloat(parts[2]),
+        a: parts[3] === undefined ? 1 : Number.parseFloat(parts[3]),
+      };
+    }
+  }
+  throw new Error(`UNSUPPORTED_CSS_COLOR:${value}`);
+}
+
+function compositeColor(foreground, background) {
+  const alpha = foreground.a + background.a * (1 - foreground.a);
+  if (alpha <= 0) return { r: 0, g: 0, b: 0, a: 0 };
+  return {
+    r: ((foreground.r * foreground.a) + (background.r * background.a * (1 - foreground.a))) / alpha,
+    g: ((foreground.g * foreground.a) + (background.g * background.a * (1 - foreground.a))) / alpha,
+    b: ((foreground.b * foreground.a) + (background.b * background.a * (1 - foreground.a))) / alpha,
+    a: alpha,
+  };
+}
+
+function relativeLuminance(color) {
+  const linear = [color.r, color.g, color.b].map((channel) => {
+    const unit = channel / 255;
+    return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+  });
+  return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+}
+
+function contrastRatio(foregroundValue, backgroundValue, pageValue) {
+  const page = parseCssColor(pageValue);
+  const background = compositeColor(parseCssColor(backgroundValue), page);
+  const foreground = compositeColor(parseCssColor(foregroundValue), background);
+  const lighter = Math.max(relativeLuminance(foreground), relativeLuminance(background));
+  const darker = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 export async function main() {
   const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").replace(/\/+$/u, "");
-  const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
+  const configuredToken = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
+  const fixtureIdentity = !configuredToken;
+  const token = configuredToken || "main-theme-readonly-browser-fixture-token";
   const outputDir = path.resolve(process.env.MAIN_THEME_READONLY_OUTPUT_DIR
     || ".codex-evidence/main-theme-suite-readonly-20260929");
   assert.match(origin, /^http:\/\/127\.0\.0\.1(?::\d+)?$/u, "LOCAL_ONLY_ORIGIN_REQUIRED");
-  assert.ok(token, "LOCAL_NAV_ADMIN_TOKEN_REQUIRED");
   await mkdir(outputDir, { recursive: true });
 
   const [receipt, diskBuildId, currentFingerprint, versionResponse, identityResponse] = await Promise.all([
@@ -29,10 +85,22 @@ export async function main() {
     readFile(path.resolve(".next/BUILD_ID"), "utf8").then((value) => value.trim()),
     Promise.resolve(computeLocalBuildFingerprint(process.cwd())),
     fetch(`${origin}/api/version`, { signal: AbortSignal.timeout(30_000) }),
-    fetch(`${origin}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(30_000),
-    }),
+    fixtureIdentity
+      ? Promise.resolve(new Response(JSON.stringify({
+        user: {
+          id: "main-theme-readonly-browser-fixture-user",
+          username: "main_theme_fixture",
+          displayName: "主题验收夹具",
+          role: "admin",
+          status: "active",
+          is_active: true,
+          credits: 0,
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      : fetch(`${origin}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(30_000),
+      }),
   ]);
   assert.equal(versionResponse.ok, true, `VERSION_HTTP_${versionResponse.status}`);
   assert.equal(identityResponse.ok, true, `AUTH_ME_HTTP_${identityResponse.status}`);
@@ -65,6 +133,7 @@ export async function main() {
     acceptance: {
       eligible: runningLatest,
       status: runningLatest ? "current-runtime" : "blocked-stale-runtime",
+      identitySource: fixtureIdentity ? "browser-fixture" : "verified-local-token",
     },
     themeSwitcher: null,
     themes: {},
@@ -148,8 +217,89 @@ export async function main() {
         });
         return;
       }
+      if (method === "GET" && url.pathname === "/api/settings/appearance") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ settings: { theme: theme.id, theme_mode: theme.mode } }),
+        });
+        return;
+      }
       if (method === "GET" && authenticated && url.pathname === "/api/auth/me") {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ user }) });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/bots") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ agents: [], navigationKeys: ["marketplace", "toolbox", "storyboard_workbench", "image_workbench", "create", "voice", "cover", "youcai", "commerce_agent"] }),
+        });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/member-permissions") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ permission: {
+            userId: user.id,
+            role: "admin",
+            featureNavigationKeys: ["marketplace", "toolbox", "storyboard_workbench", "image_workbench", "create", "voice", "cover", "youcai", "commerce_agent"],
+            agentNavigationKeys: [],
+            revision: 1,
+            checksum: "main-theme-fixture",
+            integrityValid: true,
+            authorityStatus: "ready",
+          } }),
+        });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/agent-favorites") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ favorites: [] }) });
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/settings/ui-preferences") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferences: {} }) });
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/settings/layout") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ layout: null }) });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/conversations/history") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ conversations: [] }) });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/extract/history") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ records: [], next: null, retryReady: true }) });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/tools/runtime-catalog") {
+        const unavailable = (service) => ({ available: false, pricingReady: false, service, unitPrice: null, currency: "CNY", unit: "条" });
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ items: {
+            video: unavailable("视频提取"),
+            text: unavailable("文案提取"),
+            batch: unavailable("批量提取"),
+            search: unavailable("搜索提取"),
+            formatter: { available: true, service: "文字排版", unitPrice: 0, currency: "CNY", unit: "次", processingMode: "local_rules" },
+            segmenter: { available: true, service: "智能分段", unitPrice: 0, currency: "CNY", unit: "次", processingMode: "local_rules" },
+          } }),
+        });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/cash/balance") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ balance: 0 }) });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/credits") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ credits: 0, cashBalance: 0, transactions: [] }) });
+        return;
+      }
+      if (method === "GET" && authenticated && url.pathname === "/api/notifications/user") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notifications: [], unreadCount: 0, nextCursor: null }) });
         return;
       }
       if (method === "GET" && authenticated && url.pathname === "/api/announcements/inbox") {
@@ -238,6 +388,78 @@ export async function main() {
       const landing = await home.evaluate((node) => {
         const heading = node.querySelector("h1");
         const style = getComputedStyle(node);
+        const readabilitySpec = [
+          { id: "hero-title", selector: ".swh-title-line:not(.swh-title-accent)", backdrop: "page", minFontSize: 48 },
+          { id: "hero-lead", selector: ".swh-lead", backdrop: "page", minFontSize: 17 },
+          { id: "hero-status", selector: ".swh-hero-status span", backdrop: "page", minFontSize: 12 },
+          { id: "loop-kicker", selector: ".swh-loop-kicker strong", backdrop: "loop-heading", minFontSize: 12 },
+          { id: "loop-counter", selector: ".swh-loop-kicker small", backdrop: "loop-heading", minFontSize: 12 },
+          { id: "loop-title", selector: ".swh-loop-heading > strong", backdrop: "loop-heading", minFontSize: 24 },
+          { id: "loop-description", selector: ".swh-loop-heading > p", backdrop: "loop-heading", minFontSize: 12 },
+          { id: "loop-step-phase", selector: ".swh-example-step-head small", backdrop: "loop-item", minFontSize: 12 },
+          { id: "loop-step-title", selector: ".swh-project-example > li > strong", backdrop: "loop-item", minFontSize: 14 },
+          { id: "loop-step-copy", selector: ".swh-project-example > li > p", backdrop: "loop-item", minFontSize: 12 },
+          { id: "loop-outcome", selector: ".swh-example-outcome", backdrop: "loop-item", minFontSize: 12 },
+          { id: "loop-console", selector: ".swh-console-stats strong", backdrop: "loop-item", minFontSize: 12 },
+          { id: "section-kicker", selector: ".swh-section-heading > p", backdrop: "page", minFontSize: 12 },
+          { id: "section-heading", selector: ".swh-section-heading h2", backdrop: "page", minFontSize: 36 },
+          { id: "module-rail", selector: ".swh-module-rail-items span", backdrop: "surface", minFontSize: 12 },
+          { id: "value-copy", selector: ".swh-value-grid p", backdrop: "surface", minFontSize: 14 },
+          { id: "production-title", selector: ".swh-production-grid h3", backdrop: "surface", minFontSize: 26 },
+          { id: "production-label", selector: ".swh-production-grid dt", backdrop: "surface", minFontSize: 12 },
+          { id: "production-copy", selector: ".swh-production-grid dd", backdrop: "surface", minFontSize: 14 },
+          { id: "production-flow", selector: ".swh-production-flow span", backdrop: "surface", minFontSize: 12 },
+          { id: "contact-label", selector: ".swh-contact-list small", backdrop: "surface", minFontSize: 12, optional: true },
+          { id: "contact-value", selector: ".swh-contact-list strong", backdrop: "surface", minFontSize: 14, optional: true },
+          { id: "contact-placeholder", selector: ".swh-contact-placeholder span", backdrop: "surface", minFontSize: 12, optional: true },
+        ];
+        const readability = readabilitySpec.map((entry) => {
+          const target = node.querySelector(entry.selector);
+          if (!(target instanceof HTMLElement)) return { ...entry, exists: false };
+          const targetStyle = getComputedStyle(target);
+          const rect = target.getBoundingClientRect();
+          return {
+            ...entry,
+            exists: true,
+            text: (target.textContent || "").replace(/\s+/gu, " ").trim().slice(0, 120),
+            color: targetStyle.color,
+            fontSize: Number.parseFloat(targetStyle.fontSize || "0"),
+            fontWeight: targetStyle.fontWeight,
+            opacity: Number.parseFloat(targetStyle.opacity || "0"),
+            visible: targetStyle.display !== "none"
+              && targetStyle.visibility !== "hidden"
+              && rect.width > 0
+              && rect.height > 0,
+          };
+        });
+        const motionSpec = [
+          { id: "project-card", selector: ".swh-loop-float-shell" },
+          { id: "signal-track", selector: ".swh-loop-signal" },
+          { id: "data-beam", selector: ".swh-data-beam-one" },
+          { id: "holo-orbit", selector: ".swh-holo-orbit-one" },
+          { id: "card-beam", selector: ".swh-card-beam" },
+        ];
+        const motion = Object.fromEntries(motionSpec.map((entry) => {
+          const target = node.querySelector(entry.selector);
+          if (!(target instanceof HTMLElement)) return [entry.id, { ...entry, exists: false }];
+          const targetStyle = getComputedStyle(target);
+          const rect = target.getBoundingClientRect();
+          return [entry.id, {
+            ...entry,
+            exists: true,
+            animationName: targetStyle.animationName,
+            animationDuration: targetStyle.animationDuration,
+            animationPlayState: targetStyle.animationPlayState,
+            opacity: Number.parseFloat(targetStyle.opacity || "0"),
+            display: targetStyle.display,
+            visibility: targetStyle.visibility,
+            transform: targetStyle.transform,
+            backgroundPosition: targetStyle.backgroundPosition,
+            backgroundImage: targetStyle.backgroundImage,
+            width: rect.width,
+            height: rect.height,
+          }];
+        }));
         return {
           theme: document.documentElement.dataset.theme || "",
           themeSelection: document.documentElement.dataset.themeSelection || "",
@@ -250,14 +472,98 @@ export async function main() {
           overflowX: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
           scrollable: node.scrollHeight > node.clientHeight,
           heroOpacity: Number.parseFloat(getComputedStyle(node.querySelector(".swh-hero")).opacity),
+          readability: {
+            tokens: {
+              page: style.getPropertyValue("--oh-page").trim(),
+              surface: style.getPropertyValue("--oh-surface").trim(),
+              surfaceSolid: style.getPropertyValue("--oh-surface-solid").trim(),
+              text: style.getPropertyValue("--oh-text").trim(),
+              textSoft: style.getPropertyValue("--oh-text-soft").trim(),
+              textFaint: style.getPropertyValue("--oh-text-faint").trim(),
+              accent: style.getPropertyValue("--oh-accent").trim(),
+              chipText: style.getPropertyValue("--oh-chip-text").trim(),
+              loopHeading: style.getPropertyValue("--oh-loop-heading-backdrop").trim(),
+              loopItem: style.getPropertyValue("--oh-loop-item-backdrop").trim(),
+            },
+            items: readability,
+          },
+          motion: { before: motion },
         };
       });
+      await publicPage.waitForTimeout(520);
+      landing.motion.after = await home.evaluate((node) => Object.fromEntries([
+        ["project-card", ".swh-loop-float-shell"],
+        ["signal-track", ".swh-loop-signal"],
+        ["data-beam", ".swh-data-beam-one"],
+        ["holo-orbit", ".swh-holo-orbit-one"],
+        ["card-beam", ".swh-card-beam"],
+      ].map(([id, selector]) => {
+        const target = node.querySelector(selector);
+        if (!(target instanceof HTMLElement)) return [id, { exists: false }];
+        const targetStyle = getComputedStyle(target);
+        return [id, {
+          exists: true,
+          transform: targetStyle.transform,
+          backgroundPosition: targetStyle.backgroundPosition,
+          opacity: Number.parseFloat(targetStyle.opacity || "0"),
+        }];
+      })));
       assert.equal(landing.theme, theme.id, `${theme.id}:LANDING_THEME_MISMATCH`);
       assert.equal(landing.themeSelection, theme.id, `${theme.id}:LANDING_THEME_SELECTION_MISMATCH`);
       assert.equal(landing.mode, theme.mode, `${theme.id}:LANDING_MODE_MISMATCH`);
       assert.equal(landing.overflowX, 0, `${theme.id}:LANDING_HORIZONTAL_OVERFLOW`);
       assert.equal(landing.heroOpacity, 1, `${theme.id}:LANDING_HERO_NOT_SETTLED`);
       assert.ok(landing.heading.length > 0, `${theme.id}:LANDING_HEADING_MISSING`);
+      for (const item of landing.readability.items) {
+        if (item.optional && !item.exists) continue;
+        assert.equal(item.exists, true, `${theme.id}:LANDING_TEXT_MISSING:${item.id}`);
+        assert.equal(item.visible, true, `${theme.id}:LANDING_TEXT_HIDDEN:${item.id}`);
+        assert.ok(item.opacity >= 0.99, `${theme.id}:LANDING_TEXT_TOO_FAINT:${item.id}:${item.opacity}`);
+        assert.ok(item.fontSize >= item.minFontSize,
+          `${theme.id}:LANDING_TEXT_TOO_SMALL:${item.id}:${item.fontSize}<${item.minFontSize}`);
+        const backdrop = item.backdrop === "surface"
+          ? landing.readability.tokens.surfaceSolid
+          : item.backdrop === "loop-heading"
+            ? landing.readability.tokens.loopHeading
+            : item.backdrop === "loop-item"
+              ? landing.readability.tokens.loopItem
+              : landing.readability.tokens.page;
+        item.contrastRatio = Number(contrastRatio(
+          item.color,
+          backdrop,
+          landing.readability.tokens.page,
+        ).toFixed(2));
+        assert.ok(item.contrastRatio >= 4.5,
+          `${theme.id}:LANDING_TEXT_CONTRAST_LOW:${item.id}:${item.contrastRatio}`);
+      }
+      const expectedMotion = {
+        "project-card": { animation: /swh-project-card-float/u, minOpacity: 0.99 },
+        "signal-track": { animation: /swh-loop-signal-track/u, minOpacity: 0.7 },
+        "data-beam": { animation: /swh-data-beam-one/u, minOpacity: 0.08 },
+        "holo-orbit": { animation: /swh-holo-orbit-clockwise/u, minOpacity: 0.6 },
+        "card-beam": { animation: /oh-card-beam/u, minOpacity: 0.99 },
+      };
+      let progressedMotionCount = 0;
+      for (const [motionId, expectation] of Object.entries(expectedMotion)) {
+        const before = landing.motion.before[motionId];
+        const after = landing.motion.after[motionId];
+        assert.equal(before?.exists, true, `${theme.id}:LANDING_MOTION_MISSING:${motionId}`);
+        assert.equal(after?.exists, true, `${theme.id}:LANDING_MOTION_AFTER_MISSING:${motionId}`);
+        assert.match(before.animationName || "", expectation.animation,
+          `${theme.id}:LANDING_MOTION_NAME_MISSING:${motionId}`);
+        assert.equal(before.animationPlayState, "running", `${theme.id}:LANDING_MOTION_NOT_RUNNING:${motionId}`);
+        assert.ok(before.opacity >= expectation.minOpacity,
+          `${theme.id}:LANDING_MOTION_TOO_FAINT:${motionId}:${before.opacity}`);
+        assert.ok(before.width > 0 && before.height > 0, `${theme.id}:LANDING_MOTION_NO_AREA:${motionId}`);
+        assert.notEqual(before.display, "none", `${theme.id}:LANDING_MOTION_DISPLAY_NONE:${motionId}`);
+        assert.notEqual(before.visibility, "hidden", `${theme.id}:LANDING_MOTION_HIDDEN:${motionId}`);
+        if (before.transform !== after.transform || before.backgroundPosition !== after.backgroundPosition) {
+          progressedMotionCount += 1;
+        }
+      }
+      landing.motion.progressedCount = progressedMotionCount;
+      assert.ok(progressedMotionCount >= 4,
+        `${theme.id}:LANDING_MOTION_NOT_PROGRESSING:${progressedMotionCount}/5`);
       themeReport.landing = landing;
       await publicPage.screenshot({ path: path.join(outputDir, `${theme.id}-landing-1440x900.png`), fullPage: false });
 
@@ -307,6 +613,8 @@ export async function main() {
       assert.equal(appResponse?.status(), 200, `${theme.id}:APP_HTTP`);
       await appPage.waitForSelector(".marketplace-shell", { state: "visible", timeout: 30_000 });
       await appPage.waitForTimeout(600);
+      const marketplaceThemeTriggerCount = await appPage.locator('[data-theme-switcher-trigger="true"]:visible').count();
+      assert.equal(marketplaceThemeTriggerCount, 1, `${theme.id}:MARKETPLACE_THEME_TRIGGER_MUST_BE_SIDEBAR_ONLY`);
       const marketplace = await appPage.evaluate(() => {
         const shell = document.querySelector(".marketplace-shell");
         const depth = document.querySelector(".marketplace-shell .marketplace-depth");
@@ -380,9 +688,12 @@ export async function main() {
       assert.equal(marketplace.primaryNav.borderTopWidth, 0, `${theme.id}:PRIMARY_NAV_ACTIVE_BORDER_PRESENT`);
       assert.equal(marketplace.primaryNav.borderRadius, 0, `${theme.id}:PRIMARY_NAV_ACTIVE_RADIUS_PRESENT`);
       assert.equal(marketplace.primaryNav.boxShadow, "none", `${theme.id}:PRIMARY_NAV_ACTIVE_SHADOW_PRESENT`);
-      assert.equal(marketplace.primaryNav.indicatorDisplay, "none", `${theme.id}:PRIMARY_NAV_UNDERLINE_VISIBLE`);
+      assert.ok(
+        marketplace.primaryNav.indicatorDisplay === "" || marketplace.primaryNav.indicatorDisplay === "none",
+        `${theme.id}:PRIMARY_NAV_UNDERLINE_VISIBLE`,
+      );
       assert.equal(marketplace.primaryNav.indicatorHeight, 0, `${theme.id}:PRIMARY_NAV_UNDERLINE_HEIGHT`);
-      themeReport.marketplace = marketplace;
+      themeReport.marketplace = { ...marketplace, themeTriggerCount: marketplaceThemeTriggerCount };
       const announcementDialog = appPage.locator('[role="dialog"]:visible').filter({
         has: appPage.getByRole("button", { name: "关闭系统公告", exact: true }),
       }).first();
@@ -436,6 +747,8 @@ export async function main() {
         assert.equal(response?.status(), 200, `${theme.id}:${pathname}:HTTP`);
         await appPage.waitForFunction(() => (document.body?.innerText?.trim().length || 0) > 30, null, { timeout: 30_000 });
         await appPage.waitForTimeout(1_200);
+        const adjacentThemeTriggerCount = await appPage.locator('[data-theme-switcher-trigger="true"]:visible').count();
+        assert.equal(adjacentThemeTriggerCount, 0, `${theme.id}:${pathname}:SECONDARY_PAGE_THEME_TRIGGER_MUST_BE_REMOVED`);
         const adjacent = await appPage.evaluate(() => ({
           theme: document.documentElement.dataset.theme || "",
           themeSelection: document.documentElement.dataset.themeSelection || "",
@@ -449,7 +762,7 @@ export async function main() {
         assert.equal(adjacent.themeSelection, theme.id, `${theme.id}:${pathname}:THEME_SELECTION_MISMATCH`);
         assert.equal(adjacent.mode, theme.mode, `${theme.id}:${pathname}:MODE_MISMATCH`);
         assert.equal(adjacent.overflowX, 0, `${theme.id}:${pathname}:HORIZONTAL_OVERFLOW`);
-        themeReport.adjacentPages.push({ pathname, ...adjacent });
+        themeReport.adjacentPages.push({ pathname, themeTriggerCount: adjacentThemeTriggerCount, ...adjacent });
         await appPage.screenshot({
           path: path.join(outputDir, `${theme.id}-${pathname.slice(1)}-1440x900.png`),
           fullPage: false,

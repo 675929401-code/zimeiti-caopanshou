@@ -753,7 +753,7 @@ async function persistAndProbe(
   const uploaded = await storageManager.upload(downloaded.buffer, `${runId}-${model.id}-${taskId}.mp4`, "video/mp4", {
     providerType: TARGET_PROVIDER,
     category: "video",
-    prefix: "videos/generated/autodl-hosted-h3-acceptance/",
+    prefix: "videos/scoped/model-acceptance/autodl-hosted-h3/",
     fileName: `${runId}-${model.id}-${taskId}.mp4`,
     userId,
     source: "autodl-hosted-h3-acceptance",

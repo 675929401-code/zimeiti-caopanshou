@@ -106,7 +106,21 @@ async function preparePage({ failImages = false, viewport = { width: 1600, heigh
     assert.ok(fixture.projectWrites.length > 0, "视频请求前没有先保存账号工程");
     const body = route.request().postDataJSON();
     videoRequests.push({ at: Date.now(), body });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "completed", video_url: `https://media.storyboard.test/video-${videoRequests.length}.mp4` }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      status: "completed",
+      task_id: `storyboard-task-${videoRequests.length}`,
+      video_url: `https://media.storyboard.test/video-${videoRequests.length}.mp4`,
+    }) });
+  });
+  await page.route("**/api/video/access-ticket**", (route) => {
+    const requestUrl = new URL(route.request().url());
+    const taskId = requestUrl.searchParams.get("taskId") || "storyboard-task-1";
+    const ordinal = Number(taskId.split("-").at(-1)) || 1;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ url: `https://media.storyboard.test/video-${ordinal}.mp4?ticket=${requestUrl.searchParams.get("scope") || "playback"}` }),
+    });
   });
   await page.route("**/api/video/proxy-download**", (route) => {
     const requestUrl = new URL(route.request().url());
@@ -174,7 +188,15 @@ function gaps(records) {
   assert.equal(uploadRequests.length, 1, "本地参考图没有经过上传接口");
 
   const cards = page.locator(".sbw-shot-card");
-  assert.equal(await cards.first().locator("textarea").count(), 3, "卡片应显示生图、画面精确文字和视频三个输入框");
+  assert.equal(await cards.first().locator("textarea").count(), 2, "普通模式只应显示生图和视频两个输入框");
+  assert.equal(await page.getByRole("textbox", { name: "镜头1画面精确文字", exact: true }).count(), 0, "普通模式不应暴露精确文字输入框");
+  assert.equal(await page.locator(".sbw-text-layout-toggle input:checked").count(), 0, "高级文字排版不应默认开启");
+  await firstCard.screenshot({ path: path.join(outputDir, "storyboard-text-layout-default-off.png") });
+  await firstCard.locator(".sbw-text-layout-toggle input").check();
+  await page.getByRole("textbox", { name: "镜头1画面精确文字", exact: true }).fill("主标题\n副标题");
+  assert.equal(await cards.first().locator("textarea").count(), 3, "开启高级文字排版后应显示精确文字输入框");
+  assert.equal(await cards.nth(1).locator("textarea").count(), 2, "单卡开启高级文字排版不应污染相邻镜头");
+  await firstCard.screenshot({ path: path.join(outputDir, "storyboard-text-layout-advanced-on.png") });
   for (let index = 0; index < 3; index += 1) {
     const order = index + 1;
     const imagePrompt = cards.nth(index).getByRole("textbox", { name: `镜头${order}生图提示词`, exact: true });
@@ -203,6 +225,8 @@ function gaps(records) {
   assert.ok(imageRequests.every((item) => item.body.aspectRatio === "1:1"), "批量生图没有使用1:1比例");
   assert.ok(imageRequests.every((item) => item.body.resolution === "2K"), "批量生图没有沿用目录声明的2K默认分辨率");
   assert.deepEqual(imageRequests[0].body.referenceImageUrls, ["https://example.com/uploaded-reference.png"], "首卡上传参考图没有进入生图请求");
+  assert.equal(imageRequests[0].body.coverText, "主标题\n副标题", "高级文字排版没有把用户精确文字交给平台后置排版");
+  assert.ok(imageRequests.slice(1).every((item) => !Object.hasOwn(item.body, "coverText")), "普通镜头的生图请求不应携带文字字段");
 
   assert.equal(await page.getByRole("button", { name: "批量视频", exact: true }).isDisabled(), false, "全部图片完成后批量视频没有解锁");
   await page.getByRole("button", { name: "批量视频", exact: true }).click();
@@ -237,9 +261,12 @@ function gaps(records) {
   assert.deepEqual(await page.evaluate(() => window.__storyboardDownloadNames), ["01-故事板.png", "01-视频.mp4"], "下载文件没有按镜头顺序命名");
   assert.deepEqual(downloadRequests.map((item) => item.name), [], "同步直返媒体不应误走任务下载代理");
 
+  await firstCard.locator(".sbw-text-layout-toggle input").uncheck();
+  assert.equal(await page.getByRole("textbox", { name: "镜头1画面精确文字", exact: true }).count(), 0, "关闭高级文字排版后没有收起并清空输入");
   await page.locator(".sbw-shot-card").first().getByRole("button", { name: "重新生图", exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('.sbw-status-pair [data-status="done"]').length === 3 && document.querySelectorAll('.sbw-image-frame img').length === 3);
   assert.equal(imageRequests.length, 4, "重新生图没有发起单次图片请求");
+  assert.equal(Object.hasOwn(imageRequests[3].body, "coverText"), false, "关闭高级文字排版后仍污染后续生图请求");
   const snapshotSaveDeadline = Date.now() + 10_000;
   while (!fixture.projectWrites.some((write) => String(write.document?.title || "").includes("镜头1重新生图前")) && Date.now() < snapshotSaveDeadline) {
     await page.waitForTimeout(50);
@@ -306,6 +333,20 @@ function gaps(records) {
     emptyCardHeight,
     errors,
   });
+  for (const adjacentPath of ["/video", "/cover"]) {
+    const response = await page.goto(`${baseUrl}${adjacentPath}`, { waitUntil: "domcontentloaded" });
+    await page.locator("body").waitFor();
+    await page.getByRole("status").filter({ hasText: /正在打开/u }).waitFor({ state: "hidden", timeout: 30_000 });
+    await page.waitForTimeout(500);
+    const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.equal(response?.status(), 200, `${adjacentPath} 没有返回200`);
+    assert.ok(horizontalOverflow <= 1, `${adjacentPath} 出现横向溢出：${horizontalOverflow}px`);
+    await page.screenshot({
+      path: path.join(outputDir, `storyboard-adjacent-${adjacentPath.slice(1)}.png`),
+      fullPage: true,
+    });
+    results.push({ name: `adjacent-${adjacentPath.slice(1)}`, path: adjacentPath, status: response?.status(), horizontalOverflow, errors: [] });
+  }
   await context.close();
 }
 

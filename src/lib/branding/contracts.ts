@@ -8,6 +8,8 @@ export const PLATFORM_BRAND_ASSET_PURPOSES = [
   "favicon",
   "social_share",
   "login_background",
+  "contact_wechat_qr_primary",
+  "contact_wechat_qr_secondary",
 ] as const;
 
 export type PlatformBrandAssetPurpose = typeof PLATFORM_BRAND_ASSET_PURPOSES[number];
@@ -27,6 +29,12 @@ export interface PlatformBrandPayload {
     primary: string;
     accent: string;
   };
+  contact: {
+    name: string;
+    wechat: string;
+    phone: string;
+    email: string;
+  };
   assetIds: Partial<Record<PlatformBrandAssetPurpose, string>>;
 }
 
@@ -42,6 +50,10 @@ export interface PublicPlatformBrandAsset {
 }
 
 export interface PublicPlatformBranding {
+  /** Host only selects the public display brand. It is never a business tenant claim. */
+  displayScope?: "platform" | "white_label";
+  /** Normalized direct Host used for this public snapshot. */
+  hostname?: string;
   source: "published" | "legacy";
   generation: number;
   revisionId: string | null;
@@ -76,9 +88,10 @@ export class PlatformBrandValidationError extends Error {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const HEX_COLOR = /^#[0-9a-f]{6}$/iu;
-const ALLOWED_ROOT_KEYS = new Set(["schema", "name", "shortName", "slogan", "welcomeMessage", "description", "seo", "colors", "assetIds"]);
+const ALLOWED_ROOT_KEYS = new Set(["schema", "name", "shortName", "slogan", "welcomeMessage", "description", "seo", "colors", "contact", "assetIds"]);
 const ALLOWED_SEO_KEYS = new Set(["title", "description"]);
 const ALLOWED_COLOR_KEYS = new Set(["primary", "accent"]);
+const ALLOWED_CONTACT_KEYS = new Set(["name", "wechat", "phone", "email"]);
 const ASSET_PURPOSE_SET = new Set<string>(PLATFORM_BRAND_ASSET_PURPOSES);
 
 function record(value: unknown, field: string): Record<string, unknown> {
@@ -136,6 +149,8 @@ export function parsePlatformBrandPayload(input: unknown): PlatformBrandPayload 
   rejectUnknownKeys(seo, ALLOWED_SEO_KEYS, "seo");
   const colors = root.colors == null ? {} : record(root.colors, "colors");
   rejectUnknownKeys(colors, ALLOWED_COLOR_KEYS, "colors");
+  const contact = root.contact == null ? {} : record(root.contact, "contact");
+  rejectUnknownKeys(contact, ALLOWED_CONTACT_KEYS, "contact");
   const rawAssetIds = root.assetIds == null ? {} : record(root.assetIds, "assetIds");
 
   const assetIds: Partial<Record<PlatformBrandAssetPurpose, string>> = {};
@@ -163,6 +178,12 @@ export function parsePlatformBrandPayload(input: unknown): PlatformBrandPayload 
     colors: {
       primary: colorField(colors.primary, "品牌主色", "#168D7A"),
       accent: colorField(colors.accent, "品牌强调色", "#2F80FF"),
+    },
+    contact: {
+      name: stringField(contact.name, "联系人", 80),
+      wechat: stringField(contact.wechat, "微信号", 80),
+      phone: stringField(contact.phone, "联系电话", 40),
+      email: stringField(contact.email, "联系邮箱", 254),
     },
     assetIds,
   };
@@ -223,6 +244,7 @@ export function legacyPlatformBrandPayload(settings: Record<string, string>): Pl
     description: "",
     seo: { title: name, description: "" },
     colors: { primary: "#168D7A", accent: "#2F80FF" },
+    contact: { name: "", wechat: "", phone: "", email: "" },
     assetIds: {},
   };
 }

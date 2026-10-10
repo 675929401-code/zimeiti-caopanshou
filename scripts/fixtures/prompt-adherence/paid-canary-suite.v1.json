@@ -1,0 +1,151 @@
+{
+  "schema": "media_prompt_adherence_suite.v1",
+  "suiteId": "media-adherence-paid-canary-20261010",
+  "evidenceBoundary": "The suite separates request transport, prompt lexical coverage, and observable media semantics. Text matches never prove visual, temporal, or audio adherence.",
+  "cases": [
+    {
+      "id": "image-character-action-16x9",
+      "mediaKind": "image",
+      "effectivePromptPath": "requestSnapshot.effectivePrompt",
+      "prompt": {
+        "userPrompt": "同一位穿黄色雨衣的短发女孩站在雨夜公交站左侧，右手举透明雨伞，左手把红色纸飞机递给一只坐着的柯基；中景平视，蓝紫霓虹倒影，画面内不要文字、水印、额外人物或额外犬只。",
+        "anchors": ["黄色雨衣", "透明雨伞", "红色纸飞机", "柯基", "公交站", "不要文字"]
+      },
+      "requestAssertions": [
+        { "id": "img-model", "path": "model.publicModelId", "operator": "present", "hard": true, "weight": 5 },
+        { "id": "img-model-provider", "path": "model.provider", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-model-version", "path": "model.modelVersion", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-adapter-version", "path": "model.adapterVersion", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-schema", "path": "requestSnapshot.schema", "operator": "equals", "expected": "image_generation_request_snapshot.v2", "hard": true, "weight": 5 },
+        { "id": "img-user-prompt", "path": "requestSnapshot.prompt", "operator": "equals", "expectedFrom": "prompt.userPrompt", "hard": true, "weight": 10 },
+        { "id": "img-effective-anchors", "path": "requestSnapshot.effectivePrompt", "operator": "includes_all", "expectedFrom": "prompt.anchors", "hard": true, "weight": 10 },
+        { "id": "img-ratio", "path": "requestSnapshot.aspectRatio", "operator": "equals", "expected": "16:9", "hard": true, "weight": 10 },
+        { "id": "img-resolution", "path": "requestSnapshot.resolution", "operator": "equals", "expected": "1K", "hard": true, "weight": 10 },
+        { "id": "img-count", "path": "requestSnapshot.imageCount", "operator": "equals", "expected": 1, "hard": true, "weight": 10 },
+        { "id": "img-provider-prompt", "path": "providerObservation.fields.prompt", "operator": "includes_all", "expectedFrom": "prompt.anchors", "hard": true, "weight": 10 },
+        { "id": "img-provider-ratio", "path": "providerObservation.fields.aspectRatio", "operator": "equals", "expected": "16:9", "hard": true, "weight": 5 },
+        { "id": "img-provider-resolution", "path": "providerObservation.fields.resolution", "operator": "equals", "expected": "1K", "hard": true, "weight": 5 },
+        { "id": "img-dispatch-once", "path": "providerObservation.dispatchCount", "operator": "equals", "expected": 1, "hard": true, "weight": 10 },
+        { "id": "img-no-auto-retry", "path": "providerObservation.automaticRetryCount", "operator": "equals", "expected": 0, "hard": true, "weight": 5 },
+        { "id": "img-history-same", "path": "historyReadback.requestSnapshot", "operator": "equals_path", "expectedPath": "requestSnapshot", "hard": true, "weight": 5 },
+        { "id": "img-task-id", "path": "historyReadback.taskId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-history-hash", "path": "historyReadback.snapshotHash", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "img-provider-protocol", "path": "providerObservation.protocol", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-provider-receipt", "path": "providerObservation.receiptId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-provider-receipt-hash", "path": "providerObservation.receiptSha256", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "img-billing-status", "path": "billing.status", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-billing-receipt", "path": "billing.receiptId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-billing-receipt-hash", "path": "billing.receiptSha256", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "img-output-locator", "path": "outputAsset.urlOrAssetId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "img-output-hash", "path": "outputAsset.contentSha256", "operator": "sha256", "hard": true, "weight": 2 }
+      ],
+      "outputAssertions": [
+        { "id": "img-subject", "category": "subject", "layer": "visual", "description": "Exactly one short-haired girl in a yellow raincoat and exactly one seated corgi are visible.", "promptAnchors": ["黄色雨衣", "柯基"], "weight": 20, "hard": true },
+        { "id": "img-action", "category": "action", "layer": "visual", "description": "The girl holds a transparent umbrella in her right hand and offers a red paper airplane with her left hand.", "promptAnchors": ["透明雨伞", "红色纸飞机"], "weight": 20, "hard": true },
+        { "id": "img-scene", "category": "scene", "layer": "visual", "description": "Rainy night bus stop with blue-purple neon reflections.", "promptAnchors": ["雨夜公交站", "蓝紫霓虹"], "weight": 15, "hard": false },
+        { "id": "img-camera", "category": "camera", "layer": "visual", "description": "Eye-level medium shot with the girl positioned left of frame.", "promptAnchors": ["中景平视", "左侧"], "weight": 15, "hard": false },
+        { "id": "img-negative", "category": "negative", "layer": "visual", "description": "No visible text, watermark, extra human, or extra dog.", "promptAnchors": ["不要文字", "水印", "额外人物", "额外犬只"], "weight": 15, "hard": true },
+        { "id": "img-dimensions", "category": "dimensions", "layer": "metadata", "description": "Decoded output is 16:9 within 1 percent and satisfies the current 1K pixel contract.", "promptAnchors": [], "weight": 15, "hard": true }
+      ]
+    },
+    {
+      "id": "ordinary-video-action-6s",
+      "mediaKind": "ordinary_video",
+      "effectivePromptPath": "requestSnapshot.effectivePrompt",
+      "prompt": {
+        "userPrompt": "6秒连续镜头：0-2秒黄色雨衣女孩在雨夜公交站举透明雨伞；2-4秒她把红色纸飞机递给坐着的柯基；4-6秒柯基抬爪碰纸飞机，女孩微笑，相机缓慢向前推进。不要文字、水印、额外人物、额外犬只，不生成声音。",
+        "anchors": ["0-2秒", "2-4秒", "4-6秒", "红色纸飞机", "柯基", "相机缓慢向前推进", "不要文字"]
+      },
+      "requestAssertions": [
+        { "id": "vid-model", "path": "model.publicModelId", "operator": "present", "hard": true, "weight": 5 },
+        { "id": "vid-model-provider", "path": "model.provider", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-model-version", "path": "model.modelVersion", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-adapter-version", "path": "model.adapterVersion", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-schema", "path": "requestSnapshot.schema", "operator": "equals", "expected": "video_generation_request_snapshot.v1", "hard": true, "weight": 5 },
+        { "id": "vid-user-prompt", "path": "requestSnapshot.userPrompt", "operator": "equals", "expectedFrom": "prompt.userPrompt", "hard": true, "weight": 10 },
+        { "id": "vid-effective-anchors", "path": "requestSnapshot.effectivePrompt", "operator": "includes_all", "expectedFrom": "prompt.anchors", "hard": true, "weight": 10 },
+        { "id": "vid-duration", "path": "requestSnapshot.effectiveDurationSeconds", "operator": "equals", "expected": 6, "hard": true, "weight": 10 },
+        { "id": "vid-ratio", "path": "requestSnapshot.aspectRatio", "operator": "equals", "expected": "16:9", "hard": true, "weight": 5 },
+        { "id": "vid-resolution", "path": "requestSnapshot.resolution", "operator": "equals", "expected": "720p", "hard": true, "weight": 5 },
+        { "id": "vid-audio-off", "path": "requestSnapshot.generateAudio", "operator": "equals", "expected": false, "hard": true, "weight": 5 },
+        { "id": "vid-payload-hash", "path": "requestSnapshot.providerPayloadHash", "operator": "sha256", "hard": true, "weight": 5 },
+        { "id": "vid-provider-hash-same", "path": "providerObservation.payloadHash", "operator": "equals_path", "expectedPath": "requestSnapshot.providerPayloadHash", "hard": true, "weight": 10 },
+        { "id": "vid-provider-prompt", "path": "providerObservation.fields.prompt", "operator": "includes_all", "expectedFrom": "prompt.anchors", "hard": true, "weight": 10 },
+        { "id": "vid-provider-duration", "path": "providerObservation.fields.durationSeconds", "operator": "equals", "expected": 6, "hard": true, "weight": 5 },
+        { "id": "vid-dispatch-once", "path": "providerObservation.dispatchCount", "operator": "equals", "expected": 1, "hard": true, "weight": 5 },
+        { "id": "vid-no-auto-retry", "path": "providerObservation.automaticRetryCount", "operator": "equals", "expected": 0, "hard": true, "weight": 5 },
+        { "id": "vid-history-same", "path": "historyReadback.requestSnapshot", "operator": "equals_path", "expectedPath": "requestSnapshot", "hard": true, "weight": 5 },
+        { "id": "vid-task-id", "path": "historyReadback.taskId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-history-hash", "path": "historyReadback.snapshotHash", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "vid-provider-protocol", "path": "providerObservation.protocol", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-provider-receipt", "path": "providerObservation.receiptId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-provider-receipt-hash", "path": "providerObservation.receiptSha256", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "vid-billing-status", "path": "billing.status", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-billing-receipt", "path": "billing.receiptId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-billing-receipt-hash", "path": "billing.receiptSha256", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "vid-output-locator", "path": "outputAsset.urlOrAssetId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "vid-output-hash", "path": "outputAsset.contentSha256", "operator": "sha256", "hard": true, "weight": 2 }
+      ],
+      "outputAssertions": [
+        { "id": "vid-subject", "category": "subject", "layer": "visual", "description": "The same yellow-raincoat girl and one corgi persist through the clip without identity drift.", "promptAnchors": ["黄色雨衣女孩", "柯基"], "weight": 15, "hard": true },
+        { "id": "vid-action", "category": "action", "layer": "temporal", "description": "Umbrella hold, airplane handoff, and paw contact occur in the specified order.", "promptAnchors": ["0-2秒", "2-4秒", "4-6秒"], "weight": 25, "hard": true },
+        { "id": "vid-scene", "category": "scene", "layer": "visual", "description": "The rainy night bus stop remains spatially continuous.", "promptAnchors": ["雨夜公交站"], "weight": 10, "hard": false },
+        { "id": "vid-camera", "category": "camera", "layer": "temporal", "description": "One slow push-in occurs without an unintended cut or reverse movement.", "promptAnchors": ["相机缓慢向前推进"], "weight": 10, "hard": false },
+        { "id": "vid-negative", "category": "negative", "layer": "visual", "description": "No visible text, watermark, extra human, or extra dog.", "promptAnchors": ["不要文字", "水印", "额外人物", "额外犬只"], "weight": 10, "hard": true },
+        { "id": "vid-duration-metadata", "category": "duration", "layer": "metadata", "description": "Decoded duration is 6 seconds within the suite tolerance.", "promptAnchors": [], "weight": 10, "hard": true },
+        { "id": "vid-resolution-metadata", "category": "resolution", "layer": "metadata", "description": "Decoded output matches the accepted 720p 16:9 contract.", "promptAnchors": [], "weight": 10, "hard": true },
+        { "id": "vid-audio", "category": "audio", "layer": "audio", "evidenceKinds": ["media_probe"], "description": "The delivered file contains no audio stream.", "promptAnchors": ["不生成声音"], "weight": 10, "hard": true }
+      ]
+    },
+    {
+      "id": "h3-multi-image-audio-10s",
+      "mediaKind": "h3_video",
+      "effectivePromptPath": "requestSnapshot.effectivePrompt",
+      "prompt": {
+        "userPrompt": "10秒连续镜头：保持参考图中女孩和柯基的身份与服装。0-3秒女孩在雨夜公交站举透明雨伞；3-7秒把红色纸飞机递给柯基；7-10秒柯基抬爪轻碰纸飞机，镜头缓慢推进。不要文字、水印、角色复制或肢体畸变；参考音频只作为环境雨声。",
+        "anchors": ["保持参考图", "0-3秒", "3-7秒", "7-10秒", "红色纸飞机", "镜头缓慢推进", "环境雨声"]
+      },
+      "requestAssertions": [
+        { "id": "h3-model", "path": "model.publicModelId", "operator": "present", "hard": true, "weight": 5 },
+        { "id": "h3-model-provider", "path": "model.provider", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "h3-model-version", "path": "model.modelVersion", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "h3-adapter", "path": "model.adapterVersion", "operator": "present", "hard": true, "weight": 5 },
+        { "id": "h3-schema", "path": "requestSnapshot.schema", "operator": "equals", "expected": "video_generation_request_snapshot.v1", "hard": true, "weight": 5 },
+        { "id": "h3-user-prompt", "path": "requestSnapshot.userPrompt", "operator": "equals", "expectedFrom": "prompt.userPrompt", "hard": true, "weight": 10 },
+        { "id": "h3-effective-anchors", "path": "requestSnapshot.effectivePrompt", "operator": "includes_all", "expectedFrom": "prompt.anchors", "hard": true, "weight": 10 },
+        { "id": "h3-image-refs", "path": "requestSnapshot.referenceAssets", "operator": "role_count", "role": "reference_image_list", "expected": 2, "hard": true, "weight": 10 },
+        { "id": "h3-audio-ref", "path": "requestSnapshot.referenceAssets", "operator": "role_count", "role": "reference_audio_list", "expected": 1, "hard": true, "weight": 10 },
+        { "id": "h3-duration", "path": "requestSnapshot.effectiveDurationSeconds", "operator": "equals", "expected": 10, "hard": true, "weight": 5 },
+        { "id": "h3-ratio", "path": "requestSnapshot.aspectRatio", "operator": "equals", "expected": "16:9", "hard": true, "weight": 5 },
+        { "id": "h3-resolution", "path": "requestSnapshot.resolution", "operator": "equals", "expected": "1080p", "hard": true, "weight": 5 },
+        { "id": "h3-provider-hash", "path": "providerObservation.payloadHash", "operator": "equals_path", "expectedPath": "requestSnapshot.providerPayloadHash", "hard": true, "weight": 5 },
+        { "id": "h3-provider-prompt", "path": "providerObservation.fields.prompt", "operator": "includes_all", "expectedFrom": "prompt.anchors", "hard": true, "weight": 5 },
+        { "id": "h3-provider-duration", "path": "providerObservation.fields.durationSeconds", "operator": "equals", "expected": 10, "hard": true, "weight": 5 },
+        { "id": "h3-provider-image-count", "path": "providerObservation.fields.referenceImageCount", "operator": "equals", "expected": 2, "hard": true, "weight": 5 },
+        { "id": "h3-provider-audio-count", "path": "providerObservation.fields.referenceAudioCount", "operator": "equals", "expected": 1, "hard": true, "weight": 5 },
+        { "id": "h3-dispatch-once", "path": "providerObservation.dispatchCount", "operator": "equals", "expected": 1, "hard": true, "weight": 3 },
+        { "id": "h3-no-auto-retry", "path": "providerObservation.automaticRetryCount", "operator": "equals", "expected": 0, "hard": true, "weight": 2 },
+        { "id": "h3-task-id", "path": "historyReadback.taskId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "h3-history-hash", "path": "historyReadback.snapshotHash", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "h3-provider-protocol", "path": "providerObservation.protocol", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "h3-provider-receipt", "path": "providerObservation.receiptId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "h3-provider-receipt-hash", "path": "providerObservation.receiptSha256", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "h3-billing-status", "path": "billing.status", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "h3-billing-receipt", "path": "billing.receiptId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "h3-billing-receipt-hash", "path": "billing.receiptSha256", "operator": "sha256", "hard": true, "weight": 2 },
+        { "id": "h3-output-locator", "path": "outputAsset.urlOrAssetId", "operator": "present", "hard": true, "weight": 2 },
+        { "id": "h3-output-hash", "path": "outputAsset.contentSha256", "operator": "sha256", "hard": true, "weight": 2 }
+      ],
+      "outputAssertions": [
+        { "id": "h3-identity", "category": "subject", "layer": "visual", "description": "The referenced girl and corgi remain identifiable without duplication or costume drift.", "promptAnchors": ["保持参考图"], "weight": 20, "hard": true },
+        { "id": "h3-action", "category": "action", "layer": "temporal", "description": "Umbrella hold, handoff, and paw contact occur in order and finish in a stable end state.", "promptAnchors": ["0-3秒", "3-7秒", "7-10秒"], "weight": 20, "hard": true },
+        { "id": "h3-scene", "category": "scene", "layer": "visual", "description": "Rainy night bus stop and prop continuity are maintained.", "promptAnchors": ["雨夜公交站", "红色纸飞机"], "weight": 10, "hard": false },
+        { "id": "h3-camera", "category": "camera", "layer": "temporal", "description": "The camera performs one slow push-in without an unintended cut.", "promptAnchors": ["镜头缓慢推进"], "weight": 10, "hard": false },
+        { "id": "h3-negative", "category": "negative", "layer": "visual", "description": "No text, watermark, character duplication, or limb deformation.", "promptAnchors": ["不要文字", "水印", "角色复制", "肢体畸变"], "weight": 10, "hard": true },
+        { "id": "h3-duration-metadata", "category": "duration", "layer": "metadata", "description": "Decoded output duration is 10 seconds within tolerance.", "promptAnchors": [], "weight": 10, "hard": true },
+        { "id": "h3-resolution-metadata", "category": "resolution", "layer": "metadata", "description": "Decoded dimensions satisfy the accepted H3 resolution and ratio contract; a 1920x1056 output is reported as a mismatch, not rounded up to 1080p.", "promptAnchors": [], "weight": 10, "hard": true },
+        { "id": "h3-audio", "category": "audio", "layer": "audio", "evidenceKinds": ["audio_segment", "human_review", "multimodal_review"], "description": "An audio stream exists and is recognizably the supplied rain ambience without unintended speech.", "promptAnchors": ["环境雨声"], "weight": 10, "hard": true }
+      ]
+    }
+  ]
+}

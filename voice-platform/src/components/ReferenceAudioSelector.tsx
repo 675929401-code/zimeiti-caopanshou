@@ -31,6 +31,7 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
   const [playingFile, setPlayingFile] = useState<string | null>(null);
   const [playState, setPlayState] = useState<'idle' | 'playing' | 'paused'>('idle');
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioObjectUrlRef = useRef<string | null>(null);
 
   // 重命名状态
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
@@ -39,15 +40,32 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
 
   // 提取后命名弹窗
   const [showNameModal, setShowNameModal] = useState(false);
-  const [pendingAudio, setPendingAudio] = useState<{ url: string; title: string } | null>(null);
+  const [pendingAudio, setPendingAudio] = useState<{ url: string; title: string; filename?: string } | null>(null);
 
   // 删除确认
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
 
+  const authenticatedHeaders = (): HeadersInit => {
+    const token = localStorage.getItem('auth_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const fetchOwnedAudioFile = async (url: string, filename: string): Promise<File | undefined> => {
+    if (!url.startsWith('/voice-platform/api/reference-audio?')) return undefined;
+    try {
+      const response = await fetch(url, { headers: authenticatedHeaders() });
+      if (!response.ok) return undefined;
+      const blob = await response.blob();
+      return new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+    } catch {
+      return undefined;
+    }
+  };
+
   const loadSaved = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/voice-platform/api/reference-audio');
+      const res = await fetch('/voice-platform/api/reference-audio', { headers: authenticatedHeaders() });
       const d = await res.json();
       if (d.success) setSavedAudios(d.data.files || []);
     } catch { /* 静默 */ }
@@ -57,7 +75,7 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
   useEffect(() => { loadSaved(); }, []);
 
   // 试听：修复暂停bug — 手动暂停保留 playingFile 以便恢复
-  const handlePreview = (audio: SavedAudio, e: React.MouseEvent) => {
+  const handlePreview = async (audio: SavedAudio, e: React.MouseEvent) => {
     e.stopPropagation();
 
     if (playingFile === audio.filename && playState === 'playing') {
@@ -72,18 +90,31 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
       // 切换其他音频
       audioRef.current?.pause();
       audioRef.current = null;
-      const a = new Audio(audio.url);
-      a.onended = () => { setPlayingFile(null); setPlayState('idle'); };
-      a.onerror = () => { setPlayingFile(null); setPlayState('idle'); };
-      audioRef.current = a;
-      a.play().catch(() => {});
-      setPlayingFile(audio.filename);
-      setPlayState('playing');
+      if (audioObjectUrlRef.current) URL.revokeObjectURL(audioObjectUrlRef.current);
+      try {
+        const response = await fetch(audio.url, { headers: authenticatedHeaders() });
+        if (!response.ok) throw new Error('REFERENCE_AUDIO_READ_FAILED');
+        const objectUrl = URL.createObjectURL(await response.blob());
+        audioObjectUrlRef.current = objectUrl;
+        const a = new Audio(objectUrl);
+        a.onended = () => { setPlayingFile(null); setPlayState('idle'); };
+        a.onerror = () => { setPlayingFile(null); setPlayState('idle'); };
+        audioRef.current = a;
+        await a.play();
+        setPlayingFile(audio.filename);
+        setPlayState('playing');
+      } catch {
+        setPlayingFile(null);
+        setPlayState('idle');
+      }
     }
   };
 
   useEffect(() => {
-    return () => { audioRef.current?.pause(); };
+    return () => {
+      audioRef.current?.pause();
+      if (audioObjectUrlRef.current) URL.revokeObjectURL(audioObjectUrlRef.current);
+    };
   }, []);
 
   // 删除音频
@@ -92,7 +123,10 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
     if (deletingFile) return;
     setDeletingFile(audio.filename);
     try {
-      const res = await fetch('/voice-platform/api/reference-audio?filename=' + audio.filename, { method: 'DELETE' });
+      const res = await fetch('/voice-platform/api/reference-audio?filename=' + encodeURIComponent(audio.filename), {
+        method: 'DELETE',
+        headers: authenticatedHeaders(),
+      });
       const d = await res.json();
       if (d.success) {
         if (selectedSaved === audio.filename) setSelectedSaved(null);
@@ -121,7 +155,7 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
     try {
       await fetch('/voice-platform/api/reference-audio', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authenticatedHeaders() },
         body: JSON.stringify({ filename: renamingFile, displayName: renameValue.trim() }),
       });
     } catch {}
@@ -130,9 +164,11 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
   };
 
   // 选择已保存音频
-  const handleSelectSaved = (audio: SavedAudio) => {
+  const handleSelectSaved = async (audio: SavedAudio) => {
     setSelectedSaved(audio.filename);
-    onSelect({ url: audio.url, name: audio.displayName, source: 'saved' });
+    const file = await fetchOwnedAudioFile(audio.url, audio.filename);
+    if (!file) return;
+    onSelect({ url: URL.createObjectURL(file), name: audio.displayName, source: 'saved', file });
   };
 
   // 从链接提取（含去重检查）
@@ -142,12 +178,16 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
     try {
       const res = await fetch('/voice-platform/api/voice/link-clone/extract-audio', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authenticatedHeaders() },
         body: JSON.stringify({ url: linkUrl.trim() }),
       });
       const d = await res.json();
       if (d.success) {
-        setPendingAudio({ url: d.data.audioUrl, title: d.data.title || '参考音频' });
+        setPendingAudio({
+          url: d.data.localAudioUrl || d.data.audioUrl,
+          title: d.data.title || '参考音频',
+          filename: d.data.filename || undefined,
+        });
         setShowNameModal(true);
         loadSaved();
       }
@@ -158,21 +198,29 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
   // 命名确认后保存并选中
   const confirmNameAndSelect = async () => {
     if (!pendingAudio) return;
-    const urlParts = pendingAudio.url.split('/');
-    const filename = urlParts[urlParts.length - 1];
+    const filename = pendingAudio.filename;
     
     const name = renameValue.trim() || pendingAudio.title;
-    if (renameValue.trim()) {
+    if (renameValue.trim() && filename) {
       try {
         await fetch('/voice-platform/api/reference-audio', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authenticatedHeaders() },
           body: JSON.stringify({ filename, displayName: renameValue.trim() }),
         });
       } catch {}
     }
 
-    onSelect({ url: pendingAudio.url, name, source: 'link' });
+    const file = pendingAudio.filename
+      ? await fetchOwnedAudioFile(pendingAudio.url, pendingAudio.filename)
+      : undefined;
+    if (pendingAudio.url.startsWith('/voice-platform/api/reference-audio?') && !file) return;
+    onSelect({
+      url: file ? URL.createObjectURL(file) : pendingAudio.url,
+      name,
+      source: 'link',
+      ...(file ? { file } : {}),
+    });
     setShowNameModal(false);
     setPendingAudio(null);
     setRenameValue('');
@@ -188,6 +236,20 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
 
     const url = URL.createObjectURL(file);
     onSelect({ url, name: file.name, source: 'upload', file });
+  };
+
+  const handleDownload = async (audio: SavedAudio, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const response = await fetch(audio.url, { headers: authenticatedHeaders() });
+      if (!response.ok) return;
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = `${audio.displayName}.${audio.filename.split('.').pop() || 'mp3'}`;
+      anchor.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {}
   };
 
   const formatSize = (bytes: number) => {
@@ -225,10 +287,21 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
                 确认并选用
               </button>
               <button onClick={() => {
-                onSelect({ url: pendingAudio.url, name: pendingAudio.title, source: 'link' });
-                setShowNameModal(false);
-                setPendingAudio(null);
-                setLinkUrl('');
+                void (async () => {
+                  const file = pendingAudio.filename
+                    ? await fetchOwnedAudioFile(pendingAudio.url, pendingAudio.filename)
+                    : undefined;
+                  if (pendingAudio.url.startsWith('/voice-platform/api/reference-audio?') && !file) return;
+                  onSelect({
+                    url: file ? URL.createObjectURL(file) : pendingAudio.url,
+                    name: pendingAudio.title,
+                    source: 'link',
+                    ...(file ? { file } : {}),
+                  });
+                  setShowNameModal(false);
+                  setPendingAudio(null);
+                  setLinkUrl('');
+                })();
               }} className="flex-1 py-2.5 rounded-xl text-vp-muted-foreground hover:text-vp-foreground text-sm transition-colors">
                 跳过命名
               </button>
@@ -340,17 +413,15 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
                     {/* 操作按钮组（hover显示） */}
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
                       {/* 下载 */}
-                      <a
-                        href={audio.url}
-                        download={audio.displayName + '.' + (audio.filename.split('.').pop() || 'mp3')}
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        onClick={(e) => void handleDownload(audio, e)}
                         className="w-6 h-6 rounded-md flex items-center justify-center text-vp-muted-foreground hover:text-sky-400 hover:bg-sky-400/10 transition-colors"
                         title="下载"
                       >
                         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                         </svg>
-                      </a>
+                      </button>
                       {/* 重命名 */}
                       <button
                         onClick={(e) => startRename(audio, e)}

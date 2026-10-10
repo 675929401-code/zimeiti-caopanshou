@@ -30,14 +30,32 @@ assert.ok(!chatView.includes("selectedPublicModelId"), "generic chat must not se
 assert.ok(!llmRoute.includes("FREE_CHAT_ADMIN_ONLY"), "ordinary free chat must remain open");
 assert.ok(llmRoute.includes("FREE_CHAT_DEFAULT_MODEL_KEY") && llmRoute.includes("FREE_CHAT_DEEP_THINKING_TYPE"), "free chat must use the fixed GPT-5.6 reasoning policy");
 assert.ok(llmRoute.includes("MODEL_OVERRIDE_ADMIN_ONLY"), "ordinary agent model override must be rejected server-side");
-assert.ok((legacyConversationRoute.match(/user\.role !== ["']admin["']/gu) || []).length >= 2, "legacy list/create API must remain admin-only");
-assert.ok(legacyConversationRoute.includes("CONVERSATION_ADMIN_ONLY"), "legacy conversation API must expose an explicit policy code");
+assert.ok(
+  legacyConversationRoute.includes('authorizeAdminCapability(request, "agents.view"')
+    && legacyConversationRoute.includes('operation: "raw_conversations_read"'),
+  "legacy conversation list API must remain protected by the server-side admin capability authority",
+);
+assert.ok(
+  legacyConversationRoute.includes('authorizeAdminCapability(request, "agents.manage"')
+    && legacyConversationRoute.includes('operation: "raw_conversation_create"')
+    && legacyConversationRoute.includes("requireStepUp: true"),
+  "legacy conversation create API must require the privileged admin capability and step-up",
+);
 assert.ok(historyRoute.includes('.eq("user_id", userId)') && historyRoute.includes('.order("updated_at", { ascending: false })'), "conversation history must be owner-scoped and newest-first");
 assert.ok(historyRoute.includes('"Cache-Control", "private, no-store"'), "conversation history must be private and uncached");
 assert.ok(chatView.includes('useState("")') && !/localStorage\.setItem\([^\n]*(?:draft|inputValue)/iu.test(chatView), "unsubmitted chat draft must start empty and stay out of storage");
 assert.ok(chatView.includes("当前回复仍在生成，请先停止接收后再发送新消息"), "keyboard/click duplicate send must be blocked while streaming");
 assert.ok(appContext.includes("Duplicate send blocked while conversation is streaming"), "context-level duplicate send guard is required");
-assert.ok(appContext.includes("One logical send keeps one stable key across fetchWithRetry attempts"), "network retry must keep one logical request identity");
+assert.match(
+  appContext,
+  /const clientRequestId = `chat_\$\{crypto\.randomUUID\(\)\}`;[\s\S]{0,700}fetchWithRetry\("\/api\/chat"[\s\S]{0,700}"Idempotency-Key": clientRequestId/,
+  "network retry must keep one logical request identity",
+);
+assert.match(
+  appContext,
+  /fetchWithRetry\("\/api\/llm"[\s\S]{0,1800}"Idempotency-Key": clientRequestId[\s\S]{0,1800}\}, 0\)/,
+  "paid LLM requests must not be automatically resubmitted after an ambiguous transport failure",
+);
 
 const originalFetch = globalThis.fetch;
 const observedKeys: string[] = [];

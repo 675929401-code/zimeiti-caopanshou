@@ -39,6 +39,10 @@ import {
   resolveVideoResolution,
 } from "@/lib/video-model-capabilities";
 import { extractPromptDurationSeconds } from "@/lib/video-prompt-timing";
+import {
+  restoreVideoGenerateAudio,
+  videoGenerateAudioForSubmission,
+} from "@/lib/video-generate-audio-state";
 import { formatActualVideoDuration, videoDurationDisplay } from "@/lib/video-duration-display";
 import {
   AI_VIDEO_PAGE_ASPECT_RATIOS,
@@ -120,10 +124,29 @@ function sortImageFiles(files: File[]) {
  * blob: URL 仅在浏览器内有效，提交到后端后传给上游视频API会被拒绝：
  * {"code":"image_must_be_url","message":"图片/参考图仅支持http/https URL"}
  */
-async function uploadReferenceFile(file: File, token: string | null, category: "image" | "audio"): Promise<string> {
+interface UploadedVideoReferenceAsset {
+  url: string;
+  assetRef: string;
+  category: "image" | "audio";
+}
+
+function createVideoReferenceUploadSession() {
+  const random = typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  return `video_ref_${random.replace(/[^a-zA-Z0-9_-]/gu, "")}`;
+}
+
+async function uploadReferenceFile(
+  file: File,
+  token: string | null,
+  category: "image" | "audio",
+  uploadSession: string,
+): Promise<UploadedVideoReferenceAsset> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("category", category);
+  formData.append("upload_session", uploadSession);
 
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -141,16 +164,40 @@ async function uploadReferenceFile(file: File, token: string | null, category: "
 
   const data = await resp.json();
   const url = data.file?.url;
-  if (!url) throw new Error("上传成功但未返回URL");
-  return url;
+  const assetRef = data.file?.asset_ref;
+  if (!url || !assetRef) throw new Error("上传成功但未返回完整素材引用");
+  return { url: String(url), assetRef: String(assetRef), category };
 }
 
-async function uploadImageFile(file: File, token: string | null): Promise<string> {
-  return uploadReferenceFile(file, token, "image");
+async function uploadImageFile(file: File, token: string | null, uploadSession: string) {
+  return uploadReferenceFile(file, token, "image", uploadSession);
 }
 
-async function uploadAudioFile(file: File, token: string | null): Promise<string> {
-  return uploadReferenceFile(file, token, "audio");
+async function uploadAudioFile(file: File, token: string | null, uploadSession: string) {
+  return uploadReferenceFile(file, token, "audio", uploadSession);
+}
+
+async function deleteUploadedReferenceAsset(
+  asset: UploadedVideoReferenceAsset,
+  token: string | null,
+  uploadSession: string,
+) {
+  if (!token) return false;
+  const response = await fetch("/api/video/reference-upload", {
+    method: "DELETE",
+    keepalive: true,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      asset_ref: asset.assetRef,
+      url: asset.url,
+      category: asset.category,
+      upload_session: uploadSession,
+    }),
+  });
+  return response.ok;
 }
 
 /**
@@ -292,6 +339,46 @@ const DEFAULT_CONFIG: VideoPageConfig = {
 };
 
 /* ── Task card type ── */
+interface VideoHistoryRequestSnapshot {
+  schema: "video_generation_request_snapshot.v1";
+  userPrompt: string;
+  effectivePrompt: string;
+  promptNormalizations: Array<{ name: string; applied: boolean; detail?: string }>;
+  negativePrompt: string;
+  referenceAssets: Array<{
+    role: "first_frame" | "last_frame" | "reference_image" | "reference_image_list"
+      | "reference_audio" | "reference_audio_list" | "source_video" | "person_asset" | "audio_asset";
+    index: number;
+    ref: string;
+  }>;
+  targetDurationSeconds: number;
+  effectiveDurationSeconds: number;
+  aspectRatio: string;
+  resolution: string;
+  fps: number | null;
+  seed: string | null;
+  generateAudio: boolean | null;
+  publicModelId: string;
+  routingConfigHash: string;
+  adapterVersion: string;
+  providerPayloadHash: string;
+}
+
+interface VideoHistoryRetryInputs {
+  firstFrameUrl: string;
+  lastFrameUrl: string;
+  referenceImageUrl: string;
+  referenceImageUrls: string[];
+  audioUrl: string;
+  referenceAudioUrls: string[];
+  sourceVideoUrl: string;
+}
+
+type SnapshotVideoTask = VideoTask & {
+  requestSnapshot?: VideoHistoryRequestSnapshot;
+  retryInputs?: VideoHistoryRetryInputs;
+};
+
 interface TaskCard {
   localId: number;
   prompt: string;
@@ -305,6 +392,12 @@ interface TaskCard {
   referenceImageUrls: string[];
   referenceAudioUrls: string[];
   sourceVideoUrl: string; // 视频编辑模型的源视频URL
+  audioUrl?: string;
+  fps?: number;
+  seed?: string;
+  generateAudio?: boolean;
+  uploadedReferenceAssets: UploadedVideoReferenceAsset[];
+  requestSnapshot?: VideoHistoryRequestSnapshot;
   followsSourceDuration?: boolean;
   status: "idle" | "pending" | "queued" | "processing" | "generating" | "finalizing" | "completed" | "failed" | "cancelled";
   processingStage?: string;
@@ -346,6 +439,7 @@ const emptyCard = (localId: number, cardIndex: number, batchId: string, batchTop
   referenceImageUrls: [],
   referenceAudioUrls: [],
   sourceVideoUrl: "",
+  uploadedReferenceAssets: [],
   status: "idle",
   clientRequestId: "",
   clientRequestFingerprint: "",
@@ -455,6 +549,7 @@ function normalizePublicVideoModel(value: unknown): VideoPageModel | null {
       ? capabilities.workspaceSurfaces.map(String)
       : ["ai-video"],
     supportsRemoteCancel: capabilities.supportsRemoteCancel === true,
+    supportsGenerateAudioToggle: capabilities.supportsGenerateAudioToggle === true,
     aspectRatios: Array.isArray(capabilities.aspectRatios)
       ? capabilities.aspectRatios.map(String)
       : [],
@@ -511,6 +606,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   const [aspectRatio, setAspectRatio] = useState<(typeof AI_VIDEO_PAGE_ASPECT_RATIOS)[number]>(AI_VIDEO_PAGE_ASPECT_RATIOS[0]);
   const [duration, setDuration] = useState(8);
   const [resolution, setResolution] = useState("");
+  const [referenceUploadSession] = useState(createVideoReferenceUploadSession);
   const initialBatchSeed = useId().replace(/[^a-zA-Z0-9_-]/g, "") || "initial";
   const [currentBatchId, setCurrentBatchId] = useState(`batch_ui_${initialBatchSeed}`);
   // 初始化：默认 3 张空白卡片，刷新即清空
@@ -544,9 +640,20 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     return () => controller.abort();
   }, [completedTaskBalanceKey, auth?.token]);
   const tasksRef = useRef(tasks);
+  const authTokenRef = useRef(auth?.token || null);
   useEffect(() => {
     tasksRef.current = tasks;
   }, [tasks]);
+  useEffect(() => {
+    authTokenRef.current = auth?.token || null;
+  }, [auth?.token]);
+
+  const releaseReferenceAssets = useCallback((assets: UploadedVideoReferenceAsset[]) => {
+    const token = authTokenRef.current;
+    for (const asset of assets) {
+      void deleteUploadedReferenceAsset(asset, token, referenceUploadSession).catch(() => false);
+    }
+  }, [referenceUploadSession]);
   const orderedImageInputRef = useRef<HTMLInputElement | null>(null);
   const [orderedImageMode, setOrderedImageMode] = useState<VideoWorkflowImageMode>("reference");
   const [isImportingOrderedImages, setIsImportingOrderedImages] = useState(false);
@@ -982,8 +1089,16 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   }, [auth?.token, models, modelsLoading, taskRecoveryAttempt]);
 
   /* ── Load history ── */
-  const loadHistory = useCallback((offset = historyOffsetRef.current) => {
-    if (!auth?.token || historyRequestRef.current) return;
+  const loadHistory = useCallback((
+    offset = historyOffsetRef.current,
+    options: { supersedeInFlight?: boolean } = {},
+  ) => {
+    if (!auth?.token) return;
+    if (historyRequestRef.current) {
+      if (!options.supersedeInFlight) return;
+      historyRequestRef.current.abort();
+      historyRequestRef.current = null;
+    }
     const controller = new AbortController();
     historyRequestRef.current = controller;
     let timedOut = false;
@@ -1028,20 +1143,42 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       });
   }, [auth?.token]);
 
+  const refreshHistoryFirstPage = useCallback(() => {
+    // Terminal records are inserted at the head of the durable history. Always
+    // supersede a stale pagination request and rebase both list and nextOffset
+    // from page 0; otherwise a user who loaded more can miss the new record.
+    loadHistory(0, { supersedeInFlight: true });
+  }, [loadHistory]);
+
   const prepareHistoryRetry = useCallback((saved: VideoTask) => {
     if (saved.canRetry !== true) { toast.error("原任务结果或费用尚未确认，请先刷新状态"); return; }
-    const model = models.find(item => item.id === (saved.publicModelId || saved.modelId));
+    const snapshotTask = saved as SnapshotVideoTask;
+    const snapshot = snapshotTask.requestSnapshot;
+    const retryInputs = snapshotTask.retryInputs;
+    const model = models.find(item => item.id === (snapshot?.publicModelId || saved.publicModelId || saved.modelId));
     const localId = nextLocalId.current++;
     const card: TaskCard = { ...emptyCard(localId, 1, 'retry_' + Date.now(), saved.batchTopic || ''),
-      prompt: saved.prompt || '', modelId: model?.id || '', modelName: model?.name || saved.modelName || '',
-      firstFrameUrl: saved.firstFrameUrl || '', lastFrameUrl: saved.lastFrameUrl || '',
-      referenceImageUrl: saved.referenceImageUrl || '', durationSeconds: saved.durationSeconds || null,
-      aspectRatio: saved.aspectRatio, resolution: saved.resolution };
+      prompt: snapshot?.userPrompt ?? saved.prompt ?? '', negativePrompt: snapshot?.negativePrompt || '',
+      modelId: model?.id || '', modelName: model?.name || saved.modelName || '',
+      firstFrameUrl: retryInputs?.firstFrameUrl || saved.firstFrameUrl || '',
+      lastFrameUrl: retryInputs?.lastFrameUrl || saved.lastFrameUrl || '',
+      referenceImageUrl: retryInputs?.referenceImageUrl || saved.referenceImageUrl || '',
+      referenceImageUrls: retryInputs?.referenceImageUrls || [],
+      audioUrl: retryInputs?.audioUrl || '',
+      referenceAudioUrls: retryInputs?.referenceAudioUrls || [],
+      sourceVideoUrl: retryInputs?.sourceVideoUrl || '',
+      durationSeconds: snapshot?.targetDurationSeconds ?? saved.durationSeconds ?? null,
+      aspectRatio: snapshot?.aspectRatio || saved.aspectRatio,
+      resolution: snapshot?.resolution || saved.resolution,
+      fps: snapshot?.fps ?? undefined,
+      seed: snapshot?.seed ?? undefined,
+      generateAudio: restoreVideoGenerateAudio(snapshot?.generateAudio),
+      ...(snapshot ? { requestSnapshot: snapshot } : {}) };
     setSelectedModelId(model?.id || '');
     setTasks(previous => previous.some(requiresVideoTaskTracking) ? [...previous, card] : [card]);
-    if (saved.durationSeconds) setDuration(saved.durationSeconds);
-    if (saved.resolution) setResolution(saved.resolution);
-    const ratio = AI_VIDEO_PAGE_ASPECT_RATIOS.find(item => item.value === saved.aspectRatio);
+    if (card.durationSeconds) setDuration(card.durationSeconds);
+    if (card.resolution) setResolution(card.resolution);
+    const ratio = AI_VIDEO_PAGE_ASPECT_RATIOS.find(item => item.value === card.aspectRatio);
     if (ratio) setAspectRatio(ratio);
     setShowHistory(false);
     if (!model) {
@@ -1186,7 +1323,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   setTasks((prev) => prev.map((t) =>
                     t.taskId === data.taskId ? { ...t, status: "completed", videoUrl: data.videoUrl || data.video_url || "", storageUrl: data.storageUrl || data.storage_url || "", thumbnailUrl: data.thumbnailUrl || "", needsProxy: data.needsProxy || false, error: "", progress: 100 } : t
                   ));
-                  loadHistory();
+                  refreshHistoryFirstPage();
                   if (data.cashBalance !== undefined) setCashBalance(data.cashBalance);
                   syncTaskToConversation(undefined, data.taskId, "", { status: "completed", videoUrl: data.videoUrl || data.video_url || "" });
                   sseRefs.current.delete(task.taskId!);
@@ -1198,6 +1335,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     setTasks((prev) => prev.map((t) =>
                       t.taskId === data.taskId ? { ...t, status: "failed", errorMessage, clientRequestId: "", clientRequestFingerprint: "" } : t
                     ));
+                    refreshHistoryFirstPage();
                     syncTaskToConversation(undefined, data.taskId, "", { status: "failed", errorMessage });
                   }
                   sseRefs.current.delete(task.taskId!);
@@ -1209,7 +1347,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       ? { ...t, status: "cancelled", errorMessage: "已取消", clientRequestId: "", clientRequestFingerprint: "" }
                       : t
                   ));
-                  loadHistory();
+                  refreshHistoryFirstPage();
                   syncTaskToConversation(undefined, data.taskId, "", { status: "failed", errorMessage: "已取消" });
                   sseRefs.current.delete(task.taskId!);
                   break;
@@ -1236,7 +1374,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
               const sd = await sr.json();
               if (sd.status === "completed") {
                 setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "completed", videoUrl: sd.videoUrl || sd.video_url || "", storageUrl: sd.storageUrl || sd.storage_url || "", thumbnailUrl: sd.thumbnailUrl || "", needsProxy: sd.needsProxy || false, error: "", progress: 100 } : t));
-                loadHistory();
+                refreshHistoryFirstPage();
                 if (sd.cashBalance !== undefined) setCashBalance(sd.cashBalance);
                 syncTaskToConversation(undefined, task.taskId!, "", { status: "completed", videoUrl: sd.videoUrl || sd.video_url || "" });
                 sseRefs.current.delete(task.taskId!);
@@ -1244,8 +1382,15 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
               }
               if (sd.status === "failed") {
                 setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "failed", errorMessage: sd.errorMessage || "生成失败", clientRequestId: "", clientRequestFingerprint: "" } : t));
-                loadHistory();
+                refreshHistoryFirstPage();
                 syncTaskToConversation(undefined, task.taskId!, "", { status: "failed", errorMessage: sd.errorMessage || "生成失败" });
+                sseRefs.current.delete(task.taskId!);
+                return;
+              }
+              if (sd.status === "cancelled") {
+                setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "cancelled", errorMessage: "已取消", clientRequestId: "", clientRequestFingerprint: "" } : t));
+                refreshHistoryFirstPage();
+                syncTaskToConversation(undefined, task.taskId!, "", { status: "failed", errorMessage: "已取消" });
                 sseRefs.current.delete(task.taskId!);
                 return;
               }
@@ -1261,8 +1406,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                 headers: { Authorization: `Bearer ${auth?.token || ""}` },
               });
               const sd = await sr.json();
-                if (sd.status === "completed") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "completed", videoUrl: sd.videoUrl || sd.video_url || "", storageUrl: sd.storageUrl || sd.storage_url || "", thumbnailUrl: sd.thumbnailUrl || "", needsProxy: sd.needsProxy || false, error: "", progress: 100 } : t)); loadHistory(); if (sd.cashBalance !== undefined) setCashBalance(sd.cashBalance); sseRefs.current.delete(task.taskId!); return; }
-              if (sd.status === "failed") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "failed", errorMessage: sd.errorMessage || "生成失败", clientRequestId: "", clientRequestFingerprint: "" } : t)); loadHistory(); sseRefs.current.delete(task.taskId!); return; }
+                if (sd.status === "completed") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "completed", videoUrl: sd.videoUrl || sd.video_url || "", storageUrl: sd.storageUrl || sd.storage_url || "", thumbnailUrl: sd.thumbnailUrl || "", needsProxy: sd.needsProxy || false, error: "", progress: 100 } : t)); refreshHistoryFirstPage(); if (sd.cashBalance !== undefined) setCashBalance(sd.cashBalance); sseRefs.current.delete(task.taskId!); return; }
+              if (sd.status === "failed") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "failed", errorMessage: sd.errorMessage || "生成失败", clientRequestId: "", clientRequestFingerprint: "" } : t)); refreshHistoryFirstPage(); sseRefs.current.delete(task.taskId!); return; }
+              if (sd.status === "cancelled") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "cancelled", errorMessage: "已取消", clientRequestId: "", clientRequestFingerprint: "" } : t)); refreshHistoryFirstPage(); sseRefs.current.delete(task.taskId!); return; }
             } catch { /* ignore */ }
             reconnectTimersRef.current.set(task.taskId!, setTimeout(() => { reconnectTimersRef.current.delete(task.taskId!); if (sseRefs.current.has(task.taskId!)) fetchSSE(); }, 3000));
           }
@@ -1307,7 +1453,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     // SSE 连接是长连接，progress 事件更新 tasks → 触发 re-render → 
     // 如果 cleanup abort 所有 SSE，sseRefs 条目残留 → 新 effect 跳过重建 → 任务卡死
     // 组件卸载时的清理由下方独立 useEffect 处理
-  }, [tasks, auth?.token]);
+  }, [tasks, auth?.token, refreshHistoryFirstPage]);
 
   /* ── SSE 连接卸载清理（仅在组件卸载时执行，不影响 re-render） ── */
   useEffect(() => {
@@ -1340,8 +1486,13 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           }
         } catch {}
       }
+      const uploadedAssets = tasksRef.current
+        .filter((task) => !requiresVideoTaskTracking(task))
+        .flatMap((task) => task.uploadedReferenceAssets || []);
+      const uniqueAssets = [...new Map(uploadedAssets.map((asset) => [asset.assetRef, asset])).values()];
+      releaseReferenceAssets(uniqueAssets);
     };
-  }, []);
+  }, [releaseReferenceAssets]);
 
   /* ── Get selected model ── */
   const selectedModel = models.find((m) => m.id === selectedModelId);
@@ -2208,7 +2359,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
   /* ── Remove task ── */
   const removeTask = (localId: number) => {
-    if (tasksRef.current.some(task => task.localId === localId && requiresVideoTaskTracking(task))) return;
+    const removed = tasksRef.current.find((task) => task.localId === localId);
+    if (!removed || requiresVideoTaskTracking(removed)) return;
+    releaseReferenceAssets(removed.uploadedReferenceAssets || []);
     setTasks((prev) => {
       const remaining = prev.filter((t) => t.localId !== localId);
       // 重新编号：始终从任务1开始依次排列
@@ -2281,7 +2434,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           // 刷新余额和历史
           fetch("/api/cash/balance", { headers: { Authorization: `Bearer ${auth.token}` } })
             .then((r) => r.json()).then((bal) => setCashBalance(bal.balance ?? 0)).catch(() => {});
-          loadHistory();
+          refreshHistoryFirstPage();
           return; // 不终止！
         }
 
@@ -2296,6 +2449,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
             )
           );
           toast.info(`任务${task.cardIndex}生成失败，状态已同步`);
+          refreshHistoryFirstPage();
           return;
         }
       } catch {
@@ -2319,7 +2473,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         // explanation. Do not collapse it into a generic provider error: the
         // operator must know that the original task is still being tracked.
         toast.info(String(data.message || data.error || "服务尚未确认取消，任务仍在追踪中，请勿重复生成。"));
-        if (data.status === "completed" || data.status === "failed") loadHistory();
+        if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") refreshHistoryFirstPage();
         return;
       }
     } catch {
@@ -2360,6 +2514,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           : t
       )
     );
+    refreshHistoryFirstPage();
     if (task.status !== "idle" && task.status !== "failed" && task.status !== "cancelled") {
       toast.info(`任务${task.cardIndex}已终止`);
     }
@@ -2373,15 +2528,62 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     );
   };
 
+  const taskReferenceUrls = (task: TaskCard) => new Set([
+    task.firstFrameUrl,
+    task.lastFrameUrl,
+    task.referenceImageUrl,
+    ...(task.referenceImageUrls || []),
+    task.audioUrl || "",
+    ...(task.referenceAudioUrls || []),
+  ].filter(Boolean));
+
+  const replaceTaskReferenceUrl = (
+    localId: number,
+    field: "firstFrameUrl" | "lastFrameUrl" | "referenceImageUrl" | "audioUrl",
+    value: string,
+    uploadedAsset?: UploadedVideoReferenceAsset,
+  ) => {
+    const task = tasksRef.current.find((item) => item.localId === localId);
+    if (!task || requiresVideoTaskTracking(task)) return;
+    const previousUrl = String(task[field] || "");
+    const nextTask = { ...task, [field]: value };
+    const retainedUrls = taskReferenceUrls(nextTask);
+    const removedAssets = (task.uploadedReferenceAssets || []).filter((asset) => !retainedUrls.has(asset.url));
+    if (previousUrl.startsWith("blob:") && previousUrl !== value) URL.revokeObjectURL(previousUrl);
+    releaseReferenceAssets(removedAssets);
+    setTasks((current) => current.map((item) => item.localId === localId
+      ? {
+          ...item,
+          [field]: value,
+          uploadedReferenceAssets: [
+            ...(item.uploadedReferenceAssets || []).filter((asset) => retainedUrls.has(asset.url)),
+            ...(uploadedAsset && !(item.uploadedReferenceAssets || []).some((asset) => asset.assetRef === uploadedAsset.assetRef)
+              ? [uploadedAsset]
+              : []),
+          ],
+        }
+      : item));
+  };
+
   const updateReferenceList = (
     localId: number,
     field: "referenceImageUrls" | "referenceAudioUrls",
     updater: (current: string[]) => string[],
   ) => {
-    if (tasksRef.current.some(task => task.localId === localId && requiresVideoTaskTracking(task))) return;
-    setTasks((current) => current.map((task) => task.localId === localId
-      ? { ...task, [field]: updater(task[field] || []) }
-      : task));
+    const task = tasksRef.current.find((item) => item.localId === localId);
+    if (!task || requiresVideoTaskTracking(task)) return;
+    const nextValues = updater(task[field] || []);
+    const nextTask = { ...task, [field]: nextValues };
+    const retainedUrls = taskReferenceUrls(nextTask);
+    const removedAssets = (task.uploadedReferenceAssets || []).filter((asset) => !retainedUrls.has(asset.url));
+    releaseReferenceAssets(removedAssets);
+    setTasks((current) => current.map((item) => item.localId === localId
+      ? {
+          ...item,
+          [field]: nextValues,
+          uploadedReferenceAssets: (item.uploadedReferenceAssets || []).filter((asset) => retainedUrls.has(asset.url)),
+        }
+      : item));
   };
 
   const uploadReferenceFiles = async (
@@ -2404,19 +2606,26 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       toast.info(`最多添加 ${maxItems} 个${category === "image" ? "参考图" : "参考音频"}`);
       return;
     }
-    const uploaded: string[] = [];
+    const uploaded: UploadedVideoReferenceAsset[] = [];
     for (const file of selected) {
       try {
-        const url = category === "image"
-          ? await uploadImageFile(file, auth.token)
-          : await uploadAudioFile(file, auth.token);
-        uploaded.push(url);
+        const asset = category === "image"
+          ? await uploadImageFile(file, auth.token, referenceUploadSession)
+          : await uploadAudioFile(file, auth.token, referenceUploadSession);
+        uploaded.push(asset);
       } catch (error) {
         toast.error(`${file.name} 上传失败：${error instanceof Error ? error.message : "未知错误"}`);
       }
     }
     if (uploaded.length > 0) {
-      updateReferenceList(localId, field, (items) => [...items, ...uploaded].slice(0, maxItems));
+      const uploadedUrls = uploaded.map((asset) => asset.url);
+      setTasks((current) => current.map((item) => item.localId === localId
+        ? {
+            ...item,
+            [field]: [...(item[field] || []), ...uploadedUrls].slice(0, maxItems),
+            uploadedReferenceAssets: [...(item.uploadedReferenceAssets || []), ...uploaded],
+          }
+        : item));
       toast.success(`已添加 ${uploaded.length} 个${category === "image" ? "参考图" : "参考音频"}`);
     }
   };
@@ -2458,6 +2667,13 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       previewUrl: URL.createObjectURL(file),
     }));
 
+    for (const slot of slots) {
+      const current = tasksRef.current[slot.taskIndex];
+      const oldUrl = current ? String(current[slot.field] || "") : "";
+      const replacedAssets = (current?.uploadedReferenceAssets || []).filter((asset) => asset.url === oldUrl);
+      releaseReferenceAssets(replacedAssets);
+    }
+
     setIsImportingOrderedImages(true);
     setTasks((prev) => {
       const next = [...prev];
@@ -2466,7 +2682,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       }
       for (const slot of slots) {
         const current = next[slot.taskIndex];
-        next[slot.taskIndex] = { ...current, [slot.field]: slot.previewUrl, status: "idle", errorMessage: "" };
+        const oldUrl = String(current[slot.field] || "");
+        next[slot.taskIndex] = {
+          ...current,
+          [slot.field]: slot.previewUrl,
+          uploadedReferenceAssets: (current.uploadedReferenceAssets || []).filter((asset) => asset.url !== oldUrl),
+          status: "idle",
+          errorMessage: "",
+        };
       }
       return next;
     });
@@ -2475,10 +2698,12 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     try {
       for (const slot of slots) {
         try {
-          const uploadedUrl = await uploadImageFile(slot.file, auth.token);
+          const uploaded = await uploadImageFile(slot.file, auth.token, referenceUploadSession);
           URL.revokeObjectURL(slot.previewUrl);
           setTasks((prev) => prev.map((task, index) =>
-            index === slot.taskIndex ? { ...task, [slot.field]: uploadedUrl } : task
+            index === slot.taskIndex
+              ? { ...task, [slot.field]: uploaded.url, uploadedReferenceAssets: [...(task.uploadedReferenceAssets || []), uploaded] }
+              : task
           ));
         } catch (error) {
           failedCount += 1;
@@ -2634,7 +2859,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       showPreflightGuidance(message);
       return;
     }
-    const suppliedAudios = submittedAudioUrls.filter((url) => Boolean(url?.trim())).length;
+    const suppliedAudios = [task.audioUrl || "", ...submittedAudioUrls].filter((url) => Boolean(url?.trim())).length;
     if (suppliedAudios < inputCapabilities.minReferenceAudios) {
       const message = `该模型至少需要 ${inputCapabilities.minReferenceAudios} 段参考音频，当前 ${suppliedAudios} 段`;
       showPreflightGuidance(message);
@@ -2651,11 +2876,12 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       lastFrameUrl: inputCapabilities.showLastFrame ? (task.lastFrameUrl || "") : "",
       referenceImageUrl: inputCapabilities.showReferenceImages ? (task.referenceImageUrl || "") : "",
       referenceImageUrls: inputCapabilities.showReferenceImages ? (task.referenceImageUrls || []) : [],
+      audioUrl: task.audioUrl || "",
       referenceAudioUrls: submittedAudioUrls,
       sourceVideoUrl: inputCapabilities.supportsSourceVideoInput ? (task.sourceVideoUrl || "") : "",
     };
     const inputViolation = validateVideoInputContract(inputCapabilities, submittedInputs);
-    const nonPublicInput = [...submittedImageUrls, ...submittedAudioUrls, submittedInputs.sourceVideoUrl]
+    const nonPublicInput = [...submittedImageUrls, submittedInputs.audioUrl, ...submittedAudioUrls, submittedInputs.sourceVideoUrl]
       .some((url) => Boolean(url?.trim()) && !isPublicVideoAssetUrl(url));
     if (inputViolation || nonPublicInput) {
       const message = inputViolation?.message || "参考素材暂时无法读取，请等待上传完成，或通过上传按钮重新上传素材";
@@ -2667,6 +2893,10 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     // 模糊的断网、500/502/503 不会自动换键，因而不会制造第二个供应商任务或重复扣费。
     const targetDuration = coerceVideoTargetDuration(currentModel, task.durationSeconds ?? duration);
     const videoTiming = resolveVideoDuration(currentModel, targetDuration);
+    const submittedGenerateAudio = videoGenerateAudioForSubmission(
+      currentModel.supportsGenerateAudioToggle === true,
+      task.generateAudio,
+    );
     if (!videoTiming.supported) {
       const message = `当前模型最长支持 ${videoTiming.maxDuration} 秒，请缩短镜头或切换模型`;
       showPreflightGuidance(message);
@@ -2682,10 +2912,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       referenceImageUrl: task.referenceImageUrl || "",
       referenceImageUrls: task.referenceImageUrls || [],
       referenceAudioUrls: task.referenceAudioUrls || [],
+      audioUrl: task.audioUrl || "",
       sourceVideoUrl: task.sourceVideoUrl || "",
       duration: videoTiming.target,
       aspectRatio: aspectRatio.value,
       resolution: selectedResolution,
+      fps: task.fps ?? null,
+      seed: task.seed ?? null,
+      generateAudio: submittedGenerateAudio ?? null,
     });
     const clientAttempt = resolveBrowserClientAttempt({
       storageKey: videoClientAttemptScope(identity.userId, task),
@@ -2699,7 +2933,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
     const checkpoint: TaskCard = { ...task, clientRequestId, clientRequestFingerprint, modelId: currentModel.id, modelName: currentModel.name,
       modelSnapshot: currentModel, aspectRatio: aspectRatio.value, resolution: selectedResolution, followsSourceDuration: inputCapabilities.requiresSourceVideo, supportsRemoteCancel: currentModel.supportsRemoteCancel === true,
-      status: 'pending', durationSeconds: targetDuration, errorMessage: '', submittedAt: Date.now(), videoUrl: '', taskId: '', progress: undefined, thumbnailUrl: '', contentUrl: '' };
+      generateAudio: submittedGenerateAudio, status: 'pending', durationSeconds: targetDuration, errorMessage: '', submittedAt: Date.now(), videoUrl: '', taskId: '', progress: undefined, thumbnailUrl: '', contentUrl: '' };
 
     // 关闭旧任务的 SSE 连接（防止旧回调覆盖新状态）
     if (task.taskId && sseRefs.current.has(task.taskId)) {
@@ -2716,6 +2950,17 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     );
 
     try {
+      const submittedReferenceUrls = new Set([
+        submittedInputs.imageUrl,
+        submittedInputs.lastFrameUrl,
+        submittedInputs.referenceImageUrl,
+        ...submittedInputs.referenceImageUrls,
+        submittedInputs.audioUrl,
+        ...submittedInputs.referenceAudioUrls,
+      ].filter(Boolean));
+      const submittedReferenceAssetRefs = (task.uploadedReferenceAssets || [])
+        .filter((asset) => submittedReferenceUrls.has(asset.url))
+        .map((asset) => ({ url: asset.url, asset_ref: asset.assetRef, category: asset.category }));
       const res = await fetch("/api/video/generate", {
         method: "POST",
         headers: {
@@ -2731,11 +2976,16 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           reference_image_url: submittedInputs.referenceImageUrl,
           reference_image_urls: submittedInputs.referenceImageUrls,
           reference_audio_urls: submittedInputs.referenceAudioUrls,
+          audio_url: submittedInputs.audioUrl,
           negative_prompt: task.negativePrompt || "",
           duration: targetDuration,
           aspect_ratio: aspectRatio.value,
           resolution: selectedResolution,
           resolution_tier: selectedResolution,
+          ...(task.fps !== undefined ? { fps: task.fps } : {}),
+          ...(task.seed !== undefined ? { seed: task.seed } : {}),
+          ...(submittedGenerateAudio !== undefined ? { generate_audio: submittedGenerateAudio } : {}),
+          ...(submittedReferenceAssetRefs.length > 0 ? { reference_asset_refs: submittedReferenceAssetRefs } : {}),
           source_video_url: submittedInputs.sourceVideoUrl,
           task_label: `任务${task.cardIndex}`,
           batch_id: task.batchId,
@@ -2768,6 +3018,32 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         return;
       }
 
+      // A business task id proves only that our durable reservation exists. It
+      // does not prove that a provider request was dispatched. Admission and
+      // pre-dispatch failures must never be painted as an upstream queue.
+      if (data.task_submitted === false) {
+        const releasePending = data.error_code === "VIDEO_ADMISSION_RELEASE_UNCONFIRMED"
+          || data.status === "billing_pending";
+        const failureMessage = data.error || data.message || "任务未提交供应商";
+        if (!releasePending) {
+          clearBrowserClientAttempt(videoClientAttemptScope(identity.userId, task), clientRequestId);
+        }
+        setTasks((previous) => previous.map((item) => item.localId === localId
+          ? {
+              ...item,
+              taskId: data.task_id || data.taskId || data.business_task_id || item.taskId,
+              status: "failed",
+              errorMessage: failureMessage,
+              statusDetail: releasePending ? "预算释放状态核对中，请保留原请求号" : failureMessage,
+              ...(releasePending ? {} : { clientRequestId: "", clientRequestFingerprint: "" }),
+            }
+          : item));
+        if (releasePending) toast.info(failureMessage);
+        else toast.error(failureMessage);
+        refreshHistoryFirstPage();
+        return;
+      }
+
       if (data.task_id || data.taskId || (data.status === "failed" && data.business_task_id)) {
         const taskId = data.task_id || data.taskId || data.business_task_id;
         // 同步模式：直接返回视频URL
@@ -2776,7 +3052,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           const failureMessage = data.error || "所选模型生成失败";
           setTasks(previous => previous.map(item => item.localId === localId ? { ...item, taskId, status: "failed", errorMessage: failureMessage, clientRequestId: "", clientRequestFingerprint: "" } : item));
           toast.error(failureMessage);
-          loadHistory();
+          refreshHistoryFirstPage();
         } else if (data.status === "completed" && data.video_url) {
           clearBrowserClientAttempt(videoClientAttemptScope(identity.userId, task), clientRequestId);
           setTasks((prev) =>
@@ -2801,7 +3077,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
               .catch(() => {});
           }
           // 刷新历史
-          loadHistory();
+          refreshHistoryFirstPage();
         } else if (data.status === "cancelled") {
           clearBrowserClientAttempt(videoClientAttemptScope(identity.userId, task), clientRequestId);
           cancelledRef.current.add(localId);
@@ -2819,7 +3095,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
               }
             : item));
           toast.info(`任务${task.cardIndex}已终止`);
-          loadHistory();
+          refreshHistoryFirstPage();
         } else {
           // 异步模式：已提交成功，等待上游排队/渲染
           setTasks((prev) =>
@@ -3179,7 +3455,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg font-semibold">生成历史</h2>
                   <span className="text-xs text-[var(--text-secondary)]">
-                    仅显示本工作台近 3 天记录 · 到期自动移出 · 长期保存请下载
+                    视频走原始链路实时预览 · 源有效即可播放或下载 · 长期保存请下载到电脑
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -3223,7 +3499,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   <p className="text-xs mt-1">生成完成后会在这里显示；长期保存请及时下载到电脑</p>
                 </div>
               ) : (
-                <VideoHistoryGallery tasks={history} loading={historyLoading} error={undefined} retentionDays={3} hideToolbar authToken={auth?.token}
+                <VideoHistoryGallery tasks={history} loading={historyLoading} error={undefined} hideToolbar authToken={auth?.token}
                   onRefresh={() => loadHistory(0)} onRetry={prepareHistoryRetry} selectedIds={selectedIds}
                   onLoadMore={historyNextOffset === null ? undefined : () => loadHistory(historyNextOffset)}
                   onSelect={id => setSelectedIds(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
@@ -3525,6 +3801,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       <Button
                         variant="outline"
                         onClick={() => {
+                          releaseReferenceAssets(tasksRef.current
+                            .filter((task) => !requiresVideoTaskTracking(task))
+                            .flatMap((task) => task.uploadedReferenceAssets || []));
                           setTasks((prev) => prev.map((t) => requiresVideoTaskTracking(t) ? t : ({
                             ...emptyCard(t.localId, t.cardIndex, t.batchId, t.batchTopic),
                             localId: t.localId,
@@ -3540,6 +3819,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       <Button
                         variant="outline"
                         onClick={() => {
+                          releaseReferenceAssets(tasksRef.current
+                            .filter((task) => !requiresVideoTaskTracking(task))
+                            .flatMap((task) => task.uploadedReferenceAssets || []));
                           setCurrentBatchId(`batch_${Date.now()}`);
                           currentCardCounter.current = 1;
                           setTasks(prev => prev.filter(requiresVideoTaskTracking));
@@ -3726,6 +4008,36 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                         })()}
                       </div>
 
+                      {cardModel?.supportsGenerateAudioToggle === true && (
+                        <div>
+                          <span className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">声音</span>
+                          <div
+                            role="radiogroup"
+                            aria-label={`任务${task.cardIndex}声音设置`}
+                            className="inline-flex h-8 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--background)]"
+                          >
+                            <button
+                              type="button"
+                              role="radio"
+                              aria-checked={task.generateAudio !== false}
+                              onClick={() => updateTask(task.localId, "generateAudio", true)}
+                              className={`px-3 text-[11px] font-medium transition-colors ${task.generateAudio !== false ? "bg-[var(--primary)]/15 text-[var(--primary)]" : "text-[var(--text-secondary)]"}`}
+                            >
+                              生成声音
+                            </button>
+                            <button
+                              type="button"
+                              role="radio"
+                              aria-checked={task.generateAudio === false}
+                              onClick={() => updateTask(task.localId, "generateAudio", false)}
+                              className={`border-l border-[var(--border)] px-3 text-[11px] font-medium transition-colors ${task.generateAudio === false ? "bg-[var(--primary)]/15 text-[var(--primary)]" : "text-[var(--text-secondary)]"}`}
+                            >
+                              静音
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* 图片输入区 — 首帧/尾帧折叠式 + 参考图整合模块 */}
                       <div className="space-y-1.5">
                         {/* 首帧 + 尾帧：半折叠交互，无图时窄条，有图自动展开 */}
@@ -3750,7 +4062,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                   <button
                                     type="button"
                                     aria-label={`移除任务${task.cardIndex}首帧`}
-                                    onClick={() => updateTask(task.localId, "firstFrameUrl", "")}
+                                    onClick={() => replaceTaskReferenceUrl(task.localId, "firstFrameUrl", "")}
                                     className="absolute top-1.5 right-1.5 z-10 w-5 h-5 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center text-white opacity-0 group-hover/img:opacity-100 focus:opacity-100 transition-opacity"
                                   >
                                     <X className="w-3 h-3" />
@@ -3758,7 +4070,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                 </div>
                                 <Input
                                   value={task.firstFrameUrl || ""}
-                                  onChange={(e) => updateTask(task.localId, "firstFrameUrl", e.target.value)}
+                                  onChange={(e) => replaceTaskReferenceUrl(task.localId, "firstFrameUrl", e.target.value)}
                                   placeholder="或粘贴图片URL"
                                   className="bg-[var(--background)] border-[var(--border)] text-[11px] h-7 mt-1.5 focus:border-[var(--primary)]/50"
                                 />
@@ -3779,14 +4091,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                     }
                                     // 先用 blob URL 做本地预览
                                     const previewUrl = URL.createObjectURL(file);
-                                    updateTask(task.localId, "firstFrameUrl", previewUrl);
+                                    replaceTaskReferenceUrl(task.localId, "firstFrameUrl", previewUrl);
                                     // 上传到服务器获取公网URL
                                     try {
-                                      const url = await uploadImageFile(file, auth?.token || null);
-                                      updateTask(task.localId, "firstFrameUrl", url);
+                                      const uploaded = await uploadImageFile(file, auth?.token || null, referenceUploadSession);
+                                      replaceTaskReferenceUrl(task.localId, "firstFrameUrl", uploaded.url, uploaded);
                                     } catch (err) {
                                       toast.error(`首帧上传失败: ${err instanceof Error ? err.message : err}`);
-                                      updateTask(task.localId, "firstFrameUrl", "");
+                                      replaceTaskReferenceUrl(task.localId, "firstFrameUrl", "");
                                     }
                                   };
                                   input.click();
@@ -3818,7 +4130,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                   <button
                                     type="button"
                                     aria-label={`移除任务${task.cardIndex}尾帧`}
-                                    onClick={() => updateTask(task.localId, "lastFrameUrl", "")}
+                                    onClick={() => replaceTaskReferenceUrl(task.localId, "lastFrameUrl", "")}
                                     className="absolute top-1.5 right-1.5 z-10 w-5 h-5 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center text-white opacity-0 group-hover/img:opacity-100 focus:opacity-100 transition-opacity"
                                   >
                                     <X className="w-3 h-3" />
@@ -3826,7 +4138,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                 </div>
                                 <Input
                                   value={task.lastFrameUrl || ""}
-                                  onChange={(e) => updateTask(task.localId, "lastFrameUrl", e.target.value)}
+                                  onChange={(e) => replaceTaskReferenceUrl(task.localId, "lastFrameUrl", e.target.value)}
                                   placeholder="或粘贴图片URL"
                                   className="bg-[var(--background)] border-[var(--border)] text-[11px] h-7 mt-1.5 focus:border-[var(--primary)]/50"
                                 />
@@ -3846,13 +4158,13 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                       return;
                                     }
                                     const previewUrl = URL.createObjectURL(file);
-                                    updateTask(task.localId, "lastFrameUrl", previewUrl);
+                                    replaceTaskReferenceUrl(task.localId, "lastFrameUrl", previewUrl);
                                     try {
-                                      const url = await uploadImageFile(file, auth?.token || null);
-                                      updateTask(task.localId, "lastFrameUrl", url);
+                                      const uploaded = await uploadImageFile(file, auth?.token || null, referenceUploadSession);
+                                      replaceTaskReferenceUrl(task.localId, "lastFrameUrl", uploaded.url, uploaded);
                                     } catch (err) {
                                       toast.error(`尾帧上传失败: ${err instanceof Error ? err.message : err}`);
-                                      updateTask(task.localId, "lastFrameUrl", "");
+                                      replaceTaskReferenceUrl(task.localId, "lastFrameUrl", "");
                                     }
                                   };
                                   input.click();
@@ -3891,7 +4203,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                   <button
                                     type="button"
                                     aria-label={`移除任务${task.cardIndex}参考图`}
-                                    onClick={() => updateTask(task.localId, "referenceImageUrl", "")}
+                                    onClick={() => replaceTaskReferenceUrl(task.localId, "referenceImageUrl", "")}
                                     className="absolute -top-1 -right-1 z-10 w-4 h-4 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center text-white opacity-0 group-hover/ref:opacity-100 focus:opacity-100 transition-opacity"
                                   >
                                     <X className="w-2.5 h-2.5" />
@@ -3899,7 +4211,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                 </div>
                                 <Input
                                   value={task.referenceImageUrl}
-                                  onChange={(e) => updateTask(task.localId, "referenceImageUrl", e.target.value)}
+                                  onChange={(e) => replaceTaskReferenceUrl(task.localId, "referenceImageUrl", e.target.value)}
                                   placeholder="或粘贴图片URL"
                                   className="bg-[var(--background)] border-[var(--border)] text-[11px] h-8 flex-1 focus:border-[var(--primary)]/50"
                                 />
@@ -3919,13 +4231,13 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                         return;
                                       }
                                       const previewUrl = URL.createObjectURL(file);
-                                      updateTask(task.localId, "referenceImageUrl", previewUrl);
+                                      replaceTaskReferenceUrl(task.localId, "referenceImageUrl", previewUrl);
                                       try {
-                                        const url = await uploadImageFile(file, auth?.token || null);
-                                        updateTask(task.localId, "referenceImageUrl", url);
+                                        const uploaded = await uploadImageFile(file, auth?.token || null, referenceUploadSession);
+                                        replaceTaskReferenceUrl(task.localId, "referenceImageUrl", uploaded.url, uploaded);
                                       } catch (err) {
                                         toast.error(`参考图上传失败: ${err instanceof Error ? err.message : err}`);
-                                        updateTask(task.localId, "referenceImageUrl", "");
+                                        replaceTaskReferenceUrl(task.localId, "referenceImageUrl", "");
                                       }
                                     };
                                     input.click();
@@ -3938,7 +4250,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                 <Input
                                   aria-label={`任务${task.cardIndex}参考图 URL`}
                                   value={task.referenceImageUrl || ""}
-                                  onChange={(e) => updateTask(task.localId, "referenceImageUrl", e.target.value)}
+                                  onChange={(e) => replaceTaskReferenceUrl(task.localId, "referenceImageUrl", e.target.value)}
                                   placeholder="或粘贴图片URL后按回车添加"
                                   className="bg-[var(--background)] border-[var(--border)] text-[11px] h-8 focus:border-[var(--primary)]/50"
                                 />
@@ -4200,7 +4512,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
               {/* Bottom tip */}
               <div className="text-center mt-10 mb-6 text-xs text-[var(--text-secondary)]">
-                生成完成后可播放或下载，任务会保存在历史记录中。
+                生成完成后通过原始链路播放或下载；平台保留任务与账务记录，不复制普通视频文件。
               </div>
                 </div>
               </div>
@@ -4229,7 +4541,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           </div>
         </div>
       )}
-      <BrandFooter privacyNote="视频由所选模型处理，生成结果保存至你的历史记录" />
+      <BrandFooter privacyNote="视频由所选模型处理；普通视频不复制到平台存储，长期保存请下载到电脑" />
 
       {/* 现金充值弹窗 */}
       <RechargeDialog

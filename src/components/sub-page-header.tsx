@@ -3,7 +3,6 @@
 import { ExternalLink, Home, type LucideIcon } from "lucide-react";
 import { useCallback } from "react";
 import { useAppScopedRouter } from "@/hooks/use-app-scoped-router";
-import { UserThemeSwitcher } from "@/components/user-theme-switcher";
 
 /**
  * 统一快捷导航按钮 — 等高等宽，位置一致
@@ -59,6 +58,7 @@ interface SubPageHeaderProps {
   rightSlot?: React.ReactNode;
   backHref?: string; // 自定义返回路径，默认 "/"
   onBack?: () => void; // 自定义返回回调，优先于 backHref
+  /** @deprecated 主题入口统一保留在左下侧栏；兼容旧调用，不再在页头渲染。 */
   showThemeSwitcher?: boolean;
 }
 
@@ -68,7 +68,7 @@ interface SubPageHeaderProps {
  * - 中间：页面标题 + 副标题
  * - 右侧：自定义内容（可选）
  */
-export function SubPageHeader({ title, subtitle, icon, rightSlot, backHref = "/", onBack, showThemeSwitcher = true }: SubPageHeaderProps) {
+export function SubPageHeader({ title, subtitle, icon, rightSlot, backHref = "/", onBack }: SubPageHeaderProps) {
   const router = useAppScopedRouter();
 
   const handleBack = useCallback(() => {
@@ -137,7 +137,6 @@ export function SubPageHeader({ title, subtitle, icon, rightSlot, backHref = "/"
         {/* 右侧：自定义内容 */}
         <div className="sub-page-actions flex items-center shrink-0 overflow-x-auto">
           {rightSlot}
-          {showThemeSwitcher && <UserThemeSwitcher />}
         </div>
       </div>
     </header>

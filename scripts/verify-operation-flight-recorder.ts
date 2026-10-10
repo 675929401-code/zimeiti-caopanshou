@@ -57,6 +57,14 @@ assert.match(sentry, /new URL\(url, window\.location\.origin\)\.origin !== windo
 assert.match(sentry, /method !== "GET" && method !== "HEAD"/u);
 assert.doesNotMatch(sentry, /let isIntercepting/u, "GLOBAL_FETCH_LOCK_MUST_NOT_RETURN");
 assert.match(sentry, /FETCH_NETWORK_ERROR/u);
+assert.match(sentry, /isObsoleteNavigationRequest/u);
+assert.match(sentry, /isPageRequestObsolete/u);
+assert.match(sentry, /if \(isPageRequestObsolete\(signal, startedPageUrl\)\) return response/u);
+assert.match(sentry, /signal\?\.aborted === true/u);
+assert.match(sentry, /pageLifecycleEnding/u);
+assert.match(sentry, /beforeunload/u);
+assert.match(sentry, /pagehide/u);
+assert.match(sentry, /window\.location\.href !== startedPageUrl/u);
 
 assert.match(ingest, /verifyToken/u);
 assert.match(ingest, /MAX_REQUEST_BYTES/u);

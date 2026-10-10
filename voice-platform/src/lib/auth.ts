@@ -1,8 +1,17 @@
 import { prisma } from './prisma';
-import { createHash, randomBytes, createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import bcrypt from 'bcryptjs';
 
-const JWT_SECRET = process.env.AUTH_SECRET?.trim() ?? '';
+const MIN_AUTH_SECRET_BYTES = 32;
+
+function readAuthSecret(): string | null {
+  const secret = process.env.AUTH_SECRET?.trim() ?? '';
+  return Buffer.byteLength(secret, 'utf8') >= MIN_AUTH_SECRET_BYTES ? secret : null;
+}
+
+export function isAuthSecurelyConfigured(): boolean {
+  return readAuthSecret() !== null;
+}
 
 function base64url(str: string): string {
   return Buffer.from(str).toString('base64url');
@@ -35,6 +44,10 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 
 export function createToken(userId: string, role: string): string {
+  const secret = readAuthSecret();
+  if (!secret) {
+    throw new Error('AUTH_SECRET is not securely configured');
+  }
   const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = base64url(JSON.stringify({
     userId,
@@ -42,19 +55,28 @@ export function createToken(userId: string, role: string): string {
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
   }));
-  const signature = createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest('base64url');
+  const signature = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${signature}`;
 }
 
 export function verifyToken(token: string): { userId: string; role: string } | null {
   try {
+    const secret = readAuthSecret();
+    if (!secret) return null;
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     const [header, payload, signature] = parts;
-    const expectedSig = createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest('base64url');
-    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) return null;
+    const parsedHeader = JSON.parse(base64urlDecode(header));
+    if (parsedHeader?.alg !== 'HS256' || parsedHeader?.typ !== 'JWT') return null;
+    const expectedSig = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
+    const suppliedSignature = Buffer.from(signature);
+    const expectedSignature = Buffer.from(expectedSig);
+    if (suppliedSignature.length !== expectedSignature.length) return null;
+    if (!timingSafeEqual(suppliedSignature, expectedSignature)) return null;
     const data = JSON.parse(base64urlDecode(payload));
-    if (data.exp && data.exp < Math.floor(Date.now() / 1000)) return null;
+    if (typeof data?.userId !== 'string' || data.userId.length === 0 || data.userId.length > 128) return null;
+    if (typeof data?.role !== 'string' || data.role.length === 0 || data.role.length > 64) return null;
+    if (typeof data?.exp !== 'number' || !Number.isSafeInteger(data.exp) || data.exp < Math.floor(Date.now() / 1000)) return null;
     return { userId: data.userId, role: data.role };
   } catch { return null; }
 }

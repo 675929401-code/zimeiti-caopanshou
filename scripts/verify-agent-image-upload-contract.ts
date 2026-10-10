@@ -82,8 +82,10 @@ assert.match(storage, /allowOriginalUrlFallback === false[\s\S]*throw new Error/
 assert.match(agentsRoute, /persistAvatar\(normalized, agentId, \{[\s\S]*allowOriginalUrlFallback: false,[\s\S]*ownerUserId: actorId/u, "智能体外链转存必须 fail closed 且绑定管理员归属");
 assert.doesNotMatch(agentsRoute, /const forceGenerate = updateData\.auto_generate_avatar/u, "更新接口不得保留强制覆盖人工头像的自动任务入口");
 assert.match(autoAvatarGenerator, /persistAvatar\(imageUrl, label, \{[\s\S]*allowOriginalUrlFallback: false/u, "自动头像存储失败不得回退供应商外链");
-assert.match(autoAvatarGenerator, /select\("id,avatar"\)[\s\S]*shouldGenerateAvatar\(currentAvatar\)/u, "自动头像落库前必须重新核对当前头像");
-assert.match(autoAvatarGenerator, /currentAvatar === null[\s\S]*\.is\("avatar", null\)[\s\S]*\.eq\("avatar", currentAvatar\)/u, "自动头像必须用 compare-and-set 防止竞态覆盖");
+assert.match(autoAvatarGenerator, /const snapshot = await readAgentAvatarCommitSnapshot\(agentId\)[\s\S]*shouldGenerateAvatar\(snapshot\.avatar\)[\s\S]*generateAvatarUrlForAgent/u, "自动头像必须在付费生成前读取头像与版本快照");
+assert.match(autoAvatarGenerator, /select\("id,avatar,config_revision"\)/u, "自动头像版本快照必须包含 config_revision");
+assert.match(autoAvatarGenerator, /\.eq\("config_revision", snapshot\.configRevision\)[\s\S]*snapshot\.avatar === null[\s\S]*\.is\("avatar", null\)[\s\S]*\.eq\("avatar", snapshot\.avatar\)/u, "自动头像必须同时 CAS 旧头像与配置版本");
+assert.match(autoAvatarGenerator, /discardUnclaimedGeneratedAvatar\(generatedAvatar\)/u, "CAS 失败必须清理或丢弃未采用生成物");
 assert.ok((batchAvatarRoute.match(/MANUAL_AVATAR_PRESERVED/gu) || []).length >= 4, "单个和批量自动任务都必须保留人工头像");
 assert.ok(batchAvatarRoute.indexOf("shouldGenerateAvatar(agent.avatar)") < batchAvatarRoute.indexOf("`batch-avatar-${agent.id}`"), "批量任务必须在付费生成前跳过已有头像");
 

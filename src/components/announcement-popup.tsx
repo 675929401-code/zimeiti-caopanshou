@@ -20,7 +20,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { useApp } from "@/contexts/app-context";
 import type { AnnouncementEventType, AnnouncementRecord } from "@/lib/announcement-domain";
 import {
-  announcementAutoDisplayDecision,
   normalizeAnnouncementDisplayLedger,
   recordAnnouncementImpression,
   type AnnouncementDisplayLedger,
@@ -29,16 +28,22 @@ import {
   APP_DIALOG_CLAIMED_EVENT,
   APP_DIALOG_PRIORITY,
   APP_DIALOG_RELEASED_EVENT,
+  APP_TOAST_CLAIMED_EVENT,
+  APP_TOAST_PRIORITY,
+  APP_TOAST_RELEASED_EVENT,
   claimAppDialog,
+  claimAppToast,
   currentAppDialogOwner,
+  currentAppToastOwner,
   releaseAppDialog,
+  releaseAppToast,
 } from "@/lib/client-dialog-queue";
 
 const INBOX_ENDPOINT = "/api/announcements/inbox";
 const POLL_INTERVAL_MS = 15_000;
 const BROADCAST_CHANNEL = "announcement-inbox-v1";
-const SESSION_DISMISSALS_KEY = "announcement_session_dismissals_v3";
 const DISPLAY_LEDGER_KEY = "announcement_display_ledger_v1";
+const DELIVERY_SESSION_KEY = "announcement_delivery_session_v1";
 
 interface AnnouncementInboxItem extends AnnouncementRecord {
   revision?: number;
@@ -64,11 +69,10 @@ interface AnnouncementInboxItem extends AnnouncementRecord {
 }
 
 type InboxChannelMessage = {
-  type: "read" | "dismissed" | "refresh";
+  type: "read" | "refresh";
   userId?: string;
   announcementId?: string;
   revision?: number;
-  key?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,21 +135,29 @@ function fingerprintToken(token: string): string {
   return (hash >>> 0).toString(36);
 }
 
-function readSessionDismissals(identity: string): Set<string> {
+function readDeliverySession(sessionIdentity: string) {
   try {
-    const parsed = JSON.parse(sessionStorage.getItem(SESSION_DISMISSALS_KEY) || "{}") as unknown;
-    if (!isRecord(parsed) || parsed.identity !== identity || !Array.isArray(parsed.keys)) return new Set();
-    return new Set(parsed.keys.filter((value): value is string => typeof value === "string"));
+    const parsed = JSON.parse(sessionStorage.getItem(DELIVERY_SESSION_KEY) || "null") as unknown;
+    if (!isRecord(parsed) || parsed.sessionIdentity !== sessionIdentity || !Array.isArray(parsed.knownDeliveryKeys)) {
+      return { initialized: false, knownDeliveryKeys: new Set<string>() };
+    }
+    return {
+      initialized: true,
+      knownDeliveryKeys: new Set(parsed.knownDeliveryKeys.filter((value): value is string => typeof value === "string")),
+    };
   } catch {
-    return new Set();
+    return { initialized: false, knownDeliveryKeys: new Set<string>() };
   }
 }
 
-function writeSessionDismissals(identity: string, keys: Set<string>) {
+function writeDeliverySession(sessionIdentity: string, knownDeliveryKeys: Set<string>) {
   try {
-    sessionStorage.setItem(SESSION_DISMISSALS_KEY, JSON.stringify({ identity, keys: [...keys] }));
+    sessionStorage.setItem(DELIVERY_SESSION_KEY, JSON.stringify({
+      sessionIdentity,
+      knownDeliveryKeys: [...knownDeliveryKeys].slice(-500),
+    }));
   } catch {
-    // Session storage is an optimization only. Server read state remains authoritative.
+    // The server receipt remains authoritative when session storage is unavailable.
   }
 }
 
@@ -228,19 +240,19 @@ const priorityUi = {
   normal: {
     label: "通知",
     icon: Info,
-    className: "border-sky-400/30 bg-sky-500/8 text-sky-300",
+    className: "announcement-priority",
     dot: "bg-sky-400",
   },
   important: {
     label: "重要",
     icon: AlertTriangle,
-    className: "border-amber-400/35 bg-amber-500/10 text-amber-300",
+    className: "announcement-priority announcement-priority-important",
     dot: "bg-amber-400",
   },
   urgent: {
     label: "紧急",
     icon: ShieldAlert,
-    className: "border-rose-400/40 bg-rose-500/10 text-rose-300",
+    className: "announcement-priority announcement-priority-urgent",
     dot: "bg-rose-400",
   },
 } as const;
@@ -281,30 +293,24 @@ export function AnnouncementPopup() {
   const [readingId, setReadingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [, refreshToastQueueState] = useState(0);
 
   const announcementsRef = useRef<AnnouncementInboxItem[]>([]);
   const readerOpenRef = useRef(false);
   const deferredReaderRef = useRef(false);
   const selectedIdRef = useRef<string | null>(null);
-  const dismissalsRef = useRef(new Set<string>());
+  const onlineToastKeyRef = useRef<string | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const requestSequenceRef = useRef(0);
   const cursorRef = useRef("");
-  const previousSessionIdentityRef = useRef("");
   const initializedRef = useRef(false);
   const knownDeliveryKeysRef = useRef(new Set<string>());
   const automaticImpressionsRef = useRef(new Set<string>());
+  const previousSessionIdentityRef = useRef("");
 
   useEffect(() => { announcementsRef.current = announcements; }, [announcements]);
   useEffect(() => { readerOpenRef.current = readerOpen; }, [readerOpen]);
-
-  const eligibleForAutomaticDisplay = useCallback((announcement: AnnouncementInboxItem) => {
-    if (!sessionIdentity) return false;
-    return announcementAutoDisplayDecision(
-      announcement,
-      readDisplayLedger(sessionIdentity),
-    ).eligible;
-  }, [sessionIdentity]);
+  useEffect(() => { onlineToastKeyRef.current = onlineToastKey; }, [onlineToastKey]);
 
   const recordAutomaticDisplay = useCallback((announcement: AnnouncementInboxItem) => {
     if (!sessionIdentity) return;
@@ -316,10 +322,27 @@ export function AnnouncementPopup() {
     recordAnalytics(announcement, "impression", token);
   }, [sessionIdentity, token]);
 
+  const queueToast = useCallback((announcement: AnnouncementInboxItem | null) => {
+    const key = announcement ? deliveryKey(announcement) : null;
+    onlineToastKeyRef.current = key;
+    setOnlineToastKey(key);
+    if (announcement) {
+      claimAppToast(
+        "announcement",
+        announcement.priority === "urgent"
+          ? APP_TOAST_PRIORITY.announcementUrgent
+          : APP_TOAST_PRIORITY.announcement,
+      );
+    } else {
+      releaseAppToast("announcement");
+    }
+  }, []);
+
   const openReader = useCallback((
     announcementId?: string | null,
     options: { automatic?: boolean } = {},
   ) => {
+    setActionError("");
     if (announcementId) {
       selectedIdRef.current = announcementId;
       setSelectedAnnouncementId(announcementId);
@@ -337,10 +360,10 @@ export function AnnouncementPopup() {
     deferredReaderRef.current = false;
     readerOpenRef.current = true;
     setReaderOpen(true);
-    setOnlineToastKey(null);
+    queueToast(null);
     if (options.automatic && selected) recordAutomaticDisplay(selected);
     return true;
-  }, [recordAutomaticDisplay]);
+  }, [queueToast, recordAutomaticDisplay]);
   useEffect(() => { selectedIdRef.current = selectedAnnouncementId; }, [selectedAnnouncementId]);
 
   const authHeaders = useMemo(
@@ -348,21 +371,14 @@ export function AnnouncementPopup() {
     [token],
   );
 
-  const rememberDismissed = useCallback((key: string, broadcast = true) => {
-    if (!sessionIdentity || !key) return;
-    dismissalsRef.current.add(key);
-    writeSessionDismissals(sessionIdentity, dismissalsRef.current);
-    if (broadcast) {
-      channelRef.current?.postMessage({ type: "dismissed", userId, key } satisfies InboxChannelMessage);
-    }
-  }, [sessionIdentity, userId]);
-
   const applyReadLocally = useCallback((announcementId: string, revision: number, readAt: string) => {
-    setAnnouncements((current) => current.map((announcement) => (
+    const next = announcementsRef.current.map((announcement) => (
       announcement.id === announcementId && pushRevisionOf(announcement) === revision
         ? { ...announcement, read_at: readAt, readAt, is_read: true, isRead: true }
         : announcement
-    )));
+    ));
+    announcementsRef.current = next;
+    setAnnouncements(next);
   }, []);
 
   const fetchInbox = useCallback(async (allowAutoOpen = true) => {
@@ -386,17 +402,16 @@ export function AnnouncementPopup() {
       if (isRecord(payload) && payload.unchanged === true) return;
 
       const items = extractInboxItems(payload);
-      const firstLoad = !initializedRef.current;
-      const newlyPushed = firstLoad
+      const backlogLoad = !initializedRef.current;
+      const newlyPushed = backlogLoad
         ? null
         : items.find((announcement) => (
           !isRead(announcement)
           && !knownDeliveryKeysRef.current.has(deliveryKey(announcement))
-          && !dismissalsRef.current.has(deliveryKey(announcement))
-          && eligibleForAutomaticDisplay(announcement)
         )) || null;
       initializedRef.current = true;
       knownDeliveryKeysRef.current = new Set(items.map(deliveryKey));
+      writeDeliverySession(sessionIdentity, knownDeliveryKeysRef.current);
       announcementsRef.current = items;
       setAnnouncements(items);
 
@@ -408,18 +423,15 @@ export function AnnouncementPopup() {
         setSelectedAnnouncementId(preferred?.id || null);
       }
 
-      if (allowAutoOpen && firstLoad && !readerOpenRef.current) {
-        const candidate = items.find((announcement) => (
-          !isRead(announcement)
-          && !dismissalsRef.current.has(deliveryKey(announcement))
-          && eligibleForAutomaticDisplay(announcement)
-        ));
+      if (allowAutoOpen && backlogLoad && !readerOpenRef.current) {
+        const candidate = items.find((announcement) => !isRead(announcement));
         if (candidate) {
           openReader(candidate.id, { automatic: true });
         }
-      } else if (allowAutoOpen && newlyPushed && !readerOpenRef.current) {
-        window.dispatchEvent(new CustomEvent("notification-toast-claimed", { detail: "announcement" }));
-        setOnlineToastKey(deliveryKey(newlyPushed));
+      } else if (allowAutoOpen && newlyPushed) {
+        queueToast(newlyPushed);
+      } else if (allowAutoOpen && !readerOpenRef.current && !onlineToastKeyRef.current) {
+        queueToast(items.find((announcement) => !isRead(announcement)) || null);
       }
     } catch (error) {
       console.warn("[announcement-inbox] fetch failed:", error);
@@ -429,19 +441,15 @@ export function AnnouncementPopup() {
     } finally {
       if (requestSequence === requestSequenceRef.current) setLoading(false);
     }
-  }, [authHeaders, eligibleForAutomaticDisplay, isAuthenticated, openReader]);
+  }, [authHeaders, isAuthenticated, openReader, queueToast, sessionIdentity]);
 
   useEffect(() => {
-    const previousIdentity = previousSessionIdentityRef.current;
-    previousSessionIdentityRef.current = sessionIdentity;
-    if (previousIdentity && !sessionIdentity) {
-      try {
-        sessionStorage.removeItem(SESSION_DISMISSALS_KEY);
-      } catch {
-        // A fresh login still resets the in-memory dismissal set below.
-      }
-    }
     requestSequenceRef.current += 1;
+    const previousSessionIdentity = previousSessionIdentityRef.current;
+    if (!sessionIdentity && previousSessionIdentity) {
+      try { sessionStorage.removeItem(DELIVERY_SESSION_KEY); } catch { /* no-op */ }
+    }
+    previousSessionIdentityRef.current = sessionIdentity;
     setActionError("");
     setLoadError("");
     setAnnouncements([]);
@@ -452,13 +460,15 @@ export function AnnouncementPopup() {
     setReaderOpen(false);
     readerOpenRef.current = false;
     releaseAppDialog("announcement");
-    setOnlineToastKey(null);
-    initializedRef.current = false;
-    knownDeliveryKeysRef.current = new Set();
+    queueToast(null);
+    const deliverySession = sessionIdentity
+      ? readDeliverySession(sessionIdentity)
+      : { initialized: false, knownDeliveryKeys: new Set<string>() };
+    initializedRef.current = deliverySession.initialized;
+    knownDeliveryKeysRef.current = deliverySession.knownDeliveryKeys;
     automaticImpressionsRef.current = new Set();
     cursorRef.current = "";
-    dismissalsRef.current = sessionIdentity ? readSessionDismissals(sessionIdentity) : new Set();
-  }, [sessionIdentity]);
+  }, [queueToast, sessionIdentity]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -524,11 +534,28 @@ export function AnnouncementPopup() {
   }, [openReader]);
 
   useEffect(() => {
-    const hideWhenAnotherSurfaceWins = (event: Event) => {
-      if ((event as CustomEvent).detail !== "announcement") setOnlineToastKey(null);
+    const onToastClaimed = () => refreshToastQueueState((revision) => revision + 1);
+    const onToastReleased = () => {
+      refreshToastQueueState((revision) => revision + 1);
+      const pending = announcementsRef.current.find((announcement) => (
+        onlineToastKeyRef.current === deliveryKey(announcement) && !isRead(announcement)
+      ));
+      if (pending && !readerOpenRef.current && !currentAppDialogOwner()) {
+        claimAppToast(
+          "announcement",
+          pending.priority === "urgent"
+            ? APP_TOAST_PRIORITY.announcementUrgent
+            : APP_TOAST_PRIORITY.announcement,
+        );
+      }
     };
-    window.addEventListener("notification-toast-claimed", hideWhenAnotherSurfaceWins);
-    return () => window.removeEventListener("notification-toast-claimed", hideWhenAnotherSurfaceWins);
+    window.addEventListener(APP_TOAST_CLAIMED_EVENT, onToastClaimed);
+    window.addEventListener(APP_TOAST_RELEASED_EVENT, onToastReleased);
+    return () => {
+      window.removeEventListener(APP_TOAST_CLAIMED_EVENT, onToastClaimed);
+      window.removeEventListener(APP_TOAST_RELEASED_EVENT, onToastReleased);
+      releaseAppToast("announcement");
+    };
   }, []);
 
   useEffect(() => {
@@ -540,8 +567,6 @@ export function AnnouncementPopup() {
       if (!message || (message.userId && message.userId !== userId)) return;
       if (message.type === "read" && message.announcementId && typeof message.revision === "number") {
         applyReadLocally(message.announcementId, message.revision, new Date().toISOString());
-      } else if (message.type === "dismissed" && message.key) {
-        rememberDismissed(message.key, false);
       } else if (message.type === "refresh") {
         void fetchInbox(true);
       }
@@ -550,7 +575,7 @@ export function AnnouncementPopup() {
       channel.close();
       if (channelRef.current === channel) channelRef.current = null;
     };
-  }, [applyReadLocally, fetchInbox, isAuthenticated, rememberDismissed, userId]);
+  }, [applyReadLocally, fetchInbox, isAuthenticated, userId]);
 
   const unreadCount = useMemo(
     () => announcements.filter((announcement) => !isRead(announcement)).length,
@@ -594,19 +619,52 @@ export function AnnouncementPopup() {
       headers: { ...authHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({ revision }),
     });
-    if (!response.ok) throw new Error(await responseMessage(response, "已阅读状态保存失败"));
-
-    const readAt = new Date().toISOString();
+    const receipt = await response.json().catch(() => null) as {
+      success?: unknown;
+      announcementId?: unknown;
+      revision?: unknown;
+      readAt?: unknown;
+      status?: unknown;
+      error?: unknown;
+    } | null;
+    const readAt = typeof receipt?.readAt === "string" && Number.isFinite(Date.parse(receipt.readAt))
+      ? receipt.readAt
+      : "";
+    if (!response.ok
+      || receipt?.success !== true
+      || receipt.announcementId !== announcement.id
+      || receipt.revision !== revision
+      || receipt.status !== "read"
+      || !readAt) {
+      throw new Error(typeof receipt?.error === "string" && receipt.error ? receipt.error : "已阅读状态保存失败");
+    }
     applyReadLocally(announcement.id, revision, readAt);
     recordAnalytics(announcement, "read", token);
-    if (onlineToastKey === deliveryKey(announcement)) setOnlineToastKey(null);
     channelRef.current?.postMessage({
       type: "read",
       userId,
       announcementId: announcement.id,
       revision,
     } satisfies InboxChannelMessage);
-  }, [applyReadLocally, authHeaders, onlineToastKey, token, userId]);
+  }, [applyReadLocally, authHeaders, token, userId]);
+
+  const closeReader = useCallback(() => {
+    const unreadForToast = announcementsRef.current.find((announcement) => !isRead(announcement)) || null;
+    const preservedOnlineToast = announcementsRef.current.find((announcement) => (
+      onlineToastKeyRef.current === deliveryKey(announcement) && !isRead(announcement)
+    )) || null;
+    announcementsRef.current
+      .filter((announcement) => !isRead(announcement))
+      .forEach((announcement) => {
+        recordAnalytics(announcement, "close", token);
+      });
+    readerOpenRef.current = false;
+    setReaderOpen(false);
+    setActionError("");
+    releaseAppDialog("announcement");
+    queueToast(preservedOnlineToast || unreadForToast);
+    return true;
+  }, [queueToast, token]);
 
   const markSelectedRead = async () => {
     if (!selectedAnnouncement || isRead(selectedAnnouncement) || readingId) return;
@@ -614,12 +672,18 @@ export function AnnouncementPopup() {
     setReadingId(selectedAnnouncement.id);
     try {
       await markRead(selectedAnnouncement);
-      const nextUnread = announcements.find((announcement) => (
-        announcement.id !== selectedAnnouncement.id && !isRead(announcement)
+      const currentIndex = announcementsRef.current.findIndex((announcement) => (
+        announcement.id === selectedAnnouncement.id
       ));
+      const nextUnread = [
+        ...announcementsRef.current.slice(currentIndex + 1),
+        ...announcementsRef.current.slice(0, Math.max(0, currentIndex)),
+      ].find((announcement) => !isRead(announcement));
       if (nextUnread) {
         selectedIdRef.current = nextUnread.id;
         setSelectedAnnouncementId(nextUnread.id);
+      } else {
+        closeReader();
       }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "已阅读状态保存失败");
@@ -628,28 +692,24 @@ export function AnnouncementPopup() {
     }
   };
 
-  const closeReader = useCallback(() => {
-    const pendingAcknowledgement = announcementsRef.current.find((announcement) => (
-      announcement.require_ack && !isRead(announcement)
-    ));
-    if (pendingAcknowledgement) {
-      selectedIdRef.current = pendingAcknowledgement.id;
-      setSelectedAnnouncementId(pendingAcknowledgement.id);
-      setActionError("这条公告需要确认阅读后才能关闭");
-      return false;
-    }
-    announcementsRef.current
-      .filter((announcement) => !isRead(announcement))
-      .forEach((announcement) => {
-        rememberDismissed(deliveryKey(announcement));
-        recordAnalytics(announcement, "close", token);
-      });
-    readerOpenRef.current = false;
-    setReaderOpen(false);
+  const acknowledgeToast = async (announcement: AnnouncementInboxItem) => {
+    if (readingId) return;
     setActionError("");
-    releaseAppDialog("announcement");
-    return true;
-  }, [rememberDismissed, token]);
+    setReadingId(announcement.id);
+    try {
+      await markRead(announcement);
+      const currentIndex = announcementsRef.current.findIndex((item) => item.id === announcement.id);
+      const nextUnread = [
+        ...announcementsRef.current.slice(currentIndex + 1),
+        ...announcementsRef.current.slice(0, Math.max(0, currentIndex)),
+      ].find((item) => !isRead(item));
+      queueToast(nextUnread || null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "已阅读状态保存失败");
+    } finally {
+      setReadingId(null);
+    }
+  };
 
   const selectIndex = (index: number) => {
     const next = announcements[index];
@@ -671,64 +731,66 @@ export function AnnouncementPopup() {
 
   return (
     <>
-      {onlineToastAnnouncement && !readerOpen && !currentAppDialogOwner() && (
+      {onlineToastAnnouncement && !readerOpen && !currentAppDialogOwner() && currentAppToastOwner() === "announcement" && (
         <aside
           data-testid="announcement-online-toast"
+          data-platform-popup="announcement-toast"
           role="status"
           aria-live="polite"
-          className="fixed bottom-6 right-6 z-[118] flex min-h-[190px] w-[340px] flex-col overflow-hidden rounded-2xl border border-[var(--primary)]/25 bg-[color-mix(in_srgb,var(--card)_86%,transparent)] p-5 text-[var(--foreground)] shadow-2xl backdrop-blur-xl"
+          className="announcement-toast fixed bottom-7 right-7 z-[118] flex w-[344px] flex-col overflow-hidden rounded-[18px] border"
         >
-          <div className="flex items-start gap-3">
-            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border ${priorityUi[onlineToastAnnouncement.priority].className}`}><Megaphone className="h-5 w-5" /></span>
+          <div className="announcement-toast-head flex items-start gap-3 px-4 pb-3 pt-4">
+            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] border shadow-sm ${priorityUi[onlineToastAnnouncement.priority].className}`}><Megaphone className="h-[18px] w-[18px]" /></span>
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--primary)]">在线推送</p>
-              <h2 className="mt-1 line-clamp-2 text-base font-black leading-6">{onlineToastAnnouncement.title}</h2>
+              <p className="text-[10px] font-extrabold tracking-[0.16em] text-[var(--primary)]">在线推送</p>
+              <h2 className="mt-1 line-clamp-2 text-[15px] font-extrabold leading-[1.45] tracking-[-0.01em]">{onlineToastAnnouncement.title}</h2>
             </div>
-            <button type="button" onClick={() => { rememberDismissed(deliveryKey(onlineToastAnnouncement)); setOnlineToastKey(null); }} className="grid h-8 w-8 place-items-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--muted)]" aria-label="稍后查看"><X className="h-4 w-4" /></button>
           </div>
-          <p className="mt-3 line-clamp-3 text-sm leading-6 text-[var(--secondary-foreground)]">{onlineToastAnnouncement.summary || onlineToastAnnouncement.content}</p>
-          <div className="mt-auto flex items-center justify-end gap-2 pt-4">
-            <button type="button" onClick={() => openReader(onlineToastAnnouncement.id)} className="h-9 rounded-lg border border-[var(--border)] px-3 text-xs font-bold hover:bg-[var(--muted)]">查看详情</button>
-            <button type="button" onClick={() => void markRead(onlineToastAnnouncement)} className="h-9 rounded-lg bg-[var(--primary)] px-3 text-xs font-bold text-[var(--primary-foreground)]">知道了</button>
+          <p className="announcement-toast-body line-clamp-2 px-4 py-3 text-[13px] font-medium leading-[1.65] text-[var(--secondary-foreground)]">{onlineToastAnnouncement.summary || onlineToastAnnouncement.content}</p>
+          {actionError && <p role="alert" className="announcement-toast-body border-t border-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-400">{actionError}</p>}
+          <div className="announcement-toast-actions flex items-center justify-end gap-2 px-4 py-3">
+            <button type="button" onClick={() => openReader(onlineToastAnnouncement.id)} className="h-8 rounded-[9px] border border-[var(--border)] px-3 text-xs font-bold transition hover:bg-[var(--muted)]">详情</button>
+            <button type="button" onClick={() => void acknowledgeToast(onlineToastAnnouncement)} disabled={readingId === onlineToastAnnouncement.id} className="h-8 rounded-[9px] bg-[var(--primary)] px-3.5 text-xs font-bold text-[var(--primary-foreground)] shadow-sm transition hover:brightness-105 disabled:cursor-wait disabled:opacity-60">{readingId === onlineToastAnnouncement.id ? "保存中..." : "知道了"}</button>
           </div>
         </aside>
       )}
       <Dialog open={readerOpen} onOpenChange={(open) => { if (!open) closeReader(); }}>
       <DialogContent
         data-testid="announcement-reader"
+        data-platform-popup="announcement-reader"
         showCloseButton={false}
         style={{
-          width: "min(1120px, calc(100vw - 96px))",
+          width: "min(920px, calc(100vw - 80px))",
           maxWidth: "none",
-          height: "min(680px, calc(100vh - 120px))",
+          height: "min(590px, calc(100vh - 112px))",
         }}
-        className="announcement-dialog announcement-reader grid h-[min(680px,calc(100vh-120px))] w-[min(1120px,calc(100vw-96px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] p-0 shadow-2xl"
+        className="announcement-dialog announcement-reader grid h-[min(590px,calc(100vh-112px))] w-[min(920px,calc(100vw-80px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-0"
       >
-        <header className="relative flex min-h-24 items-center gap-5 border-b border-[var(--border)] px-9 py-6 pr-24">
-          <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border ${selectedUi.className}`} aria-hidden="true">
-            <SelectedIcon className="h-6 w-6" />
+        <header className="announcement-reader-header relative flex min-h-[82px] items-center gap-4 border-b border-[var(--border)] px-6 py-4 pr-20">
+          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border ${selectedUi.className}`} aria-hidden="true">
+            <SelectedIcon className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <DialogTitle className="text-2xl font-black tracking-tight text-[var(--foreground)]">系统公告</DialogTitle>
-              {unreadCount > 0 && <span className="rounded-full border border-[var(--primary)]/25 bg-[var(--primary)]/10 px-2.5 py-1 text-xs font-bold text-[var(--primary)]">{unreadCount} 条未读</span>}
-              {selectedAnnouncement && isRead(selectedAnnouncement) && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-500"><Check className="h-3.5 w-3.5" />已阅读</span>}
+            <div className="flex flex-wrap items-center gap-2">
+              <DialogTitle className="text-[20px] font-black tracking-[-0.02em] text-[var(--foreground)]">系统公告</DialogTitle>
+              {unreadCount > 0 && <span className="rounded-full border border-[var(--primary)]/25 bg-[var(--primary)]/10 px-2 py-0.5 text-[11px] font-bold text-[var(--primary)]">{unreadCount} 条未读</span>}
+              {selectedAnnouncement && isRead(selectedAnnouncement) && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-500"><Check className="h-3 w-3" />已阅读</span>}
             </div>
-            <DialogDescription className="mt-1.5 flex items-center gap-1.5 text-sm text-[var(--muted-foreground)]">
-              <Clock3 className="h-3.5 w-3.5" />
+            <DialogDescription className="mt-1 flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
+              <Clock3 className="h-3 w-3" />
               发布时间：{selectedAnnouncement ? new Date(selectedAnnouncement.created_at).toLocaleString("zh-CN", { hour12: false }) : "--"}
             </DialogDescription>
           </div>
           <div className="shrink-0 text-right">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Announcement</p>
-            <p className="mt-1 font-mono text-sm font-bold text-[var(--primary)]">{selectedIndex >= 0 ? String(selectedIndex + 1).padStart(2, "0") : "00"} / {String(announcements.length).padStart(2, "0")}</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Announcement</p>
+            <p className="mt-0.5 font-mono text-xs font-bold text-[var(--primary)]">{selectedIndex >= 0 ? String(selectedIndex + 1).padStart(2, "0") : "00"} / {String(announcements.length).padStart(2, "0")}</p>
           </div>
-          <button type="button" onClick={closeReader} className="absolute right-7 top-7 grid h-10 w-10 place-items-center rounded-xl border border-[var(--border)] bg-[var(--muted)]/45 text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)]/45 hover:text-[var(--foreground)]" aria-label="关闭系统公告">
-            <X className="h-5 w-5" />
+          <button type="button" onClick={closeReader} className="absolute right-5 top-5 grid h-9 w-9 place-items-center rounded-[11px] border border-[var(--border)] bg-[var(--muted)]/45 text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)]/45 hover:text-[var(--foreground)]" aria-label="关闭系统公告">
+            <X className="h-4 w-4" />
           </button>
         </header>
 
-        <div data-testid="announcement-reader-content" className="min-h-0 overflow-y-auto overscroll-contain px-9 py-7" aria-live="polite">
+        <div data-testid="announcement-reader-content" className="announcement-reader-body min-h-0 overflow-y-auto overscroll-contain px-6 py-5" aria-live="polite">
           {loadError && (
             <div role="alert" data-testid="announcement-inbox-error" className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-rose-500/30 bg-rose-500/8 px-4 py-3 text-sm text-rose-500">
               <span>{loadError}</span>
@@ -738,8 +800,8 @@ export function AnnouncementPopup() {
           {loading && announcements.length === 0 && <div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--muted-foreground)]"><span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />正在加载公告</div>}
           {!loading && !loadError && !selectedAnnouncement && <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-[var(--muted-foreground)]"><Megaphone className="h-10 w-10 opacity-45" />暂无公告</div>}
           {selectedAnnouncement && (
-            <article className="grid min-h-full grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)] gap-7">
-              <section className="flex min-w-0 flex-col rounded-2xl border border-[var(--border)] bg-[var(--background)]/25 px-8 py-7">
+            <article className="grid min-h-full grid-cols-[minmax(0,1fr)_240px] gap-5">
+              <section className="announcement-reader-panel flex min-w-0 flex-col rounded-[16px] border border-[var(--border)] px-6 py-5">
                 <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--primary)]">
                   <span className={`h-2 w-2 rounded-full ${selectedUi.dot}`} />
                   <span>{selectedUi.label}公告</span>
@@ -747,46 +809,46 @@ export function AnnouncementPopup() {
                   {selectedAnnouncement.is_pinned && <span className="inline-flex items-center gap-1 rounded-full border border-current/20 px-2 py-0.5"><Pin className="h-3 w-3" />置顶</span>}
                   <span className="ml-auto rounded-full bg-[var(--muted)] px-2 py-0.5 font-mono text-[var(--muted-foreground)]">V{pushRevisionOf(selectedAnnouncement)}</span>
                 </div>
-                <h2 className="mt-5 text-[clamp(26px,2.25vw,36px)] font-black leading-[1.18] tracking-tight text-[var(--foreground)]">{selectedAnnouncement.title}</h2>
-                {selectedAnnouncement.summary && <p className="mt-4 text-base font-semibold leading-8 text-[var(--secondary-foreground)]">{selectedAnnouncement.summary}</p>}
-                <div className="mt-6 border-t border-[var(--border)] pt-5">
-                  <p className="whitespace-pre-wrap text-[15px] leading-8 text-[var(--secondary-foreground)]">{selectedAnnouncement.content}</p>
+                <h2 className="mt-4 text-[clamp(21px,1.8vw,27px)] font-black leading-[1.25] tracking-[-0.025em] text-[var(--foreground)]">{selectedAnnouncement.title}</h2>
+                {selectedAnnouncement.summary && <p className="mt-3 text-[14px] font-semibold leading-6 text-[var(--secondary-foreground)]">{selectedAnnouncement.summary}</p>}
+                <div className="mt-4 border-t border-[var(--border)] pt-4">
+                  <p className="whitespace-pre-wrap text-[14px] font-medium leading-[1.75] text-[var(--secondary-foreground)]">{selectedAnnouncement.content}</p>
                 </div>
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-7 text-xs text-[var(--muted-foreground)]">
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5 text-[11px] text-[var(--muted-foreground)]">
                   <span>更新于 {formatDate(selectedAnnouncement.updated_at || selectedAnnouncement.created_at)}</span>
                   {selectedAnnouncement.link_url && <button type="button" onClick={openLinkedContent} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 font-bold text-[var(--foreground)] hover:border-[var(--primary)]/45 hover:bg-[var(--muted)]"><span>{selectedAnnouncement.link_text || "查看相关内容"}</span><ExternalLink className="h-3.5 w-3.5" /></button>}
                 </div>
               </section>
 
-              <aside className="flex min-w-0 flex-col gap-4">
+              <aside className="flex min-w-0 flex-col gap-3">
                 {selectedAnnouncement.image_url ? (
-                  <img src={selectedAnnouncement.image_url} alt="" className="min-h-56 max-h-72 w-full rounded-2xl border border-[var(--border)] object-cover" loading="lazy" />
+                  <img src={selectedAnnouncement.image_url} alt="" className="min-h-40 max-h-52 w-full rounded-[16px] border border-[var(--border)] object-cover" loading="lazy" />
                 ) : (
-                  <div className="flex min-h-56 flex-col justify-between overflow-hidden rounded-2xl border border-[var(--primary)]/24 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--primary)_14%,var(--card)),color-mix(in_srgb,var(--background)_94%,transparent))] p-6">
-                    <Megaphone className="h-9 w-9 text-[var(--primary)]" />
+                  <div className="announcement-reader-feature flex min-h-40 flex-col justify-between overflow-hidden rounded-[16px] border p-5">
+                    <Megaphone className="h-7 w-7 text-[var(--primary)]" />
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--primary)]">Platform Update</p>
-                      <p className="mt-2 text-lg font-black leading-snug text-[var(--foreground)]">重要变化逐条送达，阅读状态跟随账号保存。</p>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--primary)]">Platform Update</p>
+                      <p className="mt-2 text-[15px] font-black leading-snug text-[var(--foreground)]">重要变化逐条送达，阅读状态跟随账号保存。</p>
                     </div>
                   </div>
                 )}
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--background)]/28 p-5">
-                  <p className="text-xs font-bold text-[var(--muted-foreground)]">阅读说明</p>
-                  <p className="mt-2 text-sm leading-6 text-[var(--secondary-foreground)]">关闭不会记为已读。只有点击“标记已阅读”后，当前推送版本才不再自动出现。</p>
+                <div className="announcement-reader-note rounded-[16px] border border-[var(--border)] p-4">
+                  <p className="text-[11px] font-bold text-[var(--muted-foreground)]">阅读说明</p>
+                  <p className="mt-1.5 text-xs leading-5 text-[var(--secondary-foreground)]">关闭详情不会记为已读，提醒会回到右下角。只有点击“知道了”并保存成功后，当前推送版本才不再出现。</p>
                 </div>
               </aside>
             </article>
           )}
         </div>
 
-        <footer className="flex min-h-20 items-center gap-3 border-t border-[var(--border)] bg-[var(--background)]/38 px-9 py-5">
+        <footer className="announcement-reader-footer flex min-h-[66px] items-center gap-2.5 border-t border-[var(--border)] px-6 py-3.5">
           {actionError ? <p role="alert" className="mr-auto max-w-72 text-xs font-semibold text-rose-500">{actionError}</p> : <span className="mr-auto text-xs text-[var(--muted-foreground)]">请逐条阅读并确认</span>}
-          <button data-testid="announcement-previous" type="button" onClick={() => selectIndex(selectedIndex + 1)} disabled={selectedIndex < 0 || selectedIndex >= announcements.length - 1} className="inline-flex h-10 min-w-24 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] px-3 text-sm font-semibold text-[var(--secondary-foreground)] hover:border-[var(--primary)]/45 hover:bg-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-35"><ChevronLeft className="h-4 w-4" />上一条</button>
-          <button data-testid="announcement-next" type="button" onClick={() => selectIndex(selectedIndex - 1)} disabled={selectedIndex <= 0} className="inline-flex h-10 min-w-24 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] px-3 text-sm font-semibold text-[var(--secondary-foreground)] hover:border-[var(--primary)]/45 hover:bg-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-35">下一条<ChevronRight className="h-4 w-4" /></button>
+          <button data-testid="announcement-previous" type="button" onClick={() => selectIndex(selectedIndex + 1)} disabled={selectedIndex < 0 || selectedIndex >= announcements.length - 1} className="inline-flex h-9 min-w-20 items-center justify-center gap-1 rounded-[10px] border border-[var(--border)] px-3 text-xs font-semibold text-[var(--secondary-foreground)] hover:border-[var(--primary)]/45 hover:bg-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-35"><ChevronLeft className="h-3.5 w-3.5" />上一条</button>
+          <button data-testid="announcement-next" type="button" onClick={() => selectIndex(selectedIndex - 1)} disabled={selectedIndex <= 0} className="inline-flex h-9 min-w-20 items-center justify-center gap-1 rounded-[10px] border border-[var(--border)] px-3 text-xs font-semibold text-[var(--secondary-foreground)] hover:border-[var(--primary)]/45 hover:bg-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-35">下一条<ChevronRight className="h-3.5 w-3.5" /></button>
           {selectedAnnouncement && !isRead(selectedAnnouncement) ? (
-            <button data-testid="announcement-mark-read" type="button" onClick={() => void markSelectedRead()} disabled={readingId === selectedAnnouncement.id} className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-bold text-[var(--primary-foreground)] shadow-sm hover:brightness-110 disabled:cursor-wait disabled:opacity-60"><Check className="h-4 w-4" />{readingId === selectedAnnouncement.id ? "保存中..." : "标记已阅读"}</button>
+            <button data-testid="announcement-mark-read" type="button" onClick={() => void markSelectedRead()} disabled={readingId === selectedAnnouncement.id} className="inline-flex h-9 min-w-32 items-center justify-center gap-1.5 rounded-[10px] bg-[var(--primary)] px-4 text-xs font-bold text-[var(--primary-foreground)] shadow-sm hover:brightness-110 disabled:cursor-wait disabled:opacity-60"><Check className="h-3.5 w-3.5" />{readingId === selectedAnnouncement.id ? "保存中..." : "知道了"}</button>
           ) : (
-            <span className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-sm font-bold text-emerald-500"><Check className="h-4 w-4" />当前已阅读</span>
+            <span className="inline-flex h-9 min-w-32 items-center justify-center gap-1.5 rounded-[10px] border border-emerald-500/25 bg-emerald-500/10 px-4 text-xs font-bold text-emerald-500"><Check className="h-3.5 w-3.5" />当前已阅读</span>
           )}
         </footer>
       </DialogContent>

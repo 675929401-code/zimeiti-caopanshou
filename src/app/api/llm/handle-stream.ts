@@ -165,6 +165,13 @@ export function handleStreamResponse(
       try {
         // ── 立即发送 SSE 心跳 ──
         if (!safeEnqueue(encoder.encode(": heartbeat\n\n"))) return;
+        if (!safeEnqueue(encoder.encode(`data: ${JSON.stringify({
+          type: "stream_delivery",
+          stream_delivery: liveDelivery ? "live" : "buffered",
+          stream_delivery_reason: protectPrompt
+            ? "prompt_output_review"
+            : ctx.streamDeliveryReason || (liveDelivery ? "live_delivery_allowed" : "buffer_until_atomic_settlement"),
+        })}\n\n`))) return;
 
         // ── 周期性心跳：在等待上游首字节期间保持连接活跃 ──
         // 每 5 秒发一次心跳，防止 Nginx（proxy_read_timeout 60s）或 CDN 断连
@@ -330,6 +337,10 @@ export function handleStreamResponse(
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      "X-Stream-Delivery": ctx.allowLiveStreamDelivery === true && !protectPrompt ? "live" : "buffered",
+      "X-Stream-Delivery-Reason": protectPrompt
+        ? "prompt_output_review"
+        : ctx.streamDeliveryReason || (ctx.allowLiveStreamDelivery === true ? "live_delivery_allowed" : "buffer_until_atomic_settlement"),
       ...(ctx.reservation ? { "X-LLM-Continue-After-Disconnect": "true" } : {}),
     },
   });
@@ -357,10 +368,10 @@ export async function handleNonStreamResponse(
   };
   const protectPrompt = Boolean(bipStep(ctx.agentId));
   if (protectPrompt && !result.content.trim()) {
-    return new Response(JSON.stringify({error:'模型未返回正文，本次未交付。',code:'LLM_EMPTY_RESPONSE',retryable:false}),{status:422,headers:{'Content-Type':'application/json'}});
+    return new Response(JSON.stringify({error:'模型未返回正文，本次未交付。',code:'LLM_EMPTY_RESPONSE',retryable:false,stream_delivery:'buffered',stream_delivery_reason:'non_stream_requested'}),{status:422,headers:{'Content-Type':'application/json','X-Stream-Delivery':'buffered','X-Stream-Delivery-Reason':'non_stream_requested'}});
   }
   if (protectPrompt && containsPromptLeak(result.content, ctx.messages.filter(m=>m.role==='system').map(m=>messageText(m.content)).join('\n'))) {
-    return new Response(JSON.stringify({error:'回复未通过内部信息保护检查，本次未交付。',code:'PROMPT_OUTPUT_BLOCKED',retryable:false}),{status:422,headers:{'Content-Type':'application/json'}});
+    return new Response(JSON.stringify({error:'回复未通过内部信息保护检查，本次未交付。',code:'PROMPT_OUTPUT_BLOCKED',retryable:false,stream_delivery:'buffered',stream_delivery_reason:'non_stream_requested'}),{status:422,headers:{'Content-Type':'application/json','X-Stream-Delivery':'buffered','X-Stream-Delivery-Reason':'non_stream_requested'}});
   }
   try {
     const settlement = await settleLlmUsage(
@@ -376,6 +387,8 @@ export async function handleNonStreamResponse(
     );
     return new Response(JSON.stringify({
       ...(protectPrompt ? {choices:[{message:{role:'assistant',content:result.content},finish_reason:'stop'}]} : result.raw as Record<string, unknown>),
+      stream_delivery: "buffered",
+      stream_delivery_reason: "non_stream_requested",
       _billing: {
         operation_id: settlement.operationId,
         credits_charged: settlement.billing?.creditsCharged || 0,
@@ -383,16 +396,18 @@ export async function handleNonStreamResponse(
         already_fulfilled: settlement.alreadyFulfilled === true,
         token_usage: tokenUsage,
       },
-    }), { headers: { "Content-Type": "application/json" } });
+    }), { headers: { "Content-Type": "application/json", "X-Stream-Delivery": "buffered", "X-Stream-Delivery-Reason": "non_stream_requested" } });
   } catch (billingError) {
     console.error("[Billing] Non-stream LLM settlement failed:", billingError);
     return new Response(JSON.stringify({
       error: "模型已返回，但共享钱包结算失败，本次不会交付完成结果",
       code: "LLM_BILLING_FAILED",
       retryable: false,
+      stream_delivery: "buffered",
+      stream_delivery_reason: "non_stream_requested",
     }), {
       status: 503,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Stream-Delivery": "buffered", "X-Stream-Delivery-Reason": "non_stream_requested" },
     });
   }
 

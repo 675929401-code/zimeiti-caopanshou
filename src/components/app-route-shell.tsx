@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
-import { DEFAULT_PLATFORM_LOGO_URL, platformBrandLogoUrl, usePlatformBranding } from "@/hooks/use-platform-branding";
+import { handlePlatformBrandLogoError, platformBrandLogoUrl, usePlatformBranding } from "@/hooks/use-platform-branding";
 import { isYoucaiPath, toYoucaiHref } from "@/lib/youcai-routes";
 import {
   readManjuShowcaseCatalog,
@@ -308,7 +308,8 @@ const YOUCAI_NAVIGATION_GROUPS: readonly (readonly NavigationItem[])[] = [
 
 function Brand({ insideYoucai, brandName = "漫剧工作台" }: { insideYoucai: boolean; brandName?: string }) {
   const platformBranding = usePlatformBranding();
-  const mainBrandName = platformBranding.brand.name || "自媒体操盘手";
+  const mainBrandName = platformBranding.brand.name
+    || (platformBranding.displayScope === "white_label" ? "品牌服务" : "自媒体操盘手");
   const mainLogoUrl = platformBrandLogoUrl(platformBranding, "square");
   return (
     <AppScopedLink
@@ -324,16 +325,15 @@ function Brand({ insideYoucai, brandName = "漫剧工作台" }: { insideYoucai: 
             <path d="M23.6 17.1c.4 3.4 1.5 4.8 4.8 5.3-3.3.5-4.4 1.9-4.8 5.3-.5-3.4-1.6-4.8-4.9-5.3 3.3-.5 4.4-1.9 4.9-5.3Z" fill="#9df5e7" stroke="#111827" strokeWidth="1.8" strokeLinejoin="round" />
             <path d="M5.3 3.5c.3 2.5 1.1 3.5 3.5 3.8-2.4.4-3.2 1.4-3.5 3.9-.4-2.5-1.2-3.5-3.6-3.9 2.4-.3 3.2-1.3 3.6-3.8Z" fill="#8b5cf6" stroke="#111827" strokeWidth="1.5" strokeLinejoin="round" />
           </svg>
-        ) : (
+        ) : mainLogoUrl ? (
           <img
             src={mainLogoUrl}
             alt=""
             className={styles.brandLogoImage}
-            onError={(event) => {
-              event.currentTarget.onerror = null;
-              event.currentTarget.src = DEFAULT_PLATFORM_LOGO_URL;
-            }}
+            onError={(event) => handlePlatformBrandLogoError(event, platformBranding)}
           />
+        ) : (
+          <span aria-hidden="true">{mainBrandName.slice(0, 1)}</span>
         )}
       </span>
       <span>{insideYoucai ? brandName : mainBrandName}</span>

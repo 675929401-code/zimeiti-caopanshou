@@ -5,7 +5,7 @@ import {DurableQueueLoop} from '../../lib/durable-queue-loop';
 import {runDepthPreparation} from './depth-video-clones';
 import {runFrameExtraction} from './frame-extraction';
 import {recoverStaleHotVideoRemix,runHotVideoRemix,sweepHotVideoRemixWorkdirs} from './hot-video-remix';
-import {job,reconcileJobBilling,reconcileStaleUndispatchedCommerceJobs,recoverSavingJob,refreshJob,runJob} from './jobs';
+import {claimStaleUndispatchedCommerceJob,job,reconcileJobBilling,recoverSavingJob,refreshJob,runJob} from './jobs';
 import {recoverStaleEdit,runEdit,type EditJob} from './media-tools';
 import {sweepAssetOrphans} from './assets';
 import {sweepProviderReferenceIntents} from './media-reference';
@@ -20,6 +20,7 @@ const POLLABLE_JOB_AGE_MS=5_000;
 const STALE_MEDIA_EDIT_MS=10*60_000;
 const MAINTENANCE_INTERVAL_MS=15*60_000;
 const HOT_VIDEO_CONCURRENCY=2;
+const DEFAULT_PROVIDER_CONCURRENCY=4;
 
 export type CommerceOrdinaryCandidate={
  kind:'job'|'media-edit'|'frame-extraction'|'depth-preparation'|'hot-video-remix'|'voice-synthesis'|'voice-replacement';
@@ -50,12 +51,19 @@ const workerId=`${os.hostname()}:${process.pid}:${process.env.NODE_APP_INSTANCE|
 const leaseKey=(candidate:CommerceOrdinaryCandidate)=>`${candidate.kind}:${candidate.id}${candidate.subId?`:${candidate.subId}`:''}`;
 const safeLimit=(value=DEFAULT_BATCH_LIMIT)=>Math.max(1,Math.min(32,Math.trunc(value)||DEFAULT_BATCH_LIMIT));
 const leaseDuration=(value=Number(process.env.COMMERCE_ORDINARY_LEASE_MS||DEFAULT_LEASE_MS))=>Number.isFinite(value)?Math.max(10_000,Math.min(300_000,Math.trunc(value))):DEFAULT_LEASE_MS;
+export const commerceProviderConcurrencyLimit=(value=Number(process.env.COMMERCE_PROVIDER_CONCURRENCY||DEFAULT_PROVIDER_CONCURRENCY))=>Number.isFinite(value)?Math.max(1,Math.min(16,Math.trunc(value))):DEFAULT_PROVIDER_CONCURRENCY;
 
 export function claimCommerceOrdinaryLease(candidate:CommerceOrdinaryCandidate,currentWorkerId=workerId,now=Date.now(),durationMs=leaseDuration()){
  const key=leaseKey(candidate);
  return transaction(()=>{
   const previous=get<CommerceOrdinaryLease>(LEASE_BUCKET,key,candidate.owner);
   if(previous&&previous.expiresAt>now)return null;
+  if(candidate.kind==='job'){
+   const active=db().prepare(`SELECT count(*) AS count FROM records WHERE bucket=?
+     AND json_extract(value,'$.expiresAt')>?
+     AND json_extract(value,'$.key') GLOB 'job:*'`).get(LEASE_BUCKET,now);
+   if(Number(active?.count||0)>=commerceProviderConcurrencyLimit())return null;
+  }
   const lease:CommerceOrdinaryLease={key,owner:candidate.owner,workerId:currentWorkerId,token:Number(previous?.token||0)+1,claimedAt:now,expiresAt:now+durationMs};
   put(LEASE_BUCKET,key,candidate.owner,lease);return lease;
  });
@@ -130,7 +138,11 @@ export function commerceOrdinaryCandidates(limit=DEFAULT_BATCH_LIMIT,now=Date.no
 
 async function processCommerceOrdinaryCandidate(candidate:CommerceOrdinaryCandidate,now=Date.now()){
  if(candidate.kind==='job'){
-  const value=job(candidate.id,candidate.owner);
+  let value=job(candidate.id,candidate.owner);
+  if(value?.status==='running'&&value.dispatchedAt==null){
+   claimStaleUndispatchedCommerceJob(candidate.id,candidate.owner,now);
+   value=job(candidate.id,candidate.owner);
+  }
   if(value?.status==='queued')await runJob(candidate.id,candidate.owner);
   else if(value?.status==='saving')await recoverSavingJob(candidate.id,candidate.owner);
   else if(value&&['succeeded','failed'].includes(value.status))await reconcileJobBilling(candidate.id,candidate.owner);
@@ -172,7 +184,6 @@ async function withLease(candidate:CommerceOrdinaryCandidate,processor:(candidat
 
 export async function reconcileCommerceOrdinaryBatch(options:ReconcileOptions={}){
   const now=options.now??Date.now(),limit=safeLimit(options.limit),durationMs=options.leaseMs??leaseDuration();
-  await reconcileStaleUndispatchedCommerceJobs(now,limit);
   const maintenanceGlobal=globalThis as typeof globalThis&{__commerceAssetMaintenanceAt?:number};
   if(now-Number(maintenanceGlobal.__commerceAssetMaintenanceAt||0)>=MAINTENANCE_INTERVAL_MS){maintenanceGlobal.__commerceAssetMaintenanceAt=now;await Promise.allSettled([sweepAssetOrphans(now),sweepProviderReferenceIntents(now),sweepHotVideoRemixWorkdirs(now),sweepVoiceReplacementWorkdirs(now)]);}
   const candidates=options.candidates??commerceOrdinaryCandidates(limit,now),processor=options.processCandidate??(candidate=>processCommerceOrdinaryCandidate(candidate,now));

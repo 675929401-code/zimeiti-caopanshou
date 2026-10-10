@@ -15,7 +15,7 @@ const longDigitalHumanMedia = fs.readFileSync(path.join(root, "src", "lib", "dig
 const manjuRegistry = fs.readFileSync(path.join(root, "src", "lib", "server", "manju-public-asset-registry.ts"), "utf8");
 const standaloneAssets = fs.readFileSync(path.join(root, "scripts", "prepare-next-standalone-assets.mjs"), "utf8");
 const buildRunner = fs.readFileSync(path.join(root, "scripts", "run-build.mjs"), "utf8");
-const forbiddenRuntimeRoots = [
+const traceExcludedCheckoutRoots = [
   ".codex-backups",
   ".codex-evidence",
   ".tmp-e2e",
@@ -43,6 +43,13 @@ const forbiddenRuntimeRoots = [
   "任务快照",
   "备份快照",
 ];
+const allowedPackagedScriptFiles = [
+  "scripts/backup-postgres-consistent.mjs",
+  "scripts/backup-recovery-helper.mjs",
+  "scripts/contracts/backup-receipt.v1.schema.json",
+  "scripts/contracts/restore-receipt.v1.schema.json",
+];
+const forbiddenRuntimeRoots = traceExcludedCheckoutRoots.filter(relativePath => relativePath !== "scripts");
 const mutableStandaloneRoots = ["runtime"];
 
 assert.match(config, /outputFileTracingExcludes\s*:\s*\{/u, "Next standalone trace exclusions are required");
@@ -65,6 +72,16 @@ assert.doesNotMatch(longDigitalHumanMedia, /process\.cwd\(\)[\s\S]{0,120}data/u,
 assert.match(manjuRegistry, /resolveAppDataFile\(DEFAULT_REGISTRY_NAME\)/u, "Manju assets must use the external data directory contract");
 assert.doesNotMatch(manjuRegistry, /process\.cwd\(\)[\s\S]{0,120}data/u, "Manju assets must not trace checkout data");
 assert.match(standaloneAssets, /materializeWebFfprobe/u, "standalone build must materialize ffprobe for upload metadata checks");
+assert.match(standaloneAssets, /materializeBackupControlPlane/u, "standalone build must materialize the complete backup control plane");
+for (const requiredBackupRuntime of [
+  "runtime-tools/backup-data.sh",
+  "scripts/backup-recovery-helper.mjs",
+  "scripts/backup-postgres-consistent.mjs",
+  "scripts/contracts/backup-receipt.v1.schema.json",
+  "scripts/contracts/restore-receipt.v1.schema.json",
+]) {
+  assert.ok(standaloneAssets.includes(`relative: "${requiredBackupRuntime}"`), `standalone backup bundle is missing ${requiredBackupRuntime}`);
+}
 const nonArtifactRootsMatch = buildRunner.match(/const nonArtifactRoots = \[([\s\S]*?)\n  \];/u);
 assert.ok(nonArtifactRootsMatch, "build runner must declare its standalone non-artifact roots");
 for (const relativePath of mutableStandaloneRoots) {
@@ -81,7 +98,7 @@ assert.ok(
   cleanupCallIndex < sensitiveCheckIndex,
   "standalone mutable roots must be removed before sensitive-path verification",
 );
-for (const relativePath of forbiddenRuntimeRoots) {
+for (const relativePath of traceExcludedCheckoutRoots) {
   assert.ok(
     config.includes(`'./${relativePath}/**/*'`),
     `Next trace boundary must exclude ${relativePath}`,
@@ -94,11 +111,26 @@ if (process.argv.includes("--artifact")) {
   const leakedRoots = [...forbiddenRuntimeRoots, ...mutableStandaloneRoots]
     .filter((relativePath) => fs.existsSync(path.join(standaloneRoot, relativePath)));
   assert.deepEqual(leakedRoots, [], `standalone output contains non-runtime checkout roots: ${leakedRoots.join(", ")}`);
+  const packagedScriptsRoot = path.join(standaloneRoot, "scripts");
+  const packagedScripts = [];
+  if (fs.existsSync(packagedScriptsRoot)) {
+    const walk = directory => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const target = path.join(directory, entry.name);
+        if (entry.isDirectory()) walk(target);
+        else if (entry.isFile()) packagedScripts.push(path.relative(standaloneRoot, target).split(path.sep).join("/"));
+        else assert.fail(`standalone scripts contains non-regular entry: ${target}`);
+      }
+    };
+    walk(packagedScriptsRoot);
+  }
+  assert.deepEqual(packagedScripts.sort(), [...allowedPackagedScriptFiles].sort(), "standalone scripts must contain only the backup control-plane allowlist");
 }
 
 console.log(JSON.stringify({
   status: "PASS",
-  excludedCheckoutRoots: forbiddenRuntimeRoots.length,
+  excludedCheckoutRoots: traceExcludedCheckoutRoots.length,
+  allowedPackagedScripts: allowedPackagedScriptFiles.length,
   purgedMutableRoots: mutableStandaloneRoots.length,
   artifactVerified: process.argv.includes("--artifact"),
 }, null, 2));

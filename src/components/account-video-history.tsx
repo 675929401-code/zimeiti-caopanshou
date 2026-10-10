@@ -47,7 +47,6 @@ export function AccountVideoHistory({ token, surface, onRetry }: { token: string
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 15000);
     return () => { window.clearInterval(timer); request.current?.abort(); };
   }, [refresh]);
-  const retainedWorkbenchHistory = surface === 'storyboard-workbench' || surface === 'video-page';
   const visibleTasks = tasks;
-  return <VideoHistoryGallery tasks={visibleTasks} loading={loading} error={error} onRefresh={() => { offsetRef.current = 0; void refresh(0); }} onRetry={onRetry} onLoadMore={nextOffset === null ? undefined : () => void refresh(nextOffset)} retentionDays={retainedWorkbenchHistory ? 3 : undefined} />;
+  return <VideoHistoryGallery tasks={visibleTasks} loading={loading} error={error} onRefresh={() => { offsetRef.current = 0; void refresh(0); }} onRetry={onRetry} onLoadMore={nextOffset === null ? undefined : () => void refresh(nextOffset)} authToken={token} />;
 }

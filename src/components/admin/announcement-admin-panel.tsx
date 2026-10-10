@@ -429,7 +429,7 @@ export function AnnouncementAdminPanel({ token }: { token: string }) {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2 rounded-lg border border-[var(--border)] bg-[var(--muted)]/45 px-3.5 py-3 text-xs leading-5 text-[var(--secondary-foreground)]">
-                所有公告均需点击“已阅读”；关闭仅在本次登录中收起，未读公告会在下次登录继续出现。
+                未读公告会持续停留在右下角；关闭详情后仍返回提醒，只有点击“知道了”且账号回执保存成功后才消失。
               </div>
               <label className={`${labelClass} md:col-span-2`}>标题 *
                 <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className={inputClass} maxLength={255} placeholder="一句话说明这条公告的重点" />

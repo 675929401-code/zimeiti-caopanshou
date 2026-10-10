@@ -6,6 +6,10 @@ import path from "node:path";
 import process from "node:process";
 import dotenv from "dotenv";
 import pg from "pg";
+import {
+  assertForwardMigrationRoot,
+  parseForwardMigrationName,
+} from "./lib/forward-migration-source-validator.mjs";
 
 const { Client } = pg;
 
@@ -15,6 +19,7 @@ const root = path.resolve(valueOf("--root") || process.cwd());
 const policyPath = path.join(root, "deploy", "policies", "release-policy.json");
 const policy = readJson(policyPath);
 const migrationRoot = path.resolve(root, valueOf("--migration-root") || policy.database?.migrationRoot || "supabase/migrations");
+const rollbackRoot = path.resolve(root, policy.database?.rollbackRoot || "supabase/rollbacks");
 const evidenceRoot = path.resolve(root, valueOf("--evidence-root") || ".codex-evidence/db-migration-release");
 const databaseUrlEnvNames = (valueOf("--database-url-env") || "")
   .split(",")
@@ -43,10 +48,23 @@ const excludedForwardMigrations = new Set(
     : [],
 );
 
+function validateForwardMigrationSource() {
+  return assertForwardMigrationRoot({
+    projectRoot: root,
+    migrationRoot,
+    rollbackRoot,
+    legacyRollbackRelocations: policy.database?.legacyRollbackRelocations || [],
+    // Production release commands run only from a committed checkout. A
+    // missing/unborn Git repository or any HEAD/index/worktree drift must
+    // fail closed before environment loading or database access.
+    gitIndexMode: "required",
+  });
+}
+
+validateForwardMigrationSource();
+
 dotenv.config({ path: path.join(root, ".env.local"), quiet: true });
 
-const CANONICAL_MIGRATION_FILE = /^(\d{14})_([a-z0-9][a-z0-9_-]*)\.sql$/iu;
-const ROLLBACK_LIKE_MIGRATION_FILE = /(?:^|[._-])(?:rollback|down)(?:[._-]|$)/iu;
 const FORBIDDEN_FORWARD_PATTERNS = [
   { code: "DROP_DATABASE_FORBIDDEN", expression: /^\s*DROP\s+DATABASE\b/imu },
   { code: "DROP_SCHEMA_FORBIDDEN", expression: /^\s*DROP\s+SCHEMA\b/imu },
@@ -109,8 +127,8 @@ function migrationTransactionMode(sql) {
 function inspectMigration(filePath) {
   const sql = fs.readFileSync(filePath, "utf8");
   const name = path.basename(filePath);
-  const match = CANONICAL_MIGRATION_FILE.exec(name);
-  if (!match) {
+  const parsedName = parseForwardMigrationName(name);
+  if (!parsedName) {
     return {
       file: relativeSlash(filePath),
       name,
@@ -126,7 +144,6 @@ function inspectMigration(filePath) {
   }
   const errors = [];
   const warnings = [];
-  if (ROLLBACK_LIKE_MIGRATION_FILE.test(name)) errors.push("ROLLBACK_LIKE_FILE_IN_FORWARD_ROOT");
   for (const pattern of FORBIDDEN_FORWARD_PATTERNS) {
     if (pattern.expression.test(sql)) errors.push(pattern.code);
   }
@@ -141,8 +158,8 @@ function inspectMigration(filePath) {
     file: relativeSlash(filePath),
     name,
     valid: errors.length === 0,
-    version: match[1],
-    slug: match[2],
+    version: parsedName.version,
+    slug: parsedName.slug,
     bytes: Buffer.byteLength(sql, "utf8"),
     sha256: sha256(sql),
     errors,
@@ -152,10 +169,9 @@ function inspectMigration(filePath) {
 }
 
 function listMigrations() {
-  const entries = fs.readdirSync(migrationRoot, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".sql"))
-    .filter((entry) => !excludedForwardMigrations.has(entry.name))
-    .map((entry) => inspectMigration(path.join(migrationRoot, entry.name)))
+  const entries = validateForwardMigrationSource().entries
+    .filter((entry) => !excludedForwardMigrations.has(entry.relativePath))
+    .map((entry) => inspectMigration(path.join(migrationRoot, entry.relativePath)))
     .sort((left, right) => left.name.localeCompare(right.name));
   const versions = new Map();
   for (const entry of entries) {

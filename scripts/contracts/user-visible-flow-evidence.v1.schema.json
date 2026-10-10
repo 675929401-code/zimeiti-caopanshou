@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "user-visible-flow-evidence.v1.schema.json",
+  "title": "Zero-network user-visible flow regression evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "recordedAt",
+    "evidenceLevel",
+    "fixtureOnly",
+    "baseline",
+    "networkBoundary",
+    "environment",
+    "browserMatrix",
+    "summary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "user-visible-flow-evidence.v1"
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 12
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidenceLevel": {
+      "const": "schema_verified"
+    },
+    "fixtureOnly": {
+      "const": true
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sha256",
+        "expectedSha256",
+        "immutable",
+        "comparison"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "expectedSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "immutable": { "const": true },
+        "comparison": { "enum": ["within_tolerance", "failed"] }
+      }
+    },
+    "networkBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "browserRequestsObserved",
+        "realProviderCalls",
+        "productRuntimeCalls",
+        "writes",
+        "paidCalls"
+      ],
+      "properties": {
+        "policy": { "const": "deny_all" },
+        "browserRequestsObserved": { "const": 0 },
+        "realProviderCalls": { "const": 0 },
+        "productRuntimeCalls": { "const": 0 },
+        "writes": { "const": 0 },
+        "paidCalls": { "const": 0 }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["platform", "node", "viewport", "clockPolicy"],
+      "properties": {
+        "platform": { "type": "string" },
+        "node": { "type": "string" },
+        "viewport": {
+          "type": "object",
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 1280 },
+            "height": { "type": "integer", "minimum": 720 }
+          }
+        },
+        "clockPolicy": { "type": "string" }
+      }
+    },
+    "browserMatrix": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["id", "engine", "execution", "status"],
+        "properties": {
+          "id": { "enum": ["chromium", "edge", "firefox", "safari"] },
+          "engine": { "type": "string" },
+          "execution": { "type": "string" },
+          "status": { "enum": ["passed", "failed", "unavailable", "external_evidence_required"] },
+          "result": { "type": ["object", "null"] },
+          "error": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "localRequired",
+        "localPassed",
+        "localFailed",
+        "safariExternalEvidenceRequired",
+        "passed"
+      ],
+      "properties": {
+        "localRequired": { "type": "integer", "minimum": 3 },
+        "localPassed": { "type": "integer", "minimum": 0 },
+        "localFailed": { "type": "integer", "minimum": 0 },
+        "safariExternalEvidenceRequired": { "const": true },
+        "passed": { "type": "boolean" }
+      }
+    }
+  }
+}

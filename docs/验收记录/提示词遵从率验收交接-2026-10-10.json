@@ -1,0 +1,17 @@
+{
+  "changedFiles": [
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verifiers/prompt-adherence/media-prompt-adherence-verifier.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verifiers/prompt-adherence/verify-zero-cost.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verifiers/prompt-adherence/audit-current-media-contracts.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/fixtures/prompt-adherence/paid-canary-suite.v1.json",
+    "01_网页开发项目/自媒体操盘手/当前版本/docs/提示词遵从率与媒体提交完整性验收-2026-10-10.md",
+    "01_网页开发项目/自媒体操盘手/当前版本/docs/验收记录/提示词遵从率验收交接-2026-10-10.json"
+  ],
+  "summary": "新增零付费、零网络的媒体提交合同审计与提示词遵从率验收器，并提供生图、普通视频、H3 视频各一次付费金丝雀的固定题集和执行计划。指标严格拆分提交完整性、提示词文本覆盖、输出语义遵从和输出证据覆盖；提示词文本、请求快照、HTTP 成功或任务 ID 均不能替代像素、时间段或音频证据。未修改任何生图/视频核心文件。",
+  "verification": "PASS：audit-current-media-contracts.mjs 确认生图 v2、视频 v1 快照/历史边界，以及 H3 hosted、legacy hosted、selfhost 对未声明 negativePrompt 与 generateAudio 的零网络前置拒绝覆盖；findings=0、providerRequests=0。PASS：verify-zero-cost.mjs 13/13，证明仅文本命中时语义分为空、语义失败可检出、prompt_text 不能充当视觉证据。PASS：verify-video-parameter-integrity-contract.mjs 18/18，拒绝用例 providerCalls=0。PASS：verify-video-request-snapshot.ts，角色与 providerPayloadHash 稳定、网络/数据库/provider 调用均为 0。PASS：verify-image-parameter-integrity-zero-cost.ts，6 协议、13 个不支持字段明确拒绝、网络/数据库/provider/paid 均为 0。PASS：verify-image-failure-history-contract.ts。PASS：verify-image-generation-request-protocol.mjs 在 register-node-script-server-only + tsx 下 26 项通过且 providerRequests=0。计划模式成功生成 3 个未执行用例，paidCanaryGate.authorized=false。",
+  "remaining": "未执行真实供应商请求，未观察任何新生成媒体，因此本轮只能给出 schema_verified / zero-cost 结论，不能声称视觉、动作、身份、负向要求或音频语义通过。真实验收仍需在当前运行版本中锁定精确公开模型、内部模型、协议、适配器、价格和能力，再经明确付费授权后各提交一次；1920x1056 必须记为与 1080p 规格不符。",
+  "runningOperations": "无。未构建、未启动或停止端口、未部署、未联网请求供应商、未写数据库、未扣费。",
+  "nextAction": "获得明确付费授权且 runningLatest=true 后，先生成计划：node scripts/verifiers/prompt-adherence/media-prompt-adherence-verifier.mjs --suite scripts/fixtures/prompt-adherence/paid-canary-suite.v1.json --mode plan --out .codex-evidence/media-adherence-p0/paid-canary-plan.json。执行人填入当次身份与逐层证据，每例最多一次 provider POST、自动重试 0，保存为 media_prompt_adherence_run.v1；再以 --mode evaluate --run <run.json> --out <report.json> 产出报告。H3 付费提交前必须先复跑统一参数拒绝测试，确保未声明 negativePrompt/generateAudio 时 422 且 provider calls=0。",
+  "runtimeIdentity": "未启动或读取本地运行时；未主张 sourceVersion、BUILD_ID 或 runningLatest。本交付仅绑定当前工作树源码与零网络测试。",
+  "productionState": "未改变。无部署、无发布、无付费请求、无账务或生产数据写入。"
+}

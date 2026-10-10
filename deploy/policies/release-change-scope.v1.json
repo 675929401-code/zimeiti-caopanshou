@@ -1,0 +1,344 @@
+{
+  "schemaVersion": "zimeiti-release-change-scope-policy.v1",
+  "policyId": "release-change-scope.v1",
+  "classificationOrder": [
+    "FAST",
+    "STANDARD",
+    "FULL"
+  ],
+  "acceptedChangeStatuses": [
+    "A",
+    "M"
+  ],
+  "fullOnChangeStatuses": [
+    "D",
+    "R",
+    "C",
+    "T",
+    "U",
+    "X",
+    "B",
+    "?"
+  ],
+  "unknownBehavior": "FULL",
+  "classificationConflictBehavior": "FULL",
+  "browserAcceptanceTrust": {
+    "path": "deploy/policies/release-acceptance-trusted-issuers.v1.json",
+    "sha256": "3e41ec2e33894adad2316cad580191be526dfdc5cf218acad14281b5b8313444",
+    "trustRootId": "zimeiti-release-acceptance-external-root-v1"
+  },
+  "browserAcceptance": {
+    "minimumDistinctRoutes": 3,
+    "defaultRoutes": ["/", "/tools", "/video"],
+    "blockedUnlessPolicyMappedPatterns": [
+      "^supabase/",
+      "^src/app/api/",
+      "^voice-platform/src/app/api/",
+      "^src/(?:lib|contexts|components)/",
+      "^src/shared/",
+      "^src/app/(?:layout|providers|globals|dialog-theme)\\.",
+      "^deploy/",
+      "^\\.github/workflows/"
+    ],
+    "defaultRouteEligiblePatterns": [
+      "^(?:docs|tests?|fixtures)/",
+      "^README(?:\\.[^/]+)?$",
+      "^.+\\.md$",
+      "^scripts/(?:verify-|test-).+\\.(?:mjs|js|ts|tsx|py)$"
+    ],
+    "routeRules": [
+      {
+        "id": "video-surface",
+        "patterns": ["^(?:src/app/video/|src/app/api/video/|src/lib/video)"],
+        "routes": ["/video", "/media-history", "/storyboard-workbench"]
+      },
+      {
+        "id": "admin-surface",
+        "patterns": ["^(?:src/app/admin/|src/app/api/admin/|src/lib/auth|src/lib/.*permission)"],
+        "routes": ["/admin", "/", "/tools"]
+      },
+      {
+        "id": "voice-surface",
+        "patterns": ["^(?:voice-platform/|src/app/voice/|src/app/api/voice/)"],
+        "routes": ["/voice", "/", "/tools"]
+      },
+      {
+        "id": "release-control-plane",
+        "patterns": ["^(?:deploy/|\\.github/workflows/|scripts/(?:classify-release-change-scope|release-change-validation-gate|compute-release-build-output-digest|package-standalone-artifact))"],
+        "routes": ["/", "/tools", "/video"]
+      }
+    ]
+  },
+  "requiredValidations": {
+    "all": [
+      "credential-scan",
+      "source-integrity",
+      "diff-check",
+      "build",
+      "build-identity",
+      "desktop-precise-route-visual-1440x900",
+      "desktop-two-adjacent-pages-visual",
+      "console-and-request-errors"
+    ],
+    "FAST": [
+      "targeted-typecheck-or-lint",
+      "targeted-zero-network-regression"
+    ],
+    "STANDARD": [
+      "targeted-typecheck-or-lint",
+      "affected-api-business-regression",
+      "affected-shared-component-regression",
+      "affected-route-contracts"
+    ],
+    "FULL": [
+      "full-typecheck-and-lint",
+      "full-zero-network-regression",
+      "security-and-permission-gates",
+      "billing-storage-and-provider-gates",
+      "database-and-rollback-gates",
+      "release-workflow-and-artifact-contracts",
+      "full-desktop-release-checklist"
+    ]
+  },
+  "validationCatalog": [
+    "credential-scan",
+    "source-integrity",
+    "diff-check",
+    "build",
+    "build-identity",
+    "desktop-precise-route-visual-1440x900",
+    "desktop-two-adjacent-pages-visual",
+    "console-and-request-errors",
+    "targeted-typecheck-or-lint",
+    "targeted-zero-network-regression",
+    "affected-api-business-regression",
+    "affected-shared-component-regression",
+    "affected-route-contracts",
+    "full-typecheck-and-lint",
+    "full-zero-network-regression",
+    "security-and-permission-gates",
+    "billing-storage-and-provider-gates",
+    "database-and-rollback-gates",
+    "release-workflow-and-artifact-contracts",
+    "full-desktop-release-checklist"
+  ],
+  "fastTargetedRegressionRules": [
+    {
+      "id": "changed-zero-network-mjs",
+      "patterns": [
+        "^scripts/(?:verify-|test-).*(?:zero-network|zero-cost)\\.mjs$"
+      ],
+      "command": {
+        "executable": "node",
+        "args": ["{path}"]
+      }
+    },
+    {
+      "id": "changed-zero-network-ts",
+      "patterns": [
+        "^scripts/(?:verify-|test-).*(?:zero-network|zero-cost)\\.ts$"
+      ],
+      "command": {
+        "executable": "pnpm",
+        "args": ["exec", "tsx", "{path}"]
+      }
+    },
+    {
+      "id": "video-isolated-ui-contract",
+      "patterns": [
+        "^src/app/video/(?:page\\.tsx|[^/]+\\.css)$"
+      ],
+      "command": {
+        "executable": "node",
+        "args": ["scripts/verify-video-live-history-ui-only-zero-network.mjs"]
+      }
+    }
+  ],
+  "pathRules": [
+    {
+      "id": "full-database-migration-or-rollback",
+      "level": "FULL",
+      "precedence": 300,
+      "patterns": [
+        "^supabase/(?:migrations|rollbacks|migration|rollback)/",
+        "^scripts/(?:db-migration-release|verify-db-migration-release|verify-release-database-gates|backup-postgres|restore-data|backup-data)(?:[.-]|$)",
+        "^deploy/policies/database(?:-|\\.)",
+        "^src/lib/generated/database-contract\\.ts$"
+      ]
+    },
+    {
+      "id": "full-authentication-or-permission",
+      "level": "FULL",
+      "precedence": 300,
+      "patterns": [
+        "^src/(?:lib/(?:auth(?:[./-]|$)|.*permission|.*authorization)|app/api/(?:auth|admin/(?:permissions|roles))(?:/|$)|proxy\\.ts$)",
+        "^voice-platform/src/(?:lib/auth(?:[./-]|$)|app/api/auth(?:/|$))"
+      ]
+    },
+    {
+      "id": "full-billing-wallet-or-payment",
+      "level": "FULL",
+      "precedence": 300,
+      "patterns": [
+        "(?:^|/)(?:billing|wallet|payment|payments|recharge|refund|ledger)(?:[./_-]|$)"
+      ]
+    },
+    {
+      "id": "full-storage-deletion-or-retention",
+      "level": "FULL",
+      "precedence": 300,
+      "patterns": [
+        "(?:^|/)(?:storage-delete|storage-cleanup|retention-worker|purge-worker|delete-worker)(?:[./_-]|$)",
+        "^scripts/(?:reconcile-user-content-retention|verify-user-content-retention|verify-deploy-storage-guard)(?:[.-]|$)"
+      ]
+    },
+    {
+      "id": "full-model-protocol-or-upstream-adapter",
+      "level": "FULL",
+      "precedence": 300,
+      "patterns": [
+        "^src/(?:lib|app/api)/.*(?:provider|adapter|upstream|model-publication|model-routing)(?:[./_-]|$)",
+        "^voice-platform/src/(?:lib|app/api)/.*(?:provider|adapter|upstream|model-routing)(?:[./_-]|$)"
+      ]
+    },
+    {
+      "id": "full-deployment-script-policy-or-manifest",
+      "level": "FULL",
+      "precedence": 300,
+      "patterns": [
+        "^\\.github/workflows/",
+        "^deploy/(?:policies|manifests)/",
+        "^scripts/(?:deploy-|package-standalone-artifact|build-release-vnext|release-workflow|release-preflight|materialize-public-asset-release|install-public-asset-release|provision-release-root)(?:[.-]|$)",
+        "^\\.releaseignore$",
+        "(?:^|/)(?:source-manifest|code-track|artifact-manifest)(?:\\.[^/]+)?$"
+      ]
+    },
+    {
+      "id": "full-secret-related-path",
+      "level": "FULL",
+      "precedence": 300,
+      "patterns": [
+        "(?:^|/)(?:\\.env(?:[./]|$)|[^/]*(?:secret|credential|private[-_]?key|access[-_]?token|refresh[-_]?token|cookie|certificate)[^/]*)(?:/|$|\\.)"
+      ]
+    },
+    {
+      "id": "standard-api-or-business-logic",
+      "level": "STANDARD",
+      "precedence": 200,
+      "patterns": [
+        "^src/app/api/",
+        "^src/app/.+/(?:action|actions|service|services|domain|store|repository)(?:[./_-]|$)",
+        "^src/(?:lib|storage|contexts)/",
+        "^src/(?:server|proxy)\\.(?:ts|tsx|js|mjs)$",
+        "^voice-platform/src/(?:app/api|lib)/"
+      ]
+    },
+    {
+      "id": "standard-shared-component-or-shell",
+      "level": "STANDARD",
+      "precedence": 200,
+      "patterns": [
+        "^src/components/",
+        "^src/app/(?:layout|providers|loading|error|not-found)\\.(?:ts|tsx|css)$",
+        "^src/app/(?:globals|dialog-theme)\\.css$",
+        "^voice-platform/src/components/"
+      ]
+    },
+    {
+      "id": "standard-build-config-or-general-script",
+      "level": "STANDARD",
+      "precedence": 200,
+      "patterns": [
+        "^(?:package\\.json|pnpm-lock\\.yaml|next\\.config\\.[^/]+|tsconfig(?:\\.[^/]+)?\\.json)$",
+        "^voice-platform/(?:package\\.json|pnpm-lock\\.yaml|next\\.config\\.[^/]+|tsconfig(?:\\.[^/]+)?\\.json)$",
+        "^scripts/(?!verify-|test-).+\\.(?:mjs|js|ts|sh|ps1)$"
+      ]
+    },
+    {
+      "id": "fast-isolated-desktop-ui-or-copy",
+      "level": "FAST",
+      "precedence": 100,
+      "patterns": [
+        "^src/app/(?!api/)(?!layout\\.)(?!providers\\.)(?!globals\\.css$)(?!dialog-theme\\.css$).+/(?:page|loading|error)\\.(?:ts|tsx)$",
+        "^src/app/(?!api/)(?!globals\\.css$)(?!dialog-theme\\.css$).+\\.(?:css|scss)$",
+        "^src/(?:content|copy|locales)/"
+      ]
+    },
+    {
+      "id": "fast-targeted-test-fixture-or-documentation",
+      "level": "FAST",
+      "precedence": 100,
+      "patterns": [
+        "^(?:tests?|fixtures)/",
+        "^scripts/(?:verify-|test-).+\\.(?:mjs|js|ts|tsx|py)$",
+        "^scripts/fixtures/",
+        "^docs/",
+        "^README(?:\\.[^/]+)?$",
+        "^.+\\.md$"
+      ]
+    }
+  ],
+  "contentRiskRules": [
+    {
+      "id": "content-api-or-business-logic",
+      "level": "STANDARD",
+      "patterns": [
+        "[\"']use server[\"']",
+        "export\\s+async\\s+function\\s+(?:POST|PUT|PATCH|DELETE)\\b",
+        "\\b(?:supabase|database|repository)\\.",
+        "\\b(?:create|update|save|submit|mutate)[A-Z][A-Za-z0-9_]*\\s*\\("
+      ]
+    },
+    {
+      "id": "content-database-migration-or-rollback",
+      "level": "FULL",
+      "patterns": [
+        "\\b(?:CREATE|ALTER|DROP|TRUNCATE)\\s+(?:TABLE|FUNCTION|POLICY|SCHEMA|TYPE|INDEX)\\b",
+        "\\b(?:migration|rollback)\\b"
+      ]
+    },
+    {
+      "id": "content-authentication-or-permission",
+      "level": "FULL",
+      "patterns": [
+        "\\b(?:service_role|SECURITY\\s+DEFINER|permission|authorize|authorization|requireAdmin|requireSuperAdmin|row\\s+level\\s+security|RLS)\\b"
+      ]
+    },
+    {
+      "id": "content-billing-wallet-or-payment",
+      "level": "FULL",
+      "patterns": [
+        "\\b(?:wallet|billing|payment|refund|charge|deduct|balance|ledger)\\b"
+      ]
+    },
+    {
+      "id": "content-storage-deletion",
+      "level": "FULL",
+      "patterns": [
+        "\\b(?:rmSync|unlinkSync|unlink|deleteObject|deleteFile|removeObject|purge)\\b",
+        "recursive\\s*:\\s*true"
+      ]
+    },
+    {
+      "id": "content-model-protocol-or-upstream-adapter",
+      "level": "FULL",
+      "patterns": [
+        "\\b(?:upstream|provider[_-]?id|baseURL|base_url|model_name|protocol\\s+adapter|OpenAI-compatible)\\b"
+      ]
+    },
+    {
+      "id": "content-deployment-or-manifest",
+      "level": "FULL",
+      "patterns": [
+        "\\b(?:deploy-artifact|releaseId|artifactManifest|source-manifest|DEPLOY_EXECUTION_APPROVED|rollback\\s+target)\\b"
+      ]
+    },
+    {
+      "id": "content-secret-related",
+      "level": "FULL",
+      "patterns": [
+        "\\b(?:api[_-]?key|client[_-]?secret|private[_-]?key|access[_-]?token|refresh[_-]?token|cookie|credential|process\\.env)\\b"
+      ]
+    }
+  ]
+}

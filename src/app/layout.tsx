@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
+import { cache } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import "@xyflow/react/dist/style.css";
 import "./globals.css";
@@ -11,6 +13,9 @@ import "./theme-crystal-aurora.css";
 import "./theme-soft-white.css";
 // Final cross-theme readability and responsive guards intentionally load last.
 import "./ui-shell-fixes.css";
+// Dialogs portal to document.body, so their theme tokens must be restored after
+// every page/theme stylesheet and before chat-only surface overrides.
+import "./dialog-theme.css";
 // Chat-only visual layer. It is scoped by data-chat-surface and must remain
 // after the shared shell guards so the three themes render one glass surface.
 import "./chat-glass-continuity.css";
@@ -34,7 +39,9 @@ import {
   resolveThemeModeForTheme,
 } from "@/lib/themes";
 import { readPlatformAppearance } from "@/lib/server/platform-appearance";
-import { readPublishedPlatformBranding } from "@/lib/server/brand-authority";
+import { PlatformBrandingProvider } from "@/hooks/use-platform-branding";
+import { resolveDisplayBrand } from "@/lib/server/white-label-runtime";
+import { isPlatformDisplayHost, normalizeDirectHostHeader } from "@/lib/white-label-host";
 
 const SERIALIZED_VALID_THEMES = JSON.stringify(VALID_THEMES);
 const SERIALIZED_LIGHT_THEMES = JSON.stringify(LIGHT_THEMES);
@@ -52,10 +59,15 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+const readRequestDisplayBrand = cache(async () => {
+  const requestHeaders = await headers();
+  return resolveDisplayBrand(requestHeaders.get("host"));
+});
+
 export async function generateMetadata(): Promise<Metadata> {
   try {
-    const branding = await readPublishedPlatformBranding();
-    const name = branding.brand.name || "自媒体操盘手";
+    const { branding } = await readRequestDisplayBrand();
+    const name = branding.brand.name || (branding.displayScope === "white_label" ? "品牌服务" : "自媒体操盘手");
     const title = branding.brand.seo.title || name;
     const description = branding.brand.seo.description
       || branding.brand.description
@@ -89,6 +101,20 @@ export async function generateMetadata(): Promise<Metadata> {
       robots: { index: true, follow: true },
     };
   } catch {
+    const requestHeaders = await headers();
+    let platformHost = false;
+    try {
+      platformHost = isPlatformDisplayHost(normalizeDirectHostHeader(requestHeaders.get("host")));
+    } catch {
+      // The proxy returns 400 for malformed Host before rendering this tree.
+    }
+    if (!platformHost) {
+      return {
+        title: "品牌服务暂不可用",
+        description: "当前品牌配置暂时无法读取。",
+        robots: { index: false, follow: false },
+      };
+    }
     return {
       title: { default: "自媒体操盘手", template: "%s | 自媒体操盘手" },
       description: "AI 内容经营系统",
@@ -103,6 +129,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const displayBrand = await readRequestDisplayBrand();
   const platformAppearance = await readPlatformAppearance();
   const rootTheme = platformAppearance.theme;
   const rootModePreference = platformAppearance.modePreference;
@@ -117,6 +144,8 @@ export default async function RootLayout({
       data-mode-preference={rootModePreference}
       data-mode={rootMode}
       data-platform-theme-authoritative={platformAppearance.authoritative ? "true" : "false"}
+      data-display-brand-scope={displayBrand.scope}
+      data-display-brand-hostname={displayBrand.hostname}
       data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
@@ -287,12 +316,13 @@ export default async function RootLayout({
               : (allowedModePreferences.indexOf(cachedPlatformMode) >= 0
                 ? cachedPlatformMode
                 : ${SERIALIZED_DEFAULT_MODE_PREFERENCE});
-            var hasAuthSession = !!localStorage.getItem('auth_token');
             var cachedUserTheme = localStorage.getItem('user_theme_preference');
             var cachedUserMode = localStorage.getItem('user_theme_mode_preference');
-            var hasValidatedUserAppearance = hasAuthSession
-              && allowedThemes.indexOf(cachedUserTheme) >= 0
-              && allowedModePreferences.indexOf(cachedUserMode) >= 0;
+            var cachedUserThemeExpiry = Date.parse(localStorage.getItem('user_theme_preference_expires_at') || '');
+            var hasValidatedUserAppearance = allowedThemes.indexOf(cachedUserTheme) >= 0
+              && allowedModePreferences.indexOf(cachedUserMode) >= 0
+              && Number.isFinite(cachedUserThemeExpiry)
+              && cachedUserThemeExpiry > Date.now();
             var selectedTheme = hasValidatedUserAppearance ? cachedUserTheme : platformTheme;
             var selectedModePreference = hasValidatedUserAppearance ? cachedUserMode : platformModePreference;
             var selectedMode = lightThemes.indexOf(selectedTheme) >= 0 ? 'light' : 'dark';
@@ -554,27 +584,29 @@ export default async function RootLayout({
             }
           })();
         ` }} />
-        <ThemeInit />
-        <AppProvider>
-          <MemberPermissionProvider>
-            <SecondaryPageReturnGuard />
-            <ErrorBoundary>
-              <MemberFeatureBoundary>{children}</MemberFeatureBoundary>
-            </ErrorBoundary>
-            <ErrorBoundary>
-              <SecurityInterruptionDialog />
-            </ErrorBoundary>
-            <ErrorBoundary>
-              <AnnouncementPopup />
-            </ErrorBoundary>
-            <ErrorBoundary>
-              <AccountNotificationCenter />
-            </ErrorBoundary>
-            <Toaster position="top-center" richColors />
-            <DiagnosticSentry />
-            <VersionChecker />
-          </MemberPermissionProvider>
-        </AppProvider>
+        <PlatformBrandingProvider initialBranding={displayBrand.branding}>
+          <ThemeInit />
+          <AppProvider>
+            <MemberPermissionProvider>
+              <SecondaryPageReturnGuard />
+              <ErrorBoundary>
+                <MemberFeatureBoundary>{children}</MemberFeatureBoundary>
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <SecurityInterruptionDialog />
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <AnnouncementPopup />
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <AccountNotificationCenter />
+              </ErrorBoundary>
+              <Toaster position="top-center" richColors />
+              <DiagnosticSentry />
+              <VersionChecker />
+            </MemberPermissionProvider>
+          </AppProvider>
+        </PlatformBrandingProvider>
       </body>
     </html>
   );

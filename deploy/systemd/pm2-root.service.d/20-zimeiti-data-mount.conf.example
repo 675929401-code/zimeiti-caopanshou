@@ -1,0 +1,13 @@
+[Unit]
+# Do not start or keep the production PM2 tree alive without the dedicated
+# data mount. The activation script performs the stronger UUID/marker checks.
+RequiresMountsFor=/data
+BindsTo=data.mount
+After=data.mount
+ConditionPathIsMountPoint=/data
+ConditionPathExists=/data/.zimeiti-storage-root
+
+[Service]
+ExecStartPre=/usr/bin/mountpoint -q /data
+ExecStartPre=/usr/bin/test -r /etc/zimeiti/deploy-storage.conf
+ExecStartPre=/usr/local/libexec/zimeiti/verify-deploy-storage-runtime.sh

@@ -3,16 +3,21 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { computeLocalBuildFingerprint } from "./local-build-fingerprint.mjs";
 
 const ORIGIN = process.env.LOCAL_APP_URL || "http://127.0.0.1:5000";
 const EXISTING_TASK_ID = "vt_fa857f50db21206574825ca6c1955e26160c3045";
+const PROJECT_ROOT = process.cwd();
+const SAFE_RUNTIME_ID = /^[A-Za-z0-9._:-]{4,180}$/u;
 const runId = process.argv.find((value) => value.startsWith("--run-id="))?.slice(9)
   || new Date().toISOString().replace(/[:.]/gu, "-");
+const expectedSourceVersion = process.argv.find((value) => value.startsWith("--expected-source-version="))?.slice(26) || "";
+const expectedBuildId = process.argv.find((value) => value.startsWith("--expected-build-id="))?.slice(20) || "";
+const planOnly = process.argv.includes("--plan");
 assert.equal(ORIGIN, "http://127.0.0.1:5000", "Only the fixed local preview may be accepted");
 assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u, "Invalid run id");
 
 const outputDir = path.resolve(".codex-evidence", "video-workbenches-browser-acceptance-20260904", runId);
-await fs.mkdir(outputDir, { recursive: true });
 const reportPath = path.join(outputDir, "summary.json");
 
 const report = {
@@ -29,7 +34,27 @@ const report = {
   apiErrors: [],
   stages: [],
   passed: false,
+  mode: planOnly ? "plan" : "execute",
+  runtimeIdentity: { before: null, after: null, unchanged: false },
+  actorIdentity: { before: null, after: null, unchanged: false },
 };
+
+if (planOnly) {
+  Object.assign(report, {
+    passed: true,
+    planOnly: true,
+    networkCalls: 0,
+    databaseWrites: 0,
+    filesystemWrites: 0,
+    providerGenerationRequests: 0,
+    requiredExecuteArguments: ["--expected-source-version=<sourceVersion>", "--expected-build-id=<buildId>"],
+    executeCommand: `node scripts/verify-video-workbenches-user-browser-local.mjs --run-id=${runId} --expected-source-version=<sourceVersion> --expected-build-id=<buildId>`,
+  });
+  console.log(JSON.stringify(report, null, 2));
+} else {
+  assert.match(expectedSourceVersion, SAFE_RUNTIME_ID, "EXPECTED_SOURCE_VERSION_REQUIRED");
+  assert.match(expectedBuildId, SAFE_RUNTIME_ID, "EXPECTED_BUILD_ID_REQUIRED");
+  await fs.mkdir(outputDir, { recursive: true });
 
 function redactedError(error) {
   return {
@@ -70,6 +95,51 @@ async function jsonRequest(route, token) {
   const body = await response.json().catch(() => null);
   assert.ok(response.ok, `${route} returned ${response.status}`);
   return body;
+}
+
+async function readRuntimeIdentity() {
+  const runtimeVersion = await jsonRequest("/api/version");
+  const [diskVersionText, diskBuildIdText, receiptText] = await Promise.all([
+    fs.readFile(path.join(PROJECT_ROOT, "public", "version.json"), "utf8"),
+    fs.readFile(path.join(PROJECT_ROOT, ".next", "BUILD_ID"), "utf8"),
+    fs.readFile(path.join(PROJECT_ROOT, ".next", "local-source-fingerprint.v1.json"), "utf8"),
+  ]);
+  const diskVersion = JSON.parse(diskVersionText);
+  const diskBuildId = diskBuildIdText.trim();
+  const receipt = JSON.parse(receiptText);
+  const fingerprint = computeLocalBuildFingerprint(PROJECT_ROOT);
+  const identity = {
+    sourceVersion: String(runtimeVersion?.sourceVersion || ""),
+    buildId: String(runtimeVersion?.buildId || ""),
+    diskSourceVersion: String(diskVersion?.sourceVersion || ""),
+    diskBuildId,
+    receiptBuildId: String(receipt?.buildId || ""),
+    receiptFingerprint: String(receipt?.fingerprint || ""),
+    currentFingerprint: String(fingerprint.fingerprint || ""),
+    fileCount: Number(fingerprint.fileCount),
+    receiptFileCount: Number(receipt?.fileCount),
+  };
+  const runningLatest = identity.sourceVersion === identity.diskSourceVersion
+    && identity.buildId === identity.diskBuildId
+    && identity.receiptBuildId === identity.diskBuildId
+    && identity.receiptFingerprint === identity.currentFingerprint
+    && identity.receiptFileCount === identity.fileCount;
+  return { ...identity, runningLatest };
+}
+
+function assertRuntimeIdentity(identity) {
+  assert.equal(identity.runningLatest, true, "RUNTIME_NOT_LATEST");
+  assert.equal(identity.sourceVersion, expectedSourceVersion, "EXPECTED_SOURCE_VERSION_MISMATCH");
+  assert.equal(identity.buildId, expectedBuildId, "EXPECTED_BUILD_ID_MISMATCH");
+}
+
+function actorProjection(user, sessionMode) {
+  return {
+    id: String(user?.id || ""),
+    role: String(user?.role || ""),
+    username: String(user?.username || ""),
+    sessionMode,
+  };
 }
 
 function capabilities(model) {
@@ -133,12 +203,14 @@ async function makeContext(browser, session, viewport, label) {
     const failure = request.failure()?.errorText || "";
     if (failure.startsWith("net::ERR_BLOCKED_BY_CLIENT") || failure === "net::ERR_ABORTED") return;
     let requestPath = "external";
+    let requestHost = null;
     try {
       const url = new URL(request.url());
       requestPath = url.origin === ORIGIN ? url.pathname : "external-media";
+      requestHost = url.origin === ORIGIN ? null : url.hostname;
     } catch {}
     if (requestPath === "external-media" && /ERR_BLOCKED_BY_ORB/u.test(failure)) {
-      report.optionalMediaFailures.push({ label, path: requestPath, error: failure.slice(0, 120) });
+      report.optionalMediaFailures.push({ label, path: requestPath, host: requestHost, resourceType: request.resourceType(), error: failure.slice(0, 120) });
       return;
     }
     report.browserFailures.push({ label, path: requestPath, error: failure.slice(0, 120) });
@@ -271,7 +343,11 @@ async function findScrollable(page, preferredSelector) {
 
 let browser;
 try {
+  report.runtimeIdentity.before = await readRuntimeIdentity();
+  assertRuntimeIdentity(report.runtimeIdentity.before);
+  await saveReport();
   const injectedToken = process.env.LOCAL_NAV_ADMIN_TOKEN?.trim();
+  const sessionMode = injectedToken ? "injected-admin-token" : "local-admin-dev-session";
   let session;
   if (injectedToken) {
     const identity = await jsonRequest("/api/auth/me", injectedToken);
@@ -285,6 +361,9 @@ try {
     assert.ok(sessionResponse.ok, "Local administrator dev session unavailable");
   }
   assert.ok(session.token && session.user?.role === "admin", "Local administrator session unavailable");
+  report.actorIdentity.before = actorProjection(session.user, sessionMode);
+  assert.equal(report.actorIdentity.before.role, "admin", "READ_ONLY_ADMIN_ROLE_MUST_BE_EXPLICIT");
+  await saveReport();
 
   const [videoCatalogBody, storyboardCatalogBody, historyBody, balanceBody] = await Promise.all([
     jsonRequest("/api/video/models?surface=video-page", session.token),
@@ -396,8 +475,8 @@ try {
     const row = page.locator(`[data-video-history-task=${JSON.stringify(String(playbackTask.id))}]`);
     await row.waitFor({ state: "visible", timeout: 30_000 });
     assert.ok((await row.innerText()).trim(), "History row lost its historical model snapshot");
-    await row.locator('button[aria-label^="播放 "]').click();
-    const video = row.locator("video");
+    await row.locator('button[aria-label^="放大播放 "]').click();
+    const video = page.locator("video:visible").last();
     await video.waitFor({ state: "visible", timeout: 30_000 });
     await video.evaluate((element) => { element.muted = true; });
     await page.waitForFunction(() => {
@@ -409,6 +488,7 @@ try {
     const playback = await video.evaluate((element) => ({ duration: element.duration, currentTime: element.currentTime, width: element.videoWidth, height: element.videoHeight, readyState: element.readyState }));
     await video.evaluate((element) => element.pause());
     assert.ok(Number.isFinite(playback.duration) && playback.duration > 0.2 && playback.width > 0 && playback.height > 0, "Existing task is not actually playable");
+    await page.getByRole("button", { name: "关闭视频预览", exact: true }).click();
     const downloadPromise = page.waitForEvent("download", { timeout: 45_000 });
     await row.getByRole("button", { name: "下载到电脑", exact: true }).click();
     const download = await downloadPromise;
@@ -491,12 +571,26 @@ try {
 
   await context.close();
 
+  const finalIdentity = await jsonRequest("/api/auth/me", session.token);
+  report.actorIdentity.after = actorProjection(finalIdentity.user, sessionMode);
+  assert.equal(report.actorIdentity.after.id, report.actorIdentity.before.id, "ACTOR_IDENTITY_CHANGED_DURING_ACCEPTANCE");
+  assert.equal(report.actorIdentity.after.role, report.actorIdentity.before.role, "ACTOR_ROLE_CHANGED_DURING_ACCEPTANCE");
+  report.actorIdentity.unchanged = true;
+  report.runtimeIdentity.after = await readRuntimeIdentity();
+  assertRuntimeIdentity(report.runtimeIdentity.after);
+  assert.deepEqual(report.runtimeIdentity.after, report.runtimeIdentity.before, "SOURCE_OR_BUILD_CHANGED_DURING_ACCEPTANCE");
+  report.runtimeIdentity.unchanged = true;
+
   report.catalog = {
     videoModelIds: videoModels.map((model) => model.id),
     storyboardModelIds: storyboardModels.map((model) => model.id),
   };
-  report.balance = { apiBalance: Number(balanceBody.balance || 0), administratorExempt: true };
+  report.balance = { apiBalance: Number(balanceBody.balance || 0), administratorExempt: true, role: "admin" };
   report.passed = report.stages.every((item) => item.passed)
+    && report.runtimeIdentity.before?.runningLatest === true
+    && report.runtimeIdentity.after?.runningLatest === true
+    && report.runtimeIdentity.unchanged === true
+    && report.actorIdentity.unchanged === true
     && report.providerGenerationRequests === 0
     && report.unexpectedMutations.length === 0
     && report.pageErrors.length === 0
@@ -511,4 +605,5 @@ try {
   console.log(JSON.stringify({ reportPath, passed: report.passed, providerGenerationRequests: report.providerGenerationRequests, stages: report.stages.map(({ name, passed }) => ({ name, passed })) }, null, 2));
 }
 
-if (!report.passed) process.exitCode = 1;
+  if (!report.passed) process.exitCode = 1;
+}

@@ -58,7 +58,10 @@ for (const marker of [
   "RELEASE_BACKUP_URL=",
   "DEPLOY_DATABASE_URL=",
   "DEPLOY_SSH_TARGET=",
-  "DEPLOY_RELEASE_ROOT=/srv/zimeiti-caopanshou",
+  "DEPLOY_RELEASE_ROOT=/data/web",
+  "DEPLOY_INCOMING_DIR=/data/direct-deploy/incoming",
+  "APP_RUNTIME_DIR=/data/web/shared/runtime",
+  "PROVIDER_ADMISSION_GLOBAL_LIMIT=8",
   "ASSET_DELIVERY_MODE=disk",
   "ASSET_STORAGE_DRIVER=disk",
 ]) {

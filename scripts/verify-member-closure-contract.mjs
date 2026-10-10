@@ -48,12 +48,18 @@ check("admin user timestamp stays ISO", adminUsersRoute.includes("lastActive: u.
 check("login today window uses Beijing day", adminLoginLogsRoute.includes("beijingCalendarDayWindowStart"));
 check("profile supports direct notification tab", /tab === ["']notifications["']/u.test(profilePage));
 
-check("offline unread opens full account dialog", /firstLoad && unread\.length > 0[\s\S]*?openDialog\(unread\[0\]\.id\)/u.test(accountNotifications));
+check("offline unread starts as persistent account toast", /firstLoad && unread\.length > 0[\s\S]*?setToastId\(unread\[0\]\.id\)/u.test(accountNotifications));
 check("online account push uses compact toast", /newlyArrived[\s\S]*?setToastId/u.test(accountNotifications));
-check("account toast desktop proportion", accountNotifications.includes("min-h-[190px] w-[340px]"));
-check("offline unread announcement opens full reader", /firstLoad[\s\S]*?openReader\(candidate\.id\)/u.test(announcementPopup));
+check("account toast desktop proportion", accountNotifications.includes("w-[344px]") && !accountNotifications.includes("min-h-[190px]"));
+check("account unread toast cannot be dismissed without receipt", !accountNotifications.includes('aria-label="稍后查看"'));
+check("account detail close restores unread toast", accountNotifications.includes("setToastId(unread?.id || null)"));
+check("account receipt failure remains visible", /catch \(markError\)[\s\S]*?setError/u.test(accountNotifications) && accountNotifications.includes('role="alert"'));
+check("offline unread announcement starts as persistent toast", /firstLoad[\s\S]*?setOnlineToastKey\(deliveryKey\(candidate\)\)/u.test(announcementPopup));
 check("online announcement push uses compact toast", /newlyPushed[\s\S]*?setOnlineToastKey/u.test(announcementPopup));
-check("announcement toast desktop proportion", announcementPopup.includes("min-h-[190px] w-[340px]"));
+check("announcement toast desktop proportion", announcementPopup.includes("w-[344px]") && !announcementPopup.includes("min-h-[190px]"));
+check("announcement unread toast cannot be dismissed without receipt", !announcementPopup.includes('aria-label="稍后查看"'));
+check("announcement detail close restores unread toast", announcementPopup.includes("setOnlineToastKey(unreadForToast ? deliveryKey(unreadForToast) : null)"));
+check("announcement receipt failure remains visible", /const acknowledgeToast = async[\s\S]*?setActionError/u.test(announcementPopup) && announcementPopup.includes('role="alert"'));
 check("full dialogs share one queue owner", dialogQueue.includes("data-app-dialog-owner"));
 check("account participates in dialog queue", accountNotifications.includes("claimAppDialog(\"account\")"));
 check("announcement participates in dialog queue", announcementPopup.includes("claimAppDialog(\"announcement\")"));

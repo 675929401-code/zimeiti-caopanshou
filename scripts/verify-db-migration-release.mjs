@@ -1,10 +1,19 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import {
+  CANONICAL_FORWARD_MIGRATION_NAME,
+  forwardMigrationEntryViolations,
+  isCanonicalForwardMigrationRelativePath,
+  inspectForwardMigrationRoot,
+  inspectGitIndexRaw,
+} from "./lib/forward-migration-source-validator.mjs";
 
 const root = process.cwd();
 const scriptPath = path.join(root, "scripts", "db-migration-release.mjs");
@@ -17,6 +26,8 @@ const rollbackRoot = path.join(root, "supabase", "rollbacks");
 const llmRollbackPath = path.join(rollbackRoot, "20260901170000_llm_request_attempts_exactly_once.rollback.sql");
 const videoRollbackPath = path.join(rollbackRoot, "20260825180000_video_terminal_billing_p0.rollback.sql");
 const refundRollbackPath = path.join(rollbackRoot, "20260904193000_payment_refund_exactly_once.rollback.sql");
+const videoSnapshotRollbackName = "20261010023000_video_generation_request_snapshot_v1.rollback.sql";
+const videoSnapshotRollbackPath = path.join(rollbackRoot, videoSnapshotRollbackName);
 const reconciliationMigrationName = "20260904031000_reconcile_pending_legacy_semantics.sql";
 const reconciliationMigrationPath = path.join(migrationRoot, reconciliationMigrationName);
 const semanticCatalogPath = path.join(root, "scripts", "lib", "database-semantic-catalog.mjs");
@@ -83,6 +94,316 @@ function runNode(args) {
   });
 }
 
+function runMigrationNodeWithCandidateIndex(args) {
+  const prefix = "zimeiti-db-release-candidate-index-";
+  const fixtureContainer = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const temporaryIndex = path.join(fixtureContainer, "index");
+  try {
+    const indexPathResult = spawnSync("git", ["rev-parse", "--git-path", "index"], {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    assert.equal(indexPathResult.status, 0, indexPathResult.stderr || "unable to locate the real Git index");
+    const realIndex = path.resolve(root, indexPathResult.stdout.trim());
+    fs.copyFileSync(realIndex, temporaryIndex);
+    const candidateEnv = { ...process.env, GIT_INDEX_FILE: temporaryIndex };
+    const relocationPaths = (policy.database?.legacyRollbackRelocations || [])
+      .flatMap((receipt) => [receipt.from, receipt.to])
+      .filter((relativePath) => {
+        if (fs.existsSync(path.join(root, ...relativePath.split("/")))) return true;
+        const indexed = spawnSync("git", ["ls-files", "--error-unmatch", "--", relativePath], {
+          cwd: root,
+          encoding: "utf8",
+          windowsHide: true,
+          env: candidateEnv,
+        });
+        return indexed.status === 0;
+      });
+    if (relocationPaths.length > 0) {
+      const staged = spawnSync("git", ["add", "-A", "--", ...relocationPaths], {
+        cwd: root,
+        encoding: "utf8",
+        windowsHide: true,
+        env: candidateEnv,
+      });
+      assert.equal(staged.status, 0, staged.stderr || "unable to prepare the temporary candidate index");
+    }
+    return spawnSync(process.execPath, args, {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+      env: candidateEnv,
+    });
+  } finally {
+    const resolvedContainer = path.resolve(fixtureContainer);
+    assert.equal(path.dirname(resolvedContainer), path.resolve(os.tmpdir()), "candidate index cleanup escaped the OS temp root");
+    assert.ok(path.basename(resolvedContainer).startsWith(prefix), "candidate index cleanup prefix mismatch");
+    fs.rmSync(resolvedContainer, { recursive: true, force: true });
+  }
+}
+
+function runFixtureGit(fixtureRoot, args) {
+  const result = spawnSync("git", args, {
+    cwd: fixtureRoot,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr || `fixture git ${args.join(" ")} failed`);
+}
+
+function writeFixtureFile(fixtureRoot, relativePath, value) {
+  const target = path.join(fixtureRoot, ...relativePath.split("/"));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, value);
+  return target;
+}
+
+function initializeFixtureRepository(fixtureRoot) {
+  fs.mkdirSync(fixtureRoot, { recursive: true });
+  runFixtureGit(fixtureRoot, ["init", "--quiet"]);
+  runFixtureGit(fixtureRoot, ["config", "user.email", "migration-fixture@example.invalid"]);
+  runFixtureGit(fixtureRoot, ["config", "user.name", "Migration Fixture"]);
+  runFixtureGit(fixtureRoot, ["config", "commit.gpgSign", "false"]);
+}
+
+function verifySharedForwardRootAdversarialFixtures() {
+  const prefix = "zimeiti-forward-root-validator-";
+  const fixtureContainer = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  try {
+    const outsideProject = path.join(fixtureContainer, "outside-project");
+    const outsideMigrations = path.join(fixtureContainer, "outside-migrations");
+    fs.mkdirSync(outsideProject, { recursive: true });
+    writeFixtureFile(fixtureContainer, "outside-migrations/20990101000000_safe.sql", "BEGIN;\nSELECT 1;\nCOMMIT;\n");
+    const outsideReport = inspectForwardMigrationRoot({
+      projectRoot: outsideProject,
+      migrationRoot: outsideMigrations,
+      gitIndexMode: "required",
+    });
+    writeFixtureFile(
+      outsideProject,
+      "deploy/policies/release-policy.json",
+      `${JSON.stringify({ database: { migrationRoot: "supabase/migrations", rollbackRoot: "supabase/rollbacks" } })}\n`,
+    );
+    const outsideRunner = spawnSync(process.execPath, [
+      scriptPath,
+      "plan",
+      `--root=${outsideProject}`,
+      `--migration-root=${outsideMigrations}`,
+    ], {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+
+    const noGitProject = path.join(fixtureContainer, "no-git-project");
+    writeFixtureFile(noGitProject, "supabase/migrations/20990101000001_artifact.sql", "BEGIN;\nSELECT 1;\nCOMMIT;\n");
+    writeFixtureFile(
+      noGitProject,
+      "deploy/policies/release-policy.json",
+      `${JSON.stringify({ database: { migrationRoot: "supabase/migrations", rollbackRoot: "supabase/rollbacks" } })}\n`,
+    );
+    const noGitRequiredReport = inspectForwardMigrationRoot({
+      projectRoot: noGitProject,
+      migrationRoot: path.join(noGitProject, "supabase", "migrations"),
+      gitIndexMode: "required",
+    });
+    const noGitAutoReport = inspectForwardMigrationRoot({
+      projectRoot: noGitProject,
+      migrationRoot: path.join(noGitProject, "supabase", "migrations"),
+      gitIndexMode: "auto",
+    });
+    const noGitDisabledReport = inspectForwardMigrationRoot({
+      projectRoot: noGitProject,
+      migrationRoot: path.join(noGitProject, "supabase", "migrations"),
+      gitIndexMode: "disabled",
+    });
+    const noGitRunner = spawnSync(process.execPath, [scriptPath, "plan", `--root=${noGitProject}`], {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+
+    const junctionProject = path.join(fixtureContainer, "junction-project");
+    const junctionTarget = path.join(fixtureContainer, "junction-target");
+    fs.mkdirSync(junctionProject, { recursive: true });
+    writeFixtureFile(fixtureContainer, "junction-target/migrations/20990101000001_safe.sql", "BEGIN;\nSELECT 1;\nCOMMIT;\n");
+    fs.symlinkSync(junctionTarget, path.join(junctionProject, "supabase"), process.platform === "win32" ? "junction" : "dir");
+    const junctionReport = inspectForwardMigrationRoot({
+      projectRoot: junctionProject,
+      migrationRoot: path.join(junctionProject, "supabase", "migrations"),
+      gitIndexMode: "disabled",
+    });
+    writeFixtureFile(
+      junctionProject,
+      "deploy/policies/release-policy.json",
+      `${JSON.stringify({ database: { migrationRoot: "supabase/migrations", rollbackRoot: "supabase/rollbacks" } })}\n`,
+    );
+    const junctionRunner = spawnSync(process.execPath, [scriptPath, "plan", `--root=${junctionProject}`], {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+
+    const unknownRepository = path.join(fixtureContainer, "unknown-index-repository");
+    initializeFixtureRepository(unknownRepository);
+    const canonicalForwardBytes = "BEGIN;\nSELECT 2;\nCOMMIT;\n";
+    const canonicalForwardPath = writeFixtureFile(
+      unknownRepository,
+      "supabase/migrations/20990101000002_safe.sql",
+      canonicalForwardBytes,
+    );
+    const stagedModifiedPath = writeFixtureFile(
+      unknownRepository,
+      "supabase/migrations/20990101000003_staged_modify.sql",
+      "BEGIN;\nSELECT 3;\nCOMMIT;\n",
+    );
+    writeFixtureFile(
+      unknownRepository,
+      "supabase/migrations/20990101000004_staged_delete.sql",
+      "BEGIN;\nSELECT 4;\nCOMMIT;\n",
+    );
+    writeFixtureFile(
+      unknownRepository,
+      "supabase/migrations/20990101000005_staged_rename.sql",
+      "BEGIN;\nSELECT 5;\nCOMMIT;\n",
+    );
+    writeFixtureFile(
+      unknownRepository,
+      "supabase/migrations/unknown/20990101000006_unknown.rollback.sql",
+      "BEGIN;\nSELECT 6;\nCOMMIT;\n",
+    );
+    runFixtureGit(unknownRepository, ["add", "--", "supabase/migrations"]);
+    runFixtureGit(unknownRepository, ["commit", "--quiet", "-m", "fixture"]);
+    fs.appendFileSync(stagedModifiedPath, "-- staged modified\n");
+    runFixtureGit(unknownRepository, ["add", "--", "supabase/migrations/20990101000003_staged_modify.sql"]);
+    runFixtureGit(unknownRepository, ["rm", "--quiet", "--", "supabase/migrations/20990101000004_staged_delete.sql"]);
+    runFixtureGit(unknownRepository, [
+      "mv",
+      "--",
+      "supabase/migrations/20990101000005_staged_rename.sql",
+      "supabase/migrations/20990101000007_renamed.sql",
+    ]);
+    runFixtureGit(unknownRepository, ["rm", "--quiet", "--", "supabase/migrations/unknown/20990101000006_unknown.rollback.sql"]);
+    const stagedChangesReport = inspectForwardMigrationRoot({
+      projectRoot: unknownRepository,
+      migrationRoot: path.join(unknownRepository, "supabase", "migrations"),
+      gitIndexMode: "required",
+    });
+    fs.appendFileSync(canonicalForwardPath, "-- modified after index\n");
+    const worktreeModifiedReport = inspectForwardMigrationRoot({
+      projectRoot: unknownRepository,
+      migrationRoot: path.join(unknownRepository, "supabase", "migrations"),
+      gitIndexMode: "required",
+    });
+    fs.rmSync(canonicalForwardPath);
+    const worktreeDeletedReport = inspectForwardMigrationRoot({
+      projectRoot: unknownRepository,
+      migrationRoot: path.join(unknownRepository, "supabase", "migrations"),
+      gitIndexMode: "required",
+    });
+
+    const unbornRepository = path.join(fixtureContainer, "unborn-repository");
+    initializeFixtureRepository(unbornRepository);
+    writeFixtureFile(unbornRepository, "supabase/migrations/20990101000008_unborn.sql", "BEGIN;\nSELECT 8;\nCOMMIT;\n");
+    const unbornReport = inspectForwardMigrationRoot({
+      projectRoot: unbornRepository,
+      migrationRoot: path.join(unbornRepository, "supabase", "migrations"),
+      gitIndexMode: "required",
+    });
+
+    const receiptRepository = path.join(fixtureContainer, "receipt-index-repository");
+    initializeFixtureRepository(receiptRepository);
+    writeFixtureFile(receiptRepository, "supabase/migrations/20990101000004_safe.sql", "BEGIN;\nSELECT 4;\nCOMMIT;\n");
+    const legacyName = "20990101000005_legacy.rollback.sql";
+    const legacyBytes = Buffer.from("BEGIN;\nSELECT 5;\nCOMMIT;\n", "utf8");
+    const legacySource = writeFixtureFile(receiptRepository, `supabase/migrations/rollback/${legacyName}`, legacyBytes);
+    runFixtureGit(receiptRepository, ["add", "--", "supabase/migrations"]);
+    runFixtureGit(receiptRepository, ["commit", "--quiet", "-m", "fixture"]);
+    fs.mkdirSync(path.join(receiptRepository, "supabase", "rollbacks"), { recursive: true });
+    const legacyTarget = path.join(receiptRepository, "supabase", "rollbacks", legacyName);
+    runFixtureGit(receiptRepository, [
+      "mv",
+      "--",
+      path.relative(receiptRepository, legacySource).split(path.sep).join("/"),
+      path.relative(receiptRepository, legacyTarget).split(path.sep).join("/"),
+    ]);
+    fs.rmdirSync(path.dirname(legacySource));
+    writeFixtureFile(receiptRepository, "supabase/migrations/20990101000006_untracked_new.sql", "BEGIN;\nSELECT 6;\nCOMMIT;\n");
+    const exactReceipt = {
+      from: `supabase/migrations/rollback/${legacyName}`,
+      to: `supabase/rollbacks/${legacyName}`,
+      sha256: crypto.createHash("sha256").update(legacyBytes).digest("hex"),
+    };
+    const receiptReport = inspectForwardMigrationRoot({
+      projectRoot: receiptRepository,
+      migrationRoot: path.join(receiptRepository, "supabase", "migrations"),
+      rollbackRoot: path.join(receiptRepository, "supabase", "rollbacks"),
+      legacyRollbackRelocations: [exactReceipt],
+      gitIndexMode: "required",
+    });
+    const receiptMissingPolicyReport = inspectForwardMigrationRoot({
+      projectRoot: receiptRepository,
+      migrationRoot: path.join(receiptRepository, "supabase", "migrations"),
+      rollbackRoot: path.join(receiptRepository, "supabase", "rollbacks"),
+      legacyRollbackRelocations: [],
+      gitIndexMode: "required",
+    });
+    fs.appendFileSync(legacyTarget, "-- tampered\n");
+    const tamperedReceiptReport = inspectForwardMigrationRoot({
+      projectRoot: receiptRepository,
+      migrationRoot: path.join(receiptRepository, "supabase", "migrations"),
+      rollbackRoot: path.join(receiptRepository, "supabase", "rollbacks"),
+      legacyRollbackRelocations: [exactReceipt],
+      gitIndexMode: "required",
+    });
+
+    return {
+      outsideRejected: !outsideReport.valid
+        && outsideReport.rootErrors.includes("MIGRATION_ROOT_OUTSIDE_PROJECT_ROOT")
+        && outsideRunner.status !== 0
+        && `${outsideRunner.stdout}\n${outsideRunner.stderr}`.includes("MIGRATION_ROOT_OUTSIDE_PROJECT_ROOT"),
+      noGitRequiredRejected: !noGitRequiredReport.valid
+        && noGitRequiredReport.rootErrors.includes("GIT_INDEX_UNREADABLE")
+        && !noGitAutoReport.valid
+        && noGitAutoReport.rootErrors.includes("GIT_INDEX_MODE_INVALID")
+        && noGitDisabledReport.valid
+        && noGitRunner.status !== 0
+        && `${noGitRunner.stdout}\n${noGitRunner.stderr}`.includes("GIT_INDEX_UNREADABLE"),
+      ancestorJunctionRejected: !junctionReport.valid
+        && junctionReport.rootErrors.some((error) => error.startsWith("MIGRATION_PATH_SYMLINK_OR_REPARSE_POINT:"))
+        && junctionRunner.status !== 0
+        && `${junctionRunner.stdout}\n${junctionRunner.stderr}`.includes("MIGRATION_PATH_SYMLINK_OR_REPARSE_POINT"),
+      gitThreeLayerDriftRejected: !stagedChangesReport.valid
+        && stagedChangesReport.rootErrors.includes("GIT_HEAD_INDEX_DRIFT")
+        && stagedChangesReport.rootErrors.includes("GIT_INDEX_NON_CANONICAL_PATH")
+        && stagedChangesReport.gitIndex.stagedChangePaths.some((entry) => entry.endsWith("20990101000003_staged_modify.sql"))
+        && stagedChangesReport.gitIndex.stagedChangePaths.some((entry) => entry.endsWith("20990101000004_staged_delete.sql"))
+        && stagedChangesReport.gitIndex.stagedChangePaths.some((entry) => entry.endsWith("20990101000005_staged_rename.sql"))
+        && !worktreeModifiedReport.valid
+        && worktreeModifiedReport.rootErrors.includes("GIT_INDEX_WORKTREE_DRIFT")
+        && !worktreeDeletedReport.valid
+        && worktreeDeletedReport.rootErrors.includes("GIT_INDEX_WORKTREE_DRIFT")
+        && !unbornReport.valid
+        && unbornReport.rootErrors.includes("GIT_HEAD_UNBORN"),
+      exactReceiptAccepted: receiptReport.valid
+        && receiptReport.gitIndex.legacyTombstonePaths.length === 1
+        && receiptReport.gitIndex.trackedForwardPaths.length === 1
+        && receiptReport.gitIndex.untrackedNewForwardPaths.length === 1
+        && receiptReport.gitIndex.uncoveredForwardPaths.length === 0
+        && !receiptMissingPolicyReport.valid
+        && receiptMissingPolicyReport.gitIndex.legacyTombstonePaths.length === 0
+        && !tamperedReceiptReport.valid
+        && tamperedReceiptReport.rootErrors.includes("GIT_INDEX_LEGACY_TOMBSTONE_INVALID"),
+    };
+  } finally {
+    const resolvedContainer = path.resolve(fixtureContainer);
+    assert.equal(path.dirname(resolvedContainer), path.resolve(os.tmpdir()), "fixture cleanup escaped the OS temp root");
+    assert.ok(path.basename(resolvedContainer).startsWith(prefix), "fixture cleanup prefix mismatch");
+    fs.rmSync(resolvedContainer, { recursive: true, force: true });
+  }
+}
+
 const checks = [];
 
 function add(name, passed, detail) {
@@ -96,6 +417,7 @@ const reconciliationMigration = read(reconciliationMigrationPath);
 const llmRollback = read(llmRollbackPath);
 const videoRollback = read(videoRollbackPath);
 const refundRollback = read(refundRollbackPath);
+const videoSnapshotRollback = read(videoSnapshotRollbackPath);
 const semanticCatalog = read(semanticCatalogPath);
 const semanticContractScript = read(semanticContractScriptPath);
 const semanticRepairGenerator = read(semanticRepairGeneratorPath);
@@ -109,6 +431,20 @@ const policy = json(policyPath);
 const pkg = json(packagePath);
 
 add("script:exists", fs.existsSync(scriptPath), "scripts/db-migration-release.mjs exists");
+add(
+  "script:uses-shared-forward-root-validator",
+  script.includes("./lib/forward-migration-source-validator.mjs")
+    && script.includes("assertForwardMigrationRoot")
+    && script.includes('gitIndexMode: "required"')
+    && !script.includes('gitIndexMode: "auto"'),
+  "production runner imports the shared validator and requires a readable committed Git checkout",
+);
+add(
+  "script:validates-forward-root-before-env-load",
+  script.indexOf("validateForwardMigrationSource();") >= 0
+    && script.indexOf("validateForwardMigrationSource();") < script.indexOf("dotenv.config"),
+  "invalid migration source is rejected before local environment secrets are loaded",
+);
 add("script:uses-pg-direct-migration-channel", script.includes("from \"pg\"") || script.includes("from 'pg'"), "uses pg outside app runtime");
 add("script:loads-env-without-printing-secrets", script.includes("dotenv.config") && script.includes("credentialsPrinted: false"), "loads env and redacts credentials");
 add("script:plan-status-semantic-adopt-apply", ["plan", "status", "semantic-check", "adopt", "apply"].every((item) => script.includes(item)), "supports plan/status/semantic-check/adopt/apply");
@@ -390,6 +726,16 @@ add(
   "refund rollback remains atomic and refuses durable provider-refund evidence",
 );
 add(
+  "rollback:video-snapshot-canonical-byte-exact-and-guarded",
+  !fs.existsSync(path.join(migrationRoot, "rollback", videoSnapshotRollbackName))
+    && crypto.createHash("sha256").update(videoSnapshotRollback, "utf8").digest("hex") === "edf1fd423c6199c0267cc15104d9ce93e15fba267c3a4ae64450c75c0b048a72"
+    && /^\s*(?:--[^\n]*\n\s*)*BEGIN;/iu.test(videoSnapshotRollback)
+    && /COMMIT;\s*$/iu.test(videoSnapshotRollback)
+    && videoSnapshotRollback.includes("VIDEO_REQUEST_SNAPSHOT_ROLLBACK_EXPLICIT_CONFIRMATION_REQUIRED")
+    && videoSnapshotRollback.includes("VIDEO_REQUEST_SNAPSHOT_ROLLBACK_WOULD_DELETE_HISTORY"),
+  "video snapshot rollback exists only at rollbackRoot, is byte-exact, transactional and refuses destructive history loss",
+);
+add(
   "policy:retired-aid-migration-excluded",
   policy.database?.excludedForwardMigrations?.includes("20260822032000_aid_integration_bridge.sql")
     && script.includes("excludedForwardMigrations"),
@@ -431,22 +777,84 @@ add("package:db-apply-script", pkg.scripts?.["deploy:db:apply"] === "node ./scri
 add("package:db-verify-script", pkg.scripts?.["deploy:db:verify"] === "node ./scripts/verify-db-migration-release.mjs", "deploy:db:verify exists");
 add("package:db-semantic-verify-script", pkg.scripts?.["deploy:db:semantic:verify"] === "node ./scripts/database-semantic-contract.mjs verify", "semantic contract verifier is callable from the release workflow");
 
-const migrationNames = fs.readdirSync(migrationRoot)
-  .filter((name) => name.toLowerCase().endsWith(".sql"))
+const forwardRootInspection = inspectForwardMigrationRoot({
+  projectRoot: root,
+  migrationRoot,
+  rollbackRoot,
+  legacyRollbackRelocations: policy.database?.legacyRollbackRelocations || [],
+  gitIndexMode: "required",
+});
+const migrationNames = forwardRootInspection.entries
+  .filter((entry) => entry.kind === "file")
+  .map((entry) => entry.relativePath)
   .sort();
 const releaseMigrationNames = migrationNames.filter(
   (name) => !policy.database?.excludedForwardMigrations?.includes(name),
 );
 add("migrations:present", migrationNames.length >= 1, `${migrationNames.length} migration files`);
 add(
-  "migrations:canonical-names",
-  migrationNames.every((name) => /^\d{14}_[a-z0-9][a-z0-9_-]*\.sql$/iu.test(name)),
-  "all forward migration files use timestamped canonical names",
+  "migrations:shared-production-root-validator",
+  forwardRootInspection.valid,
+  forwardRootInspection.valid
+    ? "shared production validator accepted the filesystem and Git index"
+    : [
+      ...forwardRootInspection.rootErrors,
+      ...forwardRootInspection.invalidEntries.map(({ entry, violations }) => `${entry.relativePath}:${violations.join("+")}`),
+      `coverage(worktree=${migrationNames.length};tracked=${forwardRootInspection.gitIndex.trackedForwardPaths.length};stagedNew=${forwardRootInspection.gitIndex.stagedNewForwardPaths.length};untrackedNew=${forwardRootInspection.gitIndex.untrackedNewForwardPaths.length};uncovered=${forwardRootInspection.gitIndex.uncoveredForwardPaths.length};legacyRelocations=${forwardRootInspection.gitIndex.legacyTombstonePaths.length})`,
+    ].join(", "),
 );
 add(
-  "migrations:no-rollback-like-files",
-  migrationNames.every((name) => !/(?:^|[._-])(?:rollback|down)(?:[._-]|$)/iu.test(name)),
-  "rollback/down files are not in forward migration root",
+  "migrations:canonical-names",
+  migrationNames.every((name) => CANONICAL_FORWARD_MIGRATION_NAME.test(name)),
+  "all forward migration files use the exact lowercase ASCII production pattern",
+);
+
+const maliciousForwardFixtures = [
+  { entry: { relativePath: "nested", kind: "directory" }, expected: "NOT_REGULAR_FILE" },
+  { entry: { relativePath: "nested/20990101000000_safe.sql", kind: "file" }, expected: "NOT_TOP_LEVEL" },
+  { entry: { relativePath: "20990101000001_Mixed_case.sql", kind: "file" }, expected: "NON_CANONICAL_FORWARD_NAME" },
+  { entry: { relativePath: "２０９９０１０１０００００２_fullwidth.sql", kind: "file" }, expected: "NFKC_NAME_DIFFERENCE" },
+  { entry: { relativePath: "20990101000003_cyrillic_а.sql", kind: "file" }, expected: "NON_ASCII_NAME" },
+  { entry: { relativePath: "20990101000004_down.sql", kind: "file" }, expected: "ROLLBACK_OR_DOWN_NAME" },
+  { entry: { relativePath: "20990101000005_rollback.sql", kind: "file" }, expected: "ROLLBACK_OR_DOWN_NAME" },
+  { entry: { relativePath: "20990101000006_safe.SQL", kind: "file" }, expected: "NON_CANONICAL_FORWARD_NAME" },
+  { entry: { relativePath: "20990101000007_safe-name.sql", kind: "file" }, expected: "NON_CANONICAL_FORWARD_NAME" },
+  { entry: { relativePath: "20990101000008_safe.sql", kind: "symlink" }, expected: "SYMLINK_OR_REPARSE_POINT" },
+  { entry: { relativePath: "20990101000009_safe.sql", kind: "other" }, expected: "NOT_REGULAR_FILE" },
+];
+const adversarialForwardRootFixtures = verifySharedForwardRootAdversarialFixtures();
+const maliciousIndexPathFixtures = [
+  "nested/20990101000000_safe.sql",
+  "20990101000001_Mixed_case.sql",
+  "２０９９０１０１０００００２_fullwidth.sql",
+  "20990101000003_cyrillic_а.sql",
+  "20990101000004_safe.sql:ads",
+  "20990101000005_safe.SQL",
+];
+add(
+  "migrations:shared-production-malicious-fixtures",
+  maliciousForwardFixtures.every(({ entry, expected }) => (
+    forwardMigrationEntryViolations(entry).includes(expected)
+  ))
+    && maliciousIndexPathFixtures.every((relativePath) => !isCanonicalForwardMigrationRelativePath(relativePath))
+    && adversarialForwardRootFixtures.outsideRejected
+    && adversarialForwardRootFixtures.ancestorJunctionRejected
+    && adversarialForwardRootFixtures.noGitRequiredRejected,
+  "the production runner requires Git while only an explicit test-only disabled mode can inspect a no-Git artifact",
+);
+const indexModeFixture = inspectGitIndexRaw(
+  `120000 ${"a".repeat(40)} 0\tsupabase/migrations/20990101000010_safe.sql\0`,
+);
+add(
+  "migrations:shared-production-index-mode-fixture",
+  indexModeFixture.symlinkPaths.length === 1
+    && indexModeFixture.nonRegularPaths.length === 1
+    && indexModeFixture.parseErrors.length === 0
+    && adversarialForwardRootFixtures.gitThreeLayerDriftRejected
+    && adversarialForwardRootFixtures.exactReceiptAccepted,
+  adversarialForwardRootFixtures.gitThreeLayerDriftRejected && adversarialForwardRootFixtures.exactReceiptAccepted
+    ? "real Git fixtures reject staged modify/delete/rename, unknown nested delete, unborn HEAD and receipt-free relocation while accepting an exact staged legacy move"
+    : JSON.stringify(adversarialForwardRootFixtures),
 );
 
 const versions = migrationNames.map((name) => name.slice(0, 14));
@@ -463,7 +871,7 @@ add(
   "wallet, extraction, LLM, video, digital-human and refund prerequisites are present in release order",
 );
 
-const plan = runNode(["./scripts/db-migration-release.mjs", "plan"]);
+const plan = runMigrationNodeWithCandidateIndex(["./scripts/db-migration-release.mjs", "plan"]);
 const planJson = extractJsonObject(plan.stdout);
 add("runner:plan-exits-zero", plan.status === 0, plan.stderr || "plan command exits zero");
 add("runner:plan-json", planJson?.mode === "plan" && planJson?.databaseWrites === 0, "plan emits redacted JSON with zero writes");
@@ -494,7 +902,7 @@ add(
 );
 
 const newestMigration = releaseMigrationNames.at(-1);
-const onlyPlan = runNode(["./scripts/db-migration-release.mjs", "plan", `--only=${newestMigration}`]);
+const onlyPlan = runMigrationNodeWithCandidateIndex(["./scripts/db-migration-release.mjs", "plan", `--only=${newestMigration}`]);
 const onlyPlanJson = extractJsonObject(onlyPlan.stdout);
 add("runner:only-prefix-closure-exits-zero", onlyPlan.status === 0, onlyPlan.stderr || "--only prefix closure plans safely");
 add(
@@ -505,11 +913,11 @@ add(
   "selecting the newest migration includes every ordered prerequisite",
 );
 
-const unknownOnly = runNode(["./scripts/db-migration-release.mjs", "plan", "--only=definitely_missing_migration"]);
+const unknownOnly = runMigrationNodeWithCandidateIndex(["./scripts/db-migration-release.mjs", "plan", "--only=definitely_missing_migration"]);
 const unknownOnlyJson = extractJsonObject(`${unknownOnly.stderr}\n${unknownOnly.stdout}`);
 add("runner:only-unknown-fails", unknownOnly.status !== 0 && /ONLY_SELECTOR_NOT_FOUND/u.test(unknownOnlyJson?.code || ""), "unknown --only selector is rejected");
 
-const blindAdopt = runNode(["./scripts/db-migration-release.mjs", "adopt"]);
+const blindAdopt = runMigrationNodeWithCandidateIndex(["./scripts/db-migration-release.mjs", "adopt"]);
 const blindAdoptJson = extractJsonObject(`${blindAdopt.stderr}\n${blindAdopt.stdout}`);
 add(
   "runner:blind-adoption-fails",

@@ -2238,21 +2238,16 @@ a:active:not(:disabled) {
   animation: tech-pulse 2.5s ease-in-out infinite;
 }
 
-/* ==========================================
-   流式→最终渲染平滑过渡（消除代码框闪烁）
-   原理：isStreaming→false瞬间，添加transitioning类
-   触发0.2s opacity淡入，掩盖DOM重建的视觉跳变
-   ========================================== */
+/* Streaming and final layers remain fully opaque. Fading the complete answer
+   on every state hand-off reads as a flash, especially on dark themes. */
 .render-transitioning {
-  opacity: 0.7;
-  transition: opacity 0.2s ease-out;
+  opacity: 1;
+  transition: none;
 }
 .render-layer-final {
-  animation: render-fade-in 0.2s ease-out;
-}
-@keyframes render-fade-in {
-  from { opacity: 0.7; }
-  to { opacity: 1; }
+  animation: none;
+  opacity: 1;
+  filter: none;
 }
 
 /* ==========================================
@@ -3757,23 +3752,18 @@ html[data-mode="light"] .chat-message-bubble-assistant .markdown-body :where(p, 
     color-mix(in srgb, var(--primary) 88%, var(--ring)),
     color-mix(in srgb, var(--primary) 18%, transparent)
   );
-  background-size: 100% 220%;
+  background-size: 100% 100%;
   box-shadow:
     0 0 10px color-mix(in srgb, var(--primary) 48%, transparent),
     0 0 18px color-mix(in srgb, var(--ring) 26%, transparent);
   opacity: .84;
-  animation: assistant-stream-rail 3.6s linear infinite;
+  animation: none;
   z-index: 0;
 }
 
 .chat-message-bubble-assistant.chat-message-bubble-streaming > * {
   position: relative;
   z-index: 1;
-}
-
-@keyframes assistant-stream-rail {
-  0% { background-position: 50% 0%; }
-  100% { background-position: 50% 100%; }
 }
 
 .render-layer-streaming-typewriter .streaming-typewriter-caret {
@@ -3790,12 +3780,8 @@ html[data-mode="light"] .chat-message-bubble-assistant .markdown-body :where(p, 
   box-shadow:
     0 0 7px color-mix(in srgb, var(--primary) 62%, transparent),
     0 0 15px color-mix(in srgb, var(--ring) 34%, transparent);
-  animation: assistant-typewriter-caret 680ms cubic-bezier(.4, 0, .2, 1) infinite;
-}
-
-@keyframes assistant-typewriter-caret {
-  0%, 44% { opacity: 1; transform: scaleY(1); }
-  68%, 100% { opacity: .24; transform: scaleY(.86); }
+  opacity: .88;
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4522,14 +4508,6 @@ html[data-mode="light"] .chat-message-bubble-assistant .markdown-body :where(p, 
   overflow: hidden !important;
 }
 
-.marketplace-shell .marketplace-nav-actions {
-  position: static !important;
-  inset: auto !important;
-  order: 2;
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
 .marketplace-shell .nav-bar-container {
   order: 1;
   flex: 1 1 auto;
@@ -4606,16 +4584,6 @@ html[data-mode="light"] .chat-message-bubble-assistant .markdown-body :where(p, 
     min-height: 64px;
     padding-left: 54px;
     padding-right: 8px;
-  }
-
-  .marketplace-shell .marketplace-nav-actions {
-    gap: 4px;
-  }
-
-  .marketplace-shell .marketplace-nav-actions > button {
-    min-width: 38px;
-    min-height: 38px;
-    padding-inline: 9px;
   }
 
   .marketplace-shell .nav-bar-container {

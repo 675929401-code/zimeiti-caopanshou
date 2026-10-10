@@ -15,6 +15,14 @@ const superUser = localIdentity.user || {};
 const databaseUrl = String(process.env.DATABASE_URL || "");
 const userAgent = "Codex-Security-Acceptance/1.0";
 const browserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36 CodexSecurityAcceptance";
+const sessionRealIps = Object.freeze({
+  superAdmin: "127.0.0.1",
+  ordinaryAdmin: "127.0.0.2",
+  promptAdmin: "127.0.0.3",
+  anonymous: "127.0.0.10",
+});
+const announcementEventTypes = new Set(["impression", "read", "click", "close", "remind_later"]);
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const evidenceDir = path.resolve(".codex-evidence", "super-admin-governance");
 const startedAt = new Date().toISOString();
 
@@ -36,6 +44,21 @@ const report = {
   promotion: {},
   ordinaryAdmin: {},
   promptPermissionMatrix: {},
+  adminLock: {},
+  announcementHandling: [],
+  announcementEventIsolation: {},
+  sessionIsolation: {
+    policy: "AUTH-SESSION-01",
+    realIps: sessionRealIps,
+    playwrightContextRealIps: {
+      superAdmin: sessionRealIps.superAdmin,
+      ordinaryAdmin: sessionRealIps.ordinaryAdmin,
+      promptAdmin: sessionRealIps.promptAdmin,
+      anonymous: sessionRealIps.anonymous,
+    },
+    superSelfAfterOrdinaryLoginStatus: null,
+    superSelfAfterPromptLoginStatus: null,
+  },
   browser: {},
   cleanup: {},
   productionWrites: 0,
@@ -75,21 +98,161 @@ async function api(pathname, options = {}) {
     ...options,
     headers: {
       "User-Agent": userAgent,
+      "X-Real-IP": sessionRealIps.superAdmin,
       ...(options.headers || {}),
     },
   });
 }
 
-async function closeAnnouncementIfVisible(page) {
-  for (const accessibleName of ["关闭系统公告", "关闭账号消息"]) {
-    const closeButton = page.getByRole("button", { name: accessibleName });
-    const appeared = await closeButton.waitFor({ state: "visible", timeout: 2_000 })
-      .then(() => true)
-      .catch(() => false);
-    if (appeared) {
-      await closeButton.click();
-      await closeButton.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => undefined);
+function inspectAnnouncementEventRequest(request) {
+  try {
+    const payload = JSON.parse(request.postData() || "{}");
+    assert.ok(payload && typeof payload === "object" && !Array.isArray(payload), "ANNOUNCEMENT_EVENT_OBJECT_REQUIRED");
+    assert.deepEqual(
+      Object.keys(payload).sort(),
+      ["event", "eventKey", "id", "pushRevision"],
+      "ANNOUNCEMENT_EVENT_EXACT_FIELDS_REQUIRED",
+    );
+    assert.match(payload.id, uuidPattern, "ANNOUNCEMENT_EVENT_ID_REQUIRED");
+    assert.ok(announcementEventTypes.has(payload.event), `ANNOUNCEMENT_EVENT_TYPE_REQUIRED:${payload.event}`);
+    assert.ok(Number.isInteger(payload.pushRevision) && payload.pushRevision > 0, "ANNOUNCEMENT_EVENT_REVISION_REQUIRED");
+    assert.equal(
+      payload.eventKey,
+      `announcement:${payload.id}:r${payload.pushRevision}:${payload.event}:v1`,
+      "ANNOUNCEMENT_EVENT_KEY_CONTRACT_REQUIRED",
+    );
+    assert.match(request.headers()["content-type"] || "", /^application\/json(?:;|$)/iu, "ANNOUNCEMENT_EVENT_JSON_REQUIRED");
+    assert.match(request.headers().authorization || "", /^Bearer\s+\S+$/u, "ANNOUNCEMENT_EVENT_AUTH_REQUIRED");
+    return {
+      id: payload.id,
+      event: payload.event,
+      revision: payload.pushRevision,
+      eventKey: payload.eventKey,
+      contractValid: true,
+      intercepted: true,
+      serverReached: false,
+    };
+  } catch (error) {
+    return {
+      contractValid: false,
+      intercepted: true,
+      serverReached: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function installAnnouncementEventInterceptor(context, label) {
+  const audit = { label, requests: [] };
+  await context.route("**/api/announcements/events", async (route) => {
+    const request = route.request();
+    const interception = inspectAnnouncementEventRequest(request);
+    audit.requests.push(interception);
+    await route.fulfill({
+      status: interception.contractValid ? 200 : 400,
+      contentType: "application/json",
+      headers: {
+        "Cache-Control": "no-store",
+        "X-Codex-Announcement-Event-Intercepted": "true",
+      },
+      body: JSON.stringify(interception.contractValid
+        ? { success: true, recorded: false, alreadyRecorded: true }
+        : { success: false, code: "ANNOUNCEMENT_EVENT_CONTRACT_INVALID" }),
+    });
+  });
+  return audit;
+}
+
+function summarizeAnnouncementEventAudits(audits) {
+  const requests = audits.flatMap((audit) => audit.requests.map((request) => ({
+    context: audit.label,
+    ...request,
+  })));
+  return {
+    interceptedCount: requests.length,
+    contexts: Object.fromEntries(audits.map((audit) => [audit.label, audit.requests.length])),
+    intercepted: requests.every((request) => request.intercepted === true),
+    serverReached: requests.some((request) => request.serverReached !== false),
+    requests,
+  };
+}
+
+function assertAnnouncementEventIsolation(audits) {
+  const summary = summarizeAnnouncementEventAudits(audits);
+  assert.ok(summary.interceptedCount > 0, "ANNOUNCEMENT_EVENT_INTERCEPTION_EVIDENCE_REQUIRED");
+  for (const [index, request] of summary.requests.entries()) {
+    assert.equal(request.contractValid, true, `ANNOUNCEMENT_EVENT_CONTRACT_INVALID:${index}`);
+    assert.equal(request.intercepted, true, `ANNOUNCEMENT_EVENT_MUST_BE_INTERCEPTED:${index}`);
+    assert.equal(request.serverReached, false, `ANNOUNCEMENT_EVENT_SERVER_MUST_NOT_BE_REACHED:${index}`);
+  }
+  assert.equal(summary.intercepted, true, "ANNOUNCEMENT_EVENTS_MUST_ALL_BE_INTERCEPTED");
+  assert.equal(summary.serverReached, false, "ANNOUNCEMENT_EVENT_SERVER_MUST_NOT_BE_REACHED");
+  return summary;
+}
+
+async function settleBlockingNotifications(page, {
+  identity,
+  allowAnnouncementReceipt = false,
+  followDeferred = true,
+} = {}) {
+  const reader = page.locator('[data-testid="announcement-reader"]');
+  const announcementAppeared = await reader.waitFor({ state: "visible", timeout: 2_000 })
+    .then(() => true)
+    .catch(() => false);
+  let serverReceiptsConfirmed = 0;
+  let announcementClosedWithoutReceipt = false;
+  if (announcementAppeared) {
+    if (allowAnnouncementReceipt) {
+      for (let index = 0; index < 50; index += 1) {
+        if (!await reader.isVisible().catch(() => false)) break;
+        const acknowledge = reader.getByTestId("announcement-mark-read");
+        if (!await acknowledge.isVisible().catch(() => false)) break;
+        const receiptResponsePromise = page.waitForResponse((response) => {
+          const url = new URL(response.url());
+          return response.request().method() === "POST"
+            && /^\/api\/announcements\/[^/]+\/read$/u.test(url.pathname);
+        }, { timeout: 20_000 });
+        await acknowledge.click();
+        const receiptResponse = await receiptResponsePromise;
+        assert.equal(receiptResponse.status(), 200, `${identity}:ANNOUNCEMENT_READ_RECEIPT_REQUIRED`);
+        serverReceiptsConfirmed += 1;
+        await page.waitForFunction(() => {
+          const button = document.querySelector('[data-testid="announcement-mark-read"]');
+          return !button || !button.hasAttribute("disabled");
+        }, undefined, { timeout: 10_000 });
+      }
     }
+    if (await reader.isVisible().catch(() => false)) {
+      await reader.getByRole("button", { name: "关闭系统公告", exact: true }).click();
+      await reader.waitFor({ state: "hidden", timeout: 10_000 });
+      announcementClosedWithoutReceipt = true;
+    }
+  }
+
+  let accountDialogClosed = false;
+  const accountCloseButton = page.getByRole("button", { name: "关闭账号消息", exact: true });
+  if (await accountCloseButton.isVisible().catch(() => false)) {
+    await accountCloseButton.click();
+    await accountCloseButton.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => undefined);
+    accountDialogClosed = true;
+  }
+  if (announcementAppeared || accountDialogClosed) {
+    report.announcementHandling.push({
+      identity,
+      serverReceiptsConfirmed,
+      announcementClosedWithoutReceipt,
+      accountDialogClosed,
+      durableBusinessStateChanged: serverReceiptsConfirmed > 0,
+    });
+  }
+  if (followDeferred && accountDialogClosed && !announcementAppeared) {
+    // Releasing the account-message dialog may hand the shared dialog queue
+    // to a deferred system announcement. Consume that second owner too.
+    await settleBlockingNotifications(page, {
+      identity,
+      allowAnnouncementReceipt,
+      followDeferred: false,
+    });
   }
 }
 
@@ -97,6 +260,7 @@ const db = new pg.Client({ connectionString: databaseUrl, application_name: "cod
 let dbConnected = false;
 let stepUpToken = "";
 let stepUpHash = "";
+let retiredMaintenanceStepUpHash = "";
 let fixtureUserId = "";
 let promptFixtureUserId = "";
 let promptFixtureUsername = "";
@@ -104,6 +268,39 @@ let promptFixturePassword = "";
 let promptFixtureToken = "";
 let maintenanceEnabled = false;
 let browser;
+const announcementEventAudits = [];
+
+async function assertStepUpSessionWindow({ actorId, rawToken, responseBody, durationMinutes, label }) {
+  assert.equal(responseBody.durationMinutes, durationMinutes, `${label}:UNLOCK_DURATION_RECEIPT_REQUIRED`);
+  const responseExpiryMs = new Date(responseBody.expiresAt || 0).getTime();
+  assert.ok(Number.isFinite(responseExpiryMs), `${label}:UNLOCK_EXPIRY_RECEIPT_REQUIRED`);
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const row = (await db.query(
+    `SELECT actor_id,created_at,expires_at
+       FROM public.admin_step_up_sessions
+      WHERE token_hash=$1`,
+    [tokenHash],
+  )).rows[0];
+  assert.equal(String(row?.actor_id || ""), actorId, `${label}:STEP_UP_ACTOR_REQUIRED`);
+  const createdAtMs = new Date(row.created_at).getTime();
+  const expiresAtMs = new Date(row.expires_at).getTime();
+  const expectedLifetimeMs = durationMinutes * 60 * 1000;
+  assert.ok(
+    Math.abs((expiresAtMs - createdAtMs) - expectedLifetimeMs) <= 5_000,
+    `${label}:STEP_UP_DB_LIFETIME_REQUIRED`,
+  );
+  assert.ok(Math.abs(expiresAtMs - responseExpiryMs) <= 1_000, `${label}:STEP_UP_RESPONSE_DB_EXPIRY_MUST_MATCH`);
+  assert.ok(
+    expiresAtMs - Date.now() > expectedLifetimeMs - 15_000
+      && expiresAtMs - Date.now() <= expectedLifetimeMs + 1_000,
+    `${label}:STEP_UP_REMAINING_WINDOW_REQUIRED`,
+  );
+  return {
+    durationMinutes,
+    responseMatchesDatabase: true,
+    databaseLifetimeSeconds: Math.round((expiresAtMs - createdAtMs) / 1000),
+  };
+}
 
 try {
   await db.connect();
@@ -117,7 +314,9 @@ try {
     "/api/settings/operation-password",
     "/api/admin/unmapped-security-probe",
   ]) {
-    const response = await api(pathname, { headers: { Accept: "application/json" } });
+    const response = await api(pathname, {
+      headers: { Accept: "application/json", "X-Real-IP": sessionRealIps.anonymous },
+    });
     const body = await readJson(response);
     assert.ok([401, 403].includes(response.status), `${pathname}:ANONYMOUS_MUST_BE_REJECTED:${response.status}`);
     assertPrivateHeaders(response, pathname);
@@ -127,7 +326,11 @@ try {
 
   const crawlerResponse = await fetch(`${origin}/api/admin/users?page=1&pageSize=1`, {
     redirect: "manual",
-    headers: { "User-Agent": "sqlmap/1.8 automated scanner", Accept: "application/json" },
+    headers: {
+      "User-Agent": "sqlmap/1.8 automated scanner",
+      Accept: "application/json",
+      "X-Real-IP": sessionRealIps.anonymous,
+    },
     signal: AbortSignal.timeout(20_000),
   });
   const crawlerBody = await readJson(crawlerResponse);
@@ -135,7 +338,9 @@ try {
   safeBody(crawlerBody);
   report.crawler = { status: crawlerResponse.status, code: crawlerBody.code || null };
 
-  const guardedPage = await api("/admin?tab=super-admin", { headers: { Accept: "text/html" } });
+  const guardedPage = await api("/admin?tab=super-admin", {
+    headers: { Accept: "text/html", "X-Real-IP": sessionRealIps.anonymous },
+  });
   assert.ok([307, 308].includes(guardedPage.status), `ADMIN_PAGE_REDIRECT_REQUIRED:${guardedPage.status}`);
   assert.match(guardedPage.headers.get("location") || "", /\/admin\/superzhujunguo\?redirect=/u, "ADMIN_LOGIN_REDIRECT_REQUIRED");
   assertPrivateHeaders(guardedPage, "admin-page");
@@ -173,6 +378,7 @@ try {
   const superHeaders = {
     Authorization: `Bearer ${superToken}`,
     "x-admin-step-up": stepUpToken,
+    "X-Real-IP": sessionRealIps.superAdmin,
     Accept: "application/json",
   };
   const controlResponse = await api("/api/admin/access-control", { headers: superHeaders });
@@ -239,6 +445,7 @@ try {
 
   const browserWriteHeaders = {
     "User-Agent": browserUserAgent,
+    "X-Real-IP": sessionRealIps.ordinaryAdmin,
     Origin: origin,
     Referer: `${origin}/admin/superzhujunguo`,
     "Sec-Fetch-Site": "same-origin",
@@ -255,33 +462,63 @@ try {
   assert.equal(login.user?.role, "admin", "PROMOTED_ACCOUNT_MUST_LOGIN_AS_ADMIN");
   assert.ok(String(login.token || "").length > 32, "PROMOTED_ADMIN_TOKEN_REQUIRED");
   const ordinaryToken = String(login.token);
+  const ordinaryHeaders = {
+    Authorization: `Bearer ${ordinaryToken}`,
+    Accept: "application/json",
+    "X-Real-IP": sessionRealIps.ordinaryAdmin,
+  };
+
+  const superSelfAfterOrdinaryLoginResponse = await api("/api/admin/access-control/self", {
+    headers: {
+      Authorization: `Bearer ${superToken}`,
+      Accept: "application/json",
+      "X-Real-IP": sessionRealIps.superAdmin,
+    },
+  });
+  const superSelfAfterOrdinaryLogin = await readJson(superSelfAfterOrdinaryLoginResponse);
+  assert.equal(
+    superSelfAfterOrdinaryLoginResponse.status,
+    200,
+    `SUPER_ADMIN_SESSION_MUST_SURVIVE_ORDINARY_LOGIN:${superSelfAfterOrdinaryLoginResponse.status}`,
+  );
+  assert.equal(superSelfAfterOrdinaryLogin.access?.adminLevel, "super_admin", "SUPER_ADMIN_LEVEL_MUST_SURVIVE_ORDINARY_LOGIN");
+  report.sessionIsolation.superSelfAfterOrdinaryLoginStatus = superSelfAfterOrdinaryLoginResponse.status;
 
   const unlockResponse = await api("/api/admin/access-control/unlock", {
     method: "POST",
     headers: { ...browserWriteHeaders, Authorization: `Bearer ${ordinaryToken}` },
-    body: JSON.stringify({ password: fixturePassword, mode: "login" }),
+    body: JSON.stringify({ password: fixturePassword, mode: "login", durationMinutes: 10 }),
   });
   const unlock = await readJson(unlockResponse);
   assert.equal(unlockResponse.status, 200, `ORDINARY_ADMIN_PASSWORD_UNLOCK_REQUIRED:${unlockResponse.status}:${JSON.stringify(unlock)}`);
   assert.equal(unlock.authMethod, "login_password", "LOGIN_PASSWORD_UNLOCK_RECEIPT_REQUIRED");
   assert.match(unlockResponse.headers.get("set-cookie") || "", /zimeiti_admin_step_up=.*HttpOnly.*SameSite=Strict/iu, "STEP_UP_COOKIE_MUST_BE_HTTPONLY_STRICT");
+  const ordinaryStepUpToken = cookieValue(unlockResponse.headers.get("set-cookie"), "zimeiti_admin_step_up");
+  assert.ok(ordinaryStepUpToken.length > 20, "ORDINARY_STEP_UP_COOKIE_REQUIRED");
+  report.adminLock.tenMinutes = await assertStepUpSessionWindow({
+    actorId: fixtureUserId,
+    rawToken: ordinaryStepUpToken,
+    responseBody: unlock,
+    durationMinutes: 10,
+    label: "ORDINARY_ADMIN_10_MINUTES",
+  });
 
   const ordinaryMembers = await api("/api/admin/users?page=1&pageSize=1", {
-    headers: { Authorization: `Bearer ${ordinaryToken}`, Accept: "application/json" },
+    headers: ordinaryHeaders,
   });
   assert.equal(ordinaryMembers.status, 200, `ORDINARY_MEMBERS_VIEW_REQUIRED:${ordinaryMembers.status}`);
   const deniedControl = await api("/api/admin/access-control", {
-    headers: { Authorization: `Bearer ${ordinaryToken}`, Accept: "application/json" },
+    headers: ordinaryHeaders,
   });
   const deniedControlBody = await readJson(deniedControl);
   assert.equal(deniedControl.status, 403, `ORDINARY_SUPER_CONTROL_MUST_BE_DENIED:${deniedControl.status}`);
-  assert.equal(deniedControlBody.code, "ADMIN_PERMISSION_DENIED");
+  assert.equal(deniedControlBody.code, "SUPER_ADMIN_REQUIRED");
   const deniedSettings = await api("/api/settings/admin?scope=brand", {
-    headers: { Authorization: `Bearer ${ordinaryToken}`, Accept: "application/json" },
+    headers: ordinaryHeaders,
   });
   assert.equal(deniedSettings.status, 403, `ORDINARY_SETTINGS_MUST_BE_DENIED:${deniedSettings.status}`);
   const deniedPrompts = await api("/api/admin/agents?include_prompt=1", {
-    headers: { Authorization: `Bearer ${ordinaryToken}`, Accept: "application/json" },
+    headers: ordinaryHeaders,
   });
   assert.equal(deniedPrompts.status, 403, `ORDINARY_PROMPTS_MUST_BE_DENIED:${deniedPrompts.status}`);
   report.ordinaryAdmin = {
@@ -293,8 +530,9 @@ try {
     deniedPrompts: deniedPrompts.status,
   };
 
-  // Exact prompts.view matrix. This uses a second disposable administrator so
-  // the long-standing member-governance assertions above remain unchanged.
+  // Exact owner-only prompt boundary. This uses a second disposable ordinary
+  // administrator and proves that neither step-up nor maintenance mode can
+  // turn a stale/requested prompts.view grant into readable prompt content.
   promptFixtureUserId = crypto.randomUUID();
   const promptSuffix = String(Date.now()).slice(-8);
   promptFixtureUsername = `codex_prompt_matrix_${promptSuffix}`;
@@ -329,35 +567,68 @@ try {
   const promptPromotion = await readJson(promptPromotionResponse);
   assert.equal(promptPromotionResponse.status, 200, `PROMPT_MATRIX_PROMOTION_REQUIRED:${promptPromotionResponse.status}:${JSON.stringify(promptPromotion)}`);
 
+  const promptBrowserWriteHeaders = {
+    ...browserWriteHeaders,
+    "X-Real-IP": sessionRealIps.promptAdmin,
+  };
   const promptLoginResponse = await api("/api/auth/login", {
     method: "POST",
-    headers: browserWriteHeaders,
+    headers: promptBrowserWriteHeaders,
     body: JSON.stringify({ username: promptFixtureUsername, password: promptFixturePassword }),
   });
   const promptLogin = await readJson(promptLoginResponse);
   assert.equal(promptLoginResponse.status, 200, `PROMPT_MATRIX_LOGIN_REQUIRED:${promptLoginResponse.status}:${JSON.stringify(promptLogin)}`);
   promptFixtureToken = String(promptLogin.token || "");
   assert.ok(promptFixtureToken.length > 32, "PROMPT_MATRIX_TOKEN_REQUIRED");
+  const promptHeaders = {
+    Authorization: `Bearer ${promptFixtureToken}`,
+    Accept: "application/json",
+    "X-Real-IP": sessionRealIps.promptAdmin,
+  };
+
+  const superSelfAfterPromptLoginResponse = await api("/api/admin/access-control/self", {
+    headers: {
+      Authorization: `Bearer ${superToken}`,
+      Accept: "application/json",
+      "X-Real-IP": sessionRealIps.superAdmin,
+    },
+  });
+  const superSelfAfterPromptLogin = await readJson(superSelfAfterPromptLoginResponse);
+  assert.equal(
+    superSelfAfterPromptLoginResponse.status,
+    200,
+    `SUPER_ADMIN_SESSION_MUST_SURVIVE_PROMPT_LOGIN:${superSelfAfterPromptLoginResponse.status}`,
+  );
+  assert.equal(superSelfAfterPromptLogin.access?.adminLevel, "super_admin", "SUPER_ADMIN_LEVEL_MUST_SURVIVE_PROMPT_LOGIN");
+  report.sessionIsolation.superSelfAfterPromptLoginStatus = superSelfAfterPromptLoginResponse.status;
 
   const promptUnlockResponse = await api("/api/admin/access-control/unlock", {
     method: "POST",
-    headers: { ...browserWriteHeaders, Authorization: `Bearer ${promptFixtureToken}` },
-    body: JSON.stringify({ password: promptFixturePassword, mode: "login" }),
+    headers: { ...promptBrowserWriteHeaders, Authorization: `Bearer ${promptFixtureToken}` },
+    body: JSON.stringify({ password: promptFixturePassword, mode: "login", durationMinutes: 20 }),
   });
   const promptUnlock = await readJson(promptUnlockResponse);
   assert.equal(promptUnlockResponse.status, 200, `PROMPT_MATRIX_INITIAL_UNLOCK_REQUIRED:${promptUnlockResponse.status}:${JSON.stringify(promptUnlock)}`);
   const promptStepUpToken = cookieValue(promptUnlockResponse.headers.get("set-cookie"), "zimeiti_admin_step_up");
   assert.ok(promptStepUpToken.length > 20, "PROMPT_MATRIX_INITIAL_STEP_UP_COOKIE_REQUIRED");
+  report.adminLock.twentyMinutes = await assertStepUpSessionWindow({
+    actorId: promptFixtureUserId,
+    rawToken: promptStepUpToken,
+    responseBody: promptUnlock,
+    durationMinutes: 20,
+    label: "PROMPT_ADMIN_20_MINUTES",
+  });
 
   const onlyAgentsUnlocked = await api("/api/admin/agents?include_prompt=1", {
-    headers: { Authorization: `Bearer ${promptFixtureToken}`, "x-admin-step-up": promptStepUpToken, Accept: "application/json" },
+    headers: { ...promptHeaders, "x-admin-step-up": promptStepUpToken },
   });
   assert.equal(onlyAgentsUnlocked.status, 403, `ONLY_AGENTS_WITH_STEP_UP_MUST_NOT_READ_PROMPTS:${onlyAgentsUnlocked.status}`);
 
-  let promptProfile = (await db.query(
-    "SELECT revision FROM public.admin_access_profiles WHERE user_id=$1",
+  const promptProfileBefore = (await db.query(
+    "SELECT to_jsonb(profile) AS snapshot FROM public.admin_access_profiles profile WHERE user_id=$1",
     [promptFixtureUserId],
-  )).rows[0];
+  )).rows[0]?.snapshot;
+  assert.ok(promptProfileBefore, "PROMPT_PROFILE_BEFORE_REQUIRED");
   const grantPromptsResponse = await api("/api/admin/access-control", {
     method: "PATCH",
     headers: { ...superHeaders, "Content-Type": "application/json", "Idempotency-Key": `codex-prompt-grant-${promptFixtureUserId}` },
@@ -366,48 +637,41 @@ try {
       userId: promptFixtureUserId,
       permissionKeys: ["agents.view", "prompts.view"],
       isActive: true,
-      expectedRevision: Number(promptProfile.revision),
-      reason: "提示词权限矩阵验收：授予只读提示词权限",
+      expectedRevision: Number(promptProfileBefore.revision),
+      reason: "所有者权限边界验收：尝试向普通管理员授予提示词权限",
     }),
   });
-  assert.equal(grantPromptsResponse.status, 200, `PROMPT_MATRIX_GRANT_REQUIRED:${grantPromptsResponse.status}:${JSON.stringify(await readJson(grantPromptsResponse))}`);
+  const grantPrompts = await readJson(grantPromptsResponse);
+  assert.equal(grantPromptsResponse.status, 400, `PROMPT_MATRIX_ATOMIC_REJECTION_REQUIRED:${grantPromptsResponse.status}:${JSON.stringify(grantPrompts)}`);
+  assert.equal(grantPrompts.code, "OWNER_PERMISSION_NOT_DELEGABLE", "PROMPT_MATRIX_OWNER_PERMISSION_CODE_REQUIRED");
+  assert.deepEqual(Object.keys(grantPrompts).sort(), ["code", "error"], "PROMPT_MATRIX_REJECTION_DETAILS_MUST_BE_CONCEALED");
+  const promptProfileAfter = (await db.query(
+    "SELECT to_jsonb(profile) AS snapshot FROM public.admin_access_profiles profile WHERE user_id=$1",
+    [promptFixtureUserId],
+  )).rows[0]?.snapshot;
+  assert.deepEqual(promptProfileAfter, promptProfileBefore, "PROMPT_MATRIX_REJECTION_MUST_BE_ATOMIC");
+
+  const promptSelfAfterGrantResponse = await api("/api/admin/access-control/self", {
+    headers: promptHeaders,
+  });
+  const promptSelfAfterGrant = await readJson(promptSelfAfterGrantResponse);
+  assert.equal(promptSelfAfterGrantResponse.status, 200, `PROMPT_MATRIX_SELF_REQUIRED:${promptSelfAfterGrantResponse.status}`);
+  assert.equal(promptSelfAfterGrant.access?.permissionKeys?.includes("agents.view"), true, "AGENTS_VIEW_MUST_REMAIN_GRANTED");
+  assert.equal(promptSelfAfterGrant.access?.permissionKeys?.includes("prompts.view"), false, "OWNER_ONLY_PROMPT_GRANT_MUST_BE_STRIPPED");
 
   const promptsLocked = await api("/api/admin/agents?include_prompt=1", {
-    headers: { Authorization: `Bearer ${promptFixtureToken}`, Accept: "application/json" },
+    headers: promptHeaders,
   });
-  assert.equal(promptsLocked.status, 428, `PROMPTS_WITHOUT_STEP_UP_MUST_LOCK:${promptsLocked.status}`);
+  const promptsLockedBody = await readJson(promptsLocked);
+  assert.equal(promptsLocked.status, 403, `PROMPTS_WITHOUT_STEP_UP_MUST_BE_OWNER_DENIED:${promptsLocked.status}`);
+  assert.equal(promptsLockedBody.code, "SUPER_ADMIN_REQUIRED", "PROMPTS_OWNER_LEVEL_CODE_REQUIRED");
 
-  const promptUnlockAfterGrantResponse = await api("/api/admin/access-control/unlock", {
-    method: "POST",
-    headers: { ...browserWriteHeaders, Authorization: `Bearer ${promptFixtureToken}` },
-    body: JSON.stringify({ password: promptFixturePassword, mode: "login" }),
-  });
-  assert.equal(promptUnlockAfterGrantResponse.status, 200, `PROMPT_MATRIX_UNLOCK_AFTER_GRANT_REQUIRED:${promptUnlockAfterGrantResponse.status}`);
-  const promptStepUpAfterGrant = cookieValue(promptUnlockAfterGrantResponse.headers.get("set-cookie"), "zimeiti_admin_step_up");
   const promptsWithStepUp = await api("/api/admin/agents?include_prompt=1", {
-    headers: { Authorization: `Bearer ${promptFixtureToken}`, "x-admin-step-up": promptStepUpAfterGrant, Accept: "application/json" },
+    headers: { ...promptHeaders, "x-admin-step-up": promptStepUpToken },
   });
   const promptsWithStepUpBody = await readJson(promptsWithStepUp);
-  assert.equal(promptsWithStepUp.status, 200, `PROMPTS_WITH_STEP_UP_REQUIRED:${promptsWithStepUp.status}`);
-  assert.equal(promptsWithStepUpBody.promptAuthorizationMode, "step_up", "PROMPT_STEP_UP_MODE_RECEIPT_REQUIRED");
-
-  promptProfile = (await db.query(
-    "SELECT revision FROM public.admin_access_profiles WHERE user_id=$1",
-    [promptFixtureUserId],
-  )).rows[0];
-  const revokePromptsResponse = await api("/api/admin/access-control", {
-    method: "PATCH",
-    headers: { ...superHeaders, "Content-Type": "application/json", "Idempotency-Key": `codex-prompt-revoke-${promptFixtureUserId}` },
-    body: JSON.stringify({
-      action: "permissions",
-      userId: promptFixtureUserId,
-      permissionKeys: ["agents.view"],
-      isActive: true,
-      expectedRevision: Number(promptProfile.revision),
-      reason: "提示词权限矩阵验收：撤销提示词权限",
-    }),
-  });
-  assert.equal(revokePromptsResponse.status, 200, `PROMPT_MATRIX_REVOKE_REQUIRED:${revokePromptsResponse.status}`);
+  assert.equal(promptsWithStepUp.status, 403, `STEP_UP_MUST_NOT_CROSS_PROMPT_OWNER_BOUNDARY:${promptsWithStepUp.status}`);
+  assert.equal(promptsWithStepUpBody.code, "SUPER_ADMIN_REQUIRED", "STEP_UP_OWNER_LEVEL_CODE_REQUIRED");
 
   const maintenanceStateResponse = await api("/api/admin/access-control/maintenance-lock", { headers: superHeaders });
   const maintenanceState = await readJson(maintenanceStateResponse);
@@ -428,51 +692,44 @@ try {
   maintenanceEnabled = true;
 
   const onlyAgentsMaintenance = await api("/api/admin/agents?include_prompt=1", {
-    headers: { Authorization: `Bearer ${promptFixtureToken}`, Accept: "application/json" },
+    headers: promptHeaders,
   });
   assert.equal(onlyAgentsMaintenance.status, 403, `MAINTENANCE_MUST_NOT_BYPASS_PROMPTS_PERMISSION:${onlyAgentsMaintenance.status}`);
 
-  promptProfile = (await db.query(
-    "SELECT revision FROM public.admin_access_profiles WHERE user_id=$1",
-    [promptFixtureUserId],
-  )).rows[0];
-  const maintenanceSuperHeaders = { Authorization: `Bearer ${superToken}`, Accept: "application/json" };
-  const maintenanceGrantResponse = await api("/api/admin/access-control", {
-    method: "PATCH",
-    headers: { ...maintenanceSuperHeaders, "Content-Type": "application/json", "Idempotency-Key": `codex-prompt-maintenance-grant-${promptFixtureUserId}` },
-    body: JSON.stringify({
-      action: "permissions",
-      userId: promptFixtureUserId,
-      permissionKeys: ["agents.view", "prompts.view"],
-      isActive: true,
-      expectedRevision: Number(promptProfile.revision),
-      reason: "提示词权限矩阵验收：维护模式下恢复只读权限",
-    }),
-  });
-  assert.equal(maintenanceGrantResponse.status, 200, `MAINTENANCE_PERMISSION_GRANT_REQUIRED:${maintenanceGrantResponse.status}`);
-
   const promptsWithMaintenance = await api("/api/admin/agents?include_prompt=1", {
-    headers: { Authorization: `Bearer ${promptFixtureToken}`, Accept: "application/json" },
+    headers: promptHeaders,
   });
   const promptsWithMaintenanceBody = await readJson(promptsWithMaintenance);
-  assert.equal(promptsWithMaintenance.status, 200, `PROMPTS_WITH_MAINTENANCE_REQUIRED:${promptsWithMaintenance.status}`);
-  assert.equal(promptsWithMaintenanceBody.promptAuthorizationMode, "maintenance", "PROMPT_MAINTENANCE_MODE_RECEIPT_REQUIRED");
+  assert.equal(promptsWithMaintenance.status, 403, `MAINTENANCE_MUST_NOT_CROSS_PROMPT_OWNER_BOUNDARY:${promptsWithMaintenance.status}`);
+  assert.equal(promptsWithMaintenanceBody.code, "SUPER_ADMIN_REQUIRED", "MAINTENANCE_OWNER_LEVEL_CODE_REQUIRED");
   const promptSelfMaintenanceResponse = await api("/api/admin/access-control/self", {
-    headers: { Authorization: `Bearer ${promptFixtureToken}`, Accept: "application/json" },
+    headers: promptHeaders,
   });
   const promptSelfMaintenance = await readJson(promptSelfMaintenanceResponse);
   assert.equal(promptSelfMaintenance.stepUp?.status, "maintenance", "ORDINARY_ADMIN_MAINTENANCE_STATUS_REQUIRED");
+  assert.equal(promptSelfMaintenance.access?.permissionKeys?.includes("prompts.view"), false, "MAINTENANCE_MUST_NOT_EXPOSE_OWNER_PERMISSION");
   report.promptPermissionMatrix = {
+    mixedAgentsAndPromptsGrant: {
+      status: grantPromptsResponse.status,
+      code: grantPrompts.code,
+      atomicProfileUnchanged: true,
+      selfContainsAgentsView: true,
+      selfContainsPromptsView: false,
+    },
     onlyAgentsWithStepUp: onlyAgentsUnlocked.status,
     promptsWithoutStepUp: promptsLocked.status,
     promptsWithStepUp: promptsWithStepUp.status,
     onlyAgentsWithMaintenance: onlyAgentsMaintenance.status,
     promptsWithMaintenance: promptsWithMaintenance.status,
-    maintenanceAuthorizationMode: promptsWithMaintenanceBody.promptAuthorizationMode,
+    ownerBoundary: "super_admin_only",
   };
 
   browser = await chromium.launch({ headless: true });
-  const anonymousContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, userAgent });
+  const anonymousContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    userAgent,
+    extraHTTPHeaders: { "X-Real-IP": sessionRealIps.anonymous },
+  });
   const anonymousPage = await anonymousContext.newPage();
   const anonymousErrors = [];
   anonymousPage.on("console", (message) => { if (message.type() === "error") anonymousErrors.push(message.text()); });
@@ -485,7 +742,12 @@ try {
   await anonymousPage.screenshot({ path: path.join(evidenceDir, "admin-login-1440x900.png"), fullPage: true });
   await anonymousContext.close();
 
-  const ordinaryContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, userAgent });
+  const ordinaryContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    userAgent,
+    extraHTTPHeaders: { "X-Real-IP": sessionRealIps.ordinaryAdmin },
+  });
+  announcementEventAudits.push(await installAnnouncementEventInterceptor(ordinaryContext, "ordinary-admin"));
   await ordinaryContext.addCookies([
     { name: "auth_token", value: ordinaryToken, url: origin, httpOnly: true, sameSite: "Lax" },
   ]);
@@ -496,7 +758,10 @@ try {
   }, { token: ordinaryToken, user: login.user });
   const ordinaryPage = await ordinaryContext.newPage();
   await ordinaryPage.goto(origin, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await closeAnnouncementIfVisible(ordinaryPage);
+  await settleBlockingNotifications(ordinaryPage, {
+    identity: "ordinary-admin",
+    allowAnnouncementReceipt: true,
+  });
   await ordinaryPage.locator('[data-testid="sidebar-user-menu-trigger"]').click();
   const ordinarySidebarEntry = ordinaryPage.locator('[data-testid="sidebar-admin-entry"]');
   await ordinarySidebarEntry.waitFor({ state: "visible", timeout: 30_000 });
@@ -505,7 +770,12 @@ try {
   await ordinaryPage.waitForURL((url) => url.pathname === "/admin", { timeout: 45_000 });
   await ordinaryContext.close();
 
-  const promptContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, userAgent });
+  const promptContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    userAgent,
+    extraHTTPHeaders: { "X-Real-IP": sessionRealIps.promptAdmin },
+  });
+  announcementEventAudits.push(await installAnnouncementEventInterceptor(promptContext, "prompt-admin"));
   await promptContext.addCookies([
     { name: "auth_token", value: promptFixtureToken, url: origin, httpOnly: true, sameSite: "Lax" },
   ]);
@@ -520,22 +790,27 @@ try {
   promptPage.on("console", (message) => { if (message.type() === "error") promptBrowserErrors.push(message.text()); });
   promptPage.on("response", (response) => { if (response.status() >= 500) promptServerFailures.push(`${response.status()} ${response.url()}`); });
   await promptPage.goto(`${origin}/admin?tab=agents&view=overview`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await closeAnnouncementIfVisible(promptPage);
+  await settleBlockingNotifications(promptPage, {
+    identity: "prompt-admin",
+    allowAnnouncementReceipt: true,
+  });
   await promptPage.locator('[data-testid="admin-maintenance-mode-banner"]').waitFor({ state: "visible", timeout: 45_000 });
-  await promptPage.locator('[data-testid="admin-prompt-access-maintenance"]').waitFor({ state: "visible", timeout: 45_000 });
+  assert.equal(await promptPage.locator('[data-testid="admin-prompt-access-maintenance"]').count(), 0, "ORDINARY_ADMIN_MUST_NOT_RECEIVE_PROMPT_MAINTENANCE_ACCESS");
   const targetAgentRow = promptPage.getByRole("row", { name: /3D故事导演｜高能版/u });
   await targetAgentRow.waitFor({ state: "visible", timeout: 45_000 });
-  await targetAgentRow.getByRole("button", { name: "查看提示词" }).click();
-  const promptViewer = promptPage.locator('[data-testid="admin-agent-prompt-readonly"]');
-  await promptViewer.waitFor({ state: "visible", timeout: 20_000 });
-  assert.match(await promptViewer.innerText(), /维护模式放行/u, "PROMPT_VIEWER_MUST_MARK_MAINTENANCE_AUTHORIZATION");
-  assert.ok((await promptViewer.locator("pre").innerText()).trim().length > 20, "PROMPT_VIEWER_MUST_RENDER_PROMPT_CONTENT");
-  await promptPage.screenshot({ path: path.join(evidenceDir, "ordinary-admin-prompt-maintenance-1440x900.png"), fullPage: true });
+  assert.equal(await targetAgentRow.getByRole("button", { name: "查看提示词" }).count(), 0, "ORDINARY_ADMIN_PROMPT_BUTTON_MUST_NOT_RENDER");
+  assert.equal(await promptPage.locator('[data-testid="admin-agent-prompt-readonly"]').count(), 0, "ORDINARY_ADMIN_PROMPT_BODY_MUST_NOT_RENDER");
+  await promptPage.screenshot({ path: path.join(evidenceDir, "ordinary-admin-prompt-owner-denied-1440x900.png"), fullPage: true });
   assert.deepEqual(promptBrowserErrors, [], `PROMPT_BROWSER_CONSOLE_ERRORS:${JSON.stringify(promptBrowserErrors)}`);
   assert.deepEqual(promptServerFailures, [], `PROMPT_BROWSER_SERVER_FAILURES:${JSON.stringify(promptServerFailures)}`);
   await promptContext.close();
 
-  const superContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, userAgent });
+  const superContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    userAgent,
+    extraHTTPHeaders: { "X-Real-IP": sessionRealIps.superAdmin },
+  });
+  announcementEventAudits.push(await installAnnouncementEventInterceptor(superContext, "super-admin"));
   await superContext.addCookies([
     { name: "auth_token", value: superToken, url: origin, httpOnly: true, sameSite: "Lax" },
     { name: "zimeiti_admin_step_up", value: stepUpToken, url: origin, httpOnly: true, sameSite: "Strict" },
@@ -547,7 +822,7 @@ try {
   }, { token: superToken, user: superUser });
   const superHomePage = await superContext.newPage();
   await superHomePage.goto(origin, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await closeAnnouncementIfVisible(superHomePage);
+  await settleBlockingNotifications(superHomePage, { identity: "super-admin" });
   await superHomePage.locator('[data-testid="sidebar-user-menu-trigger"]').click();
   const superSidebarEntry = superHomePage.locator('[data-testid="sidebar-admin-entry"]');
   await superSidebarEntry.waitFor({ state: "visible", timeout: 30_000 });
@@ -578,7 +853,7 @@ try {
   modelPage.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
   modelPage.on("response", (response) => { if (response.status() >= 500) serverFailures.push(`${response.status()} ${response.url()}`); });
   await modelPage.goto(`${origin}/admin?tab=agents&view=overview`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await closeAnnouncementIfVisible(modelPage);
+  await settleBlockingNotifications(modelPage, { identity: "super-admin" });
   const modelAgentRow = modelPage.getByRole("row", { name: /3D故事导演｜高能版/u });
   await modelAgentRow.waitFor({ state: "visible", timeout: 45_000 });
   await modelAgentRow.getByRole("button", { name: "编辑", exact: true }).click();
@@ -610,7 +885,7 @@ try {
     adminEntryInsideAccountMenu: true,
     superAdminPanelVisible: true,
     existingMemberPickerVisible: true,
-    ordinaryPromptMaintenanceVisible: true,
+    ordinaryPromptOwnerDenied: true,
     targetAgentModelOptionsVisible: true,
     targetAgentModelOptions: ["GPT-6.1 Sol", "Claude Opus 5.5", "Claude Sonnet 5.5"],
     desktopViewports: ["1440x900", "1600x1000"],
@@ -641,9 +916,42 @@ try {
   assert.equal(disableMaintenanceResponse.status, 200, `MAINTENANCE_CLEANUP_REQUIRED:${disableMaintenanceResponse.status}`);
   maintenanceEnabled = false;
 
-  const unlockContext = await browser.newContext({ viewport: { width: 1600, height: 1000 }, userAgent });
+  const maintenanceRevokedStepUp = (await db.query(
+    `SELECT revoked_at
+       FROM public.admin_step_up_sessions
+      WHERE token_hash=$1`,
+    [stepUpHash],
+  )).rows[0];
+  assert.ok(maintenanceRevokedStepUp?.revoked_at, "MAINTENANCE_DISABLE_MUST_REVOKE_PREEXISTING_STEP_UP");
+  retiredMaintenanceStepUpHash = stepUpHash;
+  stepUpToken = crypto.randomBytes(32).toString("base64url");
+  stepUpHash = crypto.createHash("sha256").update(stepUpToken).digest("hex");
+  const manualRelockExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  await db.query("BEGIN");
+  await db.query("SELECT set_config('app.admin_governance_write','on',true)");
+  await db.query(
+    `INSERT INTO public.admin_step_up_sessions
+      (actor_id,token_hash,scope_keys,profile_revision,auth_method,request_ip,user_agent,expires_at)
+     VALUES($1,$2,$3::jsonb,$4,'login_password','127.0.0.1',$5,$6)`,
+    [superUser.id, stepUpHash, JSON.stringify(self.access.permissionKeys), self.access.revision, userAgent, manualRelockExpiresAt],
+  );
+  await db.query("COMMIT");
+  superHeaders["x-admin-step-up"] = stepUpToken;
+  report.adminLock.maintenanceBoundaryReauthentication = {
+    preexistingSessionRevoked: true,
+    freshSessionIssuedForManualRelock: true,
+    durationMinutes: 10,
+  };
+
+  const unlockContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    userAgent,
+    extraHTTPHeaders: { "X-Real-IP": sessionRealIps.superAdmin },
+  });
+  announcementEventAudits.push(await installAnnouncementEventInterceptor(unlockContext, "super-admin-manual-relock"));
   await unlockContext.addCookies([
     { name: "auth_token", value: superToken, url: origin, httpOnly: true, sameSite: "Lax" },
+    { name: "zimeiti_admin_step_up", value: stepUpToken, url: origin, httpOnly: true, sameSite: "Strict" },
   ]);
   await unlockContext.addInitScript(({ token, user }) => {
     localStorage.setItem("auth_token", token);
@@ -656,10 +964,105 @@ try {
   unlockPage.on("console", (message) => { if (message.type() === "error") unlockBrowserErrors.push(message.text()); });
   unlockPage.on("response", (response) => { if (response.status() >= 500) unlockServerFailures.push(`${response.status()} ${response.url()}`); });
   await unlockPage.goto(`${origin}/admin?tab=agents&view=overview`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await closeAnnouncementIfVisible(unlockPage);
+  await settleBlockingNotifications(unlockPage, { identity: "super-admin" });
   const unlockTrigger = unlockPage.locator('[data-testid="admin-sensitive-lock"]');
   await unlockTrigger.waitFor({ state: "visible", timeout: 45_000 });
-  await unlockTrigger.click();
+  await unlockPage.getByText(/已解锁至.*点击上锁/u).waitFor({ state: "visible", timeout: 20_000 });
+
+  const sensitivePromptResponse = await api("/api/admin/agents?include_prompt=1", { headers: superHeaders });
+  const sensitivePromptPayload = await readJson(sensitivePromptResponse);
+  assert.equal(sensitivePromptResponse.status, 200, "MANUAL_RELOCK_PROMPT_BASELINE_REQUIRED");
+  const sensitivePromptAgent = (sensitivePromptPayload.agents || []).find((agent) => (
+    typeof agent?.system_prompt === "string" && agent.system_prompt.trim().length > 20
+  ));
+  assert.ok(sensitivePromptAgent, "MANUAL_RELOCK_NONEMPTY_PROMPT_BASELINE_REQUIRED");
+  const sensitivePromptText = sensitivePromptAgent.system_prompt.trim();
+  const sensitivePromptHash = crypto.createHash("sha256").update(sensitivePromptText).digest("hex");
+  const sensitiveSettingsResponse = await api("/api/settings/admin?scope=prompts", { headers: superHeaders });
+  const sensitiveSettingsPayload = await readJson(sensitiveSettingsResponse);
+  assert.equal(sensitiveSettingsResponse.status, 200, "MANUAL_RELOCK_SETTINGS_BASELINE_REQUIRED");
+  assert.ok(sensitiveSettingsPayload.settings && typeof sensitiveSettingsPayload.settings === "object", "MANUAL_RELOCK_SETTINGS_OBJECT_REQUIRED");
+
+  const targetPromptRow = unlockPage.getByRole("row", { name: sensitivePromptAgent.name });
+  await targetPromptRow.waitFor({ state: "visible", timeout: 45_000 });
+  await targetPromptRow.getByRole("button", { name: "查看提示词" }).click();
+  const promptViewer = unlockPage.locator('[data-testid="admin-agent-prompt-readonly"]');
+  await promptViewer.waitFor({ state: "visible", timeout: 20_000 });
+  assert.equal((await promptViewer.locator("pre").innerText()).trim(), sensitivePromptText, "MANUAL_RELOCK_UI_PROMPT_BASELINE_REQUIRED");
+
+  await unlockPage.goto(`${origin}/admin?tab=general`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await settleBlockingNotifications(unlockPage, { identity: "super-admin" });
+  await unlockPage.locator('[data-testid="admin-sensitive-lock"]').waitFor({ state: "visible", timeout: 45_000 });
+  const globalPromptTextarea = unlockPage.locator('textarea[placeholder*="中国广告法"]');
+  await globalPromptTextarea.waitFor({ state: "visible", timeout: 30_000 });
+  assert.equal(
+    await globalPromptTextarea.inputValue(),
+    String(sensitiveSettingsPayload.settings.global_system_prefix || ""),
+    "MANUAL_RELOCK_UI_SETTINGS_BASELINE_REQUIRED",
+  );
+
+  const manualRelockResponsePromise = unlockPage.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "DELETE" && url.pathname === "/api/admin/access-control/unlock";
+  }, { timeout: 20_000 });
+  await unlockPage.locator('[data-testid="admin-sensitive-lock"]').click();
+  const manualRelockResponse = await manualRelockResponsePromise;
+  const manualRelockPayload = await manualRelockResponse.json();
+  assert.equal(manualRelockResponse.status(), 200, "MANUAL_RELOCK_API_REQUIRED");
+  assert.equal(manualRelockPayload.success, true, "MANUAL_RELOCK_SUCCESS_REQUIRED");
+  assert.ok(Number(manualRelockPayload.revokedCount) >= 1, "MANUAL_RELOCK_SESSION_REVOCATION_REQUIRED");
+  await unlockPage.getByText("解锁敏感操作", { exact: true }).waitFor({ state: "visible", timeout: 20_000 });
+  await unlockPage.waitForFunction(() => {
+    const textarea = document.querySelector('textarea[placeholder*="中国广告法"]');
+    return textarea instanceof HTMLTextAreaElement && textarea.value === "";
+  }, undefined, { timeout: 20_000 });
+  assert.equal(
+    (await unlockContext.cookies()).some((cookie) => cookie.name === "zimeiti_admin_step_up" && cookie.value),
+    false,
+    "MANUAL_RELOCK_COOKIE_MUST_BE_CLEARED",
+  );
+  const superSelfAfterRelockResponse = await api("/api/admin/access-control/self", {
+    headers: { Authorization: `Bearer ${superToken}`, Accept: "application/json" },
+  });
+  const superSelfAfterRelock = await readJson(superSelfAfterRelockResponse);
+  assert.equal(superSelfAfterRelockResponse.status, 200, "MANUAL_RELOCK_SELF_REQUIRED");
+  assert.ok(["missing", "locked"].includes(superSelfAfterRelock.stepUp?.status), "MANUAL_RELOCK_SELF_MUST_BE_LOCKED");
+  const promptsAfterRelockResponse = await api("/api/admin/agents?include_prompt=1", {
+    headers: { Authorization: `Bearer ${superToken}`, Accept: "application/json" },
+  });
+  const promptsAfterRelock = await readJson(promptsAfterRelockResponse);
+  assert.equal(promptsAfterRelockResponse.status, 428, "MANUAL_RELOCK_PROMPTS_MUST_LOCK");
+  assert.equal(promptsAfterRelock.code, "ADMIN_STEP_UP_REQUIRED", "MANUAL_RELOCK_PROMPT_LOCK_CODE_REQUIRED");
+  assert.equal(Object.hasOwn(promptsAfterRelock, "agents"), false, "MANUAL_RELOCK_PROMPTS_MUST_NOT_BE_RETURNED");
+  const settingsAfterRelockResponse = await api("/api/settings/admin?scope=prompts", {
+    headers: { Authorization: `Bearer ${superToken}`, Accept: "application/json" },
+  });
+  const settingsAfterRelock = await readJson(settingsAfterRelockResponse);
+  assert.equal(settingsAfterRelockResponse.status, 428, "MANUAL_RELOCK_SETTINGS_MUST_LOCK");
+  assert.equal(settingsAfterRelock.code, "ADMIN_STEP_UP_REQUIRED", "MANUAL_RELOCK_SETTINGS_LOCK_CODE_REQUIRED");
+  assert.equal(Object.hasOwn(settingsAfterRelock, "settings"), false, "MANUAL_RELOCK_SETTINGS_MUST_NOT_BE_RETURNED");
+  const manualStepUpRowsRemaining = Number((await db.query(
+    "SELECT count(*)::int AS count FROM public.admin_step_up_sessions WHERE token_hash=$1 AND revoked_at IS NULL",
+    [stepUpHash],
+  )).rows[0].count);
+  assert.equal(manualStepUpRowsRemaining, 0, "MANUAL_RELOCK_DATABASE_ACTIVE_SESSION_MUST_BE_REVOKED");
+
+  await unlockPage.goto(`${origin}/admin?tab=agents&view=overview`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await settleBlockingNotifications(unlockPage, { identity: "super-admin" });
+  assert.equal(await unlockPage.locator('[data-testid="admin-agent-prompt-readonly"]').count(), 0, "MANUAL_RELOCK_PROMPT_VIEWER_MUST_CLEAR");
+  assert.equal((await unlockPage.locator("body").innerText()).includes(sensitivePromptText), false, "MANUAL_RELOCK_PROMPT_TEXT_MUST_CLEAR");
+  report.adminLock.manualRelock = {
+    viewport: "1440x900",
+    apiStatus: manualRelockResponse.status(),
+    revokedCount: Number(manualRelockPayload.revokedCount),
+    selfStepUpStatus: superSelfAfterRelock.stepUp?.status,
+    promptStateCleared: true,
+    settingsStateCleared: true,
+    promptHashBeforeRelock: sensitivePromptHash,
+    serverActiveSessionRowsRemaining: manualStepUpRowsRemaining,
+  };
+
+  await unlockPage.locator('[data-testid="admin-sensitive-lock"]').click();
   const unlockOverlay = unlockPage.locator('[data-testid="admin-sensitive-unlock-overlay"]');
   const unlockDialog = unlockOverlay.getByRole("dialog");
   await unlockDialog.waitFor({ state: "visible", timeout: 20_000 });
@@ -679,7 +1082,7 @@ try {
   assert.equal(overlayContract.focusInside, true, "UNLOCK_DIALOG_INITIAL_FOCUS_REQUIRED");
   assert.equal(overlayContract.backgroundInert, true, "UNLOCK_DIALOG_BACKGROUND_INERT_REQUIRED");
   assert.equal(overlayContract.ariaModal, "true", "UNLOCK_DIALOG_ARIA_MODAL_REQUIRED");
-  assert.equal(overlayContract.horizontalOverflow, false, "UNLOCK_DIALOG_HORIZONTAL_OVERFLOW_1600");
+  assert.equal(overlayContract.horizontalOverflow, false, "UNLOCK_DIALOG_HORIZONTAL_OVERFLOW_1440");
   for (let index = 0; index < 12; index += 1) {
     await unlockPage.keyboard.press("Tab");
     assert.equal(await unlockPage.evaluate(() => {
@@ -687,19 +1090,23 @@ try {
       return Boolean(dialog && dialog.contains(document.activeElement));
     }), true, `UNLOCK_DIALOG_FOCUS_TRAP_FAILED:${index}`);
   }
-  await unlockPage.screenshot({ path: path.join(evidenceDir, "admin-unlock-dialog-1600x1000.png"), fullPage: false });
-  await unlockPage.keyboard.press("Escape");
-  await unlockOverlay.waitFor({ state: "detached", timeout: 10_000 });
-  assert.equal(await unlockTrigger.evaluate((element) => document.activeElement === element), true, "UNLOCK_DIALOG_FOCUS_RESTORE_REQUIRED");
-  await unlockPage.setViewportSize({ width: 1440, height: 900 });
-  await unlockTrigger.click();
-  await unlockDialog.waitFor({ state: "visible", timeout: 20_000 });
-  assert.equal(await unlockPage.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, "UNLOCK_DIALOG_HORIZONTAL_OVERFLOW_1440");
   await unlockPage.screenshot({ path: path.join(evidenceDir, "admin-unlock-dialog-1440x900.png"), fullPage: false });
   await unlockPage.keyboard.press("Escape");
+  await unlockOverlay.waitFor({ state: "detached", timeout: 10_000 });
+  await unlockPage.waitForFunction(() => {
+    const trigger = document.querySelector('[data-testid="admin-sensitive-lock"]');
+    return trigger instanceof HTMLButtonElement && document.activeElement === trigger;
+  }, undefined, { timeout: 2_000 });
+  await unlockPage.setViewportSize({ width: 1600, height: 1000 });
+  await unlockTrigger.click();
+  await unlockDialog.waitFor({ state: "visible", timeout: 20_000 });
+  assert.equal(await unlockPage.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, "UNLOCK_DIALOG_HORIZONTAL_OVERFLOW_1600");
+  await unlockPage.screenshot({ path: path.join(evidenceDir, "admin-unlock-dialog-1600x1000.png"), fullPage: false });
+  await unlockPage.keyboard.press("Escape");
+  await unlockPage.setViewportSize({ width: 1440, height: 900 });
   for (const adjacentPath of ["/admin?tab=models", "/admin?tab=users&view=overview"]) {
     await unlockPage.goto(`${origin}${adjacentPath}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    await closeAnnouncementIfVisible(unlockPage);
+    await settleBlockingNotifications(unlockPage, { identity: "super-admin" });
     await unlockPage.locator('[data-testid="admin-sensitive-lock"]').waitFor({ state: "visible", timeout: 45_000 });
     assert.equal(await unlockPage.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `ADJACENT_PAGE_HORIZONTAL_OVERFLOW:${adjacentPath}`);
   }
@@ -718,8 +1125,12 @@ try {
   await browser.close();
   browser = null;
 
+  report.announcementEventIsolation = assertAnnouncementEventIsolation(announcementEventAudits);
   report.passed = true;
 } finally {
+  if (!report.announcementEventIsolation.interceptedCount) {
+    report.announcementEventIsolation = summarizeAnnouncementEventAudits(announcementEventAudits);
+  }
   if (browser) await browser.close().catch(() => undefined);
   if (dbConnected) {
     try {
@@ -748,6 +1159,7 @@ try {
         maintenanceEnabled = false;
       }
       if (fixtureUserId) {
+        await db.query("DELETE FROM public.announcement_delivery_events WHERE user_id=$1", [fixtureUserId]);
         await db.query("DELETE FROM public.login_logs WHERE user_id=$1", [fixtureUserId]);
         await db.query("DELETE FROM public.admin_step_up_sessions WHERE actor_id=$1", [fixtureUserId]);
         await db.query("DELETE FROM public.admin_access_profiles WHERE user_id=$1", [fixtureUserId]);
@@ -755,31 +1167,65 @@ try {
         await db.query("DELETE FROM public.users WHERE id=$1", [fixtureUserId]);
       }
       if (promptFixtureUserId) {
+        await db.query("DELETE FROM public.announcement_delivery_events WHERE user_id=$1", [promptFixtureUserId]);
         await db.query("DELETE FROM public.login_logs WHERE user_id=$1", [promptFixtureUserId]);
         await db.query("DELETE FROM public.admin_step_up_sessions WHERE actor_id=$1", [promptFixtureUserId]);
         await db.query("DELETE FROM public.admin_access_profiles WHERE user_id=$1", [promptFixtureUserId]);
         await db.query("DELETE FROM public.user_auth_sessions WHERE user_id=$1", [promptFixtureUserId]);
         await db.query("DELETE FROM public.users WHERE id=$1", [promptFixtureUserId]);
       }
-      if (stepUpHash) await db.query("DELETE FROM public.admin_step_up_sessions WHERE token_hash=$1", [stepUpHash]);
+      const superStepUpHashes = [retiredMaintenanceStepUpHash, stepUpHash].filter(Boolean);
+      if (superStepUpHashes.length > 0) {
+        await db.query("DELETE FROM public.admin_step_up_sessions WHERE token_hash = ANY($1::text[])", [superStepUpHashes]);
+      }
       await db.query("COMMIT");
-      const remaining = fixtureUserId
-        ? Number((await db.query("SELECT count(*)::int AS count FROM public.users WHERE id=$1", [fixtureUserId])).rows[0].count)
-        : 0;
-      assert.equal(remaining, 0, "FIXTURE_USER_CLEANUP_REQUIRED");
-      const promptRemaining = promptFixtureUserId
-        ? Number((await db.query("SELECT count(*)::int AS count FROM public.users WHERE id=$1", [promptFixtureUserId])).rows[0].count)
+      const fixtureIds = [fixtureUserId, promptFixtureUserId].filter(Boolean);
+      const remaining = fixtureIds.length > 0
+        ? (await db.query(
+          `SELECT
+             (SELECT count(*)::int FROM public.users WHERE id::text = ANY($1::text[])) AS users,
+             (SELECT count(*)::int FROM public.admin_access_profiles WHERE user_id::text = ANY($1::text[])) AS profiles,
+             (SELECT count(*)::int FROM public.admin_step_up_sessions WHERE actor_id::text = ANY($1::text[])) AS step_up_sessions,
+             (SELECT count(*)::int FROM public.user_auth_sessions WHERE user_id::text = ANY($1::text[])) AS auth_sessions,
+             (SELECT count(*)::int FROM public.login_logs WHERE user_id::text = ANY($1::text[])) AS login_logs,
+             (SELECT count(*)::int FROM public.announcement_delivery_events WHERE user_id::text = ANY($1::text[])) AS announcement_delivery_events`,
+          [fixtureIds],
+        )).rows[0]
+        : {
+          users: 0,
+          profiles: 0,
+          step_up_sessions: 0,
+          auth_sessions: 0,
+          login_logs: 0,
+          announcement_delivery_events: 0,
+        };
+      const superStepUpRemaining = superStepUpHashes.length > 0
+        ? Number((await db.query(
+          "SELECT count(*)::int AS count FROM public.admin_step_up_sessions WHERE token_hash = ANY($1::text[])",
+          [superStepUpHashes],
+        )).rows[0].count)
         : 0;
       const maintenanceRemaining = Number((await db.query(
         "SELECT count(*)::int AS count FROM public.admin_step_up_maintenance_lock WHERE singleton=true AND is_enabled=true",
       )).rows[0].count);
-      assert.equal(promptRemaining, 0, "PROMPT_FIXTURE_USER_CLEANUP_REQUIRED");
+      assert.equal(Number(remaining.users), 0, "FIXTURE_USER_CLEANUP_REQUIRED");
+      assert.equal(Number(remaining.profiles), 0, "FIXTURE_PROFILE_CLEANUP_REQUIRED");
+      assert.equal(Number(remaining.step_up_sessions), 0, "FIXTURE_STEP_UP_CLEANUP_REQUIRED");
+      assert.equal(Number(remaining.auth_sessions), 0, "FIXTURE_AUTH_SESSION_CLEANUP_REQUIRED");
+      assert.equal(Number(remaining.login_logs), 0, "FIXTURE_LOGIN_LOG_CLEANUP_REQUIRED");
+      assert.equal(Number(remaining.announcement_delivery_events), 0, "FIXTURE_ANNOUNCEMENT_DELIVERY_EVENT_CLEANUP_REQUIRED");
+      assert.equal(superStepUpRemaining, 0, "SUPER_STEP_UP_CLEANUP_REQUIRED");
       assert.equal(maintenanceRemaining, 0, "MAINTENANCE_LOCK_CLEANUP_REQUIRED");
       report.cleanup = {
-        fixtureUsersRemaining: remaining,
-        promptFixtureUsersRemaining: promptRemaining,
+        fixtureUsersRemaining: Number(remaining.users),
+        fixtureProfilesRemaining: Number(remaining.profiles),
+        fixtureStepUpSessionsRemaining: Number(remaining.step_up_sessions),
+        fixtureAuthSessionsRemaining: Number(remaining.auth_sessions),
+        fixtureLoginLogsRemaining: Number(remaining.login_logs),
+        fixtureAnnouncementDeliveryEventsRemaining: Number(remaining.announcement_delivery_events),
         maintenanceLocksEnabled: maintenanceRemaining,
-        stepUpSessionRemoved: Boolean(stepUpHash),
+        superStepUpSessionsRemaining: superStepUpRemaining,
+        stepUpSessionRemoved: superStepUpHashes.length > 0 ? superStepUpRemaining === 0 : null,
       };
     } catch (cleanupError) {
       await db.query("ROLLBACK").catch(() => undefined);

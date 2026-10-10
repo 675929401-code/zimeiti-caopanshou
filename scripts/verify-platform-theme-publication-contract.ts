@@ -37,14 +37,17 @@ assert.match(appearanceRoute, /readPublicPlatformAppearance/u);
 assert.match(cache, /getClientBootstrapAppearance/u);
 assert.match(cache, /fetch\("\/api\/settings\/appearance", \{ cache: "no-store"/u);
 assert.match(cache, /invalidateClientBootstrapAppearance/u);
-assert.match(context, /getClientBootstrapAppearance\(\)/u);
+assert.match(context, /getClientBootstrapAppearance\(\{ force \}\)/u);
 assert.match(context, /getClientBootstrapAppearance\(\{ force: true \}\)/u);
+assert.match(context, /handleThemeUpdate[\s\S]{0,240}fetchTheme\(true\)/u);
+assert.doesNotMatch(context, /invalidateClientBootstrapAppearance/u);
 assert.doesNotMatch(context, /getClientBootstrapSettings/u);
 assert.match(themeInit, /getClientBootstrapAppearance/u);
+assert.doesNotMatch(themeInit, /invalidateClientBootstrapAppearance/u);
 
 assert.match(adminRoute, /PLATFORM_SETTINGS_READBACK_MISMATCH/u);
 assert.match(adminRoute, /select\("setting_key,setting_value,updated_at"\)/u);
-assert.match(adminRoute, /settings, publishedAt/u);
+assert.match(adminRoute, /settings,[\s\S]{0,80}publishedAt/u);
 assert.match(adminRoute, /private, no-store, max-age=0, must-revalidate/u);
 
 assert.match(governanceAuthority, /request\.cookies\.get\(ADMIN_STEP_UP_COOKIE\)\?\.value/u);
@@ -68,6 +71,11 @@ assert.match(adminPage, /if \(!canManageBrandSettings\)[\s\S]*setUnlockDialogReq
 assert.match(adminPage, /"Idempotency-Key": crypto\.randomUUID\(\)/u);
 assert.match(adminPage, /publicAppearance\.authority\?\.authoritative !== true/u);
 assert.match(adminPage, /receiptTheme !== theme \|\| receiptMode !== themeMode/u);
+assert.equal(
+  adminPage.match(/invalidateClientBootstrapAppearance\(\);\s*window\.dispatchEvent\(new Event\("theme-updated"\)\);/gu)?.length,
+  2,
+  "主题发布的两条保存路径都必须先失效一次缓存再广播，监听器不得重复失效请求",
+);
 assert.match(adminPage, /“\$\{themeName\}”已发布并通过全站读回校验/u);
 assert.match(adminPage, /后台始终保持柔光白；这里发布的是用户前台默认主题/u);
 assert.match(adminPage, /发布直接写入运行配置并完成公共启动接口读回校验，不需要重新部署代码/u);

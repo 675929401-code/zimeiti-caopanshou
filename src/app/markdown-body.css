@@ -653,60 +653,15 @@ html[data-mode="dark"] .markdown-body {
   content: "";
 }
 
-/* ===== Streaming cursor — inline at end of last text element ===== */
-/* The cursor dot must appear INLINE at the very end of the last paragraph,
-   directly after the last character — exactly like chatai8/AIWeb.
-   
-   Strategy: target the last child of the streaming render layer and add
-   an inline ::after pseudo-element. This way the dot sits right after
-   the text, on the same line, not on a new line. */
-
-/* Make streaming render layer "transparent" so its children (p, h1, etc.)
-   participate directly in the parent markdown-body layout. */
+/* The keyed caret rendered by MessageContent is the only streaming caret.
+   Pseudo cursors used to duplicate it and independently blink after every
+   morphdom patch, which looked like the whole answer was flickering. */
 .render-layer-streaming {
   display: contents;
 }
 
-/* Inline cursor — solid breathing dot at the end of the last streaming element.
-   Targets the last element inside render-layer-streaming via its parent
-   .markdown-body-generate. Because render-layer-streaming has display:contents,
-   its children are layout children of .markdown-body-generate, but CSS selectors
-   still traverse the DOM tree through render-layer-streaming.
-   
-   Only show cursor after text elements (p, h1-h6, li). Hide when last child
-   is a code block or copyable block — those have their own streaming indicators. */
 .markdown-body-generate > .render-layer-streaming > :last-child::after {
-  content: "";
-  display: inline;
-  width: 2px;
-  height: 1.1em;
-  margin-left: 1px;
-  border-radius: 1px;
-  animation: streaming-cursor-blink 1s step-end infinite;
-  vertical-align: text-bottom;
-  /* Light mode: gradient cursor bar */
-  background: linear-gradient(180deg, rgb(99 102 241) 0%, rgb(139 92 246) 100%);
-  box-shadow: 0 0 6px 1px rgba(99, 102, 241, 0.35);
-}
-
-/* Hide cursor when last child is a code-block-wrapper or copyable-block
-   (those have their own internal streaming cursor) */
-.markdown-body-generate > .render-layer-streaming > .code-block-wrapper:last-child::after,
-.markdown-body-generate > .render-layer-streaming > .copyable-block:last-child::after,
-.markdown-body-generate > .render-layer-streaming > pre:last-child::after {
-  content: none;
-}
-
-/* Dark mode: gradient cursor bar */
-[data-mode="dark"] .markdown-body-generate > .render-layer-streaming > :last-child::after {
-  background: linear-gradient(180deg, rgb(129 140 248) 0%, rgb(167 139 250) 100%);
-  box-shadow: 0 0 6px 1px rgba(129, 140, 248, 0.4);
-}
-
-/* 流式光标闪烁动画 — 渐变竖线式光标，带发光效果 */
-@keyframes streaming-cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  content: none !important;
 }
 
 /* 呼吸光标动画 — 1:1 对标 chatai8/AIWeb */
@@ -723,39 +678,14 @@ html[data-mode="dark"] .markdown-body {
   animation: breathes 2s ease-in-out infinite;
 }
 
-/* ===== 流式打字机渐变动画 ===== */
-/* 只让最新的一段做极短的淡入，配合 RAF 高速推进形成“打字机+渐变”。
-   其余段落保持稳定，避免 markdown 结构变化时整段闪烁。 */
+/* Every already-rendered glyph stays opaque and still. New text appears only
+   through the monotonic typewriter state, never through CSS fades or blur. */
 .markdown-body-generate > .render-layer-streaming > * {
   animation: none !important;
-}
-
-.markdown-body-generate > .render-layer-streaming > :last-child {
-  animation: streaming-text-fade-in-fast 90ms ease-out both !important;
-  will-change: opacity, filter;
-}
-
-@keyframes streaming-text-fade-in-fast {
-  from {
-    opacity: 0.84;
-    filter: blur(0.35px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-  }
-}
-
-@keyframes streaming-text-settle {
-  from { opacity: 0.8; }
-  to { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .markdown-body-generate > .render-layer-streaming > :last-child {
-    animation: none !important;
-    filter: none !important;
-  }
+  transition: none !important;
+  opacity: 1 !important;
+  filter: none !important;
+  will-change: auto !important;
 }
 
 /* ===== 流式期间渲染稳定性 — 防止表格/代码框高频闪烁 ===== */
@@ -1245,22 +1175,9 @@ html[data-mode="dark"] .markdown-body {
   max-height: none;
   overflow-y: visible;
 }
-	/* 流式期间文档卡内部最后一个元素后面显示渐变光标，防止光标飘到容器外面 */
+/* Document cards also rely on the single keyed caret. */
 .markdown-body.markdown-body-generate .copyable-block-streaming .copyable-block-content > :last-child::after {
-  content: "";
-  display: inline-block;
-  width: 2px;
-  height: 1.1em;
-  margin-left: 1px;
-  border-radius: 1px;
-  vertical-align: text-bottom;
-  background: linear-gradient(180deg, rgb(99 102 241) 0%, rgb(139 92 246) 100%);
-  box-shadow: 0 0 4px 1px rgba(99, 102, 241, 0.3);
-  animation: streaming-cursor-blink 1s step-end infinite;
-}
-[data-mode="dark"] .markdown-body.markdown-body-generate .copyable-block-streaming .copyable-block-content > :last-child::after {
-  background: linear-gradient(180deg, rgb(129 140 248) 0%, rgb(167 139 250) 100%);
-  box-shadow: 0 0 4px 1px rgba(129, 140, 248, 0.35);
+  content: none !important;
 }
 /* 文档块内部代码块 — 无独立外框，防止"框中框" */
 /* 文档卡片本身就是外框，内部代码只需简单渲染 */

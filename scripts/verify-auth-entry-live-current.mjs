@@ -10,8 +10,8 @@ assert.equal(origin, 'http://127.0.0.1:5000', 'LOCAL_PREVIEW_ORIGIN_REQUIRED');
 
 const outputDir = path.resolve('.codex-evidence/auth-entry-live-current');
 const viewports = [
-  { name: '1440x900', width: 1440, height: 900 },
-  { name: '1920x1080', width: 1920, height: 1080 },
+  { name: '1440x900', width: 1440, height: 900, theme: 'lattice', mode: 'dark' },
+  { name: '1920x1080', width: 1920, height: 1080, theme: 'soft-white', mode: 'light' },
 ];
 const report = {
   passed: false,
@@ -30,11 +30,14 @@ const browser = await chromium.launch({ headless: true });
 try {
   for (const viewport of viewports) {
     const context = await browser.newContext({ viewport, serviceWorkers: 'block' });
-    await context.addInitScript(() => {
+    await context.addInitScript(({ theme, mode }) => {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
+      localStorage.setItem('user_theme_preference', theme);
+      localStorage.setItem('user_theme_mode_preference', mode);
+      localStorage.setItem('user_theme_preference_expires_at', new Date(Date.now() + 60_000).toISOString());
       sessionStorage.removeItem('entered_app');
-    });
+    }, { theme: viewport.theme, mode: viewport.mode });
     await context.route('**/*', async route => {
       const request = route.request();
       const url = new URL(request.url());
@@ -66,9 +69,11 @@ try {
     const rootResponse = await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     assert.equal(rootResponse?.status(), 200);
     await page.getByTestId('soft-white-premium-home').waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(await page.locator('html').getAttribute('data-theme-selection'), viewport.theme, 'PUBLIC_HOME_THEME_MISMATCH');
     await page.locator('.swh-login-button').first().click();
     const drawer = page.locator('.swh-login-drawer[role="dialog"]');
     await drawer.waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(await page.locator('html').getAttribute('data-theme-selection'), viewport.theme, 'LOGIN_DRAWER_THEME_MISMATCH');
     const labelledBy = await drawer.getAttribute('aria-labelledby');
     assert.ok(labelledBy, 'LOGIN_DRAWER_ACCESSIBLE_NAME_MISSING');
     assert.ok((await page.locator(`#${labelledBy}`).innerText()).trim().length > 0, 'LOGIN_DRAWER_TITLE_EMPTY');
@@ -78,6 +83,7 @@ try {
       ['账号登录', '邮箱登录', '注册'],
       'LOGIN_TABS_MISMATCH',
     );
+    assert.equal(await drawer.locator('.login-form-footer').count(), 0, 'REGISTRATION_TERMS_VISIBLE_ON_ACCOUNT_LOGIN');
 
     const loginPassword = drawer.locator('#login-password');
     const loginToggle = drawer.locator('[aria-controls="login-password"]');
@@ -91,6 +97,7 @@ try {
     await drawer.getByRole('tab', { name: '邮箱登录', exact: true }).click();
     await drawer.getByPlaceholder('请输入注册邮箱').waitFor({ state: 'visible' });
     await drawer.getByRole('button', { name: '获取验证码', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await drawer.locator('.login-form-footer').count(), 0, 'REGISTRATION_TERMS_VISIBLE_ON_EMAIL_LOGIN');
     await drawer.getByRole('tab', { name: '注册', exact: true }).click();
     for (const placeholder of [
       '例如 123456789@qq.com',
@@ -109,6 +116,35 @@ try {
     await registerToggle.click();
     assert.equal(await registerPassword.getAttribute('type'), 'password');
 
+    const registrationTerms = drawer.locator('.login-form-footer');
+    await registrationTerms.waitFor({ state: 'visible' });
+    assert.match(await registrationTerms.innerText(), /注册即表示同意平台使用条款/u);
+    const termsPlacement = await registrationTerms.evaluate(node => {
+      const termsRect = node.getBoundingClientRect();
+      const form = node.closest('form');
+      const panel = node.closest('.login-panel');
+      const submit = form?.querySelector('button[type="submit"]');
+      const submitRect = submit?.getBoundingClientRect();
+      const panelRect = panel?.getBoundingClientRect();
+      return {
+        insideRegistrationForm: Boolean(form),
+        immediatelyAfterSubmit: node.previousElementSibling === submit,
+        gapBelowSubmit: submitRect ? termsRect.top - submitRect.bottom : null,
+        insideLoginPanel: panelRect
+          ? termsRect.left >= panelRect.left && termsRect.right <= panelRect.right && termsRect.bottom <= panelRect.bottom
+          : false,
+      };
+    });
+    assert.equal(termsPlacement.insideRegistrationForm, true, 'REGISTRATION_TERMS_OUTSIDE_FORM');
+    assert.equal(termsPlacement.immediatelyAfterSubmit, true, 'REGISTRATION_TERMS_NOT_AFTER_SUBMIT');
+    assert.ok(
+      typeof termsPlacement.gapBelowSubmit === 'number'
+        && termsPlacement.gapBelowSubmit >= 8
+        && termsPlacement.gapBelowSubmit <= 28,
+      'REGISTRATION_TERMS_GAP_INVALID',
+    );
+    assert.equal(termsPlacement.insideLoginPanel, true, 'REGISTRATION_TERMS_OUTSIDE_LOGIN_PANEL');
+
     const drawerMetrics = await drawer.evaluate(node => {
       const rect = node.getBoundingClientRect();
       return {
@@ -118,8 +154,8 @@ try {
         overflowX: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       };
     });
-    assert.ok(drawerMetrics.width > 400 && drawerMetrics.width <= 520);
-    assert.ok(Math.abs(drawerMetrics.right - drawerMetrics.viewportWidth) <= 1);
+    assert.ok(drawerMetrics.width > 400 && drawerMetrics.width <= 520, 'LOGIN_DRAWER_WIDTH_OUT_OF_RANGE');
+    assert.ok(Math.abs(drawerMetrics.right - drawerMetrics.viewportWidth) <= 1, 'LOGIN_DRAWER_NOT_RIGHT_ALIGNED');
     assert.equal(drawerMetrics.overflowX, 0);
     const drawerScreenshot = path.join(outputDir, `login-register-drawer-${viewport.name}.png`);
     await page.screenshot({ path: drawerScreenshot, fullPage: false });
@@ -145,9 +181,12 @@ try {
     report.viewports.push({
       viewport,
       loginDrawer: true,
+      themePreservedFromHome: true,
       accountLogin: true,
       emailLogin: true,
       registration: true,
+      registrationTermsHiddenFromLoginModes: true,
+      registrationTermsInsideForm: true,
       loginPasswordToggle: true,
       registrationPasswordToggle: true,
       horizontalOverflow: 0,

@@ -9,14 +9,17 @@ out/
 build/
 dist/
 
-# 环境变量（.env 提交到 Git，内含API密钥，Coze直接可用）
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# 环境变量可能包含运行凭据，.env* 绝不提交；仅保留无凭据模板。
+.env*
+!.env.example
 
-# 数据库（dev.db 提交到 Git，Coze部署后直接可用）
-*.db-journal
+# 运行数据库及 WAL/SHM/journal 边车属于可变数据，绝不提交。
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
 
 # IDE
 .vscode/
@@ -50,7 +53,8 @@ yarn-error.log*
 # 调试截图
 scripts/*.png
 
-# 头像生成脚本和缓存（临时）
+# Generated-only 头像边界：仅以下两个生成脚本、生成 API 与生成图片不属于发布源码。
+# 不得把此边界扩大到其他 scripts/、src/ 或 public/ 路径。
 scripts/batch-gen-avatars.sh
 scripts/generate-avatars.py
 public/avatars/

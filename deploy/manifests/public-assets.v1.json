@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "projectId": "zimeiti-caopanshou",
   "kind": "public-assets",
-  "assetPolicySha256": "d18b3cbb30b7d5f646ed226d1b7975a6750778064d65db2f808c8e816f87bb5d",
+  "assetPolicySha256": "64793c5fae84c2f93d434f6d0c2409021494315d19f3a1ebd4de1d0abe3f2124",
   "contentAddressing": "sha256-files-and-asset-policy",
-  "assetVersion": "sha256-08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
+  "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "files": [
     {
       "path": "public/avatars/agent-cyber-01.png",
@@ -6124,6 +6124,6 @@
   ],
   "fileCount": 1223,
   "totalBytes": 1305400870,
-  "digest": "08ce3281e4d47757acce87f37e58ab1055efb8d8d2778a5017910f15c4bd9364",
+  "digest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "mutableUploadsIncluded": false
 }

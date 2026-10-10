@@ -15,9 +15,17 @@ export const LLM_API_BASE = process.env.LLM_API_BASE_URL || "https://yunwu.ai";
 export const LLM_API_KEY = process.env.LLM_API_KEY || "";
 export const LLM_DEFAULT_MODEL = process.env.LLM_DEFAULT_MODEL || "deepseek-v4-flash";
 
-// ── 智能体配置缓存（60秒TTL，配置变更后最多60秒生效） ──
+// ── 智能体配置缓存（60秒TTL；管理端写入后按 agentId 即时失效） ──
 export const agentConfigCache = new Map<string, { data: Record<string, unknown>; expiry: number }>();
 export const AGENT_CONFIG_TTL = process.env.SHARED_CONFIGURATION_ENABLED === "1" ? 0 : 60 * 1000; // 1分钟
+
+/**
+ * 让指定智能体的下一次 LLM 请求重新读取服务端配置。
+ * 只接受稳定 agentId，不返回也不记录缓存内容，避免系统提示词外泄。
+ */
+export function invalidateAgentConfigCache(agentId: string): boolean {
+  return agentConfigCache.delete(agentId);
+}
 
 // ── llm_models 配置缓存（60秒TTL，按查询键区分） ──
 export const llmModelCache = new Map<string, { data: Record<string, unknown> | null; expiry: number }>();
@@ -26,9 +34,17 @@ export const LLM_MODEL_CACHE_TTL = process.env.SHARED_CONFIGURATION_ENABLED === 
 // ── 内存频率限制器（替代 platform_settings 表存储，零DB开销） ──
 export const frequencyLimitStore = new Map<string, { count: number; windowStart: number }>();
 
-// ── 全局系统前缀缓存（5分钟TTL，管理员修改后最多5分钟生效） ──
+// ── 全局系统前缀缓存（5分钟TTL；管理端写入后即时失效） ──
 let globalSystemPrefixCache = { value: "", expiry: 0 };
 const GLOBAL_PREFIX_CACHE_TTL = 5 * 60 * 1000; // 5分钟
+
+/**
+ * 让下一次 LLM 请求重新读取全局系统前缀。
+ * 不返回或记录缓存内容，避免系统提示词外泄。
+ */
+export function invalidateGlobalSystemPrefixCache(): void {
+  globalSystemPrefixCache = { value: "", expiry: 0 };
+}
 
 // 种子初始化已禁用：不再自动将模型加入黑名单或冷却期
 

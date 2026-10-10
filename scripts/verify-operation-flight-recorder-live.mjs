@@ -185,8 +185,8 @@ export async function main() {
     report.viewports.push({ width: 1920, height: 1080, ...overflow1920 });
 
     for (const adjacent of [
-      { tab: "dashboard", text: "数据概览" },
-      { tab: "security", text: "安全中心" },
+      { tab: "dashboard", text: "平台指挥中心" },
+      { tab: "security", text: "安全审计" },
     ]) {
       await page.goto(`${origin}/admin?tab=${adjacent.tab}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
       await page.getByRole("navigation", { name: "管理后台功能导航" }).getByRole("button", { name: adjacent.text, exact: true }).waitFor({ state: "visible", timeout: 30_000 });

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "storage-readiness-receipt.v1.schema.json",
+  "title": "Boot-bound dedicated storage readiness receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "verifiedAt",
+    "verifiedEpoch",
+    "bootId",
+    "guard",
+    "mount",
+    "marker",
+    "capacity",
+    "paths",
+    "security",
+    "receipt"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "absolutePath": { "type": "string", "pattern": "^/[^\\u0000]*$" },
+    "mode": { "type": "string", "pattern": "^0[0-7]{3}$" },
+    "majorMinor": { "type": "string", "pattern": "^[0-9]+:[0-9]+$" }
+  },
+  "properties": {
+    "schemaVersion": { "const": "zimeiti-storage-readiness.v1" },
+    "status": { "const": "ready" },
+    "verifiedAt": { "type": "string", "format": "date-time" },
+    "verifiedEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "bootId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["script", "configPath", "configSha256", "fstypeBinding"],
+      "properties": {
+        "script": { "const": "verify-deploy-storage-runtime.sh" },
+        "configPath": { "$ref": "#/$defs/absolutePath" },
+        "configSha256": { "$ref": "#/$defs/sha256" },
+        "fstypeBinding": { "const": "detected-and-fstab-bound-not-config-declared" }
+      }
+    },
+    "mount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rootTarget",
+        "target",
+        "rootSource",
+        "source",
+        "uuid",
+        "fstype",
+        "rootMajorMinor",
+        "majorMinor",
+        "fstabSource",
+        "fstabFstype",
+        "fstabTarget",
+        "independent"
+      ],
+      "properties": {
+        "rootTarget": { "const": "/" },
+        "target": { "$ref": "#/$defs/absolutePath" },
+        "rootSource": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "source": { "type": "string", "pattern": "^/dev/[A-Za-z0-9._/+:-]+$" },
+        "uuid": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{4,128}$" },
+        "fstype": { "enum": ["ext4", "xfs"] },
+        "rootMajorMinor": { "$ref": "#/$defs/majorMinor" },
+        "majorMinor": { "$ref": "#/$defs/majorMinor" },
+        "fstabSource": {
+          "type": "string",
+          "pattern": "^(UUID=|/dev/disk/by-uuid/)[A-Za-z0-9._:-]{4,128}$"
+        },
+        "fstabFstype": { "enum": ["ext4", "xfs"] },
+        "fstabTarget": { "$ref": "#/$defs/absolutePath" },
+        "independent": { "const": true }
+      }
+    },
+    "marker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/absolutePath" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "capacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availableBytes", "minimumAvailableBytes", "availableInodes", "minimumAvailableInodes"],
+      "properties": {
+        "availableBytes": { "type": "integer", "minimum": 5368709120, "maximum": 9007199254740991 },
+        "minimumAvailableBytes": { "type": "integer", "minimum": 5368709120, "maximum": 9007199254740991 },
+        "availableInodes": { "type": "integer", "minimum": 50000, "maximum": 9007199254740991 },
+        "minimumAvailableInodes": { "type": "integer", "minimum": 50000, "maximum": 9007199254740991 }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataRoot",
+        "webRoot",
+        "rootAndDataTargetsDistinct",
+        "rootAndDataDevicesDistinct",
+        "rootAndDataSourcesDistinct",
+        "webRootOnDataDevice"
+      ],
+      "properties": {
+        "dataRoot": { "$ref": "#/$defs/absolutePath" },
+        "webRoot": { "$ref": "#/$defs/absolutePath" },
+        "rootAndDataTargetsDistinct": { "const": true },
+        "rootAndDataDevicesDistinct": { "const": true },
+        "rootAndDataSourcesDistinct": { "const": true },
+        "webRootOnDataDevice": { "const": true }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configRootOwned",
+        "configMode",
+        "fstabRootOwned",
+        "fstabMode",
+        "dataRootOwned",
+        "dataRootMode",
+        "webRootOwned",
+        "webRootMode",
+        "markerRootOwned",
+        "markerMode",
+        "runtimeDirectoryRootOwned",
+        "runtimeDirectoryMode",
+        "symlinksRejected"
+      ],
+      "properties": {
+        "configRootOwned": { "const": true },
+        "configMode": { "const": "0600" },
+        "fstabRootOwned": { "const": true },
+        "fstabMode": { "$ref": "#/$defs/mode" },
+        "dataRootOwned": { "const": true },
+        "dataRootMode": { "$ref": "#/$defs/mode" },
+        "webRootOwned": { "const": true },
+        "webRootMode": { "$ref": "#/$defs/mode" },
+        "markerRootOwned": { "const": true },
+        "markerMode": { "const": "0600" },
+        "runtimeDirectoryRootOwned": { "const": true },
+        "runtimeDirectoryMode": { "const": "0700" },
+        "symlinksRejected": { "const": true }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "ownerUid", "ownerGid", "mode", "atomicWrite"],
+      "properties": {
+        "path": { "$ref": "#/$defs/absolutePath" },
+        "ownerUid": { "const": 0 },
+        "ownerGid": { "const": 0 },
+        "mode": { "const": "0600" },
+        "atomicWrite": { "const": true }
+      }
+    }
+  }
+}

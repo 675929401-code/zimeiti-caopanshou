@@ -5,6 +5,8 @@ const PUBLIC_UNAUTHENTICATED_PATHS = new Set([
   "/admin/superzhujunguo",
   "/announcements",
   "/articles",
+  "/demo/experience",
+  "/demo/popup-styles",
   "/forgot-password",
   "/help",
   "/login",

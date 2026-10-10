@@ -53,6 +53,8 @@ import {
   resolveAllowedAgentNavigationKeys,
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
+import { createOperationPerformanceTrace, type OperationPerformanceTrace } from "@/lib/operation-performance-trace";
+import { recordServerOperationPerformanceEventBestEffort } from "@/lib/operation-flight-recorder";
 
 // ⚡ 流式路由强制动态渲染 — 防止 Next.js 静态优化缓冲 SSE
 export const dynamic = 'force-dynamic';
@@ -186,12 +188,273 @@ async function persistCompletedCozeConversation(input: {
   if (messages.error) throw new Error("会话消息保存失败");
 }
 
+type CozeBufferedDeliveryOptions = {
+  openUpstream: () => Promise<Response>;
+  fallbackUsage: CozeUsage;
+  settle: (input: { usage: CozeUsage; fullContent: string }) => Promise<{
+    operationId?: string;
+    alreadyFulfilled?: boolean;
+    billing?: { creditsCharged?: number };
+    balanceAfter?: number;
+  }>;
+  persist: (input: { cozeConversationId: string; fullContent: string }) => Promise<void>;
+  publicModelId: string;
+  performanceTrace: OperationPerformanceTrace;
+};
+
+/**
+ * Coze has no bounded atomic pre-authorization in this route, so provider text
+ * stays server-side until settlement succeeds. The outer SSE is still returned
+ * immediately: heartbeat/metadata/progress make the real delivery mode explicit.
+ */
+function createBufferedCozeDeliveryStream(options: CozeBufferedDeliveryOptions): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let upstreamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let performanceTerminalRecorded = false;
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let closed = false;
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+      const safeEnqueue = (chunk: Uint8Array): boolean => {
+        if (closed) return false;
+        try {
+          controller.enqueue(chunk);
+          return true;
+        } catch {
+          closed = true;
+          return false;
+        }
+      };
+      const safeClose = () => {
+        if (closed) return;
+        closed = true;
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        try { controller.close(); } catch { /* already closed */ }
+      };
+
+      // This must precede configuration lookup, durable provider-start marking,
+      // and the provider POST. It proves the outer response is not waiting on Coze.
+      safeEnqueue(encoder.encode(": heartbeat\n\n"));
+      safeEnqueue(encoder.encode(`data: ${JSON.stringify({
+        type: "stream_delivery",
+        stream_delivery: "buffered",
+        stream_delivery_reason: "coze_unbounded_usage_requires_atomic_settlement",
+      })}\n\n`));
+      heartbeatTimer = setInterval(() => {
+        safeEnqueue(encoder.encode(": heartbeat\n\n"));
+      }, 5_000);
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let chatUsage: CozeUsage | null = null;
+      let fullContent = "";
+      let cozeConversationId = "";
+      let upstreamCompleted = false;
+      let upstreamFailed = false;
+      let upstreamFailureMessage = "Coze 上游未完成对话";
+      let hasDoneFrame = false;
+      let lastProgressAt = 0;
+      let lastProgressChars = 0;
+      let firstContentObserved = false;
+      const bufferedFrames: string[] = [];
+      const terminalFrames: string[] = [];
+
+      const recordTerminal = (
+        outcome: "success" | "error" | "cancelled",
+        errorCode: string | null = null,
+        httpStatus: number | null = null,
+      ) => {
+        if (performanceTerminalRecorded) return;
+        options.performanceTrace.checkpoint("response.terminal", { outcome, errorCode, httpStatus });
+        performanceTerminalRecorded = true;
+      };
+
+      const processFrame = (rawFrame: string): void => {
+        if (!rawFrame.trim()) return;
+        const frame = `${rawFrame}\n\n`;
+        const parsed = parseSseFrame(rawFrame);
+        const payload = parsed.payload;
+        const payloadConversationId = typeof payload?.conversation_id === "string"
+          ? payload.conversation_id.trim()
+          : "";
+        if (payloadConversationId && !cozeConversationId) cozeConversationId = payloadConversationId;
+
+        const payloadType = typeof payload?.type === "string" ? payload.type : "";
+        const payloadContent = typeof payload?.content === "string" ? payload.content : "";
+        if (payloadType === "answer" && payloadContent) {
+          if (!firstContentObserved) {
+            options.performanceTrace.checkpoint("response.first_byte");
+            firstContentObserved = true;
+          }
+          if (parsed.eventType === "conversation.message.completed") fullContent = payloadContent;
+          else if (parsed.eventType === "conversation.message.delta") fullContent += payloadContent;
+        }
+        const usage = readCozeUsage(payload);
+        if (usage) chatUsage = usage;
+
+        const isFailureTerminal = parsed.eventType.includes("failed") || parsed.eventType.includes("error");
+        if (isFailureTerminal) {
+          upstreamFailed = true;
+          upstreamFailureMessage = typeof payload?.msg === "string"
+            ? payload.msg
+            : typeof payload?.message === "string"
+              ? payload.message
+              : "Coze 上游返回失败终态";
+          return;
+        }
+
+        if (parsed.eventType === "conversation.chat.completed") upstreamCompleted = true;
+        if (parsed.data === "[DONE]" || parsed.eventType === "done") hasDoneFrame = true;
+        const isSuccessTerminal = parsed.eventType === "conversation.message.completed"
+          || parsed.eventType === "conversation.chat.completed"
+          || parsed.eventType === "done"
+          || parsed.data === "[DONE]";
+        if (isSuccessTerminal) terminalFrames.push(frame);
+        else bufferedFrames.push(frame);
+
+        const now = Date.now();
+        if (fullContent.length > 0 && (lastProgressAt === 0 || now - lastProgressAt >= 800 || fullContent.length - lastProgressChars >= 240)) {
+          safeEnqueue(encoder.encode(`data: ${JSON.stringify({
+            type: "generation_progress",
+            phase: "coze-answer",
+            received_chars: fullContent.length,
+            stream_delivery: "buffered",
+          })}\n\n`));
+          lastProgressAt = now;
+          lastProgressChars = fullContent.length;
+        }
+      };
+
+      const drainFrames = (): void => {
+        while (true) {
+          const boundary = /\r?\n\r?\n/u.exec(buffer);
+          if (!boundary || boundary.index === undefined) return;
+          const frame = buffer.slice(0, boundary.index);
+          buffer = buffer.slice(boundary.index + boundary[0].length);
+          processFrame(frame);
+        }
+      };
+
+      try {
+        const response = await options.openUpstream();
+        options.performanceTrace.checkpoint("upstream.wait", { httpStatus: response.status });
+        if (!response.ok) {
+          const errorText = await response.text();
+          safeEnqueue(encodeSseError("COZE_API_ERROR", `Coze API error: ${errorText.slice(0, 500)}`));
+          recordTerminal("error", "COZE_API_ERROR", response.status);
+          safeClose();
+          return;
+        }
+        if (!response.body) {
+          safeEnqueue(encodeSseError("COZE_STREAM_MISSING", "No stream from Coze API"));
+          recordTerminal("error", "COZE_STREAM_MISSING", response.status);
+          safeClose();
+          return;
+        }
+        upstreamReader = response.body.getReader();
+        while (true) {
+          const { done, value } = await upstreamReader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          drainFrames();
+        }
+        buffer += decoder.decode();
+        drainFrames();
+        if (buffer.trim()) processFrame(buffer);
+
+        if (upstreamFailed || !upstreamCompleted || !fullContent.trim()) {
+          safeEnqueue(encodeSseError("COZE_UPSTREAM_INCOMPLETE", upstreamFailureMessage));
+          recordTerminal("error", "COZE_UPSTREAM_INCOMPLETE", response.status);
+          safeClose();
+          return;
+        }
+
+        let settlement;
+        try {
+          settlement = await options.settle({ usage: chatUsage ?? options.fallbackUsage, fullContent });
+        } catch (error) {
+          console.error("[Coze Billing] 原子钱包结算失败:", error);
+          safeEnqueue(encodeSseError(
+            "LLM_BILLING_FAILED",
+            "对话已由上游完成，但共享钱包结算失败，本次未交付模型输出",
+          ));
+          recordTerminal("error", "LLM_BILLING_FAILED", response.status);
+          safeClose();
+          return;
+        }
+
+        try {
+          await options.persist({ cozeConversationId, fullContent });
+          options.performanceTrace.checkpoint("result.persistence");
+        } catch (error) {
+          console.error("[Chat] Coze 对话结算成功但历史持久化失败:", error);
+          options.performanceTrace.checkpoint("result.persistence", {
+            outcome: "warning",
+            errorCode: "COZE_HISTORY_PERSIST_FAILED",
+          });
+        }
+
+        for (const frame of bufferedFrames) {
+          if (!safeEnqueue(encoder.encode(frame))) break;
+        }
+        safeEnqueue(encoder.encode(
+          `event: billing.completed\ndata: ${JSON.stringify({
+            billing_complete: true,
+            stream_delivery: "buffered",
+            stream_delivery_reason: "coze_unbounded_usage_requires_atomic_settlement",
+            operation_id: settlement.operationId,
+            already_fulfilled: settlement.alreadyFulfilled === true,
+            credits_charged: settlement.billing?.creditsCharged ?? 0,
+            balance_after: settlement.balanceAfter,
+            public_model_id: options.publicModelId,
+          })}\n\n`,
+        ));
+        for (const terminalFrame of terminalFrames) safeEnqueue(encoder.encode(terminalFrame));
+        if (!hasDoneFrame) safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+        recordTerminal("success", null, response.status);
+        safeClose();
+      } catch (error) {
+        console.error("[Chat] Coze 流读取失败:", error);
+        safeEnqueue(encodeSseError(
+          "COZE_STREAM_FAILED",
+          "Coze 流式响应中断，本次不结算也不保存成功记录",
+        ));
+        recordTerminal("error", "COZE_STREAM_FAILED");
+        safeClose();
+      } finally {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+      }
+    },
+    async cancel(reason) {
+      if (!performanceTerminalRecorded) {
+        options.performanceTrace.checkpoint("response.terminal", {
+          outcome: "cancelled",
+          errorCode: "COZE_STREAM_CANCELLED",
+        });
+        performanceTerminalRecorded = true;
+      }
+      await upstreamReader?.cancel(reason).catch(() => undefined);
+    },
+  });
+}
+
 export async function POST(request: Request) {
   let activeCozeAttempt: LlmRequestAttemptExecution | null = null;
   let cozeProviderCallStarted = false;
+  let performanceTrace: OperationPerformanceTrace | null = null;
   try {
     const body = await request.json();
     const { botId, message, conversationId, images } = body;
+    performanceTrace = createOperationPerformanceTrace({
+      domain: "chat",
+      operation: "chat.coze_request",
+      route: "/api/chat",
+      requestId: request.headers.get("idempotency-key") || body.client_request_id || request.headers.get("x-client-trace-id"),
+      traceId: request.headers.get("x-client-trace-id") || request.headers.get("idempotency-key") || body.client_request_id,
+      agentId: botId,
+    }, (event) => { void recordServerOperationPerformanceEventBestEffort(event); });
+    performanceTrace.checkpoint("request.received", { outcome: "in_progress" });
     const headerClientRequestId = request.headers.get("idempotency-key")?.trim() || "";
     const bodyClientRequestId = typeof body.client_request_id === "string" ? body.client_request_id.trim() : "";
     if (headerClientRequestId && bodyClientRequestId && headerClientRequestId !== bodyClientRequestId) {
@@ -244,6 +507,8 @@ export async function POST(request: Request) {
         { status: 401, headers: { "Content-Type": "application/json" } }
       );
     }
+    performanceTrace.enrichIdentity({ userId: verifiedUserId, accountId: verifiedUserId, agentId: botId });
+    performanceTrace.checkpoint("auth.permission");
 
     const secIP = getSecIP(request);
     const secUA = getSecUA(request);
@@ -344,10 +609,16 @@ export async function POST(request: Request) {
 
       // 返回拦截响应（使用 SSE 格式，让前端正常处理）
       const blockMsg = getBlockMessage(guardResult.reason);
-      const blockEvent = `event: conversation.message.delta\ndata: ${JSON.stringify({ type: "answer", content: blockMsg, content_type: "text" })}\n\n`;
+      const deliveryEvent = `data: ${JSON.stringify({ type: "stream_delivery", stream_delivery: "buffered", stream_delivery_reason: "server_guard_response" })}\n\n`;
+      const blockEvent = `${deliveryEvent}event: conversation.message.delta\ndata: ${JSON.stringify({ type: "answer", content: blockMsg, content_type: "text" })}\n\n`;
       return new Response(blockEvent, {
         status: 200,
-        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "X-Stream-Delivery": "buffered",
+          "X-Stream-Delivery-Reason": "server_guard_response",
+        },
       });
     }
 
@@ -588,6 +859,11 @@ export async function POST(request: Request) {
       });
       if (claim.action !== "execute") return responseForLlmAttemptClaim(claim);
       activeCozeAttempt = claim.execution;
+      performanceTrace.enrichIdentity({
+        taskId: activeCozeAttempt.record.recordId,
+        agentId: serverAgent.id,
+      });
+      performanceTrace.checkpoint("database.read");
     } catch (error) {
       if (error instanceof LlmRequestIdempotencyError) {
         return new Response(
@@ -605,201 +881,63 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── 调用 Coze API（使用追加安全前缀的消息）──
-    const cozeConfig = await cozeConfigPromise;
+    // ── 外层 SSE 先返回；上游配置、provider-start 标记和 POST 均在 start 内执行 ──
     if (!activeCozeAttempt) throw new Error("COZE_ATTEMPT_NOT_CLAIMED");
-    activeCozeAttempt = await cozeRequestAttemptStore.markProviderCallStarted(activeCozeAttempt);
-    cozeProviderCallStarted = true;
-    const response = await streamChat(botId, verifiedUserId, securedMessage, conversationId, cozeConfig, images);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return await completeLlmAttemptResponse(cozeRequestAttemptStore, activeCozeAttempt, new Response(
-        JSON.stringify({ error: `Coze API error: ${errorText}` }),
-        { status: response.status, headers: { "Content-Type": "application/json" } }
-      ));
-    }
-
-    const stream = response.body;
-    if (!stream) {
-      return await completeLlmAttemptResponse(cozeRequestAttemptStore, activeCozeAttempt, new Response(
-        JSON.stringify({ error: "No stream from Coze API" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      ));
-    }
-
-    // ── SSE 代理：增量可流式展示，所有成功终态必须等原子钱包结算成功后再释放 ──
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
-    let buffer = "";
-    let chatUsage: CozeUsage | null = null;
-    let fullContent = "";
-    let cozeConversationId = "";
-    let upstreamCompleted = false;
-    let upstreamFailed = false;
-    let upstreamFailureMessage = "Coze 上游未完成对话";
-    let hasDoneFrame = false;
-    const terminalFrames: string[] = [];
-
-    const billingStream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const processFrame = (rawFrame: string): void => {
-          if (!rawFrame.trim()) return;
-          const frame = `${rawFrame}\n\n`;
-          const parsed = parseSseFrame(rawFrame);
-          const payload = parsed.payload;
-          const payloadConversationId = typeof payload?.conversation_id === "string"
-            ? payload.conversation_id.trim()
-            : "";
-          if (payloadConversationId && !cozeConversationId) cozeConversationId = payloadConversationId;
-
-          const payloadType = typeof payload?.type === "string" ? payload.type : "";
-          const payloadContent = typeof payload?.content === "string" ? payload.content : "";
-          if (payloadType === "answer" && payloadContent) {
-            if (parsed.eventType === "conversation.message.completed") fullContent = payloadContent;
-            else if (parsed.eventType === "conversation.message.delta") fullContent += payloadContent;
-          }
-          const usage = readCozeUsage(payload);
-          if (usage) chatUsage = usage;
-
-          const isFailureTerminal = parsed.eventType.includes("failed")
-            || parsed.eventType.includes("error");
-          if (isFailureTerminal) {
-            upstreamFailed = true;
-            upstreamFailureMessage = typeof payload?.msg === "string"
-              ? payload.msg
-              : typeof payload?.message === "string"
-                ? payload.message
-                : "Coze 上游返回失败终态";
-            return;
-          }
-
-          if (parsed.eventType === "conversation.chat.completed") upstreamCompleted = true;
-          if (parsed.data === "[DONE]" || parsed.eventType === "done") hasDoneFrame = true;
-          const isSuccessTerminal = parsed.eventType === "conversation.message.completed"
-            || parsed.eventType === "conversation.chat.completed"
-            || parsed.eventType === "done"
-            || parsed.data === "[DONE]";
-          if (isSuccessTerminal) terminalFrames.push(frame);
-          else controller.enqueue(encoder.encode(frame));
-        };
-
-        const drainFrames = (): void => {
-          while (true) {
-            const boundary = /\r?\n\r?\n/u.exec(buffer);
-            if (!boundary || boundary.index === undefined) return;
-            const frame = buffer.slice(0, boundary.index);
-            buffer = buffer.slice(boundary.index + boundary[0].length);
-            processFrame(frame);
-          }
-        };
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            drainFrames();
-          }
-          buffer += decoder.decode();
-          drainFrames();
-          if (buffer.trim()) {
-            processFrame(buffer);
-            buffer = "";
-          }
-
-          if (upstreamFailed || !upstreamCompleted || !fullContent.trim()) {
-            controller.enqueue(encodeSseError("COZE_UPSTREAM_INCOMPLETE", upstreamFailureMessage));
-            controller.close();
-            return;
-          }
-
-          const usage = chatUsage ?? {
-            input_tokens: Math.ceil(message.length * 1.2),
-            output_tokens: Math.ceil(fullContent.length * 1.2),
-          };
-          let settlement;
-          try {
-            settlement = await settleLlmUsage(
-              verifiedUserId,
-              serverAgentName,
-              selectedModelBillingSnapshot.modelName,
-              usage.input_tokens,
-              usage.output_tokens,
-              0,
-              serverAgent.id,
-              {
-                isAdmin: false,
-                clientRequestId,
-                phase: "coze-response",
-                billingSnapshot: selectedModelBillingSnapshot,
-                baseFeeCredits,
-              },
-            );
-          } catch (error) {
-            console.error("[Coze Billing] 原子钱包结算失败:", error);
-            controller.enqueue(encodeSseError(
-              "COZE_BILLING_FAILED",
-              "对话已由上游完成，但共享钱包结算失败，本次不交付完成态",
-            ));
-            controller.close();
-            return;
-          }
-
-          try {
-            await persistCompletedCozeConversation({
-              conversationId: typeof conversationId === "string" ? conversationId : undefined,
-              cozeConversationId,
-              userId: verifiedUserId,
-              agentId: serverAgent.id,
-              message,
-              answer: fullContent,
-            });
-          } catch (error) {
-            console.error("[Chat] Coze 对话结算成功但历史持久化失败:", error);
-          }
-
-          controller.enqueue(encoder.encode(
-            `event: billing.completed\ndata: ${JSON.stringify({
-              billing_complete: true,
-              operation_id: settlement.operationId,
-              already_fulfilled: settlement.alreadyFulfilled === true,
-              credits_charged: settlement.billing?.creditsCharged ?? 0,
-              balance_after: settlement.balanceAfter,
-              public_model_id: selectedModelBillingSnapshot.publicModelId,
-            })}\n\n`,
-          ));
-          for (const terminalFrame of terminalFrames) controller.enqueue(encoder.encode(terminalFrame));
-          if (!hasDoneFrame) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        } catch (error) {
-          console.error("[Chat] Coze 流读取失败:", error);
-          controller.enqueue(encodeSseError(
-            "COZE_STREAM_FAILED",
-            "Coze 流式响应中断，本次不结算也不保存成功记录",
-          ));
-          controller.close();
-        }
+    const claimedCozeAttempt = activeCozeAttempt;
+    const billingStream = createBufferedCozeDeliveryStream({
+      openUpstream: async () => {
+        const cozeConfig = await cozeConfigPromise;
+        activeCozeAttempt = await cozeRequestAttemptStore.markProviderCallStarted(claimedCozeAttempt);
+        cozeProviderCallStarted = true;
+        return streamChat(botId, verifiedUserId, securedMessage, conversationId, cozeConfig, images);
       },
-      async cancel() {
-        try {
-          await reader.cancel();
-        } catch {
-          // ignore downstream abort cleanup failures
-        }
+      fallbackUsage: {
+        input_tokens: Math.ceil(message.length * 1.2),
+        output_tokens: 0,
       },
+      settle: async ({ usage, fullContent }) => settleLlmUsage(
+        verifiedUserId,
+        serverAgentName,
+        selectedModelBillingSnapshot.modelName,
+        usage.input_tokens,
+        usage.output_tokens || Math.ceil(fullContent.length * 1.2),
+        0,
+        serverAgent.id,
+        {
+          isAdmin: userRole === "admin",
+          clientRequestId,
+          phase: "coze-response",
+          billingSnapshot: selectedModelBillingSnapshot,
+          baseFeeCredits,
+        },
+      ),
+      persist: async ({ cozeConversationId, fullContent }) => persistCompletedCozeConversation({
+        conversationId: typeof conversationId === "string" ? conversationId : undefined,
+        cozeConversationId,
+        userId: verifiedUserId,
+        agentId: serverAgent.id,
+        message,
+        answer: fullContent,
+      }),
+      publicModelId: selectedModelBillingSnapshot.publicModelId,
+      performanceTrace,
     });
 
-    return await completeLlmAttemptResponse(cozeRequestAttemptStore, activeCozeAttempt, new Response(billingStream, {
+    return await completeLlmAttemptResponse(cozeRequestAttemptStore, claimedCozeAttempt, new Response(billingStream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
-        "X-Accel-Buffering": "no", // Tell Nginx to not buffer this response (critical for SSE/typewriter effect)
+        "X-Accel-Buffering": "no",
+        "X-Stream-Delivery": "buffered",
+        "X-Stream-Delivery-Reason": "coze_unbounded_usage_requires_atomic_settlement",
       },
     }));
   } catch (error: unknown) {
+    performanceTrace?.checkpoint("response.terminal", {
+      outcome: "error",
+      errorCode: "COZE_ROUTE_FAILED",
+    });
     if (activeCozeAttempt) {
       try {
         await finalizeLlmAttemptFromThrownError(

@@ -136,6 +136,10 @@ function MessageImage({ value, index }: { value: string; index: number }) {
 
 const MessageBubble = React.memo(function MessageBubble({ message, allMessages, onRetry, onContinue, onDelete, onEdit, fontSize, outputStyle, onStyleChange, onSaveStyleAsTemplate, responseFormat, primaryAgentId }: { message: ChatMessage; allMessages?: ChatMessage[]; onRetry?: () => void; onContinue?: () => void; onDelete?: () => void; onEdit?: (content: string) => void; fontSize?: number; outputStyle?: OutputStyle; onStyleChange?: (style: OutputStyle) => void; onSaveStyleAsTemplate?: () => void; responseFormat?: string; primaryAgentId?: string }) {
   const isUser = message.role === "user";
+  // Assistant placeholders are mounted before the first delta. Once a row has
+  // participated in streaming, never add the generic opacity/translate entry
+  // animation later when isStreaming flips to false at completion.
+  const [skipEntryAnimation] = useState(() => !isUser && !!message.isStreaming);
   const [copied, setCopied] = useState(false);
   const [showFormatBar, setShowFormatBar] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -230,11 +234,13 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
   return (
     <article
       className={cn(
-      "chat-message-row flex w-full flex-col px-1 py-2 msg-animate group/message",
+      "chat-message-row flex w-full flex-col px-1 py-2 group/message",
+      !skipEntryAnimation && "msg-animate",
       isUser ? "chat-message-row-user" : "chat-message-row-assistant",
       isUser && (isLongUserPaste ? "items-end pl-6 md:pl-12" : "items-end pl-28"),
       )}
       data-message-role={isUser ? "user" : "assistant"}
+      data-stream-entry-animation={skipEntryAnimation ? "off" : "on"}
       aria-label={isUser ? "你的消息" : `${message.agentName || "智能体"}的回复`}
     >
       {!isUser && (

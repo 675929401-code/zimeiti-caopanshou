@@ -10,12 +10,19 @@ runtime/
 .codex-evidence/
 evidence-archive/
 admin-token.txt
-voice-platform/
-voice-platform/node_modules
+# Voice product source is release source. Ignore only generated/runtime state.
+/voice-platform/node_modules/
+/voice-platform/.next/
+/voice-platform/dev.db
+/voice-platform/dev.db-*
+/voice-platform/prisma/dev.db*
+/voice-platform/prisma/prisma/dev.db*
+/voice-platform/*.tsbuildinfo
+/voice-platform/public/reference-audio/
+/voice-platform/.cache/
+/voice-platform/logs/
+/voice-platform/*.log
 logs/
-voice-platform/dev.db
-voice-platform/prisma/dev.db*
-voice-platform/prisma/prisma/dev.db*
 # SQLite databases and their WAL/SHM/journal sidecars are mutable runtime data.
 *.db
 *.db-*
@@ -172,6 +179,9 @@ public/**/*.ogg
 public/**/*.m4a
 public/**/*.aac
 public/**/*.flac
+# Commerce runtime images are reviewed public-code-track source and must remain
+# visible to Git even though public binaries are ignored by default.
+!public/commerce/**
 public/**/*.pdf
 public/**/*.zip
 

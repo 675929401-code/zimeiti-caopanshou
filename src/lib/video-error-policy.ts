@@ -27,16 +27,21 @@ function compactError(value: unknown) {
 /** Preserve an actionable operator error while removing credentials carried by URLs or headers. */
 export function sanitizeVideoProviderDiagnostic(rawError: unknown): string {
   return compactError(rawError)
+    .replace(/data:[^\s"'<>]+/giu, "[data-redacted]")
     .replace(/https?:\/\/[^\s"'<>]+/giu, value => {
       try {
         const parsed = new URL(value);
-        return parsed.search ? `${parsed.origin}${parsed.pathname}?[redacted]` : parsed.toString();
+        if (parsed.username || parsed.password) return "[url-redacted]";
+        parsed.search = "";
+        parsed.hash = "";
+        return parsed.toString();
       } catch {
         return "[url-redacted]";
       }
     })
     .replace(/(bearer\s+)\S+/giu, "$1[redacted]")
     .replace(/((?:api[_\s-]?key|access[_\s-]?key|secret|token|authorization)\s*[:=]\s*)[^\s,;]+/giu, "$1[redacted]")
+    .replace(/\b[A-Za-z0-9+/_=-]{257,}(?=\s|$|["'<>])/gu, "[blob-redacted]")
     .slice(0, 500);
 }
 
@@ -44,7 +49,7 @@ export function classifyVideoProviderError(
   rawError: unknown,
   publicModelName = "所选视频模型",
 ): ClassifiedVideoError {
-  const operatorMessage = compactError(rawError) || "Unknown video provider failure";
+  const operatorMessage = sanitizeVideoProviderDiagnostic(rawError) || "Unknown video provider failure";
   const normalized = operatorMessage.toLowerCase();
 
   if (/预扣费额度失败|渠道额度暂不可用|(?:额度|配额).*(?:不可用|不足|耗尽|等待恢复)|user quota is not enough|insufficient[_\s-]*(?:quota|balance|credits?|funds)|quota.*(?:not enough|exceeded|insufficient)|(?:balance|余额).*(?:insufficient|不足)|payment required|arrearage|\b402\b/iu.test(operatorMessage)) {

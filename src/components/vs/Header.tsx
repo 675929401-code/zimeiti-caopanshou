@@ -2,9 +2,9 @@
 
 import { usePathname } from 'next/navigation';
 import { AppScopedLink as Link } from '@/components/app-scoped-link';
+import { UserThemeSwitcher } from '@/components/user-theme-switcher';
 import { useApp } from '@/contexts/app-context';
 import { useAppScopedRouter } from '@/hooks/use-app-scoped-router';
-import { UserThemeSwitcher } from '@/components/user-theme-switcher';
 
 const NAV_LINKS = [
   { href: '/voice-studio/workspace', label: '语音合成', icon: 'speech' },

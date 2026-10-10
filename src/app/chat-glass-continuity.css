@@ -221,6 +221,15 @@ html[data-theme] [data-chat-surface="unified-glass"] .chat-content-rail.max-w-fu
   animation: chat-continuous-message-enter 280ms ease-out both;
 }
 
+/* A streaming assistant row is already on screen while deltas arrive. Keep it
+ * fully stable both during generation and when the stream completes; otherwise
+ * the generic row entrance briefly fades/translates the entire answer. */
+[data-chat-surface="unified-glass"] .chat-message-row-assistant[data-stream-entry-animation="off"] {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
 [data-chat-surface="unified-glass"] .chat-message-bubble-user,
 [data-chat-surface="unified-glass"] .chat-message-bubble-assistant,
 [data-chat-surface="unified-glass"] .chat-composer-rainbow {

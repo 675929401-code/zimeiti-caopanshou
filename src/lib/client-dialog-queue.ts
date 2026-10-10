@@ -2,6 +2,8 @@
 
 export type AppDialogOwner = "security" | "forced-logout" | "account" | "announcement" | "trial";
 export type AppDialogPriority = 0 | 1 | 2 | 3 | 4;
+export type AppToastOwner = "account" | "announcement";
+export type AppToastPriority = 0 | 1 | 2;
 
 export const APP_DIALOG_PRIORITY = {
   security: 0,
@@ -16,6 +18,15 @@ const OWNER_ATTRIBUTE = "data-app-dialog-owner";
 const PRIORITY_ATTRIBUTE = "data-app-dialog-priority";
 export const APP_DIALOG_CLAIMED_EVENT = "app-dialog-claimed";
 export const APP_DIALOG_RELEASED_EVENT = "app-dialog-released";
+const TOAST_OWNER_ATTRIBUTE = "data-app-toast-owner";
+const TOAST_PRIORITY_ATTRIBUTE = "data-app-toast-priority";
+export const APP_TOAST_CLAIMED_EVENT = "app-toast-claimed";
+export const APP_TOAST_RELEASED_EVENT = "app-toast-released";
+export const APP_TOAST_PRIORITY = {
+  announcementUrgent: 0,
+  account: 1,
+  announcement: 2,
+} as const satisfies Record<string, AppToastPriority>;
 
 function isAppDialogOwner(value: string | null): value is AppDialogOwner {
   return value === "security"
@@ -86,4 +97,56 @@ export function releaseAppDialog(owner: AppDialogOwner): void {
   document.documentElement.removeAttribute(OWNER_ATTRIBUTE);
   document.documentElement.removeAttribute(PRIORITY_ATTRIBUTE);
   window.dispatchEvent(new CustomEvent(APP_DIALOG_RELEASED_EVENT, { detail: { owner, priority } }));
+}
+
+function isAppToastOwner(value: string | null): value is AppToastOwner {
+  return value === "account" || value === "announcement";
+}
+
+export function currentAppToastOwner(): AppToastOwner | null {
+  if (typeof document === "undefined") return null;
+  const value = document.documentElement.getAttribute(TOAST_OWNER_ATTRIBUTE);
+  return isAppToastOwner(value) ? value : null;
+}
+
+export function currentAppToastPriority(): AppToastPriority | null {
+  if (typeof document === "undefined") return null;
+  const owner = currentAppToastOwner();
+  if (!owner) return null;
+  const value = Number(document.documentElement.getAttribute(TOAST_PRIORITY_ATTRIBUTE));
+  if (Number.isInteger(value) && value >= 0 && value <= 2) return value as AppToastPriority;
+  return owner === "account" ? APP_TOAST_PRIORITY.account : APP_TOAST_PRIORITY.announcement;
+}
+
+/**
+ * Owns the single bottom-right notification surface. A losing notification
+ * keeps its local pending item and retries after APP_TOAST_RELEASED_EVENT, so
+ * simultaneous account and announcement deliveries cannot overlap or vanish.
+ */
+export function claimAppToast(owner: AppToastOwner, requestedPriority: AppToastPriority): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
+  const previous = currentAppToastOwner();
+  const previousPriority = currentAppToastPriority();
+  const priority = Math.max(0, Math.min(2, Math.trunc(requestedPriority))) as AppToastPriority;
+
+  if (previous && previous !== owner && previousPriority !== null && priority >= previousPriority) {
+    return false;
+  }
+
+  document.documentElement.setAttribute(TOAST_OWNER_ATTRIBUTE, owner);
+  document.documentElement.setAttribute(TOAST_PRIORITY_ATTRIBUTE, String(priority));
+  if (previous !== owner) {
+    window.dispatchEvent(new CustomEvent(APP_TOAST_CLAIMED_EVENT, {
+      detail: { owner, priority, previous, previousPriority },
+    }));
+  }
+  return true;
+}
+
+export function releaseAppToast(owner: AppToastOwner): void {
+  if (typeof window === "undefined" || currentAppToastOwner() !== owner) return;
+  const priority = currentAppToastPriority();
+  document.documentElement.removeAttribute(TOAST_OWNER_ATTRIBUTE);
+  document.documentElement.removeAttribute(TOAST_PRIORITY_ATTRIBUTE);
+  window.dispatchEvent(new CustomEvent(APP_TOAST_RELEASED_EVENT, { detail: { owner, priority } }));
 }

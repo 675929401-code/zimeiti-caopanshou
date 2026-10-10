@@ -9,13 +9,18 @@ import {
   ChevronDown,
   CircleGauge,
   Clapperboard,
+  Copy,
   Database,
   Film,
   Images,
   Layers3,
+  Mail,
   MessageSquareText,
+  MessageCircle,
   Mic2,
   PenLine,
+  Phone,
+  QrCode,
   ScanSearch,
   ShieldCheck,
   Sparkles,
@@ -27,13 +32,11 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { UserThemeSwitcher } from "@/components/user-theme-switcher";
-import { DEFAULT_PLATFORM_LOGO_URL, platformBrandLogoUrl, usePlatformBranding } from "@/hooks/use-platform-branding";
-import { PointerNetwork } from "./pointer-network";
+import { handlePlatformBrandLogoError, platformBrandAssetUrl, platformBrandLogoUrl, usePlatformBranding } from "@/hooks/use-platform-branding";
 import "./soft-white-landing.css";
 import "./operating-home-v2.css";
-import "./pointer-network.css";
 import "./landing-login-themes.css";
 
 const LoginForm = dynamic(() => import("@/components/login-form").then(module => ({ default: module.LoginForm })), {
@@ -152,13 +155,67 @@ const navItems = [
   ["生产路线", "swh-production"],
   ["能力全景", "swh-capabilities"],
   ["适合谁", "swh-business"],
+  ["联系我们", "swh-contact"],
 ] as const;
+
+const heroPhrases = ["推进到完整成片", "沉淀为可用资产", "让内容持续生长"] as const;
+
+function TypewriterHeadline() {
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [visibleLength, setVisibleLength] = useState(0);
+  const [deleting, setDeleting] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncPreference = () => setReducedMotion(preference.matches);
+    syncPreference();
+    preference.addEventListener("change", syncPreference);
+    return () => preference.removeEventListener("change", syncPreference);
+  }, []);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      setPhraseIndex(0);
+      setVisibleLength(heroPhrases[0].length);
+      setDeleting(false);
+      return;
+    }
+
+    const phrase = heroPhrases[phraseIndex];
+    const atEnd = visibleLength >= phrase.length;
+    const atStart = visibleLength <= 0;
+    const delay = atEnd && !deleting ? 1_650 : atStart && deleting ? 320 : deleting ? 48 : 82;
+    const timer = window.setTimeout(() => {
+      if (atEnd && !deleting) {
+        setDeleting(true);
+      } else if (atStart && deleting) {
+        setDeleting(false);
+        setPhraseIndex((current) => (current + 1) % heroPhrases.length);
+      } else {
+        setVisibleLength((current) => current + (deleting ? -1 : 1));
+      }
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [deleting, phraseIndex, reducedMotion, visibleLength]);
+
+  return (
+    <span className="swh-title-line swh-title-accent swh-typewriter" data-testid="swh-typewriter" data-full-text={heroPhrases[phraseIndex]}>
+      <span aria-hidden="true">{heroPhrases[phraseIndex].slice(0, visibleLength)}</span>
+      <i aria-hidden="true" />
+      <span className="sr-only">推进到完整成片，沉淀为可用资产，让内容持续生长</span>
+    </span>
+  );
+}
 
 export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: SoftWhiteLandingProps) {
   const platformBranding = usePlatformBranding();
-  const platformName = platformBranding.brand.name || "自媒体操盘手";
+  const platformName = platformBranding.brand.name
+    || (platformBranding.displayScope === "white_label" ? "品牌服务" : "自媒体操盘手");
   const platformSlogan = platformBranding.brand.slogan || "AI 内容经营系统";
   const platformLogoUrl = platformBrandLogoUrl(platformBranding, "square");
+  const primaryContactQr = platformBrandAssetUrl(platformBranding, "contact_wechat_qr_primary");
+  const secondaryContactQr = platformBrandAssetUrl(platformBranding, "contact_wechat_qr_secondary");
   const primary = /^#[0-9A-F]{6}$/iu.test(platformBranding.brand.colors.primary)
     ? platformBranding.brand.colors.primary
     : "#17675A";
@@ -176,6 +233,9 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
   const homeRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const wheelUnlockRef = useRef<number | null>(null);
+  const copyResetRef = useRef<number | null>(null);
+  const [wechatCopied, setWechatCopied] = useState(false);
 
   useEffect(() => {
     if (!showLogin) return;
@@ -261,70 +321,93 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
 
   useEffect(() => {
     const home = homeRef.current;
-    if (!home) return;
+    if (!home || showLogin) return;
+    let locked = false;
 
-    const finePointer = window.matchMedia("(pointer: fine)");
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let animationFrame = 0;
-    let nextX = window.innerWidth * 0.5;
-    let nextY = window.innerHeight * 0.34;
-    let pointerActive = false;
-
-    const commitPointerPosition = () => {
-      animationFrame = 0;
-      const width = Math.max(window.innerWidth, 1);
-      const height = Math.max(window.innerHeight, 1);
-      const horizontal = Math.min(1, Math.max(0, nextX / width));
-      const vertical = Math.min(1, Math.max(0, nextY / height));
-
-      home.style.setProperty("--swh-pointer-x", `${nextX.toFixed(1)}px`);
-      home.style.setProperty("--swh-pointer-y", `${nextY.toFixed(1)}px`);
-      home.style.setProperty("--swh-tilt-x", `${((0.5 - vertical) * 5).toFixed(2)}deg`);
-      home.style.setProperty("--swh-tilt-y", `${((horizontal - 0.5) * 7).toFixed(2)}deg`);
-      home.dataset.pointerMotion = "active";
-    };
-
-    const schedulePointerPosition = (clientX: number, clientY: number) => {
-      nextX = clientX;
-      nextY = clientY;
-      if (!animationFrame) animationFrame = window.requestAnimationFrame(commitPointerPosition);
-    };
-
-    const handlePointerMove = (event: PointerEvent) => schedulePointerPosition(event.clientX, event.clientY);
-    const resetPointerPosition = () => schedulePointerPosition(window.innerWidth * 0.5, window.innerHeight * 0.34);
-
-    const disablePointerMotion = () => {
-      if (pointerActive) {
-        home.removeEventListener("pointermove", handlePointerMove);
-        home.removeEventListener("pointerleave", resetPointerPosition);
+    const panelTop = (panel: HTMLElement) => panel.getBoundingClientRect().top - home.getBoundingClientRect().top + home.scrollTop;
+    const handleWheel = (event: WheelEvent) => {
+      if (
+        event.ctrlKey
+        || Math.abs(event.deltaY) < 6
+        || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) return;
+      if (locked) {
+        event.preventDefault();
+        return;
       }
-      pointerActive = false;
-      if (animationFrame) window.cancelAnimationFrame(animationFrame);
-      animationFrame = 0;
-      delete home.dataset.pointerMotion;
-      home.style.removeProperty("--swh-tilt-x");
-      home.style.removeProperty("--swh-tilt-y");
+      const target = event.target instanceof Element ? event.target : null;
+      const freeScroll = target?.closest<HTMLElement>("[data-swh-free-scroll], .swh-login-drawer");
+      if (freeScroll) {
+        const maxScrollTop = Math.max(0, freeScroll.scrollHeight - freeScroll.clientHeight);
+        const canConsume = event.deltaY < 0
+          ? freeScroll.scrollTop > 0
+          : freeScroll.scrollTop < maxScrollTop - 1;
+        if (canConsume) return;
+      }
+      const panels = Array.from(home.querySelectorAll<HTMLElement>("[data-swh-panel]"));
+      if (!panels.length) return;
+      const headerHeight = home.querySelector<HTMLElement>(".swh-header")?.offsetHeight || 74;
+      const currentTop = home.scrollTop + headerHeight;
+      const currentIndex = panels.reduce((bestIndex, panel, index) => (
+        Math.abs(panelTop(panel) - currentTop) < Math.abs(panelTop(panels[bestIndex]) - currentTop) ? index : bestIndex
+      ), 0);
+      const nextIndex = Math.max(0, Math.min(panels.length - 1, currentIndex + (event.deltaY > 0 ? 1 : -1)));
+      if (nextIndex === currentIndex) {
+        event.preventDefault();
+        const boundaryTop = event.deltaY > 0
+          ? Math.max(0, home.scrollHeight - home.clientHeight)
+          : 0;
+        if (Math.abs(home.scrollTop - boundaryTop) > 1) {
+          home.scrollTo({ top: boundaryTop, behavior: "auto" });
+        }
+        return;
+      }
+      event.preventDefault();
+      locked = true;
+      const targetTop = nextIndex === panels.length - 1
+        ? Math.max(0, home.scrollHeight - home.clientHeight)
+        : Math.max(0, panelTop(panels[nextIndex]) - headerHeight);
+      home.scrollTo({
+        top: targetTop,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
+      wheelUnlockRef.current = window.setTimeout(() => {
+        locked = false;
+        wheelUnlockRef.current = null;
+      }, 760);
     };
 
-    const syncPointerMotion = () => {
-      disablePointerMotion();
-      if (!finePointer.matches || reducedMotion.matches) return;
-      pointerActive = true;
-      home.addEventListener("pointermove", handlePointerMove, { passive: true });
-      home.addEventListener("pointerleave", resetPointerPosition);
-      resetPointerPosition();
-    };
-
-    finePointer.addEventListener("change", syncPointerMotion);
-    reducedMotion.addEventListener("change", syncPointerMotion);
-    syncPointerMotion();
-
+    home.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
-      finePointer.removeEventListener("change", syncPointerMotion);
-      reducedMotion.removeEventListener("change", syncPointerMotion);
-      disablePointerMotion();
+      home.removeEventListener("wheel", handleWheel);
+      if (wheelUnlockRef.current != null) window.clearTimeout(wheelUnlockRef.current);
+      wheelUnlockRef.current = null;
     };
+  }, [showLogin]);
+
+  useEffect(() => () => {
+    if (copyResetRef.current != null) window.clearTimeout(copyResetRef.current);
   }, []);
+
+  const copyWechat = async () => {
+    const value = platformBranding.brand.contact?.wechat?.trim();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const field = document.createElement("textarea");
+      field.value = value;
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      document.execCommand("copy");
+      field.remove();
+    }
+    setWechatCopied(true);
+    if (copyResetRef.current != null) window.clearTimeout(copyResetRef.current);
+    copyResetRef.current = window.setTimeout(() => setWechatCopied(false), 1_600);
+  };
 
   const scrollTo = (id: string) => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -334,20 +417,18 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
   return (
     <div ref={homeRef} className="soft-white-home" style={brandStyle} data-testid="soft-white-premium-home" data-theme-synced-home="true" data-landing-version="v2">
       <div className="swh-atmosphere" data-testid="swh-theme-atmosphere" aria-hidden="true">
-        <span className="swh-aura swh-aura-one" />
-        <span className="swh-aura swh-aura-two" />
-        <span className="swh-aura swh-aura-three" />
-        <span className="swh-motion-grid" />
-        <span className="swh-data-stream" />
-        <span className="swh-particle-field" />
-        <span className="swh-light-sweep" />
-        <span className="swh-pointer-glow" />
-        <span className="swh-grain" />
-        <PointerNetwork />
+        <span className="swh-aurora-field swh-aurora-field-one" />
+        <span className="swh-aurora-field swh-aurora-field-two" />
+        <span className="swh-data-beam swh-data-beam-one" />
+        <span className="swh-data-beam swh-data-beam-two" />
+        <span className="swh-data-beam swh-data-beam-three" />
+        <span className="swh-depth-particle-field" />
       </div>
       <header className="swh-header">
         <a className="swh-brand" href="#swh-top" aria-label={`${platformName}首页`}>
-          <span className="swh-brand-mark"><img src={platformLogoUrl} alt="" onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = DEFAULT_PLATFORM_LOGO_URL; }} /></span>
+          <span className="swh-brand-mark">{platformLogoUrl
+            ? <img src={platformLogoUrl} alt="" onError={(event) => handlePlatformBrandLogoError(event, platformBranding)} />
+            : <span aria-hidden="true">{platformName.slice(0, 1)}</span>}</span>
           <span><strong>{platformName}</strong><small>{platformSlogan}</small></span>
         </a>
         <nav className="swh-nav" aria-label="首页导航">
@@ -360,13 +441,12 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
       </header>
 
       <main>
-        <section className="swh-hero" id="swh-top" data-swh-reveal>
+        <section className="swh-hero" id="swh-top" data-swh-reveal data-swh-panel>
           <div className="swh-hero-copy">
             <p className="swh-kicker"><span /> AI CONTENT OPERATING SYSTEM</p>
             <h1>
               <span className="swh-title-line">把一个内容想法</span>
-              <span className="swh-title-line">推进到完整成片</span>
-              <span className="swh-title-line swh-title-accent">沉淀为可用资产</span>
+              <TypewriterHeadline />
             </h1>
             <p className="swh-lead">围绕账号目标，把对标研究、内容策划与视听制作组织在同一个项目里。人负责判断，智能体接力执行，让每次创作都留下可复用的结果。</p>
             <div className="swh-hero-status" aria-label="平台工作方式">
@@ -384,33 +464,36 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
             </dl>
           </div>
 
-          <div className="swh-loop" aria-label="内容项目推进示例">
-            <div className="swh-loop-heading">
-              <div className="swh-loop-kicker"><span /><strong>PROJECT EXAMPLE</strong><small>3 STEPS</small></div>
-              <strong>一条上新内容，怎么走到交付</strong>
-              <p>以门店新品短视频为例：从卖点、脚本、镜头走到可下载的成片。</p>
-              <div className="swh-factory" data-testid="swh-content-factory" aria-hidden="true">
-                <span className="swh-factory-platform" />
-                <span className="swh-factory-ring swh-factory-ring-one" />
-                <span className="swh-factory-ring swh-factory-ring-two" />
-                <span className="swh-factory-core"><Layers3 size={17} /></span>
-                <span className="swh-factory-node swh-factory-node-in" />
-                <span className="swh-factory-node swh-factory-node-out" />
-                <span className="swh-factory-beam" />
+          <div className="swh-loop-float-shell" data-testid="swh-project-card-motion">
+            <div className="swh-loop" aria-label="内容项目推进示例">
+              <div className="swh-loop-signal" aria-hidden="true"><span /><span /><span /></div>
+              <div className="swh-loop-heading">
+                <div className="swh-loop-kicker"><span /><strong>PROJECT EXAMPLE</strong><small>3 STEPS</small></div>
+                <strong>一条上新内容，怎么走到交付</strong>
+                <p>以门店新品短视频为例：从卖点、脚本、镜头走到可下载的成片。</p>
+                <div className="swh-factory" data-testid="swh-content-factory" aria-hidden="true">
+                  <span className="swh-factory-platform" />
+                  <span className="swh-holo-orbit swh-holo-orbit-one" />
+                  <span className="swh-holo-orbit swh-holo-orbit-two" />
+                  <span className="swh-holo-core"><Layers3 size={17} /></span>
+                  <span className="swh-factory-node swh-factory-node-in" />
+                  <span className="swh-factory-node swh-factory-node-out" />
+                  <span className="swh-factory-beam" />
+                </div>
               </div>
-            </div>
-            <ol className="swh-project-example">
-              {projectExampleSteps.map(({ number, phase, title, detail, outcome }) => <li key={number}>
-                <header className="swh-example-step-head"><span>{number}</span><small>{phase}</small></header>
-                <strong>{title}</strong>
-                <p>{detail}</p>
-                <em className="swh-example-outcome"><Check size={13} />{outcome}</em>
-              </li>)}
-            </ol>
-            <div className="swh-console-stats" aria-label="链路结构">
-              <span><small>WORKFLOW</small><strong>输入一路推进</strong></span>
-              <span><small>CONTEXT</small><strong>素材不丢上下文</strong></span>
-              <span><small>ARCHIVE</small><strong>交付回到作品历史</strong></span>
+              <ol className="swh-project-example">
+                {projectExampleSteps.map(({ number, phase, title, detail, outcome }) => <li key={number}>
+                  <header className="swh-example-step-head"><span>{number}</span><small>{phase}</small></header>
+                  <strong>{title}</strong>
+                  <p>{detail}</p>
+                  <em className="swh-example-outcome"><Check size={13} />{outcome}</em>
+                </li>)}
+              </ol>
+              <div className="swh-console-stats" aria-label="链路结构">
+                <span><small>WORKFLOW</small><strong>输入一路推进</strong></span>
+                <span><small>CONTEXT</small><strong>素材不丢上下文</strong></span>
+                <span><small>ARCHIVE</small><strong>交付回到作品历史</strong></span>
+              </div>
             </div>
           </div>
         </section>
@@ -422,7 +505,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
           </div>
         </section>
 
-        <section className="swh-section swh-value" id="swh-value" data-swh-reveal>
+        <section className="swh-section swh-value" id="swh-value" data-swh-reveal data-swh-panel>
           <div className="swh-section-heading">
             <p>WHY ONE SYSTEM · 为什么需要一套系统</p>
             <h2>少一点重复开工，多一点持续产出</h2>
@@ -438,7 +521,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
           </div>
         </section>
 
-        <section className="swh-section swh-production" id="swh-production" data-swh-reveal>
+        <section className="swh-section swh-production" id="swh-production" data-swh-reveal data-swh-panel>
           <div className="swh-section-heading swh-heading-row">
             <div><p>THREE PRODUCTION ROUTES · 三条生产路线</p><h2>选对呈现方式，再把每一步做到位</h2></div>
             <span>真人适合建立信任，动画擅长承载叙事，AI 原生视频便于快速试验和批量表达。路线各有侧重，素材与任务仍在同一项目里推进。</span>
@@ -457,7 +540,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
           </div>
         </section>
 
-        <section className="swh-section swh-capabilities" id="swh-capabilities" data-swh-reveal>
+        <section className="swh-section swh-capabilities" id="swh-capabilities" data-swh-reveal data-swh-panel>
           <div className="swh-section-heading">
             <p>CAPABILITY SYSTEM · 内容生产能力</p>
             <h2>真正有用的 AI，不只回答，还要接住下一步</h2>
@@ -480,7 +563,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
           </div>
         </section>
 
-        <section className="swh-section swh-business" id="swh-business" data-swh-reveal>
+        <section className="swh-section swh-business" id="swh-business" data-swh-reveal data-swh-panel>
           <div className="swh-section-heading swh-heading-row">
             <div><p>WHO IT SERVES · 为谁而建</p><h2>从持续表达，到用内容经营生意</h2></div>
             <span>创作者关心稳定产出与作品质量，商家关心获客、信任与成交。两类目标，共用一套可持续的内容生产底座。</span>
@@ -505,12 +588,38 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
             <button onClick={onLoginClick}>启动项目 <ArrowRight size={15} /></button>
           </div>
         </section>
-      </main>
 
-      <footer className="swh-footer" id="swh-footer" data-swh-reveal>
-        <div><strong>{platformName}</strong><span>{platformBranding.brand.description || "把策略、创作、生产与归档，变成一套持续运转的内容系统。"}</span></div>
-        <p>微信：Yuange1991xx</p>
-      </footer>
+        <section className="swh-section swh-contact" id="swh-contact" data-swh-reveal data-swh-panel>
+          <div className="swh-contact-copy">
+            <p className="swh-kicker"><span /> CONTACT · 联系我们</p>
+            <h2>需要帮助时，直接找到对的人</h2>
+            <p>平台联系方式由管理员统一维护并随品牌版本发布。联系人、微信号、电话、邮箱与二维码保持同一份公开资料，避免页面信息不一致。</p>
+            <div className="swh-contact-list">
+              {platformBranding.brand.contact?.name && <span><MessageCircle size={17} /><small>联系人</small><strong>{platformBranding.brand.contact.name}</strong></span>}
+              {platformBranding.brand.contact?.wechat && <span><QrCode size={17} /><small>微信</small><strong>{platformBranding.brand.contact.wechat}</strong></span>}
+              {platformBranding.brand.contact?.phone && <span><Phone size={17} /><small>电话</small><strong>{platformBranding.brand.contact.phone}</strong></span>}
+              {platformBranding.brand.contact?.email && <span><Mail size={17} /><small>邮箱</small><strong>{platformBranding.brand.contact.email}</strong></span>}
+            </div>
+            {platformBranding.brand.contact?.wechat && <button type="button" className="swh-contact-copy-button" onClick={() => void copyWechat()}><Copy size={15} />{wechatCopied ? "已复制微信号" : "复制微信号"}</button>}
+          </div>
+          <div className="swh-contact-visual" aria-label="联系二维码">
+            {primaryContactQr || secondaryContactQr ? <div className="swh-contact-qr-grid">
+              {primaryContactQr && <figure><img src={primaryContactQr} alt="微信联系二维码 1" /><figcaption>{platformBranding.brand.contact?.name || "平台客服"}</figcaption></figure>}
+              {secondaryContactQr && <figure><img src={secondaryContactQr} alt="微信联系二维码 2" /><figcaption>备用联系方式</figcaption></figure>}
+            </div> : <div className="swh-contact-placeholder"><QrCode size={48} /><strong>联系方式</strong><span>管理员发布联系信息后，将在这里展示。</span></div>}
+          </div>
+          <footer className="swh-footer" id="swh-footer" data-swh-reveal>
+            <div><strong>{platformName}</strong><span>{platformBranding.brand.description || "把策略、创作、生产与归档，变成一套持续运转的内容系统。"}</span></div>
+            <p>{platformBranding.brand.contact?.wechat
+              ? `微信：${platformBranding.brand.contact.wechat}`
+              : platformBranding.brand.contact?.phone
+                ? `电话：${platformBranding.brand.contact.phone}`
+                : platformBranding.brand.contact?.email
+                  ? `邮箱：${platformBranding.brand.contact.email}`
+                  : "联系信息请在后台品牌中心设置"}</p>
+          </footer>
+        </section>
+      </main>
 
       {showLogin && <>
         <button className="swh-login-backdrop" aria-label="关闭登录面板" onClick={onCloseLogin} />

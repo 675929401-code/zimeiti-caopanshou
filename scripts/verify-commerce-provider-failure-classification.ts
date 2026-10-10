@@ -52,7 +52,12 @@ assert.doesNotMatch(sanitized, /1113|余额|error|message|\{/u);
 
 const gatewayRoute = fs.readFileSync(path.resolve('src/app/api/commerce-model-gateway/route.ts'), 'utf8');
 assert.match(gatewayRoute, /const failure=classifyProviderFailure\(error\)/u);
-assert.match(gatewayRoute, /receipt\.status=failure\.status;receipt\.error=failure\.error/u);
+assert.match(
+  gatewayRoute,
+  /const candidate:Receipt=requestMayHaveReachedProvider&&!explicitProviderResponse[\s\S]*?status:'manual_reconciliation'[\s\S]*?error:failure\.error[\s\S]*?:\{\.\.\.receipt,status:'failed'[\s\S]*?error:failure\.error/u,
+  "ambiguous post-dispatch failures must reconcile while definitive failures remain terminal",
+);
+assert.match(gatewayRoute, /commitReceiptObservation\(receipt\.id,receipt\.revision,candidate\)/u);
 assert.doesNotMatch(gatewayRoute, /rawDetail|finalError|\[1-5\]dd/u);
 
 // Dry-run only for the persisted legacy task. This test never opens its SQLite

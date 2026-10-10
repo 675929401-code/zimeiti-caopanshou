@@ -9,6 +9,7 @@ const layout = read("src/app/layout.tsx");
 const css = read("src/app/theme-soft-white.css");
 const switcher = read("src/components/user-theme-switcher.tsx");
 const marketplace = read("src/components/agent-marketplace.tsx");
+const sidebar = read("src/components/app-sidebar.tsx");
 const admin = read("src/app/admin/page.tsx");
 const darkCss = read("src/app/theme-lattice.css");
 const landing = read("src/components/landing-page.tsx");
@@ -30,7 +31,7 @@ const checks = [
   ["dark theme uses restrained semantic tokens", darkCss.includes("--background: #0d141a;") && darkCss.includes("--primary: #68c7b4;")],
   ["focus state is visible and theme aligned", css.includes("--ui-focus: 0 0 0 3px rgba(11, 116, 102, 0.2);")],
   ["conversation history has distinct active hierarchy", css.includes(".sidebar-conv-item.active") && css.includes("inset 3px 0 #17675a")],
-  ["compact theme trigger is used in primary navigation", switcher.includes("labeled?: boolean") && marketplace.includes("<UserThemeSwitcher />")],
+  ["theme trigger is kept only in the sidebar footer", switcher.includes("labeled?: boolean") && sidebar.includes('<UserThemeSwitcher menuSide="top" />') && !marketplace.includes("UserThemeSwitcher") && !marketplace.includes("marketplace-nav-actions")],
   ["theme choices are machine-testable", switcher.includes("data-theme-option={option.id}")],
   ["admin no longer overwrites stored theme", !admin.includes("...(data.settings || {}), theme: DEFAULT_THEME")],
   ["legacy API colors cannot overwrite semantic tokens", runtimeColors.includes("return {} as Record<string, string>")],

@@ -11,16 +11,10 @@ export const TOOLBOX_ITEMS = [
   { id: "format", label: "文字排版", description: "清理格式并整理段落", href: "/tools?tab=format", Icon: Text, color: "#8b5cf6" },
 ] as const;
 
-const DEFAULT_TOOLBOX_TAB = "segment";
-type ToolboxItemId = (typeof TOOLBOX_ITEMS)[number]["id"];
+const DEFAULT_TOOLBOX_TAB = "text";
 
 function preferredToolboxHref() {
-  let preferredTab: ToolboxItemId = DEFAULT_TOOLBOX_TAB;
-  try {
-    const savedTab = localStorage.getItem("toolbox_active_tab");
-    if (TOOLBOX_ITEMS.some((item) => item.id === savedTab)) preferredTab = savedTab as ToolboxItemId;
-  } catch {}
-  return `/tools?tab=${preferredTab}`;
+  return `/tools?tab=${DEFAULT_TOOLBOX_TAB}`;
 }
 
 type ToolboxMenuProps = {

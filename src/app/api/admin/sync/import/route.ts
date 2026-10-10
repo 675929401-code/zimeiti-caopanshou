@@ -11,6 +11,7 @@ import {
   previewPlatformConfigurationRelease,
 } from '@/lib/server/platform-configuration-admin';
 import type { PlatformConfigurationKind } from '@/lib/platform-configuration-contract';
+import { sharedConfigurationEnabled } from '@/storage/database/configuration-source';
 
 const SYNC_TABLES = ['agents', 'categories', 'platform_settings', 'announcements'];
 const VERSIONED_MODEL_TABLES = ['video_models', 'cover_models', 'llm_models', 'chat_models'] as const;
@@ -118,6 +119,19 @@ export async function POST(req: NextRequest) {
     }
     if (mode !== 'merge') {
       return NextResponse.json({ error: 'mode 只能是 merge' }, { status: 400 });
+    }
+
+    if (
+      sharedConfigurationEnabled()
+      && Object.prototype.hasOwnProperty.call(importData, 'agents')
+    ) {
+      return NextResponse.json(
+        {
+          error: '共享智能体配置不能通过通用同步导入；请使用带版本冲突检测的智能体管理接口。',
+          code: 'SHARED_AGENT_IMPORT_FORBIDDEN',
+        },
+        { status: 409 },
+      );
     }
 
     const importedSecretFields = findImportedSecretFields(importData as Record<string, unknown>);

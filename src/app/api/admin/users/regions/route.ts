@@ -44,14 +44,32 @@ export async function GET(request: NextRequest) {
 
     const cached = readCachedMemberRegionDistribution();
     const retryAfterSeconds = Math.max(1, Math.ceil(result.retryAfterMs / 1_000));
+    if (cached) {
+      return NextResponse.json({
+        ...cached,
+        refresh: {
+          ...cached.refresh,
+          cacheStatus: "hit",
+          nextRefreshAt: new Date(result.nextAllowedAtMs).toISOString(),
+          rateLimit: {
+            ...cached.refresh.rateLimit,
+            remainingMs: result.retryAfterMs,
+            retryAfterSeconds,
+          },
+        },
+      }, {
+        status: 200,
+        headers: NO_STORE_HEADERS,
+      });
+    }
     const body: MemberRegionRateLimitedResponse = {
       ok: false,
       code: "MEMBER_REGION_DISTRIBUTION_RATE_LIMITED",
       error: result.reason === "single_flight"
         ? "同一管理员的会员地域读取正在进行，请稍后重试"
         : "会员地域数据最短读取间隔为 60 秒，请稍后重试",
-      asOf: cached?.asOf ?? null,
-      freshness: cached?.freshness ?? null,
+      asOf: null,
+      freshness: null,
       nextRefreshAt: new Date(result.nextAllowedAtMs).toISOString(),
       cacheStatus: "rate_limited",
       rateLimit: {

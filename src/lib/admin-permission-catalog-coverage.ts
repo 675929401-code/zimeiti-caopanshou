@@ -87,6 +87,7 @@ const sortOrderByKey = new Map<string, number>(
 
 export function expectedAdminPermissionCatalogRows() {
   return ADMIN_PERMISSION_CATALOG.map((permission) => {
+    const ownerOnly = ownerOnlyAdminPermissionKeys([permission.key]).length > 0;
     return {
       permission_key: permission.key,
       group_key: ADMIN_PERMISSION_GROUP_KEYS[permission.group] ?? "",
@@ -96,8 +97,10 @@ export function expectedAdminPermissionCatalogRows() {
       step_up_required: permission.stepUpRequired,
       sort_order: sortOrderByKey.get(permission.key) ?? Number.NaN,
       is_active: true,
-      is_delegable: ownerOnlyAdminPermissionKeys([permission.key]).length === 0,
-      dependency_keys: [...(ADMIN_PERMISSION_DEPENDENCIES[permission.key] || [])],
+      is_delegable: !ownerOnly,
+      // Owner-only capabilities are granted by the super-admin trust boundary,
+      // never through dependency expansion on an ordinary administrator.
+      dependency_keys: ownerOnly ? [] : [...(ADMIN_PERMISSION_DEPENDENCIES[permission.key] || [])],
     };
   });
 }

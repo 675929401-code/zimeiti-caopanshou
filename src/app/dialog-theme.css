@@ -1,0 +1,422 @@
+/*
+ * Portal dialog elevation system.
+ *
+ * The page, scrim, dialog shell, raised content and action shelf must remain
+ * visually distinct. Theme colour is reserved for intent and actions; surface
+ * hierarchy comes from luminance, borders and shadow instead of a full-card tint.
+ */
+
+html {
+  --dialog-color-scheme: light;
+  --dialog-shell: #fbf7eb;
+  --dialog-body: #f6f0e4;
+  --dialog-chrome: #f1eadc;
+  --dialog-raised: #fffaf0;
+  --dialog-subtle: #eee7d8;
+  --dialog-footer: #eee4d4;
+  --dialog-toast: #fbf7eb;
+  --dialog-text: #1f292d;
+  --dialog-muted: #536068;
+  --dialog-border: #c8bfae;
+  --dialog-accent: #7b3039;
+  --dialog-accent-foreground: #ffffff;
+  --dialog-accent-soft: rgba(123, 48, 57, .10);
+  --dialog-secondary-accent: rgba(123, 48, 57, .10);
+  --dialog-overlay: rgba(31, 41, 45, .48);
+  --dialog-shadow: 0 30px 72px rgba(31, 41, 45, .25), 0 7px 20px rgba(31, 41, 45, .12);
+  --dialog-toast-shadow: 0 22px 54px rgba(31, 41, 45, .24), 0 5px 16px rgba(31, 41, 45, .10);
+  --dialog-panel-shadow: 0 10px 24px rgba(74, 57, 42, .08), 0 1px 0 rgba(255, 255, 255, .72) inset;
+  --dialog-shell-radius: 12px;
+  --dialog-panel-radius: 9px;
+  --dialog-info-fg: #126e7a;
+  --dialog-info-bg: rgba(39, 150, 166, .12);
+  --dialog-info-border: rgba(39, 150, 166, .30);
+  --dialog-warning-fg: #9a5f08;
+  --dialog-warning-bg: rgba(222, 151, 42, .14);
+  --dialog-warning-border: rgba(222, 151, 42, .34);
+  --dialog-danger-fg: #b23d53;
+  --dialog-danger-bg: rgba(213, 74, 99, .12);
+  --dialog-danger-border: rgba(213, 74, 99, .30);
+}
+
+html[data-theme="soft-white"] {
+  /* 01 · 象牙纸墨 */
+  --dialog-shell: #fbf7eb;
+  --dialog-body: #f6f0e4;
+  --dialog-chrome: #f1eadc;
+  --dialog-raised: #fffaf0;
+  --dialog-subtle: #eee7d8;
+  --dialog-footer: #eee4d4;
+  --dialog-toast: #fbf7eb;
+  --dialog-text: #1f292d;
+  --dialog-muted: #536068;
+  --dialog-border: #c8bfae;
+  --dialog-accent: #7b3039;
+  --dialog-accent-soft: rgba(123, 48, 57, .10);
+  --dialog-secondary-accent: rgba(123, 48, 57, .10);
+  --dialog-overlay: rgba(31, 41, 45, .48);
+  --dialog-shell-radius: 12px;
+  --dialog-panel-radius: 9px;
+}
+
+/* 04 · 蓝灰编辑部. The light editorial sheet stays legible against Lattice's
+ * deep-blue workspace; square geometry and a blue rule carry the theme. */
+html[data-theme="lattice"] {
+  --dialog-color-scheme: light;
+  --dialog-shell: #f2f5f7;
+  --dialog-body: #e8edf1;
+  --dialog-chrome: #dfe6eb;
+  --dialog-raised: #f8fafb;
+  --dialog-subtle: #dfe6eb;
+  --dialog-footer: #d7e0e7;
+  --dialog-toast: #f2f5f7;
+  --dialog-text: #132338;
+  --dialog-muted: #455b70;
+  --dialog-border: #9babb9;
+  --dialog-accent: #1f55a5;
+  --dialog-accent-foreground: #ffffff;
+  --dialog-accent-soft: rgba(31, 85, 165, .11);
+  --dialog-secondary-accent: rgba(31, 85, 165, .12);
+  --dialog-overlay: rgba(4, 13, 25, .72);
+  --dialog-shadow: 16px 16px 0 rgba(8, 18, 30, .28), 0 30px 82px rgba(0, 7, 18, .42);
+  --dialog-toast-shadow: 11px 11px 0 rgba(8, 18, 30, .25), 0 22px 56px rgba(0, 7, 18, .38);
+  --dialog-panel-shadow: 5px 5px 0 rgba(31, 55, 80, .10);
+  --dialog-shell-radius: 2px;
+  --dialog-panel-radius: 1px;
+  --dialog-info-fg: #174982;
+  --dialog-info-bg: #dce8f3;
+  --dialog-info-border: #89a7c2;
+  --dialog-warning-fg: #8a5807;
+  --dialog-warning-bg: #f4e7c8;
+  --dialog-warning-border: #c6a667;
+  --dialog-danger-fg: #9f3046;
+  --dialog-danger-bg: #f3dfe3;
+  --dialog-danger-border: #c98f9a;
+}
+
+/* 02 · 雾青玻璃. Crystal Aurora supplies the deep-sea backdrop while the
+ * translucent pale-cyan sheet keeps long-form copy crisp and calm. */
+html[data-theme="crystal-aurora"] {
+  --dialog-color-scheme: light;
+  --dialog-shell: rgba(234, 251, 248, .96);
+  --dialog-body: rgba(222, 244, 240, .96);
+  --dialog-chrome: rgba(213, 241, 237, .97);
+  --dialog-raised: rgba(246, 255, 253, .94);
+  --dialog-subtle: #d5f1ed;
+  --dialog-footer: rgba(207, 236, 232, .97);
+  --dialog-toast: rgba(234, 251, 248, .96);
+  --dialog-text: #0a2830;
+  --dialog-muted: #3e6269;
+  --dialog-border: #83bbb5;
+  --dialog-accent: #087d79;
+  --dialog-accent-foreground: #ffffff;
+  --dialog-accent-soft: rgba(8, 125, 121, .11);
+  --dialog-secondary-accent: rgba(77, 166, 214, .14);
+  --dialog-overlay: rgba(0, 13, 20, .72);
+  --dialog-shadow: 0 32px 86px rgba(0, 20, 29, .42), 0 8px 24px rgba(0, 20, 29, .20), 0 1px 0 rgba(255, 255, 255, .84) inset;
+  --dialog-toast-shadow: 0 24px 64px rgba(0, 20, 29, .38), 0 6px 20px rgba(0, 20, 29, .18), 0 1px 0 rgba(255, 255, 255, .84) inset;
+  --dialog-panel-shadow: 0 12px 30px rgba(0, 43, 49, .11), 0 1px 0 rgba(255, 255, 255, .74) inset;
+  --dialog-shell-radius: 24px;
+  --dialog-panel-radius: 16px;
+  --dialog-info-fg: #086b70;
+  --dialog-info-bg: #d4f0ed;
+  --dialog-info-border: #78b9b3;
+  --dialog-warning-fg: #8a5a08;
+  --dialog-warning-bg: #f4ead0;
+  --dialog-warning-border: #c8aa70;
+  --dialog-danger-fg: #a3354c;
+  --dialog-danger-bg: #f4dfe4;
+  --dialog-danger-border: #cd939e;
+}
+
+/* Administration is intentionally light even when the user workspace is dark. */
+body[data-admin-surface-active="true"] {
+  color-scheme: light;
+  --dialog-color-scheme: light;
+  --dialog-shell: #faf9f4;
+  --dialog-body: #f0f3ef;
+  --dialog-chrome: #edf3ef;
+  --dialog-raised: #fffefa;
+  --dialog-subtle: #e9efeb;
+  --dialog-footer: #e7efea;
+  --dialog-toast: #fffdf8;
+  --dialog-text: #17201d;
+  --dialog-muted: #596863;
+  --dialog-border: #c6d2cc;
+  --dialog-accent: #0b7b6c;
+  --dialog-accent-foreground: #ffffff;
+  --dialog-accent-soft: rgba(11, 123, 108, .12);
+  --dialog-secondary-accent: rgba(221, 151, 48, .18);
+  --dialog-overlay: rgba(17, 26, 23, .42);
+  --dialog-shadow: 0 34px 90px rgba(18, 36, 30, .24), 0 8px 24px rgba(18, 36, 30, .12), 0 0 0 1px rgba(255, 255, 255, .46) inset;
+  --dialog-toast-shadow: 0 22px 56px rgba(18, 36, 30, .22), 0 6px 18px rgba(18, 36, 30, .10), 0 0 0 1px rgba(255, 255, 255, .58) inset;
+  --dialog-panel-shadow: 0 12px 30px rgba(28, 48, 41, .09), 0 1px 2px rgba(28, 48, 41, .06), 0 1px 0 rgba(255, 255, 255, .82) inset;
+  --dialog-info-fg: #126e7a;
+  --dialog-info-bg: rgba(39, 150, 166, .12);
+  --dialog-info-border: rgba(39, 150, 166, .30);
+  --dialog-warning-fg: #9a5f08;
+  --dialog-warning-bg: rgba(222, 151, 42, .14);
+  --dialog-warning-border: rgba(222, 151, 42, .34);
+  --dialog-danger-fg: #b23d53;
+  --dialog-danger-bg: rgba(213, 74, 99, .12);
+  --dialog-danger-border: rgba(213, 74, 99, .30);
+}
+
+.platform-dialog-overlay {
+  background: var(--dialog-overlay);
+  backdrop-filter: blur(5px) saturate(.92);
+  -webkit-backdrop-filter: blur(5px) saturate(.92);
+}
+
+html[data-theme] .platform-dialog-surface,
+html[data-theme] .announcement-toast {
+  color-scheme: var(--dialog-color-scheme);
+  --background: var(--dialog-body);
+  --foreground: var(--dialog-text);
+  --card: var(--dialog-shell);
+  --card-foreground: var(--dialog-text);
+  --popover: var(--dialog-shell);
+  --popover-foreground: var(--dialog-text);
+  --secondary: var(--dialog-subtle);
+  --secondary-foreground: var(--dialog-muted);
+  --muted: var(--dialog-subtle);
+  --muted-foreground: var(--dialog-muted);
+  --accent: var(--dialog-subtle);
+  --accent-foreground: var(--dialog-text);
+  --primary: var(--dialog-accent);
+  --primary-foreground: var(--dialog-accent-foreground);
+  --border: var(--dialog-border);
+  --ring: var(--dialog-accent);
+  color: var(--dialog-text) !important;
+  border-style: solid !important;
+  border-width: 1px !important;
+  border-color: var(--dialog-border) !important;
+  border-radius: var(--dialog-shell-radius) !important;
+  background: var(--dialog-shell) !important;
+  box-shadow: var(--dialog-shadow) !important;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+body[data-admin-surface-active="true"] .platform-dialog-surface,
+body[data-admin-surface-active="true"] .announcement-toast {
+  color-scheme: light;
+  color: var(--dialog-text) !important;
+  border-color: var(--dialog-border) !important;
+  background: var(--dialog-shell) !important;
+  box-shadow: var(--dialog-shadow) !important;
+}
+
+.platform-dialog-surface::before,
+.announcement-toast::before {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  height: 3px;
+  content: "";
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--dialog-accent), color-mix(in srgb, var(--dialog-accent) 46%, var(--dialog-secondary-accent)), transparent 82%);
+}
+
+.platform-dialog-surface [data-slot="dialog-title"],
+.platform-dialog-surface [data-slot="alert-dialog-title"] {
+  color: var(--dialog-text);
+  font-size: 1.0625rem;
+  font-weight: 750;
+  line-height: 1.4;
+  letter-spacing: -.012em;
+}
+
+.platform-dialog-surface [data-slot="dialog-description"],
+.platform-dialog-surface [data-slot="alert-dialog-description"] {
+  color: var(--dialog-muted);
+  font-size: .875rem;
+  font-weight: 500;
+  line-height: 1.65;
+}
+
+.platform-dialog-surface [data-slot="dialog-close"] {
+  color: var(--dialog-muted);
+  border: 1px solid transparent;
+  border-radius: .65rem;
+}
+
+.platform-dialog-surface [data-slot="dialog-close"]:hover,
+.platform-dialog-surface [data-slot="dialog-close"]:focus-visible {
+  color: var(--dialog-text);
+  border-color: var(--dialog-border);
+  background: var(--dialog-subtle);
+}
+
+html[data-theme] .announcement-toast,
+body[data-admin-surface-active="true"] .announcement-toast {
+  isolation: isolate;
+  color: var(--dialog-text);
+  background: var(--dialog-toast) !important;
+  box-shadow: var(--dialog-toast-shadow) !important;
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
+}
+
+.announcement-toast-head {
+  border-bottom: 1px solid var(--dialog-border);
+  background:
+    radial-gradient(circle at 92% 0, var(--dialog-secondary-accent), transparent 54%),
+    var(--dialog-chrome);
+}
+
+.announcement-toast-body {
+  background: var(--dialog-toast);
+}
+
+.announcement-toast-actions {
+  border-top: 1px solid var(--dialog-border);
+  background: var(--dialog-footer);
+}
+
+.announcement-priority {
+  color: var(--dialog-info-fg);
+  border-color: var(--dialog-info-border);
+  background: var(--dialog-info-bg);
+}
+
+.announcement-priority-important {
+  color: var(--dialog-warning-fg);
+  border-color: var(--dialog-warning-border);
+  background: var(--dialog-warning-bg);
+}
+
+.announcement-priority-urgent {
+  color: var(--dialog-danger-fg);
+  border-color: var(--dialog-danger-border);
+  background: var(--dialog-danger-bg);
+}
+
+html[data-theme] .announcement-reader,
+body[data-admin-surface-active="true"] .announcement-reader {
+  background: var(--dialog-shell) !important;
+}
+
+.announcement-reader-header,
+.platform-message-header {
+  background:
+    radial-gradient(circle at 86% 0, var(--dialog-secondary-accent), transparent 48%),
+    var(--dialog-chrome);
+}
+
+.announcement-reader-body,
+.platform-message-body {
+  background: var(--dialog-body);
+}
+
+.announcement-reader-panel,
+.platform-message-panel {
+  border-color: var(--dialog-border) !important;
+  border-radius: var(--dialog-panel-radius) !important;
+  background: var(--dialog-raised);
+  box-shadow: var(--dialog-panel-shadow);
+}
+
+.announcement-reader-note {
+  border-color: var(--dialog-border) !important;
+  border-radius: var(--dialog-panel-radius) !important;
+  background: var(--dialog-subtle);
+}
+
+.announcement-reader-feature {
+  border-color: var(--dialog-border);
+  border-radius: var(--dialog-panel-radius) !important;
+  background:
+    radial-gradient(circle at 92% 6%, var(--dialog-secondary-accent), transparent 48%),
+    linear-gradient(150deg, color-mix(in srgb, var(--dialog-accent) 12%, var(--dialog-raised)), var(--dialog-raised));
+  box-shadow: var(--dialog-panel-shadow);
+}
+
+.announcement-reader-footer,
+.platform-message-footer {
+  background: var(--dialog-footer);
+}
+
+/* The three selected cards are theme mappings, not one universal popup skin. */
+html[data-theme="soft-white"] :is(
+  .platform-dialog-surface [data-slot="dialog-title"],
+  .platform-dialog-surface [data-slot="alert-dialog-title"],
+  .announcement-toast h2,
+  .announcement-reader h2,
+  .account-notification-reader h2
+) {
+  font-family: "Songti SC", "Noto Serif CJK SC", "STSong", serif;
+  font-weight: 750;
+}
+
+html[data-theme="soft-white"] :is(.announcement-toast-head, .announcement-reader-header, .platform-message-header) {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 27px, rgba(123, 48, 57, .035) 27px 28px),
+    var(--dialog-chrome);
+}
+
+html[data-theme="crystal-aurora"] :is(.platform-dialog-surface, .announcement-toast) {
+  backdrop-filter: blur(18px) saturate(1.06);
+  -webkit-backdrop-filter: blur(18px) saturate(1.06);
+}
+
+html[data-theme="crystal-aurora"] :is(.announcement-priority, .announcement-reader-header .announcement-priority) {
+  border-radius: 999px !important;
+}
+
+html[data-theme="lattice"] :is(.platform-dialog-surface, .announcement-toast) {
+  border-left: 7px solid var(--dialog-accent) !important;
+}
+
+html[data-theme="lattice"] :is(
+  .announcement-reader-panel,
+  .announcement-reader-note,
+  .announcement-reader-feature,
+  .platform-message-panel
+) {
+  border-left: 3px solid var(--dialog-accent) !important;
+}
+
+html[data-theme="lattice"] :is(.announcement-toast-head, .announcement-reader-header, .platform-message-header) {
+  background:
+    linear-gradient(rgba(31, 85, 165, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 85, 165, .055) 1px, transparent 1px),
+    var(--dialog-chrome);
+  background-size: 24px 24px;
+}
+
+html[data-theme="lattice"] :is(
+  .platform-dialog-surface button,
+  .announcement-toast button,
+  .announcement-reader button,
+  .announcement-priority
+) {
+  border-radius: 1px !important;
+}
+
+.announcement-reader p,
+.announcement-toast p,
+.account-notification-reader p {
+  text-wrap: pretty;
+}
+
+.announcement-toast h2,
+.announcement-reader h2,
+.account-notification-reader h2 {
+  text-wrap: balance;
+}
+
+.platform-dialog-surface :is(button, a):focus-visible,
+.announcement-toast :is(button, a):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--dialog-accent) 74%, white);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform-dialog-surface,
+  .platform-dialog-overlay,
+  .announcement-toast {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -160,7 +160,7 @@ includesAll("status-route:authenticated-query-and-safe-output", statusRoute, [
   "userId: user.id",
   "VOICE_LIFECYCLE_STATUS_INPUT_INVALID",
   "VOICE_LIFECYCLE_REQUEST_NOT_FOUND",
-  'record.state === "completed" ? user.role === \'admin\' ? record.response : publicVoiceResponse(record.response) : null',
+  'record.state === "completed" ? publicVoiceResponse(record.response) : null',
 ]);
 excludesAll("status-route:no-sensitive-task-fields", statusRoute, [
   "payloadFingerprint:",

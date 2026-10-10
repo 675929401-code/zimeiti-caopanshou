@@ -1,6 +1,9 @@
 const path = require("node:path");
 
-const releaseRoot = process.env.RELEASE_ROOT || "/srv/zimeiti-caopanshou";
+// Production storage is rooted on the dedicated /data mount. Falling back to
+// /srv would place mutable state on the system disk when an environment value
+// is accidentally omitted.
+const releaseRoot = process.env.RELEASE_ROOT || "/data/web";
 const webRoot = process.env.WEB_RELEASE_DIR || path.join(releaseRoot, "current-web");
 const voiceRoot = process.env.VOICE_RELEASE_DIR || path.join(releaseRoot, "current-voice");
 const logRoot = process.env.RELEASE_LOG_DIR || path.join(releaseRoot, "shared", "logs");
@@ -70,6 +73,7 @@ module.exports = {
         DEPLOY_COMMIT_SHA: deployCommitSha,
         EXPECTED_BUILD_ID: expectedBuildId,
         COZE_PROJECT_ENV: cozeProjectEnv,
+        RELEASE_READINESS_PROFILE: "production-full-v1",
         MEDIA_QUEUE_WORKER_PROCESS: "0",
         DIGITAL_VIDEO_QUEUE_WORKER: "0",
         DIGITAL_HUMAN_LONG_WORKER: "0",
@@ -103,6 +107,7 @@ module.exports = {
         DEPLOY_COMMIT_SHA: deployCommitSha,
         EXPECTED_BUILD_ID: expectedBuildId,
         COZE_PROJECT_ENV: cozeProjectEnv,
+        RELEASE_READINESS_PROFILE: "production-full-v1",
       },
     },
     {
@@ -144,6 +149,7 @@ module.exports = {
         DEPLOY_COMMIT_SHA: deployCommitSha,
         EXPECTED_BUILD_ID: expectedBuildId,
         COZE_PROJECT_ENV: cozeProjectEnv,
+        RELEASE_READINESS_PROFILE: "production-full-v1",
         MEDIA_QUEUE_WORKER_PROCESS: "1",
         MEDIA_QUEUE_WORKER_DRAIN_MS: "25000",
         DIGITAL_VIDEO_QUEUE_WORKER: "1",

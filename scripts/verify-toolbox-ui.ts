@@ -53,17 +53,17 @@ async function verifySourceContracts() {
   assert.match(page, /ArrowDown/);
   assert.match(page, /ArrowUp/);
   assert.match(page, /aria-orientation="vertical"/);
-  assert.match(page, /localStorage\.getItem\("toolbox_active_tab"\)/);
-  assert.match(page, /localStorage\.setItem\("toolbox_active_tab", activeTab\)/);
-  assert.match(page, /hasResolvedInitialTab/);
-  assert.doesNotMatch(page, /removeItem\("toolbox_active_tab"\)/);
+  assert.match(page, /const DEFAULT_TOOL_TAB: ToolTab = "text"/);
+  assert.doesNotMatch(page, /localStorage\.(?:getItem|setItem)\("toolbox_active_tab"/);
   assert.match(page, /mountedPanels\.has\("extract"\)/);
   assert.match(page, /mountedPanels\.has\("format"\)/);
   assert.match(page, /mountedPanels\.has\("segment"\)/);
   assert.match(page, /hidden=\{activePanel !== "extract"\}/);
   assert.match(page, /onTabChange=\{selectTab\}/);
 
-  assert.match(menu, /const href = preferredToolboxHref\(\)/, "single toolbox entry must reopen the real workbench at the user's last tab");
+  assert.match(menu, /const DEFAULT_TOOLBOX_TAB = "text"/);
+  assert.match(menu, /return `\/tools\?tab=\$\{DEFAULT_TOOLBOX_TAB\}`/, "single toolbox entry must always open text extraction");
+  assert.match(menu, /const href = preferredToolboxHref\(\)/, "single toolbox entry must open the deterministic text extraction URL");
   assert.match(menu, /if \(navigate\) navigate\(href\);[\s\S]*?else router\.push\(href\)/, "toolbox entry must support the shared route transition and router fallback");
   assert.match(sidebar, /normalizeShortcuts/);
   assert.match(sidebar, /TOOLBOX_SHORTCUT/);

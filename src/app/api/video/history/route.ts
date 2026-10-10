@@ -11,18 +11,20 @@ import { supportsConfirmedVideoCancellation } from "@/lib/video-cancellation";
 
 import { hideMediaHistoryItem } from "@/lib/media-history-visibility";
 import { canRetryVideoHistoryTask, sortVideoHistoryBySubmission } from '@/lib/video-history-presentation';
+import {
+  parseVideoGenerationRequestSnapshot,
+  type VideoGenerationRequestSnapshotV1,
+  type VideoRequestAssetRef,
+} from "@/lib/video-budget-reservation";
 
-const WORKBENCH_VIDEO_HISTORY_RETENTION_DAYS = 3;
-
-function workbenchHistoryCutoff(now = Date.now()) {
-  // Retain three natural Asia/Shanghai dates (today, yesterday and the day
-  // before), rather than a sliding 72-hour window that changes mid-day.
-  const shanghaiNow = new Date(now + 8 * 60 * 60 * 1000);
-  return new Date(Date.UTC(
-    shanghaiNow.getUTCFullYear(),
-    shanghaiNow.getUTCMonth(),
-    shanghaiNow.getUTCDate() - (WORKBENCH_VIDEO_HISTORY_RETENTION_DAYS - 1),
-  ) - 8 * 60 * 60 * 1000).toISOString();
+interface VideoRetryInputs {
+  firstFrameUrl: string;
+  lastFrameUrl: string;
+  referenceImageUrl: string;
+  referenceImageUrls: string[];
+  audioUrl: string;
+  referenceAudioUrls: string[];
+  sourceVideoUrl: string;
 }
 
 interface VideoTaskRow {
@@ -56,6 +58,8 @@ interface VideoTaskRow {
   batchTopic: string;
   cardIndex: number;
   needsProxy: boolean;
+  requestSnapshot?: VideoGenerationRequestSnapshotV1;
+  retryInputs?: VideoRetryInputs;
   retrySource?: {
     personAssetId: string;
     audioAssetId: string;
@@ -67,31 +71,40 @@ interface VideoTaskRow {
 function mapTaskRow(t: Record<string, unknown>): VideoTaskRow {
   const model = (t.video_models as Record<string, unknown>) || {};
   const publicModelName = publicModelDisplayName({ ...model, name: model.name || "所选视频模型" });
-  const publicModelId = t.model_id ? toPublicModelId("video", String(t.model_id)) : "";
+  const internalPublicModelId = t.model_id ? toPublicModelId("video", String(t.model_id)) : "";
   const rawError = String(t.error_message ?? "");
   const taskId = String(t.id ?? "");
+  let requestSnapshot: VideoGenerationRequestSnapshotV1 | undefined;
+  if (t.request_snapshot !== null && t.request_snapshot !== undefined) {
+    try {
+      requestSnapshot = parseVideoGenerationRequestSnapshot(t.request_snapshot);
+    } catch {
+      console.warn("[VideoHistory] invalid durable request snapshot", { taskId });
+    }
+  }
+  const canRetry = canRetryVideoHistoryTask(t) && (t.request_snapshot == null || Boolean(requestSnapshot));
   return {
-    canRetry: canRetryVideoHistoryTask(t),
+    canRetry,
     id: taskId,
     clientRequestId: String(t.client_request_id ?? ""),
     clientRequestFingerprint: String(t.request_fingerprint ?? ""),
     // History is a public workbench contract. Both the primary and explicit
     // alias remain public IDs so old refresh clients cannot fall back to the
     // database model key and accidentally poll or cancel a different binding.
-    modelId: publicModelId,
-    publicModelId,
+    modelId: requestSnapshot?.publicModelId || internalPublicModelId,
+    publicModelId: requestSnapshot?.publicModelId || internalPublicModelId,
     supportsRemoteCancel: supportsConfirmedVideoCancellation(model.protocol_type, model.api_protocol_config),
     followsSourceDuration: getVideoInputContract(model).requiresSourceVideo,
     taskIdExternal: String(t.task_id_external ?? ""),
     taskLabel: String(t.task_label ?? ""),
     modelName: publicModelName,
-    prompt: String(t.prompt ?? ""),
+    prompt: requestSnapshot?.userPrompt ?? String(t.prompt ?? ""),
     firstFrameUrl: String(t.first_frame_url ?? ""),
     lastFrameUrl: String(t.last_frame_url ?? ""),
     referenceImageUrl: String(t.reference_image_url ?? ""),
-    aspectRatio: String(t.aspect_ratio ?? ""),
-    resolution: String(t.resolution ?? ""),
-    durationSeconds: Number(t.duration_seconds ?? 0),
+    aspectRatio: requestSnapshot?.aspectRatio ?? String(t.aspect_ratio ?? ""),
+    resolution: requestSnapshot?.resolution ?? String(t.resolution ?? ""),
+    durationSeconds: requestSnapshot?.targetDurationSeconds ?? Number(t.duration_seconds ?? 0),
     status: String(t.status ?? ""),
     videoUrl: String(t.video_url ?? ""),
     thumbnailUrl: "",
@@ -106,6 +119,7 @@ function mapTaskRow(t: Record<string, unknown>): VideoTaskRow {
     batchTopic: String(t.batch_topic ?? ""),
     cardIndex: Number(t.card_index ?? 0),
     needsProxy: Boolean(t.needs_proxy ?? false) || String(t.video_url ?? "").includes("/content"),
+    ...(requestSnapshot ? { requestSnapshot } : {}),
   };
 }
 
@@ -157,20 +171,55 @@ async function attachPlaybackAccess(
   task: VideoTaskRow,
   userId: string,
 ): Promise<VideoTaskRow> {
-  const signInput = async (assetRef: string) => {
+  const signInput = async (assetRef: string, category: "image" | "audio" | "video") => {
     if (!assetRef.startsWith("object://tencent_cos/")) return assetRef;
     try {
-      return await signAutodlH3OwnedAssetRefForUser({ userId, assetRef, category: "image" });
+      return await signAutodlH3OwnedAssetRefForUser({ userId, assetRef, category });
     } catch {
       return "";
     }
   };
-  const [firstFrameUrl, lastFrameUrl, referenceImageUrl] = await Promise.all([
-    signInput(task.firstFrameUrl),
-    signInput(task.lastFrameUrl),
-    signInput(task.referenceImageUrl),
+  const [firstFrameUrl, lastFrameUrl, referenceImageUrl, signedSnapshotAssets] = await Promise.all([
+    signInput(task.firstFrameUrl, "image"),
+    signInput(task.lastFrameUrl, "image"),
+    signInput(task.referenceImageUrl, "image"),
+    Promise.all((task.requestSnapshot?.referenceAssets || []).map(async (asset) => ({
+      ...asset,
+      url: await signInput(
+        asset.ref,
+        asset.role === "reference_audio" || asset.role === "reference_audio_list" || asset.role === "audio_asset"
+          ? "audio"
+          : asset.role === "source_video" ? "video" : "image",
+      ),
+    }))),
   ]);
-  if (task.status !== "completed") return { ...task, firstFrameUrl, lastFrameUrl, referenceImageUrl };
+  const byRole = (role: VideoRequestAssetRef["role"]) => signedSnapshotAssets
+    .filter((asset) => asset.role === role && asset.url)
+    .sort((left, right) => left.index - right.index)
+    .map((asset) => asset.url);
+  const snapshotFirstFrames = byRole("first_frame");
+  const snapshotLastFrames = byRole("last_frame");
+  const snapshotReferenceImages = byRole("reference_image");
+  const snapshotReferenceImageList = byRole("reference_image_list");
+  const snapshotReferenceAudios = byRole("reference_audio");
+  const snapshotReferenceAudioList = byRole("reference_audio_list");
+  const snapshotSourceVideos = byRole("source_video");
+  const retryInputs: VideoRetryInputs | undefined = task.requestSnapshot ? {
+    firstFrameUrl: snapshotFirstFrames[0] || firstFrameUrl,
+    lastFrameUrl: snapshotLastFrames[0] || lastFrameUrl,
+    referenceImageUrl: snapshotReferenceImages[0] || referenceImageUrl,
+    referenceImageUrls: snapshotReferenceImageList,
+    audioUrl: snapshotReferenceAudios[0] || "",
+    referenceAudioUrls: snapshotReferenceAudioList,
+    sourceVideoUrl: snapshotSourceVideos[0] || "",
+  } : undefined;
+  const inputAccess = {
+    firstFrameUrl: retryInputs?.firstFrameUrl || firstFrameUrl,
+    lastFrameUrl: retryInputs?.lastFrameUrl || lastFrameUrl,
+    referenceImageUrl: retryInputs?.referenceImageUrl || referenceImageUrl,
+    ...(retryInputs ? { retryInputs } : {}),
+  };
+  if (task.status !== "completed") return { ...task, ...inputAccess };
   const [videoUrl, thumbnailUrl] = await Promise.all([
     createVideoAccessUrl({
       taskId: task.id,
@@ -187,9 +236,7 @@ async function attachPlaybackAccess(
   ]);
   return {
     ...task,
-    firstFrameUrl,
-    lastFrameUrl,
-    referenceImageUrl,
+    ...inputAccess,
     videoUrl,
     thumbnailUrl,
   };
@@ -294,10 +341,6 @@ export async function GET(request: NextRequest) {
     const requestedSurface = searchParams.get("surface");
     const digitalHuman = requestedSurface === "digital-human";
     const storyboard = requestedSurface === "storyboard-workbench";
-    const retainedWorkbenchHistory = storyboard || requestedSurface === "video-page";
-    const historyCutoff = retainedWorkbenchHistory
-      ? workbenchHistoryCutoff()
-      : "";
     // Ordinary video history owns legacy unlabeled submissions, but never
     // storyboard or digital-human tasks. Scope both the database window and
     // the final predicate so unrelated rows cannot occupy a page or be retried.
@@ -316,12 +359,12 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseClient();
     const userId = user.userId || user.username || "unknown";
 
-    const selectFields = "id, client_request_id, request_fingerprint, model_id, task_id_external, task_label, prompt, first_frame_url, last_frame_url, reference_image_url, aspect_ratio, resolution, duration_seconds, status, video_url, thumbnail_url, error_message, submission_error_code, billing_state, provider_result_url, price_charged, created_at, completed_at, batch_id, batch_topic, card_index, video_models(name,model_name,protocol_type,api_protocol_config)";
+    const selectFields = "id, client_request_id, request_fingerprint, request_snapshot, model_id, task_id_external, task_label, prompt, first_frame_url, last_frame_url, reference_image_url, aspect_ratio, resolution, duration_seconds, status, video_url, thumbnail_url, error_message, submission_error_code, billing_state, provider_result_url, source_expired_at, price_charged, created_at, completed_at, batch_id, batch_topic, card_index, video_models(name,model_name,protocol_type,api_protocol_config)";
 
     // 濡傛灉鍙煡杩涜涓殑浠诲姟锛堥〉闈㈡仮澶嶇敤锛?
     const requestedTaskId = searchParams.get("taskId");
     if (requestedTaskId) {
-      let requestedTaskQuery = supabase.from("video_tasks").select(selectFields).eq("user_id", userId).eq("id", requestedTaskId).is("history_hidden_at", null);
+      const requestedTaskQuery = supabase.from("video_tasks").select(selectFields).eq("user_id", userId).eq("id", requestedTaskId).is("history_hidden_at", null).is("source_expired_at", null);
       const found = await requestedTaskQuery.maybeSingle();
       if (found.error) return NextResponse.json({ error: "原任务暂时无法读取" }, { status: 503 });
       if (!found.data || !belongsToSurface(found.data)) return NextResponse.json({ error: "原任务不存在或无权访问" }, { status: 404 });
@@ -331,18 +374,16 @@ export async function GET(request: NextRequest) {
     }
 
     if (statusFilter === "active") {
-      let activeQuery = supabase
+      const activeQuery = supabase
         .from("video_tasks")
         .select(selectFields)
         .eq("user_id", userId)
         .is("history_hidden_at", null)
+        .is("source_expired_at", null)
         .or(surfaceFilter)
         .in("status", ["pending", "queued", "processing", "generating", "finalizing", "billing_pending"])
         .order("created_at", { ascending: false })
         .order("card_index", { ascending: true, nullsFirst: false });
-      if (historyCutoff) {
-        activeQuery = activeQuery.gte("created_at", historyCutoff);
-      }
       const { data, error } = await activeQuery;
 
       if (error) {
@@ -354,24 +395,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ tasks, total: tasks.length });
     }
 
-    // 鏌ユ墍鏈夌姸鎬佺殑璁板綍锛?0澶╁唴锛夛紝杩涜涓殑涓嶉檺鏃堕棿
-
-    // 鍒嗕袱姝ユ煡锛?) 杩涜涓殑浠诲姟锛堜笉闄愭椂闂达級2) 20澶╁唴缁堟€佺殑浠诲姟锛坈ompleted/failed/cancelled锛?
+    // Active and terminal tasks remain visible while their upstream source is
+    // deliverable. A definitive 404/410 marks source_expired_at and hides the
+    // row; transient network/5xx errors never shorten history.
     const terminalStatuses = ["completed", "failed", "cancelled", "expired"];
-    let terminalQuery = supabase.from("video_tasks").select(selectFields, { count: "exact" })
-      .eq("user_id", userId).is("history_hidden_at", null).or(surfaceFilter)
+    const terminalQuery = supabase.from("video_tasks").select(selectFields, { count: "exact" })
+      .eq("user_id", userId).is("history_hidden_at", null).is("source_expired_at", null).or(surfaceFilter)
       .in("status", terminalStatuses);
-    let activeHistoryQuery = supabase
+    const activeHistoryQuery = supabase
       .from("video_tasks")
       .select(selectFields)
       .eq("user_id", userId)
       .is("history_hidden_at", null)
+      .is("source_expired_at", null)
       .or(surfaceFilter)
       .in("status", ["pending", "queued", "processing", "generating", "finalizing", "billing_pending"]);
-    if (historyCutoff) {
-      terminalQuery = terminalQuery.gte("created_at", historyCutoff);
-      activeHistoryQuery = activeHistoryQuery.gte("created_at", historyCutoff);
-    }
     const [activeResult, terminalResult] = await Promise.all([
       activeHistoryQuery
         .order("created_at", { ascending: false }),

@@ -11,7 +11,9 @@ const bindEmail = read("src/app/api/auth/bind-email/route.ts");
 const changePhone = read("src/app/api/auth/change-phone/route.ts");
 const authMe = read("src/app/api/auth/me/route.ts");
 const avatarRoute = read("src/app/api/auth/avatar/route.ts");
+const avatarProxyRoute = read("src/app/api/avatars/route.ts");
 const avatarPresets = read("src/lib/user-profile-avatar.ts");
+const publicAssetManifest = JSON.parse(read("deploy/manifests/public-assets.v1.json"));
 const avatarMigration = read("supabase/migrations/20261003140000_user_profile_avatars.sql");
 const avatarSchemaCacheMigration = read("supabase/migrations/20261003143000_user_profile_avatars_schema_cache.sql");
 const email = read("src/lib/email.ts");
@@ -37,12 +39,27 @@ assert.match(profile, /\/api\/auth\/change-phone/u, "个人中心必须调用专
 
 const presetMatches = avatarPresets.match(/src:\s*'\/avatars\/profile-generated\/profile-avatar-\d+\.webp'/gu) || [];
 assert.equal(presetMatches.length, 8, "必须提供恰好8个预设头像");
+const presetPaths = Array.from({ length: 8 }, (_, index) => `public/avatars/profile-generated/profile-avatar-${String(index + 1).padStart(2, "0")}.webp`);
+const manifestPaths = new Set(publicAssetManifest.files.map(file => file.path));
+for (const presetPath of presetPaths) {
+  assert.ok(fs.existsSync(presetPath), `预设头像源文件缺失: ${presetPath}`);
+  assert.ok(fs.statSync(presetPath).size > 0, `预设头像源文件为空: ${presetPath}`);
+  assert.ok(manifestPaths.has(presetPath), `预设头像未进入发布素材清单: ${presetPath}`);
+}
 assert.doesNotMatch(avatarPresets, /agent-cyber/u, "个人预设头像不能继续使用写实赛博人物组");
 assert.doesNotMatch(avatarPresets, /cute-semantic/u, "个人预设头像不能复用应用广场原头像素材");
 assert.match(profile, /参考应用广场气质重新设计的原创动画人物/u, "个人中心必须说明预设头像是原创重设计而非主页素材复用");
 assert.match(avatarRoute, /requireOwnershipRecord: true/u, "上传头像必须登记资产归属");
 assert.match(avatarRoute, /validateUploadBuffer/u, "上传头像必须校验真实文件类型");
 assert.match(avatarRoute, /publicRead: true/u, "个人头像必须返回稳定可读URL");
+assert.match(avatarRoute, /userProfileAvatarProxyUrl\(stored\.key, stored\.provider\)/u, "上传头像响应必须使用本站稳定代理地址");
+assert.match(authMe, /select\("avatar_url,storage_provider,storage_key,source"\)/u, "个人资料读取必须以供应商和对象key为事实源");
+assert.match(authMe, /userProfileAvatarProxyUrl\(row\.storage_key, row\.storage_provider\)/u, "历史上传头像必须转换为本站稳定代理地址");
+assert.match(avatarProxyRoute, /let requestedProvider: StorageProviderType \| undefined/u, "头像代理必须把已验证供应商绑定到存储层类型");
+assert.match(avatarProxyRoute, /if \(requestedProviderParam\) \{[\s\S]*?!isUserProfileAvatarStorageProvider\(requestedProviderParam\)[\s\S]*?requestedProvider = requestedProviderParam;/u, "头像代理必须先验证供应商再传入存储层");
+assert.match(avatarProxyRoute, /storageManager\.read\(key, requestedProvider\)/u, "头像代理必须回到记录所属供应商读取");
+assert.doesNotMatch(avatarProxyRoute, /requestedProviderParam\s+as\s+StorageProviderType/u, "头像代理不能用强制断言绕过供应商验证");
+assert.match(avatarProxyRoute, /requestedProvider && !key\.startsWith\('user-profile-avatars'\)/u, "显式供应商读取必须限制在用户头像命名空间");
 assert.match(avatarRoute, /resize\(512, 512, \{ fit: 'cover', position: 'attention' \}\)/u, "上传头像必须自动裁成512方图");
 assert.match(avatarMigration, /REFERENCES public\.users\(id\) ON DELETE CASCADE/u, "头像记录必须与用户生命周期绑定");
 assert.match(avatarSchemaCacheMigration, /NOTIFY pgrst, 'reload schema'/u, "头像迁移后必须刷新PostgREST结构缓存");
@@ -67,7 +84,7 @@ assert.match(emailTemplate, /normalizeDisplayText/u, "邮件品牌名必须修�
 
 console.log(JSON.stringify({
   passed: true,
-  checks: 37,
+  checks: 53,
   paidCalls: 0,
   productionWrites: 0,
 }, null, 2));

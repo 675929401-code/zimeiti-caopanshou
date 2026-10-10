@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "backup-receipt.v1.schema.json",
+  "title": "Encrypted component backup receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "backupId",
+    "sourceVersion",
+    "createdEpoch",
+    "completedEpoch",
+    "artifactCreationDurationSeconds",
+    "oldestComponentAgeAtCompletionSeconds",
+    "encryptedPackage",
+    "encryptedSha256",
+    "manifestSha256",
+    "componentSnapshots",
+    "sharedSnapshot",
+    "productionConsistency",
+    "productionConsistencyComplete",
+    "sourceTargetDisjoint",
+    "expectedDeviceVerified",
+    "plaintextFinalPackage",
+    "finalPackageHashVerified",
+    "manifestHashVerified",
+    "atomicCommit"
+  ],
+  "$defs": {
+    "componentSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component",
+        "method",
+        "startedEpoch",
+        "completedEpoch",
+        "consistency",
+        "sharedWithOtherComponents",
+        "evidenceSha256"
+      ],
+      "properties": {
+        "component": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "method": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "startedEpoch": { "type": "integer", "minimum": 1 },
+        "completedEpoch": { "type": "integer", "minimum": 1 },
+        "consistency": { "const": "verified" },
+        "sharedWithOtherComponents": { "const": false },
+        "evidenceSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": { "const": "zimeiti-backup-receipt.v1" },
+    "status": { "const": "complete" },
+    "backupId": { "type": "string", "pattern": "^backup-[0-9]{8}T[0-9]{6}Z-[0-9]+$" },
+    "sourceVersion": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "createdEpoch": { "type": "integer", "minimum": 1 },
+    "completedEpoch": { "type": "integer", "minimum": 1 },
+    "artifactCreationDurationSeconds": { "type": "integer", "minimum": 0 },
+    "oldestComponentAgeAtCompletionSeconds": { "type": "integer", "minimum": 0 },
+    "encryptedPackage": { "const": "package.tar.gz.age" },
+    "encryptedSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "manifestSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "componentSnapshots": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/componentSnapshot" }
+    },
+    "sharedSnapshot": { "const": false },
+    "productionConsistency": { "const": "incomplete" },
+    "productionConsistencyComplete": { "const": false },
+    "sourceTargetDisjoint": { "const": true },
+    "expectedDeviceVerified": { "const": true },
+    "plaintextFinalPackage": { "const": false },
+    "finalPackageHashVerified": { "const": true },
+    "manifestHashVerified": { "const": true },
+    "atomicCommit": { "const": true }
+  }
+}

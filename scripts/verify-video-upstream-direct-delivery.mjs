@@ -7,67 +7,74 @@ const [
   proxyDownload,
   storageRoute,
   directDeliveryMigration,
-  archiveMigration,
+  retentionMigration,
   persistence,
-  archiveWorker,
   workerRuntime,
   mediaHistory,
+  videoHistory,
+  policySource,
 ] = await Promise.all([
   readFile("src/lib/video-terminal-finalizer.ts", "utf8"),
   readFile("src/app/api/video/proxy/route.ts", "utf8"),
   readFile("src/app/api/video/proxy-download/route.ts", "utf8"),
   readFile("src/app/api/video/storage/[taskId]/route.ts", "utf8"),
   readFile("supabase/migrations/20260926133000_video_upstream_direct_delivery.sql", "utf8"),
-  readFile("supabase/migrations/20261009040000_video_history_archive_queue.sql", "utf8"),
+  readFile("supabase/migrations/20261009043000_user_content_retention_and_video_direct_delivery.sql", "utf8"),
   readFile("src/lib/video-persistence.ts", "utf8"),
-  readFile("src/lib/video-history-archive-worker.ts", "utf8"),
   readFile("src/lib/media-queue-worker-runtime.ts", "utf8"),
   readFile("src/app/api/media-history/route.ts", "utf8"),
+  readFile("src/app/api/video/history/route.ts", "utf8"),
+  readFile("deploy/policies/media-object-retention.v2.json", "utf8"),
 ]);
 
-assert.doesNotMatch(finalizer, /persistStableVideoFromUrl/u, "terminal delivery must not synchronously copy provider video");
-assert.match(finalizer, /stableStorageUrl = providerResultUrl/u, "provider result must become the delivery source");
-assert.match(finalizer, /storage_url: usesPersistentCopy \? stableStorageUrl : null/u, "new provider results must not claim secondary storage");
+const policy = JSON.parse(policySource);
+
+assert.doesNotMatch(finalizer, /persistStableVideoFromUrl/u, "ordinary terminal delivery must not synchronously copy provider video");
+assert.match(finalizer, /stableStorageUrl = providerResultUrl/u, "provider result must become the ordinary delivery source");
+assert.match(finalizer, /storage_url: usesPersistentCopy \? stableStorageUrl : null/u, "ordinary provider results must not claim platform storage");
 assert.match(finalizer, /delivery_mode: usesPersistentCopy \? "persistent_object" : "provider_proxy"/u, "wallet metadata must record delivery mode without leaking a signed URL");
-assert.match(proxy, /provider_result_url/u, "authenticated proxy must read provider result URLs");
-assert.match(proxy, /providerResultUrl \|\| directVideoUrl/u, "provider result must be preferred over legacy direct video URL");
-assert.match(proxy, /trustedProviderResultHostname = trustedVideoProviderResultHostname\(videoUrl/u, "playback proxy must narrowly trust protocol-validated provider result URLs");
-assert.match(proxyDownload, /trustedProviderResultHostname = trustedVideoProviderResultHostname\(effectiveUrl/u, "download proxy must narrowly trust protocol-validated provider result URLs");
-assert.match(proxyDownload, /\[404, 410\]\.includes\(cdnResponse\.status\)/u, "download proxy must distinguish expired provider media");
-assert.match(proxyDownload, /isUpstreamErrorDocument\(contentType\)/u, "download proxy must reject HTML or JSON masquerading as video");
-assert.match(persistence, /const AUTODL_HOSTED_RESULT_HOSTS = new Set<string>/u, "hosted result trust must remain an exact hostname set");
-assert.match(persistence, /if \(!\/\\\.mp4\$\/iu\.test\(parsed\.pathname\)\)/u, "hosted result trust must require an MP4 path");
-assert.match(storageRoute, /redirectToOriginProxy/u, "legacy storage access route must fall back to authenticated origin proxy");
-assert.match(directDeliveryMigration, /v_delivery_url !~ '\^https\?:\/\/\[\^\[:space:\]\]\+\$'/u, "atomic finalizer must accept only HTTP(S) provider delivery URLs");
-assert.match(directDeliveryMigration, /needs_proxy = NOT v_persistent/u, "provider URLs must remain behind the authenticated proxy");
-assert.match(directDeliveryMigration, /storage_url = CASE WHEN v_persistent THEN v_delivery_url ELSE NULL END/u, "provider delivery must not populate platform storage");
-assert.match(directDeliveryMigration, /FOR UPDATE/u, "billing and delivery replay must remain row-locked");
+assert.doesNotMatch(finalizer, /Ordinary video history is retained for three days/u, "ordinary provider URLs must not promise a fixed retention window");
+assert.doesNotMatch(finalizer, /视频已生成并永久保存/u, "ordinary provider URLs must not be described as permanently saved");
+assert.match(finalizer, /视频已生成且当前播放源可用/u, "billing-pending copy must describe current source availability accurately");
+
+assert.match(proxy, /provider_result_url/u, "authenticated playback must read provider result URLs");
+assert.match(proxy, /providerResultUrl \|\| directVideoUrl/u, "provider result must be preferred over legacy direct URL");
+assert.match(proxy, /trustedProviderResultHostname = trustedVideoProviderResultHostname\(videoUrl/u, "playback must narrowly trust a protocol-validated host");
+assert.match(proxy, /directExpiryStatus = directStatus === 404 \|\| directStatus === 410/u, "playback must classify only definitive source expiry");
+assert.match(proxy, /!hasProviderContentFallback \|\| fallbackExpiryStatus/u, "playback must try every supported path before expiring a source");
+assert.match(proxy, /await upstreamResp\.body\?\.cancel\(\)/u, "non-media upstream responses must release their body");
+
+assert.match(proxyDownload, /trustedProviderResultHostname = trustedVideoProviderResultHostname\(effectiveUrl/u, "download must narrowly trust a protocol-validated host");
+assert.match(proxyDownload, /\[404, 410\]\.includes\(cdnResponse\.status\)/u, "download must distinguish definitive expiry");
+assert.match(proxyDownload, /isUpstreamErrorDocument\(contentType\)/u, "download must reject HTML or JSON masquerading as video");
+assert.match(storageRoute, /redirectToOriginProxy/u, "legacy local-storage URLs must fall back to the authenticated origin proxy");
+assert.doesNotMatch(storageRoute, /createReadStream|uploads\/videos/u, "retired local files must not be served as a new persistence path");
+
+assert.match(directDeliveryMigration, /v_delivery_url !~ '\^https\?:\/\/\[\^\[:space:\]\]\+\$'/u, "atomic finalizer must accept only HTTP(S) provider URLs");
+assert.match(directDeliveryMigration, /needs_proxy = NOT v_persistent/u, "ordinary provider URLs must remain behind the authenticated proxy");
+assert.match(directDeliveryMigration, /storage_url = CASE WHEN v_persistent THEN v_delivery_url ELSE NULL END/u, "ordinary delivery must not populate platform storage");
+assert.match(directDeliveryMigration, /FOR UPDATE/u, "billing and delivery replay must remain row locked");
 assert.match(directDeliveryMigration, /wallet_operations/u, "direct delivery must preserve wallet attestation");
 
-assert.match(archiveMigration, /CREATE TABLE IF NOT EXISTS public\.video_history_archive_jobs/u, "history archive work must be durable database state");
-assert.match(archiveMigration, /FOR UPDATE OF job SKIP LOCKED/u, "archive claims must be safe across worker processes");
-assert.match(archiveMigration, /coalesce\(task\.completed_at, task\.created_at\) > now\(\) - interval '3 days'/u, "archive claims must stay inside the advertised retention window");
-assert.match(archiveMigration, /asset\.user_id::text = v_task\.user_id::text/u, "archive commit must prove asset ownership");
-assert.match(archiveMigration, /asset\.meta->>'taskId' = v_task\.id::text/u, "archive commit must bind the object to its task");
-assert.match(archiveMigration, /REVOKE ALL ON TABLE public\.video_history_archive_jobs FROM PUBLIC, anon, authenticated/u, "archive internals must not be client writable");
-assert.doesNotMatch(
-  archiveMigration,
-  /(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+public\.(?:wallet\w*|billing\w*|payment\w*)|\bbalance\s*=/iu,
-  "history archival must not mutate charging state",
-);
+assert.match(retentionMigration, /DROP TRIGGER IF EXISTS video_tasks_enqueue_history_archive/u, "global asynchronous archive copies must be retired");
+assert.match(retentionMigration, /state = 'dead_letter'[\s\S]*ARCHIVE_POLICY_RETIRED_DIRECT_DELIVERY/u, "old queue work must be retired with an audit reason");
+assert.match(retentionMigration, /mark_video_upstream_source_expired/u, "definitive expiry must be a service-only database transition");
+assert.match(retentionMigration, /p_http_status NOT IN \(404, 410\)/u, "expiry RPC must reject transient status codes");
+assert.match(retentionMigration, /provider_result_url = NULL,[\s\S]*video_url = NULL,[\s\S]*content_url = NULL/u, "confirmed expiry must clear delivery URLs without deleting task evidence");
 
-assert.match(archiveWorker, /claim_video_history_archive_batch/u, "worker must atomically claim archive work");
-assert.match(archiveWorker, /persistVideoFromUrl\(\s*claim\.providerResultUrl/u, "worker must copy the already-generated result without resubmission");
-assert.match(archiveWorker, /refreshedHostedResultUrl/u, "worker must refresh an expired hosted result without resubmitting generation");
-assert.match(archiveWorker, /pollVideoTask/u, "worker may only poll the existing hosted task when refreshing its result URL");
-assert.match(archiveWorker, /complete_video_history_archive_job/u, "worker must commit archive ownership through the database contract");
-assert.match(archiveWorker, /fail_video_history_archive_attempt/u, "worker must durably classify retry and source expiry");
-assert.doesNotMatch(archiveWorker, /fetch\([^)]*(?:generate|submit)|wallet|billing|deduct/iu, "archive worker must not generate again or charge again");
-assert.match(workerRuntime, /startVideoHistoryArchiveWorker\(\)/u, "dedicated media worker must start the archive loop");
-assert.match(workerRuntime, /stopVideoHistoryArchiveWorker\(drainTimeoutMs\(\)\)/u, "dedicated media worker must drain the archive loop on shutdown");
-assert.match(workerRuntime, /videoHistoryArchive: videoHistoryArchiveWorkerStatus\(\)/u, "archive loop status must be observable");
-assert.match(mediaHistory, /video_history_archive_jobs\(state,attempt_count,last_error_code,source_expired_at\)/u, "history API must read explicit archive delivery state");
-assert.match(mediaHistory, /archiveDeliveryPending/u, "history API must not advertise a failed archive attempt as playable completion");
-assert.match(mediaHistory, /archiveDeliveryFailed/u, "history API must present dead-letter archive work as failed instead of broken playback");
+assert.match(persistence, /storageScope: ManagedVideoStorageScope/u, "persistent copies must require an explicit managed scope");
+assert.match(persistence, /`videos\/scoped\/\$\{scope\}\//u, "managed exceptions must use scoped prefixes");
+assert.doesNotMatch(persistence, /videos\/generated\//u, "ordinary generated-video prefix must not remain in persistence code");
+assert.doesNotMatch(workerRuntime, /VideoHistoryArchive|videoHistoryArchive/u, "dedicated runtime must not start an archive-copy worker");
+assert.match(workerRuntime, /startUserContentRetentionWorker\(\)/u, "dedicated runtime must start bounded content cleanup");
 
-console.log("video delivery contract passed; immediateSecondaryCopies=0; asyncHistoryArchive=1; paidRequests=0");
+for (const historySource of [mediaHistory, videoHistory]) {
+  assert.doesNotMatch(historySource, /video_history_archive_jobs/u, "history must not depend on archive-copy state");
+  assert.match(historySource, /source_expired_at/u, "history must filter definitively expired sources");
+}
+assert.equal(policy.version, "media-object-retention.v2");
+assert.equal(policy.ordinaryVideoDelivery.copyToPlatformStorage, false);
+assert.equal(policy.ordinaryVideoDelivery.fixedRetentionDays, null);
+assert.deepEqual(policy.ordinaryVideoDelivery.expiryEvidence, [404, 410]);
+
+console.log("video direct-delivery contract passed; ordinarySecondaryCopies=0; fixedOrdinaryRetentionDays=null; paidRequests=0");

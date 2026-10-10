@@ -20,12 +20,13 @@ const secondReservationCall = route.indexOf(
   "const reservation = await reserveVideoGenerationTask",
   firstReservationCall + 1,
 );
+const terminalFinalizerImport = route.match(/import\s*\{([^}]*)\}\s*from "@\/lib\/video-terminal-finalizer";/u)?.[1] || "";
 
 const staticChecks: Array<[string, boolean]> = [
   [
     "route uses the versioned budget reservation helper",
     route.includes('from "@/lib/video-budget-reservation"')
-      && !/reserveVideoGenerationTask,[\s\S]*?from "@\/lib\/video-terminal-finalizer"/u.test(route),
+      && !terminalFinalizerImport.includes("reserveVideoGenerationTask"),
   ],
   [
     "durable reservation precedes every ordinary provider POST",
@@ -39,10 +40,10 @@ const staticChecks: Array<[string, boolean]> = [
       < route.indexOf("await enqueueAutodlH3VideoJob"),
   ],
   [
-    "application fails closed on missing budget plus routing migration",
-    reservation.includes('db.rpc("reserve_video_generation_task_routing_atomic"')
-      && reservation.includes('db.rpc("reserve_queued_digital_video_task_routing_atomic"')
-      && reservation.includes("VIDEO_ROUTING_MIGRATION_NOT_READY"),
+    "application fails closed on missing atomic request-snapshot reservation migration",
+    reservation.includes('db.rpc("reserve_video_generation_task_request_snapshot_v1_atomic"')
+      && reservation.includes('db.rpc("reserve_queued_digital_video_task_request_snapshot_v1_atomic"')
+      && reservation.includes("VIDEO_REQUEST_SNAPSHOT_MIGRATION_NOT_READY"),
   ],
   [
     "insufficient available budget is a non-retryable 402 before provider submit",

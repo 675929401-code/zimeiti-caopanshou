@@ -424,8 +424,8 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .sub-page-header {
 }
 
 html[data-theme="crystal-aurora"][data-mode="dark"] .voice-studio-root:not(:where([data-testid="manju-content"] *)) {
-  --vs-primary: #28d5c0;
-  --vs-primary-hover: #50e4d2;
+  --vs-primary: #54e3d2;
+  --vs-primary-hover: #6be9da;
   --vs-secondary: #2f8cc3;
   --vs-accent: #4a92ff;
   --vs-bg: #031519;
@@ -440,7 +440,7 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .voice-studio-root:not(:wher
   --vs-card-hover: rgba(13, 57, 65, .96);
   --vs-input-bg: #041b20;
   --vs-input-border: rgba(113, 198, 203, .34);
-  --vs-glow: #28d5c0;
+  --vs-glow: #54e3d2;
   --vs-on-accent: #021815;
 }
 

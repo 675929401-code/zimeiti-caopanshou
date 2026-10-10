@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zimeiti.local/contracts/release-build-output-digest.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "service", "commit", "sourceVersion", "buildId", "roots", "files", "fileCount", "totalBytes", "outputDigest"],
+  "properties": {
+    "schemaVersion": {"const": "zimeiti-release-build-output-digest.v1"},
+    "service": {"enum": ["web", "voice"]},
+    "commit": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"},
+    "sourceVersion": {"type": "string", "minLength": 1},
+    "buildId": {"type": "string", "minLength": 1},
+    "roots": {"type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": {"type": "string"}},
+    "files": {
+      "type": "array", "minItems": 3,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["path", "kind", "sourceKind", "mode", "size", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "kind": {"const": "file"},
+          "sourceKind": {"enum": ["direct", "materialized-symlink"]},
+          "mode": {"type": "integer", "minimum": 0, "maximum": 511},
+          "size": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "fileCount": {"type": "integer", "minimum": 3},
+    "totalBytes": {"type": "integer", "minimum": 1},
+    "outputDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

@@ -4,6 +4,12 @@ import path from "node:path";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 import { resolveAppRuntimeDir } from "@/lib/runtime-paths";
 import { parseImageRequestRejectionReceipt, type ImageRequestRejection } from "@/lib/image-request-rejection";
+import {
+  assertImageProviderDispatchReceipt,
+  assertImageProviderSubmissionReceipt,
+  type ImageProviderDispatchReceipt,
+  type ImageProviderSubmissionReceipt,
+} from "@/lib/image-provider-request-audit";
 
 export type { ImageRequestRejection } from "@/lib/image-request-rejection";
 
@@ -20,6 +26,8 @@ export type ImageExactlyOnceRecord = {
   clientTraceId: string;
   payloadFingerprint: string;
   requestSnapshot?: Record<string, unknown>;
+  providerDispatchReceipt?: ImageProviderDispatchReceipt;
+  providerSubmissionReceipt?: ImageProviderSubmissionReceipt;
   state: "intent" | "completed" | "failed_unknown";
   response?: Record<string, unknown>;
   deliveryState?: "held" | "delivered";
@@ -47,7 +55,7 @@ type ImageProviderCheckpoint = {
 };
 
 const PERSISTENCE_LEASE_MS = 5 * 60 * 1000;
-const IMAGE_RECORD_COLUMNS = "record_id,user_hash,client_idempotency_key,client_trace_id,payload_fingerprint,request_snapshot,state,response,delivery_state,delivery_asset_id,created_at,updated_at";
+const IMAGE_RECORD_COLUMNS = "record_id,user_hash,client_idempotency_key,client_trace_id,payload_fingerprint,request_snapshot,provider_dispatch_receipt,provider_submission_receipt,state,response,delivery_state,delivery_asset_id,created_at,updated_at";
 
 function providerResultFingerprint(result: ImageProviderResult) {
   return sha256(JSON.stringify(Object.fromEntries(Object.entries(result).sort(([left], [right]) => left.localeCompare(right)))));
@@ -128,6 +136,10 @@ export class ImageRequestRejectedError extends ImageExactlyOnceError {
   constructor(readonly rejection: ImageRequestRejection) {
     super(rejection.code, rejection.code === "IMAGE_BILLING_RESERVATION_REJECTED"
       ? "本次图片预算预留未成功，未调用生成服务，也未扣费。请检查余额后重新提交。"
+      : rejection.code === "IMAGE_PROVIDER_ADMISSION_BUSY"
+        ? "上游生图通道当前并发已满，本次未调用供应商，预留费用将自动释放。"
+        : rejection.code === "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE"
+          ? "生图并发保护暂不可用，本次未调用供应商，预留费用将自动释放。"
       : rejection.code === "IMAGE_PLATFORM_REQUEST_INTERRUPTED"
         ? "本次图片任务中断且没有取得可交付结果，费用已自动退回。请重新提交一次。"
       : rejection.source === "input"
@@ -138,7 +150,11 @@ export class ImageRequestRejectedError extends ImageExactlyOnceError {
         ? `上游返回 ${rejection.actualDimensions || "未知尺寸"}，未达到所选 ${rejection.expectedResolution || "分辨率"}${rejection.expectedDimensions ? `（目标 ${rejection.expectedDimensions}）` : ""}；结果未发放且未扣费，请重新生成`
       : rejection.code === "IMAGE_REFERENCE_REJECTED"
         ? "供应商明确拒绝了参考图，本次未生成图片。请检查参考图后重新提交。"
-        : "供应商明确拒绝了本次生成请求。请检查输入或模型配置后重新提交。", rejection.code === "IMAGE_BILLING_RESERVATION_REJECTED" ? 402 : rejection.source === "input" ? 400 : 502);
+        : "供应商明确拒绝了本次生成请求。请检查输入或模型配置后重新提交。",
+    rejection.code === "IMAGE_BILLING_RESERVATION_REJECTED" ? 402
+      : rejection.code === "IMAGE_PROVIDER_ADMISSION_BUSY" ? 429
+        : rejection.code === "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE" ? 503
+          : rejection.source === "input" ? 400 : 502);
   }
 }
 
@@ -147,6 +163,43 @@ export function getImageRequestRejection(record: ImageExactlyOnceRecord): ImageR
   return record.state === "failed_unknown"
     ? parseImageRequestRejectionReceipt(record.response, record.payloadFingerprint)
     : null;
+}
+
+export type ImageRejectionBillingRelease = {
+  schema: "image_billing_release.v1";
+  state: "pending" | "confirmed";
+  referenceId: string;
+  amount: number;
+  updatedAt: string;
+};
+
+function validBillingRelease(value: unknown): value is ImageRejectionBillingRelease {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const release = value as Partial<ImageRejectionBillingRelease>;
+  return release.schema === "image_billing_release.v1"
+    && (release.state === "pending" || release.state === "confirmed")
+    && typeof release.referenceId === "string" && /^image:[A-Za-z0-9:_-]{8,200}$/u.test(release.referenceId)
+    && Number.isFinite(release.amount) && Number(release.amount) > 0
+    && typeof release.updatedAt === "string" && Number.isFinite(Date.parse(release.updatedAt));
+}
+
+export function getImageRejectionBillingRelease(record: ImageExactlyOnceRecord): ImageRejectionBillingRelease | null {
+  if (!getImageRequestRejection(record)) return null;
+  const release = (record.response as { billingRelease?: unknown } | undefined)?.billingRelease;
+  return validBillingRelease(release) ? release : null;
+}
+
+function rejectionReceipt(
+  record: ImageExactlyOnceRecord,
+  rejection: ImageRequestRejection,
+  billingRelease?: ImageRejectionBillingRelease,
+) {
+  return {
+    schema: "image_request_rejection.v1",
+    payloadFingerprint: record.payloadFingerprint,
+    ...rejection,
+    ...(billingRelease ? { billingRelease } : {}),
+  };
 }
 
 export interface ImageExactlyOnceStore {
@@ -166,8 +219,11 @@ export interface ImageExactlyOnceStore {
   claimProviderPersistence?(record: ImageExactlyOnceRecord, result: ImageProviderResult, leaseOwner: string): Promise<ImageExactlyOnceRecord | null>;
   releaseProviderPersistence?(record: ImageExactlyOnceRecord, leaseOwner: string): Promise<ImageProviderPersistenceReleaseResult>;
   completeProviderPersistence?(record: ImageExactlyOnceRecord, response: Record<string, unknown>, leaseOwner: string): Promise<ImageExactlyOnceRecord | null>;
-  recordProviderOutputRejection?(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, leaseOwner: string): Promise<ImageExactlyOnceRecord | null>;
-  recordRejection?(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection): Promise<ImageExactlyOnceRecord | null>;
+  recordProviderOutputRejection?(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, leaseOwner: string, billingRelease?: ImageRejectionBillingRelease): Promise<ImageExactlyOnceRecord | null>;
+  recordRejection?(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, billingRelease?: ImageRejectionBillingRelease): Promise<ImageExactlyOnceRecord | null>;
+  markRejectionBillingRelease?(record: ImageExactlyOnceRecord, billingRelease: ImageRejectionBillingRelease): Promise<ImageExactlyOnceRecord | null>;
+  recordProviderDispatchReceipt?(record: ImageExactlyOnceRecord, userId: string, receipt: ImageProviderDispatchReceipt): Promise<ImageExactlyOnceRecord | null>;
+  recordProviderSubmissionReceipt?(record: ImageExactlyOnceRecord, userId: string, receipt: ImageProviderSubmissionReceipt): Promise<ImageExactlyOnceRecord | null>;
 }
 
 export type ImageProviderPersistenceReleaseResult =
@@ -300,6 +356,8 @@ type DatabaseImageExactlyOnceRow = {
   client_trace_id?: string;
   payload_fingerprint?: string;
   request_snapshot?: Record<string, unknown> | null;
+  provider_dispatch_receipt?: ImageProviderDispatchReceipt | null;
+  provider_submission_receipt?: ImageProviderSubmissionReceipt | null;
   state?: ImageExactlyOnceRecord["state"];
   response?: Record<string, unknown> | null;
   delivery_state?: "held" | "delivered" | null;
@@ -395,6 +453,12 @@ function databaseRowToRecord(row: DatabaseImageExactlyOnceRow): ImageExactlyOnce
     clientTraceId: row.client_trace_id,
     payloadFingerprint: row.payload_fingerprint,
     ...(row.request_snapshot && typeof row.request_snapshot === "object" ? { requestSnapshot: row.request_snapshot } : {}),
+    ...(row.provider_dispatch_receipt && typeof row.provider_dispatch_receipt === "object"
+      ? (assertImageProviderDispatchReceipt(row.provider_dispatch_receipt), { providerDispatchReceipt: row.provider_dispatch_receipt })
+      : {}),
+    ...(row.provider_submission_receipt && typeof row.provider_submission_receipt === "object"
+      ? (assertImageProviderSubmissionReceipt(row.provider_submission_receipt), { providerSubmissionReceipt: row.provider_submission_receipt })
+      : {}),
     state,
     ...(row.response && typeof row.response === "object" ? { response: row.response } : {}),
     ...(row.delivery_state === "held" || row.delivery_state === "delivered"
@@ -414,6 +478,43 @@ function databaseRowToRecord(row: DatabaseImageExactlyOnceRow): ImageExactlyOnce
  * is intentionally not resubmitted: the caller must reconcile it manually.
  */
 export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
+  async recordProviderDispatchReceipt(record: ImageExactlyOnceRecord, userId: string, receipt: ImageProviderDispatchReceipt) {
+    assertImageProviderDispatchReceipt(receipt);
+    const { data, error } = await getSupabaseAdminClient().rpc("record_image_provider_dispatch_receipt_atomic", {
+      p_record_id: record.recordId,
+      p_user_id: userId,
+      p_client_trace_id: record.clientTraceId,
+      p_payload_fingerprint: record.payloadFingerprint,
+      p_receipt: receipt,
+    });
+    if (error) databaseImageExactlyOnceError(error);
+    const row = (data as { record?: DatabaseImageExactlyOnceRow } | null)?.record;
+    if (!row) return null;
+    const saved = databaseRowToRecord(row);
+    if (saved.providerDispatchReceipt?.receiptSha256 !== receipt.receiptSha256) return null;
+    Object.assign(record, saved);
+    return saved;
+  }
+
+  async recordProviderSubmissionReceipt(record: ImageExactlyOnceRecord, userId: string, receipt: ImageProviderSubmissionReceipt) {
+    assertImageProviderSubmissionReceipt(receipt);
+    const { data, error } = await getSupabaseAdminClient().rpc("record_image_provider_submission_receipt_atomic", {
+      p_record_id: record.recordId,
+      p_user_id: userId,
+      p_client_trace_id: record.clientTraceId,
+      p_payload_fingerprint: record.payloadFingerprint,
+      p_dispatch_receipt_sha256: receipt.dispatchReceiptSha256,
+      p_receipt: receipt,
+    });
+    if (error) databaseImageExactlyOnceError(error);
+    const row = (data as { record?: DatabaseImageExactlyOnceRow } | null)?.record;
+    if (!row) return null;
+    const saved = databaseRowToRecord(row);
+    if (saved.providerSubmissionReceipt?.receiptSha256 !== receipt.receiptSha256) return null;
+    Object.assign(record, saved);
+    return saved;
+  }
+
   async reconcileStaleIntent(record: ImageExactlyOnceRecord, userId: string, staleAfterSeconds = 600) {
     const { data, error } = await getSupabaseAdminClient().rpc("reconcile_stale_image_generation_request_atomic", {
       p_record_id: record.recordId,
@@ -436,9 +537,9 @@ export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
     return reconciled;
   }
 
-  async recordRejection(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection) {
+  async recordRejection(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, billingRelease?: ImageRejectionBillingRelease) {
     if (record.state !== "intent" || record.response) return null;
-    const response = { schema: "image_request_rejection.v1", payloadFingerprint: record.payloadFingerprint, ...rejection };
+    const response = rejectionReceipt(record, rejection, billingRelease);
     const { data, error } = await getSupabaseAdminClient().from("image_generation_requests")
       .update({ state: "failed_unknown", response, updated_at: new Date().toISOString() })
       .eq("record_id", record.recordId).eq("user_hash", record.userHash)
@@ -451,6 +552,31 @@ export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
     if (saved.recordId !== record.recordId || saved.userHash !== record.userHash || saved.payloadFingerprint !== record.payloadFingerprint
       || !confirmed || confirmed.code !== rejection.code || confirmed.source !== rejection.source || confirmed.upstreamStatus !== rejection.upstreamStatus) return null;
     return saved;
+  }
+
+  async markRejectionBillingRelease(record: ImageExactlyOnceRecord, billingRelease: ImageRejectionBillingRelease) {
+    const rejection = getImageRequestRejection(record);
+    const currentRelease = getImageRejectionBillingRelease(record);
+    if (!rejection || !currentRelease || !validBillingRelease(billingRelease)
+      || currentRelease.referenceId !== billingRelease.referenceId
+      || Math.abs(currentRelease.amount - billingRelease.amount) > 0.000001) return null;
+    const response = rejectionReceipt(record, rejection, billingRelease);
+    let query = getSupabaseAdminClient().from("image_generation_requests")
+      .update({ response, updated_at: new Date().toISOString() })
+      .eq("record_id", record.recordId).eq("user_hash", record.userHash)
+      .eq("payload_fingerprint", record.payloadFingerprint).eq("state", "failed_unknown")
+      .eq("response->>schema", "image_request_rejection.v1")
+      .eq("response->>code", rejection.code);
+    query = query.eq("response->billingRelease->>referenceId", currentRelease.referenceId)
+      .eq("response->billingRelease->>state", currentRelease.state);
+    const { data, error } = await query.select(IMAGE_RECORD_COLUMNS).maybeSingle();
+    if (error) databaseImageExactlyOnceError(error);
+    if (!data) return null;
+    const saved = databaseRowToRecord(data as DatabaseImageExactlyOnceRow);
+    const confirmed = getImageRejectionBillingRelease(saved);
+    return confirmed?.referenceId === billingRelease.referenceId && confirmed.state === billingRelease.state
+      ? saved
+      : null;
   }
 
   async claimProviderPersistence(record: ImageExactlyOnceRecord, result: ImageProviderResult, leaseOwner: string) {
@@ -584,14 +710,10 @@ export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
     return completed;
   }
 
-  async recordProviderOutputRejection(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, leaseOwner: string) {
+  async recordProviderOutputRejection(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, leaseOwner: string, billingRelease?: ImageRejectionBillingRelease) {
     const checkpoint = providerCheckpoint(record);
     if (!checkpoint || checkpoint.persistenceLease?.owner !== leaseOwner || rejection.source !== "provider") return null;
-    const response = {
-      schema: "image_request_rejection.v1",
-      payloadFingerprint: record.payloadFingerprint,
-      ...rejection,
-    };
+    const response = rejectionReceipt(record, rejection, billingRelease);
     const { data, error } = await getSupabaseAdminClient().from("image_generation_requests")
       .update({ state: "failed_unknown", response, updated_at: new Date().toISOString() })
       .eq("record_id", record.recordId).eq("user_hash", record.userHash)
@@ -755,10 +877,55 @@ export async function finalizeImageExactlyOnceDelivery(input: {
 export class MemoryImageExactlyOnceStore implements ImageExactlyOnceStore {
   private readonly records = new Map<string, ImageExactlyOnceRecord>();
 
-  async recordRejection(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection) {
+  async recordProviderDispatchReceipt(record: ImageExactlyOnceRecord, userId: string, receipt: ImageProviderDispatchReceipt) {
+    void userId;
+    assertImageProviderDispatchReceipt(receipt);
+    const stored = this.records.get(record.recordId);
+    if (!stored || stored.state !== "intent" || stored.payloadFingerprint !== record.payloadFingerprint) return null;
+    if (stored.providerDispatchReceipt) {
+      return stored.providerDispatchReceipt.receiptSha256 === receipt.receiptSha256 ? structuredClone(stored) : null;
+    }
+    const next = { ...stored, providerDispatchReceipt: structuredClone(receipt), updatedAt: new Date().toISOString() };
+    this.records.set(record.recordId, structuredClone(next));
+    Object.assign(record, next);
+    return structuredClone(next);
+  }
+
+  async recordProviderSubmissionReceipt(record: ImageExactlyOnceRecord, userId: string, receipt: ImageProviderSubmissionReceipt) {
+    void userId;
+    assertImageProviderSubmissionReceipt(receipt);
+    const stored = this.records.get(record.recordId);
+    if (!stored || stored.state !== "intent" || stored.payloadFingerprint !== record.payloadFingerprint
+      || stored.providerDispatchReceipt?.receiptSha256 !== receipt.dispatchReceiptSha256) return null;
+    if (stored.providerSubmissionReceipt) {
+      return stored.providerSubmissionReceipt.receiptSha256 === receipt.receiptSha256 ? structuredClone(stored) : null;
+    }
+    const next = { ...stored, providerSubmissionReceipt: structuredClone(receipt), updatedAt: new Date().toISOString() };
+    this.records.set(record.recordId, structuredClone(next));
+    Object.assign(record, next);
+    return structuredClone(next);
+  }
+
+  async recordRejection(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, billingRelease?: ImageRejectionBillingRelease) {
     const stored = this.records.get(record.recordId);
     if (!stored || stored.state !== "intent" || stored.response || stored.payloadFingerprint !== record.payloadFingerprint) return null;
-    const next = { ...stored, state: "failed_unknown" as const, response: { schema: "image_request_rejection.v1", payloadFingerprint: record.payloadFingerprint, ...rejection }, updatedAt: new Date().toISOString() };
+    const next = { ...stored, state: "failed_unknown" as const, response: rejectionReceipt(record, rejection, billingRelease), updatedAt: new Date().toISOString() };
+    this.records.set(record.recordId, structuredClone(next));
+    return structuredClone(next);
+  }
+
+  async markRejectionBillingRelease(record: ImageExactlyOnceRecord, billingRelease: ImageRejectionBillingRelease) {
+    const stored = this.records.get(record.recordId);
+    const rejection = stored && getImageRequestRejection(stored);
+    const currentRelease = stored && getImageRejectionBillingRelease(stored);
+    if (!stored || !rejection || !currentRelease || !validBillingRelease(billingRelease)
+      || currentRelease.referenceId !== billingRelease.referenceId
+      || Math.abs(currentRelease.amount - billingRelease.amount) > 0.000001) return null;
+    const next = {
+      ...stored,
+      response: rejectionReceipt(stored, rejection, billingRelease),
+      updatedAt: new Date().toISOString(),
+    };
     this.records.set(record.recordId, structuredClone(next));
     return structuredClone(next);
   }
@@ -813,14 +980,14 @@ export class MemoryImageExactlyOnceStore implements ImageExactlyOnceStore {
     return structuredClone(completed);
   }
 
-  async recordProviderOutputRejection(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, leaseOwner: string) {
+  async recordProviderOutputRejection(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, leaseOwner: string, billingRelease?: ImageRejectionBillingRelease) {
     const stored = this.records.get(record.recordId);
     const checkpoint = stored && providerCheckpoint(stored);
     if (!stored || !checkpoint || checkpoint.persistenceLease?.owner !== leaseOwner || rejection.source !== "provider") return null;
     const rejected = {
       ...stored,
       state: "failed_unknown" as const,
-      response: { schema: "image_request_rejection.v1", payloadFingerprint: stored.payloadFingerprint, ...rejection },
+      response: rejectionReceipt(stored, rejection, billingRelease),
       updatedAt: new Date().toISOString(),
     };
     this.records.set(record.recordId, structuredClone(rejected));
@@ -900,6 +1067,7 @@ export async function runImageExactlyOnce(options: {
   clientTraceId: string;
   payloadFingerprint: string;
   requestSnapshot?: Record<string, unknown>;
+  rejectionBilling?: { referenceId: string; amount: number };
   /**
    * Runs only for the request that created the durable intent, after the
    * intent is stored and before any provider-capable callback. Use this for
@@ -907,7 +1075,10 @@ export async function runImageExactlyOnce(options: {
    * the hook and therefore cannot reserve or submit a second time.
    */
   beforeSubmitOnce?: (record: ImageExactlyOnceRecord) => Promise<void>;
-  submitOnce: () => Promise<Record<string, unknown>>;
+  submitOnce: (receiptContext: {
+    recordProviderDispatchReceipt: (receipt: ImageProviderDispatchReceipt) => Promise<ImageProviderDispatchReceipt>;
+    recordProviderSubmissionReceipt: (receipt: ImageProviderSubmissionReceipt) => Promise<ImageProviderSubmissionReceipt>;
+  }) => Promise<Record<string, unknown>>;
   persistProviderResult?: (result: ImageProviderResult, context: { persistenceAttemptId: string }) => Promise<Record<string, unknown>>;
 }) {
   if (options.persistProviderResult && (!options.store.claimProviderPersistence || !options.store.releaseProviderPersistence || !options.store.completeProviderPersistence)) {
@@ -915,10 +1086,46 @@ export async function runImageExactlyOnce(options: {
   }
   const claimed = await options.store.claim(options);
 
+  const receiptContext = {
+    recordProviderDispatchReceipt: async (receipt: ImageProviderDispatchReceipt) => {
+      if (!options.store.recordProviderDispatchReceipt) {
+        throw new ImageExactlyOnceError("IMAGE_PROVIDER_RECEIPT_STORE_REQUIRED", "供应商派发回执存储尚未就绪，本次不会调用图片模型", 503);
+      }
+      const saved = await options.store.recordProviderDispatchReceipt(claimed.record, options.userId, receipt);
+      if (!saved?.providerDispatchReceipt || saved.providerDispatchReceipt.receiptSha256 !== receipt.receiptSha256) {
+        throw new ImageExactlyOnceError("IMAGE_PROVIDER_DISPATCH_RECEIPT_UNCONFIRMED", "供应商派发回执未确认，本次不会调用图片模型", 503);
+      }
+      Object.assign(claimed.record, saved);
+      return saved.providerDispatchReceipt;
+    },
+    recordProviderSubmissionReceipt: async (receipt: ImageProviderSubmissionReceipt) => {
+      if (!options.store.recordProviderSubmissionReceipt) {
+        throw new ImageExactlyOnceError("IMAGE_PROVIDER_RECEIPT_STORE_REQUIRED", "供应商响应回执存储尚未就绪，原请求保持锁定", 503);
+      }
+      const saved = await options.store.recordProviderSubmissionReceipt(claimed.record, options.userId, receipt);
+      if (!saved?.providerSubmissionReceipt || saved.providerSubmissionReceipt.receiptSha256 !== receipt.receiptSha256) {
+        throw new ImageExactlyOnceError("IMAGE_PROVIDER_SUBMISSION_RECEIPT_UNCONFIRMED", "供应商响应回执未确认，原请求保持锁定且不会自动重提", 503);
+      }
+      Object.assign(claimed.record, saved);
+      return saved.providerSubmissionReceipt;
+    },
+  };
+
+  const pendingBillingRelease = (error: ImageRequestRejectedError): ImageRejectionBillingRelease | undefined => {
+    if (!options.rejectionBilling || error.rejection.code === "IMAGE_BILLING_RESERVATION_REJECTED") return undefined;
+    return {
+      schema: "image_billing_release.v1",
+      state: "pending",
+      referenceId: options.rejectionBilling.referenceId,
+      amount: options.rejectionBilling.amount,
+      updatedAt: new Date().toISOString(),
+    };
+  };
+
   async function preserveFailure(error: unknown): Promise<never> {
     if (error instanceof ImageRequestRejectedError) {
       let saved: ImageExactlyOnceRecord | null = null;
-      try { saved = await options.store.recordRejection?.(claimed.record, error.rejection) || null; } catch { /* The write acknowledgement may have been lost. */ }
+      try { saved = await options.store.recordRejection?.(claimed.record, error.rejection, pendingBillingRelease(error)) || null; } catch { /* The write acknowledgement may have been lost. */ }
       if (!saved || !getImageRequestRejection(saved)) {
         // Never clear a possibly committed receipt/checkpoint through the old save RPC.
         throw new ImageExactlyOnceError("IMAGE_REJECTION_RECEIPT_UNCONFIRMED", "拒绝状态尚未安全记录，请保留原请求号查询，勿重新提交生成", 503);
@@ -959,7 +1166,7 @@ export async function runImageExactlyOnce(options: {
       if (error instanceof ImageRequestRejectedError && error.rejection.source === "provider") {
         let rejected: ImageExactlyOnceRecord | null = null;
         try {
-          rejected = await options.store.recordProviderOutputRejection?.(acquired, error.rejection, leaseOwner) || null;
+          rejected = await options.store.recordProviderOutputRejection?.(acquired, error.rejection, leaseOwner, pendingBillingRelease(error)) || null;
         } catch { /* A lost acknowledgement must remain fail-closed. */ }
         if (rejected && getImageRequestRejection(rejected)) {
           Object.assign(claimed.record, rejected);
@@ -998,7 +1205,7 @@ export async function runImageExactlyOnce(options: {
     let result: Record<string, unknown>;
     try {
       await options.beforeSubmitOnce?.(claimed.record);
-      result = await options.submitOnce();
+      result = await options.submitOnce(receiptContext);
       if (!validProviderResult(result)) throw new ImageExactlyOnceError("IMAGE_PROVIDER_RESULT_INVALID", "上游未返回可保存的明确图片结果，请保留请求号核查", 503);
     } catch (error) {
       return preserveFailure(error);
@@ -1008,7 +1215,7 @@ export async function runImageExactlyOnce(options: {
 
   try {
     await options.beforeSubmitOnce?.(claimed.record);
-    const response = await options.submitOnce();
+    const response = await options.submitOnce(receiptContext);
     claimed.record.response = response;
     claimed.record.state = "completed";
     await options.store.save(claimed.record);

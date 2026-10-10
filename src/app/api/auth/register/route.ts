@@ -8,6 +8,7 @@ import { normalizeQqEmail, qqEmailError } from '@/lib/qq-email';
 import { adminPasswordError } from '@/lib/admin-password-policy';
 import { publicAllowedAgentCategoryIds } from '@/lib/agent-category-access';
 import { issueUserAuthSession } from '@/lib/auth-session-store';
+import { getAuthSessionClientIP } from '@/lib/auth-session-client-ip';
 
 interface AtomicRegistrationResult {
   ok?: boolean;
@@ -28,34 +29,6 @@ interface AtomicRegistrationResult {
     allowed_categories: unknown;
     member_status: string | null;
   };
-}
-
-function isPrivateIP(ip: string): boolean {
-  if (!ip || ip === 'unknown' || ip === '::1') return true;
-  const parts = ip.split('.');
-  if (parts.length !== 4) return false;
-  const first = parseInt(parts[0], 10);
-  const second = parseInt(parts[1], 10);
-  return first === 10
-    || (first === 172 && second >= 16 && second <= 31)
-    || (first === 192 && second === 168)
-    || first === 127;
-}
-
-function getRegistrationClientIP(request: NextRequest): string {
-  const cfIP = request.headers.get('cf-connecting-ip');
-  const realIP = request.headers.get('x-real-ip');
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (cfIP) return cfIP.trim();
-  if (realIP) return realIP.trim();
-  if (forwarded) {
-    const ips = forwarded.split(',').map((ip) => ip.trim()).filter(Boolean);
-    for (let index = ips.length - 1; index >= 0; index--) {
-      if (!isPrivateIP(ips[index])) return ips[index];
-    }
-    if (ips.length > 0) return ips[ips.length - 1];
-  }
-  return 'unknown';
 }
 
 function hashRegistrationIP(ip: string): string {
@@ -79,6 +52,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: '注册操作过于频繁，请稍后再试' },
         { status: 429 }
+      );
+    }
+    const clientIP = getAuthSessionClientIP(request);
+    if (!clientIP) {
+      return NextResponse.json(
+        { error: '注册入口暂未获得可信网络地址，请稍后重试', code: 'CLIENT_IP_UNAVAILABLE' },
+        { status: 503 },
       );
     }
 
@@ -130,7 +110,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '注册失败：密码处理异常，请联系管理员' }, { status: 500 });
     }
 
-    const clientIP = getRegistrationClientIP(request);
     const ipHash = hashRegistrationIP(clientIP);
     const riskIPHash = clientIP === 'unknown' ? null : ipHash;
     const deviceHash = hashRegistrationDevice(String(body.deviceId || '').trim());

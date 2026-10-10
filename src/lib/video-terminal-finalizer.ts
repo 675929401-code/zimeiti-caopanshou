@@ -359,7 +359,11 @@ export async function markVideoSubmissionFailed(input: {
     p_error_code: input.errorCode,
     p_error_message: input.errorMessage,
   });
-  if (error) console.error("[VideoTerminal] Failed to persist provider submission failure", error);
+  if (error) {
+    console.error("[VideoTerminal] Failed to persist provider submission failure", error);
+    return false;
+  }
+  return true;
 }
 
 export async function finalizeVideoGenerationFailure(input: {
@@ -504,11 +508,10 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
   const model = asObject(modelData);
   let stableStorageUrl = String(task.storage_url || "");
   const providerResultUrl = String(input.providerVideoUrl || task.provider_result_url || task.video_url || "").trim();
-  // Ordinary video history is retained for three days. Deliver the provider's
-  // own media URL immediately through our authenticated proxy instead of
-  // downloading and re-uploading the complete file to Tencent COS first.
-  // Existing object:// rows remain replayable, but new results do not create a
-  // second platform-owned copy.
+  // Ordinary video delivery keeps the provider's remote URL only while that
+  // source remains available. It is played through our authenticated proxy,
+  // not copied into permanent platform storage. Existing object:// rows remain
+  // replayable, but new ordinary results do not create a second owned copy.
   if (!PERSISTENT_VIDEO_URI_PATTERN.test(stableStorageUrl)) stableStorageUrl = providerResultUrl;
   if (providerResultUrl && !PERSISTENT_VIDEO_URI_PATTERN.test(stableStorageUrl)) {
     try {
@@ -602,7 +605,7 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
           stableStorageUrl,
           priceCharged: 0,
           billingState: "failed",
-          message: "视频已生成并永久保存，但原子钱包扣费未成功；结果暂不交付，请补充余额后重试查询",
+          message: "视频已生成且当前播放源可用，但原子钱包扣费未成功；结果暂不交付，请补充余额后重试查询",
         };
       }
       billingOperationId = billing.operationId;

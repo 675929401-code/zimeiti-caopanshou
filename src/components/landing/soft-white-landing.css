@@ -34,8 +34,6 @@
   --swh-title-end: #8a5416;
   --swh-atmosphere-blend: multiply;
   --swh-pointer-color: rgba(34, 145, 123, .13);
-  --swh-pointer-x: 50vw;
-  --swh-pointer-y: 34vh;
   --swh-tilt-x: 0deg;
   --swh-tilt-y: 0deg;
   height: 100dvh;
@@ -274,7 +272,6 @@ html[data-theme="lattice"] .soft-white-home {
 
 .swh-aura,
 .swh-light-sweep,
-.swh-pointer-glow,
 .swh-grain {
   position: absolute;
   display: block;
@@ -325,15 +322,6 @@ html[data-theme="lattice"] .soft-white-home {
   transform: rotate(18deg) translate3d(-28vw, 0, 0);
   filter: blur(22px);
   animation: swh-light-sweep 16s cubic-bezier(.45, 0, .25, 1) infinite;
-}
-
-.swh-pointer-glow {
-  inset: 0;
-  opacity: .9;
-  background: radial-gradient(440px circle at var(--swh-pointer-x) var(--swh-pointer-y), var(--swh-pointer-color), transparent 70%);
-  mix-blend-mode: var(--swh-atmosphere-blend);
-  transition: opacity .35s ease;
-  will-change: background-image;
 }
 
 .swh-grain {

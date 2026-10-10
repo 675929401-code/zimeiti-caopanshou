@@ -4,6 +4,298 @@
 # 原则: 候选先验,同身份 env(继承当前生产进程),原子指针切换,失败零生产影响,绝不触碰业务数据。
 set -euo pipefail
 
+log() { echo "[activate] $*"; }
+fail() { echo "[activate] FATAL: $*" >&2; exit 1; }
+
+require_uint() {
+  local label="$1" value="$2" minimum="$3"
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "$label must be an unsigned integer"
+  (( 10#$value >= minimum )) || fail "$label is below the built-in safety floor ($minimum)"
+}
+
+require_root_controlled_file() {
+  local file="$1" label="$2" metadata owner mode kind
+  [ -f "$file" ] && [ ! -L "$file" ] || fail "$label must be a regular non-symlink file: $file"
+  metadata=$(stat -c '%u %a %F' -- "$file") || fail "cannot stat $label: $file"
+  read -r owner mode kind <<< "$metadata"
+  [ "$owner" = "0" ] || fail "$label must be owned by root: $file"
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] || fail "$label has an invalid mode: $file"
+  (( (8#$mode & 8#022) == 0 )) || fail "$label must not be group/other writable: $file"
+  [ "$kind" = "regular file" ] || fail "$label is not a regular file: $file"
+}
+
+require_root_controlled_directory() {
+  local directory="$1" label="$2" metadata owner mode kind
+  [ -d "$directory" ] && [ ! -L "$directory" ] || fail "$label must be an existing non-symlink directory: $directory"
+  metadata=$(stat -c '%u %a %F' -- "$directory") || fail "cannot stat $label: $directory"
+  read -r owner mode kind <<< "$metadata"
+  [ "$owner" = "0" ] || fail "$label must be owned by root: $directory"
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] || fail "$label has an invalid mode: $directory"
+  (( (8#$mode & 8#022) == 0 )) || fail "$label must not be group/other writable: $directory"
+  [ "$kind" = "directory" ] || fail "$label is not a directory: $directory"
+}
+
+load_storage_contract() {
+  local config="$1" raw key value
+  require_root_controlled_file "$config" "storage contract"
+  DATA_MOUNT_SOURCE=""
+  DATA_MOUNT_UUID=""
+  DATA_MARKER_SHA256=""
+  MIN_AVAILABLE_BYTES=""
+  MIN_AVAILABLE_INODES=""
+  declare -A seen=()
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    raw="${raw%$'\r'}"
+    [[ -z "$raw" || "$raw" == \#* ]] && continue
+    [[ "$raw" =~ ^([A-Z_][A-Z0-9_]*)=([^[:space:]]+)$ ]] || fail "invalid storage contract line"
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    [ -z "${seen[$key]:-}" ] || fail "duplicate storage contract key: $key"
+    seen[$key]=1
+    case "$key" in
+      DATA_MOUNT_SOURCE) DATA_MOUNT_SOURCE="$value" ;;
+      DATA_MOUNT_UUID) DATA_MOUNT_UUID="$value" ;;
+      DATA_MARKER_SHA256) DATA_MARKER_SHA256="$value" ;;
+      MIN_AVAILABLE_BYTES) MIN_AVAILABLE_BYTES="$value" ;;
+      MIN_AVAILABLE_INODES) MIN_AVAILABLE_INODES="$value" ;;
+      *) fail "unsupported storage contract key: $key" ;;
+    esac
+  done < "$config"
+  [[ "$DATA_MOUNT_SOURCE" =~ ^/dev/[A-Za-z0-9._/+:-]+$ ]] || fail "invalid DATA_MOUNT_SOURCE"
+  [[ "$DATA_MOUNT_UUID" =~ ^[A-Za-z0-9._:-]{4,128}$ ]] || fail "invalid DATA_MOUNT_UUID"
+  [[ "$DATA_MARKER_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "invalid DATA_MARKER_SHA256"
+  require_uint MIN_AVAILABLE_BYTES "$MIN_AVAILABLE_BYTES" 5368709120
+  require_uint MIN_AVAILABLE_INODES "$MIN_AVAILABLE_INODES" 50000
+}
+
+findmnt_field() {
+  local field="$1" target="$2"
+  findmnt -n -o "$field" --target "$target" 2>/dev/null | head -n 1
+}
+
+assert_on_data_mount() {
+  local path="$1" data_root="$2" data_device="$3" resolved path_device
+  resolved=$(readlink -f -- "$path") || fail "path is missing or unreadable: $path"
+  case "$resolved" in
+    "$data_root"|"$data_root"/*) ;;
+    *) fail "path escaped the data mount: $path -> $resolved" ;;
+  esac
+  case "$resolved" in /srv|/srv/*) fail "legacy /srv/system-disk path is forbidden: $resolved" ;; esac
+  path_device=$(findmnt_field 'MAJ:MIN' "$resolved")
+  [ -n "$path_device" ] && [ "$path_device" = "$data_device" ] || fail "path is not backed by the configured data device: $resolved"
+}
+
+verify_storage_contract() {
+  local data_root="$1" web_root="$2" config="$3" fstab="$4"
+  local marker actual_source actual_uuid root_device data_device mount_target web_target
+  local configured_fstab_source marker_hash available_bytes available_inodes
+  for command_name in findmnt mountpoint stat df sha256sum readlink tar; do
+    command -v "$command_name" >/dev/null 2>&1 || fail "required storage guard command missing: $command_name"
+  done
+  [ "$data_root" = "/data" ] || [ "${DEPLOY_ACTIVATE_LIBRARY_ONLY:-0}" = "1" ] || fail "production data root must remain /data"
+  [ "$web_root" = "$data_root/web" ] || fail "web root must be directly under the data mount"
+  case "$data_root $web_root" in *"/srv"*) fail "legacy /srv/system-disk path is forbidden" ;; esac
+
+  load_storage_contract "$config"
+  mountpoint -q -- "$data_root" || fail "$data_root is not a real mountpoint"
+  [ "$(readlink -f -- "$data_root")" = "$data_root" ] || fail "$data_root must not be a symlink or redirected path"
+  mount_target=$(findmnt_field TARGET "$data_root")
+  [ "$mount_target" = "$data_root" ] || fail "findmnt target mismatch for $data_root"
+  actual_source=$(findmnt_field SOURCE "$data_root")
+  actual_uuid=$(findmnt_field UUID "$data_root")
+  data_device=$(findmnt_field 'MAJ:MIN' "$data_root")
+  root_device=$(findmnt_field 'MAJ:MIN' /)
+  [ -n "$actual_source" ] && [ "$actual_source" = "$DATA_MOUNT_SOURCE" ] || fail "data mount source mismatch"
+  [ -n "$actual_uuid" ] && [ "$actual_uuid" = "$DATA_MOUNT_UUID" ] || fail "data mount UUID mismatch"
+  [ -n "$data_device" ] && [ -n "$root_device" ] && [ "$data_device" != "$root_device" ] || fail "$data_root resolves to the system root device"
+
+  require_root_controlled_file "$fstab" "fstab"
+  configured_fstab_source=$(findmnt --fstab -n -o SOURCE --target "$data_root" 2>/dev/null | head -n 1)
+  case "$configured_fstab_source" in
+    "UUID=$DATA_MOUNT_UUID"|"/dev/disk/by-uuid/$DATA_MOUNT_UUID") ;;
+    *) fail "$data_root is not persistently configured by the expected UUID" ;;
+  esac
+
+  [ -d "$web_root" ] && [ ! -L "$web_root" ] || fail "web root must be an existing non-symlink directory: $web_root"
+  require_root_controlled_directory "$web_root" "web root"
+  web_target=$(findmnt_field TARGET "$web_root")
+  [ "$web_target" = "$data_root" ] || fail "$web_root is not located on the dedicated data mount"
+  assert_on_data_mount "$web_root" "$data_root" "$data_device"
+
+  marker="$data_root/.zimeiti-storage-root"
+  require_root_controlled_file "$marker" "storage identity marker"
+  marker_hash=$(sha256sum -- "$marker" | awk '{print $1}')
+  [ "$marker_hash" = "$DATA_MARKER_SHA256" ] || fail "storage identity marker hash mismatch"
+
+  available_bytes=$(df -P -B1 --output=avail "$data_root" | awk 'NR == 2 {print $1}')
+  available_inodes=$(df -P -i --output=iavail "$data_root" | awk 'NR == 2 {print $1}')
+  require_uint available_bytes "$available_bytes" "$MIN_AVAILABLE_BYTES"
+  require_uint available_inodes "$available_inodes" "$MIN_AVAILABLE_INODES"
+  STORAGE_DATA_DEVICE="$data_device"
+  STORAGE_AVAILABLE_BYTES="$available_bytes"
+  STORAGE_AVAILABLE_INODES="$available_inodes"
+  log "storage guard OK: mount=$data_root source=$actual_source uuid=$actual_uuid availableBytes=$available_bytes availableInodes=$available_inodes"
+}
+
+normalize_archive_path() {
+  local path="$1"
+  while [[ "$path" == ./* ]]; do path="${path#./}"; done
+  [ "$path" = "." ] && path=""
+  while [[ "$path" == */ ]]; do path="${path%/}"; done
+  printf '%s' "$path"
+}
+
+validate_archive_path() {
+  local raw="$1" path component
+  [[ "$raw" != *$'\r'* && "$raw" != *$'\n'* && "$raw" != *$'\t'* && "$raw" != *'\\'* ]] || fail "archive contains a control/backslash path"
+  [[ "$raw" != /* ]] || fail "archive contains an absolute path: $raw"
+  path=$(normalize_archive_path "$raw")
+  [ -n "$path" ] || return 0
+  [[ "$path" != */./* && "$path" != */. && "$path" != *//* ]] || fail "archive contains a non-canonical path: $raw"
+  IFS='/' read -r -a components <<< "$path"
+  for component in "${components[@]}"; do
+    [ -n "$component" ] || fail "archive contains an empty path component: $raw"
+    [ "$component" != ".." ] || fail "archive contains parent traversal: $raw"
+  done
+  [ "${#path}" -le 4096 ] || fail "archive path exceeds 4096 bytes"
+}
+
+preflight_archive() {
+  local pkg="$1" node_bin="$2" available_bytes="$3" available_inodes="$4"
+  local names verbose raw normalized line type size regular_count=0 regular_bytes=0
+  local manifest_member="" manifest_count=0 manifest_size=0 metadata required_bytes required_inodes entry_count=0 archive_bytes
+  declare -A seen_paths=()
+  require_root_controlled_file "$pkg" "release archive"
+  tar --help 2>/dev/null | grep -q -- '--restrict' || fail "GNU tar with --restrict support is required"
+  archive_bytes=$(stat -c '%s' -- "$pkg") || fail "cannot stat release archive size"
+  [[ "$archive_bytes" =~ ^[0-9]+$ ]] && [ "$archive_bytes" -gt 0 ] || fail "release archive size is invalid"
+  names=$(LC_ALL=C tar --list --gzip --file="$pkg" --quoting-style=escape) || fail "release archive cannot be listed"
+  [ -n "$names" ] || fail "release archive is empty"
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    validate_archive_path "$raw"
+    normalized=$(normalize_archive_path "$raw")
+    [ -n "$normalized" ] || continue
+    entry_count=$((entry_count + 1))
+    [ "$entry_count" -le 250000 ] || fail "archive entry count exceeds the safety ceiling"
+    [ -z "${seen_paths[$normalized]:-}" ] || fail "archive contains a duplicate path: $normalized"
+    seen_paths[$normalized]=1
+    if [ "$normalized" = "release-manifest.json" ]; then
+      manifest_member="$raw"
+      manifest_count=$((manifest_count + 1))
+    fi
+  done <<< "$names"
+  [ "$manifest_count" -eq 1 ] || fail "archive must contain exactly one root release-manifest.json"
+
+  verbose=$(LC_ALL=C tar --list --verbose --gzip --numeric-owner --full-time --quoting-style=escape --file="$pkg") || fail "release archive metadata cannot be listed"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    type="${line:0:1}"
+    case "$type" in
+      -|d) ;;
+      l|h) fail "archive links are forbidden (type=$type)" ;;
+      b|c|p|s) fail "archive special files are forbidden (type=$type)" ;;
+      *) fail "archive contains an unsupported entry type: $type" ;;
+    esac
+    if [ "$type" = "-" ]; then
+      set -- $line
+      size="${3:-}"
+      [[ "$size" =~ ^[0-9]+$ ]] || fail "archive regular-file size is unreadable"
+      regular_count=$((regular_count + 1))
+      regular_bytes=$((regular_bytes + size))
+    fi
+  done <<< "$verbose"
+
+  metadata=$(tar --extract --to-stdout --gzip --file="$pkg" -- "$manifest_member" | "$node_bin" -e '
+const fs = require("fs");
+const crypto = require("crypto");
+const manifest = JSON.parse(fs.readFileSync(0, "utf8"));
+if (manifest.schemaVersion !== 2 || manifest.kind !== "immutable-standalone-service-artifact") throw new Error("invalid manifest identity");
+if (!Array.isArray(manifest.files) || !Number.isSafeInteger(manifest.fileCount) || manifest.fileCount !== manifest.files.length) throw new Error("invalid manifest fileCount");
+if (manifest.fileCount > 250000) throw new Error("manifest fileCount exceeds the safety ceiling");
+if (!Number.isSafeInteger(manifest.totalBytes) || manifest.totalBytes < 0) throw new Error("invalid manifest totalBytes");
+if (!/^[0-9a-f]{64}$/.test(manifest.artifactDigest || "")) throw new Error("invalid manifest artifactDigest");
+process.stdout.write(`${manifest.fileCount} ${manifest.totalBytes}`);
+') || fail "embedded release inventory metadata is invalid"
+  read -r MANIFEST_FILE_COUNT MANIFEST_TOTAL_BYTES <<< "$metadata"
+  manifest_size=$(printf '%s\n' "$names" | awk '$0 == "./release-manifest.json" || $0 == "release-manifest.json" { found=1 } END { if (!found) exit 1 }' >/dev/null && tar --extract --to-stdout --gzip --file="$pkg" -- "$manifest_member" | wc -c) || fail "cannot measure release manifest"
+  [ "$regular_count" -eq $((MANIFEST_FILE_COUNT + 1)) ] || fail "archive regular-file count does not match embedded inventory"
+  [ "$regular_bytes" -eq $((MANIFEST_TOTAL_BYTES + manifest_size)) ] || fail "archive byte total does not match embedded inventory"
+  required_bytes=$((MIN_AVAILABLE_BYTES + MANIFEST_TOTAL_BYTES + MANIFEST_TOTAL_BYTES / 10 + 67108864))
+  required_inodes=$((MIN_AVAILABLE_INODES + MANIFEST_FILE_COUNT + 1024))
+  [ "$available_bytes" -ge "$required_bytes" ] || fail "data mount free-byte waterline would be crossed by this release"
+  [ "$available_inodes" -ge "$required_inodes" ] || fail "data mount free-inode waterline would be crossed by this release"
+  ARCHIVE_SHA256=$(sha256sum -- "$pkg" | awk '{print $1}')
+  log "archive preflight OK: files=$MANIFEST_FILE_COUNT bytes=$MANIFEST_TOTAL_BYTES sha256=$ARCHIVE_SHA256"
+}
+
+verify_extracted_inventory() {
+  local target="$1" node_bin="$2" pkg="$3" before_sha="$4" after_sha
+  after_sha=$(sha256sum -- "$pkg" | awk '{print $1}')
+  [ "$after_sha" = "$before_sha" ] || fail "release archive changed during extraction"
+  "$node_bin" - "$target" <<'NODEEOF'
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const root = fs.realpathSync(process.argv[2]);
+const manifestPath = path.join(root, 'release-manifest.json');
+const manifestStat = fs.lstatSync(manifestPath);
+if (!manifestStat.isFile() || manifestStat.isSymbolicLink()) throw new Error('release-manifest.json must be a regular file');
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+if (manifest.schemaVersion !== 2 || manifest.kind !== 'immutable-standalone-service-artifact') throw new Error('invalid release manifest identity');
+if (!Array.isArray(manifest.files) || manifest.fileCount !== manifest.files.length) throw new Error('invalid release inventory count');
+const expected = new Map();
+let previous = '';
+for (const entry of manifest.files) {
+  if (!entry || typeof entry.path !== 'string' || path.posix.normalize(entry.path) !== entry.path || path.posix.isAbsolute(entry.path)
+    || entry.path.split('/').includes('..') || entry.path === 'release-manifest.json' || previous && previous.localeCompare(entry.path, 'en') >= 0
+    || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || !/^[0-9a-f]{64}$/.test(entry.sha256 || '')) throw new Error(`invalid release inventory entry: ${entry?.path || '<unknown>'}`);
+  expected.set(entry.path, entry);
+  previous = entry.path;
+}
+const actual = [];
+function walk(directory) {
+  for (const dirent of fs.readdirSync(directory, {withFileTypes: true}).sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
+    const absolute = path.join(directory, dirent.name);
+    const relative = path.relative(root, absolute).split(path.sep).join('/');
+    const stat = fs.lstatSync(absolute);
+    if (stat.isSymbolicLink()) throw new Error(`extracted tree contains a symlink: ${relative}`);
+    if (stat.isDirectory()) walk(absolute);
+    else if (stat.isFile()) {
+      if (relative === 'release-manifest.json') continue;
+      const hashState = crypto.createHash('sha256');
+      const descriptor = fs.openSync(absolute, 'r');
+      const buffer = Buffer.allocUnsafe(1024 * 1024);
+      try {
+        for (;;) {
+          const read = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+          if (read === 0) break;
+          hashState.update(buffer.subarray(0, read));
+        }
+      } finally { fs.closeSync(descriptor); }
+      const hash = hashState.digest('hex');
+      actual.push({path: relative, bytes: stat.size, sha256: hash});
+    } else throw new Error(`extracted tree contains a special file: ${relative}`);
+  }
+}
+walk(root);
+actual.sort((a, b) => a.path.localeCompare(b.path, 'en'));
+if (actual.length !== expected.size) throw new Error('extracted file count differs from release inventory');
+for (const file of actual) {
+  const pinned = expected.get(file.path);
+  if (!pinned || pinned.bytes !== file.bytes || pinned.sha256 !== file.sha256) throw new Error(`extracted file mismatch: ${file.path}`);
+}
+const totalBytes = actual.reduce((sum, file) => sum + file.bytes, 0);
+const digest = crypto.createHash('sha256').update(actual.map(file => `${file.sha256}  ${file.path}\n`).join('')).digest('hex');
+if (manifest.fileCount !== actual.length || manifest.totalBytes !== totalBytes || manifest.artifactDigest !== digest) throw new Error('extracted aggregate inventory mismatch');
+process.stdout.write(`inventory OK: files=${actual.length} bytes=${totalBytes} digest=${digest}\n`);
+NODEEOF
+}
+
+if [ "${DEPLOY_ACTIVATE_LIBRARY_ONLY:-0}" = "1" ]; then
+  [ "${BASH_SOURCE[0]}" != "$0" ] || fail "library-only mode is valid only when sourced by the offline verifier"
+  return 0 2>/dev/null || exit 0
+fi
+
 RELEASE_ID="${1:?missing release_id}"
 [[ "$RELEASE_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || { echo '[activate] FATAL: invalid release_id' >&2; exit 1; }
 PKG="${2:?missing package path}"
@@ -15,16 +307,31 @@ TOOLCHAIN_NODE=/data/direct-deploy/toolchain/bin/node
 CANDIDATE_PORT=5100
 RECEIPTS=/data/direct-deploy/receipts
 EXPECTED_SOURCE_VERSION="${EXPECTED_SOURCE_VERSION:?missing EXPECTED_SOURCE_VERSION}"
+STORAGE_CONTRACT=/etc/zimeiti/deploy-storage.conf
 umask 077
-
-log() { echo "[activate] $*"; }
-fail() { echo "[activate] FATAL: $*" >&2; exit 1; }
 
 # ─── 0. 前置检查 ─────────────────────────────────────────
 [ -f "$PKG" ] || fail "package missing: $PKG"
 [ -x "$TOOLCHAIN_NODE" ] || fail "toolchain node missing"
+verify_storage_contract /data /data/web "$STORAGE_CONTRACT" /etc/fstab
+require_root_controlled_directory /data/direct-deploy "deployment root"
+require_root_controlled_directory /data/direct-deploy/incoming "deployment incoming directory"
+require_root_controlled_directory "$RELEASES" "release root"
+require_root_controlled_directory "$RECEIPTS" "deployment receipt directory"
+require_root_controlled_file "$TOOLCHAIN_NODE" "deployment Node runtime"
+assert_on_data_mount /data/direct-deploy /data "$STORAGE_DATA_DEVICE"
+assert_on_data_mount "$TOOLCHAIN_NODE" /data "$STORAGE_DATA_DEVICE"
+assert_on_data_mount "$RECEIPTS" /data "$STORAGE_DATA_DEVICE"
+PKG_REAL=$(readlink -f -- "$PKG") || fail "package path unreadable"
+case "$PKG_REAL" in /data/direct-deploy/incoming/*) ;; *) fail "package must be inside /data/direct-deploy/incoming" ;; esac
+assert_on_data_mount "$PKG_REAL" /data "$STORAGE_DATA_DEVICE"
+assert_on_data_mount "$RELEASES" /data "$STORAGE_DATA_DEVICE"
+[ -L "$CURRENT" ] || fail "current-web must be a symlink"
 [ -e "$TARGET_DIR" ] && fail "target already exists: $TARGET_DIR"
 CURRENT_TARGET=$(readlink -f "$CURRENT") || fail "current-web unreadable"
+case "$CURRENT_TARGET" in "$RELEASES"/*/web) ;; *) fail "current-web escaped the immutable release root: $CURRENT_TARGET" ;; esac
+assert_on_data_mount "$CURRENT_TARGET" /data "$STORAGE_DATA_DEVICE"
+preflight_archive "$PKG_REAL" "$TOOLCHAIN_NODE" "$STORAGE_AVAILABLE_BYTES" "$STORAGE_AVAILABLE_INODES"
 log "current=$CURRENT_TARGET -> new=$TARGET"
 
 WEB_PID=""
@@ -37,38 +344,10 @@ log "production web pid=$WEB_PID"
 
 # ─── 1. 解包新 release ───────────────────────────────────
 mkdir -p "$TARGET"
-tar -xzf "$PKG" -C "$TARGET"
+tar --extract --gzip --file="$PKG_REAL" --directory="$TARGET" --no-same-owner --no-same-permissions --delay-directory-restore --restrict
+verify_extracted_inventory "$TARGET" "$TOOLCHAIN_NODE" "$PKG_REAL" "$ARCHIVE_SHA256"
 [ -f "$TARGET/server.js" ] || fail "server.js missing in package"
 [ -f "$TARGET/release-manifest.json" ] || fail "release-manifest.json missing in package"
-
-# ─── 1.5 修复 pnpm 符号链接（Windows 打包的绝对路径链接在 Linux 悬空，重写为包内相对链接） ───
-NM="$TARGET/node_modules"
-if [ -d "$NM/.pnpm" ]; then
-  LINKS_FIXED=0
-  # 顶层及 scope 层链接（排除 .pnpm 内部）
-  while IFS= read -r link; do
-    target=$(readlink "$link")
-    case "$target" in
-      */node_modules/.pnpm/*)
-        rel=".pnpm/${target#*/node_modules/.pnpm/}"
-        rm "$link" && ln -s "$rel" "$link" && LINKS_FIXED=$((LINKS_FIXED+1)) ;;
-    esac
-  done < <(find "$NM" -maxdepth 2 -type l -not -path "*/.pnpm/*")
-  # .pnpm 内部 peer 互链（绝对路径 → 包内相对）
-  while IFS= read -r link; do
-    target=$(readlink "$link")
-    case "$target" in
-      */node_modules/.pnpm/*)
-        rest="${target#*/node_modules/.pnpm/}"
-        abs="$NM/.pnpm/$rest"
-        if [ -e "$abs" ]; then
-          rel=$(realpath --relative-to="$(dirname "$link")" "$abs")
-          rm "$link" && ln -s "$rel" "$link" && LINKS_FIXED=$((LINKS_FIXED+1))
-        fi ;;
-    esac
-  done < <(find "$NM/.pnpm" -maxdepth 5 -type l)
-  log "pnpm links rewritten: $LINKS_FIXED"
-fi
 
 chmod -R a-w "$TARGET" || true
 log "unpacked: $(du -sh "$TARGET" | awk '{print $1}')"
@@ -93,32 +372,13 @@ process.stdout.write(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).commit
 NODEEOF
 )
 log "new BUILD_ID=$NEW_BUILD_ID commit=$NEW_COMMIT_SHA"
-if [ -d "$CURRENT_TARGET/runtime-tools" ]; then
-  chmod -R u+w "$TARGET"
-  cp -a "$CURRENT_TARGET/runtime-tools" "$TARGET/runtime-tools"
-  chmod -R a-w "$TARGET"
-  log "runtime-tools inherited"
-fi
-
-# ─── 2.5 继承旧 release 的 public 文件（只补缺，不覆盖新构建文件） ───
-if [ -d "$CURRENT_TARGET/public" ]; then
-  chmod -R u+w "$TARGET"
-  cp -an "$CURRENT_TARGET/public/." "$TARGET/public/" 2>/dev/null || true
-  chmod -R a-w "$TARGET"
-  log "public inherited (no-clobber)"
-fi
-
-# ─── 2.6 并入共享资产根（硬链接，零额外磁盘） ───
-# 生产静态资产真相源是 PUBLIC_ASSET_ROOT（/data/web/shared/assets/current/public）。
-# release 自带的 public 只是精简集；缺少的文件会让 Next 内部回退成 HTML，
-# 导致 /_next/image 优化器 400（"isn't a valid image"）。用硬链接并集修复。
-SHARED_PUBLIC="${PUBLIC_ASSET_ROOT:-/data/web/shared/assets/current/public}"
-if [ -d "$SHARED_PUBLIC" ] && command -v rsync >/dev/null 2>&1; then
-  chmod -R u+w "$TARGET"
-  rsync -a --ignore-existing --link-dest="$SHARED_PUBLIC" "$SHARED_PUBLIC/" "$TARGET/public/" \
-    && log "shared asset root unioned (hardlink, from $SHARED_PUBLIC)"
-  chmod -R a-w "$TARGET"
-fi
+# The candidate tree is immutable evidence. The packager must materialize all
+# runtime dependencies and code-track public files before the archive is
+# created. B-track assets stay in their separately pinned PUBLIC_ASSET_ROOT;
+# nothing from the previous release or shared asset tree may be copied or
+# hard-linked into this release after inventory verification.
+verify_extracted_inventory "$TARGET" "$TOOLCHAIN_NODE" "$PKG_REAL" "$ARCHIVE_SHA256"
+log "candidate tree remains identical to the signed artifact inventory"
 
 # ─── 3. 构造同身份候选 env（从当前生产进程 /proc 提取） ───
 CAND_ENV=/tmp/candidate-env-$$.json

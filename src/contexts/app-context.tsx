@@ -57,7 +57,6 @@ import {
   getClientBootstrapAppearance,
   getClientBootstrapLayout,
   invalidateClientBootstrapAuthMe,
-  invalidateClientBootstrapAppearance,
   invalidateClientBootstrapLayout,
 } from "@/lib/client-bootstrap-cache";
 import {
@@ -137,6 +136,13 @@ const SAFE_INLINE_CHAT_IMAGE = /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0
 const TYPEWRITER_MIN_STEP = 1;
 const TYPEWRITER_MAX_STEP = 64;
 const TYPEWRITER_TARGET_CATCHUP_FRAMES = 6;
+// Settle waits are only an abnormal fallback; the normal path resolves as soon
+// as the RAF queue drains. Budget two 60 Hz frames per expected paint plus a
+// small frame margin so a long final provider chunk can finish progressively.
+const TYPEWRITER_SETTLE_FRAME_BUDGET_MS = 34;
+const TYPEWRITER_SETTLE_SAFETY_FRAMES = 6;
+const TYPEWRITER_SETTLE_MIN_WAIT_MS = 750;
+const TYPEWRITER_SETTLE_MAX_WAIT_MS = 15000;
 
 function safeTypewriterBoundary(target: string, requestedEnd: number): number {
   let end = Math.min(requestedEnd, target.length);
@@ -178,6 +184,72 @@ function takeTypewriterSlice(current: string, target: string, framesRemaining: n
   );
   const requestedEnd = current.length + Math.min(step, remaining);
   return target.slice(0, safeTypewriterBoundary(target, requestedEnd));
+}
+
+function undisplayedTypewriterChars(current: string, target: string): number {
+  if (current === target) return 0;
+  // Non-prefix corrections are applied atomically by takeTypewriterSlice.
+  return target.startsWith(current) ? target.length - current.length : 1;
+}
+
+function estimateTypewriterDrainWaitMs(
+  displayedContent: string,
+  targetContent: string,
+  displayedReasoning: string,
+  targetReasoning: string,
+): number {
+  const undisplayedChars = Math.max(
+    undisplayedTypewriterChars(displayedContent, targetContent),
+    undisplayedTypewriterChars(displayedReasoning, targetReasoning),
+  );
+  if (undisplayedChars === 0) return 0;
+
+  const estimatedFrames = Math.max(
+    TYPEWRITER_TARGET_CATCHUP_FRAMES,
+    Math.ceil(undisplayedChars / TYPEWRITER_MAX_STEP),
+  );
+  const estimatedWaitMs = (estimatedFrames + TYPEWRITER_SETTLE_SAFETY_FRAMES)
+    * TYPEWRITER_SETTLE_FRAME_BUDGET_MS;
+  return Math.min(
+    TYPEWRITER_SETTLE_MAX_WAIT_MS,
+    Math.max(TYPEWRITER_SETTLE_MIN_WAIT_MS, estimatedWaitMs),
+  );
+}
+
+type ChatStreamLifecyclePhase = "submittedAt" | "requestStart" | "firstContentDelta" | "done";
+
+function clientPerformanceNow() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+/**
+ * Observational client timing only. These marks never enter requests, messages,
+ * persistence or billing; `message-content` adds the matching firstPaint mark.
+ */
+function markChatStreamLifecycle(messageId: string, phase: ChatStreamLifecyclePhase, startTime?: number) {
+  if (typeof performance === "undefined" || !messageId) return;
+  const markName = `chat-stream:${messageId}:${phase}`;
+  try {
+    if (performance.getEntriesByName(markName).length > 0) return;
+    if (startTime === undefined) performance.mark(markName);
+    else performance.mark(markName, { startTime });
+
+    if (phase === "done") {
+      const phases = ["submittedAt", "requestStart", "firstContentDelta", "firstPaint", "done"] as const;
+      const timing = Object.fromEntries(phases.map((name) => {
+        const entries = performance.getEntriesByName(`chat-stream:${messageId}:${name}`);
+        return [name, entries.length > 0 ? entries[entries.length - 1].startTime : null];
+      }));
+      try {
+        if (window.localStorage?.getItem("debug_stream") === "1") {
+          console.log("[stream-lifecycle]", { messageId, ...timing });
+        }
+      } catch { /* localStorage can be unavailable in privacy modes. */ }
+      window.dispatchEvent(new CustomEvent("chat-stream-lifecycle", { detail: { messageId, ...timing } }));
+    }
+  } catch { /* Performance Timeline is best-effort diagnostics. */ }
 }
 
 function toLlmImageUrl(value: string): string | null {
@@ -878,16 +950,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    const fetchTheme = async () => {
+    const fetchTheme = async (force = false) => {
       safeRemove(STORAGE_KEYS.DEPRECATED_USER_THEME_CHOICE);
       const token = safeGet(STORAGE_KEYS.AUTH_TOKEN);
       let platformTheme = normalizeTheme(safeGet(STORAGE_KEYS.PLATFORM_THEME) || DEFAULT_THEME);
       let platformMode = normalizeThemeModePreference(safeGet(STORAGE_KEYS.PLATFORM_THEME_MODE))
         || DEFAULT_MODE_PREFERENCE;
 
+      const applyCachedLoginAppearance = () => {
+        const cachedTheme = safeGet(STORAGE_KEYS.USER_THEME_PREFERENCE);
+        const cachedMode = normalizeThemeModePreference(safeGet(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE));
+        const cachedExpiry = Date.parse(safeGet(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT) || "");
+        if (
+          cachedTheme
+          && normalizeTheme(cachedTheme) === cachedTheme
+          && cachedMode
+          && Number.isFinite(cachedExpiry)
+          && cachedExpiry > Date.now()
+        ) {
+          applyAppearance(cachedTheme, cachedMode);
+          return true;
+        }
+        return false;
+      };
+
       try {
         const requests: [Promise<Response>, Promise<Response> | null] = [
-          getClientBootstrapAppearance(),
+          getClientBootstrapAppearance({ force }),
           token ? getClientBootstrapAuthMe(token) : null,
         ];
         const [settingsRes, meRes] = await Promise.all([
@@ -915,6 +1004,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (userTheme && userMode) {
             safeSet(STORAGE_KEYS.USER_THEME_PREFERENCE, userTheme);
             safeSet(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE, userMode);
+            if (meData.user?.themePreferenceExpiresAt) {
+              safeSet(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT, meData.user.themePreferenceExpiresAt);
+            }
             applyAppearance(userTheme, userMode);
             return;
           }
@@ -925,8 +1017,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // because the current IP/expiry cannot be proven without /auth/me.
       }
 
+      if (!token && applyCachedLoginAppearance()) return;
       safeRemove(STORAGE_KEYS.USER_THEME_PREFERENCE);
       safeRemove(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE);
+      safeRemove(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT);
       applyAppearance(platformTheme, platformMode);
     };
     void fetchTheme();
@@ -942,10 +1036,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     };
     const handleThemeUpdate = () => {
-      // 管理后台保存平台默认外观后，不能命中 1.5 秒 settled cache，
-      // 否则当前标签页会短暂恢复旧默认值。
-      invalidateClientBootstrapAppearance();
-      void fetchTheme();
+      // 发布方已在广播前清除旧值；这里强制刷新，并与 ThemeInit
+      // 共享同一个 post-invalidation single-flight 请求。
+      void fetchTheme(true);
     };
     window.addEventListener("theme-updated", handleThemeUpdate);
     window.addEventListener("storage", handleStorageUpdate);
@@ -1112,6 +1205,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const sendMessage = useCallback(
     async (content: string, mentionedAgentId?: string, images?: string[], modelOverride?: string, apiContent?: string, deepThinkingOverride?: number, webSearchOverride?: boolean, skipUserMessage?: boolean, retryUserMessageId?: string): Promise<boolean> => {
       const convId = state.activeConversationId;
+      const submittedAt = clientPerformanceNow();
       console.log(`[sendMessage] 🔵 ENTRY convId=${convId}, content="${content?.slice(0,30)}...", isStreaming=${state.isStreaming}, streamingConvs=[${[...streamingConvIdsRef.current]}], activeAgent=${state.activeAgentId}`);
       if (!convId) {
         console.warn("[sendMessage] ❌ NO convId, returning false");
@@ -1331,6 +1425,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         (hybridImageConfig.routingMode === "always" ||
          (hybridImageConfig.routingMode === "auto" && shouldTriggerHybridImage(effectiveApiContent, hybridImageConfig)));
       const hybridImagePrompt = effectiveApiContent;
+      if (!isImageModel && !shouldUseHybridImage) {
+        markChatStreamLifecycle(assistantMessage.id, "submittedAt", submittedAt);
+      }
       console.log(
         "[sendMessage] routing to:",
         isImageModel || shouldUseHybridImage
@@ -1684,7 +1781,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [flushStreamingUpdate, markStreamTarget, streamKey]);
 
-  const settleTypewriterUpdate = useCallback((payload: StreamingUpdatePayload, maxWaitMs = 2_000) => {
+  const settleTypewriterUpdate = useCallback((payload: StreamingUpdatePayload) => {
     const key = streamKey(payload);
     return new Promise<void>((resolve) => {
       let settled = false;
@@ -1731,6 +1828,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      const settleWaitMs = estimateTypewriterDrainWaitMs(
+        displayedContent,
+        payload.content || "",
+        displayedReasoning,
+        targetReasoning,
+      );
+
       let resolvers = typewriterDrainResolversRef.current.get(key);
       if (!resolvers) {
         resolvers = new Set();
@@ -1741,7 +1845,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       timeoutId = setTimeout(() => {
         dispatch({ type: "UPDATE_MESSAGE", payload });
         finish("settle-timeout");
-      }, maxWaitMs);
+      }, settleWaitMs);
 
       throttledDispatchUpdate(payload);
     });
@@ -1816,6 +1920,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let responseErrorMessage: string | null = null;
       let rawContent = ""; // Raw accumulated content for think tag parsing
       let reasoningContent = "";
+      let visibleContentStarted = false;
+      let reasoningStarted = false;
 
       // Create new AbortController for this conversation's stream
       const controller = getOrCreateAbortController(convId);
@@ -1899,6 +2005,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // chooses to retry. Keep the stable key for this submitted request, but
         // never let the generic fetch helper automatically re-send an LLM call.
         const clientRequestId = `llm_${crypto.randomUUID()}`;
+        markChatStreamLifecycle(assistantMsgId, "requestStart");
         const res = await fetchWithRetry("/api/llm", {
           method: "POST",
           signal: controller.signal,
@@ -2075,7 +2182,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                       payload: {
                         conversationId: convId,
                         messageId: assistantMsgId,
-                        streamStatus: receivedChars > 0 ? "正在生成" : "正在连接模型",
+                        streamStatus: receivedChars > 0 ? "正在生成" : "已连接，模型思考中",
+                      },
+                    });
+                    continue;
+                  }
+                  if (data.type === "stream_delivery") {
+                    dispatch({
+                      type: "UPDATE_MESSAGE",
+                      payload: {
+                        conversationId: convId,
+                        messageId: assistantMsgId,
+                        streamStatus: data.stream_delivery === "live"
+                          ? "已连接，模型思考中"
+                          : "模型正在生成完整回复",
                       },
                     });
                     continue;
@@ -2086,6 +2206,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                     // Some APIs (e.g., GLM-5.1) use "reasoning" instead of "reasoning_content"
                     const reasoningChunk = delta.reasoning_content || delta.reasoning;
                     if (reasoningChunk) {
+                      if (!reasoningStarted && !visibleContentStarted) {
+                        reasoningStarted = true;
+                        dispatch({
+                          type: "UPDATE_MESSAGE",
+                          payload: {
+                            conversationId: convId,
+                            messageId: assistantMsgId,
+                            streamStatus: "模型思考中",
+                          },
+                        });
+                      }
                       reasoningContent += reasoningChunk;
                       throttledDispatchUpdate({ conversationId: convId, messageId: assistantMsgId, content: fullContent, reasoningContent });
                     }
@@ -2093,6 +2224,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                     // 1. Agent explicitly enables think tags, OR
                     // 2. Agent has deep thinking enabled (type 1 or 2) — some APIs embed thinking in <think compatible> tags
                     if (delta.content) {
+                      markChatStreamLifecycle(assistantMsgId, "firstContentDelta");
+                      if (!visibleContentStarted) {
+                        visibleContentStarted = true;
+                        dispatch({
+                          type: "UPDATE_MESSAGE",
+                          payload: {
+                            conversationId: convId,
+                            messageId: assistantMsgId,
+                            streamStatus: "正在生成",
+                          },
+                        });
+                      }
                       rawContent += delta.content;
                       const shouldParseThinkTags = agent.enableThinkTags || (agent.deepThinkingType ?? agent.deep_thinking_type ?? 0) > 0;
                       if (shouldParseThinkTags) {
@@ -2119,6 +2262,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const data = await res.json();
           const choice = data.choices?.[0];
           if (choice?.message) {
+            if (choice.message.content) markChatStreamLifecycle(assistantMsgId, "firstContentDelta");
             rawContent = choice.message.content || "";
             reasoningContent = choice.message.reasoning_content || choice.message.reasoning || "";
             // Parse think tags when enabled or when deep thinking is active
@@ -2240,6 +2384,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           payload: { conversationId: convId, messageId: assistantMsgId, isStreaming: false },
         });
         dispatch({ type: "SET_CONV_STREAMING", payload: { conversationId: convId, isStreaming: false } });
+        markChatStreamLifecycle(assistantMsgId, "done");
         // 立即同步更新 isStreamingRef，避免安全网读到过时值误触发
         // dispatch 是异步的（下次渲染才生效），但 ref 可以立即更新
         // 检查 streamingConvIdsRef 是否还有其他流式会话
@@ -2272,16 +2417,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Create new AbortController for this conversation's stream
       const controller = getOrCreateAbortController(convId);
+      // One logical /api/chat send keeps the same identity across every
+      // transport attempt made by fetchWithRetry.
+      const clientRequestId = `chat_${crypto.randomUUID()}`;
 
       try {
+        markChatStreamLifecycle(assistantMsgId, "requestStart");
         const res = await fetchWithRetry("/api/chat", {
           method: "POST",
           signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
+            "Idempotency-Key": clientRequestId,
             ...(authRef.current.token ? { Authorization: `Bearer ${authRef.current.token}` } : {}),
           },
           body: JSON.stringify({
+            client_request_id: clientRequestId,
             botId: agent.botId,
             agentId: agent.id,
             message: content,
@@ -2399,6 +2550,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                     reasoningContent += reasoningChunk;
                     throttledDispatchUpdate({ conversationId: convId, messageId: assistantMsgId, content: fullContent, reasoningContent });
                   } else if (data.content) {
+                    markChatStreamLifecycle(assistantMsgId, "firstContentDelta");
                     rawContent += data.content;
                     const shouldParseThinkTags = agent.enableThinkTags || (agent.deepThinkingType ?? agent.deep_thinking_type ?? 0) > 0;
                     if (shouldParseThinkTags) {
@@ -2414,6 +2566,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   }
                 }
                 if (currentEvent === "conversation.message.completed" && data.content) {
+                  markChatStreamLifecycle(assistantMsgId, "firstContentDelta");
                   const shouldParseThinkTags = agent.enableThinkTags || (agent.deepThinkingType ?? agent.deep_thinking_type ?? 0) > 0;
                   if (shouldParseThinkTags) {
                     const parsed = parseThinkTags(data.content);
@@ -2514,6 +2667,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         finalizeAbortController(convId, controller);
         dispatch({ type: "SET_MESSAGE_STREAMING", payload: { conversationId: effectiveConvId, messageId: assistantMsgId, isStreaming: false } });
         dispatch({ type: "SET_CONV_STREAMING", payload: { conversationId: effectiveConvId, isStreaming: false } });
+        markChatStreamLifecycle(assistantMsgId, "done");
         // 立即同步更新 isStreamingRef，避免安全网读到过时值误触发
         const remainingStreams = new Set(streamingConvIdsRef.current);
         remainingStreams.delete(effectiveConvId);
@@ -2546,6 +2700,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const controller = getOrCreateAbortController(convId);
 
       try {
+        markChatStreamLifecycle(assistantMsgId, "requestStart");
         const res = await fetchWithRetry("/api/chat/coding", {
           method: "POST",
           signal: controller.signal,
@@ -2652,6 +2807,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
                 // Unified helper: accumulate content and throttle dispatch
                 const accumulateAndDispatch = (chunk: string) => {
+                  if (chunk) markChatStreamLifecycle(assistantMsgId, "firstContentDelta");
                   rawContent += chunk;
                   if (agent.enableThinkTags) {
                     const parsed = parseThinkTags(rawContent);
@@ -2779,6 +2935,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         finalizeAbortController(convId, controller);
         dispatch({ type: "SET_MESSAGE_STREAMING", payload: { conversationId: effectiveConvId, messageId: assistantMsgId, isStreaming: false } });
         dispatch({ type: "SET_CONV_STREAMING", payload: { conversationId: effectiveConvId, isStreaming: false } });
+        markChatStreamLifecycle(assistantMsgId, "done");
         // 立即同步更新 isStreamingRef，避免安全网读到过时值误触发
         const remainingStreams = new Set(streamingConvIdsRef.current);
         remainingStreams.delete(effectiveConvId);
@@ -2958,10 +3115,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (userPref && userMode) {
           safeSet(STORAGE_KEYS.USER_THEME_PREFERENCE, userPref);
           safeSet(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE, userMode);
+          if (authenticatedUser.themePreferenceExpiresAt) {
+            safeSet(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT, authenticatedUser.themePreferenceExpiresAt);
+          }
           dispatch({ type: "SET_APPEARANCE", payload: resolveAppearance(userPref, userMode) });
         } else {
           safeRemove(STORAGE_KEYS.USER_THEME_PREFERENCE);
           safeRemove(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE);
+          safeRemove(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT);
           dispatch({ type: "SET_APPEARANCE", payload: resolveAppearance(platformTheme, platformMode) });
         }
         dispatch({
@@ -2993,16 +3154,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     }).catch(() => {});
     clearStoredAuthSession();
-    // 个性化外观属于 user + IP 的服务端租约。登出后立即回到平台
-    // 默认，避免下一位使用同一浏览器的账号看到前一账号偏好。
-    safeRemove(STORAGE_KEYS.USER_THEME_PREFERENCE);
-    safeRemove(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE);
+    // 保留最近一次仍在租约期内的个人外观，仅用于下一次登录页预览。
+    // 新账号完成认证后会立刻用该账号的服务端偏好或平台默认覆盖。
     clearConversationCache();
     dispatch({ type: "LOGOUT" });
+    const cachedTheme = safeGet(STORAGE_KEYS.USER_THEME_PREFERENCE);
+    const cachedMode = normalizeThemeModePreference(safeGet(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE));
+    const cachedExpiry = Date.parse(safeGet(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT) || "");
+    const hasActiveCachedAppearance = Boolean(
+      cachedTheme
+      && normalizeTheme(cachedTheme) === cachedTheme
+      && cachedMode
+      && Number.isFinite(cachedExpiry)
+      && cachedExpiry > Date.now(),
+    );
     const platformTheme = safeGet(STORAGE_KEYS.PLATFORM_THEME) || DEFAULT_THEME;
     const platformMode = normalizeThemeModePreference(safeGet(STORAGE_KEYS.PLATFORM_THEME_MODE))
       || DEFAULT_MODE_PREFERENCE;
-    dispatch({ type: "SET_APPEARANCE", payload: resolveAppearance(platformTheme, platformMode) });
+    dispatch({
+      type: "SET_APPEARANCE",
+      payload: hasActiveCachedAppearance
+        ? resolveAppearance(cachedTheme, cachedMode)
+        : resolveAppearance(platformTheme, platformMode),
+    });
   }, [state.auth.token]);
 
   const persistUserAppearancePreference = useCallback(async (
@@ -3028,9 +3202,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }),
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const responseData = await response.json().catch(() => null);
         if (safeGet(STORAGE_KEYS.AUTH_TOKEN) !== token) return;
         safeSet(STORAGE_KEYS.USER_THEME_PREFERENCE, theme);
         safeSet(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE, modePreference);
+        const expiresAt = responseData?.appearancePreference?.expiresAt;
+        if (typeof expiresAt === "string" && Number.isFinite(Date.parse(expiresAt))) {
+          safeSet(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT, expiresAt);
+        }
         persisted = true;
       } catch {
         console.warn("[theme] 保存七天用户外观偏好失败");
@@ -3184,10 +3363,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (userThemePref && userModePref) {
             safeSet(STORAGE_KEYS.USER_THEME_PREFERENCE, userThemePref);
             safeSet(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE, userModePref);
+            if (authUser?.themePreferenceExpiresAt) {
+              safeSet(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT, authUser.themePreferenceExpiresAt);
+            }
             dispatch({ type: "SET_APPEARANCE", payload: resolveAppearance(userThemePref, userModePref) });
           } else {
             safeRemove(STORAGE_KEYS.USER_THEME_PREFERENCE);
             safeRemove(STORAGE_KEYS.USER_THEME_MODE_PREFERENCE);
+            safeRemove(STORAGE_KEYS.USER_THEME_PREFERENCE_EXPIRES_AT);
             let platformTheme = normalizeTheme(safeGet(STORAGE_KEYS.PLATFORM_THEME) || DEFAULT_THEME);
             let platformMode = normalizeThemeModePreference(safeGet(STORAGE_KEYS.PLATFORM_THEME_MODE))
               || DEFAULT_MODE_PREFERENCE;

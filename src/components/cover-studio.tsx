@@ -17,7 +17,6 @@ import {
   X,
 } from "lucide-react";
 import { AppScopedLink as Link } from "@/components/app-scoped-link";
-import { UserThemeSwitcher } from "@/components/user-theme-switcher";
 import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CoverRatio } from "@/lib/cover-templates";
 import { useApp } from "@/contexts/app-context";
@@ -1527,9 +1526,7 @@ function CoverStudioForAccount() {
           </Link>
         </div>
         <div className="cover-rebuild-brand" aria-label="封面制作"><strong>封面制作</strong></div>
-        <div className="cover-rebuild-actions">
-          <UserThemeSwitcher />
-        </div>
+        <div className="cover-rebuild-actions" />
       </header>
 
       <main className={`cover-rebuild-workspace${isReferenceCreation ? " has-reference-dock" : ""}`}>

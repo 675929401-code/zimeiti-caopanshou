@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zimeiti.local/contracts/release-change-scope-receipt.v1.schema.json",
+  "title": "Release change scope receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptId",
+    "policy",
+    "input",
+    "classification",
+    "failClosed",
+    "reasons",
+    "changedFiles",
+    "browserAcceptance",
+    "requiredValidations",
+    "omittedValidations",
+    "gate"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "zimeiti-release-change-scope-receipt.v1"
+    },
+    "receiptId": {
+      "type": "string",
+      "pattern": "^scope-[a-f0-9]{24}$"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "schemaVersion", "sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "schemaVersion": {"const": "zimeiti-release-change-scope-policy.v1"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "base", "head", "rangeMode", "trustedBase", "minimumLevel", "acceptanceRoutes", "changeCount"],
+      "properties": {
+        "kind": {"enum": ["git-range", "fixture", "forced-full"]},
+        "base": {"type": ["string", "null"]},
+        "head": {"type": ["string", "null"]},
+        "rangeMode": {"type": ["string", "null"], "enum": ["merge-base", "direct", null]},
+        "trustedBase": {"type": "boolean"},
+        "minimumLevel": {"enum": ["FAST", "FULL"]},
+        "acceptanceRoutes": {
+          "type": "array", "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^/[A-Za-z0-9_./?=&%-]*$"}
+        },
+        "changeCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "classification": {
+      "enum": ["FAST", "STANDARD", "FULL"]
+    },
+    "failClosed": {"type": "boolean"},
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "level", "path", "ruleId"],
+        "properties": {
+          "code": {"type": "string", "minLength": 1},
+          "level": {"enum": ["FAST", "STANDARD", "FULL"]},
+          "path": {"type": ["string", "null"]},
+          "ruleId": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "changedFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "path", "previousPath", "pathLevel", "pathRuleIds", "contentRiskIds", "targetedRegressionIds"],
+        "properties": {
+          "status": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "previousPath": {"type": ["string", "null"]},
+          "pathLevel": {"enum": ["FAST", "STANDARD", "FULL"]},
+          "pathRuleIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "contentRiskIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+          ,"targetedRegressionIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        }
+      }
+    },
+    "browserAcceptance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["preciseRoute", "requiredRoutes", "routeRuleIds", "explicitRoutesRequired", "explicitRoutesProvided", "unresolvedPaths"],
+      "properties": {
+        "preciseRoute": {"type": "string", "pattern": "^/[A-Za-z0-9_./?=&%-]*$"},
+        "requiredRoutes": {"type": "array", "minItems": 3, "uniqueItems": true, "items": {"type": "string", "pattern": "^/[A-Za-z0-9_./?=&%-]*$"}},
+        "routeRuleIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "explicitRoutesRequired": {"type": "boolean"},
+        "explicitRoutesProvided": {"type": "boolean"},
+        "unresolvedPaths": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "requiredValidations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "omittedValidations": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "validationState", "releaseReady", "requiredValidationCount"],
+      "properties": {
+        "decision": {"const": "CLASSIFICATION_ONLY"},
+        "validationState": {"const": "pending-required"},
+        "releaseReady": {"const": false},
+        "requiredValidationCount": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

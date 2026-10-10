@@ -499,6 +499,8 @@ export interface VideoModel {
   workspaceSurfaces?: string[];
   /** 上游是否提供真正的远程取消，false 时不能把“停止等待”伪装成取消计费。 */
   supportsRemoteCancel?: boolean;
+  /** 是否允许用户显式选择生成声音或静音；仅由服务端模型协议能力公开。 */
+  supportsGenerateAudioToggle?: boolean;
   isActive: boolean;
   sortOrder: number;
   createdAt: string;

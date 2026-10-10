@@ -1,140 +1,127 @@
+import fs from 'node:fs';
+import { Readable } from 'node:stream';
 import { NextRequest } from 'next/server';
-import { successResponse, errorResponse } from '@/lib/response';
-import { randomUUID } from 'node:crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-import { referenceAudioPublicUrl, resolveReferenceAudioDirectory } from '@/lib/runtime-paths';
+import { errorResponse, successResponse } from '@/lib/response';
+import { getUserFromRequest } from '@/lib/auth';
+import {
+  deleteOwnedReferenceAudio,
+  getOwnedReferenceAudio,
+  listOwnedReferenceAudio,
+  ReferenceAudioStorageError,
+  renameOwnedReferenceAudio,
+} from '@/lib/runtime-paths';
 
-function readMeta(): Record<string, { displayName: string }> {
-  try {
-    const metaFile = path.join(resolveReferenceAudioDirectory(), '.meta.json');
-    if (fs.existsSync(metaFile)) {
-      return JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
-    }
-  } catch {}
-  return {};
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+function storageFailure(error: unknown, fallbackCode: string) {
+  if (error instanceof ReferenceAudioStorageError) {
+    return errorResponse(error.message, error.code, error.status);
+  }
+  return errorResponse('参考音频服务暂不可用', fallbackCode, 500);
 }
 
-function writeMeta(meta: Record<string, { displayName: string }>) {
-  const publicDir = resolveReferenceAudioDirectory();
-  const metaFile = path.join(publicDir, '.meta.json');
-  if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
-  const temporary = `${metaFile}.tmp-${process.pid}-${randomUUID()}`;
-  fs.writeFileSync(temporary, `${JSON.stringify(meta, null, 2)}\n`);
-  if (!fs.existsSync(metaFile)) {
-    fs.renameSync(temporary, metaFile);
-    return;
-  }
-  const previous = `${metaFile}.previous-${process.pid}-${randomUUID()}`;
-  fs.renameSync(metaFile, previous);
-  try {
-    fs.renameSync(temporary, metaFile);
-  } catch (error) {
-    if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
-    if (!fs.existsSync(metaFile) && fs.existsSync(previous)) fs.renameSync(previous, metaFile);
-    throw error;
-  }
-  try {
-    fs.rmSync(previous, { force: true });
-  } catch {
-    // The new complete metadata file is already committed; stale backups can be pruned later.
-  }
+async function authenticate(request: NextRequest) {
+  return getUserFromRequest(request);
 }
 
-// GET /api/reference-audio — 列出所有已保存的参考音频
-export async function GET() {
+function parseByteRange(value: string | null, size: number): { start: number; end: number } | null {
+  if (!value) return null;
+  const match = /^bytes=(\d*)-(\d*)$/u.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  let start: number;
+  let end: number;
+  if (!match[1]) {
+    const suffix = Number(match[2]);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return null;
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Number(match[2]) : size - 1;
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= size || end < start) return null;
+  return { start, end: Math.min(end, size - 1) };
+}
+
+// GET /api/reference-audio — 仅列出当前登录用户拥有的文件；带 filename 时返回受认证的文件内容。
+export async function GET(request: NextRequest) {
+  const user = await authenticate(request);
+  if (!user) return errorResponse('请先登录', 'UNAUTHORIZED', 401);
+
   try {
-    const publicDir = resolveReferenceAudioDirectory();
-    if (!fs.existsSync(publicDir)) {
-      return successResponse({ files: [] });
+    const filename = request.nextUrl.searchParams.get('filename');
+    if (filename) {
+      const file = getOwnedReferenceAudio(user.userId, filename);
+      const requestedRange = request.headers.get('range');
+      const range = parseByteRange(requestedRange, file.size);
+      if (requestedRange && !range) {
+        return new Response(null, {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${file.size}`, 'Cache-Control': 'private, no-store' },
+        });
+      }
+      const start = range?.start ?? 0;
+      const end = range?.end ?? file.size - 1;
+      const body = Readable.toWeb(fs.createReadStream(file.filepath, { start, end })) as ReadableStream;
+      return new Response(body, {
+        status: range ? 206 : 200,
+        headers: {
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'private, no-store',
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+          'Content-Length': String(end - start + 1),
+          ...(range ? { 'Content-Range': `bytes ${start}-${end}/${file.size}` } : {}),
+          'Content-Type': file.mimeType,
+          'Content-Security-Policy': "sandbox; default-src 'none'",
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
     }
 
-    const meta = readMeta();
-
-    const files = fs.readdirSync(publicDir)
-      .filter(f => /\.(mp4|mp3|wav|m4a|aac|ogg|opus|webm)$/i.test(f))
-      .map(f => {
-        const stat = fs.statSync(path.join(publicDir, f));
-        const customName = meta[f]?.displayName || '';
-        return {
-          filename: f,
-          url: referenceAudioPublicUrl(f),
-          size: stat.size,
-          createdAt: stat.birthtime.toISOString(),
-          displayName: customName || parseDisplayName(f),
-          customName: !!customName,
-          source: f.includes('_link_') ? 'link' : 'upload',
-        };
-      })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 20);
-
+    const files = listOwnedReferenceAudio(user.userId).slice(0, 20).map((file) => ({
+      filename: file.filename,
+      url: `/voice-platform/api/reference-audio?filename=${encodeURIComponent(file.filename)}`,
+      size: file.size,
+      mimeType: file.mimeType,
+      createdAt: file.createdAt,
+      displayName: file.displayName,
+      customName: file.customName,
+      source: file.filename.includes('_link_') ? 'link' : 'upload',
+    }));
     return successResponse({ files });
-  } catch (err: any) {
-    return errorResponse(err.message, 'LIST_ERROR', 500);
+  } catch (error) {
+    return storageFailure(error, 'LIST_ERROR');
   }
 }
 
-// PUT /api/reference-audio — 重命名（请求体: { filename, displayName }）
+// PUT /api/reference-audio — 仅允许所有者重命名。
 export async function PUT(request: NextRequest) {
+  const user = await authenticate(request);
+  if (!user) return errorResponse('请先登录', 'UNAUTHORIZED', 401);
+
   try {
-    const { filename, displayName } = await request.json();
-    if (!filename) return errorResponse('缺少 filename', 'MISSING_PARAM', 400);
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      return errorResponse('非法文件名', 'INVALID_FILENAME', 400);
+    const body: unknown = await request.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return errorResponse('请求格式无效', 'INVALID_REQUEST', 400);
     }
-
-    const meta = readMeta();
-    if (!displayName || displayName.trim().length === 0) {
-      // 删除自定义名称，恢复默认
-      delete meta[filename];
-    } else {
-      meta[filename] = { displayName: displayName.trim().slice(0, 50) };
-    }
-    writeMeta(meta);
-
-    return successResponse({ filename, displayName: meta[filename]?.displayName || parseDisplayName(filename) });
-  } catch (err: any) {
-    return errorResponse(err.message, 'RENAME_ERROR', 500);
+    const { filename, displayName } = body as Record<string, unknown>;
+    const file = renameOwnedReferenceAudio(user.userId, filename, displayName);
+    return successResponse({ filename: file.filename, displayName: file.displayName });
+  } catch (error) {
+    return storageFailure(error, 'RENAME_ERROR');
   }
 }
 
-// DELETE /api/reference-audio?filename=xxx — 删除指定音频
+// DELETE /api/reference-audio?filename=xxx — 仅允许所有者删除。
 export async function DELETE(request: NextRequest) {
+  const user = await authenticate(request);
+  if (!user) return errorResponse('请先登录', 'UNAUTHORIZED', 401);
+
   try {
-    const { searchParams } = new URL(request.url);
-    const filename = searchParams.get('filename');
-    if (!filename) return errorResponse('缺少 filename 参数', 'MISSING_PARAM', 400);
-
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      return errorResponse('非法文件名', 'INVALID_FILENAME', 400);
-    }
-
-    const filepath = path.join(resolveReferenceAudioDirectory(), filename);
-    if (fs.existsSync(filepath)) {
-      fs.unlinkSync(filepath);
-    }
-
-    // 同时清理元数据
-    const meta = readMeta();
-    if (meta[filename]) {
-      delete meta[filename];
-      writeMeta(meta);
-    }
-
-    return successResponse({ deleted: filename });
-  } catch (err: any) {
-    return errorResponse(err.message, 'DELETE_ERROR', 500);
+    const deleted = deleteOwnedReferenceAudio(user.userId, request.nextUrl.searchParams.get('filename'));
+    return successResponse({ deleted });
+  } catch (error) {
+    return storageFailure(error, 'DELETE_ERROR');
   }
-}
-
-function parseDisplayName(filename: string): string {
-  const name = filename.replace(/\.\w+$/, '');
-  const parts = name.split('_');
-  if (parts.length >= 3) {
-    const source = parts[1] === 'link' ? '链接提取' : '上传文件';
-    const hash = parts[2] || '';
-    return `${source} (${hash})`;
-  }
-  return filename;
 }

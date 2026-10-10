@@ -104,6 +104,10 @@ function fixture() {
   const modules = {
     'node:crypto': { createHash, randomUUID }, 'node:path': { default: path, ...path }, 'node:fs/promises': {},
     '@/lib/runtime-paths': { resolveAppRuntimeDir: () => '/fixture-runtime' },
+    '@/lib/image-provider-request-audit': {
+      assertImageProviderDispatchReceipt: () => undefined,
+      assertImageProviderSubmissionReceipt: () => undefined,
+    },
     '@/storage/database/supabase-client': {
       getSupabaseAdminClient: () => db,
       getSupabaseClient: () => db,

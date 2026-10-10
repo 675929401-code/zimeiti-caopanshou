@@ -27,7 +27,7 @@ import { ToolboxMenu } from "@/components/toolbox-menu";
 import { resolveAgentAvatarUrl, resolveAvatarUrl } from "@/lib/utils";
 import { getSemanticAgentAvatarFallback } from "@/lib/agent-avatar-aliases";
 import {
-  DEFAULT_PLATFORM_LOGO_URL,
+  handlePlatformBrandLogoError,
   platformBrandLogoUrl,
   usePlatformBranding,
 } from "@/hooks/use-platform-branding";
@@ -41,7 +41,7 @@ import {
 import { PresetDialog } from "@/components/preset-dialog";
 import type { PresetField } from "@/types/coze";
 import { useRouter, usePathname } from "next/navigation";
-import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties, type SyntheticEvent } from "react";
 import { getPrimaryNavigationLabelForRoute, requestMarketplaceShowAll } from "@/lib/marketplace-navigation";
 import { featurePermissionForPath } from "@/lib/member-permissions";
 import { useMemberPermissions } from "@/components/member-permission-boundary";
@@ -58,16 +58,22 @@ function repairMojibake(value: string) {
   }
 }
 
-function BrandMark({ src }: { src: string }) {
+function BrandMark({
+  src,
+  fallbackText,
+  onError,
+}: {
+  src?: string;
+  fallbackText: string;
+  onError: (event: SyntheticEvent<HTMLImageElement>) => void;
+}) {
+  if (!src) return <span aria-hidden="true">{fallbackText.slice(0, 1)}</span>;
   return (
     <img
       src={src}
       alt=""
       className="h-full w-full scale-[1.025] object-cover"
-      onError={(event) => {
-        event.currentTarget.onerror = null;
-        event.currentTarget.src = DEFAULT_PLATFORM_LOGO_URL;
-      }}
+      onError={onError}
     />
   );
 }
@@ -77,8 +83,12 @@ function BrandMark({ src }: { src: string }) {
 function SidebarProfile() {
   const platformBranding = usePlatformBranding();
   const platformLogoUrl = platformBrandLogoUrl(platformBranding, "square");
-  const displayName = platformBranding.brand.name || "自媒体操盘手";
-  const displaySlogan = platformBranding.brand.slogan
+  const displayName = platformBranding.brand.name
+    || (platformBranding.displayScope === "white_label" ? "品牌服务" : "自媒体操盘手");
+  const publishedWechat = platformBranding.brand.contact.wechat.trim();
+  const displaySubtitle = publishedWechat
+    ? `微信：${publishedWechat}`
+    : platformBranding.brand.slogan
     || platformBranding.brand.description
     || "AI 内容经营系统";
 
@@ -90,7 +100,11 @@ function SidebarProfile() {
       <div className="flex items-center gap-3">
         <Avatar className="ring-2 ring-[var(--sb-primary)]/30" style={{ width: `calc(40px * var(--sidebar-scale, 1))`, height: `calc(40px * var(--sidebar-scale, 1))`, minWidth: '32px', minHeight: '32px' }}>
           <AvatarFallback className="bg-transparent p-0 text-white" style={{ fontSize: `calc(16px * var(--sidebar-scale, 1))` }}>
-            <BrandMark src={platformLogoUrl} />
+            <BrandMark
+              src={platformLogoUrl}
+              fallbackText={displayName}
+              onError={(event) => handlePlatformBrandLogoError(event, platformBranding)}
+            />
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
@@ -99,9 +113,9 @@ function SidebarProfile() {
           </div>
           <div
             className="text-[clamp(11px,calc(12px*var(--sidebar-scale,1)),14px)] text-[var(--text-secondary)] truncate mt-0.5"
-            title={displaySlogan}
+            title={displaySubtitle}
           >
-            {displaySlogan}
+            {displaySubtitle}
           </div>
         </div>
       </div>

@@ -16,6 +16,12 @@ const HISTORY_SURFACES = new Set([
   "free-canvas",
   "short-drama-film-studio",
 ]);
+const IMAGE_PUBLIC_REQUEST_FIELDS = new Set([
+  "prompt", "modelId", "style", "mode", "aspectRatio", "resolution", "coverText",
+  "referenceImageUrls", "referenceUsage", "imageUrl", "clientTraceId", "clientIdempotencyKey",
+  "clientNodeId", "clientNodeTitle", "historySurface", "noRetry", "strictSingleSubmit",
+  "resumeDeliveryOnly", "adminValidation",
+]);
 
 export class ImageGenerationInputError extends Error {
   readonly code: string;
@@ -47,14 +53,14 @@ function optionalString(
 ) {
   if (value == null) return undefined;
   if (typeof value !== "string") {
-    throw new ImageGenerationInputError("IMAGE_REQUEST_FIELD_INVALID", `${field} 格式无效`);
+    throw new ImageGenerationInputError("IMAGE_REQUEST_FIELD_INVALID", `${field} 格式无效`, 422);
   }
   const normalized = value.trim();
   if (!options.allowEmpty && !normalized) {
-    throw new ImageGenerationInputError("IMAGE_REQUEST_FIELD_INVALID", `${field} 不能为空`);
+    throw new ImageGenerationInputError("IMAGE_REQUEST_FIELD_INVALID", `${field} 不能为空`, 422);
   }
   if (normalized.length > maximum || (options.controls !== false && CONTROL_CHARACTERS.test(normalized))) {
-    throw new ImageGenerationInputError("IMAGE_REQUEST_FIELD_INVALID", `${field} 长度或字符格式无效`);
+    throw new ImageGenerationInputError("IMAGE_REQUEST_FIELD_INVALID", `${field} 长度或字符格式无效`, 422);
   }
   return normalized;
 }
@@ -62,35 +68,35 @@ function optionalString(
 function optionalBoolean(value: unknown, field: string) {
   if (value == null) return undefined;
   if (typeof value !== "boolean") {
-    throw new ImageGenerationInputError("IMAGE_REQUEST_FIELD_INVALID", `${field} 必须是布尔值`);
+    throw new ImageGenerationInputError("IMAGE_REQUEST_FIELD_INVALID", `${field} 必须是布尔值`, 422);
   }
   return value;
 }
 
 function normalizeReference(value: unknown, field: string) {
   if (typeof value !== "string") {
-    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} 必须是图片 URL 或图片数据`);
+    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} 必须是图片 URL 或图片数据`, 422);
   }
   const reference = value.trim();
   if (!reference) {
-    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} 不能为空`);
+    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} 不能为空`, 422);
   }
   if (/^data:/iu.test(reference)) {
     if (reference.length > MAX_DATA_REFERENCE_CHARACTERS
       || !/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+$/iu.test(reference)) {
-      throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} 图片数据格式或大小无效`);
+      throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} 图片数据格式或大小无效`, 422);
     }
     return reference;
   }
   if (reference.length > MAX_HTTP_REFERENCE_CHARACTERS) {
-    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} URL 过长`);
+    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} URL 过长`, 422);
   }
   try {
     const parsed = new URL(reference);
     if (!["https:", "http:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error("invalid");
     return parsed.href;
   } catch {
-    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} 必须是有效的 HTTP(S) 图片 URL`);
+    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", `${field} 必须是有效的 HTTP(S) 图片 URL`, 422);
   }
 }
 
@@ -149,30 +155,38 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
   if (!plainObject(value)) {
     throw new ImageGenerationInputError("IMAGE_REQUEST_BODY_INVALID", "生图请求体必须是 JSON 对象");
   }
+  const unsupportedFields = Object.keys(value).filter((field) => !IMAGE_PUBLIC_REQUEST_FIELDS.has(field));
+  if (unsupportedFields.length > 0) {
+    throw new ImageGenerationInputError(
+      "IMAGE_REQUEST_FIELD_UNSUPPORTED",
+      `当前生图协议不支持参数：${unsupportedFields.sort().join("、")}`,
+      422,
+    );
+  }
   const prompt = optionalString(value.prompt, "提示词", MAX_PROMPT_CHARACTERS);
-  if (!prompt) throw new ImageGenerationInputError("IMAGE_PROMPT_REQUIRED", "提示词不能为空");
+  if (!prompt) throw new ImageGenerationInputError("IMAGE_PROMPT_REQUIRED", "提示词不能为空", 422);
   const modelId = optionalString(value.modelId, "模型标识", 240);
   const style = optionalString(value.style, "风格", MAX_STYLE_CHARACTERS, { allowEmpty: true });
   const coverText = optionalString(value.coverText, "精确画面文字", 200, { allowEmpty: true });
   const mode = optionalString(value.mode, "生成模式", 16) as "local" | "workflow" | undefined;
   if (mode && mode !== "local" && mode !== "workflow") {
-    throw new ImageGenerationInputError("IMAGE_MODE_UNSUPPORTED", "图片生成模式不受支持");
+    throw new ImageGenerationInputError("IMAGE_MODE_UNSUPPORTED", "图片生成模式不受支持", 422);
   }
   const aspectRatio = optionalString(value.aspectRatio, "图片画幅", 8);
   if (aspectRatio && !ASPECT_RATIOS.has(aspectRatio)) {
-    throw new ImageGenerationInputError("IMAGE_ASPECT_RATIO_UNSUPPORTED", "图片画幅不受支持");
+    throw new ImageGenerationInputError("IMAGE_ASPECT_RATIO_UNSUPPORTED", "图片画幅不受支持", 422);
   }
   const rawResolution = optionalString(value.resolution, "图片分辨率", 8);
   const resolution = rawResolution?.toUpperCase();
   if (resolution && !RESOLUTIONS.has(resolution)) {
-    throw new ImageGenerationInputError("IMAGE_RESOLUTION_UNSUPPORTED", "图片分辨率格式不受支持");
+    throw new ImageGenerationInputError("IMAGE_RESOLUTION_UNSUPPORTED", "图片分辨率格式不受支持", 422);
   }
   const referenceUsage = optionalString(value.referenceUsage, "参考图用途", 32) as "general" | "character-identity" | undefined;
   if (referenceUsage && referenceUsage !== "general" && referenceUsage !== "character-identity") {
-    throw new ImageGenerationInputError("IMAGE_REFERENCE_USAGE_INVALID", "参考图用途不受支持");
+    throw new ImageGenerationInputError("IMAGE_REFERENCE_USAGE_INVALID", "参考图用途不受支持", 422);
   }
   if (value.referenceImageUrls != null && !Array.isArray(value.referenceImageUrls)) {
-    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", "参考图列表必须是数组");
+    throw new ImageGenerationInputError("IMAGE_REFERENCE_INVALID", "参考图列表必须是数组", 422);
   }
   const submittedReferences = Array.isArray(value.referenceImageUrls) ? value.referenceImageUrls : [];
   const hasInputImage = value.imageUrl != null;
@@ -180,6 +194,7 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
     throw new ImageGenerationInputError(
       "IMAGE_REFERENCE_LIMIT_EXCEEDED",
       `单次最多提交 ${MAX_IMAGE_REFERENCES} 张参考图，当前提交了 ${submittedReferences.length + (hasInputImage ? 1 : 0)} 张`,
+      422,
     );
   }
   const normalizedReferences = submittedReferences.map((reference, index) =>
@@ -189,23 +204,23 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
 
   const clientTraceId = optionalString(value.clientTraceId, "图片生成追踪键", 128, { allowEmpty: true, controls: false });
   if (clientTraceId && !STABLE_KEY.test(clientTraceId)) {
-    throw new ImageGenerationInputError("IMAGE_TRACE_ID_INVALID", "图片生成追踪键格式无效");
+    throw new ImageGenerationInputError("IMAGE_TRACE_ID_INVALID", "图片生成追踪键格式无效", 422);
   }
   const clientIdempotencyKey = optionalString(value.clientIdempotencyKey, "图片生成幂等键", 128, { allowEmpty: true, controls: false });
   if (clientIdempotencyKey && !STABLE_KEY.test(clientIdempotencyKey)) {
-    throw new ImageGenerationInputError("IMAGE_IDEMPOTENCY_KEY_INVALID", "图片生成幂等键格式无效");
+    throw new ImageGenerationInputError("IMAGE_IDEMPOTENCY_KEY_INVALID", "图片生成幂等键格式无效", 422);
   }
   const clientNodeId = optionalString(value.clientNodeId, "节点标识", 128, { allowEmpty: true });
   const clientNodeTitle = optionalString(value.clientNodeTitle, "节点标题", 240, { allowEmpty: true });
   const historySurface = optionalString(value.historySurface, "历史来源", 64) as NormalizedImageGenerationInput["historySurface"];
   if (historySurface && !HISTORY_SURFACES.has(historySurface)) {
-    throw new ImageGenerationInputError("IMAGE_HISTORY_SURFACE_INVALID", "图片历史来源不受支持");
+    throw new ImageGenerationInputError("IMAGE_HISTORY_SURFACE_INVALID", "图片历史来源不受支持", 422);
   }
   const noRetry = optionalBoolean(value.noRetry, "noRetry");
   const strictSingleSubmit = optionalBoolean(value.strictSingleSubmit, "strictSingleSubmit");
   const resumeDeliveryOnly = optionalBoolean(value.resumeDeliveryOnly, "resumeDeliveryOnly");
   if (value.adminValidation != null && !plainObject(value.adminValidation)) {
-    throw new ImageGenerationInputError("IMAGE_ADMIN_VALIDATION_INVALID", "图片验证参数格式无效");
+    throw new ImageGenerationInputError("IMAGE_ADMIN_VALIDATION_INVALID", "图片验证参数格式无效", 422);
   }
 
   return {

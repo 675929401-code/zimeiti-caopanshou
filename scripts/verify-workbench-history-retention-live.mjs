@@ -6,37 +6,18 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 
-const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
-const RETAINED_NATURAL_DAYS = 3;
-
 function argumentValue(args, prefix, fallback = "") {
   return args.find((value) => value.startsWith(prefix))?.slice(prefix.length) || fallback;
-}
-
-function taskTime(task) {
-  return Date.parse(String(task?.createdAt || task?.created_at || ""));
 }
 
 function taskLabel(task) {
   return String(task?.taskLabel || task?.task_label || "");
 }
 
-function retainedHistoryCutoff(now = Date.now()) {
-  const shanghaiNow = new Date(now + SHANGHAI_OFFSET_MS);
-  return Date.UTC(
-    shanghaiNow.getUTCFullYear(),
-    shanghaiNow.getUTCMonth(),
-    shanghaiNow.getUTCDate() - (RETAINED_NATURAL_DAYS - 1),
-  ) - SHANGHAI_OFFSET_MS;
-}
-
-function assertRetained(tasks, label) {
-  const cutoff = retainedHistoryCutoff();
+function assertSourceBoundHistory(tasks, label) {
   for (const task of tasks) {
-    const createdAt = taskTime(task);
+    const createdAt = Date.parse(String(task?.createdAt || task?.created_at || ""));
     assert.ok(Number.isFinite(createdAt), `${label} returned a task without a valid createdAt`);
-    assert.ok(createdAt >= cutoff, `${label} returned a task outside today/yesterday/day-before-yesterday: ${task?.id || "unknown"}`);
-    assert.notEqual(String(task?.status || ""), "expired", `${label} exposed an expired history card`);
   }
 }
 
@@ -93,9 +74,9 @@ export async function main(args = process.argv.slice(2)) {
   assert.ok([301, 302, 303, 307, 308].includes(retiredHistoryResponse.status), "The retired aggregate history route did not redirect");
   assert.equal(new URL(retiredHistoryResponse.headers.get("location") || "/missing", origin).pathname, "/", "The retired aggregate history route did not return to the main site");
 
-  assertRetained(videoHistory.tasks, "video history");
-  assertRetained(storyboardHistory.tasks, "storyboard history");
-  assertRetained(activePayload.activeTasks, "active video tasks");
+  assertSourceBoundHistory(videoHistory.tasks, "video history");
+  assertSourceBoundHistory(storyboardHistory.tasks, "storyboard history");
+  assertSourceBoundHistory(activePayload.activeTasks, "active video tasks");
   assert.ok(videoHistory.tasks.every((task) => !taskLabel(task).startsWith("分镜工作台") && !taskLabel(task).startsWith("digital-human:")), "Video history contains another workbench's task");
   assert.ok(storyboardHistory.tasks.every((task) => taskLabel(task).startsWith("分镜工作台")), "Storyboard history contains another workbench's task");
   assert.ok(activePayload.activeTasks.every((task) => !taskLabel(task).startsWith("分镜工作台") && !taskLabel(task).startsWith("digital-human:")), "Active video recovery contains another workbench's task");
@@ -239,7 +220,7 @@ export async function main(args = process.argv.slice(2)) {
 
     const historyButton = page.getByRole("button", { name: "历史", exact: true }).first();
     await historyButton.click();
-    await page.getByText("仅显示本工作台近 3 天记录", { exact: false }).waitFor({ state: "visible", timeout: 30_000 });
+    await page.getByText("视频走原始链路实时预览", { exact: false }).waitFor({ state: "visible", timeout: 30_000 });
     await page.getByRole("region", { name: "视频生成历史" }).waitFor({ state: "visible", timeout: 30_000 }).catch(() => undefined);
     await page.waitForTimeout(1_500);
     report.browser.historyCards = await page.locator("[data-video-history-task]").count();

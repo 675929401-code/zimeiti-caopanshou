@@ -73,6 +73,8 @@ export function createLocalPreviewLaunchPlan(runtime, baseEnv, inheritedEnv = pr
     SHARED_CONFIGURATION_ENABLED: '1',
     SHARED_CONFIGURATION_SUPABASE_URL: local.supabaseUrl,
     SHARED_CONFIGURATION_SERVICE_ROLE_KEY: local.serviceRoleKey,
+    SHARED_CONFIGURATION_ID: 'local-acceptance',
+    LOCAL_RUNTIME_PROFILE: 'local-acceptance',
     LOCAL_ACCEPTANCE_PREVIEW: 'true',
     NODE_ENV: 'development',
     LOCAL_VALIDATION_DIST_DIR: '.next-validation',

@@ -19,7 +19,10 @@ const tests = [
   ["公告/推送界面", "verify-announcement-push-ui.ts"],
   ["帮助中心", "verify-help-center.ts"],
   ["导航/性能合同", "verify-navigation-performance-contract.ts"],
-  ["工具箱/UI合同", "verify-toolbox-ui.ts"],
+  ["工具箱/UI合同", "verify-toolbox-ui.ts", {
+    mode: "zero-network-static",
+    env: { TOOLBOX_SKIP_RUNTIME: "1" },
+  }],
   ["提取/一期零成本", "verify-extract-phase1-zero-cost.ts"],
   ["提取/定价失败关闭", "verify-extraction-pricing-fail-closed-zero-cost.ts"],
   ["提取/工具交接链", "verify-extract-tool-chain-zero-cost.ts"],
@@ -28,7 +31,10 @@ const tests = [
   ["聊天/错误分类", "verify-chat-error-taxonomy-zero-cost.ts"],
   ["聊天/发布模型门禁", "verify-chat-published-model-gate-zero-cost.ts"],
   ["图片/交付", "verify-image-delivery-p0.ts"],
-  ["视频/页面链安全", "verify-video-page-chain-safety.ts"],
+  ["视频/页面链安全", "verify-video-page-chain-safety.ts", {
+    mode: "zero-network-static",
+    env: { VIDEO_PAGE_STATIC_ONLY: "1" },
+  }],
   ["语音/客户端接口", "verify-voice-client-api-contract.ts"],
   ["媒体历史", "verify-media-history-contract.ts"],
   ["数字人/合同", "verify-digital-human-contracts.ts"],
@@ -62,12 +68,16 @@ function commandFor(file) {
 const startedAt = new Date().toISOString();
 const results = [];
 
-for (const [domain, file] of tests) {
+for (const [domain, file, options = {}] of tests) {
   const [command, args] = commandFor(file);
   const started = Date.now();
+  const childEnv = { ...process.env, ACCEPTANCE_ZERO_COST: "1" };
+  delete childEnv.TOOLBOX_SKIP_RUNTIME;
+  delete childEnv.VIDEO_PAGE_STATIC_ONLY;
+  Object.assign(childEnv, options.env ?? {});
   const child = spawnSync(command, args, {
     cwd: root,
-    env: { ...process.env, ACCEPTANCE_ZERO_COST: "1" },
+    env: childEnv,
     encoding: "utf8",
     timeout: 120_000,
     windowsHide: true,
@@ -76,6 +86,8 @@ for (const [domain, file] of tests) {
   const result = {
     domain,
     file,
+    mode: options.mode ?? "zero-cost-contract",
+    environmentOverrides: Object.keys(options.env ?? {}).sort(),
     status: child.status === 0 ? "passed" : "failed",
     exitCode: typeof child.status === "number" ? child.status : null,
     signal: child.signal ?? null,

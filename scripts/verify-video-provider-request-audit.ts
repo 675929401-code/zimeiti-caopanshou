@@ -24,12 +24,15 @@ assert.deepEqual(videoProviderRequestReceipt("https://provider.example/materials
 const originalFetch = globalThis.fetch;
 const actualBodies: unknown[] = [];
 try {
-  globalThis.fetch = (async (_input, init) => { actualBodies.push(init?.body); return new Response("{}", { status: 200 }); }) as typeof fetch;
+  globalThis.fetch = (async (input, init) => {
+    actualBodies.push(input instanceof Request ? await input.clone().text() : init?.body);
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
   const captured: Record<string, string[]> = { a: [], b: [] };
   await Promise.all(["a", "b"].map((model) => withVideoProviderRequestAudit(async (item) => { captured[model].push(item.submittedModel!); }, async () => {
     await Promise.resolve();
     const body = JSON.stringify({ model, prompt: "unchanged" });
-    const result = await videoProviderFetch("https://provider.example/v1/videos", { method: "POST", body });
+    const result = await videoProviderFetch("https://provider.example/v1/videos", { method: "POST", headers: { "content-type": "application/json" }, body });
     assert.equal(result.status, 200); assert.ok(actualBodies.includes(body));
   })));
   assert.deepEqual(captured, { a: ["a"], b: ["b"] }, "concurrent tasks keep separate routing evidence");

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseImageRenditionWidth, renderWebpRendition } from '@/lib/server/image-rendition';
+import { isUserProfileAvatarStorageProvider } from '@/lib/user-profile-avatar';
+import type { StorageProviderType } from '@/storage/object';
 
 // GET - Stream avatar image by key
 // Usage: /api/avatars?key=<storage_key>
@@ -38,6 +40,8 @@ async function avatarResponse(
 
 export async function GET(request: NextRequest) {
   const key = request.nextUrl.searchParams.get('key');
+  const requestedProviderParam = request.nextUrl.searchParams.get('provider');
+  let requestedProvider: StorageProviderType | undefined;
   let renditionWidth: number | null;
 
   try {
@@ -48,6 +52,17 @@ export async function GET(request: NextRequest) {
 
   if (!key) {
     return NextResponse.json({ error: '缺少 key 参数' }, { status: 400 });
+  }
+
+  if (requestedProviderParam) {
+    if (!isUserProfileAvatarStorageProvider(requestedProviderParam)) {
+      return NextResponse.json({ error: '无效的存储供应商' }, { status: 400 });
+    }
+    requestedProvider = requestedProviderParam;
+  }
+
+  if (requestedProvider && !key.startsWith('user-profile-avatars')) {
+    return NextResponse.json({ error: '该存储供应商参数仅用于用户头像' }, { status: 400 });
   }
 
   // Basic key validation: reject obviously malicious paths
@@ -111,7 +126,7 @@ export async function GET(request: NextRequest) {
     const { storageManager } = await import('@/storage/object');
 
     // First try reading the file content directly
-    const buffer = await storageManager.read(key);
+    const buffer = await storageManager.read(key, requestedProvider);
     const ext = key.split('.').pop()?.toLowerCase() || 'jpeg';
     const contentType = ext === 'png' ? 'image/png'
       : ext === 'gif' ? 'image/gif'

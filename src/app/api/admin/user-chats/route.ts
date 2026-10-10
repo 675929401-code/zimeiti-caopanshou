@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { CONVERSATION_CONTENT_RETENTION_DAYS } from "@/lib/media-retention-policy";
 
 const ADMIN_USER_SEARCH_COLUMNS = ["display_name", "username", "phone", "email"] as const;
 const ADMIN_CONVERSATION_STATS_BATCH_SIZE = 1000;
@@ -33,15 +34,21 @@ function buildAdminUserSearchFilter(value: string): string {
 type AdminConversationScopeQuery = {
   in: (column: string, values: readonly string[]) => AdminConversationScopeQuery;
   eq: (column: string, value: string) => AdminConversationScopeQuery;
+  gt: (column: string, value: string) => AdminConversationScopeQuery;
 };
+
+function adminChatRetentionCutoff(now = Date.now()) {
+  return new Date(now - CONVERSATION_CONTENT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
 
 /** Apply the same user and agent scope to list and aggregate queries. */
 function applyAdminConversationScope<T extends AdminConversationScopeQuery>(
   query: T,
   userIds: readonly string[],
   agentId: string,
+  retentionCutoff: string,
 ): T {
-  let scopedQuery = query.in("user_id", userIds) as T;
+  let scopedQuery = query.in("user_id", userIds).gt("updated_at", retentionCutoff) as T;
   if (agentId) {
     scopedQuery = scopedQuery.eq("agent_id", agentId) as T;
   }
@@ -139,6 +146,7 @@ export async function GET(req: NextRequest) {
     const conversationId = searchParams.get("conversation_id");
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const retentionCutoff = adminChatRetentionCutoff();
 
     // 模式0：列出所有学员的会话（管理员全局视图）
     if (!userId && !conversationId) {
@@ -170,6 +178,7 @@ export async function GET(req: NextRequest) {
           .select("id, user_id, agent_id, source, created_at, updated_at", { count: "exact" }),
         scopedUserIds,
         agentFilter,
+        retentionCutoff,
       )
         .order("updated_at", { ascending: false })
         .range((page - 1) * pageSize, page * pageSize - 1);
@@ -190,6 +199,7 @@ export async function GET(req: NextRequest) {
             .select("id, agent_id, updated_at", { count: "exact" }),
           scopedUserIds,
           agentFilter,
+          retentionCutoff,
         )
           .not("agent_id", "is", null)
           .order("id", { ascending: true })
@@ -245,7 +255,8 @@ export async function GET(req: NextRequest) {
         const { data: msgCounts } = await supabase
           .from("conversation_messages")
           .select("conversation_id")
-          .in("conversation_id", convIds);
+          .in("conversation_id", convIds)
+          .gt("created_at", retentionCutoff);
         (msgCounts || []).forEach((m: any) => {
           msgCountMap[m.conversation_id] = (msgCountMap[m.conversation_id] || 0) + 1;
         });
@@ -256,6 +267,7 @@ export async function GET(req: NextRequest) {
           .select("conversation_id, content")
           .in("conversation_id", convIds)
           .eq("role", "user")
+          .gt("created_at", retentionCutoff)
           .order("created_at", { ascending: false });
         (lastMsgs || []).forEach((m: any) => {
           if (!lastMsgMap[m.conversation_id] && m.content) {
@@ -294,7 +306,8 @@ export async function GET(req: NextRequest) {
             const { count, error } = await supabase
               .from("conversation_messages")
               .select("id", { count: "exact", head: true })
-              .in("conversation_id", conversationIdBatch);
+              .in("conversation_id", conversationIdBatch)
+              .gt("created_at", retentionCutoff);
             if (error) {
               return { agentId: bucket.agentId, messageCount: 0, error };
             }
@@ -327,6 +340,7 @@ export async function GET(req: NextRequest) {
         .from("conversations")
         .select("id, agent_id, source, created_at, updated_at", { count: "exact" })
         .eq("user_id", userId)
+        .gt("updated_at", retentionCutoff)
         .order("updated_at", { ascending: false })
         .range((page - 1) * pageSize, page * pageSize - 1);
 
@@ -356,7 +370,8 @@ export async function GET(req: NextRequest) {
         const { count: msgCount } = await supabase
           .from("conversation_messages")
           .select("*", { count: "exact", head: true })
-          .eq("conversation_id", conv.id);
+          .eq("conversation_id", conv.id)
+          .gt("created_at", retentionCutoff);
 
         // Get last user message
         const { data: lastMsg } = await supabase
@@ -364,6 +379,7 @@ export async function GET(req: NextRequest) {
           .select("content")
           .eq("conversation_id", conv.id)
           .eq("role", "user")
+          .gt("created_at", retentionCutoff)
           .order("created_at", { ascending: false })
           .limit(1);
 
@@ -396,6 +412,7 @@ export async function GET(req: NextRequest) {
         .from("conversation_messages")
         .select("id, role, content, created_at")
         .eq("conversation_id", conversationId)
+        .gt("created_at", retentionCutoff)
         .order("created_at", { ascending: true });
 
       if (error) {

@@ -7,7 +7,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { UserThemeSwitcher } from "@/components/user-theme-switcher";
 import { isQqEmail, normalizeQqEmail } from "@/lib/qq-email";
 import {
-  DEFAULT_PLATFORM_LOGO_URL,
+  handlePlatformBrandLogoError,
   platformBrandAssetUrl,
   platformBrandLogoUrl,
   usePlatformBranding,
@@ -51,9 +51,17 @@ export function LoginForm({
 } = {}) {
   const { login, register } = useApp();
   const publicBranding = usePlatformBranding();
-  const platformName = publicBranding.brand.name || "自媒体操盘手";
+  const platformName = publicBranding.brand.name
+    || (publicBranding.displayScope === "white_label" ? "品牌服务" : "自媒体操盘手");
   const platformLogo = platformBrandLogoUrl(publicBranding, "square");
   const loginBackground = platformBrandAssetUrl(publicBranding, "login_background");
+  const publishedContact = publicBranding.brand.contact.wechat.trim()
+    ? `微信：${publicBranding.brand.contact.wechat.trim()}`
+    : publicBranding.brand.contact.phone.trim()
+      ? `电话：${publicBranding.brand.contact.phone.trim()}`
+      : publicBranding.brand.contact.email.trim()
+        ? `邮箱：${publicBranding.brand.contact.email.trim()}`
+        : "";
   const enabledModes: readonly LoginMode[] = allowedModes?.length ? allowedModes : ALL_LOGIN_MODES;
   const modeEnabled = useCallback((value: LoginMode) => enabledModes.includes(value), [enabledModes]);
   const [mode, setMode] = useState<LoginMode>(() => initialMode && enabledModes.includes(initialMode) ? initialMode : enabledModes[0]);
@@ -570,10 +578,7 @@ export function LoginForm({
                   src={platformLogo}
                   alt=""
                   className="h-16 w-16 scale-[1.025] rounded-2xl object-cover"
-                  onError={(event) => {
-                    event.currentTarget.onerror = null;
-                    event.currentTarget.src = DEFAULT_PLATFORM_LOGO_URL;
-                  }}
+                  onError={(event) => handlePlatformBrandLogoError(event, publicBranding)}
                 />
               </div>
             ) : (
@@ -988,6 +993,12 @@ export function LoginForm({
                       "注 册"
                     )}
                   </button>
+
+                  {!footerNote && (
+                    <p className="login-form-footer px-2 text-center text-xs leading-5 text-white/50">
+                      {`注册即表示同意平台使用条款${publishedContact ? ` · ${publishedContact}` : ""}`}
+                    </p>
+                  )}
                 </form>
               )}
             </>
@@ -995,12 +1006,14 @@ export function LoginForm({
         </div>
       </div>
 
-      <p
-        className="login-form-footer mt-5 text-center text-xs text-white/50"
-        style={footerTextColor ? { color: footerTextColor } : undefined}
-      >
-        {footerNote || "注册即表示同意平台使用条款 · 微信：Yuange1991xx"}
-      </p>
+      {footerNote && (
+        <p
+          className="login-form-footer mt-5 text-center text-xs text-white/50"
+          style={footerTextColor ? { color: footerTextColor } : undefined}
+        >
+          {footerNote}
+        </p>
+      )}
 
       {/* 备案号已隐藏 */}
     </div>

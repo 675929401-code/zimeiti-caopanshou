@@ -16,8 +16,6 @@ import {
 } from "@/lib/autodl-h3-assets";
 import { reconcileStaleVideoSubmissionsForUser } from "@/lib/video-submission-reconciliation";
 
-const VIDEO_PAGE_HISTORY_RETENTION_DAYS = 3;
-
 function belongsToGeneralVideoPage(task: Record<string, unknown>) {
   const taskLabel = String(task.task_label || "");
   return !taskLabel.startsWith("digital-human:")
@@ -48,8 +46,6 @@ export async function GET(request: NextRequest) {
 
     const supabase = getSupabaseClient();
     const userId = user.userId || user.username || "unknown";
-    const retentionCutoff = new Date(Date.now() - VIDEO_PAGE_HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-
     const reconciliation = await reconcileStaleVideoSubmissionsForUser({ userId, supabase });
     if (reconciliation.expiredCount > 0) {
       console.info("[active-tasks] Closed stale submission confirmations", {
@@ -57,14 +53,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 查询所有未完成的任务；finalizing / billing_pending 表示上游已完成、
-    // 正在持久化或结算，刷新后仍必须恢复，避免结果在交付完成前从页面消失。
+    // 查询所有未完成的任务，不按提交日期截断；finalizing / billing_pending
+    // 表示上游已完成、正在确认播放源或结算，刷新后仍必须恢复。
     const { data, error } = await supabase
       .from("video_tasks")
       .select("id, model_id, task_label, prompt, first_frame_url, last_frame_url, reference_image_url, aspect_ratio, duration_seconds, status, batch_id, batch_topic, card_index, created_at, resolution, provider_progress, provider_status_message, provider_last_polled_at, provider_poll_failures")
       .eq("user_id", userId)
       .is("history_hidden_at", null)
-      .gte("created_at", retentionCutoff)
       .in("status", ["pending", "queued", "processing", "generating", "finalizing", "billing_pending"])
       .order("created_at", { ascending: false })
       .order("id", { ascending: false });

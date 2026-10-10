@@ -82,13 +82,15 @@ assert.match(pricingRoute, /Cache-Control': 'private, no-store'/);
 assert.match(runtimeCatalog, /case "coze_multifunction_extract": return "Coze"/);
 assert.match(runtimeCatalog, /providerFallbackForRole\(row, fallbackProvider\)/);
 assert.match(runtimeCatalog, /const sharedQuote = quote\(coze, "三合一提取工作流"\)/);
+assert.match(runtimeCatalog, /authorizeAdminCapability\(request, "models\.view"/);
+assert.match(runtimeCatalog, /canViewInternalModelMetadata = authorization\.ok/);
 for (const [surface, service] of [
   ['video', '视频提取'],
   ['text', '文案提取'],
   ['batch', '批量提取'],
   ['search', '搜索提取'],
 ] as const) {
-  assert.match(runtimeCatalog, new RegExp(`${surface}: publicQuote\\(sharedQuote, "${service}", isAdmin\\)`));
+  assert.match(runtimeCatalog, new RegExp(`${surface}: publicQuote\\(sharedQuote, "${service}", canViewInternalModelMetadata\\)`));
 }
 
 console.log(JSON.stringify({

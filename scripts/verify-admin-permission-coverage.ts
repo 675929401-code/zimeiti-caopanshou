@@ -38,14 +38,18 @@ assert.deepEqual(
   ownerOnlyAdminPermissionKeys(["admin.accounts.manage", "members.view"]),
   ["admin.accounts.manage"],
 );
+assert.deepEqual(
+  ownerOnlyAdminPermissionKeys(["prompts.view", "prompts.edit", "internal_tools.manage", "members.view"]),
+  ["prompts.view", "prompts.edit", "internal_tools.manage"],
+);
 assert.ok(
   !normalizeDelegableAdminPermissionKeys(ADMIN_PERMISSION_KEYS).includes("admin.accounts.manage"),
   "owner-only authority must not be delegable",
 );
 assert.deepEqual(
   normalizeDelegableAdminPermissionKeys(["prompts.edit"]),
-  ["agents.view", "prompts.view", "prompts.edit"],
-  "prompt editing must include the minimum read dependencies",
+  [],
+  "prompt editing must remain inside the platform-owner boundary",
 );
 assert.deepEqual(
   normalizeDelegableAdminPermissionKeys(["models.manage"]),

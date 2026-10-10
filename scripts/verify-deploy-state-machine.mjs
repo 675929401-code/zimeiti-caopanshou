@@ -50,12 +50,27 @@ for (const marker of [
   'verify_candidate_release_seal()',
   'chown --recursive --no-dereference -- root:root "$target"',
   'sealed candidate full SHA-256 inventory changed before activation',
+  'candidate-log.v2 service=${service} release=${releaseId}',
+  'published candidate log payload digest is invalid',
+  '--property=ReadOnlyPaths --property=ReadWritePaths --property=InaccessiblePaths',
+  '--property=CapabilityBoundingSet --property=AmbientCapabilities --property=RestrictNamespaces',
+  '--property=KillMode --property=RuntimeMaxUSec --property=TimeoutStopUSec --property=UMask',
 ]) {
   assert.ok(deployer.includes(marker), `deployment state-machine marker is missing: ${marker}`);
 }
 
 const finalCleanup = sliceFunction("final_cleanup", "\n}\ntrap final_cleanup EXIT");
 const directHook = sliceFunction("direct_hook", "\n}\n\ncleanup_candidate()");
+const candidateCgroupEmpty = sliceFunction("candidate_cgroup_empty", "\n}\n\ncandidate_unit_stopped()");
+const candidateUnitStopped = sliceFunction("candidate_unit_stopped", "\n}\n\nwait_candidate_unit_stopped()");
+const waitCandidateUnitStopped = sliceFunction("wait_candidate_unit_stopped", "\n}\n\npublish_candidate_log()");
+const publishCandidateLog = sliceFunction("publish_candidate_log", "\n}\n\ncleanup_candidate()");
+const cleanupCandidate = sliceFunction("cleanup_candidate", "\n}\n\nsafe_remove_staging()");
+const harnessCandidateCgroupEmpty = candidateCgroupEmpty.replace(
+  'cgroup_path="/sys/fs/cgroup$control_group"',
+  'cgroup_path="$CGROUP_ROOT$control_group"',
+);
+assert.notEqual(harnessCandidateCgroupEmpty, candidateCgroupEmpty, "candidate cleanup harness must redirect cgroup reads into its fixture root");
 assertOrdered("final cleanup trap masking", finalCleanup, [
   "local exit_status=$?",
   "trap - EXIT ERR",
@@ -172,6 +187,54 @@ assert.ok(bash, "Git Bash or system bash is required for deployment state-machin
 const dynamicResults = [];
 const temporaryRoot = fs.mkdtempSync(path.join(process.platform === 'win32' ? path.resolve(root, '..', '运行日志') : os.tmpdir(), "deploy-state-machine-"));
 try {
+  const candidateLogHarnessPath = path.join(temporaryRoot, "candidate-log-harness.sh");
+  const candidateLogHarness = [
+    "#!/usr/bin/env bash",
+    "set -Eeuo pipefail",
+    'CANDIDATE_PRIVATE_LOG="$1"',
+    'CANDIDATE_LOG="$2"',
+    'scenario="$3"',
+    'SERVICE="web"',
+    'RELEASE_ID="V999.1-aaaaaaaaaaaa"',
+    'CANDIDATE_UID="$(node - "$CANDIDATE_PRIVATE_LOG" <<\'NODE\'\nconst fs=require("node:fs");process.stdout.write(String(fs.statSync(process.argv[2]).uid));\nNODE\n)"',
+    'case "$scenario" in',
+    '  fresh) publish_candidate_log ;;',
+    '  existing-valid) publish_candidate_log; publish_candidate_log ;;',
+    '  existing-zero) : >"$CANDIDATE_LOG"; publish_candidate_log ;;',
+    '  existing-truncated) printf \'candidate-log.v2 service=web release=V999.1-aaaaaaaaaaaa source_bytes=1\\n\' >"$CANDIDATE_LOG"; publish_candidate_log ;;',
+    '  existing-tampered) printf \'candidate-log.v2 service=web release=V999.1-aaaaaaaaaaaa source_bytes=1 source_tail_bytes=1 payload_bytes=1 payload_sha256=%064d\\nX\' 0 >"$CANDIDATE_LOG"; publish_candidate_log ;;',
+    '  *) exit 91 ;;',
+    'esac',
+    "",
+  ].join("\n");
+  fs.writeFileSync(candidateLogHarnessPath, `${publishCandidateLog}\n${candidateLogHarness}`, { mode: 0o700 });
+  for (const testCase of [
+    { scenario: "fresh", expectedStatus: 0 },
+    { scenario: "existing-valid", expectedStatus: 0 },
+    { scenario: "existing-zero", expectedStatus: 1 },
+    { scenario: "existing-truncated", expectedStatus: 1 },
+    { scenario: "existing-tampered", expectedStatus: 1 },
+  ]) {
+    const caseRoot = path.join(temporaryRoot, `candidate-log-${testCase.scenario}`);
+    fs.mkdirSync(caseRoot, { recursive: true });
+    const privateLog = path.join(caseRoot, "candidate-private.log");
+    const publishedLog = path.join(caseRoot, "candidate-public.log");
+    const privateContent = "boot ok\\napi_key=private-value\\nfinal line\\n";
+    fs.writeFileSync(privateLog, privateContent, { mode: 0o600 });
+    const run = runBash(bash, candidateLogHarnessPath, [privateLog, publishedLog, testCase.scenario]);
+    assert.equal(run.status, testCase.expectedStatus, `${testCase.scenario} candidate-log fault injection mismatch: ${run.stderr || run.stdout}`);
+    assert.equal(fs.readFileSync(privateLog, "utf8"), privateContent, `${testCase.scenario} must retain the private candidate log`);
+    if (testCase.expectedStatus === 0) {
+      const published = fs.readFileSync(publishedLog, "utf8");
+      assert.match(published, /^candidate-log\.v2 service=web release=V999\.1-aaaaaaaaaaaa source_bytes=[0-9]+ source_tail_bytes=[0-9]+ payload_bytes=[0-9]+ payload_sha256=[a-f0-9]{64}\n/u);
+      assert.match(published, /api_key=\[REDACTED\]/u);
+      assert.doesNotMatch(published, /private-value/u);
+    } else {
+      assert.ok(fs.existsSync(publishedLog), `${testCase.scenario} fault fixture must remain available for diagnosis`);
+    }
+    dynamicResults.push({ harness: "candidate-log", scenario: testCase.scenario, status: run.status, privateLogRetained: true });
+  }
+
   const signalHarnessPath = path.join(temporaryRoot, "signal-harness.sh");
   const signalMarkerPath = path.join(temporaryRoot, "signal-events.log");
   const signalHarness = `#!/usr/bin/env bash
@@ -242,6 +305,10 @@ exit 99
     'ROLLBACK_SUCCEEDED="0"',
     'FAILURE_CONTEXT=""',
     'candidate_pid=""',
+    'candidate_unit=""',
+    'candidate_cgroup=""',
+    'CANDIDATE_LOG=""',
+    'CANDIDATE_PRIVATE_LOG=""',
     'APP_TEMP_LINK=""',
     'ASSET_TEMP_LINK=""',
     'HISTORY_FD=""',
@@ -274,6 +341,144 @@ exit 99
     assert.equal((events.match(/^CLEANUP$/gmu) ?? []).length, 1, "EXIT cleanup must run candidate cleanup exactly once");
     assert.doesNotMatch(events, /^REENTER$/mu, "secondary signal must not re-enter EXIT cleanup");
     dynamicResults.push({ harness: "exit", originalStatus: 7, secondarySignalDuringRollback: secondary === "1", status: run.status });
+  }
+
+  const candidateCleanupHarnessPath = path.join(temporaryRoot, "candidate-cleanup-harness.sh");
+  const candidateCleanupMarkerPath = path.join(temporaryRoot, "candidate-cleanup-events.log");
+  const candidateCleanupHeader = [
+    "#!/usr/bin/env bash",
+    "set -Eeuo pipefail",
+    'marker="$1"',
+    'scenario="$2"',
+    'test_root="$3"',
+    'CGROUP_ROOT="$test_root/cgroup"',
+    'STAGING_ROOT="$test_root/staging-root"',
+    'STAGING_DIR="$STAGING_ROOT/candidate-staging"',
+    'RELEASE_ROOT="$test_root/releases"',
+    'AUDIT_DIR=""',
+    'PAYLOAD_DIR=""',
+    'candidate_pid="4242"',
+    'candidate_unit="zimeiti-candidate-web-4321.service"',
+    'candidate_cgroup="/system.slice/$candidate_unit"',
+    'CANDIDATE_LOG=""',
+    'CANDIDATE_PRIVATE_LOG=""',
+    'CANDIDATE_UID="4242"',
+    'SERVICE="web"',
+    'RELEASE_ID="V999.1-aaaaaaaaaaaa"',
+    'APP_TEMP_LINK=""',
+    'ASSET_TEMP_LINK=""',
+    'HISTORY_FD=""',
+    'SWITCH_STARTED="0"',
+    'DEPLOY_COMPLETE="0"',
+    'ROLLBACK_ATTEMPTED="0"',
+    'ROLLBACK_SUCCEEDED="0"',
+    'IN_ROLLBACK="0"',
+    'FAILURE_CONTEXT=""',
+    'DIRECT_PREPARED="0"',
+    'DIRECT_ROLLBACK_COMPLETE="0"',
+    'STATE="active"',
+    'MAIN_PID="4242"',
+    'POPULATED="1"',
+    'PHASE="direct"',
+    'mkdir -p "$CGROUP_ROOT$candidate_cgroup" "$STAGING_DIR"',
+    "write_cgroup_state() { printf 'populated %s\\n' \"$POPULATED\" >\"$CGROUP_ROOT$candidate_cgroup/cgroup.events\"; }",
+    "write_cgroup_state",
+    "systemctl() {",
+    '  local action="${1:-}" property',
+    "  shift || true",
+    '  case "$action" in',
+    "    show)",
+    '      property="${1#--property=}"',
+    '      case "$property" in',
+    "        LoadState) printf 'loaded\\n' ;;",
+    "        ActiveState) printf '%s\\n' \"$STATE\" ;;",
+    "        MainPID) printf '%s\\n' \"$MAIN_PID\" ;;",
+    "        ControlGroup) printf '%s\\n' \"$candidate_cgroup\" ;;",
+    "        *) return 64 ;;",
+    "      esac",
+    "      ;;",
+    "    stop)",
+    '      [[ "${1:-}" == "--" && "${2:-}" == "$candidate_unit" ]] || return 66',
+    "      printf 'STOP:%s\\n' \"$PHASE\" >>\"$marker\"",
+    '      if [[ "$scenario" == "stop-inactive" ]]; then STATE="inactive"; MAIN_PID="0"; POPULATED="0"; write_cgroup_state; fi',
+    "      ;;",
+    "    kill)",
+    '      [[ "${1:-}" == "--kill-whom=all" && "${2:-}" == "--signal=SIGKILL" && "${3:-}" == "--" && "${4:-}" == "$candidate_unit" ]] || return 67',
+    "      printf 'KILL:%s\\n' \"$PHASE\" >>\"$marker\"",
+    '      if [[ "$scenario" == "kill-recovery" ]]; then STATE="inactive"; MAIN_PID="0"; POPULATED="0"; write_cgroup_state; fi',
+    "      ;;",
+    "    reset-failed) printf 'RESET:%s\\n' \"$PHASE\" >>\"$marker\" ;;",
+    "    *) return 65 ;;",
+    "  esac",
+    "}",
+    "sleep() { :; }",
+    "publish_candidate_log() { printf 'PUBLISH:%s\\n' \"$PHASE\" >>\"$marker\"; }",
+    "safe_remove_staging() { printf 'REMOVE:%s\\n' \"$PHASE\" >>\"$marker\"; command rm -rf -- \"$STAGING_DIR\"; }",
+    "direct_hook() { return 0; }",
+    "rollback_release() { return 0; }",
+  ].join("\n");
+  const candidateCleanupFooter = [
+    "set +e",
+    "cleanup_candidate",
+    'direct_status="$?"',
+    "set -e",
+    "printf 'DIRECT:%s:unit=%s:pid=%s:cgroup=%s:state=%s:populated=%s\\n' \"$direct_status\" \"$candidate_unit\" \"$candidate_pid\" \"$candidate_cgroup\" \"$STATE\" \"$POPULATED\" >>\"$marker\"",
+    'candidate_pid="4242"',
+    'candidate_unit="zimeiti-candidate-web-4321.service"',
+    'candidate_cgroup="/system.slice/$candidate_unit"',
+    'STATE="active"',
+    'MAIN_PID="4242"',
+    'POPULATED="1"',
+    'PHASE="final"',
+    "write_cgroup_state",
+    "trap final_cleanup EXIT",
+    "exit 0",
+    "",
+  ].join("\n");
+  fs.writeFileSync(
+    candidateCleanupHarnessPath,
+    `${candidateCleanupHeader}\n${harnessCandidateCgroupEmpty}\n${candidateUnitStopped}\n${waitCandidateUnitStopped}\n${cleanupCandidate}\n${finalCleanup}\n${candidateCleanupFooter}`,
+    { mode: 0o700 },
+  );
+  for (const testCase of [
+    { scenario: "stop-inactive", expectedStatus: 0, expectedDirectStatus: 0, expectedKillCount: 0, expectedStagingRemoved: true },
+    { scenario: "kill-recovery", expectedStatus: 0, expectedDirectStatus: 0, expectedKillCount: 2, expectedStagingRemoved: true },
+    { scenario: "kill-stuck", expectedStatus: 1, expectedDirectStatus: 1, expectedKillCount: 2, expectedStagingRemoved: false },
+  ]) {
+    const caseRoot = path.join(temporaryRoot, `candidate-cleanup-${testCase.scenario}`);
+    fs.mkdirSync(caseRoot, { recursive: true });
+    fs.writeFileSync(candidateCleanupMarkerPath, "");
+    const run = runBash(bash, candidateCleanupHarnessPath, [candidateCleanupMarkerPath, testCase.scenario, caseRoot]);
+    assert.equal(run.status, testCase.expectedStatus, `${testCase.scenario} candidate cleanup status mismatch: ${run.stderr || run.stdout}`);
+    const events = fs.readFileSync(candidateCleanupMarkerPath, "utf8");
+    const directMatch = /^DIRECT:(\d+):unit=([^:]*):pid=([^:]*):cgroup=([^:]*):state=([^:]*):populated=([^:\r\n]*)$/mu.exec(events);
+    assert.ok(directMatch, `${testCase.scenario} candidate cleanup did not report its direct state: ${events}`);
+    assert.equal(Number(directMatch[1]), testCase.expectedDirectStatus, `${testCase.scenario} direct cleanup status mismatch`);
+    const killCount = (events.match(/^KILL:/gmu) ?? []).length;
+    assert.equal(killCount, testCase.expectedKillCount, `${testCase.scenario} systemctl kill count mismatch`);
+    const stagingPath = path.join(caseRoot, "staging-root", "candidate-staging");
+    assert.equal(fs.existsSync(stagingPath), !testCase.expectedStagingRemoved, `${testCase.scenario} staging retention mismatch`);
+    if (testCase.expectedDirectStatus === 0) {
+      assert.deepEqual(directMatch.slice(2), ["", "", "", "inactive", "0"], `${testCase.scenario} must clear candidate handles only after inactive/MainPID=0/populated=0`);
+      assert.match(events, /^REMOVE:final$/mu, `${testCase.scenario} final cleanup must allow staging removal`);
+    } else {
+      assert.deepEqual(
+        directMatch.slice(2),
+        ["zimeiti-candidate-web-4321.service", "4242", "/system.slice/zimeiti-candidate-web-4321.service", "active", "1"],
+        `${testCase.scenario} must retain candidate handles and STATE after an unconfirmed kill`,
+      );
+      assert.doesNotMatch(events, /^REMOVE:/mu, `${testCase.scenario} final cleanup must not call safe_remove_staging`);
+      assert.match(run.stderr, /CLEANUP BLOCKED: candidate unit remains controlled/u, `${testCase.scenario} must report blocked candidate cleanup`);
+      assert.match(run.stderr, /CLEANUP RETAINED:/u, `${testCase.scenario} must report retained staging`);
+    }
+    dynamicResults.push({
+      harness: "candidate-cleanup",
+      scenario: testCase.scenario,
+      directCleanupStatus: Number(directMatch[1]),
+      killCount,
+      stagingRemoved: testCase.expectedStagingRemoved,
+      status: run.status,
+    });
   }
 
   const firstHarnessPath = path.join(temporaryRoot, "first-deploy-harness.sh");

@@ -125,6 +125,21 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "“内部工具”的系统标识固定为“自用”，请修改展示文案而不是内部分类名" }, { status: 400 });
     }
 
+    if (name !== undefined && name !== previousCategory.name) {
+      const { data: linkedAgents, error: linkedAgentsError } = await client
+        .from("agents")
+        .select("id")
+        .eq("category", previousCategory.name);
+      if (linkedAgentsError) return NextResponse.json({ error: "读取分类智能体失败" }, { status: 500 });
+      if ((linkedAgents || []).length > 0) {
+        return NextResponse.json({
+          error: "分类改名会批量修改智能体配置；在多行 revision 原子 CAS 就绪前已阻止该操作。",
+          code: "AGENT_BATCH_CAS_TRANSACTION_REQUIRED",
+          affected_agents: linkedAgents?.length || 0,
+        }, { status: 409 });
+      }
+    }
+
     const fields: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (name !== undefined) fields.name = name;
     if (icon !== undefined) fields.icon = icon;
@@ -141,29 +156,6 @@ export async function PUT(request: NextRequest) {
       .single();
 
     if (error) return NextResponse.json({ error: `更新分类失败: ${error.message}` }, { status: 500 });
-
-    if (name !== undefined && name !== previousCategory.name) {
-      const { error: agentRenameError } = await client
-        .from("agents")
-        .update({ category: name, updated_at: new Date().toISOString() })
-        .eq("category", previousCategory.name);
-      if (agentRenameError) {
-        const rollback = await client
-          .from("categories")
-          .update({
-            name: previousCategory.name,
-            icon: previousCategory.icon,
-            description: previousCategory.description,
-            sort_order: previousCategory.sort_order,
-            is_active: previousCategory.is_active,
-            visibility: previousCategory.visibility,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", categoryId);
-        console.error("Category rename failed; rollback result:", agentRenameError, rollback.error);
-        return NextResponse.json({ error: "分类改名未完成，已恢复原分类" }, { status: 500 });
-      }
-    }
 
     // Making an item visible updates the catalog only. User grants stay unchanged.
     invalidateBotsCache();
@@ -211,7 +203,6 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "“内部工具”是固定智能体导航，不能删除其内部分类" }, { status: 400 });
     }
 
-    let targetCategoryName: string | null = null;
     if (migrateTo) {
       const { data: targetCategory, error: targetError } = await client
         .from("categories")
@@ -222,7 +213,6 @@ export async function DELETE(request: NextRequest) {
       if (!targetCategory || targetCategory.id === categoryId) {
         return NextResponse.json({ error: "请选择其他有效分类作为迁移目标" }, { status: 400 });
       }
-      targetCategoryName = targetCategory.name;
     }
 
     const { data: agentsToMove, error: agentsToMoveError } = await client
@@ -235,31 +225,17 @@ export async function DELETE(request: NextRequest) {
     }
     const movedAgentIds = (agentsToMove || []).map((agent: { id: string }) => agent.id);
 
-    // Move agents first. A failure must stop deletion instead of returning false success.
-    if (migrateTo && movedAgentIds.length > 0) {
-      const { error: migrateError } = await client
-        .from("agents")
-        .update({ category: targetCategoryName, updated_at: new Date().toISOString() })
-        .in("id", movedAgentIds);
-      if (migrateError) return NextResponse.json({ error: `迁移智能体失败: ${migrateError.message}` }, { status: 500 });
-    } else if (movedAgentIds.length > 0) {
-      const { error: detachError } = await client
-        .from("agents")
-        .update({ category: null, updated_at: new Date().toISOString() })
-        .in("id", movedAgentIds);
-      if (detachError) return NextResponse.json({ error: `清空智能体分类失败: ${detachError.message}` }, { status: 500 });
+    if (movedAgentIds.length > 0) {
+      return NextResponse.json({
+        error: "删除非空分类会批量修改智能体配置；在多行 revision 原子 CAS 就绪前已阻止该操作。",
+        code: "AGENT_BATCH_CAS_TRANSACTION_REQUIRED",
+        affected_agents: movedAgentIds.length,
+      }, { status: 409 });
     }
 
     // Delete the category
     const { error } = await client.from("categories").delete().eq("id", categoryId);
     if (error) {
-      const restore = movedAgentIds.length > 0
-        ? await client
-            .from("agents")
-            .update({ category: cat.name, updated_at: new Date().toISOString() })
-            .in("id", movedAgentIds)
-        : { error: null };
-      console.error("Category delete failed; agent rollback result:", error, restore.error);
       return NextResponse.json({ error: `删除分类失败: ${error.message}` }, { status: 500 });
     }
 

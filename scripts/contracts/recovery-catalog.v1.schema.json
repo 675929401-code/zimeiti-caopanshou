@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "recovery-catalog.v1.schema.json",
+  "title": "Offline local-disk disaster recovery catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "environment",
+    "accountId",
+    "tenantId",
+    "databaseIdentity",
+    "catalogId",
+    "catalogSchemaSha256",
+    "createdAt",
+    "source",
+    "publicAssets",
+    "databaseBackup",
+    "userAssets",
+    "consistency",
+    "trust",
+    "readiness"
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "safeId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "readinessCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "verified", "evidencePath", "evidenceSha256", "signaturePath", "signatureSha256", "issuerFingerprint"],
+      "properties": {
+        "id": {
+          "enum": [
+            "primary-copy",
+            "offline-copy",
+            "independent-offsite-copy",
+            "two-failure-domains",
+            "offline-or-immutable",
+            "empty-disk-drill",
+            "zero-verification-errors"
+          ]
+        },
+        "verified": { "type": "boolean" },
+        "evidencePath": {
+          "anyOf": [
+            { "type": "string", "pattern": "^evidence/[A-Za-z0-9._/-]+\\.json$" },
+            { "type": "null" }
+          ]
+        },
+        "evidenceSha256": {
+          "anyOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "signaturePath": { "anyOf": [{ "type": "string", "pattern": "^evidence/[A-Za-z0-9._/-]+\\.sig\\.json$" }, { "type": "null" }] },
+        "signatureSha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "issuerFingerprint": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": { "const": "zimeiti-recovery-catalog.v1" },
+    "projectId": { "const": "zimeiti-caopanshou" },
+    "environment": { "$ref": "#/$defs/safeId" },
+    "accountId": { "$ref": "#/$defs/safeId" },
+    "tenantId": { "$ref": "#/$defs/safeId" },
+    "databaseIdentity": { "$ref": "#/$defs/safeId" },
+    "catalogId": { "type": "string", "pattern": "^recovery-[A-Za-z0-9._-]+-[a-f0-9]{16}$" },
+    "catalogSchemaSha256": { "$ref": "#/$defs/sha256" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gitCommit", "sourceVersion", "manifestSha256", "commitReceiptSha256", "detachedSignatureSha256", "sourceFingerprint", "fileCount", "totalBytes"],
+      "properties": {
+        "gitCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "sourceVersion": { "$ref": "#/$defs/safeId" },
+        "manifestSha256": { "$ref": "#/$defs/sha256" },
+        "commitReceiptSha256": { "$ref": "#/$defs/sha256" },
+        "detachedSignatureSha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "sourceFingerprint": { "$ref": "#/$defs/sha256" },
+        "fileCount": { "type": "integer", "minimum": 1 },
+        "totalBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "publicAssets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetVersion", "assetDigest", "manifestSha256", "readyReceiptSha256", "detachedSignatureSha256", "fileCount", "totalBytes"],
+      "properties": {
+        "assetVersion": { "type": "string", "pattern": "^sha256-[a-f0-9]{64}$" },
+        "assetDigest": { "$ref": "#/$defs/sha256" },
+        "manifestSha256": { "$ref": "#/$defs/sha256" },
+        "readyReceiptSha256": { "$ref": "#/$defs/sha256" },
+        "detachedSignatureSha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "fileCount": { "type": "integer", "minimum": 1 },
+        "totalBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "databaseBackup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backupId", "sourceVersion", "packageSha256", "receiptSha256", "detachedSignatureSha256", "projectId", "environment", "accountId", "tenantId", "databaseIdentity", "productionConsistency"],
+      "properties": {
+        "backupId": { "type": "string", "pattern": "^backup-[0-9]{8}T[0-9]{6}Z-[0-9]+$" },
+        "sourceVersion": { "$ref": "#/$defs/safeId" },
+        "packageSha256": { "$ref": "#/$defs/sha256" },
+        "receiptSha256": { "$ref": "#/$defs/sha256" },
+        "detachedSignatureSha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "projectId": { "const": "zimeiti-caopanshou" },
+        "environment": { "$ref": "#/$defs/safeId" },
+        "accountId": { "$ref": "#/$defs/safeId" },
+        "tenantId": { "$ref": "#/$defs/safeId" },
+        "databaseIdentity": { "$ref": "#/$defs/safeId" },
+        "productionConsistency": { "const": "incomplete" }
+      }
+    },
+    "userAssets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventorySha256", "detachedSignatureSha256", "inventoryDigest", "snapshotAt", "bucket", "accountId", "tenantId", "region", "ownerId", "databaseIdentity", "fileCount", "totalBytes", "crossComponentConsistency"],
+      "properties": {
+        "inventorySha256": { "$ref": "#/$defs/sha256" },
+        "detachedSignatureSha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "inventoryDigest": { "$ref": "#/$defs/sha256" },
+        "snapshotAt": { "type": "string", "format": "date-time" },
+        "bucket": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{2,127}$" },
+        "accountId": { "$ref": "#/$defs/safeId" },
+        "tenantId": { "$ref": "#/$defs/safeId" },
+        "region": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "ownerId": { "$ref": "#/$defs/safeId" },
+        "databaseIdentity": { "$ref": "#/$defs/safeId" },
+        "fileCount": { "type": "integer", "minimum": 0 },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "crossComponentConsistency": { "const": false }
+      }
+    },
+    "consistency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crossComponentConsistency", "databaseAndObjectsJointSnapshot", "truth"],
+      "properties": {
+        "crossComponentConsistency": { "const": false },
+        "databaseAndObjectsJointSnapshot": { "const": false },
+        "truth": { "const": "independent-verified-components" }
+      }
+    },
+    "trust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "allowlistSha256", "algorithm", "maxEvidenceAgeSeconds"],
+      "properties": {
+        "status": { "enum": ["TRUSTED", "BLOCKED"] },
+        "allowlistSha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "algorithm": { "const": "Ed25519" },
+        "maxEvidenceAgeSeconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["standard", "status", "checks"],
+      "properties": {
+        "standard": { "const": "3-2-1-1-0" },
+        "status": { "enum": ["READY", "BLOCKED"] },
+        "checks": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/readinessCheck" }
+        }
+      }
+    }
+  }
+}

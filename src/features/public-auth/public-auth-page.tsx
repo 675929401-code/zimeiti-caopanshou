@@ -51,7 +51,7 @@ export function PublicAuthPage({
   invitationCode?: string;
 }) {
   const copy = AUTH_COPY[kind];
-  const { state, checkAuth } = useApp();
+  const { state, checkAuth, dispatch } = useApp();
   const router = useAppScopedRouter();
   const redirectingRef = useRef(false);
 
@@ -59,8 +59,15 @@ export function PublicAuthPage({
     if (redirectingRef.current) return;
     redirectingRef.current = true;
     await checkAuth().catch(() => undefined);
+    if (redirectTo === "/") {
+      try {
+        sessionStorage.setItem("entered_app", "1");
+        localStorage.setItem("active_view", "marketplace");
+      } catch {}
+      dispatch({ type: "SET_VIEW", payload: "marketplace" });
+    }
     router.replace(redirectTo);
-  }, [checkAuth, redirectTo, router]);
+  }, [checkAuth, dispatch, redirectTo, router]);
 
   useEffect(() => {
     const handleAuthChanged = () => { void continueAfterAuth(); };

@@ -20,10 +20,18 @@ const MAX_BYTES = 2 * 1024 * 1024;
 const PROJECT_LIST_BATCH_SIZE = 100;
 const MAX_PROJECT_LIST_ROWS = 500;
 const VIDEO_TASK_BATCH_SIZE = 100;
-const VIDEO_TASK_FIELDS = "id,task_id_external,model_id,status,error_message,submission_error_code,billing_state,price_charged,provider_result_url,completed_at";
+const VIDEO_TASK_FIELDS = "id,task_id_external,model_id,status,error_message,submission_error_code,billing_state,price_charged,provider_result_url,completed_at,source_expired_at,history_hidden_at";
 type Database = SupabaseClient;
 type Document = z.infer<typeof StoryboardProjectDocument>;
 type Asset = { id: string; storage_key: string; storage_provider: StorageProviderType };
+type OwnedStoryboardVideoTask = StoryboardVideoTaskSnapshot & {
+  source_expired_at?: unknown;
+  history_hidden_at?: unknown;
+};
+type HydratedDocument = {
+  document: Document;
+  playbackUnavailableCardIds: ReadonlySet<string>;
+};
 const mediaFields = ["imageUrl", "videoSourceImageUrl", "videoUrl", "videoContentUrl"] as const;
 const saveSchema = z.object({ document: StoryboardProjectDocument, expectedRevision: z.number().int().nonnegative() }).strict();
 const deleteSchema = z.object({ id: StoryboardProjectId, expectedRevision: z.number().int().positive() }).strict();
@@ -112,7 +120,7 @@ async function stabilize(db: Database, owner: string, input: Document): Promise<
 }
 
 async function loadOwnedVideoTasks(db: Database, owner: string, taskIds: readonly string[]) {
-  const tasks: StoryboardVideoTaskSnapshot[] = [];
+  const tasks: OwnedStoryboardVideoTask[] = [];
   for (let offset = 0; offset < taskIds.length; offset += VIDEO_TASK_BATCH_SIZE) {
     const batch = taskIds.slice(offset, offset + VIDEO_TASK_BATCH_SIZE);
     const results = await Promise.allSettled([
@@ -121,11 +129,11 @@ async function loadOwnedVideoTasks(db: Database, owner: string, taskIds: readonl
     ]);
     for (const result of results) {
       if (result.status === "fulfilled" && !result.value.error) {
-        tasks.push(...(result.value.data || []) as StoryboardVideoTaskSnapshot[]);
+        tasks.push(...(result.value.data || []) as OwnedStoryboardVideoTask[]);
       }
     }
   }
-  const unique = new Map<string, StoryboardVideoTaskSnapshot>();
+  const unique = new Map<string, OwnedStoryboardVideoTask>();
   for (const task of tasks) {
     const key = `${String(task.id || "")}\u0000${String(task.task_id_external || "")}\u0000${String(task.model_id || "")}`;
     unique.set(key, task);
@@ -133,8 +141,30 @@ async function loadOwnedVideoTasks(db: Database, owner: string, taskIds: readonl
   return [...unique.values()];
 }
 
-async function hydrate(db: Database, owner: string, input: Document) {
+function unavailablePlaybackMessage(task: OwnedStoryboardVideoTask) {
+  if (task.history_hidden_at) return "视频记录已从历史中移除，当前不可播放；不会自动重新提交";
+  if (task.source_expired_at) return "视频源已过期，当前不可播放；不会自动重新提交";
+  return "";
+}
+
+function markPlaybackUnavailable(card: Document["cards"][number], message: string) {
+  card.videoStatus = "failed";
+  card.videoRetryable = false;
+  card.videoError = message;
+  card.videoStatusDetail = message;
+  card.videoPollFailures = 0;
+  delete card.videoUrl;
+  delete card.videoContentUrl;
+  delete card.videoThumbnailUrl;
+  delete card.videoProgress;
+  delete card.videoLifecycle;
+  delete card.videoLifecycleError;
+  delete card.videoMonitoringPaused;
+}
+
+async function hydrate(db: Database, owner: string, input: Document): Promise<HydratedDocument> {
   let document = structuredClone(input);
+  const playbackUnavailableCardIds = new Set<string>();
   const ids = new Set<string>();
   for (const card of document.cards) for (const url of [...card.referenceImageUrls, ...mediaFields.map((field) => card[field])]) {
     if (typeof url === "string" && url.startsWith("asset://")) ids.add(url.slice(8));
@@ -165,9 +195,17 @@ async function hydrate(db: Database, owner: string, input: Document) {
     document = reconcileStoryboardProjectVideoTasks(document, tasks);
     const playableCards = document.cards.map(async (card) => {
       if (!card.videoTaskId) return;
-      const task = findStoryboardVideoTask(card, tasks);
-      if (task && normalizeStoryboardVideoTaskStatus(task.status) === "done") {
-        const taskId = String(task.id || "").trim();
+      const task = findStoryboardVideoTask(card, tasks) as OwnedStoryboardVideoTask | undefined;
+      if (!task) return;
+      const taskId = String(task.id || "").trim();
+      const unavailableMessage = unavailablePlaybackMessage(task);
+      if (unavailableMessage) {
+        if (taskId) card.videoTaskId = taskId;
+        markPlaybackUnavailable(card, unavailableMessage);
+        playbackUnavailableCardIds.add(card.id);
+        return;
+      }
+      if (normalizeStoryboardVideoTaskStatus(task.status) === "done") {
         if (!taskId) return;
         // The stored document may contain an older provider task id. Response
         // snapshots always expose our owned local id so the client can mint a
@@ -186,10 +224,10 @@ async function hydrate(db: Database, owner: string, input: Document) {
     });
     await Promise.allSettled(playableCards);
   }
-  return document;
+  return { document, playbackUnavailableCardIds };
 }
 
-function summaryWithDocument(row: Record<string, unknown>, hydrated?: Document) {
+function summaryWithDocument(row: Record<string, unknown>, hydrated?: HydratedDocument) {
   const createdAt = String(row.created_at || row.updated_at || "");
   const updatedAt = String(row.updated_at || row.created_at || "");
   return {
@@ -201,7 +239,7 @@ function summaryWithDocument(row: Record<string, unknown>, hydrated?: Document) 
     submittedAt: deriveStoryboardSubmittedAt(row.document),
     cardCount: Number(row.card_count),
     ...(hydrated ? {
-      cards: [...hydrated.cards]
+      cards: [...hydrated.document.cards]
         .sort((left, right) => left.order - right.order)
         .map((card) => ({
           id: card.id,
@@ -212,7 +250,13 @@ function summaryWithDocument(row: Record<string, unknown>, hydrated?: Document) 
           videoTaskId: String(card.videoTaskId || ""),
           videoUrl: String(card.videoUrl || ""),
           videoThumbnailUrl: String(card.videoThumbnailUrl || ""),
-        })),
+          videoError: String(card.videoError || ""),
+          videoStatusDetail: String(card.videoStatusDetail || ""),
+          videoRetryable: card.videoRetryable === true,
+        }))
+        .map((card) => hydrated.playbackUnavailableCardIds.has(card.id)
+          ? { ...card, videoTaskId: "", videoUrl: "", videoThumbnailUrl: "" }
+          : card),
     } : {}),
   };
 }
@@ -268,7 +312,8 @@ export async function GET(request: Request) {
         const result = await db.from("storyboard_projects").select("*").eq("owner_id", user.id).eq("id", id).eq("deleted", false).maybeSingle();
         if (result.error) throw result.error;
         if (!result.data) return json({ code: "PROJECT_NOT_FOUND", error: "任务不存在或无权访问" }, 404);
-        return json({ project: { ...summary(result.data), document: await hydrate(db, user.id, result.data.document as Document) } });
+        const hydrated = await hydrate(db, user.id, result.data.document as Document);
+        return json({ project: { ...summary(result.data), document: hydrated.document } });
       }
       const offset = z.coerce.number().int().nonnegative().max(100000).parse(url.searchParams.get("offset") || 0);
       const projects = await listOwnedProjectRows(db, user.id);

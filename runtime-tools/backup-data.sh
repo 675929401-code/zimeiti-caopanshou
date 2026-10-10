@@ -1,193 +1,231 @@
-#!/bin/bash
-# ============================================
-# 学员数据每日备份脚本
-# 用法: bash runtime-tools/backup-data.sh
-# 策略: 每日一次，新备份覆盖旧备份
-# 存储: 独立持久化 BACKUP_DIR（7天轮转）；异地复制由外部备份作业负责。
-# ============================================
+#!/usr/bin/env bash
+# Linux-only encrypted backup control plane. It never claims a cross-component snapshot.
 
-set -e
+set -Eeuo pipefail
+umask 077
 
-# ---- 读取环境变量 ----
-ENV_FILE="$(dirname "$0")/../.env.local"
-if [ -f "$ENV_FILE" ]; then
-  COZE_SUPABASE_URL="${COZE_SUPABASE_URL:-$(sed -n 's/^COZE_SUPABASE_URL=//p' "$ENV_FILE" | head -1)}"
-  COZE_SUPABASE_SERVICE_ROLE_KEY="${COZE_SUPABASE_SERVICE_ROLE_KEY:-$(sed -n 's/^COZE_SUPABASE_SERVICE_ROLE_KEY=//p' "$ENV_FILE" | head -1)}"
-fi
+MODE="${1:---plan}"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+HELPER="$PROJECT_ROOT/scripts/backup-recovery-helper.mjs"
+PLAIN_STAGE_NAME="zimeiti-backup-plaintext-staging"
 
-SUPABASE_URL="${COZE_SUPABASE_URL}"
-SUPABASE_KEY="${COZE_SUPABASE_SERVICE_ROLE_KEY}"
-export SUPABASE_URL SUPABASE_KEY
-
-if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
-  echo "❌ 缺少 Supabase 环境变量 (COZE_SUPABASE_URL / COZE_SUPABASE_SERVICE_ROLE_KEY)"
-  exit 1
-fi
-
-# ---- 配置 ----
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [ "${NODE_ENV:-development}" = "production" ]; then
-  case "${BACKUP_DIR:-}" in
-    /*) ;;
-    *) echo "❌ 生产环境要求 BACKUP_DIR 为已挂载的绝对路径" >&2; exit 2 ;;
-  esac
-else
-  BACKUP_DIR="${BACKUP_DIR:-$PROJECT_ROOT/backups}"
-fi
-BACKUP_FILE="$BACKUP_DIR/latest.json"
-BACKUP_DAILY="$BACKUP_DIR/daily_$(date +%u).json"  # 周一到周日轮转1-7
-BACKUP_TIMESTAMP_FILE="$BACKUP_DIR/latest.timestamp"
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-DATE_LABEL=$(date '+%Y%m%d')
-export BACKUP_FILE TIMESTAMP DATE_LABEL
-
-mkdir -p "$BACKUP_DIR"
-
-echo "=========================================="
-echo "  学员数据备份 - $TIMESTAMP"
-echo "=========================================="
-
-# ---- 使用 Python 执行备份（避免 Bash 拼接 JSON 的特殊字符问题）----
-python3 << 'PYTHON_SCRIPT'
-import json, os, re, urllib.request, urllib.error, sys
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-BACKUP_FILE = os.environ.get("BACKUP_FILE", "")
-TIMESTAMP = os.environ.get("TIMESTAMP", "")
-DATE_LABEL = os.environ.get("DATE_LABEL", "")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("❌ 缺少环境变量")
-    sys.exit(1)
-
-CORE_TABLES = ["users", "credit_transactions", "cash_transactions", "revenue_records", "payment_orders"]
-CONFIG_TABLES = ["agents", "categories", "platform_settings", "video_models", "cover_models", "announcements"]
-LOG_TABLES = ["login_logs", "video_tasks", "video_channel_health", "conversations", "conversation_messages",
-              "prompt_guard_logs", "security_events", "formatter_history", "segmenter_history",
-              "system_logs", "health_checks", "auto_fixes"]
-# 补充表（邀请码/技能/插件/模型等 — 完整灾备必需）
-SUPP_TABLES = ["invitation_codes", "invitation_records", "invitation_benefits",
-               "skills", "agent_skills", "plugins", "crami_codes",
-               "trial_plans", "trial_plan_agents", "user_trial_activations",
-               "llm_models", "user_favorites", "daily_usage_stats", "voice_tasks",
-               "user_voices", "voice_nest_slots"]
-
-def export_table(table_name):
-    """通过 Supabase REST API 导出表数据"""
-    url = f"{SUPABASE_URL}/rest/v1/{table_name}?select=*&limit=100000&order=id.asc"
-    req = urllib.request.Request(url, headers={
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}"
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            count = len(data) if isinstance(data, list) else 0
-            print(f"  ✅ {table_name}: {count} 条记录")
-            return data
-    except urllib.error.HTTPError as e:
-        # 某些表可能不存在
-        print(f"  ⚠️  {table_name}: 导出失败 (HTTP {e.code}), 跳过")
-        return []
-    except Exception as e:
-        print(f"  ⚠️  {table_name}: 导出异常 ({str(e)[:80]}), 跳过")
-        return []
-
-def export_category(tables, label):
-    """导出一个分类下的所有表"""
-    print(f"\n=== {label} ===")
-    result = {}
-    for table in tables:
-        result[table] = export_table(table)
-    return result
-
-def validate_auth_snapshot(users):
-    """备份必须保留有效 password_hash，否则恢复后原密码无法登录。"""
-    issues = []
-    bcrypt_re = re.compile(r"^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$")
-    if not isinstance(users, list):
-        return ["core.users 缺失，不能作为可恢复登录的数据快照"]
-    if len(users) == 0:
-        return ["core.users 为空，不能作为可恢复登录的数据快照"]
-    for idx, user in enumerate(users, start=1):
-        if not isinstance(user, dict):
-            issues.append(f"第 {idx} 条用户记录不是对象")
-            continue
-        identity = user.get("username") or user.get("email") or user.get("phone") or user.get("id") or f"row-{idx}"
-        password_hash = user.get("password_hash")
-        if not isinstance(password_hash, str) or not password_hash.strip():
-            issues.append(f"用户 {identity} 缺少 password_hash")
-        elif not bcrypt_re.match(password_hash.strip()):
-            issues.append(f"用户 {identity} 的 password_hash 不是有效 bcrypt 哈希")
-    return issues
-
-# 执行备份
-core_data = export_category(CORE_TABLES, "核心数据（学员资产）")
-config_data = export_category(CONFIG_TABLES, "配置数据（平台运营）")
-log_data = export_category(LOG_TABLES, "日志与历史数据")
-supp_data = export_category(SUPP_TABLES, "补充数据（邀请码/技能/插件/模型）")
-
-auth_issues = validate_auth_snapshot(core_data.get("users", []))
-if auth_issues:
-    print("\n❌ 认证快照校验失败，已停止保存备份：")
-    for issue in auth_issues[:20]:
-        print(f"  - {issue}")
-    if len(auth_issues) > 20:
-        print(f"  - 其余 {len(auth_issues) - 20} 项已省略")
-    sys.exit(2)
-
-backup = {
-    "backup_time": TIMESTAMP,
-    "date_label": DATE_LABEL,
-    "version": "2.0",
-    "auth_snapshot": {
-        "ok": True,
-        "checkedUsers": len(core_data.get("users", [])),
-        "passwordHashAlgorithm": "bcrypt"
-    },
-    "core": core_data,
-    "config": config_data,
-    "logs": log_data,
-    "supplement": supp_data,
+die() { printf 'BACKUP_BLOCKED:%s\n' "$1" >&2; exit "${2:-2}"; }
+require_command() { command -v "$1" >/dev/null 2>&1 || die "COMMAND_REQUIRED:$1"; }
+require_absolute_dir() {
+  local name="$1" value="${!1:-}"
+  [[ "$value" = /* ]] || die "ABSOLUTE_DIRECTORY_REQUIRED:$name"
+  [[ ! "$value" =~ [[:cntrl:]] ]] || die "CONTROL_CHARACTER_IN_PATH:$name"
+  [[ ! -L "$value" ]] || die "SYMLINK_NOT_ALLOWED:$name"
+  [[ -d "$value" ]] || die "DIRECTORY_NOT_FOUND:$name"
+}
+require_absolute_file() {
+  local name="$1" value="${!1:-}"
+  [[ "$value" = /* ]] || die "ABSOLUTE_FILE_REQUIRED:$name"
+  [[ ! "$value" =~ [[:cntrl:]] ]] || die "CONTROL_CHARACTER_IN_PATH:$name"
+  [[ ! -L "$value" ]] || die "SYMLINK_NOT_ALLOWED:$name"
+  [[ -f "$value" ]] || die "FILE_NOT_FOUND:$name"
+}
+require_controlled_secret_file() {
+  local name="$1" value="${!1:-}" owner mode
+  require_absolute_file "$name"
+  owner="$(stat -Lc '%u' "$value")"
+  mode="$(stat -Lc '%a' "$value")"
+  [[ "$owner" = "$(id -u)" ]] || die "CONTROL_FILE_OWNER_MISMATCH:$name"
+  (( (8#$mode & 077) == 0 )) || die "CONTROL_FILE_PERMISSIONS_TOO_OPEN:$name"
+}
+device_number() { stat -Lc '%d' "$1"; }
+is_inside_or_equal() {
+  local parent="$1" child="$2"
+  [[ "$child" = "$parent" || "$child" = "$parent"/* ]]
+}
+require_disjoint() {
+  local left right label="$3"
+  left="$(realpath -e "$1")"
+  right="$(realpath -e "$2")"
+  if is_inside_or_equal "$left" "$right" || is_inside_or_equal "$right" "$left"; then
+    die "PATHS_MUST_BE_BIDIRECTIONALLY_DISJOINT:$label"
+  fi
+  node "$HELPER" assert-disjoint --left "$left" --right "$right"
+}
+validate_plaintext_staging_mount() {
+  local mount_name="$1" mount_path="${!1:-}" filesystem source block_type root_dev mount_dev
+  require_absolute_dir "$mount_name"
+  mountpoint -q "$mount_path" || die "PLAINTEXT_STAGING_MOUNT_REQUIRED:$mount_name"
+  filesystem="$(findmnt -n -o FSTYPE -T "$mount_path")"
+  if [[ "$filesystem" != "tmpfs" ]]; then
+    source="$(findmnt -n -o SOURCE -T "$mount_path")"
+    source="${source%%\[*}"
+    [[ "$source" = /dev/* ]] || die "PLAINTEXT_STAGING_MUST_BE_TMPFS_OR_DMCRYPT:$mount_name"
+    block_type="$(lsblk -ndo TYPE "$source" 2>/dev/null | head -n 1)"
+    [[ "$block_type" = "crypt" ]] || die "PLAINTEXT_STAGING_MUST_BE_TMPFS_OR_DMCRYPT:$mount_name"
+  fi
+  root_dev="$(device_number /)"
+  mount_dev="$(device_number "$mount_path")"
+  [[ -n "$mount_dev" && "$mount_dev" != "$root_dev" ]] || die "PLAINTEXT_STAGING_MUST_NOT_USE_SYSTEM_DEVICE:$mount_name"
+  node "$HELPER" assert-path-absent --path "$mount_path/$PLAIN_STAGE_NAME" || die "PLAINTEXT_STAGING_RESIDUE_REQUIRES_MANUAL_REVIEW:$mount_name"
 }
 
-# 保存文件
-with open(BACKUP_FILE, "w", encoding="utf-8") as f:
-    json.dump(backup, f, ensure_ascii=False, indent=2)
+print_usage() {
+  cat <<'USAGE'
+Usage: bash runtime-tools/backup-data.sh --plan|--preflight|--execute
 
-# 统计
-total_core = sum(len(v) for v in core_data.values())
-total_supp = sum(len(v) for v in supp_data.values())
-file_size = os.path.getsize(BACKUP_FILE)
-size_str = f"{file_size / 1024:.1f} KB" if file_size < 1024 * 1024 else f"{file_size / 1024 / 1024:.1f} MB"
+Required controlled inputs:
+  DEPLOY_DATABASE_URL, PERSISTENT_DATA_MOUNTPOINT, BACKUP_DIR
+  BACKUP_PLAINTEXT_STAGING_MOUNTPOINT, BACKUP_AGE_RECIPIENTS_FILE
+  APP_DATA_DIR, COMMERCE_DATA_DIR, VOICE_SQLITE_PATH
+  VOICE_REFERENCE_AUDIO_DIR, STORAGE_LOCAL_BASE_PATH, PUBLIC_ASSET_ROOT
 
-# 资产统计
-users = core_data.get("users", [])
-total_credits = sum(u.get("credits", 0) or 0 for u in users)
-total_cash = sum(u.get("cash_balance", 0) or 0 for u in users)
+The plaintext staging mount must be a dedicated tmpfs or verified dm-crypt
+block-device mount. Any residue from a killed run blocks the next run.
+USAGE
+}
 
-print(f"\n==========================================")
-print(f"  ✅ 备份完成！")
-print(f"  时间: {TIMESTAMP}")
-print(f"  核心数据: {total_core} 条")
-print(f"  补充数据: {total_supp} 条")
-print(f"  用户数: {len(users)}")
-print(f"  积分合计: {total_credits:.2f}")
-print(f"  现金合计: ¥{total_cash:.2f}")
-print(f"  文件大小: {size_str}")
-print(f"  路径: {BACKUP_FILE}")
-print(f"==========================================")
-PYTHON_SCRIPT
+validate_configuration() {
+  [[ "$(uname -s)" = "Linux" ]] || die "LINUX_ONLY"
+  [[ -f "$HELPER" ]] || die "HELPER_NOT_FOUND"
+  [[ -n "${DEPLOY_DATABASE_URL:-}" ]] || die "DEPLOY_DATABASE_URL_REQUIRED"
+  require_absolute_dir PERSISTENT_DATA_MOUNTPOINT
+  require_absolute_dir BACKUP_DIR
+  require_controlled_secret_file BACKUP_AGE_RECIPIENTS_FILE
+  require_absolute_dir APP_DATA_DIR
+  require_absolute_dir COMMERCE_DATA_DIR
+  require_absolute_file VOICE_SQLITE_PATH
+  require_absolute_dir VOICE_REFERENCE_AUDIO_DIR
+  require_absolute_dir STORAGE_LOCAL_BASE_PATH
+  require_absolute_dir PUBLIC_ASSET_ROOT
+  [[ ! -L "$COMMERCE_DATA_DIR/commerce.sqlite" && -f "$COMMERCE_DATA_DIR/commerce.sqlite" ]] || die "COMMERCE_SQLITE_REQUIRED"
+  [[ ! -L "$COMMERCE_DATA_DIR/assets" && -d "$COMMERCE_DATA_DIR/assets" ]] || die "COMMERCE_ASSETS_REQUIRED"
+  grep -Eq '^[[:space:]]*(age1|ssh-(rsa|ed25519)|plugin:)' "$BACKUP_AGE_RECIPIENTS_FILE" || die "AGE_RECIPIENT_REQUIRED"
+  mountpoint -q "$PERSISTENT_DATA_MOUNTPOINT" || die "PERSISTENT_DATA_MOUNTPOINT_NOT_MOUNTED"
 
-  # 轮转备份：复制到 daily_1~7.json（周一到周日）
-cp "$BACKUP_FILE" "$BACKUP_DAILY" 2>/dev/null && echo "📅 轮转备份: $BACKUP_DAILY" || true
+  local system_dev expected_dev data_root backup_root source source_root source_dev
+  system_dev="$(device_number /)"
+  expected_dev="$(device_number "$PERSISTENT_DATA_MOUNTPOINT")"
+  [[ -n "$system_dev" && -n "$expected_dev" && "$system_dev" != "$expected_dev" ]] || die "PERSISTENT_DATA_MUST_NOT_USE_SYSTEM_DEVICE"
+  data_root="$(realpath -e "$PERSISTENT_DATA_MOUNTPOINT")"
+  backup_root="$(realpath -e "$BACKUP_DIR")"
+  is_inside_or_equal "$data_root" "$backup_root" || die "BACKUP_DIR_OUTSIDE_PERSISTENT_MOUNT"
+  [[ "$(device_number "$backup_root")" = "$expected_dev" ]] || die "BACKUP_DIR_UNEXPECTED_DEVICE"
 
-# 保存时间戳
-echo "$TIMESTAMP" > "$BACKUP_TIMESTAMP_FILE"
+  for source in "$APP_DATA_DIR" "$COMMERCE_DATA_DIR" "$VOICE_SQLITE_PATH" "$VOICE_REFERENCE_AUDIO_DIR" "$STORAGE_LOCAL_BASE_PATH" "$PUBLIC_ASSET_ROOT"; do
+    source_root="$(realpath -e "$source")"
+    is_inside_or_equal "$data_root" "$source_root" || die "SOURCE_DATA_OUTSIDE_PERSISTENT_MOUNT"
+    source_dev="$(device_number "$source_root")"
+    [[ "$source_dev" = "$expected_dev" ]] || die "SOURCE_DATA_UNEXPECTED_DEVICE"
+    require_disjoint "$backup_root" "$source_root" "backup-source"
+  done
 
-# 数据库快照永远不得进入普通 Git/Gitee 代码仓。
-if [ "${PUSH_DATA_BACKUP_TO_GIT:-0}" = "1" ]; then
-  echo "❌ 已阻止：数据库快照不得进入代码仓。请由加密的异地备份作业复制 BACKUP_DIR。" >&2
-  exit 2
+  validate_plaintext_staging_mount BACKUP_PLAINTEXT_STAGING_MOUNTPOINT
+  local staging_root staging_dev
+  staging_root="$(realpath -e "$BACKUP_PLAINTEXT_STAGING_MOUNTPOINT")"
+  staging_dev="$(device_number "$staging_root")"
+  [[ "$staging_dev" != "$expected_dev" ]] || die "PLAINTEXT_STAGING_MUST_USE_DEDICATED_DEVICE"
+  require_disjoint "$staging_root" "$backup_root" "staging-backup"
+  for source in "$APP_DATA_DIR" "$COMMERCE_DATA_DIR" "$VOICE_SQLITE_PATH" "$VOICE_REFERENCE_AUDIO_DIR" "$STORAGE_LOCAL_BASE_PATH" "$PUBLIC_ASSET_ROOT"; do
+    require_disjoint "$staging_root" "$source" "staging-source"
+  done
+}
+
+validate_tools() {
+  for tool in age pg_dump pg_dumpall pg_restore psql node tar sha256sum realpath mountpoint findmnt stat id lsblk uname; do
+    require_command "$tool"
+  done
+}
+
+emit_plan() {
+  cat <<'EOF'
+{
+  "schemaVersion": "zimeiti-backup-plan.v2",
+  "platform": "linux-only",
+  "mode": "encrypted-component-snapshots",
+  "componentSnapshotCount": 8,
+  "sharedSnapshot": false,
+  "productionConsistency": "incomplete",
+  "plaintextStaging": "dedicated-tmpfs-or-verified-dmcrypt",
+  "plaintextFinalPackageAllowed": false,
+  "atomicEncryptedCommit": true
+}
+EOF
+}
+
+case "$MODE" in
+  -h|--help) print_usage; exit 0 ;;
+  --plan) emit_plan; exit 0 ;;
+  --preflight) validate_tools; validate_configuration; printf 'BACKUP_PREFLIGHT_OK\n'; exit 0 ;;
+  --execute) ;;
+  *) print_usage >&2; die "MODE_INVALID:$MODE" ;;
+esac
+
+validate_tools
+validate_configuration
+[[ -w "$BACKUP_DIR" ]] || die "BACKUP_DIRECTORY_NOT_WRITABLE"
+
+START_EPOCH="$(date +%s)"
+BACKUP_ID="backup-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+PLAIN_WORK_ROOT="$BACKUP_PLAINTEXT_STAGING_MOUNTPOINT/$PLAIN_STAGE_NAME"
+STAGING="$PLAIN_WORK_ROOT/payload"
+PLAIN_ARCHIVE="$PLAIN_WORK_ROOT/package.tar.gz"
+COMPLETE_STAGING="$BACKUP_DIR/.${BACKUP_ID}.commit"
+ENCRYPTED_PARTIAL="$COMPLETE_STAGING/package.tar.gz.age.partial"
+FINAL_PACKAGE="$COMPLETE_STAGING/package.tar.gz.age"
+FINAL_RECEIPT="$COMPLETE_STAGING/receipt.json"
+FINAL_DIR="$BACKUP_DIR/$BACKUP_ID"
+
+cleanup() {
+  case "$PLAIN_WORK_ROOT" in
+    "$BACKUP_PLAINTEXT_STAGING_MOUNTPOINT/$PLAIN_STAGE_NAME") rm -rf -- "$PLAIN_WORK_ROOT" ;;
+    *) printf 'BACKUP_PLAINTEXT_CLEANUP_REFUSED\n' >&2 ;;
+  esac
+  case "$COMPLETE_STAGING" in
+    "$BACKUP_DIR"/.backup-*.commit) rm -rf -- "$COMPLETE_STAGING" ;;
+    *) printf 'BACKUP_COMMIT_CLEANUP_REFUSED\n' >&2 ;;
+  esac
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+mkdir "$PLAIN_WORK_ROOT" "$STAGING" "$COMPLETE_STAGING"
+[[ "$(device_number "$PLAIN_WORK_ROOT")" = "$(device_number "$BACKUP_PLAINTEXT_STAGING_MOUNTPOINT")" ]] || die "PLAINTEXT_WORKSPACE_UNEXPECTED_DEVICE"
+[[ "$(device_number "$COMPLETE_STAGING")" = "$(device_number "$BACKUP_DIR")" ]] || die "ENCRYPTED_COMMIT_UNEXPECTED_DEVICE"
+mkdir "$STAGING/postgres" "$STAGING/sqlite" "$STAGING/files" "$STAGING/audits" "$STAGING/metadata"
+
+node "$PROJECT_ROOT/scripts/backup-postgres-consistent.mjs" --output-root "$STAGING"
+node "$HELPER" sqlite-backup --source "$COMMERCE_DATA_DIR/commerce.sqlite" --destination "$STAGING/sqlite/commerce.sqlite" --report "$STAGING/audits/commerce-sqlite.json" --label commerce-sqlite
+node "$HELPER" sqlite-backup --source "$VOICE_SQLITE_PATH" --destination "$STAGING/sqlite/voice.sqlite" --report "$STAGING/audits/voice-sqlite.json" --label voice-sqlite
+
+node "$HELPER" stable-copy-tree --source "$APP_DATA_DIR" --destination "$STAGING/files/app-data" --report "$STAGING/audits/app-data-tree.json" --label app-data
+node "$HELPER" stable-copy-tree --source "$COMMERCE_DATA_DIR/assets" --destination "$STAGING/files/commerce-assets" --report "$STAGING/audits/commerce-assets-tree.json" --label commerce-assets
+node "$HELPER" stable-copy-tree --source "$VOICE_REFERENCE_AUDIO_DIR" --destination "$STAGING/files/voice-reference-audio" --report "$STAGING/audits/voice-reference-audio-tree.json" --label voice-reference-audio
+node "$HELPER" stable-copy-tree --source "$STORAGE_LOCAL_BASE_PATH" --destination "$STAGING/files/uploads" --report "$STAGING/audits/uploads-tree.json" --label uploads
+node "$HELPER" stable-copy-tree --source "$PUBLIC_ASSET_ROOT" --destination "$STAGING/files/public-assets" --report "$STAGING/audits/public-assets-tree.json" --label public-assets
+
+SOURCE_VERSION="unknown"
+if [[ -f "$PROJECT_ROOT/public/version.json" ]]; then
+  cp "$PROJECT_ROOT/public/version.json" "$STAGING/metadata/source-version.json"
+  SOURCE_VERSION="$(node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).sourceVersion||"unknown";if(!/^[A-Za-z0-9._-]+$/.test(v))process.exit(2);process.stdout.write(v)' "$PROJECT_ROOT/public/version.json")"
 fi
+
+node "$HELPER" write-backup-metadata --output "$STAGING/metadata/package.json" --backup-id "$BACKUP_ID" --source-version "$SOURCE_VERSION" --created-epoch "$START_EPOCH" \
+  --component-report "$STAGING/audits/postgres-component-snapshot.json" \
+  --component-report "$STAGING/audits/commerce-sqlite.json" \
+  --component-report "$STAGING/audits/voice-sqlite.json" \
+  --component-report "$STAGING/audits/app-data-tree.json" \
+  --component-report "$STAGING/audits/commerce-assets-tree.json" \
+  --component-report "$STAGING/audits/voice-reference-audio-tree.json" \
+  --component-report "$STAGING/audits/uploads-tree.json" \
+  --component-report "$STAGING/audits/public-assets-tree.json"
+node "$HELPER" build-manifest --root "$STAGING" --metadata "$STAGING/metadata/package.json" --output "$STAGING/manifest.json"
+node "$HELPER" verify-manifest --root "$STAGING" --manifest "$STAGING/manifest.json"
+
+tar --format=posix --numeric-owner --owner=0 --group=0 -C "$STAGING" -czf "$PLAIN_ARCHIVE" .
+age -R "$BACKUP_AGE_RECIPIENTS_FILE" -o "$ENCRYPTED_PARTIAL" "$PLAIN_ARCHIVE"
+[[ -s "$ENCRYPTED_PARTIAL" ]] || die "ENCRYPTED_PACKAGE_EMPTY"
+node "$HELPER" verify-manifest --root "$STAGING" --manifest "$STAGING/manifest.json"
+mv -n "$ENCRYPTED_PARTIAL" "$FINAL_PACKAGE" || die "FINAL_PACKAGE_COMMIT_FAILED"
+END_EPOCH="$(date +%s)"
+node "$HELPER" write-backup-receipt --output "$FINAL_RECEIPT" --metadata "$STAGING/metadata/package.json" --encrypted-package "$FINAL_PACKAGE" --manifest "$STAGING/manifest.json" --completed-epoch "$END_EPOCH"
+node "$HELPER" validate-receipt --kind backup --document "$FINAL_RECEIPT"
+rm -f -- "$PLAIN_ARCHIVE"
+mv -n "$COMPLETE_STAGING" "$FINAL_DIR" || die "BACKUP_DIRECTORY_COMMIT_FAILED"
+[[ -f "$FINAL_DIR/package.tar.gz.age" && -f "$FINAL_DIR/receipt.json" ]] || die "BACKUP_DIRECTORY_COMMIT_INCOMPLETE"
+printf 'BACKUP_COMPLETE:%s\n' "$FINAL_DIR/receipt.json"

@@ -17,6 +17,9 @@ const context = vm.createContext({
   exports: moduleExports, Buffer, crypto, process: { env: {} }, AbortSignal, console,
   require(specifier: string) {
     if (specifier === '@/lib/server/voice-provider-config') return { loadVolcanoVoiceProviderConfig: async () => ({ apiKey: 'fixture-only' }) };
+    if (specifier === '@/lib/voice-provider-concurrency') {
+      return { withVoiceProviderSlot: async (_providerIdentity: string, operation: () => Promise<unknown>) => operation() };
+    }
     throw new Error(`Unexpected dependency: ${specifier}`);
   },
   fetch: async () => {

@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "user-visible-flow-latency-baseline.v1",
+  "baselineId": "desktop-zero-network-flows-2026-10-10",
+  "frozenAt": "2026-10-10T00:00:00+08:00",
+  "scope": {
+    "evidenceLevel": "schema_verified",
+    "fixtureOnly": true,
+    "productRuntimeVerified": false,
+    "providerVerified": false,
+    "networkPolicy": "deny_all",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "reportingPolicy": {
+    "minimumPositiveDurationMs": 0.1,
+    "roundingDigits": 3,
+    "zeroDurationClaimsAllowed": false,
+    "percentileMethod": "nearest_rank"
+  },
+  "browserMatrix": [
+    {
+      "id": "chromium",
+      "engine": "chromium",
+      "execution": "local_headless",
+      "requiredForLocalPass": true
+    },
+    {
+      "id": "edge",
+      "engine": "chromium",
+      "execution": "local_headless_system_edge",
+      "requiredForLocalPass": true
+    },
+    {
+      "id": "firefox",
+      "engine": "firefox",
+      "execution": "local_headless",
+      "requiredForLocalPass": true
+    },
+    {
+      "id": "safari",
+      "engine": "webkit",
+      "execution": "external_real_safari",
+      "requiredForLocalPass": false,
+      "externalEvidenceRequired": true,
+      "acceptedEvidence": [
+        "Safari version and macOS version",
+        "1440x900-or-larger desktop viewport",
+        "raw user-timing marks",
+        "screen recording showing chat and video flows",
+        "baseline SHA-256 and verifier SHA-256"
+      ]
+    }
+  ],
+  "flows": {
+    "chat": {
+      "fixture": {
+        "simulatedProviderFirstChunkMs": 120,
+        "simulatedProviderChunkCadenceMs": 48,
+        "chunkSizeCharacters": 2
+      },
+      "metrics": {
+        "uiAcknowledgementMs": {
+          "referenceMs": 60,
+          "allowedAbsoluteToleranceMs": 40,
+          "maximumMs": 100
+        },
+        "requestToFirstVisibleTextMs": {
+          "referenceMs": 180,
+          "allowedAbsoluteToleranceMs": 60,
+          "maximumMs": 240
+        },
+        "providerToFirstVisibleTextMs": {
+          "referenceMs": 40,
+          "allowedAbsoluteToleranceMs": 40,
+          "maximumMs": 80
+        },
+        "providerToVisibleChunkP95Ms": {
+          "referenceMs": 40,
+          "allowedAbsoluteToleranceMs": 40,
+          "maximumMs": 80
+        },
+        "visibleMutationGapP95Ms": {
+          "referenceMs": 72,
+          "allowedAbsoluteToleranceMs": 48,
+          "maximumMs": 120
+        },
+        "requestToFinalTextMs": {
+          "referenceMs": 900,
+          "allowedAbsoluteToleranceMs": 600,
+          "maximumMs": 1500
+        }
+      },
+      "invariants": {
+        "textLengthMonotonic": true,
+        "everyVisibleStateIsFinalPrefix": true,
+        "minimumDistinctVisibleStates": 10,
+        "maximumCharactersPerMutation": 2,
+        "finalTextExact": true
+      }
+    },
+    "video": {
+      "fixture": {
+        "providerScheduleMs": {
+          "accepted": 160,
+          "processing": 320,
+          "completed": 560
+        }
+      },
+      "metrics": {
+        "uiAcknowledgementMs": {
+          "referenceMs": 60,
+          "allowedAbsoluteToleranceMs": 40,
+          "maximumMs": 100
+        },
+        "providerToUiStatusP95Ms": {
+          "referenceMs": 40,
+          "allowedAbsoluteToleranceMs": 40,
+          "maximumMs": 80
+        },
+        "providerToHistoryStatusP95Ms": {
+          "referenceMs": 60,
+          "allowedAbsoluteToleranceMs": 60,
+          "maximumMs": 120
+        },
+        "providerCompletedToHistoryCompletedMs": {
+          "referenceMs": 60,
+          "allowedAbsoluteToleranceMs": 60,
+          "maximumMs": 120
+        }
+      },
+      "invariants": {
+        "acknowledgementPrecedesProviderAcceptance": true,
+        "providerStatusOrder": [
+          "accepted",
+          "processing",
+          "completed"
+        ],
+        "uiStatusOrderMatchesProvider": true,
+        "historyStatusOrderMatchesProvider": true,
+        "noUiCompletionBeforeProviderCompletion": true,
+        "noHistoryCompletionBeforeProviderCompletion": true
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "schema_version": "collaboration_handoff_report.v1",
+  "summary": "AGENT-SYNC migration 1400 P1/P2 repair completed without database connection, apply, build, deployment, or Git write.",
+  "changed": [
+    "Candidate-aware release gate blocks while migration 1400 is absent from the formal database contract.",
+    "Category reorder now requires a complete stable category order and rejects filtered subsets with zero writes.",
+    "Coze import aborts before its RPC when any getBotInfo call fails; mixed mutations remain one transaction.",
+    "40001, 23505, 23514, and P0002 conflicts map to HTTP 409.",
+    "Rollback removes functions and ledger; probes cover rollback, reapply, pg_get_functiondef semantic hash, and readiness.",
+    "Agent mutation inventory covers 24 SDK, native SQL, and generated recovery SQL entrypoints.",
+    "Generated avatar cleanup fails closed without unique user_files source/provider metadata."
+  ],
+  "verification": "TypeScript pass; targeted ESLint 0 errors with 39 pre-existing warnings; batch CAS zero-network pass with 24 classified mutation files; candidate release gate pass with current contract blocked and synthetic captured contract ready; shared revision, cache invalidation, permission coverage, and diff-check pass.",
+  "hashes": {
+    "migration": "9aaa21f3a75a063fe3c0a675f7b46a1e5f2be1f8053c4679751fa4007bc5241c",
+    "rollback": "8ba04660bfcdc153567106a237ad14613b5ad0ebbf544d239d2a512298ef7d9a",
+    "apply_probe": "a57e9937ede8243819511c21e7e6307dcce89e5205ab53a13c9bf23450edb31d",
+    "readiness_probe": "69e5a6a840aabf0b4821bce6c2a30c58c25fcc1b17117e3bdf29b7ac85cc77b8",
+    "rollback_probe": "ff839599b6bb6819fe83d5d9ea83dcebb851ad432f605920ef5bdcbf3f13011b"
+  },
+  "not_executed": [
+    "database connection or write",
+    "migration apply",
+    "transaction rollback probe",
+    "build",
+    "deployment",
+    "Git write"
+  ],
+  "next_gate": "Independent audit, then authorized formal-local apply/readiness/rollback-reapply. Only after evidence passes may the database control-plane owner refresh the formal and generated contracts. Production two-end evidence remains open.",
+  "remaining": "Migration 1400 remains candidate-only. Formal-local apply/readiness/rollback-reapply and production two-end evidence are not complete.",
+  "runningOperations": "None.",
+  "nextAction": "Independent audit, then authorized formal-local apply/readiness/rollback-reapply; database control-plane owner refreshes contracts only after evidence passes.",
+  "runtimeIdentity": "No runtime or database identity was connected in this stage.",
+  "productionState": "Unchanged; no Git push, deployment, database write, build, or paid/provider call.",
+  "changedFiles": [
+    "01_网页开发项目/自媒体操盘手/当前版本/src/lib/server/agent-config-cas.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/app/api/admin/agents/reorder/route.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/app/api/admin/agents/import-coze/route.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/components/agent-marketplace.tsx",
+    "01_网页开发项目/自媒体操盘手/当前版本/src/lib/storage.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/update-benchmark-agent-action-loop.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/website-promoter-v2-local.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/backup-storyboard-directors-v6-2.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-release-database-gates.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/lib/shared-agent-batch-cas-candidate-gate.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-candidate-release-gate-zero-network.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-batch-cas-zero-network.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-config-revision-zero-cost.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/apply-shared-agent-batch-cas-local.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-batch-cas-readiness-local.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-batch-cas-rollback-local.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/supabase/migrations/20261010140000_shared_agent_batch_cas.sql",
+    "01_网页开发项目/自媒体操盘手/当前版本/supabase/rollbacks/20261010140000_shared_agent_batch_cas.rollback.sql",
+    "01_网页开发项目/自媒体操盘手/当前版本/docs/deployment/SHARED-AGENT-BATCH-CAS-CANDIDATE-INTEGRATION.md",
+    "01_网页开发项目/自媒体操盘手/当前版本/docs/验收记录/AGENT-SYNC-1400-P1-P2返修交接-2026-10-10.md",
+    "01_网页开发项目/自媒体操盘手/当前版本/docs/验收记录/AGENT-SYNC-1400-P1-P2返修交接-2026-10-10.json"
+  ]
+}

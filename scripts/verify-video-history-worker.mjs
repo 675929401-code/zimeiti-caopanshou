@@ -45,6 +45,7 @@ function statusFixture(task, providerStatus = 'processing') {
     '@/lib/public-model-dto':{},'@/lib/video-error-policy':{classifyVideoProviderError:()=>({publicMessage:'fixture',code:'fixture'})},
     '@/lib/video-terminal-accounting':{recordVideoTerminalOutcome:async()=>{}},
     '@/lib/video-submission-reconciliation':{reconcileStaleVideoSubmissionsForUser:async()=>({expiredCount:0,taskIds:[]})},
+    '@/lib/video-cancellation-runtime':{confirmObservedVideoTaskCancellation:async()=>({confirmed:false})},
     '@/lib/video-routing-snapshot':{parseVideoRoutingSnapshot:()=>null,resolveVideoRoutingCredential:async()=>'',videoModelConfigFromRoutingSnapshot:()=>null},
     '@/lib/provider-secret':{resolveProviderSecret:()=> 'fixture'},
     '@/lib/video-access-ticket':{createVideoAccessUrl:async()=>'/owned-result'},

@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminToken } from "@/lib/admin-auth";
 import { getSupabaseAdminClient, getSupabaseClient } from "@/storage/database/supabase-client";
-import { invalidateBotsCache } from "@/lib/bots-cache";
 import {
   generateAvatarUrlForAgent,
   replaceGeneratedAvatarIfUnclaimed,
@@ -20,6 +19,7 @@ type AgentRow = {
   name: string;
   description: string | null;
   avatar: string | null;
+  config_revision: number;
 };
 
 type GenerationClaim = {
@@ -204,10 +204,11 @@ export async function POST(request: NextRequest) {
 
   try {
     if (scope.mode === "single" && scope.singleAgent) {
+      let singleSnapshot: { avatar: string | null; configRevision: number } | null = null;
       if (scope.singleAgentId) {
         const { data: current, error: currentError } = await getSupabaseClient()
           .from("agents")
-          .select("id,avatar")
+          .select("id,avatar,config_revision")
           .eq("id", scope.singleAgentId)
           .maybeSingle();
         if (currentError) {
@@ -222,6 +223,17 @@ export async function POST(request: NextRequest) {
             { status: 404 },
           );
         }
+        const configRevision = Number(current.config_revision);
+        if (!Number.isSafeInteger(configRevision) || configRevision < 1) {
+          return NextResponse.json(
+            { success: false, error: "智能体版本无效", code: "AGENT_CONFIG_REVISION_INVALID" },
+            { status: 409 },
+          );
+        }
+        singleSnapshot = {
+          avatar: typeof current.avatar === "string" ? current.avatar : null,
+          configRevision,
+        };
         if (!shouldGenerateAvatar(current.avatar)) {
           return NextResponse.json({
             success: false,
@@ -243,21 +255,21 @@ export async function POST(request: NextRequest) {
         if (!avatarUrl) throw new Error("头像生成未返回有效图片，请检查后台启用的头像生图模型");
 
         if (scope.singleAgentId) {
-          const commit = await replaceGeneratedAvatarIfUnclaimed(scope.singleAgentId, avatarUrl);
-          if (commit === "manual-preserved") {
+          if (!singleSnapshot) throw new Error("智能体版本快照缺失");
+          const commit = await replaceGeneratedAvatarIfUnclaimed(scope.singleAgentId, avatarUrl, singleSnapshot);
+          if (commit === "manual-preserved" || commit === "revision-conflict") {
             await recordGenerationResult(request, actor.userId, claim, "failure", {
-              code: "MANUAL_AVATAR_PRESERVED",
+              code: commit === "manual-preserved" ? "MANUAL_AVATAR_PRESERVED" : "AGENT_CONFIG_REVISION_CONFLICT",
               generatedCount: 1,
               savedCount: 0,
             });
             return NextResponse.json({
               success: false,
               error: "生成期间头像已被人工设置，本次生成结果未覆盖人工头像。",
-              code: "MANUAL_AVATAR_PRESERVED",
+              code: commit === "manual-preserved" ? "MANUAL_AVATAR_PRESERVED" : "AGENT_CONFIG_REVISION_CONFLICT",
             }, { status: 409 });
           }
           if (commit !== "updated") throw new Error(commit === "missing" ? "智能体不存在" : "数据库更新失败");
-          invalidateBotsCache();
         }
 
         await recordGenerationResult(request, actor.userId, claim, "success", {
@@ -300,7 +312,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error: dbError } = await getSupabaseClient()
       .from("agents")
-      .select("id,name,description,avatar")
+      .select("id,name,description,avatar,config_revision")
       .eq("is_active", true)
       .in("id", scope.agentIds);
     if (dbError) {
@@ -321,6 +333,17 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
     const agents = scope.agentIds.map((id) => byId.get(id) as AgentRow);
+    const invalidRevisionIds = agents
+      .filter((agent) => !Number.isSafeInteger(Number(agent.config_revision)) || Number(agent.config_revision) < 1)
+      .map((agent) => agent.id);
+    if (invalidRevisionIds.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: "部分智能体配置版本无效，本次未开始生成",
+        code: "AGENT_CONFIG_REVISION_INVALID",
+        invalidRevisionIds,
+      }, { status: 409 });
+    }
     const claim = await claimPaidGeneration(request, actor.userId, scope);
 
     const encoder = new TextEncoder();
@@ -368,9 +391,12 @@ export async function POST(request: NextRequest) {
             );
             if (!avatarUrl) throw new Error("头像生成未返回有效图片，请检查后台启用的头像生图模型");
 
-            const commit = await replaceGeneratedAvatarIfUnclaimed(agent.id, avatarUrl);
+            const commit = await replaceGeneratedAvatarIfUnclaimed(agent.id, avatarUrl, {
+              avatar: agent.avatar,
+              configRevision: Number(agent.config_revision),
+            });
             if (commit !== "updated") {
-              if (commit === "manual-preserved") skippedCount += 1;
+              if (commit === "manual-preserved" || commit === "revision-conflict") skippedCount += 1;
               else failCount += 1;
               sendEvent({
                 type: "progress",
@@ -379,12 +405,19 @@ export async function POST(request: NextRequest) {
                 agentId: agent.id,
                 name: agent.name,
                 success: false,
-                skipped: commit === "manual-preserved",
-                code: commit === "manual-preserved" ? "MANUAL_AVATAR_PRESERVED" : "AUTO_AVATAR_COMMIT_FAILED",
-                error: commit === "manual-preserved" ? "生成期间已设置人工头像，自动任务已跳过" : "数据库更新失败",
+                skipped: commit === "manual-preserved" || commit === "revision-conflict",
+                code: commit === "manual-preserved"
+                  ? "MANUAL_AVATAR_PRESERVED"
+                  : commit === "revision-conflict"
+                    ? "AGENT_CONFIG_REVISION_CONFLICT"
+                    : "AUTO_AVATAR_COMMIT_FAILED",
+                error: commit === "manual-preserved"
+                  ? "生成期间已设置人工头像，自动任务已跳过"
+                  : commit === "revision-conflict"
+                    ? "生成期间智能体配置已变化，本次生成结果已丢弃"
+                    : "数据库更新失败",
               });
             } else {
-              invalidateBotsCache();
               successCount += 1;
               sendEvent({
                 type: "progress",

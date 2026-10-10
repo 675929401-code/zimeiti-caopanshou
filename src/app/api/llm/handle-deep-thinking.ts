@@ -68,36 +68,13 @@ export async function handleDeepThinkingType1(
     let thinkingUsage = { prompt_tokens: 0, completion_tokens: 0, cached_tokens: 0 };
     const encoder = new TextEncoder();
 
-    // 获取标准化 SSE 流（智谱AI 走 zhipuChatStream，其他走通用 proxy）
-    let proxyStream: ReadableStream;
-    if (ctx.isZhipuAI) {
-      proxyStream = await zhipuChatStream(thinkRequest, {
-        apiBase: ctx.apiBase,
-        apiKey: ctx.useApiKey,
-        timeout: Math.min(Math.floor(ctx.agentTimeout / 2), 120),
-        onContent: (text) => { thinkingContent += text; },
-        onReasoning: (text) => { reasoningContent += text; },
-        onUsage: (usage) => { thinkingUsage = usage; },
-      });
-    } else {
-      const thinkProxy = getLLMProxy({
-        apiBase: ctx.apiBase,
-        apiKey: ctx.useApiKey,
-        defaultModel: actualThinkingModel,
-        timeout: Math.min(Math.floor(ctx.agentTimeout / 2), 120),
-        ...llmProxyBindingConfig(ctx.llmProviderBinding),
-      });
-      proxyStream = await thinkProxy.chatStream(thinkRequest, {
-        onContent: (text) => { thinkingContent += text; },
-        onReasoning: (text) => { reasoningContent += text; },
-        onUsage: (usage) => { thinkingUsage = usage; },
-      });
-    }
-
     const mergedStream = new ReadableStream({
       async start(controller) {
         let mergedClosed = false;
         const bufferedThinkingChunks: Uint8Array[] = [];
+        let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+        let lastProgressAt = 0;
+        let lastProgressChars = 0;
         const safeEnqueue = (chunk: Uint8Array): boolean => {
           if (mergedClosed) return false;
           try {
@@ -110,11 +87,60 @@ export async function handleDeepThinkingType1(
         };
         const safeClose = () => {
           if (mergedClosed) return;
+          if (heartbeatTimer) clearInterval(heartbeatTimer);
           try { controller.close(); } catch { /* already closed */ }
           mergedClosed = true;
         };
+        const emitProgress = (phase: "thinking" | "answer", receivedChars: number) => {
+          const now = Date.now();
+          if (receivedChars < 1 || (lastProgressAt !== 0 && now - lastProgressAt < 800 && receivedChars - lastProgressChars < 240)) return;
+          safeEnqueue(encoder.encode(`data: ${JSON.stringify({
+            type: "generation_progress",
+            phase,
+            received_chars: receivedChars,
+            stream_delivery: "buffered",
+          })}\n\n`));
+          lastProgressAt = now;
+          lastProgressChars = receivedChars;
+        };
 
         try {
+          safeEnqueue(encoder.encode(": heartbeat\n\n"));
+          safeEnqueue(encoder.encode(`data: ${JSON.stringify({
+            type: "stream_delivery",
+            stream_delivery: "buffered",
+            stream_delivery_reason: "deep_thinking_multi_stage_atomic_budget_unavailable",
+          })}\n\n`));
+          heartbeatTimer = setInterval(() => {
+            safeEnqueue(encoder.encode(": heartbeat\n\n"));
+          }, 5_000);
+
+          // 上游连接必须在外层 SSE 建立并交付首包后才开始。
+          let proxyStream: ReadableStream<Uint8Array>;
+          if (ctx.isZhipuAI) {
+            proxyStream = await zhipuChatStream(thinkRequest, {
+              apiBase: ctx.apiBase,
+              apiKey: ctx.useApiKey,
+              timeout: Math.min(Math.floor(ctx.agentTimeout / 2), 120),
+              onContent: (text) => { thinkingContent += text; emitProgress("thinking", thinkingContent.length + reasoningContent.length); },
+              onReasoning: (text) => { reasoningContent += text; emitProgress("thinking", thinkingContent.length + reasoningContent.length); },
+              onUsage: (usage) => { thinkingUsage = usage; },
+            });
+          } else {
+            const thinkProxy = getLLMProxy({
+              apiBase: ctx.apiBase,
+              apiKey: ctx.useApiKey,
+              defaultModel: actualThinkingModel,
+              timeout: Math.min(Math.floor(ctx.agentTimeout / 2), 120),
+              ...llmProxyBindingConfig(ctx.llmProviderBinding),
+            });
+            proxyStream = await thinkProxy.chatStream(thinkRequest, {
+              onContent: (text) => { thinkingContent += text; emitProgress("thinking", thinkingContent.length + reasoningContent.length); },
+              onReasoning: (text) => { reasoningContent += text; emitProgress("thinking", thinkingContent.length + reasoningContent.length); },
+              onUsage: (usage) => { thinkingUsage = usage; },
+            });
+          }
+
           // 思考内容先在服务端缓冲；只有该阶段原子结算成功后才交付。
           await proxyStream.pipeTo(new WritableStream({
             write(chunk) {
@@ -162,8 +188,14 @@ export async function handleDeepThinkingType1(
           // 阶段2：链式调用对话模型
           if (thinkBlock) {
             safeEnqueue(encoder.encode(
-              `data: ${JSON.stringify({ thinking_complete: true })}\n\n`,
+              `data: ${JSON.stringify({
+                thinking_complete: true,
+                stream_delivery: "buffered",
+                stream_delivery_reason: "deep_thinking_phase_settled_before_replay",
+              })}\n\n`,
             ));
+            lastProgressAt = 0;
+            lastProgressChars = 0;
 
             const enrichedMessages = [
               ...ctx.searchInjectedMessages,
@@ -193,7 +225,7 @@ export async function handleDeepThinkingType1(
                 apiBase: ctx.apiBase,
                 apiKey: ctx.useApiKey,
                 timeout: Math.min(ctx.agentTimeout, 300),
-                onContent: (text) => { fullContent += text; },
+                onContent: (text) => { fullContent += text; emitProgress("answer", fullContent.length); },
                 onUsage: (usage) => { finalUsage = usage; },
               });
             } else {
@@ -205,7 +237,7 @@ export async function handleDeepThinkingType1(
                 ...llmProxyBindingConfig(ctx.llmProviderBinding),
               });
               chatStream = await chatProxy.chatStream(chatRequest, {
-                onContent: (text) => { fullContent += text; },
+                onContent: (text) => { fullContent += text; emitProgress("answer", fullContent.length); },
                 onUsage: (usage) => { finalUsage = usage; },
               });
             }
@@ -249,6 +281,8 @@ export async function handleDeepThinkingType1(
                   safeEnqueue(encoder.encode(`data: ${JSON.stringify({
                     billing_complete: true,
                     phase: "answer",
+                    stream_delivery: "buffered",
+                    stream_delivery_reason: "deep_thinking_multi_stage_atomic_budget_unavailable",
                     operation_id: settlement.operationId,
                     credits_charged: settlement.billing?.creditsCharged || 0,
                     balance_after: settlement.balanceAfter,
@@ -296,6 +330,8 @@ export async function handleDeepThinkingType1(
             `data: ${JSON.stringify({ error: "思考流中断" })}\n\n`,
           ));
           safeClose();
+        } finally {
+          if (heartbeatTimer) clearInterval(heartbeatTimer);
         }
       },
     });
@@ -306,6 +342,8 @@ export async function handleDeepThinkingType1(
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
         "X-Accel-Buffering": "no",
+        "X-Stream-Delivery": "buffered",
+        "X-Stream-Delivery-Reason": "deep_thinking_multi_stage_atomic_budget_unavailable",
       },
     });
   } catch (thinkErr) {

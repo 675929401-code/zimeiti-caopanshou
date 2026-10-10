@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
+import { fetchBrandAssetUpstream } from "@/lib/server/brand-asset-upstream";
 import { readAdminPlatformBrandAsset } from "@/lib/server/brand-authority";
 import { storageManager } from "@/storage/object";
 
@@ -59,17 +60,19 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     }
 
     const headers = privateAssetHeaders(asset);
-    const signedUrl = await storageManager.getSignedUrl(
-      asset.storageKey,
-      { expireTime: 120, responseContentType: asset.mimeType },
-      asset.storageProvider,
-    );
-    if (/^https?:\/\//iu.test(signedUrl)) {
-      const upstream = await fetch(signedUrl, {
-        cache: "no-store",
-        redirect: "follow",
-        signal: AbortSignal.timeout(15_000),
-      });
+    // LocalProvider returns an absolute /uploads URL in development. Newly
+    // uploaded draft assets are authoritative in the provider directory and
+    // are not guaranteed to be visible through the active build's public
+    // files, so never self-fetch local previews over HTTP.
+    const signedUrl = asset.storageProvider === "local"
+      ? null
+      : await storageManager.getSignedUrl(
+        asset.storageKey,
+        { expireTime: 120, responseContentType: asset.mimeType },
+        asset.storageProvider,
+      );
+    if (signedUrl && /^https?:\/\//iu.test(signedUrl)) {
+      const upstream = await fetchBrandAssetUpstream(signedUrl);
       if (!upstream.ok || !upstream.body) {
         return NextResponse.json({ error: "品牌资产暂时不可读取" }, {
           status: upstream.status === 404 ? 404 : 502,

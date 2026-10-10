@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeToken, getTokenFromHeaders } from '@/lib/auth';
 import { UploadValidationError, validateUploadBuffer } from '@/lib/file-upload-security';
-import { isUserProfileAvatarPreset } from '@/lib/user-profile-avatar';
+import { isUserProfileAvatarPreset, userProfileAvatarProxyUrl } from '@/lib/user-profile-avatar';
 import { getSupabaseAdminClient } from '@/storage/database/supabase-client';
 import { storageManager } from '@/storage/object';
 import type { StorageProviderType } from '@/storage/object';
@@ -176,9 +176,10 @@ export async function POST(request: NextRequest) {
     }
 
     const previous = await currentAvatar(actor.userId);
+    const stableAvatarUrl = userProfileAvatarProxyUrl(stored.key, stored.provider);
     const { error } = await getSupabaseAdminClient().from('user_profile_avatars').upsert({
       user_id: actor.userId,
-      avatar_url: stored.url,
+      avatar_url: stableAvatarUrl,
       storage_provider: stored.provider,
       storage_key: stored.key,
       source: 'upload',
@@ -187,7 +188,7 @@ export async function POST(request: NextRequest) {
     if (error) throw new Error(avatarDatabaseFailure(error, 'AVATAR_WRITE_FAILED'));
     await removePreviousUpload(previous, stored.key);
     uploaded = null;
-    return json({ success: true, avatarUrl: stored.url });
+    return json({ success: true, avatarUrl: stableAvatarUrl });
   } catch (error) {
     if (uploaded) {
       try { await storageManager.delete(uploaded.key, uploaded.provider); } catch {}

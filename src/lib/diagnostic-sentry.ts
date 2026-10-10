@@ -90,6 +90,7 @@ function collectBrowserInfo(): Record<string, string> {
 // ── 自动监测 ──
 
 let monitoringActive = false;
+let pageLifecycleEnding = false;
 
 type OperationDomain = "chat" | "image" | "video" | "voice" | "extract" | "payment" | "auth" | "storage" | "admin" | "system" | "other";
 
@@ -135,6 +136,27 @@ function productUsageJourneyId(): string | null {
 function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
   const method = init?.method || (input instanceof Request ? input.method : "GET");
   return method.toUpperCase();
+}
+
+function requestSignal(input: RequestInfo | URL, init?: RequestInit): AbortSignal | null {
+  return init?.signal || (input instanceof Request ? input.signal : null);
+}
+
+function isPageRequestObsolete(signal: AbortSignal | null, startedPageUrl: string): boolean {
+  return signal?.aborted === true
+    || pageLifecycleEnding
+    || window.location.href !== startedPageUrl;
+}
+
+function isObsoleteNavigationRequest(
+  error: unknown,
+  signal: AbortSignal | null,
+  startedPageUrl: string,
+): boolean {
+  const errorName = error && typeof error === "object" && "name" in error
+    ? String(error.name)
+    : "";
+  return errorName === "AbortError" || isPageRequestObsolete(signal, startedPageUrl);
 }
 
 function traceFromBody(body: BodyInit | null | undefined): string | null {
@@ -195,6 +217,8 @@ function submitFlightEvent(payload: Record<string, unknown>): void {
 export function startDiagnosticMonitoring() {
   if (monitoringActive || typeof window === "undefined") return;
   monitoringActive = true;
+  window.addEventListener("beforeunload", () => { pageLifecycleEnding = true; });
+  window.addEventListener("pagehide", () => { pageLifecycleEnding = true; });
 
   // 1. 监听 JS 运行时错误
   window.addEventListener("error", (event) => {
@@ -235,8 +259,10 @@ export function startDiagnosticMonitoring() {
     const descriptor = operationDescriptor(path);
     if (!descriptor) return originalFetch.apply(this, args);
     const method = requestMethod(args[0], args[1]);
+    const signal = requestSignal(args[0], args[1]);
     const prepared = prepareTrace(args[0], args[1]);
     const startTime = Date.now();
+    const startedPageUrl = window.location.href;
     const productFeature = method !== "GET" && method !== "HEAD" ? productUsageFeatureForApi(path) : null;
     const productJourney = productFeature ? productUsageJourneyId() : null;
     if (productFeature && productJourney) {
@@ -250,6 +276,7 @@ export function startDiagnosticMonitoring() {
 
     try {
       const response = await originalFetch.apply(this, prepared.args as Parameters<typeof fetch>);
+      if (isPageRequestObsolete(signal, startedPageUrl)) return response;
       const duration = Date.now() - startTime;
 
       pushLog({
@@ -329,6 +356,10 @@ export function startDiagnosticMonitoring() {
 
       return response;
     } catch (err) {
+      // Route changes routinely cancel obsolete reads. They are neither an
+      // outage nor a failed user operation, so keep them out of durable
+      // diagnostics while preserving the original fetch rejection.
+      if (isObsoleteNavigationRequest(err, signal, startedPageUrl)) throw err;
       const duration = Date.now() - startTime;
       const errorMsg = err instanceof Error ? err.message : String(err);
 

@@ -11,6 +11,8 @@ assert.doesNotMatch(source, /normalizeVideoPromptTiming|durationInstruction|ๆ—ถ้
 assert.match(source, /const executionPrompt = inputContract\.supportsPrompt \? trimmedPrompt : "";/u, 'video route does not preserve the trimmed user prompt');
 assert.match(source, /videoBillingAdapterAdmission\(selectedProtocolConfig\)/u, 'video route must evaluate the provider billing adapter before submission');
 assert.match(source, /error_code: billingAdmission\.code[\s\S]*task_submitted: false[\s\S]*price: 0/u, 'unsupported provider billing must fail closed before charging or dispatch');
+assert.match(source, /status: "billing_pending"[\s\S]*submission_outcome: "not_submitted"[\s\S]*task_submitted: false/u, 'unconfirmed admission release must never look queued');
+assert.match(source, /status: "failed"[\s\S]*submission_outcome: "not_submitted"[\s\S]*task_submitted: false/u, 'persisted admission rejection must be terminal in the client contract');
 const tree = ts.createSourceFile(routePath, source, ts.ScriptTarget.Latest, true);
 const post = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'POST');
 const outerTry = post.body.statements.find(ts.isTryStatement);
@@ -45,12 +47,18 @@ const adminTree = ts.createSourceFile('admin-auth.ts', adminSource, ts.ScriptTar
 const adminFunction = adminTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'createAdminTokenAuthorizer');
 assert.ok(adminFunction);
 const state = {};
+class FixtureProviderAdmissionBusyError extends Error {
+  constructor() { super('Fixture admission busy'); this.code = 'PROVIDER_ADMISSION_BUSY'; this.status = 429; this.retryAfterSeconds = 3; }
+}
+class FixtureProviderAdmissionUnavailableError extends Error {
+  constructor() { super('Fixture admission unavailable'); this.code = 'PROVIDER_ADMISSION_CONTROL_UNAVAILABLE'; this.status = 503; }
+}
 const report = { at: new Date().toISOString(), routeSha256: createHash('sha256').update(source).digest('hex'), actualAstBranches: true, realNetworkRequests: 0, databaseWrites: 0, cases: [] };
 function reset() {
   Object.assign(state, { user: { id: 'fixture-owner', role: 'admin', is_active: true, status: 'active', session_id: 'fixture-session' }, staleJwtRole: 'admin', authDbError: false, signatureValid: true,
     row: { id: 'vt_fixture', user_id: 'fixture-owner', request_fingerprint: 'fixture-fingerprint', status: 'pending', task_id_external: null },
     updateMode: 'ok', bindError: false, providerError: false, providerResult: { taskId: '', status: 'processing', submissionOutcome: 'unknown' },
-    providerCalls: 0, bindCalls: 0, submissionFailureCalls: 0, healthCalls: [], updates: [], order: [], traces: [], dispatchReceipts: [], submissionReceipts: [],
+    providerCalls: 0, bindCalls: 0, submissionFailureCalls: 0, admissionMode: 'available', admissionReleases: 0, healthCalls: [], updates: [], order: [], traces: [], dispatchReceipts: [], submissionReceipts: [],
   });
 }
 const db = { from(table) {
@@ -81,6 +89,13 @@ const common = {
   verifyToken: async () => payload(),
   db,
   writeVideoTrace: async value => { state.traces.push(value); },
+  ProviderAdmissionBusyError: FixtureProviderAdmissionBusyError,
+  ProviderAdmissionUnavailableError: FixtureProviderAdmissionUnavailableError,
+  acquireProviderAdmission: async () => {
+    if (state.admissionMode === 'busy') throw new FixtureProviderAdmissionBusyError();
+    if (state.admissionMode === 'unavailable') throw new FixtureProviderAdmissionUnavailableError();
+    return { leaseId: 'fixture-admission', expiresAt: Date.now() + 60_000, release: async () => { state.admissionReleases++; } };
+  },
   publicModelDisplayName: () => 'Fixture model',
   classifyVideoProviderError: () => ({ code: 'FIXTURE_PROVIDER_ERROR', category: 'provider', publicMessage: 'Fixture rejected', operatorMessage: 'Fixture rejected', retryable: true }),
   videoTerminalErrorResponse: () => null,
@@ -91,7 +106,7 @@ const common = {
     if (state.row.task_id_external && state.row.task_id_external !== value.providerTaskId) throw new Error('FIXTURE_BIND_CONFLICT');
     state.row.task_id_external = value.providerTaskId;
   },
-  markVideoSubmissionFailed: async () => { state.submissionFailureCalls++; state.order.push('submission-rpc'); if (!state.row.task_id_external) state.row.status = 'failed'; },
+  markVideoSubmissionFailed: async () => { state.submissionFailureCalls++; state.order.push('submission-rpc'); if (!state.row.task_id_external) state.row.status = 'failed'; return true; },
   recordVideoTerminalOutcome: async value => { state.healthCalls.push(value); state.order.push('health'); },
   persistVideoProviderDispatchReceipt: async value => {
     assert.equal(value.taskIdInternal, state.row.id); assert.equal(value.userId, state.row.user_id); assert.equal(value.requestFingerprint, state.row.request_fingerprint);
@@ -113,6 +128,7 @@ const common = {
   traceId: 'fixture-trace', traceModelId: 'fixture-model', traceTaskLabel: 'fixture-task', tracePromptHash: 'fixture-prompt',
   normalizedClientRequestId: 'fixture-original-key', channelConfig: {}, executionPrompt: 'Fixture', effectiveImageUrl: undefined, effectiveLastFrameUrl: undefined, effectiveReferenceImageUrl: undefined,
   effectiveAudioUrl: undefined, effectiveReferenceImageUrls: [], effectiveReferenceAudioUrls: [], source_video_url: undefined, effectiveSourceVideoUrl: undefined, body: { inputOwnerId: 'untrusted-body-owner' }, negative_prompt: undefined,
+  adapterParams: { prompt: 'Fixture', idempotencyKey: 'fixture-provider-original' },
   videoTiming: { submit: 5 }, aspect_ratio: '16:9', selectedResolution: '720p', taskIdentity: { taskIdInternal: 'vt_fixture', providerIdempotencyKey: 'fixture-provider-original' }, submitMs: 0,
 };
 function compile(code, additions = {}) {
@@ -155,6 +171,15 @@ await test('adapter exception before provider dispatch fails locally without poi
   state.providerError = true; const response = await submit(); const body = await response.json();
   assert.equal(response.status, 502); assert.equal(body.status, 'failed'); assert.equal(body.business_task_id, 'vt_fixture');
   assert.equal(state.submissionFailureCalls, 1); assert.equal(state.healthCalls.length, 0);
+});
+for (const [mode, expectedStatus, expectedCode] of [
+  ['busy', 429, 'PROVIDER_ADMISSION_BUSY'],
+  ['unavailable', 503, 'PROVIDER_ADMISSION_CONTROL_UNAVAILABLE'],
+]) await test('provider admission ' + mode + ' fails before provider and releases reservation', async () => {
+  state.admissionMode = mode; const response = await submit(); const body = await response.json();
+  assert.equal(response.status, expectedStatus); assert.equal(body.error_code, expectedCode); assert.equal(body.task_submitted, false);
+  assert.equal(state.providerCalls, 0); assert.equal(state.submissionFailureCalls, 1); assert.equal(state.admissionReleases, 0);
+  if (mode === 'busy') assert.equal(response.headers.get('retry-after'), '3');
 });
 await test('failed task with provider ID binds before terminal CAS and counts health once', async () => {
   state.providerResult = { taskId: 'provider-original', status: 'failed', error: 'Fixture failure' };

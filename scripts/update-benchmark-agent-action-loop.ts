@@ -14,7 +14,7 @@ const EXPECTED_BASELINE_PROMPT_SHAS=[
 ];
 const CONFIRM_FLAG='--confirm-local-only-benchmark-agent';
 const EVIDENCE_KEY='benchmark-action-loop-20260928';
-const FIELDS='id,name,description,system_prompt,guide_message,preset_fields,category,sort_order,model,model_id,max_reply_tokens,temperature,is_active,user_access,deleted_at,updated_at';
+const FIELDS='id,name,description,system_prompt,guide_message,preset_fields,category,sort_order,model,model_id,max_reply_tokens,temperature,is_active,user_access,deleted_at,config_revision,updated_at';
 
 const sha256=(value:string)=>createHash('sha256').update(value,'utf8').digest('hex');
 
@@ -106,13 +106,14 @@ async function main(){
  await client.connect();
  try{
   await client.query('begin');
-  const locked=await client.query('select id, name, description, system_prompt, guide_message, updated_at from public.agents where id=$1 for update',[TARGET_ID]);
+  const locked=await client.query('select id, name, description, system_prompt, guide_message, config_revision, updated_at from public.agents where id=$1 for update',[TARGET_ID]);
   assert.equal(locked.rowCount,1,'事务内未找到目标智能体');
   const lockedRow=locked.rows[0] as Record<string,unknown>;
   assert.equal(lockedRow.name,before.name,'事务内目标名称发生变化');
   assert.equal(lockedRow.description,before.description,'事务开始前目标描述已并发变化');
   assert.equal(lockedRow.system_prompt,before.system_prompt,'事务开始前目标提示词已并发变化');
   assert.equal(lockedRow.guide_message,before.guide_message,'事务开始前目标欢迎语已并发变化');
+  assert.equal(Number(lockedRow.config_revision),Number(before.config_revision),'事务开始前目标配置版本已并发变化');
 
   const latestBefore=await client.query('select id, prompt from public.prompt_versions where agent_id=$1 order by created_at desc limit 1',[TARGET_ID]);
   if(String(latestBefore.rows[0]?.prompt||'')!==beforePrompt){
@@ -125,8 +126,8 @@ async function main(){
 
   if(beforePromptSha!==newPromptSha||before.description!==config.description||before.guide_message!==config.guide_message){
    const updated=await client.query(
-    'update public.agents set description=$1, system_prompt=$2, guide_message=$3, updated_at=$4 where id=$5 returning id',
-    [config.description,config.system_prompt,config.guide_message,new Date().toISOString(),TARGET_ID],
+    'update public.agents set description=$1, system_prompt=$2, guide_message=$3, updated_at=$4 where id=$5 and config_revision=$6 returning id,config_revision',
+    [config.description,config.system_prompt,config.guide_message,new Date().toISOString(),TARGET_ID,Number(before.config_revision)],
    );
    assert.equal(updated.rowCount,1,'目标智能体事务更新未命中');
   }

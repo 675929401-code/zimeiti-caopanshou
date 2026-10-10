@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { withAuth } from "@/lib/api-middleware";
 import {
   DatabaseImageExactlyOnceStore,
   ImageExactlyOnceError,
   getImageProviderCheckpointState,
   getImageRequestRejection,
+  getImageRejectionBillingRelease,
   ImageRequestRejectedError,
 } from "@/lib/image-exactly-once";
-import { parseImageFailureRequestSnapshot } from "@/lib/image-failure-history";
+import {
+  imageFailureBillingReferenceId,
+  imageFailureBillingReleaseProjection,
+  imageFailureBillingStateFromOperations,
+  parseImageFailureRequestSnapshot,
+  type ImageFailureBillingState,
+  type ImageFailureWalletOperation,
+} from "@/lib/image-failure-history";
 import { COVER_ATTEMPT_ACTIVE_STATES, coverAttemptProjection, isCoverAttemptRow } from "@/lib/cover-durable-attempt";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { imageProviderEvidenceProjection } from "@/lib/image-provider-request-audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,20 +42,27 @@ function resumeInput(record: Awaited<ReturnType<DatabaseImageExactlyOnceStore["g
       prompt: snapshot.prompt,
       modelId: snapshot.publicModelId,
       mode: snapshot.publicModelId.startsWith("workflow:") ? "workflow" : "local",
-      style: "",
+      style: snapshot.style || "",
       aspectRatio: snapshot.aspectRatio,
       resolution: snapshot.resolution,
       coverText: snapshot.exactCoverText || "",
       referenceImageUrls: [],
-      referenceUsage: "general",
+      referenceUsage: snapshot.referenceUsage || "general",
       historySurface: snapshot.surface,
       resumeDeliveryOnly: true,
+    },
+    requestIntegrity: {
+      schema: snapshot.schema,
+      ...(snapshot.payloadFingerprint ? { payloadFingerprint: snapshot.payloadFingerprint } : {}),
+      ...(snapshot.providerProtocol ? { providerProtocol: snapshot.providerProtocol } : {}),
+      ...(snapshot.outputPixelSize ? { outputPixelSize: snapshot.outputPixelSize } : {}),
+      imageCount: snapshot.imageCount || 1,
     },
   };
 }
 
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (user) => {
+  return withAuth(request, async (user, authenticatedDb) => {
 
   const clientIdempotencyKey = request.nextUrl.searchParams.get("clientIdempotencyKey")?.trim() || "";
   const clientTraceId = request.nextUrl.searchParams.get("clientTraceId")?.trim() || "";
@@ -99,16 +116,51 @@ export async function GET(request: NextRequest) {
 
     const rejection = getImageRequestRejection(record);
     if (rejection) {
-      return response({ success: true, state: "rejected", code: rejection.code,
-        canRecover: false, canResubmit: true, sameKeyCanResubmit: false,
+      const snapshot = parseImageFailureRequestSnapshot(record.requestSnapshot);
+      const billingReferenceId = imageFailureBillingReferenceId(user.id, record.clientIdempotencyKey);
+      const durableRelease = getImageRejectionBillingRelease(record);
+      let billingState: ImageFailureBillingState = snapshot?.billingExempt ? "exempt" : "unknown";
+      if (snapshot) {
+        const billing = await (authenticatedDb as SupabaseClient).from("wallet_operations")
+          .select("idempotency_key,operation_kind,amount,status")
+          .eq("user_id", user.id)
+          .in("operation_kind", ["cash_charge", "cash_refund"])
+          .in("idempotency_key", [billingReferenceId, `${billingReferenceId}:release`]);
+        billingState = imageFailureBillingStateFromOperations({
+          billingReferenceId,
+          billingExempt: snapshot.billingExempt,
+          operations: (billing.data || []) as ImageFailureWalletOperation[],
+          queryFailed: Boolean(billing.error),
+        }).state;
+        if (billing.error && durableRelease?.state === "confirmed"
+          && durableRelease.referenceId === billingReferenceId) {
+          billingState = "not_charged";
+        }
+      }
+      const release = imageFailureBillingReleaseProjection(billingState);
+      return response({ success: true,
+        providerEvidence: imageProviderEvidenceProjection(record),
+        state: release.canResubmit ? "rejected" : "billing_release_pending",
+        rejectionState: "rejected",
+        code: rejection.code,
+        canRecover: false, canResubmit: release.canResubmit, sameKeyCanResubmit: false,
+        billingHeld: release.billingHeld,
+        billingReleaseState: release.billingReleaseState,
+        billingReconciliation: release.reconciliationState,
+        billingReferenceId,
+        ...(release.retryBlockReason ? { retryBlockReason: release.retryBlockReason } : {}),
         ...(rejection.upstreamStatus ? { upstreamStatus: rejection.upstreamStatus } : {}),
-        message: new ImageRequestRejectedError(rejection).message, updatedAt: record.updatedAt });
+        message: release.canResubmit
+          ? new ImageRequestRejectedError(rejection).message
+          : "图片请求已明确拒绝，费用仍在自动对账或释放；确认完成前不可使用新键重提。",
+        updatedAt: record.updatedAt });
     }
 
     if (record.state === "completed" && record.response) {
       const delivered = record.deliveryState === "delivered" && Boolean(record.deliveryAssetId);
       return response({
         success: true,
+        providerEvidence: imageProviderEvidenceProjection(record),
         state: delivered ? "completed" : "provider_completed_pending_delivery",
         canRecover: true,
         canResubmit: false,
@@ -126,6 +178,7 @@ export async function GET(request: NextRequest) {
     if (checkpoint.hasCheckpoint) {
       return response({
         success: true,
+        providerEvidence: imageProviderEvidenceProjection(record),
         state: "provider_completed_pending_delivery",
         canRecover: !checkpoint.persistenceInProgress,
         canResubmit: false,
@@ -144,6 +197,7 @@ export async function GET(request: NextRequest) {
     if (record.state === "intent") {
       return response({
         success: true,
+        providerEvidence: imageProviderEvidenceProjection(record),
         state: "processing",
         canRecover: false,
         canResubmit: false,
@@ -154,6 +208,7 @@ export async function GET(request: NextRequest) {
 
     return response({
       success: true,
+      providerEvidence: imageProviderEvidenceProjection(record),
       state: "unknown",
       canRecover: false,
       canResubmit: false,

@@ -31,7 +31,7 @@ async function sourceContracts() {
   const fileEntries = await Promise.all([
     'src/lib/digital-video-queue-worker.ts',
     'src/lib/digital-human-long-worker.ts',
-    'src/lib/video-history-archive-worker.ts',
+    'src/lib/user-content-retention-worker.ts',
     'src/lib/media-queue-worker-runtime.ts',
     'src/lib/durable-queue-loop.ts',
     'src/commerce/server/ordinary-worker.ts',
@@ -67,7 +67,7 @@ async function sourceContracts() {
   check('worker runtime handles PM2 shutdown messages and signal fallback with bounded drain',
     files['src/lib/media-queue-worker-runtime.ts'].includes("message === 'shutdown'")
       && files['src/lib/media-queue-worker-runtime.ts'].includes("process.once('SIGTERM'")
-      && files['src/lib/media-queue-worker-runtime.ts'].includes('stopVideoHistoryArchiveWorker')
+      && files['src/lib/media-queue-worker-runtime.ts'].includes('stopUserContentRetentionWorker')
       && files['src/lib/media-queue-worker-runtime.ts'].includes('stopDigitalVideoQueueWorker')
       && files['src/lib/media-queue-worker-runtime.ts'].includes('stopDigitalHumanLongWorker')
       && files['src/lib/media-queue-worker-runtime.ts'].includes('stopCommerceOrdinaryWorker'),
@@ -76,21 +76,19 @@ async function sourceContracts() {
     files['src/lib/media-queue-worker-runtime.ts'].includes('startCommerceOrdinaryWorker()')
       && files['src/lib/media-queue-worker-runtime.ts'].includes('commerceOrdinary: commerceOrdinaryWorkerStatus()'),
     { start: true, status: true });
-  check('dedicated runtime owns the asynchronous video history archive loop',
-    files['src/lib/media-queue-worker-runtime.ts'].includes('startVideoHistoryArchiveWorker()')
-      && files['src/lib/media-queue-worker-runtime.ts'].includes('videoHistoryArchive: videoHistoryArchiveWorkerStatus()')
-      && files['src/lib/video-history-archive-worker.ts'].includes("db.rpc('claim_video_history_archive_batch'")
-      && files['src/lib/video-history-archive-worker.ts'].includes("db.rpc('complete_video_history_archive_job'")
-      && files['src/lib/video-history-archive-worker.ts'].includes('refreshedHostedResultUrl')
-      && files['src/lib/video-history-archive-worker.ts'].includes('pollVideoTask')
-      && !/(?:generate|submit).*\bPOST\b|wallet|billing|deduct/iu.test(files['src/lib/video-history-archive-worker.ts']),
-    { start: true, status: true, databaseLease: true, hostedResultRefresh: true, providerPosts: 0, billingMutations: 0 });
+  check('dedicated runtime owns bounded user-content retention without provider or billing work',
+    files['src/lib/media-queue-worker-runtime.ts'].includes('startUserContentRetentionWorker()')
+      && files['src/lib/media-queue-worker-runtime.ts'].includes('userContentRetention: userContentRetentionWorkerStatus()')
+      && files['src/lib/user-content-retention-worker.ts'].includes("db.rpc('purge_expired_user_content'")
+      && files['src/lib/user-content-retention-worker.ts'].includes('RETENTION_MAX_BATCHES_PER_TICK = 10')
+      && !/(?:generate|submit).*\bPOST\b|wallet|billing|deduct/iu.test(files['src/lib/user-content-retention-worker.ts']),
+    { start: true, status: true, maxBatches: 10, providerPosts: 0, billingMutations: 0 });
   check('Commerce ordinary coordinator has database leases and covers jobs, media edits, frames, and depth preparation',
     files['src/commerce/server/ordinary-worker.ts'].includes("LEASE_BUCKET='commerce-ordinary-worker-leases'")
       && files['src/commerce/server/ordinary-worker.ts'].includes("kind:'job'|'media-edit'|'frame-extraction'|'depth-preparation'")
       && files['src/commerce/server/ordinary-worker.ts'].includes('claimCommerceOrdinaryLease')
       && files['src/commerce/server/ordinary-worker.ts'].includes('renewCommerceOrdinaryLease')
-      && files['src/commerce/server/ordinary-worker.ts'].includes('reconcileStaleUndispatchedCommerceJobs'),
+      && files['src/commerce/server/ordinary-worker.ts'].includes('claimStaleUndispatchedCommerceJob'),
     { databaseLease: true, job: true, mediaEdit: true, frameExtraction: true, depthPreparation: true });
 
   const previous = {
@@ -196,9 +194,9 @@ async function databaseContracts() {
       'claim_digital_human_long_segment',
       'claim_digital_human_long_finalization',
       'begin_digital_human_long_segment_post',
-      'claim_video_history_archive_batch',
-      'complete_video_history_archive_job',
-      'fail_video_history_archive_attempt',
+      'purge_expired_user_content',
+      'mark_video_upstream_source_expired',
+      'scrub_transient_video_extraction_content',
     ];
     const definitions = await client.query<{ proname: string; definition: string }>(
       `SELECT p.proname,pg_get_functiondef(p.oid) AS definition
@@ -216,9 +214,9 @@ async function databaseContracts() {
     const longClaim = functionMap.get('claim_digital_human_long_segment') || '';
     const longFinalization = functionMap.get('claim_digital_human_long_finalization') || '';
     const longBegin = functionMap.get('begin_digital_human_long_segment_post') || '';
-    const archiveClaim = functionMap.get('claim_video_history_archive_batch') || '';
-    const archiveComplete = functionMap.get('complete_video_history_archive_job') || '';
-    const archiveFail = functionMap.get('fail_video_history_archive_attempt') || '';
+    const retentionPurge = functionMap.get('purge_expired_user_content') || '';
+    const sourceExpiry = functionMap.get('mark_video_upstream_source_expired') || '';
+    const transientScrub = functionMap.get('scrub_transient_video_extraction_content') || '';
     check('ordinary queue claim is atomic and supports multiple worker processes',
       /FOR UPDATE SKIP LOCKED/iu.test(ordinaryClaim)
         && /lease_owner\s*=\s*p_worker/iu.test(ordinaryClaim)
@@ -244,17 +242,17 @@ async function databaseContracts() {
         && /CASE\s+WHEN\s+provider_task_id\s+IS\s+NULL\s+THEN\s+'submission_unknown'\s+ELSE\s+'running'/iu.test(longClaim)
         && /state\s*=\s*'dispatching'[\s\S]*lease_owner\s*=\s*p_worker/iu.test(longBegin),
       { expiredPreparing: 'queued', expiredDispatchWithoutReceipt: 'submission_unknown', expiredDispatchWithReceipt: 'running', beginPostOwnerFenced: true });
-    check('video history archive claims and transitions are lease-owner fenced',
-      /FOR UPDATE OF job SKIP LOCKED/iu.test(archiveClaim)
-        && /lease_owner\s*=\s*v_worker/iu.test(archiveClaim)
-        && /lease_owner IS DISTINCT FROM trim\(coalesce\(p_worker_id/iu.test(archiveComplete)
-        && /lease_owner IS DISTINCT FROM trim\(coalesce\(p_worker_id/iu.test(archiveFail),
-      { claimSkipLocked: true, claimLease: true, completionOwnerFenced: true, failureOwnerFenced: true });
-    check('video history archive completion is owner-bound and cannot mutate billing',
-      /asset\.user_id::text\s*=\s*v_task\.user_id::text/iu.test(archiveComplete)
-        && /asset\.meta\s*->>\s*'taskId'\s*=\s*v_task\.id::text/iu.test(archiveComplete)
-        && !/(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+public\.(?:wallet\w*|billing\w*|payment\w*)|\bbalance\s*=/iu.test(`${archiveClaim} ${archiveComplete} ${archiveFail}`),
-      { taskOwnerBound: true, taskMetadataBound: true, billingMutations: 0 });
+    check('retention cleanup is bounded, skip-locked and keeps protected collections out of delete statements',
+      /LIMIT v_limit[\s\S]{0,120}FOR UPDATE SKIP LOCKED/iu.test(retentionPurge)
+        && /greatest\(1, least\(coalesce\(p_limit, 500\), 2000\)\)/iu.test(retentionPurge)
+        && !/DELETE FROM public\.(?:agents|agent_memories|text_chat_memories|user_files)/iu.test(retentionPurge),
+      { skipLocked: true, boundedBatch: true, protectedCollectionsDeleted: false });
+    check('source expiry and transient-video scrub are narrow and cannot mutate billing',
+      /p_http_status NOT IN \(404, 410\)/iu.test(sourceExpiry)
+        && /v_extraction_mode = 'video'/iu.test(transientScrub)
+        && /NEW\.response := NULL/iu.test(transientScrub)
+        && !/(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+public\.(?:wallet\w*|billing\w*|payment\w*)|\bbalance\s*=/iu.test(`${retentionPurge} ${sourceExpiry} ${transientScrub}`),
+      { expiryStatuses: [404, 410], rawVideoDurableContent: false, billingMutations: 0 });
 
     const ordinaryCounts = await client.query(`SELECT
       count(*)::int AS total,

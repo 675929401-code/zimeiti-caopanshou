@@ -36,6 +36,7 @@ const PUBLIC_CAPABILITY_KEYS = new Set([
   "supportsReferenceInput", "referenceInputMode", "identityReferenceLevel",
   "maxReferenceImages", "maxCharacterReferences", "referenceCapabilityLabel",
   "supportsAudioInput", "maxReferenceAudios", "billingUnit", "workspaceSurfaces", "supportsRemoteCancel",
+  "supportsGenerateAudioToggle",
 ]);
 
 function publicIdSecret(): string {

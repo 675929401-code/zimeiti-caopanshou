@@ -26,6 +26,12 @@ export function ensureServerRuntimeEnvLoaded(): void {
   if (envLoadAttempted) return;
   envLoadAttempted = true;
 
+  // Release candidates are deliberately credential-free.  This gate must
+  // short-circuit before considering either explicit env-file variables or
+  // filesystem discovery: inherited service-manager variables are not a
+  // trusted input for unactivated code.
+  if (process.env.SERVER_ENV_DISCOVERY_DISABLED === "1") return;
+
   try {
     const dotenv = require("dotenv");
     const cwd = process.cwd();

@@ -21,7 +21,7 @@ const checks = [
   ["cover preview footer wraps", files.coverCss.includes(".cover-preview-meta {\n  min-width: 0;\n  flex-wrap: wrap;")],
   ["invalid primary alpha CSS removed", !/var\(--primary\)\s*\/\s*\d/.test(files.globals) && !/var\(--primary\)\s*\/\s*\d/.test(files.video)],
   ["video result poster falls back to first frame", files.video.includes("poster={task.thumbnailUrl || task.firstFrameUrl || undefined}")],
-  ["video page owns one history heading", files.video.includes("retentionDays={3} hideToolbar") && files.videoHistory.includes("!hideToolbar && <div className={styles.toolbar}")],
+  ["video page owns one history heading", files.video.includes("<VideoHistoryGallery tasks={history}") && files.video.includes("hideToolbar authToken={auth?.token}") && files.videoHistory.includes("!hideToolbar && <div className={styles.toolbar}")],
   ["video input images open an accessible preview", files.video.includes("setInputImagePreview({ src: task.firstFrameUrl") && files.video.includes('aria-label="关闭图片预览"')],
   ["storyboard light ratio is legible", files.storyboardCss.includes('html[data-mode="light"] .sbw-root .sbw-ratio-control button.is-active') && files.storyboardCss.includes("background: #0e7490;")],
   ["storyboard history media is not cropped", /\.sbw-history-project-media img,[\s\S]*?object-fit: contain;/.test(files.storyboardCss)],

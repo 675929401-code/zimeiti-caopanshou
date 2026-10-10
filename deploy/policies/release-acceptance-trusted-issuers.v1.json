@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "zimeiti-release-acceptance-trusted-issuers.v1",
+  "projectId": "zimeiti-caopanshou",
+  "trustRoot": {
+    "rootId": "zimeiti-release-acceptance-external-root-v1",
+    "custody": "external-controlled",
+    "keyMaterial": "public-only"
+  },
+  "maxEvidenceAgeSeconds": 86400,
+  "issuers": []
+}

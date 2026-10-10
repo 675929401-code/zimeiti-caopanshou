@@ -2,20 +2,34 @@ import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { installStoryboardBrowserFixture } from "./storyboard-browser-fixture.mjs";
 
 const baseUrl = process.env.BASE_URL || "http://127.0.0.1:5000";
+assert.match(baseUrl, /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/u, "LOCAL_PREVIEW_REQUIRED");
 const fixturePath = path.resolve("public/storyboard-reviews/high-energy-default10-v642-pica-gpt-omni-20260815.json");
 const screenshotDir = path.resolve(".codex-screenshots/storyboard-video-realtime");
 await mkdir(screenshotDir, { recursive: true });
 
 const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
 assert.ok(fixture.run?.cards?.[0]?.imageUrl, "测试存档没有已验证故事板图片");
+const storyboardFixtureImage = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900"><rect width="1600" height="900" fill="#0f172a"/></svg>');
 
-const sessionResponse = await fetch(`${baseUrl}/api/auth/dev-session`, {
-  headers: { "x-local-workbench": "ai-creation-studio-local" },
-});
-const session = await sessionResponse.json();
-assert.ok(sessionResponse.ok && session.token, session.error || "本地测试会话不可用");
+// This verifier is intentionally browser-fixture-only.  The old dev-session
+// endpoint no longer exists in the production-shaped runtime, so depending on
+// it made an otherwise zero-cost UI check fail before reaching the workbench.
+const session = {
+  token: "storyboard-video-realtime-browser-fixture",
+  user: {
+    id: "storyboard-video-realtime-fixture-user",
+    username: "storyboard_video_fixture",
+    displayName: "分镜视频浏览器验收",
+    role: "admin",
+    status: "active",
+    is_active: true,
+    credits: 0,
+    cashBalance: 0,
+  },
+};
 
 const browser = await chromium.launch({ headless: true });
 const results = [];
@@ -39,6 +53,21 @@ function buildRun(scenario) {
     videoLastCheckedAt: undefined,
     videoStatusDetail: undefined,
     videoPollFailures: 0,
+    imageUrl: "https://media.storyboard.test/realtime.svg",
+    imageWidth: 1600,
+    imageHeight: 900,
+    imageValidatedAt: Date.now(),
+    imageRequestSnapshot: {
+      runId: run.id,
+      cardId: `card-${scenario}`,
+      cardOrder: 1,
+      prompt: run.cards[0].imagePrompt,
+      modelId: run.imageModelId,
+      aspectRatio: "16:9",
+      resolution: "1K",
+      referenceImageUrls: [],
+      strictSingleSubmit: false,
+    },
   });
   return run;
 }
@@ -61,28 +90,93 @@ async function mockModelCatalog(page, run) {
     contentType: "application/json",
     body: JSON.stringify({ models: [{
       id: run.videoModelId,
-      name: "Realtime Video Test",
-      durationSeconds: 10,
-      minDuration: 10,
-      maxDuration: 10,
-      supportsImageInput: true,
-      requiresImage: true,
-      resolutionOptions: ["1080p"],
-      defaultResolution: "1080p",
-      aspectRatios: ["16:9"],
+      displayName: "Realtime Video Test",
+      publicPrice: 0.4,
+      capabilities: {
+        type: "video",
+        durationMode: "fixed",
+        durationSeconds: 10,
+        minDuration: 10,
+        maxDuration: 10,
+        defaultDuration: 10,
+        nativeDurations: [10],
+        supportsImageInput: true,
+        requiresImage: true,
+        supportsRemoteCancel: true,
+        resolutionOptions: ["1080p"],
+        defaultResolution: "1080p",
+        aspectRatios: ["16:9"],
+        workspaceSurfaces: ["storyboard"],
+      },
     }] }),
+  }));
+}
+
+async function mockPeripheralApis(page) {
+  await page.route("https://media.storyboard.test/realtime.svg", (route) => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: storyboardFixtureImage,
+  }));
+  await page.route("**/api/image-workbench/persist", async (route) => {
+    const body = route.request().postDataJSON();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ url: body.url, width: 1600, height: 900 }),
+    });
+  });
+  await page.route(/\/api\/announcements\/inbox(?:\?|$)/u, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ announcements: [], unreadCount: 0, cursor: null }),
+  }));
+  await page.route(/\/api\/notifications\/user(?:\?|$)/u, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, notifications: [], total: 0, unreadCount: 0 }),
+  }));
+  await page.route(/\/api\/video\/active-tasks(?:\?|$)/u, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ activeTasks: [] }),
   }));
 }
 
 async function runScenario(name, terminalEvent, expectedStatus, expectedText) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
+  const diagnostics = { requests: [], failedRequests: [], consoleErrors: [], pageErrors: [] };
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.origin === new URL(baseUrl).origin && url.pathname.startsWith("/api/")) {
+      diagnostics.requests.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+  page.on("requestfailed", (request) => diagnostics.failedRequests.push({
+    url: request.url(),
+    error: request.failure()?.errorText || "unknown",
+  }));
+  page.on("console", (message) => {
+    if (message.type() === "error") diagnostics.consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => diagnostics.pageErrors.push(error.message));
   const run = buildRun(name);
-  await page.addInitScript(({ token, payload }) => {
+  const projectFixture = await installStoryboardBrowserFixture(page, {
+    token: session.token,
+    user: session.user,
+    resetStorage: false,
+    initialProjects: [run],
+  });
+  await page.addInitScript(({ token, user, payload }) => {
     localStorage.clear();
     localStorage.setItem("auth_token", token);
+    localStorage.setItem("auth_user", JSON.stringify(user));
+    localStorage.setItem("active_view", "storyboard-workbench");
+    sessionStorage.setItem("entered_app", "1");
     localStorage.setItem("storyboard_prompt_workbench_current_v2", JSON.stringify(payload));
-  }, { token: session.token, payload: run });
+  }, { token: session.token, user: session.user, payload: run });
+  await mockPeripheralApis(page);
   await mockModelCatalog(page, run);
 
   await page.route("**/api/video/generate", (route) => route.fulfill({
@@ -111,7 +205,17 @@ async function runScenario(name, terminalEvent, expectedStatus, expectedText) {
   }));
 
   await page.goto(`${baseUrl}/storyboard-workbench`, { waitUntil: "domcontentloaded" });
-  await page.getByText("Realtime Video Test", { exact: false }).first().waitFor({ timeout: 15_000 });
+  try {
+    await page.getByText("Realtime Video Test", { exact: false }).first().waitFor({ timeout: 15_000 });
+  } catch (error) {
+    const pageText = await page.locator("body").innerText().catch(() => "body unavailable");
+    throw new Error(`${error.message}\nURL=${page.url()}\nDIAGNOSTICS=${JSON.stringify(diagnostics)}\nBODY=${pageText.slice(0, 2400)}`);
+  }
+  await page.getByRole("button", { name: "最近任务", exact: true }).click();
+  const project = page.locator(`[data-storyboard-project-id="${run.id}"]`);
+  await project.waitFor({ timeout: 15_000 });
+  page.once("dialog", (dialog) => dialog.accept());
+  await project.getByRole("button", { name: "打开任务", exact: true }).click();
   const card = page.locator(".sbw-shot-card").first();
   await card.waitFor({ timeout: 30_000 });
   const generate = card.getByRole("button", { name: "生成视频", exact: true });
@@ -120,15 +224,25 @@ async function runScenario(name, terminalEvent, expectedStatus, expectedText) {
   try {
     await card.getByText(expectedText, { exact: false }).first().waitFor({ timeout: 15_000 });
   } catch (error) {
-    const debugRun = await page.evaluate(() => JSON.parse(localStorage.getItem("storyboard_prompt_workbench_current_v2") || "null"));
+    const debugRun = projectFixture.latestDocument();
     const debugText = await card.innerText().catch(() => "card unavailable");
-    throw new Error(`${error.message}\nSTATUS=${JSON.stringify(debugRun?.cards?.[0] || null)}\nCARD=${debugText.slice(-1200)}`);
+    throw new Error(`${error.message}\nSTATUS=${JSON.stringify(debugRun?.cards?.[0] || null)}\nREQUESTS=${JSON.stringify(diagnostics.requests)}\nFAILED=${JSON.stringify(diagnostics.failedRequests)}\nCARD=${debugText.slice(-1200)}`);
   }
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("storyboard_prompt_workbench_current_v2") || "null"));
+  const saveDeadline = Date.now() + 10_000;
+  while (projectFixture.latestDocument()?.cards?.[0]?.videoStatus !== expectedStatus && Date.now() < saveDeadline) {
+    await page.waitForTimeout(50);
+  }
+  const saved = projectFixture.latestDocument();
+  assert.ok(saved?.cards?.[0], "账号工程没有保存实时视频状态");
   assert.equal(saved.cards[0].videoStatus, expectedStatus);
   if (expectedStatus === "done") assert.equal(saved.cards[0].videoProgress, 100);
   await page.screenshot({ path: path.join(screenshotDir, `${name}.png`), fullPage: true });
-  results.push({ name, status: saved.cards[0].videoStatus, detail: saved.cards[0].videoStatusDetail });
+  results.push({
+    name,
+    status: saved.cards[0].videoStatus,
+    detail: saved.cards[0].videoStatusDetail,
+    fixtureProjectWrites: projectFixture.projectWrites.length,
+  });
   await context.close();
 }
 
@@ -137,11 +251,21 @@ async function runCancelScenario() {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   const run = buildRun(name);
-  await page.addInitScript(({ token, payload }) => {
+  const projectFixture = await installStoryboardBrowserFixture(page, {
+    token: session.token,
+    user: session.user,
+    resetStorage: false,
+    initialProjects: [run],
+  });
+  await page.addInitScript(({ token, user, payload }) => {
     localStorage.clear();
     localStorage.setItem("auth_token", token);
+    localStorage.setItem("auth_user", JSON.stringify(user));
+    localStorage.setItem("active_view", "storyboard-workbench");
+    sessionStorage.setItem("entered_app", "1");
     localStorage.setItem("storyboard_prompt_workbench_current_v2", JSON.stringify(payload));
-  }, { token: session.token, payload: run });
+  }, { token: session.token, user: session.user, payload: run });
+  await mockPeripheralApis(page);
   await mockModelCatalog(page, run);
   await page.route("**/api/video/generate", (route) => route.fulfill({
     status: 200,
@@ -166,16 +290,31 @@ async function runCancelScenario() {
 
   await page.goto(`${baseUrl}/storyboard-workbench`, { waitUntil: "domcontentloaded" });
   await page.getByText("Realtime Video Test", { exact: false }).first().waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "最近任务", exact: true }).click();
+  const project = page.locator(`[data-storyboard-project-id="${run.id}"]`);
+  await project.waitFor({ timeout: 15_000 });
+  page.once("dialog", (dialog) => dialog.accept());
+  await project.getByRole("button", { name: "打开任务", exact: true }).click();
   const card = page.locator(".sbw-shot-card").first();
   await card.getByRole("button", { name: "生成视频", exact: true }).click();
   const stop = card.getByRole("button", { name: "终止生成", exact: true });
   await stop.waitFor({ timeout: 15_000 });
   await stop.click();
   await card.getByText("视频已终止", { exact: false }).first().waitFor({ timeout: 15_000 });
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("storyboard_prompt_workbench_current_v2") || "null"));
+  const saveDeadline = Date.now() + 10_000;
+  while (projectFixture.latestDocument()?.cards?.[0]?.videoStatus !== "cancelled" && Date.now() < saveDeadline) {
+    await page.waitForTimeout(50);
+  }
+  const saved = projectFixture.latestDocument();
+  assert.ok(saved?.cards?.[0], "账号工程没有保存终止状态");
   assert.equal(saved.cards[0].videoStatus, "cancelled");
   await page.screenshot({ path: path.join(screenshotDir, `${name}.png`), fullPage: true });
-  results.push({ name, status: saved.cards[0].videoStatus, detail: saved.cards[0].videoStatusDetail });
+  results.push({
+    name,
+    status: saved.cards[0].videoStatus,
+    detail: saved.cards[0].videoStatusDetail,
+    fixtureProjectWrites: projectFixture.projectWrites.length,
+  });
   await context.close();
 }
 

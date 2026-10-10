@@ -174,11 +174,11 @@ test("status contract declares every unconnected source and preserves unavailabl
 
 test("control request parser rejects executable actions and accepts the bounded preview contract", () => {
   const incidentId = "00000000-0000-4000-8000-000000000001";
-  const leaseToken = "00000000-0000-4000-8000-000000000002";
+  const fixtureLeaseToken = "00000000-0000-4000-8000-000000000002";
   const parsed = parseIncidentSloControlCommand({
     kind: "register_action",
     incidentId,
-    leaseToken,
+    leaseToken: fixtureLeaseToken,
     expectedRevision: 2,
     mode: "preview",
     actionKind: "read_only_probe",
@@ -189,7 +189,7 @@ test("control request parser rejects executable actions and accepts the bounded 
     () => parseIncidentSloControlCommand({
       kind: "register_action",
       incidentId,
-      leaseToken,
+      leaseToken: fixtureLeaseToken,
       expectedRevision: 2,
       mode: "request",
       actionKind: "restart_service",

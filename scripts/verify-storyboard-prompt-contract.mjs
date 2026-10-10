@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  buildStoryboardUserPrompt,
   STORYBOARD_AGENT_PROMPT,
   STORYBOARD_AGENT_VERSION,
+  storyboardTextLayoutInstruction,
   StoryboardTargetDurationSchema,
+  StoryboardTextLayoutModeSchema,
 } from "../src/lib/storyboard-workbench.ts";
+import { buildStoryboardVideoPrompt, storyboardVideoRuntimeGuard } from "../src/lib/storyboard-video-prompt.ts";
 
 const baseUrl = String(process.env.BASE_URL || "http://127.0.0.1:5000").replace(/\/+$/u, "");
 const document = await readFile("docs/10秒故事板导演智能体提示词-v2.md", "utf8");
 const videoGenerateRoute = await readFile("src/app/api/video/generate/route.ts", "utf8");
+const compileRoute = await readFile("src/app/api/storyboard/compile/route.ts", "utf8");
 const fenceStart = document.indexOf("```text\n");
 const fenceEnd = document.indexOf("\n```", fenceStart + 8);
 assert.ok(fenceStart >= 0 && fenceEnd > fenceStart, "交付文档缺少系统提示词代码块");
@@ -30,6 +35,27 @@ for (const duration of [5, 9, 12, 16, "10"]) {
     `目标时长 Schema 不应接受 ${String(duration)}`,
   );
 }
+assert.equal(StoryboardTextLayoutModeSchema.safeParse("visual-only").success, true);
+assert.equal(StoryboardTextLayoutModeSchema.safeParse("advanced-text-layout").success, true);
+assert.equal(StoryboardTextLayoutModeSchema.safeParse("always-text").success, false);
+const visualOnlyInstruction = storyboardTextLayoutInstruction("visual-only");
+const advancedTextInstruction = storyboardTextLayoutInstruction("advanced-text-layout");
+assert.ok(visualOnlyInstruction.includes("不得要求或暗示生成任何可读文字"));
+assert.ok(visualOnlyInstruction.includes("标题、副标题、字幕"));
+assert.ok(advancedTextInstruction.includes("用户明确开启高级文字排版"));
+assert.ok(advancedTextInstruction.includes("平台在生图完成后单独渲染"));
+const defaultUserPrompt = buildStoryboardUserPrompt({
+  script: "这是用于验证默认纯视觉模式的完整口播文案。",
+  style: "电影级3D卡通动画",
+  ratio: "16:9",
+  panelMode: "fixed-4",
+  targetDuration: 10,
+  segments: ["这是用于验证默认纯视觉模式的完整口播文案。"],
+});
+assert.ok(defaultUserPrompt.includes("画面文字模式：visual-only"));
+assert.ok(defaultUserPrompt.includes(visualOnlyInstruction));
+assert.ok(compileRoute.includes('StoryboardTextLayoutModeSchema.default("visual-only")'), "编译接口没有把纯视觉设为默认模式");
+assert.ok(compileRoute.includes("storyboardTextLayoutInstruction(input.textLayoutMode)"), "编译接口没有给数据库旧提示词追加最高优先级文字模式");
 assert.ok(runtimePrompt.includes("8秒、10秒或15秒"), "文字协议没有同时声明 8/10/15 秒");
 assert.ok(runtimePrompt.includes("8秒真实成片使用3个镜头"), "文字协议缺少 8 秒镜头规则");
 assert.ok(runtimePrompt.includes("10秒真实成片使用3至4个镜头"), "文字协议缺少 10 秒镜头规则");
@@ -37,10 +63,11 @@ assert.ok(runtimePrompt.includes("15秒真实成片使用4至6个镜头"), "文�
 
 const response = await fetch(`${baseUrl}/api/storyboard/agent`);
 const apiConfig = await response.json();
-assert.equal(response.status, 403, "匿名访问不应读取完整提示词");
-assert.equal(apiConfig.error, "需要管理员权限", "匿名访问应返回明确的管理员门禁");
+assert.equal(response.status, 401, "匿名访问不应读取完整提示词");
+assert.equal(apiConfig.error, "请先登录", "匿名访问应先返回登录门禁");
+assert.equal(apiConfig.code, "AUTH_REQUIRED", "匿名访问应返回稳定的登录错误码");
 const agentRoute = await readFile("src/app/api/storyboard/agent/route.ts", "utf8");
-assert.ok(/export async function GET\(request: Request\)[\s\S]*requireAdmin\(request\)/u.test(agentRoute), "GET 没有管理员门禁");
+assert.ok(/export async function GET\(request: NextRequest\)[\s\S]*authorizeAdminCapability\(request, "prompts\.view"/u.test(agentRoute), "GET 没有管理员提示词查看门禁");
 
 for (const required of [
   "一张4至5格故事板",
@@ -52,7 +79,7 @@ for (const required of [
   "镜头执行线生成器",
   "动作余波",
   "四层控制架构",
-  "白名单",
+  "默认模式可读文字为零",
   "包装有强度预算",
   "高能语义包装强度层",
   "每2至3秒一个可见强事件",
@@ -101,12 +128,8 @@ for (const required of [
   "不是扁平核对表",
   "资产锁定句 + 本段语义句 + 分格动作句 + 收尾约束句",
   "开场绑定句 + 时间镜头 + 收尾边界句",
-  "对标注释版校准",
-  "图文导演注释版",
-  "视频安全参考版",
-  "每格注释只描述该格的运镜",
-  "每格注释要能反推一个高能强事件",
-  "默认回归测试必须至少跑一次图文导演注释版",
+  "默认回归测试必须使用纯画面版",
+  "高级文字排版另测平台后置渲染",
   "可迁移规律按三层处理",
   "stable_grammar",
   "semantic_router",
@@ -132,11 +155,12 @@ for (const required of [
   "每个实体道具都要有动作证据链",
   "每段至少有2个狗狗表情峰值",
   "图形化包装锚点",
-  "全段最多在最终落幅保留1个大号白名单短中文结论牌",
-  "最终结论牌必须是完整入镜的不透明实体牌",
+  "默认 visual-only 模式",
+  "advanced-text-layout",
+  "图片模型仍不自行绘制任何文字",
   "占底部格宽度约10%至14%",
   "至少16%画面宽",
-  "画面内部安全区而不是角落边缘",
+  "不贴边、不半出画、不压住角色脸",
   "每段开头先用0.4至0.8秒建立完整角色身份镜头",
   "无字舒适区刻度",
   "背景医院、商店、路牌、量表和信息窗使用图标或无字造型",
@@ -145,24 +169,12 @@ for (const required of [
 }
 
 const videoPromptGuard = await readFile("src/lib/storyboard-video-prompt.ts", "utf8");
-assert.ok(videoPromptGuard.includes("完整的一图多画面故事板"), "视频运行时保护句没有绑定完整故事板参考");
-assert.ok(videoPromptGuard.includes("暖芥末黄上衣") && videoPromptGuard.includes("蓝色牛仔裤"), "视频运行时保护句没有锁定严格对标穿搭");
-assert.ok(videoPromptGuard.includes("开头0.4至0.8秒先建立完整角色身份镜头"), "视频运行时保护句没有强化开头完整角色同框");
-assert.ok(videoPromptGuard.includes("高能版执行") && videoPromptGuard.includes("全段至少3个强视觉事件"), "视频运行时保护句没有强化高能事件密度");
-assert.ok(videoPromptGuard.includes("25%至40%视觉注意力") && videoPromptGuard.includes("至少两次强镜头冲击"), "视频运行时保护句没有锁定英雄包装和强镜头冲击");
-assert.ok(videoPromptGuard.includes("红黑冲突包装向金色或绿色解决包装转化"), "视频运行时保护句没有锁定冲突色到解决色转化");
-assert.ok(videoPromptGuard.includes("duration === 15") && videoPromptGuard.includes("增加升级爆点或二次反转"), "视频运行时保护句没有强化15秒扩展规则");
-assert.ok(videoPromptGuard.includes("每个实体道具沿一条清楚物理路径完成动作"), "视频运行时保护句没有拦截道具凭空出现");
-assert.ok(!videoPromptGuard.includes("视频模型看不到其余故事板格"), "视频运行时保护句仍在裁切为首格参考");
-assert.ok(videoPromptGuard.includes("现场声轨只包含") && videoPromptGuard.includes("人物和宠物不发出语言化声音"), "视频运行时保护句没有区分现场声与语言类声音");
-assert.ok(videoPromptGuard.includes("无字牌面") && videoPromptGuard.includes("全段最多在最终落幅保留1个大号短中文结论牌"), "视频运行时保护句没有建立文字泄漏防护");
-assert.ok(videoPromptGuard.includes("不透明实体牌") && videoPromptGuard.includes("完整入镜") && videoPromptGuard.includes("只放一个短词"), "视频运行时保护句没有约束最终结论牌和小字泄漏");
-assert.ok(videoPromptGuard.includes("道具来源、取出或拾起、持有移动、接触点、释放或放回"), "视频运行时保护句没有建立道具轨迹锚点");
-assert.ok(videoPromptGuard.includes("眼白扩大") && videoPromptGuard.includes("至少两次明显表情峰值"), "视频运行时保护句没有强化狗狗表情峰值");
-assert.ok(videoPromptGuard.includes("核心光晕、电弧、速度线、实体牌和粒子路径按同形态运动继承"), "视频运行时保护句没有继承参考包装形态");
+assert.equal(storyboardVideoRuntimeGuard(10), "", "视频运行时不得再注入隐藏的通用文字或创意前缀");
+assert.equal(buildStoryboardVideoPrompt({ prompt: "  用户确认的视频执行提示词  ", duration: 10 }), "用户确认的视频执行提示词");
+assert.ok(videoPromptGuard.includes("never mixed into the user's provider prompt"), "视频提示词边界缺少直传说明");
 assert.ok(runtimePrompt.includes("videoPrompt字段禁用过程词"), "智能体提示词没有建立最终视频Prompt禁用词门禁");
 assert.ok(runtimePrompt.includes("最终videoPrompt里只允许出现镜头执行句"), "智能体提示词没有把最终视频Prompt限制为执行口令");
-for (const forbiddenTextLeakToken of ["参考图已有的短中文视觉锚点", "画面文字锚点", "半透明触摸刻度窗", "触摸刻度窗"]) {
+for (const forbiddenTextLeakToken of ["白名单短词", "短中文结论牌", "参考图已有的短中文视觉锚点", "画面文字锚点", "半透明触摸刻度窗", "触摸刻度窗"]) {
   assert.ok(!runtimePrompt.includes(forbiddenTextLeakToken), `智能体提示词仍包含文字泄漏风险词：${forbiddenTextLeakToken}`);
   assert.ok(!videoPromptGuard.includes(forbiddenTextLeakToken), `视频运行时保护句仍包含文字泄漏风险词：${forbiddenTextLeakToken}`);
 }
@@ -170,8 +182,9 @@ for (const forbiddenRuntimeGuardToken of ["原始口播", "后期", "分段文�
   assert.ok(!videoPromptGuard.includes(forbiddenRuntimeGuardToken), `视频运行时保护句仍包含过程词：${forbiddenRuntimeGuardToken}`);
 }
 
-assert.ok(videoGenerateRoute.includes("动作、声音事件和运镜"), "视频后端时长护栏没有使用无对白的声音事件表达");
-assert.ok(!/全部核心动作、对白|全部动作、对白|新对白/.test(videoGenerateRoute), "视频后端时长护栏仍包含对白触发词");
+assert.ok(videoGenerateRoute.includes("Creative prompt integrity is independent from technical model settings"), "视频后端缺少创意提示词直传边界");
+assert.ok(videoGenerateRoute.includes("const normalizedTiming = { prompt: trimmedPrompt, timelineNormalized: false }"), "视频后端仍可能按时长改写用户提示词");
+assert.ok(!/全部核心动作、对白|全部动作、对白|新对白/.test(videoGenerateRoute), "视频后端仍包含对白触发词");
 
 console.log(JSON.stringify({
   passed: true,

@@ -45,7 +45,9 @@ try {
   assert.match(rendered, /server_name zycheni9\.com www\.zycheni9\.com zyuani8\.com www\.zyuani8\.com;/u);
   assert.match(rendered, /root \/data\/web\/shared\/assets\/current\/public;/u);
   assert.match(rendered, /root \/data\/web\/shared;/u);
-  assert.match(rendered, /alias \/data\/web\/shared\/voice\/reference-audio\//u);
+  const privateReferenceAudio = blockFor(rendered, /location\s+\^~\s+\/voice-platform\/reference-audio\/\s*\{/u);
+  assert.match(privateReferenceAudio, /return 404;/u);
+  assert.doesNotMatch(privateReferenceAudio, /\balias\b/u);
   const notify = blockFor(rendered, /location\s*=\s*\/api\/payment\/notify\s*\{/u);
   assert.match(notify, /client_max_body_size 64k;/u);
   assert.match(notify, /client_body_buffer_size 64k;/u);

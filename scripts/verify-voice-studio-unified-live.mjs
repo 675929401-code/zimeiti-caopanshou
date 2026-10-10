@@ -25,6 +25,10 @@ const PROVIDER_RISK_ENDPOINTS = new Set([
   'POST /api/voice/preview',
   'POST /api/voice/tts',
 ]);
+const TELEMETRY_ENDPOINTS = new Set([
+  'POST /api/operation-events',
+  'POST /api/product-usage/events',
+]);
 
 const read = (file) => fs.readFile(path.resolve(file), 'utf8');
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -123,6 +127,10 @@ async function installFixtures(context, state, theme, token, identity) {
     const requestSignature = `${method} ${url.pathname}`;
     const providerRisk = PROVIDER_RISK_ENDPOINTS.has(requestSignature);
     if (providerRisk) state.providerRiskRequests.push(requestSignature);
+    if (TELEMETRY_ENDPOINTS.has(requestSignature)) {
+      state.mockedTelemetryPosts.push(requestSignature);
+      return json(route, { success: true, accepted: true });
+    }
     if (url.pathname === '/api/auth/me') return json(route, { user: { ...identity, themePreference: theme.id, theme_preference: theme.id } });
     if (url.pathname === '/api/tools/runtime-catalog') return json(route, { items: { video: { available: true, service: 'fixture-video-extract', provider: 'fixture', model: 'fixture', unitPrice: 0.02, currency: 'CNY', unit: '条' } } });
     if (url.pathname === '/api/voice/pricing') return json(route, { success: true, data: [{ modelId: 'seed-tts-2.0' }, { modelId: 'seed-tts-1.0' }, { modelId: 'seed-audio-1.0' }] });
@@ -321,7 +329,7 @@ export async function main(args = process.argv.slice(2)) {
   const state = {
     origin,
     audioDataUrl: `data:audio/wav;base64,${Buffer.from('RIFF0000WAVEfmt ').toString('base64')}`,
-    blockedExternal: [], mockedMutations: [], unmockedMutations: [],
+    blockedExternal: [], mockedMutations: [], mockedTelemetryPosts: [], unmockedMutations: [],
     providerRiskRequests: [], providerRiskFixtures: [], unfixtureProviderRiskRequests: [],
     extractPosts: 0, audioExtractPosts: 0, previewPosts: 0, fixtureGenerationPosts: 0,
   };
@@ -373,7 +381,8 @@ export async function main(args = process.argv.slice(2)) {
     pages, interactions: { linkChargeCancelZeroPosts: true, linkTwoStageFixture: true, uploadFixture: true, previewFixture: true, favoriteFeedback: true, generationDisabledFeedback: true },
     providerCalls, paidRequests: 0, databaseMutations: 0,
     providerRiskFixtures: state.providerRiskFixtures,
-    mockedMutations: state.mockedMutations, blockedExternalRequests: state.blockedExternal.length,
+    mockedMutations: state.mockedMutations, mockedTelemetryPosts: state.mockedTelemetryPosts.length,
+    blockedExternalRequests: state.blockedExternal.length,
   };
   await fs.writeFile(path.join(outputDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   console.log(JSON.stringify(report, null, 2));

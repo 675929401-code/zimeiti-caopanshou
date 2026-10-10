@@ -12,9 +12,10 @@ const root = process.cwd();
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");
 const confirmPlanSha256 = valueOf("--confirm-plan-sha256").toLowerCase();
-const policyPath = path.join(root, "deploy", "policies", "media-object-retention.v1.json");
+const policyPath = path.join(root, "deploy", "policies", "media-object-retention.v2.json");
 const evidenceRoot = path.join(root, ".codex-evidence", "cos-media-lifecycle");
-const ownedRulePrefix = "zimeiti-media-retention-v1-";
+const ownedRulePrefix = "zimeiti-media-retention-v2-";
+const ownedRulePrefixes = ["zimeiti-media-retention-v1-", ownedRulePrefix];
 
 dotenv.config({ path: path.join(root, ".env.local"), quiet: true });
 
@@ -64,7 +65,7 @@ function desiredRules(policy) {
 }
 
 function buildPlan({ bucket, region, currentRules, desired }) {
-  const foreignRules = currentRules.filter((rule) => !scalar(rule.ID).startsWith(ownedRulePrefix));
+  const foreignRules = currentRules.filter((rule) => !ownedRulePrefixes.some((prefix) => scalar(rule.ID).startsWith(prefix)));
   const conflicts = foreignRules.flatMap((rule) => {
     const target = desired.find((candidate) => rulePrefix(candidate) === rulePrefix(rule));
     if (!target || (scalar(rule.Status) === "Enabled" && ruleDays(rule) === ruleDays(target))) return [];
@@ -79,7 +80,7 @@ function buildPlan({ bucket, region, currentRules, desired }) {
   const plannedRules = [...foreignRules, ...desired];
   const core = {
     schemaVersion: 1,
-    policyVersion: "media-object-retention.v1",
+    policyVersion: "media-object-retention.v2",
     bucket,
     region,
     currentLifecycleSha256: sha256(currentRules),
@@ -125,7 +126,7 @@ function writeEvidence(name, report) {
 
 async function main() {
   const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
-  assert.equal(policy.version, "media-object-retention.v1", "MEDIA_RETENTION_POLICY_VERSION_INVALID");
+  assert.equal(policy.version, "media-object-retention.v2", "MEDIA_RETENTION_POLICY_VERSION_INVALID");
   const bucket = requiredEnvironment("COS_BUCKET");
   const region = requiredEnvironment("COS_REGION");
   const cos = new COS({

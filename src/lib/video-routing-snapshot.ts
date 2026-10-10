@@ -40,6 +40,7 @@ const SAFE_CREDENTIAL_REFERENCE = /^(?:secret:\/\/[a-z0-9][a-z0-9._-]{0,127}|env
 const SAFE_SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_CONFIG_BYTES = 32 * 1024;
 const MAX_RECEIPT_BYTES = 8 * 1024;
+const MAX_SAFE_STRING_LENGTH = 4096;
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -74,16 +75,35 @@ function normalizeEndpoint(value: unknown) {
   if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
     throw new Error("VIDEO_ROUTING_ENDPOINT_INVALID");
   }
-  for (const key of parsed.searchParams.keys()) {
-    if (isDirectSecretKey(key)) throw new Error("VIDEO_ROUTING_ENDPOINT_CONTAINS_SECRET");
-  }
+  parsed.search = "";
   parsed.hash = "";
   return parsed.toString();
 }
 
+function sanitizeStringValue(value: string): string | undefined {
+  if (value.length > MAX_SAFE_STRING_LENGTH || /data:/iu.test(value)) return undefined;
+  const compact = value.replace(/\s+/gu, "");
+  if (compact.length > 256 && /^[A-Za-z0-9+/=_-]+$/u.test(compact)) return undefined;
+  let invalidUrl = false;
+  const sanitized = value.replace(/https?:\/\/[^\s"'<>]+/giu, raw => {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.username || parsed.password) { invalidUrl = true; return ""; }
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.toString();
+    } catch {
+      invalidUrl = true;
+      return "";
+    }
+  });
+  return invalidUrl ? undefined : sanitized;
+}
+
 function toSafeJson(value: unknown, depth = 0): JsonValue | undefined {
   if (depth > 12) throw new Error("VIDEO_ROUTING_CONFIG_TOO_DEEP");
-  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "string") return sanitizeStringValue(value);
   if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
   if (Array.isArray(value)) {
     return value.map((item) => toSafeJson(item, depth + 1)).filter((item): item is JsonValue => item !== undefined);
@@ -215,21 +235,57 @@ export async function resolveVideoRoutingCredential(input: {
 
 function normalizeDispatchReceipt(snapshot: VideoRoutingSnapshot, receipt: VideoProviderRequestReceipt): JsonObject {
   const endpointHost = requiredText(receipt.endpointHost, "VIDEO_PROVIDER_DISPATCH_RECEIPT_INVALID", 255).toLowerCase();
-  if (endpointHost !== new URL(snapshot.apiEndpoint).host.toLowerCase()) {
+  const endpointPath = requiredText(receipt.endpointPath, "VIDEO_PROVIDER_DISPATCH_RECEIPT_INVALID", 2048);
+  const expectedEndpoint = new URL(snapshot.apiEndpoint);
+  if (endpointHost !== expectedEndpoint.host.toLowerCase()) {
     throw new Error("VIDEO_PROVIDER_DISPATCH_ROUTE_MISMATCH");
   }
+  if (!/^\/[^?#]{0,2047}$/u.test(endpointPath)) throw new Error("VIDEO_PROVIDER_DISPATCH_RECEIPT_INVALID");
   const safeId = (value: unknown): string | null => {
     if (value === null || value === undefined || value === "") return null;
     const normalized = requiredText(value, "VIDEO_PROVIDER_DISPATCH_RECEIPT_INVALID", 160);
     if (normalized.includes("://")) throw new Error("VIDEO_PROVIDER_DISPATCH_RECEIPT_INVALID");
     return normalized;
   };
+  const projection = asObject(receipt.requestProjection);
+  const effectivePromptSha256 = projection.effectivePromptSha256 === null
+    ? null
+    : requiredText(projection.effectivePromptSha256, "VIDEO_PROVIDER_DISPATCH_RECEIPT_INVALID", 64).toLowerCase();
+  if ((effectivePromptSha256 !== null && !SAFE_SHA256.test(effectivePromptSha256))
+    || !Number.isInteger(receipt.wireBodyBytes) || receipt.wireBodyBytes < 1 || receipt.wireBodyBytes > 128 * 1024 * 1024
+    || !SAFE_SHA256.test(String(receipt.wireBodySha256 || "").toLowerCase())
+    || !SAFE_SHA256.test(String(receipt.dispatchIdentitySha256 || "").toLowerCase())
+    || !Number.isInteger(receipt.attemptOrdinal) || receipt.attemptOrdinal < 1 || receipt.attemptOrdinal > 16
+    || !["application/json", "multipart/form-data"].includes(receipt.requestContentType)
+    || (projection.duration !== null && (!Number.isFinite(Number(projection.duration)) || Number(projection.duration) < 0 || Number(projection.duration) > 86_400))
+    || (projection.resolution !== null && (typeof projection.resolution !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._xX:-]{0,63}$/u.test(projection.resolution)))
+    || (projection.aspectRatio !== null && (typeof projection.aspectRatio !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._xX:-]{0,63}$/u.test(projection.aspectRatio)))
+    || !Number.isInteger(projection.referenceImageCount) || Number(projection.referenceImageCount) < 0 || Number(projection.referenceImageCount) > 128
+    || !Number.isInteger(projection.referenceAudioCount) || Number(projection.referenceAudioCount) < 0 || Number(projection.referenceAudioCount) > 128
+    || !["provided_true", "provided_false", "omitted"].includes(String(projection.generateAudioState))) {
+    throw new Error("VIDEO_PROVIDER_DISPATCH_RECEIPT_INVALID");
+  }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     endpointHost,
+    endpointPath,
+    attemptOrdinal: receipt.attemptOrdinal,
+    dispatchIdentitySha256: receipt.dispatchIdentitySha256.toLowerCase(),
     submittedModel: safeId(receipt.submittedModel),
     submittedWorkflow: safeId(receipt.submittedWorkflow),
     routingConfigVersion: snapshot.configVersion,
+    requestContentType: receipt.requestContentType,
+    wireBodySha256: receipt.wireBodySha256.toLowerCase(),
+    wireBodyBytes: receipt.wireBodyBytes,
+    requestProjection: {
+      effectivePromptSha256,
+      duration: projection.duration === null ? null : Number(projection.duration),
+      resolution: projection.resolution as string | null,
+      aspectRatio: projection.aspectRatio as string | null,
+      referenceImageCount: Number(projection.referenceImageCount),
+      referenceAudioCount: Number(projection.referenceAudioCount),
+      generateAudioState: String(projection.generateAudioState),
+    },
   };
 }
 

@@ -32,6 +32,12 @@ import { featurePermissionForApiPath } from "@/lib/member-permissions";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
 import { adminRequirementForRequest } from "@/lib/admin-governance";
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
+import { resolveDisplayBrand } from "@/lib/server/white-label-runtime";
+import {
+  WhiteLabelHostError,
+  isPlatformDisplayHost,
+  normalizeDirectHostHeader,
+} from "@/lib/white-label-host";
 import {
   scheduleSecurityEventDelivery,
   type SecurityEventProducerPayload,
@@ -111,6 +117,38 @@ function recordSecurityEvent(
 export async function proxy(request: NextRequest, lifecycle?: NextFetchEvent) {
   const { pathname, search } = request.nextUrl;
   const method = request.method;
+
+  // Host selects the public display brand only. It must never be copied into a
+  // business tenant/session/permission claim. Platform-owned names are an
+  // explicit allowlist; every other direct Host must resolve to an immutable
+  // published white-label release before even a whitelist path is released.
+  // X-Forwarded-Host is intentionally ignored because there is no trusted-hop
+  // contract at this application boundary.
+  try {
+    const directHost = request.headers.get("host");
+    const hostname = normalizeDirectHostHeader(directHost);
+    if (!isPlatformDisplayHost(hostname)) await resolveDisplayBrand(directHost);
+  } catch (error) {
+    const hostError = error instanceof WhiteLabelHostError
+      ? error
+      : new WhiteLabelHostError("白标品牌运行态暂不可读取", "WHITE_LABEL_RUNTIME_UNAVAILABLE", 503);
+    const response = NextResponse.json(
+      {
+        error: hostError.status === 421
+          ? "该域名未登记或尚未发布"
+          : hostError.status === 400
+            ? "Host 格式无效"
+            : "品牌服务暂不可用",
+        code: hostError.code,
+      },
+      {
+        status: hostError.status,
+        headers: { "Cache-Control": "private, no-store", Vary: "Host" },
+      },
+    );
+    applySecurityHeaders(response, request);
+    return response;
+  }
 
   // ── 1. 白名单路径直接放行（加安全头） ──
   if (isWhitelistedPath(pathname)) {

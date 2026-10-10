@@ -17,10 +17,14 @@ import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 import { getProductionVideoModelById } from "@/lib/production-data-source";
 import { buildDigitalDispatch, queuedDigitalProtocol } from '@/lib/digital-video-dispatch';
 import { startDigitalVideoQueueWorker } from '@/lib/digital-video-queue-worker';
-import { submitVideoTask } from "@/lib/video-adapter";
-import type { VideoModelConfig } from "@/lib/video-adapter";
+import { submitVideoTask, validateVideoParameterContract } from "@/lib/video-adapter";
+import type { VideoGenerateParams, VideoModelConfig } from "@/lib/video-adapter";
 import { checkCashBalance } from "@/lib/billing";
-import { reserveVideoGenerationTask } from "@/lib/video-budget-reservation";
+import {
+  buildVideoGenerationRequestSnapshot,
+  reserveVideoGenerationTask,
+  type VideoRequestAssetRef,
+} from "@/lib/video-budget-reservation";
 import { getTokenFromHeaders, verifyToken } from "@/lib/auth";
 import { authorizeAdminToken } from "@/lib/admin-auth";
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
@@ -42,8 +46,8 @@ import {
   isWorkspaceModelAssigned,
   parseWorkspaceModelAssignmentOverrides,
 } from "@/lib/workspace-model-assignment-settings";
-import { findModelByPublicId, publicModelDisplayName } from "@/lib/public-model-dto";
-import { classifyVideoProviderError } from "@/lib/video-error-policy";
+import { findModelByPublicId, publicModelDisplayName, toPublicModelId } from "@/lib/public-model-dto";
+import { classifyVideoProviderError, sanitizeVideoProviderDiagnostic } from "@/lib/video-error-policy";
 import { recordVideoSubmission, recordVideoTerminalOutcome } from "@/lib/video-terminal-accounting";
 import {
   authorizeVideoChannelRecoveryCanary,
@@ -91,14 +95,34 @@ import {
 } from "@/lib/video-routing-snapshot";
 import { videoBillingAdapterAdmission } from "@/lib/video-model-availability";
 import { resumeRequestedVideoCancellation } from "@/lib/video-cancellation-runtime";
+import {
+  acquireProviderAdmission,
+  ProviderAdmissionBusyError,
+  ProviderAdmissionUnavailableError,
+  type ProviderAdmissionLease,
+} from "@/lib/provider-admission-control";
+
+function sanitizeVideoTraceValue(value: unknown, depth = 0): unknown {
+  if (depth > 12) return "[depth-redacted]";
+  if (typeof value === "string") return sanitizeVideoProviderDiagnostic(value);
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+  if (Array.isArray(value)) return value.slice(0, 128).map(item => sanitizeVideoTraceValue(item, depth + 1));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, 256)
+      .filter(([key]) => !/(?:authorization|api.?key|access.?key|secret|token|password|cookie|signature)/iu.test(key))
+      .map(([key, item]) => [key, sanitizeVideoTraceValue(item, depth + 1)]));
+  }
+  return sanitizeVideoProviderDiagnostic(value);
+}
 
 async function writeVideoTrace(event: Record<string, unknown>) {
   try {
     const traceDirectory = resolveAppRuntimeDir();
     await mkdir(traceDirectory, { recursive: true });
-    await appendFile(path.join(traceDirectory, "canvas-video-generation.ndjson"), `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`, "utf8");
+    const safeEvent = sanitizeVideoTraceValue(event) as Record<string, unknown>;
+    await appendFile(path.join(traceDirectory, "canvas-video-generation.ndjson"), `${JSON.stringify({ at: new Date().toISOString(), ...safeEvent })}\n`, "utf8");
   } catch (error) {
-    console.warn("[Video/Trace] Failed to persist trace:", error);
+    console.warn("[Video/Trace] Failed to persist trace:", sanitizeVideoProviderDiagnostic(error));
   }
 }
 
@@ -260,6 +284,129 @@ function hasAnyVideoReference(input: {
   return Boolean(input.imageUrl || input.lastFrameUrl || input.referenceImageUrl || input.imageUrls?.length);
 }
 
+function stableVideoRequestAssetRef(value: unknown, ownedStorageKey = ""): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+  if (ownedStorageKey) return createAutodlH3AssetRef("tencent_cos", ownedStorageKey);
+  if (/^(?:object|asset):\/\//u.test(raw) || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    if (!url.username && !url.password && !url.search && !url.hash) return url.toString();
+    if (!url.username && !url.password && ["http:", "https:"].includes(url.protocol)) {
+      const identity = `${url.protocol}//${url.host}${url.pathname}`;
+      return `asset://request/${createHash("sha256").update(identity).digest("hex")}`;
+    }
+  } catch { /* Snapshot validation below will reject malformed references. */ }
+  return raw;
+}
+
+class PageReferenceAssetRefError extends Error {
+  constructor(readonly code: string, readonly status: number) {
+    super(code === "VIDEO_REFERENCE_ASSET_LOOKUP_FAILED"
+      ? "参考素材归属校验暂时不可用，本次未提交"
+      : "参考素材引用无效，请重新上传后再提交");
+  }
+}
+
+function tencentCosPageAssetKey(value: unknown) {
+  if (typeof value !== "string") return "";
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password
+      || !/^[a-z0-9][a-z0-9-]{0,62}\.cos(?:-internal)?\.[a-z0-9-]+\.myqcloud\.com$/iu.test(url.hostname)) return "";
+    return decodeURIComponent(url.pathname).replace(/^\/+/, "");
+  } catch {
+    return "";
+  }
+}
+
+async function resolveOwnedPageReferenceAssetRefs(
+  db: ReturnType<typeof getSupabaseAdminClient>,
+  userId: string,
+  value: unknown,
+  candidates: Array<{ url: unknown; category: "image" | "audio" }>,
+) {
+  if (value !== undefined && (!Array.isArray(value) || value.length > 16)) {
+    throw new PageReferenceAssetRefError("VIDEO_REFERENCE_ASSET_REF_INVALID", 400);
+  }
+  const submitted = new Map(candidates
+    .filter((candidate) => typeof candidate.url === "string" && Boolean(candidate.url.trim()))
+    .map((candidate) => [String(candidate.url).trim(), candidate.category]));
+  const hints = new Map<string, string>();
+  for (const candidate of Array.isArray(value) ? value : []) {
+    const item = candidate && typeof candidate === "object" ? candidate as Record<string, unknown> : {};
+    const url = typeof item.url === "string" ? item.url.trim() : "";
+    const assetRef = typeof item.asset_ref === "string" ? item.asset_ref.trim() : "";
+    const category = item.category === "audio" ? "audio" : item.category === "image" ? "image" : "";
+    const parsed = parseAutodlH3AssetRef(assetRef);
+    if (!url || !category || submitted.get(url) !== category || !parsed || tencentCosPageAssetKey(url) !== parsed.key) {
+      throw new PageReferenceAssetRefError("VIDEO_REFERENCE_ASSET_REF_INVALID", 400);
+    }
+    const previous = hints.get(url);
+    if (previous && previous !== assetRef) throw new PageReferenceAssetRefError("VIDEO_REFERENCE_ASSET_REF_INVALID", 400);
+    hints.set(url, assetRef);
+  }
+
+  const result = new Map<string, string>();
+  for (const [url, category] of submitted) {
+    const key = tencentCosPageAssetKey(url);
+    if (!key) continue;
+    const owned = await db.from("user_files")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("storage_provider", "tencent_cos")
+      .eq("storage_key", key)
+      .eq("file_category", category)
+      .eq("source", "video-page-reference")
+      .limit(2);
+    if (owned.error) throw new PageReferenceAssetRefError("VIDEO_REFERENCE_ASSET_LOOKUP_FAILED", 503);
+    if ((owned.data || []).length > 1) {
+      throw new PageReferenceAssetRefError("VIDEO_REFERENCE_ASSET_REF_INVALID", 400);
+    }
+    if ((owned.data || []).length === 0) continue;
+    const assetRef = createAutodlH3AssetRef("tencent_cos", key);
+    if (hints.has(url) && hints.get(url) !== assetRef) {
+      throw new PageReferenceAssetRefError("VIDEO_REFERENCE_ASSET_REF_INVALID", 400);
+    }
+    result.set(url, assetRef);
+  }
+  if ([...hints.keys()].some((url) => !result.has(url))) {
+    throw new PageReferenceAssetRefError("VIDEO_REFERENCE_ASSET_REF_INVALID", 400);
+  }
+  return result;
+}
+
+function buildVideoRequestAssetRefs(input: {
+  imageUrl?: unknown;
+  imageStorageKey?: string;
+  lastFrameUrl?: unknown;
+  referenceImageUrl?: unknown;
+  referenceImageUrls?: unknown[];
+  audioUrl?: unknown;
+  referenceAudioUrls?: unknown[];
+  sourceVideoUrl?: unknown;
+  personAssetId?: unknown;
+  audioAssetId?: unknown;
+  ownedPageAssetRefs?: Map<string, string>;
+}): VideoRequestAssetRef[] {
+  const assets: VideoRequestAssetRef[] = [];
+  const add = (role: VideoRequestAssetRef["role"], index: number, value: unknown, storageKey = "") => {
+    const raw = typeof value === "string" ? value.trim() : "";
+    const ref = stableVideoRequestAssetRef(input.ownedPageAssetRefs?.get(raw) || value, storageKey);
+    if (ref) assets.push({ role, index, ref });
+  };
+  add("first_frame", 0, input.imageUrl, input.imageStorageKey);
+  add("last_frame", 0, input.lastFrameUrl);
+  add("reference_image", 0, input.referenceImageUrl);
+  (input.referenceImageUrls || []).forEach((value, index) => add("reference_image_list", index, value));
+  add("reference_audio", 0, input.audioUrl);
+  (input.referenceAudioUrls || []).forEach((value, index) => add("reference_audio_list", index, value));
+  add("source_video", 0, input.sourceVideoUrl);
+  add("person_asset", 0, input.personAssetId);
+  add("audio_asset", 0, input.audioAssetId);
+  return assets;
+}
+
 export async function POST(req: NextRequest) {
   const submitStart = Date.now();
   const traceId = crypto.randomUUID();
@@ -287,6 +434,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { image_url } = body;
     const { model_id, prompt, last_frame_url, reference_image_url, audio_url, negative_prompt, duration, aspect_ratio, resolution, resolution_tier, source_video_url, task_label, batch_id, batch_topic, card_index, surface, client_request_id } = body;
+    const generateAudio = Object.prototype.hasOwnProperty.call(body, "generate_audio")
+      ? body.generate_audio
+      : body.generateAudio;
+    if (body.generate_audio !== undefined && body.generateAudio !== undefined && body.generate_audio !== body.generateAudio) {
+      return NextResponse.json({
+        error: "音轨开关参数冲突，本次未提交上游",
+        error_code: "VIDEO_PARAMETER_CONFLICT",
+        parameter: "generateAudio",
+        retryable: false,
+        task_submitted: false,
+      }, { status: 422 });
+    }
     const adminValidationRequested = body.admin_validation === true;
     const adminAuthorization = adminValidationRequested ? currentAuthorization : null;
     if (adminAuthorization && !adminAuthorization.ok) return NextResponse.json({ error: adminAuthorization.error, error_code: adminAuthorization.code, task_submitted: false }, { status: adminAuthorization.status });
@@ -396,7 +555,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 安全防护1：POST请求体注入检测（SQL注入/XSS/路径遍历） ──
-    const requestBody = { model_id, prompt, image_url, last_frame_url, reference_image_url, reference_image_urls: referenceImageUrls, audio_url, reference_audio_urls: referenceAudioUrls, negative_prompt, duration, aspect_ratio, resolution, resolution_tier, source_video_url, task_label, batch_id, batch_topic, card_index, client_request_id };
+    const requestBody = { model_id, prompt, image_url, last_frame_url, reference_image_url, reference_image_urls: referenceImageUrls, audio_url, reference_audio_urls: referenceAudioUrls, negative_prompt, generate_audio: generateAudio, duration, aspect_ratio, resolution, resolution_tier, source_video_url, task_label, batch_id, batch_topic, card_index, client_request_id };
     const bodySuspicious = detectSuspiciousBody(requestBody, ["task_label", "batch_topic"]);
     if (bodySuspicious.suspicious) {
       const secIP = getSecIP(req as unknown as Request);
@@ -425,6 +584,25 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getSupabaseAdminClient();
+    let ownedPageAssetRefs: Map<string, string>;
+    try {
+      ownedPageAssetRefs = await resolveOwnedPageReferenceAssetRefs(db, userId, body.reference_asset_refs, [
+        { url: image_url, category: "image" },
+        { url: last_frame_url, category: "image" },
+        { url: reference_image_url, category: "image" },
+        ...referenceImageUrls.map((url) => ({ url, category: "image" as const })),
+        { url: audio_url, category: "audio" },
+        ...referenceAudioUrls.map((url) => ({ url, category: "audio" as const })),
+      ]);
+    } catch (error) {
+      const referenceError = error instanceof PageReferenceAssetRefError ? error : null;
+      return NextResponse.json({
+        error: referenceError?.message || "参考素材归属校验暂时不可用，本次未提交",
+        error_code: referenceError?.code || "VIDEO_REFERENCE_ASSET_LOOKUP_FAILED",
+        task_submitted: false,
+        retryable: referenceError?.status === 503,
+      }, { status: referenceError?.status || 503 });
+    }
 
     // 1. 查询用户选择的模型配置。普通用户只提交公开 opaque ID；管理员兼容内部 ID。
     let dbSelectedModel = null;
@@ -467,7 +645,7 @@ export async function POST(req: NextRequest) {
         dbSelectedModel = result.data;
       }
     } catch (modelLookupError) {
-      console.warn("[video-gen] Supabase model lookup failed, trying production proxy:", modelLookupError);
+      console.warn("[video-gen] Supabase model lookup failed, trying production proxy:", sanitizeVideoProviderDiagnostic(modelLookupError));
     }
 
     const selectedModel = dbSelectedModel || (!adminValidationRequested && privilegedModelOperationAuthorized && !String(model_id).startsWith("pm_")
@@ -481,6 +659,39 @@ export async function POST(req: NextRequest) {
     const selectedProtocolConfig = selectedModel.api_protocol_config && typeof selectedModel.api_protocol_config === "object"
       ? selectedModel.api_protocol_config as Record<string, unknown>
       : {};
+    const protocolParameterIssue = validateVideoParameterContract(selectedModel as VideoModelConfig, {
+      prompt: trimmedPrompt,
+      negativePrompt: negative_prompt,
+      generateAudio,
+      duration,
+      fps: body.fps,
+      seed: body.seed,
+      resolution,
+      resolutionTier: resolution_tier,
+      userProvidedOptions: {
+        resolution: Boolean(String(resolution ?? "").trim() || String(resolution_tier ?? "").trim()),
+      },
+    });
+    if (protocolParameterIssue) {
+      return NextResponse.json({
+        error: protocolParameterIssue.message,
+        error_code: protocolParameterIssue.code,
+        parameter: protocolParameterIssue.parameter,
+        accepted_values: protocolParameterIssue.acceptedValues,
+        retryable: false,
+        task_submitted: false,
+        price: 0,
+      }, { status: protocolParameterIssue.status });
+    }
+    const parameterGuardedProtocol = [
+      "siliconflow_kling",
+      "kling_official",
+      "replicate",
+      "autodl_comfyui_workflow",
+      "autodl_comfyui_h3",
+      "autodl_h3_selfhost",
+    ]
+      .includes(String(selectedModel.protocol_type || ""));
     const billingAdmission = videoBillingAdapterAdmission(selectedProtocolConfig);
     if (!billingAdmission.ready) {
       return NextResponse.json({
@@ -707,7 +918,7 @@ export async function POST(req: NextRequest) {
     } catch (secretError) {
       console.error("[Video/ProviderDiagnostic] provider credential unavailable", {
         modelId: selectedModel.id,
-        error: secretError instanceof Error ? secretError.message : "Unknown secret error",
+        error: sanitizeVideoProviderDiagnostic(secretError),
       });
     }
 
@@ -736,10 +947,17 @@ export async function POST(req: NextRequest) {
           ? `当前模型最短支持 ${requestedTiming.minDuration} 秒，请调整时长或切换模型`
           : `当前模型最长支持 ${requestedTiming.maxDuration} 秒，请缩短镜头或切换模型`,
         duration_capabilities: requestedTiming,
+        ...(parameterGuardedProtocol ? {
+          error_code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+          parameter: "duration",
+          retryable: false,
+        } : {}),
         task_submitted: false,
-      }, { status: 400 });
+      }, { status: parameterGuardedProtocol ? 422 : 400 });
     }
-    const targetDuration = coerceVideoTargetDuration(selectedModel, requestedDuration);
+    const targetDuration = parameterGuardedProtocol
+      ? requestedDuration
+      : coerceVideoTargetDuration(selectedModel, requestedDuration);
     const videoTiming = resolveVideoDuration(selectedModel, targetDuration);
     if (!videoTiming.supported) {
       return NextResponse.json({
@@ -747,7 +965,18 @@ export async function POST(req: NextRequest) {
           ? `当前模型最短支持 ${videoTiming.minDuration} 秒，请调整时长或切换模型`
           : `当前模型最长支持 ${videoTiming.maxDuration} 秒，请缩短镜头或切换模型`,
         duration_capabilities: videoTiming,
-      }, { status: 400 });
+      }, { status: parameterGuardedProtocol ? 422 : 400 });
+    }
+    if (parameterGuardedProtocol
+      && (videoTiming.target !== requestedDuration || videoTiming.submit !== requestedDuration)) {
+      return NextResponse.json({
+        error: `当前协议无法原样提交 ${requestedDuration} 秒，本次未提交上游`,
+        error_code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+        parameter: "duration",
+        retryable: false,
+        task_submitted: false,
+        price: 0,
+      }, { status: 422 });
     }
     const configuredDurations = Array.isArray(selectedProtocolConfig.duration_options)
       ? selectedProtocolConfig.duration_options.map(Number).filter((value) => Number.isFinite(value) && value > 0)
@@ -769,7 +998,13 @@ export async function POST(req: NextRequest) {
         error: `当前模型不支持 ${requestedResolution}，可选分辨率：${videoResolution.options.join("/")}`,
         resolution_options: videoResolution.options,
         default_resolution: videoResolution.defaultResolution,
-      }, { status: 400 });
+        ...(parameterGuardedProtocol ? {
+          error_code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+          parameter: "resolution",
+          retryable: false,
+          task_submitted: false,
+        } : {}),
+      }, { status: parameterGuardedProtocol ? 422 : 400 });
     }
     const selectedResolution = videoResolution.resolution;
 
@@ -1015,6 +1250,19 @@ export async function POST(req: NextRequest) {
     // Freeze all non-secret routing data before reservation. The original
     // credential reference is captured, never the resolved provider secret.
     const routingSnapshot = buildVideoRoutingSnapshot(selectedModel as Record<string, unknown>);
+    const publicRequestedModelId = String(model_id).startsWith("pm_")
+      ? String(model_id)
+      : toPublicModelId("video", String(selectedModel.id));
+    const promptNormalizations = [
+      { name: "trim_prompt", applied: typeof prompt === "string" && prompt !== trimmedPrompt },
+      { name: "omit_unsupported_prompt", applied: !inputContract.supportsPrompt && Boolean(trimmedPrompt) },
+      { name: "timeline_normalization", applied: normalizedTiming.timelineNormalized },
+    ];
+    const snapshotFps = Number.isFinite(Number(body.fps)) && Number(body.fps) > 0 ? Number(body.fps) : null;
+    const snapshotSeed = body.seed === undefined || body.seed === null || String(body.seed).trim() === ""
+      ? null
+      : String(body.seed);
+    const snapshotGenerateAudio = typeof generateAudio === "boolean" ? generateAudio : null;
 
     if (useAutodlH3Lifecycle) {
       let stableInputAssets: AutodlH3StableInputAssets;
@@ -1042,10 +1290,52 @@ export async function POST(req: NextRequest) {
 
       const publicTaskId = createAutodlH3PublicTaskId({ userId, clientRequestId: stableH3ClientRequestId });
       const videoTaskInternalId = taskIdentity.taskIdInternal;
+      const h3RequestPayload = {
+        prompt: executionPrompt,
+        ...stableInputAssets,
+        negativePrompt: negative_prompt || undefined,
+        generateAudio: typeof generateAudio === "boolean" ? generateAudio : undefined,
+        duration: videoTiming.submit,
+        aspectRatio: aspect_ratio || "16:9",
+        resolution: selectedResolution,
+        resolutionTier: selectedResolution,
+        billingPriceYuan: price,
+        billingCostPrice: selectedCostPrice,
+        idempotencyKey: stableH3ClientRequestId,
+      };
+      const requestSnapshot = buildVideoGenerationRequestSnapshot({
+        userPrompt: typeof prompt === "string" ? prompt : "",
+        effectivePrompt: executionPrompt,
+        promptNormalizations,
+        negativePrompt: typeof negative_prompt === "string" ? negative_prompt : "",
+        referenceAssets: buildVideoRequestAssetRefs({
+          imageUrl: stableInputAssets.imageAssetRef,
+          lastFrameUrl: stableInputAssets.lastFrameAssetRef,
+          referenceImageUrl: stableInputAssets.referenceImageAssetRef,
+          referenceImageUrls: stableInputAssets.imageAssetRefs,
+          audioUrl: stableInputAssets.audioAssetRef,
+          referenceAudioUrls: stableInputAssets.audioAssetRefs,
+          sourceVideoUrl: stableInputAssets.sourceVideoAssetRef,
+          personAssetId: body.person_asset_id,
+          audioAssetId: body.audio_asset_id,
+        }),
+        targetDurationSeconds: videoTiming.target,
+        effectiveDurationSeconds: videoTiming.submit,
+        aspectRatio: aspect_ratio || "16:9",
+        resolution: selectedResolution,
+        fps: snapshotFps,
+        seed: snapshotSeed,
+        generateAudio: snapshotGenerateAudio,
+        publicModelId: publicRequestedModelId,
+        routingConfigHash: routingSnapshot.configVersion,
+        adapterVersion: `video-adapter:${channelConfig.protocol_type}:v1`,
+        providerPayload: h3RequestPayload,
+      });
       const requestFingerprint = buildVideoRequestFingerprint({
         modelId: channelConfig.id,
         prompt: executionPrompt,
         negativePrompt: negative_prompt || null,
+        generateAudio: generateAudio ?? null,
         duration: videoTiming.submit,
         targetDuration: videoTiming.target,
         aspectRatio: aspect_ratio || "16:9",
@@ -1059,6 +1349,7 @@ export async function POST(req: NextRequest) {
         clientRequestId: normalizedClientRequestId,
         requestFingerprint,
         routingSnapshot,
+        requestSnapshot,
         price: billing,
         billingExempt,
         providerTaskId: publicTaskId,
@@ -1067,7 +1358,7 @@ export async function POST(req: NextRequest) {
           batchId: batch_id,
           batchTopic: batch_topic,
           cardIndex: card_index,
-          prompt,
+          prompt: typeof prompt === "string" ? prompt : "",
           firstFrameUrl: stableInputAssets.imageAssetRef,
           lastFrameUrl: stableInputAssets.lastFrameAssetRef,
           referenceImageUrl: stableInputAssets.referenceImageAssetRef,
@@ -1103,25 +1394,14 @@ export async function POST(req: NextRequest) {
           idempotencyKey: stableH3ClientRequestId,
           publicTaskId,
           videoTaskInternalId,
-          requestPayload: {
-            prompt: executionPrompt,
-            ...stableInputAssets,
-            negativePrompt: negative_prompt || undefined,
-            duration: videoTiming.submit,
-            aspectRatio: aspect_ratio || "16:9",
-            resolution: selectedResolution,
-            resolutionTier: selectedResolution,
-            // Immutable billing snapshot consumed only by the fenced atomic
-            // finalizer. Later admin price edits cannot change an accepted job.
-            billingPriceYuan: price,
-            billingCostPrice: selectedCostPrice,
-            idempotencyKey: stableH3ClientRequestId,
-          },
+          // Immutable billing fields are consumed only by the fenced atomic
+          // finalizer. The exact same payload is hashed into the reservation.
+          requestPayload: h3RequestPayload,
         });
 
         if (queued.created) {
           await recordVideoSubmission(channelConfig.id)
-            .catch((error) => console.warn("[Video/Accounting] Failed to record H3 lifecycle submission", error));
+            .catch((error) => console.warn("[Video/Accounting] Failed to record H3 lifecycle submission", sanitizeVideoProviderDiagnostic(error)));
         }
         const totalMs = Date.now() - submitStart;
         await writeVideoTrace({
@@ -1230,6 +1510,26 @@ export async function POST(req: NextRequest) {
     }
 
     const taskIdInternal = taskIdentity.taskIdInternal;
+    const adapterParams: VideoGenerateParams = {
+      prompt: executionPrompt,
+      imageUrl: effectiveImageUrl,
+      lastFrameUrl: effectiveLastFrameUrl,
+      referenceImageUrl: effectiveReferenceImageUrl,
+      audioUrl: effectiveAudioUrl,
+      imageUrls: effectiveReferenceImageUrls,
+      audioUrls: effectiveReferenceAudioUrls,
+      sourceVideoUrl: effectiveSourceVideoUrl,
+      videoExtension: ["dashscope_video_retalk", "volcengine_digital_human"].includes(selectedModel.protocol_type)
+        && body.video_extension === true,
+      negativePrompt: negative_prompt,
+      generateAudio,
+      duration: videoTiming.submit,
+      aspectRatio: aspect_ratio || "16:9",
+      resolution: selectedResolution,
+      resolutionTier: selectedResolution,
+      userProvidedOptions: { resolution: Boolean(requestedResolution) },
+      idempotencyKey: taskIdentity.providerIdempotencyKey,
+    };
     const requestFingerprint = buildVideoRequestFingerprint({
       modelId: channelConfig.id,
       prompt: executionPrompt,
@@ -1242,6 +1542,7 @@ export async function POST(req: NextRequest) {
       sourceVideoUrl: effectiveSourceVideoUrl || null,
       videoExtension: body.video_extension === true,
       negativePrompt: negative_prompt || null,
+      generateAudio: generateAudio ?? null,
       duration: videoTiming.submit,
       targetDuration: videoTiming.target,
       aspectRatio: aspect_ratio || "16:9",
@@ -1253,9 +1554,40 @@ export async function POST(req: NextRequest) {
           mode: task_label === 'digital-human:video' ? 'video' : 'photo', durationChoice: body.duration_choice,
           params: {prompt:executionPrompt,negativePrompt:negative_prompt,duration:videoTiming.submit,
             aspectRatio:aspect_ratio || '16:9',resolution:selectedResolution,resolutionTier:selectedResolution,
+            generateAudio,
             videoExtension: ['dashscope_video_retalk','volcengine_digital_human'].includes(selectedModel.protocol_type) && body.video_extension === true,
             idempotencyKey:taskIdentity.providerIdempotencyKey},
         }) : undefined;
+    const requestSnapshot = buildVideoGenerationRequestSnapshot({
+      userPrompt: typeof prompt === "string" ? prompt : "",
+      effectivePrompt: executionPrompt,
+      promptNormalizations,
+      negativePrompt: typeof negative_prompt === "string" ? negative_prompt : "",
+      referenceAssets: buildVideoRequestAssetRefs({
+        imageUrl: image_url,
+        imageStorageKey: image_storage_key,
+        lastFrameUrl: last_frame_url,
+        referenceImageUrl: reference_image_url,
+        referenceImageUrls,
+        audioUrl: audio_url,
+        referenceAudioUrls,
+        sourceVideoUrl: source_video_url,
+        personAssetId: body.person_asset_id,
+        audioAssetId: body.audio_asset_id,
+        ownedPageAssetRefs,
+      }),
+      targetDurationSeconds: videoTiming.target,
+      effectiveDurationSeconds: videoTiming.submit,
+      aspectRatio: aspect_ratio || "16:9",
+      resolution: selectedResolution,
+      fps: snapshotFps,
+      seed: snapshotSeed,
+      generateAudio: snapshotGenerateAudio,
+      publicModelId: publicRequestedModelId,
+      routingConfigHash: routingSnapshot.configVersion,
+      adapterVersion: `video-adapter:${channelConfig.protocol_type}:v1`,
+      providerPayload: dispatch || adapterParams,
+    });
     const reservation = await reserveVideoGenerationTask({
       dispatch,
       taskIdInternal,
@@ -1264,6 +1596,7 @@ export async function POST(req: NextRequest) {
       clientRequestId: normalizedClientRequestId,
       requestFingerprint,
       routingSnapshot,
+      requestSnapshot,
       price: billing,
       billingExempt,
       task: {
@@ -1271,7 +1604,7 @@ export async function POST(req: NextRequest) {
         batchId: batch_id,
         batchTopic: batch_topic,
         cardIndex: card_index,
-        prompt,
+        prompt: typeof prompt === "string" ? prompt : "",
         firstFrameUrl: image_url,
         lastFrameUrl: last_frame_url,
         referenceImageUrl: reference_image_url,
@@ -1327,8 +1660,16 @@ export async function POST(req: NextRequest) {
     let result;
     let providerRequestDispatched = false;
     let submitFailedBeforeProviderDispatch = false;
+    let providerAdmissionLease: ProviderAdmissionLease | null = null;
+    let providerAdmissionError: ProviderAdmissionBusyError | ProviderAdmissionUnavailableError | null = null;
     try {
+      providerAdmissionLease = await acquireProviderAdmission({
+        provider: String(selectedModel.provider || "unknown"),
+        channel: String(selectedModel.id || selectedModel.api_endpoint || "unknown"),
+        model: String(selectedModel.model_name || selectedModel.name || selectedModel.id || "unknown"),
+      });
       result = await submitVideoTask(channelConfig, {
+        ...adapterParams,
         inputOwnerId: userId,
         onProviderRequest: async (receipt) => {
           // The audited provider fetch is fail-closed: this durable receipt
@@ -1344,23 +1685,11 @@ export async function POST(req: NextRequest) {
           providerRequestDispatched = true;
           await writeVideoTrace({ phase: "provider_dispatch", traceId, clientRequestId: normalizedClientRequestId, modelId: selectedModel.id, protocol: selectedModel.protocol_type, ...receipt });
         },
-        prompt: executionPrompt,
-        imageUrl: effectiveImageUrl,
-        lastFrameUrl: effectiveLastFrameUrl,
-        referenceImageUrl: effectiveReferenceImageUrl,
-        audioUrl: effectiveAudioUrl,
-        imageUrls: effectiveReferenceImageUrls,
-        audioUrls: effectiveReferenceAudioUrls,
-        sourceVideoUrl: effectiveSourceVideoUrl,
-        videoExtension: ["dashscope_video_retalk", "volcengine_digital_human"].includes(selectedModel.protocol_type) && body.video_extension === true,
-        negativePrompt: negative_prompt,
-        duration: videoTiming.submit,
-        aspectRatio: aspect_ratio || "16:9",
-        resolution: selectedResolution,
-        resolutionTier: selectedResolution,
-        idempotencyKey: taskIdentity.providerIdempotencyKey,
       });
     } catch (submitError) {
+      if (submitError instanceof ProviderAdmissionBusyError || submitError instanceof ProviderAdmissionUnavailableError) {
+        providerAdmissionError = submitError;
+      }
       const errorMessage = submitError instanceof Error ? submitError.message : String(submitError);
       submitFailedBeforeProviderDispatch = !providerRequestDispatched;
       const upstreamStatus = Number(errorMessage.match(/(?:API|HTTP|status|返回)\D{0,8}(4\d\d)/iu)?.[1] || 0);
@@ -1373,6 +1702,8 @@ export async function POST(req: NextRequest) {
             submissionOutcome: "unknown" as const,
             error: errorMessage,
           };
+    } finally {
+      await providerAdmissionLease?.release().catch(() => undefined);
     }
 
     if (!result.taskId && !result.videoUrl && result.status !== "failed"
@@ -1426,6 +1757,51 @@ export async function POST(req: NextRequest) {
       }, { status: 202 });
     }
     if (result.status === "failed") {
+      if (providerAdmissionError) {
+        const failurePersisted = await markVideoSubmissionFailed({
+          taskIdInternal,
+          userId,
+          requestFingerprint,
+          errorCode: providerAdmissionError.code,
+          errorMessage: providerAdmissionError.message,
+        });
+        await writeVideoTrace({
+          phase: "blocked",
+          traceId,
+          modelId: traceModelId,
+          taskLabel: traceTaskLabel,
+          promptHash: tracePromptHash,
+          durationMs: Date.now() - submitStart,
+          errorCode: failurePersisted ? providerAdmissionError.code : "VIDEO_ADMISSION_RELEASE_UNCONFIRMED",
+        });
+        if (!failurePersisted) {
+          return NextResponse.json({
+            error: "视频任务未调用供应商，但预算释放状态正在核对；请保留原请求号，暂勿重复提交",
+            error_code: "VIDEO_ADMISSION_RELEASE_UNCONFIRMED",
+            task_id: taskIdInternal,
+            business_task_id: taskIdInternal,
+            status: "billing_pending",
+            submission_outcome: "not_submitted",
+            task_submitted: false,
+            retryable: false,
+          }, { status: 503 });
+        }
+        return NextResponse.json({
+          error: providerAdmissionError.message,
+          error_code: providerAdmissionError.code,
+          task_id: taskIdInternal,
+          business_task_id: taskIdInternal,
+          status: "failed",
+          submission_outcome: "not_submitted",
+          task_submitted: false,
+          retryable: true,
+        }, {
+          status: providerAdmissionError.status,
+          headers: providerAdmissionError instanceof ProviderAdmissionBusyError
+            ? { "Retry-After": String(providerAdmissionError.retryAfterSeconds) }
+            : undefined,
+        });
+      }
       const modelDisplayName = publicModelDisplayName(selectedModel as Record<string, unknown>);
       const classifiedError = classifyVideoProviderError(result.error, modelDisplayName);
       await writeVideoTrace({
@@ -1472,7 +1848,7 @@ export async function POST(req: NextRequest) {
         errorMessage: classifiedError.publicMessage,
       });
       if (!submitFailedBeforeProviderDispatch) {
-        await recordVideoTerminalOutcome({ modelId: selectedModel.id, outcome: "fail", responseMs: totalMs, errorMessage: result.error, countSubmission: true }).catch((error) => console.warn("[Video/Accounting] Failed to record submit failure", error));
+        await recordVideoTerminalOutcome({ modelId: selectedModel.id, outcome: "fail", responseMs: totalMs, errorMessage: result.error, countSubmission: true }).catch((error) => console.warn("[Video/Accounting] Failed to record submit failure", sanitizeVideoProviderDiagnostic(error)));
       }
 
       return NextResponse.json(
@@ -1547,7 +1923,7 @@ export async function POST(req: NextRequest) {
       // Keep the sync path explicit so total_requests is neither skipped nor
       // coupled to whether terminal persistence/billing finishes immediately.
       await recordVideoSubmission(channelConfig.id)
-        .catch((error) => console.warn("[Video/Accounting] Failed to record sync submission", error));
+        .catch((error) => console.warn("[Video/Accounting] Failed to record sync submission", sanitizeVideoProviderDiagnostic(error)));
       const finalized = await finalizeVideoGenerationSuccess({
         taskIdInternal,
         userId,
@@ -1618,10 +1994,10 @@ export async function POST(req: NextRequest) {
         }),
       ]);
       if (accountingResult.status === "rejected") {
-        console.warn("[Video/Accounting] Failed to record async submission", accountingResult.reason);
+        console.warn("[Video/Accounting] Failed to record async submission", sanitizeVideoProviderDiagnostic(accountingResult.reason));
       }
       if (traceResult.status === "rejected") {
-        console.warn("[Video/Trace] Failed to persist accepted submission trace", traceResult.reason);
+        console.warn("[Video/Trace] Failed to persist accepted submission trace", sanitizeVideoProviderDiagnostic(traceResult.reason));
       }
     });
     return NextResponse.json({
@@ -1672,7 +2048,7 @@ export async function POST(req: NextRequest) {
       errorCategory: classifiedError.category,
       detail: classifiedError.operatorMessage,
     });
-    console.error("视频生成错误:", error);
+    console.error("视频生成错误:", classifiedError.operatorMessage);
     return NextResponse.json({
       error: classifiedError.publicMessage,
       error_code: classifiedError.code,

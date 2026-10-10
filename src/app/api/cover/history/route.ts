@@ -132,7 +132,8 @@ async function loadFailedCoverHistory(
     .flatMap((row) => {
       const snapshot = parseImageFailureRequestSnapshot(row.request_snapshot);
       const failure = parseImageTerminalFailure(row.response, row.payload_fingerprint);
-      return snapshot?.surface === COVER_FAILURE_HISTORY_SURFACE && failure ? [{ row, snapshot, failure }] : [];
+      const integrityMatches = !snapshot?.payloadFingerprint || snapshot.payloadFingerprint === row.payload_fingerprint;
+      return snapshot?.surface === COVER_FAILURE_HISTORY_SURFACE && integrityMatches && failure ? [{ row, snapshot, failure }] : [];
     });
 
   const billingReferences = parsedRows.map(({ row }) => imageFailureBillingReferenceId(userId, row.client_idempotency_key));
@@ -179,6 +180,16 @@ async function loadFailedCoverHistory(
       publicModelId: snapshot.publicModelId,
       modelName: snapshot.modelName,
       resolution: snapshot.resolution,
+      requestIntegrity: {
+        schema: snapshot.schema,
+        payloadFingerprint: snapshot.payloadFingerprint || row.payload_fingerprint,
+        effectivePrompt: snapshot.effectivePrompt || snapshot.prompt,
+        style: snapshot.style || "",
+        referenceUsage: snapshot.referenceUsage || "general",
+        providerProtocol: snapshot.providerProtocol || "legacy_unknown",
+        outputPixelSize: snapshot.outputPixelSize || "",
+        imageCount: snapshot.imageCount || 1,
+      },
       referenceAssetRefs: snapshot.referenceAssetRefs,
       referenceCount: snapshot.referenceAssetRefs.length,
       quotedPriceYuan: snapshot.quotedPriceYuan,

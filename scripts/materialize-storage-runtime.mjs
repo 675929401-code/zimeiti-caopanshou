@@ -28,16 +28,24 @@ export function materializeRuntimePackages(sourceRoot, artifactRoot, names) {
     throw new Error(`Missing runtime dependency: ${name}`);
   }
 
-  function copyContents(source, destination, packageRoot) {
+  function copyContents(source, destination, packageRoot, activeRealDirectories = new Set()) {
+    if (path.extname(source).toLowerCase() === ".map") return;
     const resolvedSource = fs.realpathSync(source);
     if (!inside(installedRoot, resolvedSource)) throw new Error("Package file escapes installed packages");
     if (!inside(outputRoot, path.resolve(destination))) throw new Error("Package output escapes artifact");
     const stat = fs.statSync(resolvedSource);
     if (stat.isDirectory()) {
-      fs.mkdirSync(destination, { recursive: true });
-      for (const entry of fs.readdirSync(resolvedSource)) {
-        if (entry === ".git" || (resolvedSource === packageRoot && entry === "node_modules")) continue;
-        copyContents(path.join(resolvedSource, entry), path.join(destination, entry), packageRoot);
+      const directoryKey = process.platform === "win32" ? resolvedSource.toLowerCase() : resolvedSource;
+      if (activeRealDirectories.has(directoryKey)) throw new Error("Installed package directory link cycle");
+      activeRealDirectories.add(directoryKey);
+      try {
+        fs.mkdirSync(destination, { recursive: true });
+        for (const entry of fs.readdirSync(resolvedSource)) {
+          if (entry.toLowerCase().endsWith(".map") || entry === ".git" || (resolvedSource === packageRoot && entry === "node_modules")) continue;
+          copyContents(path.join(resolvedSource, entry), path.join(destination, entry), packageRoot, activeRealDirectories);
+        }
+      } finally {
+        activeRealDirectories.delete(directoryKey);
       }
     } else if (stat.isFile()) {
       fs.mkdirSync(path.dirname(destination), { recursive: true });

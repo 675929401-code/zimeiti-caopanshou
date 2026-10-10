@@ -2,7 +2,8 @@ export type ImageRequestRejection = {
   code: "IMAGE_REFERENCE_READ_FAILED" | "IMAGE_REFERENCE_REJECTED" | "IMAGE_UPSTREAM_REQUEST_REJECTED"
     | "IMAGE_UPSTREAM_TERMINAL_EVENT" | "IMAGE_UPSTREAM_ACCOUNT_UNAVAILABLE"
     | "IMAGE_OUTPUT_ASPECT_RATIO_MISMATCH" | "IMAGE_OUTPUT_RESOLUTION_MISMATCH"
-    | "IMAGE_BILLING_RESERVATION_REJECTED" | "IMAGE_PLATFORM_REQUEST_INTERRUPTED";
+    | "IMAGE_BILLING_RESERVATION_REJECTED" | "IMAGE_PLATFORM_REQUEST_INTERRUPTED"
+    | "IMAGE_PROVIDER_ADMISSION_BUSY" | "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE";
   source: "input" | "provider" | "platform";
   upstreamStatus?: number;
   /** Required when a relay wraps a definite provider refusal in a generic 5xx. */
@@ -11,6 +12,8 @@ export type ImageRequestRejection = {
   expectedAspectRatio?: string;
   expectedResolution?: string;
   expectedDimensions?: string;
+  retryAfterSeconds?: number;
+  admissionScope?: "global" | "provider" | "channel" | "model";
 };
 
 /** Parse only a rejection receipt bound to the exact request fingerprint. */
@@ -26,6 +29,22 @@ export function parseImageRequestRejectionReceipt(response: unknown, payloadFing
   }
   if (value.source === "platform" && value.code === "IMAGE_PLATFORM_REQUEST_INTERRUPTED" && value.upstreamStatus == null) {
     return { source: "platform", code: "IMAGE_PLATFORM_REQUEST_INTERRUPTED" };
+  }
+  if (value.source === "platform"
+    && (value.code === "IMAGE_PROVIDER_ADMISSION_BUSY" || value.code === "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE")
+    && value.upstreamStatus == null) {
+    const retryAfterSeconds = Number(value.retryAfterSeconds);
+    const admissionScope = ["global", "provider", "channel", "model"].includes(String(value.admissionScope))
+      ? value.admissionScope as ImageRequestRejection["admissionScope"]
+      : undefined;
+    if (value.code === "IMAGE_PROVIDER_ADMISSION_BUSY"
+      && (!Number.isSafeInteger(retryAfterSeconds) || retryAfterSeconds < 1 || retryAfterSeconds > 3600)) return null;
+    return {
+      source: "platform",
+      code: value.code,
+      ...(value.code === "IMAGE_PROVIDER_ADMISSION_BUSY" ? { retryAfterSeconds } : {}),
+      ...(admissionScope ? { admissionScope } : {}),
+    };
   }
   const upstreamStatus = Number(value.upstreamStatus);
   const synchronousClientRejection = upstreamStatus >= 400 && upstreamStatus < 500

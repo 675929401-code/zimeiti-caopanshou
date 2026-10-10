@@ -158,7 +158,8 @@ async function main(){
 
     const routeSource=await fs.readFile(path.resolve('src/app/api/commerce/jobs/route.ts'),'utf8');
     const runtimeSource=await fs.readFile(path.resolve('src/lib/media-queue-worker-runtime.ts'),'utf8');
-    assert.match(routeSource,/!\w+\.input\.rollingPlan/u,'浏览器 GET 必须跳过滚动父任务推进');
+    const jobsGetSource=routeSource.slice(routeSource.indexOf('export async function GET'),routeSource.indexOf('export async function POST'));
+    assert.doesNotMatch(jobsGetSource,/after\(|refreshJob/u,'浏览器 GET 必须只读，不能推进普通或滚动任务');
     assert.match(runtimeSource,/startCommerceRollingWorker/u,'独立媒体 Worker 必须启动 Commerce 滚动执行器');
     console.log(JSON.stringify({passed:true,checks:39,doubleWorkerAdvanceCount:entered,doubleWorkerRecoveryClaims:recoveryClaims.filter(Boolean).length,unknownChildId:unknownChild.id,savingChildId:savingChild.id,restitchParentId:restitchParent.id,finalAssetId,temporaryTailRemoteDeleteAttempts:remoteDeletes.length,providerSubmissions:0,walletWrites:0,databaseSchemaChanges:0}));
   }finally{

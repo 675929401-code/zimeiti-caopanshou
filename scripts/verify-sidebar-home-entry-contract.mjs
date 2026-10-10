@@ -31,12 +31,9 @@ assert.match(newConversation, /if \(!auth\?\.isAuthenticated \|\| !user\)[\s\S]*
 assert.match(newConversation, /startFreeChat\(\);\s*onNavigate\?\.\(\);/u, "所有已登录用户的新建对话必须进入自由对话");
 assert.doesNotMatch(newConversation, /if \(isAdmin\)|activeAgent|createConversationAndChat/u, "新建自由对话不得再按管理员角色或当前智能体分流");
 
-const actionsStart = marketplace.indexOf("用户端只保留主题切换");
-const actionsEnd = marketplace.indexOf("{/* 导航栏项 */}", actionsStart);
-assert.ok(actionsStart >= 0 && actionsEnd > actionsStart, "缺少首页导航操作区");
-const actions = marketplace.slice(actionsStart, actionsEnd);
-assert.match(actions, /<UserThemeSwitcher\s*\/>/u, "首页导航操作区必须保留主题切换");
-assert.doesNotMatch(actions, /管理导航入口|开启布局编辑模式|打开学习中心|setShowAddNav\(true\)|router\.push\("\/help"\)/u, "首页右上角临时管理入口必须收起");
+assert.match(sidebar, /<UserThemeSwitcher\s+menuSide="top"\s*\/>/u, "左侧栏底部必须保留唯一主题切换入口");
+assert.doesNotMatch(marketplace, /UserThemeSwitcher|marketplace-nav-actions/u, "首页右上角不得继续渲染重复主题入口");
+assert.doesNotMatch(marketplace, /管理导航入口|开启布局编辑模式|打开学习中心|setShowAddNav\(true\)|router\.push\("\/help"\)/u, "首页右上角临时管理入口必须保持收起");
 
 console.log(JSON.stringify({
   passed: true,
@@ -47,6 +44,6 @@ console.log(JSON.stringify({
     "new-chat-opens-free-chat-for-authenticated-users",
     "unauthenticated-new-chat-returns-home",
     "home-admin-actions-hidden",
-    "theme-switcher-preserved",
+    "theme-switcher-kept-in-sidebar-only",
   ],
 }, null, 2));

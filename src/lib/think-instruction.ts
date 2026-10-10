@@ -90,6 +90,23 @@ export function parseThinkTags(content: string): {
   let remaining = content;
   let inThink = false;
 
+  // A streaming chunk may stop halfway through an opening tag ("<t",
+  // "<think compatible", ...). Publishing that suffix as answer text and
+  // retracting it when the next chunk completes the tag makes the visible
+  // response go backwards. Keep only the ambiguous trailing fragment buffered;
+  // invalid lookalikes become visible as soon as the next character proves
+  // that they are ordinary text.
+  const withoutIncompleteOpenTag = (value: string) => {
+    const lastOpen = value.lastIndexOf('<');
+    if (lastOpen < 0) return value;
+    const tail = value.slice(lastOpen);
+    const lowerTail = tail.toLowerCase();
+    const isTagPrefix = ['<think🌍>', '<think compatible>', '<thinking>']
+      .some((tag) => tag.startsWith(lowerTail));
+    const isUnclosedThinkTag = /^<think(?:ing)?(?:\s[^>]*)?$/iu.test(tail);
+    return isTagPrefix || isUnclosedThinkTag ? value.slice(0, lastOpen) : value;
+  };
+
   while (remaining.length > 0) {
     if (inThink) {
       // 查找闭合标签：优先精确匹配，再通用匹配
@@ -157,8 +174,9 @@ export function parseThinkTags(content: string): {
       }
 
       if (openIdx === -1) {
-        // 没有开标签，全部是正文
-        displayParts.push(remaining);
+        // 没有完整开标签：正文可以公开，但跨 chunk 的标签前缀必须先缓冲，
+        // 避免先显示“<thi”再在标签闭合时整段回退。
+        displayParts.push(withoutIncompleteOpenTag(remaining));
         break;
       }
       // 提取正文（开标签之前的部分）

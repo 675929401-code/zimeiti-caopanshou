@@ -24,6 +24,13 @@ export async function main() {
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: 'block' });
+    await context.addCookies([{
+      name: 'auth_token',
+      value: token,
+      url: origin,
+      httpOnly: true,
+      sameSite: 'Strict',
+    }]);
     await context.route('**/*', async route => {
       const request = route.request();
       const url = new URL(request.url());
@@ -68,7 +75,7 @@ export async function main() {
     assert.equal(await page.getByRole('button', { name: '漫剧后台', exact: true }).count(), 0, 'INDEPENDENT_MANJU_HEADER_ENTRY_REMAINS');
     assert.equal(await nav.getByRole('button', { name: '漫剧工作台', exact: true }).count(), 0, 'DUPLICATE_MANJU_GLOBAL_NAV_ENTRY_REMAINS');
     assert.equal(await nav.getByRole('button', { name: '工作台配置', exact: true }).count(), 1, 'WORKSPACE_CONFIG_GLOBAL_NAV_ENTRY_INVALID');
-    assert.equal(await page.getByRole('button', { name: '部署到线上', exact: true }).count(), 1, 'GLOBAL_DEPLOY_ACTION_INVALID');
+    assert.equal(await page.getByRole('button', { name: '部署到线上', exact: true }).count(), 0, 'DEAD_GLOBAL_DEPLOY_ACTION_REMAINS');
     assert.equal(await nav.getByRole('button', { name: '学员管理', exact: true }).getAttribute('aria-current'), 'page');
 
     await nav.getByRole('button', { name: '模型资源池', exact: true }).click();

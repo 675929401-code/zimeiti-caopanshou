@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRestApi } from "@/lib/supabase-rest";
-import { withAdminAuth } from "@/lib/api-middleware";
+import { sharedConfigurationEnabled } from "@/storage/database/configuration-source";
+import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
 
 /** GET /api/admin/prompt-versions?agent_id=xxx
  *  获取指定智能体的提示词版本历史（按时间倒序）
  */
 export async function GET(request: NextRequest) {
-  return withAdminAuth(request, async () => {
+  const promptAccess = await authorizeAdminCapability(request, "prompts.view", {
+    requireStepUp: true,
+    operation: "agent_prompt_history_view",
+  });
+  if (!promptAccess.ok) return promptAccess.response;
 
   const { searchParams } = new URL(request.url);
   const agentId = searchParams.get("agent_id");
@@ -19,7 +24,7 @@ export async function GET(request: NextRequest) {
     path: "prompt_versions",
     query: {
       agent_id: `eq.${agentId}`,
-      select: "id,prompt,created_at",
+      select: "id,prompt,created_at,agent_revision,prompt_hash",
       order: "created_at.desc",
       limit: "200",
     },
@@ -31,15 +36,29 @@ export async function GET(request: NextRequest) {
   }
 
   // 转换为前端兼容格式
-  const rows = (data as Array<{ id: string; prompt: string; created_at: string }>) || [];
+  const rows = (data as Array<{
+    id: string;
+    prompt: string;
+    created_at: string;
+    agent_revision: number;
+    prompt_hash: string;
+  }>) || [];
   const versions = rows.map((v) => ({
     id: v.id,
     ts: new Date(v.created_at).getTime(),
     prompt: v.prompt,
+    agent_revision: v.agent_revision,
+    prompt_hash: v.prompt_hash,
   }));
 
-  return NextResponse.json({ versions });
-  });
+  return NextResponse.json({
+    versions,
+    immutable: sharedConfigurationEnabled(),
+    audit_fields: {
+      available: ["agent_revision", "prompt_hash"],
+      unavailable: ["actor", "reason", "source"],
+    },
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 /** POST /api/admin/prompt-versions
@@ -47,7 +66,18 @@ export async function GET(request: NextRequest) {
  *  保留 max_versions 条（默认10），超出自动删除最旧的（FIFO覆盖）
  */
 export async function POST(request: NextRequest) {
-  return withAdminAuth(request, async () => {
+  const promptAccess = await authorizeAdminCapability(request, "prompts.edit", {
+    requireStepUp: true,
+    operation: "agent_prompt_history_write",
+  });
+  if (!promptAccess.ok) return promptAccess.response;
+
+  if (sharedConfigurationEnabled()) {
+    return NextResponse.json({
+      error: "共享智能体的提示词历史由配置更新事务自动记录，禁止直接写入。",
+      code: "PROMPT_VERSION_DIRECT_WRITE_FORBIDDEN",
+    }, { status: 409 });
+  }
 
   const body = await request.json();
   const { agent_id, prompt, max_versions = 10 } = body;
@@ -122,14 +152,24 @@ export async function POST(request: NextRequest) {
         }
       : null,
   });
-  });
 }
 
 /** DELETE /api/admin/prompt-versions?id=xxx 或 ?agent_id=xxx
  *  删除单条版本 或 清空某智能体的所有版本
  */
 export async function DELETE(request: NextRequest) {
-  return withAdminAuth(request, async () => {
+  const promptAccess = await authorizeAdminCapability(request, "prompts.edit", {
+    requireStepUp: true,
+    operation: "agent_prompt_history_delete",
+  });
+  if (!promptAccess.ok) return promptAccess.response;
+
+  if (sharedConfigurationEnabled()) {
+    return NextResponse.json({
+      error: "共享智能体的提示词历史为审计记录，禁止直接删除。",
+      code: "PROMPT_VERSION_DELETE_FORBIDDEN",
+    }, { status: 409 });
+  }
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
@@ -162,5 +202,4 @@ export async function DELETE(request: NextRequest) {
   }
 
   return NextResponse.json({ error: "缺少 id 或 agent_id" }, { status: 400 });
-  });
 }

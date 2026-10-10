@@ -57,29 +57,35 @@ function load(file) {
     AbortController,
     AbortSignal,
     DOMException,
+    TextDecoder,
+    TextEncoder,
     Buffer,
     setTimeout,
     clearTimeout,
     crypto: nativeRequire("node:crypto").webcrypto,
     console: { log() {}, warn() {}, error() {} },
     fetch: async (input, init = {}) => {
-      const body = typeof init.body === "string"
-        ? JSON.parse(init.body)
-        : init.body instanceof FormData
-          ? Object.fromEntries([...init.body.entries()].map(([key, value]) => [
+      const request = input instanceof Request ? input : new Request(input, init);
+      const contentType = request.headers.get("content-type") || "";
+      const body = request.method === "GET" || request.method === "HEAD"
+        ? null
+        : contentType.includes("application/json")
+          ? await request.clone().json()
+          : contentType.includes("multipart/form-data")
+            ? Object.fromEntries([...(await request.clone().formData()).entries()].map(([key, value]) => [
               key,
               typeof value === "string" ? value : { name: value.name, size: value.size, type: value.type },
             ]))
-          : null;
-      const headers = Object.fromEntries(new Headers(init.headers).entries());
+            : null;
+      const headers = Object.fromEntries(new Headers(input instanceof Request ? input.headers : init.headers).entries());
       calls.push({
-        url: String(input),
-        method: String(init.method || "GET").toUpperCase(),
+        url: request.url,
+        method: request.method.toUpperCase(),
         headers,
         body,
-        bodyKind: init.body instanceof FormData ? "multipart" : "json",
+        bodyKind: contentType.includes("multipart/form-data") ? "multipart" : "json",
       });
-      return responseFactory(input, init);
+      return responseFactory(request, init);
     },
   }, { filename: absolute });
   return loaded.exports;
@@ -398,6 +404,62 @@ await test("AutoDL workflow completed without an asset remains processing", asyn
   assert.equal(result.status, "processing");
   assert.equal(result.videoUrl, undefined);
   assert.match(String(result.error), /等待/u);
+  assert.equal(calls.length, 1);
+});
+
+const autodlH3Config = baseConfig("autodl_comfyui_h3", {
+  api_endpoint: "https://www.autodl.art/api/v1",
+  model_name: "minimax_h3_multimodal",
+  api_protocol_config: { workflow_id: "minimax_h3_multimodal", max_reference_images: 9, max_reference_audios: 3 },
+});
+const autodlH3Params = {
+  prompt: "fixture", duration: 8, resolutionTier: "720p", aspectRatio: "16:9",
+  idempotencyKey: "video-autodl-h3-original-request",
+};
+
+await test("AutoDL H3 success uses one POST and records a submission receipt", async () => {
+  responseFactory = json({ code: "Success", data: { task_id: "autodl-h3-task", status: "QUEUED" } });
+  const result = await adapter.submitVideoTask(autodlH3Config, autodlH3Params);
+  assert.equal(result.taskId, "autodl-h3-task");
+  assert.equal(result.status, "queued");
+  assert.equal(result.submissionReceipt?.receiptState, "response_received");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers["x-idempotency-key"], autodlH3Params.idempotencyKey);
+});
+
+await test("AutoDL H3 transport loss is unknown with zero retry", async () => {
+  responseFactory = async () => { throw new TypeError("fixture transport loss"); };
+  const result = await adapter.submitVideoTask(autodlH3Config, autodlH3Params);
+  assert.equal(result.submissionOutcome, "unknown");
+  assert.equal(result.status, "processing");
+  assert.equal(result.submissionReceipt?.receiptState, "transport_unavailable");
+  assert.equal(calls.length, 1);
+});
+
+await test("AutoDL H3 HTTP 503 is unknown with zero retry", async () => {
+  responseFactory = json({ code: "error", message: "temporary unavailable" }, 503);
+  const result = await adapter.submitVideoTask(autodlH3Config, autodlH3Params);
+  assert.equal(result.submissionOutcome, "unknown");
+  assert.equal(result.status, "processing");
+  assert.equal(result.submissionReceipt?.httpStatus, 503);
+  assert.equal(calls.length, 1);
+});
+
+await test("AutoDL H3 HTTP 200 without task_id is unknown with zero retry", async () => {
+  responseFactory = json({ code: "Success", data: { status: "QUEUED" } });
+  const result = await adapter.submitVideoTask(autodlH3Config, autodlH3Params);
+  assert.equal(result.submissionOutcome, "unknown");
+  assert.equal(result.status, "processing");
+  assert.equal(result.submissionReceipt?.httpStatus, 200);
+  assert.equal(calls.length, 1);
+});
+
+await test("AutoDL H3 explicit HTTP 400 rejection is terminal and receipted", async () => {
+  responseFactory = json({ code: "invalid_parameter", message: "invalid parameter" }, 400);
+  const result = await adapter.submitVideoTask(autodlH3Config, autodlH3Params);
+  assert.equal(result.status, "failed");
+  assert.equal(result.submissionOutcome, undefined);
+  assert.equal(result.submissionReceipt?.httpStatus, 400);
   assert.equal(calls.length, 1);
 });
 

@@ -18,6 +18,7 @@ import { isSyntheticProxyAddress } from "@/lib/extract-media-network";
 
 const VIDEO_PROVIDER: StorageProviderType = "tencent_cos";
 const OBJECT_URI_PREFIX = `object://${VIDEO_PROVIDER}/`;
+export type ManagedVideoStorageScope = "autodl-h3" | "short-drama" | "model-acceptance";
 export const AUTODL_HOSTED_RESULT_HOST = "codewithgpu-image-1310972338.cos.ap-beijing.myqcloud.com";
 // CodeWithGPU 托管工作流的产物桶已迁移到火山 TOS；结果地址是带签名的私有桶 URL，
 // 下载必须保留完整签名 query，否则 TOS 返回 403。
@@ -31,6 +32,10 @@ const videoPersistenceGlobal = globalThis as typeof globalThis & {
 };
 const autodlH3VideoFinalizationLocks = videoPersistenceGlobal.__autodlH3VideoFinalizationLocks
   ?? (videoPersistenceGlobal.__autodlH3VideoFinalizationLocks = new Set<string>());
+
+function managedVideoPrefix(scope: ManagedVideoStorageScope) {
+  return `videos/scoped/${scope}/`;
+}
 
 function toObjectUri(key: string) {
   return `${OBJECT_URI_PREFIX}${encodeURIComponent(key)}`;
@@ -82,6 +87,7 @@ async function persistAutodlHostedResult(
   taskId: string,
   userId: string,
   providerProtocol: string,
+  storageScope: ManagedVideoStorageScope,
 ) {
   const trustedUrl = assertAutodlHostedResultUrl(videoUrl);
   const downloaded = await safeFetch(trustedUrl, {
@@ -107,7 +113,7 @@ async function persistAutodlHostedResult(
       strictProvider: true,
       requireOwnershipRecord: true,
       category: "video",
-      prefix: "videos/generated/",
+      prefix: managedVideoPrefix(storageScope),
       fileName: `${taskId}.mp4`,
       userId,
       source: "video-generation",
@@ -155,7 +161,12 @@ export async function resolvePersistentVideoUri(value: string) {
   return storageManager.getSignedUrl(key, { expireTime: 3600 }, VIDEO_PROVIDER);
 }
 
-export async function persistVideoFile(filePath: string, taskId: string, userId: string) {
+export async function persistVideoFile(
+  filePath: string,
+  taskId: string,
+  userId: string,
+  storageScope: ManagedVideoStorageScope,
+) {
   if (!fs.existsSync(filePath)) return "";
   const result = await storageManager.upload(
     fs.readFileSync(filePath),
@@ -166,7 +177,7 @@ export async function persistVideoFile(filePath: string, taskId: string, userId:
       strictProvider: true,
       requireOwnershipRecord: true,
       category: "video",
-      prefix: "videos/generated/",
+      prefix: managedVideoPrefix(storageScope),
       fileName: `${taskId}.mp4`,
       userId,
       source: "video-generation",
@@ -180,7 +191,8 @@ export async function persistVideoFromUrl(
   videoUrl: string,
   taskId: string,
   userId: string,
-  options?: {
+  options: {
+    storageScope: ManagedVideoStorageScope;
     trimDurationSeconds?: number;
     sourceDurationSeconds?: number;
     providerProtocol?: string;
@@ -198,7 +210,7 @@ export async function persistVideoFromUrl(
     }
     const { outputPath, tempDir } = await downloadAndTrimVideo(videoUrl, trimDuration);
     try {
-      return await persistVideoFile(outputPath, taskId, userId);
+      return await persistVideoFile(outputPath, taskId, userId, options.storageScope);
     } finally {
       await removeVideoTempDir(tempDir);
     }
@@ -219,7 +231,7 @@ export async function persistVideoFromUrl(
         strictProvider: true,
         requireOwnershipRecord: true,
         category: "video",
-        prefix: "videos/generated/",
+        prefix: managedVideoPrefix(options.storageScope),
         fileName: `${taskId}.mp4`,
         userId,
         source: "video-generation",
@@ -234,6 +246,7 @@ export async function persistVideoFromUrl(
       taskId,
       userId,
       String(options?.providerProtocol || ""),
+      options.storageScope,
     );
   }
   if (["suanlicheng_video", "gaorui_video"].includes(String(options?.providerProtocol))) {
@@ -245,7 +258,7 @@ export async function persistVideoFromUrl(
       strictProvider: true,
       requireOwnershipRecord: true,
       category: "video",
-      prefix: "videos/generated/",
+      prefix: managedVideoPrefix(options.storageScope),
       fileName: `${taskId}.mp4`,
       userId,
       source: "video-generation",
@@ -292,7 +305,7 @@ export async function persistVideoFromUrl(
       strictProvider: true,
       requireOwnershipRecord: true,
       category: "video",
-      prefix: "videos/generated/",
+      prefix: managedVideoPrefix(options.storageScope),
       fileName: `${taskId}.${validated.extension}`,
       userId,
       source: "video-generation",
@@ -307,7 +320,8 @@ export async function persistStableVideoFromUrl(
   videoUrl: string,
   taskId: string,
   userId: string,
-  options?: {
+  options: {
+    storageScope: ManagedVideoStorageScope;
     trimDurationSeconds?: number;
     sourceDurationSeconds?: number;
     providerProtocol?: string;

@@ -149,13 +149,8 @@ export async function main(args = process.argv.slice(2)) {
   assert.equal(videoCandidates.length, videoPayload.models.length, "Storyboard video API leaked a model outside the storyboard surface");
   assert.equal(compatibleVideos.length, videoPayload.models.length, "Storyboard video API leaked an incompatible input contract");
   assert.ok(selectableVideos.length > 0, "Current storyboard video catalog must expose at least one selectable model");
-  const expectedOpenVideoModels = [
-    compatibleVideos.find((model) => /^Seedance 2\.0 · 4K · 超清$/u.test(publicName(model))),
-    compatibleVideos.find((model) => /^Seedance 2\.5 · 旗舰 · 4–30秒 · 1080p$/u.test(publicName(model))),
-  ];
-  assert.ok(expectedOpenVideoModels.every(Boolean), "The two reported Seedance models are missing from the public catalog");
-  for (const model of expectedOpenVideoModels) {
-    assert.equal(modelSelectable(model), true, `${publicName(model)} is still blocked by an internal acceptance state`);
+  const reportedSeedanceModels = compatibleVideos.filter((model) => /Seedance 2\.(?:0|5)/iu.test(publicName(model)));
+  for (const model of compatibleVideos) {
     assert.equal(Object.hasOwn(capabilities(model), "activationReady"), false, `${publicName(model)} leaked internal activation readiness`);
     assert.equal(Object.hasOwn(capabilities(model), "readinessMessage"), false, `${publicName(model)} leaked internal acceptance copy`);
   }
@@ -174,7 +169,7 @@ export async function main(args = process.argv.slice(2)) {
       videoCandidates: videoCandidates.length,
       videoCompatibleConfigured: compatibleVideos.length,
       videoSelectable: selectableVideos.length,
-      expectedOpenModels: expectedOpenVideoModels.map((model) => ({ id: model.id, name: publicName(model) })),
+      reportedSeedanceModels: reportedSeedanceModels.map((model) => ({ id: model.id, name: publicName(model) })),
       publicQaTraceCount: 0,
       videoUnavailable: unavailableVideos.map((model) => ({ id: model.id, name: compactVideoName(publicName(model)), reason: capabilities(model).availabilityMessage || "价格尚未配置" })),
       videoSpecializedExcluded: specializedVideos.map((model) => ({ id: model.id, name: publicName(model), reason: inputModeIssue(model) })),

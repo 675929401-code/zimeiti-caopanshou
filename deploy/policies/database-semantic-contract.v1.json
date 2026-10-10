@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "kind": "database-semantic-contract",
   "profile": "public-runtime-contract.v1",
-  "generatedAt": "2026-10-08T23:38:11.557Z",
-  "sourceLabel": "fully-migrated-local-runtime-20261009-manju-native-evidence-sync",
+  "generatedAt": "2026-10-10T09:04:31.763Z",
+  "sourceLabel": "reviewed-local-transactional-preview:20261009054000_white_label_runtime_publish.sql",
   "sourceDatabase": "zimeiti_local",
-  "migrationManifestSha256": "c59f8395ee86670e2dc4148f67c887753667d338f1b8c18ba709c95ef0093bbf",
+  "migrationManifestSha256": "045ac236f35e578362e49c64ce4b27a2c31ed8ab498c4a062086d309fd85aece",
   "extraObjectPolicy": "structural extras warn; privilege extras block",
   "snapshot": {
     "profile": "public-runtime-contract.v1",
     "sections": {
       "tables": {
-        "rows": 220,
-        "sha256": "f9a1b02bbddc61fcf57accf1db21e402e8cdb25b1d3619e5510a0ee5c7198a13",
+        "rows": 225,
+        "sha256": "71fb1dd4fcc440828717fad52e01400b18fa7f68687096d76caa1aa5a63cf61a",
         "exactExtras": false,
         "objects": [
           {
@@ -840,6 +840,10 @@
             "sha256": "e481ffbf9ea6b10d2f21957baa1c664da2a8caf4a323166d7a351fcf64525db2"
           },
           {
+            "key": "public|video_reference_asset_cleanup_outbox",
+            "sha256": "61a7d6ad2c176eb8b13a714ae22e0f4978ffe1ff0397afd8dbd8abc80602da3b"
+          },
+          {
             "key": "public|video_task_cancel_intents",
             "sha256": "f2d88498d74187c0fb9b973c17b8e657f3f7bfc7f55a35a3b26808267da723b8"
           },
@@ -892,14 +896,30 @@
             "sha256": "fd49f93e819db667bc25f017457cf7317155c0a0cd1015be576d40c19df04e5d"
           },
           {
+            "key": "public|white_label_assets",
+            "sha256": "ab992cfab0819fee54ff6511c7a41e2c80001b3ca4a395e8bbc3bb5bcdb055ff"
+          },
+          {
+            "key": "public|white_label_profile_events",
+            "sha256": "25181b89f2c00d83a5220bb8b29b792aff3097df9099ff1b0e797fd4a099a12a"
+          },
+          {
+            "key": "public|white_label_profiles",
+            "sha256": "44b7e8e1bc433e2e61c0a5d6b7e274dc2cbe1c7d596e9811f5d7160d144b1487"
+          },
+          {
+            "key": "public|white_label_release_assets",
+            "sha256": "335b4f6b75c593c0fc388c2dd577945d481105cee0af81f8abf3d033e5e5d9da"
+          },
+          {
             "key": "public|workspace_model_config_releases",
             "sha256": "0b2028529c131bbb24b190910cf7ee48d0a586d052295d4118109a437071f7a2"
           }
         ]
       },
       "columns": {
-        "rows": 3005,
-        "sha256": "9f5ae5763104e3f0f5ee23b63bffa69ecc706258cd295d2d12a804ad01046b7d",
+        "rows": 3081,
+        "sha256": "9d2f5cc26d024b8f79e489a3f6ecb444c8e996a364b12d50afd513d5f0429be0",
         "exactExtras": false,
         "objects": [
           {
@@ -1321,6 +1341,10 @@
           {
             "key": "public|agents|category",
             "sha256": "c6330b3ce725fc48d582ee7db9a3ba8953b289e3ee6a5c3d64f2c5f29cc8ba90"
+          },
+          {
+            "key": "public|agents|config_revision",
+            "sha256": "adf3a2021a86769e2a653934925b6edc37cdc7e8d1e535fcf7ae8623a1e8341c"
           },
           {
             "key": "public|agents|cost_per_message",
@@ -4491,6 +4515,10 @@
             "sha256": "bac4e60cccedb2ec0fddc938a16eaddb15159f04bfb60f747e23ba8747ce17b4"
           },
           {
+            "key": "public|extraction_attempts|content_purged_at",
+            "sha256": "3c86c6fe50ca76449a70ab7a8c91db06b5f8ae19c3baef6ea9bf4baf2ae74d20"
+          },
+          {
             "key": "public|extraction_attempts|created_at",
             "sha256": "e9d6dc9a38e2386ec94003b07a71249707023a0213bbb4744ae02c4c018009cd"
           },
@@ -4677,6 +4705,14 @@
           {
             "key": "public|image_generation_requests|payload_fingerprint",
             "sha256": "ba3c36e47d740774a954b2619df971ba197fa2a5d86ae15a09c5a794111412d1"
+          },
+          {
+            "key": "public|image_generation_requests|provider_dispatch_receipt",
+            "sha256": "e5980ca9be7da6faef51ea013b08d93e52d5513fd7644ab228221874107af43b"
+          },
+          {
+            "key": "public|image_generation_requests|provider_submission_receipt",
+            "sha256": "673baec81c412d7114f84060f8d643de01943953c1c1a2def5831d38a6c7feaa"
           },
           {
             "key": "public|image_generation_requests|record_id",
@@ -8691,6 +8727,10 @@
             "sha256": "849ba31b9d3ba37c0bea742d0cbd80142f5aa78466a5b49a567b173701540c64"
           },
           {
+            "key": "public|prompt_versions|agent_revision",
+            "sha256": "b9dbf5c9af76fc5978a0cc21db7964b45afad25cf98ec21f3cdb977d033e7741"
+          },
+          {
             "key": "public|prompt_versions|created_at",
             "sha256": "7c6433d77d54a70936b833d521a9c459ebd5d6a0c825c20e5da777cacf5dd6e2"
           },
@@ -8701,6 +8741,10 @@
           {
             "key": "public|prompt_versions|prompt",
             "sha256": "15c01b08ead398a3631ead1d5f005781a2b273066dac63468017f36981dfca0a"
+          },
+          {
+            "key": "public|prompt_versions|prompt_hash",
+            "sha256": "07a117a883265dd6cf606ac004164b053b06b850a8b653236e8ea7138614b780"
           },
           {
             "key": "public|registration_codes|attempts",
@@ -11875,6 +11919,70 @@
             "sha256": "98d5b1cc331a7e41f056e3fbcc4820b987c6727eb58c55158c1a8328e41ece81"
           },
           {
+            "key": "public|video_reference_asset_cleanup_outbox|asset_ref",
+            "sha256": "5e3ffa9e1d9c8387897cf5b04817b36516db24dd8223cad97eea1d172128bf02"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|attempts",
+            "sha256": "6a82f0b059523da5c6b7c2ce5d732a86e33230871b2465d3ad5fc174f5dc8d8f"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|claimed_at",
+            "sha256": "a8b6e94ea39924c2a78a4cb2a045c738fc2f3653314a263cef7b3a5a5d011adb"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|completed_at",
+            "sha256": "48983a3995857228dcd275c5f2e2ddcd3db02048207f5f80654d32d213591547"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|file_category",
+            "sha256": "e6cc3321f375b1532b40350327255b2fff94e5da0089fc11df4165d9468db00f"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|last_error_code",
+            "sha256": "bd43922aacd805dfaa71a62114b92ff69f56b41229de45cd4d5213d2e4742588"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|object_deleted_at",
+            "sha256": "a9102417c4049512390f9a72b1e15175efa64551a1a104c15c7cabb2852b6e42"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|registered_at",
+            "sha256": "a5f017c1926de5eef6acc26755fa44b178a5b5604d30748826a4cccaade89c6e"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|source",
+            "sha256": "87429046140845d67dff17d76b5d707024a5edf0ac997671a6b6d0a8997b10c2"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|state",
+            "sha256": "29514df9cf5e3837bb7e71c4148cf7a9981a3f32849fcd0319cc78e0dfb53fa1"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|storage_key",
+            "sha256": "6b636f8ec6ed8f82d9e00ee06a868041a16a9802dd5ec839b304ee08d714619a"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|storage_provider",
+            "sha256": "9f643e6f85c495807dc43c0ad179a7c5cce11fd887e44bc0ce1a6cd10fb66cd6"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|updated_at",
+            "sha256": "463f14a9a017634b88ce960263eed6225930888e65cc0a7575dfe78d6dbca1bd"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|upload_session",
+            "sha256": "c9ed118bd166615c6646ba8c71e65fba64392963c237183fe19c1634185a6565"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|user_file_id",
+            "sha256": "9ed774d7602851dff0e7e65dd463f96d3af118e2edf70fdd56eb53b8d1c62540"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|user_id",
+            "sha256": "c1619768bdfb2cc2ac72d0799e5a6182f7a8ee40a46809c94b6f5a52b6627a3b"
+          },
+          {
             "key": "public|video_task_cancel_intents|client_request_id",
             "sha256": "6f3804c6be380f3ec95bbcd5c89aaa1150fab1bec55f13db224e7891451f3a2b"
           },
@@ -12075,6 +12183,18 @@
             "sha256": "dfc6f94167e620117b2449e4c35001b5fca9cd07fbee42e471defa7eae75cd1b"
           },
           {
+            "key": "public|video_tasks|request_snapshot",
+            "sha256": "433652fff4df4e4a9f9213e6d38a0c5a4e9b46ec995f2ffc70c4d2d6bbe99edd"
+          },
+          {
+            "key": "public|video_tasks|request_snapshot_hash",
+            "sha256": "820f6ada7a1170d6654d6fe1781b571b7a0b82f91311e2c3814be4b065cb49a7"
+          },
+          {
+            "key": "public|video_tasks|request_snapshot_version",
+            "sha256": "f0559be67b7aa97e4daf09b344a12587828b5fd4619158315374c57c4aee235d"
+          },
+          {
             "key": "public|video_tasks|resolution",
             "sha256": "786477507b29f3d8f1079c682effa3866071ddf586396d033bc21bee0a3cb6e6"
           },
@@ -12089,6 +12209,10 @@
           {
             "key": "public|video_tasks|routing_snapshot_version",
             "sha256": "fae13365587820cb000ba75c3c783e325c53889596dcae396af266c6eb027dc4"
+          },
+          {
+            "key": "public|video_tasks|source_expired_at",
+            "sha256": "5c66ddd0642d2a888b0873d7d0942877e753b80eca089c4bc18f658560757b78"
           },
           {
             "key": "public|video_tasks|status",
@@ -12859,6 +12983,206 @@
             "sha256": "a4d52daa9667e43817cd14fead5e26211ed2e6087bb0ae6cde19ff40a6a5a469"
           },
           {
+            "key": "public|white_label_assets|asset_id",
+            "sha256": "d5e5baf18b02add4682114e56bb655210e3738182dae62470257c1cf41f4f739"
+          },
+          {
+            "key": "public|white_label_assets|bytes",
+            "sha256": "59a3351bebbb265ec612d977d1256fdfa6f37f4cbd1458ff94956146ea4c8700"
+          },
+          {
+            "key": "public|white_label_assets|created_at",
+            "sha256": "aeb6a223d8a171e14255f17eb7a1b3f68a0dfeb259a9da28506724452669d880"
+          },
+          {
+            "key": "public|white_label_assets|created_by",
+            "sha256": "ec4fbc07a5fb574c9d589949eeb060434c6e8634bb4c70ae79dd2921a7f5b317"
+          },
+          {
+            "key": "public|white_label_assets|deleted_at",
+            "sha256": "dc59b363d6c983ecf1d9b165e16179d3254ae4f982ddf9696c15a95db8cd8498"
+          },
+          {
+            "key": "public|white_label_assets|height",
+            "sha256": "daf4bbcdac59206fcfaace54b55956aebca41cff998ad8150d7fa2cb5580d557"
+          },
+          {
+            "key": "public|white_label_assets|mime_type",
+            "sha256": "4ea6119f80a131e69af09a93f60230d5e761256f497f1bc4190fa1e2fccf44fb"
+          },
+          {
+            "key": "public|white_label_assets|profile_id",
+            "sha256": "8c4000c7d011cfcf7f3ba06ea9e9fd62ea4b3493b9fdd674c5cd3e2e99bbe2e3"
+          },
+          {
+            "key": "public|white_label_assets|purpose",
+            "sha256": "de6a637a5728b90f0be78a40ec303181e6b7d325ebecef58cbcd3a1598f40fb1"
+          },
+          {
+            "key": "public|white_label_assets|request_key",
+            "sha256": "d0cd48024103882c48103f0eb44d15725a1f68ed48dce23136bcd4ff998bf319"
+          },
+          {
+            "key": "public|white_label_assets|sha256",
+            "sha256": "0442cfc0d633113dfb8b49d3be4cf712fbc1370a12663e3dd827a52f8ece39d4"
+          },
+          {
+            "key": "public|white_label_assets|site_key",
+            "sha256": "80267838e656d68654f7d83059a86c501662bbd75e8434cca541821f285596fa"
+          },
+          {
+            "key": "public|white_label_assets|storage_key",
+            "sha256": "319148d9bf22a6e835c329d6e5fa11c231c0f44101bf3857f97f463a51650f63"
+          },
+          {
+            "key": "public|white_label_assets|storage_provider",
+            "sha256": "220a2e4ff6acdb82fa65c75d79275550ca45786eb04d5dfb50794c600524c4c2"
+          },
+          {
+            "key": "public|white_label_assets|tenant_key",
+            "sha256": "0fd1b64404846f865307fd5cdab478f67b59f03a6f43894d8545b7d2a45c8576"
+          },
+          {
+            "key": "public|white_label_assets|width",
+            "sha256": "49f3a52c52743e1330ccf33e485f95e1478117831c2c24ac05e959829dfd7ded"
+          },
+          {
+            "key": "public|white_label_profile_events|action",
+            "sha256": "dd2a12c2c58d7f0d33038f6e9711abb2f713a6e434505e7b729935f7b414fad5"
+          },
+          {
+            "key": "public|white_label_profile_events|actor_id",
+            "sha256": "82d3ee345f648191933faee63fd75c3c7e7aa7f8d45d305e5495e1d1c2c8c32e"
+          },
+          {
+            "key": "public|white_label_profile_events|created_at",
+            "sha256": "e08507cad15199f76f1085ed7565743961a9f9f3fac4d584450683ad72ce3d44"
+          },
+          {
+            "key": "public|white_label_profile_events|event_id",
+            "sha256": "a037edf5e2c5f802cde9ad7feac08ac1f36128454d6ceb17a5866723b04cc74f"
+          },
+          {
+            "key": "public|white_label_profile_events|profile_id",
+            "sha256": "19f873ddd7313a48a2247f0a123aa3c791b546cd916c7843e4a81ed9cdd572eb"
+          },
+          {
+            "key": "public|white_label_profile_events|receipt",
+            "sha256": "836294356fc930709e6aa3beeafd09173225e26fb237498309061ec028b6b6fe"
+          },
+          {
+            "key": "public|white_label_profile_events|request_key",
+            "sha256": "d78ac34fdad1d95d21ec50412b1f484b08073da81a0a16b935198ad45953228d"
+          },
+          {
+            "key": "public|white_label_profile_events|result",
+            "sha256": "fce91d53d4cb87b158798bbdb400a86b1afb16e941f39d52fa191dcdf3c7aacd"
+          },
+          {
+            "key": "public|white_label_profiles|brand_description",
+            "sha256": "d93170d6a146638649a0a39d44046d623d47e1c10c9e8b3e64a9d44a9598df6c"
+          },
+          {
+            "key": "public|white_label_profiles|brand_generation",
+            "sha256": "c84ca3db2492ed8d132bf37efb7cf2c71c2203e852ead06cf843d0fe3278efec"
+          },
+          {
+            "key": "public|white_label_profiles|brand_name",
+            "sha256": "804e19e5f2a28a7a4199c20e7d18578dd4ee137c434d129b8cc96d753dde8e0e"
+          },
+          {
+            "key": "public|white_label_profiles|brand_release_id",
+            "sha256": "89107a6c4395efcf714e0ef0b23e533f083150392ed5ee7bf7078ad875123d74"
+          },
+          {
+            "key": "public|white_label_profiles|brand_short_name",
+            "sha256": "714c13cbd71a439408b316e640d205b734b312682e3e87f234b850b7cbfe58c5"
+          },
+          {
+            "key": "public|white_label_profiles|brand_slogan",
+            "sha256": "7afc615161c73fbaef360d76b11904e65c45ce316275ba27edd49f03c16b9886"
+          },
+          {
+            "key": "public|white_label_profiles|contact_email",
+            "sha256": "ff591557787d623ad4ff968db6f6b593648024aea554a0a7b708a74c01664a39"
+          },
+          {
+            "key": "public|white_label_profiles|contact_name",
+            "sha256": "6bb3be38677576668bfbbbdf5b37fa9f23c1a321d670c2d9248916da420704e3"
+          },
+          {
+            "key": "public|white_label_profiles|contact_phone",
+            "sha256": "d6348cd3c7c41b3b88e1a6fd8c3a394cecb645011defecef43d4aaf4ecd283c6"
+          },
+          {
+            "key": "public|white_label_profiles|contact_wechat",
+            "sha256": "5d1efdea618c94abe9e17e4f477186df8677d45a72991628beb56c5e9f746e9b"
+          },
+          {
+            "key": "public|white_label_profiles|created_at",
+            "sha256": "6fff6e25601be5570fca9af704072f22593d5f497fb2fd5904e725174724c94b"
+          },
+          {
+            "key": "public|white_label_profiles|created_by",
+            "sha256": "28f8a39fe6964753e9f5c5ce0dab368bc62244c9b42e210be662997d0f11e0d6"
+          },
+          {
+            "key": "public|white_label_profiles|domain_claim_id",
+            "sha256": "3fa234b11649b16fd3fd8235d54529ae9550d75694f2741d8cdfa56a76cb732c"
+          },
+          {
+            "key": "public|white_label_profiles|draft_asset_ids",
+            "sha256": "f4c226a60004a891433a5b242f76934aa2a40b8612227560cc78a7cb5663753b"
+          },
+          {
+            "key": "public|white_label_profiles|lifecycle_status",
+            "sha256": "cde4823a919f6a8fbefa9522fd8cb0894a5bb90902fbb285ee9f5f88f9d0a423"
+          },
+          {
+            "key": "public|white_label_profiles|profile_id",
+            "sha256": "3528ba82e1c2ba99cfbbd82511b432b3dd2bf69a4faa9cdb1c08133b25d228fa"
+          },
+          {
+            "key": "public|white_label_profiles|published_release_id",
+            "sha256": "6ec9123f400d0320e9c7a2cd65428f8d14b9341393c275dc7c8b1e77f0037440"
+          },
+          {
+            "key": "public|white_label_profiles|revision",
+            "sha256": "1e61ffb942788fffd561cb6f8b39fdd1c00c52d4c9e4a221692051a5e23c0b84"
+          },
+          {
+            "key": "public|white_label_profiles|site_key",
+            "sha256": "a14f312a8c01dbabea2d86f126ad50bd2b541fdbd3d9fd691d0fc315b41fb0e5"
+          },
+          {
+            "key": "public|white_label_profiles|tenant_key",
+            "sha256": "65344d10407f4797ebeb4c9422636246be3c0529cd155d076729e6836e96d904"
+          },
+          {
+            "key": "public|white_label_profiles|updated_at",
+            "sha256": "eb7d8160481710b102523edf105f717f83d81c32cdc3fec900113cc5288845cd"
+          },
+          {
+            "key": "public|white_label_profiles|updated_by",
+            "sha256": "a4cfb8f7775eeb230ec943f99f01528d4c384cfee8e5deccb80253b54b95c3ce"
+          },
+          {
+            "key": "public|white_label_release_assets|asset_id",
+            "sha256": "16298d902bf6d81fe0ce808f94455f708437ad10c77b371edcbd42ae0c5e4f88"
+          },
+          {
+            "key": "public|white_label_release_assets|created_at",
+            "sha256": "49a98874000552357b0aeb2a9dcbd6950cd21c1b2c8cf184f5ecf4d39f7239c9"
+          },
+          {
+            "key": "public|white_label_release_assets|purpose",
+            "sha256": "48ab5bf129cc0701c48d5c59ee543c0b363c3f6d6010c123ca9ebccce6e46475"
+          },
+          {
+            "key": "public|white_label_release_assets|release_id",
+            "sha256": "0598b2506aee5a0fd72f587922cd3843f2e46569d132a1e527f5a5ce00f3c8c5"
+          },
+          {
             "key": "public|workspace_model_config_releases|change_note",
             "sha256": "5c98a8696bee58bc73c3da6cf4a548d2bcf7dabbfd32fc9210195023df58aafe"
           },
@@ -12925,8 +13249,8 @@
         ]
       },
       "constraints": {
-        "rows": 1567,
-        "sha256": "1ad3bc9abb90bd7d35526754500ffd45389c1028807d582986dbe9941d91d974",
+        "rows": 1634,
+        "sha256": "68e3a89d776840844d63de0971dd4fff74c3d3224031bff0292f94ffe854a6ec",
         "exactExtras": false,
         "objects": [
           {
@@ -13116,6 +13440,10 @@
           {
             "key": "public|agent_skills|agent_skills_skill_id_fkey",
             "sha256": "e64d0e4ef7adc06f1492cc89b4e724cf17bb4e97656ec1c08efd0ea5e36d6e7f"
+          },
+          {
+            "key": "public|agents|agents_config_revision_positive",
+            "sha256": "006257822cb98be53dbf296744562440e966dc70ddfdf4fd861890bbdb520fb4"
           },
           {
             "key": "public|agents|agents_model_id_fkey",
@@ -14855,7 +15183,7 @@
           },
           {
             "key": "public|extraction_attempts|extraction_attempts_terminal_shape",
-            "sha256": "691a8368bb551471e459f3d7f767f6e3de588695b498d0f4853d3bfcd8938e6c"
+            "sha256": "21caddff9a9e1972050a709c9995bb2b413b10f7394deb6861ac6dcf155d1d90"
           },
           {
             "key": "public|extraction_attempts|extraction_attempts_user_request_unique",
@@ -14898,8 +15226,12 @@
             "sha256": "7df65d5889fb64b519886162c0accd2af4849c91b3e2a87dead75a5ac331312d"
           },
           {
+            "key": "public|image_generation_requests|image_generation_requests_provider_receipt_order",
+            "sha256": "bf26e5f9174cda5bd617a833408160ae5e12b0b6f6988ee5c59679e96250583a"
+          },
+          {
             "key": "public|image_generation_requests|image_generation_requests_snapshot_valid",
-            "sha256": "44e2621e365a6fa5c52d674456194d4ac73fca54ea487d83b0fa0ca7210adf94"
+            "sha256": "f92326e9d25485bee2ae3e9cfa6a09fb15929660d599779b904dcfa05a879962"
           },
           {
             "key": "public|image_generation_requests|image_generation_requests_state_check",
@@ -16799,7 +17131,7 @@
           },
           {
             "key": "public|platform_brand_assets|platform_brand_assets_purpose_check",
-            "sha256": "83cd805a546d2bc26cb5483424b72ac2513be3a7c351f27960b3deb188fb8937"
+            "sha256": "402c0d7fce72b465b63980011516fc8a016f2d8e54f215a2212d9115f902f32c"
           },
           {
             "key": "public|platform_brand_assets|platform_brand_assets_sha256_check",
@@ -16871,7 +17203,7 @@
           },
           {
             "key": "public|platform_brand_revision_assets|platform_brand_revision_assets_purpose_check",
-            "sha256": "9267164c1cdbe5a38a71666e1d1ac71696a7cd79372eff03f28072780dfa5a60"
+            "sha256": "3bc9c36fcae817d4c9669c249186b2dfcd673051690f04cc508f375359e6f992"
           },
           {
             "key": "public|platform_brand_revision_assets|platform_brand_revision_assets_revision_id_asset_id_key",
@@ -16915,7 +17247,7 @@
           },
           {
             "key": "public|platform_brand_revisions|platform_brand_revisions_snapshot_check",
-            "sha256": "f0eb178006d4d34403982f8cc68fd6edf0235991ba7540efead7d896861b70e9"
+            "sha256": "3fb4240f1a680241662f281b8b0ab032a63bf1e070f931ef96d9288141d85421"
           },
           {
             "key": "public|platform_brand_revisions|platform_brand_revisions_snapshot_sha256_check",
@@ -17110,8 +17442,16 @@
             "sha256": "abdf2abbd38e928c57a2cb65176b912867b190fc37c80e442dd2146d23163e13"
           },
           {
+            "key": "public|prompt_versions|prompt_versions_agent_revision_positive",
+            "sha256": "d5b3bff946c7f0474ebabf3ee169dfa64956aa2b2e9c6d2b9f3b780c6af72963"
+          },
+          {
             "key": "public|prompt_versions|prompt_versions_pkey",
             "sha256": "ff69cfe5d8815e91b1eb5c8169621817ac7677623f945270ff7674ee42b08a3e"
+          },
+          {
+            "key": "public|prompt_versions|prompt_versions_prompt_hash_format",
+            "sha256": "a65aed43f4e7d2a94eab61c648c0b7e32355600ab51c700eb0b04594d0522f12"
           },
           {
             "key": "public|registration_codes|registration_codes_pkey",
@@ -18906,6 +19246,38 @@
             "sha256": "8fbb3ababe2f5840501f6bb365ac4cfec279c2df1dbac270edf277e03710d335"
           },
           {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup__storage_provider_storage_key_key",
+            "sha256": "86929dc14f0539b36a07bba659c000c2404637419d0c913744dbb0ede252a6b3"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup_outbox_attempts_check",
+            "sha256": "534cc845e195f5923b80323ebbe1a724f8fd3a1e4aca096e05b688a2c34bfa7f"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup_outbox_check",
+            "sha256": "229d4ceaef5a2dc135ab17d2cee748e76245892e447f1542541fd143f7c6282d"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup_outbox_file_category_check",
+            "sha256": "6a78062c42d3cb45b13a9bc2d1f98f68f2f69a71017e88624fc15f7cb0572687"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup_outbox_pkey",
+            "sha256": "e48ac81b69b84ad0712cf143249c28ef26ae6c905b31efd69c77f6c139edce0f"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup_outbox_source_check",
+            "sha256": "f11afec2475dea548f0ba12d11c5bda7ad68e7c0e0e9f63a77c2fe1e637dfa8a"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup_outbox_state_check",
+            "sha256": "11efa684bdbf4801f696fd5015b7b181dda3797700f00f6fd325675fac4c6ef4"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup_outbox_storage_provider_check",
+            "sha256": "af1b71ac8d8c72e81c6cc86157a8cdd0b51777a5092a69c839a7333f03606ea7"
+          },
+          {
             "key": "public|video_task_cancel_intents|video_task_cancel_intents_owner_request_unique",
             "sha256": "41a8baeaaa07a65009beba19d7e03a7f83c33e45ab415eea652b1af537c0918c"
           },
@@ -18956,6 +19328,10 @@
           {
             "key": "public|video_tasks|video_tasks_request_fingerprint_check",
             "sha256": "c0b99c9e1cc10bac9c0ab0f90f7b42458ff58f5188e5541ee43184d22bd5535d"
+          },
+          {
+            "key": "public|video_tasks|video_tasks_request_snapshot_v1_check",
+            "sha256": "60613eb2ec3cebdffc4f7864eed1dc7a8706f141900c830b368701dfc8c8d0e6"
           },
           {
             "key": "public|video_tasks|video_tasks_routing_snapshot_check",
@@ -19150,6 +19526,222 @@
             "sha256": "28c4b59ce32eec352b2ae01067ab000743057bd9fe9059e3aaf57198c3cd328c"
           },
           {
+            "key": "public|white_label_assets|white_label_assets_bytes_check",
+            "sha256": "69b7be78f30d8856c0b067e55c51c06e4095f41f97f9fcd6286ee5d83f663c7d"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_created_by_check",
+            "sha256": "fb619929983526432b0dd88d637333f503ad732ce054a8c039115019efeed6eb"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_height_check",
+            "sha256": "8046571be9d4c15b737acfd93fcc699ba6d2fe40c3896a5a5ae2ff12171a5937"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_mime_type_check",
+            "sha256": "590bd503ada91809b3b6c25f511223f6761b0e7f66ed25b2fb36802d14f8134b"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_pkey",
+            "sha256": "2828fa9a0578f37716af12b35fc158e90f0bd45f98e7d6f9d3348822edd26d46"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_profile_id_asset_id_key",
+            "sha256": "d340ec5101cbc507e1eb233f095cc45101d14ea01f41a5234e1dbbba6f44ee3b"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_profile_id_fkey",
+            "sha256": "67eff186f2f8af2cf218043e1bfd4e999b85f6dac25feaba7273ab8e2ac36f4c"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_purpose_check",
+            "sha256": "360136beddd41224dfd95136bb60b05a4f76f070d5edc30a0594a45f50b60696"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_request_key_check",
+            "sha256": "c643b1b11b93966108199946892b2713f507c075f7ea8af4f02f051e56101019"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_request_key_key",
+            "sha256": "d497499b89221142cf95d8ceb04f61b96bfe7e5853639a6c319776dba56f2f48"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_sha256_check",
+            "sha256": "d825caef8985d2e083b7d3462c449e866bd521e57d6c426465a709528e87b121"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_site_key_fkey",
+            "sha256": "75464b61416d2122144536cf750f330ec2c5d880c586950fa5ec16b800ff5b43"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_storage_key_check",
+            "sha256": "47832f4e352d1c8e3b0a03d24484b775d3fd02a0f2a4c8f7ff96390a0375ce82"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_storage_provider_check",
+            "sha256": "8cf4dd6b206e5248419921213b06838617bb83aacb2f1528510880eed55334bb"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_tenant_key_fkey",
+            "sha256": "9ea2729482bede69b8098bf59ecefc0fa8670ad6314b7b73c29a5c06646af6d3"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_tenant_key_site_key_fkey",
+            "sha256": "7fceedd60def54f5450d44b8ee1b9a7dbb4b237a39460f3995b489c0c4fe8625"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_width_check",
+            "sha256": "c4846b64a8e8eea572eef94ac72218404b2895703d11a0e3d0ac876de0711d46"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_action_check",
+            "sha256": "70e8201259615203323e17e7b4076d9ee99f20bb77a074f2296b434581db463b"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_actor_id_check",
+            "sha256": "95bb2eb7c298d96c32c6329484a15f765393931cfdd62540b00cc18b9d352d4e"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_pkey",
+            "sha256": "396c6c20912e5942d49645650299a6dc16b1d7909f7bbe27859375c2d207327c"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_profile_id_fkey",
+            "sha256": "1fcc3ea03019535b2a8b90be385e4b7f179d35f74ca6020300924e0feeee8018"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_receipt_check",
+            "sha256": "3104cb4f99e6ab9b5082ea0e5ab9b1335b6650184d52f397d9adaa1d59bb6149"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_request_key_check",
+            "sha256": "12187f90dc08cec05d9a61dbc1377cde601afbf78c80ece1408ea343f57b339e"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_request_key_key",
+            "sha256": "c0c9a69fbab61b8887015442ba868c429364e8b28d71e46dea23dba6f68fd932"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_result_check",
+            "sha256": "70cab068708f3ff6d26b028a8404bfc42a50d4d679308dd78e9d7f42c94fb0a1"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_brand_description_check",
+            "sha256": "d27ac8d77b16667db6b846bf2f9097a6882be04f00ed989d8fd361f84b306f23"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_brand_generation_check",
+            "sha256": "6febb1ee366c6d9874bc826e5d9cb6ccdefbefe51d4812e8ebdcad4aa4b9ceb5"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_brand_name_check",
+            "sha256": "d9ec55e8f9797e13e5be6512f2b72e37f615f3720d9539d243076a8a3c1ffba3"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_brand_release_id_fkey",
+            "sha256": "14966273d88726e9c08adce81f345412719e35dac4071a0bfa625ad5359c3dca"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_brand_release_id_key",
+            "sha256": "0901a1a7b0b96305f78f4b8f90315da3fd173844df1d8537c4996f4422f9c7c3"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_brand_short_name_check",
+            "sha256": "c4bb1bd3a8f49252ef3aa1a31330a11e3730b9466d5d3dd7fb45eb9c1015bd51"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_brand_slogan_check",
+            "sha256": "81544fcee20464d79e5bb6b6987ee2579e9208c8359a56ec3190ff1ea7ae6fbf"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_contact_email_check",
+            "sha256": "10f5184fde394a02aa9caebaaa6b50c0afbc8967fda76c1147c77b8e2423cbed"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_contact_name_check",
+            "sha256": "c8736162e0d2a9d0bb05e39765fdaef506913a25d8835eca28278f0cea7f98fe"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_contact_phone_check",
+            "sha256": "b685dd190a4726720ad9c7ce1ae9c011ac0d27a081d63c0151cecd8c2f5d07f4"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_contact_wechat_check",
+            "sha256": "087f062ec5bb659d059bb0f4707688afbeea6fb9ca51f5826cc049da9525dde3"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_created_by_check",
+            "sha256": "d4c1aa45ea7f2c2e38cedfc80088fda18a4bd0b4f80123a0b48df4d6ddc1ed1e"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_domain_claim_id_fkey",
+            "sha256": "36ed8a1e3c2d5b4330b73f306d5a7b67c5d747a22448b02b498425b718b39be2"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_domain_claim_id_key",
+            "sha256": "6fb4dddf23aa2a615ed5b7512ed76748f8722f2e5b969bcdebd478f5568dcc05"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_draft_asset_ids_check",
+            "sha256": "b40ed5199c45c01fa5fa26fd67dd7a33600138ead9d994625d66cad37f4b9bf8"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_lifecycle_status_check",
+            "sha256": "1d6fd741093e37ef9dabd544ba85e866e249b85a81da055ff43cb5ad57b31d4c"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_pkey",
+            "sha256": "13c0a263565951888c3f5ae39a35334a3e24fe1ca44be2c1cb623818557840ca"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_published_release_id_fkey",
+            "sha256": "48be9cebd920f093e0059a7c4c9400f2c1f73ad1c4f16c07cbbf0ad42d1a5da7"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_revision_check",
+            "sha256": "7cb4ad1da60ef914a4e3814d42a520c493a248ae04859895755d07026169490c"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_site_key_fkey",
+            "sha256": "d55eac7b3a1c749d0f69e919ba83c3747cd8f9bfcb5e70da43dd4fd5f726e7b5"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_site_key_key",
+            "sha256": "d6cee761abf582903666446771b94968658492587d7568f086a39122ce503c40"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_tenant_key_fkey",
+            "sha256": "2b08754c681d311abd9ef0dd58b849df9100d5d7584b8190b59e1534b8bc35db"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_tenant_key_key",
+            "sha256": "fe26474868d92964594152caf700c322b6953848c22adf742f4acbbb8050d12c"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_updated_by_check",
+            "sha256": "f2e03b6c0e079bb6d1b33d71d5c6cd063484e59d595b9787ba7a97f39655bc1e"
+          },
+          {
+            "key": "public|white_label_release_assets|white_label_release_assets_asset_id_fkey",
+            "sha256": "bbef7f36bd0a0f511d67d62b2a918985d02bc11995766b7ce9e6836aac3cafbc"
+          },
+          {
+            "key": "public|white_label_release_assets|white_label_release_assets_pkey",
+            "sha256": "b86ac2d5c5f69a83c0304beb9d9b22416ca7a90c3be01ebe7ae26a40050dbe6d"
+          },
+          {
+            "key": "public|white_label_release_assets|white_label_release_assets_purpose_check",
+            "sha256": "f6053cc1726f26a53be33af4850db6cf2dcfbc5b5d27f410392b74683bd438bb"
+          },
+          {
+            "key": "public|white_label_release_assets|white_label_release_assets_release_id_asset_id_key",
+            "sha256": "617d500c34b9a00da9679a4520964827457dde8ff13217531c480bb129e2f1c4"
+          },
+          {
+            "key": "public|white_label_release_assets|white_label_release_assets_release_id_fkey",
+            "sha256": "fb56cd544636dc5ae921930afd2713e213b881cf97e3c598baaae24daaf2c0a7"
+          },
+          {
             "key": "public|workspace_model_config_releases|workspace_model_config_releases_change_note_check",
             "sha256": "055f7e79814dc895d1a6ebb6a9e7812fbb957de7f60724a30c0b356696bed7dd"
           },
@@ -19200,8 +19792,8 @@
         ]
       },
       "indexes": {
-        "rows": 590,
-        "sha256": "e4783136b333def0f884845d1b0a9e913e61352f2a816aa1b20940931e512c3d",
+        "rows": 614,
+        "sha256": "a64ff7b2a40f911908d9d5180cbbec21c4565b3c60a79ca84c319d79b669efa4",
         "exactExtras": false,
         "objects": [
           {
@@ -19649,8 +20241,16 @@
             "sha256": "54b6fe865129f9bc416769899d950912bb5a2d0a930e6ca38133f9dc4216202e"
           },
           {
+            "key": "public|conversation_messages|conversation_messages_content_retention_idx",
+            "sha256": "3d4c039a7ecbfc5e96145dbcc30b56d0040c5a6c2884a744e4f2504cf3349b45"
+          },
+          {
             "key": "public|conversation_messages|conversation_messages_pkey",
             "sha256": "b7c048cb0a69f25e0fabee870990dd0ed7c27c29d29e0b5860e3da94ea22376a"
+          },
+          {
+            "key": "public|conversations|conversations_content_retention_idx",
+            "sha256": "8f3f0a62491bc8bd4e25f8eb8ee0d5d66d59751bd3fefbfbd50854cbcba0574a"
           },
           {
             "key": "public|conversations|conversations_pkey",
@@ -19859,6 +20459,10 @@
           {
             "key": "public|extraction_attempt_reconciliation_audit|extraction_attempt_reconciliation_audit_record_idx",
             "sha256": "1d4df2a4f49eb0e88398c8c20ba22976c0394739a07f0528db8b71c7f285b530"
+          },
+          {
+            "key": "public|extraction_attempts|extraction_attempts_content_retention_idx",
+            "sha256": "267db59e2165e59446ccc008d4229cfb24d0e20056d1c4f70bc26104c05aeb89"
           },
           {
             "key": "public|extraction_attempts|extraction_attempts_history_cursor_idx",
@@ -20745,6 +21349,14 @@
             "sha256": "1985db7547dc840cc97f18faa849247c8f6f3bdb4d5a6bb99317e3a9fe7c915e"
           },
           {
+            "key": "public|prompt_versions|prompt_versions_agent_prompt_hash_idx",
+            "sha256": "fadea61c7c8927487c6ff16f0f17c3e540bb374f1d88dc3a40e69331d052fa32"
+          },
+          {
+            "key": "public|prompt_versions|prompt_versions_agent_revision_unique",
+            "sha256": "5d621e0033f3dd04e62d972724686f21aa8a268a2f8505063659ef9674db62bc"
+          },
+          {
             "key": "public|prompt_versions|prompt_versions_pkey",
             "sha256": "ddec1157dc11300b09afef6e3ab95a18a9e9a557fc250b25fcd02ac5a8eb0965"
           },
@@ -21301,6 +21913,14 @@
             "sha256": "1ecbde910477b3010994380a2c74b981ce4a8dc642dc140de07409c827634702"
           },
           {
+            "key": "public|user_auth_sessions|user_auth_sessions_active_ip_user_idx",
+            "sha256": "d2ad42bfee2765b465bf50d7d1a5dd4545d5032ebadbf8f35d72c9fa77f59173"
+          },
+          {
+            "key": "public|user_auth_sessions|user_auth_sessions_active_user_ip_idx",
+            "sha256": "c81a14b17443b7c0560862a923ffa74c9d6976dc6bee07720301b3ad4e09367e"
+          },
+          {
             "key": "public|user_auth_sessions|user_auth_sessions_pkey",
             "sha256": "5103842796270d70717e5a5148ecb032e16656f72b3a74110464c0f081a0f6ef"
           },
@@ -21397,6 +22017,14 @@
             "sha256": "d3771f5da382fdd3c72c3f370949193d39913ab7774409b78deb59236f160bc4"
           },
           {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup__storage_provider_storage_key_key",
+            "sha256": "666350494e94ca755f4ed8a70288f03c1b8638bf290fa12f7bd34d40dbd537e4"
+          },
+          {
+            "key": "public|video_reference_asset_cleanup_outbox|video_reference_asset_cleanup_outbox_pkey",
+            "sha256": "2054c98ffb372ed57181188e0a5f5cd3327e9758a9c4ed2e83678230779c6828"
+          },
+          {
             "key": "public|video_task_cancel_intents|video_task_cancel_intents_owner_request_unique",
             "sha256": "da95031d47894cf1efbe5e8bd111d18f0acfd806cae42b3637b4339d22364310"
           },
@@ -21423,6 +22051,10 @@
           {
             "key": "public|video_tasks|video_tasks_provider_reconciliation_idx",
             "sha256": "a68eb1f01bc0c5386f5611394b03d1d86c634d51b2a4ca81df0e28fd27d5838b"
+          },
+          {
+            "key": "public|video_tasks|video_tasks_source_expired_idx",
+            "sha256": "df74fb8c839d5820d70e257a3f762a09de4895ddbb161c43105cad331cb33beb"
           },
           {
             "key": "public|video_tasks|video_tasks_terminal_billing_state_idx",
@@ -21549,6 +22181,62 @@
             "sha256": "99856b83ac4c1cc79f0aa3db5682e8520db67c226b2445bc8e8939bf12bc712c"
           },
           {
+            "key": "public|white_label_assets|white_label_assets_pkey",
+            "sha256": "f75c4595f93c560554642f976e2b3553dec852575b1c15a982e6d17d800639e1"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_profile_id_asset_id_key",
+            "sha256": "df6007aaf81a8a3c4bae76d2e8319b5567a875826febb7a3f70cb7963a7dfe0e"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_profile_idx",
+            "sha256": "25b7ebafced10819bc8edff5f2a5e38e8eede345e6cb1e807b9ae07278ef59a4"
+          },
+          {
+            "key": "public|white_label_assets|white_label_assets_request_key_key",
+            "sha256": "7a06e5537c4f55b31d12791618ba6c7bbab4653874c4127b89d9b294c02edfb7"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_pkey",
+            "sha256": "07986e6e8ca3dda0b31a4a8beea9efd93cab8b5c8f39884fda4d9defde210b3a"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_profile_idx",
+            "sha256": "850ac40aef6eba3927a5c05592b5c76997e6eeeed2c3b2b4595dcd73a7cf1bb7"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_request_key_key",
+            "sha256": "70a92f462b4f275778d91821cd09c3ef99a2056be67e903ed0a68e521790e1d9"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_brand_release_id_key",
+            "sha256": "109ad6075cd739a29867470ff52f97f0022f076df7815638be102440a7865eee"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_domain_claim_id_key",
+            "sha256": "7c3a6d430607a3ba1ab649e9cbccfaa051065722981cfc3b2f26dff6071706ef"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_pkey",
+            "sha256": "707bcc3a310008cb3be14992da1ee015d69184f098ea300aa174b4c1f980148e"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_site_key_key",
+            "sha256": "84ec0af867daf1612bd96d6f8af539e379504361adf125b060cfb55d657ff028"
+          },
+          {
+            "key": "public|white_label_profiles|white_label_profiles_tenant_key_key",
+            "sha256": "42b1c24ae6e0b2616fe6996b23601de3b6d0e44f57589c3af7d924a29536f0cf"
+          },
+          {
+            "key": "public|white_label_release_assets|white_label_release_assets_pkey",
+            "sha256": "4ba66becaf265ed35520e1c0258910fbe6966d4c449a8f1ef1e399a199d790c0"
+          },
+          {
+            "key": "public|white_label_release_assets|white_label_release_assets_release_id_asset_id_key",
+            "sha256": "e8dd0b0f23749fc6bbda90cb67d6a4477444b27c5b7a090b6e296c329645b899"
+          },
+          {
             "key": "public|workspace_model_config_releases|workspace_model_config_one_current",
             "sha256": "e64bc02561ee9c6f97f5edd4e48e3279d6c9a4fcf51d427237466d6c62ced553"
           },
@@ -21567,8 +22255,8 @@
         ]
       },
       "functions": {
-        "rows": 311,
-        "sha256": "712f7d1e84c3859cb3e88ce92fc85c69fd74b6d45ab2bb7ba66c2dea819b8296",
+        "rows": 342,
+        "sha256": "5a3478aa53b66f5d205dad89917e70be703611ceadd859ab217e28e955450ade",
         "exactExtras": false,
         "objects": [
           {
@@ -21582,6 +22270,14 @@
           {
             "key": "public|append_admin_governance_audit|p_actor_id text, p_actor_level text, p_target_user_id text, p_permission_key text, p_action text, p_result text, p_reason_code text, p_resource text, p_request_path text, p_request_method text, p_request_key text, p_request_ip text, p_user_agent text, p_metadata jsonb",
             "sha256": "f2dcfb948b9efd0cf194401145e47ad58a4348aa3e93383fbc81744442c60335"
+          },
+          {
+            "key": "public|apply_agent_reorder_cas_v1|p_entries jsonb",
+            "sha256": "e67410961424efbd5bead8702b337bd8814e23121b5ad79aef2b4abba51a9198"
+          },
+          {
+            "key": "public|apply_coze_agent_import_cas_v1|p_entries jsonb",
+            "sha256": "c8c501d18a4ed3d3978a5ad9c3f06b83f21cc126bdcfa63c23d16059854c701f"
           },
           {
             "key": "public|apply_wallet_operation_atomic|p_user_id text, p_operation_kind text, p_idempotency_key text, p_amount numeric, p_description text, p_metadata jsonb",
@@ -21749,7 +22445,7 @@
           },
           {
             "key": "public|claim_image_generation_request_v2|p_record_id text, p_user_id text, p_user_hash text, p_client_idempotency_key text, p_client_trace_id text, p_payload_fingerprint text, p_request_snapshot jsonb",
-            "sha256": "77e96b831ebaa2f30a4b70ade14132781e15ed6a074bb89902fe4d46c2068bc3"
+            "sha256": "52adb29cc1fb2afad38313ed9bb0d9c26a392d5e03fcbe5066313053c6151d1f"
           },
           {
             "key": "public|claim_image_model_validation|p_validation_id text, p_model_id text, p_user_id text, p_configuration_hash text, p_model_snapshot_hash text, p_epoch integer, p_client_key text, p_payload_fingerprint text, p_retest_reason text",
@@ -21800,6 +22496,10 @@
             "sha256": "1ec0739ccd546703f2eb2e2dab59b82c005e72871121202766a2fbebab8923df"
           },
           {
+            "key": "public|claim_video_reference_asset_cleanup_v1|p_asset_ref text, p_user_file_id text, p_storage_key text, p_storage_provider text, p_user_id text, p_source text, p_file_category text, p_upload_session text",
+            "sha256": "3a3d35ae90d64ccaf91b5336028924dec8e2a5295e2b49030f86760d829207fa"
+          },
+          {
             "key": "public|claim_voice_training_provider_call_atomic|p_user_id text, p_job_key text, p_operation_kind text, p_request_fingerprint text, p_provider_speaker_id text, p_result_payload jsonb",
             "sha256": "abbdc4caad97b7d4151deaf84bcdd9f0ea3cc5481f485bc52f78015f6bc8ce50"
           },
@@ -21818,6 +22518,10 @@
           {
             "key": "public|complete_video_history_archive_job|p_task_id text, p_worker_id text, p_storage_url text",
             "sha256": "731665eb60c12f780ffe7274519c8287c071807365a8abd09feb2abdab40cdc7"
+          },
+          {
+            "key": "public|complete_video_reference_asset_cleanup_v1|p_asset_ref text, p_user_file_id text, p_storage_key text, p_storage_provider text, p_user_id text, p_source text",
+            "sha256": "c145ad9073cd182bbfa5d46f8e767e13192629335e5283a8a847bc8aeb535a95"
           },
           {
             "key": "public|confirm_video_task_upstream_cancellation_atomic|p_user_id text, p_client_request_id text, p_task_id text, p_provider_task_id text",
@@ -21882,6 +22586,10 @@
           {
             "key": "public|enforce_domain_site_tenant_consistency|",
             "sha256": "418e74df425c34171b03bd27f45933064f31ebb91106cefd474af0020b6b98ff"
+          },
+          {
+            "key": "public|enforce_exclusive_user_auth_session_write|",
+            "sha256": "b267d317c0ca1da8f105caaf23a4dbd8aeb8635ed7004d7174961fcc02d0a31a"
           },
           {
             "key": "public|enforce_invitation_owner_eligible_on_consume|",
@@ -22056,6 +22764,10 @@
             "sha256": "1d99b6385b91a34577def6cda043e3eb69f132f6d0b8ca7bcdcbe60ea91622f0"
           },
           {
+            "key": "public|guard_published_white_label_release|",
+            "sha256": "a6a0842a60e725d438aa10a7d4062c24d511c0c8d80959e6540c67beb0a5e0b3"
+          },
+          {
             "key": "public|guard_security_case_append_only|",
             "sha256": "adf6c4a65f27e944c468a1f56053066fd12f478e171e096d3a7a54774cbe4e8a"
           },
@@ -22074,6 +22786,10 @@
           {
             "key": "public|guard_security_reliability_write|",
             "sha256": "357792361421a63d9ce579a0ec4b25ecc64427d15a0756384a5ad84ffdaaa0f4"
+          },
+          {
+            "key": "public|guard_video_reference_assets_during_reservation_v1|",
+            "sha256": "91067a777d189e8ace5029711a8365f456c8bf53bb3880ecfd27080d6fe6d464"
           },
           {
             "key": "public|guard_video_task_against_active_long_job|",
@@ -22125,7 +22841,7 @@
           },
           {
             "key": "public|issue_user_auth_session|p_user_id text, p_session_id text, p_ip_hash text, p_user_agent_hash text, p_expires_at timestamp with time zone",
-            "sha256": "495ca17dc1f063df98c829cefd027d43561ca7f43496803665854d1a165018a4"
+            "sha256": "4b9c92f32c734d2a68bce576b39f9f6a4b979515a22237cf55c740a29272da10"
           },
           {
             "key": "public|link_incident_slo_postmortem_cas|p_incident_id uuid, p_actor_id text, p_expected_revision integer, p_request_key text, p_status text, p_summary text, p_root_cause jsonb, p_action_items jsonb, p_external_reference text",
@@ -22138,6 +22854,10 @@
           {
             "key": "public|list_extraction_attempts_for_reconciliation|p_limit integer",
             "sha256": "71b792468b50f7cf0e64774fa3f24bd3d6f5150ac49a5a9ab774648504af411f"
+          },
+          {
+            "key": "public|maintain_shared_agent_config_revision|",
+            "sha256": "abc38678690db5c93560dbf6c9e57458063ffc98193ae86e2afbd594472c55f6"
           },
           {
             "key": "public|manju_config_guard_active_pointer|",
@@ -22196,6 +22916,14 @@
             "sha256": "1d2b921e4f9af855c977103b174d21d6e48cac9555951370ef227e0b1447321c"
           },
           {
+            "key": "public|mark_video_reference_asset_object_deleted_v1|p_asset_ref text, p_user_id text",
+            "sha256": "4211a0bc4c58eb728233603942822ac359f2def4556823dda7762be2f12a680a"
+          },
+          {
+            "key": "public|mark_video_upstream_source_expired|p_task_id text, p_user_id text, p_http_status integer",
+            "sha256": "e579feba8945714b818629c754c40dfa25ac7a7e0e2a5136aab6950724f217c4"
+          },
+          {
             "key": "public|mark_voice_training_provider_attempt_atomic|p_user_id text, p_job_key text, p_operation_kind text, p_request_fingerprint text, p_provider_speaker_id text, p_lifecycle_status text, p_provider_status text, p_result_payload jsonb, p_provider_call_started boolean, p_reconciliation_reason text",
             "sha256": "da7c1bc68f75f7cd5986d68a97563a0c047eb9065958ecfffdcfeb51a58f2445"
           },
@@ -22224,6 +22952,10 @@
             "sha256": "379b695344edc8625eb35798d35ed0c1aeb4365ba8f7ad4e46295b500f6b5dd2"
           },
           {
+            "key": "public|persist_video_generation_request_snapshot_v1_atomic|p_task_id text, p_user_id text, p_request_fingerprint text, p_request_snapshot jsonb, p_request_snapshot_hash text",
+            "sha256": "f5bc1828d6f0a14201ab8afc38aaf9578bd42180c8077fe589b22708e6116fed"
+          },
+          {
             "key": "public|persist_video_routing_snapshot_atomic|p_task_id text, p_user_id text, p_request_fingerprint text, p_routing_snapshot jsonb",
             "sha256": "db4cc3f827f07ed9ccd246ac5cc2bfb118090444bd21e81be8a5956568eec4ae"
           },
@@ -22234,6 +22966,10 @@
           {
             "key": "public|prepare_digital_human_long_segment|p_segment_id text, p_worker text, p_person_asset_id text, p_audio_asset_id text",
             "sha256": "20850d92832555add1a99e273277ab4fd8d539d61cf7f85cbeb14b74be1b8038"
+          },
+          {
+            "key": "public|prepare_shared_agent_prompt_version_insert|",
+            "sha256": "547119b11f2d008823ef3359393bb937033e0ec7b79d97b52b01ba2b0b4f7d9c"
           },
           {
             "key": "public|project_model_pool_configuration_atomic|p_snapshot jsonb",
@@ -22280,8 +23016,16 @@
             "sha256": "0643cdbd310528c327eb6e30992beabcad35eebac276517f6d79969053b0effc"
           },
           {
+            "key": "public|publish_white_label_draft_atomic|p_profile_id uuid, p_expected_revision integer, p_actor_id text, p_request_key text",
+            "sha256": "e1fcf2cf16e5e5faf6e5d8fc8cd2959782c57ec1bba5ec08cf2b14de28c24fa2"
+          },
+          {
             "key": "public|purchase_voice_nest_slots_atomic|p_user_id text, p_quantity integer, p_idempotency_key text",
             "sha256": "3e619666ea5ad6af0ae10dcb4d5fb900f4e2dfa14f0c4b6990ed87efc1cf66ac"
+          },
+          {
+            "key": "public|purge_expired_user_content|p_conversation_days integer, p_extraction_days integer, p_limit integer",
+            "sha256": "cb4205e0c1c38c6467a295552e3912145fd51ff2d212520160534495db62f12f"
           },
           {
             "key": "public|read_admin_access_snapshot|p_user_id text",
@@ -22297,7 +23041,7 @@
           },
           {
             "key": "public|read_extraction_account_history|p_user_id text, p_before timestamp with time zone, p_before_id text, p_limit integer",
-            "sha256": "8aa3cde49acb3255da942b8e5d4acf613da44711ea3a0a4e958c3dcd5bd2d2c3"
+            "sha256": "f77c3a5b14d5f884313ce304d4abf447bb346097f84b7229ac76bc93d76f8467"
           },
           {
             "key": "public|read_image_model_publication_state|p_model_id text",
@@ -22322,6 +23066,18 @@
           {
             "key": "public|read_published_platform_brand_asset|p_asset_id uuid",
             "sha256": "cffff088ad3f75ad6000a5f4e388b9c3bf33bf0e0c1f90100014b17bece49dab"
+          },
+          {
+            "key": "public|read_published_white_label_asset|p_hostname text, p_release_id uuid, p_asset_id uuid",
+            "sha256": "1eb6db6927f533372d41358eaa1bca19b1cbc3ac8689362b85c21a520fc881d6"
+          },
+          {
+            "key": "public|read_published_white_label_brand|p_hostname text",
+            "sha256": "4c6806785512537f19f9f8a049a7f08f45ba30addecb33b7a0e9c6ef485bb013"
+          },
+          {
+            "key": "public|read_white_label_admin_state|",
+            "sha256": "affeb89caf49a80a4ce94ae98b1c86a67cdc991c9cef4ee5cd7faffca0291a48"
           },
           {
             "key": "public|reconcile_extraction_attempt_atomic|p_record_id text, p_expected_updated_at timestamp with time zone, p_actor_user_id text, p_target_state text, p_http_status integer, p_response jsonb, p_response_fingerprint text, p_provider_task_id text, p_provider_evidence jsonb, p_billing_evidence jsonb, p_error_code text, p_error_message text, p_reason text",
@@ -22349,7 +23105,11 @@
           },
           {
             "key": "public|reconcile_stale_image_generation_request_atomic|p_record_id text, p_user_id text, p_stale_after_seconds integer",
-            "sha256": "f634930f8cdcebb0dd0951113713ff0044f26dc5a384c594e88ef32e7a10e233"
+            "sha256": "b9a10977653d47b2a3c7c95ad79399e1c1a036bdeefa84a265a133629de8402e"
+          },
+          {
+            "key": "public|reconcile_stale_image_generation_request_without_provider_recei|p_record_id text, p_user_id text, p_stale_after_seconds integer",
+            "sha256": "1aa9444b7605f666ea1c3963d1c0a301bc5ceed57c3480e9f51bcda48cb17029"
           },
           {
             "key": "public|record_announcement_delivery_event|p_announcement_id text, p_user_id text, p_revision integer, p_event_type text, p_event_key text",
@@ -22368,6 +23128,14 @@
             "sha256": "d59b98d362fb1b9f30e178e864230fee893460c9ca80476b1ec9b80090d96849"
           },
           {
+            "key": "public|record_image_provider_dispatch_receipt_atomic|p_record_id text, p_user_id text, p_client_trace_id text, p_payload_fingerprint text, p_receipt jsonb",
+            "sha256": "c6ec43929b414d27db1d76e32b3d6cd194ea529cb9a3b3ee0bd15d0608011b07"
+          },
+          {
+            "key": "public|record_image_provider_submission_receipt_atomic|p_record_id text, p_user_id text, p_client_trace_id text, p_payload_fingerprint text, p_dispatch_receipt_sha256 text, p_receipt jsonb",
+            "sha256": "326fd702ba81a34297977c7fdd1b538ea2b8c7680ecfd1e5d3b1b4de8349d971"
+          },
+          {
             "key": "public|record_incident_slo_observation_atomic|p_input jsonb",
             "sha256": "f514d0f8f9f021a295ce0af05b18a5bd41e8ff46cf82ecf2ec797c353a42aa9b"
           },
@@ -22380,12 +23148,24 @@
             "sha256": "05bd0aa41a8123ce7cf8dd37927a45c031911d9c88f85f68bd98b36cd67acce6"
           },
           {
+            "key": "public|record_shared_agent_prompt_version|",
+            "sha256": "ee8f978ce43145a2a93096a3591cf23fa981fa302c6052e170d47353c53ac526"
+          },
+          {
             "key": "public|record_video_provider_dispatch_receipt_atomic|p_task_id text, p_user_id text, p_request_fingerprint text, p_receipt jsonb",
-            "sha256": "b0c493e260e24644a941d471774121ae9b9b539dbc13088581432b64876bcbc7"
+            "sha256": "273c5d3f66d30ae9768ffedff281b16f076ecda363e257669958d69572656cfe"
           },
           {
             "key": "public|record_video_provider_submission_receipt_atomic|p_task_id text, p_user_id text, p_request_fingerprint text, p_outcome text, p_provider_task_id text, p_receipt jsonb",
-            "sha256": "448d54b75bf1c8e31e9c495fdad1448b67f96db92f3b5ae621289e33424471e0"
+            "sha256": "801bb245b0be9441bbfd52d1c49a9bf181660e025d4160a2ac69e630b249982c"
+          },
+          {
+            "key": "public|record_video_reference_asset_cleanup_failure_v1|p_asset_ref text, p_user_id text, p_error_code text",
+            "sha256": "f026964d646003bc34c7e52d58989963a837ceb9068ae84301936fbf5760c410"
+          },
+          {
+            "key": "public|record_white_label_domain_verification|p_profile_id uuid, p_expected_revision integer, p_passed boolean, p_observed_values_hash text, p_evidence_sha256 text, p_resolver_name text, p_error_code text, p_actor_id text, p_request_key text",
+            "sha256": "9950d839b1cbc740a85a21541a11fff6ac85f013a5af167dce59a182a81830a7"
           },
           {
             "key": "public|recover_llm_credit_reservations_atomic|p_user_id text",
@@ -22413,7 +23193,15 @@
           },
           {
             "key": "public|register_platform_brand_asset_atomic|p_purpose text, p_storage_provider text, p_storage_key text, p_sha256 text, p_mime_type text, p_bytes bigint, p_width integer, p_height integer, p_actor_id uuid, p_request_key text",
-            "sha256": "8d9ea0140fef67549c2ca4f7fbe08a11bf40cace70f2ab145bea7f09fac1f075"
+            "sha256": "2e5f00b0e9c11994f91968919d641027b7f288c8b118f6bc66f4964655798c46"
+          },
+          {
+            "key": "public|register_video_reference_asset_guard_v1|p_asset_ref text, p_user_file_id text, p_storage_key text, p_storage_provider text, p_user_id text, p_source text, p_file_category text, p_upload_session text",
+            "sha256": "7455f505c612e3d00a070b2404b2745ff735c87618c3bc21c66da9f5568036b5"
+          },
+          {
+            "key": "public|register_white_label_asset_atomic|p_profile_id uuid, p_expected_revision integer, p_purpose text, p_storage_provider text, p_storage_key text, p_sha256 text, p_mime_type text, p_bytes integer, p_width integer, p_height integer, p_actor_id text, p_request_key text",
+            "sha256": "f28894173115e4a89352e3637a53095608120b60829af6676f71bda63765cb5a"
           },
           {
             "key": "public|reject_commerce_card_evidence_mutation|",
@@ -22466,6 +23254,10 @@
           {
             "key": "public|reject_tenant_audit_mutation|",
             "sha256": "c523b9a2b14d789a7a6322a9def4675e2323ab983687c29de66801dad6c232c8"
+          },
+          {
+            "key": "public|reject_white_label_event_mutation|",
+            "sha256": "5e053139c3243c4a2ce0bd9756816fe8e39d7f4bcff8415b00df1ef6756b8078"
           },
           {
             "key": "public|release_llm_credits_atomic|p_record_id text, p_lease_owner text, p_lease_token bigint, p_reason text",
@@ -22524,6 +23316,10 @@
             "sha256": "b15f8979786ecd979e7ffbcb1bbfc495af56d8e004304ca29bdb33c2f276d5ad"
           },
           {
+            "key": "public|reserve_queued_digital_video_task_request_snapshot_v1_atomic|p_task jsonb, p_dispatch jsonb, p_routing_snapshot jsonb, p_request_snapshot jsonb, p_request_snapshot_hash text",
+            "sha256": "71c8f5a57533074441fe7af5bf41ed01b63a83762d96f79acc4acf1b87610173"
+          },
+          {
             "key": "public|reserve_queued_digital_video_task_routing_atomic|p_task jsonb, p_dispatch jsonb, p_routing_snapshot jsonb",
             "sha256": "a9324a985a4b3162c0ee6f5585da3592cf5cb1b9247a89393c24bdcd8cda7ea8"
           },
@@ -22534,6 +23330,10 @@
           {
             "key": "public|reserve_video_generation_task_budget_atomic|p_task_id text, p_user_id text, p_model_id text, p_client_request_id text, p_request_fingerprint text, p_billing_price_yuan numeric, p_billing_cost_price_yuan numeric, p_billing_unit text, p_billing_quantity numeric, p_explicitly_free boolean, p_billing_exempt boolean, p_provider_task_id text, p_task_label text, p_batch_id text, p_batch_topic text, p_card_index integer, p_prompt text, p_first_frame_url text, p_last_frame_url text, p_reference_image_url text, p_aspect_ratio text, p_resolution text, p_duration_seconds numeric, p_content_url text",
             "sha256": "920caaa5b374150e0efc5959de2b14737405c9b8c1ecbfefeda08246e20d0b1b"
+          },
+          {
+            "key": "public|reserve_video_generation_task_request_snapshot_v1_atomic|p_task_id text, p_user_id text, p_model_id text, p_client_request_id text, p_request_fingerprint text, p_billing_price_yuan numeric, p_billing_cost_price_yuan numeric, p_billing_unit text, p_billing_quantity numeric, p_explicitly_free boolean, p_billing_exempt boolean, p_routing_snapshot jsonb, p_request_snapshot jsonb, p_request_snapshot_hash text, p_provider_task_id text, p_task_label text, p_batch_id text, p_batch_topic text, p_card_index integer, p_prompt text, p_first_frame_url text, p_last_frame_url text, p_reference_image_url text, p_aspect_ratio text, p_resolution text, p_duration_seconds numeric, p_content_url text",
+            "sha256": "e146b6e5b46a344aa05e0c63d18a51aedd22059e51216cfa76268d3c5e458771"
           },
           {
             "key": "public|reserve_video_generation_task_routing_atomic|p_task_id text, p_user_id text, p_model_id text, p_client_request_id text, p_request_fingerprint text, p_billing_price_yuan numeric, p_billing_cost_price_yuan numeric, p_billing_unit text, p_billing_quantity numeric, p_explicitly_free boolean, p_billing_exempt boolean, p_routing_snapshot jsonb, p_provider_task_id text, p_task_label text, p_batch_id text, p_batch_topic text, p_card_index integer, p_prompt text, p_first_frame_url text, p_last_frame_url text, p_reference_image_url text, p_aspect_ratio text, p_resolution text, p_duration_seconds numeric, p_content_url text",
@@ -22565,11 +23365,11 @@
           },
           {
             "key": "public|revoke_sessions_on_legacy_session_clear|",
-            "sha256": "2ea68a3aa7acf1bfa6efc9c77273886a7dd44323baf4a12917cb43bf8d257237"
+            "sha256": "aaf1d8728afbfe1d3dfa51ca4e188977b2289a09c581335be93df631ba20256f"
           },
           {
             "key": "public|revoke_user_auth_session|p_user_id text, p_session_id text, p_reason text",
-            "sha256": "2c22b53f59009b5eadcc449e36ec718365fa75f0a1ee53f4a6ee250cf4467779"
+            "sha256": "1d4553cc2fefc5ccb0b55e971c9d9d6f5bfcd13c7baaba401b5502b0f9b1ca00"
           },
           {
             "key": "public|rollback_manju_config_release|p_environment text, p_domain text, p_target_release_id uuid, p_expected_active_release_id uuid, p_actor_id text",
@@ -22605,7 +23405,7 @@
           },
           {
             "key": "public|save_platform_brand_draft_atomic|p_expected_generation bigint, p_snapshot jsonb, p_snapshot_sha256 text, p_actor_id uuid, p_request_key text",
-            "sha256": "2ca4cbd103bde80318fc6584223172989b94ba3c306bfc128e39fc2815b9e5f9"
+            "sha256": "644482a54b408541ea6fa791ad702ea29d3ac2e212c50dfbc60ed0200bf4e70e"
           },
           {
             "key": "public|save_skill_package_draft|p_slug text, p_display_name text, p_summary text, p_origin text, p_visibility text, p_runtime_kind text, p_payload jsonb, p_payload_hash text, p_semver text, p_schema_version text, p_metadata jsonb, p_package_id uuid, p_version_id uuid, p_expected_updated_at timestamp with time zone, p_actor_id text",
@@ -22618,6 +23418,18 @@
           {
             "key": "public|save_voice_favorite_atomic|p_user_id text, p_voice_id text, p_voice_name text, p_engine text, p_gender text, p_language text, p_style_tags text[], p_is_cloned boolean, p_clone_id text",
             "sha256": "eb20e45ed834aa9582f45154514586d0570ff6808238f24723a4e871e290705e"
+          },
+          {
+            "key": "public|save_white_label_draft_atomic|p_profile_id uuid, p_expected_revision integer, p_brand_name text, p_brand_short_name text, p_contact_name text, p_contact_wechat text, p_contact_phone text, p_contact_email text, p_requested_hostname text, p_ascii_hostname text, p_unicode_hostname text, p_expected_txt_name text, p_verification_token_hash text, p_verification_token_hint text, p_actor_id text, p_request_key text",
+            "sha256": "b7f9bfdb32edaa7388c4f3c58b1bc98e950091527cbab2bd503e56f63ed96c1b"
+          },
+          {
+            "key": "public|save_white_label_draft_v2_atomic|p_profile_id uuid, p_expected_revision integer, p_brand_name text, p_brand_short_name text, p_contact_name text, p_contact_wechat text, p_contact_phone text, p_contact_email text, p_requested_hostname text, p_ascii_hostname text, p_unicode_hostname text, p_expected_txt_name text, p_verification_token_hash text, p_verification_token_hint text, p_brand_slogan text, p_brand_description text, p_asset_ids jsonb, p_actor_id text, p_request_key text",
+            "sha256": "9ce2dc75d37d04f557527ec8005fa8542f06081b5594940938c2270f38e67791"
+          },
+          {
+            "key": "public|scrub_transient_video_extraction_content|",
+            "sha256": "f26824e956595a55ff87ab21265f94e7381bc0714afa0deae3db729f56828c24"
           },
           {
             "key": "public|security_case_evidence_is_safe|p_value jsonb",
@@ -23137,8 +23949,8 @@
         ]
       },
       "triggers": {
-        "rows": 100,
-        "sha256": "070eff84064df36ce495582edb857532c57020d726039c89371540d7460c61bb",
+        "rows": 107,
+        "sha256": "d4c9783efb9c5ff93ccdac26aa6eb34911f7304a2c0294a16ac7d32128e034a1",
         "exactExtras": false,
         "objects": [
           {
@@ -23168,6 +23980,14 @@
           {
             "key": "public|agent_skill_installations|skill_archive_reference_lock",
             "sha256": "dda6f757db8ed7a3740a815b7d7faa8e845bdbb21956251ea72a16cd3cfd1357"
+          },
+          {
+            "key": "public|agents|agents_config_revision_before_write",
+            "sha256": "78772940ea6b1a1d9fdacf410a95baaa387ffa0e6937f28b3f184ce598512851"
+          },
+          {
+            "key": "public|agents|agents_prompt_version_after_write",
+            "sha256": "03e2b46adf676b4232f022599ea1b562d31971b17cb747dbbdf3b7831f3118a7"
           },
           {
             "key": "public|announcements|announcements_initialize_first_push",
@@ -23240,6 +24060,10 @@
           {
             "key": "public|domain_verification_attempts|domain_verification_attempts_immutable",
             "sha256": "5ef6a684bf7d50b4f78b26426149f854f2411ce6f006a2d460f4768f270df0d6"
+          },
+          {
+            "key": "public|extraction_attempts|extraction_attempts_scrub_transient_video_content",
+            "sha256": "f36ec1ad02e19497f5db2a42801a18e6903144649bfa4c4d5545d638e427f3e1"
           },
           {
             "key": "public|extraction_attempts|operation_flight_recorder",
@@ -23382,6 +24206,10 @@
             "sha256": "dbacd147dfd8a1559c45a18fff06fded7758f9f76afa93a7f18310e5c7c61e4a"
           },
           {
+            "key": "public|prompt_versions|prompt_versions_prepare_legacy_insert",
+            "sha256": "c2e03b693a82904cecd5bf81e11c12a814b9c2b7507ceb6c69f74cb48bbf819a"
+          },
+          {
             "key": "public|security_case_actions|security_case_actions_write_guard",
             "sha256": "8a7ef9eae8be81a12b2ac62f56a6ba89d57a2c31e654e6bfece2a48cb51a2806"
           },
@@ -23442,6 +24270,10 @@
             "sha256": "088d08887260dbdfa558a1c4d9edd681fa57c2f96c28bcd80901ab9f4eb62b84"
           },
           {
+            "key": "public|site_brand_releases|site_brand_white_label_published_immutable",
+            "sha256": "af8f9dc683a957a19a206871ad38b192e7ef9af66229e48f77c758bd298bd553"
+          },
+          {
             "key": "public|sites|sites_revision_bump",
             "sha256": "27e336a3c8f6c34ce7cc360504fe3c17671f0faadecdae8dce3b6d75e8267d88"
           },
@@ -23480,6 +24312,10 @@
           {
             "key": "public|tenants|tenants_revision_bump",
             "sha256": "1726d0a29c5b1135db3536347d4dd4e2652ad24136681a905d4643eb620fe957"
+          },
+          {
+            "key": "public|user_auth_sessions|user_auth_sessions_exclusive_write_guard",
+            "sha256": "1f19559f4e3d9e3f50ae0f0db644b4eb8758e2e830b8e41bce965b1ee324b191"
           },
           {
             "key": "public|user_skill_installations|skill_archive_reference_lock",
@@ -23530,12 +24366,16 @@
             "sha256": "d82e06c48ed520a22d110357fcb32670863bf2eb543457e1d83738499d282d9f"
           },
           {
-            "key": "public|video_tasks|video_tasks_enqueue_history_archive",
-            "sha256": "406c9d3556bf4e4eeceb12fd1e7a2a3c49c0ff653ddaae04e5df5ec552987c14"
+            "key": "public|video_tasks|video_tasks_reference_asset_reservation_guard",
+            "sha256": "3efe473a4e7140bf8ff974fbb226905c7f71a9d0bc37822fcb6208e22272d3d0"
           },
           {
             "key": "public|voice_generation_requests|operation_flight_recorder",
             "sha256": "8edbb1654fb083e8ebba2364f02911e7354be2b50d3a57cf4b5832cc6d868bfa"
+          },
+          {
+            "key": "public|white_label_profile_events|white_label_profile_events_immutable",
+            "sha256": "3e23a36d8546bb28697c8078afc9620e370673768541ee449977405e3b445feb"
           },
           {
             "key": "public|workspace_model_config_releases|workspace_model_config_release_immutable",
@@ -23544,8 +24384,8 @@
         ]
       },
       "sequences": {
-        "rows": 20,
-        "sha256": "b961286a696a583873fb763c61be5241669fc3c0e7da08db6e49920a1167630f",
+        "rows": 21,
+        "sha256": "f6683bbcaef00d9e482fbc45c18e5852c362291d5d6e3997ae4468924c93170f",
         "exactExtras": false,
         "objects": [
           {
@@ -23627,6 +24467,10 @@
           {
             "key": "public|wallet_operations_id_seq",
             "sha256": "dbb5854872d17757b65f0e8f9f0739c07cd43a065c70a6b3f76a04fe0e050d8c"
+          },
+          {
+            "key": "public|white_label_profile_events_event_id_seq",
+            "sha256": "3b0098c7c3621fcaf64d7b91c4d87570894d7632d2ee96e8f5121dac568ff268"
           }
         ]
       },
@@ -28558,8 +29402,8 @@
         ]
       },
       "sequence-privileges": {
-        "rows": 36,
-        "sha256": "f8b00777c076631dbe602034be044b09331d583286403d9690ab70e41fcfdae8",
+        "rows": 38,
+        "sha256": "cf2cf5172334337288247f879c127e77938b8422cac6b2722971be47435d9cfb",
         "exactExtras": true,
         "objects": [
           {
@@ -28705,12 +29549,20 @@
           {
             "key": "public|wallet_operations_id_seq|service_role|USAGE",
             "sha256": "c5732bcb5d2b9b239dc4f5cfa2a871c52339c1b04ae378f7d58495816d156e15"
+          },
+          {
+            "key": "public|white_label_profile_events_event_id_seq|service_role|SELECT",
+            "sha256": "2e0bbd56b2d6b32d2f37a3a317bf7bc080de4aefe6a12698d7c439591de7c951"
+          },
+          {
+            "key": "public|white_label_profile_events_event_id_seq|service_role|USAGE",
+            "sha256": "3f837f84f4204579fd8246efdcc3d5d39b452b489e840e6ef92263a0552896ef"
           }
         ]
       },
       "function-privileges": {
-        "rows": 235,
-        "sha256": "2bfe0b05f3bd961b949c42a4d3fb02ebfe1cfc4289db40a76a26fc9f9c1b975f",
+        "rows": 254,
+        "sha256": "5109876209b2d1f17de2f02b652cd605f5f9cda181f24ddba771b46ebb8c6e97",
         "exactExtras": true,
         "objects": [
           {
@@ -28720,6 +29572,14 @@
           {
             "key": "public|append_admin_governance_audit|p_actor_id text, p_actor_level text, p_target_user_id text, p_permission_key text, p_action text, p_result text, p_reason_code text, p_resource text, p_request_path text, p_request_method text, p_request_key text, p_request_ip text, p_user_agent text, p_metadata jsonb|service_role|EXECUTE",
             "sha256": "10d9c27b4ba797dc8f8e1ac8e3965c6cf6050a3b0e80b514439a54e3bf688484"
+          },
+          {
+            "key": "public|apply_agent_reorder_cas_v1|p_entries jsonb|service_role|EXECUTE",
+            "sha256": "fa18597eed39eb57f8096a678c442d7be9775159bb528657a5d3b70f91e2674d"
+          },
+          {
+            "key": "public|apply_coze_agent_import_cas_v1|p_entries jsonb|service_role|EXECUTE",
+            "sha256": "08845b3db10788e9209a5d01c40e728d1a169c16dff2fb8b11b5474385c2951f"
           },
           {
             "key": "public|apply_wallet_operation_atomic|p_user_id text, p_operation_kind text, p_idempotency_key text, p_amount numeric, p_description text, p_metadata jsonb|service_role|EXECUTE",
@@ -28910,12 +29770,12 @@
             "sha256": "6ea7ab64f17595360dadcb6660aa67a7da3d369f564eabd4d1af6bf6cad8a8a2"
           },
           {
-            "key": "public|claim_video_history_archive_batch|p_worker_id text, p_limit integer, p_lease_seconds integer|service_role|EXECUTE",
-            "sha256": "1d79282ddeab40d993f59cbf859bacaf64086a58a3429cdd140fc893f986c6ca"
-          },
-          {
             "key": "public|claim_video_history_poll_batch|p_worker_id text, p_limit integer, p_lease_seconds integer|service_role|EXECUTE",
             "sha256": "f0f0ae6155ac6c20ae8de2c712b240aae6ae401ce92b9ba05b2cbde020e1e678"
+          },
+          {
+            "key": "public|claim_video_reference_asset_cleanup_v1|p_asset_ref text, p_user_file_id text, p_storage_key text, p_storage_provider text, p_user_id text, p_source text, p_file_category text, p_upload_session text|service_role|EXECUTE",
+            "sha256": "0932f9e65f2ba8541555a7de131c053b8f51b4db007b27f73b67400ba2be361b"
           },
           {
             "key": "public|claim_voice_training_provider_call_atomic|p_user_id text, p_job_key text, p_operation_kind text, p_request_fingerprint text, p_provider_speaker_id text, p_result_payload jsonb|service_role|EXECUTE",
@@ -28934,8 +29794,8 @@
             "sha256": "6d8be09da1c142932ca809443f7b604a299ff391a63d0aa58f14b8bc824c2112"
           },
           {
-            "key": "public|complete_video_history_archive_job|p_task_id text, p_worker_id text, p_storage_url text|service_role|EXECUTE",
-            "sha256": "db74825dc4203629fd0560a084ad589f64580408c424c21521335f6275058336"
+            "key": "public|complete_video_reference_asset_cleanup_v1|p_asset_ref text, p_user_file_id text, p_storage_key text, p_storage_provider text, p_user_id text, p_source text|service_role|EXECUTE",
+            "sha256": "7f4eadc753c640c5f53ec868f648977f76cb498617ad42b1a6c8f55dc7f56934"
           },
           {
             "key": "public|confirm_video_task_upstream_cancellation_atomic|p_user_id text, p_client_request_id text, p_task_id text, p_provider_task_id text|service_role|EXECUTE",
@@ -29012,10 +29872,6 @@
           {
             "key": "public|fail_video_generation_submission_atomic|p_task_id text, p_user_id text, p_request_fingerprint text, p_error_code text, p_error_message text|service_role|EXECUTE",
             "sha256": "3235470741c15d26a0289ef6514d508873bebdae5ad1ceecc2a99e0709004283"
-          },
-          {
-            "key": "public|fail_video_history_archive_attempt|p_task_id text, p_worker_id text, p_error_code text, p_source_expired boolean, p_retry_seconds integer|service_role|EXECUTE",
-            "sha256": "81bd6ddb55ce5d0c1ef48f0949ada621760dd8f2d1137df9b595eb445f2bc4fd"
           },
           {
             "key": "public|finalize_digital_human_long_job|p_parent_id text, p_worker text, p_billing_operation_id text, p_charged_yuan numeric|service_role|EXECUTE",
@@ -29178,6 +30034,14 @@
             "sha256": "91cfb098a4030dfcb62a9778fc5df7b84ac2d4380f25e3160974259af7586b1a"
           },
           {
+            "key": "public|mark_video_reference_asset_object_deleted_v1|p_asset_ref text, p_user_id text|service_role|EXECUTE",
+            "sha256": "c381a3c9d715eb145ab0233929e3eb2a278e1743e157fb17c90d051e99ad6819"
+          },
+          {
+            "key": "public|mark_video_upstream_source_expired|p_task_id text, p_user_id text, p_http_status integer|service_role|EXECUTE",
+            "sha256": "801b8e9795398d5cc091b5ef3fe323ec094a8f9b1775f63f0608219e1e558e6c"
+          },
+          {
             "key": "public|mark_voice_training_provider_attempt_atomic|p_user_id text, p_job_key text, p_operation_kind text, p_request_fingerprint text, p_provider_speaker_id text, p_lifecycle_status text, p_provider_status text, p_result_payload jsonb, p_provider_call_started boolean, p_reconciliation_reason text|service_role|EXECUTE",
             "sha256": "79f9d99391d787b3c361230df3506941a7627a06a4e5caceade9ea19ff49c934"
           },
@@ -29196,6 +30060,10 @@
           {
             "key": "public|normalize_member_feature_keys|p_keys jsonb|PUBLIC|EXECUTE",
             "sha256": "ce89afd5cd7fcce6ae7ea804ee0e9a39147bf43a20f824c180a6876a2debee43"
+          },
+          {
+            "key": "public|persist_video_generation_request_snapshot_v1_atomic|p_task_id text, p_user_id text, p_request_fingerprint text, p_request_snapshot jsonb, p_request_snapshot_hash text|service_role|EXECUTE",
+            "sha256": "eceaff087f6b2dcb3ca51db5f73525c80840a461a930fb348590fd6df10c8c1c"
           },
           {
             "key": "public|persist_video_routing_snapshot_atomic|p_task_id text, p_user_id text, p_request_fingerprint text, p_routing_snapshot jsonb|service_role|EXECUTE",
@@ -29254,8 +30122,16 @@
             "sha256": "15db55bfd8e47793a61fd5a1a7bdc2fa317032d81b4acda0af360bc3f1197ed3"
           },
           {
+            "key": "public|publish_white_label_draft_atomic|p_profile_id uuid, p_expected_revision integer, p_actor_id text, p_request_key text|service_role|EXECUTE",
+            "sha256": "e27f24d157f12d44e37a063e9fb8e23df2538c1d136128f08ca35d5f0b3e111c"
+          },
+          {
             "key": "public|purchase_voice_nest_slots_atomic|p_user_id text, p_quantity integer, p_idempotency_key text|service_role|EXECUTE",
             "sha256": "5268f062c807af4686f4a777a099bade313456cd31d42d92f0e6145c4f0b61e8"
+          },
+          {
+            "key": "public|purge_expired_user_content|p_conversation_days integer, p_extraction_days integer, p_limit integer|service_role|EXECUTE",
+            "sha256": "e9ad734a6bd935bc0bf0db9f52b4b3a3e47b173b8d7653481b8136007356e129"
           },
           {
             "key": "public|read_admin_access_snapshot|p_user_id text|service_role|EXECUTE",
@@ -29298,6 +30174,18 @@
             "sha256": "5ee529e94d3bbcc1abefb30bc1e59ed09bb02de32c9b0cdb2809de6123803aa5"
           },
           {
+            "key": "public|read_published_white_label_asset|p_hostname text, p_release_id uuid, p_asset_id uuid|service_role|EXECUTE",
+            "sha256": "20c344679ce6e4cb46bb65bda9e21241a0039cbdfd3f4111504050dc452b7611"
+          },
+          {
+            "key": "public|read_published_white_label_brand|p_hostname text|service_role|EXECUTE",
+            "sha256": "13eed96c987caf0a76f41ecb9fcc1f21b2be10421da41f68d80c1d848007118a"
+          },
+          {
+            "key": "public|read_white_label_admin_state||service_role|EXECUTE",
+            "sha256": "bcbda93704c15260e59cee5bb91499f06590b80fb119667d5105fac10a18e94d"
+          },
+          {
             "key": "public|reconcile_extraction_attempt_atomic|p_record_id text, p_expected_updated_at timestamp with time zone, p_actor_user_id text, p_target_state text, p_http_status integer, p_response jsonb, p_response_fingerprint text, p_provider_task_id text, p_provider_evidence jsonb, p_billing_evidence jsonb, p_error_code text, p_error_message text, p_reason text|service_role|EXECUTE",
             "sha256": "26cba404e9cfce67cb305a0553c7e45dc36ef285d0a2eb748ccfcb3b0987658d"
           },
@@ -29338,6 +30226,14 @@
             "sha256": "5fa97d19f8ed4f3a2f78cf69d4f6b14e3813cc6fd13993619c8e76472de6e02f"
           },
           {
+            "key": "public|record_image_provider_dispatch_receipt_atomic|p_record_id text, p_user_id text, p_client_trace_id text, p_payload_fingerprint text, p_receipt jsonb|service_role|EXECUTE",
+            "sha256": "07b025af2f9e50c9aa09a07c8816804963fa28597d60ed114a3afb8a7040ef85"
+          },
+          {
+            "key": "public|record_image_provider_submission_receipt_atomic|p_record_id text, p_user_id text, p_client_trace_id text, p_payload_fingerprint text, p_dispatch_receipt_sha256 text, p_receipt jsonb|service_role|EXECUTE",
+            "sha256": "dd8a2e68c5b1b1cf875905ce18869f6739ee4f107f646f99c11747f4f823e29b"
+          },
+          {
             "key": "public|record_incident_slo_observation_atomic|p_input jsonb|service_role|EXECUTE",
             "sha256": "e7c7b97f022d88327e4213bf3779436154751ebc011db7ab1c3fe0a2cbff711a"
           },
@@ -29356,6 +30252,14 @@
           {
             "key": "public|record_video_provider_submission_receipt_atomic|p_task_id text, p_user_id text, p_request_fingerprint text, p_outcome text, p_provider_task_id text, p_receipt jsonb|service_role|EXECUTE",
             "sha256": "3589d1352d3d05152d48d38dca3cdb780b7bfdfe6b3700bdefe807d771efd78e"
+          },
+          {
+            "key": "public|record_video_reference_asset_cleanup_failure_v1|p_asset_ref text, p_user_id text, p_error_code text|service_role|EXECUTE",
+            "sha256": "7dab0128402b642a4b082716dc0fcacfe9c50f3324673763e8839124c2211f57"
+          },
+          {
+            "key": "public|record_white_label_domain_verification|p_profile_id uuid, p_expected_revision integer, p_passed boolean, p_observed_values_hash text, p_evidence_sha256 text, p_resolver_name text, p_error_code text, p_actor_id text, p_request_key text|service_role|EXECUTE",
+            "sha256": "9bba5eb05bd89a00e3940a2f73e1d45ccebd2d2be2add4a06fcebbc9a90ff700"
           },
           {
             "key": "public|recover_llm_credit_reservations_atomic|p_user_id text|service_role|EXECUTE",
@@ -29384,6 +30288,14 @@
           {
             "key": "public|register_platform_brand_asset_atomic|p_purpose text, p_storage_provider text, p_storage_key text, p_sha256 text, p_mime_type text, p_bytes bigint, p_width integer, p_height integer, p_actor_id uuid, p_request_key text|service_role|EXECUTE",
             "sha256": "6dee4323f4504b977e4a164c6e6149616f48d6807d808905c6bcffbaef1b6351"
+          },
+          {
+            "key": "public|register_video_reference_asset_guard_v1|p_asset_ref text, p_user_file_id text, p_storage_key text, p_storage_provider text, p_user_id text, p_source text, p_file_category text, p_upload_session text|service_role|EXECUTE",
+            "sha256": "d0b054a0ac456fe91a9fc9ff82b883ac4ed4746da03d0dcbf92e637e1c8aa0ca"
+          },
+          {
+            "key": "public|register_white_label_asset_atomic|p_profile_id uuid, p_expected_revision integer, p_purpose text, p_storage_provider text, p_storage_key text, p_sha256 text, p_mime_type text, p_bytes integer, p_width integer, p_height integer, p_actor_id text, p_request_key text|service_role|EXECUTE",
+            "sha256": "c97e2804fdcef3abb5562ca1996eec8fac795ccffe56260748f585ea47fe9b87"
           },
           {
             "key": "public|reject_signed_legacy_platform_brand_url||service_role|EXECUTE",
@@ -29446,6 +30358,10 @@
             "sha256": "4f8302563d70e44d55761654ef086f109f6fc8fec03f35a5d92526e9725428bf"
           },
           {
+            "key": "public|reserve_queued_digital_video_task_request_snapshot_v1_atomic|p_task jsonb, p_dispatch jsonb, p_routing_snapshot jsonb, p_request_snapshot jsonb, p_request_snapshot_hash text|service_role|EXECUTE",
+            "sha256": "ae216d45a3d2f857405748b9dd43369198ec46d80ac75c51487cbb5c9c4023dc"
+          },
+          {
             "key": "public|reserve_queued_digital_video_task_routing_atomic|p_task jsonb, p_dispatch jsonb, p_routing_snapshot jsonb|service_role|EXECUTE",
             "sha256": "b03496dbfa5f39fda26ec1d7f7d531af0734bf7f2e80debfc70f69070d6ecef9"
           },
@@ -29456,6 +30372,10 @@
           {
             "key": "public|reserve_video_generation_task_budget_atomic|p_task_id text, p_user_id text, p_model_id text, p_client_request_id text, p_request_fingerprint text, p_billing_price_yuan numeric, p_billing_cost_price_yuan numeric, p_billing_unit text, p_billing_quantity numeric, p_explicitly_free boolean, p_billing_exempt boolean, p_provider_task_id text, p_task_label text, p_batch_id text, p_batch_topic text, p_card_index integer, p_prompt text, p_first_frame_url text, p_last_frame_url text, p_reference_image_url text, p_aspect_ratio text, p_resolution text, p_duration_seconds numeric, p_content_url text|service_role|EXECUTE",
             "sha256": "daaf3ffec255a582d0d20a27d0d08650f5696300985ee61bb1d9f2429bfc691f"
+          },
+          {
+            "key": "public|reserve_video_generation_task_request_snapshot_v1_atomic|p_task_id text, p_user_id text, p_model_id text, p_client_request_id text, p_request_fingerprint text, p_billing_price_yuan numeric, p_billing_cost_price_yuan numeric, p_billing_unit text, p_billing_quantity numeric, p_explicitly_free boolean, p_billing_exempt boolean, p_routing_snapshot jsonb, p_request_snapshot jsonb, p_request_snapshot_hash text, p_provider_task_id text, p_task_label text, p_batch_id text, p_batch_topic text, p_card_index integer, p_prompt text, p_first_frame_url text, p_last_frame_url text, p_reference_image_url text, p_aspect_ratio text, p_resolution text, p_duration_seconds numeric, p_content_url text|service_role|EXECUTE",
+            "sha256": "522e558e619586b81e6419fa021facdd27b728311efe78d6747ba127afd5ed3d"
           },
           {
             "key": "public|reserve_video_generation_task_routing_atomic|p_task_id text, p_user_id text, p_model_id text, p_client_request_id text, p_request_fingerprint text, p_billing_price_yuan numeric, p_billing_cost_price_yuan numeric, p_billing_unit text, p_billing_quantity numeric, p_explicitly_free boolean, p_billing_exempt boolean, p_routing_snapshot jsonb, p_provider_task_id text, p_task_label text, p_batch_id text, p_batch_topic text, p_card_index integer, p_prompt text, p_first_frame_url text, p_last_frame_url text, p_reference_image_url text, p_aspect_ratio text, p_resolution text, p_duration_seconds numeric, p_content_url text|service_role|EXECUTE",
@@ -29536,6 +30456,14 @@
           {
             "key": "public|save_voice_favorite_atomic|p_user_id text, p_voice_id text, p_voice_name text, p_engine text, p_gender text, p_language text, p_style_tags text[], p_is_cloned boolean, p_clone_id text|service_role|EXECUTE",
             "sha256": "f3060cbd5a70754d3d65139273e954697bd22d14994ecc82dfbeeee9b7f45c73"
+          },
+          {
+            "key": "public|save_white_label_draft_atomic|p_profile_id uuid, p_expected_revision integer, p_brand_name text, p_brand_short_name text, p_contact_name text, p_contact_wechat text, p_contact_phone text, p_contact_email text, p_requested_hostname text, p_ascii_hostname text, p_unicode_hostname text, p_expected_txt_name text, p_verification_token_hash text, p_verification_token_hint text, p_actor_id text, p_request_key text|service_role|EXECUTE",
+            "sha256": "6fe190bbcb2c426cf8df2dee7e642db11de979a3db94a901ad23e80fd5c15fb0"
+          },
+          {
+            "key": "public|save_white_label_draft_v2_atomic|p_profile_id uuid, p_expected_revision integer, p_brand_name text, p_brand_short_name text, p_contact_name text, p_contact_wechat text, p_contact_phone text, p_contact_email text, p_requested_hostname text, p_ascii_hostname text, p_unicode_hostname text, p_expected_txt_name text, p_verification_token_hash text, p_verification_token_hint text, p_brand_slogan text, p_brand_description text, p_asset_ids jsonb, p_actor_id text, p_request_key text|service_role|EXECUTE",
+            "sha256": "1198f90c6c6e28e78f4becb483e21eb730e0d51423644e3236d28bb67cd03a1f"
           },
           {
             "key": "public|send_invitation_reward_atomic|p_admin_id text, p_invitation_record_id text, p_reward_stage text, p_idempotency_key text|service_role|EXECUTE",
@@ -29679,7 +30607,7 @@
         ]
       }
     },
-    "sha256": "08321b2b595d878bbe274fbb7ccb5dc7f1f720a590dace559bf0f82d0099f67e"
+    "sha256": "1ca942ba00f301ed849f34713c396afcdc605510a69bf1c0ea4c379654329359"
   },
-  "contractSha256": "ce48b6b4b8019aab3e9cbab74fff161ac68c379842bae17c8c39bb5b073d29fd"
+  "contractSha256": "d27289f97dbdf4fd6da479add91de70ff562b4dd27dbf828f370924fa592d85c"
 }

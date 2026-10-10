@@ -134,7 +134,9 @@ export async function authorizeToken(token: string): Promise<TokenAuthorizationR
  * Verify both the signed token and the server-owned current session.
  *
  * Password resets and administrator identity changes revoke every session;
- * logout revokes only the caller and a third login revokes the oldest device.
+ * logout revokes only the caller. Same-account sessions may coexist on one IP;
+ * a login from a different IP replaces that account's prior-IP sessions, and
+ * a different account on the same IP is replaced.
  * Current role and display identity also come from the database instead of a
  * stale claim embedded in the token.
  */

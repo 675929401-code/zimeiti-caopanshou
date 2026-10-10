@@ -253,6 +253,23 @@ function normalizeItem(value: unknown): MediaHistoryItem | null {
   };
 }
 
+function mergeHistoryItems(
+  previous: MediaHistoryItem[],
+  incoming: MediaHistoryItem[],
+  incomingFirst: boolean,
+): MediaHistoryItem[] {
+  const incomingById = new Map(incoming.map((item) => [item.id, item]));
+  const incomingUnique = Array.from(incomingById.values());
+  if (incomingFirst) {
+    return [...incomingUnique, ...previous.filter((item) => !incomingById.has(item.id))];
+  }
+  const previousIds = new Set(previous.map((item) => item.id));
+  return [
+    ...previous.map((item) => incomingById.get(item.id) ?? item),
+    ...incomingUnique.filter((item) => !previousIds.has(item.id)),
+  ];
+}
+
 function facetRecord(value: unknown, keys: readonly string[]): Record<string, number> {
   const result: Record<string, number> = {};
   const normalizeFacetKey = (value: unknown) => value === "other-production"
@@ -499,8 +516,7 @@ export default function MediaHistoryPage() {
         : [];
       setItems((previous) => {
         if (offset === 0 && !background) return incoming;
-        const merged = offset === 0 ? [...incoming, ...previous] : [...previous, ...incoming];
-        return Array.from(new Map(merged.map((item) => [item.id, item])).values());
+        return mergeHistoryItems(previous, incoming, offset === 0);
       });
       setFacets(readFacets(data));
       setHistoryScope(token);
@@ -722,7 +738,7 @@ export default function MediaHistoryPage() {
           <Database aria-hidden="true" />
           <div>
             <strong>历史仅保存任务索引、受控预览地址与到期信息</strong>
-            <p>优先跟随上游到期时间；没有明确到期信息时，图片保留两天、视频保留三天。到期索引自动从列表清理。</p>
+            <p>图片没有明确到期信息时保留两天；普通视频不设平台固定天数，源有效即可播放或下载，确认失效后自动移出历史。</p>
           </div>
           <span><Download aria-hidden="true" />下载到电脑长期保存{expiredCount > 0 ? ` · 已清理 ${expiredCount} 条过期索引` : ""}</span>
         </section>

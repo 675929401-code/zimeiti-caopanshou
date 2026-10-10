@@ -34,6 +34,7 @@ const SAFE_COLUMNS = [
   "timeout",
   "enable_web_search",
   "guide_message",
+  "config_revision",
   "updated_at",
   "deleted_at",
 ] as const;
@@ -92,10 +93,13 @@ SET
   enable_web_search = ${sqlLiteral(row.enable_web_search)},
   guide_message = ${sqlLiteral(row.guide_message)},
   updated_at = ${sqlLiteral(row.updated_at)}::timestamptz
-WHERE id = ${sqlLiteral(row.id)} AND name = ${sqlLiteral(row.name)} AND deleted_at IS NULL;
+WHERE id = ${sqlLiteral(row.id)}
+  AND name = ${sqlLiteral(row.name)}
+  AND deleted_at IS NULL
+  AND config_revision = ${sqlLiteral(row.config_revision)}::bigint;
 
 IF NOT FOUND THEN
-  RAISE EXCEPTION 'restore target missing or name mismatch: ${row.id}';
+  RAISE EXCEPTION 'restore target missing, name mismatch, or revision conflict: ${row.id}' USING ERRCODE = '40001';
 END IF;`).join("\n\n");
 
   return `-- Generated from local backup ${backupId}. Contains only allowlisted agent configuration.

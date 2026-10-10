@@ -26,6 +26,30 @@ const REQUIRED_DATA_FILES = [
   "voice-studio/voices.json",
 ] as const;
 const PROJECT_ID = "zimeiti-caopanshou";
+const CANDIDATE_READINESS_PROFILE = "candidate-runtime-v1";
+const PRODUCTION_READINESS_PROFILE = "production-full-v1";
+
+type ReleaseReadinessProfile =
+  | typeof CANDIDATE_READINESS_PROFILE
+  | typeof PRODUCTION_READINESS_PROFILE;
+
+function resolveReadinessProfile(): ReleaseReadinessProfile {
+  const configured = process.env.RELEASE_READINESS_PROFILE?.trim() || PRODUCTION_READINESS_PROFILE;
+  if (configured !== CANDIDATE_READINESS_PROFILE && configured !== PRODUCTION_READINESS_PROFILE) {
+    throw new Error("RELEASE_READINESS_PROFILE is invalid");
+  }
+  return configured;
+}
+
+function externalAttestationRequired(subject: "database" | "reference-data") {
+  return {
+    state: "external-attestation-required",
+    ready: false,
+    probeExecuted: false,
+    requiredBeforeActivation: true,
+    subject,
+  } as const;
+}
 
 function sha256File(filePath: string) {
   const hash = crypto.createHash("sha256");
@@ -52,6 +76,33 @@ function requireDirectory(environmentName: string, writable = true) {
   if (!linkStats.isDirectory()) throw new Error(`${environmentName} must be a directory`);
   fs.accessSync(/* turbopackIgnore: true */ resolved, writable ? fs.constants.R_OK | fs.constants.W_OK : fs.constants.R_OK);
   return resolved;
+}
+
+function requireDedicatedDataMount(pathsToVerify: string[]) {
+  if (process.platform !== "linux") throw new Error("production storage mount verification requires Linux");
+  const dataRoot = "/data";
+  const rootStats = fs.statSync(/* turbopackIgnore: true */ "/");
+  const dataLinkStats = fs.lstatSync(/* turbopackIgnore: true */ dataRoot);
+  if (!dataLinkStats.isDirectory() || dataLinkStats.isSymbolicLink()) {
+    throw new Error("/data must be a real directory mountpoint");
+  }
+  if (fs.realpathSync(/* turbopackIgnore: true */ dataRoot) !== dataRoot) {
+    throw new Error("/data must not redirect through a symbolic link");
+  }
+  const dataStats = fs.statSync(/* turbopackIgnore: true */ dataRoot);
+  if (dataStats.dev === rootStats.dev) {
+    throw new Error("/data is not backed by a device independent from the system root");
+  }
+  for (const configuredPath of pathsToVerify) {
+    const resolved = fs.realpathSync(/* turbopackIgnore: true */ configuredPath);
+    if (resolved !== dataRoot && !resolved.startsWith(`${dataRoot}${path.sep}`)) {
+      throw new Error(`production runtime path escaped /data: ${path.basename(configuredPath)}`);
+    }
+    if (fs.statSync(/* turbopackIgnore: true */ resolved).dev !== dataStats.dev) {
+      throw new Error(`production runtime path is not on the verified data device: ${path.basename(configuredPath)}`);
+    }
+  }
+  return { mount: dataRoot, isolatedFromSystemDisk: true };
 }
 
 function readAssetReceipt(publicAssetRoot: string) {
@@ -131,6 +182,7 @@ function readAssetReceipt(publicAssetRoot: string) {
 
 export async function GET() {
   const checks: Record<string, unknown> = {};
+  let readinessProfile: ReleaseReadinessProfile | null = null;
   try {
     if (process.env.NODE_ENV !== "production" || process.env.COZE_PROJECT_ENV !== "PROD") {
       throw new Error("release readiness is only valid in production mode");
@@ -141,42 +193,59 @@ export async function GET() {
     if (!commitSha || !/^[0-9a-f]{40,64}$/u.test(commitSha)) throw new Error("DEPLOY_COMMIT_SHA is invalid");
     const buildId = process.env.EXPECTED_BUILD_ID?.trim();
     if (!buildId || !/^[A-Za-z0-9._-]{1,256}$/u.test(buildId)) throw new Error("EXPECTED_BUILD_ID is invalid");
-
-    const databaseReadiness = await probeProductionDatabaseReadiness();
-    checks.database = {
-      state: databaseReadiness.state,
-      contractId: databaseReadiness.contractId,
-      contractVersion: databaseReadiness.contractVersion,
-      tableCount: databaseReadiness.tableCount,
-      rpcCount: databaseReadiness.rpcCount,
-      missingTableCount: databaseReadiness.missingTables.length,
-      missingColumnCount: databaseReadiness.missingColumns.length,
-      missingRpcCount: databaseReadiness.missingRpcs.length,
-      missingRpcArgumentCount: databaseReadiness.missingRpcArguments.length,
-      forbiddenRpcCount: databaseReadiness.forbiddenRpcsPresent.length,
+    const buildOutputDigest = process.env.RELEASE_BUILD_OUTPUT_DIGEST?.trim().toLowerCase();
+    const sourceVersion = process.env.RELEASE_SOURCE_VERSION?.trim();
+    if (!buildOutputDigest || !/^[a-f0-9]{64}$/u.test(buildOutputDigest)) throw new Error("RELEASE_BUILD_OUTPUT_DIGEST is invalid");
+    if (!sourceVersion || /[\u0000-\u001f\u007f]/u.test(sourceVersion)) throw new Error("RELEASE_SOURCE_VERSION is invalid");
+    readinessProfile = resolveReadinessProfile();
+    checks.profile = {
+      name: readinessProfile,
+      scope: readinessProfile === CANDIDATE_READINESS_PROFILE ? "candidate-runtime" : "production-full",
     };
-    if (!databaseReadiness.ok) {
-      throw new Error(`production database contract is not ready: ${databaseReadiness.code}`);
-    }
 
-    const referenceDataReadiness = await probeProductionReferenceDataReadiness();
-    checks.referenceData = {
-      state: referenceDataReadiness.state,
-      voiceActivePriceCount: referenceDataReadiness.voiceActivePriceCount,
-      manjuRequiredDomainCount: referenceDataReadiness.manjuRequiredDomainCount,
-      manjuReadyDomainCount: referenceDataReadiness.manjuReadyDomainCount,
-      missingManjuDomainCount: referenceDataReadiness.missingManjuDomains.length,
-      serviceRoleConfigured: referenceDataReadiness.serviceRoleConfigured,
-      manjuStorageReadyDomainCount: referenceDataReadiness.manjuStorageReadyDomainCount,
-      missingManjuStorageDomainCount: referenceDataReadiness.missingManjuStorageDomains.length,
-      videoHealthProtocolVersion: referenceDataReadiness.videoHealthProtocolVersion,
-      activeVideoModelCount: referenceDataReadiness.activeVideoModelCount,
-      verifiedVideoModelCount: referenceDataReadiness.verifiedVideoModelCount,
-      videoModelVerificationReady: referenceDataReadiness.videoModelVerificationReady,
-      unverifiedVideoModelCount: referenceDataReadiness.unverifiedVideoModelIds.length,
-    };
-    if (!referenceDataReadiness.ok) {
-      throw new Error(`production reference data is not ready: ${referenceDataReadiness.code}`);
+    if (readinessProfile === CANDIDATE_READINESS_PROFILE) {
+      // Candidate runtime acceptance is deliberately credential-free. Production
+      // database and reference-data evidence is supplied outside the isolated
+      // candidate and remains mandatory before activation.
+      checks.database = externalAttestationRequired("database");
+      checks.referenceData = externalAttestationRequired("reference-data");
+    } else {
+      const databaseReadiness = await probeProductionDatabaseReadiness();
+      checks.database = {
+        state: databaseReadiness.state,
+        contractId: databaseReadiness.contractId,
+        contractVersion: databaseReadiness.contractVersion,
+        tableCount: databaseReadiness.tableCount,
+        rpcCount: databaseReadiness.rpcCount,
+        missingTableCount: databaseReadiness.missingTables.length,
+        missingColumnCount: databaseReadiness.missingColumns.length,
+        missingRpcCount: databaseReadiness.missingRpcs.length,
+        missingRpcArgumentCount: databaseReadiness.missingRpcArguments.length,
+        forbiddenRpcCount: databaseReadiness.forbiddenRpcsPresent.length,
+      };
+      if (!databaseReadiness.ok) {
+        throw new Error(`production database contract is not ready: ${databaseReadiness.code}`);
+      }
+
+      const referenceDataReadiness = await probeProductionReferenceDataReadiness();
+      checks.referenceData = {
+        state: referenceDataReadiness.state,
+        voiceActivePriceCount: referenceDataReadiness.voiceActivePriceCount,
+        manjuRequiredDomainCount: referenceDataReadiness.manjuRequiredDomainCount,
+        manjuReadyDomainCount: referenceDataReadiness.manjuReadyDomainCount,
+        missingManjuDomainCount: referenceDataReadiness.missingManjuDomains.length,
+        serviceRoleConfigured: referenceDataReadiness.serviceRoleConfigured,
+        manjuStorageReadyDomainCount: referenceDataReadiness.manjuStorageReadyDomainCount,
+        missingManjuStorageDomainCount: referenceDataReadiness.missingManjuStorageDomains.length,
+        videoHealthProtocolVersion: referenceDataReadiness.videoHealthProtocolVersion,
+        activeVideoModelCount: referenceDataReadiness.activeVideoModelCount,
+        verifiedVideoModelCount: referenceDataReadiness.verifiedVideoModelCount,
+        videoModelVerificationReady: referenceDataReadiness.videoModelVerificationReady,
+        unverifiedVideoModelCount: referenceDataReadiness.unverifiedVideoModelIds.length,
+      };
+      if (!referenceDataReadiness.ok) {
+        throw new Error(`production reference data is not ready: ${referenceDataReadiness.code}`);
+      }
     }
 
     const dataRoot = resolveAppDataDir();
@@ -202,13 +271,25 @@ export async function GET() {
     const uploadRoot = requireDirectory("STORAGE_LOCAL_BASE_PATH");
     const referenceAudioRoot = requireDirectory("VOICE_REFERENCE_AUDIO_DIR");
     const publicAssetRoot = requireDirectory("PUBLIC_ASSET_ROOT", false);
+    const voiceDatabasePath = resolveVoiceSqlitePath();
+    const dataMount = requireDedicatedDataMount([
+      process.cwd(),
+      dataRoot,
+      runtimeRoot,
+      idempotencyRoot,
+      backupRoot,
+      uploadRoot,
+      referenceAudioRoot,
+      publicAssetRoot,
+      voiceDatabasePath,
+    ]);
     checks.storage = {
+      dataMount,
       uploadsReady: Boolean(uploadRoot),
       referenceAudioReady: Boolean(referenceAudioRoot),
       assets: readAssetReceipt(publicAssetRoot),
     };
 
-    const voiceDatabasePath = resolveVoiceSqlitePath();
     const voiceStats = fs.statSync(/* turbopackIgnore: true */ voiceDatabasePath);
     if (!voiceStats.isFile() || voiceStats.size <= 0) throw new Error("voice database is empty");
     const voiceDatabase = new Database(voiceDatabasePath, { readonly: true, fileMustExist: true });
@@ -223,20 +304,28 @@ export async function GET() {
 
     return NextResponse.json({
       ready: true,
+      activationReady: readinessProfile === PRODUCTION_READINESS_PROFILE,
+      readinessProfile,
       service: "web",
       releaseId,
       commitSha,
       buildId,
+      buildOutputDigest,
+      sourceVersion,
       assetDigest: process.env.ASSET_DIGEST,
       checks,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({
       ready: false,
+      activationReady: false,
+      readinessProfile,
       service: "web",
       releaseId: process.env.RELEASE_ID || null,
       commitSha: process.env.DEPLOY_COMMIT_SHA || null,
       buildId: null,
+      buildOutputDigest: null,
+      sourceVersion: null,
       code: "RELEASE_NOT_READY",
       error: error instanceof Error ? error.message : String(error),
       checks,

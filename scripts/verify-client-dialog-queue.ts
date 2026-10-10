@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import {
   APP_DIALOG_PRIORITY,
+  APP_TOAST_PRIORITY,
   claimAppDialog,
+  claimAppToast,
   currentAppDialogOwner,
   currentAppDialogPriority,
+  currentAppToastOwner,
+  currentAppToastPriority,
   releaseAppDialog,
+  releaseAppToast,
 } from "../src/lib/client-dialog-queue";
 
 const attributes = new Map<string, string>();
@@ -88,4 +93,23 @@ releaseAppDialog("forced-logout");
 assert.ok(events.some((event) => event.type === "app-dialog-claimed"));
 assert.ok(events.some((event) => event.type === "app-dialog-released"));
 
-console.log("client dialog priority queue verification passed");
+assert.equal(claimAppToast("announcement", APP_TOAST_PRIORITY.announcement), true);
+assert.equal(currentAppToastOwner(), "announcement");
+assert.equal(currentAppToastPriority(), APP_TOAST_PRIORITY.announcement);
+assert.equal(claimAppToast("account", APP_TOAST_PRIORITY.account), true, "account toast preempts ordinary announcement");
+assert.equal(claimAppToast("announcement", APP_TOAST_PRIORITY.announcement), false, "ordinary announcement remains queued");
+assert.equal(
+  claimAppToast("announcement", APP_TOAST_PRIORITY.announcementUrgent),
+  true,
+  "urgent announcement preempts account toast",
+);
+assert.equal(currentAppToastOwner(), "announcement");
+releaseAppToast("account");
+assert.equal(currentAppToastOwner(), "announcement", "a non-owner cannot release the active toast");
+releaseAppToast("announcement");
+assert.equal(currentAppToastOwner(), null);
+assert.equal(currentAppToastPriority(), null);
+assert.ok(events.some((event) => event.type === "app-toast-claimed"));
+assert.ok(events.some((event) => event.type === "app-toast-released"));
+
+console.log("client dialog and toast priority queue verification passed");

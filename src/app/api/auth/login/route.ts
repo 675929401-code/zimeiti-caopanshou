@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomBytes } from "crypto";
 import { createToken, verifyPassword } from "@/lib/auth";
-import { getClientIP as getTrustedClientIP, logSecurityEvent } from "@/lib/security";
+import { logSecurityEvent } from "@/lib/security";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { issueUserAuthSession } from "@/lib/auth-session-store";
 import { publicAllowedAgentCategoryIds } from "@/lib/agent-category-access";
 import { readUserAppearancePreference } from "@/lib/server/user-appearance-preference";
+import { getAuthSessionClientIP } from "@/lib/auth-session-client-ip";
 
 interface UserRow {
   id: string;
@@ -133,7 +134,13 @@ async function rejectLogin(params: {
 }
 
 export async function POST(request: NextRequest) {
-  const clientIP = getTrustedClientIP(request);
+  const clientIP = getAuthSessionClientIP(request);
+  if (!clientIP) {
+    return NextResponse.json(
+      { error: "登录入口暂未获得可信网络地址，请稍后重试", code: "CLIENT_IP_UNAVAILABLE" },
+      { status: 503 },
+    );
+  }
   const userAgent = request.headers.get("user-agent") || "unknown";
 
   try {

@@ -107,7 +107,7 @@ test("development session is inaccessible in production and off loopback", () =>
 
 test("registration uses an atomic invitation transaction", () => {
   const route = source("src/app/api/auth/register/route.ts");
-  assert.match(route, /register_invited_user_atomic/u);
+  assert.match(route, /register_invited_user_secure_atomic/u);
   assert.match(route, /hashPassword\(password\)/u);
   assert.match(route, /PGRST202/u);
   assert.match(route, /status: 503/u);

@@ -318,7 +318,7 @@ export async function persistAvatar(
       prefix: "agent-images/avatar/",
       fileName,
       publicRead: false,
-      source: "agent-avatar-transfer",
+      source: options.source || "agent-avatar-transfer",
       meta: { purpose: "avatar", sha256: digest, width: String(validated.width), height: String(validated.height) },
     });
     console.log(`[AvatarStorage] Persisted legacy avatar for ${label || "import"} via object storage (${result.size} bytes)`);
@@ -334,4 +334,39 @@ export async function persistAvatar(
   // 兼容仍依赖旧行为的导入链；智能体新增、编辑和自动头像均显式关闭此回退。
   console.error(`[AvatarStorage] All storage strategies failed for ${label}, using raw URL as fallback`);
   return rawUrl;
+}
+
+/**
+ * Best-effort disposal for a just-generated avatar that lost its agent CAS.
+ * Only exact managed avatar references with no current agent reference are
+ * eligible; arbitrary URLs/keys are never deleted.
+ */
+export async function discardUnclaimedGeneratedAvatar(reference: string): Promise<boolean> {
+  const normalized = reference.trim();
+  if (!normalized) return false;
+
+  const client = getSupabaseAdminClient();
+  const { count, error: referenceError } = await client
+    .from("agents")
+    .select("id", { head: true, count: "exact" })
+    .eq("avatar", normalized);
+  if (referenceError || (count || 0) > 0) return false;
+
+  // Public avatar URLs do not carry authoritative user_files/provider
+  // ownership metadata. Fail closed instead of guessing a provider or
+  // deleting an unowned object.
+  try { new URL(normalized); return false; } catch { /* private key below */ }
+
+  if (!/^agent-images\/avatar\/[A-Za-z0-9._/-]+$/u.test(normalized)
+    || normalized.includes("..")) return false;
+
+  const { data: metadata, error: metadataError } = await client
+    .from("user_files")
+    .select("storage_provider,source")
+    .eq("storage_key", normalized);
+  if (metadataError || metadata?.length !== 1) return false;
+  const row = metadata[0] as { source?: string | null; storage_provider?: string | null };
+  if (row.source !== "agent-avatar-generated" || !row.storage_provider) return false;
+  const provider = row.storage_provider as StorageProviderType;
+  return storageManager.delete(normalized, provider).catch(() => false);
 }

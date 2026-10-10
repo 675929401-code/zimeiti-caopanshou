@@ -90,6 +90,7 @@ export function createAutodlH3ProductionFinalizerDependencies(options: {
 
     async persistResult({ context, resultUrl }) {
       return persist(resultUrl, context.videoTaskInternalId, context.userId, {
+        storageScope: "autodl-h3",
         providerProtocol: context.providerProtocol,
         providerEndpoint: context.providerEndpoint,
       });

@@ -1,10 +1,16 @@
-import { promises as fs } from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAppRuntimeDir } from "@/lib/runtime-paths";
 import { createVideoAccessUrl } from "@/lib/video-access-ticket";
 import { authorizeVideoMediaRequest } from "@/lib/video-media-auth";
 import { extractVideoThumbnail } from "@/lib/video-postprocess";
+import {
+  readVideoThumbnailCacheFile,
+  readVideoThumbnailCachePolicy,
+  resolveVideoThumbnailCacheFile,
+  scheduleVideoThumbnailCachePrune,
+  writeVideoThumbnailCacheFile,
+} from "@/lib/video-thumbnail-cache";
 import {
   authorizeMemberContentAccess,
   authorizeMemberContentDiscovery,
@@ -18,10 +24,10 @@ function resolveThumbnailDirectory(): string {
   return path.join(/* turbopackIgnore: true */ resolveAppRuntimeDir(), "video-thumbnails");
 }
 const thumbnailGlobal = globalThis as typeof globalThis & {
-  __videoThumbnailJobs?: Map<string, Promise<void>>;
+  __videoThumbnailJobs?: Map<string, Promise<Buffer>>;
 };
 const thumbnailJobs = thumbnailGlobal.__videoThumbnailJobs
-  ?? (thumbnailGlobal.__videoThumbnailJobs = new Map<string, Promise<void>>());
+  ?? (thumbnailGlobal.__videoThumbnailJobs = new Map<string, Promise<Buffer>>());
 
 function thumbnailResponse(buffer: Buffer) {
   return new NextResponse(buffer, {
@@ -93,11 +99,21 @@ export async function GET(
   if (!contentAccess.ok) return contentAccess.response;
 
   const thumbnailDirectory = resolveThumbnailDirectory();
-  await fs.mkdir(/* turbopackIgnore: true */ thumbnailDirectory, { recursive: true });
-  const thumbPath = path.join(/* turbopackIgnore: true */ thumbnailDirectory, `${task.id}.jpg`);
-  try {
-    return thumbnailResponse(await fs.readFile(/* turbopackIgnore: true */ thumbPath));
-  } catch {}
+  const cachePolicy = readVideoThumbnailCachePolicy();
+  const thumbPath = resolveVideoThumbnailCacheFile(thumbnailDirectory, task.id);
+  const cachedThumbnail = await readVideoThumbnailCacheFile(
+    thumbnailDirectory,
+    task.id,
+    cachePolicy.ttlMs,
+  );
+  if (cachedThumbnail) {
+    scheduleVideoThumbnailCachePrune({
+      cacheRoot: thumbnailDirectory,
+      policy: cachePolicy,
+      protectedPaths: [thumbPath],
+    });
+    return thumbnailResponse(cachedThumbnail);
+  }
 
   let job = thumbnailJobs.get(task.id);
   if (!job) {
@@ -115,20 +131,27 @@ export async function GET(
         maxBytes: 256 * 1024 * 1024,
         timeoutMs: 120_000,
       });
-      const pendingPath = `${thumbPath}.${process.pid}.${Date.now()}.tmp`;
       try {
-        await fs.writeFile(/* turbopackIgnore: true */ pendingPath, thumbnail, { flag: "wx" });
-        await fs.rename(/* turbopackIgnore: true */ pendingPath, thumbPath);
-      } finally {
-        await fs.rm(/* turbopackIgnore: true */ pendingPath, { force: true });
+        await writeVideoThumbnailCacheFile(thumbnailDirectory, task.id, thumbnail);
+      } catch (cacheError) {
+        console.warn("[VideoThumbnail] cache write failed", {
+          taskId: task.id,
+          reason: cacheError instanceof Error ? cacheError.message.split(":", 1)[0] : "UNKNOWN",
+        });
       }
+      scheduleVideoThumbnailCachePrune({
+        cacheRoot: thumbnailDirectory,
+        policy: cachePolicy,
+        protectedPaths: [thumbPath],
+        force: true,
+      });
+      return thumbnail;
     })().finally(() => thumbnailJobs.delete(task.id));
     thumbnailJobs.set(task.id, job);
   }
 
   try {
-    await job;
-    return thumbnailResponse(await fs.readFile(/* turbopackIgnore: true */ thumbPath));
+    return thumbnailResponse(await job);
   } catch (thumbnailError) {
     console.warn("[VideoThumbnail] extraction failed", {
       taskId: task.id,

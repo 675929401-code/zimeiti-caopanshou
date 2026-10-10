@@ -77,7 +77,8 @@ assert.match(page, /hasMemberPermissionsManagePermission && <button[^\n]+openUse
 assert.match(page, /canEditPrompts && <PromptVersionHistory/u, "PROMPT_HISTORY_EDIT_GATE_MISSING");
 assert.match(page, /editingAgent\.source !== "llm" && canReadPrompts/u, "NON_LLM_PROMPT_READ_GATE_MISSING");
 assert.match(page, /if \(!canEditPrompts\) delete agentData\.systemPrompt/u, "CREATE_PROMPT_OMISSION_MISSING");
-assert.match(page, /if \(!canEditPrompts\) delete \(rest as Partial<AgentInfo>\)\.system_prompt/u, "UPDATE_PROMPT_OMISSION_MISSING");
+assert.match(page, /function buildAgentUpdatePayload\([\s\S]*?field === "system_prompt" && !canEditPrompts\) continue/u, "UPDATE_PROMPT_OMISSION_MISSING");
+assert.match(page, /const updatePayload = buildAgentUpdatePayload\(editingAgent, originalAgent, canEditPrompts\)/u, "UPDATE_PROMPT_SAFE_PAYLOAD_NOT_USED");
 
 assert.match(page, /grantedPermissionKeys\.has\("agents\.manage"\) && grantedPermissionKeys\.has\("prompts\.view"\)/u, "WORKSPACE_COMMERCE_MANJU_PERMISSION_PAIR_MISSING");
 assert.match(page, /visibleProjectIds=\{visibleWorkspaceProjectIds\}/u, "WORKSPACE_VISIBLE_PROJECTS_NOT_PASSED");
@@ -127,7 +128,7 @@ assert.match(page, /const visibleSettings = useMemo\(\(\) => sensitiveUnlocked \
 assert.match(page, /value=\{visibleSettings\.global_system_prefix\}/u, "PROMPT_SETTINGS_LOCKED_DOM_MASK_MISSING");
 assert.ok((page.match(/settings=\{visibleSettings\}/gu) || []).length >= 2, "INTEGRATION_AND_MODEL_SETTINGS_LOCKED_DOM_MASK_MISSING");
 assert.match(unlockControl, /window\.setTimeout\(update, Math\.max\(0, expiryTime - Date\.now\(\)\) \+ 1\)/u, "STEP_UP_EXACT_EXPIRY_TIMER_MISSING");
-assert.match(navigationVerifier, /benignNavigationAbortPaths = new Set\(\["\/", "\/login", "\/help", "\/admin"\]\)/u, "BENIGN_NAVIGATION_ABORT_ALLOWLIST_MISSING");
+assert.match(navigationVerifier, /const benignNavigationAbortPaths = new Set\(\[[\s\S]*?"\/"[\s\S]*?"\/login"[\s\S]*?"\/help"[\s\S]*?"\/admin"[\s\S]*?"\/admin\/extraction-reconciliation"[\s\S]*?"\/api\/announcements\/inbox"[\s\S]*?\]\)/u, "BENIGN_NAVIGATION_ABORT_ALLOWLIST_MISSING");
 assert.match(navigationVerifier, /entry\.sameOrigin !== true[\s\S]*?entry\.method !== "GET"[\s\S]*?entry\.error !== "net::ERR_ABORTED"/u, "BENIGN_NAVIGATION_ABORT_BASE_CLASSIFIER_MISSING");
 assert.match(navigationVerifier, /entry\.resourceType === "fetch"[\s\S]*?benignNavigationAbortPaths\.has\(pathname\)/u, "BENIGN_FETCH_NAVIGATION_ABORT_ALLOWLIST_MISSING");
 assert.match(navigationVerifier, /entry\.resourceType === "image"[\s\S]*?branding\\\/assets[\s\S]*?test\(pathname\)/u, "BENIGN_BRANDING_IMAGE_ABORT_EXACT_CLASSIFIER_MISSING");
@@ -159,6 +160,6 @@ assert.match(governance, /"white-label": "white_label\.manage"/u, "WHITE_LABEL_T
 assert.match(page, /activeTab === "white-label"[\s\S]*?grantedPermissionKeys\.has\("white_label\.manage"\)[\s\S]*?<WhiteLabelReadinessPanel/u, "WHITE_LABEL_ENTRY_GATE_MISSING");
 assert.match(whiteLabelPanel, /fetch\("\/api\/admin\/domain-release\/status"/u, "WHITE_LABEL_DOMAIN_STATUS_SOURCE_MISSING");
 assert.match(whiteLabelPanel, /fetch\("\/api\/admin\/multitenant-boundary"/u, "WHITE_LABEL_TENANT_BOUNDARY_SOURCE_MISSING");
-assert.match(whiteLabelPanel, /当前没有证据的环节会明确显示/u, "WHITE_LABEL_TRUTHFULNESS_COPY_MISSING");
+assert.match(whiteLabelPanel, /只有该域名的 CNAME、网关、TLS 与 HTTPS 全部验证后，才能称为正式上线/u, "WHITE_LABEL_TRUTHFULNESS_COPY_MISSING");
 
 console.log("admin capability concealment contract: ok");

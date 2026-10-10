@@ -31,6 +31,7 @@ for (const pathname of [
   "/announcements",
   "/articles",
   "/articles/demo",
+  "/demo/experience",
   "/help",
   "/help/storyboard-prompt-image-video",
   "/payment/result",
@@ -63,7 +64,7 @@ assert.match(
 console.log(JSON.stringify({
   passed: true,
   protectedSecondaryRoutes: 5,
-  publicRoutes: 15,
+  publicRoutes: 16,
   providerRequests: 0,
   databaseWrites: 0,
 }, null, 2));

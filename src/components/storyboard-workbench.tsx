@@ -12,6 +12,7 @@ import {
   ImageIcon,
   Loader2,
   LockKeyhole,
+  Maximize2,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -20,8 +21,11 @@ import {
   Trash2,
   Upload,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useApp } from "@/contexts/app-context";
 import { createUserScopedWorkbenchStorage, resolveWorkbenchIdentity, workbenchUserStorageKey, type WorkbenchIdentity } from "@/lib/workbench-user-storage";
 import { NavButton, SubPageHeader } from "@/components/sub-page-header";
@@ -134,6 +138,7 @@ type WorkbenchCard = {
   narration?: string;
   imagePrompt: string;
   imageExactText?: string;
+  imageTextLayoutEnabled?: boolean;
   videoPrompt: string;
   referenceImageUrls: string[];
   imageStatus: TaskStatus;
@@ -720,6 +725,7 @@ function createCard(order: number): WorkbenchCard {
     narration: "",
     imagePrompt: "",
     imageExactText: "",
+    imageTextLayoutEnabled: false,
     videoPrompt: "",
     referenceImageUrls: [],
     imageStatus: "idle",
@@ -894,6 +900,8 @@ function normalizeRun(value: unknown): WorkbenchRun | null {
       ...card,
       order: index + 1,
       narration: String(card.narration || inferStoryboardNarration(card.label)),
+      imageTextLayoutEnabled: (card as Partial<WorkbenchCard>).imageTextLayoutEnabled === true
+        || Boolean(String((card as Partial<WorkbenchCard>).imageExactText || "").trim()),
       imageError: normalizeLegacyImageError(card.imageError, (card as Partial<WorkbenchCard>).imageRecoveryReady === true),
       referenceImageUrls: Array.isArray(card.referenceImageUrls) ? card.referenceImageUrls.slice(0, MAX_REFERENCES) : [],
     })),
@@ -1149,22 +1157,109 @@ function TicketedVideo({ url, taskId, token, poster, onExpand }: { url: string; 
   );
 }
 
-async function openDownload(url: string, filename: string, token = "", taskId?: string) {
-  let targetUrl = url;
-  if (taskId && token) {
-    try {
-      targetUrl = await requestVideoAccessUrl(taskId, token, { scope: "download", filename });
-    } catch {
-      // 兼容历史记录里的旧播放地址；若旧地址也已过期，由浏览器下载失败提示用户重试。
-      targetUrl = url;
-    }
-  }
+function triggerDownload(targetUrl: string, filename: string) {
   const anchor = document.createElement("a");
   anchor.href = targetUrl;
   anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+}
+
+function openImageDownload(url: string, filename: string) {
+  triggerDownload(url, filename);
+}
+
+async function openVideoDownload(taskId: string | undefined, filename: string, token: string) {
+  if (!taskId) throw new Error("缺少视频任务编号，无法获取安全下载票据");
+  if (!token) throw new Error("登录状态已失效，请重新登录后下载");
+  const ticketUrl = await requestVideoAccessUrl(taskId, token, { scope: "download", filename });
+  triggerDownload(ticketUrl, filename);
+}
+
+type PreviewMedia = { url: string; type: "image" | "video"; poster?: string };
+
+const PREVIEW_ZOOM_MIN = 0.7;
+const PREVIEW_ZOOM_MAX = 1.4;
+const PREVIEW_ZOOM_STEP = 0.1;
+
+function MediaLightbox({ media, onClose }: { media: PreviewMedia; onClose: () => void }) {
+  const [zoom, setZoom] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const close = useCallback(() => {
+    const fullscreenElement = document.fullscreenElement;
+    if (fullscreenElement && dialogRef.current?.contains(fullscreenElement)) {
+      void document.exitFullscreen().catch(() => undefined).finally(onClose);
+      return;
+    }
+    onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    setZoom(1);
+  }, [media.url]);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    };
+    const syncFullscreenState = () => setIsFullscreen(document.fullscreenElement === dialogRef.current);
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape, true);
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    closeButtonRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape, true);
+      document.removeEventListener("fullscreenchange", syncFullscreenState);
+      previouslyFocused?.focus();
+    };
+  }, [close]);
+
+  const updateZoom = (delta: number) => {
+    setZoom((current) => Math.min(PREVIEW_ZOOM_MAX, Math.max(PREVIEW_ZOOM_MIN, Number((current + delta).toFixed(1)))));
+  };
+  const toggleFullscreen = async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    await dialogRef.current?.requestFullscreen();
+  };
+  const zoomPercent = Math.round(zoom * 100);
+
+  return createPortal(
+    <div
+      ref={dialogRef}
+      className="sbw-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={media.type === "video" ? "视频放大预览" : "故事板图片放大预览"}
+      onMouseDown={(event) => event.target === event.currentTarget && close()}
+    >
+      <div className="sbw-lightbox-toolbar" role="toolbar" aria-label="媒体预览工具栏">
+        <button type="button" aria-label="缩小预览" title="缩小 10%" disabled={zoom <= PREVIEW_ZOOM_MIN} onClick={() => updateZoom(-PREVIEW_ZOOM_STEP)}><ZoomOut /></button>
+        <output aria-live="polite" aria-label="当前缩放比例">{zoomPercent}%</output>
+        <button type="button" aria-label="放大预览" title="放大 10%" disabled={zoom >= PREVIEW_ZOOM_MAX} onClick={() => updateZoom(PREVIEW_ZOOM_STEP)}><ZoomIn /></button>
+        <button type="button" aria-label={isFullscreen ? "退出全屏" : "进入全屏"} title={isFullscreen ? "退出全屏" : "进入全屏"} onClick={() => void toggleFullscreen().catch(() => undefined)}><Maximize2 /></button>
+        <button ref={closeButtonRef} type="button" aria-label="关闭预览" title="关闭预览（Esc）" onClick={close}><X /></button>
+      </div>
+      <div className="sbw-lightbox-stage" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+        {media.type === "video"
+          ? <video key={media.url} src={media.url} poster={media.poster} controls autoPlay playsInline style={{ transform: `scale(${zoom})` }} />
+          : <img src={media.url} alt="故事板原图预览" style={{ transform: `scale(${zoom})` }} />}
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 function effectiveVideoDuration(model?: VideoModel, requested?: number) {
@@ -1266,7 +1361,7 @@ function UserStoryboardWorkbench({
   const [imageFailureHistoryLoading, setImageFailureHistoryLoading] = useState(false);
   const [imageFailureHistoryError, setImageFailureHistoryError] = useState("");
   const [imageFailureHistoryNextPage, setImageFailureHistoryNextPage] = useState<number | null>(null);
-  const [previewMedia, setPreviewMedia] = useState<{ url: string; type: "image" | "video"; poster?: string } | null>(null);
+  const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [uploadingCardId, setUploadingCardId] = useState("");
   const [expandedVideoCards, setExpandedVideoCards] = useState<Set<string>>(() => new Set());
   const [clockNow, setClockNow] = useState(() => Date.now());
@@ -1307,18 +1402,6 @@ function UserStoryboardWorkbench({
   const uploadInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
   const videoSectionsRef = useRef<Record<string, HTMLElement | null>>({});
   const scopeMountedRef = useRef(true);
-
-  useEffect(() => {
-    if (!previewMedia) return;
-    const closePreviewOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPreviewMedia(null);
-    };
-    window.addEventListener("keydown", closePreviewOnEscape);
-    return () => window.removeEventListener("keydown", closePreviewOnEscape);
-  }, [previewMedia]);
 
   useEffect(() => {
     // Submitted work is recovered from the owned project/history APIs. Older
@@ -2392,6 +2475,10 @@ function UserStoryboardWorkbench({
         modelName = card.imageModelNameUsed || "原生图模型";
       } else {
         if (!card.imagePrompt.trim()) { setNotice("请先粘贴分镜生图 Prompt"); return null; }
+        if (card.imageTextLayoutEnabled && !String(card.imageExactText || "").trim()) {
+          setNotice(`镜头${card.order}已开启高级文字排版，请先填写需要精确呈现的文字`);
+          return null;
+        }
         const model = imageModels.find((item) => item.id === current.imageModelId);
         if (!model) { setNotice("图片模型尚未加载"); return null; }
         const selectionIssue = storyboardImageModelSelectionIssue(model);
@@ -2409,7 +2496,7 @@ function UserStoryboardWorkbench({
           cardId: card.id,
           cardOrder: card.order,
           prompt: card.imagePrompt,
-          exactText: String(card.imageExactText || "").trim(),
+          exactText: card.imageTextLayoutEnabled ? String(card.imageExactText || "").trim() : undefined,
           modelId: model.id,
           aspectRatio: current.ratio,
           resolution: effectiveImageResolution(model, current.imageResolution),
@@ -2531,7 +2618,7 @@ function UserStoryboardWorkbench({
               style: "",
               aspectRatio: requestSnapshot.aspectRatio,
               resolution: requestSnapshot.resolution,
-              coverText: requestSnapshot.exactText || "",
+              ...(requestSnapshot.exactText ? { coverText: requestSnapshot.exactText } : {}),
               referenceImageUrls: requestSnapshot.referenceImageUrls,
               referenceUsage: "general",
               clientTraceId,
@@ -4102,10 +4189,24 @@ function UserStoryboardWorkbench({
                     <div className="sbw-flow-prompt">
                       <div className="sbw-prompt-heading"><span>生图提示词</span><button type="button" title="粘贴生图提示词" aria-label={`粘贴镜头${card.order}生图提示词`} onClick={() => void pastePrompt(card.id, "imagePrompt", `镜头${card.order}生图提示词`)}><ClipboardPaste /></button></div>
                       <textarea aria-label={`镜头${card.order}生图提示词`} rows={4} disabled={imageAttemptNeedsResolution(card)} value={card.imagePrompt} onChange={(event) => patchCard(card.id, { imagePrompt: event.target.value })} placeholder="粘贴故事版智能体输出的生图 Prompt" />
-                      <label className="sbw-exact-text-field">
-                        <span>画面精确文字（可选）</span>
-                        <textarea aria-label={`镜头${card.order}画面精确文字`} rows={2} maxLength={200} disabled={imageAttemptNeedsResolution(card)} value={card.imageExactText || ""} onChange={(event) => patchCard(card.id, { imageExactText: event.target.value })} placeholder="第一行标题，第二行副标题" />
+                      <label className="sbw-text-layout-toggle">
+                        <input
+                          type="checkbox"
+                          checked={card.imageTextLayoutEnabled === true}
+                          disabled={imageAttemptNeedsResolution(card)}
+                          onChange={(event) => patchCard(card.id, event.target.checked
+                            ? { imageTextLayoutEnabled: true }
+                            : { imageTextLayoutEnabled: false, imageExactText: "" })}
+                        />
+                        <span>高级文字排版</span>
+                        <small>{card.imageTextLayoutEnabled ? "已开启；文字将由平台精确排版" : "默认关闭；普通生图只生成视觉画面"}</small>
                       </label>
+                      {card.imageTextLayoutEnabled && (
+                        <label className="sbw-exact-text-field">
+                          <span>需要精确呈现的文字</span>
+                          <textarea aria-label={`镜头${card.order}画面精确文字`} rows={2} maxLength={200} disabled={imageAttemptNeedsResolution(card)} value={card.imageExactText || ""} onChange={(event) => patchCard(card.id, { imageExactText: event.target.value })} placeholder="第一行标题，第二行副标题" />
+                        </label>
+                      )}
                     </div>
 
                     <section className="sbw-reference-section">
@@ -4153,7 +4254,7 @@ function UserStoryboardWorkbench({
                           : `实际扣费 ¥${Number(card.imagePriceCharged || 0).toFixed(2)}`}</p>}
                     <div className="sbw-media-actions">
                       <button type="button" title="复制生图 Prompt" onClick={() => copyText(card.imagePrompt, `镜头${card.order}生图 Prompt`)}><ClipboardCopy /></button>
-                      {card.imageUrl && <button type="button" title="下载故事板" onClick={() => void openDownload(card.imageUrl!, `${String(card.order).padStart(2, "0")}-故事板.png`, token)}><Download /></button>}
+                      {card.imageUrl && <button type="button" title="下载故事板" onClick={() => void openImageDownload(card.imageUrl!, `${String(card.order).padStart(2, "0")}-故事板.png`)}><Download /></button>}
                       <button
                         type="button"
                         className="is-command is-image-command"
@@ -4232,9 +4333,11 @@ function UserStoryboardWorkbench({
                           {card.videoUrl && (
                             <button
                               type="button"
-                              title="下载视频"
+                              title={card.videoTaskId ? "下载视频" : "缺少视频任务编号，无法安全下载"}
+                              aria-label={card.videoTaskId ? `下载镜头${card.order}视频` : `镜头${card.order}视频缺少任务编号，无法下载`}
+                              disabled={!card.videoTaskId}
                               onClick={() => {
-                                void openDownload(card.videoUrl!, `${String(card.order).padStart(2, "0")}-视频.mp4`, token, card.videoTaskId)
+                                void openVideoDownload(card.videoTaskId, `${String(card.order).padStart(2, "0")}-视频.mp4`, token)
                                   .catch((error) => setNotice(error instanceof Error ? error.message : "下载地址获取失败，请重试"));
                               }}
                             >
@@ -4372,7 +4475,7 @@ function UserStoryboardWorkbench({
                   </article>
                 );
               })}
-              {!videoHistoryLoading && !videoHistoryError && !videoHistoryTasks.length && <p>最近三天暂无分镜视频记录。</p>}
+              {!videoHistoryLoading && !videoHistoryError && !videoHistoryTasks.length && <p>暂无分镜视频记录。</p>}
             </section>
             <div className="sbw-history-list">
               <div className="flex items-center justify-between gap-2"><strong>分镜任务</strong><button type="button" disabled={cloud.loading} onClick={() => void cloud.refresh()}>{cloud.loading ? "读取中…" : "刷新"}</button></div>
@@ -4468,7 +4571,7 @@ function UserStoryboardWorkbench({
         </div>
       )}
 
-      {previewMedia && <div className="sbw-lightbox" role="dialog" aria-modal="true" aria-label={previewMedia.type === "video" ? "视频放大预览" : "故事板图片放大预览"} onMouseDown={(event) => event.target === event.currentTarget && setPreviewMedia(null)}><button type="button" aria-label="关闭预览" onClick={() => setPreviewMedia(null)}><X /></button>{previewMedia.type === "video" ? <video src={previewMedia.url} poster={previewMedia.poster} controls autoPlay playsInline /> : <img src={previewMedia.url} alt="故事板原图预览" />}</div>}
+      {previewMedia && <MediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} />}
     </div>
   );
 }

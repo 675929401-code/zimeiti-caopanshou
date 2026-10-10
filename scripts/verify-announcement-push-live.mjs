@@ -4,20 +4,31 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { decodeJwt } from "jose";
+import pg from "pg";
 import { chromium } from "playwright";
+import { computeLocalBuildFingerprint } from "./local-build-fingerprint.mjs";
 
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").replace(/\/+$/u, "");
 const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "");
+const databaseUrl = String(process.env.DATABASE_URL || "");
 assert.equal(origin, "http://127.0.0.1:5000", "LOCAL_PREVIEW_ORIGIN_REQUIRED");
 assert.ok(token.length > 32, "LOCAL_ADMIN_TOKEN_REQUIRED");
+assert.ok(databaseUrl, "LOCAL_DATABASE_URL_REQUIRED");
+
+const databaseIdentity = new URL(databaseUrl);
+assert.ok(["127.0.0.1", "localhost", "::1"].includes(databaseIdentity.hostname), "LOCAL_DATABASE_HOST_REQUIRED");
+assert.equal(databaseIdentity.pathname.replace(/^\//u, ""), "zimeiti_local", "LOCAL_DATABASE_NAME_REQUIRED");
 
 const actorId = String(decodeJwt(token).userId || "");
 assert.ok(actorId, "LOCAL_ADMIN_ACTOR_REQUIRED");
 
 const bundledChromium = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim()
   || "F:/总项目文件/Skill存储系统/运行数据/自媒体操盘手/.cache/ms-playwright/chromium-1228/chrome-win64/chrome.exe";
-const outputDir = path.resolve(".codex-evidence", "announcement-push-live-20260929");
+const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
+const outputDir = path.join(root, ".codex-evidence", "announcement-push-live", stamp);
 const suffix = crypto.randomBytes(5).toString("hex");
 const title = `公告推送本地验收-${suffix}`;
 const longContent = Array.from(
@@ -31,6 +42,7 @@ const report = {
   origin,
   title,
   announcementId: null,
+  runtime: {},
   assertions: {},
   dimensions: [],
   themeSignatures: [],
@@ -39,6 +51,9 @@ const report = {
   serverErrors: [],
   providerRequests: [],
   fixtureRemoved: false,
+  stepUpFixtureRemoved: false,
+  localDatabaseWritesExpected: true,
+  localDatabaseFixtureScope: ["announcement", "announcement receipt", "step-up session", "local governance audit"],
   productionWrites: 0,
 };
 
@@ -46,6 +61,10 @@ const authHeaders = {
   Authorization: `Bearer ${token}`,
   "Content-Type": "application/json",
 };
+const db = new pg.Client({ connectionString: databaseUrl });
+let dbConnected = false;
+let stepUpToken = "";
+let stepUpHash = "";
 
 async function api(pathname, init = {}) {
   const response = await fetch(`${origin}${pathname}`, {
@@ -85,6 +104,22 @@ async function authenticatedContext(browser, viewport) {
   const user = identity.body?.user;
   assert.ok(user?.id === actorId, "LOCAL_ADMIN_IDENTITY_MISMATCH");
   const context = await browser.newContext({ viewport, serviceWorkers: "block" });
+  await context.addCookies([
+    {
+      name: "auth_token",
+      value: token,
+      url: origin,
+      httpOnly: true,
+      sameSite: "Strict",
+    },
+    {
+      name: "zimeiti_admin_step_up",
+      value: stepUpToken,
+      url: origin,
+      httpOnly: true,
+      sameSite: "Strict",
+    },
+  ]);
   await context.addInitScript(({ authToken, authUser }) => {
     localStorage.setItem("auth_token", authToken);
     localStorage.setItem("auth_user", JSON.stringify(authUser));
@@ -117,6 +152,65 @@ async function closeReaderIfItAppears(page, timeout = 15_000) {
 await fs.mkdir(outputDir, { recursive: true });
 let browser;
 try {
+  const [versionResponse, receiptText, diskBuildId, versionManifestText] = await Promise.all([
+    fetch(`${origin}/api/version`, { cache: "no-store", signal: AbortSignal.timeout(15_000) }),
+    fs.readFile(path.join(root, ".next", "local-source-fingerprint.v1.json"), "utf8"),
+    fs.readFile(path.join(root, ".next", "BUILD_ID"), "utf8").then((value) => value.trim()),
+    fs.readFile(path.join(root, "public", "version.json"), "utf8"),
+  ]);
+  assert.equal(versionResponse.ok, true, `VERSION_HTTP_${versionResponse.status}`);
+  const version = await versionResponse.json();
+  const receipt = JSON.parse(receiptText);
+  const versionManifest = JSON.parse(versionManifestText);
+  const sourceFingerprint = computeLocalBuildFingerprint(root);
+  const servedBuildId = String(version.buildId || version.version || "");
+  const sourceFingerprintCurrent = receipt.fingerprint === sourceFingerprint.fingerprint
+    && receipt.fileCount === sourceFingerprint.fileCount;
+  const runningLatest = sourceFingerprintCurrent
+    && receipt.buildId === diskBuildId
+    && servedBuildId === diskBuildId
+    && version.sourceVersion === versionManifest.sourceVersion;
+  report.runtime = {
+    sourceVersion: version.sourceVersion || null,
+    servedBuildId,
+    diskBuildId,
+    sourceFingerprint: sourceFingerprint.fingerprint,
+    sourceFingerprintCurrent,
+    runningLatest,
+  };
+  assert.equal(runningLatest, true, "RUNTIME_NOT_LATEST");
+
+  await db.connect();
+  dbConnected = true;
+  const self = await api("/api/admin/access-control/self");
+  assert.equal(self.response.status, 200, `LOCAL_ADMIN_ACCESS_UNAVAILABLE:${self.response.status}`);
+  assert.equal(self.body?.access?.adminLevel, "super_admin", "LOCAL_SUPER_ADMIN_REQUIRED");
+  assert.ok(Array.isArray(self.body?.access?.permissionKeys), "LOCAL_ADMIN_PERMISSIONS_REQUIRED");
+  stepUpToken = crypto.randomBytes(32).toString("base64url");
+  stepUpHash = crypto.createHash("sha256").update(stepUpToken).digest("hex");
+  try {
+    await db.query("BEGIN");
+    await db.query("SELECT set_config('app.admin_governance_write','on',true)");
+    await db.query(
+      `INSERT INTO public.admin_step_up_sessions
+        (actor_id,token_hash,scope_keys,profile_revision,auth_method,request_ip,user_agent,expires_at)
+       VALUES($1,$2,$3::jsonb,$4,'login_password','127.0.0.1',$5,$6)`,
+      [
+        actorId,
+        stepUpHash,
+        JSON.stringify(self.body.access.permissionKeys),
+        self.body.access.revision,
+        "Codex-Announcement-Acceptance/1.0",
+        new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      ],
+    );
+    await db.query("COMMIT");
+  } catch (error) {
+    await db.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  }
+  authHeaders["x-admin-step-up"] = stepUpToken;
+
   try {
     await fs.access(bundledChromium);
     browser = await chromium.launch({ headless: true, executablePath: bundledChromium });
@@ -150,8 +244,8 @@ try {
   const firstContext = await authenticatedContext(browser, { width: 1440, height: 900 });
   const firstPage = await firstContext.newPage();
   installDiagnostics(firstPage, "first-session");
-  const firstResponse = await firstPage.goto(`${origin}/media-history`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  assert.equal(firstResponse?.status(), 200, "MEDIA_HISTORY_UNAVAILABLE");
+  const firstResponse = await firstPage.goto(`${origin}/`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  assert.equal(firstResponse?.status(), 200, "MARKETPLACE_UNAVAILABLE");
   const firstReader = await waitForReader(firstPage);
   await firstReader.getByText(title, { exact: true }).waitFor({ state: "visible", timeout: 10_000 });
   report.assertions.unreadAutoOpensOnLogin = true;
@@ -164,7 +258,7 @@ try {
   const secondContext = await authenticatedContext(browser, { width: 1440, height: 900 });
   const userPage = await secondContext.newPage();
   installDiagnostics(userPage, "fresh-session");
-  await userPage.goto(`${origin}/media-history`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await userPage.goto(`${origin}/`, { waitUntil: "domcontentloaded", timeout: 60_000 });
   const secondReader = await waitForReader(userPage);
   await secondReader.getByText(title, { exact: true }).waitFor({ state: "visible", timeout: 10_000 });
   report.assertions.unreadReopensInFreshLoginSession = true;
@@ -184,7 +278,8 @@ try {
   });
   report.dimensions.push({ theme: "initial", ...initialDimensions });
   await userPage.screenshot({ path: path.join(outputDir, "initial-reader-1440x900.png"), fullPage: false });
-  assert.ok(initialDimensions.width >= 1_000 && initialDimensions.height <= 700 && initialDimensions.ratio >= 1.5, "ANNOUNCEMENT_READER_NOT_HORIZONTAL");
+  assert.ok(initialDimensions.width >= 860 && initialDimensions.width <= 960, "ANNOUNCEMENT_READER_WIDTH_OUT_OF_RANGE");
+  assert.ok(initialDimensions.height <= 650 && initialDimensions.ratio >= 1.35, "ANNOUNCEMENT_READER_NOT_HORIZONTAL");
   assert.ok(initialDimensions.contentScrollHeight > initialDimensions.contentClientHeight, "ANNOUNCEMENT_CONTENT_NOT_INTERNALLY_SCROLLABLE");
   assert.ok(initialDimensions.bodyOverflowX <= 1, "ANNOUNCEMENT_READER_CAUSED_HORIZONTAL_OVERFLOW");
   report.assertions.horizontalReaderAndInternalScroll = true;
@@ -216,7 +311,7 @@ try {
   const adminContext = await authenticatedContext(browser, { width: 1440, height: 900 });
   const adminPage = await adminContext.newPage();
   installDiagnostics(adminPage, "admin");
-  await adminPage.goto(`${origin}/admin?tab=announcements`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await adminPage.goto(`${origin}/admin?tab=announcements&view=overview`, { waitUntil: "domcontentloaded", timeout: 60_000 });
   const possibleReader = adminPage.getByTestId("announcement-reader");
   await closeReaderIfItAppears(adminPage, 20_000);
   const card = adminPage.locator("article").filter({ hasText: title });
@@ -234,10 +329,16 @@ try {
   await adminPage.getByText(/再次强推成功，当前版本 V2/u).waitFor({ state: "visible", timeout: 30_000 });
   report.assertions.adminRepushButtonWorks = true;
 
-  const repushedReader = await waitForReader(userPage, 35_000);
+  const repushedToast = userPage.getByTestId("announcement-online-toast");
+  await repushedToast.waitFor({ state: "visible", timeout: 35_000 });
+  await repushedToast.getByText(title, { exact: true }).waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await userPage.getByTestId("announcement-reader").isVisible(), false, "ONLINE_REPUSH_MUST_NOT_INTERRUPT_WITH_READER");
+  report.assertions.onlineRepushUsesCompactReminder = true;
+  await repushedToast.getByRole("button", { name: "详情", exact: true }).click();
+  const repushedReader = await waitForReader(userPage, 15_000);
   await repushedReader.getByText(title, { exact: true }).waitFor({ state: "visible", timeout: 15_000 });
   await repushedReader.getByText("V2", { exact: true }).waitFor({ state: "visible", timeout: 15_000 });
-  report.assertions.onlineRepushOpensCurrentPage = true;
+  report.assertions.onlineRepushDetailsKeepCurrentRevision = true;
   await userPage.screenshot({ path: path.join(outputDir, "online-repush-v2-1440x900.png"), fullPage: false });
 
   await repushedReader.getByTestId("announcement-mark-read").click();
@@ -262,7 +363,6 @@ try {
     ["lattice", "dark"],
     ["soft-white", "light"],
     ["crystal-aurora", "dark"],
-    ["stellar-blue", "dark"],
   ];
   for (const [theme, mode] of themes) {
     for (const viewport of [{ width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
@@ -286,7 +386,8 @@ try {
           bodyOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
       });
-      assert.ok(sample.width >= 1_000 && sample.height <= 700 && sample.ratio >= 1.5, `NON_HORIZONTAL_READER:${theme}:${viewport.width}`);
+      assert.ok(sample.width >= 860 && sample.width <= 960, `READER_WIDTH_OUT_OF_RANGE:${theme}:${viewport.width}`);
+      assert.ok(sample.height <= 650 && sample.ratio >= 1.35, `NON_HORIZONTAL_READER:${theme}:${viewport.width}`);
       assert.ok(sample.bodyOverflowX <= 1, `HORIZONTAL_OVERFLOW:${theme}:${viewport.width}`);
       report.dimensions.push({ theme, mode, ...sample });
       report.themeSignatures.push(`${theme}:${sample.backgroundColor}:${sample.color}:${sample.borderColor}`);
@@ -296,8 +397,8 @@ try {
       });
     }
   }
-  assert.ok(new Set(report.themeSignatures).size >= 4, "THEME_VISUAL_SIGNATURES_NOT_DISTINCT");
-  report.assertions.fourThemesAtTwoDesktopViewports = true;
+  assert.ok(new Set(report.themeSignatures).size >= 3, "THEME_VISUAL_SIGNATURES_NOT_DISTINCT");
+  report.assertions.threeThemesAtTwoDesktopViewports = true;
 
   await closeReader(userPage);
   await adminContext.close();
@@ -309,14 +410,25 @@ try {
   assert.deepEqual(report.providerRequests, [], "PROVIDER_REQUESTS_DURING_ANNOUNCEMENT_E2E");
   report.passed = true;
 } finally {
+  const functionalChecksPassed = report.passed;
   if (report.announcementId) {
     const removed = await api(`/api/announcements?id=${encodeURIComponent(report.announcementId)}`, { method: "DELETE" }).catch(() => null);
     report.fixtureRemoved = removed?.response?.status === 200;
   }
   if (browser) await browser.close().catch(() => undefined);
+  if (dbConnected && stepUpHash) {
+    await db.query("BEGIN").catch(() => undefined);
+    await db.query("SELECT set_config('app.admin_governance_write','on',true)").catch(() => undefined);
+    const removed = await db.query("DELETE FROM public.admin_step_up_sessions WHERE token_hash=$1", [stepUpHash]).catch(() => null);
+    await db.query("COMMIT").catch(() => undefined);
+    report.stepUpFixtureRemoved = Number(removed?.rowCount || 0) === 1;
+  }
+  if (dbConnected) await db.end().catch(() => undefined);
+  report.passed = functionalChecksPassed && report.fixtureRemoved && report.stepUpFixtureRemoved;
   report.checkedAt = new Date().toISOString();
   await fs.writeFile(path.join(outputDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
 }
 
 assert.equal(report.fixtureRemoved, true, "ANNOUNCEMENT_FIXTURE_CLEANUP_FAILED");
+assert.equal(report.stepUpFixtureRemoved, true, "ANNOUNCEMENT_STEP_UP_FIXTURE_CLEANUP_FAILED");
 console.log(JSON.stringify(report, null, 2));

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, History, ImageUp, Loader2, RotateCcw, Save } from "lucide-react";
+import { CheckCircle2, History, ImageUp, Loader2, RefreshCw, RotateCcw, Save } from "lucide-react";
 
 import {
   PLATFORM_BRAND_ASSET_PURPOSES,
@@ -55,6 +55,8 @@ const PURPOSE_LABELS: Record<PlatformBrandAssetPurpose, { title: string; hint: s
   favicon: { title: "浏览器图标", hint: "建议 192×192 或更高的正方形图" },
   social_share: { title: "分享封面", hint: "建议 1200×630，用于链接分享预览" },
   login_background: { title: "登录背景", hint: "建议 16:9；不上传则继续使用主题背景" },
+  contact_wechat_qr_primary: { title: "微信二维码 1", hint: "建议上传清晰的正方形二维码，发布后显示在首页联系我们区域" },
+  contact_wechat_qr_secondary: { title: "微信二维码 2", hint: "选填，可用于第二位联系人或备用微信" },
 };
 
 const ADVANCED_ASSET_PURPOSES: readonly PlatformBrandAssetPurpose[] = [
@@ -79,6 +81,12 @@ const DEFAULT_PLATFORM_BRAND: PlatformBrandPayload = {
   colors: {
     primary: "#168D7A",
     accent: "#2F80FF",
+  },
+  contact: {
+    name: "",
+    wechat: "",
+    phone: "",
+    email: "",
   },
   assetIds: {},
 };
@@ -105,6 +113,12 @@ function completeInitialBrand(value: PlatformBrandPayload): PlatformBrandPayload
     colors: {
       primary: value.colors.primary || defaults.colors.primary,
       accent: value.colors.accent || defaults.colors.accent,
+    },
+    contact: {
+      name: value.contact?.name || defaults.contact.name,
+      wechat: value.contact?.wechat || defaults.contact.wechat,
+      phone: value.contact?.phone || "",
+      email: value.contact?.email || "",
     },
     assetIds: { ...value.assetIds },
   };
@@ -264,7 +278,7 @@ export function PlatformBrandSettingsPanel({
     setNotice("");
   };
 
-  const patchNested = <K extends "seo" | "colors">(
+  const patchNested = <K extends "seo" | "colors" | "contact">(
     key: K,
     patch: Partial<PlatformBrandPayload[K]>,
   ) => {
@@ -308,12 +322,20 @@ export function PlatformBrandSettingsPanel({
       const body = await response.json().catch(() => ({})) as Record<string, unknown>;
       if (handleStepUp(response, body)) return;
       if (!response.ok) throw new Error(String(body.error || "品牌配置操作失败"));
-      setNotice(action === "save-draft" ? "品牌草稿已保存，可继续预览并发布。" : action === "publish" ? "品牌版本已发布，前台将读取同一份版本。" : "已从历史版本生成并发布新的回滚版本。");
       if (action === "publish" || action === "rollback") {
         clearLocalPreviews();
         refreshPublishedPlatformBranding();
       }
-      await load();
+      const reloaded = await load();
+      if (!reloaded) {
+        setError("操作已返回成功，但服务器权威状态读回失败；请勿重复提交，先刷新核对。");
+      } else {
+        setNotice(action === "save-draft"
+          ? `品牌草稿已保存并完成服务器读回（配置代次 ${reloaded.generation}）；刷新页面不会丢失。`
+          : action === "publish"
+            ? `品牌版本已发布并完成服务器读回（配置代次 ${reloaded.generation}）。`
+            : `已从历史版本生成回滚版本并完成服务器读回（配置代次 ${reloaded.generation}）。`);
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "品牌配置操作失败");
     } finally {
@@ -396,7 +418,7 @@ export function PlatformBrandSettingsPanel({
   const previewForPurpose = (purpose: PlatformBrandAssetPurpose): string => {
     const explicit = assetPreview(purpose);
     if (explicit) return explicit;
-    return purpose === "login_background" ? "" : currentSquarePreview;
+    return purpose === "login_background" || purpose.startsWith("contact_wechat_qr_") ? "" : currentSquarePreview;
   };
   const previewPrimary = isHexColor(brand.colors.primary) ? brand.colors.primary : "#168D7A";
   const previewAccent = isHexColor(brand.colors.accent) ? brand.colors.accent : "#2F80FF";
@@ -422,6 +444,18 @@ export function PlatformBrandSettingsPanel({
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-testid="brand-refresh-authoritative"
+          title={dirty ? "请先保存或撤销当前修改" : "重新读取服务器权威品牌版本"}
+          disabled={Boolean(working) || loading || dirty}
+          onClick={() => void load().then((next) => {
+            if (next) setNotice(`已刷新并读回服务器品牌状态（配置代次 ${next.generation}）。`);
+          })}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-bold text-[var(--muted-foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />刷新回读
+        </button>
         {dirty && hasSavedBrand && (
           <button type="button" disabled={Boolean(working)} onClick={restoreSavedBrand} className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-bold text-[var(--muted-foreground)] disabled:opacity-40">
             撤销修改
@@ -460,6 +494,8 @@ export function PlatformBrandSettingsPanel({
       ? "使用平台内置 Logo"
       : purpose === "login_background"
         ? "使用主题背景"
+        : purpose.startsWith("contact_wechat_qr_")
+          ? "暂不展示这张二维码"
         : "使用主 Logo 自动适配";
     return (
       <article key={purpose} data-testid={`brand-asset-${purpose}`} className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3">
@@ -532,6 +568,26 @@ export function PlatformBrandSettingsPanel({
           <label className="text-xs font-semibold text-[var(--foreground)]">品牌强调色<span className="mt-1.5 flex items-center gap-2"><input aria-label="选择品牌强调色" type="color" value={isHexColor(brand.colors.accent) ? brand.colors.accent : "#2F80FF"} onChange={(event) => patchNested("colors", { accent: event.target.value.toUpperCase() })} className="h-10 w-12 rounded-lg border border-[var(--border)] bg-transparent p-1" /><input aria-label="品牌强调色十六进制值" value={brand.colors.accent} maxLength={7} onChange={(event) => patchNested("colors", { accent: event.target.value.toUpperCase() })} className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 font-mono text-sm" /></span></label>
         </div>
         {validationIssue && <p role="alert" className="mt-3 text-xs font-semibold text-red-700">{validationIssue}</p>}
+      </div>
+
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm" data-testid="platform-brand-contact-settings">
+        <div className="mb-4">
+          <h3 className="font-bold text-[var(--foreground)]">对外联系信息</h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">单独维护平台对外联系人。保存草稿后刷新仍保留，发布后才显示到首页和工具页页脚；留空的项目不会展示。</p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="text-xs font-semibold text-[var(--foreground)]">联系人或客服名称<input value={brand.contact.name} maxLength={80} onChange={(event) => patchNested("contact", { name: event.target.value })} className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none focus:border-[var(--primary)]" placeholder="例如：平台客服" /></label>
+          <label className="text-xs font-semibold text-[var(--foreground)]">微信号<input value={brand.contact.wechat} maxLength={80} onChange={(event) => patchNested("contact", { wechat: event.target.value })} className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none focus:border-[var(--primary)]" placeholder="填写已确认的微信号" /></label>
+          <label className="text-xs font-semibold text-[var(--foreground)]">联系电话<input value={brand.contact.phone} maxLength={40} onChange={(event) => patchNested("contact", { phone: event.target.value })} className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none focus:border-[var(--primary)]" placeholder="选填" /></label>
+          <label className="text-xs font-semibold text-[var(--foreground)]">联系邮箱<input value={brand.contact.email} maxLength={254} onChange={(event) => patchNested("contact", { email: event.target.value })} className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none focus:border-[var(--primary)]" placeholder="选填" /></label>
+        </div>
+        <div className="mt-5 border-t border-[var(--border)] pt-5">
+          <div className="mb-3"><h4 className="text-xs font-black text-[var(--foreground)]">微信二维码</h4><p className="mt-1 text-[11px] leading-5 text-[var(--muted-foreground)]">可上传一张或两张。图片上传后仍需点击“保存草稿”，再点击“发布到全站”才会对访客生效。</p></div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {renderAssetCard("contact_wechat_qr_primary")}
+            {renderAssetCard("contact_wechat_qr_secondary")}
+          </div>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-sm" aria-labelledby="brand-preview-title">

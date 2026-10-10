@@ -196,6 +196,10 @@ const requiredAvatarAssets = [
   "public/avatars/cute-semantic/agent-cute-10.webp",
   "public/avatars/cute-semantic/agent-cute-33.webp",
   "public/avatars/agent-cyber-01.png",
+  ...Array.from(
+    { length: 8 },
+    (_, index) => `public/avatars/profile-generated/profile-avatar-${String(index + 1).padStart(2, "0")}.webp`,
+  ),
 ];
 
 // These files are user-visible runtime dependencies, not optional test media.

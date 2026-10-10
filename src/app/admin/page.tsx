@@ -33,6 +33,7 @@ import {
   type ThemeModePreference,
 } from "@/lib/themes";
 import { applyThemeColorSettings } from "@/lib/theme-color-settings";
+import { invalidateClientBootstrapAppearance } from "@/lib/client-bootstrap-cache";
 import {
   DEFAULT_PLATFORM_LOGO_URL,
   platformBrandLogoUrl,
@@ -220,6 +221,7 @@ interface AdminUserDeleteVerification {
 
 interface AgentInfo {
   id: string;
+  config_revision?: number;
   name: string;
   description: string;
   avatar: string;
@@ -282,6 +284,27 @@ interface AgentInfo {
   file_parsing?: string;
 }
 
+const AGENT_SENSITIVE_CLIENT_FIELDS = [
+  "bot_id", "model", "system_prompt", "coze_coding_api_url", "coze_coding_api_token",
+  "coze_coding_api_token_configured", "coze_coding_project_id", "preset_fields", "output_style",
+  "enable_think_tags", "proxy_url", "deep_thinking_type", "deduct_deep_think", "max_context_rounds",
+  "max_context_tokens", "max_reply_tokens", "timeout", "enable_web_search", "temperature",
+  "response_format", "token_billing_enabled", "input_cost_per_million", "output_cost_per_million",
+  "cached_cost_per_million", "profit_margin", "token_rounding_unit", "model_id", "model_billing",
+] as const;
+
+function stripAgentSensitiveClientFields(agent: AgentInfo): AgentInfo {
+  const sanitized = { ...agent } as unknown as Record<string, unknown>;
+  for (const field of AGENT_SENSITIVE_CLIENT_FIELDS) delete sanitized[field];
+  return {
+    ...sanitized,
+    bot_id: "",
+    model: "",
+    prompt_access: "protected",
+    configuration_access: "protected",
+  } as unknown as AgentInfo;
+}
+
 const AGENT_EDITABLE_FIELDS = [
   "name", "description", "avatar", "category", "source", "bot_id", "model", "system_prompt",
   "cost_per_message", "base_fee", "sort_order", "is_active", "user_access", "coze_coding_api_url",
@@ -304,6 +327,9 @@ function normalizedAgentPresetFields(value: AgentInfo["preset_fields"]): PresetF
 
 function buildAgentUpdatePayload(current: AgentInfo, original: AgentInfo, canEditPrompts: boolean): Record<string, unknown> {
   const payload: Record<string, unknown> = { agentId: current.id };
+  if (Number.isSafeInteger(original.config_revision) && Number(original.config_revision) >= 1) {
+    payload.expected_revision = Number(original.config_revision);
+  }
   for (const field of AGENT_EDITABLE_FIELDS) {
     if (field === "system_prompt" && !canEditPrompts) continue;
     if (field === "coze_coding_api_token") {
@@ -317,6 +343,14 @@ function buildAgentUpdatePayload(current: AgentInfo, original: AgentInfo, canEdi
     payload[field] = currentValue === undefined ? null : currentValue;
   }
   return payload;
+}
+
+function buildAgentMutationPayload(agent: AgentInfo, changes: Record<string, unknown>): Record<string, unknown> {
+  const revision = Number(agent.config_revision);
+  if (!Number.isSafeInteger(revision) || revision < 1) {
+    throw new Error("AGENT_EXPECTED_REVISION_REQUIRED");
+  }
+  return { agentId: agent.id, expected_revision: revision, ...changes };
 }
 
 type PresetFieldConfig = AgentPresetField;
@@ -443,6 +477,19 @@ const COVER_WORKFLOW_SETTING_FIELDS = ["cover_workflow_api_url", "cover_workflow
 const AVATAR_MODEL_SETTING_FIELDS = ["auto_avatar_model_id"] as const satisfies readonly (keyof PlatformSettings)[];
 const CREDIT_EXCHANGE_SETTING_FIELDS = ["credits_per_yuan"] as const satisfies readonly (keyof PlatformSettings)[];
 const GLOBAL_PROMPT_SETTING_FIELDS = ["global_system_prefix"] as const satisfies readonly (keyof PlatformSettings)[];
+const ADMIN_SECRET_SETTING_FIELDS = new Set<keyof PlatformSettings>([
+  "coze_api_token",
+  "coze_coding_api_token",
+  "cover_workflow_token",
+  "thinking_model_api_key",
+  "extract_api_token",
+  "email_smtp_pass",
+]);
+
+function isBlankOrMaskedAdminSecret(value: string): boolean {
+  const normalized = value.trim();
+  return !normalized || /^(?:\*{3,}|•{3,}|已配置|configured)$/i.test(normalized);
+}
 
 function normalizePlatformThemeMode(themeValue: string, _themeModeValue: string) {
   return modeForTheme(normalizeTheme(themeValue));
@@ -2762,9 +2809,14 @@ export default function AdminPage() {
   const [userSearch, setUserSearch] = useState("");
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [viewingPromptAgentId, setViewingPromptAgentId] = useState("");
-  const [agentDataSource, setAgentDataSource] = useState<{ configuration: string; businessData: string } | null>(null);
+  const [agentDataSource, setAgentDataSource] = useState<{ configuration: string; configurationId?: string | null; businessData: string } | null>(null);
   const [trashedAgents, setTrashedAgents] = useState<AgentInfo[]>([]);
+  const agentsRequestSequenceRef = useRef(0);
+  const agentsAbortControllerRef = useRef<AbortController | null>(null);
+  const trashedAgentsRequestSequenceRef = useRef(0);
+  const trashedAgentsAbortControllerRef = useRef<AbortController | null>(null);
   const [settings, setSettings] = useState<PlatformSettings>(createDefaultPlatformSettings);
+  const [settingsBaseline, setSettingsBaseline] = useState<PlatformSettings>(createDefaultPlatformSettings);
   const lockedSettings = useMemo(() => createDefaultPlatformSettings(), []);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [themePushing, setThemePushing] = useState(false);
@@ -2776,6 +2828,26 @@ export default function AdminPage() {
     ...(pushedPlatformThemeMode ? { theme_mode: pushedPlatformThemeMode } : {}),
   }, [lockedSettings, pushedPlatformTheme, pushedPlatformThemeMode, sensitiveUnlocked, settings]);
   const pendingThemePublishRef = useRef<{ theme: string; themeMode: ThemeModePreference } | null>(null);
+  const editableSettingKeys = useMemo(() => Array.from(new Set(
+    readableSettingScopes.flatMap((scope) => adminPlatformSettingKeysForScope(scope)),
+  )) as Array<keyof PlatformSettings>, [readableSettingScopes]);
+  const settingsDirtyKeys = useMemo(() => sensitiveUnlocked
+    ? editableSettingKeys.filter((key) => (
+      typeof settings[key] === "string"
+      && settings[key] !== settingsBaseline[key]
+    ))
+    : [], [editableSettingKeys, sensitiveUnlocked, settings, settingsBaseline]);
+  const hasUnsavedAdminSettings = settingsDirtyKeys.length > 0;
+
+  useEffect(() => {
+    if (!hasUnsavedAdminSettings) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedAdminSettings]);
 
   const previewPlatformAppearance = useCallback((themeValue: string, themeModeValue: string) => {
     if (typeof document === "undefined") return;
@@ -2915,6 +2987,8 @@ export default function AdminPage() {
   const [opPasswordError, setOpPasswordError] = useState("");
   const [opPasswordSuccess, setOpPasswordSuccess] = useState("");
   const [generatedPassword, setGeneratedPassword] = useState("");
+  const opPasswordRequestSequenceRef = useRef(0);
+  const opPasswordAbortControllerRef = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(true);
   const [videoModelsList, setVideoModelsList] = useState<Record<string, unknown>[]>([]);
   const [editingVideoModel, setEditingVideoModel] = useState<Record<string, unknown> | null>(null);
@@ -3061,9 +3135,6 @@ export default function AdminPage() {
   // 提示词版本历史 refs
   const editPromptVersionRef = useRef<PromptVersionHistoryHandle>(null);
   const newPromptVersionRef = useRef<PromptVersionHistoryHandle>(null);
-  const [deploying, setDeploying] = useState(false);
-  const [deployProgress, setDeployProgress] = useState<string>("");
-  const [deployStatus, setDeployStatus] = useState<string>("");
   const [healthData, setHealthData] = useState<any>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthActionError, setHealthActionError] = useState("");
@@ -3114,11 +3185,53 @@ export default function AdminPage() {
   const [cozeTestResult, setCozeTestResult] = useState<{ connected: boolean; botCount?: number; sampleBots?: Array<{ bot_id: string; bot_name: string }>; error?: string } | null>(null);
   useEffect(() => {
     if (sensitiveUnlocked) return;
+    agentsRequestSequenceRef.current += 1;
+    agentsAbortControllerRef.current?.abort();
+    agentsAbortControllerRef.current = null;
+    trashedAgentsRequestSequenceRef.current += 1;
+    trashedAgentsAbortControllerRef.current?.abort();
+    trashedAgentsAbortControllerRef.current = null;
+    opPasswordRequestSequenceRef.current += 1;
+    opPasswordAbortControllerRef.current?.abort();
+    opPasswordAbortControllerRef.current = null;
     // A step-up lock or expiry must remove every value previously returned by
     // /api/settings/admin, including unknown keys added by a newer server.
     setSettings(createDefaultPlatformSettings());
+    setSettingsBaseline(createDefaultPlatformSettings());
     setCozeTestResult(null);
+    setAgents((current) => current.map(stripAgentSensitiveClientFields));
+    setTrashedAgents((current) => current.map(stripAgentSensitiveClientFields));
+    setAgentDataSource(null);
+    setViewingPromptAgentId("");
+    setEditingAgent(null);
+    editOriginalAgentRef.current = null;
+    setShowAddAgent(false);
+    setShowImportCoze(false);
+    setShowImportByIds(false);
+    setShowVideoModelDialog(false);
+    setEditingVideoModel(null);
+    setNewAgent((current) => ({
+      ...current,
+      botId: "",
+      systemPrompt: "",
+      cozeCodingApiUrl: "",
+      cozeCodingApiToken: "",
+      cozeCodingProjectId: "",
+      proxyUrl: "",
+    }));
+    setShowOpPasswordDialog(false);
+    setOpPasswordOld("");
+    setOpPasswordNew("");
+    setOpPasswordError("");
+    setOpPasswordSuccess("");
+    setGeneratedPassword("");
+    setOpPasswordLoading(false);
   }, [sensitiveUnlocked]);
+  useEffect(() => () => {
+    agentsAbortControllerRef.current?.abort();
+    trashedAgentsAbortControllerRef.current?.abort();
+    opPasswordAbortControllerRef.current?.abort();
+  }, []);
   const [categories, setCategories] = useState<AdminAgentCategory[]>([]);
   // 动态分类列表：优先用API返回的分类，兜底用FALLBACK_CATEGORIES
   const categoryOptions = categories.length > 0 ? categories.map(c => c.name) : FALLBACK_CATEGORIES;
@@ -3140,6 +3253,10 @@ export default function AdminPage() {
     selling_price?: number; price_per_use?: number; is_active?: boolean; sort_order?: number;
   }>>([]);
   const activeDrawingModels = drawingModels.filter(m => m.is_active !== false);
+  const selectedAvatarModelId = visibleSettings.auto_avatar_model_id.trim();
+  const selectedAvatarModelUnavailable = selectedAvatarModelId !== ""
+    && !activeDrawingModels.some((model) => model.id === selectedAvatarModelId);
+  const selectedAvatarModelIsSaved = selectedAvatarModelId === settingsBaseline.auto_avatar_model_id.trim();
   const isImageGenerationModel = (modelName?: string | null) =>
     /\b(gpt-image|glm-image|dall-e|stable-diffusion|sd3|flux|seedream|cogview|ideogram|imagen)\b/i.test(modelName || "");
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -3598,39 +3715,81 @@ export default function AdminPage() {
     if (canManageAgentConfiguration) query.set("include_configuration", "1");
     if (canReadPrompts) query.set("include_prompt", "1");
     const queryString = query.toString();
+    const requestsSensitiveData = canViewInternalTools || canManageAgentConfiguration || canReadPrompts;
+    const requestSequence = ++agentsRequestSequenceRef.current;
+    agentsAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    agentsAbortControllerRef.current = controller;
     try {
-      const res = await fetch(`/api/admin/agents${queryString ? `?${queryString}` : ""}`, { headers: authHeaders });
+      const res = await fetch(`/api/admin/agents${queryString ? `?${queryString}` : ""}`, {
+        headers: authHeaders,
+        signal: controller.signal,
+      });
       if (res.ok) {
         const data = await res.json();
+        if (controller.signal.aborted
+          || requestSequence !== agentsRequestSequenceRef.current
+          || (requestsSensitiveData && !sensitiveUnlockedRef.current)) return;
         setAgents((data.agents || []).map((agent: AgentInfo) => ({
           ...agent,
           system_prompt: agent.prompt_access === "visible" ? (agent.system_prompt || "") : undefined,
         })));
         setAgentDataSource(data.configurationAccess === "visible" ? (data.dataSource || null) : null);
       }
-    } catch {/* */}
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) console.error("智能体列表加载失败:", error);
+    } finally {
+      if (requestSequence === agentsRequestSequenceRef.current) agentsAbortControllerRef.current = null;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManageAgentConfiguration, canReadPrompts, canViewInternalTools, token]);
 
   const loadTrashedAgents = useCallback(async () => {
     const query = new URLSearchParams({ trash: "1" });
     if (canViewInternalTools) query.set("include_internal", "1");
-    try { const res = await fetch(`/api/admin/agents?${query}`, { headers: authHeaders }); if (res.ok) { const data = await res.json(); setTrashedAgents(data.agents || []); } } catch {/* */}
+    const requestSequence = ++trashedAgentsRequestSequenceRef.current;
+    trashedAgentsAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    trashedAgentsAbortControllerRef.current = controller;
+    try {
+      const res = await fetch(`/api/admin/agents?${query}`, { headers: authHeaders, signal: controller.signal });
+      if (res.ok) {
+        const data = await res.json();
+        if (controller.signal.aborted
+          || requestSequence !== trashedAgentsRequestSequenceRef.current
+          || (canViewInternalTools && !sensitiveUnlockedRef.current)) return;
+        const nextAgents = (data.agents || []) as AgentInfo[];
+        setTrashedAgents(sensitiveUnlockedRef.current
+          ? nextAgents
+          : nextAgents.map(stripAgentSensitiveClientFields));
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) console.error("回收站智能体加载失败:", error);
+    } finally {
+      if (requestSequence === trashedAgentsRequestSequenceRef.current) trashedAgentsAbortControllerRef.current = null;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canViewInternalTools]);
 
-  const handleRestoreAgent = async (id: string) => {
-    const res = await fetch("/api/admin/agents/restore", { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ agentId: id }) });
-    if (res.ok) { showSuccessAndSync("已恢复"); loadAgents(); loadTrashedAgents(); }
+  const handleRestoreAgent = async (agent: AgentInfo) => {
+    try {
+      const res = await fetch("/api/admin/agents/restore", { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify(buildAgentMutationPayload(agent, {})) });
+      const data = await res.json();
+      if (res.ok) { showSuccessAndSync("已恢复"); loadAgents(); loadTrashedAgents(); }
+      else if (res.status === 409) { showMessage("error", "该智能体已在另一端更新，请刷新回收站后重试。"); loadTrashedAgents(); }
+      else showMessage("error", data.error || "恢复失败");
+    } catch { showMessage("error", "缺少有效配置版本，请刷新回收站后重试。"); loadTrashedAgents(); }
   };
 
-  const handlePermanentDelete = (id: string) => {
+  const handlePermanentDelete = (agent: AgentInfo) => {
     confirmWithPassword("永久删除智能体（此操作无法恢复）", async () => {
       try {
-        const res = await fetch(`/api/admin/agents?id=${encodeURIComponent(id)}&permanent=1`, { method: "DELETE", headers: authHeaders });
+        const revision = Number(agent.config_revision);
+        if (!Number.isSafeInteger(revision) || revision < 1) throw new Error("AGENT_EXPECTED_REVISION_REQUIRED");
+        const res = await fetch(`/api/admin/agents?id=${encodeURIComponent(agent.id)}&permanent=1&expected_revision=${revision}`, { method: "DELETE", headers: authHeaders });
         if (res.ok) { showSuccessAndSync("已永久删除"); loadTrashedAgents(); }
-        else { const data = await res.json(); showMessage("error", data.error || "永久删除失败"); }
-      } catch { showMessage("error", "网络错误"); }
+        else { const data = await res.json(); showMessage("error", res.status === 409 ? "该智能体已在另一端更新，请刷新回收站后重试。" : (data.error || "永久删除失败")); if (res.status === 409) loadTrashedAgents(); }
+      } catch { showMessage("error", "缺少有效配置版本，请刷新回收站后重试。"); loadTrashedAgents(); }
     });
   };
 
@@ -3821,6 +3980,15 @@ export default function AdminPage() {
         if (grantedPermissionKeys.has("brand.settings.manage")) applyThemeColorSettings(nextSettings);
         return nextSettings;
       });
+      setSettingsBaseline((prev) => {
+        const theme = normalizeTheme(scopedSettings.theme || prev.theme);
+        return {
+          ...prev,
+          ...scopedSettings,
+          theme,
+          theme_mode: normalizePlatformThemeMode(theme, scopedSettings.theme_mode || prev.theme_mode),
+        };
+      });
     } catch {/* */}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sensitiveUnlocked, token, readableSettingScopes]);
@@ -3837,6 +4005,9 @@ export default function AdminPage() {
   }, []);
 
   const handleOpPasswordAction = async () => {
+    const requestSequence = ++opPasswordRequestSequenceRef.current;
+    opPasswordAbortControllerRef.current?.abort();
+    opPasswordAbortControllerRef.current = null;
     setOpPasswordError("");
     setOpPasswordSuccess("");
     setOpPasswordLoading(true);
@@ -3861,12 +4032,18 @@ export default function AdminPage() {
         body.password = opPasswordOld;
       }
 
+      const controller = new AbortController();
+      opPasswordAbortControllerRef.current = controller;
       const res = await fetch("/api/settings/operation-password", {
         method: "POST",
         headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       const data = await res.json();
+      if (controller.signal.aborted
+        || requestSequence !== opPasswordRequestSequenceRef.current
+        || !sensitiveUnlockedRef.current) return;
       if (!res.ok) {
         setOpPasswordError(data.error || "操作失败");
         return;
@@ -3888,10 +4065,15 @@ export default function AdminPage() {
         setOpPasswordNew("");
       }
       loadOpPasswordStatus();
-    } catch {
-      setOpPasswordError("操作失败，请重试");
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setOpPasswordError("操作失败，请重试");
+      }
     } finally {
-      setOpPasswordLoading(false);
+      if (requestSequence === opPasswordRequestSequenceRef.current) {
+        opPasswordAbortControllerRef.current = null;
+        setOpPasswordLoading(false);
+      }
     }
   };
 
@@ -4775,7 +4957,7 @@ export default function AdminPage() {
       if (!canEditPrompts) delete agentData.systemPrompt;
       const res = await fetch("/api/admin/agents", { method: "POST", headers: authHeaders, body: JSON.stringify(agentData) });
       const data = await res.json();
-      if (res.ok) { if (canEditPrompts) newPromptVersionRef.current?.pushVersion(newAgent.systemPrompt || ""); showSuccessAndSync(`智能体 ${newAgent.name} 创建成功`); setShowAddAgent(false); setAddShowAdvanced(false); setNewAgent({ name: "", description: "", avatar: "", category: "通用", source: "llm", botId: "", model: "deepseek-v4-flash", systemPrompt: "", costPerMessage: 10, sortOrder: 0, cozeCodingApiUrl: "", cozeCodingApiToken: "", cozeCodingProjectId: "", isActive: true, output_style: undefined, enable_think_tags: false, proxyUrl: "", deepThinkingType: 0, deductDeepThink: 1, maxContextRounds: 0, maxContextTokens: 0, maxReplyTokens: 16384, timeout: 300, enableWebSearch: false, temperature: undefined, response_format: undefined, token_billing_enabled: false, input_cost_per_million: undefined, output_cost_per_million: undefined, cached_cost_per_million: undefined, profit_margin: undefined, token_rounding_unit: 0, modelId: "", frequencyLimit: 50, imageParsing: "none", fileParsing: "none", guide_message: "" }); setAvatarPreview(""); setAddAgentSource("llm"); setAddPresetFields([]); setAddAgentCoverUrl(""); setAddAgentCoverPreview(""); setPendingAddAvatarKey(""); setPendingAddCoverKey(""); loadAgents(); }
+      if (res.ok) { showSuccessAndSync(`智能体 ${newAgent.name} 创建成功`); setShowAddAgent(false); setAddShowAdvanced(false); setNewAgent({ name: "", description: "", avatar: "", category: "通用", source: "llm", botId: "", model: "deepseek-v4-flash", systemPrompt: "", costPerMessage: 10, sortOrder: 0, cozeCodingApiUrl: "", cozeCodingApiToken: "", cozeCodingProjectId: "", isActive: true, output_style: undefined, enable_think_tags: false, proxyUrl: "", deepThinkingType: 0, deductDeepThink: 1, maxContextRounds: 0, maxContextTokens: 0, maxReplyTokens: 16384, timeout: 300, enableWebSearch: false, temperature: undefined, response_format: undefined, token_billing_enabled: false, input_cost_per_million: undefined, output_cost_per_million: undefined, cached_cost_per_million: undefined, profit_margin: undefined, token_rounding_unit: 0, modelId: "", frequencyLimit: 50, imageParsing: "none", fileParsing: "none", guide_message: "" }); setAvatarPreview(""); setAddAgentSource("llm"); setAddPresetFields([]); setAddAgentCoverUrl(""); setAddAgentCoverPreview(""); setPendingAddAvatarKey(""); setPendingAddCoverKey(""); loadAgents(); }
       else { showMessage("error", data.error || "创建失败"); }
     } catch { showMessage("error", "网络错误"); }
   };
@@ -5193,7 +5375,7 @@ export default function AdminPage() {
       return;
     }
     const updatePayload = buildAgentUpdatePayload(editingAgent, originalAgent, canEditPrompts);
-    if (Object.keys(updatePayload).length === 1) {
+    if (Object.keys(updatePayload).every((key) => key === "agentId" || key === "expected_revision")) {
       showMessage("success", "没有需要保存的修改");
       return;
     }
@@ -5210,9 +5392,6 @@ export default function AdminPage() {
           editOriginalImagesRef.current.avatar !== editingAgent.avatar ? editOriginalImagesRef.current.avatar : "",
           editOriginalImagesRef.current.cover !== (editingAgent.cover_url || "") ? editOriginalImagesRef.current.cover : "",
         ].filter(Boolean);
-        if (canEditPrompts && Object.prototype.hasOwnProperty.call(updatePayload, "system_prompt")) {
-          editPromptVersionRef.current?.pushVersion(editingAgent.system_prompt || "");
-        }
         showSuccessAndSync("智能体更新成功");
         setPendingEditAvatarKey("");
         setPendingEditCoverKey("");
@@ -5224,18 +5403,24 @@ export default function AdminPage() {
         obsoleteKeys.forEach((key) => void discardPendingAgentImage(key));
         loadAgents();
       }
+      else if (res.status === 409 && data.code === "AGENT_CONFIG_REVISION_CONFLICT") {
+        showMessage("error", "该智能体已在另一端更新。为避免覆盖，请关闭编辑窗口并重新打开后再合并修改。");
+        loadAgents();
+      }
       else { showMessage("error", data.error || "更新失败"); }
     } catch { showMessage("error", "更新失败"); }
     finally { setAgentSaveBusy(false); }
   };
 
-  const handleDeleteAgent = (agentId: string, name: string) => {
-    confirmWithPassword(`删除智能体「${name}」（删除后将移至回收站）`, async () => {
+  const handleDeleteAgent = (agent: AgentInfo) => {
+    confirmWithPassword(`删除智能体「${agent.name}」（删除后将移至回收站）`, async () => {
       try {
-        const res = await fetch(`/api/admin/agents?id=${encodeURIComponent(agentId)}`, { method: "DELETE", headers: authHeaders });
+        const revision = Number(agent.config_revision);
+        if (!Number.isSafeInteger(revision) || revision < 1) throw new Error("AGENT_EXPECTED_REVISION_REQUIRED");
+        const res = await fetch(`/api/admin/agents?id=${encodeURIComponent(agent.id)}&expected_revision=${revision}`, { method: "DELETE", headers: authHeaders });
         if (res.ok) { showSuccessAndSync("已移至回收站"); loadAgents(); loadTrashedAgents(); }
-        else { const data = await res.json(); showMessage("error", data.error || "删除失败"); }
-      } catch { showMessage("error", "网络错误"); }
+        else { const data = await res.json(); showMessage("error", res.status === 409 ? "该智能体已在另一端更新，请刷新后重试。" : (data.error || "删除失败")); if (res.status === 409) loadAgents(); }
+      } catch { showMessage("error", "缺少有效配置版本，请刷新后重试。"); loadAgents(); }
     });
   };
 
@@ -5313,9 +5498,10 @@ export default function AdminPage() {
 
   const handleToggleAgentActive = async (agent: AgentInfo) => {
     try {
-      const res = await fetch("/api/admin/agents", { method: "PUT", headers: authHeaders, body: JSON.stringify({ agentId: agent.id, isActive: !agent.is_active }) });
+      const res = await fetch("/api/admin/agents", { method: "PUT", headers: authHeaders, body: JSON.stringify(buildAgentMutationPayload(agent, { isActive: !agent.is_active })) });
       if (res.ok) { showSuccessAndSync(agent.is_active ? "已禁用" : "已启用"); loadAgents(); }
-    } catch {/* */}
+      else if (res.status === 409) { showMessage("error", "该智能体已在另一端更新，请刷新后重试。"); loadAgents(); }
+    } catch { showMessage("error", "缺少有效配置版本，请刷新后重试。"); loadAgents(); }
   };
 
   const handleTestCozeConnection = async () => {
@@ -5392,9 +5578,11 @@ export default function AdminPage() {
     let allOk = true;
     for (const [agentId, sortOrder] of entries) {
       try {
+        const agent = agents.find((item) => item.id === agentId);
+        if (!agent) throw new Error("AGENT_NOT_FOUND");
         const res = await fetch("/api/admin/agents", {
           method: "PUT", headers: { ...authHeaders, "Content-Type": "application/json" },
-          body: JSON.stringify({ agentId, sortOrder }),
+          body: JSON.stringify(buildAgentMutationPayload(agent, { sortOrder })),
         });
         const data = await res.json();
         if (!data.success) { allOk = false; console.error("[saveSortOrder] failed:", agentId, data.error); }
@@ -5407,9 +5595,11 @@ export default function AdminPage() {
   // 移动单个智能体到指定分类
   const handleMoveAgentToCategory = async (agentId: string, targetCategory: string) => {
     try {
+      const agent = agents.find((item) => item.id === agentId);
+      if (!agent) throw new Error("AGENT_NOT_FOUND");
       const res = await fetch("/api/admin/agents", {
         method: "PUT", headers: { ...authHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId, category: targetCategory }),
+        body: JSON.stringify(buildAgentMutationPayload(agent, { category: targetCategory })),
       });
       const data = await res.json();
       if (data.success) { showSuccessAndSync("智能体已迁移"); loadAgents(); loadCategories(); }
@@ -5476,10 +5666,11 @@ const handleDeleteCategory = async () => {
     try {
       const client_agents = agents.filter((a) => a.category === fromCategory);
       for (const agent of client_agents) {
-        await fetch("/api/admin/agents", {
+        const res = await fetch("/api/admin/agents", {
           method: "PUT", headers: authHeaders,
-          body: JSON.stringify({ agentId: agent.id, category: toCategory }),
+          body: JSON.stringify(buildAgentMutationPayload(agent, { category: toCategory })),
         });
+        if (!res.ok) throw new Error(res.status === 409 ? "AGENT_CONFIG_REVISION_CONFLICT" : "AGENT_MIGRATION_FAILED");
       }
       showSuccessAndSync(`已将 ${client_agents.length} 个智能体迁移至"${toCategory}"`);
       loadAgents(); loadCategories();
@@ -5650,52 +5841,6 @@ const handleDeleteCategory = async () => {
 
   const handleLogout = () => { safeLocalStorageRemove(STORAGE_KEYS.AUTH_TOKEN); safeLocalStorageRemove(STORAGE_KEYS.AUTH_USER); router.push("/"); };
 
-  // 部署到生产服务器
-  const handleDeploy = async () => {
-    if (deploying) return;
-    if (!confirm("确定要部署到生产服务器吗？这将构建并更新线上版本。")) return;
-    setDeploying(true);
-    setDeployStatus("部署中...");
-    setDeployProgress("正在连接服务器...");
-    try {
-      const res = await fetch("/api/deploy", { method: "POST", headers: authHeaders });
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) { setDeployStatus("部署失败：无法读取响应"); setDeploying(false); return; }
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.step) setDeployProgress(data.step);
-              if (data.progress) setDeployProgress(data.progress);
-              if (data.error) { setDeployStatus("部署失败"); setDeployProgress(data.error); setDeploying(false); return; }
-              if (data.done) {
-                setDeployStatus("部署成功");
-                setDeployProgress(data.message || "生产环境已更新");
-                setTimeout(() => { setDeploying(false); setDeployStatus(""); setDeployProgress(""); }, 5000);
-                return;
-              }
-            } catch { /* ignore parse errors */ }
-          }
-        }
-      }
-      setDeployStatus("部署完成");
-      setDeployProgress("");
-      setTimeout(() => { setDeploying(false); setDeployStatus(""); }, 3000);
-    } catch (err: unknown) {
-      setDeployStatus("部署失败");
-      setDeployProgress(err instanceof Error ? err.message : "网络错误");
-      setTimeout(() => { setDeploying(false); setDeployStatus(""); setDeployProgress(""); }, 5000);
-    }
-  };
-
   // 手动保存设置
   const saveSettings = async (
     scope: AdminPlatformSettingScope,
@@ -5721,10 +5866,34 @@ const handleDeleteCategory = async () => {
         headers: authHeaders,
         body: JSON.stringify(scopedPayload),
       });
+      const receipt = await res.json().catch(() => ({})) as {
+        success?: boolean;
+        verifiedKeys?: string[];
+        verification?: string;
+        error?: string;
+      };
       if (res.ok) {
-        if (showSuccess) showSuccessAndSync("设置已保存");
+        const verifiedKeys = new Set(Array.isArray(receipt.verifiedKeys) ? receipt.verifiedKeys : []);
+        const expectedVerifiedKeys = Object.entries(scopedPayload)
+          .filter(([key, value]) => (
+            !ADMIN_SECRET_SETTING_FIELDS.has(key as keyof PlatformSettings)
+            || !isBlankOrMaskedAdminSecret(value)
+          ))
+          .map(([key]) => key);
+        const missingVerifiedKey = expectedVerifiedKeys.find((key) => !verifiedKeys.has(key));
+        if (receipt.success !== true || receipt.verification !== "database-readback" || missingVerifiedKey) {
+          showMessage("error", missingVerifiedKey
+            ? `保存回执缺少 ${missingVerifiedKey} 的数据库确认，请刷新后重试`
+            : "保存回执未通过数据库读回确认，请刷新后重试");
+          return false;
+        }
+        const savedFieldValues = Object.fromEntries(fieldKeys.map((key) => [
+          key,
+          ADMIN_SECRET_SETTING_FIELDS.has(key) ? "" : s[key],
+        ])) as Partial<PlatformSettings>;
         setSettings((current) => ({
           ...current,
+          ...savedFieldValues,
           ...(scope === "brand" ? { theme: s.theme, theme_mode: s.theme_mode } : {}),
           ...(scope === "integrations" ? {
             ...(fieldKeys.includes("coze_api_token") ? {
@@ -5755,17 +5924,19 @@ const handleDeleteCategory = async () => {
             } : {}),
           } : {}),
         }));
+        setSettingsBaseline((current) => ({ ...current, ...savedFieldValues }));
         if (scope === "brand") {
           applyThemeColorSettings(s);
           safeLocalStorageSet(STORAGE_KEYS.PLATFORM_THEME, s.theme);
           safeLocalStorageSet(STORAGE_KEYS.PLATFORM_THEME_MODE, s.theme_mode);
           previewPlatformAppearance(s.theme, s.theme_mode);
+          invalidateClientBootstrapAppearance();
           window.dispatchEvent(new Event("theme-updated"));
         }
+        if (showSuccess) showSuccessAndSync("设置已保存，并已完成数据库读回确认");
         return true;
       } else {
-        const data = await res.json();
-        showMessage("error", data.error || "保存失败");
+        showMessage("error", receipt.error || "保存失败");
         return false;
       }
     } catch {
@@ -5825,11 +5996,13 @@ const handleDeleteCategory = async () => {
       }
 
       setSettings((current) => ({ ...current, theme, theme_mode: themeMode }));
+      setSettingsBaseline((current) => ({ ...current, theme, theme_mode: themeMode }));
       setPushedPlatformTheme(theme);
       setPushedPlatformThemeMode(themeMode);
       safeLocalStorageSet(STORAGE_KEYS.PLATFORM_THEME, theme);
       safeLocalStorageSet(STORAGE_KEYS.PLATFORM_THEME_MODE, themeMode);
       previewPlatformAppearance(theme, themeMode);
+      invalidateClientBootstrapAppearance();
       window.dispatchEvent(new Event("theme-updated"));
       showSuccessAndSync(`“${themeName}”已发布并通过全站读回校验`);
     } catch {
@@ -5917,41 +6090,13 @@ const handleDeleteCategory = async () => {
                 onForceOpenHandled={() => setUnlockDialogRequested(false)}
               />
             )}
-            {adminAccess?.access.permissionKeys.includes("deployment.execute") && (
-            <div className="relative">
-              <button
-                onClick={() => sensitiveUnlocked ? handleDeploy() : setUnlockDialogRequested(true)}
-                disabled={deploying}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  deploying
-                    ? "bg-[var(--muted)] text-[var(--muted-foreground)] cursor-wait"
-                    : "border border-[#067647] bg-[#079455] text-white hover:bg-[#067647]"
-                }`}
-              >
-                {deploying ? (
-                  <>
-                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                    部署中...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                    部署到线上
-                  </>
-                )}
-              </button>
-              {deployStatus && (
-                <div className="absolute top-full mt-2 right-0 z-50 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-xl p-3 min-w-[240px] text-xs">
-                  <div className={`font-medium ${deployStatus === "部署成功" ? "text-emerald-500" : deployStatus === "部署失败" ? "text-red-500" : "text-[var(--primary)]"}`}>
-                    {deployStatus}
-                  </div>
-                  {deployProgress && <div className="text-[var(--muted-foreground)] mt-1">{deployProgress}</div>}
-                </div>
-              )}
-            </div>
-            )}
             <button onClick={() => router.push("/")} className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)]">返回工作台</button>
             <span className="max-w-40 truncate px-1 text-sm font-medium text-[var(--secondary-foreground)]" title={userInfo?.displayName || userInfo?.name}>{userInfo?.displayName || userInfo?.name}</span>
+            {hasUnsavedAdminSettings && (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800" title={`${settingsDirtyKeys.length} 项设置尚未保存`}>
+                {settingsDirtyKeys.length} 项未保存
+              </span>
+            )}
             <button onClick={handleLogout} className="rounded-lg px-3 py-2 text-sm font-medium text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--destructive)]/10 hover:text-[var(--destructive)]">退出</button>
           </div>
         </div>
@@ -6322,6 +6467,7 @@ const handleDeleteCategory = async () => {
             </div>
             {agentDataSource && <div role="status" className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--muted-foreground)]">
               <strong className="text-[var(--foreground)]">智能体配置：{agentDataSource.configuration === 'local-acceptance' ? '本地验收库' : agentDataSource.configuration === 'shared-cloud' ? '云端共享' : agentDataSource.configuration === 'cloud' ? '云端数据库' : '本地数据库'}</strong>
+              {agentDataSource.configurationId && <span className="ml-3 font-mono text-xs">配置身份：{agentDataSource.configurationId}</span>}
               <span className="ml-3">{agentDataSource.configuration === 'local-acceptance' ? '配置与账号数据均隔离在本机验收库，刷新页面会读取最新配置。' : agentDataSource.configuration === 'shared-cloud' ? '模型绑定与分类配置保存到云端，重新打开卡片读取最新配置。' : '保存修改无需重新部署代码。'}</span>
               <p className="mt-1">账号、聊天与账单：{agentDataSource.businessData === 'local' ? '本地测试库；未与线上用户数据合并' : '云端数据库'}。</p>
             </div>}
@@ -7562,7 +7708,7 @@ const handleDeleteCategory = async () => {
                               <div className="text-[10px] text-[var(--muted-foreground)] px-3 py-1">迁移到：</div>
                               {categoryOptions.filter((c) => c !== agent.category).map((c) => (
                                 <button key={c} onClick={async () => {
-                                  const res = await fetch("/api/admin/agents", { method: "PUT", headers: authHeaders, body: JSON.stringify({ agentId: agent.id, category: c }) });
+                                  const res = await fetch("/api/admin/agents", { method: "PUT", headers: authHeaders, body: JSON.stringify(buildAgentMutationPayload(agent, { category: c })) });
                                   if (res.ok) { showSuccessAndSync(`已迁移至"${c}"`); loadAgents(); loadCategories(); }
                                 }} className="block w-full text-left px-3 py-1.5 text-xs text-[var(--secondary-foreground)] hover:bg-[var(--border)] hover:text-[var(--foreground)] transition-colors">{c}</button>
                               ))}
@@ -7588,7 +7734,7 @@ const handleDeleteCategory = async () => {
                           {canManageAgents ? <select
                             value={agent.user_access || "available"}
                             onChange={async (e) => {
-                              const res = await fetch("/api/admin/agents", { method: "PUT", headers: authHeaders, body: JSON.stringify({ agentId: agent.id, user_access: e.target.value }) });
+                              const res = await fetch("/api/admin/agents", { method: "PUT", headers: authHeaders, body: JSON.stringify(buildAgentMutationPayload(agent, { user_access: e.target.value })) });
                               if (res.ok) { showSuccessAndSync("权限已更新"); loadAgents(); }
                             }}
                             className="text-xs border border-[var(--border)] rounded px-1.5 py-0.5 bg-[var(--background)] text-[var(--foreground)]"
@@ -7601,7 +7747,7 @@ const handleDeleteCategory = async () => {
                           {canReadPrompts && <button type="button" onClick={() => setViewingPromptAgentId((current) => current === agent.id ? "" : agent.id)} className="text-xs text-[#175cd3] hover:underline">{viewingPromptAgentId === agent.id ? "收起提示词" : "查看提示词"}</button>}
                           {canManageAgentConfiguration && <button onClick={() => { loadLlmModels(); loadDrawingModels(); editOriginalAgentRef.current = agent; setEditingAgent(agent); editOriginalImagesRef.current = { avatar: agent.avatar || "", cover: agent.cover_url || "" }; setPendingEditAvatarKey(""); setPendingEditCoverKey(""); setEditAvatarPreview(resolveTrashAvatarSrc(agent)); setEditAgentCoverPreview(resolveAvatarPreviewSrc(agent.cover_url)); setEditShowAdvanced(false); }} className="text-xs text-[var(--primary)] hover:underline cursor-pointer">编辑</button>}
                           {canManageAgentConfiguration && <button onClick={() => handleDuplicateAgent(agent)} className="text-xs text-emerald-500 hover:text-emerald-400 cursor-pointer">创建副本</button>}
-                          {canManageAgents && <button type="button" onClick={() => handleDeleteAgent(agent.id, agent.name)} className="text-xs text-[var(--destructive)] hover:text-[#FF6B6B] cursor-pointer">删除</button>}
+                          {canManageAgents && <button type="button" onClick={() => handleDeleteAgent(agent)} className="text-xs text-[var(--destructive)] hover:text-[#FF6B6B] cursor-pointer">删除</button>}
                         </td>
                       </tr>
                     );
@@ -7663,8 +7809,8 @@ const handleDeleteCategory = async () => {
                         <span className="hidden shrink-0 whitespace-nowrap text-xs text-[var(--muted-foreground)] sm:inline">删除于 {deletedLabel}</span>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <button onClick={() => handleRestoreAgent(agent.id)} className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90">恢复</button>
-                        <button onClick={() => handlePermanentDelete(agent.id)} className="rounded-lg bg-[var(--destructive)] px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90">永久删除</button>
+                        <button onClick={() => handleRestoreAgent(agent)} className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90">恢复</button>
+                        <button onClick={() => handlePermanentDelete(agent)} className="rounded-lg bg-[var(--destructive)] px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90">永久删除</button>
                       </div>
                     </div>
                   );
@@ -8347,11 +8493,16 @@ const handleDeleteCategory = async () => {
                   <div>
                     <label className={labelCls}>头像生图模型</label>
                     <select
-                      value={visibleSettings.auto_avatar_model_id || ""}
+                      value={selectedAvatarModelId}
                       onChange={(e) => updateSetting("auto_avatar_model_id", e.target.value)}
                       className={inputCls}
                     >
                       <option value="">自动选择第一个启用的生图模型</option>
+                      {selectedAvatarModelUnavailable && (
+                        <option value={selectedAvatarModelId} disabled>
+                          {selectedAvatarModelId}（{selectedAvatarModelIsSaved ? "当前已保存" : "当前选择"}，暂不可用于新生成）
+                        </option>
+                      )}
                       {activeDrawingModels.map((model) => (
                         <option key={model.id} value={model.id}>
                           {model.name}{model.model_name !== model.name ? ` (${model.model_name})` : ""}
@@ -8860,7 +9011,7 @@ const handleDeleteCategory = async () => {
         )}
 
         {activeTab === "white-label" && token && grantedPermissionKeys.has("white_label.manage") && (
-          <WhiteLabelReadinessPanel token={token} />
+          <WhiteLabelReadinessPanel token={token} onRequestUnlock={() => setUnlockDialogRequested(true)} />
         )}
 
         {/* ── 计费审计 Tab ── */}

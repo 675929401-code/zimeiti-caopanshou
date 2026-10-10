@@ -579,32 +579,24 @@ async function auditVideo(context, session, viewport, theme) {
 
 async function auditToolboxLazyMount(context) {
   const page = await context.newPage();
-  const extractReads = [];
   attachPageDiagnostics(page, "tools-lazy-mount");
   await page.addInitScript(() => {
     localStorage.setItem("user_theme_preference", "lattice");
     localStorage.setItem("toolbox_active_tab", "format");
   });
-  page.on("request", (request) => {
-    const pathname = new URL(request.url()).pathname;
-    if (request.method() === "GET" && (pathname.startsWith("/api/extract") || pathname === "/api/tools/runtime-catalog")) {
-      extractReads.push(pathname);
-    }
-  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${origin}/tools`, { waitUntil: "domcontentloaded", timeout: 45_000 });
-  await page.getByRole("tab", { name: /文字排版/u, selected: true }).waitFor({ state: "visible", timeout: 30_000 });
-  await page.locator("#tool-panel-format textarea[placeholder*='需要排版的文案']").waitFor({ state: "visible", timeout: 30_000 });
+  await page.getByRole("tab", { name: /文案提取/u, selected: true }).waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator("#tool-panel-extract textarea[placeholder*='粘贴完整分享文本或链接']").waitFor({ state: "visible", timeout: 30_000 });
   await page.waitForTimeout(250);
-  assert.equal(await page.locator("#tool-panel-extract").count(), 0, "恢复文字排版时提前挂载了提取工具");
-  assert.deepEqual(extractReads, [], `恢复文字排版时触发了提取读取：${JSON.stringify(extractReads)}`);
+  assert.equal(new URL(page.url()).searchParams.get("tab"), "text", "效率工具无 tab 入口必须规范化到文案提取");
+  assert.notEqual(await page.evaluate(() => localStorage.getItem("toolbox_active_tab")), "text", "默认入口不得依赖或改写历史 tab");
 
   const formatValue = "延迟挂载回归：文字排版";
   const textValue = "延迟挂载回归：文案提取";
-  await page.locator("#tool-panel-format textarea[placeholder*='需要排版的文案']").fill(formatValue);
-  await page.getByRole("tab", { name: /文案提取/u }).click();
   await page.locator("#tool-panel-extract textarea[placeholder*='粘贴完整分享文本或链接']").fill(textValue);
   await page.getByRole("tab", { name: /文字排版/u }).click();
+  await page.locator("#tool-panel-format textarea[placeholder*='需要排版的文案']").fill(formatValue);
   assert.equal(await page.locator("#tool-panel-format textarea[placeholder*='需要排版的文案']").inputValue(), formatValue, "延迟挂载后文字排版状态丢失");
   await page.getByRole("tab", { name: /文案提取/u }).click();
   assert.equal(await page.locator("#tool-panel-extract textarea[placeholder*='粘贴完整分享文本或链接']").inputValue(), textValue, "延迟挂载后文案提取状态丢失");

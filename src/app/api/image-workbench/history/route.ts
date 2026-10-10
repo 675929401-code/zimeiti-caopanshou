@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-middleware';
 import { beijingCalendarDayWindowStart } from '@/lib/beijing-history-window';
 import { storageManager, type StorageProviderType } from '@/storage/object';
+import { parseImageFailureRequestSnapshot } from '@/lib/image-failure-history';
 
 export const dynamic = 'force-dynamic';
 const ID = /^[A-Za-z0-9:_-]{8,160}$/;
@@ -107,10 +108,10 @@ export async function POST(request: NextRequest) {
     if (items.some(item => !assets.has(item.assetId) || !messageAssets.get(item.historyRecordId)?.has(item.assetId))) {
       return NextResponse.json({ error: '只能同步本人已保存的生成图片' }, { status: 403 });
     }
-    const attempts = await db.from('image_generation_requests').select('delivery_asset_id,client_idempotency_key,client_trace_id')
+    const attempts = await db.from('image_generation_requests').select('delivery_asset_id,client_idempotency_key,client_trace_id,payload_fingerprint,request_snapshot')
       .eq('user_id', user.id).eq('state', 'completed').eq('delivery_state', 'delivered').in('delivery_asset_id', [...assets.keys()]);
     if (attempts.error) throw attempts.error;
-    const attemptRows = (attempts.data || []) as Array<{ delivery_asset_id: string; client_idempotency_key: string; client_trace_id: string }>;
+    const attemptRows = (attempts.data || []) as Array<{ delivery_asset_id: string; client_idempotency_key: string; client_trace_id: string; payload_fingerprint: string; request_snapshot: unknown }>;
     const operationFor = (key: string) => 'h3_' + createHash('sha256').update(user.id + ':' + key).digest('hex').slice(0, 48);
     const billingKeys = attemptRows.map(row => 'image:' + operationFor(row.client_idempotency_key));
     const billing = billingKeys.length ? await db.from('wallet_operations').select('idempotency_key,amount,metadata')
@@ -120,8 +121,22 @@ export async function POST(request: NextRequest) {
     const receipts = new Map<string, Obj>(attemptRows.map(row => {
       const operationId = operationFor(row.client_idempotency_key);
       const charge = charges.get('image:' + operationId);
+      const snapshot = parseImageFailureRequestSnapshot(row.request_snapshot);
+      const integrity = snapshot?.payloadFingerprint && snapshot.payloadFingerprint === row.payload_fingerprint
+        ? {
+            schema: snapshot.schema,
+            payloadFingerprint: snapshot.payloadFingerprint,
+            effectivePrompt: snapshot.effectivePrompt,
+            style: snapshot.style || '',
+            referenceUsage: snapshot.referenceUsage || 'general',
+            providerProtocol: snapshot.providerProtocol,
+            outputPixelSize: snapshot.outputPixelSize,
+            imageCount: snapshot.imageCount || 1,
+          }
+        : { schema: snapshot?.schema || 'legacy', payloadFingerprint: row.payload_fingerprint, imageCount: 1 };
       return [row.delivery_asset_id, { operationId, traceId: row.client_trace_id,
         resolution: charge?.metadata?.price_snapshot?.resolution,
+        requestIntegrity: integrity,
         ...(charge && Number.isFinite(Number(charge.amount)) ? { cashCharged: Number(charge.amount) } : {}),
       }];
     }));
@@ -132,6 +147,7 @@ export async function POST(request: NextRequest) {
         return { id: item.assetId, assetId: item.assetId, historyRecordId: item.historyRecordId, prompt: item.prompt,
           ...(receipt?.taskId || receipt?.traceId ? { taskId: receipt.taskId || receipt.traceId } : {}),
           ...(receipt?.operationId ? { operationId: receipt.operationId } : {}),
+          ...(receipt?.requestIntegrity ? { requestIntegrity: receipt.requestIntegrity } : {}),
           ...(['1K','2K','4K'].includes(receipt?.resolution) ? { resolution: receipt!.resolution } : {}),
           ...(charge !== undefined ? { cashCharged: charge } : {}),
         };

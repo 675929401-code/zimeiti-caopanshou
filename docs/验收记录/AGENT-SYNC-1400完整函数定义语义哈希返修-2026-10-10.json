@@ -1,0 +1,17 @@
+{
+  "summary": "AGENT-SYNC 1400 readiness and rollback probes now hash a complete function semantic descriptor derived from pg_get_functiondef plus explicit PostgreSQL catalog attributes, instead of hashing prosrc only.",
+  "verification": "Zero-network malicious fixture passed for two functions and 15 drift classes per function; batch CAS zero-network verifier passed; TypeScript passed; targeted ESLint passed with zero errors; diff-check passed.",
+  "remaining": "No database connection or probe execution occurred. Formal-local apply, readiness, and rollback-reapply evidence remain pending independent audit and authorization. Ownerless fire-and-forget auto-avatar objects remain fail-closed and may orphan after CAS conflict because no authenticated owner can be safely invented.",
+  "runningOperations": "None.",
+  "nextAction": "Independent audit, then authorized formal-local apply/readiness/rollback-reapply. Consider redesigning the ownerless auto-avatar trigger to carry an authenticated actor or dedicated service ownership contract before enabling precise cleanup.",
+  "runtimeIdentity": "No runtime or database identity was connected.",
+  "productionState": "Unchanged; no database write, migration apply, build, deployment, provider call, paid request, or Git write.",
+  "changedFiles": [
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/lib/shared-agent-function-definition.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-function-definition-zero-network.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-batch-cas-readiness-local.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-batch-cas-rollback-local.mjs",
+    "01_网页开发项目/自媒体操盘手/当前版本/scripts/verify-shared-agent-batch-cas-zero-network.ts",
+    "01_网页开发项目/自媒体操盘手/当前版本/docs/验收记录/AGENT-SYNC-1400完整函数定义语义哈希返修-2026-10-10.json"
+  ]
+}

@@ -72,7 +72,15 @@ for (const invalid of [
   assert.throws(() => createLocalStandaloneDatabaseEnv(invalid, oldRemote));
 }
 assert.throws(() => sharedConfigurationConnection({ ...env, LOCAL_ACCEPTANCE_PREVIEW: "false" }), /SHARED_CONFIGURATION_REQUIRES_CLOUD_HTTPS/u);
+assert.throws(() => sharedConfigurationConnection({ ...env, LOCAL_RUNTIME_PROFILE: "formal-local-shared" }), /SHARED_CONFIGURATION_REQUIRES_CLOUD_HTTPS/u);
+assert.throws(() => sharedConfigurationConnection({ ...env, DATABASE_URL: "postgresql://cloud.example.invalid/business" }), /SHARED_CONFIGURATION_REQUIRES_CLOUD_HTTPS/u);
 assert.throws(() => sharedConfigurationConnection({ ...env, SHARED_CONFIGURATION_SUPABASE_URL: "http://localhost:54321" }), /SHARED_CONFIGURATION_REQUIRES_CLOUD_HTTPS/u);
+assert.throws(() => sharedConfigurationConnection({
+  ...env,
+  LOCAL_ACCEPTANCE_PREVIEW: "false",
+  SHARED_CONFIGURATION_SUPABASE_URL: "https://shared.example.invalid",
+  SHARED_CONFIGURATION_ID: "",
+}), /SHARED_CONFIGURATION_ID_MISSING/u);
 
 const serialized = JSON.stringify({ argv: [], log: "LOCAL_STANDALONE_RUNTIME_CONFIG_READ_FAILED" });
 for (const secret of [env.COZE_SUPABASE_SERVICE_ROLE_KEY, env.COZE_SUPABASE_ANON_KEY, env.JWT_SECRET, decodeURIComponent(database.password)]) {

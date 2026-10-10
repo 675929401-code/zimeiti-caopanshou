@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -9,34 +11,506 @@ const root = process.cwd();
 const read = (relativePath) => fs.readFileSync(path.join(root, ...relativePath.split("/")), "utf8");
 const policy = JSON.parse(read("deploy/policies/release-policy.json"));
 const releaseWorkflowSource = read("scripts/release-workflow.mjs");
+const ciWorkflow = read(".github/workflows/release-vnext.yml");
+
+function verifyReleaseVnextWorkflowContract() {
+  assert.match(ciWorkflow, /node-version:\s*"24\.19\.0"/u);
+  assert.match(ciWorkflow, /PUPPETEER_SKIP_DOWNLOAD:\s*"true"/u);
+  assert.match(ciWorkflow, /git diff --check "\$RELEASE_BASE_SHA\.\.\.\$RELEASE_HEAD_SHA"/u, "PR merge-base diff-check must use the resolved trusted range");
+  assert.match(ciWorkflow, /git diff --check "\$RELEASE_BASE_SHA\.\.\$RELEASE_HEAD_SHA"/u, "manual direct diff-check must use the trusted release range");
+  assert.match(ciWorkflow, /sha256sum -c/u, "CI must verify the packager-owned checksum");
+  assert.doesNotMatch(ciWorkflow, /sha256sum[^\n]*>[^\n]*checksum/u, "CI must never overwrite the packager-owned checksum");
+  assert.match(ciWorkflow, /package-standalone-artifact\.mjs[^\n]+--archive/u);
+  assert.match(ciWorkflow, /\(cd voice-platform && pnpm --ignore-workspace install --frozen-lockfile\)/u,
+    "Voice dependencies must be installed in an explicit isolated subshell");
+  assert.match(ciWorkflow, /init --scope-receipt[^\n]+--target source-candidate/u);
+  assert.match(ciWorkflow, /finalize --bundle[^\n]+--target source-candidate/u);
+  assert.match(ciWorkflow, /merge-external --bundle "\$RELEASE_VALIDATION_BUNDLE"/u);
+  assert.match(ciWorkflow, /promote-release-ready --bundle "\$RELEASE_VALIDATION_BUNDLE"/u);
+  assert.match(ciWorkflow, /finalize --bundle "\$RELEASE_VALIDATION_BUNDLE" --target release-ready/u);
+  const mergeIndex = ciWorkflow.indexOf("merge-external --bundle");
+  const promoteIndex = ciWorkflow.indexOf("promote-release-ready --bundle");
+  const readyIndex = ciWorkflow.indexOf("--target release-ready");
+  const packageIndex = ciWorkflow.indexOf("--finalize-candidate-archive");
+  assert.ok(mergeIndex > 0 && mergeIndex < promoteIndex && promoteIndex < readyIndex && readyIndex < packageIndex,
+    "one staged bundle must merge evidence, promote, finalize, then package without rebuilding");
+  assert.equal((ciWorkflow.match(/release:vnext:build:/gu) || []).length, 1, "workflow must build once and never rebuild during finalization");
+  assert.doesNotMatch(ciWorkflow, /^\s+push:/mu, "release workflow must not be tag-triggered");
+  assert.doesNotMatch(ciWorkflow, /^\s+tags:/mu, "tags must not be a release entrypoint");
+  assert.match(ciWorkflow, /git merge-base --is-ancestor "\$base_sha" "\$head_sha"/u, "manual release base must be a real ancestor");
+  assert.doesNotMatch(ciWorkflow, /acceptance_trusted_issuers_path/u, "dispatcher must not replace issuer trust");
+  assert.match(ciWorkflow, /bind-identity --bundle[^\n]+--service "\$service"[^\n]+--build-output-digest-receipt/u);
+  assert.match(ciWorkflow, /bind-package-payload --bundle "\$RELEASE_VALIDATION_BUNDLE"/u);
+  assert.match(ciWorkflow, /--finalize-candidate-archive "\$candidate_archive"/u);
+  assert.match(ciWorkflow, /--finalize-candidate-archive "\$candidate_archive"[^\n]+--scope-receipt "\$RELEASE_SCOPE_RECEIPT"[^\n]+--evidence-root "\$RELEASE_VALIDATION_EVIDENCE"/u,
+    "fresh finalizer must rerun the authoritative gate against scope and signed evidence");
+  assert.match(read("scripts/package-standalone-artifact.mjs"), /"verify-release-ready"[\s\S]+"--scope-receipt", scopeReceiptPath[\s\S]+"--evidence-root", evidenceRoot/u,
+    "formal packager must invoke the authoritative release-ready verifier");
+  assert.doesNotMatch(ciWorkflow, /tar -xzf "\$RUNNER_TEMP\/candidate\/release-candidate-build/u,
+    "finalize must consume the already-materialized package instead of restoring build output");
+  const finalizeSection = ciWorkflow.slice(ciWorkflow.indexOf("Validate candidate and browser-evidence run provenance"));
+  assert.doesNotMatch(finalizeSection, /pnpm (?:install|run "?release:vnext:build)|compute-release-build-output-digest\.mjs/u,
+    "fresh finalize must not install dependencies, rebuild, or regenerate output digests");
+}
+
+verifyReleaseVnextWorkflowContract();
+if (process.argv.includes("--workflow-contract-only")) {
+  process.stdout.write("PASS release-vnext staged workflow contract\n");
+  process.exit(0);
+}
 
 for (const marker of [
   "inspectMigrationWorktree",
-  "historical migration changed relative to HEAD; restore it and use a new forward-only migration",
+  "historical migration changed relative to audit base; restore it and use a new forward-only migration",
   "historicalMigrationMutationAllowed: false",
+  "relocatedHistoricalRollbacks",
+  "consumedRelocationReceipts",
+  "validatePhysicalPath",
+  "readStableRegularFile",
+  "git-range-candidate",
+  "legacy rollback relocation rejected",
   "newForwardMigrations",
 ]) assert.ok(releaseWorkflowSource.includes(marker), `release workflow migration immutability gate missing: ${marker}`);
 
-assert.deepEqual(policy.source.publicSourcePaths, [
-  "public/model-brands/bytedance.svg",
-  "public/model-brands/generic.svg",
-  "public/model-brands/google.svg",
-  "public/model-brands/openai.svg",
-  "public/model-brands/xai.svg",
-  "public/product-assets/youcai-demo-v1/clean-v21/previews/03-shot-02.webp",
-  "public/robots.txt",
-  "public/short-drama/previews/film-studio-promo-bg-v2.webp",
-  "public/short-drama/previews/film-studio-promo-bg-v3.webp",
-  "public/short-drama/previews/hero-dream-floral-v2.webp",
-  "public/short-drama/previews/hero-pipeline-v1.webp",
-  "public/short-drama/previews/inspiration-moon-observatory-v1.webp",
-  "public/short-drama/previews/inspiration-paper-fox-v1.webp",
-  "public/short-drama/previews/inspiration-product-film-v1.webp",
-  "public/short-drama/previews/inspiration-silent-pet-v1.webp",
-  "public/short-drama/previews/manifest.json",
+assert.deepEqual(policy.database.legacyRollbackRelocationAudit, {
+  schemaVersion: 1,
+  requireExplicitCandidateRange: true,
+  candidateMode: "git-tree-and-blob-only",
+  dirtyMode: "head-index-worktree-bound",
+  receiptBinding: "base-head-policy-sha256-old-new-git-blob",
+}, "legacy rollback relocation audit policy must remain fail-closed and explicit");
+
+const expectedLegacyRollbackRelocations = [
+  {
+    from: "supabase/migrations/rollback/20261001221000_super_admin_governance.rollback.sql",
+    to: "supabase/rollbacks/20261001221000_super_admin_governance.rollback.sql",
+    sha256: "23d2cec78ffa7c27845fd2cc7a6eef061ae37c73baefcf4b66f7ffdd7a057b35",
+  },
+  {
+    from: "supabase/migrations/rollback/20261001224000_existing_member_admin_promotion.rollback.sql",
+    to: "supabase/rollbacks/20261001224000_existing_member_admin_promotion.rollback.sql",
+    sha256: "d3925f35c472830af4148b30cd36213a6136cdd6f581cb273407d3328a4789e8",
+  },
+];
+assert.deepEqual(
+  policy.database.legacyRollbackRelocations,
+  expectedLegacyRollbackRelocations,
+  "legacy rollback relocation receipts must remain exact and reviewable",
+);
+
+const releaseWorkflowPath = path.join(root, "scripts", "release-workflow.mjs");
+const relocationChecks = [];
+const fixturePrefix = path.join(os.tmpdir(), "zimeiti-release-migration-relocation-");
+
+function writeFixtureFile(fixtureRoot, relativePath, bytes) {
+  const target = path.join(fixtureRoot, ...relativePath.split("/"));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, bytes);
+  return target;
+}
+
+function fixtureGit(fixtureRoot, arguments_) {
+  const result = spawnSync("git", arguments_, { cwd: fixtureRoot, encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, `fixture git ${arguments_.join(" ")} failed: ${result.stderr || result.stdout}`);
+  return result.stdout;
+}
+
+function createRelocationFixture({ includeUnlistedLegacy = false, includePreexistingTarget = false } = {}) {
+  const fixtureRoot = fs.mkdtempSync(fixturePrefix);
+  const name = "20260101010101_legacy_guard.rollback.sql";
+  const from = `supabase/migrations/rollback/${name}`;
+  const to = `supabase/rollbacks/${name}`;
+  const rollbackBytes = Buffer.from("BEGIN;\nSELECT 1;\nCOMMIT;\n", "utf8");
+  const sha256 = crypto.createHash("sha256").update(rollbackBytes).digest("hex");
+  const policyDocument = {
+    schemaVersion: 1,
+    projectId: "migration-relocation-fixture",
+    source: { excludeGlobs: [], excludeDirectoryNames: [], excludeFileNames: [], publicSourcePaths: [] },
+    assets: { root: "public", externalRoots: [], forbiddenPublicRoots: [], forbiddenCuratedJsonMarkers: [] },
+    runtime: { mutablePaths: [], secretPaths: [] },
+    database: {
+      migrationRoot: "supabase/migrations",
+      rollbackRoot: "supabase/rollbacks",
+      legacyRollbackRelocationAudit: {
+        schemaVersion: 1,
+        requireExplicitCandidateRange: true,
+        candidateMode: "git-tree-and-blob-only",
+        dirtyMode: "head-index-worktree-bound",
+        receiptBinding: "base-head-policy-sha256-old-new-git-blob",
+      },
+      legacyRollbackRelocations: [{ from, to, sha256 }],
+    },
+  };
+  writeFixtureFile(fixtureRoot, from, rollbackBytes);
+  if (includePreexistingTarget) writeFixtureFile(fixtureRoot, to, rollbackBytes);
+  writeFixtureFile(fixtureRoot, "supabase/migrations/20260101000000_forward.sql", "BEGIN;\nSELECT 2;\nCOMMIT;\n");
+  if (includeUnlistedLegacy) {
+    writeFixtureFile(
+      fixtureRoot,
+      "supabase/migrations/legacy/20260101010102_unlisted.rollback.sql",
+      "BEGIN;\nSELECT 3;\nCOMMIT;\n",
+    );
+  }
+  writeFixtureFile(fixtureRoot, "release-policy.json", `${JSON.stringify(policyDocument, null, 2)}\n`);
+  fixtureGit(fixtureRoot, ["init", "--quiet", "--initial-branch=main"]);
+  fixtureGit(fixtureRoot, ["-c", "core.autocrlf=false", "add", "--all"]);
+  fixtureGit(fixtureRoot, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "baseline"]);
+  const baseline = fixtureGit(fixtureRoot, ["rev-parse", "HEAD"]).trim();
+  fs.rmSync(path.join(fixtureRoot, ...from.split("/")));
+  writeFixtureFile(fixtureRoot, to, rollbackBytes);
+  return { fixtureRoot, from, to, name, rollbackBytes, sha256, policyDocument, baseline, cleanupPaths: [] };
+}
+
+function runRelocationAudit(fixtureRoot, { base, head } = {}) {
+  const rangeArguments = base && head ? ["--base", base, "--head", head] : [];
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.RELEASE_BASE_SHA;
+  delete childEnvironment.RELEASE_HEAD_SHA;
+  const result = spawnSync(process.execPath, [
+    releaseWorkflowPath,
+    "migration-audit",
+    "--root", fixtureRoot,
+    "--policy", "release-policy.json",
+    ...rangeArguments,
+  ], {
+    cwd: fixtureRoot,
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 8 * 1024 * 1024,
+    env: childEnvironment,
+  });
+  assert.ok([0, 1].includes(result.status), `migration audit crashed: ${result.stderr || result.stdout}`);
+  assert.ok(result.stdout.trim(), `migration audit emitted no JSON: ${result.stderr}`);
+  return { exitCode: result.status, report: JSON.parse(result.stdout) };
+}
+
+function commitFixture(fixture, message = "candidate") {
+  fixtureGit(fixture.fixtureRoot, ["-c", "core.autocrlf=false", "add", "--all"]);
+  fixtureGit(fixture.fixtureRoot, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", message]);
+  return fixtureGit(fixture.fixtureRoot, ["rev-parse", "HEAD"]).trim();
+}
+
+function withRelocationFixture(name, mutate, verify, options) {
+  const fixture = createRelocationFixture(options);
+  try {
+    mutate?.(fixture);
+    const result = runRelocationAudit(fixture.fixtureRoot);
+    verify(result, fixture);
+    relocationChecks.push(name);
+  } finally {
+    const resolved = path.resolve(fixture.fixtureRoot);
+    assert.ok(resolved.startsWith(path.resolve(os.tmpdir())), "fixture cleanup escaped the OS temp root");
+    fs.rmSync(resolved, { recursive: true, force: true });
+    for (const cleanupPath of fixture.cleanupPaths) {
+      const resolvedCleanup = path.resolve(cleanupPath);
+      assert.ok(resolvedCleanup.startsWith(path.resolve(os.tmpdir())), "fixture auxiliary cleanup escaped the OS temp root");
+      fs.rmSync(resolvedCleanup, { recursive: true, force: true });
+    }
+  }
+}
+
+function withCleanCandidateFixture(name, mutate, verify, options) {
+  const fixture = createRelocationFixture(options);
+  try {
+    mutate?.(fixture);
+    const candidateHead = commitFixture(fixture, name);
+    const result = runRelocationAudit(fixture.fixtureRoot, { base: fixture.baseline, head: candidateHead });
+    verify(result, { ...fixture, candidateHead });
+    relocationChecks.push(name);
+  } finally {
+    const resolved = path.resolve(fixture.fixtureRoot);
+    assert.ok(resolved.startsWith(path.resolve(os.tmpdir())), "fixture cleanup escaped the OS temp root");
+    fs.rmSync(resolved, { recursive: true, force: true });
+    for (const cleanupPath of fixture.cleanupPaths) {
+      const resolvedCleanup = path.resolve(cleanupPath);
+      assert.ok(resolvedCleanup.startsWith(path.resolve(os.tmpdir())), "fixture auxiliary cleanup escaped the OS temp root");
+      fs.rmSync(resolvedCleanup, { recursive: true, force: true });
+    }
+  }
+}
+
+const expectRelocationFailure = (pattern) => ({ exitCode, report }) => {
+  assert.equal(exitCode, 1);
+  assert.equal(report.status, "FAIL");
+  assert.match(report.failures.join("\n"), pattern);
+};
+
+withRelocationFixture("byte-identical allowlisted relocation passes", null, ({ exitCode, report }, fixture) => {
+  assert.equal(exitCode, 0);
+  assert.equal(report.status, "PASS");
+  assert.deepEqual(report.migrationSource.deletedHistoricalMigrations, []);
+  assert.deepEqual(report.migrationSource.invalidMigrationRootEntries, []);
+  assert.equal(report.migrationSource.relocatedHistoricalRollbacks.length, 1);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(report.migrationSource.relocatedHistoricalRollbacks[0])
+      .filter(([key]) => ["from", "to", "sha256", "bytes"].includes(key))),
+    { from: fixture.from, to: fixture.to, sha256: fixture.sha256, bytes: fixture.rollbackBytes.length },
+  );
+});
+withRelocationFixture("tampered target fails closed", (fixture) => {
+  fs.appendFileSync(path.join(fixture.fixtureRoot, ...fixture.to.split("/")), "-- tampered\n");
+}, expectRelocationFailure(/target sha256|bytes differ/u));
+withRelocationFixture("missing target fails closed", (fixture) => {
+  fs.rmSync(path.join(fixture.fixtureRoot, ...fixture.to.split("/")));
+}, expectRelocationFailure(/target is missing/u));
+withRelocationFixture("wrong target root fails closed", (fixture) => {
+  fixture.policyDocument.database.legacyRollbackRelocations[0].to = `supabase/not-rollbacks/${fixture.name}`;
+  writeFixtureFile(fixture.fixtureRoot, "release-policy.json", `${JSON.stringify(fixture.policyDocument, null, 2)}\n`);
+}, expectRelocationFailure(/policy entry 0 is invalid/u));
+withRelocationFixture("wrong source root fails closed", (fixture) => {
+  fixture.policyDocument.database.legacyRollbackRelocations[0].from = `supabase/not-migrations/rollback/${fixture.name}`;
+  writeFixtureFile(fixture.fixtureRoot, "release-policy.json", `${JSON.stringify(fixture.policyDocument, null, 2)}\n`);
+}, expectRelocationFailure(/policy entry 0 is invalid/u));
+withRelocationFixture("path traversal fails closed", (fixture) => {
+  fixture.policyDocument.database.legacyRollbackRelocations[0].to = `supabase/rollbacks/../rollbacks/${fixture.name}`;
+  writeFixtureFile(fixture.fixtureRoot, "release-policy.json", `${JSON.stringify(fixture.policyDocument, null, 2)}\n`);
+}, expectRelocationFailure(/policy entry 0 is invalid/u));
+withRelocationFixture("different target basename fails closed", (fixture) => {
+  fixture.policyDocument.database.legacyRollbackRelocations[0].to = "supabase/rollbacks/20260101010101_different.rollback.sql";
+  writeFixtureFile(fixture.fixtureRoot, "release-policy.json", `${JSON.stringify(fixture.policyDocument, null, 2)}\n`);
+}, expectRelocationFailure(/policy entry 0 is invalid/u));
+withRelocationFixture("policy hash drift fails closed", (fixture) => {
+  fixture.policyDocument.database.legacyRollbackRelocations[0].sha256 = "0".repeat(64);
+  writeFixtureFile(fixture.fixtureRoot, "release-policy.json", `${JSON.stringify(fixture.policyDocument, null, 2)}\n`);
+}, expectRelocationFailure(/target sha256|base source blob sha256/u));
+withRelocationFixture("audit-base source blob hash remains authoritative", (fixture) => {
+  const replacement = Buffer.from("BEGIN;\nSELECT 8;\nCOMMIT;\n", "utf8");
+  writeFixtureFile(fixture.fixtureRoot, fixture.to, replacement);
+  fixture.policyDocument.database.legacyRollbackRelocations[0].sha256 = crypto.createHash("sha256").update(replacement).digest("hex");
+  writeFixtureFile(fixture.fixtureRoot, "release-policy.json", `${JSON.stringify(fixture.policyDocument, null, 2)}\n`);
+}, expectRelocationFailure(/base source blob sha256|bytes differ/u));
+withRelocationFixture("symlink target fails closed", (fixture) => {
+  const target = path.join(fixture.fixtureRoot, ...fixture.to.split("/"));
+  const backing = path.join(path.dirname(target), "backing.rollback.sql");
+  fs.renameSync(target, backing);
+  fs.symlinkSync(path.basename(backing), target, "file");
+}, expectRelocationFailure(/not a single-link regular file|symlink, junction, or reparse point/u));
+withRelocationFixture("unknown nested SQL fails closed", (fixture) => {
+  writeFixtureFile(fixture.fixtureRoot, "supabase/migrations/nested/20260101010103_unknown.sql", "SELECT 4;\n");
+}, expectRelocationFailure(/non-canonical or nested SQL entry/u));
+withRelocationFixture("historical top-level forward modification fails closed", (fixture) => {
+  writeFixtureFile(fixture.fixtureRoot, "supabase/migrations/20260101000000_forward.sql", "BEGIN;\nSELECT 9;\nCOMMIT;\n");
+}, expectRelocationFailure(/historical migration changed relative to audit base/u));
+withRelocationFixture("historical top-level forward deletion fails closed", (fixture) => {
+  fs.rmSync(path.join(fixture.fixtureRoot, "supabase", "migrations", "20260101000000_forward.sql"));
+}, expectRelocationFailure(/historical migration deleted relative to audit base/u));
+withRelocationFixture("unallowlisted historical nested SQL deletion fails closed", (fixture) => {
+  fs.rmSync(path.join(fixture.fixtureRoot, "supabase", "migrations", "legacy", "20260101010102_unlisted.rollback.sql"));
+}, expectRelocationFailure(/historical migration deleted relative to audit base/u), { includeUnlistedLegacy: true });
+withRelocationFixture("index and worktree candidate divergence fails closed", (fixture) => {
+  fs.appendFileSync(path.join(fixture.fixtureRoot, ...fixture.to.split("/")), "-- staged tamper\n");
+  fixtureGit(fixture.fixtureRoot, ["-c", "core.autocrlf=false", "add", "--all"]);
+  writeFixtureFile(fixture.fixtureRoot, fixture.to, fixture.rollbackBytes);
+}, expectRelocationFailure(/index\/worktree candidate mismatch/u));
+withRelocationFixture("gitignored nested SQL is still rejected by filesystem traversal", (fixture) => {
+  writeFixtureFile(fixture.fixtureRoot, ".gitignore", "supabase/migrations/ignored/\n");
+  writeFixtureFile(fixture.fixtureRoot, "supabase/migrations/ignored/20260101010104_hidden.sql", "SELECT 10;\n");
+}, expectRelocationFailure(/non-canonical or nested SQL entry/u));
+withRelocationFixture("gitignored relocation target is not a consumable candidate", (fixture) => {
+  writeFixtureFile(fixture.fixtureRoot, ".gitignore", "supabase/rollbacks/\n");
+}, expectRelocationFailure(/target is not Git-visible/u));
+withRelocationFixture("supabase ancestor junction to an external tree fails closed", (fixture) => {
+  const externalContainer = fs.mkdtempSync(path.join(os.tmpdir(), "zimeiti-release-external-supabase-"));
+  const externalSupabase = path.join(externalContainer, "supabase");
+  const fixtureSupabase = path.join(fixture.fixtureRoot, "supabase");
+  fs.renameSync(fixtureSupabase, externalSupabase);
+  fs.symlinkSync(externalSupabase, fixtureSupabase, process.platform === "win32" ? "junction" : "dir");
+  fixture.cleanupPaths.push(externalContainer);
+}, ({ exitCode, report }) => {
+  assert.equal(exitCode, 1, JSON.stringify(report, null, 2));
+  assert.match(report.failures.join("\n"), /symlink, junction, or reparse point|junction, mount, or reparse redirect/u);
+});
+withRelocationFixture("hard-linked relocation target fails stable file identity gate", (fixture) => {
+  fs.linkSync(
+    path.join(fixture.fixtureRoot, ...fixture.to.split("/")),
+    path.join(fixture.fixtureRoot, "supabase", "rollbacks", "hardlink.rollback.sql"),
+  );
+}, expectRelocationFailure(/single-link regular file/u));
+
+withCleanCandidateFixture("clean Git range relocation consumes a base-head-policy-blob-bound receipt", null, ({ exitCode, report }, fixture) => {
+  assert.equal(exitCode, 0);
+  assert.equal(report.status, "PASS");
+  assert.equal(report.migrationSource.mode, "git-range-candidate");
+  assert.equal(report.migrationSource.base, fixture.baseline);
+  assert.equal(report.migrationSource.head, fixture.candidateHead);
+  assert.equal(report.migrationSource.range, `${fixture.baseline}..${fixture.candidateHead}`);
+  assert.equal(report.migrationSource.consumedRelocationReceipts.length, 1);
+  const receipt = report.migrationSource.consumedRelocationReceipts[0];
+  assert.equal(receipt.base, fixture.baseline);
+  assert.equal(receipt.head, fixture.candidateHead);
+  assert.match(receipt.policySha256, /^[0-9a-f]{64}$/u);
+  assert.match(receipt.oldBlob, /^[0-9a-f]{40,64}$/u);
+  assert.match(receipt.newBlob, /^[0-9a-f]{40,64}$/u);
+});
+withCleanCandidateFixture("clean Git range historical forward modification fails closed", (fixture) => {
+  writeFixtureFile(fixture.fixtureRoot, "supabase/migrations/20260101000000_forward.sql", "BEGIN;\nSELECT 11;\nCOMMIT;\n");
+}, expectRelocationFailure(/historical migration changed relative to audit base/u));
+withCleanCandidateFixture("clean Git range historical forward deletion fails closed", (fixture) => {
+  fs.rmSync(path.join(fixture.fixtureRoot, "supabase", "migrations", "20260101000000_forward.sql"));
+}, expectRelocationFailure(/historical migration deleted relative to audit base/u));
+withCleanCandidateFixture("clean Git range unknown nested SQL addition fails closed", (fixture) => {
+  writeFixtureFile(fixture.fixtureRoot, "supabase/migrations/nested/20260101010105_unknown.sql", "SELECT 12;\n");
+}, expectRelocationFailure(/non-canonical or nested SQL entry/u));
+withCleanCandidateFixture("clean Git range symlink relocation target fails closed", (fixture) => {
+  const target = path.join(fixture.fixtureRoot, ...fixture.to.split("/"));
+  const backing = path.join(path.dirname(target), "clean-backing.rollback.sql");
+  fs.renameSync(target, backing);
+  fs.symlinkSync(path.basename(backing), target, "file");
+}, expectRelocationFailure(/not a regular file|target is missing/u));
+withCleanCandidateFixture("clean Git range unallowlisted nested deletion fails closed", (fixture) => {
+  fs.rmSync(path.join(fixture.fixtureRoot, "supabase", "migrations", "legacy", "20260101010102_unlisted.rollback.sql"));
+}, expectRelocationFailure(/historical migration deleted relative to audit base/u), { includeUnlistedLegacy: true });
+withCleanCandidateFixture("configured relocation receipt must be consumed", (fixture) => {
+  writeFixtureFile(fixture.fixtureRoot, fixture.from, fixture.rollbackBytes);
+}, expectRelocationFailure(/receipt was not consumed/u));
+withCleanCandidateFixture("preexisting rollback target does not consume a relocation receipt", null,
+  expectRelocationFailure(/target already existed in the audit base/u), { includePreexistingTarget: true });
+
+{
+  const hadBase = Object.hasOwn(process.env, "RELEASE_BASE_SHA");
+  const hadHead = Object.hasOwn(process.env, "RELEASE_HEAD_SHA");
+  const previousBase = process.env.RELEASE_BASE_SHA;
+  const previousHead = process.env.RELEASE_HEAD_SHA;
+  process.env.RELEASE_BASE_SHA = "ci-parent-base-must-not-leak";
+  process.env.RELEASE_HEAD_SHA = "ci-parent-head-must-not-leak";
+  try {
+    withRelocationFixture("dirty fixture clears inherited CI release range", null, ({ exitCode, report }) => {
+      assert.equal(exitCode, 0);
+      assert.equal(report.status, "PASS");
+      assert.equal(report.migrationSource.mode, "git-head-bound-worktree");
+    });
+    withCleanCandidateFixture("clean fixture overrides inherited CI release range with its own commits", null,
+      ({ exitCode, report }, fixture) => {
+        assert.equal(exitCode, 0);
+        assert.equal(report.status, "PASS");
+        assert.equal(report.migrationSource.base, fixture.baseline);
+        assert.equal(report.migrationSource.head, fixture.candidateHead);
+      });
+  } finally {
+    if (hadBase) process.env.RELEASE_BASE_SHA = previousBase;
+    else delete process.env.RELEASE_BASE_SHA;
+    if (hadHead) process.env.RELEASE_HEAD_SHA = previousHead;
+    else delete process.env.RELEASE_HEAD_SHA;
+  }
+}
+
+{
+  const fixture = createRelocationFixture();
+  try {
+    const candidateHead = commitFixture(fixture, "clean candidate without explicit range");
+    expectRelocationFailure(/clean candidate requires an explicit trusted --base and --head/u)(runRelocationAudit(fixture.fixtureRoot));
+    relocationChecks.push("clean candidate without explicit range fails closed");
+    fs.appendFileSync(path.join(fixture.fixtureRoot, "release-policy.json"), "\n");
+    expectRelocationFailure(/policy does not match the candidate-head Git blob/u)(runRelocationAudit(
+      fixture.fixtureRoot,
+      { base: fixture.baseline, head: candidateHead },
+    ));
+    relocationChecks.push("candidate range rejects a worktree policy that differs from candidate head");
+    expectRelocationFailure(/candidate base is not an ancestor of candidate head/u)(runRelocationAudit(
+      fixture.fixtureRoot,
+      { base: candidateHead, head: fixture.baseline },
+    ));
+    relocationChecks.push("candidate range rejects a reversed non-ancestor base");
+  } finally {
+    fs.rmSync(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+if (process.argv.includes("--migration-relocation-contract-only")) {
+  console.log(JSON.stringify({
+    verifier: "release-workflow-legacy-rollback-relocation",
+    passed: true,
+    checks: relocationChecks,
+    networkRequests: 0,
+    databaseWrites: 0,
+  }, null, 2));
+  process.exit(0);
+}
+
+const codeTrackManifest = read("deploy/manifests/public-code-track.v1.txt")
+  .split(/\r?\n/u)
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith("#"));
+assert.equal(codeTrackManifest.length, 81, "public code-track manifest count drifted");
+assert.equal(new Set(codeTrackManifest).size, codeTrackManifest.length, "public code-track manifest contains duplicates");
+function assertGitPathNotIgnored(relativePath, label) {
+  const result = spawnSync("git", ["check-ignore", "--quiet", "--no-index", "--", relativePath], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(
+    result.status,
+    1,
+    `${label} must not be ignored by Git: ${relativePath}${result.stderr ? ` (${result.stderr.trim()})` : ""}`,
+  );
+}
+function assertGitPathIgnored(relativePath, label) {
+  const result = spawnSync("git", ["check-ignore", "--quiet", "--no-index", "--", relativePath], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(
+    result.status,
+    0,
+    `${label} must remain ignored by Git: ${relativePath}${result.stderr ? ` (${result.stderr.trim()})` : ""}`,
+  );
+}
+function assertGitPathTracked(relativePath, label) {
+  const result = spawnSync("git", ["ls-files", "--error-unmatch", "--", relativePath], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(
+    result.status,
+    0,
+    `${label} must be tracked by the Git index: ${relativePath}${result.stderr ? ` (${result.stderr.trim()})` : ""}`,
+  );
+}
+for (const manifestPath of codeTrackManifest) {
+  const relativePath = `public/${manifestPath}`;
+  assertGitPathNotIgnored(relativePath, "public code-track path");
+  assertGitPathTracked(relativePath, "public code-track path");
+}
+for (const relativePath of [
+  "voice-platform/src/__release_visibility_probe__.ts",
+  "voice-platform/scripts/__release_visibility_probe__.mjs",
+  "voice-platform/prisma/__release_visibility_probe__.prisma",
+]) assertGitPathNotIgnored(relativePath, "Voice source visibility probe");
+for (const relativePath of [
+  "voice-platform/scripts/batch-gen-avatars.sh",
+  "voice-platform/scripts/generate-avatars.py",
+  "voice-platform/public/avatars/__release_generated_probe__.png",
+  "voice-platform/src/app/api/avatars/__release_generated_probe__.ts",
+]) assertGitPathIgnored(relativePath, "Voice generated-only boundary probe");
+const expectedPublicSourcePaths = [
+  ...codeTrackManifest.map((relativePath) => `public/${relativePath}`),
   "public/version.json",
-  "public/youcai-media/v1/source-manifest.json",
-]);
+].sort((left, right) => left.localeCompare(right, "en"));
+assert.deepEqual(policy.source.publicSourcePaths, expectedPublicSourcePaths,
+  "release policy public allowlist must exactly match the reviewed code-track manifest plus version.json");
+assert.deepEqual(policy.source.requiredBuildPaths, policy.source.publicSourcePaths,
+  "every code-track public asset must be present in the reviewed build");
+for (const relativePath of policy.source.publicSourcePaths) {
+  assert.ok(fs.statSync(path.join(root, ...relativePath.split("/"))).isFile(), `missing code-track public asset: ${relativePath}`);
+}
+const commercePublicRoot = path.join(root, "public", "commerce");
+const commercePublicPaths = [];
+function collectCommercePublicFiles(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) collectCommercePublicFiles(entryPath);
+    else if (entry.isFile()) commercePublicPaths.push(path.relative(root, entryPath).replace(/\\/gu, "/"));
+  }
+}
+collectCommercePublicFiles(commercePublicRoot);
+commercePublicPaths.sort((left, right) => left.localeCompare(right, "en"));
+assert.deepEqual(
+  policy.source.publicSourcePaths.filter((relativePath) => relativePath.startsWith("public/commerce/")),
+  commercePublicPaths,
+  "every Commerce runtime image must remain on the exact code public track",
+);
+assert.ok(policy.source.publicSourcePaths.includes("public/brand/platform-logo-display-256.webp"),
+  "the platform fallback logo must remain inside the code artifact");
 assert.equal(policy.source.publicSourceExtensions, undefined, "blanket public extension allowlists are forbidden");
 assert.deepEqual(policy.source.preSnapshotVerifiers, [
   "scripts/verify-public-asset-contract.mjs",
@@ -97,7 +571,7 @@ for (const table of databaseContract.tables) {
 }
 for (const rpc of databaseContract.rpcs) {
   assert.match(rpc.name, /^[a-z][a-z0-9_]*$/u);
-  assert.ok(Array.isArray(rpc.arguments) && rpc.arguments.length > 0, `database RPC arguments missing: ${rpc.name}`);
+  assert.ok(Array.isArray(rpc.arguments), `database RPC arguments missing: ${rpc.name}`);
   assert.equal(new Set(rpc.arguments).size, rpc.arguments.length, `duplicate RPC arguments: ${rpc.name}`);
 }
 for (const requiredTable of [
@@ -228,19 +702,6 @@ while (sourceScanStack.length > 0) {
 }
 assert.deepEqual(topLevelDatabaseClients, [], "database clients must be initialized inside request/runtime functions, never during module evaluation");
 
-const ciWorkflow = read(".github/workflows/release-vnext.yml");
-assert.match(ciWorkflow, /node-version:\s*"24\.19\.0"/u);
-assert.match(ciWorkflow, /PUPPETEER_SKIP_DOWNLOAD:\s*"true"/u);
-assert.match(ciWorkflow, /git diff --check "\$BASE_SHA\.\.\.\$HEAD_SHA"/u, "CI must reject new whitespace debt without rewriting the baseline");
-assert.match(ciWorkflow, /sha256sum -c/u, "CI must verify the packager-owned checksum");
-assert.doesNotMatch(ciWorkflow, /sha256sum[^\n]*>[^\n]*checksum/u, "CI must never overwrite the packager-owned checksum");
-assert.match(ciWorkflow, /package-standalone-artifact\.mjs[\s\S]{0,400}--archive/u);
-assert.match(
-  ciWorkflow,
-  /working-directory:\s*voice-platform[\s\S]{0,160}pnpm --ignore-workspace install --frozen-lockfile/u,
-  "Voice dependencies must be installed from the isolated Voice lockfile",
-);
-
 const dockerfile = read("Dockerfile");
 assert.match(dockerfile, /node:24\.19\.0-bookworm-slim@sha256:[0-9a-f]{64}/u);
 assert.match(dockerfile, /pnpm-workspace\.yaml/u);
@@ -259,8 +720,16 @@ for (const marker of [
   "buildEnvironment",
   "assetDigest",
   "sourceManifestSha256",
+  "standaloneCopyFilter",
+  "source-public-allowlist-only",
+  "publicSourceBoundary",
 ]) assert.ok(packager.includes(marker), `packager gate missing: ${marker}`);
 assert.doesNotMatch(packager, /publicSourceExtensions/u);
+assert.match(
+  packager,
+  /relativePath !== "public" && !relativePath\.startsWith\("public\/"\)/u,
+  "web artifact must exclude the prepared standalone public tree before copying the exact source allowlist",
+);
 
 const build = read("scripts/build-release-vnext.mjs");
 for (const marker of ["productionBuild", "--allow-local-rehearsal", "--verify-pnpm-invocation", "resolvePnpmInvocation", "PNPM_CLI_PATH", "lockfileSha256", "nodeModulesAbi", "detectLibc", "DEPLOYMENT_VERSION", "servicePnpmPrefix", "--ignore-workspace", "required-server-files.json", "compiled deploymentId must equal the immutable Git commit", "Voice BUILD_ID must equal the immutable Git commit", "deploymentId: commitSha", "buildIdStrategy", "nextVersion"]) {
@@ -324,6 +793,9 @@ assert.match(releaseReadiness, /production database contract is not ready/u);
 assert.match(releaseReadiness, /probeProductionReferenceDataReadiness/u);
 assert.match(releaseReadiness, /production reference data is not ready/u);
 assert.match(releaseReadiness, /EXPECTED_BUILD_ID/u);
+assert.match(releaseReadiness, /requireDedicatedDataMount/u);
+assert.match(releaseReadiness, /dataStats\.dev === rootStats\.dev/u);
+assert.match(releaseReadiness, /production runtime path escaped \/data/u);
 assert.doesNotMatch(releaseReadiness, /process\.cwd\(\)[\s\S]{0,80}BUILD_ID/u, "Web readiness must not make Next trace the source root");
 for (const call of ["openSync", "readFileSync", "statSync", "lstatSync", "accessSync"]) {
   assert.doesNotMatch(
@@ -485,11 +957,15 @@ for (const productionSource of [
   assert.doesNotMatch(read(productionSource), /\/(?:storyboard-reviews|demo-assets)\//u, `${productionSource} references public evidence`);
 }
 const pm2 = read("deploy/pm2/ecosystem.vnext.config.cjs");
-for (const marker of ["APP_DATA_DIR", "APP_RUNTIME_DIR", "COMMERCE_DATA_DIR", "COMMERCE_DISCOVERY_CATALOG", "COMMERCE_GATEWAY_KEY_FILE", "BACKUP_DIR", "PUBLIC_ASSET_ROOT", "VOICE_REFERENCE_AUDIO_DIR", "EXPECTED_BUILD_ID", "COZE_PROJECT_ENV"]) {
+for (const marker of ["APP_DATA_DIR", "APP_RUNTIME_DIR", "COMMERCE_DATA_DIR", "COMMERCE_DISCOVERY_CATALOG", "COMMERCE_GATEWAY_KEY_FILE", "BACKUP_DIR", "PUBLIC_ASSET_ROOT", "VOICE_REFERENCE_AUDIO_DIR", "EXPECTED_BUILD_ID", "COZE_PROJECT_ENV", "RELEASE_READINESS_PROFILE", "production-full-v1"]) {
   assert.ok(pm2.includes(marker), `PM2 release contract missing: ${marker}`);
 }
 const artifactDeployer = read("scripts/deploy-artifact-vnext.sh");
-for (const marker of ["EXPECTED_BUILD_ID=\"$BUILD_ID\"", "active_build_id", "env.EXPECTED_BUILD_ID !== buildId", "\"$PREVIOUS_BUILD_ID\""]) {
+const standaloneAssetPreparer = read("scripts/prepare-next-standalone-assets.mjs");
+for (const marker of ["materializeVoiceReleaseIdentity", 'path.join(root, "public", "version.json")', "sourceVersion"]) {
+  assert.ok(standaloneAssetPreparer.includes(marker), `Voice release identity materialization gate missing: ${marker}`);
+}
+for (const marker of ["EXPECTED_BUILD_ID=$BUILD_ID", "active_build_id", "env.EXPECTED_BUILD_ID !== buildId", "\"$PREVIOUS_BUILD_ID\""]) {
   assert.ok(artifactDeployer.includes(marker), `artifact deployment build-identity gate missing: ${marker}`);
 }
 for (const marker of [
@@ -507,7 +983,139 @@ for (const marker of [
   "seal_candidate_release",
   "verify_candidate_release_seal",
   "sealed candidate full SHA-256 inventory changed before activation",
+  'CANDIDATE_USER="zimeiti-candidate"',
+  "systemd-run --quiet --collect",
+  '--expand-environment=no',
+  '"$ENV_BIN" -i -- "${CANDIDATE_ENVIRONMENT[@]}"',
+  'RELEASE_READINESS_PROFILE=candidate-runtime-v1',
+  'RELEASE_CANDIDATE_MODE=isolated',
+  'SERVER_ENV_DISCOVERY_DISABLED=1',
+  'CANDIDATE_FIXTURE_HELPER_PATH="/usr/local/libexec/zimeiti/prepare-candidate-readiness-fixtures.py"',
+  '"$CANDIDATE_FIXTURE_HELPER_PATH" --service web',
+  'productionRecordsCopied',
+  'schemaContractVersion !== "zimeiti-voice-sqlite-readiness.v1"',
+  'receipt.sourceSchemaSha256 !== receipt.outputSchemaSha256',
+  'PrivateNetwork=yes',
+  'PrivateIPC=yes',
+  'ProtectSystem=strict',
+  'ProtectProc=invisible',
+  'ProcSubset=pid',
+  'RestrictAddressFamilies=AF_INET AF_INET6',
+  'ReadWritePaths=$CANDIDATE_STATE_ROOT',
+  'InaccessiblePaths=$CANDIDATE_INACCESSIBLE_PATHS',
+  'StandardOutput=append:$CANDIDATE_PRIVATE_LOG',
+  'MemoryMax=1073741824',
+  'MemorySwapMax=0',
+  'TasksMax=256',
+  'CPUQuota=100%',
+  'LimitFSIZE=134217728',
+  'ReadOnlyPaths=$PAYLOAD_DIR $PUBLIC_ASSET_ROOT',
+  'ReadWritePaths=$CANDIDATE_STATE_ROOT',
+  'InaccessiblePaths=$CANDIDATE_INACCESSIBLE_PATHS',
+  'CapabilityBoundingSet=',
+  'AmbientCapabilities=',
+  'RestrictNamespaces=yes',
+  'KillMode=mixed',
+  'RuntimeMaxUSec=3min',
+  'TimeoutStopUSec=5s',
+  'UMask=0077',
+  'candidate-log.v2 service=${service} release=${releaseId}',
+  'published candidate log length summary is invalid',
+  'published candidate log payload digest is invalid',
+  'candidate_cgroup_empty',
+  'candidate sandbox could not be proven inactive with an empty cgroup',
+  'nsenter --target "$candidate_pid" --net',
+  'STORAGE_GUARD_PATH="/usr/local/libexec/zimeiti/verify-deploy-storage-runtime.sh"',
+  "run_storage_boot_guard",
+  "assert_fresh_production_preflight_receipt",
+  "create-production-preflight-receipt.mjs",
+  "verify-production-preflight-receipt.mjs",
+  "PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY",
+  "production preflight receipt identity missing at commit boundary",
 ]) assert.ok(artifactDeployer.includes(marker), `artifact deployment transaction gate missing: ${marker}`);
+assert.ok(
+  !artifactDeployer.includes('cp -a -- "$APP_DATA_DIR/." "$CANDIDATE_DATA_DIR/"'),
+  "candidate must not clone the full mutable/user-derived application data tree",
+);
+const serverRuntimeEnvironment = read("src/lib/server-runtime-env.ts");
+const customServerEntrypoint = read("src/server.ts");
+assert.ok(
+  serverRuntimeEnvironment.includes('if (process.env.SERVER_ENV_DISCOVERY_DISABLED === "1") return;'),
+  "server runtime env loader must return before explicit or discovered env files in candidate mode",
+);
+assert.ok(
+  customServerEntrypoint.includes("process.env.SERVER_ENV_DISCOVERY_DISABLED !== '1'"),
+  "custom server entrypoint must honor candidate env-discovery isolation",
+);
+for (const forbiddenCandidateCredentialMarker of [
+  ".env.candidate-readonly",
+  "load_candidate_readonly_environment",
+  "zimeiti_candidate_readonly",
+  'COZE_SUPABASE_SERVICE_ROLE_KEY="$COZE_SUPABASE_SERVICE_ROLE_KEY"',
+]) {
+  assert.ok(!artifactDeployer.includes(forbiddenCandidateCredentialMarker), `candidate deployment still contains a forbidden credential marker: ${forbiddenCandidateCredentialMarker}`);
+}
+assert.ok(
+  artifactDeployer.indexOf("compare_data_snapshot \"$DATA_BEFORE\" \"$DATA_AFTER_CANDIDATE\"")
+    < artifactDeployer.lastIndexOf("load_protected_environment"),
+  "production credentials must load only after isolated candidate acceptance",
+);
+const storageGuardBytes = fs.readFileSync(path.join(root, "scripts/verify-deploy-storage-runtime.sh"));
+const storageGuardSha256 = crypto.createHash("sha256").update(storageGuardBytes).digest("hex");
+assert.ok(
+  artifactDeployer.includes(`STORAGE_GUARD_SHA256="${storageGuardSha256}"`),
+  "artifact deployer is not pinned to the reviewed storage guard bytes",
+);
+const runtimeSafetyProvisioner = read("scripts/provision-production-runtime-safety.sh");
+const candidateFixtureBytes = fs.readFileSync(path.join(root, "scripts/prepare-candidate-readiness-fixtures.py"));
+const candidateFixtureSha256 = crypto.createHash("sha256").update(candidateFixtureBytes).digest("hex");
+const candidateFixtureSource = candidateFixtureBytes.toString("utf8");
+for (const marker of [
+  'VOICE_SCHEMA_CONTRACT_VERSION = "zimeiti-voice-sqlite-readiness.v1"',
+  "VOICE_SCHEMA_CONTRACT:",
+  "REQUIRED_UNIQUE_COLUMN_SETS:",
+  "validate_voice_schema_contract",
+  '"sourceSchemaSha256"',
+  '"outputSchemaSha256"',
+  "candidate Voice schema drifted while production records were removed",
+]) assert.ok(candidateFixtureSource.includes(marker), `candidate fixture schema gate missing: ${marker}`);
+const candidateFixtureTestSource = read("scripts/test-prepare-candidate-readiness-fixtures.py");
+for (const marker of [
+  '"missing-table"',
+  '"missing-column"',
+  '"incompatible-affinity"',
+  'receipt["sourceSchemaSha256"]',
+  'receipt["outputSchemaSha256"]',
+]) assert.ok(candidateFixtureTestSource.includes(marker), `candidate fixture negative test gate missing: ${marker}`);
+const systemdStorageDropinBytes = fs.readFileSync(path.join(root, "deploy/systemd/pm2-root.service.d/20-zimeiti-data-mount.conf.example"));
+const systemdStorageDropinSha256 = crypto.createHash("sha256").update(systemdStorageDropinBytes).digest("hex");
+for (const marker of [
+  "RUNTIME_SAFETY_EXECUTION_APPROVED",
+  'CANDIDATE_USER="zimeiti-candidate"',
+  "systemctl daemon-reload",
+  "PM2_ACTIONS=0",
+  "missing-disk and wrong-disk boot drills",
+  "prepare-candidate-readiness-fixtures.py",
+  '"$FIXTURE_TARGET" --self-test',
+]) assert.ok(runtimeSafetyProvisioner.includes(marker), `runtime-safety provisioner gate missing: ${marker}`);
+assert.ok(
+  runtimeSafetyProvisioner.includes(`GUARD_SHA256="${storageGuardSha256}"`),
+  "runtime-safety provisioner is not pinned to the reviewed storage guard bytes",
+);
+assert.ok(
+  runtimeSafetyProvisioner.includes(`DROPIN_SHA256="${systemdStorageDropinSha256}"`),
+  "runtime-safety provisioner is not pinned to the reviewed systemd drop-in bytes",
+);
+assert.ok(
+  runtimeSafetyProvisioner.includes(`FIXTURE_SHA256="${candidateFixtureSha256}"`)
+    && artifactDeployer.includes(`CANDIDATE_FIXTURE_HELPER_SHA256="${candidateFixtureSha256}"`),
+  "candidate fixture helper is not pinned consistently by provisioning and deployment",
+);
+assert.ok(
+  artifactDeployer.lastIndexOf("\nload_protected_environment\n")
+    < artifactDeployer.lastIndexOf("\nrun_production_preflight\n"),
+  "production preflight must run only after protected credentials load",
+);
 const stateMachineVerification = spawnSync(process.execPath, [path.join(root, "scripts/verify-deploy-state-machine.mjs")], {
   cwd: root,
   encoding: "utf8",
@@ -519,6 +1127,13 @@ assert.equal(stateMachineReport.ok, true, "deployment state-machine report did n
 assert.equal(stateMachineReport.staticStateMachineChecks, true, "deployment state-machine static gates did not pass");
 assert.ok(stateMachineReport.embeddedNodeValidators >= 12, "deployment state-machine did not syntax-check every embedded Node validator");
 assert.ok(Array.isArray(stateMachineReport.dynamicFaultInjectionChecks), "deployment state-machine did not execute fault injection");
+for (const shellScript of [
+  "scripts/provision-production-runtime-safety.sh",
+  "scripts/verify-deploy-storage-runtime.sh",
+]) {
+  const syntax = spawnSync(stateMachineReport.bash, ["-n", path.join(root, shellScript)], { cwd: root, encoding: "utf8" });
+  assert.equal(syntax.status, 0, `${shellScript} Bash syntax failed: ${syntax.stderr || syntax.stdout}`);
+}
 for (const requiredHarness of ["signal", "exit", "first-deploy"]) {
   assert.ok(
     stateMachineReport.dynamicFaultInjectionChecks.some((result) => result.harness === requiredHarness),

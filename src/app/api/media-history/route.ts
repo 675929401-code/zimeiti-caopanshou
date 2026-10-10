@@ -1,4 +1,4 @@
-import { isCurrentDigitalHumanTask } from '@/lib/digital-human-task';
+import { DIGITAL_HUMAN_TASK_FILTER, isCurrentDigitalHumanTask } from '@/lib/digital-human-task';
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCurrentApiUser } from "@/lib/current-api-user";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
@@ -71,12 +71,6 @@ function relationName(value: unknown): string {
   if (Array.isArray(value)) return String((value[0] as Record<string, unknown> | undefined)?.name || "");
   if (value && typeof value === "object") return String((value as Record<string, unknown>).name || "");
   return "";
-}
-
-function relationObject(value: unknown): Record<string, unknown> {
-  if (Array.isArray(value)) return (value[0] as Record<string, unknown> | undefined) || {};
-  if (value && typeof value === "object") return value as Record<string, unknown>;
-  return {};
 }
 
 function publicModelBaseName(value: string, fallback: string): string {
@@ -157,9 +151,10 @@ async function loadVideoRows(db: MediaDb, userId: string) {
   while (true) {
     const result = await db
       .from("video_tasks")
-      .select("id, client_request_id, model_id, task_label, aspect_ratio, duration_seconds, status, video_url, error_message, submission_error_code, billing_state, provider_result_url, provider_dispatch_receipt, provider_submission_receipt, price_charged, created_at, completed_at, storage_url, batch_id, batch_topic, card_index, video_models(name), video_history_archive_jobs(state,attempt_count,last_error_code,source_expired_at)")
+      .select("id, client_request_id, model_id, task_label, aspect_ratio, duration_seconds, status, video_url, error_message, submission_error_code, billing_state, provider_result_url, provider_dispatch_receipt, provider_submission_receipt, source_expired_at, price_charged, created_at, completed_at, storage_url, batch_id, batch_topic, card_index, video_models(name)")
       .eq("user_id", userId)
       .is("history_hidden_at", null)
+      .is("source_expired_at", null)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .range(cursor, cursor + chunkSize - 1);
@@ -173,6 +168,19 @@ async function loadVideoRows(db: MediaDb, userId: string) {
     if (batch.length < chunkSize) break;
   }
   return { rows, failed };
+}
+
+async function loadHiddenOrExpiredVideoCount(db: MediaDb, userId: string) {
+  const result = await db
+    .from("video_tasks")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .or("source_expired_at.not.is.null,history_hidden_at.not.is.null")
+    .or(`task_label.is.null,task_label.not.like.digital-human:%,${DIGITAL_HUMAN_TASK_FILTER}`);
+  return {
+    count: result.error ? 0 : result.count ?? 0,
+    failed: Boolean(result.error),
+  };
 }
 
 async function loadImageMessages(db: MediaDb, userId: string) {
@@ -238,6 +246,7 @@ const KIND_KEYS = new Set<MediaKind>(["image", "video"]);
 
 type SourcePages = {
   videoPage: Awaited<ReturnType<typeof loadVideoRows>>;
+  videoExcludedPage: Awaited<ReturnType<typeof loadHiddenOrExpiredVideoCount>>;
   imagePage: Awaited<ReturnType<typeof loadImageMessages>>;
   deliveredImagePage: Awaited<ReturnType<typeof loadDeliveredImageRows>>;
   commercePage: ReturnType<typeof loadCommerceMediaHistory>;
@@ -252,9 +261,10 @@ type MediaHistoryAccountSnapshot = {
   rows: readonly IndexedMediaHistoryItem[];
   facets: ReturnType<typeof exactFacets> | ReturnType<typeof unavailableFacets>;
   sourceFailures: readonly string[];
+  countFailures: readonly string[];
   enumerationFailed: boolean;
   allSourcesFailed: boolean;
-  expiredCount: number;
+  expiredCount: number | null;
 };
 
 type MediaHistorySnapshotCacheEntry = {
@@ -539,13 +549,15 @@ async function buildMediaHistoryAccountSnapshot(
   userId: string,
   role: MediaHistoryCommerceRole,
 ): Promise<MediaHistoryAccountSnapshot> {
-  const [videoPage, imagePage, deliveredImagePage, commercePage]: [
+  const [videoPage, videoExcludedPage, imagePage, deliveredImagePage, commercePage]: [
     SourcePages["videoPage"],
+    SourcePages["videoExcludedPage"],
     SourcePages["imagePage"],
     SourcePages["deliveredImagePage"],
     SourcePages["commercePage"],
   ] = await Promise.all([
     loadVideoRows(db, userId),
+    loadHiddenOrExpiredVideoCount(db, userId),
     loadImageMessages(db, userId),
     loadDeliveredImageRows(db, userId),
     Promise.resolve().then(() => loadCommerceMediaHistory(userId, role)),
@@ -557,9 +569,10 @@ async function buildMediaHistoryAccountSnapshot(
       rows: [],
       facets: unavailableFacets(),
       sourceFailures: ["视频任务", "聊天图片记录", "生图交付记录", "带货 Agent 媒体记录"],
+      countFailures: ["视频任务", "聊天图片记录", "生图交付记录", "带货 Agent 媒体记录"],
       enumerationFailed: true,
       allSourcesFailed: true,
-      expiredCount: 0,
+      expiredCount: null,
     };
   }
 
@@ -653,16 +666,7 @@ async function buildMediaHistoryAccountSnapshot(
     const humanTitle = row.task_label === "digital-human:video" ? "视频改口型" : "照片说话";
     const cardIndex = Number(row.card_index || 0);
     const configuredModelName = relationName(row.video_models);
-    const archiveJob = relationObject(row.video_history_archive_jobs);
-    const archiveState = String(archiveJob.state || "");
-    const hasPersistentArchive = Boolean(String(row.storage_url || "").trim());
-    const archiveDeliveryPending = !hasPersistentArchive
-      && ["leased", "retry"].includes(archiveState)
-      && Number(archiveJob.attempt_count || 0) > 0;
-    const archiveDeliveryFailed = !hasPersistentArchive && archiveState === "dead_letter";
-    const sourceExpiredAt = archiveState === "source_expired"
-      ? String(archiveJob.source_expired_at || "")
-      : "";
+    const sourceExpiredAt = String(row.source_expired_at || "");
     const modelName = publicModelBaseName(configuredModelName, "视频模型");
     const variant = publicVariantLabel({ name: configuredModelName }, 0);
     const rawError = String(row.error_message || "");
@@ -674,19 +678,10 @@ async function buildMediaHistoryAccountSnapshot(
       || String(row.provider_result_url || "").trim()
       || String(row.video_url || "").trim(),
     );
-    const deliveryReady = rawStatus === "completed"
-      && hasAuthenticatedDeliverySource
-      && !archiveDeliveryPending
-      && !archiveDeliveryFailed;
+    const deliveryReady = rawStatus === "completed" && hasAuthenticatedDeliverySource && !sourceExpiredAt;
     const previewPath = deliveryReady ? `/api/video/storage/${encodeURIComponent(recordId)}` : "";
     const thumbnailPath = deliveryReady ? `/api/video/thumbnail/${encodeURIComponent(recordId)}` : "";
-    const status = archiveDeliveryPending
-      ? "processing"
-      : archiveDeliveryFailed
-        ? "failed"
-        : rawStatus === "completed" && !deliveryReady
-          ? "failed"
-          : rawStatus;
+    const status = rawStatus === "completed" && !deliveryReady ? "failed" : rawStatus;
     return retainedMediaHistoryItem({
       id: `video:${recordId}`,
       kind: "video",
@@ -710,13 +705,9 @@ async function buildMediaHistoryAccountSnapshot(
       thumbnailPath,
       downloadPath: previewPath,
       preview: previewContract("video", previewPath, thumbnailPath),
-      errorMessage: archiveDeliveryPending
-        ? "视频已生成，正在完成历史归档；归档完成后即可稳定播放和下载。"
-        : archiveDeliveryFailed
-          ? "视频已生成，但原始取件地址已不可用，历史归档未能完成。"
-          : rawStatus === "completed" && !hasAuthenticatedDeliverySource
-            ? "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。"
-            : rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : "",
+      errorMessage: rawStatus === "completed" && !hasAuthenticatedDeliverySource
+        ? "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。"
+        : rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : "",
       aspectRatio: String(row.aspect_ratio || ""),
       durationSeconds: Number.isFinite(Number(row.duration_seconds)) ? Number(row.duration_seconds) : null,
     }, sourceExpiredAt || upstreamMediaExpiry(row.provider_submission_receipt) || upstreamMediaExpiry(row.provider_dispatch_receipt));
@@ -847,8 +838,11 @@ async function buildMediaHistoryAccountSnapshot(
 
   const retainedCommerce = commercePage.items.map(item => retainedMediaHistoryItem(item));
   const commerceItems = retainedCommerce.filter(entry => !entry.expired).map(entry => entry.item);
-  const expiredCount = [...retainedVideos, ...retainedImages, ...retainedDeliveredImages, ...retainedCommerce]
+  const retainedExpiredCount = [...retainedVideos, ...retainedImages, ...retainedDeliveredImages, ...retainedCommerce]
     .filter(entry => entry.expired).length;
+  const expiredCount = sourceEnumerationFailed || videoExcludedPage.failed
+    ? null
+    : videoExcludedPage.count + retainedExpiredCount;
   const merged = stableDedupe([...videos, ...images, ...commerceItems]);
   const sourceFailures = [
     ...(videoPage.failed ? ["视频任务"] : []),
@@ -859,12 +853,21 @@ async function buildMediaHistoryAccountSnapshot(
     ...(imageProvenance.failed ? ["图片来源与费用"] : []),
     ...(shortDramaLookupFailed ? ["影视工坊视频来源"] : []),
     ...(shortDramaImageLookupFailed ? ["影视工坊图片来源"] : []),
+    ...(videoExcludedPage.failed ? ["视频已确认过期/隐藏统计"] : []),
+  ];
+  const countFailures = [
+    ...(videoPage.failed ? ["视频任务"] : []),
+    ...(imagePage.failed ? ["聊天图片记录"] : []),
+    ...(deliveredImagePage.failed ? ["生图交付记录"] : []),
+    ...(commercePage.failed ? ["带货 Agent 媒体记录"] : []),
+    ...(videoExcludedPage.failed ? ["视频已确认过期/隐藏统计"] : []),
   ];
   const facets = sourceEnumerationFailed ? unavailableFacets() : exactFacets(merged);
   return {
     rows: merged.map(item => ({ item, searchText: searchableText(item) })),
     facets,
     sourceFailures,
+    countFailures,
     enumerationFailed: sourceEnumerationFailed,
     allSourcesFailed: false,
     expiredCount,
@@ -895,6 +898,7 @@ type MediaHistoryCacheTestHook = {
     keys: string[];
   };
   busyResponse: () => NextResponse;
+  loadHiddenOrExpiredVideoCount: (db: MediaDb, userId: string) => Promise<{ count: number; failed: boolean }>;
   limits: { active: number; waiting: number; settled: number };
 };
 
@@ -929,6 +933,7 @@ if (process.env.MEDIA_HISTORY_CACHE_TEST_HOOK === "1") {
       };
     },
     busyResponse: mediaHistoryBusyResponse,
+    loadHiddenOrExpiredVideoCount,
     limits: {
       active: MEDIA_HISTORY_SNAPSHOT_MAX_ACTIVE_BUILDS,
       waiting: MEDIA_HISTORY_SNAPSHOT_MAX_WAITING_BUILDS,
@@ -1012,12 +1017,12 @@ export async function GET(request: NextRequest) {
       totalKnown: totalCount !== null,
     },
     sourceFailures: snapshot.sourceFailures,
-    countFailures: snapshot.enumerationFailed ? snapshot.sourceFailures : [],
+    countFailures: snapshot.countFailures,
     expiredCount: snapshot.expiredCount,
     retention: {
       imageFallbackDays: MEDIA_HISTORY_FALLBACK_DAYS.image,
       videoFallbackDays: MEDIA_HISTORY_FALLBACK_DAYS.video,
-      strategy: "upstream-expiry-then-fallback",
+      strategy: "image-fallback-video-upstream-lifetime",
     },
   }, {
     headers: { "Cache-Control": "private, no-store" },

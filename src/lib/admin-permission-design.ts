@@ -6,7 +6,15 @@ import {
   normalizeAdminPermissionKeys,
 } from "@/lib/admin-governance";
 
-export const ADMIN_OWNER_ONLY_PERMISSION_KEYS = ["admin.accounts.manage"] as const;
+// These permissions are never delegable to an ordinary administrator.  A
+// second-factor/step-up session proves who is operating the account; it must
+// never promote that account into the platform-owner trust boundary.
+export const ADMIN_OWNER_ONLY_PERMISSION_KEYS = [
+  "admin.accounts.manage",
+  "prompts.view",
+  "prompts.edit",
+  "internal_tools.manage",
+] as const;
 export const ADMIN_CORE_TECH_PERMISSION_KEYS = [
   "prompts.view",
   "prompts.edit",

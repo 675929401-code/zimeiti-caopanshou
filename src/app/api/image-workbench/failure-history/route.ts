@@ -91,7 +91,8 @@ export async function GET(request: NextRequest) {
       const visible = loaded.slice(0, IMAGE_FAILURE_HISTORY_PAGE_SIZE).flatMap(row => {
         const snapshot = parseImageFailureRequestSnapshot(row.request_snapshot);
         const terminal = parseImageTerminalFailure(row.response, row.payload_fingerprint);
-        return snapshot?.surface === surface && terminal ? [{ row, snapshot, terminal }] : [];
+        const integrityMatches = !snapshot?.payloadFingerprint || snapshot.payloadFingerprint === row.payload_fingerprint;
+        return snapshot?.surface === surface && integrityMatches && terminal ? [{ row, snapshot, terminal }] : [];
       });
       const billingReferences = visible.map(({ row }) => imageFailureBillingReferenceId(user.id, row.client_idempotency_key));
       const billingKeys = billingReferences.flatMap((reference) => [reference, `${reference}:release`]);
@@ -124,6 +125,13 @@ export async function GET(request: NextRequest) {
           mode: snapshot.mode,
           aspectRatio: snapshot.aspectRatio,
           resolution: snapshot.resolution,
+          style: snapshot.style || "",
+          effectivePrompt: snapshot.effectivePrompt || snapshot.prompt,
+          referenceUsage: snapshot.referenceUsage || "general",
+          providerProtocol: snapshot.providerProtocol || "legacy_unknown",
+          outputPixelSize: snapshot.outputPixelSize || "",
+          imageCount: snapshot.imageCount || 1,
+          payloadFingerprint: snapshot.payloadFingerprint || row.payload_fingerprint,
           referenceAssetRefs: snapshot.referenceAssetRefs,
           referenceCount: snapshot.referenceAssetRefs.length,
           quotedPriceYuan: snapshot.quotedPriceYuan,

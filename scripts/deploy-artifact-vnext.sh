@@ -3,6 +3,11 @@ set -Eeuo pipefail
 umask 027
 
 PROJECT_ID="zimeiti-caopanshou"
+STORAGE_GUARD_PATH="/usr/local/libexec/zimeiti/verify-deploy-storage-runtime.sh"
+STORAGE_GUARD_SHA256="f7df11406eb20819cffbe3300c77aefe38caa315e4183025912823f8f1990be4"
+STORAGE_READINESS_RECEIPT="/run/zimeiti/storage-readiness.json"
+CANDIDATE_FIXTURE_HELPER_PATH="/usr/local/libexec/zimeiti/prepare-candidate-readiness-fixtures.py"
+CANDIDATE_FIXTURE_HELPER_SHA256="ea62e6aa0676b26514491109fe13e950799585f51d41398b82817f83a860c3c6"
 
 usage() {
   cat <<'USAGE'
@@ -94,7 +99,9 @@ const path = require("node:path");
 const [inputMode, inputPath, typesPath] = process.argv.slice(2);
 const sensitiveDataExtensions = new Set(["", ".bin", ".conf", ".config", ".csv", ".dat", ".ini", ".json", ".properties", ".txt", ".xml", ".yaml", ".yml"]);
 const privateKeyExtensions = new Set([".key", ".keystore", ".p12", ".pfx"]);
+const forbiddenArtifactExtensions = new Set([".pem", ".key", ".pub", ".crt", ".cer", ".p7b", ".p12", ".pfx", ".map"]);
 const sensitiveNameMarker = /(^|[._-])(?:api[._-]?key|private[._-]?key|secret(?:s)?|token(?:s)?|cookie(?:s)?|credential(?:s)?|service[._-]?account)(?=$|[._-])/iu;
+const hiddenMetadataDirectoryNames = new Set([".git", ".svn", ".hg", ".history", ".cache"]);
 
 function normalize(relativePath) {
   return relativePath.replace(/\\/gu, "/").replace(/^\.\//u, "").replace(/\/+$/u, "");
@@ -112,11 +119,13 @@ function sensitiveReason(relativePath, kind) {
     if (lowerPart === ".env" || lowerPart.startsWith(".env.")) return "environment file";
     if (lowerPart === ".npmrc") return "package-manager credential file";
     if (lowerPart === ".secure") return "secure-material path";
+    if (hiddenMetadataDirectoryNames.has(lowerPart)) return "source-control, history, or cache metadata path";
   }
   if (kind !== "file" || parts.length === 0) return null;
   if (isKnownNonSecretDependencySchema(normalizedPath)) return null;
   const fileName = parts.at(-1).toLowerCase();
   const extension = path.posix.extname(fileName);
+  if (forbiddenArtifactExtensions.has(extension)) return "key, certificate, or source-map file";
   if (privateKeyExtensions.has(extension)) return "private-key container";
   if (["id_dsa", "id_ecdsa", "id_ed25519", "id_rsa"].includes(fileName)) return "SSH private key";
   if (sensitiveDataExtensions.has(extension)) {
@@ -128,6 +137,12 @@ function sensitiveReason(relativePath, kind) {
 function assertSafe(relativePath, kind) {
   const reason = sensitiveReason(relativePath, kind);
   if (reason) throw new Error(`forbidden sensitive artifact path (${reason}): ${normalize(relativePath)}`);
+}
+function assertSafeContent(filePath, relativePath) {
+  const body = fs.readFileSync(filePath);
+  if (/-----BEGIN ((?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY)-----[\s\S]{1,1048576}?-----END \1-----/u.test(body.toString("utf8"))) {
+    throw new Error(`forbidden private-key PEM content: ${normalize(relativePath)}`);
+  }
 }
 
 if (inputMode === "archive") {
@@ -150,6 +165,7 @@ if (inputMode === "archive") {
       if (stats.isSymbolicLink()) throw new Error(`artifact tree contains a symlink: ${relativePath}`);
       if (stats.isDirectory()) walk(entryPath);
       else if (!stats.isFile()) throw new Error(`artifact tree contains a non-regular entry: ${relativePath}`);
+      else assertSafeContent(entryPath, relativePath);
     }
   }
   walk(root);
@@ -217,6 +233,7 @@ fi
   die "ASSET_DELIVERY_MODE must be auto, disk, or cos"
 [[ -n "$ARTIFACT" && -f "$ARTIFACT" && ! -L "$ARTIFACT" ]] || die "artifact must be an existing regular non-symlink file"
 [[ "$RELEASE_ROOT" == /* ]] || die "--root must be an absolute Linux path"
+[[ ! "$RELEASE_ROOT" =~ [[:space:]] ]] || die "--root must not contain whitespace"
 
 for command_name in readlink sha256sum awk tar node mktemp grep head rm; do
   require_command "$command_name"
@@ -224,6 +241,15 @@ done
 tar --version 2>/dev/null | head -n 1 | grep -q "GNU tar" || die "GNU tar is required for deterministic safe extraction"
 
 ARTIFACT="$(readlink -f -- "$ARTIFACT")"
+DEPLOY_SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+DEPLOY_SCRIPT_DIR="${DEPLOY_SCRIPT_PATH%/*}"
+CONTROL_PLANE_ROOT="$(readlink -f -- "$DEPLOY_SCRIPT_DIR/..")"
+PREFLIGHT_CREATOR="$CONTROL_PLANE_ROOT/scripts/create-production-preflight-receipt.mjs"
+PREFLIGHT_VERIFIER="$CONTROL_PLANE_ROOT/scripts/verify-production-preflight-receipt.mjs"
+PREFLIGHT_SCHEMA="$CONTROL_PLANE_ROOT/scripts/contracts/production-preflight-receipt.v1.schema.json"
+PREFLIGHT_REFERENCE_CONTRACT="$CONTROL_PLANE_ROOT/scripts/contracts/production-preflight-reference.v1.json"
+PREFLIGHT_DATABASE_CONTRACT="$CONTROL_PLANE_ROOT/deploy/policies/database-contract.v1.json"
+PREFLIGHT_SEMANTIC_CONTRACT="$CONTROL_PLANE_ROOT/deploy/policies/database-semantic-contract.v1.json"
 [[ -d "$RELEASE_ROOT" && ! -L "$RELEASE_ROOT" ]] || die "release root must already exist and cannot be a symlink"
 RELEASE_ROOT="$(readlink -f -- "$RELEASE_ROOT")"
 case "$RELEASE_ROOT" in
@@ -240,6 +266,9 @@ CANDIDATE="$RELEASES_ROOT/$RELEASE_ID/$SERVICE"
 SHARED_ROOT="$RELEASE_ROOT/shared"
 ENV_ROOT="$SHARED_ROOT/env"
 PROTECTED_ENV_FILE="$ENV_ROOT/.env.local"
+CANDIDATE_USER="zimeiti-candidate"
+CANDIDATE_HOME="/nonexistent"
+CANDIDATE_SHELL="/usr/sbin/nologin"
 APP_DATA_DIR="$SHARED_ROOT/data"
 APP_RUNTIME_DIR="$SHARED_ROOT/runtime"
 COMMERCE_DATA_DIR="$APP_RUNTIME_DIR/commerce-agent"
@@ -409,6 +438,180 @@ NODE
   assert_service_pointer_if_present
 }
 
+verify_boot_bound_storage_receipt() {
+  [[ -f "$STORAGE_READINESS_RECEIPT" && ! -L "$STORAGE_READINESS_RECEIPT" ]] || \
+    die "boot-bound storage readiness receipt is missing: $STORAGE_READINESS_RECEIPT"
+  node - "$STORAGE_READINESS_RECEIPT" <<'NODE'
+const fs = require("node:fs");
+const receiptPath = process.argv[2];
+const stats = fs.lstatSync(receiptPath);
+if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== 1 || stats.uid !== 0 || stats.gid !== 0 || (stats.mode & 0o777) !== 0o600 || stats.size > 65536) {
+  throw new Error("storage readiness receipt metadata is unsafe");
+}
+const value = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+const exactKeys = (object, keys, label) => {
+  if (!object || typeof object !== "object" || Array.isArray(object)) throw new Error(`${label} is not an object`);
+  const actual = Object.keys(object).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) throw new Error(`${label} contains unexpected fields`);
+};
+exactKeys(value, ["schemaVersion", "status", "verifiedAt", "verifiedEpoch", "bootId", "guard", "mount", "marker", "capacity", "paths", "security", "receipt"], "storage receipt");
+if (value.schemaVersion !== "zimeiti-storage-readiness.v1" || value.status !== "ready") throw new Error("storage receipt identity mismatch");
+const bootId = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+if (value.bootId !== bootId) throw new Error("storage receipt belongs to a different boot");
+const now = Math.floor(Date.now() / 1000);
+if (!Number.isSafeInteger(value.verifiedEpoch) || value.verifiedEpoch > now + 5 || now - value.verifiedEpoch > 60) throw new Error("storage receipt is stale");
+if (value.mount?.rootTarget !== "/" || value.mount?.target !== "/data" || value.mount?.independent !== true
+    || !["ext4", "xfs"].includes(value.mount?.fstype) || value.mount?.source === value.mount?.rootSource
+    || value.mount?.majorMinor === value.mount?.rootMajorMinor) throw new Error("storage mount isolation receipt is invalid");
+if (value.paths?.dataRoot !== "/data" || value.paths?.webRoot !== "/data/web"
+    || value.paths?.rootAndDataTargetsDistinct !== true || value.paths?.rootAndDataDevicesDistinct !== true
+    || value.paths?.rootAndDataSourcesDistinct !== true || value.paths?.webRootOnDataDevice !== true) {
+  throw new Error("storage path isolation receipt is invalid");
+}
+if (value.guard?.script !== "verify-deploy-storage-runtime.sh" || value.guard?.configPath !== "/etc/zimeiti/deploy-storage.conf"
+    || value.receipt?.path !== receiptPath || value.receipt?.ownerUid !== 0 || value.receipt?.ownerGid !== 0
+    || value.receipt?.mode !== "0600" || value.receipt?.atomicWrite !== true) throw new Error("storage receipt provenance is invalid");
+if (!Number.isSafeInteger(value.capacity?.availableBytes) || !Number.isSafeInteger(value.capacity?.minimumAvailableBytes)
+    || value.capacity.availableBytes < value.capacity.minimumAvailableBytes
+    || !Number.isSafeInteger(value.capacity?.availableInodes) || !Number.isSafeInteger(value.capacity?.minimumAvailableInodes)
+    || value.capacity.availableInodes < value.capacity.minimumAvailableInodes) throw new Error("storage capacity receipt is invalid");
+NODE
+}
+
+run_storage_boot_guard() {
+  require_trusted_controller_file "$STORAGE_GUARD_PATH" "trusted storage guard"
+  [[ -f "$STORAGE_GUARD_PATH" && ! -L "$STORAGE_GUARD_PATH" && -x "$STORAGE_GUARD_PATH" ]] || \
+    die "trusted storage guard is not installed on the system disk: $STORAGE_GUARD_PATH"
+  local metadata uid gid mode kind links actual_sha
+  metadata="$(stat -c '%u %g %a %F %h' -- "$STORAGE_GUARD_PATH")" || die "cannot stat trusted storage guard"
+  read -r uid gid mode kind links <<<"$metadata"
+  [[ "$uid" == "0" && "$gid" == "0" && "$kind" == "regular file" && "$links" == "1" ]] || \
+    die "trusted storage guard must be a single-link root:root regular file"
+  [[ "$mode" =~ ^0?[0-7]{3}$ ]] || die "trusted storage guard mode is invalid"
+  (( (8#$mode & 8#022) == 0 )) || die "trusted storage guard must not be group/other writable"
+  actual_sha="$(sha256sum "$STORAGE_GUARD_PATH" | awk '{print $1}')"
+  [[ "$actual_sha" == "$STORAGE_GUARD_SHA256" ]] || die "trusted storage guard SHA-256 mismatch"
+  "$STORAGE_GUARD_PATH" >/dev/null || die "dedicated storage runtime guard rejected this boot"
+  verify_boot_bound_storage_receipt || die "boot-bound storage readiness receipt validation failed"
+}
+
+require_trusted_controller_file() {
+  local file="$1" label="$2" resolved metadata uid gid mode kind links directory
+  [[ -f "$file" && ! -L "$file" ]] || die "$label is not a regular non-symlink file: $file"
+  resolved="$(readlink -f -- "$file")" || die "cannot resolve $label"
+  [[ "$resolved" == "$file" ]] || die "$label path is not canonical: $file"
+  metadata="$(stat -c '%u %g %a %F %h' -- "$file")" || die "cannot stat $label"
+  read -r uid gid mode kind links <<<"$metadata"
+  [[ "$uid" == "0" && "$gid" == "0" && "$kind" == "regular file" && "$links" == "1" ]] || \
+    die "$label must be a single-link root:root regular file"
+  [[ "$mode" =~ ^0?[0-7]{3}$ ]] || die "$label mode is invalid"
+  (( (8#$mode & 8#022) == 0 )) || die "$label must not be group/other writable"
+  directory="${file%/*}"
+  while [[ "$directory" != "/" ]]; do
+    metadata="$(stat -c '%u %g %a %F' -- "$directory")" || die "cannot stat $label parent"
+    read -r uid gid mode kind <<<"$metadata"
+    [[ "$uid" == "0" && "$gid" == "0" && "$kind" == "directory" && "$mode" =~ ^0?[0-7]{3}$ ]] || \
+      die "$label parent chain is not root-controlled: $directory"
+    (( (8#$mode & 8#022) == 0 )) || die "$label parent chain is writable by group/other: $directory"
+    directory="${directory%/*}"
+    [[ -n "$directory" ]] || directory="/"
+  done
+}
+
+run_production_preflight() {
+  local trusted_file source_version migration_manifest_sha receipt_path creator_summary verifier_summary receipt_metadata
+  for trusted_file in \
+    "$PREFLIGHT_CREATOR" "$PREFLIGHT_VERIFIER" "$PREFLIGHT_SCHEMA" \
+    "$PREFLIGHT_REFERENCE_CONTRACT" "$PREFLIGHT_DATABASE_CONTRACT" "$PREFLIGHT_SEMANTIC_CONTRACT"; do
+    require_trusted_controller_file "$trusted_file" "production preflight controller input"
+  done
+  source_version="$(node - "$PAYLOAD_DIR/public/version.json" <<'NODE'
+const fs = require("node:fs");
+const file = process.argv[2];
+const stats = fs.lstatSync(file);
+if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== 1) throw new Error("public version identity is unsafe");
+const value = JSON.parse(fs.readFileSync(file, "utf8"));
+if (typeof value.sourceVersion !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(value.sourceVersion)) {
+  throw new Error("public sourceVersion is invalid");
+}
+process.stdout.write(value.sourceVersion);
+NODE
+)" || die "candidate sourceVersion is unavailable for production preflight binding"
+  migration_manifest_sha="$(node - "$PREFLIGHT_SEMANTIC_CONTRACT" <<'NODE'
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (value.schemaVersion !== 1 || value.kind !== "database-semantic-contract"
+    || typeof value.migrationManifestSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(value.migrationManifestSha256)) {
+  throw new Error("database semantic contract migration identity is invalid");
+}
+process.stdout.write(value.migrationManifestSha256);
+NODE
+)" || die "migration manifest identity is unavailable for production preflight binding"
+
+  receipt_path="$LOG_ROOT/production-preflight-$SERVICE-$RELEASE_ID.json"
+  PRODUCTION_PREFLIGHT_RECEIPT_PATH="$receipt_path"
+  creator_summary="$STAGING_DIR/production-preflight-create-summary.json"
+  verifier_summary="$STAGING_DIR/production-preflight-verify-summary.json"
+  [[ ! -e "$receipt_path" && ! -L "$receipt_path" ]] || die "immutable production preflight receipt already exists: $receipt_path"
+  export PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY
+  export PRODUCTION_PREFLIGHT_RECEIPT_KEY_ID
+  PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))')"
+  PRODUCTION_PREFLIGHT_RECEIPT_KEY_ID="ephemeral-$SERVICE-$RELEASE_ID-$$"
+  if ! node "$PREFLIGHT_CREATOR" \
+    --output "$receipt_path" \
+    --release-id "$RELEASE_ID" \
+    --artifact-sha256 "${ACTUAL_SHA256,,}" \
+    --commit "$COMMIT_SHA" \
+    --source-version "$source_version" \
+    --build-id "$BUILD_ID" \
+    --migration-manifest-sha256 "$migration_manifest_sha" \
+    >"$creator_summary" 2>"$creator_summary.error"; then
+    unset PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY PRODUCTION_PREFLIGHT_RECEIPT_KEY_ID
+    fail "trusted GET-only production preflight failed; see $creator_summary.error"
+  fi
+  if ! node "$PREFLIGHT_VERIFIER" \
+    --receipt "$receipt_path" \
+    --release-id "$RELEASE_ID" \
+    --artifact-sha256 "${ACTUAL_SHA256,,}" \
+    --commit "$COMMIT_SHA" \
+    --source-version "$source_version" \
+    --build-id "$BUILD_ID" \
+    --migration-manifest-sha256 "$migration_manifest_sha" \
+    >"$verifier_summary" 2>"$verifier_summary.error"; then
+    unset PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY PRODUCTION_PREFLIGHT_RECEIPT_KEY_ID
+    fail "production preflight receipt verification failed; see $verifier_summary.error"
+  fi
+  unset PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY PRODUCTION_PREFLIGHT_RECEIPT_KEY_ID
+  receipt_metadata="$(stat -c '%u %g %a %F %h' -- "$receipt_path")" || die "cannot stat production preflight receipt"
+  [[ "$receipt_metadata" == "0 0 600 regular file 1" ]] || die "production preflight receipt metadata is unsafe"
+  PRODUCTION_PREFLIGHT_RECEIPT_SHA256="$(sha256sum "$receipt_path" | awk '{print $1}')"
+  [[ "$PRODUCTION_PREFLIGHT_RECEIPT_SHA256" =~ ^[a-f0-9]{64}$ ]] || die "production preflight receipt SHA-256 is invalid"
+}
+
+assert_fresh_production_preflight_receipt() {
+  [[ -n "$PRODUCTION_PREFLIGHT_RECEIPT_PATH" && -f "$PRODUCTION_PREFLIGHT_RECEIPT_PATH" && ! -L "$PRODUCTION_PREFLIGHT_RECEIPT_PATH" ]] || \
+    die "production preflight receipt disappeared before activation"
+  local current_sha
+  current_sha="$(sha256sum "$PRODUCTION_PREFLIGHT_RECEIPT_PATH" | awk '{print $1}')"
+  [[ "$current_sha" == "$PRODUCTION_PREFLIGHT_RECEIPT_SHA256" ]] || die "production preflight receipt changed before activation"
+  node - "$PRODUCTION_PREFLIGHT_RECEIPT_PATH" "$RELEASE_ID" "${ACTUAL_SHA256,,}" "$COMMIT_SHA" "$BUILD_ID" <<'NODE'
+const fs = require("node:fs");
+const [file, releaseId, artifactSha256, commitSha, buildId] = process.argv.slice(2);
+const value = JSON.parse(fs.readFileSync(file, "utf8"));
+const now = Math.floor(Date.now() / 1000);
+if (value.status !== "passed" || value.binding?.releaseId !== releaseId
+    || value.binding?.artifactSha256 !== artifactSha256 || value.binding?.commitSha !== commitSha
+    || value.binding?.buildId !== buildId) throw new Error("production preflight receipt binding changed");
+if (!Number.isSafeInteger(value.issuedAtEpoch) || !Number.isSafeInteger(value.expiresAtEpoch)
+    || value.expiresAtEpoch - value.issuedAtEpoch !== 300 || value.issuedAtEpoch > now + 5
+    || value.expiresAtEpoch <= now) throw new Error("production preflight receipt expired before activation");
+for (const counter of ["databaseWrites", "rpcRequests", "providerRequests", "paidRequests"]) {
+  if (value.counters?.[counter] !== 0) throw new Error(`production preflight counter is nonzero: ${counter}`);
+}
+NODE
+}
+
 load_protected_environment() {
   local line key value first last required_name
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -449,6 +652,10 @@ AUDIT_DIR="$(mktemp -d)"
 STAGING_DIR=""
 PAYLOAD_DIR=""
 candidate_pid=""
+candidate_unit=""
+candidate_cgroup=""
+CANDIDATE_LOG=""
+CANDIDATE_PRIVATE_LOG=""
 APP_TEMP_LINK=""
 ASSET_TEMP_LINK=""
 HISTORY_FD=""
@@ -460,6 +667,8 @@ ROLLBACK_SUCCEEDED="0"
 FAILURE_CONTEXT=""
 DIRECT_PREPARED="0"
 DIRECT_ROLLBACK_COMPLETE="0"
+PRODUCTION_PREFLIGHT_RECEIPT_SHA256="-"
+PRODUCTION_PREFLIGHT_RECEIPT_PATH=""
 
 # Optional direct-push transaction participant. The controller and every import
 # are installed immutably in an identity-scoped root-owned directory. No hook
@@ -477,18 +686,168 @@ NODE
   node "$DIRECT_HOOK_PATH" "$1" "${DIRECT_TRANSACTION_ROOT:?}"
 }
 
-cleanup_candidate() {
-  if [[ -n "$candidate_pid" ]] && kill -0 "$candidate_pid" 2>/dev/null; then
-    kill "$candidate_pid" 2>/dev/null || true
-    local attempt
-    for ((attempt = 1; attempt <= 25; attempt += 1)); do
-      kill -0 "$candidate_pid" 2>/dev/null || break
-      sleep 0.2
-    done
-    if kill -0 "$candidate_pid" 2>/dev/null; then kill -KILL "$candidate_pid" 2>/dev/null || true; fi
-    wait "$candidate_pid" 2>/dev/null || true
+candidate_cgroup_empty() {
+  local control_group="$1"
+  local cgroup_path populated
+  [[ "$control_group" =~ ^/system\.slice/zimeiti-candidate-(web|voice)-[0-9]+\.service$ ]] || return 1
+  cgroup_path="/sys/fs/cgroup$control_group"
+  if [[ ! -e "$cgroup_path" && ! -L "$cgroup_path" ]]; then return 0; fi
+  [[ -d "$cgroup_path" && ! -L "$cgroup_path" && -r "$cgroup_path/cgroup.events" ]] || return 1
+  populated="$(awk '
+    $1 == "populated" { count += 1; value = $2 }
+    END { if (count != 1 || (value != "0" && value != "1")) exit 1; print value }
+  ' "$cgroup_path/cgroup.events" 2>/dev/null)" || return 1
+  [[ "$populated" == "0" ]]
+}
+
+candidate_unit_stopped() {
+  local load_state active_state main_pid current_cgroup
+  [[ -n "$candidate_unit" ]] || return 0
+  load_state="$(systemctl show --property=LoadState --value "$candidate_unit" 2>/dev/null || true)"
+  if [[ -z "$load_state" || "$load_state" == "not-found" ]]; then
+    [[ -n "$candidate_cgroup" ]] && candidate_cgroup_empty "$candidate_cgroup"
+    return
   fi
+  active_state="$(systemctl show --property=ActiveState --value "$candidate_unit" 2>/dev/null || true)"
+  main_pid="$(systemctl show --property=MainPID --value "$candidate_unit" 2>/dev/null || true)"
+  current_cgroup="$(systemctl show --property=ControlGroup --value "$candidate_unit" 2>/dev/null || true)"
+  if [[ -n "$current_cgroup" ]]; then
+    [[ "$current_cgroup" =~ ^/system\.slice/zimeiti-candidate-(web|voice)-[0-9]+\.service$ ]] || return 1
+    candidate_cgroup="$current_cgroup"
+  fi
+  [[ "$active_state" == "inactive" && "$main_pid" == "0" && -n "$candidate_cgroup" ]] || return 1
+  candidate_cgroup_empty "$candidate_cgroup"
+}
+
+wait_candidate_unit_stopped() {
+  local attempt
+  for ((attempt = 1; attempt <= 25; attempt += 1)); do
+    candidate_unit_stopped && return 0
+    sleep 0.2
+  done
+  return 1
+}
+
+publish_candidate_log() {
+  [[ -n "$CANDIDATE_PRIVATE_LOG" && -n "$CANDIDATE_LOG" ]] || return 0
+  [[ -e "$CANDIDATE_PRIVATE_LOG" && ! -L "$CANDIDATE_PRIVATE_LOG" ]] || return 1
+  node - "$CANDIDATE_PRIVATE_LOG" "$CANDIDATE_LOG" "$CANDIDATE_UID" "$SERVICE" "$RELEASE_ID" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const [sourcePath, destinationPath, expectedUidText, service, releaseId] = process.argv.slice(2);
+const expectedUid = Number(expectedUidText);
+const noFollow = fs.constants.O_NOFOLLOW || 0;
+const sourceFd = fs.openSync(sourcePath, fs.constants.O_RDONLY | noFollow);
+let sourceBytes;
+let tailSourceBytes;
+let bodyBuffer;
+try {
+  const stats = fs.fstatSync(sourceFd);
+  if (!stats.isFile() || stats.nlink !== 1 || stats.uid !== expectedUid || stats.size > 134217728) {
+    throw new Error("private candidate log metadata is unsafe");
+  }
+  sourceBytes = stats.size;
+  tailSourceBytes = Math.min(stats.size, 262144);
+  const buffer = Buffer.alloc(tailSourceBytes);
+  if (tailSourceBytes) fs.readSync(sourceFd, buffer, 0, tailSourceBytes, stats.size - tailSourceBytes);
+  const body = buffer.toString("utf8")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, "?")
+    .replace(/((?:api[_-]?key|secret|token|password|authorization)[^:=\n]{0,32}[:=]\s*)[^\s,;]+/giu, "$1[REDACTED]");
+  bodyBuffer = Buffer.from(body, "utf8");
+} finally {
+  fs.closeSync(sourceFd);
+}
+const payloadSha256 = crypto.createHash("sha256").update(bodyBuffer).digest("hex");
+const header = Buffer.from(
+  `candidate-log.v2 service=${service} release=${releaseId} source_bytes=${sourceBytes} `
+  + `source_tail_bytes=${tailSourceBytes} payload_bytes=${bodyBuffer.length} payload_sha256=${payloadSha256}\n`,
+  "utf8",
+);
+const completeLog = Buffer.concat([header, bodyBuffer]);
+
+function validatePublishedLog(buffer) {
+  const newline = buffer.indexOf(0x0a);
+  if (newline <= 0) throw new Error("published candidate log header is missing or truncated");
+  const headerText = buffer.subarray(0, newline).toString("utf8");
+  const match = /^candidate-log\.v2 service=([^ ]+) release=([^ ]+) source_bytes=([0-9]+) source_tail_bytes=([0-9]+) payload_bytes=([0-9]+) payload_sha256=([a-f0-9]{64})$/u.exec(headerText);
+  if (!match || match[1] !== service || match[2] !== releaseId) {
+    throw new Error("published candidate log identity header is invalid");
+  }
+  const declaredSourceBytes = Number(match[3]);
+  const declaredTailSourceBytes = Number(match[4]);
+  const declaredPayloadBytes = Number(match[5]);
+  const payload = buffer.subarray(newline + 1);
+  if (!Number.isSafeInteger(declaredSourceBytes) || declaredSourceBytes !== sourceBytes
+      || !Number.isSafeInteger(declaredTailSourceBytes) || declaredTailSourceBytes !== tailSourceBytes
+      || !Number.isSafeInteger(declaredPayloadBytes) || declaredPayloadBytes !== payload.length) {
+    throw new Error("published candidate log length summary is invalid");
+  }
+  const observedSha256 = crypto.createHash("sha256").update(payload).digest("hex");
+  if (observedSha256 !== match[6]) throw new Error("published candidate log payload digest is invalid");
+  if (!buffer.equals(completeLog)) throw new Error("published candidate log does not match the retained private log tail");
+}
+
+function validateExistingDestination() {
+  const existing = fs.lstatSync(destinationPath);
+  const effectiveUid = typeof process.geteuid === "function" ? process.geteuid() : existing.uid;
+  const effectiveGid = typeof process.getegid === "function" ? process.getegid() : existing.gid;
+  if (!existing.isFile() || existing.isSymbolicLink() || existing.nlink !== 1
+      || existing.uid !== effectiveUid || existing.gid !== effectiveGid
+      || existing.size !== completeLog.length) {
+    throw new Error("published candidate log path or complete length is unsafe");
+  }
+  validatePublishedLog(fs.readFileSync(destinationPath));
+}
+
+if (fs.existsSync(destinationPath)) {
+  validateExistingDestination();
+  process.exit(0);
+}
+
+const temporaryPath = path.join(
+  path.dirname(destinationPath),
+  `.${path.basename(destinationPath)}.tmp.${process.pid}.${crypto.randomBytes(12).toString("hex")}`,
+);
+const destinationFd = fs.openSync(temporaryPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | noFollow, 0o600);
+try {
+  fs.writeFileSync(destinationFd, completeLog);
+  fs.fchmodSync(destinationFd, 0o600);
+  fs.fsyncSync(destinationFd);
+} finally {
+  fs.closeSync(destinationFd);
+}
+let linked = false;
+try {
+  try {
+    fs.linkSync(temporaryPath, destinationPath);
+    linked = true;
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+    validateExistingDestination();
+  }
+} finally {
+  fs.unlinkSync(temporaryPath);
+}
+if (linked) validateExistingDestination();
+NODE
+}
+
+cleanup_candidate() {
+  [[ -n "$candidate_unit" ]] || return 0
+  systemctl stop -- "$candidate_unit" >/dev/null 2>&1 || true
+  systemctl reset-failed -- "$candidate_unit" >/dev/null 2>&1 || true
+  if ! wait_candidate_unit_stopped; then
+    systemctl kill --kill-whom=all --signal=SIGKILL -- "$candidate_unit" >/dev/null 2>&1 || true
+    systemctl stop -- "$candidate_unit" >/dev/null 2>&1 || true
+    systemctl reset-failed -- "$candidate_unit" >/dev/null 2>&1 || true
+    wait_candidate_unit_stopped || return 1
+  fi
+  publish_candidate_log || return 1
+  systemctl reset-failed -- "$candidate_unit" >/dev/null 2>&1 || true
   candidate_pid=""
+  candidate_unit=""
+  candidate_cgroup=""
 }
 
 safe_remove_staging() {
@@ -519,7 +878,13 @@ final_cleanup() {
     fi
     set +e
   fi
-  cleanup_candidate
+  local candidate_cleanup_ok="1"
+  if ! cleanup_candidate; then
+    candidate_cleanup_ok="0"
+    FAILURE_CONTEXT="${FAILURE_CONTEXT};candidate-cleanup=unconfirmed"
+    exit_status=1
+    echo "CLEANUP BLOCKED: candidate unit remains controlled; staging is retained for safe recovery: $candidate_unit" >&2
+  fi
   if [[ "$DIRECT_PREPARED" == "1" && "$DEPLOY_COMPLETE" != "1" && "$DIRECT_ROLLBACK_COMPLETE" != "1" ]]; then
     if direct_hook rollback-before && direct_hook rollback-after; then
       DIRECT_ROLLBACK_COMPLETE="1"
@@ -538,7 +903,13 @@ final_cleanup() {
     fi
     exec {HISTORY_FD}>&- || true
   fi
-  if [[ -n "$STAGING_DIR" ]]; then safe_remove_staging || true; fi
+  if [[ -n "$STAGING_DIR" ]]; then
+    if [[ "$candidate_cleanup_ok" == "1" && -z "$candidate_unit" ]]; then
+      safe_remove_staging || true
+    else
+      echo "CLEANUP RETAINED: $STAGING_DIR" >&2
+    fi
+  fi
   if [[ -n "$AUDIT_DIR" && -d "$AUDIT_DIR" ]]; then rm -rf -- "$AUDIT_DIR" || true; fi
   exit "$exit_status"
 }
@@ -683,7 +1054,9 @@ if (!expected) throw new Error("release manifest files must be an array");
 const hex64 = /^[0-9a-f]{64}$/u;
 const sensitiveDataExtensions = new Set(["", ".bin", ".conf", ".config", ".csv", ".dat", ".ini", ".json", ".properties", ".txt", ".xml", ".yaml", ".yml"]);
 const privateKeyExtensions = new Set([".key", ".keystore", ".p12", ".pfx"]);
+const forbiddenArtifactExtensions = new Set([".pem", ".key", ".pub", ".crt", ".cer", ".p7b", ".p12", ".pfx", ".map"]);
 const sensitiveNameMarker = /(^|[._-])(?:api[._-]?key|private[._-]?key|secret(?:s)?|token(?:s)?|cookie(?:s)?|credential(?:s)?|service[._-]?account)(?=$|[._-])/iu;
+const hiddenMetadataDirectoryNames = new Set([".git", ".svn", ".hg", ".history", ".cache"]);
 
 function validateRelative(relativePath) {
   if (typeof relativePath !== "string" || !relativePath || relativePath.includes("\\") || /[\u0000-\u001f\u007f]/u.test(relativePath)) return false;
@@ -705,11 +1078,13 @@ function sensitiveReason(relativePath, kind = "file") {
     if (lowerPart === ".env" || lowerPart.startsWith(".env.")) return "environment file";
     if (lowerPart === ".npmrc") return "package-manager credential file";
     if (lowerPart === ".secure") return "secure-material path";
+    if (hiddenMetadataDirectoryNames.has(lowerPart)) return "source-control, history, or cache metadata path";
   }
   if (kind !== "file") return null;
   if (isKnownNonSecretDependencySchema(relativePath)) return null;
   const fileName = parts.at(-1).toLowerCase();
   const extension = path.posix.extname(fileName);
+  if (forbiddenArtifactExtensions.has(extension)) return "key, certificate, or source-map file";
   if (privateKeyExtensions.has(extension)) return "private-key container";
   if (["id_dsa", "id_ecdsa", "id_ed25519", "id_rsa"].includes(fileName)) return "SSH private key";
   if (sensitiveDataExtensions.has(extension)) {
@@ -722,6 +1097,13 @@ function sensitiveReason(relativePath, kind = "file") {
 function assertNotSensitive(relativePath, label, kind = "file") {
   const reason = sensitiveReason(relativePath, kind);
   if (reason) throw new Error(`${label} contains forbidden sensitive path (${reason}): ${relativePath}`);
+}
+
+function assertSafeContent(filePath, relativePath) {
+  const body = fs.readFileSync(filePath);
+  if (/-----BEGIN ((?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY)-----[\s\S]{1,1048576}?-----END \1-----/u.test(body.toString("utf8"))) {
+    throw new Error(`extracted payload contains forbidden private-key PEM content: ${relativePath}`);
+  }
 }
 
 function sha256File(filePath) {
@@ -747,7 +1129,10 @@ function walk(directory) {
     assertNotSensitive(relativePath, "extracted payload", stats.isDirectory() ? "directory" : "file");
     if (stats.isSymbolicLink()) throw new Error(`extracted payload contains a symlink: ${relativePath}`);
     if (stats.isDirectory()) walk(filePath);
-    else if (stats.isFile()) { if (relativePath !== "release-manifest.json") actualPaths.push(relativePath); }
+    else if (stats.isFile()) {
+      assertSafeContent(filePath, relativePath);
+      if (relativePath !== "release-manifest.json") actualPaths.push(relativePath);
+    }
     else throw new Error(`extracted payload contains a non-regular entry: ${relativePath}`);
   }
 }
@@ -1468,10 +1853,61 @@ fi
 
 [[ "${DEPLOY_EXECUTION_APPROVED:-}" == "$RELEASE_ID" ]] || die "DEPLOY_EXECUTION_APPROVED must exactly equal the release id"
 [[ "$EUID" -eq 0 ]] || die "--execute requires EUID=0 so the promoted release can be sealed root:root before activation"
-for command_name in curl pm2 ss flock cmp mv id stat mkdir ln tail tr env sleep date chown chmod find; do require_command "$command_name"; done
+for command_name in curl pm2 ss flock cmp cp mv id stat mkdir ln dirname tail tr env sleep date chown chmod find systemd-run systemctl nsenter getent passwd python3; do require_command "$command_name"; done
 mv --version 2>/dev/null | head -n 1 | grep -q "GNU coreutils" || die "GNU coreutils mv is required for atomic symlink replacement"
+SYSTEMD_VERSION="$(systemd-run --version 2>/dev/null | awk 'NR == 1 { print $2 }')"
+[[ "$SYSTEMD_VERSION" =~ ^[0-9]+$ && "$SYSTEMD_VERSION" -ge 255 ]] || \
+  die "systemd 255 or newer is required for the isolated candidate environment contract"
+run_storage_boot_guard
 DEPLOY_ACTOR="${DEPLOY_OPERATOR:-$(id -un)}"
 [[ "$DEPLOY_ACTOR" =~ ^[A-Za-z0-9@._-]{1,128}$ ]] || die "DEPLOY_OPERATOR contains unsafe audit characters"
+
+[[ -f "$CANDIDATE_FIXTURE_HELPER_PATH" && ! -L "$CANDIDATE_FIXTURE_HELPER_PATH" && -x "$CANDIDATE_FIXTURE_HELPER_PATH" ]] || \
+  die "trusted candidate fixture helper is not provisioned: $CANDIDATE_FIXTURE_HELPER_PATH"
+[[ "$(stat -c '%u:%g:%a:%h:%F' -- "$CANDIDATE_FIXTURE_HELPER_PATH")" == "0:0:755:1:regular file" ]] || \
+  die "trusted candidate fixture helper must be a single-link root:root 0755 regular file"
+[[ "$(sha256sum -- "$CANDIDATE_FIXTURE_HELPER_PATH" | awk 'NR == 1 { print $1 }')" == "$CANDIDATE_FIXTURE_HELPER_SHA256" ]] || \
+  die "trusted candidate fixture helper SHA-256 does not match the reviewed control plane"
+
+CANDIDATE_PASSWD="$(getent passwd "$CANDIDATE_USER" || true)"
+[[ -n "$CANDIDATE_PASSWD" && "$CANDIDATE_PASSWD" != *$'\n'* ]] || \
+  die "dedicated candidate sandbox user is missing or ambiguous: $CANDIDATE_USER"
+IFS=: read -r candidate_name _ CANDIDATE_UID CANDIDATE_GID _ candidate_home candidate_shell <<<"$CANDIDATE_PASSWD"
+[[ "$candidate_name" == "$CANDIDATE_USER" && "$CANDIDATE_UID" =~ ^[0-9]+$ && \
+   "$CANDIDATE_GID" =~ ^[0-9]+$ && "$CANDIDATE_UID" != "0" ]] || \
+  die "candidate sandbox user must have the exact non-root numeric identity"
+[[ "$candidate_home" == "$CANDIDATE_HOME" && "$candidate_shell" == "$CANDIDATE_SHELL" ]] || \
+  die "candidate sandbox user must use $CANDIDATE_HOME and $CANDIDATE_SHELL"
+[[ ! -e "$CANDIDATE_HOME" && ! -L "$CANDIDATE_HOME" ]] || die "candidate no-home path unexpectedly exists"
+[[ "$(getent passwd "$CANDIDATE_UID")" == "$CANDIDATE_PASSWD" ]] || die "candidate uid reverse lookup is not unique"
+CANDIDATE_GROUP="$(getent group "$CANDIDATE_USER" || true)"
+[[ -n "$CANDIDATE_GROUP" && "$CANDIDATE_GROUP" != *$'\n'* ]] || die "candidate primary group is missing or ambiguous"
+IFS=: read -r candidate_group_name _ candidate_group_gid candidate_group_members <<<"$CANDIDATE_GROUP"
+[[ "$candidate_group_name" == "$CANDIDATE_USER" && "$candidate_group_gid" == "$CANDIDATE_GID" && -z "$candidate_group_members" ]] || \
+  die "candidate must have its own empty primary group"
+[[ "$(getent group "$CANDIDATE_GID")" == "$CANDIDATE_GROUP" ]] || die "candidate gid reverse lookup is not unique"
+[[ "$(id -u "$CANDIDATE_USER")" == "$CANDIDATE_UID" && "$(id -g "$CANDIDATE_USER")" == "$CANDIDATE_GID" ]] || \
+  die "candidate id lookup does not match passwd/group"
+[[ "$(id -G "$CANDIDATE_USER" | tr -s ' ' | awk '{$1=$1; print}')" == "$CANDIDATE_GID" ]] || \
+  die "candidate sandbox user must not belong to supplementary groups"
+CANDIDATE_SHADOW="$(getent shadow "$CANDIDATE_USER" || true)"
+[[ -n "$CANDIDATE_SHADOW" && "$CANDIDATE_SHADOW" != *$'\n'* ]] || die "candidate shadow identity is missing or ambiguous"
+candidate_shadow_password="${CANDIDATE_SHADOW#*:}"
+candidate_shadow_password="${candidate_shadow_password%%:*}"
+[[ "$candidate_shadow_password" == '!'* || "$candidate_shadow_password" == '*'* ]] || die "candidate password is not locked"
+passwd -S "$CANDIDATE_USER" | awk 'NR == 1 { exit !($2 == "L" || $2 == "LK") }' || die "candidate account is not reported locked"
+[[ -f "$CANDIDATE_SHELL" && ! -L "$CANDIDATE_SHELL" && -x "$CANDIDATE_SHELL" ]] || die "candidate nologin shell is unsafe"
+candidate_shell_metadata="$(stat -c '%u:%g:%a:%F' -- "$CANDIDATE_SHELL")"
+IFS=: read -r candidate_shell_uid candidate_shell_gid candidate_shell_mode candidate_shell_kind <<<"$candidate_shell_metadata"
+[[ "$candidate_shell_uid" == "0" && "$candidate_shell_gid" == "0" && "$candidate_shell_kind" == "regular file" && \
+   $((8#$candidate_shell_mode & 8#022)) -eq 0 ]] || die "candidate nologin shell must be root-owned and not group/other writable"
+CANDIDATE_PROCESS_COUNT=0
+for candidate_status_path in /proc/[0-9]*/status; do
+  [[ -r "$candidate_status_path" ]] || continue
+  candidate_process_uid="$(awk '$1 == "Uid:" { print $2; exit }' "$candidate_status_path" 2>/dev/null || true)"
+  [[ "$candidate_process_uid" != "$CANDIDATE_UID" ]] || CANDIDATE_PROCESS_COUNT=$((CANDIDATE_PROCESS_COUNT + 1))
+done
+(( CANDIDATE_PROCESS_COUNT == 0 )) || die "candidate user already owns active processes"
 
 LOCK_FILE="$RELEASE_ROOT/.deploy.lock"
 if [[ -e "$LOCK_FILE" || -L "$LOCK_FILE" ]]; then
@@ -1561,47 +1997,247 @@ CANDIDATE_PORT="$(choose_candidate_port)" || die "no free candidate port in $CAN
 if port_in_use "$CANDIDATE_PORT"; then die "candidate port became occupied before launch: $CANDIDATE_PORT"; fi
 CANDIDATE_LOG="$LOG_ROOT/candidate-$SERVICE-$RELEASE_ID.log"
 [[ ! -e "$CANDIDATE_LOG" && ! -L "$CANDIDATE_LOG" ]] || die "candidate log already exists; release ids are immutable: $CANDIDATE_LOG"
+PUBLIC_ASSET_ROOT="$ASSET_TARGET/public"
+CANDIDATE_STATE_ROOT="$STAGING_DIR/candidate-state"
+CANDIDATE_HOME_DIR="$CANDIDATE_STATE_ROOT/home"
+CANDIDATE_DATA_DIR="$CANDIDATE_STATE_ROOT/data"
+CANDIDATE_RUNTIME_DIR="$CANDIDATE_STATE_ROOT/runtime"
+CANDIDATE_COMMERCE_DIR="$CANDIDATE_RUNTIME_DIR/commerce-agent"
+CANDIDATE_DISCOVERY_DIR="$CANDIDATE_RUNTIME_DIR/commerce-discovery"
+CANDIDATE_IDEMPOTENCY_DIR="$CANDIDATE_RUNTIME_DIR/llm-request-idempotency"
+CANDIDATE_BACKUP_DIR="$CANDIDATE_STATE_ROOT/backups"
+CANDIDATE_UPLOAD_DIR="$CANDIDATE_STATE_ROOT/uploads"
+CANDIDATE_VOICE_DIR="$CANDIDATE_STATE_ROOT/voice"
+CANDIDATE_REFERENCE_AUDIO_DIR="$CANDIDATE_VOICE_DIR/reference-audio"
+CANDIDATE_VOICE_DATABASE="$CANDIDATE_VOICE_DIR/voice.db"
+CANDIDATE_COMMERCE_KEY="$CANDIDATE_COMMERCE_DIR/main-gateway.key"
+mkdir --mode=0711 -- "$CANDIDATE_STATE_ROOT"
+mkdir --mode=0700 -- "$CANDIDATE_HOME_DIR" "$CANDIDATE_RUNTIME_DIR" \
+  "$CANDIDATE_COMMERCE_DIR" "$CANDIDATE_DISCOVERY_DIR" "$CANDIDATE_DISCOVERY_DIR/media" \
+  "$CANDIDATE_IDEMPOTENCY_DIR" "$CANDIDATE_BACKUP_DIR" "$CANDIDATE_UPLOAD_DIR" \
+  "$CANDIDATE_VOICE_DIR" "$CANDIDATE_REFERENCE_AUDIO_DIR"
+# Candidate code receives only generated empty fixtures. The pinned, root-owned
+# helper may read the production Voice schema through SQLite's online backup
+# API, but it VACUUMs every user table to zero rows before writing candidate
+# state. It never imports code or native modules from the unactivated payload.
+CANDIDATE_FIXTURE_RECEIPT="$STAGING_DIR/candidate-fixture-receipt.json"
+if [[ "$SERVICE" == "web" ]]; then
+  "$CANDIDATE_FIXTURE_HELPER_PATH" --service web \
+    --input-root "$VOICE_ROOT" --input "$VOICE_DATABASE_PATH" \
+    --output-root "$CANDIDATE_STATE_ROOT" --output "$CANDIDATE_DATA_DIR" \
+    --voice-output "$CANDIDATE_VOICE_DATABASE" > "$CANDIDATE_FIXTURE_RECEIPT"
+else
+  "$CANDIDATE_FIXTURE_HELPER_PATH" --service voice \
+    --input-root "$VOICE_ROOT" --input "$VOICE_DATABASE_PATH" \
+    --output-root "$CANDIDATE_STATE_ROOT" --output "$CANDIDATE_VOICE_DATABASE" > "$CANDIDATE_FIXTURE_RECEIPT"
+  mkdir --mode=0700 -- "$CANDIDATE_DATA_DIR"
+fi
+node - "$CANDIDATE_FIXTURE_RECEIPT" "$SERVICE" <<'NODE'
+const fs = require("node:fs");
+const [receiptPath, service] = process.argv.slice(2);
+const stats = fs.lstatSync(receiptPath);
+if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== 1 || stats.uid !== 0 || stats.gid !== 0 || stats.size > 4096) {
+  throw new Error("candidate fixture receipt metadata is unsafe");
+}
+const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+const sha256 = /^[a-f0-9]{64}$/u;
+if (receipt.schemaVersion !== "zimeiti-candidate-fixture.v1" || receipt.status !== "ready" || receipt.service !== service
+  || receipt.records !== 0 || receipt.productionRecordsCopied !== 0 || receipt.quickCheck !== "ok"
+  || !Number.isSafeInteger(receipt.tableCount) || receipt.tableCount < 8
+  || receipt.schemaContractVersion !== "zimeiti-voice-sqlite-readiness.v1"
+  || !sha256.test(receipt.schemaContractSha256) || !sha256.test(receipt.sourceSchemaSha256)
+  || !sha256.test(receipt.outputSchemaSha256)
+  || receipt.sourceSchemaSha256 !== receipt.outputSchemaSha256) {
+  throw new Error("candidate fixture helper did not attest the Voice schema contract/fingerprint and a zero-record output");
+}
+if (service === "web" && receipt.fileCount !== 7) throw new Error("candidate Web fixture inventory is incomplete");
+NODE
+chmod 0600 -- "$CANDIDATE_FIXTURE_RECEIPT"
+[[ -d "$CANDIDATE_DATA_DIR" && ! -L "$CANDIDATE_DATA_DIR" ]] || die "candidate data fixture directory is unsafe"
+[[ -f "$CANDIDATE_VOICE_DATABASE" && ! -L "$CANDIDATE_VOICE_DATABASE" && -s "$CANDIDATE_VOICE_DATABASE" ]] || \
+  die "candidate Voice fixture is missing, empty, or redirected"
+printf '%s\n' '{"schema":1,"items":[],"order":{"video":[],"image":[],"canvas":[]},"homeOrder":{"video":[],"image":[],"canvas":[]}}' \
+  > "$CANDIDATE_DISCOVERY_DIR/catalog.json"
+node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("hex"))' > "$CANDIDATE_COMMERCE_KEY"
+chmod 0600 -- "$CANDIDATE_COMMERCE_KEY" "$CANDIDATE_VOICE_DATABASE" "$CANDIDATE_DISCOVERY_DIR/catalog.json"
+CANDIDATE_AUTH_SECRET="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("hex"))')"
+CANDIDATE_PRIVATE_LOG="$CANDIDATE_STATE_ROOT/candidate.log"
 set -o noclobber
-if ! exec {CANDIDATE_LOG_FD}>"$CANDIDATE_LOG"; then
+if ! exec {CANDIDATE_LOG_FD}>"$CANDIDATE_PRIVATE_LOG"; then
   set +o noclobber
-  die "unable to create candidate log without overwriting an existing path"
+  die "unable to create the private candidate log without overwriting an existing path"
 fi
 set +o noclobber
-[[ -f "$CANDIDATE_LOG" && ! -L "$CANDIDATE_LOG" ]] || die "candidate log path changed while it was opened"
-[[ "$(readlink -f -- "/proc/$$/fd/$CANDIDATE_LOG_FD")" == "$(readlink -f -- "$CANDIDATE_LOG")" ]] || die "candidate log file descriptor escaped its expected path"
-PUBLIC_ASSET_ROOT="$ASSET_TARGET/public"
-load_protected_environment
-if [[ -n "${DIRECT_HOOK_PATH:-}" ]]; then
-  DIRECT_PREPARED="1"
-  direct_hook prepare || fail "direct configuration/process preparation failed"
+[[ -f "$CANDIDATE_PRIVATE_LOG" && ! -L "$CANDIDATE_PRIVATE_LOG" ]] || die "private candidate log path changed while it was opened"
+[[ "$(readlink -f -- "/proc/$$/fd/$CANDIDATE_LOG_FD")" == "$(readlink -f -- "$CANDIDATE_PRIVATE_LOG")" ]] || \
+  die "private candidate log file descriptor escaped its expected path"
+exec {CANDIDATE_LOG_FD}>&-
+chmod 0600 -- "$CANDIDATE_PRIVATE_LOG"
+chown -R "$CANDIDATE_UID:$CANDIDATE_GID" -- "$CANDIDATE_HOME_DIR" "$CANDIDATE_DATA_DIR" \
+  "$CANDIDATE_RUNTIME_DIR" "$CANDIDATE_BACKUP_DIR" "$CANDIDATE_UPLOAD_DIR" "$CANDIDATE_VOICE_DIR"
+chown "$CANDIDATE_UID:$CANDIDATE_GID" -- "$CANDIDATE_PRIVATE_LOG"
+[[ "$(stat -c '%u:%g:%a:%F' -- "$CANDIDATE_STATE_ROOT")" == "0:0:711:directory" ]] || \
+  die "candidate state root must remain root-owned and non-writable by the candidate"
+# The application tree stays root-owned and non-writable. Only the staging
+# parent needs search permission so the unprivileged service can reach it.
+chmod 0711 -- "$STAGING_DIR"
+chmod 0755 -- "$PAYLOAD_DIR"
+find "$PAYLOAD_DIR" -xdev -type d -exec chmod go-w,o+rx -- {} +
+find "$PAYLOAD_DIR" -xdev -type f -exec chmod go-w,o+r -- {} +
+
+NODE_BIN="$(readlink -f -- "$(command -v node)")"
+ENV_BIN="$(readlink -f -- "$(command -v env)")"
+for trusted_binary in "$NODE_BIN" "$ENV_BIN"; do
+  [[ -f "$trusted_binary" && ! -L "$trusted_binary" && -x "$trusted_binary" ]] || \
+    die "candidate launcher binary is not a regular executable: $trusted_binary"
+  trusted_binary_metadata="$(stat -c '%u:%g:%a:%F' -- "$trusted_binary")"
+  IFS=: read -r trusted_binary_uid trusted_binary_gid trusted_binary_mode trusted_binary_kind <<<"$trusted_binary_metadata"
+  [[ "$trusted_binary_uid" == "0" && "$trusted_binary_gid" == "0" && "$trusted_binary_kind" == "regular file" && \
+     $((8#$trusted_binary_mode & 8#022)) -eq 0 ]] || \
+    die "candidate launcher binary must be root-owned and not group/other writable: $trusted_binary"
+done
+CANDIDATE_UNIT="zimeiti-candidate-$SERVICE-$$.service"
+candidate_unit="$CANDIDATE_UNIT"
+candidate_cgroup="/system.slice/$CANDIDATE_UNIT"
+CANDIDATE_INACCESSIBLE_PATHS="-/root -/home -/run/secrets -/run/postgresql -/var/run/postgresql -/run/pm2 -/var/run/pm2 -/etc/zimeiti -/etc/agent-hub -/var/lib/pgsql -/data/direct-deploy $ENV_ROOT $APP_DATA_DIR $APP_RUNTIME_DIR $UPLOAD_ROOT $LOG_ROOT $BACKUP_ROOT $VOICE_ROOT"
+CANDIDATE_ENVIRONMENT=(
+  "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  "HOME=$CANDIDATE_HOME_DIR"
+  "NODE_ENV=production"
+  "NEXT_TELEMETRY_DISABLED=1"
+  "PORT=$CANDIDATE_PORT"
+  "HOSTNAME=127.0.0.1"
+  "RELEASE_READINESS_PROFILE=candidate-runtime-v1"
+  "RELEASE_CANDIDATE_MODE=isolated"
+  "SERVER_ENV_DISCOVERY_DISABLED=1"
+  "DEV_READ_ONLY_MODE=1"
+  "RELEASE_ROOT=$PAYLOAD_DIR"
+  "APP_DATA_DIR=$CANDIDATE_DATA_DIR"
+  "APP_RUNTIME_DIR=$CANDIDATE_RUNTIME_DIR"
+  "COMMERCE_DATA_DIR=$CANDIDATE_COMMERCE_DIR"
+  "COMMERCE_DISCOVERY_CATALOG=$CANDIDATE_DISCOVERY_DIR/catalog.json"
+  "COMMERCE_GATEWAY_KEY_FILE=$CANDIDATE_COMMERCE_KEY"
+  "IDEMPOTENCY_DIR=$CANDIDATE_IDEMPOTENCY_DIR"
+  "BACKUP_DIR=$CANDIDATE_BACKUP_DIR"
+  "PUBLIC_ASSET_ROOT=$PUBLIC_ASSET_ROOT"
+  "VOICE_SQLITE_PATH=$CANDIDATE_VOICE_DATABASE"
+  "VOICE_REFERENCE_AUDIO_DIR=$CANDIDATE_REFERENCE_AUDIO_DIR"
+  "ASSET_DIGEST=$ASSET_DIGEST"
+  "ASSET_MANIFEST_SHA256=$ASSET_MANIFEST_SHA256"
+  "RELEASE_ID=$RELEASE_ID"
+  "DEPLOY_COMMIT_SHA=$COMMIT_SHA"
+  "EXPECTED_BUILD_ID=$BUILD_ID"
+  "COZE_PROJECT_ENV=PROD"
+)
+if [[ "$SERVICE" == "web" ]]; then
+  CANDIDATE_ENVIRONMENT+=(
+    "JWT_SECRET=$CANDIDATE_AUTH_SECRET"
+    "STORAGE_LOCAL_BASE_PATH=$CANDIDATE_UPLOAD_DIR"
+  )
+else
+  CANDIDATE_ENVIRONMENT+=(
+    "AUTH_SECRET=$CANDIDATE_AUTH_SECRET"
+    "DATABASE_URL=file:$CANDIDATE_VOICE_DATABASE"
+  )
 fi
 
-if [[ "$SERVICE" == "web" ]]; then
-  (
-    cd "$PAYLOAD_DIR"
-    exec env NODE_ENV=production PORT="$CANDIDATE_PORT" HOSTNAME=127.0.0.1 \
-      RELEASE_ROOT="$RELEASE_ROOT" APP_DATA_DIR="$APP_DATA_DIR" APP_RUNTIME_DIR="$APP_RUNTIME_DIR" COMMERCE_DATA_DIR="$COMMERCE_DATA_DIR" COMMERCE_DISCOVERY_CATALOG="$COMMERCE_DISCOVERY_CATALOG" COMMERCE_GATEWAY_KEY_FILE="$COMMERCE_GATEWAY_KEY_FILE" \
-      IDEMPOTENCY_DIR="$IDEMPOTENCY_DIR" BACKUP_DIR="$BACKUP_ROOT" \
-      PUBLIC_ASSET_ROOT="$PUBLIC_ASSET_ROOT" STORAGE_LOCAL_BASE_PATH="$UPLOAD_ROOT" \
-      VOICE_SQLITE_PATH="$VOICE_DATABASE_PATH" VOICE_REFERENCE_AUDIO_DIR="$VOICE_REFERENCE_AUDIO_ROOT" \
-      ASSET_DIGEST="$ASSET_DIGEST" ASSET_MANIFEST_SHA256="$ASSET_MANIFEST_SHA256" \
-      RELEASE_ID="$RELEASE_ID" DEPLOY_COMMIT_SHA="$COMMIT_SHA" EXPECTED_BUILD_ID="$BUILD_ID" \
-      COZE_PROJECT_ENV=PROD node server.js
-  ) >&"$CANDIDATE_LOG_FD" 2>&1 &
-else
-  (
-    cd "$PAYLOAD_DIR"
-    exec env NODE_ENV=production PORT="$CANDIDATE_PORT" HOSTNAME=127.0.0.1 \
-      RELEASE_ROOT="$RELEASE_ROOT" APP_DATA_DIR="$APP_DATA_DIR" APP_RUNTIME_DIR="$APP_RUNTIME_DIR" COMMERCE_DATA_DIR="$COMMERCE_DATA_DIR" COMMERCE_DISCOVERY_CATALOG="$COMMERCE_DISCOVERY_CATALOG" COMMERCE_GATEWAY_KEY_FILE="$COMMERCE_GATEWAY_KEY_FILE" \
-      IDEMPOTENCY_DIR="$IDEMPOTENCY_DIR" BACKUP_DIR="$BACKUP_ROOT" \
-      PUBLIC_ASSET_ROOT="$PUBLIC_ASSET_ROOT" VOICE_SQLITE_PATH="$VOICE_DATABASE_PATH" \
-      VOICE_REFERENCE_AUDIO_DIR="$VOICE_REFERENCE_AUDIO_ROOT" \
-      DATABASE_URL="file:$VOICE_DATABASE_PATH" RELEASE_ID="$RELEASE_ID" DEPLOY_COMMIT_SHA="$COMMIT_SHA" EXPECTED_BUILD_ID="$BUILD_ID" \
-      COZE_PROJECT_ENV=PROD node server.js
-  ) >&"$CANDIDATE_LOG_FD" 2>&1 &
+if ! systemd-run --quiet --collect --expand-environment=no --unit="$CANDIDATE_UNIT" --service-type=simple \
+  --property="User=$CANDIDATE_USER" --property="Group=$CANDIDATE_GID" \
+  --property="SupplementaryGroups=" --property="WorkingDirectory=$PAYLOAD_DIR" \
+  --property="UMask=0077" --property="NoNewPrivileges=yes" \
+  --property="CapabilityBoundingSet=" --property="AmbientCapabilities=" \
+  --property="PrivateNetwork=yes" --property="PrivateTmp=yes" --property="PrivateDevices=yes" --property="PrivateIPC=yes" \
+  --property="ProtectSystem=strict" --property="ProtectHome=yes" \
+  --property="ProtectProc=invisible" --property="ProcSubset=pid" \
+  --property="ProtectKernelTunables=yes" --property="ProtectKernelModules=yes" \
+  --property="ProtectKernelLogs=yes" --property="ProtectControlGroups=yes" \
+  --property="ProtectClock=yes" --property="ProtectHostname=yes" \
+  --property="RestrictSUIDSGID=yes" --property="RestrictRealtime=yes" \
+  --property="RestrictNamespaces=yes" --property="LockPersonality=yes" \
+  --property="RestrictAddressFamilies=AF_INET AF_INET6" \
+  --property="SystemCallArchitectures=native" \
+  --property="ReadOnlyPaths=$PAYLOAD_DIR $PUBLIC_ASSET_ROOT" \
+  --property="ReadWritePaths=$CANDIDATE_STATE_ROOT" \
+  --property="InaccessiblePaths=$CANDIDATE_INACCESSIBLE_PATHS" \
+  --property="StandardOutput=append:$CANDIDATE_PRIVATE_LOG" --property="StandardError=append:$CANDIDATE_PRIVATE_LOG" \
+  --property="MemoryMax=1073741824" --property="MemorySwapMax=0" --property="TasksMax=256" \
+  --property="CPUQuota=100%" --property="LimitFSIZE=134217728" \
+  --property="KillMode=mixed" --property="TimeoutStopSec=5s" --property="RuntimeMaxSec=180s" \
+  -- "$ENV_BIN" -i -- "${CANDIDATE_ENVIRONMENT[@]}" "$NODE_BIN" "$PAYLOAD_DIR/server.js"; then
+  fail "unable to start the non-root private-network candidate sandbox"
 fi
-candidate_pid=$!
-exec {CANDIDATE_LOG_FD}>&-
+
+observed_candidate_cgroup="$(systemctl show --property=ControlGroup --value "$CANDIDATE_UNIT" 2>/dev/null || true)"
+[[ -z "$observed_candidate_cgroup" || "$observed_candidate_cgroup" == "$candidate_cgroup" ]] || \
+  fail "candidate unit entered an unexpected control group"
+
+candidate_pid=""
+for ((candidate_start_attempt = 1; candidate_start_attempt <= 40; candidate_start_attempt += 1)); do
+  candidate_pid="$(systemctl show --property=MainPID --value "$CANDIDATE_UNIT" 2>/dev/null || true)"
+  if [[ "$candidate_pid" =~ ^[1-9][0-9]*$ && -r "/proc/$candidate_pid/environ" ]]; then break; fi
+  systemctl is-failed --quiet "$CANDIDATE_UNIT" 2>/dev/null && break
+  sleep 0.25
+done
+[[ "$candidate_pid" =~ ^[1-9][0-9]*$ && -r "/proc/$candidate_pid/environ" ]] || \
+  fail "candidate sandbox exited before its process identity could be verified; see $CANDIDATE_LOG"
+[[ "$(stat -c '%u' -- "/proc/$candidate_pid")" == "$CANDIDATE_UID" ]] || \
+  fail "candidate sandbox process is not running as the dedicated non-root user"
+node - "/proc/$candidate_pid/environ" "/proc/$candidate_pid/status" "$PAYLOAD_DIR" "$SERVICE" "$CANDIDATE_UID" "$CANDIDATE_GID" <<'NODE'
+const fs = require("node:fs");
+const [environmentPath, statusPath, payloadRoot, service, expectedUid, expectedGid] = process.argv.slice(2);
+const entries = fs.readFileSync(environmentPath).toString("utf8").split("\0").filter(Boolean);
+const environment = new Map(entries.map((entry) => {
+  const separator = entry.indexOf("=");
+  return separator < 0 ? [entry, ""] : [entry.slice(0, separator), entry.slice(separator + 1)];
+}));
+if (environment.size !== entries.length) throw new Error("candidate environment contains duplicate names");
+const expectedNames = new Set([
+  "PATH", "HOME", "NODE_ENV", "NEXT_TELEMETRY_DISABLED", "PORT", "HOSTNAME",
+  "RELEASE_READINESS_PROFILE", "RELEASE_CANDIDATE_MODE", "SERVER_ENV_DISCOVERY_DISABLED",
+  "DEV_READ_ONLY_MODE", "RELEASE_ROOT", "APP_DATA_DIR", "APP_RUNTIME_DIR", "COMMERCE_DATA_DIR",
+  "COMMERCE_DISCOVERY_CATALOG", "COMMERCE_GATEWAY_KEY_FILE", "IDEMPOTENCY_DIR", "BACKUP_DIR",
+  "PUBLIC_ASSET_ROOT", "VOICE_SQLITE_PATH", "VOICE_REFERENCE_AUDIO_DIR", "ASSET_DIGEST",
+  "ASSET_MANIFEST_SHA256", "RELEASE_ID", "DEPLOY_COMMIT_SHA", "EXPECTED_BUILD_ID", "COZE_PROJECT_ENV",
+  ...(service === "web" ? ["JWT_SECRET", "STORAGE_LOCAL_BASE_PATH"] : ["AUTH_SECRET", "DATABASE_URL"]),
+]);
+const names = new Set(environment.keys());
+const missing = [...expectedNames].filter((name) => !names.has(name));
+const unexpected = [...names].filter((name) => !expectedNames.has(name));
+if (missing.length || unexpected.length) {
+  throw new Error(`candidate environment is not the exact allowlist (missing=${missing.join(",") || "-"}; unexpected=${unexpected.join(",") || "-"})`);
+}
+if (environment.get("SERVER_ENV_DISCOVERY_DISABLED") !== "1") throw new Error("candidate environment discovery is not disabled");
+if (environment.get("RELEASE_ROOT") !== payloadRoot) throw new Error("candidate release root is not confined to the payload");
+if (environment.get("RELEASE_READINESS_PROFILE") !== "candidate-runtime-v1") throw new Error("candidate readiness profile is not isolated");
+const status = fs.readFileSync(statusPath, "utf8");
+const field = (name) => status.match(new RegExp(`^${name}:\\s+(.+)$`, "mu"))?.[1]?.trim() || "";
+if (field("Uid").split(/\s+/u).some((value) => value !== expectedUid) || field("Uid").split(/\s+/u).length !== 4) {
+  throw new Error("candidate process uid tuple is not isolated");
+}
+if (field("Gid").split(/\s+/u).some((value) => value !== expectedGid) || field("Gid").split(/\s+/u).length !== 4) {
+  throw new Error("candidate process gid tuple is not isolated");
+}
+if (field("Groups").split(/\s+/u).filter(Boolean).join(" ") !== expectedGid) throw new Error("candidate process has supplementary groups");
+if (field("NoNewPrivs") !== "1") throw new Error("candidate process does not have NoNewPrivileges");
+NODE
+CANDIDATE_UNIT_SECURITY="$(systemctl show "$CANDIDATE_UNIT" \
+  --property=User --property=PrivateNetwork --property=NoNewPrivileges --property=ProtectSystem \
+  --property=ProtectHome --property=PrivateDevices --property=PrivateIPC --property=ProtectProc \
+  --property=ProcSubset --property=RestrictAddressFamilies --property=MemoryMax --property=MemorySwapMax \
+  --property=TasksMax --property=CPUQuotaPerSecUSec --property=LimitFSIZE \
+  --property=ReadOnlyPaths --property=ReadWritePaths --property=InaccessiblePaths \
+  --property=CapabilityBoundingSet --property=AmbientCapabilities --property=RestrictNamespaces \
+  --property=KillMode --property=RuntimeMaxUSec --property=TimeoutStopUSec --property=UMask)"
+for expected_property in \
+  "User=$CANDIDATE_USER" "PrivateNetwork=yes" "NoNewPrivileges=yes" "ProtectSystem=strict" \
+  "ProtectHome=yes" "PrivateDevices=yes" "PrivateIPC=yes" "ProtectProc=invisible" "ProcSubset=pid" \
+  "RestrictAddressFamilies=AF_INET AF_INET6" "MemoryMax=1073741824" "MemorySwapMax=0" \
+  "TasksMax=256" "CPUQuotaPerSecUSec=1s" "LimitFSIZE=134217728" \
+  "ReadOnlyPaths=$PAYLOAD_DIR $PUBLIC_ASSET_ROOT" "ReadWritePaths=$CANDIDATE_STATE_ROOT" \
+  "InaccessiblePaths=$CANDIDATE_INACCESSIBLE_PATHS" "CapabilityBoundingSet=" "AmbientCapabilities=" \
+  "RestrictNamespaces=yes" "KillMode=mixed" "RuntimeMaxUSec=3min" "TimeoutStopUSec=5s" "UMask=0077"; do
+  grep -Fxq "$expected_property" <<<"$CANDIDATE_UNIT_SECURITY" || fail "candidate sandbox security property is not active: $expected_property"
+done
 
 wait_http() {
   local url="$1"
@@ -1614,15 +2250,32 @@ wait_http() {
   return 1
 }
 
+wait_candidate_http() {
+  local url="$1"
+  local output="$2"
+  local attempt
+  for ((attempt = 1; attempt <= 45; attempt += 1)); do
+    if systemctl is-active --quiet "$CANDIDATE_UNIT" 2>/dev/null && \
+       nsenter --target "$candidate_pid" --net -- \
+         curl --fail --silent --connect-timeout 2 --max-time 5 --output "$output" "$url" 2>/dev/null; then
+      return 0
+    fi
+    systemctl is-failed --quiet "$CANDIDATE_UNIT" 2>/dev/null && return 1
+    sleep 1
+  done
+  return 1
+}
+
 assert_readiness_identity() {
   local response_file="$1"
   local expected_release="$2"
   local expected_commit="$3"
   local expected_build="$4"
   local expected_asset_digest="$5"
-  node - "$response_file" "$SERVICE" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" <<'NODE'
+  local label="$6"
+  node - "$response_file" "$SERVICE" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" "$label" <<'NODE'
 const fs = require("node:fs");
-const [filePath, service, releaseId, commitSha, buildId, assetDigest] = process.argv.slice(2);
+const [filePath, service, releaseId, commitSha, buildId, assetDigest, label] = process.argv.slice(2);
 const body = JSON.parse(fs.readFileSync(filePath, "utf8"));
 if (body.ready !== true) throw new Error(`readiness is not true: ${String(body.ready)}`);
 if (body.service !== service) throw new Error(`readiness service mismatch: ${String(body.service)}`);
@@ -1630,6 +2283,22 @@ if (body.releaseId !== releaseId) throw new Error(`readiness release identity mi
 if (body.commitSha !== commitSha) throw new Error(`readiness commit identity mismatch: ${String(body.commitSha)}`);
 if (body.buildId !== buildId) throw new Error(`readiness build identity mismatch: ${String(body.buildId)}`);
 if (service === "web" && body.assetDigest !== assetDigest) throw new Error(`readiness asset digest mismatch: ${String(body.assetDigest)}`);
+if (label === "candidate") {
+  if (body.readinessProfile !== "candidate-runtime-v1" || body.activationReady !== false) {
+    throw new Error("candidate readiness must be credential-free and non-activating");
+  }
+  if (service === "web") {
+    for (const key of ["database", "referenceData"]) {
+      const check = body.checks?.[key];
+      if (check?.state !== "external-attestation-required" || check?.probeExecuted !== false || check?.requiredBeforeActivation !== true) {
+        throw new Error(`candidate ${key} must require an external preflight attestation`);
+      }
+    }
+  }
+}
+if (label !== "candidate" && (body.readinessProfile !== "production-full-v1" || body.activationReady !== true)) {
+  throw new Error("live readiness must be production-full-v1 and activation-ready");
+}
 NODE
 }
 
@@ -1641,20 +2310,32 @@ verify_service_http() {
   local expected_asset_digest="$5"
   local label="$6"
   local response_file="$STAGING_DIR/$label-health.json"
-  wait_http "http://127.0.0.1:$port$READINESS_PATH" "$response_file" || return 1
-  assert_readiness_identity "$response_file" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" || return 1
+  if [[ "$label" == "candidate" ]]; then
+    wait_candidate_http "http://127.0.0.1:$port$READINESS_PATH" "$response_file" || return 1
+  else
+    wait_http "http://127.0.0.1:$port$READINESS_PATH" "$response_file" || return 1
+  fi
+  assert_readiness_identity "$response_file" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" "$label" || return 1
 }
 
 verify_service_http "$CANDIDATE_PORT" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" "$ASSET_DIGEST" "candidate" || \
-  fail "candidate readiness/identity/data/database check failed; see $CANDIDATE_LOG"
-LISTENER_DETAIL="$(ss -H -ltnp "sport = :$CANDIDATE_PORT" 2>/dev/null || true)"
+  fail "isolated candidate runtime readiness/identity/data check failed; see $CANDIDATE_LOG"
+LISTENER_DETAIL="$(nsenter --target "$candidate_pid" --net -- ss -H -ltnp "sport = :$CANDIDATE_PORT" 2>/dev/null || true)"
 grep -Fq "pid=$candidate_pid," <<<"$LISTENER_DETAIL" || fail "candidate port is not owned by the launched candidate PID $candidate_pid"
 
-cleanup_candidate
-port_in_use "$CANDIDATE_PORT" && fail "candidate process stopped but its port remains occupied"
+cleanup_candidate || fail "candidate sandbox could not be proven inactive with an empty cgroup; staging was retained"
 validate_payload_inventory "$PAYLOAD_DIR"
 capture_data_snapshot "$DATA_AFTER_CANDIDATE"
 compare_data_snapshot "$DATA_BEFORE" "$DATA_AFTER_CANDIDATE" || fail "candidate startup changed shared/data; code was not activated"
+
+# Production credentials and direct activation hooks are loaded only after the
+# isolated candidate has exited and the persistent data snapshot is unchanged.
+load_protected_environment
+run_production_preflight
+if [[ -n "${DIRECT_HOOK_PATH:-}" ]]; then
+  DIRECT_PREPARED="1"
+  direct_hook prepare || fail "direct configuration/process preparation failed"
+fi
 
 PREVIOUS_TARGET=""
 PREVIOUS_ASSET_TARGET="$CURRENT_ASSET_TARGET"
@@ -1897,7 +2578,11 @@ rollback_release() {
   ROLLBACK_ATTEMPTED="1"
   IN_ROLLBACK="1"
   echo "ROLLBACK: $reason" >&2
-  cleanup_candidate
+  if ! cleanup_candidate; then
+    echo "ROLLBACK FAILED: candidate sandbox could not be proven inactive; pointers were not changed." >&2
+    IN_ROLLBACK="0"
+    return 1
+  fi
 
   if ! direct_hook rollback-before; then
     echo "ROLLBACK FAILED: configuration/worker restoration prerequisite is unconfirmed." >&2
@@ -2025,6 +2710,8 @@ verify_candidate_release_seal "$CANDIDATE" || fail "candidate root-owned seal ch
 validate_payload_inventory "$CANDIDATE" || fail "sealed candidate full SHA-256 inventory changed before activation"
 [[ "$VALIDATED_PAYLOAD_ID" == "$(stat -c '%d:%i' -- "$CANDIDATE")" ]] || \
   fail "sealed candidate directory identity changed before activation"
+run_storage_boot_guard
+assert_fresh_production_preflight_receipt
 
 SWITCH_STARTED="1"
 if [[ "$SERVICE" == "web" ]]; then
@@ -2116,12 +2803,16 @@ if ! direct_hook precommit; then
   rollback_release "direct transaction precommit verification failed" || true
   fail "direct transaction precommit verification failed"
 fi
+if [[ ! "$PRODUCTION_PREFLIGHT_RECEIPT_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
+  rollback_release "production preflight receipt identity missing at commit boundary" || true
+  fail "production preflight receipt identity missing at commit boundary"
+fi
 
 # SUCCESS and DEPLOY_COMPLETE form one short commit boundary. A termination
 # before this block rolls back; a termination after it preserves the new release.
 trap '' HUP INT TERM
-if ! printf '%s\tSUCCESS\t%s\t%s\t%s\t%s\t%s\t%s\t-\n' \
-  "$(date -u +%FT%TZ)" "$RELEASE_ID" "$SERVICE" "${ACTUAL_SHA256,,}" "$COMMIT_SHA" "${ASSET_DIGEST:--}" "$DEPLOY_ACTOR" \
+if ! printf '%s\tSUCCESS\t%s\t%s\t%s\t%s\t%s\t%s\tpreflight=%s\n' \
+  "$(date -u +%FT%TZ)" "$RELEASE_ID" "$SERVICE" "${ACTUAL_SHA256,,}" "$COMMIT_SHA" "${ASSET_DIGEST:--}" "$DEPLOY_ACTOR" "$PRODUCTION_PREFLIGHT_RECEIPT_SHA256" \
   >&"$HISTORY_FD"; then
   FAILURE_CONTEXT="history-success-write-failed;exit=1"
   rollback_release "unable to append the deployment SUCCESS record" || true

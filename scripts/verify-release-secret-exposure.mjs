@@ -3,11 +3,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 
 const root = process.cwd();
+const cli = new Map();
+for (let index = 2; index < process.argv.length; index += 1) {
+  const token = process.argv[index];
+  if (!token.startsWith("--")) throw new Error("ARGUMENT_NAME_REQUIRED");
+  const next = process.argv[index + 1];
+  if (next !== undefined && !next.startsWith("--")) { cli.set(token, next); index += 1; }
+  else cli.set(token, "1");
+}
 const mode = process.argv.includes("--include-local-evidence") ? "local-evidence" : "release-candidate";
 const maximumTextBytes = 2 * 1024 * 1024;
-const releaseRoots = ["src", "scripts", "deploy", "docs", "supabase", "public", "voice-platform"];
 const evidenceRoots = ["artifacts", ".logs", ".codex-evidence"];
 const skippedDirectoryNames = new Set([
   ".git", ".next", "node_modules", "backups", ".codex-backups", ".codex-task-snapshots",
@@ -117,14 +125,57 @@ function walk(directory, output) {
   }
 }
 
+// Kept as the scanner-contract extraction boundary; runtime fills this array
+// only after all pure detection functions have been defined.
+const workingTreeFindings = [];
+
 function runGit(arguments_) {
   return spawnSync("git", arguments_, { cwd: root, encoding: "utf8", windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
 }
 
-function historyFindings() {
-  const commitsResult = runGit(["rev-list", "--all"]);
-  if (commitsResult.status !== 0) return { available: false, commits: 0, findings: [] };
+function candidateFindings(commit) {
+  const listed = runGit(["ls-tree", "-r", "-z", "--name-only", commit]);
+  if (listed.status !== 0) throw new Error("SECRET_SCAN_CANDIDATE_TREE_UNAVAILABLE");
+  const findings = [];
+  for (const relativePath of listed.stdout.split("\0").filter(Boolean)) {
+    if (isSkipped(relativePath)) continue;
+    const extension = path.extname(relativePath).toLowerCase();
+    if (!textExtensions.has(extension) && !path.basename(relativePath).startsWith(".env")) continue;
+    const blob = runGit(["show", `${commit}:${relativePath}`]);
+    if (blob.status !== 0) throw new Error("SECRET_SCAN_CANDIDATE_BLOB_UNAVAILABLE");
+    if (Buffer.byteLength(blob.stdout, "utf8") > maximumTextBytes || blob.stdout.includes("\0")) continue;
+    const counts = findingsFor(blob.stdout, relativePath);
+    if (counts.size > 0) findings.push({
+      path: normalize(relativePath),
+      categories: [...counts.entries()].map(([category, count]) => ({ category, count })),
+    });
+  }
+  return findings.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function resolveCommit(revision) {
+  const result = runGit(["rev-parse", "--verify", `${revision}^{commit}`]);
+  if (result.status !== 0) throw new Error("SECRET_SCAN_GIT_REVISION_UNRESOLVED");
+  return result.stdout.trim().toLowerCase();
+}
+
+function historyFindings(baseArgument, headArgument, includeBase) {
+  let base = null;
+  let head = null;
+  let commitsResult;
+  if (baseArgument || headArgument) {
+    if (!baseArgument || !headArgument) throw new Error("SECRET_SCAN_HISTORY_RANGE_INCOMPLETE");
+    base = resolveCommit(baseArgument);
+    head = resolveCommit(headArgument);
+    const ancestry = runGit(["merge-base", "--is-ancestor", base, head]);
+    if (ancestry.status !== 0) throw new Error("SECRET_SCAN_HISTORY_BASE_NOT_ANCESTOR");
+    commitsResult = runGit(["rev-list", "--reverse", `${base}..${head}`]);
+  } else {
+    commitsResult = runGit(["rev-list", "--all"]);
+  }
+  if (commitsResult.status !== 0) throw new Error("SECRET_SCAN_HISTORY_UNAVAILABLE");
   const commits = commitsResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).filter(Boolean);
+  if (includeBase && base) commits.unshift(base);
   const candidateExpressions = [
     { category: "private-key-pem", pattern: "-----BEGIN [A-Z ]*PRIVATE KEY-----" },
     { category: "credentialed-url", pattern: "https?://[^/[:space:]:@]+:[^/[:space:]@]+@" },
@@ -136,8 +187,8 @@ function historyFindings() {
   for (const commit of commits) {
     const candidatePaths = new Set();
     for (const { pattern } of candidateExpressions) {
-      const result = runGit(["-c", "core.quotePath=false", "grep", "-I", "-l", "-E", pattern, commit, "--"]);
-      if (![0, 1].includes(result.status)) continue;
+      const result = runGit(["-c", "core.quotePath=false", "grep", "-I", "-l", "-E", "-e", pattern, commit, "--"]);
+      if (![0, 1].includes(result.status)) throw new Error("SECRET_SCAN_GIT_GREP_FAILED");
       for (const raw of result.stdout.split(/\r?\n/u).map((entry) => entry.trim()).filter(Boolean)) {
         const separator = raw.indexOf(":");
         const relativePath = separator >= 0 ? raw.slice(separator + 1) : raw;
@@ -149,7 +200,8 @@ function historyFindings() {
       const extension = path.extname(relativePath).toLowerCase();
       if (!textExtensions.has(extension) && !path.basename(relativePath).startsWith(".env")) continue;
       const blob = runGit(["show", `${commit}:${relativePath}`]);
-      if (blob.status !== 0 || Buffer.byteLength(blob.stdout, "utf8") > maximumTextBytes) continue;
+      if (blob.status !== 0) throw new Error("SECRET_SCAN_GIT_BLOB_UNAVAILABLE");
+      if (Buffer.byteLength(blob.stdout, "utf8") > maximumTextBytes) continue;
       for (const [category] of findingsFor(blob.stdout, relativePath)) {
         const key = `${relativePath}\u0000${category}`;
         aggregate.set(key, (aggregate.get(key) || 0) + 1);
@@ -160,15 +212,31 @@ function historyFindings() {
     const [relativePath, category] = key.split("\u0000");
     return { path: relativePath, category, commitCount };
   }).sort((left, right) => left.path.localeCompare(right.path) || left.category.localeCompare(right.category));
-  return { available: true, commits: commits.length, findings };
+  return { available: true, base, head, includeBase, commits: commits.length, findings };
 }
 
-const workingTreeFindings = [];
-for (const relativeRoot of [...releaseRoots, ...(mode === "local-evidence" ? evidenceRoots : [])]) {
-  walk(path.join(root, relativeRoot), workingTreeFindings);
+const candidateCommit = cli.has("--candidate-commit") ? resolveCommit(cli.get("--candidate-commit")) : resolveCommit("HEAD");
+const headCommit = resolveCommit("HEAD");
+if (candidateCommit !== headCommit) throw new Error("SECRET_SCAN_CANDIDATE_NOT_HEAD");
+if (cli.has("--require-clean-candidate")) {
+  const dirty = runGit(["status", "--porcelain=v1", "--untracked-files=all"]);
+  if (dirty.status !== 0 || dirty.stdout.length > 0) throw new Error("SECRET_SCAN_CANDIDATE_NOT_CLEAN");
 }
-workingTreeFindings.sort((left, right) => left.path.localeCompare(right.path));
-const history = historyFindings();
+workingTreeFindings.push(...candidateFindings(candidateCommit));
+if (mode === "local-evidence") {
+  for (const relativeRoot of evidenceRoots) walk(path.join(root, relativeRoot), workingTreeFindings);
+  workingTreeFindings.sort((left, right) => left.path.localeCompare(right.path));
+}
+const history = historyFindings(cli.get("--history-base"), cli.get("--history-head"), cli.has("--include-history-base"));
+let scopeReceiptId = null;
+let scopeReceiptSha256 = null;
+if (cli.has("--scope-receipt")) {
+  const scopeBytes = fs.readFileSync(path.resolve(cli.get("--scope-receipt")));
+  const scope = JSON.parse(scopeBytes.toString("utf8"));
+  if (!/^scope-[a-f0-9]{24}$/u.test(String(scope.receiptId || ""))) throw new Error("SECRET_SCAN_SCOPE_RECEIPT_INVALID");
+  scopeReceiptId = scope.receiptId;
+  scopeReceiptSha256 = crypto.createHash("sha256").update(scopeBytes).digest("hex");
+}
 const workingTreeBlockingCount = workingTreeFindings.reduce((total, entry) => total
   + entry.categories.filter(({ category }) => highConfidenceCategories.has(category))
     .reduce((count, item) => count + item.count, 0), 0);
@@ -182,14 +250,26 @@ const reviewCount = workingTreeFindings.reduce((total, entry) => total
   + history.findings.filter(({ category }) => !highConfidenceCategories.has(category)).length;
 const status = blockingCount > 0 ? "BLOCKED" : reviewCount > 0 ? "REVIEW_REQUIRED" : "PASS";
 const result = {
+  schemaVersion: "zimeiti-release-secret-exposure-receipt.v1",
   verifier: "release-secret-exposure",
   mode,
   status,
+  scopeReceiptId,
+  scopeReceiptSha256,
+  candidate: { commit: candidateCommit, cleanRequired: cli.has("--require-clean-candidate") },
   outputPolicy: "paths-categories-counts-only",
   summary: { blockingCount, reviewCount, workingTreeBlockingCount, historyBlockingCount },
   workingTree: { findingFiles: workingTreeFindings.length, findings: workingTreeFindings },
   gitHistory: history,
 };
 
-console.log(JSON.stringify(result, null, 2));
+const body = `${JSON.stringify(result, null, 2)}\n`;
+if (cli.has("--receipt")) {
+  const receiptPath = path.resolve(cli.get("--receipt"));
+  fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
+  const temporary = `${receiptPath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  fs.writeFileSync(temporary, body, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  fs.renameSync(temporary, receiptPath);
+}
+process.stdout.write(body);
 process.exit(result.status === "PASS" ? 0 : result.status === "REVIEW_REQUIRED" ? 1 : 2);

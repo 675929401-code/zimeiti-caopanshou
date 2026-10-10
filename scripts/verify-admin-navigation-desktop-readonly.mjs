@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
+import { computeLocalBuildFingerprint } from "./local-build-fingerprint.mjs";
 
 const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").replace(/\/+$/u, "");
 const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
@@ -40,7 +41,7 @@ const commandCenterViews = [
 const mappedTabs = primaryNavigation.flatMap((module) =>
   module.tabs.map(([label, tab]) => ({ label, tab, moduleRoot: module.root, moduleTitle: module.title, moduleSize: module.tabs.length })),
 );
-const forbiddenLabels = ["带货 Agent", "漫剧工作台", "漫剧后台"];
+const forbiddenLabels = ["带货 Agent", "漫剧工作台", "漫剧后台", "部署到线上"];
 const forbiddenPaths = [
   /^\/api\/commerce(?:\/|$)/u,
   /^\/api\/admin\/manju(?:-|\/|$)/u,
@@ -125,6 +126,78 @@ function uniqueEntries(entries, key) {
     seen.add(identity);
     return true;
   });
+}
+
+async function readRuntimeIdentity(stage) {
+  const root = process.cwd();
+  const [publicVersionText, diskBuildIdText, fingerprintReceiptText] = await Promise.all([
+    fs.readFile(path.join(root, "public", "version.json"), "utf8"),
+    fs.readFile(path.join(root, ".next", "BUILD_ID"), "utf8"),
+    fs.readFile(path.join(root, ".next", "local-source-fingerprint.v1.json"), "utf8"),
+  ]);
+  const publicVersion = JSON.parse(publicVersionText);
+  const diskBuildId = diskBuildIdText.trim();
+  const fingerprintReceipt = JSON.parse(fingerprintReceiptText);
+  const currentSourceFingerprint = computeLocalBuildFingerprint(root);
+  const response = await fetch(`${origin}/api/version`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const runtimeVersion = await response.json().catch(() => ({}));
+  const identity = {
+    stage,
+    checkedAt: new Date().toISOString(),
+    files: {
+      publicVersion: "public/version.json",
+      diskBuildId: ".next/BUILD_ID",
+      fingerprintReceipt: ".next/local-source-fingerprint.v1.json",
+    },
+    publicVersion: {
+      schemaVersion: publicVersion?.schemaVersion ?? null,
+      sourceVersion: publicVersion?.sourceVersion || publicVersion?.version || null,
+      sourceDigest: publicVersion?.sourceDigest || null,
+    },
+    diskBuildId,
+    fingerprintReceipt: {
+      schemaVersion: fingerprintReceipt?.schemaVersion ?? null,
+      kind: fingerprintReceipt?.kind || null,
+      buildId: fingerprintReceipt?.buildId || null,
+      fingerprint: fingerprintReceipt?.fingerprint || null,
+      fileCount: fingerprintReceipt?.fileCount ?? null,
+      capturedAt: fingerprintReceipt?.capturedAt || null,
+    },
+    currentSourceFingerprint,
+    runtimeVersion: {
+      status: response.status,
+      sourceVersion: runtimeVersion?.sourceVersion || runtimeVersion?.version || null,
+      buildId: runtimeVersion?.buildId || runtimeVersion?.build || null,
+    },
+    runningLatest: false,
+  };
+  identity.runningLatest = response.ok
+    && identity.publicVersion.schemaVersion === 1
+    && Boolean(identity.publicVersion.sourceVersion)
+    && Boolean(identity.diskBuildId)
+    && identity.fingerprintReceipt.schemaVersion === 1
+    && identity.fingerprintReceipt.kind === "local-production-preview-source-fingerprint"
+    && identity.fingerprintReceipt.buildId === identity.diskBuildId
+    && identity.fingerprintReceipt.fingerprint === identity.currentSourceFingerprint.fingerprint
+    && identity.fingerprintReceipt.fileCount === identity.currentSourceFingerprint.fileCount
+    && identity.runtimeVersion.sourceVersion === identity.publicVersion.sourceVersion
+    && identity.runtimeVersion.buildId === identity.diskBuildId;
+  return identity;
+}
+
+function runtimeIdentityBinding(identity) {
+  return {
+    publicVersion: identity?.publicVersion || null,
+    diskBuildId: identity?.diskBuildId || null,
+    fingerprintReceipt: identity?.fingerprintReceipt || null,
+    currentSourceFingerprint: identity?.currentSourceFingerprint || null,
+    runtimeVersion: identity?.runtimeVersion || null,
+    runningLatest: identity?.runningLatest === true,
+  };
 }
 
 async function pageMetrics(page) {
@@ -251,6 +324,11 @@ async function main() {
     },
     expected: { primaryModules: 14, adminTabs: 27, commandCenterViews: 7, adminHelpPages: 1 },
     runtimeVersion: null,
+    runtimeIdentity: {
+      before: null,
+      after: null,
+      unchanged: false,
+    },
     navigationContract: null,
     adminTabs: [],
     commandCenterViews: [],
@@ -293,20 +371,14 @@ async function main() {
   };
 
   try {
-    const versionResponse = await fetch(`${origin}/api/version`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-    const versionBody = await versionResponse.json().catch(() => ({}));
-    report.runtimeVersion = {
-      status: versionResponse.status,
-      sourceVersion: versionBody.sourceVersion || versionBody.version || null,
-      buildId: versionBody.buildId || versionBody.build || null,
-    };
-    if (!versionResponse.ok) addIssue("RUNTIME_VERSION_UNAVAILABLE", "preflight", `HTTP ${versionResponse.status}`);
+    report.runtimeIdentity.before = await readRuntimeIdentity("before-browser-sweep");
+    report.runtimeVersion = report.runtimeIdentity.before.runtimeVersion;
+    if (!report.runtimeIdentity.before.runningLatest) {
+      addIssue("RUNTIME_NOT_LATEST", "preflight", JSON.stringify(runtimeIdentityBinding(report.runtimeIdentity.before)));
+    }
   } catch (error) {
     report.runtimeVersion = { error: redact(error?.message || error) };
-    addIssue("RUNTIME_VERSION_UNAVAILABLE", "preflight", error?.message || error);
+    addIssue("RUNTIME_IDENTITY_UNAVAILABLE", "preflight", error?.message || error);
   }
 
   const browser = await chromium.launch({ headless: true });
@@ -446,7 +518,7 @@ async function main() {
       const expectedTestIds = primaryNavigation.map((module) => `admin-primary-nav-${module.root}`);
       const forbiddenVisible = [];
       for (const label of forbiddenLabels) {
-        if (await nav.getByRole("button", { name: label, exact: true }).count()) forbiddenVisible.push(label);
+        if (await page.getByRole("button", { name: label, exact: true }).count()) forbiddenVisible.push(label);
       }
       report.navigationContract = {
         requestedUrl: `${origin}/admin?tab=users`,
@@ -659,7 +731,6 @@ async function main() {
 
     const unexpectedNetworkErrors = report.networkErrors.filter((entry) => !entry.blockedByPolicy && !isBenignNavigationAbort(entry));
     const unexpectedConsoleErrors = report.consoleErrors.filter((entry) => !/ERR_BLOCKED_BY_CLIENT|Failed to load resource: net::ERR_FAILED/iu.test(entry.message));
-    const criticalExternalRequests = report.blockedExternalRequests.filter((entry) => ["document", "script", "stylesheet", "xhr", "fetch", "websocket"].includes(entry.resourceType));
     const businessWrites = report.blockedWrites;
     if (report.adminTabs.length !== 27) addIssue("ADMIN_TAB_SWEEP_INCOMPLETE", "summary", `${report.adminTabs.length}/27`);
     if (report.commandCenterViews.length !== 7) addIssue("COMMAND_CENTER_SWEEP_INCOMPLETE", "summary", `${report.commandCenterViews.length}/7`);
@@ -670,13 +741,30 @@ async function main() {
     if (report.lockedSensitiveConsole428.length) addIssue("LOCKED_SENSITIVE_CONSOLE_428", "browser", JSON.stringify(report.lockedSensitiveConsole428));
     if (report.blockedPaidRequests.length) addIssue("PAID_OR_MUTATION_REQUEST_ATTEMPTED", "network", JSON.stringify(report.blockedPaidRequests));
     if (businessWrites.length) addIssue("BUSINESS_WRITE_REQUEST_ATTEMPTED", "network", JSON.stringify(businessWrites));
-    if (criticalExternalRequests.length) addIssue("ACTIVE_EXTERNAL_REQUEST_ATTEMPTED", "network", JSON.stringify(criticalExternalRequests));
+    if (report.blockedExternalRequests.length) addIssue("ACTIVE_EXTERNAL_REQUEST_ATTEMPTED", "network", JSON.stringify(report.blockedExternalRequests));
     if (report.failedResponses.length) addIssue("HTTP_ERROR_RESPONSES", "network", JSON.stringify(report.failedResponses));
     if (report.pageErrors.length) addIssue("PAGE_ERRORS", "browser", JSON.stringify(report.pageErrors));
     if (unexpectedConsoleErrors.length) addIssue("CONSOLE_ERRORS", "browser", JSON.stringify(unexpectedConsoleErrors));
     if (unexpectedNetworkErrors.length) addIssue("NETWORK_ERRORS", "browser", JSON.stringify(unexpectedNetworkErrors));
   } finally {
     await browser.close();
+  }
+
+  try {
+    report.runtimeIdentity.after = await readRuntimeIdentity("after-browser-sweep");
+    if (!report.runtimeIdentity.after.runningLatest) {
+      addIssue("RUNTIME_NOT_LATEST", "postflight", JSON.stringify(runtimeIdentityBinding(report.runtimeIdentity.after)));
+    }
+    report.runtimeIdentity.unchanged = JSON.stringify(runtimeIdentityBinding(report.runtimeIdentity.before))
+      === JSON.stringify(runtimeIdentityBinding(report.runtimeIdentity.after));
+    if (!report.runtimeIdentity.unchanged) {
+      addIssue("RUNTIME_IDENTITY_DRIFTED", "postflight", JSON.stringify({
+        before: runtimeIdentityBinding(report.runtimeIdentity.before),
+        after: runtimeIdentityBinding(report.runtimeIdentity.after),
+      }));
+    }
+  } catch (error) {
+    addIssue("RUNTIME_IDENTITY_UNAVAILABLE", "postflight", error?.message || error);
   }
 
   report.finishedAt = new Date().toISOString();
@@ -701,6 +789,9 @@ async function main() {
     networkErrors: report.networkErrors.length,
     benignNavigationAborts: report.benignNavigationAborts.length,
     unexpectedNetworkErrors: report.networkErrors.filter((entry) => !entry.blockedByPolicy && !isBenignNavigationAbort(entry)).length,
+    runningLatestBefore: report.runtimeIdentity.before?.runningLatest === true,
+    runningLatestAfter: report.runtimeIdentity.after?.runningLatest === true,
+    runtimeIdentityUnchanged: report.runtimeIdentity.unchanged,
     issueCount: report.issues.length,
   };
   report.passed = report.issues.length === 0;

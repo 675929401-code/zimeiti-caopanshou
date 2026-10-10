@@ -230,7 +230,7 @@ async function finalizeVideoStatusSuccess(input: {
       videoUrl: "",
       storageUrl: "",
       thumbnailUrl: "",
-      errorMessage: outcome.message || "视频正在完成永久存储与原子结算",
+      errorMessage: outcome.message || "视频正在完成交付确认与原子结算",
       errorCode: outcome.code,
       retryable: true,
       priceCharged: 0,

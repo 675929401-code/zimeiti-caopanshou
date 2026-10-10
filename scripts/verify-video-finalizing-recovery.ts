@@ -27,8 +27,16 @@ async function main(): Promise<void> {
     true,
     "active task recovery must include finalizing",
   );
+  const activeQueryStart = activeTasks.indexOf("// 查询所有未完成的任务");
+  const activeQueryEnd = activeTasks.indexOf("if (error)", activeQueryStart);
+  assert.ok(activeQueryStart >= 0 && activeQueryEnd > activeQueryStart, "active task query must remain inspectable");
+  const activeQuery = activeTasks.slice(activeQueryStart, activeQueryEnd);
+  assert.doesNotMatch(activeQuery, /\.gte\("created_at"/u, "unfinished task recovery must not expire after three days");
+  assert.doesNotMatch(activeTasks, /VIDEO_PAGE_HISTORY_RETENTION_DAYS/u, "unfinished task recovery must not keep a hidden age window");
+  assert.match(activeQuery, /\.eq\("user_id", userId\)[\s\S]*\.is\("history_hidden_at", null\)[\s\S]*\.in\("status", \["pending", "queued", "processing", "generating", "finalizing", "billing_pending"\]\)/u,
+    "unbounded recovery must preserve owner, visibility, and active-status safety boundaries");
 
-  console.log("video finalizing recovery verifier: PASS");
+  console.log("video finalizing recovery zero-cost verifier: PASS; unfinishedAgeWindow=none; paidRequests=0");
 }
 
 void main();

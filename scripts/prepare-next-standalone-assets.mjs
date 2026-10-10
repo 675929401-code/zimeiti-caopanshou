@@ -272,17 +272,55 @@ function materializeWebFfprobe(standaloneRoot) {
   };
 }
 
-function materializeDevelopmentBackupScript(root, standaloneRoot) {
-  const source = path.join(root, "runtime-tools", "backup-data.sh");
-  requireFile("development backup script", source);
-  const target = path.join(standaloneRoot, "runtime-tools", "backup-data.sh");
-  fs.mkdirSync(path.dirname(target), { recursive: true });
+function materializeBackupControlPlane(root, standaloneRoot) {
+  const bundle = [
+    { relative: "runtime-tools/backup-data.sh", executable: true },
+    { relative: "scripts/backup-recovery-helper.mjs", executable: true },
+    { relative: "scripts/backup-postgres-consistent.mjs", executable: true },
+    { relative: "scripts/contracts/backup-receipt.v1.schema.json", executable: false },
+    { relative: "scripts/contracts/restore-receipt.v1.schema.json", executable: false },
+  ];
+  const files = [];
+  for (const entry of bundle) {
+    const source = path.join(root, ...entry.relative.split("/"));
+    const target = path.join(standaloneRoot, ...entry.relative.split("/"));
+    requireFile(`backup control-plane source ${entry.relative}`, source);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    if (fs.existsSync(target)) fs.rmSync(target, { force: true });
+    fs.copyFileSync(source, target);
+    fs.chmodSync(target, entry.executable ? 0o755 : 0o644);
+    requireFile(`standalone backup control-plane ${entry.relative}`, target);
+    files.push({
+      path: normalize(path.relative(standaloneRoot, target)),
+      bytes: fs.statSync(target).size,
+      sha256: sha256File(target),
+    });
+  }
+  return {
+    kind: "backup-control-plane-bundle.v1",
+    files,
+  };
+}
+
+function materializeVoiceReleaseIdentity(root, targetPublic) {
+  const source = path.join(root, "public", "version.json");
+  const target = path.join(targetPublic, "version.json");
+  requireFile("shared release identity", source);
+  const sourceStats = fs.lstatSync(source);
+  if (sourceStats.isSymbolicLink()) stop(`shared release identity cannot be a symlink: ${source}`, 2);
+  const value = JSON.parse(fs.readFileSync(source, "utf8"));
+  if (value.schemaVersion !== 1 || typeof value.sourceVersion !== "string"
+      || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(value.sourceVersion)) {
+    stop("shared release identity is invalid", 2);
+  }
+  fs.mkdirSync(targetPublic, { recursive: true });
   if (fs.existsSync(target)) fs.rmSync(target, { force: true });
   fs.copyFileSync(source, target);
-  fs.chmodSync(target, 0o755);
-  requireFile("standalone backup runtime", target);
+  fs.chmodSync(target, 0o644);
   return {
-    path: normalize(path.relative(standaloneRoot, target)),
+    source: normalize(path.relative(root, source)),
+    target: normalize(path.relative(root, target)),
+    sourceVersion: value.sourceVersion,
     bytes: fs.statSync(target).size,
     sha256: sha256File(target),
   };
@@ -294,7 +332,6 @@ function main() {
   if (!["web", "voice"].includes(service)) stop("--service must be web or voice", 2);
 
   const policy = readPolicy(root);
-  const serviceRoot = service === "web" ? root : path.join(root, "voice-platform");
   const standaloneRelative = service === "web"
     ? policy?.services?.web?.standaloneDirectory || ".next/standalone"
     : policy?.services?.voice?.standaloneDirectory || "voice-platform/.next/standalone";
@@ -321,19 +358,21 @@ function main() {
   const staticMetrics = copyTree(staticRoot, targetStatic);
   if (staticMetrics.files <= 0) stop("no Next static files were copied into standalone output", 2);
 
-  let publicMetrics = { files: 0, directories: 0, bytes: 0 };
   let publicExcludedRoots = [];
   if (fs.existsSync(publicRoot)) {
     publicExcludedRoots = service === "web" ? publicExclusionsForWeb(policy) : publicExclusionsForVoice();
     removeGeneratedDirectory(standaloneRoot, targetPublic, "standalone public");
-    publicMetrics = copyTree(publicRoot, targetPublic, { excludedRoots: publicExcludedRoots });
+    copyTree(publicRoot, targetPublic, { excludedRoots: publicExcludedRoots });
   }
+  const releaseIdentity = service === "voice"
+    ? materializeVoiceReleaseIdentity(root, targetPublic)
+    : null;
 
   const runtimeTools = service === "web"
     ? {
         ffmpeg: materializeWebFfmpeg(standaloneRoot),
         ffprobe: materializeWebFfprobe(standaloneRoot),
-        backupScript: materializeDevelopmentBackupScript(root, standaloneRoot),
+        backupControlPlane: materializeBackupControlPlane(root, standaloneRoot),
       }
     : {};
   // pnpm may leave hoisted links whose package targets were intentionally not
@@ -353,6 +392,7 @@ function main() {
     source: {
       staticRoot: normalize(path.relative(root, staticRoot)),
       publicRoot: fs.existsSync(publicRoot) ? normalize(path.relative(root, publicRoot)) : null,
+      releaseIdentity: releaseIdentity?.source || "public/version.json",
     },
     target: {
       standaloneRoot: normalize(path.relative(root, standaloneRoot)),
@@ -365,10 +405,11 @@ function main() {
     counts: {
       staticFiles: countFiles(targetStatic),
       publicFiles: fs.existsSync(targetPublic) ? countFiles(targetPublic) : 0,
-      runtimeToolFiles: Object.keys(runtimeTools).length,
+      runtimeToolFiles: Object.values(runtimeTools).reduce((total, tool) => total + (Array.isArray(tool?.files) ? tool.files.length : 1), 0),
       prunedBrokenSymlinks,
     },
     runtimeTools,
+    releaseIdentity,
     sample: {
       buildIdSha256: sha256File(buildIdPath),
     },

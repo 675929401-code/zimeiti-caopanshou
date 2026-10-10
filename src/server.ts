@@ -1,8 +1,12 @@
 import { config } from 'dotenv';
 import { resolve } from 'path';
 
-// Load .env.local for production deployment (Next.js only auto-loads in dev mode)
-config({ path: resolve(process.cwd(), '.env.local') });
+// Load .env.local for legacy production entrypoints only. The isolated release
+// candidate explicitly disables filesystem discovery so it can never inherit a
+// production secret file from a release-root or staging ancestor.
+if (process.env.SERVER_ENV_DISCOVERY_DISABLED !== '1') {
+  config({ path: resolve(process.cwd(), '.env.local') });
+}
 
 import { createServer } from 'http';
 import { parse } from 'url';

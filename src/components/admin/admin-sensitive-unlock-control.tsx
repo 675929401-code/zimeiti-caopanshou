@@ -4,6 +4,7 @@ import { Clock3, Eye, EyeOff, LockKeyhole, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AdminAccessClientState } from "@/lib/admin-governance";
+import { ADMIN_STEP_UP_DURATION_MINUTES, type AdminStepUpDurationMinutes } from "@/lib/admin-step-up-contract";
 
 function formatExpiry(value?: string | null) {
   if (!value) return "暂无";
@@ -134,9 +135,11 @@ export function AdminSensitiveUnlockControl({
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"auto" | "login" | "management">("auto");
+  const [durationMinutes, setDurationMinutes] = useState<AdminStepUpDurationMinutes>(10);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [lockError, setLockError] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -161,6 +164,7 @@ export function AdminSensitiveUnlockControl({
   useEffect(() => {
     if (!open) return;
     const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const trigger = triggerRef.current;
     const overlay = overlayRef.current;
     const dialog = dialogRef.current;
     if (!overlay || !dialog) return;
@@ -222,7 +226,7 @@ export function AdminSensitiveUnlockControl({
         if (entry.ariaHidden === null) entry.element.removeAttribute("aria-hidden");
         else entry.element.setAttribute("aria-hidden", entry.ariaHidden);
       }
-      const restoreTarget = previousActive?.isConnected ? previousActive : triggerRef.current;
+      const restoreTarget = previousActive?.isConnected ? previousActive : trigger;
       window.requestAnimationFrame(() => restoreTarget?.focus());
     };
   }, [open]);
@@ -235,11 +239,12 @@ export function AdminSensitiveUnlockControl({
     if (!password || busy) return;
     setBusy(true);
     setError("");
+    setLockError("");
     try {
       const response = await fetch("/api/admin/access-control/unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ password, mode: managementPasswordAllowed ? mode : "login" }),
+        body: JSON.stringify({ password, mode: managementPasswordAllowed ? mode : "login", durationMinutes }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "解锁失败");
@@ -256,12 +261,17 @@ export function AdminSensitiveUnlockControl({
   const lock = async () => {
     if (busy) return;
     setBusy(true);
+    setLockError("");
     try {
-      await fetch("/api/admin/access-control/unlock", {
+      const response = await fetch("/api/admin/access-control/unlock", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "重新上锁失败，请勿继续敏感操作");
       await onChanged();
+    } catch (lockFailure) {
+      setLockError(lockFailure instanceof Error ? lockFailure.message : "重新上锁失败，请勿继续敏感操作");
     } finally {
       setBusy(false);
     }
@@ -275,17 +285,19 @@ export function AdminSensitiveUnlockControl({
         data-testid="admin-sensitive-lock"
         onClick={() => maintenanceActive ? undefined : unlocked ? void lock() : setOpen(true)}
         aria-disabled={maintenanceActive || undefined}
+        title={maintenanceActive ? "全局维护模式到期后自动恢复" : unlocked ? "点击立即重新上锁" : "验证密码后临时解锁"}
         className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-bold transition-colors ${maintenanceActive ? "cursor-default border-amber-500/40 bg-amber-100 text-amber-900" : unlocked ? "border-emerald-500/30 bg-emerald-500/8 text-emerald-700" : "border-amber-500/30 bg-amber-500/8 text-amber-700"}`}
       >
         {unlocked ? <ShieldCheck className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}
-        {maintenanceActive ? `维护模式至 ${formatExpiry(state?.stepUp.expiresAt).slice(-5)}` : unlocked ? `敏感操作已解锁至 ${formatExpiry(state?.stepUp.expiresAt).slice(-5)}` : "解锁敏感操作"}
+        {maintenanceActive ? `维护模式至 ${formatExpiry(state?.stepUp.expiresAt).slice(-5)}` : unlocked ? `已解锁至 ${formatExpiry(state?.stepUp.expiresAt).slice(-5)} · 点击上锁` : "解锁敏感操作"}
       </button>
+      {lockError && <span role="alert" className="max-w-64 text-xs font-bold text-rose-700">{lockError}</span>}
 
       {open && typeof document !== "undefined" && createPortal(
         <div ref={overlayRef} data-testid="admin-sensitive-unlock-overlay" className="fixed inset-0 z-[2147483647] grid place-items-center bg-black/45 p-6 backdrop-blur-[2px]" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
           <div ref={dialogRef} tabIndex={-1} data-slot="dialog-content" role="dialog" aria-modal="true" aria-labelledby="admin-unlock-title" className="w-full max-w-lg rounded-2xl border border-[#d0d5dd] bg-white shadow-2xl outline-none">
             <div className="flex items-start justify-between border-b border-[#eaecf0] px-6 py-5">
-              <div><p className="text-xs font-bold text-[#067647]">后台安全确认</p><h2 id="admin-unlock-title" className="mt-1 text-xl font-black text-[#101828]">解锁敏感操作 10 分钟</h2></div>
+              <div><p className="text-xs font-bold text-[#067647]">后台安全确认</p><h2 id="admin-unlock-title" className="mt-1 text-xl font-black text-[#101828]">解锁敏感操作 {durationMinutes} 分钟</h2></div>
               <button type="button" aria-label="关闭" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl border border-[#d0d5dd] text-[#667085]"><X className="h-4 w-4" /></button>
             </div>
             <div className="space-y-4 p-6">
@@ -301,6 +313,17 @@ export function AdminSensitiveUnlockControl({
                   <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-xl border px-3 py-2.5 ${mode === value ? "border-[#079455] bg-[#ecfdf3] text-[#067647]" : "border-[#d0d5dd] text-[#475467]"}`}>{label}</button>
                 ))}
               </div>
+              <fieldset>
+                <legend className="mb-2 text-sm font-bold text-[#344054]">本次解锁时长</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {ADMIN_STEP_UP_DURATION_MINUTES.map((minutes) => (
+                    <button key={minutes} type="button" aria-pressed={durationMinutes === minutes} onClick={() => setDurationMinutes(minutes)} className={`rounded-xl border px-3 py-2.5 text-xs font-bold ${durationMinutes === minutes ? "border-[#079455] bg-[#ecfdf3] text-[#067647]" : "border-[#d0d5dd] text-[#475467]"}`}>
+                      {minutes} 分钟{minutes === 10 ? "（默认）" : ""}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[#667085]">最长 20 分钟；完成修改后可点击顶部挂锁立即结束本次解锁。</p>
+              </fieldset>
               <label className="block text-sm font-bold text-[#344054]">{managementPasswordAllowed && mode === "management" ? "平台管理密码" : managementPasswordAllowed && mode === "auto" ? "登录密码或平台管理密码" : "当前管理员登录密码"}
                 <span className="relative mt-2 block"><input autoFocus type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void unlock(); }} className="h-12 w-full rounded-xl border border-[#d0d5dd] px-4 pr-12 outline-none focus:border-[#079455]" /><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#667085]">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span>
               </label>

@@ -104,7 +104,12 @@ function WorkspaceContent() {
     try {
       const res = await fetch('/voice-platform/api/voice/link-clone/extract-audio', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('auth_token')
+            ? { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+            : {}),
+        },
         body: JSON.stringify({ url: link }),
       });
       const d = await res.json();

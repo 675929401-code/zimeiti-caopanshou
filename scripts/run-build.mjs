@@ -34,6 +34,16 @@ function run(command, args, options = {}) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+function withMinimumNodeHeap(existing = "", minimumMb = 8192) {
+  let requestedMb = minimumMb;
+  const heapFlag = /(?:^|\s)--max-old-space-size(?:=|\s+)(\d+)(?=\s|$)/gu;
+  for (const match of String(existing).matchAll(heapFlag)) {
+    requestedMb = Math.max(requestedMb, Number(match[1]) || 0);
+  }
+  const remaining = String(existing).replace(heapFlag, " ").trim().replace(/\s+/gu, " ");
+  return `${remaining}${remaining ? " " : ""}--max-old-space-size=${requestedMb}`;
+}
+
 function removeStandaloneSecrets(root) {
   const standaloneRoot = path.join(root, ".next", "standalone");
   if (!fs.existsSync(standaloneRoot)) return;
@@ -204,13 +214,16 @@ if (process.platform === "win32") {
   // standalone artifact. Webpack's NFT path respects outputFileTracingExcludes
   // and is the audited production builder for this filesystem-heavy service.
   console.log("[run-build] Windows detected: using audited Next.js Webpack production build.");
-  run(process.execPath, ["--require", "./scripts/next-windows-trace-globs.cjs", "./node_modules/next/dist/bin/next", "build", "--webpack"]);
+  run(process.execPath, ["--require", "./scripts/next-windows-trace-globs.cjs", "./node_modules/next/dist/bin/next", "build", "--webpack"], {
+    env: { NODE_OPTIONS: withMinimumNodeHeap(process.env.NODE_OPTIONS) },
+  });
+  removeStandaloneSecrets(root);
+  removeStandaloneNonArtifactRoots(root);
   console.log("[run-build] Preparing Next.js standalone static/public assets.");
   run(process.execPath, ["./scripts/prepare-next-standalone-assets.mjs", "--service", "web"]);
   removeStandaloneSecrets(root);
-  removeStandaloneNonArtifactRoots(root);
-  console.log("[run-build] Verifying standalone output contains no forbidden secret paths.");
-  run(process.execPath, ["./scripts/package-standalone-artifact.mjs", "--verify-sensitive-root", path.join(root, ".next", "standalone")]);
+  console.log("[run-build] Verifying standalone output can be safely materialized without sensitive paths or escaped links.");
+  run(process.execPath, ["./scripts/package-standalone-artifact.mjs", "--verify-materializable-root", path.join(root, ".next", "standalone"), "--root", root, "--service", "web"]);
   console.log("[run-build] Verifying standalone output contains only production runtime roots.");
   run(process.execPath, ["./scripts/verify-standalone-trace-boundary.mjs", "--artifact"]);
   const receipt = writeLocalBuildFingerprintReceipt(root, ".next/local-source-fingerprint.v1.json", sourceBefore.fingerprint);

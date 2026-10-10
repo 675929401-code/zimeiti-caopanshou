@@ -18,14 +18,22 @@ function safeReleaseId(value: unknown) {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(normalized) ? normalized : null;
 }
 
+function safeBuildOutputDigest(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return /^[a-f0-9]{64}$/u.test(normalized) ? normalized : null;
+}
+
 function readReleaseMetadata(fileData?: { deployCommitSha?: unknown; releaseId?: unknown }) {
   const deployCommitSha = safeDeployCommitSha(process.env.DEPLOY_COMMIT_SHA)
     || safeDeployCommitSha(fileData?.deployCommitSha);
   const releaseId = safeReleaseId(process.env.RELEASE_ID)
     || safeReleaseId(fileData?.releaseId);
+  const buildOutputDigest = safeBuildOutputDigest(process.env.RELEASE_BUILD_OUTPUT_DIGEST);
   return {
     ...(deployCommitSha ? { deployCommitSha } : {}),
     ...(releaseId ? { releaseId } : {}),
+    ...(buildOutputDigest ? { buildOutputDigest } : {}),
   };
 }
 

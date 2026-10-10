@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "contractId": "zimeiti-production-preflight-reference.v1",
+  "environment": "production",
+  "manjuDomains": [
+    "prompt",
+    "skill",
+    "agent",
+    "workflow",
+    "content",
+    "media",
+    "feature_flags",
+    "model_policy",
+    "ui"
+  ],
+  "videoHealthProtocolVersion": "video-channel-health.v2",
+  "forbiddenSelectFields": [
+    "api_key",
+    "client_secret",
+    "client_secret_key",
+    "password",
+    "private_key",
+    "service_role_key",
+    "token"
+  ],
+  "tables": [
+    {
+      "name": "voice_nest_price_versions",
+      "purpose": "one-current-active-price",
+      "select": ["id", "version", "status", "effective_at"],
+      "filters": [
+        { "column": "status", "operator": "eq", "value": "active" }
+      ],
+      "order": ["effective_at.desc", "id.desc"],
+      "limit": 1
+    },
+    {
+      "name": "manju_config_active",
+      "purpose": "production-domain-active-pointers",
+      "select": ["environment", "domain", "active_release_id", "active_revision_id", "etag"],
+      "filters": [
+        { "column": "environment", "operator": "eq", "value": "production" }
+      ],
+      "order": ["domain.asc"],
+      "limit": 32
+    },
+    {
+      "name": "manju_config_releases",
+      "purpose": "active-release-bindings",
+      "select": ["id", "environment", "domain", "revision_id", "release_kind", "etag"],
+      "filters": [],
+      "order": ["domain.asc", "id.asc"],
+      "limit": 32
+    },
+    {
+      "name": "manju_config_revisions",
+      "purpose": "published-revision-bindings",
+      "select": ["id", "environment", "domain", "status", "published_at"],
+      "filters": [],
+      "order": ["domain.asc", "id.asc"],
+      "limit": 32
+    },
+    {
+      "name": "manju_config_storage_state",
+      "purpose": "native-storage-bindings",
+      "select": ["environment", "domain", "state", "generation", "native_active_release_id", "native_active_revision_id", "last_verified_at"],
+      "filters": [
+        { "column": "environment", "operator": "eq", "value": "production" }
+      ],
+      "order": ["domain.asc"],
+      "limit": 32
+    },
+    {
+      "name": "video_models",
+      "purpose": "active-video-model-identities-without-credentials",
+      "select": ["id", "model_name", "provider", "protocol_type", "is_active"],
+      "filters": [
+        { "column": "is_active", "operator": "eq", "value": "true" }
+      ],
+      "order": ["id.asc"],
+      "limit": 1000
+    },
+    {
+      "name": "video_channel_health",
+      "purpose": "release-verified-active-video-health",
+      "select": ["channel_id", "is_healthy", "last_success_at", "health_protocol_version", "verification_state", "verified_at"],
+      "filters": [],
+      "order": ["channel_id.asc"],
+      "limit": 1000
+    }
+  ]
+}

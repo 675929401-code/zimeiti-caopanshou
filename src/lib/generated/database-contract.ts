@@ -3,10 +3,426 @@
 const DATABASE_CONTRACT_SOURCE = {
   "schemaVersion": 1,
   "contractId": "zimeiti-caopanshou-production-database-v1",
-  "contractVersion": "20261001070000",
+  "contractVersion": "20261010140000",
   "openApiProfile": "public",
   "probeMode": "read-only-postgrest-openapi",
   "requiredProbeRole": "service_role",
+  "liveCatalogChecks": {
+    "mode": "read-only-postgresql-catalog",
+    "requiredAfterMigrationApply": true,
+    "requiredBeforeCandidateActivation": true,
+    "migrationLedger": {
+      "relation": "supabase_migrations.schema_migrations",
+      "hashColumn": "hash",
+      "hashAlgorithm": "sha256-source-bytes",
+      "requiredMigrations": [
+        {
+          "version": "20261010023000",
+          "file": "supabase/migrations/20261010023000_video_generation_request_snapshot_v1.sql",
+          "sha256": "30dbbaf18bed8fa7941853e5328a7a3f73a6e173f7f0fab9bc194e84052b1d05"
+        },
+        {
+          "version": "20261010130000",
+          "file": "supabase/migrations/20261010130000_image_generation_request_snapshot_v2.sql",
+          "sha256": "7931645cf5584566bb2b5a87e3399de87d03c65a6865a9fab51795dd8df5902d"
+        },
+        {
+          "version": "20261010131000",
+          "file": "supabase/migrations/20261010131000_image_security_definer_owner_alignment.sql",
+          "sha256": "be8d9bbcefa9e9e48b902d0e7fefc68311e4f9a3620e0d8899bad053d27ccfb5"
+        },
+        {
+          "version": "20261010132000",
+          "file": "supabase/migrations/20261010132000_video_snapshot_function_owner_alignment.sql",
+          "sha256": "4c04e5e77155a36ee07840eaf102d791d71c248bab01914117e17bbe59f7a164"
+        },
+        {
+          "version": "20261010133000",
+          "file": "supabase/migrations/20261010133000_image_provider_dispatch_receipts.sql",
+          "sha256": "dd06d611c50656d5bf664ea41844216c13e91b4a956e4c87794380cccc1f0201"
+        },
+        {
+          "version": "20261010134000",
+          "file": "supabase/migrations/20261010134000_video_provider_request_projection.sql",
+          "sha256": "e2cb931493979a6f84a34b5f736eb474c0cec576bcb0e6cdcf41d0f6cdfd756a"
+        },
+        {
+          "version": "20261010135000",
+          "file": "supabase/migrations/20261010135000_video_reference_asset_cleanup_outbox.sql",
+          "sha256": "92f48e53feb3d46f034b858a0a6315f7b56c6d390f2f5013bca7feddf1ee5655"
+        },
+        {
+          "version": "20261010140000",
+          "file": "supabase/migrations/20261010140000_shared_agent_batch_cas.sql",
+          "sha256": "9aaa21f3a75a063fe3c0a675f7b46a1e5f2be1f8053c4679751fa4007bc5241c"
+        }
+      ]
+    },
+    "relationSemantics": [
+      {
+        "relation": "public.image_generation_requests",
+        "requiredColumns": [
+          {
+            "name": "provider_dispatch_receipt",
+            "type": "jsonb"
+          },
+          {
+            "name": "provider_submission_receipt",
+            "type": "jsonb"
+          }
+        ],
+        "requiredConstraints": [
+          {
+            "name": "image_generation_requests_provider_receipt_order",
+            "validated": true,
+            "definitionTokens": [
+              "provider_submission_receipt IS NULL",
+              "provider_dispatch_receipt IS NOT NULL"
+            ]
+          }
+        ]
+      },
+      {
+        "relation": "public.video_reference_asset_cleanup_outbox",
+        "requiredOwnerRelation": "public.video_tasks",
+        "rlsRequired": true,
+        "forbiddenPrivilegePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated",
+          "service_role"
+        ],
+        "requiredColumns": [
+          {
+            "name": "asset_ref",
+            "type": "text"
+          },
+          {
+            "name": "user_file_id",
+            "type": "text"
+          },
+          {
+            "name": "user_id",
+            "type": "text"
+          },
+          {
+            "name": "storage_provider",
+            "type": "text"
+          },
+          {
+            "name": "storage_key",
+            "type": "text"
+          },
+          {
+            "name": "source",
+            "type": "text"
+          },
+          {
+            "name": "file_category",
+            "type": "text"
+          },
+          {
+            "name": "upload_session",
+            "type": "text"
+          },
+          {
+            "name": "state",
+            "type": "text"
+          },
+          {
+            "name": "attempts",
+            "type": "integer"
+          },
+          {
+            "name": "last_error_code",
+            "type": "text"
+          },
+          {
+            "name": "registered_at",
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "claimed_at",
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "object_deleted_at",
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "completed_at",
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "updated_at",
+            "type": "timestamp with time zone"
+          }
+        ],
+        "requiredConstraints": []
+      }
+    ],
+    "functionSecurityGroups": [
+      {
+        "id": "image-generation-request",
+        "ownerRelation": "public.image_generation_requests",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.claim_image_generation_request_v2(text,text,text,text,text,text,jsonb)",
+          "public.reconcile_stale_image_generation_request_atomic(text,text,integer)",
+          "public.record_image_provider_dispatch_receipt_atomic(text,text,text,text,jsonb)",
+          "public.record_image_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)"
+        ],
+        "requiredDefinitionTokens": {
+          "public.reconcile_stale_image_generation_request_atomic(text,text,integer)": [
+            "provider_evidence_present"
+          ],
+          "public.record_image_provider_dispatch_receipt_atomic(text,text,text,text,jsonb)": [
+            "IMAGE_PROVIDER_DISPATCH_RECEIPT_INVALID",
+            "requestProjection.referenceCount="
+          ],
+          "public.record_image_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)": [
+            "IMAGE_PROVIDER_SUBMISSION_RECEIPT_INVALID",
+            "providerAcknowledgementField="
+          ]
+        }
+      },
+      {
+        "id": "image-provider-reconciliation-owner-helper",
+        "ownerRelation": "public.image_generation_requests",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated",
+          "service_role"
+        ],
+        "functions": [
+          "public.reconcile_stale_image_generation_request_without_provider_receipt(text,text,integer)"
+        ]
+      },
+      {
+        "id": "video-generation-request-snapshot",
+        "ownerRelation": "public.video_tasks",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.persist_video_generation_request_snapshot_v1_atomic(text,text,text,jsonb,text)",
+          "public.reserve_video_generation_task_request_snapshot_v1_atomic(text,text,text,text,text,numeric,numeric,text,numeric,boolean,boolean,jsonb,jsonb,text,text,text,text,text,integer,text,text,text,text,text,text,numeric,text)",
+          "public.reserve_queued_digital_video_task_request_snapshot_v1_atomic(jsonb,jsonb,jsonb,jsonb,text)"
+        ]
+      },
+      {
+        "id": "video-provider-request-projection",
+        "ownerRelation": "public.video_tasks",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.record_video_provider_dispatch_receipt_atomic(text,text,text,jsonb)",
+          "public.record_video_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)"
+        ],
+        "requiredDefinitionTokens": {
+          "public.record_video_provider_dispatch_receipt_atomic(text,text,text,jsonb)": [
+            "wireBodySha256",
+            "endpointPath",
+            "attemptOrdinal",
+            "dispatchIdentitySha256",
+            "VIDEO_PROVIDER_DISPATCH_ATTEMPT_ORDINAL_CONFLICT",
+            "VIDEO_PROVIDER_DUPLICATE_WIRE_BODY_CONFLICT"
+          ],
+          "public.record_video_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)": [
+            "dispatchReceiptSha256",
+            "dispatchIdentitySha256s",
+            "dispatchAttemptCount",
+            "VIDEO_PROVIDER_SUBMISSION_RECEIPT_WITHOUT_V2_DISPATCH"
+          ]
+        }
+      },
+      {
+        "id": "video-reference-asset-reservation-guard",
+        "ownerRelation": "public.video_tasks",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated",
+          "service_role"
+        ],
+        "functions": [
+          "public.guard_video_reference_assets_during_reservation_v1()"
+        ],
+        "requiredDefinitionTokens": {
+          "public.guard_video_reference_assets_during_reservation_v1()": [
+            "VIDEO_REFERENCE_ASSET_CLEANUP_IN_PROGRESS"
+          ]
+        }
+      },
+      {
+        "id": "video-reference-asset-cleanup",
+        "ownerRelation": "public.video_tasks",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.register_video_reference_asset_guard_v1(text,text,text,text,text,text,text,text)",
+          "public.claim_video_reference_asset_cleanup_v1(text,text,text,text,text,text,text,text)",
+          "public.mark_video_reference_asset_object_deleted_v1(text,text)",
+          "public.complete_video_reference_asset_cleanup_v1(text,text,text,text,text,text)",
+          "public.record_video_reference_asset_cleanup_failure_v1(text,text,text)"
+        ],
+        "requiredDefinitionTokens": {
+          "public.register_video_reference_asset_guard_v1(text,text,text,text,text,text,text,text)": [
+            "VIDEO_REFERENCE_GUARD_IDENTITY_MISMATCH"
+          ],
+          "public.claim_video_reference_asset_cleanup_v1(text,text,text,text,text,text,text,text)": [
+            "VIDEO_REFERENCE_DELETE_ACTIVE_TASK"
+          ],
+          "public.mark_video_reference_asset_object_deleted_v1(text,text)": [
+            "VIDEO_REFERENCE_DELETE_STATE_INVALID"
+          ],
+          "public.complete_video_reference_asset_cleanup_v1(text,text,text,text,text,text)": [
+            "delete from public.user_files"
+          ],
+          "public.record_video_reference_asset_cleanup_failure_v1(text,text,text)": [
+            "VIDEO_REFERENCE_DELETE_RETRY_REQUIRED"
+          ]
+        }
+      },
+      {
+        "id": "shared-agent-batch-cas",
+        "ownerRelation": "public.agents",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.apply_agent_reorder_cas_v1(jsonb)",
+          "public.apply_coze_agent_import_cas_v1(jsonb)"
+        ],
+        "requiredDefinitionTokens": {
+          "public.apply_agent_reorder_cas_v1(jsonb)": [
+            "AGENT_REORDER_CATEGORY_INCOMPLETE",
+            "AGENT_CONFIG_REVISION_CONFLICT"
+          ],
+          "public.apply_coze_agent_import_cas_v1(jsonb)": [
+            "pg_advisory_xact_lock",
+            "COZE_IMPORT_INSERT_TARGET_EXISTS",
+            "AGENT_CONFIG_REVISION_CONFLICT_AFTER_LOCK"
+          ]
+        }
+      }
+    ],
+    "triggerSemantics": [
+      {
+        "relation": "public.video_tasks",
+        "name": "video_tasks_reference_asset_reservation_guard",
+        "function": "public.guard_video_reference_assets_during_reservation_v1()",
+        "enabled": true
+      }
+    ]
+  },
   "tables": [
     {
       "name": "users",
@@ -179,6 +595,8 @@ const DATABASE_CONTRACT_SOURCE = {
         "response",
         "delivery_state",
         "delivery_asset_id",
+        "provider_dispatch_receipt",
+        "provider_submission_receipt",
         "failure_hidden_at",
         "created_at",
         "updated_at"
@@ -297,6 +715,7 @@ const DATABASE_CONTRACT_SOURCE = {
         "billing_evidence",
         "error_code",
         "error_message",
+        "content_purged_at",
         "reconciled_by",
         "reconciled_at",
         "reconciliation_reason",
@@ -774,11 +1193,16 @@ const DATABASE_CONTRACT_SOURCE = {
         "routing_snapshot",
         "routing_snapshot_hash",
         "routing_snapshot_version",
+        "request_snapshot",
+        "request_snapshot_hash",
+        "request_snapshot_version",
         "provider_dispatch_receipt",
         "provider_submission_receipt",
         "provider_dispatch_started_at",
         "provider_acknowledged_at",
-        "provider_reconciliation_state"
+        "provider_reconciliation_state",
+        "history_hidden_at",
+        "source_expired_at"
       ]
     },
     {
@@ -1591,6 +2015,38 @@ const DATABASE_CONTRACT_SOURCE = {
       ]
     },
     {
+      "name": "reconcile_stale_image_generation_request_atomic",
+      "feature": "image-failure-history",
+      "arguments": [
+        "p_record_id",
+        "p_user_id",
+        "p_stale_after_seconds"
+      ]
+    },
+    {
+      "name": "record_image_provider_dispatch_receipt_atomic",
+      "feature": "image-provider-receipt",
+      "arguments": [
+        "p_record_id",
+        "p_user_id",
+        "p_client_trace_id",
+        "p_payload_fingerprint",
+        "p_receipt"
+      ]
+    },
+    {
+      "name": "record_image_provider_submission_receipt_atomic",
+      "feature": "image-provider-receipt",
+      "arguments": [
+        "p_record_id",
+        "p_user_id",
+        "p_client_trace_id",
+        "p_payload_fingerprint",
+        "p_dispatch_receipt_sha256",
+        "p_receipt"
+      ]
+    },
+    {
       "name": "save_image_generation_request",
       "feature": "image-exactly-once",
       "arguments": [
@@ -1932,6 +2388,61 @@ const DATABASE_CONTRACT_SOURCE = {
       ]
     },
     {
+      "name": "persist_video_generation_request_snapshot_v1_atomic",
+      "feature": "video-request-snapshot",
+      "arguments": [
+        "p_task_id",
+        "p_user_id",
+        "p_request_fingerprint",
+        "p_request_snapshot",
+        "p_request_snapshot_hash"
+      ]
+    },
+    {
+      "name": "reserve_video_generation_task_request_snapshot_v1_atomic",
+      "feature": "video-request-snapshot",
+      "arguments": [
+        "p_task_id",
+        "p_user_id",
+        "p_model_id",
+        "p_client_request_id",
+        "p_request_fingerprint",
+        "p_billing_price_yuan",
+        "p_billing_cost_price_yuan",
+        "p_billing_unit",
+        "p_billing_quantity",
+        "p_explicitly_free",
+        "p_billing_exempt",
+        "p_routing_snapshot",
+        "p_request_snapshot",
+        "p_request_snapshot_hash",
+        "p_provider_task_id",
+        "p_task_label",
+        "p_batch_id",
+        "p_batch_topic",
+        "p_card_index",
+        "p_prompt",
+        "p_first_frame_url",
+        "p_last_frame_url",
+        "p_reference_image_url",
+        "p_aspect_ratio",
+        "p_resolution",
+        "p_duration_seconds",
+        "p_content_url"
+      ]
+    },
+    {
+      "name": "reserve_queued_digital_video_task_request_snapshot_v1_atomic",
+      "feature": "video-request-snapshot",
+      "arguments": [
+        "p_task",
+        "p_dispatch",
+        "p_routing_snapshot",
+        "p_request_snapshot",
+        "p_request_snapshot_hash"
+      ]
+    },
+    {
       "name": "record_video_provider_dispatch_receipt_atomic",
       "feature": "video-provider-receipt",
       "arguments": [
@@ -2150,6 +2661,34 @@ const DATABASE_CONTRACT_SOURCE = {
         "p_error_code",
         "p_error_message",
         "p_reason"
+      ]
+    },
+    {
+      "name": "read_extraction_account_history",
+      "feature": "user-content-retention",
+      "arguments": [
+        "p_user_id",
+        "p_before",
+        "p_before_id",
+        "p_limit"
+      ]
+    },
+    {
+      "name": "mark_video_upstream_source_expired",
+      "feature": "video-direct-delivery",
+      "arguments": [
+        "p_task_id",
+        "p_user_id",
+        "p_http_status"
+      ]
+    },
+    {
+      "name": "purge_expired_user_content",
+      "feature": "user-content-retention",
+      "arguments": [
+        "p_conversation_days",
+        "p_extraction_days",
+        "p_limit"
       ]
     },
     {
@@ -2422,12 +2961,270 @@ const DATABASE_CONTRACT_SOURCE = {
         "p_expected",
         "p_updates"
       ]
+    },
+    {
+      "name": "read_white_label_admin_state",
+      "feature": "white-label-draft-control-plane",
+      "arguments": []
+    },
+    {
+      "name": "save_white_label_draft_atomic",
+      "feature": "white-label-draft-control-plane",
+      "arguments": [
+        "p_profile_id",
+        "p_expected_revision",
+        "p_brand_name",
+        "p_brand_short_name",
+        "p_contact_name",
+        "p_contact_wechat",
+        "p_contact_phone",
+        "p_contact_email",
+        "p_requested_hostname",
+        "p_ascii_hostname",
+        "p_unicode_hostname",
+        "p_expected_txt_name",
+        "p_verification_token_hash",
+        "p_verification_token_hint",
+        "p_actor_id",
+        "p_request_key"
+      ]
+    },
+    {
+      "name": "save_white_label_draft_v2_atomic",
+      "feature": "white-label-runtime-publication",
+      "arguments": [
+        "p_profile_id",
+        "p_expected_revision",
+        "p_brand_name",
+        "p_brand_short_name",
+        "p_contact_name",
+        "p_contact_wechat",
+        "p_contact_phone",
+        "p_contact_email",
+        "p_requested_hostname",
+        "p_ascii_hostname",
+        "p_unicode_hostname",
+        "p_expected_txt_name",
+        "p_verification_token_hash",
+        "p_verification_token_hint",
+        "p_brand_slogan",
+        "p_brand_description",
+        "p_asset_ids",
+        "p_actor_id",
+        "p_request_key"
+      ]
+    },
+    {
+      "name": "register_white_label_asset_atomic",
+      "feature": "white-label-runtime-assets",
+      "arguments": [
+        "p_profile_id",
+        "p_expected_revision",
+        "p_purpose",
+        "p_storage_provider",
+        "p_storage_key",
+        "p_sha256",
+        "p_mime_type",
+        "p_bytes",
+        "p_width",
+        "p_height",
+        "p_actor_id",
+        "p_request_key"
+      ]
+    },
+    {
+      "name": "publish_white_label_draft_atomic",
+      "feature": "white-label-runtime-publication",
+      "arguments": [
+        "p_profile_id",
+        "p_expected_revision",
+        "p_actor_id",
+        "p_request_key"
+      ]
+    },
+    {
+      "name": "read_published_white_label_brand",
+      "feature": "white-label-runtime-publication",
+      "arguments": [
+        "p_hostname"
+      ]
+    },
+    {
+      "name": "read_published_white_label_asset",
+      "feature": "white-label-runtime-assets",
+      "arguments": [
+        "p_hostname",
+        "p_release_id",
+        "p_asset_id"
+      ]
+    },
+    {
+      "name": "record_white_label_domain_verification",
+      "feature": "white-label-domain-verification",
+      "arguments": [
+        "p_profile_id",
+        "p_expected_revision",
+        "p_passed",
+        "p_observed_values_hash",
+        "p_evidence_sha256",
+        "p_resolver_name",
+        "p_error_code",
+        "p_actor_id",
+        "p_request_key"
+      ]
+    },
+    {
+      "name": "register_video_reference_asset_guard_v1",
+      "feature": "video-reference-asset-cleanup",
+      "arguments": [
+        "p_asset_ref",
+        "p_user_file_id",
+        "p_storage_key",
+        "p_storage_provider",
+        "p_user_id",
+        "p_source",
+        "p_file_category",
+        "p_upload_session"
+      ]
+    },
+    {
+      "name": "claim_video_reference_asset_cleanup_v1",
+      "feature": "video-reference-asset-cleanup",
+      "arguments": [
+        "p_asset_ref",
+        "p_user_file_id",
+        "p_storage_key",
+        "p_storage_provider",
+        "p_user_id",
+        "p_source",
+        "p_file_category",
+        "p_upload_session"
+      ]
+    },
+    {
+      "name": "mark_video_reference_asset_object_deleted_v1",
+      "feature": "video-reference-asset-cleanup",
+      "arguments": [
+        "p_asset_ref",
+        "p_user_id"
+      ]
+    },
+    {
+      "name": "complete_video_reference_asset_cleanup_v1",
+      "feature": "video-reference-asset-cleanup",
+      "arguments": [
+        "p_asset_ref",
+        "p_user_file_id",
+        "p_storage_key",
+        "p_storage_provider",
+        "p_user_id",
+        "p_source"
+      ]
+    },
+    {
+      "name": "record_video_reference_asset_cleanup_failure_v1",
+      "feature": "video-reference-asset-cleanup",
+      "arguments": [
+        "p_asset_ref",
+        "p_user_id",
+        "p_error_code"
+      ]
+    },
+    {
+      "name": "apply_agent_reorder_cas_v1",
+      "feature": "shared-agent-batch-cas",
+      "arguments": [
+        "p_entries"
+      ]
+    },
+    {
+      "name": "apply_coze_agent_import_cas_v1",
+      "feature": "shared-agent-batch-cas",
+      "arguments": [
+        "p_entries"
+      ]
     }
   ],
   "forbiddenRpcs": [
     {
       "name": "fulfill_payment_order_atomic",
       "reason": "legacy payment fulfillment does not require provider transaction evidence"
+    }
+  ],
+  "rollbackArtifacts": [
+    {
+      "forwardMigration": "supabase/migrations/20261009053000_platform_brand_contact_qr.sql",
+      "rollback": "supabase/rollbacks/20261009053000_platform_brand_contact_qr.rollback.sql",
+      "mode": "guarded-semantic-revert",
+      "preserves": [
+        "platform_brand_profiles",
+        "platform_brand_revisions",
+        "platform_brand_assets",
+        "platform_brand_revision_assets",
+        "platform_brand_events"
+      ],
+      "blocksWhen": [
+        "platform_brand_revisions.snapshot.contact exists",
+        "platform_brand_revisions.snapshot.assetIds references contact_wechat_qr_primary or contact_wechat_qr_secondary",
+        "platform_brand_assets contains either contact WeChat QR purpose",
+        "platform_brand_revision_assets contains either contact WeChat QR purpose"
+      ]
+    },
+    {
+      "forwardMigration": "supabase/migrations/20261010132000_video_snapshot_function_owner_alignment.sql",
+      "rollback": "supabase/rollbacks/20261010132000_video_snapshot_function_owner_alignment.rollback.sql",
+      "mode": "forward-repair-only",
+      "preserves": [
+        "video_tasks",
+        "persist_video_generation_request_snapshot_v1_atomic",
+        "reserve_video_generation_task_request_snapshot_v1_atomic",
+        "reserve_queued_digital_video_task_request_snapshot_v1_atomic",
+        "supabase_migrations.schema_migrations:20261010132000"
+      ],
+      "blocksWhen": [
+        "function owner differs from public.video_tasks owner",
+        "SECURITY DEFINER or search_path differs from the release contract",
+        "direct or effective EXECUTE is available to a non-owner role other than service_role"
+      ]
+    },
+    {
+      "forwardMigration": "supabase/migrations/20261010133000_image_provider_dispatch_receipts.sql",
+      "rollback": "supabase/rollbacks/20261010133000_image_provider_dispatch_receipts.rollback.sql",
+      "rollbackSha256": "14195658c6a43ac836a8617effb6eccb75fdca1cb0880e01fd61e6aaf45669ea",
+      "mode": "forward-repair-only",
+      "preserves": [
+        "image_generation_requests.provider_dispatch_receipt",
+        "image_generation_requests.provider_submission_receipt",
+        "record_image_provider_dispatch_receipt_atomic",
+        "record_image_provider_submission_receipt_atomic",
+        "reconcile_stale_image_generation_request_atomic",
+        "supabase_migrations.schema_migrations:20261010133000"
+      ],
+      "blocksWhen": [
+        "provider receipt columns or receipt-order constraint are absent",
+        "receipt-aware stale reconciliation semantics are absent",
+        "function owner, SECURITY DEFINER or search_path differs from the release contract",
+        "direct or effective EXECUTE differs from the service-role-only and owner-only helper contract"
+      ]
+    },
+    {
+      "forwardMigration": "supabase/migrations/20261010134000_video_provider_request_projection.sql",
+      "rollback": "supabase/rollbacks/20261010134000_video_provider_request_projection.rollback.sql",
+      "rollbackSha256": "87cf610bc8d089f0f88ea7704d1ac90d6f6d00ca32a9a383ad672dde067ce3b0",
+      "mode": "forward-repair-only",
+      "preserves": [
+        "video_tasks.provider_dispatch_receipt",
+        "video_tasks.provider_submission_receipt",
+        "record_video_provider_dispatch_receipt_atomic",
+        "record_video_provider_submission_receipt_atomic",
+        "supabase_migrations.schema_migrations:20261010134000"
+      ],
+      "blocksWhen": [
+        "ordered dispatch identity or duplicate wire-body conflict semantics are absent",
+        "submission receipt is not bound to V2 dispatch hashes, identities and attempt count",
+        "function owner, SECURITY DEFINER or search_path differs from the release contract",
+        "direct or effective EXECUTE is available to a non-owner role other than service_role"
+      ]
     }
   ],
   "referenceDataChecks": [

@@ -114,11 +114,19 @@ export interface VideoGenerateParams {
   generateAudio?: boolean;
   negativePrompt?: string;
   duration?: number;
+  /** Reserved until an adapter explicitly maps the value to its provider payload. */
+  fps?: string | number | null;
+  /** Reserved until an adapter explicitly maps the value to its provider payload. */
+  seed?: string | number | null;
   aspectRatio?: string;
   /** 像素分辨率，如 "1280x720"，部分协议需要像素尺寸而非比例 */
   resolution?: string;
   /** 分辨率等级，如 "720p"/"1080p"/"4k"，omni系列模型使用此参数 */
   resolutionTier?: string;
+  /** API 路由可传入用户是否显式选择了参数；直接调用时有值即视为显式选择。 */
+  userProvidedOptions?: {
+    resolution?: boolean;
+  };
   /** 供应商提交幂等键；只由明确支持的协议使用。 */
   idempotencyKey?: string;
 }
@@ -249,6 +257,12 @@ export interface ApiProtocolConfig {
   source_video_field?: string;
   /** 是否要求上游同时生成/保留音轨。 */
   generate_audio?: boolean;
+  /** 协议明确接受用户音轨开关；未开启时禁止透传。 */
+  supports_generate_audio_toggle?: boolean;
+  /** 协议音轨开关字段名，默认 generate_audio。 */
+  generate_audio_field?: string;
+  /** 协议反向提示词字段名；未配置时不得猜测上游 schema。 */
+  negative_prompt_field?: string;
   /** 托管工作流 ID（例如 minimax_h3_image_audio_to_video_v2）。 */
   workflow_id?: string;
   /** AutoDL ComfyUI 工作流的精确输入形态。 */
@@ -294,6 +308,196 @@ export interface ApiProtocolConfig {
   cancel_task_id_field?: string;
   /** 可选的同源状态确认路径；取消响应不是终态时读取该路径。 */
   cancel_confirm_path?: string;
+}
+
+const PRICED_PARAMETER_GUARDED_PROTOCOLS = new Set([
+  "siliconflow_kling",
+  "kling_official",
+  "replicate",
+  "autodl_comfyui_workflow",
+  "autodl_comfyui_h3",
+  "autodl_h3_selfhost",
+]);
+
+const BUILTIN_RESOLUTION_FIELD_PROTOCOLS = new Set([
+  "autodl_comfyui_workflow",
+  "autodl_comfyui_h3",
+  "autodl_h3_selfhost",
+]);
+
+export type VideoParameterContractIssue = {
+  status: 422;
+  code: "VIDEO_PARAMETER_INVALID" | "VIDEO_PARAMETER_CONFLICT" | "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL";
+  parameter: "duration" | "resolution" | "negativePrompt" | "generateAudio" | "fps" | "seed";
+  message: string;
+  acceptedValues?: Array<string | number>;
+};
+
+export class VideoParameterContractError extends Error {
+  readonly status = 422 as const;
+  readonly code: VideoParameterContractIssue["code"];
+  readonly parameter: VideoParameterContractIssue["parameter"];
+  readonly acceptedValues?: Array<string | number>;
+
+  constructor(issue: VideoParameterContractIssue) {
+    super(issue.message);
+    this.name = "VideoParameterContractError";
+    this.code = issue.code;
+    this.parameter = issue.parameter;
+    this.acceptedValues = issue.acceptedValues;
+  }
+}
+
+function configuredPositiveDurations(config: VideoModelConfig): number[] {
+  const configured = config.api_protocol_config?.duration_options;
+  if (!Array.isArray(configured)) return [];
+  return [...new Set(configured.map(Number).filter((value) => Number.isFinite(value) && value > 0))];
+}
+
+function requestedResolution(params: VideoGenerateParams): { value: string; explicit: boolean; conflict: boolean } {
+  const pixel = typeof params.resolution === "string" ? params.resolution.trim() : "";
+  const tier = typeof params.resolutionTier === "string" ? params.resolutionTier.trim() : "";
+  const conflict = Boolean(pixel && tier && pixel.toLowerCase() !== tier.toLowerCase());
+  return {
+    value: tier || pixel,
+    explicit: params.userProvidedOptions?.resolution ?? Boolean(pixel || tier),
+    conflict,
+  };
+}
+
+/**
+ * Guard the priced parameters whose legacy adapters previously omitted or
+ * altered values. A configured field is the explicit protocol declaration;
+ * absent declarations fail closed instead of guessing an upstream schema.
+ */
+export function validateVideoParameterContract(
+  config: VideoModelConfig,
+  params: VideoGenerateParams,
+): VideoParameterContractIssue | null {
+  const fpsProvided = params.fps !== undefined
+    && params.fps !== null
+    && String(params.fps).trim() !== "";
+  if (fpsProvided) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+      parameter: "fps",
+      message: "当前视频适配器尚未承诺帧率参数会原样提交，本次未计费、未提交上游",
+    };
+  }
+
+  const seedProvided = params.seed !== undefined
+    && params.seed !== null
+    && String(params.seed).trim() !== "";
+  if (seedProvided) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+      parameter: "seed",
+      message: "当前视频适配器尚未承诺随机种子会原样提交，本次未计费、未提交上游",
+    };
+  }
+
+  if (!PRICED_PARAMETER_GUARDED_PROTOCOLS.has(config.protocol_type)) return null;
+
+  const parsedDuration = Number(params.duration ?? config.duration_seconds);
+  if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_INVALID",
+      parameter: "duration",
+      message: "视频时长必须是大于 0 的有限数值，本次未提交上游",
+    };
+  }
+  const configuredDurations = configuredPositiveDurations(config);
+  const acceptedDurations = configuredDurations.length > 0
+    ? configuredDurations
+    : config.protocol_type === "kling_official"
+      ? [5, 10]
+      : [];
+  if (acceptedDurations.length > 0 && !acceptedDurations.includes(parsedDuration)) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+      parameter: "duration",
+      message: `当前协议不支持 ${parsedDuration} 秒；可选原生时长：${acceptedDurations.join("/")} 秒`,
+      acceptedValues: acceptedDurations,
+    };
+  }
+
+  if ((params.resolution !== undefined && typeof params.resolution !== "string")
+    || (params.resolutionTier !== undefined && typeof params.resolutionTier !== "string")) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_INVALID",
+      parameter: "resolution",
+      message: "分辨率格式无效，本次未提交上游",
+    };
+  }
+  const resolution = requestedResolution(params);
+  if (resolution.conflict) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_CONFLICT",
+      parameter: "resolution",
+      message: "分辨率与分辨率档位不一致，本次未提交上游",
+    };
+  }
+  const resolutionField = String(config.api_protocol_config?.resolution_field || "").trim()
+    || (BUILTIN_RESOLUTION_FIELD_PROTOCOLS.has(config.protocol_type) ? "resolution" : "");
+  if (resolution.explicit && resolution.value && !resolutionField) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+      parameter: "resolution",
+      message: `当前协议未声明分辨率字段，不能安全提交 ${resolution.value}`,
+    };
+  }
+
+  if (params.negativePrompt !== undefined && typeof params.negativePrompt !== "string") {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_INVALID",
+      parameter: "negativePrompt",
+      message: "反向提示词格式无效，本次未提交上游",
+    };
+  }
+  const negativePrompt = typeof params.negativePrompt === "string" ? params.negativePrompt.trim() : "";
+  const negativePromptField = config.protocol_type === "siliconflow_kling"
+    ? "negative_prompt"
+    : String(config.api_protocol_config?.negative_prompt_field || "").trim();
+  if (negativePrompt && !negativePromptField) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+      parameter: "negativePrompt",
+      message: "当前协议不支持反向提示词，本次未提交上游",
+    };
+  }
+
+  if (params.generateAudio !== undefined && typeof params.generateAudio !== "boolean") {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_INVALID",
+      parameter: "generateAudio",
+      message: "音轨开关格式无效，本次未提交上游",
+    };
+  }
+  if (params.generateAudio !== undefined && config.api_protocol_config?.supports_generate_audio_toggle !== true) {
+    return {
+      status: 422,
+      code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
+      parameter: "generateAudio",
+      message: "当前协议不支持音轨开关，本次未提交上游",
+    };
+  }
+
+  return null;
+}
+
+export function assertVideoParameterContract(config: VideoModelConfig, params: VideoGenerateParams): void {
+  const issue = validateVideoParameterContract(config, params);
+  if (issue) throw new VideoParameterContractError(issue);
 }
 
 // ─── SiliconFlow Kling 适配器 ────────────────────────
@@ -425,14 +629,21 @@ async function pollSiliconFlowVideo(
 }
 
 async function generateSiliconFlowKling(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
+  const protocolConfig = config.api_protocol_config || {};
   const body: Record<string, unknown> = {
     prompt: params.prompt,
-    duration: params.duration || config.duration_seconds || 5,
+    duration: Number(params.duration ?? config.duration_seconds ?? 5),
     aspect_ratio: params.aspectRatio || "16:9",
   };
   if (params.imageUrl) body.image = params.imageUrl;
   if (params.lastFrameUrl) body.tail_image = params.lastFrameUrl;
   if (params.negativePrompt) body.negative_prompt = params.negativePrompt;
+  const resolution = requestedResolution(params).value;
+  const resolutionField = String(protocolConfig.resolution_field || "").trim();
+  if (resolution && resolutionField) body[resolutionField] = resolution;
+  if (params.generateAudio !== undefined) {
+    body[String(protocolConfig.generate_audio_field || "generate_audio")] = params.generateAudio;
+  }
 
   return submitSiliconFlowVideo(config, params, body, "Kling");
 }
@@ -1022,9 +1233,8 @@ async function generateKlingOfficial(config: VideoModelConfig, params: VideoGene
   const submitUrl = config.api_endpoint;
 
   // 可灵官方API参数
-  const durationSec = params.duration || config.duration_seconds || 10;
-  // 可灵只支持5秒和10秒，向下取整到最近支持的值
-  const klingDuration = durationSec >= 10 ? "10" : "5";
+  const protocolConfig = config.api_protocol_config || {};
+  const durationSec = Number(params.duration ?? config.duration_seconds ?? 10);
   // mode根据model_name判断：kling-video-pro=专业版，其他=标准版
   const mode = (config.model_name || "").includes("pro") ? "pro" : "std";
 
@@ -1032,7 +1242,7 @@ async function generateKlingOfficial(config: VideoModelConfig, params: VideoGene
     prompt: params.prompt,
     cfg_scale: 0.5,
     mode,
-    duration: klingDuration,
+    duration: String(durationSec),
     aspect_ratio: params.aspectRatio || "16:9",
   };
 
@@ -1050,6 +1260,14 @@ async function generateKlingOfficial(config: VideoModelConfig, params: VideoGene
   if (params.referenceImageUrl) {
     body.reference_image = params.referenceImageUrl;
     body.reference_image_type = "url";
+  }
+  const resolution = requestedResolution(params).value;
+  const resolutionField = String(protocolConfig.resolution_field || "").trim();
+  if (resolution && resolutionField) body[resolutionField] = resolution;
+  const negativePromptField = String(protocolConfig.negative_prompt_field || "").trim();
+  if (params.negativePrompt && negativePromptField) body[negativePromptField] = params.negativePrompt;
+  if (params.generateAudio !== undefined) {
+    body[String(protocolConfig.generate_audio_field || "generate_audio")] = params.generateAudio;
   }
 
   const resp = await fetch(submitUrl, {
@@ -1249,14 +1467,23 @@ async function pollRunway(config: VideoModelConfig, taskId: string): Promise<Vid
 
 // ─── Replicate 适配器 ──────────────────────────────
 async function generateReplicate(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
+  const protocolConfig = config.api_protocol_config || {};
   const input: Record<string, unknown> = {
     prompt: params.prompt,
     image: params.imageUrl || undefined,
     aspect_ratio: params.aspectRatio || "16:9",
-    duration: params.duration || config.duration_seconds || 5,
+    duration: Number(params.duration ?? config.duration_seconds ?? 5),
   };
   if (params.lastFrameUrl) input.last_frame_image = params.lastFrameUrl;
   if (params.referenceImageUrl) input.reference_image = params.referenceImageUrl;
+  const resolution = requestedResolution(params).value;
+  const resolutionField = String(protocolConfig.resolution_field || "").trim();
+  if (resolution && resolutionField) input[resolutionField] = resolution;
+  const negativePromptField = String(protocolConfig.negative_prompt_field || "").trim();
+  if (params.negativePrompt && negativePromptField) input[negativePromptField] = params.negativePrompt;
+  if (params.generateAudio !== undefined) {
+    input[String(protocolConfig.generate_audio_field || "generate_audio")] = params.generateAudio;
+  }
 
   const body = {
     version: config.model_name || config.id,
@@ -1587,7 +1814,12 @@ function videoSubmissionWithoutTask(
   const refused = isDeterministicGaoruiModelError(details)
     || /no[_ ]+(?:available[_ ]+)?accounts?(?:[_ ]+available)?|insufficient[_ ](?:quota|balance|credits)|invalid[_ ](?:api[_ ]?key|request|parameter|argument)|unauthorized|authentication[_ ]error|permission[_ ]denied|content[_ ]policy[_ ]violation|\btask_failed\b|\brejected\b|无可用账号|余额不足|配额不足/iu.test(details);
   if ((resp.status >= 400 && resp.status < 500) || refused) {
-    return { taskId: "", status: "failed", error: `${provider}: ${(details || `上游拒绝提交（HTTP ${resp.status}）`).slice(0, 300)}` };
+    return {
+      taskId: "",
+      status: "failed",
+      error: `${provider}: ${(details || `上游拒绝提交（HTTP ${resp.status}）`).slice(0, 300)}`,
+      submissionReceipt,
+    };
   }
   return videoSubmissionUnknown(submissionReceipt);
 }
@@ -3762,35 +3994,39 @@ async function generateAutoDLComfyH3(config: VideoModelConfig, params: VideoGene
   imageUrls.forEach((url, index) => { body[`ref_image_${index}`] = url; });
   audioUrls.forEach((url, index) => { body[`ref_audio_${index}`] = url; });
 
-  const resp = await fetch(submitUrl, {
+  const providerRequestKey = secureSkillProviderRequestKey(params);
+  const acknowledgement = await videoSubmitOnce(submitUrl, {
     method: "POST",
     headers: {
       Authorization: config.api_key,
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...secureSkillIdempotencyHeaders(providerRequestKey),
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(60_000),
   });
-  const data = await safeParseJson(resp);
+  if (!acknowledgement) {
+    return videoSubmissionUnknown(secureSkillSubmissionReceipt(submitUrl, providerRequestKey));
+  }
+  const { resp, data } = acknowledgement;
+  const submissionReceipt = secureSkillSubmissionReceipt(submitUrl, providerRequestKey, acknowledgement);
+  if (resp.status >= 500) return videoSubmissionUnknown(submissionReceipt);
   if (!resp.ok || (data.code && String(data.code).toLowerCase() !== "success")) {
-    return {
-      taskId: "",
-      status: "failed",
-      error: `AutoDL H3 提交失败 (${resp.status}): ${autoDLError(data, "接口未返回可识别错误")}`,
-    };
+    return videoSubmissionWithoutTask(resp, data, "AutoDL H3 提交", submissionReceipt);
   }
 
   const taskData = data.data && typeof data.data === "object"
     ? data.data as Record<string, unknown>
     : data;
-  const taskId = String(taskData.task_id || taskData.id || "").trim();
+  const taskId = videoSubmissionTaskId(taskData.task_id, taskData.id);
   if (!taskId) {
-    return { taskId: "", status: "failed", error: "AutoDL H3 已响应，但未返回 task_id" };
+    return videoSubmissionUnknown(submissionReceipt);
   }
   return {
     taskId,
     status: normalizeVideoStatus(String(taskData.status || "QUEUED")),
+    submissionReceipt,
   };
 }
 
@@ -3985,6 +4221,7 @@ export async function submitVideoTask(config: VideoModelConfig, params: VideoGen
 }
 
 async function submitVideoTaskWithProtocol(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
+  assertVideoParameterContract(config, params);
   let normalizedParams = params;
 
   // 全协议统一兜底：

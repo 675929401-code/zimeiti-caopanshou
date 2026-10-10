@@ -26,13 +26,19 @@ function load(file) {
       if (['./video-provider-request-audit', './api-endpoints', './video-prompt-timing'].includes(name)) return load(path.join(path.dirname(file), name + '.ts'));
       return unrelated;
     },
-    Request, Response, Headers, URL, FormData, AbortSignal, DOMException, Buffer,
+    Request, Response, Headers, URL, FormData, AbortSignal, DOMException, TextDecoder, TextEncoder, Buffer,
     crypto: nativeRequire('node:crypto').webcrypto,
     console: { log() {}, warn() {}, error() {} },
-    fetch: async (url, init) => {
-      calls.push({ path: new URL(url).pathname, method: init.method, headers: init.headers, body: init.body ? JSON.parse(init.body) : null });
+    fetch: async (input, init = {}) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const body = request.method === 'GET' || request.method === 'HEAD' || !request.body
+        ? null
+        : await request.clone().json();
+      const headers = Object.fromEntries(request.headers.entries());
+      if (request.headers.has('x-idempotency-key')) headers['X-Idempotency-Key'] = request.headers.get('x-idempotency-key');
+      calls.push({ path: new URL(request.url).pathname, method: request.method, headers, body });
       assert.ok(calls.length <= 1, 'one adapter invocation must never dispatch twice');
-      return factory(url, init);
+      return factory(request, init);
     },
   }, { filename: file });
   return loadedModule.exports;

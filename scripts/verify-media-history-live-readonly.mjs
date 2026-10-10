@@ -724,7 +724,7 @@ async function pageThemeState(page) {
       categoryFilterCount: document.querySelectorAll('[aria-label="生产来源筛选"] button').length,
       kindFilterCount: document.querySelectorAll('[aria-label="媒体类型筛选"] button').length,
       emptyState: document.body.innerText.includes("没有匹配的作品"),
-      retentionCopy: document.body.innerText.includes("图片保留两天、视频保留三天"),
+      retentionCopy: document.body.innerText.includes("普通视频不设平台固定天数"),
       resultSummary: document.querySelector('[aria-label="作品历史筛选"]')?.textContent || "",
       overflowingCards: cards.filter((card) => {
         const rect = card.getBoundingClientRect();
@@ -776,6 +776,7 @@ async function loadMediaHistoryPage(context, origin, theme, viewport, report, ex
 
 async function setHistorySearch(page, value) {
   const input = page.getByRole("textbox", { name: "搜索作品历史" });
+  if (await input.inputValue() === value) return;
   await waitForHistoryResponse(page, () => input.fill(value), (url) => url.searchParams.get("q") === value);
   await page.waitForTimeout(200);
 }

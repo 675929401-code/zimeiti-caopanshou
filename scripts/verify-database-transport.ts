@@ -41,8 +41,14 @@ async function main() {
     assert.deepEqual(bodies.get(recovery), [payload, payload]);
     checks.push("atomic recovery: identical replayable payload after dropped socket");
 
+    const governanceRead = "/rest/v1/rpc/read_admin_access_snapshot";
+    assert.equal((await transport(origin + governanceRead, { method: "POST", body: payload })).status, 200);
+    assert.deepEqual(bodies.get(governanceRead), [payload, payload]);
+    checks.push("allowlisted read RPC: identical replayable payload after dropped socket");
+
     for (const [method, key] of [
       ["POST", "/rest/v1/rpc/charge_cash_atomic"],
+      ["POST", "/rest/v1/rpc/read_not_allowlisted"],
       ["POST", "/rest/v1/tasks"], ["PATCH", "/rest/v1/users"],
       ["DELETE", "/rest/v1/media"], ["GET", "/rest/v1/rpc/unclassified_function"],
       ["GET", "/storage/v1/object"],

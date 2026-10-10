@@ -30,6 +30,7 @@ export const STORAGE_KEYS = {
   PLATFORM_THEME_MODE: "platform_theme_mode",
   USER_THEME_PREFERENCE: "user_theme_preference",
   USER_THEME_MODE_PREFERENCE: "user_theme_mode_preference",
+  USER_THEME_PREFERENCE_EXPIRES_AT: "user_theme_preference_expires_at",
   SIDEBAR_WIDTH: "sidebar_width",
   SIDEBAR_COLLAPSED: "sidebar_collapsed",
 

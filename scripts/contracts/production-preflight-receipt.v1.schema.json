@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "production-preflight-receipt.v1.schema.json",
+  "title": "Trusted production read-only preflight receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "receiptId",
+    "issuedAtEpoch",
+    "expiresAtEpoch",
+    "ttlSeconds",
+    "binding",
+    "database",
+    "probe",
+    "counters",
+    "attestation"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$" },
+    "nonNegativeInteger": { "type": "integer", "minimum": 0 }
+  },
+  "properties": {
+    "schemaVersion": { "const": "zimeiti-production-preflight-receipt.v1" },
+    "status": { "const": "passed" },
+    "receiptId": {
+      "type": "string",
+      "pattern": "^preflight-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{16}$"
+    },
+    "issuedAtEpoch": { "type": "integer", "minimum": 1 },
+    "expiresAtEpoch": { "type": "integer", "minimum": 1 },
+    "ttlSeconds": { "const": 300 },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "releaseId",
+        "artifactSha256",
+        "commitSha",
+        "sourceVersion",
+        "buildId",
+        "databaseFingerprint",
+        "databaseContractSha256",
+        "referenceContractSha256",
+        "migrationManifestSha256",
+        "receiptSchemaSha256",
+        "verifierSha256"
+      ],
+      "properties": {
+        "releaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$" },
+        "artifactSha256": { "$ref": "#/$defs/sha256" },
+        "commitSha": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" },
+        "sourceVersion": { "$ref": "#/$defs/safeId" },
+        "buildId": { "$ref": "#/$defs/safeId" },
+        "databaseFingerprint": { "$ref": "#/$defs/sha256" },
+        "databaseContractSha256": { "$ref": "#/$defs/sha256" },
+        "referenceContractSha256": { "$ref": "#/$defs/sha256" },
+        "migrationManifestSha256": { "$ref": "#/$defs/sha256" },
+        "receiptSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "verifierSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "contractVersion",
+        "requiredProbeRole",
+        "openApiProfile",
+        "openApiSha256",
+        "tableCount",
+        "rpcCount",
+        "referenceContractId",
+        "referenceCounts"
+      ],
+      "properties": {
+        "contractId": { "$ref": "#/$defs/safeId" },
+        "contractVersion": { "$ref": "#/$defs/safeId" },
+        "requiredProbeRole": { "const": "service_role" },
+        "openApiProfile": { "const": "public" },
+        "openApiSha256": { "$ref": "#/$defs/sha256" },
+        "tableCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "rpcCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "referenceContractId": { "const": "zimeiti-production-preflight-reference.v1" },
+        "referenceCounts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "voiceActivePrice",
+            "manjuActive",
+            "manjuRelease",
+            "manjuRevision",
+            "manjuStorage",
+            "activeVideoModel",
+            "verifiedVideoHealth"
+          ],
+          "properties": {
+            "voiceActivePrice": { "const": 1 },
+            "manjuActive": { "type": "integer", "minimum": 1 },
+            "manjuRelease": { "type": "integer", "minimum": 1 },
+            "manjuRevision": { "type": "integer", "minimum": 1 },
+            "manjuStorage": { "type": "integer", "minimum": 1 },
+            "activeVideoModel": { "type": "integer", "minimum": 1 },
+            "verifiedVideoHealth": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "methods",
+        "httpGetRequests",
+        "openApiValidated",
+        "referenceDataValidated",
+        "apiKeyFieldSelected"
+      ],
+      "properties": {
+        "mode": { "const": "controller-get-only-postgrest.v1" },
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "prefixItems": [{ "const": "GET" }],
+          "items": false
+        },
+        "httpGetRequests": { "type": "integer", "minimum": 2 },
+        "openApiValidated": { "const": true },
+        "referenceDataValidated": { "const": true },
+        "apiKeyFieldSelected": { "const": false }
+      }
+    },
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["databaseWrites", "rpcRequests", "providerRequests", "paidRequests"],
+      "properties": {
+        "databaseWrites": { "const": 0 },
+        "rpcRequests": { "const": 0 },
+        "providerRequests": { "const": 0 },
+        "paidRequests": { "const": 0 }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "keyId", "payloadSha256", "signature"],
+      "properties": {
+        "algorithm": { "const": "hmac-sha256" },
+        "keyId": { "$ref": "#/$defs/safeId" },
+        "payloadSha256": { "$ref": "#/$defs/sha256" },
+        "signature": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}
