@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "2e0b0246db864384d088b89844a86abec3573080ab4bfaf84724e288a440548e",
+  "sourceFingerprint": "db439d367fc500716cbe9c06d99e7016ee57e531fbd4e8c580960c97cedd4fcd",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4176,
-  "totalBytes": 66672261,
+  "totalBytes": 66673388,
   "files": [
     {
       "path": ".cnb.yml",
@@ -48,8 +48,8 @@
     },
     {
       "path": ".github/workflows/release-vnext.yml",
-      "bytes": 18693,
-      "sha256": "34165990cc7bb9429a24ed8678405755434e6bf56d792234aaa1f4dd8007ef46"
+      "bytes": 18745,
+      "sha256": "1ba3c588e376770df40b91e3e46e28450c52af69485d6a9157cae1228359decc"
     },
     {
       "path": ".gitignore",
@@ -663,8 +663,8 @@
     },
     {
       "path": "docs/当前迭代任务清单-2026-10-09.md",
-      "bytes": 22735,
-      "sha256": "3a3cba6e0435b126e07f9d83234085b4eb88b7baf726632792fb8691bbf19252"
+      "bytes": 23581,
+      "sha256": "dc169d660cae2ad7c80e83240849c59ff73858e039dc001feb9faf67a81f53a7"
     },
     {
       "path": "docs/提示词遵从率与媒体提交完整性验收-2026-10-10.md",
@@ -1609,7 +1609,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "deb2995c30ca6c9e4b1b78e445b1b703362dd1dc9562d3cc2fa9861bb68ad95b"
+      "sha256": "b70cb6306600fdb90c9f618fd5789debe2362ab440f3776a92ced24400b633a9"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -8178,8 +8178,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 67285,
-      "sha256": "3769ba76303ac05e26b7ff48a0cda7e1733178300b1f6823ffd9641c2d44bd94"
+      "bytes": 67514,
+      "sha256": "1fe813da0e41df70092e18283ef1864a9490042d8fbdd654d6b44ec0db8c6b32"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",

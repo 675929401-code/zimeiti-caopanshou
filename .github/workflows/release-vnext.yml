@@ -126,6 +126,7 @@ jobs:
         if: env.RELEASE_PHASE == 'candidate'
         env:
           CHANGE_SCOPE: ${{ steps.scope.outputs.classification }}
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
           pnpm install --frozen-lockfile
           if [[ ",$RELEASE_SERVICES," == *,voice,* ]]; then (cd voice-platform && pnpm --ignore-workspace install --frozen-lockfile); fi
