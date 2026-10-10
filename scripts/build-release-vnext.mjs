@@ -192,6 +192,21 @@ function removeGeneratedEnvironmentEntries(directory) {
 }
 if (fs.existsSync(standaloneRoot)) removeGeneratedEnvironmentEntries(standaloneRoot);
 console.log(`Removed ${removedEnvironmentEntries.length} generated environment entries from standalone output.`);
+
+// Runtime state is provisioned separately under the release root. Next's file
+// tracer can still copy a developer checkout's fallback runtime directory when
+// server code contains dynamic filesystem reads, so remove the complete root
+// before provenance is issued and before the packager inspects the build.
+const removedNonArtifactRoots = [];
+for (const relativePath of ["runtime"]) {
+  const target = path.join(standaloneRoot, relativePath);
+  if (!fs.existsSync(target)) continue;
+  const relative = path.relative(standaloneRoot, target);
+  if (path.isAbsolute(relative) || relative.startsWith(`..${path.sep}`)) stop("standalone non-artifact cleanup escaped build output");
+  fs.rmSync(target, { recursive: true, force: true });
+  removedNonArtifactRoots.push(relativePath);
+}
+console.log(`Removed ${removedNonArtifactRoots.length} generated non-artifact roots from standalone output.`);
 const standaloneEntrypoint = path.join(buildDirectory, "standalone", "server.js");
 const buildIdPath = path.join(buildDirectory, "BUILD_ID");
 const requiredServerFilesPath = path.join(buildDirectory, "required-server-files.json");

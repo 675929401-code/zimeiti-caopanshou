@@ -15,6 +15,7 @@ const longDigitalHumanMedia = fs.readFileSync(path.join(root, "src", "lib", "dig
 const manjuRegistry = fs.readFileSync(path.join(root, "src", "lib", "server", "manju-public-asset-registry.ts"), "utf8");
 const standaloneAssets = fs.readFileSync(path.join(root, "scripts", "prepare-next-standalone-assets.mjs"), "utf8");
 const buildRunner = fs.readFileSync(path.join(root, "scripts", "run-build.mjs"), "utf8");
+const releaseBuildRunner = fs.readFileSync(path.join(root, "scripts", "build-release-vnext.mjs"), "utf8");
 const traceExcludedCheckoutRoots = [
   ".codex-backups",
   ".codex-evidence",
@@ -35,6 +36,7 @@ const traceExcludedCheckoutRoots = [
   "prompts",
   "research",
   "research-output",
+  "runtime",
   "scripts",
   "src",
   "supabase",
@@ -98,6 +100,13 @@ assert.ok(
   cleanupCallIndex < sensitiveCheckIndex,
   "standalone mutable roots must be removed before sensitive-path verification",
 );
+const releaseCleanupIndex = releaseBuildRunner.indexOf('for (const relativePath of ["runtime"])');
+const releaseProvenanceIndex = releaseBuildRunner.indexOf("const provenance = {");
+assert.ok(releaseCleanupIndex >= 0, "release build must remove mutable runtime state from standalone output");
+assert.ok(
+  releaseProvenanceIndex > releaseCleanupIndex,
+  "release build must remove mutable runtime state before issuing provenance",
+);
 for (const relativePath of traceExcludedCheckoutRoots) {
   assert.ok(
     config.includes(`'./${relativePath}/**/*'`),
@@ -108,7 +117,7 @@ for (const relativePath of traceExcludedCheckoutRoots) {
 if (process.argv.includes("--artifact")) {
   const standaloneRoot = path.join(root, ".next", "standalone");
   assert.ok(fs.statSync(standaloneRoot).isDirectory(), "standalone output is missing");
-  const leakedRoots = [...forbiddenRuntimeRoots, ...mutableStandaloneRoots]
+  const leakedRoots = [...new Set([...forbiddenRuntimeRoots, ...mutableStandaloneRoots])]
     .filter((relativePath) => fs.existsSync(path.join(standaloneRoot, relativePath)));
   assert.deepEqual(leakedRoots, [], `standalone output contains non-runtime checkout roots: ${leakedRoots.join(", ")}`);
   const packagedScriptsRoot = path.join(standaloneRoot, "scripts");

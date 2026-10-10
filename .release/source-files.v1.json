@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "fb976d5f7e79eaa2fd6bb82f02f0400526aaf17dfeb1d3f294ea1187f7ecd880",
+  "sourceFingerprint": "fb40f2ab7caa20a9e6f99d4f70c747f2a4a960dedbc8f4794480fddac5b23dcd",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4176,
-  "totalBytes": 66656234,
+  "totalBytes": 66657929,
   "files": [
     {
       "path": ".cnb.yml",
@@ -983,8 +983,8 @@
     },
     {
       "path": "next.config.ts",
-      "bytes": 10968,
-      "sha256": "faa90f70c7705d3bdd63e8345bf580a276970c5d220a48f1ee7fb06c22c9d961"
+      "bytes": 11199,
+      "sha256": "0a9319a9e5b781e6e30e94c521aa33b8ed2de2bb523ad222d0fb5c4de8baf3e5"
     },
     {
       "path": "package.json",
@@ -1609,7 +1609,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "bae3ac81b6e8841555eb7237fffcaebe18d5a8efd12bce0208340d90beb83c67"
+      "sha256": "da7611e9d6f1c07d08dc8763616930a8618bedc3235243cfd42102d4a501bd6b"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2348,8 +2348,8 @@
     },
     {
       "path": "scripts/build-release-vnext.mjs",
-      "bytes": 12625,
-      "sha256": "55aeb24604f0d4dd0c4b93a4312b7db386644f2e84f60475d349d23e6d7bb06d"
+      "bytes": 13521,
+      "sha256": "9d4eaa2d1feb14cdbc1cf1a55ef0a5dea6f4b4d1c7d81628a2e933b140afd5a1"
     },
     {
       "path": "scripts/build-storyboard-semantic-packaging-library-v1.mjs",
@@ -8548,8 +8548,8 @@
     },
     {
       "path": "scripts/verify-standalone-trace-boundary.mjs",
-      "bytes": 8223,
-      "sha256": "e00a23f9f774a9cd3e8d2faa5caf087f9dfbfb307c59ae3dafb60c955b6c0ff7"
+      "bytes": 8791,
+      "sha256": "a51ad65c2b09dc38e541a676f60bbcd21af8ee9b134c2d13ec734aa63c15e746"
     },
     {
       "path": "scripts/verify-storage-production-readiness.ts",

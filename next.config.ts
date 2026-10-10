@@ -39,6 +39,10 @@ const nextConfig: NextConfig = {
       './prompts/**/*',
       './research/**/*',
       './research-output/**/*',
+      // Mutable runtime state (including generated gateway and signing keys)
+      // is mounted outside every release. It must never enter Next's traced
+      // standalone tree from a developer checkout.
+      './runtime/**/*',
       './scripts/**/*',
       './src/**/*',
       './supabase/**/*',
