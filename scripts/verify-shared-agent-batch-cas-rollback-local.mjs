@@ -30,9 +30,21 @@ const client = new pg.Client({ ...runtime.ownerConnection, user: "postgres", pas
 await client.connect();
 let open = false;
 try {
-  assert.equal((await client.query("select to_regprocedure('public.apply_agent_reorder_cas_v1(jsonb)')::text signature")).rows[0]?.signature || null, null,
-    "PROBE_REQUIRES_MIGRATION_NOT_APPLIED");
+  const initialState = (await client.query(`select
+    to_regprocedure('public.apply_agent_reorder_cas_v1(jsonb)') is not null reorder_present,
+    to_regprocedure('public.apply_coze_agent_import_cas_v1(jsonb)') is not null coze_present,
+    exists(select 1 from supabase_migrations.schema_migrations where version::text='20261010140000') ledger_present,
+    coalesce((select hash from supabase_migrations.schema_migrations where version::text='20261010140000' limit 1),'') ledger_hash`)).rows[0];
+  assert.equal(initialState.reorder_present, initialState.coze_present, "INITIAL_FUNCTIONS_MUST_MOVE_TOGETHER");
+  assert.equal(initialState.reorder_present, initialState.ledger_present, "INITIAL_LEDGER_MUST_MATCH_FUNCTIONS");
   await client.query("begin"); open = true;
+  if (initialState.ledger_present) await client.query(rollback);
+  const isolatedBaseline = (await client.query(`select
+    to_regprocedure('public.apply_agent_reorder_cas_v1(jsonb)') is null reorder_absent,
+    to_regprocedure('public.apply_coze_agent_import_cas_v1(jsonb)') is null coze_absent,
+    not exists(select 1 from supabase_migrations.schema_migrations where version::text='20261010140000') ledger_absent`)).rows[0];
+  assert.deepEqual(isolatedBaseline, { reorder_absent: true, coze_absent: true, ledger_absent: true },
+    "ISOLATED_BASELINE_REQUIRED");
   await client.query(migration);
   await client.query(`insert into supabase_migrations.schema_migrations(version,name,hash,applied_by)
     values('20261010140000','shared_agent_batch_cas',$1,current_user)`, [migrationHash]);
@@ -150,10 +162,19 @@ try {
     assert.ok(row.config.includes("search_path=public, pg_temp"), `READINESS_SEARCH_PATH_MISMATCH:${name}`);
   }
   await client.query("rollback"); open = false;
+  const restoredState = (await client.query(`select
+    to_regprocedure('public.apply_agent_reorder_cas_v1(jsonb)') is not null reorder_present,
+    to_regprocedure('public.apply_coze_agent_import_cas_v1(jsonb)') is not null coze_present,
+    exists(select 1 from supabase_migrations.schema_migrations where version::text='20261010140000') ledger_present,
+    coalesce((select hash from supabase_migrations.schema_migrations where version::text='20261010140000' limit 1),'') ledger_hash`)).rows[0];
+  assert.deepEqual(restoredState, initialState, "OUTER_ROLLBACK_MUST_RESTORE_INITIAL_STATE");
   console.log(JSON.stringify({ passed: true, persisted: false, target: "127.0.0.1:54322/zimeiti_local",
-    migrationHash, checks: ["filtered reorder writes zero rows", "second-row reorder conflict writes zero rows",
+    initialMigrationApplied: initialState.ledger_present, migrationHash,
+    checks: ["pre-applied and not-yet-applied local states are isolated inside the outer transaction",
+      "filtered reorder writes zero rows", "second-row reorder conflict writes zero rows",
       "mixed Coze insert/update conflict writes zero rows", "23505 and P0002 write zero rows",
-      "rollback removes functions and ledger", "rollback -> reapply -> semantic/security ready", "outer transaction rollback"] }, null, 2));
+      "rollback removes functions and ledger", "rollback -> reapply -> semantic/security ready",
+      "outer transaction rollback restores the exact initial state"] }, null, 2));
 } finally {
   if (open) await client.query("rollback").catch(() => {});
   await client.end();
