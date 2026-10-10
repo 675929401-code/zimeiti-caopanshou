@@ -1310,7 +1310,13 @@ try {
     return archivePath;
   }
   expectSignedArchiveAttack("private-pem", archiveWithInjectedFile("private-pem", "runtime/private.pem", "not-a-real-key\n"), /key, certificate, or source-map file/u);
-  const privateKeyPemFixture = ["-----", "BEGIN ", "PRIVATE KEY", "-----\nfixture-only\n-----", "END ", "PRIVATE KEY", "-----\n"].join("");
+  const privateKeyPemMarker = ["-----BEGIN ", "PRIVATE ", "KEY-----"].join("");
+  const privateKeyPemFooter = ["-----END ", "PRIVATE ", "KEY-----"].join("");
+  const privateKeyPemBody = Buffer.concat([Buffer.from([0x30, 0x3e]), Buffer.alloc(62, 0x07)])
+    .toString("base64")
+    .match(/.{1,64}/gu)
+    .join("\n");
+  const privateKeyPemFixture = `${privateKeyPemMarker}\n${privateKeyPemBody}\n${privateKeyPemFooter}\n`;
   expectSignedArchiveAttack("pem-content", archiveWithInjectedFile("pem-content", "runtime/blob.bin", privateKeyPemFixture), /forbidden private-key PEM content/u);
   expectSignedArchiveAttack("git-metadata", archiveWithInjectedFile("git-metadata", ".git/config", "[core]\n"), /source-control, history, or cache(?: metadata)? path/u);
   const modeDirectory = path.join(freshFinalizeRoot, "mode-tamper-tree");
