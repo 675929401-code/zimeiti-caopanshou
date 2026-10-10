@@ -19,6 +19,9 @@ const releaseBuildRunner = fs.readFileSync(path.join(root, "scripts", "build-rel
 const traceExcludedCheckoutRoots = [
   ".codex-backups",
   ".codex-evidence",
+  ".codex-snapshots",
+  ".logs",
+  ".runtime",
   ".tmp-e2e",
   ".codex-temp",
   ".next-validation",
@@ -54,7 +57,7 @@ const allowedPackagedScriptFiles = [
 const forbiddenRuntimeRoots = traceExcludedCheckoutRoots.filter(relativePath => relativePath !== "scripts");
 const mutableStandaloneRoots = ["runtime"];
 
-assert.match(config, /outputFileTracingExcludes\s*:\s*\{/u, "Next standalone trace exclusions are required");
+assert.match(config, /outputFileTracingExcludes\s*:\s*\{\s*['"]\/\*['"]\s*:/u, "Next standalone trace exclusions must apply to every route");
 assert.match(buildRunner, /"build", "--webpack"/u, "production builds must use the audited Webpack NFT implementation");
 assert.match(ffmpegResolver, /process\.env\.NODE_ENV === "production"\) \{\s*return PACKAGED_FFMPEG_EXECUTABLE;/u, "production FFmpeg path must be deterministic");
 assert.match(ffmpegResolver, /PACKAGED_FFMPEG_EXECUTABLE[\s\S]*?"runtime-tools\\\\ffmpeg\.exe"[\s\S]*?"runtime-tools\/ffmpeg"/u, "packaged FFmpeg paths must be platform literals");
@@ -86,10 +89,10 @@ for (const requiredBackupRuntime of [
 }
 const nonArtifactRootsMatch = buildRunner.match(/const nonArtifactRoots = \[([\s\S]*?)\n  \];/u);
 assert.ok(nonArtifactRootsMatch, "build runner must declare its standalone non-artifact roots");
-for (const relativePath of mutableStandaloneRoots) {
+for (const relativePath of traceExcludedCheckoutRoots) {
   assert.ok(
     nonArtifactRootsMatch[1].includes(`"${relativePath}"`),
-    `standalone cleanup must remove mutable ${relativePath} state`,
+    `standalone cleanup must remove traced non-artifact root ${relativePath}`,
   );
 }
 const cleanupCallIndex = buildRunner.indexOf("removeStandaloneNonArtifactRoots(root);");
@@ -100,13 +103,26 @@ assert.ok(
   cleanupCallIndex < sensitiveCheckIndex,
   "standalone mutable roots must be removed before sensitive-path verification",
 );
-const releaseCleanupIndex = releaseBuildRunner.indexOf('for (const relativePath of ["runtime"])');
+const releaseNonArtifactRootsMatch = releaseBuildRunner.match(/const nonArtifactRoots = \[([\s\S]*?)\n\];/u);
+assert.ok(releaseNonArtifactRootsMatch, "release build must declare its standalone non-artifact roots");
+for (const relativePath of traceExcludedCheckoutRoots) {
+  assert.ok(
+    releaseNonArtifactRootsMatch[1].includes(`"${relativePath}"`),
+    `release build cleanup must remove traced non-artifact root ${relativePath}`,
+  );
+}
+const releaseCleanupIndex = releaseBuildRunner.indexOf("for (const relativePath of nonArtifactRoots)");
+const releaseAllowlistIndex = releaseBuildRunner.indexOf("prepare-next-standalone-assets.mjs");
+const releaseBoundaryIndex = releaseBuildRunner.indexOf("verify-standalone-trace-boundary.mjs");
 const releaseProvenanceIndex = releaseBuildRunner.indexOf("const provenance = {");
 assert.ok(releaseCleanupIndex >= 0, "release build must remove mutable runtime state from standalone output");
 assert.ok(
   releaseProvenanceIndex > releaseCleanupIndex,
   "release build must remove mutable runtime state before issuing provenance",
 );
+assert.ok(releaseAllowlistIndex > releaseCleanupIndex, "release build must restore only audited runtime assets after cleanup");
+assert.ok(releaseBoundaryIndex > releaseAllowlistIndex && releaseProvenanceIndex > releaseBoundaryIndex,
+  "release build must verify the final standalone boundary before issuing provenance");
 for (const relativePath of traceExcludedCheckoutRoots) {
   assert.ok(
     config.includes(`'./${relativePath}/**/*'`),

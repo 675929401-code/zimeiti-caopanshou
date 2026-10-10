@@ -130,7 +130,11 @@ try {
   const privateKeyPemFooter = ["-----END ", "PRIVATE ", "KEY-----"].join("");
   assert.equal(verifierSource.includes(privateKeyPemMarker), false, "complete PEM fixture marker must not be stored in verifier source");
   assert.equal(verifierSource.includes(privateKeyPemFooter), false, "complete PEM fixture footer must not be stored in verifier source");
-  fs.writeFileSync(path.join(pemContentRoot, "runtime", "blob.bin"), `${privateKeyPemMarker}\nfixture-only\n${privateKeyPemFooter}\n`, "utf8");
+  const privateKeyFixtureBody = Buffer.concat([Buffer.from([0x30, 0x3e]), Buffer.alloc(62, 0x07)])
+    .toString("base64")
+    .match(/.{1,64}/gu)
+    .join("\n");
+  fs.writeFileSync(path.join(pemContentRoot, "runtime", "blob.bin"), `${privateKeyPemMarker}\n${privateKeyFixtureBody}\n${privateKeyPemFooter}\n`, "utf8");
 
   const pemPackagerResult = run(process.execPath, [packagerPath, "--verify-sensitive-root", pemContentRoot]);
   assert.notEqual(pemPackagerResult.status, 0, "packager accepted disguised private-key PEM content");
@@ -147,6 +151,21 @@ try {
   assert.equal(markerOnlyPackagerResult.status, 0, `packager rejected a marker-only documentation example:\n${outputOf(markerOnlyPackagerResult)}`);
   const markerOnlyDeployerResult = run(bash, ["scripts/deploy-artifact-vnext.sh", "--verify-sensitive-root", toBashPath(pemMarkerOnlyRoot)]);
   assert.equal(markerOnlyDeployerResult.status, 0, `deployer rejected a marker-only documentation example:\n${outputOf(markerOnlyDeployerResult)}`);
+
+  const binaryMarkerRoot = path.join(temporaryRoot, "binary-marker-pair");
+  createTree(binaryMarkerRoot, ["server.js", "runtime-tools/ffmpeg.exe"]);
+  const openSshPemMarker = ["-----BEGIN ", "OPENSSH PRIVATE ", "KEY-----"].join("");
+  const openSshPemFooter = ["-----END ", "OPENSSH PRIVATE ", "KEY-----"].join("");
+  fs.writeFileSync(path.join(binaryMarkerRoot, "runtime-tools", "ffmpeg.exe"), Buffer.concat([
+    Buffer.from([0x4d, 0x5a, 0x00, 0xff, 0x10]),
+    Buffer.from(openSshPemMarker, "ascii"),
+    Buffer.from([0x00, 0xff, 0x80, 0x01, 0x02, 0x03]),
+    Buffer.from(openSshPemFooter, "ascii"),
+  ]));
+  const binaryMarkerPackagerResult = run(process.execPath, [packagerPath, "--verify-sensitive-root", binaryMarkerRoot]);
+  assert.equal(binaryMarkerPackagerResult.status, 0, `packager rejected non-key binary marker strings:\n${outputOf(binaryMarkerPackagerResult)}`);
+  const binaryMarkerDeployerResult = run(bash, ["scripts/deploy-artifact-vnext.sh", "--verify-sensitive-root", toBashPath(binaryMarkerRoot)]);
+  assert.equal(binaryMarkerDeployerResult.status, 0, `deployer rejected non-key binary marker strings:\n${outputOf(binaryMarkerDeployerResult)}`);
 
   const materializableProject = path.join(temporaryRoot, "materializable-project");
   const materializableStandalone = path.join(materializableProject, ".next", "standalone");

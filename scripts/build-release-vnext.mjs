@@ -171,7 +171,6 @@ if (nextVersion !== expectedNextVersions[service]) {
 if (service === "voice") runPnpm([...servicePnpmPrefix, "exec", "prisma", "generate"], serviceRoot);
 // Use the same audited Next 16 file tracer as the local production preview.
 runPnpm([...servicePnpmPrefix, "exec", "next", "build", ...(service === "web" ? ["--webpack"] : [])], serviceRoot);
-run(process.execPath, [path.join(root, "scripts", "prepare-next-standalone-assets.mjs"), "--root", root, "--service", service], root);
 
 const buildDirectory = path.join(serviceRoot, ".next");
 // Next may trace the builder's environment link. Remove generated copies only;
@@ -193,12 +192,44 @@ function removeGeneratedEnvironmentEntries(directory) {
 if (fs.existsSync(standaloneRoot)) removeGeneratedEnvironmentEntries(standaloneRoot);
 console.log(`Removed ${removedEnvironmentEntries.length} generated environment entries from standalone output.`);
 
-// Runtime state is provisioned separately under the release root. Next's file
-// tracer can still copy a developer checkout's fallback runtime directory when
-// server code contains dynamic filesystem reads, so remove the complete root
-// before provenance is issued and before the packager inspects the build.
+// Runtime state and developer-only checkout material are provisioned separately
+// or are irrelevant to production. Next's file tracer can still copy these
+// roots when server code contains dynamic filesystem reads, so purge them before
+// the audited runtime allowlist is materialized and before provenance is issued.
+const nonArtifactRoots = [
+  ".codex-backups",
+  ".codex-evidence",
+  ".codex-snapshots",
+  ".codex-temp",
+  ".logs",
+  ".next-validation",
+  ".next-local-acceptance",
+  ".next-local-acceptance-next",
+  ".runtime",
+  ".tmp-e2e",
+  "--output=.codex-evidence",
+  "%SystemDrive%",
+  "artifacts",
+  "assets",
+  "backups",
+  "data",
+  "deploy",
+  "docs",
+  "evidence-archive",
+  "prompts",
+  "research",
+  "research-output",
+  "runtime",
+  "scripts",
+  "src",
+  "supabase",
+  "tests",
+  "voice-platform",
+  "任务快照",
+  "备份快照",
+];
 const removedNonArtifactRoots = [];
-for (const relativePath of ["runtime"]) {
+for (const relativePath of nonArtifactRoots) {
   const target = path.join(standaloneRoot, relativePath);
   if (!fs.existsSync(target)) continue;
   const relative = path.relative(standaloneRoot, target);
@@ -207,6 +238,9 @@ for (const relativePath of ["runtime"]) {
   removedNonArtifactRoots.push(relativePath);
 }
 console.log(`Removed ${removedNonArtifactRoots.length} generated non-artifact roots from standalone output.`);
+run(process.execPath, [path.join(root, "scripts", "prepare-next-standalone-assets.mjs"), "--root", root, "--service", service], root);
+if (fs.existsSync(standaloneRoot)) removeGeneratedEnvironmentEntries(standaloneRoot);
+run(process.execPath, [path.join(root, "scripts", "verify-standalone-trace-boundary.mjs"), "--artifact"], root);
 const standaloneEntrypoint = path.join(buildDirectory, "standalone", "server.js");
 const buildIdPath = path.join(buildDirectory, "BUILD_ID");
 const requiredServerFilesPath = path.join(buildDirectory, "required-server-files.json");

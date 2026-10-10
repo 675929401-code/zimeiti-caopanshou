@@ -105,9 +105,36 @@ function assertSafeArtifactPath(relativePath, kind) {
   if (reason) throw new Error(`forbidden sensitive artifact path (${reason}): ${normalize(relativePath)}`);
 }
 
+const privateKeyPemPattern = /-----BEGIN ((?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY)-----([\s\S]{1,1048576}?)-----END \1-----/gu;
+function containsStructurallyValidPrivateKeyPem(body) {
+  const text = body.toString("latin1");
+  privateKeyPemPattern.lastIndex = 0;
+  for (const match of text.matchAll(privateKeyPemPattern)) {
+    const label = match[1];
+    const lines = match[2].replace(/\r/gu, "").split("\n");
+    while (lines.length > 0 && !lines[0].trim()) lines.shift();
+    while (lines.length > 0 && /^[A-Za-z0-9-]+:[\t -~]*$/u.test(lines[0].trim())) lines.shift();
+    while (lines.length > 0 && !lines[0].trim()) lines.shift();
+    while (lines.length > 0 && !lines.at(-1).trim()) lines.pop();
+    if (lines.length === 0) continue;
+    const encodedLines = lines.map((line) => line.trim());
+    if (encodedLines.some((line) => !/^[A-Za-z0-9+/]+={0,2}$/u.test(line))) continue;
+    const encoded = encodedLines.join("");
+    if (encoded.length < 44 || encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) continue;
+    const decoded = Buffer.from(encoded, "base64");
+    if (decoded.length < 32 || decoded.toString("base64").replace(/=+$/u, "") !== encoded.replace(/=+$/u, "")) continue;
+    if (label === "OPENSSH PRIVATE KEY") {
+      if (decoded.subarray(0, 15).equals(Buffer.from("openssh-key-v1\0", "ascii"))) return true;
+    } else if (decoded[0] === 0x30) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function assertSafeArtifactContent(filePath, relativePath) {
   const body = fs.readFileSync(filePath);
-  if (/-----BEGIN ((?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY)-----[\s\S]{1,1048576}?-----END \1-----/u.test(body.toString("utf8"))) {
+  if (containsStructurallyValidPrivateKeyPem(body)) {
     throw new Error(`forbidden private-key PEM content: ${canonicalArtifactPath(relativePath)}`);
   }
 }

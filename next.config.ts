@@ -19,9 +19,12 @@ const nextConfig: NextConfig = {
   // research material) into the production standalone directory. Public assets
   // and FFmpeg are materialized explicitly by prepare-next-standalone-assets.
   outputFileTracingExcludes: {
-    '*': [
+    '/*': [
       './.codex-backups/**/*',
       './.codex-evidence/**/*',
+      './.codex-snapshots/**/*',
+      './.logs/**/*',
+      './.runtime/**/*',
       './.tmp-e2e/**/*',
       './.codex-temp/**/*',
       './.next-validation/**/*',

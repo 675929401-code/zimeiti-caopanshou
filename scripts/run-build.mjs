@@ -76,10 +76,13 @@ function removeStandaloneNonArtifactRoots(root) {
   const nonArtifactRoots = [
     ".codex-backups",
     ".codex-evidence",
+    ".codex-snapshots",
     ".codex-temp",
+    ".logs",
     ".next-validation",
     ".next-local-acceptance",
     ".next-local-acceptance-next",
+    ".runtime",
     ".tmp-e2e",
     "--output=.codex-evidence",
     "%SystemDrive%",

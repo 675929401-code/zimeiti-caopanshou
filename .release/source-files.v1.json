@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "09e5ada064905c76569977012c1895bcea34c401ed94d2234c080ebbdd756b56",
+  "sourceFingerprint": "2310aa59d9f7e3b03c847371b9d6567ce5579170e8b4be77babd2f5c5bf3928c",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4176,
-  "totalBytes": 66663020,
+  "totalBytes": 66670385,
   "files": [
     {
       "path": ".cnb.yml",
@@ -983,8 +983,8 @@
     },
     {
       "path": "next.config.ts",
-      "bytes": 11199,
-      "sha256": "0a9319a9e5b781e6e30e94c521aa33b8ed2de2bb523ad222d0fb5c4de8baf3e5"
+      "bytes": 11280,
+      "sha256": "283e2e4cfc7a85bcceb75e93dfbf12ed100d9b4a40f6b99473768a2d23801bf6"
     },
     {
       "path": "package.json",
@@ -1609,7 +1609,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "6f762884a3dfae16dc070fbbdc67fb9aa979970b63322c5d420a5ed866838fed"
+      "sha256": "cdba8d74f47346ea18f0129eac38ac121ce2a742c82716c5d16695bb3fede8fb"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2348,8 +2348,8 @@
     },
     {
       "path": "scripts/build-release-vnext.mjs",
-      "bytes": 13521,
-      "sha256": "9d4eaa2d1feb14cdbc1cf1a55ef0a5dea6f4b4d1c7d81628a2e933b140afd5a1"
+      "bytes": 14273,
+      "sha256": "898ea770ee22994b205ec6c9aca10322333fcecd54f5e3619a1a3696e3923971"
     },
     {
       "path": "scripts/build-storyboard-semantic-packaging-library-v1.mjs",
@@ -2728,8 +2728,8 @@
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
-      "bytes": 153110,
-      "sha256": "4501e62954fed8450361fcb8eafdfeb24689f5db1d307b48f5be1f44acb4cd61"
+      "bytes": 155828,
+      "sha256": "5e9d2c82fdeccac174fd54ae9ed3f226f7ac332f155cff88d52bca854bc38368"
     },
     {
       "path": "scripts/deploy-direct.js",
@@ -3463,8 +3463,8 @@
     },
     {
       "path": "scripts/package-standalone-artifact.mjs",
-      "bytes": 47825,
-      "sha256": "bd508c9263af8e4d0d64497082f82ea26a8948516ff669fb2ef4975c01ed0e32"
+      "bytes": 49185,
+      "sha256": "7088b32211651fef18d5bb52be224a0e204ac2332f90ca05e6e68021c356bd21"
     },
     {
       "path": "scripts/patch-benchmark-video-prompts.ts",
@@ -4283,8 +4283,8 @@
     },
     {
       "path": "scripts/run-build.mjs",
-      "bytes": 10590,
-      "sha256": "aadb565ce2ad0b5a992d6118b62932f9928703c850c3198bac9e18cfdf0c27b1"
+      "bytes": 10643,
+      "sha256": "b333021658a2bc097c9f41a4670cff8ac49c87d83fcaec03ceffc814e54b8182"
     },
     {
       "path": "scripts/run-canvas-live-sample.ts",
@@ -5473,8 +5473,8 @@
     },
     {
       "path": "scripts/verify-artifact-secret-gates.mjs",
-      "bytes": 19104,
-      "sha256": "e4a3f804a4ec5a53c91a8c9e04abb1d6f2a3bbe229785d99fd781536ab0f2d43"
+      "bytes": 20451,
+      "sha256": "f7cd28830b04154ae660880c061c154c518f204f72fcf0759679df66e17e0c3b"
     },
     {
       "path": "scripts/verify-auth-deeplink-zero-cost.ts",
@@ -8548,8 +8548,8 @@
     },
     {
       "path": "scripts/verify-standalone-trace-boundary.mjs",
-      "bytes": 8791,
-      "sha256": "a51ad65c2b09dc38e541a676f60bbcd21af8ee9b134c2d13ec734aa63c15e746"
+      "bytes": 9845,
+      "sha256": "db54563c3e633744957f9ec9758ed238f9d31586f25ef1289fd74dc3d08a3ace"
     },
     {
       "path": "scripts/verify-storage-production-readiness.ts",
