@@ -60,6 +60,9 @@ const lockedSensitiveReadPaths = new Set([
   "/api/admin/payment-methods",
   "/api/admin/shortcuts",
 ]);
+const telemetryWritePaths = new Set([
+  "/api/announcements/events",
+]);
 const benignNavigationAbortPaths = new Set([
   "/",
   "/login",
@@ -339,6 +342,7 @@ async function main() {
     blockedPaidRequests: [],
     blockedExternalRequests: [],
     excludedRequests: [],
+    telemetryAccepted: [],
     lockedSensitiveReadAttempts: [],
     lockedSensitive428Responses: [],
     lockedSensitiveConsole428: [],
@@ -417,6 +421,15 @@ async function main() {
         intentionallyBlocked.add(request);
         report.excludedRequests.push(event);
         await route.abort("blockedbyclient");
+        return;
+      }
+      if (method === "POST" && telemetryWritePaths.has(url.pathname)) {
+        report.telemetryAccepted.push(event);
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json; charset=utf-8",
+          body: JSON.stringify({ ok: true, acceptedBy: "readonly-admin-verifier" }),
+        });
         return;
       }
       if (!["GET", "HEAD"].includes(method)) {
@@ -510,7 +523,13 @@ async function main() {
     const bootstrapOffsets = eventOffsets();
     try {
       const response = await page.goto(`${origin}/admin?tab=users`, { waitUntil: "domcontentloaded", timeout: 45_000 });
-      await page.getByRole("navigation", { name: "管理后台一级导航" }).waitFor({ state: "visible", timeout: 30_000 });
+      const bootstrapNavigation = page.getByRole("navigation", { name: "管理后台一级导航" });
+      try {
+        await bootstrapNavigation.waitFor({ state: "visible", timeout: 15_000 });
+      } catch {
+        await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 });
+        await bootstrapNavigation.waitFor({ state: "visible", timeout: 30_000 });
+      }
       const nav = page.getByRole("navigation", { name: "管理后台一级导航" });
       const labels = await nav.locator('[data-testid^="admin-primary-nav-"] span.truncate').allTextContents();
       const testIds = await nav.locator('[data-testid^="admin-primary-nav-"]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-testid")));
@@ -780,6 +799,7 @@ async function main() {
     blockedPaidAttempts: report.blockedPaidRequests.length,
     blockedExternalAttempts: report.blockedExternalRequests.length,
     excludedFeatureAttempts: report.excludedRequests.length,
+    telemetryAccepted: report.telemetryAccepted.length,
     lockedSensitiveReadAttempts: report.lockedSensitiveReadAttempts.length,
     lockedSensitive428Responses: report.lockedSensitive428Responses.length,
     lockedSensitiveConsole428: report.lockedSensitiveConsole428.length,

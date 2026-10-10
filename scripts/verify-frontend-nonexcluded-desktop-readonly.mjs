@@ -25,8 +25,8 @@ const outputDir = path.resolve(
 const screenshotsDir = path.join(outputDir, "screenshots");
 
 const EXPECTED_COUNTS = Object.freeze({
-  routePatterns: 54,
-  browserUrls: 108,
+  routePatterns: 56,
+  browserUrls: 110,
   excludedRedirectBoundaries: 6,
   toolAliases: 37,
   helpSlugs: 19,

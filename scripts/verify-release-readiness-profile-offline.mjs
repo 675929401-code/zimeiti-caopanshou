@@ -198,6 +198,8 @@ async function runRoute(readinessProfile) {
     RELEASE_ID: "release-fixture-0001",
     DEPLOY_COMMIT_SHA: "c".repeat(40),
     EXPECTED_BUILD_ID: "build-fixture-0001",
+    RELEASE_BUILD_OUTPUT_DIGEST: "d".repeat(64),
+    RELEASE_SOURCE_VERSION: "R000000-fixture",
     ASSET_DIGEST,
     ASSET_MANIFEST_SHA256: manifestSha256,
     APP_DATA_DIR: DATA_ROOT,
@@ -288,7 +290,7 @@ async function runRoute(readinessProfile) {
 }
 
 const candidate = await runRoute("candidate-runtime-v1");
-assert.equal(candidate.response.status, 200);
+assert.equal(candidate.response.status, 200, JSON.stringify(candidate.response.body));
 assert.equal(candidate.response.body.ready, true);
 assert.equal(candidate.response.body.activationReady, false);
 assert.equal(candidate.response.body.readinessProfile, "candidate-runtime-v1");
@@ -304,7 +306,7 @@ assert.equal(candidate.response.body.checks.voiceDatabase.quickCheck, "ok");
 assert.equal(candidate.response.body.checks.storage.dataMount.isolatedFromSystemDisk, true);
 
 const production = await runRoute("production-full-v1");
-assert.equal(production.response.status, 200);
+assert.equal(production.response.status, 200, JSON.stringify(production.response.body));
 assert.equal(production.response.body.ready, true);
 assert.equal(production.response.body.activationReady, true);
 assert.equal(production.response.body.readinessProfile, "production-full-v1");
@@ -313,7 +315,7 @@ assert.equal(production.response.body.checks.database.state, "ready");
 assert.equal(production.response.body.checks.referenceData.state, "ready");
 
 const productionDefault = await runRoute(undefined);
-assert.equal(productionDefault.response.status, 200);
+assert.equal(productionDefault.response.status, 200, JSON.stringify(productionDefault.response.body));
 assert.equal(productionDefault.response.body.readinessProfile, "production-full-v1");
 assert.deepEqual(productionDefault.counters, { database: 1, referenceData: 1 });
 

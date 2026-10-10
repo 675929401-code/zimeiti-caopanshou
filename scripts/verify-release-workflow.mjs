@@ -67,6 +67,7 @@ for (const marker of [
   "historicalMigrationMutationAllowed: false",
   "relocatedHistoricalRollbacks",
   "consumedRelocationReceipts",
+  "verifiedCommittedRelocationReceipts",
   "validatePhysicalPath",
   "readStableRegularFile",
   "git-range-candidate",
@@ -344,6 +345,32 @@ withCleanCandidateFixture("clean Git range relocation consumes a base-head-polic
   assert.match(receipt.oldBlob, /^[0-9a-f]{40,64}$/u);
   assert.match(receipt.newBlob, /^[0-9a-f]{40,64}$/u);
 });
+{
+  const fixture = createRelocationFixture();
+  try {
+    const relocationHead = commitFixture(fixture, "commit reviewed relocation");
+    writeFixtureFile(fixture.fixtureRoot, "post-relocation-change.txt", "next candidate\n");
+    const nextHead = commitFixture(fixture, "candidate after committed relocation");
+    const { exitCode, report } = runRelocationAudit(fixture.fixtureRoot, { base: relocationHead, head: nextHead });
+    assert.equal(exitCode, 0, JSON.stringify(report, null, 2));
+    assert.equal(report.status, "PASS");
+    assert.equal(report.migrationSource.consumedRelocationReceipts.length, 0);
+    assert.equal(report.migrationSource.verifiedCommittedRelocationReceipts.length, 1);
+    const receipt = report.migrationSource.verifiedCommittedRelocationReceipts[0];
+    assert.equal(receipt.from, fixture.from);
+    assert.equal(receipt.to, fixture.to);
+    assert.equal(receipt.sha256, fixture.sha256);
+    assert.equal(receipt.base, relocationHead);
+    assert.equal(receipt.head, nextHead);
+    assert.match(receipt.baseTargetBlob, /^[0-9a-f]{40,64}$/u);
+    assert.match(receipt.candidateTargetBlob, /^[0-9a-f]{40,64}$/u);
+    relocationChecks.push("committed relocation remains valid for later clean candidates");
+  } finally {
+    const resolved = path.resolve(fixture.fixtureRoot);
+    assert.ok(resolved.startsWith(path.resolve(os.tmpdir())), "fixture cleanup escaped the OS temp root");
+    fs.rmSync(resolved, { recursive: true, force: true });
+  }
+}
 withCleanCandidateFixture("clean Git range historical forward modification fails closed", (fixture) => {
   writeFixtureFile(fixture.fixtureRoot, "supabase/migrations/20260101000000_forward.sql", "BEGIN;\nSELECT 11;\nCOMMIT;\n");
 }, expectRelocationFailure(/historical migration changed relative to audit base/u));
@@ -364,7 +391,7 @@ withCleanCandidateFixture("clean Git range unallowlisted nested deletion fails c
 }, expectRelocationFailure(/historical migration deleted relative to audit base/u), { includeUnlistedLegacy: true });
 withCleanCandidateFixture("configured relocation receipt must be consumed", (fixture) => {
   writeFixtureFile(fixture.fixtureRoot, fixture.from, fixture.rollbackBytes);
-}, expectRelocationFailure(/receipt was not consumed/u));
+}, expectRelocationFailure(/neither consumed nor a verified committed relocation/u));
 withCleanCandidateFixture("preexisting rollback target does not consume a relocation receipt", null,
   expectRelocationFailure(/target already existed in the audit base/u), { includePreexistingTarget: true });
 

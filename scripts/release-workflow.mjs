@@ -547,6 +547,7 @@ function inspectMigrationWorktree() {
     head: null,
     range: null,
     consumedRelocationReceipts: [],
+    verifiedCommittedRelocationReceipts: [],
     modifiedHistoricalMigrations: [],
     deletedHistoricalMigrations: [],
     relocatedHistoricalRollbacks: [],
@@ -879,6 +880,7 @@ function inspectMigrationWorktree() {
   const deletedHistoricalMigrations = [];
   const relocatedHistoricalRollbacks = [];
   const consumedRelocationReceipts = [];
+  const verifiedCommittedRelocationReceipts = [];
   const relocationFailures = [];
   for (const entry of deletedHistoricalCandidates) {
     const receipt = relocationByFrom.get(entry);
@@ -926,9 +928,38 @@ function inspectMigrationWorktree() {
     consumedRelocationReceipts.push(consumedReceipt);
   }
   for (const receipt of relocationByFrom.values()) {
-    if (!consumedRelocationReceipts.some((entry) => entry.from === receipt.from)) {
-      relocationFailures.push(`configured legacy rollback relocation receipt was not consumed in this candidate: ${receipt.from}`);
+    if (consumedRelocationReceipts.some((entry) => entry.from === receipt.from)) continue;
+    const baseSourceObject = safelyReadObject(readBaseObject, receipt.from, "unable to inspect committed relocation source in audit base");
+    const candidateSourceObject = safelyReadObject(readCandidateObject, receipt.from, "unable to inspect committed relocation source in candidate");
+    const baseTargetObject = safelyReadObject(readBaseObject, receipt.to, "unable to inspect committed relocation target in audit base");
+    const candidateTargetObject = safelyReadObject(readCandidateObject, receipt.to, "unable to inspect committed relocation target in candidate");
+    const failures = [];
+    if (baseSourceObject) failures.push("legacy source still exists in the audit base");
+    if (candidateSourceObject) failures.push("legacy source exists in the candidate");
+    if (!baseTargetObject) failures.push("committed target is missing from the audit base");
+    if (!candidateTargetObject) failures.push("committed target is missing from the candidate");
+    const baseTargetSha256 = baseTargetObject ? sha256Buffer(baseTargetObject.bytes) : null;
+    const candidateTargetSha256 = candidateTargetObject ? sha256Buffer(candidateTargetObject.bytes) : null;
+    if (baseTargetSha256 !== receipt.sha256) failures.push("audit-base target sha256 does not match the relocation receipt");
+    if (candidateTargetSha256 !== receipt.sha256) failures.push("candidate target sha256 does not match the relocation receipt");
+    if (!baseTargetObject || !candidateTargetObject || !baseTargetObject.bytes.equals(candidateTargetObject.bytes)) {
+      failures.push("audit-base and candidate target bytes differ");
     }
+    if (failures.length > 0) {
+      relocationFailures.push(`configured legacy rollback relocation receipt is neither consumed nor a verified committed relocation (${receipt.from}): ${[...new Set(failures)].join("; ")}`);
+      continue;
+    }
+    verifiedCommittedRelocationReceipts.push({
+      from: receipt.from,
+      to: receipt.to,
+      sha256: receipt.sha256,
+      bytes: baseTargetObject.bytes.length,
+      base,
+      head: candidateHead,
+      policySha256,
+      baseTargetBlob: baseTargetObject.oid,
+      candidateTargetBlob: candidateTargetObject.oid,
+    });
   }
   const invalidMigrationRootEntries = [...new Set([
     ...currentPaths.filter((entry) => !isCanonicalForwardPath(entry)),
@@ -956,6 +987,7 @@ function inspectMigrationWorktree() {
     head: candidateHead,
     range: `${base}..${candidateHead}`,
     consumedRelocationReceipts,
+    verifiedCommittedRelocationReceipts,
     modifiedHistoricalMigrations,
     deletedHistoricalMigrations,
     relocatedHistoricalRollbacks,
@@ -980,6 +1012,7 @@ function printMigrationAudit() {
       head: migrationSource.head,
       range: migrationSource.range,
       consumedRelocationReceipts: migrationSource.consumedRelocationReceipts,
+      verifiedCommittedRelocationReceipts: migrationSource.verifiedCommittedRelocationReceipts,
       historicalMigrationMutationAllowed: false,
       modifiedHistoricalMigrations: migrationSource.modifiedHistoricalMigrations,
       deletedHistoricalMigrations: migrationSource.deletedHistoricalMigrations,
@@ -1043,6 +1076,7 @@ function printAudit() {
       head: migrationSource.head,
       range: migrationSource.range,
       consumedRelocationReceipts: migrationSource.consumedRelocationReceipts,
+      verifiedCommittedRelocationReceipts: migrationSource.verifiedCommittedRelocationReceipts,
       historicalMigrationMutationAllowed: false,
       modifiedHistoricalMigrations: migrationSource.modifiedHistoricalMigrations,
       deletedHistoricalMigrations: migrationSource.deletedHistoricalMigrations,
