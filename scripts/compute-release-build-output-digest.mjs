@@ -27,9 +27,16 @@ function isInside(root, candidate) {
   return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
+function isNonRuntimePackageDocumentation(relative) {
+  const normalized = relative.replace(/\\/gu, "/").toLowerCase();
+  const extension = path.posix.extname(normalized);
+  return normalized.split("/").includes("node_modules")
+    && (extension === ".md" || extension === ".markdown");
+}
+
 function collect(absolute, relative, files, options) {
   const stat = fs.lstatSync(absolute);
-  if (path.posix.extname(relative).toLowerCase() === ".map") return;
+  if (path.posix.extname(relative).toLowerCase() === ".map" || isNonRuntimePackageDocumentation(relative)) return;
   if (stat.isSymbolicLink()) {
     const realTarget = fs.realpathSync.native(absolute);
     if (!options.trustedRoots.some((trustedRoot) => isInside(trustedRoot, realTarget))) {

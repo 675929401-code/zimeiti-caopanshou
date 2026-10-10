@@ -13,6 +13,7 @@ export function materializeRuntimePackages(sourceRoot, artifactRoot, names) {
   const outputRoot = fs.realpathSync(artifactRoot);
   if (inside(installedRoot, outputRoot) || inside(outputRoot, installedRoot)) throw new Error("Storage runtime source/output overlap");
   const packages = [];
+  let omittedPackageDocumentation = 0;
 
   function resolvePackage(name, from) {
     if (!/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/iu.test(name)) throw new Error("Invalid runtime dependency name");
@@ -29,7 +30,12 @@ export function materializeRuntimePackages(sourceRoot, artifactRoot, names) {
   }
 
   function copyContents(source, destination, packageRoot, activeRealDirectories = new Set()) {
-    if (path.extname(source).toLowerCase() === ".map") return;
+    const extension = path.extname(source).toLowerCase();
+    if (extension === ".map") return;
+    if (extension === ".md" || extension === ".markdown") {
+      omittedPackageDocumentation += 1;
+      return;
+    }
     const resolvedSource = fs.realpathSync(source);
     if (!inside(installedRoot, resolvedSource)) throw new Error("Package file escapes installed packages");
     if (!inside(outputRoot, path.resolve(destination))) throw new Error("Package output escapes artifact");
@@ -41,7 +47,18 @@ export function materializeRuntimePackages(sourceRoot, artifactRoot, names) {
       try {
         fs.mkdirSync(destination, { recursive: true });
         for (const entry of fs.readdirSync(resolvedSource)) {
-          if (entry.toLowerCase().endsWith(".map") || entry === ".git" || (resolvedSource === packageRoot && entry === "node_modules")) continue;
+          if (
+            entry.toLowerCase().endsWith(".map")
+            || entry.toLowerCase().endsWith(".md")
+            || entry.toLowerCase().endsWith(".markdown")
+            || entry === ".git"
+            || (resolvedSource === packageRoot && entry === "node_modules")
+          ) {
+            if (entry.toLowerCase().endsWith(".md") || entry.toLowerCase().endsWith(".markdown")) {
+              omittedPackageDocumentation += 1;
+            }
+            continue;
+          }
           copyContents(path.join(resolvedSource, entry), path.join(destination, entry), packageRoot, activeRealDirectories);
         }
       } finally {
@@ -76,7 +93,7 @@ export function materializeRuntimePackages(sourceRoot, artifactRoot, names) {
   for (const name of names) {
     visit(name, resolvePackage(name, sourceRoot), path.join(outputRoot, "node_modules", name), new Map());
   }
-  return { packageCopies: packages.length, packages };
+  return { packageCopies: packages.length, packages, omittedPackageDocumentation };
 }
 
 export function materializeStorageRuntime(sourceRoot, artifactRoot) {

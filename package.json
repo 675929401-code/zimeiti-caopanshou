@@ -115,7 +115,7 @@
     "release:vnext:state-machine:verify": "node ./scripts/verify-deploy-state-machine.mjs",
     "verify:manju-public-assets": "node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-manju-public-assets.ts",
     "verify:youcai-navigation-live": "node ./scripts/verify-youcai-navigation-live.mjs",
-    "release:vnext:verify": "node ./scripts/verify-release-workflow.mjs && node ./scripts/verify-render-nginx-config-vnext.mjs && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-runtime-data-boundary.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-provider-surface-security.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-local-video-tools.ts",
+    "release:vnext:verify": "node ./scripts/verify-release-workflow.mjs && node ./scripts/verify-artifact-secret-gates.mjs && node ./scripts/verify-storage-runtime-package.mjs && node ./scripts/verify-render-nginx-config-vnext.mjs && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-runtime-data-boundary.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-provider-surface-security.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-local-video-tools.ts",
     "deploy:ready": "node ./scripts/verify-deployment-readiness.mjs --mode=production",
     "deploy:ready:code": "node ./scripts/verify-deployment-readiness.mjs --mode=code",
     "validate": "tsc -p tsconfig.json && eslint . --quiet"

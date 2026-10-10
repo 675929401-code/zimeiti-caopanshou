@@ -116,6 +116,13 @@ function isSourceMapPath(relativePath) {
   return path.posix.extname(normalize(relativePath)).toLowerCase() === ".map";
 }
 
+const nonRuntimePackageDocumentationExtensions = new Set([".md", ".markdown"]);
+function isNonRuntimePackageDocumentation(relativePath) {
+  const normalizedPath = normalize(relativePath).toLowerCase();
+  return normalizedPath.split("/").includes("node_modules")
+    && nonRuntimePackageDocumentationExtensions.has(path.posix.extname(normalizedPath));
+}
+
 function sensitiveArtifactPathReasonAllowingSourceMap(relativePath, kind, allowSourceMap) {
   if (allowSourceMap && kind === "file" && isSourceMapPath(relativePath)) {
     const parent = path.posix.dirname(normalize(relativePath));
@@ -160,6 +167,7 @@ function assertMaterializableArtifactTree(rootPath, trustedRoots) {
   const realTrustedRoots = [...new Set(trustedRoots.map((candidate) => fs.realpathSync(candidate)))];
   const activeRealDirectories = new Set();
   const omittedSourceMapTargets = new Set();
+  const omittedPackageDocumentationTargets = new Set();
 
   function trustedTargetRelativePaths(realTarget) {
     return realTrustedRoots
@@ -188,6 +196,7 @@ function assertMaterializableArtifactTree(rootPath, trustedRoots) {
         const relativePath = normalize(path.posix.join(logicalDirectory, entry.name));
         const entryStats = fs.lstatSync(entryPath);
         const sourceMapOmitted = isSourceMapPath(relativePath);
+        const packageDocumentationOmitted = isNonRuntimePackageDocumentation(relativePath);
 
         let realTarget;
         try {
@@ -211,8 +220,10 @@ function assertMaterializableArtifactTree(rootPath, trustedRoots) {
         if (!entryStats.isSymbolicLink() && !entryStats.isDirectory() && !entryStats.isFile()) {
           throw new Error(`materializable input contains a non-regular entry: ${relativePath}`);
         }
-        if (sourceMapOmitted) {
-          omittedSourceMapTargets.add(process.platform === "win32" ? realTarget.toLowerCase() : realTarget);
+        if (sourceMapOmitted || packageDocumentationOmitted) {
+          const targetKey = process.platform === "win32" ? realTarget.toLowerCase() : realTarget;
+          if (sourceMapOmitted) omittedSourceMapTargets.add(targetKey);
+          if (packageDocumentationOmitted) omittedPackageDocumentationTargets.add(targetKey);
           continue;
         }
         if (targetStats.isDirectory()) walk(realTarget, relativePath);
@@ -223,7 +234,10 @@ function assertMaterializableArtifactTree(rootPath, trustedRoots) {
     }
   }
   walk(resolvedRoot, "");
-  return { omittedSourceMaps: omittedSourceMapTargets.size };
+  return {
+    omittedSourceMaps: omittedSourceMapTargets.size,
+    omittedPackageDocumentation: omittedPackageDocumentationTargets.size,
+  };
 }
 
 function sha256File(filePath) {
@@ -330,6 +344,12 @@ function copyTree(source, destination, filter = () => true, options = {}) {
     for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
       const sourcePath = path.join(source, entry.name);
       const destinationPath = path.join(destination, entry.name);
+      if (isNonRuntimePackageDocumentation(sourcePath)) {
+        if (options.metrics) {
+          options.metrics.omittedPackageDocumentationCount = (options.metrics.omittedPackageDocumentationCount || 0) + 1;
+        }
+        continue;
+      }
       if (entry.name.toLowerCase().endsWith(".map")) {
         if (options.metrics) options.metrics.omittedSourceMapCount = (options.metrics.omittedSourceMapCount || 0) + 1;
         continue;
@@ -417,7 +437,7 @@ if (materializableVerificationRoot) {
       path.join(verificationProjectRoot, "node_modules"),
     ].filter((candidate, index, values) => fs.existsSync(candidate) && values.indexOf(candidate) === index);
     const result = assertMaterializableArtifactTree(materializableVerificationRoot, trustedRoots);
-    console.log(`PASS materializable standalone input; omittedSourceMaps=${result.omittedSourceMaps}`);
+    console.log(`PASS materializable standalone input; omittedSourceMaps=${result.omittedSourceMaps}; omittedPackageDocumentation=${result.omittedPackageDocumentation}`);
     process.exit(0);
   } catch (error) {
     stop(`materializable standalone policy rejected input: ${error instanceof Error ? error.message : String(error)}`);
@@ -671,7 +691,7 @@ if (provenance.deployable) {
 
 fs.mkdirSync(outputRoot, { recursive: false });
 try {
-  const copyMetrics = { materializedSymlinkCount: 0, omittedSourceMapCount: 0 };
+  const copyMetrics = { materializedSymlinkCount: 0, omittedSourceMapCount: 0, omittedPackageDocumentationCount: 0 };
   const trustedSymlinkRoots = [
     standaloneRoot,
     path.join(serviceRoot, "node_modules"),
@@ -703,6 +723,7 @@ try {
   // one at a time, and forbid fallback to the builder during load verification.
   const runtime = materializeTracedRuntime(serviceRoot, standaloneRoot, outputRoot, { storage: service === "web" });
   console.log(`PASS traced runtime dependencies: ${runtime.roots.join(", ")}; ${runtime.packageCopies} package copies`);
+  console.log(`PASS omitted non-runtime package documentation: ${copyMetrics.omittedPackageDocumentationCount + runtime.omittedPackageDocumentation} files`);
   copyTree(staticRoot, path.join(outputRoot, ".next", "static"));
   fs.mkdirSync(path.join(outputRoot, ".next"), { recursive: true });
   fs.copyFileSync(buildIdPath, path.join(outputRoot, ".next", "BUILD_ID"));

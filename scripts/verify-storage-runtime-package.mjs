@@ -18,12 +18,19 @@ try {
   makePackage(path.join(sdk, "node_modules", "cookie"), { name: "cookie", version: "2", main: "index.js" }, "module.exports=2;");
   fs.writeFileSync(path.join(sdk, "top-level.map"), "source map fixture");
   fs.writeFileSync(path.join(sdk, "node_modules", "cookie", "nested.map"), "nested source map fixture");
+  const privateKeyMarker = ["-----BEGIN ", "PRIVATE ", "KEY-----"].join("");
+  const privateKeyFooter = ["-----END ", "PRIVATE ", "KEY-----"].join("");
+  fs.writeFileSync(path.join(sdk, "README.md"), `${privateKeyMarker}\nfixture-only\n${privateKeyFooter}\n`);
+  fs.writeFileSync(path.join(sdk, "node_modules", "cookie", "GUIDE.markdown"), "non-runtime package documentation");
   makePackage(path.join(output, "node_modules", "cookie"), { name: "cookie", version: "5", main: "missing.js" }, "module.exports=5;");
   const result = materializeStorageRuntime(source, output);
   assert.equal(result.packageCopies, 2);
   assert.equal(JSON.parse(fs.readFileSync(path.join(output, "node_modules", "cos-nodejs-sdk-v5", "node_modules", "cookie", "package.json"))).version, "2");
   assert.equal(fs.existsSync(path.join(output, "node_modules", "cos-nodejs-sdk-v5", "top-level.map")), false);
   assert.equal(fs.existsSync(path.join(output, "node_modules", "cos-nodejs-sdk-v5", "node_modules", "cookie", "nested.map")), false);
+  assert.equal(fs.existsSync(path.join(output, "node_modules", "cos-nodejs-sdk-v5", "README.md")), false);
+  assert.equal(fs.existsSync(path.join(output, "node_modules", "cos-nodejs-sdk-v5", "node_modules", "cookie", "GUIDE.markdown")), false);
+  assert.equal(result.omittedPackageDocumentation, 2);
   // Removing the actual dependency must fail instead of falling back to source.
   fs.renameSync(path.join(output, "node_modules", "cos-nodejs-sdk-v5", "node_modules", "cookie"), path.join(output, "cookie-removed"));
   assert.throws(() => verifyStorageRuntime(output), /Storage runtime dependency check failed/);
@@ -58,7 +65,7 @@ try {
   const cycleOutput = path.join(temporary, "cycle-artifact");
   fs.mkdirSync(cycleOutput);
   assert.throws(() => materializeRuntimePackages(source, cycleOutput, ["cycle-package"]), /directory link cycle/iu);
-  console.log(JSON.stringify({ status: "PASS", conflictingHoistedVersionIsolated: true, missingDependencyRejected: true, frameworkScopedDependencyPreserved: true, frameworkMissingDependencyRejected: true, completeTracedRootsPreserved: true, databaseMissingDependencyRejected: true, sourceMapsOmitted: true, directoryCycleRejected: true, realProviderRequests: 0 }));
+  console.log(JSON.stringify({ status: "PASS", conflictingHoistedVersionIsolated: true, missingDependencyRejected: true, frameworkScopedDependencyPreserved: true, frameworkMissingDependencyRejected: true, completeTracedRootsPreserved: true, databaseMissingDependencyRejected: true, sourceMapsOmitted: true, packageDocumentationOmitted: true, directoryCycleRejected: true, realProviderRequests: 0 }));
 } finally {
   const resolved = fs.realpathSync(temporary);
   const tempRoot = fs.realpathSync(os.tmpdir());

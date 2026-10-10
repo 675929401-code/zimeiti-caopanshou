@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "fb40f2ab7caa20a9e6f99d4f70c747f2a4a960dedbc8f4794480fddac5b23dcd",
+  "sourceFingerprint": "09e5ada064905c76569977012c1895bcea34c401ed94d2234c080ebbdd756b56",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4176,
-  "totalBytes": 66657929,
+  "totalBytes": 66663020,
   "files": [
     {
       "path": ".cnb.yml",
@@ -988,8 +988,8 @@
     },
     {
       "path": "package.json",
-      "bytes": 15130,
-      "sha256": "7b1d10c51e34c312271e0803b7a9062a9a3fa9f953184abcec6903984b0c01d3"
+      "bytes": 15234,
+      "sha256": "46b5bd26e692ef008f0c6072f5002a119f698d45c84e36937a638ddce85b8a83"
     },
     {
       "path": "pnpm-lock.yaml",
@@ -1609,7 +1609,7 @@
     {
       "path": "public/version.json",
       "bytes": 302,
-      "sha256": "da7611e9d6f1c07d08dc8763616930a8618bedc3235243cfd42102d4a501bd6b"
+      "sha256": "6f762884a3dfae16dc070fbbdc67fb9aa979970b63322c5d420a5ed866838fed"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2453,8 +2453,8 @@
     },
     {
       "path": "scripts/compute-release-build-output-digest.mjs",
-      "bytes": 6872,
-      "sha256": "5ae894ebf3accc2f40a3a64e8408e1f875acbda7467b27bf9cdd224e644996d7"
+      "bytes": 7208,
+      "sha256": "5fd35819ec675bddcd63ec41fa1038d64661fe17e6da7199386b4555e98edd20"
     },
     {
       "path": "scripts/config/autodl-h3-selfhost-activation-profile.example.json",
@@ -3333,8 +3333,8 @@
     },
     {
       "path": "scripts/materialize-storage-runtime.mjs",
-      "bytes": 7872,
-      "sha256": "54932e81a35513f36a99c3ed0b3c009e42b259578a8c187873367ec80b6d0731"
+      "bytes": 8437,
+      "sha256": "7887f0bdccdfaf7df69d963e547247c9cdf758fe36260b53183788ef9f7d31fe"
     },
     {
       "path": "scripts/migrate-agent-navigation-permissions.ts",
@@ -3463,8 +3463,8 @@
     },
     {
       "path": "scripts/package-standalone-artifact.mjs",
-      "bytes": 46547,
-      "sha256": "8c66ee9dc28a471504c3c32ddd4183c1deb760e4e5aa08dffba520063fcbaf02"
+      "bytes": 47825,
+      "sha256": "bd508c9263af8e4d0d64497082f82ea26a8948516ff669fb2ef4975c01ed0e32"
     },
     {
       "path": "scripts/patch-benchmark-video-prompts.ts",
@@ -5473,8 +5473,8 @@
     },
     {
       "path": "scripts/verify-artifact-secret-gates.mjs",
-      "bytes": 17009,
-      "sha256": "53f3301ecba98505175e9a296c5929412d7ff763c30df5257f4d95b0a9f72a66"
+      "bytes": 19104,
+      "sha256": "e4a3f804a4ec5a53c91a8c9e04abb1d6f2a3bbe229785d99fd781536ab0f2d43"
     },
     {
       "path": "scripts/verify-auth-deeplink-zero-cost.ts",
@@ -8563,8 +8563,8 @@
     },
     {
       "path": "scripts/verify-storage-runtime-package.mjs",
-      "bytes": 5954,
-      "sha256": "5ebd23e6ac4be63f66118e185edc222d3c8d79522a02d3b22fac274eaf7ee8da"
+      "bytes": 6667,
+      "sha256": "775d94a982c04d0f4f3c8e2f0c8051cd738f600bf07a6ba615ca9c11ead66140"
     },
     {
       "path": "scripts/verify-story-director-overtime-gate-live.mjs",

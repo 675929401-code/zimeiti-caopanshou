@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { computeBuildOutputDigest } from "./compute-release-build-output-digest.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packagerPath = path.join(root, "scripts", "package-standalone-artifact.mjs");
@@ -13,6 +14,8 @@ const deployerPath = path.join(root, "scripts", "deploy-artifact-vnext.sh");
 const verifierSource = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
 const packagerSource = fs.readFileSync(packagerPath, "utf8");
 const deployerSource = fs.readFileSync(deployerPath, "utf8");
+const digestSource = fs.readFileSync(path.join(root, "scripts", "compute-release-build-output-digest.mjs"), "utf8");
+const materializerSource = fs.readFileSync(path.join(root, "scripts", "materialize-storage-runtime.mjs"), "utf8");
 
 function findBash() {
   const candidates = [
@@ -150,6 +153,7 @@ try {
   const trustedPackage = path.join(materializableProject, "node_modules", "trusted-package");
   createTree(materializableStandalone, ["server.js", "runtime/debug.map"]);
   createTree(trustedPackage, ["package.json", "index.js"]);
+  fs.writeFileSync(path.join(trustedPackage, "README.md"), `${privateKeyPemMarker}\nfixture-only\n${privateKeyPemFooter}\n`, "utf8");
   createDirectoryLink(trustedPackage, path.join(materializableStandalone, "node_modules", "trusted-package"));
   const materializableAccepted = run(process.execPath, [
     packagerPath,
@@ -159,7 +163,26 @@ try {
   ]);
   assert.equal(materializableAccepted.status, 0, `trusted standalone dependency link was rejected:\n${outputOf(materializableAccepted)}`);
   assert.match(outputOf(materializableAccepted), /omittedSourceMaps=1/u);
+  assert.match(outputOf(materializableAccepted), /omittedPackageDocumentation=1/u);
   assert.equal(outputOf(materializableAccepted).includes(fs.realpathSync(trustedPackage)), false, "materializable verifier exposed an absolute link target");
+
+  const digestProject = path.join(temporaryRoot, "build-output-digest");
+  createTree(digestProject, [
+    ".next/BUILD_ID",
+    ".next/standalone/server.js",
+    ".next/standalone/node_modules/trusted-package/package.json",
+    ".next/standalone/node_modules/trusted-package/index.js",
+    ".next/static/app.js",
+  ]);
+  fs.writeFileSync(path.join(digestProject, ".next", "BUILD_ID"), "fixture-build-id\n", "utf8");
+  fs.writeFileSync(
+    path.join(digestProject, ".next", "standalone", "node_modules", "trusted-package", "README.md"),
+    `${privateKeyPemMarker}\nfixture-only\n${privateKeyPemFooter}\n`,
+    "utf8",
+  );
+  const digest = computeBuildOutputDigest(digestProject, "web", "a".repeat(40), "R_TEST");
+  assert.equal(digest.files.some((entry) => entry.path.endsWith("/README.md")), false, "build digest retained non-runtime package documentation");
+  assert.equal(digest.files.some((entry) => entry.path.endsWith("/index.js")), true, "build digest omitted runtime package code");
 
   const finalLinkPackager = run(process.execPath, [packagerPath, "--verify-sensitive-root", materializableStandalone]);
   assert.notEqual(finalLinkPackager.status, 0, "final packager gate accepted a symbolic link or junction");
@@ -265,12 +288,16 @@ try {
   assert.ok(deployerManifestContentGate > deployerManifestValidator, "deployer extracted payload inventory must scan file content for private-key PEM material");
   assert.doesNotMatch(packagerSource, /["']history["']\s*,\s*["']\.cache["']/u, "plain history directory must not be forbidden by the packager");
   assert.doesNotMatch(packagerSource, /["']cache["']\s*\]/u, "plain cache directory must not be forbidden by the packager");
+  assert.match(packagerSource, /if \(isNonRuntimePackageDocumentation\(sourcePath\)\)/u, "packager copy must omit non-runtime package documentation");
+  assert.match(digestSource, /isNonRuntimePackageDocumentation\(relative\)/u, "build-output digest must omit the same non-runtime package documentation");
+  assert.match(materializerSource, /omittedPackageDocumentation/u, "dependency materialization must omit and report non-runtime package documentation");
 
   console.log("PASS artifact secret gates reject sensitive names at packaging and deployment layers");
   console.log("PASS allowed environment-neutral, source-code, history, and cache paths remain accepted");
   console.log("PASS hidden metadata directory policy covers deploy archive/tree and manifest checks");
   console.log("PASS key/certificate paths and disguised private-key PEM content remain rejected");
   console.log("PASS materializable standalone accepts trusted links, omits source maps, and rejects escaped, broken, cyclic, or sensitive aliases");
+  console.log("PASS non-runtime package documentation is omitted before digesting and materialization");
   console.log("PASS final packager/deployer gates reject links and source maps");
   console.log(`PASS forbidden fixtures checked: ${forbiddenPaths.length}`);
 } finally {
