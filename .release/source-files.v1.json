@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "2154bde1f20eb43e6670a5a7b234d48c737d1472d2870f4edaa7c40fc7385c84",
+  "sourceFingerprint": "4fc064f3d85338b389cd446ae96ac6a571b4ae848b120ff459567bea271f4ef4",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4176,
-  "totalBytes": 66683133,
+  "totalBytes": 66683423,
   "files": [
     {
       "path": ".cnb.yml",
@@ -48,8 +48,8 @@
     },
     {
       "path": ".github/workflows/release-vnext.yml",
-      "bytes": 18745,
-      "sha256": "1ba3c588e376770df40b91e3e46e28450c52af69485d6a9157cae1228359decc"
+      "bytes": 18805,
+      "sha256": "c6beb98830cd3a0bf275a1b4b6c48264b225934db9116e6f3518ab918466a655"
     },
     {
       "path": ".gitignore",
@@ -8178,8 +8178,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 69063,
-      "sha256": "ce12a15cc0704963256c4e17d72a5e7c9fa9b232122bff53b0e7cbadfb315b39"
+      "bytes": 69293,
+      "sha256": "b8999472cf6b12c793fd6c7e02ef219f0dcee0ef1caf8f26a038cd3934533405"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",

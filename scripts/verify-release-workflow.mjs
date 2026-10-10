@@ -18,6 +18,8 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(ciWorkflow, /PUPPETEER_SKIP_DOWNLOAD:\s*"true"/u);
   assert.match(ciWorkflow, /Install, verify, and audit source candidate[\s\S]*?NODE_OPTIONS:\s*"--max-old-space-size=8192"[\s\S]*?pnpm run validate/u,
     "source candidate validation must retain the audited Node heap ceiling");
+  assert.match(ciWorkflow, /Build once, hash actual outputs, and bind the digest[\s\S]*?NODE_OPTIONS:\s*"--max-old-space-size=8192"[\s\S]*?release:vnext:build:/u,
+    "candidate builds must retain the audited Node heap ceiling");
   assert.match(ciWorkflow, /git diff --check "\$RELEASE_BASE_SHA\.\.\.\$RELEASE_HEAD_SHA"/u, "PR merge-base diff-check must use the resolved trusted range");
   assert.match(ciWorkflow, /git diff --check "\$RELEASE_BASE_SHA\.\.\$RELEASE_HEAD_SHA"/u, "manual direct diff-check must use the trusted release range");
   assert.match(ciWorkflow, /sha256sum -c/u, "CI must verify the packager-owned checksum");
