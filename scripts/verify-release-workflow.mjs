@@ -1066,7 +1066,9 @@ assert.match(browserAcceptanceRunner, /blockingFailures\.push[\s\S]*BROWSER_ROUT
   "browser acceptance must sweep all required routes and report their blocking failures together");
 assert.match(browserAcceptanceRunner, /"\/extract": Object\.freeze\(\{ service: "web", expectedRoute: "\/tools\?tab=text" \}\)/u,
   "browser acceptance must validate the retired extract bookmark against its reviewed toolbox destination");
-assert.match(browserAcceptanceRunner, /"\/workspace": Object\.freeze\(\{ service: "voice", expectedRoute: "\/workspace" \}\)/u,
+assert.match(browserAcceptanceRunner, /"\/admin": Object\.freeze\(\{ service: "web", expectedRoute: "\/admin\?tab=dashboard&view=overview" \}\)/u,
+  "browser acceptance must validate the admin shell against its reviewed default view");
+assert.match(browserAcceptanceRunner, /"\/workspace": Object\.freeze\(\{[\s\S]*service: "voice"[\s\S]*navigationRoute: "\/voice-platform\/workspace"[\s\S]*expectedRoute: "\/voice-platform\/workspace"/u,
   "browser acceptance must open the Voice workspace on the Voice candidate rather than the Web candidate");
 assert.match(browserAcceptanceRunner, /runBrowserAcceptance\(\{[\s\S]*web: `http:\/\/127\.0\.0\.1:\$\{ports\.web\}`[\s\S]*voice: ports\.voice/u,
   "browser acceptance must provide both immutable candidate origins to the route sweep");

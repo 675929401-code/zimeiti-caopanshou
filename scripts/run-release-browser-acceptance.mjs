@@ -21,8 +21,13 @@ const VIEWPORT = Object.freeze({ width: 1440, height: 900 });
 // on the service that actually owns it. Retired bookmarks are accepted only
 // when they land on their reviewed canonical destination.
 const BROWSER_ROUTE_TARGETS = Object.freeze({
+  "/admin": Object.freeze({ service: "web", expectedRoute: "/admin?tab=dashboard&view=overview" }),
   "/extract": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
-  "/workspace": Object.freeze({ service: "voice", expectedRoute: "/workspace" }),
+  "/workspace": Object.freeze({
+    service: "voice",
+    navigationRoute: "/voice-platform/workspace",
+    expectedRoute: "/voice-platform/workspace",
+  }),
 });
 const CANDIDATE_ADMIN_PERMISSIONS = Object.freeze([
   "admin.accounts.manage", "members.view", "member_content.view", "members.manage", "members.delete",
@@ -505,7 +510,7 @@ function resolveBrowserRouteTarget(route, serviceOrigins) {
   return {
     service: reviewed.service,
     baseUrl,
-    navigationUrl: baseUrl ? new URL(route, baseUrl) : null,
+    navigationUrl: baseUrl ? new URL(reviewed.navigationRoute || route, baseUrl) : null,
     expectedUrl: baseUrl ? new URL(reviewed.expectedRoute, baseUrl) : null,
   };
 }
