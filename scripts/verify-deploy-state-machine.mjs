@@ -157,6 +157,26 @@ for (const marker of [
   '"$CONTROL_PLANE_ROOT/receipts/"*',
   '--receipt-sha256 "${ASSET_POLICY_TRANSITION_SHA256,,}"',
 ]) assert.ok(compatibilityBody.includes(marker), `forward asset compatibility gate is missing: ${marker}`);
+
+const trustedControllerStart = deployer.indexOf("require_trusted_controller_file() {");
+const trustedControllerEnd = deployer.indexOf("\n}\n\nrun_production_preflight()", trustedControllerStart);
+assert.ok(trustedControllerStart >= 0 && trustedControllerEnd > trustedControllerStart, "unable to locate trusted controller file validator");
+const trustedControllerBody = deployer.slice(trustedControllerStart, trustedControllerEnd);
+for (const marker of [
+  "stat -c '%u:%g:%a:%h'",
+  "IFS=: read -r uid gid mode links",
+  "stat -c '%u:%g:%a'",
+  "IFS=: read -r uid gid mode",
+]) assert.ok(trustedControllerBody.includes(marker), `trusted controller metadata parser is missing: ${marker}`);
+assert.doesNotMatch(trustedControllerBody, /stat -c '[^']*%F/u, "trusted controller metadata must not depend on localized multi-word file-type text");
+
+const storageGuardStart = deployer.indexOf("run_storage_boot_guard() {");
+const storageGuardEnd = deployer.indexOf("\n}\n\nrequire_trusted_controller_file()", storageGuardStart);
+assert.ok(storageGuardStart >= 0 && storageGuardEnd > storageGuardStart, "unable to locate storage boot guard");
+const storageGuardBody = deployer.slice(storageGuardStart, storageGuardEnd);
+assert.ok(storageGuardBody.includes('require_trusted_controller_file "$STORAGE_GUARD_PATH"'), "storage guard must reuse the common trusted-file validator");
+assert.doesNotMatch(storageGuardBody, /stat -c/u, "storage guard must not duplicate trusted-file metadata parsing");
+assert.doesNotMatch(deployer, /stat -c '[^']*%F/u, "deployment security gates must use shell file predicates plus locale-independent numeric stat fields");
 const policyTransitionVerifier = fs.readFileSync(path.join(root, "scripts", "asset-policy-transition-proof-vnext.mjs"), "utf8");
 for (const marker of [
   "required-paths-additive-only",

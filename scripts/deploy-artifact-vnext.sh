@@ -546,15 +546,9 @@ NODE
 
 run_storage_boot_guard() {
   require_trusted_controller_file "$STORAGE_GUARD_PATH" "trusted storage guard"
-  [[ -f "$STORAGE_GUARD_PATH" && ! -L "$STORAGE_GUARD_PATH" && -x "$STORAGE_GUARD_PATH" ]] || \
+  [[ -x "$STORAGE_GUARD_PATH" ]] || \
     die "trusted storage guard is not installed on the system disk: $STORAGE_GUARD_PATH"
-  local metadata uid gid mode kind links actual_sha
-  metadata="$(stat -c '%u %g %a %F %h' -- "$STORAGE_GUARD_PATH")" || die "cannot stat trusted storage guard"
-  read -r uid gid mode kind links <<<"$metadata"
-  [[ "$uid" == "0" && "$gid" == "0" && "$kind" == "regular file" && "$links" == "1" ]] || \
-    die "trusted storage guard must be a single-link root:root regular file"
-  [[ "$mode" =~ ^0?[0-7]{3}$ ]] || die "trusted storage guard mode is invalid"
-  (( (8#$mode & 8#022) == 0 )) || die "trusted storage guard must not be group/other writable"
+  local actual_sha
   actual_sha="$(sha256sum "$STORAGE_GUARD_PATH" | awk '{print $1}')"
   [[ "$actual_sha" == "$STORAGE_GUARD_SHA256" ]] || die "trusted storage guard SHA-256 mismatch"
   "$STORAGE_GUARD_PATH" >/dev/null || die "dedicated storage runtime guard rejected this boot"
@@ -562,21 +556,22 @@ run_storage_boot_guard() {
 }
 
 require_trusted_controller_file() {
-  local file="$1" label="$2" resolved metadata uid gid mode kind links directory
+  local file="$1" label="$2" resolved metadata uid gid mode links directory
   [[ -f "$file" && ! -L "$file" ]] || die "$label is not a regular non-symlink file: $file"
   resolved="$(readlink -f -- "$file")" || die "cannot resolve $label"
   [[ "$resolved" == "$file" ]] || die "$label path is not canonical: $file"
-  metadata="$(stat -c '%u %g %a %F %h' -- "$file")" || die "cannot stat $label"
-  read -r uid gid mode kind links <<<"$metadata"
-  [[ "$uid" == "0" && "$gid" == "0" && "$kind" == "regular file" && "$links" == "1" ]] || \
+  metadata="$(stat -c '%u:%g:%a:%h' -- "$file")" || die "cannot stat $label"
+  IFS=: read -r uid gid mode links <<<"$metadata"
+  [[ "$uid" == "0" && "$gid" == "0" && "$links" == "1" ]] || \
     die "$label must be a single-link root:root regular file"
   [[ "$mode" =~ ^0?[0-7]{3}$ ]] || die "$label mode is invalid"
   (( (8#$mode & 8#022) == 0 )) || die "$label must not be group/other writable"
   directory="${file%/*}"
   while [[ "$directory" != "/" ]]; do
-    metadata="$(stat -c '%u %g %a %F' -- "$directory")" || die "cannot stat $label parent"
-    read -r uid gid mode kind <<<"$metadata"
-    [[ "$uid" == "0" && "$gid" == "0" && "$kind" == "directory" && "$mode" =~ ^0?[0-7]{3}$ ]] || \
+    [[ -d "$directory" && ! -L "$directory" ]] || die "$label parent is not a regular directory: $directory"
+    metadata="$(stat -c '%u:%g:%a' -- "$directory")" || die "cannot stat $label parent"
+    IFS=: read -r uid gid mode <<<"$metadata"
+    [[ "$uid" == "0" && "$gid" == "0" && "$mode" =~ ^0?[0-7]{3}$ ]] || \
       die "$label parent chain is not root-controlled: $directory"
     (( (8#$mode & 8#022) == 0 )) || die "$label parent chain is writable by group/other: $directory"
     directory="${directory%/*}"
@@ -648,8 +643,9 @@ NODE
     fail "production preflight receipt verification failed; see $verifier_summary.error"
   fi
   unset PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY PRODUCTION_PREFLIGHT_RECEIPT_KEY_ID
-  receipt_metadata="$(stat -c '%u %g %a %F %h' -- "$receipt_path")" || die "cannot stat production preflight receipt"
-  [[ "$receipt_metadata" == "0 0 600 regular file 1" ]] || die "production preflight receipt metadata is unsafe"
+  [[ -f "$receipt_path" && ! -L "$receipt_path" ]] || die "production preflight receipt is not a regular non-symlink file"
+  receipt_metadata="$(stat -c '%u:%g:%a:%h' -- "$receipt_path")" || die "cannot stat production preflight receipt"
+  [[ "$receipt_metadata" == "0:0:600:1" ]] || die "production preflight receipt metadata is unsafe"
   PRODUCTION_PREFLIGHT_RECEIPT_SHA256="$(sha256sum "$receipt_path" | awk '{print $1}')"
   [[ "$PRODUCTION_PREFLIGHT_RECEIPT_SHA256" =~ ^[a-f0-9]{64}$ ]] || die "production preflight receipt SHA-256 is invalid"
 }
@@ -1998,7 +1994,7 @@ DEPLOY_ACTOR="${DEPLOY_OPERATOR:-$(id -un)}"
 
 [[ -f "$CANDIDATE_FIXTURE_HELPER_PATH" && ! -L "$CANDIDATE_FIXTURE_HELPER_PATH" && -x "$CANDIDATE_FIXTURE_HELPER_PATH" ]] || \
   die "trusted candidate fixture helper is not provisioned: $CANDIDATE_FIXTURE_HELPER_PATH"
-[[ "$(stat -c '%u:%g:%a:%h:%F' -- "$CANDIDATE_FIXTURE_HELPER_PATH")" == "0:0:755:1:regular file" ]] || \
+[[ "$(stat -c '%u:%g:%a:%h' -- "$CANDIDATE_FIXTURE_HELPER_PATH")" == "0:0:755:1" ]] || \
   die "trusted candidate fixture helper must be a single-link root:root 0755 regular file"
 [[ "$(sha256sum -- "$CANDIDATE_FIXTURE_HELPER_PATH" | awk 'NR == 1 { print $1 }')" == "$CANDIDATE_FIXTURE_HELPER_SHA256" ]] || \
   die "trusted candidate fixture helper SHA-256 does not match the reviewed control plane"
@@ -2031,9 +2027,9 @@ candidate_shadow_password="${candidate_shadow_password%%:*}"
 [[ "$candidate_shadow_password" == '!'* || "$candidate_shadow_password" == '*'* ]] || die "candidate password is not locked"
 passwd -S "$CANDIDATE_USER" | awk 'NR == 1 { exit !($2 == "L" || $2 == "LK") }' || die "candidate account is not reported locked"
 [[ -f "$CANDIDATE_SHELL" && ! -L "$CANDIDATE_SHELL" && -x "$CANDIDATE_SHELL" ]] || die "candidate nologin shell is unsafe"
-candidate_shell_metadata="$(stat -c '%u:%g:%a:%F' -- "$CANDIDATE_SHELL")"
-IFS=: read -r candidate_shell_uid candidate_shell_gid candidate_shell_mode candidate_shell_kind <<<"$candidate_shell_metadata"
-[[ "$candidate_shell_uid" == "0" && "$candidate_shell_gid" == "0" && "$candidate_shell_kind" == "regular file" && \
+candidate_shell_metadata="$(stat -c '%u:%g:%a' -- "$CANDIDATE_SHELL")"
+IFS=: read -r candidate_shell_uid candidate_shell_gid candidate_shell_mode <<<"$candidate_shell_metadata"
+[[ "$candidate_shell_uid" == "0" && "$candidate_shell_gid" == "0" && \
    $((8#$candidate_shell_mode & 8#022)) -eq 0 ]] || die "candidate nologin shell must be root-owned and not group/other writable"
 CANDIDATE_PROCESS_COUNT=0
 for candidate_status_path in /proc/[0-9]*/status; do
@@ -2210,7 +2206,9 @@ chmod 0600 -- "$CANDIDATE_PRIVATE_LOG"
 chown -R "$CANDIDATE_UID:$CANDIDATE_GID" -- "$CANDIDATE_HOME_DIR" "$CANDIDATE_DATA_DIR" \
   "$CANDIDATE_RUNTIME_DIR" "$CANDIDATE_BACKUP_DIR" "$CANDIDATE_UPLOAD_DIR" "$CANDIDATE_VOICE_DIR"
 chown "$CANDIDATE_UID:$CANDIDATE_GID" -- "$CANDIDATE_PRIVATE_LOG"
-[[ "$(stat -c '%u:%g:%a:%F' -- "$CANDIDATE_STATE_ROOT")" == "0:0:711:directory" ]] || \
+[[ -d "$CANDIDATE_STATE_ROOT" && ! -L "$CANDIDATE_STATE_ROOT" ]] || \
+  die "candidate state root is not a regular directory"
+[[ "$(stat -c '%u:%g:%a' -- "$CANDIDATE_STATE_ROOT")" == "0:0:711" ]] || \
   die "candidate state root must remain root-owned and non-writable by the candidate"
 # The application tree stays root-owned and non-writable. Only the staging
 # parent needs search permission so the unprivileged service can reach it.
