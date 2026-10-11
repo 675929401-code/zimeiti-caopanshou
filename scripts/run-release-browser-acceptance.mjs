@@ -18,8 +18,16 @@ const BROWSER_VALIDATIONS = Object.freeze([
 const CHECKLIST_VALIDATION = "full-desktop-release-checklist";
 const VIEWPORT = Object.freeze({ width: 1440, height: 900 });
 const NETWORK_CONSOLE_ERROR = /^Failed to load resource: the server responded with a status of \d{3} \([^)]*\)$/u;
-const CANDIDATE_BROWSER_ASSET_PATHS = Object.freeze([
-  "public/avatars/voice-studio/portraits.webp",
+const CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT = "scripts/fixtures/release-browser-assets";
+const CANDIDATE_BROWSER_ASSETS = Object.freeze([
+  Object.freeze({
+    path: "public/avatars/voice-studio/portraits.webp",
+    fixturePath: "scripts/fixtures/release-browser-assets/portraits.webp",
+    urlPath: "/avatars/voice-studio/portraits.webp",
+    bytes: 110_838,
+    sha256: "bed09115f796eedc58bffe927694ebe9e679232db7338d94efe62b396bd930cf",
+    contentType: "image/webp",
+  }),
 ]);
 // The release scope is shared by the Web and Voice candidates. Keep the
 // user-visible route identity in the signed evidence, while opening each route
@@ -412,21 +420,34 @@ function materializeCandidateBrowserAssets(checkoutRoot, publicRoot, candidatePu
   const manifestEntries = new Map(assetManifest.files.map((entry) => [entry.path, entry]));
   const materialized = [];
   const checkoutRealRoot = fs.realpathSync(checkoutRoot);
-  for (const relative of CANDIDATE_BROWSER_ASSET_PATHS) {
-    const logical = canonicalArtifactPath(relative);
-    const entry = manifestEntries.get(logical);
-    if (!entry || !Number.isSafeInteger(entry.bytes) || typeof entry.sha256 !== "string") {
-      fail("BROWSER_ASSET_MANIFEST_ENTRY_MISSING", logical);
+  const fixtureRootPath = path.join(checkoutRoot, CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT);
+  const fixtureRootStats = fs.lstatSync(fixtureRootPath);
+  if (!fixtureRootStats.isDirectory() || fixtureRootStats.isSymbolicLink()) fail("BROWSER_ASSET_FIXTURE_ROOT_UNSAFE");
+  const fixtureRealRoot = fs.realpathSync(fixtureRootPath);
+  for (const expected of CANDIDATE_BROWSER_ASSETS) {
+    const logical = canonicalArtifactPath(expected.path);
+    if (logical !== expected.path || expected.fixturePath !== `${CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT}/portraits.webp`) {
+      fail("BROWSER_ASSET_MAPPING_INVALID", logical);
     }
-    const sourcePath = path.join(checkoutRoot, ...logical.split("/"));
+    const entry = manifestEntries.get(logical);
+    if (!entry) fail("BROWSER_ASSET_MANIFEST_ENTRY_MISSING", logical);
+    if (entry.bytes !== expected.bytes || entry.sha256 !== expected.sha256) fail("BROWSER_ASSET_MANIFEST_ENTRY_MISMATCH", logical);
+    const publicRelative = logical.replace(/^public\//u, "");
+    if (publicRelative === logical) fail("BROWSER_ASSET_PATH_INVALID", logical);
+    if (`/${publicRelative}` !== expected.urlPath) fail("BROWSER_ASSET_URL_MAPPING_INVALID", logical);
+    const tracked = run("git", ["-C", checkoutRoot, "ls-files", "--error-unmatch", "--", expected.fixturePath], {
+      code: "BROWSER_ASSET_FIXTURE_NOT_TRACKED",
+    }).trim();
+    if (tracked !== expected.fixturePath) fail("BROWSER_ASSET_FIXTURE_NOT_TRACKED", expected.fixturePath);
+    const sourcePath = path.join(checkoutRoot, ...expected.fixturePath.split("/"));
     const sourceStats = fs.lstatSync(sourcePath);
     const sourceRealPath = fs.realpathSync(sourcePath);
     const sourceRelativeToCheckout = path.relative(checkoutRealRoot, sourceRealPath);
+    const sourceRelativeToFixture = path.relative(fixtureRealRoot, sourceRealPath).split(path.sep).join("/");
     if (!sourceRelativeToCheckout || sourceRelativeToCheckout.startsWith(`..${path.sep}`)
-      || path.isAbsolute(sourceRelativeToCheckout) || !sourceStats.isFile() || sourceStats.isSymbolicLink() || sourceStats.size !== entry.bytes
+      || path.isAbsolute(sourceRelativeToCheckout) || sourceRelativeToFixture !== "portraits.webp"
+      || !sourceStats.isFile() || sourceStats.isSymbolicLink() || sourceStats.nlink !== 1 || sourceStats.size !== entry.bytes
       || sha256File(sourcePath) !== entry.sha256) fail("BROWSER_ASSET_SOURCE_MISMATCH", logical);
-    const publicRelative = logical.replace(/^public\//u, "");
-    if (publicRelative === logical) fail("BROWSER_ASSET_PATH_INVALID", logical);
     const destinations = [
       { kind: "external-public-root", root: publicRoot },
       { kind: "web-candidate-static-overlay", root: candidatePublicRoot },
@@ -441,9 +462,11 @@ function materializeCandidateBrowserAssets(checkoutRoot, publicRoot, candidatePu
     }
     materialized.push({
       path: logical,
-      urlPath: `/${publicRelative}`,
+      fixturePath: expected.fixturePath,
+      urlPath: expected.urlPath,
       bytes: entry.bytes,
       sha256: entry.sha256,
+      contentType: expected.contentType,
       destinations: destinations.map((destination) => destination.kind),
     });
   }
@@ -480,6 +503,10 @@ function prepareAssetMetadata(workRoot, checkoutRoot, webPayload, webManifest) {
     verificationMode: "full-sha256",
     storageBackend: "disk",
     location: `ci-metadata-only/${assetManifest.assetVersion}`,
+    candidateRuntimeOnly: true,
+    activationEligible: false,
+    completeAssetSetVerified: false,
+    materializedRequiredFileCount: materialized.length,
     verifiedAt: new Date().toISOString(),
   });
   return { publicRoot, manifestSha256, assetManifest, materialized };
@@ -726,7 +753,7 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         };
         requiredAssetResponses.push(receipt);
         await response.dispose();
-        if (receipt.status !== 200 || !contentType.startsWith("image/")
+        if (receipt.status !== 200 || contentType !== asset.contentType
           || receipt.bytes !== asset.bytes || receipt.sha256 !== asset.sha256) {
           blockingFailures.push({ route: asset.urlPath, code: "BROWSER_REQUIRED_ASSET_INVALID", detail: JSON.stringify(receipt) });
         }
@@ -1027,6 +1054,8 @@ async function main() {
     fail("DEDICATED_DATA_MOUNT_REQUIRED");
   }
   const bundle = readJson(path.join(candidateRoot, "release-change-validations.json"), "CANDIDATE_BUNDLE_INVALID");
+  const toolchainCommit = String(process.env.GITHUB_SHA || run("git", ["-C", checkoutRoot, "rev-parse", "HEAD"]).trim()).toLowerCase();
+  if (!/^[0-9a-f]{40}$/u.test(toolchainCommit)) fail("TOOLCHAIN_COMMIT_INVALID");
   const expectedSubjectCommit = String(process.env.CANDIDATE_SUBJECT_SHA || process.env.GITHUB_SHA || bundle.subject.commit).toLowerCase();
   if (bundle.target !== "source-candidate" || bundle.status !== "source-candidate-pending-required"
     || bundle.subject.commit !== expectedSubjectCommit
@@ -1134,6 +1163,10 @@ async function main() {
     schemaVersion: "zimeiti-release-browser-acceptance-report.v1",
     checkedAt: new Date().toISOString(),
     candidateBundleId: bundle.bundleId,
+    toolchain: {
+      commit: toolchainCommit,
+      fixturePaths: assets.materialized.map((asset) => asset.fixturePath),
+    },
     subject: bundle.subject,
     viewport: VIEWPORT,
     runtimeReadbacks,
@@ -1146,7 +1179,13 @@ async function main() {
     requiredAssetResponses: browserReport.requiredAssetResponses,
     assetFixture: {
       localOnly: true,
-      source: "managed-checkout-files-bound-to-candidate-asset-manifest",
+      source: "git-tracked-verifier-fixture-bound-to-candidate-asset-manifest",
+      overlayOnly: true,
+      activationEligible: false,
+      completeAssetSetVerified: false,
+      candidateArchiveSha256: bundle.subject.candidatePayloads.web.archiveSha256,
+      candidateAssetManifestSha256: assets.manifestSha256,
+      candidateAssetDigest: assets.assetManifest.digest,
       materialized: assets.materialized,
     },
     voicePricingFixtures: Object.fromEntries(Object.entries(states).map(([service, state]) => [service, state.voicePricingFixture])),

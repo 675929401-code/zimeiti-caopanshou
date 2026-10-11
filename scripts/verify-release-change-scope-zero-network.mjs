@@ -1440,10 +1440,13 @@ try {
     "name: Release browser acceptance evidence",
     "release-candidate-${{ steps.candidate.outputs.sha }}",
     "run-release-browser-acceptance.mjs",
+    "scripts/fixtures/release-browser-assets/portraits\\.webp",
     "RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY",
     "release-change-validation-gate.mjs verify-release-ready",
     "release-browser-acceptance-${{ github.sha }}",
   ]) assert.ok(browserAcceptanceWorkflow.includes(marker), `browser acceptance workflow integration missing: ${marker}`);
+  assert.ok(workflow.includes("scripts/fixtures/release-browser-assets/portraits\\.webp"),
+    "finalize candidate reuse allowlist must include the exact verifier-only portrait fixture");
   assert.doesNotMatch(browserAcceptanceWorkflow, /\b(?:ssh|scp|rsync)\b|deploy-artifact-vnext|DEPLOY_EXECUTION_APPROVED/u);
   for (const marker of [
     "CANDIDATE_PAYLOAD_INVENTORY_MISMATCH",

@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "6483eb26e42710ab2af6ba95c31e526094b08faa9ba13a3f4fd1aa0fc42cd561",
+  "sourceFingerprint": "bd0abaac71c6abdf4982197c67cd5757496a4767fd9865982a0c09b2a91273b5",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
-  "fileCount": 4178,
-  "totalBytes": 66776893,
+  "fileCount": 4179,
+  "totalBytes": 66892795,
   "files": [
     {
       "path": ".cnb.yml",
@@ -48,13 +48,13 @@
     },
     {
       "path": ".github/workflows/release-browser-acceptance.yml",
-      "bytes": 7213,
-      "sha256": "031b1427d24d0b65fa4f5689bf1dae10bd38082430828a6a37a2077fb4dc3593"
+      "bytes": 7269,
+      "sha256": "8c53399bc85c520dc4bc370ca35e6237195fe4daae04789abf46d667961dfdc4"
     },
     {
       "path": ".github/workflows/release-vnext.yml",
-      "bytes": 20355,
-      "sha256": "738baa4a58e5247b55297cd7e9f3a2f948ab98106a11836eb8e7df6fafb1c520"
+      "bytes": 20411,
+      "sha256": "e7a3378932c345e8ca61b85f390ea58ffb127e581df0b412eb62b4eec12ea25f"
     },
     {
       "path": ".gitignore",
@@ -2977,6 +2977,11 @@
       "sha256": "237afff6de32b4f4939cba5298ec7adb7e578dcb8461bfa39526c76a653f4fe0"
     },
     {
+      "path": "scripts/fixtures/release-browser-assets/portraits.webp",
+      "bytes": 110838,
+      "sha256": "bed09115f796eedc58bffe927694ebe9e679232db7338d94efe62b396bd930cf"
+    },
+    {
       "path": "scripts/fixtures/runtime-telemetry-current-web-process.json",
       "bytes": 3603,
       "sha256": "7dca5b19440941491515d4ed7d459c3b4d3a9c126b3db6fc1022d47012175da5"
@@ -4418,8 +4423,8 @@
     },
     {
       "path": "scripts/run-release-browser-acceptance.mjs",
-      "bytes": 56583,
-      "sha256": "b49523d7e4aa203daecf1aac2dcb5d35d48d642529b2930b712d6b6e44d1ee11"
+      "bytes": 58984,
+      "sha256": "e7e9d432b80ac42c646316df2141a66ce2683cea8a6017fd3f8cd71469acebfc"
     },
     {
       "path": "scripts/run-release-targeted-regressions.mjs",
@@ -8153,8 +8158,8 @@
     },
     {
       "path": "scripts/verify-release-change-scope-zero-network.mjs",
-      "bytes": 108852,
-      "sha256": "05ef69676b4c94c9dde4917ecda43d8da9b9bac53e66f3d2d2d40ed55e6def91"
+      "bytes": 109104,
+      "sha256": "68a6666c112819d89ad7701068d83cf13448b9c4451abbf6a1ed716bb6bb9bd6"
     },
     {
       "path": "scripts/verify-release-database-gates.ts",
@@ -8188,8 +8193,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 86467,
-      "sha256": "005c4571c2b0a99fc0b188ea0eab67e9ea13779bcb16093a5a1ea53db110946f"
+      "bytes": 88766,
+      "sha256": "d392f90b0749158005196ad0573258eb446a2535638dd07533e143d72d9f3a7d"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",

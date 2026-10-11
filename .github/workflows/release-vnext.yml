@@ -239,7 +239,7 @@ jobs:
           test "$acceptance_head_sha" = "$RELEASE_TOOLCHAIN_SHA"
           test "$(jq -r .conclusion <<<"$acceptance")" = success
           test "$(jq -r .name <<<"$acceptance")" = 'Release browser acceptance evidence'
-          unexpected="$(git diff --name-only "$RELEASE_HEAD_SHA..$RELEASE_TOOLCHAIN_SHA" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs)$' || true)"
+          unexpected="$(git diff --name-only "$RELEASE_HEAD_SHA..$RELEASE_TOOLCHAIN_SHA" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs|scripts/fixtures/release-browser-assets/portraits\.webp)$' || true)"
           [[ -z "$unexpected" ]] || { printf 'candidate finalization rejected because runtime source changed:\n%s\n' "$unexpected" >&2; exit 2; }
           echo "acceptance_head_sha=$acceptance_head_sha" >> "$GITHUB_OUTPUT"
 

@@ -52,7 +52,7 @@ jobs:
           test "$(jq -r .name <<<"$candidate")" = 'Release vNext staged candidate'
           git cat-file -e "$candidate_sha^{commit}"
           git merge-base --is-ancestor "$candidate_sha" "$GITHUB_SHA"
-          unexpected="$(git diff --name-only "$candidate_sha..$GITHUB_SHA" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs)$' || true)"
+          unexpected="$(git diff --name-only "$candidate_sha..$GITHUB_SHA" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs|scripts/fixtures/release-browser-assets/portraits\.webp)$' || true)"
           [[ -z "$unexpected" ]] || { printf 'candidate reuse rejected because runtime source changed:\n%s\n' "$unexpected" >&2; exit 2; }
           echo "CANDIDATE_SUBJECT_SHA=$candidate_sha" >> "$GITHUB_ENV"
           echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"

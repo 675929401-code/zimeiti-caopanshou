@@ -62,6 +62,8 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(browserAcceptanceWorkflow, /^\s+candidate_run_id:/mu);
   assert.match(browserAcceptanceWorkflow, /git merge-base --is-ancestor "\$candidate_sha" "\$GITHUB_SHA"/u);
   assert.match(browserAcceptanceWorkflow, /candidate reuse rejected because runtime source changed/u);
+  assert.match(browserAcceptanceWorkflow, /scripts\/fixtures\/release-browser-assets\/portraits\\\.webp/u,
+    "browser acceptance candidate reuse must allow only the exact hash-bound portrait fixture path");
   assert.match(browserAcceptanceWorkflow, /name: release-candidate-\$\{\{ steps\.candidate\.outputs\.sha \}\}/u);
   assert.match(browserAcceptanceWorkflow, /run-id: \$\{\{ inputs\.candidate_run_id \}\}/u);
   assert.doesNotMatch(browserAcceptanceWorkflow, /^\s{6}(?:PLAYWRIGHT_BROWSERS_PATH|DATA_IMAGE):[^\n]*\$\{\{ runner\.temp \}\}/mu,
@@ -78,6 +80,8 @@ function verifyReleaseVnextWorkflowContract() {
     "browser acceptance must remain an isolated build-only workflow and never connect to production");
   assert.match(ciWorkflow, /RELEASE_TOOLCHAIN_SHA=\$toolchain_sha/u);
   assert.match(ciWorkflow, /candidate finalization rejected because runtime source changed/u);
+  assert.match(ciWorkflow, /scripts\/fixtures\/release-browser-assets\/portraits\\\.webp/u,
+    "candidate finalization must allow the exact verifier-only portrait fixture path");
   assert.match(ciWorkflow, /name: release-candidate-\$\{\{ steps\.resolve\.outputs\.subject_sha \}\}/u);
   assert.match(ciWorkflow, /b\.subject\.commit!==process\.env\.RELEASE_HEAD_SHA/u,
     "finalize must bind the downloaded candidate bundle to the immutable subject commit");
@@ -1175,18 +1179,50 @@ for (const marker of [
 ]) assert.ok(browserAcceptanceRunner.includes(marker), `benign navigation abort allowlist missing: ${marker}`);
 assert.match(browserAcceptanceRunner, /benignNavigationAborts: browserReport\.benignNavigationAborts/u,
   "benign navigation aborts must remain visible in the signed browser report");
+const browserAssetFixtureRelative = "scripts/fixtures/release-browser-assets/portraits.webp";
+const browserAssetFixturePath = path.join(root, ...browserAssetFixtureRelative.split("/"));
+const browserAssetFixtureStats = fs.lstatSync(browserAssetFixturePath);
+const browserAssetFixtureBytes = fs.readFileSync(browserAssetFixturePath);
+assert.ok(browserAssetFixtureStats.isFile() && !browserAssetFixtureStats.isSymbolicLink() && browserAssetFixtureStats.nlink === 1,
+  "browser portrait fixture must be a single-link regular Git file");
+assert.equal(browserAssetFixtureBytes.length, 110_838, "browser portrait fixture byte count drifted");
+assert.equal(crypto.createHash("sha256").update(browserAssetFixtureBytes).digest("hex"),
+  "bed09115f796eedc58bffe927694ebe9e679232db7338d94efe62b396bd930cf",
+  "browser portrait fixture SHA-256 drifted");
+const managedSourceSnapshot = JSON.parse(read(".release/source-files.v1.json"));
+const managedBrowserAssetFixture = managedSourceSnapshot.files.find((entry) => entry.path === browserAssetFixtureRelative);
+assert.deepEqual(managedBrowserAssetFixture, {
+  path: browserAssetFixtureRelative,
+  bytes: 110_838,
+  sha256: "bed09115f796eedc58bffe927694ebe9e679232db7338d94efe62b396bd930cf",
+}, "managed source snapshot must bind the exact browser portrait fixture");
 for (const marker of [
   '"public/avatars/voice-studio/portraits.webp"',
+  'CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT = "scripts/fixtures/release-browser-assets"',
+  'fixturePath: "scripts/fixtures/release-browser-assets/portraits.webp"',
+  "bytes: 110_838",
+  'sha256: "bed09115f796eedc58bffe927694ebe9e679232db7338d94efe62b396bd930cf"',
+  'contentType: "image/webp"',
+  '"ls-files", "--error-unmatch"',
+  "sourceStats.nlink !== 1",
   'kind: "web-candidate-static-overlay"',
   'path.join(webPayload, "public")',
   "sourceRelativeToCheckout",
   "BROWSER_ASSET_SOURCE_MISMATCH",
+  "BROWSER_ASSET_MANIFEST_ENTRY_MISMATCH",
   "BROWSER_ASSET_DESTINATION_MISMATCH",
-  'source: "managed-checkout-files-bound-to-candidate-asset-manifest"',
+  'source: "git-tracked-verifier-fixture-bound-to-candidate-asset-manifest"',
   "requiredAssetResponses",
   "BROWSER_REQUIRED_ASSET_INVALID",
-  'contentType.startsWith("image/")',
+  "contentType !== asset.contentType",
   "receipt.sha256 !== asset.sha256",
+  "toolchainCommit",
+  "candidateArchiveSha256",
+  "candidateAssetManifestSha256",
+  "candidateAssetDigest",
+  "overlayOnly: true",
+  "activationEligible: false",
+  "completeAssetSetVerified: false",
 ]) assert.ok(browserAcceptanceRunner.includes(marker), `hash-bound browser asset fixture missing: ${marker}`);
 for (const marker of [
   "seedCandidateVoicePricingCatalog",
