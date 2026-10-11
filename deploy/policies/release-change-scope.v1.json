@@ -63,6 +63,25 @@
         "routes": ["/voice-studio/workspace", "/", "/tools"]
       },
       {
+        "id": "platform-wide-shared-surface",
+        "patterns": [
+          "^(?:\\.gitignore$|\\.release/|next\\.config\\.[^/]+$|package\\.json$|pnpm-lock\\.yaml$|public/|runtime-tools/|scripts/|supabase/|src/(?:app/api/|components/|contexts/|features/|hooks/|lib/|storage/|commerce/|types/|server\\.ts$|proxy\\.ts$|app/(?:layout|globals|dialog-theme|chat-glass-continuity|markdown-body|theme-crystal-aurora|ui-shell-fixes)\\.|app/.+\\.css$))"
+        ],
+        "routes": [
+          "/",
+          "/admin",
+          "/announcements",
+          "/commerce/rebuild",
+          "/cover",
+          "/image-workbench",
+          "/media-history",
+          "/storyboard-workbench",
+          "/tools",
+          "/video",
+          "/voice-studio/workspace"
+        ]
+      },
+      {
         "id": "release-control-plane",
         "patterns": ["^(?:deploy/|\\.github/workflows/|scripts/(?:classify-release-change-scope|release-change-validation-gate|compute-release-build-output-digest|package-standalone-artifact))"],
         "routes": ["/", "/tools", "/video"]

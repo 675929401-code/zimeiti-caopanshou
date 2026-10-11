@@ -197,15 +197,15 @@ try {
   const standardApi = runScenario("standard-api", [
     { status: "M", path: "src/app/api/help/route.ts", content: "return Response.json({ ok: true });" }
   ]);
-  assert.equal(standardApi.classification, "FULL");
-  assert.equal(standardApi.browserAcceptance.explicitRoutesRequired, true);
+  assert.equal(standardApi.classification, "STANDARD");
+  assert.equal(standardApi.browserAcceptance.explicitRoutesRequired, false);
   assert.equal(standardApi.browserAcceptance.explicitRoutesProvided, false);
   const standardApiWithRoutes = runScenario("standard-api-with-reviewed-routes", [
     { status: "M", path: "src/app/api/help/route.ts", content: "return Response.json({ ok: true });" }
   ], { acceptanceRoutes: ["/help", "/", "/tools"] });
   assert.equal(standardApiWithRoutes.classification, "FULL");
   assert.equal(standardApiWithRoutes.failClosed, true);
-  assert.ok(standardApiWithRoutes.browserAcceptance.unresolvedPaths.includes("src/app/api/help/route.ts"));
+  assert.deepEqual(standardApiWithRoutes.browserAcceptance.unresolvedPaths, ["<caller-routes-not-policy-approved>"]);
   assertCommonValidations(standardApi);
   assert.ok(standardApiWithRoutes.requiredValidations.includes("full-zero-network-regression"));
 
@@ -214,6 +214,17 @@ try {
   ], { acceptanceRoutes: ["/", "/tools", "/video"] });
   assert.equal(standardShared.classification, "FULL");
   assert.equal(standardShared.failClosed, true);
+
+  const mappedPlatformWide = runScenario("mapped-platform-wide", [
+    { status: "M", path: "src/components/feature-card.tsx", content: "const size = 'desktop';" },
+    { status: "A", path: "public/commerce/reference/example.png", content: "fixture" },
+    { status: "A", path: "supabase/migrations/20990101000000_example.sql", content: "CREATE TABLE example(id bigint);" },
+    { status: "M", path: "scripts/release-workflow.mjs", content: "export const release = true;" },
+  ]);
+  assert.equal(mappedPlatformWide.browserAcceptance.explicitRoutesRequired, false);
+  for (const route of ["/", "/admin", "/commerce/rebuild", "/cover", "/image-workbench", "/video", "/voice-studio/workspace"]) {
+    assert.ok(mappedPlatformWide.browserAcceptance.requiredRoutes.includes(route), `platform-wide route mapping omitted ${route}`);
+  }
 
   const dynamicPageWithArbitraryRoutes = runScenario("dynamic-page-caller-route-bypass", [
     { status: "M", path: "src/app/blog/[slug]/page.tsx", content: "export default function Page() { return null; }" },
@@ -1369,10 +1380,17 @@ try {
   fs.writeFileSync(internallyTamperedBundlePath, `${JSON.stringify(internallyTamperedBundle, null, 2)}\n`, "utf8");
   assert.match(runFailure(process.execPath, [packagerPath, "--root", freshFinalizeRoot, "--service", "web", "--finalize-candidate-archive", internallyTamperedArchive, "--candidate-checksum", internallyTamperedChecksum, "--validation-bundle", internallyTamperedBundlePath, "--scope-receipt", freshScopePath, "--evidence-root", freshEvidenceRoot, "--archive-path", path.join(freshFinalizeRoot, "official", "internal-tamper.tar.gz")], freshFinalizeRoot).stderr, /authoritative release-ready gate rejected candidate/u);
 
+  const unresolvedPromotionBundle = JSON.parse(fs.readFileSync(releaseBundlePath, "utf8"));
+  unresolvedPromotionBundle.scope.browserAcceptance.explicitRoutesRequired = true;
+  unresolvedPromotionBundle.scope.browserAcceptance.explicitRoutesProvided = false;
+  unresolvedPromotionBundle.scope.browserAcceptance.unresolvedPaths = ["src/shared/unmapped.ts"];
+  unresolvedPromotionBundle.bundleId = recomputeBundleId(unresolvedPromotionBundle);
+  const unresolvedPromotionBundlePath = path.join(temporaryRoot, "unresolved-promotion-bundle.json");
+  fs.writeFileSync(unresolvedPromotionBundlePath, `${JSON.stringify(unresolvedPromotionBundle, null, 2)}\n`, "utf8");
   assert.match(runFailure(process.execPath, [
     validationGatePath, "promote-release-ready",
     "--root", root,
-    "--bundle", releaseBundlePath,
+    "--bundle", unresolvedPromotionBundlePath,
   ]).stderr, /RELEASE_BROWSER_ROUTES_UNRESOLVED/u);
 
   const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
@@ -1383,6 +1401,11 @@ try {
     policy.browserAcceptance.routeRules.find((rule) => rule.id === "voice-surface")?.routes,
     ["/voice-studio/workspace", "/", "/tools"],
     "voice acceptance must use the live canonical workspace instead of the retired /voice route",
+  );
+  assert.deepEqual(
+    policy.browserAcceptance.routeRules.find((rule) => rule.id === "platform-wide-shared-surface")?.routes,
+    ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"],
+    "shared platform changes must fan out to the reviewed high-impact desktop surface",
   );
   const pinnedTrustPath = path.join(root, ...policy.browserAcceptanceTrust.path.split("/"));
   assert.equal(sha256(fs.readFileSync(pinnedTrustPath)), policy.browserAcceptanceTrust.sha256, "reviewed issuer allowlist hash pin must match exact bytes");
