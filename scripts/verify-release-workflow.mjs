@@ -1032,6 +1032,16 @@ for (const marker of ["APP_DATA_DIR", "APP_RUNTIME_DIR", "COMMERCE_DATA_DIR", "C
   assert.ok(pm2.includes(marker), `PM2 release contract missing: ${marker}`);
 }
 const artifactDeployer = read("scripts/deploy-artifact-vnext.sh");
+for (const marker of [
+  'DEPLOY_NODE_BIN="/data/direct-deploy/toolchain/bin/node"',
+  'DEPLOY_RUNTIME_PATH="/data/direct-deploy/toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"',
+  'require_trusted_root_executable "$DEPLOY_NODE_BIN" "deployment Node runtime"',
+  '"v24.19.0:137"',
+]) assert.ok(artifactDeployer.includes(marker), `artifact deployer pinned runtime gate missing: ${marker}`);
+assert.ok(
+  !artifactDeployer.includes("trusted_binary_kind"),
+  "artifact deployer launcher validation must not trust stat's locale/version-specific file description",
+);
 const browserAcceptanceRunner = read("scripts/run-release-browser-acceptance.mjs");
 const standaloneAssetPreparer = read("scripts/prepare-next-standalone-assets.mjs");
 for (const marker of ["materializeVoiceReleaseIdentity", 'path.join(root, "public", "version.json")', "sourceVersion"]) {

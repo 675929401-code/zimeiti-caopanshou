@@ -8,6 +8,8 @@ STORAGE_GUARD_SHA256="c7d32c01a8747cc2e354aa2f12bc6990970d4860daa5b22c345b6c2c4e
 STORAGE_READINESS_RECEIPT="/run/zimeiti/storage-readiness.json"
 CANDIDATE_FIXTURE_HELPER_PATH="/usr/local/libexec/zimeiti/prepare-candidate-readiness-fixtures.py"
 CANDIDATE_FIXTURE_HELPER_SHA256="ea62e6aa0676b26514491109fe13e950799585f51d41398b82817f83a860c3c6"
+DEPLOY_NODE_BIN="/data/direct-deploy/toolchain/bin/node"
+DEPLOY_RUNTIME_PATH="/data/direct-deploy/toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 usage() {
   cat <<'USAGE'
@@ -87,6 +89,20 @@ fail() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command is unavailable: $1"
+}
+
+require_trusted_root_executable() {
+  local path="$1" label="$2" metadata uid gid mode links
+  [[ -f "$path" && ! -L "$path" && -x "$path" ]] || \
+    die "$label is not a regular executable: $path"
+  metadata="$(stat -c '%u:%g:%a:%h' -- "$path" 2>/dev/null)" || \
+    die "cannot stat $label: $path"
+  IFS=: read -r uid gid mode links <<<"$metadata"
+  [[ "$uid" == "0" && "$gid" == "0" && "$links" == "1" ]] || \
+    die "$label must be a single-link root:root executable: $path"
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] || die "$label mode is invalid: $path mode=$mode"
+  (( (8#$mode & 8#022) == 0 )) || die "$label must not be group/other writable: $path mode=$mode"
+  [[ "$(readlink -f -- "$path")" == "$path" ]] || die "$label is not canonical: $path"
 }
 
 verify_sensitive_artifact_paths() {
@@ -261,9 +277,17 @@ fi
 [[ "$RELEASE_ROOT" == /* ]] || die "--root must be an absolute Linux path"
 [[ ! "$RELEASE_ROOT" =~ [[:space:]] ]] || die "--root must not contain whitespace"
 
-for command_name in readlink sha256sum awk tar node mktemp grep head rm; do
+for command_name in readlink sha256sum awk tar mktemp grep head rm stat; do
   require_command "$command_name"
 done
+require_trusted_root_executable "$DEPLOY_NODE_BIN" "deployment Node runtime"
+PATH="$DEPLOY_RUNTIME_PATH"
+export PATH
+require_command node
+[[ "$(readlink -f -- "$(command -v node)")" == "$DEPLOY_NODE_BIN" ]] || \
+  die "deployment PATH did not select the pinned Node runtime"
+[[ "$(node -p 'process.version + ":" + process.versions.modules')" == "v24.19.0:137" ]] || \
+  die "deployment Node runtime must be exact Node v24.19.0 with ABI 137"
 tar --version 2>/dev/null | head -n 1 | grep -q "GNU tar" || die "GNU tar is required for deterministic safe extraction"
 
 ARTIFACT="$(readlink -f -- "$ARTIFACT")"
@@ -2181,13 +2205,7 @@ find "$PAYLOAD_DIR" -xdev -type f -exec chmod go-w,o+r -- {} +
 NODE_BIN="$(readlink -f -- "$(command -v node)")"
 ENV_BIN="$(readlink -f -- "$(command -v env)")"
 for trusted_binary in "$NODE_BIN" "$ENV_BIN"; do
-  [[ -f "$trusted_binary" && ! -L "$trusted_binary" && -x "$trusted_binary" ]] || \
-    die "candidate launcher binary is not a regular executable: $trusted_binary"
-  trusted_binary_metadata="$(stat -c '%u:%g:%a:%F' -- "$trusted_binary")"
-  IFS=: read -r trusted_binary_uid trusted_binary_gid trusted_binary_mode trusted_binary_kind <<<"$trusted_binary_metadata"
-  [[ "$trusted_binary_uid" == "0" && "$trusted_binary_gid" == "0" && "$trusted_binary_kind" == "regular file" && \
-     $((8#$trusted_binary_mode & 8#022)) -eq 0 ]] || \
-    die "candidate launcher binary must be root-owned and not group/other writable: $trusted_binary"
+  require_trusted_root_executable "$trusted_binary" "candidate launcher binary"
 done
 CANDIDATE_UNIT="zimeiti-candidate-$SERVICE-$$.service"
 candidate_unit="$CANDIDATE_UNIT"
