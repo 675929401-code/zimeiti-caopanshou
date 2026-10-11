@@ -23,6 +23,7 @@ const VIEWPORT = Object.freeze({ width: 1440, height: 900 });
 const BROWSER_ROUTE_TARGETS = Object.freeze({
   "/admin": Object.freeze({ service: "web", expectedRoute: "/admin?tab=dashboard&view=overview" }),
   "/extract": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
+  "/tools": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
   "/workspace": Object.freeze({
     service: "voice",
     navigationRoute: "/voice-platform/workspace",
