@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { chromium } from "playwright";
 import { canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
 
@@ -16,6 +17,10 @@ const BROWSER_VALIDATIONS = Object.freeze([
 ]);
 const CHECKLIST_VALIDATION = "full-desktop-release-checklist";
 const VIEWPORT = Object.freeze({ width: 1440, height: 900 });
+const NETWORK_CONSOLE_ERROR = /^Failed to load resource: the server responded with a status of \d{3} \([^)]*\)$/u;
+const CANDIDATE_BROWSER_ASSET_PATHS = Object.freeze([
+  "public/avatars/voice-studio/portraits.webp",
+]);
 // The release scope is shared by the Web and Voice candidates. Keep the
 // user-visible route identity in the signed evidence, while opening each route
 // on the service that actually owns it. Retired bookmarks are accepted only
@@ -45,13 +50,16 @@ const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
 const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
   "bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用",
 ]);
-const CANDIDATE_API_PREFIXES = Object.freeze({
-  web: "/api/",
-  voice: "/voice-platform/api/",
-});
 const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/admin|/admin/extraction-reconciliation",
   "/demo/popup-styles|/",
+  "/extract|/",
+  "/storyboard-workbench|/",
+  "/tools|/",
+  "/video|/",
+  "/voice-studio/workspace|/voice-studio/imitate",
+  "/voice-studio/workspace|/voice-studio/voices",
+  "/voice-studio/workspace|/voice-studio/workspace",
 ]);
 
 function fail(code, detail = "") {
@@ -164,15 +172,33 @@ async function startCandidateDatabaseFixture(port) {
   const requests = [];
   const server = createServer((request, response) => {
     const url = new URL(request.url || "/", `http://127.0.0.1:${port}`);
-    requests.push({ method: request.method || "GET", path: url.pathname });
+    const requestMethod = request.method || "GET";
+    const isReadOnlyTableRequest = requestMethod === "GET" || requestMethod === "HEAD";
+    const rejectMethod = (allow) => {
+      response.setHeader("Allow", allow);
+      sendJson(request, response, 405, { code: "CANDIDATE_FIXTURE_METHOD_NOT_ALLOWED" });
+    };
+    requests.push({ method: requestMethod, path: url.pathname });
     const objectResponse = String(request.headers.accept || "").includes("application/vnd.pgrst.object+json");
     if (url.pathname === "/rest/v1/users") {
+      if (!isReadOnlyTableRequest) {
+        rejectMethod("GET, HEAD");
+        return;
+      }
       sendJson(request, response, 200, objectResponse ? admin : [admin], 1);
       return;
     }
     if (url.pathname === "/rest/v1/user_auth_sessions") {
+      if (!isReadOnlyTableRequest) {
+        rejectMethod("GET, HEAD");
+        return;
+      }
       const row = { user_id: admin.id, session_id: sessionId, revoked_at: null, expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() };
       sendJson(request, response, 200, objectResponse ? row : [row], 1);
+      return;
+    }
+    if (url.pathname.startsWith("/rest/v1/rpc/") && requestMethod !== "POST") {
+      rejectMethod("POST");
       return;
     }
     if (url.pathname === "/rest/v1/rpc/read_admin_access_snapshot") {
@@ -219,11 +245,34 @@ async function startCandidateDatabaseFixture(port) {
       });
       return;
     }
+    if (url.pathname === "/rest/v1/rpc/read_extraction_account_history"
+      || url.pathname === "/rest/v1/rpc/read_image_model_publication_state") {
+      sendJson(request, response, 200, []);
+      return;
+    }
+    if (url.pathname === "/rest/v1/product_usage_events"
+      || url.pathname === "/rest/v1/operation_flight_events") {
+      if (requestMethod !== "POST") {
+        rejectMethod("POST");
+        return;
+      }
+      sendJson(request, response, 201, []);
+      return;
+    }
     if (url.pathname.startsWith("/rest/v1/rpc/")) {
+      const rpcName = url.pathname.slice("/rest/v1/rpc/".length);
+      if (!rpcName.startsWith("read_")) {
+        rejectMethod("POST");
+        return;
+      }
       sendJson(request, response, 200, {});
       return;
     }
     if (url.pathname.startsWith("/rest/v1/")) {
+      if (!isReadOnlyTableRequest) {
+        rejectMethod("GET, HEAD");
+        return;
+      }
       sendJson(request, response, 200, objectResponse ? {} : [], 0);
       return;
     }
@@ -359,7 +408,49 @@ function extractCandidate(candidateRoot, workRoot, bundle, service) {
   return { payloadRoot, manifest: verifyExtractedPayload(payloadRoot, bundle, service, archive) };
 }
 
-function prepareAssetMetadata(workRoot, webPayload, webManifest) {
+function materializeCandidateBrowserAssets(checkoutRoot, publicRoot, candidatePublicRoot, assetManifest) {
+  const manifestEntries = new Map(assetManifest.files.map((entry) => [entry.path, entry]));
+  const materialized = [];
+  const checkoutRealRoot = fs.realpathSync(checkoutRoot);
+  for (const relative of CANDIDATE_BROWSER_ASSET_PATHS) {
+    const logical = canonicalArtifactPath(relative);
+    const entry = manifestEntries.get(logical);
+    if (!entry || !Number.isSafeInteger(entry.bytes) || typeof entry.sha256 !== "string") {
+      fail("BROWSER_ASSET_MANIFEST_ENTRY_MISSING", logical);
+    }
+    const sourcePath = path.join(checkoutRoot, ...logical.split("/"));
+    const sourceStats = fs.lstatSync(sourcePath);
+    const sourceRealPath = fs.realpathSync(sourcePath);
+    const sourceRelativeToCheckout = path.relative(checkoutRealRoot, sourceRealPath);
+    if (!sourceRelativeToCheckout || sourceRelativeToCheckout.startsWith(`..${path.sep}`)
+      || path.isAbsolute(sourceRelativeToCheckout) || !sourceStats.isFile() || sourceStats.isSymbolicLink() || sourceStats.size !== entry.bytes
+      || sha256File(sourcePath) !== entry.sha256) fail("BROWSER_ASSET_SOURCE_MISMATCH", logical);
+    const publicRelative = logical.replace(/^public\//u, "");
+    if (publicRelative === logical) fail("BROWSER_ASSET_PATH_INVALID", logical);
+    const destinations = [
+      { kind: "external-public-root", root: publicRoot },
+      { kind: "web-candidate-static-overlay", root: candidatePublicRoot },
+    ];
+    for (const destination of destinations) {
+      const destinationPath = path.join(destination.root, ...publicRelative.split("/"));
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true, mode: 0o700 });
+      fs.copyFileSync(sourcePath, destinationPath, fs.constants.COPYFILE_EXCL);
+      const destinationStats = fs.lstatSync(destinationPath);
+      if (!destinationStats.isFile() || destinationStats.isSymbolicLink() || destinationStats.size !== entry.bytes
+        || sha256File(destinationPath) !== entry.sha256) fail("BROWSER_ASSET_DESTINATION_MISMATCH", `${logical}:${destination.kind}`);
+    }
+    materialized.push({
+      path: logical,
+      urlPath: `/${publicRelative}`,
+      bytes: entry.bytes,
+      sha256: entry.sha256,
+      destinations: destinations.map((destination) => destination.kind),
+    });
+  }
+  return materialized;
+}
+
+function prepareAssetMetadata(workRoot, checkoutRoot, webPayload, webManifest) {
   const manifestSource = path.join(webPayload, ".release", "public-assets.v1.json");
   const assetManifest = readJson(manifestSource, "PUBLIC_ASSET_MANIFEST_INVALID");
   const manifestSha256 = sha256File(manifestSource);
@@ -373,6 +464,7 @@ function prepareAssetMetadata(workRoot, webPayload, webManifest) {
   fs.mkdirSync(publicRoot, { recursive: true });
   fs.mkdirSync(metadataRoot, { recursive: true });
   fs.copyFileSync(manifestSource, path.join(metadataRoot, "public-assets.v1.json"), fs.constants.COPYFILE_EXCL);
+  const materialized = materializeCandidateBrowserAssets(checkoutRoot, publicRoot, path.join(webPayload, "public"), assetManifest);
   writeJson(path.join(metadataRoot, "public-assets.ready.v1.json"), {
     schemaVersion: 1,
     projectId: assetManifest.projectId,
@@ -390,7 +482,42 @@ function prepareAssetMetadata(workRoot, webPayload, webManifest) {
     location: `ci-metadata-only/${assetManifest.assetVersion}`,
     verifiedAt: new Date().toISOString(),
   });
-  return { publicRoot, manifestSha256, assetManifest };
+  return { publicRoot, manifestSha256, assetManifest, materialized };
+}
+
+function seedCandidateVoicePricingCatalog(databasePath) {
+  const database = new DatabaseSync(databasePath);
+  const rows = [
+    ["candidate-seed-tts-2-0", "Doubao-TTS 2.0", "seed-tts-2.0", "seed-tts-2.0", 1, 1000, 1, "千字符", 0, 1, 0],
+    ["candidate-seed-icl-2-0", "Doubao-ICL 1.0", "seed-icl-2.0", "seed-icl-2.0", 1, 1000, 1, "千字符", 0, 1, 1],
+    ["candidate-seed-audio-1-0", "Seed-Audio 1.0", "seed-audio-1.0", "seed-audio-1.0", 1, 1, 1, "分钟", 0, 1, 2],
+  ];
+  try {
+    database.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000");
+    const before = database.prepare('SELECT COUNT(*) AS count FROM "ModelConfig"').get();
+    if (Number(before.count) !== 0) fail("CANDIDATE_VOICE_PRICING_FIXTURE_NOT_EMPTY");
+    const insert = database.prepare('INSERT INTO "ModelConfig" (id,name,modelId,resourceId,apiKey,totalPrice,totalChars,costPrice,unit,profitMargin,isActive,sort,createdAt,updatedAt) VALUES (?,?,?,?,NULL,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)');
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      for (const row of rows) insert.run(...row);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    const readback = database.prepare('SELECT id,modelId,apiKey,isActive FROM "ModelConfig" ORDER BY sort,id').all();
+    if (readback.length !== rows.length || readback.some((row, index) => (
+      row.id !== rows[index][0] || row.modelId !== rows[index][2] || row.apiKey !== null || Number(row.isActive) !== 1
+    ))) fail("CANDIDATE_VOICE_PRICING_FIXTURE_INVALID");
+    return {
+      count: readback.length,
+      modelIds: readback.map((row) => row.modelId),
+      apiKeyAbsent: readback.every((row) => row.apiKey === null),
+      allActive: readback.every((row) => Number(row.isActive) === 1),
+    };
+  } finally {
+    database.close();
+  }
 }
 
 function prepareState(root, checkoutRoot, schemaDatabase, service) {
@@ -420,11 +547,12 @@ function prepareState(root, checkoutRoot, schemaDatabase, service) {
       "--output-root", stateRoot, "--output", voiceDatabase],
     { code: "VOICE_FIXTURE_PREPARATION_FAILED", timeout: 120_000 });
   }
+  const voicePricingFixture = seedCandidateVoicePricingCatalog(voiceDatabase);
   const catalogPath = path.join(discoveryDir, "catalog.json");
   fs.writeFileSync(catalogPath, `${JSON.stringify({ schema: 1, items: [], order: { video: [], image: [], canvas: [] }, homeOrder: { video: [], image: [], canvas: [] } })}\n`, { mode: 0o600 });
   const gatewayKeyPath = path.join(commerceDir, "main-gateway.key");
   fs.writeFileSync(gatewayKeyPath, crypto.randomBytes(48).toString("hex"), { mode: 0o600 });
-  return { stateRoot, dataDir, runtimeDir, commerceDir, discoveryDir, idempotencyDir, backupDir, uploadDir, referenceAudioDir, voiceDatabase, catalogPath, gatewayKeyPath };
+  return { stateRoot, dataDir, runtimeDir, commerceDir, discoveryDir, idempotencyDir, backupDir, uploadDir, referenceAudioDir, voiceDatabase, catalogPath, gatewayKeyPath, voicePricingFixture };
 }
 
 function createSchemaDatabase(checkoutRoot, workRoot) {
@@ -452,7 +580,11 @@ function candidateEnvironment(payloadRoot, manifest, state, assets, port, servic
     RELEASE_READINESS_PROFILE: "candidate-runtime-v1",
     RELEASE_CANDIDATE_MODE: "isolated",
     SERVER_ENV_DISCOVERY_DISABLED: "1",
-    DEV_READ_ONLY_MODE: "1",
+    // Candidate processes have no inherited provider credentials and every
+    // database/file target below is an isolated local fixture. Keep normal
+    // browser writes enabled so telemetry routes exercise their real proxy,
+    // authentication, validation, and persistence contracts.
+    DEV_READ_ONLY_MODE: "0",
     RELEASE_ROOT: payloadRoot,
     APP_DATA_DIR: state.dataDir,
     APP_RUNTIME_DIR: state.runtimeDir,
@@ -552,7 +684,7 @@ function resolveBrowserRouteTarget(route, serviceOrigins) {
   };
 }
 
-async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, authToken, authUser) {
+async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, authToken, authUser, requiredAssets) {
   const browser = await chromium.launch({ headless: true, args: ["--disable-dev-shm-usage"] });
   const context = await browser.newContext({ viewport: VIEWPORT, serviceWorkers: "block", reducedMotion: "reduce" });
   const cookieOrigins = [...new Set(Object.values(serviceOrigins).filter(Boolean))];
@@ -576,7 +708,34 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
   const requestFailures = [];
   const nonBlockingHttpErrors = [];
   const benignNavigationAborts = [];
+  const requiredAssetResponses = [];
   try {
+    for (const asset of requiredAssets) {
+      const assetUrl = new URL(asset.urlPath, serviceOrigins.web).toString();
+      try {
+        const response = await context.request.get(assetUrl, { failOnStatusCode: false, timeout: 30_000 });
+        const body = await response.body();
+        const contentType = String(response.headers()["content-type"] || "").split(";", 1)[0].trim().toLowerCase();
+        const receipt = {
+          path: asset.path,
+          urlPath: asset.urlPath,
+          status: response.status(),
+          contentType,
+          bytes: body.length,
+          sha256: sha256(body),
+        };
+        requiredAssetResponses.push(receipt);
+        await response.dispose();
+        if (receipt.status !== 200 || !contentType.startsWith("image/")
+          || receipt.bytes !== asset.bytes || receipt.sha256 !== asset.sha256) {
+          blockingFailures.push({ route: asset.urlPath, code: "BROWSER_REQUIRED_ASSET_INVALID", detail: JSON.stringify(receipt) });
+        }
+      } catch (error) {
+        const detail = `${asset.urlPath}:${error instanceof Error ? error.message : String(error)}`.slice(0, 1000);
+        requiredAssetResponses.push({ path: asset.path, urlPath: asset.urlPath, status: null, contentType: "", bytes: null, sha256: null, error: detail });
+        blockingFailures.push({ route: asset.urlPath, code: "BROWSER_REQUIRED_ASSET_REQUEST_FAILED", detail });
+      }
+    }
     for (const [index, route] of routes.entries()) {
       const page = await context.newPage();
       const target = resolveBrowserRouteTarget(route, serviceOrigins);
@@ -589,12 +748,23 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
       let screenshot = "";
       page.setDefaultTimeout(30_000);
       page.on("console", (message) => {
-        if (message.type() === "error") consoleErrors.push({ route, text: message.text().slice(0, 1000) });
+        const text = message.text();
+        // Chromium duplicates HTTP failures as URL-less console messages.
+        // The response/request listeners below retain the URL, resource type,
+        // origin, status, and abort reason and are the authoritative gate.
+        if (message.type() === "error" && !NETWORK_CONSOLE_ERROR.test(text)) {
+          consoleErrors.push({ route, text: text.slice(0, 1000) });
+        }
       });
       page.on("pageerror", (error) => consoleErrors.push({ route, text: `${error.name}:${error.message}`.slice(0, 1000) }));
       page.on("requestfailed", (request) => {
         const resourceType = request.resourceType();
         const error = request.failure()?.errorText || "requestfailed";
+        const requestHeaders = request.headers();
+        const nextRouterPrefetch = /^[12]$/u.test(requestHeaders["next-router-prefetch"] || "")
+          || typeof requestHeaders["next-router-segment-prefetch"] === "string"
+          || requestHeaders.purpose === "prefetch"
+          || String(requestHeaders["sec-purpose"] || "").split(/\s*;\s*/u).includes("prefetch");
         let sameOrigin = false;
         let pathname = "";
         try {
@@ -609,12 +779,13 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
           method: request.method(),
           resourceType,
           sameOrigin,
+          nextRouterPrefetch,
           url: cleanUrl(request.url()),
           error,
         };
         const benignNavigationKey = `${route}|${pathname}`;
         if (sameOrigin && item.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"
-          && BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)) {
+          && nextRouterPrefetch && BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)) {
           benignNavigationAborts.push(item);
         } else {
           requestFailures.push(item);
@@ -640,9 +811,11 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
           sameOrigin,
           url: cleanUrl(response.url()),
         };
-        const candidateApiPrefix = CANDIDATE_API_PREFIXES[target.service];
-        if ((sameOrigin && candidateApiPrefix && pathname.startsWith(candidateApiPrefix))
-          || ["document", "script", "stylesheet"].includes(request.resourceType())) requestFailures.push(item);
+        // Every same-origin HTTP failure is release-blocking, including images,
+        // fonts, media, and non-API fetches. This keeps the URL-less Chromium
+        // console duplicate filter above safe because the response listener
+        // remains the authoritative, URL-aware gate for candidate resources.
+        if (sameOrigin || ["document", "script", "stylesheet"].includes(request.resourceType())) requestFailures.push(item);
         else nonBlockingHttpErrors.push(item);
       });
       const startedAt = Date.now();
@@ -705,7 +878,7 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
     await context.close();
     await browser.close();
   }
-  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors, benignNavigationAborts };
+  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors, benignNavigationAborts, requiredAssetResponses };
 }
 
 function runtimeIdentity(bundle, service) {
@@ -879,7 +1052,7 @@ async function main() {
 
   const extracted = {};
   for (const service of bundle.subject.services) extracted[service] = extractCandidate(candidateRoot, workRoot, bundle, service);
-  const assets = prepareAssetMetadata(workRoot, extracted.web.payloadRoot, extracted.web.manifest);
+  const assets = prepareAssetMetadata(workRoot, checkoutRoot, extracted.web.payloadRoot, extracted.web.manifest);
   const schemaDatabase = createSchemaDatabase(checkoutRoot, workRoot);
   const states = {};
   for (const service of bundle.subject.services) states[service] = prepareState(workRoot, checkoutRoot, schemaDatabase, service);
@@ -943,11 +1116,19 @@ async function main() {
     browserReport = await runBrowserAcceptance({
       web: `http://127.0.0.1:${ports.web}`,
       voice: ports.voice ? `http://127.0.0.1:${ports.voice}` : null,
-    }, routes, screenshotRoot, authToken, authUser);
+    }, routes, screenshotRoot, authToken, authUser, assets.materialized);
   } finally {
     await Promise.all(Object.values(processes).map((entry) => stopChild(entry.child)));
     await stopFixtureServer(databaseFixture?.server);
   }
+
+  const databaseMethodsAndPaths = [...new Set(databaseFixture.requests.map((entry) => `${entry.method} ${entry.path}`))]
+    .sort((left, right) => left.localeCompare(right, "en"));
+  const requiredIsolatedWrites = [
+    "POST /rest/v1/operation_flight_events",
+    "POST /rest/v1/product_usage_events",
+  ];
+  const missingRequiredIsolatedWrites = requiredIsolatedWrites.filter((entry) => !databaseMethodsAndPaths.includes(entry));
 
   const report = {
     schemaVersion: "zimeiti-release-browser-acceptance-report.v1",
@@ -962,17 +1143,31 @@ async function main() {
     requestFailures: browserReport.requestFailures,
     nonBlockingHttpErrors: browserReport.nonBlockingHttpErrors,
     benignNavigationAborts: browserReport.benignNavigationAborts,
+    requiredAssetResponses: browserReport.requiredAssetResponses,
+    assetFixture: {
+      localOnly: true,
+      source: "managed-checkout-files-bound-to-candidate-asset-manifest",
+      materialized: assets.materialized,
+    },
+    voicePricingFixtures: Object.fromEntries(Object.entries(states).map(([service, state]) => [service, state.voicePricingFixture])),
     databaseFixture: {
       localOnly: true,
       requestCount: databaseFixture.requests.length,
+      methodsAndPaths: databaseMethodsAndPaths,
+      requiredIsolatedWrites,
+      missingRequiredIsolatedWrites,
       paths: [...new Set(databaseFixture.requests.map((entry) => entry.path))].sort((left, right) => left.localeCompare(right, "en")),
     },
-    result: browserReport.blockingFailures.length || browserReport.consoleErrors.length || browserReport.requestFailures.length
+    result: missingRequiredIsolatedWrites.length || browserReport.blockingFailures.length
+      || browserReport.consoleErrors.length || browserReport.requestFailures.length
       ? "failed"
       : "passed",
   };
   const reportPath = path.join(reportRoot, "browser-acceptance-report.json");
   writeJson(reportPath, report);
+  if (missingRequiredIsolatedWrites.length) {
+    fail("CANDIDATE_DATABASE_FIXTURE_WRITE_MISSING", missingRequiredIsolatedWrites.join(","));
+  }
   if (browserReport.blockingFailures.length) fail("BROWSER_ROUTE_FAILURES", JSON.stringify(browserReport.blockingFailures.slice(0, 25)));
   if (browserReport.consoleErrors.length) fail("BROWSER_CONSOLE_ERRORS", JSON.stringify(browserReport.consoleErrors.slice(0, 25)));
   if (browserReport.requestFailures.length) fail("BROWSER_REQUEST_FAILURES", JSON.stringify(browserReport.requestFailures.slice(0, 25)));

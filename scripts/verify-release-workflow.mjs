@@ -1081,13 +1081,41 @@ assert.match(browserAcceptanceRunner, /PRODUCT_USAGE_NOTICE_VERSION = "candidate
   "browser acceptance must provide a non-production product-usage notice fixture");
 assert.match(browserAcceptanceRunner, /BASE_URL = `http:\/\/127\.0\.0\.1:\$\{port\}`/u,
   "browser acceptance must bind same-origin checks to the isolated Web candidate");
+assert.match(browserAcceptanceRunner, /RELEASE_CANDIDATE_MODE: "isolated"[\s\S]*DEV_READ_ONLY_MODE: "0"[\s\S]*COZE_SUPABASE_URL = acceptance\.database\.url/u,
+  "isolated candidate acceptance must exercise normal browser writes only against its loopback database fixture");
 assert.doesNotMatch(browserAcceptanceRunner, /process\.env\.(?:COZE_SUPABASE|COS_SECRET|SSH_)|https:\/\/[^"'`]*supabase/iu,
   "browser acceptance must never inherit production database, COS, or SSH credentials");
+const candidateEnvironmentSource = browserAcceptanceRunner.slice(
+  browserAcceptanceRunner.indexOf("function candidateEnvironment("),
+  browserAcceptanceRunner.indexOf("function startCandidate("),
+);
+assert.ok(candidateEnvironmentSource.length > 0, "candidate environment function must be inspectable");
+assert.doesNotMatch(candidateEnvironmentSource, /\.\.\.process\.env/u,
+  "candidate runtime environment must not inherit the parent process environment");
+for (const isolationMarker of [
+  'PATH: process.env.PATH ||',
+  'HOSTNAME: "127.0.0.1"',
+  'SERVER_ENV_DISCOVERY_DISABLED: "1"',
+  'APP_DATA_DIR: state.dataDir',
+  'APP_RUNTIME_DIR: state.runtimeDir',
+  'VOICE_SQLITE_PATH: state.voiceDatabase',
+  'COZE_SUPABASE_URL = acceptance.database.url',
+]) assert.ok(candidateEnvironmentSource.includes(isolationMarker), `candidate runtime isolation marker missing: ${isolationMarker}`);
+assert.match(browserAcceptanceRunner, /server\.listen\(port, "127\.0\.0\.1"/u,
+  "candidate database fixture must listen only on loopback");
+assert.match(browserAcceptanceRunner, /url: `http:\/\/127\.0\.0\.1:\$\{port\}`/u,
+  "candidate database fixture URL must stay on loopback");
+assert.match(browserAcceptanceRunner, /workRoot = requireFreshDirectory[\s\S]*prepareState\(workRoot, checkoutRoot, schemaDatabase, service\)/u,
+  "candidate file state must be derived from the fresh isolated work root");
 const publishedBrandFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_published_platform_brand"';
 const memberPermissionFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_member_permission_snapshot"';
-const genericRpcFixtureMarker = 'url.pathname.startsWith("/rest/v1/rpc/")';
+const extractionHistoryFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_extraction_account_history"';
+const imagePublicationFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_image_model_publication_state"';
+const genericRpcFixtureMarker = 'const rpcName = url.pathname.slice("/rest/v1/rpc/".length)';
 const publishedBrandFixtureIndex = browserAcceptanceRunner.indexOf(publishedBrandFixtureMarker);
 const memberPermissionFixtureIndex = browserAcceptanceRunner.indexOf(memberPermissionFixtureMarker);
+const extractionHistoryFixtureIndex = browserAcceptanceRunner.indexOf(extractionHistoryFixtureMarker);
+const imagePublicationFixtureIndex = browserAcceptanceRunner.indexOf(imagePublicationFixtureMarker);
 const genericRpcFixtureIndex = browserAcceptanceRunner.indexOf(genericRpcFixtureMarker);
 assert.ok(
   publishedBrandFixtureIndex >= 0 && genericRpcFixtureIndex > publishedBrandFixtureIndex,
@@ -1110,6 +1138,12 @@ for (const marker of [
   "feature_navigation_keys: CANDIDATE_FEATURE_NAVIGATION_KEYS",
   "agent_navigation_keys: CANDIDATE_AGENT_NAVIGATION_KEYS",
 ]) assert.ok(memberPermissionFixture.includes(marker), `member-permission RPC fixture binding missing: ${marker}`);
+assert.ok(extractionHistoryFixtureIndex >= 0 && imagePublicationFixtureIndex >= 0
+  && extractionHistoryFixtureIndex < genericRpcFixtureIndex && imagePublicationFixtureIndex < genericRpcFixtureIndex,
+"array-valued extraction and image publication RPC fixtures must precede the generic object-valued RPC fixture");
+assert.match(browserAcceptanceRunner.slice(extractionHistoryFixtureIndex, genericRpcFixtureIndex),
+  /sendJson\(request, response, 200, \[\]\)/u,
+  "array-valued candidate RPCs must return empty arrays rather than corrupt object placeholders");
 assert.ok(browserAcceptanceRunner.includes(`const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
   "marketplace", "toolbox", "storyboard_workbench", "image_workbench", "create",
   "voice", "cover", "youcai", "commerce_agent",
@@ -1117,19 +1151,69 @@ assert.ok(browserAcceptanceRunner.includes(`const CANDIDATE_FEATURE_NAVIGATION_K
 assert.ok(browserAcceptanceRunner.includes(`const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
   "bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用",
 ]);`), "member-permission Agent fixture must contain the exact five stable navigation keys");
-assert.match(browserAcceptanceRunner, /web: "\/api\/"[\s\S]*voice: "\/voice-platform\/api\/"/u,
-  "browser acceptance must block API errors for both Web and Voice candidate base paths");
-assert.match(browserAcceptanceRunner, /sameOrigin && candidateApiPrefix && pathname\.startsWith\(candidateApiPrefix\)[\s\S]*requestFailures\.push\(item\)/u,
-  "same-origin candidate API errors must block browser acceptance");
+assert.match(browserAcceptanceRunner, /if \(sameOrigin \|\| \["document", "script", "stylesheet"\]\.includes\(request\.resourceType\(\)\)\) requestFailures\.push\(item\)/u,
+  "every same-origin HTTP error, including images, fonts, media, and non-API fetches, must block browser acceptance");
+assert.match(browserAcceptanceRunner, /NETWORK_CONSOLE_ERROR[\s\S]*response\.status\(\) < 400[\s\S]*requestFailures\.push\(item\)/u,
+  "URL-less Chromium HTTP console duplicates may be filtered only while URL-aware response failures remain authoritative");
 assert.match(browserAcceptanceRunner, /sameOrigin && item\.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"/u,
   "browser acceptance may classify only narrow same-origin GET fetch aborts as benign navigation races");
+assert.match(browserAcceptanceRunner, /nextRouterPrefetch && BENIGN_NAVIGATION_ABORT_KEYS\.has\(benignNavigationKey\)/u,
+  "benign navigation aborts must also carry an explicit Next router prefetch marker");
+assert.match(browserAcceptanceRunner, /\^\[12\]\$\/u\.test\(requestHeaders\["next-router-prefetch"\] \|\| ""\)/u,
+  "Next router prefetch evidence must accept both full-prefetch value 1 and PPR-prefetch value 2");
 for (const marker of [
   '"/admin|/admin/extraction-reconciliation"',
   '"/demo/popup-styles|/"',
+  '"/extract|/"',
+  '"/storyboard-workbench|/"',
+  '"/tools|/"',
+  '"/video|/"',
+  '"/voice-studio/workspace|/voice-studio/imitate"',
+  '"/voice-studio/workspace|/voice-studio/voices"',
+  '"/voice-studio/workspace|/voice-studio/workspace"',
   "BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)",
 ]) assert.ok(browserAcceptanceRunner.includes(marker), `benign navigation abort allowlist missing: ${marker}`);
 assert.match(browserAcceptanceRunner, /benignNavigationAborts: browserReport\.benignNavigationAborts/u,
   "benign navigation aborts must remain visible in the signed browser report");
+for (const marker of [
+  '"public/avatars/voice-studio/portraits.webp"',
+  'kind: "web-candidate-static-overlay"',
+  'path.join(webPayload, "public")',
+  "sourceRelativeToCheckout",
+  "BROWSER_ASSET_SOURCE_MISMATCH",
+  "BROWSER_ASSET_DESTINATION_MISMATCH",
+  'source: "managed-checkout-files-bound-to-candidate-asset-manifest"',
+  "requiredAssetResponses",
+  "BROWSER_REQUIRED_ASSET_INVALID",
+  'contentType.startsWith("image/")',
+  "receipt.sha256 !== asset.sha256",
+]) assert.ok(browserAcceptanceRunner.includes(marker), `hash-bound browser asset fixture missing: ${marker}`);
+for (const marker of [
+  "seedCandidateVoicePricingCatalog",
+  '"candidate-seed-tts-2-0"',
+  '"candidate-seed-icl-2-0"',
+  '"candidate-seed-audio-1-0"',
+  "CANDIDATE_VOICE_PRICING_FIXTURE_INVALID",
+  "voicePricingFixtures",
+  "apiKeyAbsent",
+  "allActive",
+]) assert.ok(browserAcceptanceRunner.includes(marker), `credential-free candidate Voice pricing fixture missing: ${marker}`);
+for (const marker of [
+  'url.pathname === "/rest/v1/product_usage_events"',
+  'url.pathname === "/rest/v1/operation_flight_events"',
+  '"POST /rest/v1/operation_flight_events"',
+  '"POST /rest/v1/product_usage_events"',
+  "missingRequiredIsolatedWrites",
+  "methodsAndPaths: databaseMethodsAndPaths",
+]) assert.ok(browserAcceptanceRunner.includes(marker), `isolated telemetry persistence evidence missing: ${marker}`);
+assert.match(browserAcceptanceRunner, /isReadOnlyTableRequest = requestMethod === "GET" \|\| requestMethod === "HEAD"/u,
+  "generic table fixtures must be read-only");
+assert.match(browserAcceptanceRunner, /url\.pathname\.startsWith\("\/rest\/v1\/"\)[\s\S]*if \(!isReadOnlyTableRequest\)[\s\S]*rejectMethod\("GET, HEAD"\)/u,
+  "unexpected candidate table writes must fail closed");
+assert.match(browserAcceptanceRunner, /rpcName\.startsWith\("read_"\)[\s\S]*rejectMethod\("POST"\)/u,
+  "generic candidate RPC fixtures must reject non-read RPC names");
+assert.match(browserAcceptanceRunner, /result: missingRequiredIsolatedWrites\.length \|\| browserReport\.blockingFailures\.length/u,
+  "browser acceptance report must fail when required isolated writes are missing");
 for (const marker of ["canonicalJson(expected)", 'item.kind === "directory"', "expectedFileCount", "observed.mode !== item.mode", "manifest.sourceVersion"]) {
   assert.ok(artifactDeployer.includes(marker), `artifact deployment v2 inventory/identity contract missing: ${marker}`);
 }
