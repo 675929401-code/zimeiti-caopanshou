@@ -37,6 +37,21 @@ const CANDIDATE_ADMIN_PERMISSIONS = Object.freeze([
   "integrations.manage", "payment.settings.manage", "white_label.manage", "announcements.manage", "security.view",
   "security.manage", "logs.view", "logs.export", "backups.manage", "deployment.execute",
 ]);
+const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
+  "marketplace", "toolbox", "storyboard_workbench", "image_workbench", "create",
+  "voice", "cover", "youcai", "commerce_agent",
+]);
+const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
+  "bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用",
+]);
+const CANDIDATE_API_PREFIXES = Object.freeze({
+  web: "/api/",
+  voice: "/voice-platform/api/",
+});
+const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
+  "/admin|/admin/extraction-reconciliation",
+  "/demo/popup-styles|/",
+]);
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}:${detail}` : code);
@@ -184,6 +199,23 @@ async function startCandidateDatabaseFixture(port) {
       // Returning the generic empty object would be interpreted as a corrupt
       // published revision and make the root layout fail closed with HTTP 500.
       sendJson(request, response, 200, null);
+      return;
+    }
+    if (url.pathname === "/rest/v1/rpc/read_member_permission_snapshot") {
+      sendJson(request, response, 200, {
+        role: "admin",
+        authority_status: "ready",
+        integrity_valid: true,
+        feature_navigation_keys: CANDIDATE_FEATURE_NAVIGATION_KEYS,
+        agent_navigation_keys: CANDIDATE_AGENT_NAVIGATION_KEYS,
+        revision: 1,
+        checksum: "candidate-read-only",
+        source_profile_key: "candidate-release",
+        source_profile_version: 1,
+        updated_at: new Date().toISOString(),
+        updated_by: admin.id,
+        reason: "isolated candidate browser acceptance",
+      });
       return;
     }
     if (url.pathname.startsWith("/rest/v1/rpc/")) {
@@ -446,6 +478,10 @@ function candidateEnvironment(payloadRoot, manifest, state, assets, port, servic
     environment.COZE_SUPABASE_URL = acceptance.database.url;
     environment.COZE_SUPABASE_SERVICE_ROLE_KEY = acceptance.database.serviceRoleKey;
     environment.STORAGE_LOCAL_BASE_PATH = state.uploadDir;
+    environment.BASE_URL = `http://127.0.0.1:${port}`;
+    environment.PRODUCTION_SITE_URL = environment.BASE_URL;
+    environment.PRODUCT_USAGE_POLICY_BASIS_CODE = "candidate-browser-acceptance";
+    environment.PRODUCT_USAGE_NOTICE_VERSION = "candidate-v1";
   } else {
     environment.AUTH_SECRET = crypto.randomBytes(48).toString("hex");
     environment.DATABASE_URL = `file:${state.voiceDatabase}`;
@@ -538,6 +574,7 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
   const consoleErrors = [];
   const requestFailures = [];
   const nonBlockingHttpErrors = [];
+  const benignNavigationAborts = [];
   try {
     for (const [index, route] of routes.entries()) {
       const page = await context.newPage();
@@ -554,12 +591,57 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         if (message.type() === "error") consoleErrors.push({ route, text: message.text().slice(0, 1000) });
       });
       page.on("pageerror", (error) => consoleErrors.push({ route, text: `${error.name}:${error.message}`.slice(0, 1000) }));
-      page.on("requestfailed", (request) => requestFailures.push({ route, resourceType: request.resourceType(), url: cleanUrl(request.url()), error: request.failure()?.errorText || "requestfailed" }));
+      page.on("requestfailed", (request) => {
+        const resourceType = request.resourceType();
+        const error = request.failure()?.errorText || "requestfailed";
+        let sameOrigin = false;
+        let pathname = "";
+        try {
+          const requestUrl = new URL(request.url());
+          sameOrigin = Boolean(target.baseUrl) && requestUrl.origin === new URL(target.baseUrl).origin;
+          pathname = requestUrl.pathname;
+        } catch {
+          sameOrigin = false;
+        }
+        const item = {
+          route,
+          method: request.method(),
+          resourceType,
+          sameOrigin,
+          url: cleanUrl(request.url()),
+          error,
+        };
+        const benignNavigationKey = `${route}|${pathname}`;
+        if (sameOrigin && item.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"
+          && BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)) {
+          benignNavigationAborts.push(item);
+        } else {
+          requestFailures.push(item);
+        }
+      });
       page.on("response", (response) => {
         if (response.status() < 400) return;
         const request = response.request();
-        const item = { route, status: response.status(), resourceType: request.resourceType(), url: cleanUrl(response.url()) };
-        if (["document", "script", "stylesheet"].includes(request.resourceType())) requestFailures.push(item);
+        let sameOrigin = false;
+        let pathname = "";
+        try {
+          const responseUrl = new URL(response.url());
+          sameOrigin = Boolean(target.baseUrl) && responseUrl.origin === new URL(target.baseUrl).origin;
+          pathname = responseUrl.pathname;
+        } catch {
+          sameOrigin = false;
+        }
+        const item = {
+          route,
+          method: request.method(),
+          status: response.status(),
+          resourceType: request.resourceType(),
+          sameOrigin,
+          url: cleanUrl(response.url()),
+        };
+        const candidateApiPrefix = CANDIDATE_API_PREFIXES[target.service];
+        if ((sameOrigin && candidateApiPrefix && pathname.startsWith(candidateApiPrefix))
+          || ["document", "script", "stylesheet"].includes(request.resourceType())) requestFailures.push(item);
         else nonBlockingHttpErrors.push(item);
       });
       const startedAt = Date.now();
@@ -622,7 +704,7 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
     await context.close();
     await browser.close();
   }
-  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors };
+  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors, benignNavigationAborts };
 }
 
 function runtimeIdentity(bundle, service) {
@@ -878,6 +960,7 @@ async function main() {
     consoleErrors: browserReport.consoleErrors,
     requestFailures: browserReport.requestFailures,
     nonBlockingHttpErrors: browserReport.nonBlockingHttpErrors,
+    benignNavigationAborts: browserReport.benignNavigationAborts,
     databaseFixture: {
       localOnly: true,
       requestCount: databaseFixture.requests.length,

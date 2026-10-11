@@ -1073,11 +1073,19 @@ assert.match(browserAcceptanceRunner, /"\/workspace": Object\.freeze\(\{[\s\S]*s
 assert.match(browserAcceptanceRunner, /runBrowserAcceptance\(\{[\s\S]*web: `http:\/\/127\.0\.0\.1:\$\{ports\.web\}`[\s\S]*voice: ports\.voice/u,
   "browser acceptance must provide both immutable candidate origins to the route sweep");
 assert.match(browserAcceptanceRunner, /COZE_SUPABASE_URL = acceptance\.database\.url/u);
+assert.match(browserAcceptanceRunner, /PRODUCT_USAGE_POLICY_BASIS_CODE = "candidate-browser-acceptance"/u,
+  "browser acceptance must provide a non-production product-usage policy fixture");
+assert.match(browserAcceptanceRunner, /PRODUCT_USAGE_NOTICE_VERSION = "candidate-v1"/u,
+  "browser acceptance must provide a non-production product-usage notice fixture");
+assert.match(browserAcceptanceRunner, /BASE_URL = `http:\/\/127\.0\.0\.1:\$\{port\}`/u,
+  "browser acceptance must bind same-origin checks to the isolated Web candidate");
 assert.doesNotMatch(browserAcceptanceRunner, /process\.env\.(?:COZE_SUPABASE|COS_SECRET|SSH_)|https:\/\/[^"'`]*supabase/iu,
   "browser acceptance must never inherit production database, COS, or SSH credentials");
 const publishedBrandFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_published_platform_brand"';
+const memberPermissionFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_member_permission_snapshot"';
 const genericRpcFixtureMarker = 'url.pathname.startsWith("/rest/v1/rpc/")';
 const publishedBrandFixtureIndex = browserAcceptanceRunner.indexOf(publishedBrandFixtureMarker);
+const memberPermissionFixtureIndex = browserAcceptanceRunner.indexOf(memberPermissionFixtureMarker);
 const genericRpcFixtureIndex = browserAcceptanceRunner.indexOf(genericRpcFixtureMarker);
 assert.ok(
   publishedBrandFixtureIndex >= 0 && genericRpcFixtureIndex > publishedBrandFixtureIndex,
@@ -1088,6 +1096,38 @@ assert.match(
   /sendJson\(request, response, 200, null\)/u,
   "an empty isolated brand control plane must use the authoritative null RPC result",
 );
+assert.ok(
+  memberPermissionFixtureIndex >= 0 && genericRpcFixtureIndex > memberPermissionFixtureIndex,
+  "browser acceptance must handle the member-permission RPC before the generic RPC fixture",
+);
+const memberPermissionFixture = browserAcceptanceRunner.slice(memberPermissionFixtureIndex, genericRpcFixtureIndex);
+for (const marker of ['authority_status: "ready"', "integrity_valid: true"]) {
+  assert.ok(memberPermissionFixture.includes(marker), `member-permission RPC response missing: ${marker}`);
+}
+for (const marker of [
+  "feature_navigation_keys: CANDIDATE_FEATURE_NAVIGATION_KEYS",
+  "agent_navigation_keys: CANDIDATE_AGENT_NAVIGATION_KEYS",
+]) assert.ok(memberPermissionFixture.includes(marker), `member-permission RPC fixture binding missing: ${marker}`);
+assert.ok(browserAcceptanceRunner.includes(`const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
+  "marketplace", "toolbox", "storyboard_workbench", "image_workbench", "create",
+  "voice", "cover", "youcai", "commerce_agent",
+]);`), "member-permission feature fixture must contain the exact full product navigation set");
+assert.ok(browserAcceptanceRunner.includes(`const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
+  "bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用",
+]);`), "member-permission Agent fixture must contain the exact five stable navigation keys");
+assert.match(browserAcceptanceRunner, /web: "\/api\/"[\s\S]*voice: "\/voice-platform\/api\/"/u,
+  "browser acceptance must block API errors for both Web and Voice candidate base paths");
+assert.match(browserAcceptanceRunner, /sameOrigin && candidateApiPrefix && pathname\.startsWith\(candidateApiPrefix\)[\s\S]*requestFailures\.push\(item\)/u,
+  "same-origin candidate API errors must block browser acceptance");
+assert.match(browserAcceptanceRunner, /sameOrigin && item\.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"/u,
+  "browser acceptance may classify only narrow same-origin GET fetch aborts as benign navigation races");
+for (const marker of [
+  '"/admin|/admin/extraction-reconciliation"',
+  '"/demo/popup-styles|/"',
+  "BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)",
+]) assert.ok(browserAcceptanceRunner.includes(marker), `benign navigation abort allowlist missing: ${marker}`);
+assert.match(browserAcceptanceRunner, /benignNavigationAborts: browserReport\.benignNavigationAborts/u,
+  "benign navigation aborts must remain visible in the signed browser report");
 for (const marker of ["canonicalJson(expected)", 'item.kind === "directory"', "expectedFileCount", "observed.mode !== item.mode", "manifest.sourceVersion"]) {
   assert.ok(artifactDeployer.includes(marker), `artifact deployment v2 inventory/identity contract missing: ${marker}`);
 }
