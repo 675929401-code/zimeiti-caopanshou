@@ -1055,6 +1055,19 @@ assert.match(browserAcceptanceRunner, /startCandidateDatabaseFixture/u,
 assert.match(browserAcceptanceRunner, /COZE_SUPABASE_URL = acceptance\.database\.url/u);
 assert.doesNotMatch(browserAcceptanceRunner, /process\.env\.(?:COZE_SUPABASE|COS_SECRET|SSH_)|https:\/\/[^"'`]*supabase/iu,
   "browser acceptance must never inherit production database, COS, or SSH credentials");
+const publishedBrandFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_published_platform_brand"';
+const genericRpcFixtureMarker = 'url.pathname.startsWith("/rest/v1/rpc/")';
+const publishedBrandFixtureIndex = browserAcceptanceRunner.indexOf(publishedBrandFixtureMarker);
+const genericRpcFixtureIndex = browserAcceptanceRunner.indexOf(genericRpcFixtureMarker);
+assert.ok(
+  publishedBrandFixtureIndex >= 0 && genericRpcFixtureIndex > publishedBrandFixtureIndex,
+  "browser acceptance must handle the published-brand RPC before the generic RPC fixture",
+);
+assert.match(
+  browserAcceptanceRunner.slice(publishedBrandFixtureIndex, genericRpcFixtureIndex),
+  /sendJson\(request, response, 200, null\)/u,
+  "an empty isolated brand control plane must use the authoritative null RPC result",
+);
 for (const marker of ["canonicalJson(expected)", 'item.kind === "directory"', "expectedFileCount", "observed.mode !== item.mode", "manifest.sourceVersion"]) {
   assert.ok(artifactDeployer.includes(marker), `artifact deployment v2 inventory/identity contract missing: ${marker}`);
 }

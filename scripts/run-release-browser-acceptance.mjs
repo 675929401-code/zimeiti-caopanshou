@@ -166,6 +166,13 @@ async function startCandidateDatabaseFixture(port) {
       });
       return;
     }
+    if (url.pathname === "/rest/v1/rpc/read_published_platform_brand") {
+      // A null RPC result is the production contract for "no published brand".
+      // Returning the generic empty object would be interpreted as a corrupt
+      // published revision and make the root layout fail closed with HTTP 500.
+      sendJson(request, response, 200, null);
+      return;
+    }
     if (url.pathname.startsWith("/rest/v1/rpc/")) {
       sendJson(request, response, 200, {});
       return;
