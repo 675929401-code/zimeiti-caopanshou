@@ -258,6 +258,50 @@ async function startCandidateDatabaseFixture(port) {
       sendJson(request, response, 200, []);
       return;
     }
+    if (url.pathname === "/rest/v1/rpc/recover_llm_credit_reservations_atomic") {
+      if (requestMethod !== "POST") {
+        rejectMethod("POST");
+        return;
+      }
+      // The production function returns the number of stale holds released.
+      // The isolated candidate starts with no holds, so zero is authoritative.
+      sendJson(request, response, 200, 0);
+      return;
+    }
+    if (url.pathname === "/rest/v1/rpc/expire_video_submission_confirmations_atomic") {
+      if (requestMethod !== "POST") {
+        rejectMethod("POST");
+        return;
+      }
+      sendJson(request, response, 200, {
+        expired_count: 0,
+        protected_dispatch_count: 0,
+        task_ids: [],
+        charged_yuan: 0,
+      });
+      return;
+    }
+    if (url.pathname === "/rest/v1/rpc/append_admin_governance_audit") {
+      if (requestMethod !== "POST") {
+        rejectMethod("POST");
+        return;
+      }
+      // PostgREST serializes the UUID scalar returned by the production RPC.
+      sendJson(request, response, 200, "00000000-0000-4000-8000-000000000002");
+      return;
+    }
+    if (url.pathname === "/rest/v1/diagnostic_logs") {
+      if (requestMethod !== "POST") {
+        rejectMethod("POST");
+        return;
+      }
+      const row = {
+        id: "00000000-0000-4000-8000-000000000003",
+        created_at: "2026-01-01T00:00:00.000Z",
+      };
+      sendJson(request, response, 201, objectResponse ? row : [row], 1);
+      return;
+    }
     if (url.pathname === "/rest/v1/product_usage_events"
       || url.pathname === "/rest/v1/operation_flight_events") {
       if (requestMethod !== "POST") {
@@ -1154,6 +1198,8 @@ async function main() {
   const databaseMethodsAndPaths = [...new Set(databaseFixture.requests.map((entry) => `${entry.method} ${entry.path}`))]
     .sort((left, right) => left.localeCompare(right, "en"));
   const requiredIsolatedWrites = [
+    "POST /rest/v1/rpc/expire_video_submission_confirmations_atomic",
+    "POST /rest/v1/rpc/recover_llm_credit_reservations_atomic",
     "POST /rest/v1/operation_flight_events",
     "POST /rest/v1/product_usage_events",
   ];

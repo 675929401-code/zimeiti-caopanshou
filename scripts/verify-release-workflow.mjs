@@ -1115,11 +1115,19 @@ const publishedBrandFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_publish
 const memberPermissionFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_member_permission_snapshot"';
 const extractionHistoryFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_extraction_account_history"';
 const imagePublicationFixtureMarker = 'url.pathname === "/rest/v1/rpc/read_image_model_publication_state"';
+const creditRecoveryFixtureMarker = 'url.pathname === "/rest/v1/rpc/recover_llm_credit_reservations_atomic"';
+const videoExpiryFixtureMarker = 'url.pathname === "/rest/v1/rpc/expire_video_submission_confirmations_atomic"';
+const governanceAuditFixtureMarker = 'url.pathname === "/rest/v1/rpc/append_admin_governance_audit"';
+const diagnosticLogFixtureMarker = 'url.pathname === "/rest/v1/diagnostic_logs"';
 const genericRpcFixtureMarker = 'const rpcName = url.pathname.slice("/rest/v1/rpc/".length)';
 const publishedBrandFixtureIndex = browserAcceptanceRunner.indexOf(publishedBrandFixtureMarker);
 const memberPermissionFixtureIndex = browserAcceptanceRunner.indexOf(memberPermissionFixtureMarker);
 const extractionHistoryFixtureIndex = browserAcceptanceRunner.indexOf(extractionHistoryFixtureMarker);
 const imagePublicationFixtureIndex = browserAcceptanceRunner.indexOf(imagePublicationFixtureMarker);
+const creditRecoveryFixtureIndex = browserAcceptanceRunner.indexOf(creditRecoveryFixtureMarker);
+const videoExpiryFixtureIndex = browserAcceptanceRunner.indexOf(videoExpiryFixtureMarker);
+const governanceAuditFixtureIndex = browserAcceptanceRunner.indexOf(governanceAuditFixtureMarker);
+const diagnosticLogFixtureIndex = browserAcceptanceRunner.indexOf(diagnosticLogFixtureMarker);
 const genericRpcFixtureIndex = browserAcceptanceRunner.indexOf(genericRpcFixtureMarker);
 assert.ok(
   publishedBrandFixtureIndex >= 0 && genericRpcFixtureIndex > publishedBrandFixtureIndex,
@@ -1148,6 +1156,28 @@ assert.ok(extractionHistoryFixtureIndex >= 0 && imagePublicationFixtureIndex >= 
 assert.match(browserAcceptanceRunner.slice(extractionHistoryFixtureIndex, genericRpcFixtureIndex),
   /sendJson\(request, response, 200, \[\]\)/u,
   "array-valued candidate RPCs must return empty arrays rather than corrupt object placeholders");
+for (const [label, index] of [
+  ["credit recovery", creditRecoveryFixtureIndex],
+  ["video submission expiry", videoExpiryFixtureIndex],
+  ["governance audit", governanceAuditFixtureIndex],
+]) {
+  assert.ok(index >= 0 && index < genericRpcFixtureIndex,
+    `${label} RPC must have an explicit fixture before the fail-closed generic RPC handler`);
+}
+assert.ok(diagnosticLogFixtureIndex >= 0 && diagnosticLogFixtureIndex < genericRpcFixtureIndex,
+  "diagnostic-log insertion must have an explicit fixture before the fail-closed generic handlers");
+assert.match(browserAcceptanceRunner.slice(creditRecoveryFixtureIndex, videoExpiryFixtureIndex),
+  /sendJson\(request, response, 200, 0\)/u,
+  "credit recovery fixture must use the production integer return contract");
+assert.match(browserAcceptanceRunner.slice(videoExpiryFixtureIndex, governanceAuditFixtureIndex),
+  /expired_count: 0[\s\S]*protected_dispatch_count: 0[\s\S]*task_ids: \[\][\s\S]*charged_yuan: 0/u,
+  "video expiry fixture must use the production JSON return contract");
+assert.match(browserAcceptanceRunner.slice(governanceAuditFixtureIndex, diagnosticLogFixtureIndex),
+  /sendJson\(request, response, 200, "00000000-0000-4000-8000-000000000002"\)/u,
+  "governance audit fixture must use the production UUID scalar return contract");
+assert.match(browserAcceptanceRunner.slice(diagnosticLogFixtureIndex, genericRpcFixtureIndex),
+  /sendJson\(request, response, 201, objectResponse \? row : \[row\], 1\)/u,
+  "diagnostic-log fixture must satisfy PostgREST insert-select-single semantics");
 assert.ok(browserAcceptanceRunner.includes(`const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
   "marketplace", "toolbox", "storyboard_workbench", "image_workbench", "create",
   "voice", "cover", "youcai", "commerce_agent",
@@ -1239,6 +1269,8 @@ for (const marker of [
   'url.pathname === "/rest/v1/operation_flight_events"',
   '"POST /rest/v1/operation_flight_events"',
   '"POST /rest/v1/product_usage_events"',
+  '"POST /rest/v1/rpc/expire_video_submission_confirmations_atomic"',
+  '"POST /rest/v1/rpc/recover_llm_credit_reservations_atomic"',
   "missingRequiredIsolatedWrites",
   "methodsAndPaths: databaseMethodsAndPaths",
 ]) assert.ok(browserAcceptanceRunner.includes(marker), `isolated telemetry persistence evidence missing: ${marker}`);
