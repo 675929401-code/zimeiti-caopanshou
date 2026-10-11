@@ -16,6 +16,14 @@ const BROWSER_VALIDATIONS = Object.freeze([
 ]);
 const CHECKLIST_VALIDATION = "full-desktop-release-checklist";
 const VIEWPORT = Object.freeze({ width: 1440, height: 900 });
+// The release scope is shared by the Web and Voice candidates. Keep the
+// user-visible route identity in the signed evidence, while opening each route
+// on the service that actually owns it. Retired bookmarks are accepted only
+// when they land on their reviewed canonical destination.
+const BROWSER_ROUTE_TARGETS = Object.freeze({
+  "/extract": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
+  "/workspace": Object.freeze({ service: "voice", expectedRoute: "/workspace" }),
+});
 const CANDIDATE_ADMIN_PERMISSIONS = Object.freeze([
   "admin.accounts.manage", "members.view", "member_content.view", "members.manage", "members.delete",
   "member_permissions.manage", "invitations.manage", "packages.manage", "cards.manage", "billing.view",
@@ -491,18 +499,30 @@ function cleanUrl(raw) {
   }
 }
 
-async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken, authUser) {
+function resolveBrowserRouteTarget(route, serviceOrigins) {
+  const reviewed = BROWSER_ROUTE_TARGETS[route] || { service: "web", expectedRoute: route };
+  const baseUrl = serviceOrigins[reviewed.service];
+  return {
+    service: reviewed.service,
+    baseUrl,
+    navigationUrl: baseUrl ? new URL(route, baseUrl) : null,
+    expectedUrl: baseUrl ? new URL(reviewed.expectedRoute, baseUrl) : null,
+  };
+}
+
+async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, authToken, authUser) {
   const browser = await chromium.launch({ headless: true, args: ["--disable-dev-shm-usage"] });
   const context = await browser.newContext({ viewport: VIEWPORT, serviceWorkers: "block", reducedMotion: "reduce" });
-  await context.addCookies([{
+  const cookieOrigins = [...new Set(Object.values(serviceOrigins).filter(Boolean))];
+  await context.addCookies(cookieOrigins.map((url) => ({
     name: "auth_token",
     value: authToken,
-    url: baseUrl,
+    url,
     httpOnly: true,
     secure: false,
     sameSite: "Lax",
     expires: Math.floor(Date.now() / 1000) + 60 * 60,
-  }]);
+  })));
   await context.addInitScript(({ token, user }) => {
     window.localStorage.setItem("auth_token", token);
     window.localStorage.setItem("auth_user", JSON.stringify(user));
@@ -516,9 +536,11 @@ async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken, 
   try {
     for (const [index, route] of routes.entries()) {
       const page = await context.newPage();
+      const target = resolveBrowserRouteTarget(route, serviceOrigins);
       const routeFailures = [];
       let responseStatus = null;
       let finalPath = "";
+      let finalSearch = "";
       let title = "";
       let bodyText = "";
       let screenshot = "";
@@ -537,17 +559,20 @@ async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken, 
       });
       const startedAt = Date.now();
       try {
-        const response = await page.goto(new URL(route, baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+        if (!target.navigationUrl || !target.expectedUrl) {
+          fail("BROWSER_ROUTE_SERVICE_UNAVAILABLE", `${route}:${target.service}`);
+        }
+        const response = await page.goto(target.navigationUrl.toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
         responseStatus = response?.status() ?? null;
         await page.waitForTimeout(1_500);
         const finalUrl = new URL(page.url());
-        const expectedUrl = new URL(route, baseUrl);
         finalPath = finalUrl.pathname;
+        finalSearch = finalUrl.search;
         if (!response || responseStatus >= 400) {
           routeFailures.push({ code: "BROWSER_DOCUMENT_HTTP_FAILED", detail: `${route}:${responseStatus ?? "no-response"}` });
         }
-        if (finalPath !== expectedUrl.pathname) {
-          routeFailures.push({ code: "BROWSER_ROUTE_REDIRECTED", detail: `${route}:${finalPath}` });
+        if (finalPath !== target.expectedUrl.pathname || finalSearch !== target.expectedUrl.search) {
+          routeFailures.push({ code: "BROWSER_ROUTE_REDIRECTED", detail: `${route}:${finalPath}${finalSearch}` });
         }
         const body = page.locator("body");
         await body.waitFor({ state: "visible" });
@@ -575,7 +600,9 @@ async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken, 
       blockingFailures.push(...routeFailures.map((failure) => ({ route, ...failure })));
       results.push({
         route,
+        service: target.service,
         finalPath,
+        finalSearch,
         status: responseStatus,
         title,
         visibleTextCharacters: bodyText.length,
@@ -825,7 +852,10 @@ async function main() {
       const readinessPath = extracted[service].manifest.readinessPath;
       runtimeReadbacks[service] = await waitForReadiness(`http://127.0.0.1:${ports[service]}${readinessPath}`, extracted[service].manifest, service);
     }
-    browserReport = await runBrowserAcceptance(`http://127.0.0.1:${ports.web}`, routes, screenshotRoot, authToken, authUser);
+    browserReport = await runBrowserAcceptance({
+      web: `http://127.0.0.1:${ports.web}`,
+      voice: ports.voice ? `http://127.0.0.1:${ports.voice}` : null,
+    }, routes, screenshotRoot, authToken, authUser);
   } finally {
     await Promise.all(Object.values(processes).map((entry) => stopChild(entry.child)));
     await stopFixtureServer(databaseFixture?.server);

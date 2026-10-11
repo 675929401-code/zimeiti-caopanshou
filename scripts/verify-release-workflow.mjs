@@ -1064,6 +1064,12 @@ assert.match(browserAcceptanceRunner, /context\.addInitScript[\s\S]*localStorage
   "browser acceptance must seed the same client-side authenticated state used by protected pages");
 assert.match(browserAcceptanceRunner, /blockingFailures\.push[\s\S]*BROWSER_ROUTE_FAILURES/u,
   "browser acceptance must sweep all required routes and report their blocking failures together");
+assert.match(browserAcceptanceRunner, /"\/extract": Object\.freeze\(\{ service: "web", expectedRoute: "\/tools\?tab=text" \}\)/u,
+  "browser acceptance must validate the retired extract bookmark against its reviewed toolbox destination");
+assert.match(browserAcceptanceRunner, /"\/workspace": Object\.freeze\(\{ service: "voice", expectedRoute: "\/workspace" \}\)/u,
+  "browser acceptance must open the Voice workspace on the Voice candidate rather than the Web candidate");
+assert.match(browserAcceptanceRunner, /runBrowserAcceptance\(\{[\s\S]*web: `http:\/\/127\.0\.0\.1:\$\{ports\.web\}`[\s\S]*voice: ports\.voice/u,
+  "browser acceptance must provide both immutable candidate origins to the route sweep");
 assert.match(browserAcceptanceRunner, /COZE_SUPABASE_URL = acceptance\.database\.url/u);
 assert.doesNotMatch(browserAcceptanceRunner, /process\.env\.(?:COZE_SUPABASE|COS_SECRET|SSH_)|https:\/\/[^"'`]*supabase/iu,
   "browser acceptance must never inherit production database, COS, or SSH credentials");
