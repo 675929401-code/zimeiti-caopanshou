@@ -1267,13 +1267,19 @@ for (const marker of [
 for (const marker of [
   'url.pathname === "/rest/v1/product_usage_events"',
   'url.pathname === "/rest/v1/operation_flight_events"',
-  '"POST /rest/v1/operation_flight_events"',
   '"POST /rest/v1/product_usage_events"',
   '"POST /rest/v1/rpc/expire_video_submission_confirmations_atomic"',
   '"POST /rest/v1/rpc/recover_llm_credit_reservations_atomic"',
   "missingRequiredIsolatedWrites",
   "methodsAndPaths: databaseMethodsAndPaths",
 ]) assert.ok(browserAcceptanceRunner.includes(marker), `isolated telemetry persistence evidence missing: ${marker}`);
+const requiredIsolatedWritesSource = browserAcceptanceRunner.slice(
+  browserAcceptanceRunner.indexOf("const requiredIsolatedWrites = ["),
+  browserAcceptanceRunner.indexOf("const missingRequiredIsolatedWrites ="),
+);
+assert.ok(requiredIsolatedWritesSource.length > 0, "required isolated writes must be inspectable");
+assert.doesNotMatch(requiredIsolatedWritesSource, /operation_flight_events/u,
+  "a clean route sweep must not manufacture a failure flight merely to satisfy acceptance");
 assert.match(browserAcceptanceRunner, /isReadOnlyTableRequest = requestMethod === "GET" \|\| requestMethod === "HEAD"/u,
   "generic table fixtures must be read-only");
 assert.match(browserAcceptanceRunner, /url\.pathname\.startsWith\("\/rest\/v1\/"\)[\s\S]*if \(!isReadOnlyTableRequest\)[\s\S]*rejectMethod\("GET, HEAD"\)/u,

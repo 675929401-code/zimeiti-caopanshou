@@ -1200,7 +1200,6 @@ async function main() {
   const requiredIsolatedWrites = [
     "POST /rest/v1/rpc/expire_video_submission_confirmations_atomic",
     "POST /rest/v1/rpc/recover_llm_credit_reservations_atomic",
-    "POST /rest/v1/operation_flight_events",
     "POST /rest/v1/product_usage_events",
   ];
   const missingRequiredIsolatedWrites = requiredIsolatedWrites.filter((entry) => !databaseMethodsAndPaths.includes(entry));
