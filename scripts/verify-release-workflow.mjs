@@ -63,6 +63,10 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(browserAcceptanceWorkflow, /test "\$\(jq -r \.head_sha <<<"\$candidate"\)" = "\$GITHUB_SHA"/u);
   assert.match(browserAcceptanceWorkflow, /name: release-candidate-\$\{\{ github\.sha \}\}/u);
   assert.match(browserAcceptanceWorkflow, /run-id: \$\{\{ inputs\.candidate_run_id \}\}/u);
+  assert.doesNotMatch(browserAcceptanceWorkflow, /^\s{6}(?:PLAYWRIGHT_BROWSERS_PATH|DATA_IMAGE):[^\n]*\$\{\{ runner\.temp \}\}/mu,
+    "runner context is unavailable while job-level env is evaluated");
+  assert.match(browserAcceptanceWorkflow, /Resolve runner-scoped temporary paths[\s\S]*PLAYWRIGHT_BROWSERS_PATH=\$RUNNER_TEMP\/ms-playwright[\s\S]*DATA_IMAGE=\$RUNNER_TEMP\/release-browser-acceptance-data-/u,
+    "runner-scoped paths must be exported only after the runner starts");
   assert.match(browserAcceptanceWorkflow, /playwright install --with-deps chromium/u);
   assert.match(browserAcceptanceWorkflow, /stat -c '%d' \/data/u);
   assert.match(browserAcceptanceWorkflow, /run-release-browser-acceptance\.mjs/u);

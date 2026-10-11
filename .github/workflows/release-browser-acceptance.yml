@@ -22,17 +22,21 @@ jobs:
     timeout-minutes: 75
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
       CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
       ACCEPTANCE_OUTPUT: ${{ github.workspace }}/.release-external-acceptance
       ACCEPTANCE_WORK_ROOT: /data/release-browser-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
-      DATA_IMAGE: ${{ runner.temp }}/release-browser-acceptance-data-${{ github.run_id }}-${{ github.run_attempt }}.ext4
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ github.sha }}
+
+      - name: Resolve runner-scoped temporary paths
+        run: |
+          set -euo pipefail
+          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright" >> "$GITHUB_ENV"
+          echo "DATA_IMAGE=$RUNNER_TEMP/release-browser-acceptance-data-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.ext4" >> "$GITHUB_ENV"
 
       - name: Verify exact candidate run provenance
         env:
