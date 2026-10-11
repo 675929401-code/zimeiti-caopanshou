@@ -718,9 +718,20 @@ async function main() {
   const schemaDatabase = createSchemaDatabase(checkoutRoot, workRoot);
   const states = {};
   for (const service of bundle.subject.services) states[service] = prepareState(workRoot, checkoutRoot, schemaDatabase, service);
-  const basePort = Number(args.get("--base-port") || 15100);
-  if (!Number.isInteger(basePort) || basePort < 1024 || basePort > 64000) fail("BASE_PORT_INVALID");
-  const ports = { web: basePort, voice: basePort + 1, database: basePort + 2 };
+  const fixturePort = Number(args.get("--fixture-port") || 15100);
+  if (!Number.isInteger(fixturePort) || fixturePort < 1024 || fixturePort > 64000) fail("FIXTURE_PORT_INVALID");
+  const ports = {
+    web: Number(extracted.web.manifest.port),
+    voice: extracted.voice ? Number(extracted.voice.manifest.port) : null,
+    database: fixturePort,
+  };
+  const activePorts = [
+    ports.web,
+    ports.database,
+    ...(bundle.subject.services.includes("voice") ? [ports.voice] : []),
+  ];
+  if (activePorts.some((port) => !Number.isInteger(port) || port < 1024 || port > 65535)
+    || new Set(activePorts).size !== activePorts.length) fail("CANDIDATE_PORT_CONTRACT_INVALID");
   const processes = {};
   const jwtSecret = crypto.randomBytes(48).toString("hex");
   let databaseFixture;
