@@ -1430,12 +1430,17 @@ const systemdStorageDropinSha256 = crypto.createHash("sha256").update(systemdSto
 for (const marker of [
   "RUNTIME_SAFETY_EXECUTION_APPROVED",
   'CANDIDATE_USER="zimeiti-candidate"',
+  "stat -c '%u:%g:%a:%h'",
   "systemctl daemon-reload",
   "PM2_ACTIONS=0",
   "missing-disk and wrong-disk boot drills",
   "prepare-candidate-readiness-fixtures.py",
   '"$FIXTURE_TARGET" --self-test',
 ]) assert.ok(runtimeSafetyProvisioner.includes(marker), `runtime-safety provisioner gate missing: ${marker}`);
+assert.ok(
+  !runtimeSafetyProvisioner.includes('&& "$kind" == "regular file"'),
+  "runtime-safety provisioner must not rely on stat's locale/version-specific regular-file description",
+);
 assert.ok(
   runtimeSafetyProvisioner.includes(`GUARD_SHA256="${storageGuardSha256}"`),
   "runtime-safety provisioner is not pinned to the reviewed storage guard bytes",

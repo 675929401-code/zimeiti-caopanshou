@@ -141,11 +141,11 @@ require_root_directory() {
 }
 
 require_root_file() {
-  local path="$1" label="$2" expected_mode="${3:-}" metadata uid gid mode links kind
+  local path="$1" label="$2" expected_mode="${3:-}" metadata uid gid mode links
   [[ -f "$path" && ! -L "$path" ]] || die "$label must be a real non-symlink regular file: $path"
-  metadata="$(stat -c '%u:%g:%a:%h:%F' -- "$path" 2>/dev/null)" || die "cannot stat $label: $path"
-  IFS=: read -r uid gid mode links kind <<<"$metadata"
-  [[ "$uid" == "0" && "$gid" == "0" && "$kind" == "regular file" && "$links" == "1" ]] || \
+  metadata="$(stat -c '%u:%g:%a:%h' -- "$path" 2>/dev/null)" || die "cannot stat $label: $path"
+  IFS=: read -r uid gid mode links <<<"$metadata"
+  [[ "$uid" == "0" && "$gid" == "0" && "$links" == "1" ]] || \
     die "$label must be a single-link root:root regular file: $path"
   ! mode_has_forbidden_write_or_special_bits "$mode" || \
     die "$label has group/other write or special permission bits: $path mode=$mode"
