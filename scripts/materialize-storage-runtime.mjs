@@ -93,7 +93,18 @@ export function materializeRuntimePackages(sourceRoot, artifactRoot, names) {
   for (const name of names) {
     visit(name, resolvePackage(name, sourceRoot), path.join(outputRoot, "node_modules", name), new Map());
   }
-  return { packageCopies: packages.length, packages, omittedPackageDocumentation };
+  let prismaGeneratedClient = null;
+  if (names.includes("@prisma/client")) {
+    const prismaPackageRoot = resolvePackage("@prisma/client", sourceRoot);
+    const generatedRoot = fs.realpathSync(path.join(path.dirname(path.dirname(prismaPackageRoot)), ".prisma", "client"));
+    const destinationRoot = path.join(outputRoot, "node_modules", ".prisma", "client");
+    copyContents(generatedRoot, destinationRoot, generatedRoot);
+    for (const required of ["default.js", "index.js", "package.json", "schema.prisma"]) {
+      if (!fs.existsSync(path.join(destinationRoot, required))) throw new Error(`Generated Prisma client is missing ${required}`);
+    }
+    prismaGeneratedClient = { materialized: true };
+  }
+  return { packageCopies: packages.length, packages, omittedPackageDocumentation, prismaGeneratedClient };
 }
 
 export function materializeStorageRuntime(sourceRoot, artifactRoot) {
@@ -122,12 +133,17 @@ export function materializeTracedRuntime(sourceRoot, standaloneRoot, artifactRoo
     }
   }
   const result = materializeRuntimePackages(sourceRoot, artifactRoot, [...names].sort());
-  verifyStorageRuntime(artifactRoot, { web: true, storage, database: names.has("pg") });
+  verifyStorageRuntime(artifactRoot, {
+    web: true,
+    storage,
+    database: names.has("pg"),
+    prisma: result.prismaGeneratedClient !== null,
+  });
   return { ...result, roots: [...names].sort() };
 }
 
 /** Resolving a dependency outside the artifact must fail, even on the builder. */
-export function verifyStorageRuntime(artifactRoot, { web = false, storage = true, database = false } = {}) {
+export function verifyStorageRuntime(artifactRoot, { web = false, storage = true, database = false, prisma = false } = {}) {
   const probe = `
     const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
     const root = fs.realpathSync(process.cwd());
@@ -153,6 +169,10 @@ export function verifyStorageRuntime(artifactRoot, { web = false, storage = true
       const pg = scoped('pg');
       if (typeof pg.Pool !== 'function' || typeof pg.Client !== 'function') throw new Error('PG_RUNTIME_INVALID');
       if (pg.types.getTypeParser(23)('42') !== 42) throw new Error('PG_TYPES_RUNTIME_INVALID');
+    }
+    if (${JSON.stringify(prisma)}) {
+      const generated = scoped('@prisma/client');
+      if (typeof generated.PrismaClient !== 'function') throw new Error('PRISMA_RUNTIME_INVALID');
     }
     if (${JSON.stringify(storage)}) {
       const COS = scoped('cos-nodejs-sdk-v5');

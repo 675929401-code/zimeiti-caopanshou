@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "545b5b7f7be0d180aaa86b8e790f67c9ea4f6fdf92613d4d15a66a66ff37256d",
+  "sourceFingerprint": "1bf8096e56c51041300656ca3ff053a5de7a7860a670c8d98a34dbb2b823f43b",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4178,
-  "totalBytes": 66741554,
+  "totalBytes": 66744451,
   "files": [
     {
       "path": ".cnb.yml",
@@ -3338,8 +3338,8 @@
     },
     {
       "path": "scripts/materialize-storage-runtime.mjs",
-      "bytes": 8437,
-      "sha256": "7887f0bdccdfaf7df69d963e547247c9cdf758fe36260b53183788ef9f7d31fe"
+      "bytes": 9446,
+      "sha256": "18344df02faf1c0f58243c44f5a19e768b9872c5328cc9485487ed372a3af686"
     },
     {
       "path": "scripts/migrate-agent-navigation-permissions.ts",
@@ -8573,8 +8573,8 @@
     },
     {
       "path": "scripts/verify-storage-runtime-package.mjs",
-      "bytes": 6667,
-      "sha256": "775d94a982c04d0f4f3c8e2f0c8051cd738f600bf07a6ba615ca9c11ead66140"
+      "bytes": 8555,
+      "sha256": "56a72489fff28bcda09a8fb59bdf07ab069ac330030796fdb6c1839850736f3f"
     },
     {
       "path": "scripts/verify-story-director-overtime-gate-live.mjs",
