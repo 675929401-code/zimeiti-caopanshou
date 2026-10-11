@@ -12,6 +12,7 @@ const read = (relativePath) => fs.readFileSync(path.join(root, ...relativePath.s
 const policy = JSON.parse(read("deploy/policies/release-policy.json"));
 const releaseWorkflowSource = read("scripts/release-workflow.mjs");
 const ciWorkflow = read(".github/workflows/release-vnext.yml");
+const browserAcceptanceWorkflow = read(".github/workflows/release-browser-acceptance.yml");
 
 function verifyReleaseVnextWorkflowContract() {
   assert.match(ciWorkflow, /node-version:\s*"24\.19\.0"/u);
@@ -55,6 +56,21 @@ function verifyReleaseVnextWorkflowContract() {
   const finalizeSection = ciWorkflow.slice(ciWorkflow.indexOf("Validate candidate and browser-evidence run provenance"));
   assert.doesNotMatch(finalizeSection, /pnpm (?:install|run "?release:vnext:build)|compute-release-build-output-digest\.mjs/u,
     "fresh finalize must not install dependencies, rebuild, or regenerate output digests");
+
+  assert.match(browserAcceptanceWorkflow, /^name: Release browser acceptance evidence$/mu);
+  assert.match(browserAcceptanceWorkflow, /^\s+workflow_dispatch:/mu);
+  assert.match(browserAcceptanceWorkflow, /^\s+candidate_run_id:/mu);
+  assert.match(browserAcceptanceWorkflow, /test "\$\(jq -r \.head_sha <<<"\$candidate"\)" = "\$GITHUB_SHA"/u);
+  assert.match(browserAcceptanceWorkflow, /name: release-candidate-\$\{\{ github\.sha \}\}/u);
+  assert.match(browserAcceptanceWorkflow, /run-id: \$\{\{ inputs\.candidate_run_id \}\}/u);
+  assert.match(browserAcceptanceWorkflow, /playwright install --with-deps chromium/u);
+  assert.match(browserAcceptanceWorkflow, /stat -c '%d' \/data/u);
+  assert.match(browserAcceptanceWorkflow, /run-release-browser-acceptance\.mjs/u);
+  assert.match(browserAcceptanceWorkflow, /RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY: \$\{\{ secrets\.RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY \}\}/u);
+  assert.match(browserAcceptanceWorkflow, /release-change-validation-gate\.mjs verify-release-ready/u);
+  assert.match(browserAcceptanceWorkflow, /name: release-browser-acceptance-\$\{\{ github\.sha \}\}/u);
+  assert.doesNotMatch(browserAcceptanceWorkflow, /\b(?:ssh|scp|rsync)\b|deploy-artifact-vnext|production\.env|DEPLOY_EXECUTION_APPROVED/u,
+    "browser acceptance must remain an isolated build-only workflow and never connect to production");
 }
 
 verifyReleaseVnextWorkflowContract();
@@ -751,6 +767,8 @@ for (const marker of [
   "buildEnvironment",
   "assetDigest",
   "sourceManifestSha256",
+  "sourceVersion: buildOutputDigestReceipt.sourceVersion",
+  "buildOutputDigest: buildOutputDigestReceipt.outputDigest",
   "standaloneCopyFilter",
   "source-public-allowlist-only",
   "publicSourceBoundary",
@@ -824,6 +842,8 @@ assert.match(releaseReadiness, /production database contract is not ready/u);
 assert.match(releaseReadiness, /probeProductionReferenceDataReadiness/u);
 assert.match(releaseReadiness, /production reference data is not ready/u);
 assert.match(releaseReadiness, /EXPECTED_BUILD_ID/u);
+assert.match(releaseReadiness, /RELEASE_SOURCE_VERSION/u);
+assert.match(releaseReadiness, /RELEASE_BUILD_OUTPUT_DIGEST/u);
 assert.match(releaseReadiness, /requireDedicatedDataMount/u);
 assert.match(releaseReadiness, /dataStats\.dev === rootStats\.dev/u);
 assert.match(releaseReadiness, /production runtime path escaped \/data/u);
@@ -866,6 +886,8 @@ for (const pattern of [
 ]) assert.doesNotMatch(avatarRoute, pattern, "avatar runtime mounts must be excluded from Turbopack file tracing");
 const voiceReleaseReadiness = read("voice-platform/src/app/api/release-readiness/route.ts");
 assert.match(voiceReleaseReadiness, /EXPECTED_BUILD_ID/u);
+assert.match(voiceReleaseReadiness, /RELEASE_SOURCE_VERSION/u);
+assert.match(voiceReleaseReadiness, /RELEASE_BUILD_OUTPUT_DIGEST/u);
 assert.match(voiceReleaseReadiness, /must equal DEPLOY_COMMIT_SHA/u);
 assert.doesNotMatch(voiceReleaseReadiness, /process\.cwd\(\)[\s\S]{0,80}BUILD_ID/u, "Voice readiness must not make Next trace the source root");
 const referenceDataReadiness = read("src/lib/production-reference-data-readiness.ts");
@@ -988,16 +1010,39 @@ for (const productionSource of [
   assert.doesNotMatch(read(productionSource), /\/(?:storyboard-reviews|demo-assets)\//u, `${productionSource} references public evidence`);
 }
 const pm2 = read("deploy/pm2/ecosystem.vnext.config.cjs");
-for (const marker of ["APP_DATA_DIR", "APP_RUNTIME_DIR", "COMMERCE_DATA_DIR", "COMMERCE_DISCOVERY_CATALOG", "COMMERCE_GATEWAY_KEY_FILE", "BACKUP_DIR", "PUBLIC_ASSET_ROOT", "VOICE_REFERENCE_AUDIO_DIR", "EXPECTED_BUILD_ID", "COZE_PROJECT_ENV", "RELEASE_READINESS_PROFILE", "production-full-v1"]) {
+for (const marker of ["APP_DATA_DIR", "APP_RUNTIME_DIR", "COMMERCE_DATA_DIR", "COMMERCE_DISCOVERY_CATALOG", "COMMERCE_GATEWAY_KEY_FILE", "BACKUP_DIR", "PUBLIC_ASSET_ROOT", "VOICE_REFERENCE_AUDIO_DIR", "EXPECTED_BUILD_ID", "RELEASE_SOURCE_VERSION", "RELEASE_BUILD_OUTPUT_DIGEST", "COZE_PROJECT_ENV", "RELEASE_READINESS_PROFILE", "production-full-v1"]) {
   assert.ok(pm2.includes(marker), `PM2 release contract missing: ${marker}`);
 }
 const artifactDeployer = read("scripts/deploy-artifact-vnext.sh");
+const browserAcceptanceRunner = read("scripts/run-release-browser-acceptance.mjs");
 const standaloneAssetPreparer = read("scripts/prepare-next-standalone-assets.mjs");
 for (const marker of ["materializeVoiceReleaseIdentity", 'path.join(root, "public", "version.json")', "sourceVersion"]) {
   assert.ok(standaloneAssetPreparer.includes(marker), `Voice release identity materialization gate missing: ${marker}`);
 }
-for (const marker of ["EXPECTED_BUILD_ID=$BUILD_ID", "active_build_id", "env.EXPECTED_BUILD_ID !== buildId", "\"$PREVIOUS_BUILD_ID\""]) {
+for (const marker of ["EXPECTED_BUILD_ID=$BUILD_ID", "RELEASE_SOURCE_VERSION=$SOURCE_VERSION", "RELEASE_BUILD_OUTPUT_DIGEST=$BUILD_OUTPUT_DIGEST", "active_build_id", "env.EXPECTED_BUILD_ID !== buildId", "env.RELEASE_SOURCE_VERSION !== sourceVersion", "env.RELEASE_BUILD_OUTPUT_DIGEST !== buildOutputDigest", "\"$PREVIOUS_BUILD_ID\"", "\"$PREVIOUS_SOURCE_VERSION\"", "\"$PREVIOUS_BUILD_OUTPUT_DIGEST\""]) {
   assert.ok(artifactDeployer.includes(marker), `artifact deployment build-identity gate missing: ${marker}`);
+}
+for (const marker of [
+  "CANDIDATE_PAYLOAD_INVENTORY_MISMATCH",
+  "DEDICATED_DATA_MOUNT_REQUIRED",
+  "candidate-runtime-v1",
+  "desktop-precise-route-visual-1440x900",
+  "desktop-two-adjacent-pages-visual",
+  "console-and-request-errors",
+  "full-desktop-release-checklist",
+  "BROWSER_SIGNING_KEY_NOT_TRUSTED",
+  "crypto.sign(null",
+  "playwright",
+  "1440",
+  "900",
+]) assert.ok(browserAcceptanceRunner.includes(marker), `browser acceptance runner contract missing: ${marker}`);
+assert.match(browserAcceptanceRunner, /startCandidateDatabaseFixture/u,
+  "browser acceptance must use an isolated local database fixture for authenticated routes");
+assert.match(browserAcceptanceRunner, /COZE_SUPABASE_URL = acceptance\.database\.url/u);
+assert.doesNotMatch(browserAcceptanceRunner, /process\.env\.(?:COZE_SUPABASE|COS_SECRET|SSH_)|https:\/\/[^"'`]*supabase/iu,
+  "browser acceptance must never inherit production database, COS, or SSH credentials");
+for (const marker of ["canonicalJson(expected)", 'item.kind === "directory"', "expectedFileCount", "observed.mode !== item.mode", "manifest.sourceVersion"]) {
+  assert.ok(artifactDeployer.includes(marker), `artifact deployment v2 inventory/identity contract missing: ${marker}`);
 }
 for (const marker of [
   "verify_exact_active_composite",
@@ -1197,6 +1242,7 @@ for (const script of [
   "scripts/verify-public-asset-release.mjs",
   "scripts/publish-public-assets-cos-vnext.mjs",
   "scripts/materialize-public-asset-release-vnext.mjs",
+  "scripts/run-release-browser-acceptance.mjs",
 ]) {
   const checked = spawnSync(process.execPath, ["--check", path.join(root, script)], { encoding: "utf8" });
   assert.equal(checked.status, 0, `${script} syntax failed: ${checked.stderr || checked.stdout}`);

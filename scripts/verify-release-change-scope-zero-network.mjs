@@ -17,6 +17,8 @@ const targetedRunnerPath = path.join(root, "scripts", "run-release-targeted-regr
 const secretScannerPath = path.join(root, "scripts", "verify-release-secret-exposure.mjs");
 const validationSchemaPath = path.join(root, "scripts", "contracts", "release-change-validation-bundle.v1.schema.json");
 const workflowPath = path.join(root, ".github", "workflows", "release-vnext.yml");
+const browserAcceptanceWorkflowPath = path.join(root, ".github", "workflows", "release-browser-acceptance.yml");
+const browserAcceptanceRunnerPath = path.join(root, "scripts", "run-release-browser-acceptance.mjs");
 const buildOutputDigestPath = path.join(root, "scripts", "compute-release-build-output-digest.mjs");
 const packagerPath = path.join(root, "scripts", "package-standalone-artifact.mjs");
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "release-change-scope-"));
@@ -125,6 +127,7 @@ function bindFixtureCandidatePayload(bundlePath, service, directory, label) {
     service,
     commitSha: bundle.subject.commit,
     buildId: bundle.subject.builds[service],
+    sourceVersion: bundle.subject.sourceVersion,
     buildOutputDigest: bundle.subject.buildOutputDigests[service],
     releaseId: `${label}-${service}-release`,
     artifactDigest: sha256(`fixture-artifact:${label}:${service}`),
@@ -1151,6 +1154,13 @@ try {
   assert.deepEqual(artifactLinkPaths, [], "materialized artifact directory must not contain symbolic links or junctions");
   const candidateArchiveListing = run("tar", ["-tzf", candidateArchivePath]).stdout.split(/\r?\n/u).filter(Boolean);
   assert.equal(candidateArchiveListing.some((entry) => entry.toLowerCase().endsWith(".map")), false, "artifact tar must not contain source maps");
+  const sourceVersionTamperManifestPath = path.join(temporaryRoot, "candidate-source-version-tamper-manifest.json");
+  fs.writeFileSync(sourceVersionTamperManifestPath, `${JSON.stringify({ ...candidateArtifactManifest, sourceVersion: "RTEST-TAMPERED" }, null, 2)}\n`, "utf8");
+  assert.match(
+    runFailure(process.execPath, [validationGatePath, "bind-package-payload", "--root", packageCandidateRoot, "--bundle", authoritativePackageBundlePath, "--service", "web", "--manifest", sourceVersionTamperManifestPath, "--archive", candidateArchivePath]).stderr,
+    /CANDIDATE_PAYLOAD_BUILD_IDENTITY_MISMATCH/u,
+    "candidate payload sourceVersion must remain bound to the accepted build identity",
+  );
   run(process.execPath, [validationGatePath, "bind-package-payload", "--root", packageCandidateRoot, "--bundle", authoritativePackageBundlePath, "--service", "web", "--manifest", path.join(candidateArtifactDirectory, "release-manifest.json"), "--archive", candidateArchivePath]);
   run(process.execPath, [validationGatePath, "finalize", "--root", packageCandidateRoot, "--bundle", authoritativePackageBundlePath, "--target", "source-candidate", "--evidence-root", authoritativePackageEvidenceRoot, "--quiet"]);
 
@@ -1369,6 +1379,11 @@ try {
   assert.equal(policy.unknownBehavior, "FULL");
   assert.equal(policy.classificationConflictBehavior, "FULL");
   assert.deepEqual(policy.fullOnChangeStatuses, ["D", "R", "C", "T", "U", "X", "B", "?"]);
+  assert.deepEqual(
+    policy.browserAcceptance.routeRules.find((rule) => rule.id === "voice-surface")?.routes,
+    ["/voice-studio/workspace", "/", "/tools"],
+    "voice acceptance must use the live canonical workspace instead of the retired /voice route",
+  );
   const pinnedTrustPath = path.join(root, ...policy.browserAcceptanceTrust.path.split("/"));
   assert.equal(sha256(fs.readFileSync(pinnedTrustPath)), policy.browserAcceptanceTrust.sha256, "reviewed issuer allowlist hash pin must match exact bytes");
   const productionTrust = JSON.parse(fs.readFileSync(pinnedTrustPath, "utf8"));
@@ -1386,6 +1401,8 @@ try {
   assert.ok(validationSchema.required.includes("attestations"));
 
   const workflow = fs.readFileSync(workflowPath, "utf8");
+  const browserAcceptanceWorkflow = fs.readFileSync(browserAcceptanceWorkflowPath, "utf8");
+  const browserAcceptanceRunner = fs.readFileSync(browserAcceptanceRunnerPath, "utf8");
   for (const marker of [
     "Classify, diff-check, and scan the exact candidate range",
     "scripts/classify-release-change-scope.mjs",
@@ -1419,6 +1436,26 @@ try {
   assert.match(workflow, /--finalize-candidate-archive "\$candidate_archive"[^\n]+--scope-receipt "\$RELEASE_SCOPE_RECEIPT"[^\n]+--evidence-root "\$RELEASE_VALIDATION_EVIDENCE"/u);
   assert.match(fs.readFileSync(packagerPath, "utf8"), /"verify-release-ready"[\s\S]+"--scope-receipt", scopeReceiptPath[\s\S]+"--evidence-root", evidenceRoot/u);
   assert.doesNotMatch(workflow, /tar -xzf "\$RUNNER_TEMP\/candidate\/release-candidate-build/u);
+  for (const marker of [
+    "name: Release browser acceptance evidence",
+    "release-candidate-${{ github.sha }}",
+    "run-release-browser-acceptance.mjs",
+    "RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY",
+    "release-change-validation-gate.mjs verify-release-ready",
+    "release-browser-acceptance-${{ github.sha }}",
+  ]) assert.ok(browserAcceptanceWorkflow.includes(marker), `browser acceptance workflow integration missing: ${marker}`);
+  assert.doesNotMatch(browserAcceptanceWorkflow, /\b(?:ssh|scp|rsync)\b|deploy-artifact-vnext|DEPLOY_EXECUTION_APPROVED/u);
+  for (const marker of [
+    "CANDIDATE_PAYLOAD_INVENTORY_MISMATCH",
+    "DEDICATED_DATA_MOUNT_REQUIRED",
+    "BROWSER_SIGNING_KEY_NOT_TRUSTED",
+    "desktop-precise-route-visual-1440x900",
+    "desktop-two-adjacent-pages-visual",
+    "console-and-request-errors",
+    "full-desktop-release-checklist",
+  ]) assert.ok(browserAcceptanceRunner.includes(marker), `browser acceptance runner integration missing: ${marker}`);
+  assert.equal(spawnSync(process.execPath, ["--check", browserAcceptanceRunnerPath], { encoding: "utf8" }).status, 0,
+    "browser acceptance runner syntax must be valid");
   run(process.execPath, [path.join(root, "scripts", "verify-release-workflow.mjs"), "--workflow-contract-only"]);
 
   process.stdout.write(JSON.stringify({

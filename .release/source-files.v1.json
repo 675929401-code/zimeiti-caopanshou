@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "4fc064f3d85338b389cd446ae96ac6a571b4ae848b120ff459567bea271f4ef4",
+  "sourceFingerprint": "926998aab2138477cf7a7f52082ceb2b547ad631ebedcb21233d30cd7be2e34f",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
-  "fileCount": 4176,
-  "totalBytes": 66683423,
+  "fileCount": 4178,
+  "totalBytes": 66739179,
   "files": [
     {
       "path": ".cnb.yml",
@@ -45,6 +45,11 @@
       "path": ".github/workflows/deploy.yml",
       "bytes": 818,
       "sha256": "e979ff897021b4f4f8af47cc9fdfc4d2a4441dd7e82da69912b361291508d5e6"
+    },
+    {
+      "path": ".github/workflows/release-browser-acceptance.yml",
+      "bytes": 6253,
+      "sha256": "2bfac588c4705b79f20a833a0e5dccb037ab417906dadb0b9b628d83d4d67a69"
     },
     {
       "path": ".github/workflows/release-vnext.yml",
@@ -138,8 +143,8 @@
     },
     {
       "path": "deploy/pm2/ecosystem.vnext.config.cjs",
-      "bytes": 7198,
-      "sha256": "481a5150e2574bfb08fbb316f9117834a720f62fe885bcc91fd91dd68edd7b8e"
+      "bytes": 7700,
+      "sha256": "a725fcff2513d60255d22f92e8983d2aa19bb60f8d64fbffaa895e8628dd4af6"
     },
     {
       "path": "deploy/policies/backup-policy.json",
@@ -168,13 +173,13 @@
     },
     {
       "path": "deploy/policies/release-acceptance-trusted-issuers.v1.json",
-      "bytes": 313,
-      "sha256": "3e41ec2e33894adad2316cad580191be526dfdc5cf218acad14281b5b8313444"
+      "bytes": 760,
+      "sha256": "327f9b30b163848e908253c379f491fef07d710b78c65b26387ec34487217633"
     },
     {
       "path": "deploy/policies/release-change-scope.v1.json",
-      "bytes": 11056,
-      "sha256": "6ed16ca2162c9c628c7ccca3795e13f4aa60250e38b0c4e1bac6f0c7750e1a99"
+      "bytes": 11073,
+      "sha256": "c6583bfd75614e58336d02e104666e8ce11f7909596ba676285c0d8a1bc32c71"
     },
     {
       "path": "deploy/policies/release-policy.json",
@@ -2728,8 +2733,8 @@
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
-      "bytes": 155828,
-      "sha256": "5e9d2c82fdeccac174fd54ae9ed3f226f7ac332f155cff88d52bca854bc38368"
+      "bytes": 159965,
+      "sha256": "5eddf5d8f1a8fde4fbe69fd57e72ef63b17061323fad4460fda5dd8508f49ca9"
     },
     {
       "path": "scripts/deploy-direct.js",
@@ -3463,8 +3468,8 @@
     },
     {
       "path": "scripts/package-standalone-artifact.mjs",
-      "bytes": 49185,
-      "sha256": "7088b32211651fef18d5bb52be224a0e204ac2332f90ca05e6e68021c356bd21"
+      "bytes": 49308,
+      "sha256": "9ad429b287bba6deb0796fcfce1e221cb1d51de0d511439faa92c2252b064436"
     },
     {
       "path": "scripts/patch-benchmark-video-prompts.ts",
@@ -4088,8 +4093,8 @@
     },
     {
       "path": "scripts/release-change-validation-gate.mjs",
-      "bytes": 39245,
-      "sha256": "47ad237d0e0839cdd79227377fe6852a3fb1b0b4522a9c711019ea2b63e110b2"
+      "bytes": 39310,
+      "sha256": "0f104a32c476ebe6c22a410fd8a7f5e89542add3de97160d7c59f842d9af0cb1"
     },
     {
       "path": "scripts/release-close-loop.mjs",
@@ -4410,6 +4415,11 @@
       "path": "scripts/run-node-maintenance-tsx.mjs",
       "bytes": 1678,
       "sha256": "8c9c27aa15d8ce35e141a66b8f744a9c7000a5984c0d6cbc32de261721e43df9"
+    },
+    {
+      "path": "scripts/run-release-browser-acceptance.mjs",
+      "bytes": 38082,
+      "sha256": "f349a2ef3d341c61defc0faf247b5a8e617c8a1b4788a655811330fcade75b27"
     },
     {
       "path": "scripts/run-release-targeted-regressions.mjs",
@@ -5473,8 +5483,8 @@
     },
     {
       "path": "scripts/verify-artifact-secret-gates.mjs",
-      "bytes": 20451,
-      "sha256": "f7cd28830b04154ae660880c061c154c518f204f72fcf0759679df66e17e0c3b"
+      "bytes": 20463,
+      "sha256": "4e2e1ec0dc99f7353853c5912568c3fcd092fbe3251d5f5e3104779e79a45a32"
     },
     {
       "path": "scripts/verify-auth-deeplink-zero-cost.ts",
@@ -8143,8 +8153,8 @@
     },
     {
       "path": "scripts/verify-release-change-scope-zero-network.mjs",
-      "bytes": 106258,
-      "sha256": "ad4ae26599432d771c0f0d539e74e8c51741cc795602d3417edf35a0d8b28557"
+      "bytes": 108835,
+      "sha256": "5a5c9daabfe9c292b1d953f7cc642da2107319754f30a1178cbe5ab2f3b1ba3b"
     },
     {
       "path": "scripts/verify-release-database-gates.ts",
@@ -8178,8 +8188,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 69293,
-      "sha256": "b8999472cf6b12c793fd6c7e02ef219f0dcee0ef1caf8f26a038cd3934533405"
+      "bytes": 72834,
+      "sha256": "cd059fb1a47894d66ffb271cbc00cd365fa69eeabc27d9de8250a91d09b3cdea"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",

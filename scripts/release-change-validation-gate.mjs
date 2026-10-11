@@ -517,6 +517,7 @@ function main() {
     const manifest = readJson(manifestPath, "CANDIDATE_PAYLOAD_MANIFEST_INVALID");
     const archiveSha256 = sha256(fs.readFileSync(archivePath));
     if (manifest.schemaVersion !== 2 || manifest.service !== service || manifest.commitSha !== bundle.subject.commit
+      || manifest.sourceVersion !== bundle.subject.sourceVersion
       || manifest.buildId !== bundle.subject.builds[service]
       || manifest.buildOutputDigest !== bundle.subject.buildOutputDigests[service]
       || !/^[a-f0-9]{64}$/u.test(manifest.artifactDigest || "")

@@ -24,6 +24,8 @@ const assetManifestSha256 = process.env.ASSET_MANIFEST_SHA256 || "";
 const releaseId = process.env.RELEASE_ID || "";
 const deployCommitSha = process.env.DEPLOY_COMMIT_SHA || "";
 const expectedBuildId = process.env.EXPECTED_BUILD_ID || "";
+const releaseSourceVersion = process.env.RELEASE_SOURCE_VERSION || "";
+const releaseBuildOutputDigest = process.env.RELEASE_BUILD_OUTPUT_DIGEST || "";
 const cozeProjectEnv = process.env.COZE_PROJECT_ENV || "PROD";
 const mediaWorkerInstances = Math.max(1, Math.min(8, Number.parseInt(process.env.MEDIA_QUEUE_WORKER_INSTANCES || "2", 10) || 2));
 const mediaWorkerPort = String(Math.max(1024, Math.min(65535, Number.parseInt(process.env.MEDIA_QUEUE_WORKER_PORT || "5102", 10) || 5102)));
@@ -72,6 +74,8 @@ module.exports = {
         RELEASE_ID: releaseId,
         DEPLOY_COMMIT_SHA: deployCommitSha,
         EXPECTED_BUILD_ID: expectedBuildId,
+        RELEASE_SOURCE_VERSION: releaseSourceVersion,
+        RELEASE_BUILD_OUTPUT_DIGEST: releaseBuildOutputDigest,
         COZE_PROJECT_ENV: cozeProjectEnv,
         RELEASE_READINESS_PROFILE: "production-full-v1",
         MEDIA_QUEUE_WORKER_PROCESS: "0",
@@ -106,6 +110,8 @@ module.exports = {
         RELEASE_ID: releaseId,
         DEPLOY_COMMIT_SHA: deployCommitSha,
         EXPECTED_BUILD_ID: expectedBuildId,
+        RELEASE_SOURCE_VERSION: releaseSourceVersion,
+        RELEASE_BUILD_OUTPUT_DIGEST: releaseBuildOutputDigest,
         COZE_PROJECT_ENV: cozeProjectEnv,
         RELEASE_READINESS_PROFILE: "production-full-v1",
       },
@@ -148,6 +154,8 @@ module.exports = {
         RELEASE_ID: releaseId,
         DEPLOY_COMMIT_SHA: deployCommitSha,
         EXPECTED_BUILD_ID: expectedBuildId,
+        RELEASE_SOURCE_VERSION: releaseSourceVersion,
+        RELEASE_BUILD_OUTPUT_DIGEST: releaseBuildOutputDigest,
         COZE_PROJECT_ENV: cozeProjectEnv,
         RELEASE_READINESS_PROFILE: "production-full-v1",
         MEDIA_QUEUE_WORKER_PROCESS: "1",

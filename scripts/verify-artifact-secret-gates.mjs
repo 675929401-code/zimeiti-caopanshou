@@ -285,7 +285,7 @@ try {
   const payloadValidation = deployerSource.indexOf('validate_payload_inventory "$PAYLOAD_DIR"', extraction);
   assert.ok(archiveGate > 0 && archiveGate < extraction, "deployment archive inventory gate must run before extraction");
   assert.ok(extractedGate > extraction && extractedGate < payloadValidation, "deployment extracted-tree gate must run before payload inventory validation");
-  assert.match(deployerSource, /assertNotSensitive\(file\.path, "manifest inventory"\)/u);
+  assert.match(deployerSource, /assertNotSensitive\(item\.path, "manifest inventory", item\.kind\)/u);
 
   const packagerHiddenMetadataChecks = packagerSource.match(/hiddenMetadataDirectoryNames\.has\(lowerPart\)/gu) || [];
   const deployerHiddenMetadataChecks = deployerSource.match(/hiddenMetadataDirectoryNames\.has\(lowerPart\)/gu) || [];

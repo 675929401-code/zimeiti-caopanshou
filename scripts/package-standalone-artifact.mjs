@@ -486,6 +486,7 @@ function verifyMaterializedArtifactTree(artifactRoot, expectedPayload, expectedS
   const manifest = readJson(manifestPath, "candidate payload release manifest");
   if (manifest.schemaVersion !== 2 || manifest.service !== service || manifest.commitSha !== expectedSubject.commit
     || manifest.buildId !== expectedSubject.builds[service]
+    || manifest.sourceVersion !== expectedSubject.sourceVersion
     || manifest.buildOutputDigest !== expectedSubject.buildOutputDigests[service]
     || manifest.releaseId !== expectedPayload.releaseId || manifest.artifactDigest !== expectedPayload.artifactDigest
     || manifest.fileCount !== expectedPayload.fileCount || manifest.totalBytes !== expectedPayload.totalBytes) {
@@ -841,6 +842,7 @@ try {
     service,
     commitSha,
     buildId,
+    sourceVersion: buildOutputDigestReceipt.sourceVersion,
     buildOutputDigest: buildOutputDigestReceipt.outputDigest,
     healthPath: servicePolicy.healthPath,
     readinessPath: servicePolicy.readinessPath,

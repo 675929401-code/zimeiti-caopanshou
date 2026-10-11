@@ -1012,6 +1012,8 @@ requireCondition(manifest.deployable === true, "artifact is a rehearsal/non-depl
 requireCondition(manifest.rehearsal === false, "deployable artifact cannot be marked as a rehearsal");
 requireCondition(typeof manifest.commitSha === "string" && gitHash.test(manifest.commitSha), "invalid Git commit SHA");
 requireCondition(typeof manifest.buildId === "string" && /^[A-Za-z0-9._-]{1,256}$/u.test(manifest.buildId), "missing or unsafe build id");
+requireCondition(typeof manifest.sourceVersion === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(manifest.sourceVersion), "missing or unsafe source version");
+requireCondition(typeof manifest.buildOutputDigest === "string" && hex64.test(manifest.buildOutputDigest), "invalid build output digest");
 requireCondition(typeof manifest.sourceManifestSha256 === "string" && hex64.test(manifest.sourceManifestSha256), "invalid source manifest SHA-256");
 requireCondition(typeof manifest.sourceFingerprint === "string" && hex64.test(manifest.sourceFingerprint), "invalid source fingerprint");
 requireCondition(typeof manifest.builtAt === "string" && Number.isFinite(Date.parse(manifest.builtAt)), "invalid build timestamp provenance");
@@ -1051,6 +1053,8 @@ const metadata = {
   service: manifest.service,
   commitSha: manifest.commitSha,
   buildId: manifest.buildId,
+  sourceVersion: manifest.sourceVersion,
+  buildOutputDigest: manifest.buildOutputDigest,
   sourceManifestSha256: manifest.sourceManifestSha256,
   assetDigest: manifest.assetDigest ?? null,
   assetVersion: manifest.assetDigest ? `sha256-${manifest.assetDigest}` : null,
@@ -1172,25 +1176,39 @@ function sha256File(filePath) {
   return hash.digest("hex");
 }
 
-const actualPaths = [];
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort((left, right) => left.localeCompare(right, "en"))
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+const actual = [];
 function walk(directory) {
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name, "en"))) {
     const filePath = path.join(directory, entry.name);
     const relativePath = path.relative(root, filePath).split(path.sep).join("/");
     const stats = fs.lstatSync(filePath);
     assertNotSensitive(relativePath, "extracted payload", stats.isDirectory() ? "directory" : "file");
     if (stats.isSymbolicLink()) throw new Error(`extracted payload contains a symlink: ${relativePath}`);
-    if (stats.isDirectory()) walk(filePath);
+    if (stats.isDirectory()) {
+      actual.push({ path: relativePath, kind: "directory", mode: stats.mode & 0o777, bytes: 0, sha256: null });
+      walk(filePath);
+    }
     else if (stats.isFile()) {
       assertSafeContent(filePath, relativePath);
-      if (relativePath !== "release-manifest.json") actualPaths.push(relativePath);
+      if (relativePath !== "release-manifest.json") {
+        actual.push({ path: relativePath, kind: "file", mode: stats.mode & 0o777, bytes: stats.size, sha256: sha256File(filePath) });
+      }
     }
     else throw new Error(`extracted payload contains a non-regular entry: ${relativePath}`);
   }
 }
 walk(root);
-actualPaths.sort((left, right) => left.localeCompare(right, "en"));
-for (const relativePath of actualPaths) {
+actual.sort((left, right) => left.path.localeCompare(right.path, "en"));
+for (const { path: relativePath } of actual) {
   if (relativePath === "public/storyboard-reviews" || relativePath.startsWith("public/storyboard-reviews/") ||
       relativePath === "public/demo-assets" || relativePath.startsWith("public/demo-assets/")) {
     throw new Error(`test/evidence content is forbidden in a production service artifact: ${relativePath}`);
@@ -1200,29 +1218,48 @@ for (const relativePath of actualPaths) {
 const seen = new Set();
 let previousPath = "";
 let totalBytes = 0;
-for (const file of expected) {
-  if (!validateRelative(file?.path)) throw new Error(`unsafe manifest inventory path: ${String(file?.path)}`);
-  assertNotSensitive(file.path, "manifest inventory");
-  if (seen.has(file.path)) throw new Error(`duplicate manifest inventory path: ${file.path}`);
-  if (previousPath && previousPath.localeCompare(file.path, "en") >= 0) throw new Error("manifest inventory is not strictly sorted");
-  if (!Number.isSafeInteger(file.bytes) || file.bytes < 0 || !hex64.test(file.sha256)) throw new Error(`invalid inventory metadata: ${file.path}`);
-  seen.add(file.path);
-  previousPath = file.path;
-  totalBytes += file.bytes;
+let expectedFileCount = 0;
+for (const item of expected) {
+  if (!validateRelative(item?.path)) throw new Error(`unsafe manifest inventory path: ${String(item?.path)}`);
+  if (!new Set(["file", "directory"]).has(item.kind)) throw new Error(`invalid inventory kind: ${item.path}`);
+  assertNotSensitive(item.path, "manifest inventory", item.kind);
+  if (seen.has(item.path)) throw new Error(`duplicate manifest inventory path: ${item.path}`);
+  if (previousPath && previousPath.localeCompare(item.path, "en") >= 0) throw new Error("manifest inventory is not strictly sorted");
+  if (!Number.isInteger(item.mode) || item.mode < 0 || item.mode > 0o777 || (item.mode & 0o022) !== 0) {
+    throw new Error(`invalid or writable inventory mode: ${item.path}`);
+  }
+  if (item.kind === "directory") {
+    if (item.bytes !== 0 || item.sha256 !== null) throw new Error(`invalid directory inventory metadata: ${item.path}`);
+  } else {
+    if (!Number.isSafeInteger(item.bytes) || item.bytes < 0 || !hex64.test(item.sha256)) {
+      throw new Error(`invalid file inventory metadata: ${item.path}`);
+    }
+    expectedFileCount += 1;
+    totalBytes += item.bytes;
+  }
+  seen.add(item.path);
+  previousPath = item.path;
 }
-if (actualPaths.length !== expected.length || actualPaths.some((value, index) => value !== expected[index].path)) throw new Error("extracted file set does not exactly match the signed inventory");
-for (const file of expected) {
-  const filePath = path.join(root, ...file.path.split("/"));
-  const stats = fs.lstatSync(filePath);
-  if (!stats.isFile() || stats.isSymbolicLink()) throw new Error(`inventory entry is not a regular file: ${file.path}`);
-  if (stats.size !== file.bytes) throw new Error(`inventory byte count mismatch: ${file.path}`);
-  if (sha256File(filePath) !== file.sha256) throw new Error(`inventory SHA-256 mismatch: ${file.path}`);
+if (actual.length !== expected.length || actual.some((value, index) => value.path !== expected[index].path || value.kind !== expected[index].kind)) {
+  throw new Error("extracted path/type set does not exactly match the signed inventory");
 }
-const artifactDigest = crypto.createHash("sha256").update(expected.map((file) => `${file.sha256}  ${file.path}\n`).join("")).digest("hex");
+for (let index = 0; index < expected.length; index += 1) {
+  const item = expected[index];
+  const observed = actual[index];
+  if (observed.mode !== item.mode) throw new Error(`inventory mode mismatch: ${item.path}`);
+  if (item.kind === "file" && (observed.bytes !== item.bytes || observed.sha256 !== item.sha256)) {
+    throw new Error(`inventory content mismatch: ${item.path}`);
+  }
+}
+const artifactDigest = crypto.createHash("sha256").update(canonicalJson(expected)).digest("hex");
 if (manifest.artifactDigest !== artifactDigest) throw new Error("artifact digest mismatch");
-if (manifest.fileCount !== expected.length) throw new Error("artifact fileCount mismatch");
+if (manifest.fileCount !== expectedFileCount) throw new Error("artifact fileCount mismatch");
 if (manifest.totalBytes !== totalBytes) throw new Error("artifact totalBytes mismatch");
-for (const required of ["server.js", ".release/ecosystem.config.cjs"]) if (!seen.has(required)) throw new Error(`artifact inventory omits required runtime file: ${required}`);
+for (const required of ["server.js", ".release/ecosystem.config.cjs"]) {
+  if (!seen.has(required) || expected.find((entry) => entry.path === required)?.kind !== "file") {
+    throw new Error(`artifact inventory omits required runtime file: ${required}`);
+  }
+}
 
 for (const required of [".next/BUILD_ID", ".release/source-files.v1.json", ".release/build-provenance.v1.json"]) {
   if (!seen.has(required)) throw new Error(`artifact inventory omits required provenance file: ${required}`);
@@ -1830,6 +1867,8 @@ MANIFEST_METADATA="$AUDIT_DIR/manifest-metadata.json"
 validate_manifest_contract "$PLAN_MANIFEST" "$MANIFEST_METADATA"
 COMMIT_SHA="$(metadata_value commitSha)"
 BUILD_ID="$(metadata_value buildId)"
+SOURCE_VERSION="$(metadata_value sourceVersion)"
+BUILD_OUTPUT_DIGEST="$(metadata_value buildOutputDigest)"
 SOURCE_MANIFEST_SHA256="$(metadata_value sourceManifestSha256)"
 ASSET_DIGEST=""
 ASSET_VERSION=""
@@ -1883,6 +1922,8 @@ echo "SERVICE=$SERVICE"
 echo "RELEASE_ID=$RELEASE_ID"
 echo "COMMIT_SHA=$COMMIT_SHA"
 echo "BUILD_ID=$BUILD_ID"
+echo "SOURCE_VERSION=$SOURCE_VERSION"
+echo "BUILD_OUTPUT_DIGEST=$BUILD_OUTPUT_DIGEST"
 echo "SOURCE_MANIFEST_SHA256=$SOURCE_MANIFEST_SHA256"
 echo "ARTIFACT=$ARTIFACT"
 echo "ARTIFACT_SHA256=${ACTUAL_SHA256,,}"
@@ -2179,6 +2220,8 @@ CANDIDATE_ENVIRONMENT=(
   "RELEASE_ID=$RELEASE_ID"
   "DEPLOY_COMMIT_SHA=$COMMIT_SHA"
   "EXPECTED_BUILD_ID=$BUILD_ID"
+  "RELEASE_SOURCE_VERSION=$SOURCE_VERSION"
+  "RELEASE_BUILD_OUTPUT_DIGEST=$BUILD_OUTPUT_DIGEST"
   "COZE_PROJECT_ENV=PROD"
 )
 if [[ "$SERVICE" == "web" ]]; then
@@ -2249,7 +2292,8 @@ const expectedNames = new Set([
   "DEV_READ_ONLY_MODE", "RELEASE_ROOT", "APP_DATA_DIR", "APP_RUNTIME_DIR", "COMMERCE_DATA_DIR",
   "COMMERCE_DISCOVERY_CATALOG", "COMMERCE_GATEWAY_KEY_FILE", "IDEMPOTENCY_DIR", "BACKUP_DIR",
   "PUBLIC_ASSET_ROOT", "VOICE_SQLITE_PATH", "VOICE_REFERENCE_AUDIO_DIR", "ASSET_DIGEST",
-  "ASSET_MANIFEST_SHA256", "RELEASE_ID", "DEPLOY_COMMIT_SHA", "EXPECTED_BUILD_ID", "COZE_PROJECT_ENV",
+  "ASSET_MANIFEST_SHA256", "RELEASE_ID", "DEPLOY_COMMIT_SHA", "EXPECTED_BUILD_ID",
+  "RELEASE_SOURCE_VERSION", "RELEASE_BUILD_OUTPUT_DIGEST", "COZE_PROJECT_ENV",
   ...(service === "web" ? ["JWT_SECRET", "STORAGE_LOCAL_BASE_PATH"] : ["AUTH_SECRET", "DATABASE_URL"]),
 ]);
 const names = new Set(environment.keys());
@@ -2324,16 +2368,20 @@ assert_readiness_identity() {
   local expected_commit="$3"
   local expected_build="$4"
   local expected_asset_digest="$5"
-  local label="$6"
-  node - "$response_file" "$SERVICE" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" "$label" <<'NODE'
+  local expected_source_version="$6"
+  local expected_build_output_digest="$7"
+  local label="$8"
+  node - "$response_file" "$SERVICE" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" "$expected_source_version" "$expected_build_output_digest" "$label" <<'NODE'
 const fs = require("node:fs");
-const [filePath, service, releaseId, commitSha, buildId, assetDigest, label] = process.argv.slice(2);
+const [filePath, service, releaseId, commitSha, buildId, assetDigest, sourceVersion, buildOutputDigest, label] = process.argv.slice(2);
 const body = JSON.parse(fs.readFileSync(filePath, "utf8"));
 if (body.ready !== true) throw new Error(`readiness is not true: ${String(body.ready)}`);
 if (body.service !== service) throw new Error(`readiness service mismatch: ${String(body.service)}`);
 if (body.releaseId !== releaseId) throw new Error(`readiness release identity mismatch: ${String(body.releaseId)}`);
 if (body.commitSha !== commitSha) throw new Error(`readiness commit identity mismatch: ${String(body.commitSha)}`);
 if (body.buildId !== buildId) throw new Error(`readiness build identity mismatch: ${String(body.buildId)}`);
+if (body.sourceVersion !== sourceVersion) throw new Error(`readiness source version mismatch: ${String(body.sourceVersion)}`);
+if (body.buildOutputDigest !== buildOutputDigest) throw new Error(`readiness build output digest mismatch: ${String(body.buildOutputDigest)}`);
 if (service === "web" && body.assetDigest !== assetDigest) throw new Error(`readiness asset digest mismatch: ${String(body.assetDigest)}`);
 if (label === "candidate") {
   if (body.readinessProfile !== "candidate-runtime-v1" || body.activationReady !== false) {
@@ -2360,17 +2408,21 @@ verify_service_http() {
   local expected_commit="$3"
   local expected_build="$4"
   local expected_asset_digest="$5"
-  local label="$6"
+  local expected_source_version="$6"
+  local expected_build_output_digest="$7"
+  local label="$8"
   local response_file="$STAGING_DIR/$label-health.json"
   if [[ "$label" == "candidate" ]]; then
     wait_candidate_http "http://127.0.0.1:$port$READINESS_PATH" "$response_file" || return 1
   else
     wait_http "http://127.0.0.1:$port$READINESS_PATH" "$response_file" || return 1
   fi
-  assert_readiness_identity "$response_file" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" "$label" || return 1
+  assert_readiness_identity "$response_file" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" \
+    "$expected_source_version" "$expected_build_output_digest" "$label" || return 1
 }
 
-verify_service_http "$CANDIDATE_PORT" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" "$ASSET_DIGEST" "candidate" || \
+verify_service_http "$CANDIDATE_PORT" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" "$ASSET_DIGEST" \
+  "$SOURCE_VERSION" "$BUILD_OUTPUT_DIGEST" "candidate" || \
   fail "isolated candidate runtime readiness/identity/data check failed; see $CANDIDATE_LOG"
 LISTENER_DETAIL="$(nsenter --target "$candidate_pid" --net -- ss -H -ltnp "sport = :$CANDIDATE_PORT" 2>/dev/null || true)"
 grep -Fq "pid=$candidate_pid," <<<"$LISTENER_DETAIL" || fail "candidate port is not owned by the launched candidate PID $candidate_pid"
@@ -2416,12 +2468,14 @@ if (manifest.service !== service) throw new Error("rollback manifest service mis
 if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(manifest.releaseId)) throw new Error("rollback release id is invalid");
 if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(manifest.commitSha)) throw new Error("rollback commit SHA is invalid");
 if (typeof manifest.buildId !== "string" || !manifest.buildId) throw new Error("rollback build id is missing");
+if (typeof manifest.sourceVersion !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(manifest.sourceVersion)) throw new Error("rollback source version is invalid");
+if (!/^[0-9a-f]{64}$/u.test(manifest.buildOutputDigest)) throw new Error("rollback build output digest is invalid");
 const assetDigest = service === "web" ? manifest.assetDigest : "-";
 const assetManifestSha256 = service === "web" ? manifest.assetManifestSha256 : "-";
 if (service === "web" && (!/^[0-9a-f]{64}$/u.test(assetDigest) || !/^[0-9a-f]{64}$/u.test(assetManifestSha256))) {
   throw new Error("rollback Web asset identity is invalid");
 }
-process.stdout.write(`${manifest.releaseId}\t${manifest.commitSha}\t${manifest.buildId}\t${assetDigest}\t${assetManifestSha256}\n`);
+process.stdout.write(`${manifest.releaseId}\t${manifest.commitSha}\t${manifest.buildId}\t${manifest.sourceVersion}\t${manifest.buildOutputDigest}\t${assetDigest}\t${assetManifestSha256}\n`);
 NODE
 }
 
@@ -2440,10 +2494,12 @@ validate_asset_manifest_binding() {
 PREVIOUS_RELEASE_ID=""
 PREVIOUS_COMMIT_SHA=""
 PREVIOUS_BUILD_ID=""
+PREVIOUS_SOURCE_VERSION=""
+PREVIOUS_BUILD_OUTPUT_DIGEST=""
 PREVIOUS_ASSET_DIGEST=""
 PREVIOUS_ASSET_MANIFEST_SHA256=""
 if [[ -n "$PREVIOUS_TARGET" ]]; then
-  IFS=$'\t' read -r PREVIOUS_RELEASE_ID PREVIOUS_COMMIT_SHA PREVIOUS_BUILD_ID PREVIOUS_ASSET_DIGEST PREVIOUS_ASSET_MANIFEST_SHA256 < <(read_release_identity "$PREVIOUS_TARGET")
+  IFS=$'\t' read -r PREVIOUS_RELEASE_ID PREVIOUS_COMMIT_SHA PREVIOUS_BUILD_ID PREVIOUS_SOURCE_VERSION PREVIOUS_BUILD_OUTPUT_DIGEST PREVIOUS_ASSET_DIGEST PREVIOUS_ASSET_MANIFEST_SHA256 < <(read_release_identity "$PREVIOUS_TARGET")
   validate_payload_inventory "$PREVIOUS_TARGET"
   if [[ "$SERVICE" == "web" ]]; then
     [[ "$PREVIOUS_ASSET_DIGEST" == "$CURRENT_ASSET_DIGEST" ]] || die "active Web release and current asset pointer are already inconsistent"
@@ -2475,6 +2531,8 @@ activate_pm2() {
   local active_build_id="$4"
   local active_asset_digest="$5"
   local active_asset_manifest_sha256="$6"
+  local active_source_version="$7"
+  local active_build_output_digest="$8"
   export RELEASE_ROOT APP_DATA_DIR APP_RUNTIME_DIR COMMERCE_DATA_DIR COMMERCE_DISCOVERY_CATALOG COMMERCE_GATEWAY_KEY_FILE IDEMPOTENCY_DIR
   export BACKUP_DIR="$BACKUP_ROOT"
   export PUBLIC_ASSET_ROOT="$ASSET_CURRENT_LINK/public"
@@ -2483,6 +2541,8 @@ activate_pm2() {
   export RELEASE_ID="$active_release_id"
   export DEPLOY_COMMIT_SHA="$active_commit_sha"
   export EXPECTED_BUILD_ID="$active_build_id"
+  export RELEASE_SOURCE_VERSION="$active_source_version"
+  export RELEASE_BUILD_OUTPUT_DIGEST="$active_build_output_digest"
   export COZE_PROJECT_ENV="PROD"
   if [[ "$SERVICE" == "web" ]]; then
     export WEB_RELEASE_DIR="$CURRENT_LINK"
@@ -2504,10 +2564,12 @@ verify_pm2_identity() {
   local expected_build_id="$4"
   local expected_asset_digest="${5:--}"
   local expected_asset_manifest_sha256="${6:--}"
+  local expected_source_version="$7"
+  local expected_build_output_digest="$8"
   local pm2_pid
   pm2_pid="$(pm2 jlist | node -e '
 const fs = require("node:fs");
-const [name, target, releaseId, commitSha, buildId, service, assetDigest, assetManifestSha256] = process.argv.slice(1);
+const [name, target, releaseId, commitSha, buildId, service, assetDigest, assetManifestSha256, sourceVersion, buildOutputDigest] = process.argv.slice(1);
 const processes = JSON.parse(fs.readFileSync(0, "utf8"));
 const matches = processes.filter((entry) => entry?.name === name);
 if (matches.length !== 1) throw new Error(`expected one PM2 process ${name}, found ${matches.length}`);
@@ -2517,13 +2579,15 @@ if (env.status !== "online") throw new Error(`PM2 process is not online: ${Strin
 const cwd = fs.realpathSync(env.pm_cwd);
 const expected = fs.realpathSync(target);
 if (cwd !== expected) throw new Error(`PM2 cwd mismatch: ${cwd}`);
-if (env.RELEASE_ID !== releaseId || env.DEPLOY_COMMIT_SHA !== commitSha || env.EXPECTED_BUILD_ID !== buildId || env.COZE_PROJECT_ENV !== "PROD") throw new Error("PM2 release identity environment mismatch");
+if (env.RELEASE_ID !== releaseId || env.DEPLOY_COMMIT_SHA !== commitSha || env.EXPECTED_BUILD_ID !== buildId
+  || env.RELEASE_SOURCE_VERSION !== sourceVersion || env.RELEASE_BUILD_OUTPUT_DIGEST !== buildOutputDigest
+  || env.COZE_PROJECT_ENV !== "PROD") throw new Error("PM2 release identity environment mismatch");
 if (service === "web" && (env.ASSET_DIGEST !== assetDigest || env.ASSET_MANIFEST_SHA256 !== assetManifestSha256)) {
   throw new Error("PM2 Web asset identity environment mismatch");
 }
 if (typeof processInfo.pid !== "number" || processInfo.pid <= 0) throw new Error("PM2 process PID is invalid");
 process.stdout.write(String(processInfo.pid));
-' "$APP_NAME" "$expected_target" "$expected_release" "$expected_commit" "$expected_build_id" "$SERVICE" "$expected_asset_digest" "$expected_asset_manifest_sha256")" || return 1
+' "$APP_NAME" "$expected_target" "$expected_release" "$expected_commit" "$expected_build_id" "$SERVICE" "$expected_asset_digest" "$expected_asset_manifest_sha256" "$expected_source_version" "$expected_build_output_digest")" || return 1
   local listener
   listener="$(ss -H -ltnp "sport = :$LIVE_PORT" 2>/dev/null || true)"
   grep -Fq "pid=$pm2_pid," <<<"$listener"
@@ -2565,19 +2629,23 @@ verify_exact_active_composite() {
   local expected_asset_target="$5"
   local expected_asset_digest="$6"
   local expected_asset_manifest_sha256="$7"
-  local label="$8"
+  local expected_source_version="$8"
+  local expected_build_output_digest="$9"
+  local label="${10}"
   link_resolves_to "$CURRENT_LINK" "$expected_target" || return 1
   link_resolves_to "$ASSET_CURRENT_LINK" "$expected_asset_target" || return 1
   # PM2 reports online before Node has bound the HTTP listener. Wait for the
   # exact release readiness first, then bind that listener back to its PM2 PID.
-  verify_service_http "$LIVE_PORT" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" "$label" || return 1
+  verify_service_http "$LIVE_PORT" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" \
+    "$expected_source_version" "$expected_build_output_digest" "$label" || return 1
   verify_pm2_identity "$expected_target" "$expected_release" "$expected_commit" "$expected_build" \
-    "$expected_asset_digest" "$expected_asset_manifest_sha256" || return 1
+    "$expected_asset_digest" "$expected_asset_manifest_sha256" "$expected_source_version" "$expected_build_output_digest" || return 1
 }
 
 if [[ -n "$PREVIOUS_TARGET" ]]; then
   verify_exact_active_composite "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
-    "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" "predeploy" || \
+    "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" \
+    "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" "predeploy" || \
     die "rollback target code/asset/PM2/listener/readiness composite identity is not healthy before activation"
 else
   verify_exact_first_deploy_composite "$PREVIOUS_ASSET_TARGET" || \
@@ -2672,9 +2740,11 @@ rollback_release() {
       pointer_ok=1
     fi
     if [[ "$pointer_ok" -eq 0 ]] && validate_payload_inventory "$PREVIOUS_TARGET"; then
-      activate_pm2 "$PREVIOUS_TARGET/.release/ecosystem.config.cjs" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" >/dev/null 2>&1
+      activate_pm2 "$PREVIOUS_TARGET/.release/ecosystem.config.cjs" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
+        "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" >/dev/null 2>&1
       if ! verify_exact_active_composite "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
-        "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" "rollback"; then
+        "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" \
+        "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" "rollback"; then
         process_ok=1
       fi
     else
@@ -2777,7 +2847,8 @@ if ! atomic_symlink "$CANDIDATE" "$CURRENT_LINK" "$APP_TEMP_LINK"; then
   fail "service pointer switch failed"
 fi
 
-if ! activate_pm2 "$CANDIDATE_PM2_CONFIG" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" "${ASSET_DIGEST:--}" "${ASSET_MANIFEST_SHA256:--}"; then
+if ! activate_pm2 "$CANDIDATE_PM2_CONFIG" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" \
+  "${ASSET_DIGEST:--}" "${ASSET_MANIFEST_SHA256:--}" "$SOURCE_VERSION" "$BUILD_OUTPUT_DIGEST"; then
   rollback_release "PM2 activation failed" || true
   fail "PM2 activation failed"
 fi
@@ -2786,7 +2857,8 @@ if ! direct_hook activated; then
   fail "direct worker/runtime activation failed"
 fi
 if ! verify_exact_active_composite "$CANDIDATE" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" \
-  "$ASSET_TARGET" "${ASSET_DIGEST:--}" "${ASSET_MANIFEST_SHA256:--}" "production"; then
+  "$ASSET_TARGET" "${ASSET_DIGEST:--}" "${ASSET_MANIFEST_SHA256:--}" \
+  "$SOURCE_VERSION" "$BUILD_OUTPUT_DIGEST" "production"; then
   rollback_release "production code/asset/PM2/listener/readiness composite identity failed" || true
   fail "production code/asset/PM2/listener/readiness composite identity failed"
 fi
@@ -2798,7 +2870,8 @@ if ! compare_data_snapshot "$DATA_BEFORE" "$DATA_AFTER_LIVE"; then
 fi
 
 if ! verify_exact_active_composite "$CANDIDATE" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" \
-  "$ASSET_TARGET" "${ASSET_DIGEST:--}" "${ASSET_MANIFEST_SHA256:--}" "precommit"; then
+  "$ASSET_TARGET" "${ASSET_DIGEST:--}" "${ASSET_MANIFEST_SHA256:--}" \
+  "$SOURCE_VERSION" "$BUILD_OUTPUT_DIGEST" "precommit"; then
   rollback_release "final precommit composite identity changed after data verification" || true
   fail "final precommit composite identity changed after data verification"
 fi

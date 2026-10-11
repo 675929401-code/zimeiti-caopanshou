@@ -24,7 +24,7 @@
   "classificationConflictBehavior": "FULL",
   "browserAcceptanceTrust": {
     "path": "deploy/policies/release-acceptance-trusted-issuers.v1.json",
-    "sha256": "3e41ec2e33894adad2316cad580191be526dfdc5cf218acad14281b5b8313444",
+    "sha256": "327f9b30b163848e908253c379f491fef07d710b78c65b26387ec34487217633",
     "trustRootId": "zimeiti-release-acceptance-external-root-v1"
   },
   "browserAcceptance": {
@@ -60,7 +60,7 @@
       {
         "id": "voice-surface",
         "patterns": ["^(?:voice-platform/|src/app/voice/|src/app/api/voice/)"],
-        "routes": ["/voice", "/", "/tools"]
+        "routes": ["/voice-studio/workspace", "/", "/tools"]
       },
       {
         "id": "release-control-plane",

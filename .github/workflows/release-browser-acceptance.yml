@@ -1,0 +1,141 @@
+name: Release browser acceptance evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful Release vNext staged candidate run ID for this exact commit
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: release-browser-acceptance-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  browser-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      ACCEPTANCE_OUTPUT: ${{ github.workspace }}/.release-external-acceptance
+      ACCEPTANCE_WORK_ROOT: /data/release-browser-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+      DATA_IMAGE: ${{ runner.temp }}/release-browser-acceptance-data-${{ github.run_id }}-${{ github.run_attempt }}.ext4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Verify exact candidate run provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'candidate_run_id must be numeric' >&2; exit 2; }
+          candidate="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
+          test "$(jq -r .head_sha <<<"$candidate")" = "$GITHUB_SHA"
+          test "$(jq -r .conclusion <<<"$candidate")" = success
+          test "$(jq -r .name <<<"$candidate")" = 'Release vNext staged candidate'
+
+      - name: Download the exact immutable candidate output
+        uses: actions/download-artifact@v4
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - uses: pnpm/action-setup@v4
+        with: {version: 9.0.0, run_install: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: "24.19.0", cache: pnpm}
+
+      - name: Install the pinned verifier toolchain
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          (cd voice-platform && pnpm --ignore-workspace install --frozen-lockfile)
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Create an isolated data device for candidate readiness
+        run: |
+          set -euo pipefail
+          if mountpoint -q /data; then echo '/data is unexpectedly already mounted' >&2; exit 2; fi
+          sudo mkdir -p /data
+          test -z "$(sudo find /data -mindepth 1 -maxdepth 1 -print -quit)"
+          truncate -s 8G "$DATA_IMAGE"
+          mkfs.ext4 -q -F "$DATA_IMAGE"
+          sudo mount -o loop,nodev,nosuid "$DATA_IMAGE" /data
+          sudo chown "$USER:$USER" /data
+          test "$(stat -c '%d' /data)" != "$(stat -c '%d' /)"
+
+      - name: Run exact-artifact desktop browser acceptance and sign evidence
+        env:
+          RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY: ${{ secrets.RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/run-release-browser-acceptance.mjs \
+            --checkout-root "$GITHUB_WORKSPACE" \
+            --candidate-root "$RUNNER_TEMP/candidate" \
+            --work-root "$ACCEPTANCE_WORK_ROOT" \
+            --output-root "$ACCEPTANCE_OUTPUT" \
+            --issuer-id github-actions-browser-v1
+
+      - name: Re-run the authoritative merge and release-ready gate locally
+        run: |
+          set -euo pipefail
+          verify_root="$RUNNER_TEMP/acceptance-authoritative-verify"
+          mkdir -p "$verify_root/evidence"
+          cp "$RUNNER_TEMP/candidate/release-change-scope.json" "$verify_root/scope.json"
+          cp "$RUNNER_TEMP/candidate/release-change-validations.json" "$verify_root/bundle.json"
+          cp -R "$RUNNER_TEMP/candidate/release-change-validation-evidence/." "$verify_root/evidence/"
+          node scripts/release-change-validation-gate.mjs merge-external \
+            --bundle "$verify_root/bundle.json" \
+            --external-bundle .release-external-acceptance/bundle.json \
+            --external-evidence-root .release-external-acceptance/evidence \
+            --evidence-root "$verify_root/evidence"
+          node scripts/release-change-validation-gate.mjs promote-release-ready --bundle "$verify_root/bundle.json"
+          node scripts/release-change-validation-gate.mjs finalize --bundle "$verify_root/bundle.json" --target release-ready --evidence-root "$verify_root/evidence"
+          node scripts/release-change-validation-gate.mjs verify-release-ready \
+            --bundle "$verify_root/bundle.json" --scope-receipt "$verify_root/scope.json" --evidence-root "$verify_root/evidence"
+
+      - name: Upload signed browser evidence for the exact commit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-browser-acceptance-${{ github.sha }}
+          path: ${{ env.ACCEPTANCE_OUTPUT }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          include-hidden-files: true
+
+      - name: Remove transient acceptance output from the checkout
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -d "$ACCEPTANCE_OUTPUT" && "$ACCEPTANCE_OUTPUT" == "$GITHUB_WORKSPACE/.release-external-acceptance" ]]; then
+            rm -rf -- "$ACCEPTANCE_OUTPUT"
+          fi
+
+      - name: Unmount the isolated data device
+        if: always()
+        run: |
+          set -euo pipefail
+          if mountpoint -q /data; then
+            source_path="$(findmnt -n -o SOURCE --target /data)"
+            loop_backing="$(sudo losetup -j "$DATA_IMAGE" | cut -d: -f1 | head -n1 || true)"
+            [[ -n "$loop_backing" && "$source_path" == "$loop_backing" ]] || { echo 'refusing to unmount an unexpected /data device' >&2; exit 2; }
+            sudo umount /data
+          fi
+          if [[ -f "$DATA_IMAGE" && "$DATA_IMAGE" == "$RUNNER_TEMP"/* ]]; then rm -f -- "$DATA_IMAGE"; fi

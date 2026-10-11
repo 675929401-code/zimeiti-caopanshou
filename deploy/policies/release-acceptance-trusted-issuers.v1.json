@@ -7,5 +7,15 @@
     "keyMaterial": "public-only"
   },
   "maxEvidenceAgeSeconds": 86400,
-  "issuers": []
+  "issuers": [
+    {
+      "issuerId": "github-actions-browser-v1",
+      "trustRootId": "zimeiti-release-acceptance-external-root-v1",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAgeaY9xIol8rs6JA0oCesQVv9LiKuXvuAk7ZkePYzGX8=\n-----END PUBLIC KEY-----\n",
+      "publicKeyFingerprint": "42bc5291e418f5b599bad1974223f1e2c2bc74e2ce4e64ee092ff071b5f0c1bd",
+      "allowedEvidenceTypes": [
+        "release-browser-acceptance"
+      ]
+    }
+  ]
 }
