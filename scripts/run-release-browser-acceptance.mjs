@@ -60,6 +60,7 @@ const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
 ]);
 const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/admin|/admin/extraction-reconciliation",
+  "/cover|/",
   "/demo/popup-styles|/",
   "/extract|/",
   "/storyboard-workbench|/",

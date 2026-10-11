@@ -1197,6 +1197,7 @@ assert.match(browserAcceptanceRunner, /\^\[12\]\$\/u\.test\(requestHeaders\["nex
   "Next router prefetch evidence must accept both full-prefetch value 1 and PPR-prefetch value 2");
 for (const marker of [
   '"/admin|/admin/extraction-reconciliation"',
+  '"/cover|/"',
   '"/demo/popup-styles|/"',
   '"/extract|/"',
   '"/storyboard-workbench|/"',
