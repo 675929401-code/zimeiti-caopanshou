@@ -8,6 +8,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chromium } from "playwright";
 import { canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
 
+const ARCHIVE_METADATA_MAX_BUFFER = 64 * 1024 * 1024;
 const BROWSER_VALIDATIONS = Object.freeze([
   "desktop-precise-route-visual-1440x900",
   "desktop-two-adjacent-pages-visual",
@@ -205,6 +206,7 @@ function run(command, args, options = {}) {
     env: options.env,
     encoding: "utf8",
     timeout: options.timeout || 120_000,
+    maxBuffer: options.maxBuffer || 1024 * 1024,
     windowsHide: true,
   });
   if (result.error || result.status !== 0) {
@@ -225,8 +227,14 @@ function canonicalArtifactPath(raw) {
 }
 
 function inspectArchive(archivePath) {
-  const listing = run("tar", ["-tzf", archivePath], { code: "ARCHIVE_LIST_FAILED" });
-  const verbose = run("tar", ["-tvzf", archivePath], { code: "ARCHIVE_VERBOSE_LIST_FAILED" });
+  const listing = run("tar", ["-tzf", archivePath], {
+    code: "ARCHIVE_LIST_FAILED",
+    maxBuffer: ARCHIVE_METADATA_MAX_BUFFER,
+  });
+  const verbose = run("tar", ["-tvzf", archivePath], {
+    code: "ARCHIVE_VERBOSE_LIST_FAILED",
+    maxBuffer: ARCHIVE_METADATA_MAX_BUFFER,
+  });
   const names = listing.split(/\r?\n/u).filter(Boolean);
   const types = verbose.split(/\r?\n/u).filter(Boolean);
   if (names.length !== types.length || names.length < 2) fail("ARCHIVE_LISTING_INVALID");

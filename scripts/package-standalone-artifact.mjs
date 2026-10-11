@@ -10,6 +10,7 @@ import { computeBuildOutputDigest } from "./compute-release-build-output-digest.
 import { assertJsonSchema, canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
 import { materializeTracedRuntime } from "./materialize-storage-runtime.mjs";
 
+const ARCHIVE_METADATA_MAX_BUFFER = 64 * 1024 * 1024;
 const options = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
   const argument = process.argv[index];
@@ -573,8 +574,14 @@ if (finalizeCandidateArchive) {
     || bundle.target !== "release-ready" || bundle.status !== "release-ready") stop("release-ready validation bundle required", 2);
   const expectedPayload = bundle.subject?.candidatePayloads?.[service];
   if (!expectedPayload || expectedPayload.archiveSha256 !== archiveSha256) stop("candidate archive is not bound to the release-ready bundle", 2);
-  const listing = spawnSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
-  const verbose = spawnSync("tar", ["-tvzf", archivePath], { encoding: "utf8" });
+  const listing = spawnSync("tar", ["-tzf", archivePath], {
+    encoding: "utf8",
+    maxBuffer: ARCHIVE_METADATA_MAX_BUFFER,
+  });
+  const verbose = spawnSync("tar", ["-tvzf", archivePath], {
+    encoding: "utf8",
+    maxBuffer: ARCHIVE_METADATA_MAX_BUFFER,
+  });
   if (listing.error || listing.status !== 0 || verbose.error || verbose.status !== 0) stop("candidate archive cannot be inspected", 2);
   const archivePathKeys = new Set();
   for (const entry of listing.stdout.split(/\r?\n/u).filter(Boolean)) {

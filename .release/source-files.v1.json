@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "0c8da2a2675d0ada22c29379e43f9eddc32271d19cec668dd280c5b5cd6fac84",
+  "sourceFingerprint": "545b5b7f7be0d180aaa86b8e790f67c9ea4f6fdf92613d4d15a66a66ff37256d",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4178,
-  "totalBytes": 66740227,
+  "totalBytes": 66741554,
   "files": [
     {
       "path": ".cnb.yml",
@@ -3468,8 +3468,8 @@
     },
     {
       "path": "scripts/package-standalone-artifact.mjs",
-      "bytes": 49308,
-      "sha256": "9ad429b287bba6deb0796fcfce1e221cb1d51de0d511439faa92c2252b064436"
+      "bytes": 49464,
+      "sha256": "223de2d4fa106636ddb10fdcd4dadfa69a2b3113dfb0501f3f8cbf19b2d7a04e"
     },
     {
       "path": "scripts/patch-benchmark-video-prompts.ts",
@@ -4418,8 +4418,8 @@
     },
     {
       "path": "scripts/run-release-browser-acceptance.mjs",
-      "bytes": 38515,
-      "sha256": "8eedab707742fb9a4db9a01c502cb0c67a3635fe69fd241a09f17c7a0ae762d0"
+      "bytes": 38720,
+      "sha256": "e4310bda6baf58863a1c25680eeacc000c0039fa336ac5c44fb55744727a00ac"
     },
     {
       "path": "scripts/run-release-targeted-regressions.mjs",
@@ -8188,8 +8188,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 73319,
-      "sha256": "7b6e7729ebbb321a38338aedb8d74306270a79954d7b175afafec50f54592946"
+      "bytes": 74285,
+      "sha256": "0486246b70d39ca5edf6531f7441837d642f4f311e63cf263870b54511c0b42e"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",

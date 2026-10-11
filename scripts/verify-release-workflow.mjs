@@ -777,6 +777,10 @@ for (const marker of [
   "source-public-allowlist-only",
   "publicSourceBoundary",
 ]) assert.ok(packager.includes(marker), `packager gate missing: ${marker}`);
+assert.match(packager, /const ARCHIVE_METADATA_MAX_BUFFER = 64 \* 1024 \* 1024;/u,
+  "finalization must bound large archive metadata output above Node's default child-process buffer");
+assert.equal((packager.match(/maxBuffer: ARCHIVE_METADATA_MAX_BUFFER/gu) || []).length, 2,
+  "finalization must apply the archive metadata buffer to both compact and verbose tar listings");
 assert.doesNotMatch(packager, /publicSourceExtensions/u);
 assert.match(
   packager,
@@ -1040,6 +1044,12 @@ for (const marker of [
   "1440",
   "900",
 ]) assert.ok(browserAcceptanceRunner.includes(marker), `browser acceptance runner contract missing: ${marker}`);
+assert.match(browserAcceptanceRunner, /const ARCHIVE_METADATA_MAX_BUFFER = 64 \* 1024 \* 1024;/u,
+  "browser acceptance must bound large archive metadata output above Node's default child-process buffer");
+assert.match(browserAcceptanceRunner, /maxBuffer: options\.maxBuffer \|\| 1024 \* 1024/u,
+  "browser acceptance command runner must forward explicit bounded output limits");
+assert.equal((browserAcceptanceRunner.match(/maxBuffer: ARCHIVE_METADATA_MAX_BUFFER/gu) || []).length, 2,
+  "browser acceptance must apply the archive metadata buffer to both compact and verbose tar listings");
 assert.match(browserAcceptanceRunner, /startCandidateDatabaseFixture/u,
   "browser acceptance must use an isolated local database fixture for authenticated routes");
 assert.match(browserAcceptanceRunner, /COZE_SUPABASE_URL = acceptance\.database\.url/u);
