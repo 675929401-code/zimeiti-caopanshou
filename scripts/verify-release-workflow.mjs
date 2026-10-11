@@ -1480,6 +1480,12 @@ assert.equal(stateMachineReport.ok, true, "deployment state-machine report did n
 assert.equal(stateMachineReport.staticStateMachineChecks, true, "deployment state-machine static gates did not pass");
 assert.ok(stateMachineReport.embeddedNodeValidators >= 12, "deployment state-machine did not syntax-check every embedded Node validator");
 assert.ok(Array.isArray(stateMachineReport.dynamicFaultInjectionChecks), "deployment state-machine did not execute fault injection");
+const assetPolicyTransitionVerifierBytes = fs.readFileSync(path.join(root, "scripts", "asset-policy-transition-proof-vnext.mjs"));
+const assetPolicyTransitionVerifierSha256 = crypto.createHash("sha256").update(assetPolicyTransitionVerifierBytes).digest("hex");
+assert.ok(
+  artifactDeployer.includes(`ASSET_POLICY_TRANSITION_VERIFIER_SHA256="${assetPolicyTransitionVerifierSha256}"`),
+  "artifact deployer is not pinned to the reviewed asset-policy transition verifier bytes",
+);
 for (const shellScript of [
   "scripts/provision-production-runtime-safety.sh",
   "scripts/verify-deploy-storage-runtime.sh",
@@ -1519,6 +1525,7 @@ for (const script of [
   "scripts/verify-public-asset-release.mjs",
   "scripts/publish-public-assets-cos-vnext.mjs",
   "scripts/materialize-public-asset-release-vnext.mjs",
+  "scripts/asset-policy-transition-proof-vnext.mjs",
   "scripts/run-release-browser-acceptance.mjs",
 ]) {
   const checked = spawnSync(process.execPath, ["--check", path.join(root, script)], { encoding: "utf8" });

@@ -145,6 +145,29 @@ assert.ok(validatorStart >= 0 && validatorEnd > validatorStart, "unable to locat
 const validatorBody = deployer.slice(validatorStart, validatorEnd);
 assert.doesNotMatch(validatorBody, /ASSET_DELIVERY_MODE/u, "asset validator must receive a per-release backend instead of reading global mode");
 
+const compatibilityStart = deployer.indexOf("validate_asset_forward_compatibility() {");
+const compatibilityEnd = deployer.indexOf("\n}\n\ncapture_data_snapshot()", compatibilityStart);
+assert.ok(compatibilityStart >= 0 && compatibilityEnd > compatibilityStart, "unable to locate forward asset compatibility body");
+const compatibilityBody = deployer.slice(compatibilityStart, compatibilityEnd);
+for (const marker of [
+  'require_trusted_controller_file "$ASSET_POLICY_TRANSITION_VERIFIER"',
+  "ASSET_POLICY_TRANSITION_VERIFIER_SHA256",
+  '--current-manifest "$current_manifest"',
+  '--next-manifest "$next_manifest"',
+  '"$CONTROL_PLANE_ROOT/receipts/"*',
+  '--receipt-sha256 "${ASSET_POLICY_TRANSITION_SHA256,,}"',
+]) assert.ok(compatibilityBody.includes(marker), `forward asset compatibility gate is missing: ${marker}`);
+const policyTransitionVerifier = fs.readFileSync(path.join(root, "scripts", "asset-policy-transition-proof-vnext.mjs"), "utf8");
+for (const marker of [
+  "required-paths-additive-only",
+  "asset policy fields other than requiredPaths changed",
+  "next asset policy removes a required path",
+  "new asset release deletes an active URL",
+  "new asset release mutates an active immutable URL",
+  "transition receipt generator identity/SHA is unsupported",
+  "transition receipt is not bound to the supplied manifests/policies",
+]) assert.ok(policyTransitionVerifier.includes(marker), `asset policy transition verifier is missing: ${marker}`);
+
 const firstProductionGate = deployer.indexOf('"production"; then');
 const dataGate = deployer.indexOf('compare_data_snapshot "$DATA_BEFORE" "$DATA_AFTER_LIVE"');
 const finalCompositeGate = deployer.indexOf('"precommit"; then');

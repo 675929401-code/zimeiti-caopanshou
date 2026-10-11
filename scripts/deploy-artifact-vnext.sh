@@ -10,17 +10,20 @@ CANDIDATE_FIXTURE_HELPER_PATH="/usr/local/libexec/zimeiti/prepare-candidate-read
 CANDIDATE_FIXTURE_HELPER_SHA256="ea62e6aa0676b26514491109fe13e950799585f51d41398b82817f83a860c3c6"
 DEPLOY_NODE_BIN="/data/direct-deploy/toolchain/bin/node"
 DEPLOY_RUNTIME_PATH="/data/direct-deploy/toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ASSET_POLICY_TRANSITION_VERIFIER_SHA256="55294aef46841fe6362f2a41df44c6d13fe196e7ffb904543b9b062743187bee"
 
 usage() {
   cat <<'USAGE'
 Usage:
   bash scripts/deploy-artifact-vnext.sh --plan \
     --release-mode WEB|VOICE --service web|voice \
-    --artifact FILE --sha256 HEX --release-id ID --root ABSOLUTE_ROOT
+    --artifact FILE --sha256 HEX --release-id ID --root ABSOLUTE_ROOT \
+    [--asset-policy-transition-receipt FILE --asset-policy-transition-sha256 HEX]
 
   DEPLOY_EXECUTION_APPROVED=ID bash scripts/deploy-artifact-vnext.sh --execute \
     --release-mode WEB|VOICE --service web|voice \
-    --artifact FILE --sha256 HEX --release-id ID --root ABSOLUTE_ROOT
+    --artifact FILE --sha256 HEX --release-id ID --root ABSOLUTE_ROOT \
+    [--asset-policy-transition-receipt FILE --asset-policy-transition-sha256 HEX]
 
   bash scripts/deploy-artifact-vnext.sh --verify-sensitive-root DIRECTORY
 
@@ -65,10 +68,12 @@ per-file SHA-256 verification. Web deployment compares those receipts with the
 asset manifest embedded in the code artifact, then switches current atomically.
 
 The asset and Web links are not one kernel-level two-pointer atomic operation.
-When the asset digest changes, activation is allowed only if the new manifest
-keeps the same asset policy and is a forward-compatible superset: every old URL
-keeps identical bytes/SHA and only new URLs are added. Otherwise deployment
-fails closed; use new asset paths or a future single-bundle pointer transaction.
+When the asset digest changes, activation first requires a fully verified URL
+superset: every old URL keeps identical bytes/SHA and only new URLs are added.
+An asset-policy digest change is a separate gate. It requires a SHA-bound proof
+showing that every policy field except requiredPaths is unchanged and that
+requiredPaths only grows. A URL proof can never waive a policy change, and a
+policy proof can never waive a URL mutation. Otherwise deployment fails closed.
 
   ASSET_DELIVERY_MODE defaults to auto and is only an optional policy constraint
   for the target asset release. Every current/target/rollback release derives its
@@ -226,6 +231,8 @@ RELEASE_ID=""
 RELEASE_ROOT=""
 SENSITIVE_VERIFY_ROOT=""
 ASSET_DELIVERY_MODE="${ASSET_DELIVERY_MODE:-auto}"
+ASSET_POLICY_TRANSITION_RECEIPT=""
+ASSET_POLICY_TRANSITION_SHA256=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -245,6 +252,8 @@ while [[ $# -gt 0 ]]; do
     --sha256) EXPECTED_SHA256="${2:-}"; shift 2 ;;
     --release-id) RELEASE_ID="${2:-}"; shift 2 ;;
     --root) RELEASE_ROOT="${2:-}"; shift 2 ;;
+    --asset-policy-transition-receipt) ASSET_POLICY_TRANSITION_RECEIPT="${2:-}"; shift 2 ;;
+    --asset-policy-transition-sha256) ASSET_POLICY_TRANSITION_SHA256="${2:-}"; shift 2 ;;
     --verify-sensitive-root) SENSITIVE_VERIFY_ROOT="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -252,7 +261,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$SENSITIVE_VERIFY_ROOT" ]]; then
-  [[ -z "$MODE$RELEASE_MODE$SERVICE$ARTIFACT$EXPECTED_SHA256$RELEASE_ID$RELEASE_ROOT" ]] || \
+  [[ -z "$MODE$RELEASE_MODE$SERVICE$ARTIFACT$EXPECTED_SHA256$RELEASE_ID$RELEASE_ROOT$ASSET_POLICY_TRANSITION_RECEIPT$ASSET_POLICY_TRANSITION_SHA256" ]] || \
     die "--verify-sensitive-root is a standalone read-only verification mode"
   require_command node
   [[ -d "$SENSITIVE_VERIFY_ROOT" && ! -L "$SENSITIVE_VERIFY_ROOT" ]] || die "sensitive-path verification root must be a regular directory"
@@ -273,6 +282,11 @@ fi
 [[ "$EXPECTED_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || die "--sha256 must be a 64-character SHA-256"
 [[ "$ASSET_DELIVERY_MODE" == "auto" || "$ASSET_DELIVERY_MODE" == "disk" || "$ASSET_DELIVERY_MODE" == "cos" ]] || \
   die "ASSET_DELIVERY_MODE must be auto, disk, or cos"
+if [[ -n "$ASSET_POLICY_TRANSITION_RECEIPT" || -n "$ASSET_POLICY_TRANSITION_SHA256" ]]; then
+  [[ "$SERVICE" == "web" ]] || die "asset policy transition proof is valid only for the Web release"
+  [[ -n "$ASSET_POLICY_TRANSITION_RECEIPT" && "$ASSET_POLICY_TRANSITION_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || \
+    die "asset policy transition receipt and its 64-character SHA-256 must be supplied together"
+fi
 [[ -n "$ARTIFACT" && -f "$ARTIFACT" && ! -L "$ARTIFACT" ]] || die "artifact must be an existing regular non-symlink file"
 [[ "$RELEASE_ROOT" == /* ]] || die "--root must be an absolute Linux path"
 [[ ! "$RELEASE_ROOT" =~ [[:space:]] ]] || die "--root must not contain whitespace"
@@ -294,6 +308,7 @@ ARTIFACT="$(readlink -f -- "$ARTIFACT")"
 DEPLOY_SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 DEPLOY_SCRIPT_DIR="${DEPLOY_SCRIPT_PATH%/*}"
 CONTROL_PLANE_ROOT="$(readlink -f -- "$DEPLOY_SCRIPT_DIR/..")"
+ASSET_POLICY_TRANSITION_VERIFIER="$CONTROL_PLANE_ROOT/scripts/asset-policy-transition-proof-vnext.mjs"
 PREFLIGHT_CREATOR="$CONTROL_PLANE_ROOT/scripts/create-production-preflight-receipt.mjs"
 PREFLIGHT_VERIFIER="$CONTROL_PLANE_ROOT/scripts/verify-production-preflight-receipt.mjs"
 PREFLIGHT_SCHEMA="$CONTROL_PLANE_ROOT/scripts/contracts/production-preflight-receipt.v1.schema.json"
@@ -1807,26 +1822,28 @@ NODE
 validate_asset_forward_compatibility() {
   local current_manifest="$1"
   local next_manifest="$2"
-  node - "$current_manifest" "$next_manifest" <<'NODE'
-const fs = require("node:fs");
-const [currentPath, nextPath] = process.argv.slice(2);
-const current = JSON.parse(fs.readFileSync(currentPath, "utf8"));
-const next = JSON.parse(fs.readFileSync(nextPath, "utf8"));
-if (current.digest === next.digest) process.exit(0);
-if (!Array.isArray(current.files) || !Array.isArray(next.files)) throw new Error("asset compatibility manifests require file inventories");
-if (current.contentAddressing !== "sha256-files-and-asset-policy" || next.contentAddressing !== current.contentAddressing ||
-    next.assetPolicySha256 !== current.assetPolicySha256) {
-  throw new Error("asset policy changed; sequential asset+Web pointers cannot prove old-URL compatibility");
-}
-const nextByPath = new Map(next.files.map((file) => [file.path, file]));
-for (const previousFile of current.files) {
-  const nextFile = nextByPath.get(previousFile.path);
-  if (!nextFile) throw new Error(`new asset release deletes an active URL: ${previousFile.path}`);
-  if (nextFile.sha256 !== previousFile.sha256 || nextFile.bytes !== previousFile.bytes) {
-    throw new Error(`new asset release mutates an active immutable URL: ${previousFile.path}`);
-  }
-}
-NODE
+  local actual_verifier_sha receipt_real actual_receipt_sha
+  local -a verifier_args
+  require_trusted_controller_file "$ASSET_POLICY_TRANSITION_VERIFIER" "asset policy transition verifier"
+  actual_verifier_sha="$(sha256sum "$ASSET_POLICY_TRANSITION_VERIFIER" | awk '{print $1}')"
+  [[ "$actual_verifier_sha" == "$ASSET_POLICY_TRANSITION_VERIFIER_SHA256" ]] || \
+    die "asset policy transition verifier SHA-256 mismatch"
+  verifier_args=(
+    --verify
+    --current-manifest "$current_manifest"
+    --next-manifest "$next_manifest"
+  )
+  if [[ -n "$ASSET_POLICY_TRANSITION_RECEIPT" ]]; then
+    require_trusted_controller_file "$ASSET_POLICY_TRANSITION_RECEIPT" "asset policy transition receipt"
+    receipt_real="$(readlink -f -- "$ASSET_POLICY_TRANSITION_RECEIPT")"
+    [[ "$receipt_real" == "$CONTROL_PLANE_ROOT/receipts/"* ]] || \
+      die "asset policy transition receipt must stay below the trusted control receipts directory"
+    actual_receipt_sha="$(sha256sum "$receipt_real" | awk '{print $1}')"
+    [[ "$actual_receipt_sha" == "${ASSET_POLICY_TRANSITION_SHA256,,}" ]] || \
+      die "asset policy transition receipt SHA-256 mismatch"
+    verifier_args+=(--receipt "$receipt_real" --receipt-sha256 "${ASSET_POLICY_TRANSITION_SHA256,,}")
+  fi
+  node "$ASSET_POLICY_TRANSITION_VERIFIER" "${verifier_args[@]}"
 }
 
 capture_data_snapshot() {

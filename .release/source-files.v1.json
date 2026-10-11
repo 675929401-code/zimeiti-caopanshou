@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "965ab118059699f4c9c0d20c0f3ed0086146463c8f2930f72da4823667c72175",
+  "sourceFingerprint": "18f06e384189dc4a3cdb6a4cda7b42de9e7754ca9b7330951db2bd4f9da0a8d0",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
-  "fileCount": 4179,
-  "totalBytes": 66903139,
+  "fileCount": 4180,
+  "totalBytes": 66922411,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2067,6 +2067,11 @@
       "sha256": "7c395c100d813ff9a6ce91846d9861f3903c2edb6b0d1f3ca9c3614b5d17dc27"
     },
     {
+      "path": "scripts/asset-policy-transition-proof-vnext.mjs",
+      "bytes": 15926,
+      "sha256": "55294aef46841fe6362f2a41df44c6d13fe196e7ffb904543b9b062743187bee"
+    },
+    {
       "path": "scripts/assign-published-video-model-to-workspaces-local-20261006.mjs",
       "bytes": 5192,
       "sha256": "2a21bd860d3f6ae9ec7aaa3dff394b721a1a1e57a771478d3e408b751566e7e2"
@@ -2733,8 +2738,8 @@
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
-      "bytes": 160777,
-      "sha256": "6983969df988434739c4a6a951f2d4444b52b2ee6e2ee6323164653a366a3a96"
+      "bytes": 162124,
+      "sha256": "854863ef245afd1eeb04c0701e99f0c8ee72841b0a24f890dc4a4679a54a14e7"
     },
     {
       "path": "scripts/deploy-direct.js",
@@ -6468,8 +6473,8 @@
     },
     {
       "path": "scripts/verify-deploy-state-machine.mjs",
-      "bytes": 29270,
-      "sha256": "41907b06408a2838b87843b3d0278bcedc6af1444c3599576694108f7b2f5180"
+      "bytes": 30736,
+      "sha256": "223aea77b5e8c464077464064c3a7c2c2c746d96918dbcf536314dfcb633e25e"
     },
     {
       "path": "scripts/verify-deploy-storage-guard-zero-network.sh",
@@ -8193,8 +8198,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 93639,
-      "sha256": "337f1ea38cd23c8cfd705e477ed803073d222c4127a45f6eb379d2e89f970c2d"
+      "bytes": 94172,
+      "sha256": "122c4e370b43aabccb03724778ce6ec7a2c1fd840a62c21c83511dcabc7bc684"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",
