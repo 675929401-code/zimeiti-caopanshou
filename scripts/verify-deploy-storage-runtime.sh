@@ -89,7 +89,10 @@ require_root_directory() {
 findmnt_value() {
   local field="$1" target="$2" value
   value=$(findmnt -n -o "$field" --target "$target" 2>/dev/null) || fail "findmnt failed for $field on $target"
-  [[ "$value" != *$'\n'* && -n "$value" ]] || fail "findmnt returned zero or multiple $field values for $target"
+  [[ "$value" != *$'\n'* ]] || fail "findmnt returned zero or multiple $field values for $target"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  [[ -n "$value" ]] || fail "findmnt returned zero or multiple $field values for $target"
   printf '%s' "$value"
 }
 

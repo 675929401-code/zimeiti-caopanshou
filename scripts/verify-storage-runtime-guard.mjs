@@ -27,6 +27,8 @@ const requiredGuardFragments = [
   "findmnt_value TARGET /",
   "findmnt_value 'MAJ:MIN' /",
   "findmnt_value SOURCE /",
+  'value="${value#"${value%%[![:space:]]*}"}"',
+  'value="${value%"${value##*[![:space:]]}"}"',
   "system and data mount targets are identical",
   "fell back to the system root device",
   "fell back to the system root source",

@@ -1386,11 +1386,21 @@ assert.ok(
 );
 const storageGuardBytes = fs.readFileSync(path.join(root, "scripts/verify-deploy-storage-runtime.sh"));
 const storageGuardSha256 = crypto.createHash("sha256").update(storageGuardBytes).digest("hex");
+const findmntOuterWhitespaceTrimMarkers = [
+  'value="${value#"${value%%[![:space:]]*}"}"',
+  'value="${value%"${value##*[![:space:]]}"}"',
+];
+for (const marker of findmntOuterWhitespaceTrimMarkers) {
+  assert.ok(storageGuardBytes.includes(Buffer.from(marker)), `storage guard does not normalize padded findmnt output: ${marker}`);
+}
 assert.ok(
   artifactDeployer.includes(`STORAGE_GUARD_SHA256="${storageGuardSha256}"`),
   "artifact deployer is not pinned to the reviewed storage guard bytes",
 );
 const runtimeSafetyProvisioner = read("scripts/provision-production-runtime-safety.sh");
+for (const marker of findmntOuterWhitespaceTrimMarkers) {
+  assert.ok(runtimeSafetyProvisioner.includes(marker), `runtime-safety provisioner does not normalize padded findmnt output: ${marker}`);
+}
 const candidateFixtureBytes = fs.readFileSync(path.join(root, "scripts/prepare-candidate-readiness-fixtures.py"));
 const candidateFixtureSha256 = crypto.createHash("sha256").update(candidateFixtureBytes).digest("hex");
 const candidateFixtureSource = candidateFixtureBytes.toString("utf8");

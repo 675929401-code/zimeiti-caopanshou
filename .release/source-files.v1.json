@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "a02d465f59a6cf70e02f49f7c9e7c54966a6ca3b666b75c6bb46f6f7a39e0c6e",
+  "sourceFingerprint": "eb4f0fa40f2560035765209b1e4dbcedb6f3008155ebcc9a0551b28b66d97d05",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4179,
-  "totalBytes": 66900012,
+  "totalBytes": 66900975,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2734,7 +2734,7 @@
     {
       "path": "scripts/deploy-artifact-vnext.sh",
       "bytes": 159965,
-      "sha256": "5eddf5d8f1a8fde4fbe69fd57e72ef63b17061323fad4460fda5dd8508f49ca9"
+      "sha256": "33e6792601a5aa0d13cf80eb834678529f6fcbeeedd66c8375ff3fc6b04d8c2f"
     },
     {
       "path": "scripts/deploy-direct.js",
@@ -3618,8 +3618,8 @@
     },
     {
       "path": "scripts/provision-production-runtime-safety.sh",
-      "bytes": 32463,
-      "sha256": "558a223a4f2e6b3dcdf156654748cfaacb1d4415462b02ecd4916bc9dedc050b"
+      "bytes": 32633,
+      "sha256": "21d568a79dbdd7531f590feffadb431d73fca8ceca74b350a0a7ed04948244b7"
     },
     {
       "path": "scripts/provision-release-root-vnext.sh",
@@ -6478,8 +6478,8 @@
     },
     {
       "path": "scripts/verify-deploy-storage-runtime.sh",
-      "bytes": 13073,
-      "sha256": "f7df11406eb20819cffbe3300c77aefe38caa315e4183025912823f8f1990be4"
+      "bytes": 13238,
+      "sha256": "5acc4a75929668b9aa77b0ec965b983708a23079e35347fb67527346ee8ce400"
     },
     {
       "path": "scripts/verify-deployment-readiness-security.mjs",
@@ -8193,8 +8193,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 91704,
-      "sha256": "7a434fb80569def268189e20482c50ab4da69bdbc61d9f138c5e6d5f94734818"
+      "bytes": 92236,
+      "sha256": "f56cde5aa52580f2b4d8e2a900689b82972bb2a87299ca40d8bb02aee3211192"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",
@@ -8573,8 +8573,8 @@
     },
     {
       "path": "scripts/verify-storage-runtime-guard.mjs",
-      "bytes": 15658,
-      "sha256": "77d99c2148cafd7c8ebd3ed2f1ef02feede64bdb2ee107336c0b7b036d7a8280"
+      "bytes": 15754,
+      "sha256": "c94457ce91586b8195569d6480d4d6841e636192da82b6136738d3fba1c5fdbd"
     },
     {
       "path": "scripts/verify-storage-runtime-package.mjs",

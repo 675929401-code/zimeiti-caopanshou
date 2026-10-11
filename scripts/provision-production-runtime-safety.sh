@@ -20,7 +20,7 @@ DROPIN_TARGET="/etc/systemd/system/pm2-root.service.d/20-zimeiti-data-mount.conf
 RECEIPT_PATH="/run/zimeiti/storage-readiness.json"
 LOCK_PATH="/run/zimeiti-runtime-safety-provision.lock"
 
-GUARD_SHA256="f7df11406eb20819cffbe3300c77aefe38caa315e4183025912823f8f1990be4"
+GUARD_SHA256="5acc4a75929668b9aa77b0ec965b983708a23079e35347fb67527346ee8ce400"
 FIXTURE_SHA256="ea62e6aa0676b26514491109fe13e950799585f51d41398b82817f83a860c3c6"
 DROPIN_SHA256="7aa7ef2694091b5ea4a1c457844c9cf447357c18620880e9282e5654104c2b04"
 MIN_AVAILABLE_BYTES="21474836480"
@@ -192,7 +192,11 @@ findmnt_value() {
   local field="$1" target="$2" value
   value="$(findmnt -n -o "$field" --target "$target" 2>/dev/null)" || \
     die "findmnt failed for $field on $target"
-  [[ -n "$value" && "$value" != *$'\n'* ]] || \
+  [[ "$value" != *$'\n'* ]] || \
+    die "findmnt returned zero or multiple $field values for $target"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  [[ -n "$value" ]] || \
     die "findmnt returned zero or multiple $field values for $target"
   printf '%s' "$value"
 }
