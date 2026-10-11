@@ -366,6 +366,52 @@ else
   CANDIDATE_PORT_MIN="15150"
   CANDIDATE_PORT_MAX="15199"
 fi
+PM2_STATE_ROOT="/root/.pm2"
+PM2_DUMP_PATH="$PM2_STATE_ROOT/dump.pm2"
+
+validate_predeploy_runtime_alignment() {
+  require_command pm2
+  require_command ss
+  local daemon_pid current_target pm2_pid listener
+  [[ -f "$PM2_STATE_ROOT/pm2.pid" && ! -L "$PM2_STATE_ROOT/pm2.pid" ]] || \
+    die "PM2 daemon identity file is unavailable; plan mode must not start a daemon"
+  daemon_pid="$(tr -d '[:space:]' <"$PM2_STATE_ROOT/pm2.pid")"
+  [[ "$daemon_pid" =~ ^[1-9][0-9]*$ && -d "/proc/$daemon_pid" ]] || \
+    die "PM2 daemon is not already running"
+  current_target=""
+  if [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]]; then
+    [[ -L "$CURRENT_LINK" ]] || die "service current pointer is not a symlink: $CURRENT_LINK"
+    current_target="$(readlink -f -- "$CURRENT_LINK")" || die "service current pointer is broken"
+  fi
+  pm2_pid="$(pm2 jlist | node -e '
+const fs = require("node:fs");
+const [name, target, livePort] = process.argv.slice(1);
+const processes = JSON.parse(fs.readFileSync(0, "utf8"));
+const statusOf = (entry) => entry?.pm2_env?.status ?? entry?.status ?? "";
+const portOf = (entry) => String(entry?.pm2_env?.env?.PORT ?? entry?.pm2_env?.PORT ?? entry?.env?.PORT ?? entry?.PORT ?? "");
+const conflicting = processes.filter((entry) => entry?.name !== name && portOf(entry) === livePort && statusOf(entry) !== "stopped");
+if (conflicting.length) throw new Error(`unmanaged PM2 process claims live port ${livePort}: ${conflicting.map((entry) => `${entry.name}:${statusOf(entry)}`).join(",")}`);
+const matches = processes.filter((entry) => entry?.name === name);
+if (!target) {
+  if (matches.length) throw new Error(`managed PM2 process ${name} exists without a current pointer`);
+  process.stdout.write("0");
+  process.exit(0);
+}
+if (matches.length !== 1) throw new Error(`expected one PM2 process ${name}, found ${matches.length}`);
+const processInfo = matches[0];
+const env = processInfo.pm2_env || {};
+if (statusOf(processInfo) !== "online") throw new Error(`PM2 process is not online: ${statusOf(processInfo)}`);
+if (typeof processInfo.pid !== "number" || processInfo.pid <= 0) throw new Error("PM2 process PID is invalid");
+if (fs.realpathSync(env.pm_cwd) !== fs.realpathSync(target)) throw new Error(`PM2 cwd does not match current pointer: ${env.pm_cwd}`);
+process.stdout.write(String(processInfo.pid));
+' "$APP_NAME" "$current_target" "$LIVE_PORT")" || die "managed pointer/PM2 runtime topology is inconsistent"
+  listener="$(ss -H -ltnp "sport = :$LIVE_PORT" 2>/dev/null || true)"
+  if [[ "$pm2_pid" == "0" ]]; then
+    [[ -z "$listener" ]] || die "first managed deployment requires the live port to be unused"
+  else
+    grep -Fq "pid=$pm2_pid," <<<"$listener" || die "managed PM2 process does not own live port $LIVE_PORT"
+  fi
+}
 
 assert_regular_directory() {
   local directory="$1"
@@ -1952,6 +1998,7 @@ else
 fi
 
 [[ ! -e "$CANDIDATE" && ! -L "$CANDIDATE" ]] || die "immutable release already exists: $CANDIDATE"
+validate_predeploy_runtime_alignment
 
 echo "MODE=$MODE"
 echo "RELEASE_MODE=$RELEASE_MODE"
@@ -1973,7 +2020,7 @@ echo "ASSET_DELIVERY_MODE_POLICY=$ASSET_DELIVERY_MODE"
 echo "READINESS=http://127.0.0.1:$LIVE_PORT$READINESS_PATH"
 
 if [[ "$MODE" == "plan" ]]; then
-  echo "PASS PLAN ONLY: artifact identity, archive safety, shared mounts/data JSON, and asset READY receipt validated."
+  echo "PASS PLAN ONLY: artifact identity, archive safety, shared mounts/data JSON, asset READY receipt, and managed runtime topology validated."
   if [[ "$SERVICE" == "web" && "$ASSET_DIGEST" != "$CURRENT_ASSET_DIGEST" ]]; then
     echo "PASS asset transition is a verified forward-compatible superset; sequential asset+Web pointers are safe but not kernel-level dual-atomic."
   fi
@@ -1983,7 +2030,7 @@ fi
 
 [[ "${DEPLOY_EXECUTION_APPROVED:-}" == "$RELEASE_ID" ]] || die "DEPLOY_EXECUTION_APPROVED must exactly equal the release id"
 [[ "$EUID" -eq 0 ]] || die "--execute requires EUID=0 so the promoted release can be sealed root:root before activation"
-for command_name in curl pm2 ss flock cmp cp mv id stat mkdir ln dirname tail tr env sleep date chown chmod find systemd-run systemctl nsenter getent passwd python3; do require_command "$command_name"; done
+for command_name in curl pm2 ss flock cmp cp mv id stat mkdir ln dirname tail tr env sleep date chown chmod find sync systemd-run systemctl nsenter getent passwd python3; do require_command "$command_name"; done
 mv --version 2>/dev/null | head -n 1 | grep -q "GNU coreutils" || die "GNU coreutils mv is required for atomic symlink replacement"
 SYSTEMD_VERSION="$(systemd-run --version 2>/dev/null | awk 'NR == 1 { print $2 }')"
 [[ "$SYSTEMD_VERSION" =~ ^[0-9]+$ && "$SYSTEMD_VERSION" -ge 255 ]] || \
@@ -2626,6 +2673,64 @@ process.stdout.write(String(processInfo.pid));
   grep -Fq "pid=$pm2_pid," <<<"$listener"
 }
 
+verify_pm2_dump_identity() {
+  local expected_target="$1"
+  local expected_release="$2"
+  local expected_commit="$3"
+  local expected_build_id="$4"
+  local expected_asset_digest="${5:--}"
+  local expected_asset_manifest_sha256="${6:--}"
+  local expected_source_version="${7:-}"
+  local expected_build_output_digest="${8:-}"
+  require_trusted_controller_file "$PM2_DUMP_PATH" "PM2 persistent process dump"
+  node - "$PM2_DUMP_PATH" "$APP_NAME" "$expected_target" "$expected_release" "$expected_commit" "$expected_build_id" \
+    "$SERVICE" "$LIVE_PORT" "$expected_asset_digest" "$expected_asset_manifest_sha256" \
+    "$expected_source_version" "$expected_build_output_digest" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+const [dumpPath, name, target, releaseId, commitSha, buildId, service, livePort, assetDigest, assetManifestSha256, sourceVersion, buildOutputDigest] = process.argv.slice(2);
+const processes = JSON.parse(fs.readFileSync(dumpPath, "utf8"));
+if (!Array.isArray(processes)) throw new Error("PM2 dump must be an array");
+const statusOf = (entry) => entry?.status ?? entry?.pm2_env?.status ?? "";
+const valueOf = (entry, key) => entry?.[key] ?? entry?.env?.[key] ?? entry?.pm2_env?.[key] ?? entry?.pm2_env?.env?.[key];
+const portOf = (entry) => String(valueOf(entry, "PORT") ?? "");
+const conflicting = processes.filter((entry) => entry?.name !== name && portOf(entry) === livePort && statusOf(entry) !== "stopped");
+if (conflicting.length) throw new Error(`PM2 dump contains another active claimant for port ${livePort}`);
+const matches = processes.filter((entry) => entry?.name === name);
+if (!target) {
+  if (matches.length) throw new Error(`PM2 dump unexpectedly contains ${name}`);
+  process.exit(0);
+}
+if (matches.length !== 1) throw new Error(`PM2 dump expected one ${name} entry, found ${matches.length}`);
+const entry = matches[0];
+if (statusOf(entry) !== "online") throw new Error("PM2 dump managed process is not online");
+if (fs.realpathSync(entry.pm_cwd) !== fs.realpathSync(target)) throw new Error("PM2 dump cwd mismatch");
+if (valueOf(entry, "RELEASE_ID") !== releaseId || valueOf(entry, "DEPLOY_COMMIT_SHA") !== commitSha ||
+    valueOf(entry, "EXPECTED_BUILD_ID") !== buildId || valueOf(entry, "RELEASE_SOURCE_VERSION") !== sourceVersion ||
+    valueOf(entry, "RELEASE_BUILD_OUTPUT_DIGEST") !== buildOutputDigest || valueOf(entry, "COZE_PROJECT_ENV") !== "PROD" ||
+    portOf(entry) !== livePort) throw new Error("PM2 dump release identity environment mismatch");
+if (service === "web" && (valueOf(entry, "ASSET_DIGEST") !== assetDigest ||
+    valueOf(entry, "ASSET_MANIFEST_SHA256") !== assetManifestSha256)) throw new Error("PM2 dump Web asset identity mismatch");
+if (!path.isAbsolute(entry.pm_exec_path)) throw new Error("PM2 dump executable path is not absolute");
+NODE
+}
+
+persist_pm2_state() {
+  local expected_target="$1"
+  local expected_release="$2"
+  local expected_commit="$3"
+  local expected_build_id="$4"
+  local expected_asset_digest="${5:--}"
+  local expected_asset_manifest_sha256="${6:--}"
+  local expected_source_version="${7:-}"
+  local expected_build_output_digest="${8:-}"
+  pm2 save --force >/dev/null || return 1
+  [[ -f "$PM2_DUMP_PATH" && ! -L "$PM2_DUMP_PATH" ]] || return 1
+  sync -f "$PM2_DUMP_PATH" || return 1
+  verify_pm2_dump_identity "$expected_target" "$expected_release" "$expected_commit" "$expected_build_id" \
+    "$expected_asset_digest" "$expected_asset_manifest_sha256" "$expected_source_version" "$expected_build_output_digest"
+}
+
 link_resolves_to() {
   local link_path="$1"
   local expected_target="$2"
@@ -2810,6 +2915,18 @@ rollback_release() {
       IN_ROLLBACK="0"
       return 1
     fi
+    if [[ -n "$PREVIOUS_TARGET" ]]; then
+      if ! persist_pm2_state "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
+        "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST"; then
+        echo "ROLLBACK FAILED: restored PM2 runtime could not be persisted for reboot." >&2
+        IN_ROLLBACK="0"
+        return 1
+      fi
+    elif ! persist_pm2_state "" "" "" "" "-" "-" "" ""; then
+      echo "ROLLBACK FAILED: first-deploy PM2 absence could not be persisted for reboot." >&2
+      IN_ROLLBACK="0"
+      return 1
+    fi
     DIRECT_ROLLBACK_COMPLETE="1"
     ROLLBACK_SUCCEEDED="1"
     echo "ROLLBACK PASS: code/process and asset pointer invariants are restored; shared data was not restored or overwritten." >&2
@@ -2964,6 +3081,11 @@ fi
 if [[ ! "$PRODUCTION_PREFLIGHT_RECEIPT_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
   rollback_release "production preflight receipt identity missing at commit boundary" || true
   fail "production preflight receipt identity missing at commit boundary"
+fi
+if ! persist_pm2_state "$CANDIDATE" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" \
+  "${ASSET_DIGEST:--}" "${ASSET_MANIFEST_SHA256:--}" "$SOURCE_VERSION" "$BUILD_OUTPUT_DIGEST"; then
+  rollback_release "PM2 reboot persistence verification failed" || true
+  fail "PM2 reboot persistence verification failed"
 fi
 
 # SUCCESS and DEPLOY_COMPLETE form one short commit boundary. A termination

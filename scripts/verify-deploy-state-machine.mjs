@@ -177,6 +177,45 @@ const storageGuardBody = deployer.slice(storageGuardStart, storageGuardEnd);
 assert.ok(storageGuardBody.includes('require_trusted_controller_file "$STORAGE_GUARD_PATH"'), "storage guard must reuse the common trusted-file validator");
 assert.doesNotMatch(storageGuardBody, /stat -c/u, "storage guard must not duplicate trusted-file metadata parsing");
 assert.doesNotMatch(deployer, /stat -c '[^']*%F/u, "deployment security gates must use shell file predicates plus locale-independent numeric stat fields");
+
+const runtimeAlignmentStart = deployer.indexOf("validate_predeploy_runtime_alignment() {");
+const runtimeAlignmentEnd = deployer.indexOf("\n}\n\nassert_regular_directory()", runtimeAlignmentStart);
+assert.ok(runtimeAlignmentStart >= 0 && runtimeAlignmentEnd > runtimeAlignmentStart, "unable to locate predeploy runtime alignment gate");
+const runtimeAlignmentBody = deployer.slice(runtimeAlignmentStart, runtimeAlignmentEnd);
+for (const marker of [
+  '[[ -f "$PM2_STATE_ROOT/pm2.pid" && ! -L "$PM2_STATE_ROOT/pm2.pid" ]]',
+  "plan mode must not start a daemon",
+  "unmanaged PM2 process claims live port",
+  "PM2 cwd does not match current pointer",
+  'grep -Fq "pid=$pm2_pid,"',
+]) assert.ok(runtimeAlignmentBody.includes(marker), `predeploy runtime alignment gate is missing: ${marker}`);
+const runtimeAlignmentCall = deployer.indexOf("\nvalidate_predeploy_runtime_alignment\n");
+const planSuccess = deployer.indexOf("PASS PLAN ONLY:");
+assert.ok(runtimeAlignmentCall >= 0 && runtimeAlignmentCall < planSuccess, "runtime topology must be checked before a plan can pass");
+
+const pm2DumpVerifierStart = deployer.indexOf("verify_pm2_dump_identity() {");
+const pm2DumpVerifierEnd = deployer.indexOf("\n}\n\npersist_pm2_state()", pm2DumpVerifierStart);
+assert.ok(pm2DumpVerifierStart >= 0 && pm2DumpVerifierEnd > pm2DumpVerifierStart, "unable to locate PM2 dump identity verifier");
+const pm2DumpVerifierBody = deployer.slice(pm2DumpVerifierStart, pm2DumpVerifierEnd);
+for (const marker of [
+  'require_trusted_controller_file "$PM2_DUMP_PATH"',
+  "PM2 dump contains another active claimant",
+  "PM2 dump cwd mismatch",
+  "PM2 dump release identity environment mismatch",
+  "PM2 dump Web asset identity mismatch",
+]) assert.ok(pm2DumpVerifierBody.includes(marker), `PM2 dump verifier is missing: ${marker}`);
+const pm2PersistStart = deployer.indexOf("persist_pm2_state() {");
+const pm2PersistEnd = deployer.indexOf("\n}\n\nlink_resolves_to()", pm2PersistStart);
+assert.ok(pm2PersistStart >= 0 && pm2PersistEnd > pm2PersistStart, "unable to locate PM2 persistence function");
+const pm2PersistBody = deployer.slice(pm2PersistStart, pm2PersistEnd);
+for (const marker of ["pm2 save --force", 'sync -f "$PM2_DUMP_PATH"', "verify_pm2_dump_identity"]) {
+  assert.ok(pm2PersistBody.includes(marker), `PM2 persistence function is missing: ${marker}`);
+}
+const pm2SuccessPersistCall = deployer.lastIndexOf('persist_pm2_state "$CANDIDATE"');
+const successHistoryWrite = deployer.indexOf("SUCCESS\\t%s\\t%s");
+assert.ok(pm2SuccessPersistCall >= 0 && successHistoryWrite > pm2SuccessPersistCall, "PM2 reboot state must be persisted before deployment SUCCESS is committed");
+const rollbackPersistCall = deployer.indexOf('persist_pm2_state "$PREVIOUS_TARGET"');
+assert.ok(rollbackPersistCall >= 0 && rollbackPersistCall < pm2SuccessPersistCall, "rollback must persist the restored PM2 state");
 const policyTransitionVerifier = fs.readFileSync(path.join(root, "scripts", "asset-policy-transition-proof-vnext.mjs"), "utf8");
 for (const marker of [
   "required-paths-additive-only",
@@ -545,13 +584,14 @@ exit 99
     'IN_ROLLBACK="0"',
     'PM2_PRESENT="0"',
     'PORT_PRESENT="0"',
+    'PERSIST_FAIL="0"',
     'FAIL_RM="0"',
     'CURRENT_MATCH="1"',
     'ASSET_MATCH="1"',
     'mkdir -p "$CANDIDATE" "$PREVIOUS_ASSET_TARGET"',
     ': >"$ASSET_CURRENT_LINK"',
     'case "$scenario" in',
-    '  verify-clean|rollback-current|rollback-rm-fail) ;;',
+    '  verify-clean|rollback-current|rollback-rm-fail|rollback-persist-fail) ;;',
     '  verify-current) : >"$CURRENT_LINK" ;;',
     '  verify-previous) PREVIOUS_TARGET="$test_root/old-release" ;;',
     '  verify-asset) ASSET_MATCH="0" ;;',
@@ -560,8 +600,9 @@ exit 99
     '  rollback-unexpected) : >"$CURRENT_LINK"; CURRENT_MATCH="0" ;;',
     '  *) exit 91 ;;',
     'esac',
-    'if [[ "$scenario" == "rollback-current" || "$scenario" == "rollback-rm-fail" ]]; then : >"$CURRENT_LINK"; fi',
+    'if [[ "$scenario" == "rollback-current" || "$scenario" == "rollback-rm-fail" || "$scenario" == "rollback-persist-fail" ]]; then : >"$CURRENT_LINK"; fi',
     'if [[ "$scenario" == "rollback-rm-fail" ]]; then FAIL_RM="1"; fi',
+    'if [[ "$scenario" == "rollback-persist-fail" ]]; then PERSIST_FAIL="1"; fi',
     'cleanup_candidate() { :; }',
     'port_in_use() { [[ "$PORT_PRESENT" == "1" ]]; }',
     'link_resolves_to() { if [[ "$1" == "$CURRENT_LINK" ]]; then [[ "$CURRENT_MATCH" == "1" && -e "$CURRENT_LINK" ]]; else [[ "$1" == "$ASSET_CURRENT_LINK" && "$ASSET_MATCH" == "1" ]]; fi; }',
@@ -571,6 +612,7 @@ exit 99
     'validate_payload_inventory() { return 0; }',
     'activate_pm2() { return 0; }',
     'verify_exact_active_composite() { return 0; }',
+    'persist_pm2_state() { [[ "$PERSIST_FAIL" == "0" ]]; }',
     'unexpected_error() { return 1; }',
     'rm() { if [[ "$FAIL_RM" == "1" && "${*: -1}" == "$CURRENT_LINK" ]]; then return 1; fi; command rm "$@"; }',
   ].join("\n");
@@ -595,6 +637,7 @@ exit 99
     { scenario: "rollback-current", expected: 0 },
     { scenario: "rollback-absent", expected: 0 },
     { scenario: "rollback-rm-fail", expected: 42 },
+    { scenario: "rollback-persist-fail", expected: 42 },
     { scenario: "rollback-unexpected", expected: 42 },
   ]) {
     const caseRoot = path.join(temporaryRoot, `first-${testCase.scenario}`);
