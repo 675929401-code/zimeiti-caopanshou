@@ -1393,6 +1393,8 @@ const findmntOuterWhitespaceTrimMarkers = [
 for (const marker of findmntOuterWhitespaceTrimMarkers) {
   assert.ok(storageGuardBytes.includes(Buffer.from(marker)), `storage guard does not normalize padded findmnt output: ${marker}`);
 }
+assert.ok(storageGuardBytes.includes(Buffer.from("df --output=iavail")), "storage guard must query inode availability without incompatible df flags");
+assert.ok(!storageGuardBytes.includes(Buffer.from("df -i --output=iavail")), "storage guard must not combine mutually exclusive df flags");
 assert.ok(
   artifactDeployer.includes(`STORAGE_GUARD_SHA256="${storageGuardSha256}"`),
   "artifact deployer is not pinned to the reviewed storage guard bytes",
@@ -1401,6 +1403,8 @@ const runtimeSafetyProvisioner = read("scripts/provision-production-runtime-safe
 for (const marker of findmntOuterWhitespaceTrimMarkers) {
   assert.ok(runtimeSafetyProvisioner.includes(marker), `runtime-safety provisioner does not normalize padded findmnt output: ${marker}`);
 }
+assert.ok(runtimeSafetyProvisioner.includes("df --output=iavail"), "runtime-safety provisioner must query inode availability without incompatible df flags");
+assert.ok(!runtimeSafetyProvisioner.includes("df -i --output=iavail"), "runtime-safety provisioner must not combine mutually exclusive df flags");
 const candidateFixtureBytes = fs.readFileSync(path.join(root, "scripts/prepare-candidate-readiness-fixtures.py"));
 const candidateFixtureSha256 = crypto.createHash("sha256").update(candidateFixtureBytes).digest("hex");
 const candidateFixtureSource = candidateFixtureBytes.toString("utf8");

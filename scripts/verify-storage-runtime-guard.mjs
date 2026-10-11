@@ -40,7 +40,7 @@ const requiredGuardFragments = [
   "storage marker SHA-256 mismatch",
   "web root is not on the verified data mount",
   "df -B1 --output=avail",
-  "df -i --output=iavail",
+  "df --output=iavail",
   "invalid boot_id",
   "must not be a symlink",
   "must use mode 0600",

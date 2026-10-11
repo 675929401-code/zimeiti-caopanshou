@@ -4,7 +4,7 @@ umask 027
 
 PROJECT_ID="zimeiti-caopanshou"
 STORAGE_GUARD_PATH="/usr/local/libexec/zimeiti/verify-deploy-storage-runtime.sh"
-STORAGE_GUARD_SHA256="5acc4a75929668b9aa77b0ec965b983708a23079e35347fb67527346ee8ce400"
+STORAGE_GUARD_SHA256="c7d32c01a8747cc2e354aa2f12bc6990970d4860daa5b22c345b6c2c4e8c52b6"
 STORAGE_READINESS_RECEIPT="/run/zimeiti/storage-readiness.json"
 CANDIDATE_FIXTURE_HELPER_PATH="/usr/local/libexec/zimeiti/prepare-candidate-readiness-fixtures.py"
 CANDIDATE_FIXTURE_HELPER_SHA256="ea62e6aa0676b26514491109fe13e950799585f51d41398b82817f83a860c3c6"

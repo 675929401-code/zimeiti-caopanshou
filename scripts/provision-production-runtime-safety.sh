@@ -20,7 +20,7 @@ DROPIN_TARGET="/etc/systemd/system/pm2-root.service.d/20-zimeiti-data-mount.conf
 RECEIPT_PATH="/run/zimeiti/storage-readiness.json"
 LOCK_PATH="/run/zimeiti-runtime-safety-provision.lock"
 
-GUARD_SHA256="5acc4a75929668b9aa77b0ec965b983708a23079e35347fb67527346ee8ce400"
+GUARD_SHA256="c7d32c01a8747cc2e354aa2f12bc6990970d4860daa5b22c345b6c2c4e8c52b6"
 FIXTURE_SHA256="ea62e6aa0676b26514491109fe13e950799585f51d41398b82817f83a860c3c6"
 DROPIN_SHA256="7aa7ef2694091b5ea4a1c457844c9cf447357c18620880e9282e5654104c2b04"
 MIN_AVAILABLE_BYTES="21474836480"
@@ -268,7 +268,7 @@ inspect_live_storage() {
     die "fstab and live /data filesystem identities differ"
 
   AVAILABLE_BYTES="$(df -B1 --output=avail "$DATA_ROOT" | awk 'NR == 2 {print $1}')"
-  AVAILABLE_INODES="$(df -i --output=iavail "$DATA_ROOT" | awk 'NR == 2 {print $1}')"
+  AVAILABLE_INODES="$(df --output=iavail "$DATA_ROOT" | awk 'NR == 2 {print $1}')"
   [[ "$AVAILABLE_BYTES" =~ ^[0-9]+$ && "$AVAILABLE_INODES" =~ ^[0-9]+$ ]] || \
     die "cannot read /data free-byte or free-inode capacity"
   (( AVAILABLE_BYTES >= MIN_AVAILABLE_BYTES )) || \

@@ -192,7 +192,7 @@ MARKER_SHA256=$(sha256sum -- "$MARKER_PATH" | awk 'NR == 1 {print $1}')
 [[ "$MARKER_SHA256" == "$DATA_MARKER_SHA256" ]] || fail "storage marker SHA-256 mismatch"
 
 AVAILABLE_BYTES=$(df -B1 --output=avail "$DATA_ROOT" | awk 'NR == 2 {print $1}')
-AVAILABLE_INODES=$(df -i --output=iavail "$DATA_ROOT" | awk 'NR == 2 {print $1}')
+AVAILABLE_INODES=$(df --output=iavail "$DATA_ROOT" | awk 'NR == 2 {print $1}')
 require_uint availableBytes "$AVAILABLE_BYTES" "$MIN_AVAILABLE_BYTES"
 require_uint availableInodes "$AVAILABLE_INODES" "$MIN_AVAILABLE_INODES"
 
