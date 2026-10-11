@@ -60,8 +60,9 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(browserAcceptanceWorkflow, /^name: Release browser acceptance evidence$/mu);
   assert.match(browserAcceptanceWorkflow, /^\s+workflow_dispatch:/mu);
   assert.match(browserAcceptanceWorkflow, /^\s+candidate_run_id:/mu);
-  assert.match(browserAcceptanceWorkflow, /test "\$\(jq -r \.head_sha <<<"\$candidate"\)" = "\$GITHUB_SHA"/u);
-  assert.match(browserAcceptanceWorkflow, /name: release-candidate-\$\{\{ github\.sha \}\}/u);
+  assert.match(browserAcceptanceWorkflow, /git merge-base --is-ancestor "\$candidate_sha" "\$GITHUB_SHA"/u);
+  assert.match(browserAcceptanceWorkflow, /candidate reuse rejected because runtime source changed/u);
+  assert.match(browserAcceptanceWorkflow, /name: release-candidate-\$\{\{ steps\.candidate\.outputs\.sha \}\}/u);
   assert.match(browserAcceptanceWorkflow, /run-id: \$\{\{ inputs\.candidate_run_id \}\}/u);
   assert.doesNotMatch(browserAcceptanceWorkflow, /^\s{6}(?:PLAYWRIGHT_BROWSERS_PATH|DATA_IMAGE):[^\n]*\$\{\{ runner\.temp \}\}/mu,
     "runner context is unavailable while job-level env is evaluated");
@@ -75,6 +76,11 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(browserAcceptanceWorkflow, /name: release-browser-acceptance-\$\{\{ github\.sha \}\}/u);
   assert.doesNotMatch(browserAcceptanceWorkflow, /\b(?:ssh|scp|rsync)\b|deploy-artifact-vnext|production\.env|DEPLOY_EXECUTION_APPROVED/u,
     "browser acceptance must remain an isolated build-only workflow and never connect to production");
+  assert.match(ciWorkflow, /RELEASE_TOOLCHAIN_SHA=\$toolchain_sha/u);
+  assert.match(ciWorkflow, /candidate finalization rejected because runtime source changed/u);
+  assert.match(ciWorkflow, /name: release-candidate-\$\{\{ steps\.resolve\.outputs\.subject_sha \}\}/u);
+  assert.match(ciWorkflow, /b\.subject\.commit!==process\.env\.RELEASE_HEAD_SHA/u,
+    "finalize must bind the downloaded candidate bundle to the immutable subject commit");
 }
 
 verifyReleaseVnextWorkflowContract();
@@ -1052,6 +1058,12 @@ assert.equal((browserAcceptanceRunner.match(/maxBuffer: ARCHIVE_METADATA_MAX_BUF
   "browser acceptance must apply the archive metadata buffer to both compact and verbose tar listings");
 assert.match(browserAcceptanceRunner, /startCandidateDatabaseFixture/u,
   "browser acceptance must use an isolated local database fixture for authenticated routes");
+assert.match(browserAcceptanceRunner, /process\.env\.CANDIDATE_SUBJECT_SHA \|\| process\.env\.GITHUB_SHA/u,
+  "browser acceptance must separate the immutable candidate subject from the verifier toolchain commit");
+assert.match(browserAcceptanceRunner, /context\.addInitScript[\s\S]*localStorage\.setItem\("auth_token", token\)[\s\S]*localStorage\.setItem\("auth_user", JSON\.stringify\(user\)\)[\s\S]*sessionStorage\.setItem\("entered_app", "1"\)/u,
+  "browser acceptance must seed the same client-side authenticated state used by protected pages");
+assert.match(browserAcceptanceRunner, /blockingFailures\.push[\s\S]*BROWSER_ROUTE_FAILURES/u,
+  "browser acceptance must sweep all required routes and report their blocking failures together");
 assert.match(browserAcceptanceRunner, /COZE_SUPABASE_URL = acceptance\.database\.url/u);
 assert.doesNotMatch(browserAcceptanceRunner, /process\.env\.(?:COZE_SUPABASE|COS_SECRET|SSH_)|https:\/\/[^"'`]*supabase/iu,
   "browser acceptance must never inherit production database, COS, or SSH credentials");

@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "c8cae06d7f30d5b7c59fe0fbac37514c7edc6e675ee9c5b0cf3eb538c14d35a5",
-  "sourceFingerprint": "9fe6a4e845e60bc26d80de4e13d4fdf1f4acf669cae9c5b08537009933a023af",
+  "sourceFingerprint": "edddb040ee5ed78c62fa6918c179a0d82a6b61677a1e1e0a0aaaacb4684bcdf3",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4178,
-  "totalBytes": 66745621,
+  "totalBytes": 66751934,
   "files": [
     {
       "path": ".cnb.yml",
@@ -48,13 +48,13 @@
     },
     {
       "path": ".github/workflows/release-browser-acceptance.yml",
-      "bytes": 6383,
-      "sha256": "b70a885f3fad12303219cc39ca39a2783ef05bc7f65eff4ad2b3c2a22dc101c7"
+      "bytes": 7213,
+      "sha256": "031b1427d24d0b65fa4f5689bf1dae10bd38082430828a6a37a2077fb4dc3593"
     },
     {
       "path": ".github/workflows/release-vnext.yml",
-      "bytes": 18805,
-      "sha256": "c6beb98830cd3a0bf275a1b4b6c48264b225934db9116e6f3518ab918466a655"
+      "bytes": 20355,
+      "sha256": "738baa4a58e5247b55297cd7e9f3a2f948ab98106a11836eb8e7df6fafb1c520"
     },
     {
       "path": ".gitignore",
@@ -4418,8 +4418,8 @@
     },
     {
       "path": "scripts/run-release-browser-acceptance.mjs",
-      "bytes": 39097,
-      "sha256": "5f2fe43469a577ef72d42dfed43dd53e05b1ae936cb621f433f65054729a1ca4"
+      "bytes": 41705,
+      "sha256": "1015780020db6c07360ff42bb2db45bbddcef85ec7c916bd77ea475aad4282b0"
     },
     {
       "path": "scripts/run-release-targeted-regressions.mjs",
@@ -8153,8 +8153,8 @@
     },
     {
       "path": "scripts/verify-release-change-scope-zero-network.mjs",
-      "bytes": 108835,
-      "sha256": "5a5c9daabfe9c292b1d953f7cc642da2107319754f30a1178cbe5ab2f3b1ba3b"
+      "bytes": 108852,
+      "sha256": "05ef69676b4c94c9dde4917ecda43d8da9b9bac53e66f3d2d2d40ed55e6def91"
     },
     {
       "path": "scripts/verify-release-database-gates.ts",
@@ -8188,8 +8188,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 75078,
-      "sha256": "dbbec1ca201661d9688809779f236dd097157b45c4d9dd90d6c9f180834a7d10"
+      "bytes": 76386,
+      "sha256": "e9786a08ce0b35071841445d6394e0998e2506099d76c3d72066cd54e6d5718d"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",

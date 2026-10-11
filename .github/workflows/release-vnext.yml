@@ -58,7 +58,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Resolve immutable phase, services, and trusted range
+        id: resolve
         env:
+          GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -70,7 +72,8 @@ jobs:
           ACCEPTANCE_RUN_ID: ${{ inputs.acceptance_run_id }}
         run: |
           set -euo pipefail
-          head_sha="$(git rev-parse HEAD)"
+          toolchain_sha="$(git rev-parse HEAD)"
+          head_sha="$toolchain_sha"
           phase="${REQUESTED_PHASE:-candidate}"
           requested="${REQUESTED_SERVICE:-web}"
           if [[ "$EVENT_NAME" == pull_request ]]; then
@@ -85,6 +88,13 @@ jobs:
             range_mode=direct
             if [[ "$phase" == finalize ]]; then
               [[ "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ && "$ACCEPTANCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'finalize requires candidate and acceptance run IDs' >&2; exit 2; }
+              candidate="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
+              head_sha="$(jq -r .head_sha <<<"$candidate")"
+              [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+              test "$(jq -r .conclusion <<<"$candidate")" = success
+              test "$(jq -r .name <<<"$candidate")" = 'Release vNext staged candidate'
+              git cat-file -e "$head_sha^{commit}"
+              git merge-base --is-ancestor "$head_sha" "$toolchain_sha"
             fi
           fi
           git merge-base --is-ancestor "$base_sha" "$head_sha" || { echo 'trusted base is not an ancestor' >&2; exit 2; }
@@ -93,6 +103,7 @@ jobs:
             echo "RELEASE_PHASE=$phase"
             echo "RELEASE_BASE_SHA=$base_sha"
             echo "RELEASE_HEAD_SHA=$head_sha"
+            echo "RELEASE_TOOLCHAIN_SHA=$toolchain_sha"
             echo "RELEASE_RANGE_MODE=$range_mode"
             echo "RELEASE_SERVICES=$services"
             echo "RELEASE_ACCEPTANCE_ROUTES=${REQUESTED_ROUTES:-[]}"
@@ -101,6 +112,7 @@ jobs:
             echo "RELEASE_VALIDATION_EVIDENCE=$RUNNER_TEMP/release-change-validation-evidence"
             echo "RELEASE_CANDIDATE_PACKAGES=$RUNNER_TEMP/candidate-packages"
           } >> "$GITHUB_ENV"
+          echo "subject_sha=$head_sha" >> "$GITHUB_OUTPUT"
           mkdir -p "$RUNNER_TEMP/release-change-validation-evidence"
 
       - name: Classify, diff-check, and scan the exact candidate range
@@ -212,6 +224,7 @@ jobs:
 
       - name: Validate candidate and browser-evidence run provenance
         if: env.RELEASE_PHASE == 'finalize'
+        id: provenance
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
@@ -222,15 +235,19 @@ jobs:
           test "$(jq -r .head_sha <<<"$candidate")" = "$RELEASE_HEAD_SHA"
           test "$(jq -r .conclusion <<<"$candidate")" = success
           test "$(jq -r .name <<<"$candidate")" = 'Release vNext staged candidate'
-          test "$(jq -r .head_sha <<<"$acceptance")" = "$RELEASE_HEAD_SHA"
+          acceptance_head_sha="$(jq -r .head_sha <<<"$acceptance")"
+          test "$acceptance_head_sha" = "$RELEASE_TOOLCHAIN_SHA"
           test "$(jq -r .conclusion <<<"$acceptance")" = success
           test "$(jq -r .name <<<"$acceptance")" = 'Release browser acceptance evidence'
+          unexpected="$(git diff --name-only "$RELEASE_HEAD_SHA..$RELEASE_TOOLCHAIN_SHA" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs)$' || true)"
+          [[ -z "$unexpected" ]] || { printf 'candidate finalization rejected because runtime source changed:\n%s\n' "$unexpected" >&2; exit 2; }
+          echo "acceptance_head_sha=$acceptance_head_sha" >> "$GITHUB_OUTPUT"
 
       - name: Download exact candidate output
         if: env.RELEASE_PHASE == 'finalize'
         uses: actions/download-artifact@v4
         with:
-          name: release-candidate-${{ github.sha }}
+          name: release-candidate-${{ steps.resolve.outputs.subject_sha }}
           path: ${{ runner.temp }}/candidate
           github-token: ${{ github.token }}
           run-id: ${{ inputs.candidate_run_id }}
@@ -249,6 +266,7 @@ jobs:
           cp "$RUNNER_TEMP/candidate/release-change-scope.json" "$RELEASE_SCOPE_RECEIPT"
           cp "$RUNNER_TEMP/candidate/release-change-validations.json" "$RELEASE_VALIDATION_BUNDLE"
           cp -R "$RUNNER_TEMP/candidate/release-change-validation-evidence/." "$RELEASE_VALIDATION_EVIDENCE/"
+          node -e "const b=require(process.argv[1]); if(b.subject.commit!==process.env.RELEASE_HEAD_SHA) process.exit(2)" "$RELEASE_VALIDATION_BUNDLE"
           node scripts/classify-release-change-scope.mjs --verify-receipt "$RELEASE_SCOPE_RECEIPT" --quiet
           IFS=',' read -ra services <<< "$RELEASE_SERVICES"
           for service in "${services[@]}"; do

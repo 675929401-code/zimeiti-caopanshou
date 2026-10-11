@@ -491,7 +491,7 @@ function cleanUrl(raw) {
   }
 }
 
-async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken) {
+async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken, authUser) {
   const browser = await chromium.launch({ headless: true, args: ["--disable-dev-shm-usage"] });
   const context = await browser.newContext({ viewport: VIEWPORT, serviceWorkers: "block", reducedMotion: "reduce" });
   await context.addCookies([{
@@ -503,13 +503,25 @@ async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken) 
     sameSite: "Lax",
     expires: Math.floor(Date.now() / 1000) + 60 * 60,
   }]);
+  await context.addInitScript(({ token, user }) => {
+    window.localStorage.setItem("auth_token", token);
+    window.localStorage.setItem("auth_user", JSON.stringify(user));
+    window.sessionStorage.setItem("entered_app", "1");
+  }, { token: authToken, user: authUser });
   const results = [];
+  const blockingFailures = [];
   const consoleErrors = [];
   const requestFailures = [];
   const nonBlockingHttpErrors = [];
   try {
     for (const [index, route] of routes.entries()) {
       const page = await context.newPage();
+      const routeFailures = [];
+      let responseStatus = null;
+      let finalPath = "";
+      let title = "";
+      let bodyText = "";
+      let screenshot = "";
       page.setDefaultTimeout(30_000);
       page.on("console", (message) => {
         if (message.type() === "error") consoleErrors.push({ route, text: message.text().slice(0, 1000) });
@@ -524,29 +536,53 @@ async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken) 
         else nonBlockingHttpErrors.push(item);
       });
       const startedAt = Date.now();
-      const response = await page.goto(new URL(route, baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
-      await page.waitForTimeout(1_500);
-      const finalUrl = new URL(page.url());
-      const expectedUrl = new URL(route, baseUrl);
-      if (!response || response.status() >= 400) fail("BROWSER_DOCUMENT_HTTP_FAILED", `${route}:${response?.status() ?? "no-response"}`);
-      if (finalUrl.pathname !== expectedUrl.pathname) fail("BROWSER_ROUTE_REDIRECTED", `${route}:${finalUrl.pathname}`);
-      const body = page.locator("body");
-      await body.waitFor({ state: "visible" });
-      const bodyText = (await body.innerText()).trim();
-      if (bodyText.length < 20 || /Application error|Internal Server Error|This page could not be found/iu.test(bodyText)) {
-        fail("BROWSER_PAGE_RENDER_INVALID", `${route}:${bodyText.slice(0, 200)}`);
+      try {
+        const response = await page.goto(new URL(route, baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+        responseStatus = response?.status() ?? null;
+        await page.waitForTimeout(1_500);
+        const finalUrl = new URL(page.url());
+        const expectedUrl = new URL(route, baseUrl);
+        finalPath = finalUrl.pathname;
+        if (!response || responseStatus >= 400) {
+          routeFailures.push({ code: "BROWSER_DOCUMENT_HTTP_FAILED", detail: `${route}:${responseStatus ?? "no-response"}` });
+        }
+        if (finalPath !== expectedUrl.pathname) {
+          routeFailures.push({ code: "BROWSER_ROUTE_REDIRECTED", detail: `${route}:${finalPath}` });
+        }
+        const body = page.locator("body");
+        await body.waitFor({ state: "visible" });
+        bodyText = (await body.innerText()).trim();
+        if (bodyText.length < 20 || /Application error|Internal Server Error|This page could not be found/iu.test(bodyText)) {
+          routeFailures.push({ code: "BROWSER_PAGE_RENDER_INVALID", detail: `${route}:${bodyText.slice(0, 200)}` });
+        }
+        title = await page.title();
+      } catch (error) {
+        routeFailures.push({
+          code: "BROWSER_ROUTE_EXECUTION_FAILED",
+          detail: `${route}:${error instanceof Error ? error.message : String(error)}`.slice(0, 1000),
+        });
       }
-      const screenshot = path.join(screenshotRoot, routeFileName(route, index));
-      await page.screenshot({ path: screenshot, fullPage: false, animations: "disabled" });
+      screenshot = path.join(screenshotRoot, routeFileName(route, index));
+      try {
+        await page.screenshot({ path: screenshot, fullPage: false, animations: "disabled" });
+      } catch (error) {
+        routeFailures.push({
+          code: "BROWSER_SCREENSHOT_FAILED",
+          detail: `${route}:${error instanceof Error ? error.message : String(error)}`.slice(0, 1000),
+        });
+        screenshot = "";
+      }
+      blockingFailures.push(...routeFailures.map((failure) => ({ route, ...failure })));
       results.push({
         route,
-        finalPath: finalUrl.pathname,
-        status: response.status(),
-        title: await page.title(),
+        finalPath,
+        status: responseStatus,
+        title,
         visibleTextCharacters: bodyText.length,
         elapsedMs: Date.now() - startedAt,
-        screenshot: path.basename(screenshot),
-        screenshotSha256: sha256File(screenshot),
+        screenshot: screenshot ? path.basename(screenshot) : null,
+        screenshotSha256: screenshot ? sha256File(screenshot) : null,
+        failures: routeFailures,
       });
       await page.close();
     }
@@ -554,9 +590,7 @@ async function runBrowserAcceptance(baseUrl, routes, screenshotRoot, authToken) 
     await context.close();
     await browser.close();
   }
-  if (consoleErrors.length) fail("BROWSER_CONSOLE_ERRORS", JSON.stringify(consoleErrors.slice(0, 10)));
-  if (requestFailures.length) fail("BROWSER_REQUEST_FAILURES", JSON.stringify(requestFailures.slice(0, 10)));
-  return { routes: results, consoleErrors, requestFailures, nonBlockingHttpErrors };
+  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors };
 }
 
 function runtimeIdentity(bundle, service) {
@@ -705,8 +739,9 @@ async function main() {
     fail("DEDICATED_DATA_MOUNT_REQUIRED");
   }
   const bundle = readJson(path.join(candidateRoot, "release-change-validations.json"), "CANDIDATE_BUNDLE_INVALID");
+  const expectedSubjectCommit = String(process.env.CANDIDATE_SUBJECT_SHA || process.env.GITHUB_SHA || bundle.subject.commit).toLowerCase();
   if (bundle.target !== "source-candidate" || bundle.status !== "source-candidate-pending-required"
-    || bundle.subject.commit !== String(process.env.GITHUB_SHA || bundle.subject.commit).toLowerCase()
+    || bundle.subject.commit !== expectedSubjectCommit
     || !bundle.subject.services.includes("web")) fail("CANDIDATE_BUNDLE_PHASE_INVALID");
   const routes = bundle.scope.browserAcceptance.requiredRoutes;
   if (!Array.isArray(routes) || routes.length < 3 || new Set(routes).size !== routes.length
@@ -762,6 +797,26 @@ async function main() {
       displayName: databaseFixture.admin.display_name,
       sessionId: databaseFixture.sessionId,
     });
+    const authUser = {
+      id: databaseFixture.admin.id,
+      username: databaseFixture.admin.username,
+      displayName: databaseFixture.admin.display_name,
+      phone: "",
+      email: databaseFixture.admin.email,
+      avatarUrl: "",
+      role: databaseFixture.admin.role,
+      credits: databaseFixture.admin.credits,
+      reservedCredits: databaseFixture.admin.credits_reserved,
+      is_active: databaseFixture.admin.is_active,
+      allowedCategories: null,
+      memberStatus: databaseFixture.admin.member_status,
+      themePreference: null,
+      themeModePreference: null,
+      themePreferenceExpiresAt: null,
+      themePreferenceStatus: "absent",
+      hasPassword: true,
+      status: databaseFixture.admin.status,
+    };
     for (const service of bundle.subject.services) {
       processes[service] = startCandidate(extracted[service].payloadRoot, extracted[service].manifest, states[service], assets, ports[service], service, reportRoot, acceptance);
     }
@@ -770,7 +825,7 @@ async function main() {
       const readinessPath = extracted[service].manifest.readinessPath;
       runtimeReadbacks[service] = await waitForReadiness(`http://127.0.0.1:${ports[service]}${readinessPath}`, extracted[service].manifest, service);
     }
-    browserReport = await runBrowserAcceptance(`http://127.0.0.1:${ports.web}`, routes, screenshotRoot, authToken);
+    browserReport = await runBrowserAcceptance(`http://127.0.0.1:${ports.web}`, routes, screenshotRoot, authToken, authUser);
   } finally {
     await Promise.all(Object.values(processes).map((entry) => stopChild(entry.child)));
     await stopFixtureServer(databaseFixture?.server);
@@ -784,6 +839,7 @@ async function main() {
     viewport: VIEWPORT,
     runtimeReadbacks,
     routes: browserReport.routes,
+    blockingFailures: browserReport.blockingFailures,
     consoleErrors: browserReport.consoleErrors,
     requestFailures: browserReport.requestFailures,
     nonBlockingHttpErrors: browserReport.nonBlockingHttpErrors,
@@ -792,10 +848,15 @@ async function main() {
       requestCount: databaseFixture.requests.length,
       paths: [...new Set(databaseFixture.requests.map((entry) => entry.path))].sort((left, right) => left.localeCompare(right, "en")),
     },
-    result: "passed",
+    result: browserReport.blockingFailures.length || browserReport.consoleErrors.length || browserReport.requestFailures.length
+      ? "failed"
+      : "passed",
   };
   const reportPath = path.join(reportRoot, "browser-acceptance-report.json");
   writeJson(reportPath, report);
+  if (browserReport.blockingFailures.length) fail("BROWSER_ROUTE_FAILURES", JSON.stringify(browserReport.blockingFailures.slice(0, 25)));
+  if (browserReport.consoleErrors.length) fail("BROWSER_CONSOLE_ERRORS", JSON.stringify(browserReport.consoleErrors.slice(0, 25)));
+  if (browserReport.requestFailures.length) fail("BROWSER_REQUEST_FAILURES", JSON.stringify(browserReport.requestFailures.slice(0, 25)));
   const externalBundle = createExternalBundle(bundle, evidenceRoot, privateKey, issuer, sha256File(reportPath));
   writeJson(path.join(outputRoot, "bundle.json"), externalBundle);
   process.stdout.write(`${JSON.stringify({

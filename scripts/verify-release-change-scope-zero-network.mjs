@@ -1438,7 +1438,7 @@ try {
   assert.doesNotMatch(workflow, /tar -xzf "\$RUNNER_TEMP\/candidate\/release-candidate-build/u);
   for (const marker of [
     "name: Release browser acceptance evidence",
-    "release-candidate-${{ github.sha }}",
+    "release-candidate-${{ steps.candidate.outputs.sha }}",
     "run-release-browser-acceptance.mjs",
     "RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY",
     "release-change-validation-gate.mjs verify-release-ready",

@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.sha }}
 
@@ -39,20 +39,28 @@ jobs:
           echo "DATA_IMAGE=$RUNNER_TEMP/release-browser-acceptance-data-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.ext4" >> "$GITHUB_ENV"
 
       - name: Verify exact candidate run provenance
+        id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'candidate_run_id must be numeric' >&2; exit 2; }
           candidate="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
-          test "$(jq -r .head_sha <<<"$candidate")" = "$GITHUB_SHA"
+          candidate_sha="$(jq -r .head_sha <<<"$candidate")"
+          [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]
           test "$(jq -r .conclusion <<<"$candidate")" = success
           test "$(jq -r .name <<<"$candidate")" = 'Release vNext staged candidate'
+          git cat-file -e "$candidate_sha^{commit}"
+          git merge-base --is-ancestor "$candidate_sha" "$GITHUB_SHA"
+          unexpected="$(git diff --name-only "$candidate_sha..$GITHUB_SHA" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs)$' || true)"
+          [[ -z "$unexpected" ]] || { printf 'candidate reuse rejected because runtime source changed:\n%s\n' "$unexpected" >&2; exit 2; }
+          echo "CANDIDATE_SUBJECT_SHA=$candidate_sha" >> "$GITHUB_ENV"
+          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
 
       - name: Download the exact immutable candidate output
         uses: actions/download-artifact@v4
         with:
-          name: release-candidate-${{ github.sha }}
+          name: release-candidate-${{ steps.candidate.outputs.sha }}
           path: ${{ runner.temp }}/candidate
           github-token: ${{ github.token }}
           run-id: ${{ inputs.candidate_run_id }}
