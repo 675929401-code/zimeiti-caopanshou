@@ -6,7 +6,10 @@ import ts from 'typescript';
 const source = await fs.readFile('src/components/admin-video-validation-state.ts', 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } });
 const module = { exports: {} };
+const mediaModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(await fs.readFile('src/lib/video-media-availability.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: mediaModule, exports: mediaModule.exports });
 vm.runInNewContext(compiled.outputText, { module, exports: module.exports, URL, Date, AbortSignal, JSON, Error, Number, String, Boolean,
+  require(name) { assert.equal(name, '@/lib/video-media-availability'); return mediaModule.exports; },
   fetch() { throw new Error('REAL_NETWORK_FORBIDDEN'); } });
 const helper = module.exports;
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -132,6 +135,16 @@ await test('provider-completed asset persistence failure stays finalizing under 
   await helper.submitVideoValidation({ ...baseDto, validationKey: `vav_${'d'.repeat(64)}` }, fields, 'fixture-user', io);
   assert.equal(io.requests.length, 1); assert.equal(helper.videoValidationIsTerminal(finalizing), false);
 });
-const directory = '.codex-evidence/admin-video-validation-ui-20260903'; await fs.mkdir(directory, { recursive: true });
+await test('completed but unavailable cannot publish or resubmit the same proof', async () => {
+  const io = harness(); const before = await helper.submitVideoValidation(baseDto, fields, 'fixture-user', io);
+  const unavailable = helper.updateVideoValidationReceipt(before, { status: 'completed', mediaAvailable: false, mediaUnavailableReason: 'source_expired', priceCharged: 2, billingState: 'settled' });
+  assert.equal(unavailable.status, 'failed'); assert.equal(unavailable.errorCode, 'VIDEO_MEDIA_UNAVAILABLE');
+  assert.equal(unavailable.generationStatus, 'completed'); assert.equal(unavailable.priceCharged, 2); assert.equal(unavailable.billingState, 'settled');
+  assert.equal(unavailable.taskId, before.taskId); assert.equal(unavailable.notSubmitted, false);
+  helper.saveVideoValidationAttempt(io.storage, unavailable);
+  assert.throws(() => helper.buildVideoValidationPublishRequest(unavailable));
+  await helper.submitVideoValidation(baseDto, fields, 'fixture-user', io); assert.equal(io.requests.length, 1);
+});
+const directory = process.env.VIDEO_TEST_EVIDENCE_DIR || '.codex-evidence/admin-video-validation-ui-20260903'; await fs.mkdir(directory, { recursive: true });
 await fs.writeFile(`${directory}/fixture-summary.json`, JSON.stringify({ passed, source: 'actual admin-video-validation-state helper', realUpstreamCalls: 0, databaseWrites: 0 }, null, 2));
 console.log(JSON.stringify({ passed, realUpstreamCalls: 0 }));

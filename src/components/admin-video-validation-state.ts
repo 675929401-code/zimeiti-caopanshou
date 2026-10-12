@@ -1,4 +1,5 @@
 import type { AiVideoPageInputCapabilities } from "@/lib/ai-video-page-capabilities";
+import { getVideoMediaUnavailable } from "@/lib/video-media-availability";
 
 export type VideoValidationProof = {
   validationKey: string;
@@ -49,6 +50,8 @@ export type VideoValidationAttempt = {
   status: "submitting" | "processing" | "finalizing" | "unknown" | "completed" | "failed" | "published";
   taskId: string; businessTaskId: string; error: string; errorCode: string;
   notSubmitted?: boolean;
+  generationStatus?: string; mediaAvailable?: boolean; mediaUnavailableReason?: string;
+  priceCharged?: number; billingState?: string;
 };
 type AttemptStorage = Pick<Storage, "getItem" | "setItem">;
 type AttemptIo = { storage: AttemptStorage; fetcher: typeof fetch; token: string; onChange?: (attempt: VideoValidationAttempt) => void };
@@ -130,14 +133,18 @@ export function updateVideoValidationReceipt(attempt: VideoValidationAttempt, da
   const taskId = String(data.task_id || data.taskId || attempt.taskId || "");
   const businessTaskId = String(data.business_task_id || data.businessTaskId || attempt.businessTaskId || "");
   const status = String(data.status || "");
+  const mediaUnavailable = getVideoMediaUnavailable(data);
   const unknown = data.submission_outcome === "unknown" || data.task_submitted === null || status === "unknown";
   const failed = !unknown && (["failed", "cancelled", "expired"].includes(status) || (!responseOk && data.task_submitted === false && !taskId && !businessTaskId));
   return {
     ...attempt, taskId, businessTaskId,
+    ...(status === "completed" ? { generationStatus: "completed", mediaAvailable: !mediaUnavailable, mediaUnavailableReason: mediaUnavailable?.reason } : {}),
+    ...(data.priceCharged !== undefined && Number.isFinite(Number(data.priceCharged)) ? { priceCharged: Math.max(0, Number(data.priceCharged)) } : {}),
+    ...(typeof data.billingState === "string" ? { billingState: data.billingState } : {}),
     notSubmitted: data.task_submitted === false && !taskId && !businessTaskId,
-    status: unknown ? "unknown" : status === "completed" && (taskId || businessTaskId) ? "completed" : failed ? "failed" : status === "finalizing" && (taskId || businessTaskId) ? "finalizing" : responseOk && taskId ? "processing" : "unknown",
-    error: status === "completed" ? "" : safeError(data.errorMessage || data.error || data.message, unknown ? "上游提交结果待确认，请检查原任务" : failed ? "本次验证未完成" : responseOk ? "" : "验证响应暂不可确认，请检查原任务"),
-    errorCode: String(data.error_code || data.errorCode || data.code || "").slice(0, 100),
+    status: mediaUnavailable ? "failed" : unknown ? "unknown" : status === "completed" && (taskId || businessTaskId) ? "completed" : failed ? "failed" : status === "finalizing" && (taskId || businessTaskId) ? "finalizing" : responseOk && taskId ? "processing" : "unknown",
+    error: mediaUnavailable ? safeError(data.errorMessage || data.error || data.message, "视频已生成，但当前不可播放；本次验证不能用于启用模型") : status === "completed" ? "" : safeError(data.errorMessage || data.error || data.message, unknown ? "上游提交结果待确认，请检查原任务" : failed ? "本次验证未完成" : responseOk ? "" : "验证响应暂不可确认，请检查原任务"),
+    errorCode: mediaUnavailable ? "VIDEO_MEDIA_UNAVAILABLE" : String(data.error_code || data.errorCode || data.code || "").slice(0, 100),
   };
 }
 

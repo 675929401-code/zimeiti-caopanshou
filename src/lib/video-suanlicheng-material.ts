@@ -1,11 +1,13 @@
 import { safeFetch } from './safe-fetch';
 import { trustedRelayHostnamesFromEnv } from './safe-media-fetch';
+import { parseGeneratedImageReferenceUri } from './generated-image-reference';
 
 type Kind = 'image' | 'audio';
 type Material = { buffer: Buffer; contentType: string };
 export interface SuanlichengMaterialDependencies {
   readOwned(url: string, userId: string, kind: Kind, maxBytes: number): Promise<Material>;
   readExternal(url: string, kind: Kind, maxBytes: number): Promise<Material>;
+  readGenerated?(url: string, userId: string, maxBytes: number): Promise<Material>;
 }
 const defaults: SuanlichengMaterialDependencies = {
   async readOwned(url, userId, kind, maxBytes) {
@@ -32,6 +34,16 @@ const defaults: SuanlichengMaterialDependencies = {
 
 /** Owned COS inputs use authenticated storage, never an SSRF exception or cross-account fallback. */
 export async function readSuanlichengMaterial(url: string, kind: Kind, userId?: string, dependencies = defaults): Promise<Material> {
+  const generated = parseGeneratedImageReferenceUri(url);
+  if (url.startsWith('generated-image:')) {
+    if (!generated || kind !== 'image' || !userId) throw new Error('生成图片引用缺少有效账号归属');
+    const maxBytes = 16 * 1024 * 1024;
+    const material = dependencies.readGenerated
+      ? await dependencies.readGenerated(url, userId, maxBytes)
+      : await (await import('@/lib/server/generated-image-reference')).readGeneratedImageMaterial({ userId, reference: generated, maxBytes });
+    if (!material.buffer.length || material.buffer.length > maxBytes || !['image/png','image/jpeg','image/webp'].includes(material.contentType)) throw new Error('生成图片字节不符合通道限制');
+    return material;
+  }
   const parsed = new URL(url);
   const owned = parsed.protocol === 'object:' || (parsed.protocol === 'https:'
     && /^[a-z0-9][a-z0-9-]{0,62}\.cos(?:-internal)?\.[a-z0-9-]+\.myqcloud\.com$/iu.test(parsed.hostname));

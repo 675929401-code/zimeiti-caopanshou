@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  adoptImageValidationAttempt, buildImageValidationPublishRequest, fetchImageValidationAsset,
+  adoptImageValidationAttempt, buildImageValidationPublishRequest, fetchImageValidationAsset,fetchImageValidationRecord,
   imageValidationInputsForDto, imageValidationIsTerminal, imageValidationSafeError,
   readImageValidationAttempt, recoverImageValidation, sameImageValidationProof, saveImageValidationAttempt,
   submitImageValidation, updateImageValidationReceipt,
@@ -121,25 +121,37 @@ function ImageValidationContent({ modelId, modelName, token, userId, onClose, on
   }, [attempt, checkOriginal]);
 
   const completedAssetId = attempt && ["completed", "published"].includes(attempt.status) ? attempt.assetId : "";
+  const completedProviderRecord=attempt && ["completed","published"].includes(attempt.status) && attempt.deliveryReceipt?.deliveryMode==="provider_url" ? attempt.imageRecordId : "";
   useEffect(() => {
-    let active = true; setPreview(null); setDimensions(null);
+    let active = true;
+    if(attempt?.deliveryReceipt?.deliveryMode==="inline_ephemeral" && !completedAssetId)return;
+    setPreview(null); setDimensions(null);
     if (previewRef.current) { URL.revokeObjectURL(previewRef.current); previewRef.current = ""; }
-    if (!completedAssetId) return;
-    void fetchImageValidationAsset(completedAssetId, token).then(result => {
+    if (!completedAssetId && !completedProviderRecord) return;
+    void (completedAssetId?fetchImageValidationAsset(completedAssetId,token):fetchImageValidationRecord(completedProviderRecord,token)).then(result => {
       if (!active || !mounted.current) return;
       const url = URL.createObjectURL(result.blob); previewRef.current = url; setPreview({ ...result, url });
     }).catch(cause => { if (active && mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "", "验证图片暂不可读取")); });
     return () => { active = false; };
-  }, [completedAssetId, token]);
+  }, [completedAssetId,completedProviderRecord, token]);
 
+  const acceptCurrentDelivery = (delivery: import("@/lib/generated-image-client-delivery").GeneratedImageClientDelivery) => {
+    if(!mounted.current || !delivery.url){delivery.revoke();return;}
+    if(!delivery.blob && delivery.kind==="provider_url"){
+      delivery.revoke();return; // The owned-record effect performs the bounded authenticated read.
+    }
+    if(!delivery.blob){delivery.revoke();return;}
+    if(previewRef.current)URL.revokeObjectURL(previewRef.current);
+    previewRef.current=delivery.url;setPreview({blob:delivery.blob,url:delivery.url,extension:delivery.blob.type==="image/jpeg"?"jpg":delivery.blob.type==="image/webp"?"webp":"png"});
+  };
   const submit = async () => {
     if (!dto || !inputs || !confirmed || busy || uploading || lock.current) return;
     lock.current = true; setBusy(true); setError("");
     try {
       const perform = () => submitImageValidation(dto, inputs, userId, { storage: localStorage, token, fetcher: fetch,
-        onChange: next => { if (mounted.current) { setAttempt(next); setPreparedReason(""); } } }, preparedReason);
+        onDelivery:acceptCurrentDelivery, onChange: next => { if (mounted.current) { setAttempt(next); setPreparedReason(""); } } }, preparedReason);
       const next = navigator.locks ? await navigator.locks.request(`admin-image-validation:${userId}:${modelId}`, perform) : await perform();
-      lock.current = false; if (mounted.current) { setPreparedReason(""); await checkOriginal(next); }
+      lock.current = false; if (mounted.current) { setPreparedReason(""); if(!imageValidationIsTerminal(next)) await checkOriginal(next); }
     } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "")); }
     finally { lock.current = false; if (mounted.current) setBusy(false); }
   };
@@ -171,11 +183,18 @@ function ImageValidationContent({ modelId, modelName, token, userId, onClose, on
     if (!attempt || busy || lock.current) return;
     lock.current = true; setBusy(true); setError("");
     try {
-      const response = await fetch("/api/admin/cover-models/validation/publish", { method: "POST", headers: { ...headers(), "Content-Type": "application/json" },
-        body: JSON.stringify(buildImageValidationPublishRequest(attempt)), redirect: "error", signal: AbortSignal.timeout(60000) });
+      const publication=buildImageValidationPublishRequest(attempt);
+      let body:BodyInit=JSON.stringify(publication),publicationHeaders:Record<string,string>={...headers(),"Content-Type":"application/json"};
+      if(attempt.deliveryReceipt?.deliveryMode==="inline_ephemeral" && attempt.status!=="published"){
+        if(!preview)throw new Error("请提供本页原验证图片或选择已下载的同一原图");
+        const form=new FormData();form.set("file",preview.blob,"validation-image."+preview.extension);body=form;
+        publicationHeaders={...headers(),"x-image-publication-request":encodeURIComponent(JSON.stringify(publication))};
+      }
+      const response = await fetch("/api/admin/cover-models/validation/publish", { method: "POST", headers:publicationHeaders,
+        body, redirect: "error", signal: AbortSignal.timeout(60000) });
       const data = await response.json();
-      if (!response.ok || data.success !== true || data.modelId !== modelId || data.imageRecordId !== attempt.imageRecordId || data.assetId !== attempt.assetId) throw new Error(imageValidationSafeError(data.error, "启用结果暂未确认，请检查原记录"));
-      store({ ...attempt, status: "published", error: "", errorCode: "" }); if (mounted.current) onPublished();
+      if (!response.ok || data.success !== true || data.modelId !== modelId || data.imageRecordId !== attempt.imageRecordId || typeof data.assetId!=="string" || (!attempt.deliveryReceipt && data.assetId !== attempt.assetId)) throw new Error(imageValidationSafeError(data.error, "启用结果暂未确认，请检查原记录"));
+      store({ ...attempt,assetId:data.assetId, status: "published", error: "", errorCode: "" }); if (mounted.current) onPublished();
     } catch (cause) { if (mounted.current) setError(imageValidationSafeError(cause instanceof Error ? cause.message : "", "启用结果暂未确认，请保留原验证记录")); }
     finally { lock.current = false; if (mounted.current) setBusy(false); }
   };
@@ -194,6 +213,15 @@ function ImageValidationContent({ modelId, modelName, token, userId, onClose, on
     const link = document.createElement("a"); link.href = preview.url;
     link.download = `${(attempt?.model.name || modelName).replace(/[\\/:*?"<>|]/gu, "_").slice(0, 80)}-验证.${preview.extension}`; link.click();
   };
+  const selectPublicationOriginal=async(file:File)=>{
+    if(!attempt?.deliveryReceipt || attempt.deliveryReceipt.deliveryMode!=="inline_ephemeral" || file.size<=0 || file.size>30*1024*1024)return;
+    const receipt=attempt.deliveryReceipt;
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await file.arrayBuffer())),value=>value.toString(16).padStart(2,"0")).join("");
+    if(digest!==receipt.sha256 || file.size!==receipt.byteLength || file.type!==receipt.contentType){setError("选择的文件与原验证图片摘要不一致");return;}
+    if(!mounted.current)return;
+    if(previewRef.current)URL.revokeObjectURL(previewRef.current);
+    const url=URL.createObjectURL(file);previewRef.current=url;setPreview({url,blob:file,extension:file.type==="image/jpeg"?"jpg":file.type==="image/webp"?"webp":"png"});setError("");
+  };
   const showForm = !!dto && !!inputs && (!attempt || !!preparedReason);
   return <ImageValidationFrame title={attempt?.model.name || dto?.name || modelName} onClose={onClose}>
     {(attempt?.model.upstream || dto?.modelName) && <p className="mb-3 break-words text-xs text-[var(--muted-foreground)]">{attempt?.model.upstream || dto?.modelName}</p>}
@@ -201,6 +229,7 @@ function ImageValidationContent({ modelId, modelName, token, userId, onClose, on
     {!dto && busy && <p role="status">正在读取模型能力…</p>}
     {attempt && !preparedReason && <div className="space-y-3" data-testid="image-validation-attempt" data-model-id={attempt.model.id} data-status={attempt.status}>
       <p role="status" className="font-medium">{phases[attempt.status]}</p>
+      {attempt.generationCompleted && !preview && !attempt.assetId && <p className="text-sm">图片生成已完成，任务与费用收据已保留；当前页面没有可用图片，临时图片刷新后无法恢复。</p>}
       {attempt.error && <p className="text-sm text-red-600">{attempt.model.name}：{attempt.error}</p>}
       {attempt.errorCode && <p className="break-all text-xs text-[var(--muted-foreground)]">{attempt.errorCode}</p>}
       {preview && <div><img src={preview.url} alt={`${attempt.model.name} 的原验证图片`} className="max-h-96 w-full rounded-lg object-contain" onLoad={event => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => setError("原验证图片无法解码，请检查下载结果")} />
@@ -209,7 +238,9 @@ function ImageValidationContent({ modelId, modelName, token, userId, onClose, on
         <button type="button" onClick={() => void checkOriginal()} disabled={busy} className={buttonClass}>检查原任务</button>
         {attempt.status === "finalizing" && attempt.canRecover && attempt.body && <button type="button" onClick={() => void recover()} disabled={busy} className={buttonClass}>恢复原结果保存</button>}
         {preview && <button type="button" onClick={download} className={buttonClass}>下载验证图片</button>}
-        {attempt.status === "completed" && <button type="button" onClick={() => void publish()} disabled={busy || !attempt.imageRecordId || !preview || !dimensions} className={primaryClass}>{busy ? "正在启用…" : "启用此配置"}</button>}
+        {attempt.status==="completed" && attempt.deliveryReceipt?.deliveryMode==="inline_ephemeral" && !preview && <label className={buttonClass}>选择已下载的原验证图<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{const file=event.target.files?.[0];if(file)void selectPublicationOriginal(file).catch(()=>setError("原图读取未通过，请重新选择同一文件"));event.target.value="";}} /></label>}
+        {attempt.status === "completed" && <button type="button" onClick={() => void publish()} disabled={busy || (!attempt.assetId && !attempt.deliveryReceipt) || !attempt.imageRecordId || (attempt.deliveryReceipt?.deliveryMode!=="provider_url" && (!preview || !dimensions))} className={primaryClass}>{busy ? "正在启用…" : attempt.deliveryReceipt ? "保存验证凭证并发布模型" : "启用此配置"}</button>}
+        {attempt.status==="completed" && attempt.deliveryReceipt && <p className="text-xs text-[var(--muted-foreground)]">仅点击发布时保存独立验证凭证；普通生成与刷新不会备份临时图片，也不会再次生成或扣费。</p>}
       </div>
       {!imageValidationIsTerminal(attempt) && <p className="text-xs text-[var(--muted-foreground)]">原任务已保留，关闭后可再次打开查看进度。</p>}
       {attempt.status === "rejected" && dto?.canRequestRetest && <div className="space-y-2"><label className="block text-sm">复测原因<textarea value={reason} onChange={event => setReason(event.target.value)} rows={2} maxLength={300} className={`${fieldClass} mt-1`} placeholder="说明已修正的问题，保留原失败记录" /></label>

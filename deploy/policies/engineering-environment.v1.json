@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "engineering-environment.v1",
+  "projectId": "zimeiti-caopanshou",
+  "owner": "release-engineering",
+  "releasePolicy": "deploy/policies/release-policy.json",
+  "projectProfile": ".engineering/project-profile.v1.json",
+  "toolchainPointer": "/release/productionBuild",
+  "servicesPointer": "/services",
+  "persistentSlotsPointer": "/runtime/requiredServerMounts",
+  "packages": {
+    "web": { "manifest": "package.json", "lockfile": "pnpm-lock.yaml" },
+    "voice": { "manifest": "voice-platform/package.json", "lockfile": "voice-platform/pnpm-lock.yaml" }
+  },
+  "configurationNameSources": [".env.example", "voice-platform/.env.example", "deploy/environments/production.env.example"],
+  "pm2Config": "deploy/pm2/ecosystem.vnext.config.cjs",
+  "artifactPacker": "scripts/package-standalone-artifact.mjs",
+  "serverVerifier": "scripts/deploy-artifact-vnext.sh",
+  "environments": {
+    "local": {
+      "owner": "local-runtime",
+      "platform": "win32",
+      "architecture": "x64",
+      "launcherReference": "../../../启动自媒体操盘手本地预览.ps1",
+      "installCommand": "pnpm install --frozen-lockfile",
+      "buildScript": "build"
+    },
+    "ci": {
+      "owner": "github-build-only",
+      "workflow": ".github/workflows/release-vnext.yml",
+      "acceptanceWorkflow": ".github/workflows/release-browser-acceptance.yml",
+      "installCommand": "pnpm install --frozen-lockfile",
+      "voiceInstallCommand": "pnpm --ignore-workspace install --frozen-lockfile",
+      "buildScripts": { "web": "release:vnext:build:web", "voice": "release:vnext:build:voice" }
+    },
+    "server": {
+      "owner": "immutable-release-runtime",
+      "buildAllowedPointer": "/release/serverBuildAllowed",
+      "gitCheckoutAllowedPointer": "/release/serverGitCheckoutAllowed",
+      "verification": "same artifact SHA-256, plan receipt, actual process executable and mount identity; UNKNOWN until observed"
+    }
+  }
+}

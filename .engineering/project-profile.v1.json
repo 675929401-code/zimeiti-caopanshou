@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "software-engineering-project-profile.v1",
+  "projectId": "zimeiti-caopanshou",
+  "contracts": {
+    "sourceRules": "AGENTS.md",
+    "localIdentity": "docs/本地版本与发布协议.md",
+    "release": "deploy/policies/release-policy.json",
+    "changeScope": "deploy/policies/release-change-scope.v1.json",
+    "database": "deploy/policies/database-contract.v1.json",
+    "databaseSemantics": "deploy/policies/database-semantic-contract.v1.json",
+    "environment": "deploy/policies/engineering-environment.v1.json",
+    "topology": "deploy/pm2/ecosystem.vnext.config.cjs",
+    "assets": "deploy/manifests/public-assets.v1.json"
+  },
+  "rules": [
+    {
+      "id": "engineering-control",
+      "layer": "ci-release",
+      "pathRegex": "^(?:\\.engineering/|\\.github/|\\.release/|deploy/|scripts/|package\\.json$|pnpm-(?:lock\\.yaml|workspace\\.yaml)$|public/version\\.json$|voice-platform/(?:package\\.json|pnpm-lock\\.yaml)$)",
+      "owner": "release-engineering",
+      "service": "release-control-plane",
+      "releaseAffecting": true,
+      "minimumChecks": [
+        "node scripts/inspect-engineering-environment.mjs --check",
+        "node scripts/verify-engineering-environment.mjs",
+        "node scripts/verify-release-workflow.mjs --workflow-contract-only",
+        "node scripts/verify-runtime-alignment-tooling.mjs",
+        "node scripts/verify-deploy-state-machine.mjs"
+      ]
+    },
+    {
+      "id": "source-governance",
+      "layer": "docs",
+      "pathRegex": "^(?:AGENTS\\.md$|docs/)",
+      "owner": "project-governance",
+      "service": "project-contract",
+      "releaseAffecting": false,
+      "minimumChecks": ["authoritative-source-link", "no-dynamic-state-as-rule", "no-secret-content"]
+    },
+    {
+      "id": "web-product",
+      "layer": "source-code",
+      "pathRegex": "^(?:src/|prompts/|next\\.config\\.ts$|tsconfig\\.json$|postcss\\.config\\.mjs$|components\\.json$)",
+      "owner": "web-product",
+      "service": "web",
+      "releaseAffecting": true,
+      "minimumChecks": ["type-or-static-check", "targeted-tests", "current-runtime-desktop-browser", "two-adjacent-pages"]
+    },
+    {
+      "id": "voice-product",
+      "layer": "source-code",
+      "pathRegex": "^voice-platform/(?!(?:package\\.json|pnpm-lock\\.yaml)$)",
+      "owner": "voice-platform",
+      "service": "voice",
+      "releaseAffecting": true,
+      "minimumChecks": ["voice-build-contract", "voice-persistence-and-permission", "voice-browser-playback"]
+    },
+    {
+      "id": "public-assets",
+      "layer": "assets",
+      "pathRegex": "^public/(?!version\\.json$)",
+      "owner": "public-assets",
+      "service": "assets",
+      "releaseAffecting": true,
+      "minimumChecks": ["asset-manifest-and-digest", "storage-owner", "client-compatibility"]
+    },
+    {
+      "id": "database-contract",
+      "layer": "database",
+      "pathRegex": "^supabase/",
+      "owner": "database-contract",
+      "service": "database",
+      "releaseAffecting": true,
+      "minimumChecks": ["target-identity", "migration-plan", "recoverable-backup", "semantic-and-permission-contract"]
+    }
+  ]
+}

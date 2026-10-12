@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import type { PresetField } from "@/types/coze";
 import { ChevronDown, X, Send } from "lucide-react";
 import { resolveAgentAvatarUrl } from "@/lib/utils";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import styles from "./agent-intake.module.css";
 
 interface PresetDialogProps {
   agentId?: string;
@@ -83,19 +85,9 @@ export function PresetDialog({ agentId, agentName, agentIconUrl, fields, onStart
     });
     return init;
   });
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   // 按 order 排序字段
   const sortedFields = [...fields].sort((a, b) => a.order - b.order);
-
-  // ESC 关闭弹窗
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
 
   const handleChange = (fieldId: string, value: string) => {
     setValues((prev) => ({ ...prev, [fieldId]: value }));
@@ -140,6 +132,7 @@ export function PresetDialog({ agentId, agentName, agentIconUrl, fields, onStart
         {/* 标签行 */}
         <div className="flex items-center mb-1.5 min-w-0">
           <label
+            htmlFor={`preset-${field.id}`}
             className="flex min-w-0 items-center gap-1 text-[13px] font-medium text-[var(--foreground)]"
             title={field.description || undefined}
           >
@@ -198,17 +191,12 @@ export function PresetDialog({ agentId, agentName, agentIconUrl, fields, onStart
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* 背景遮罩 */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* 对话框主体 */}
-      <div
-        ref={dialogRef}
-        className="relative w-full max-w-2xl bg-[var(--card)] border border-[var(--border)] rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        className={`${styles.surface} flex max-h-[88dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl`}
+        data-testid="agent-preset-intake"
+        aria-describedby={undefined}
+        showCloseButton={false}
       >
         {/* 头部 */}
         <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[var(--border)] bg-[var(--secondary)]/50">
@@ -218,10 +206,11 @@ export function PresetDialog({ agentId, agentName, agentIconUrl, fields, onStart
             className="w-9 h-9 rounded-xl object-cover border border-[var(--border)] shrink-0"
           />
           <div className="flex-1 min-w-0">
-            <h3 className="text-[14px] font-semibold text-[var(--foreground)] truncate">{agentName}</h3>
+            <DialogTitle className="truncate">{agentName}</DialogTitle>
           </div>
           <button
             onClick={onClose}
+            aria-label="关闭接收卡"
             className="p-1.5 rounded-lg hover:bg-[var(--accent)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
@@ -229,7 +218,7 @@ export function PresetDialog({ agentId, agentName, agentIconUrl, fields, onStart
         </div>
 
         {/* 字段区域 - 2列网格；textarea 与奇数分组的末项跨2列 */}
-        <div className="px-5 py-4 max-h-[60vh] overflow-y-auto chat-scroll">
+        <div className="min-h-0 px-5 py-4 max-h-[60vh] overflow-y-auto chat-scroll">
           <div className="grid grid-cols-2 gap-x-4 gap-y-4">
             {sortedFields.map((field, index) => (
               <div key={field.id} className={getPresetFieldGridClass(sortedFields, index, agentId)}>
@@ -255,7 +244,7 @@ export function PresetDialog({ agentId, agentName, agentIconUrl, fields, onStart
             开始
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

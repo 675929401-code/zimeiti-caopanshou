@@ -9,17 +9,17 @@
   "git": {
     "primaryRemote": {
       "name": "origin",
-      "recommendedProvider": "Gitee private repository",
-      "repositoryName": "zimeiti-caopanshou-source-vnext",
-      "purpose": "产品源码主仓；服务器部署、CI 和人工审计都以它的不可变 commit 为准。",
-      "urlPlaceholder": "git@gitee.com:<account>/zimeiti-caopanshou-source-vnext.git"
+      "recommendedProvider": "GitHub private repository",
+      "repositoryName": "zimeiti-caopanshou",
+      "purpose": "源码主仓与 build-only CI；精确仓库身份从 release-policy.json 的 git.primaryRepository 读取。remote 名称是模板角色，不自动修改现有 Git 配置。",
+      "urlPlaceholder": "git@github.com:<account>/zimeiti-caopanshou.git"
     },
     "backupRemote": {
       "name": "backup",
-      "recommendedProvider": "GitHub, GitLab, Coding, or another independent private Git provider",
+      "recommendedProvider": "Gitee, GitLab, Coding, or another independent private Git provider",
       "repositoryName": "zimeiti-caopanshou-source-vnext-backup",
       "purpose": "源码异地备份；必须与 origin 不同故障域，避免一处故障导致源码和备份同时不可用。",
-      "urlPlaceholder": "git@github.com:<account>/zimeiti-caopanshou-source-vnext-backup.git"
+      "urlPlaceholder": "git@gitee.com:<account>/zimeiti-caopanshou-source-vnext-backup.git"
     },
     "localArchive": {
       "name": "local-archive",
@@ -54,7 +54,7 @@
     },
     "longTerm": {
       "strategy": "COS/OSS/S3 object storage + CDN",
-      "useCase": "用户上传素材、生成结果、参考图、可增长媒体库。",
+      "useCase": "用户显式上传或导出的素材、受控参考资产；普通生成图片视频使用上游链接，不自动复制。",
       "reason": "降低服务器磁盘与带宽压力，提升首屏和列表加载速度，并支持版本化、跨区备份与 CDN 缓存。"
     },
     "frontendRule": "前端列表优先加载缩略图，原图/视频按需加载，素材索引由 manifest 或数据库记录驱动。"
@@ -91,13 +91,8 @@
     "verificationCommand": "npm run deploy:env:verify",
     "privateEnvRule": "真实生产变量只能存在于本机私有文件、CI Secret 或服务器 Secret，不得提交 Git。"
   },
-  "nextOperatorSteps": [
-    "创建空的 Gitee 私有主仓：zimeiti-caopanshou-source-vnext。",
-    "创建空的独立私有备份仓：zimeiti-caopanshou-source-vnext-backup。",
-    "运行 npm run deploy:remotes 先检查地址。",
-    "运行 npm run deploy:remotes:apply 写入 origin 与 backup。",
-    "运行 npm run deploy:close-loop:push 推送同一 commit。",
-    "配置 DEPLOY_DATABASE_URL 并完成数据库备份后，再执行迁移门禁。",
-    "生产门禁 PASS 后，才执行服务器应用目录覆盖部署。"
-  ]
+  "deploymentAuthority": {
+    "workspaceRelativePath": "99_系统协议/02_操作协议/自媒体操盘手部署执行规约-当前版.md",
+    "role": "navigation-only"
+  }
 }

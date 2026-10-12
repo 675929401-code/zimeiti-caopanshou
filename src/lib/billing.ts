@@ -122,13 +122,7 @@ const BILLING_CONFIG_TTL = 60_000; // 60秒缓存
 const agentBillingCache = new Map<string, { data: BillingConfig | null; ts: number }>();
 const AGENT_BILLING_CACHE_TTL = 60_000; // 60秒缓存
 
-export async function getBillingConfig(): Promise<BillingConfig> {
-  if (billingConfigCache && Date.now() - billingConfigCache.ts < BILLING_CONFIG_TTL) {
-    return billingConfigCache.data;
-  }
-  const db = await getDb();
-  const { data } = await db.from("platform_settings").select("setting_key, setting_value");
-
+export function billingConfigFromSettingsRows(data: Array<{ setting_key: string; setting_value: string }>): BillingConfig {
   const get = (key: string, fallback: number): number => {
     const row = data?.find((r: { setting_key: string; setting_value: string }) => r.setting_key === key);
     return row ? Number(row.setting_value) || fallback : fallback;
@@ -152,6 +146,17 @@ export async function getBillingConfig(): Promise<BillingConfig> {
     tokenRoundingMin: get("token_rounding_min", 100),
     tokenRoundingMax: get("token_rounding_max", 10000),
   };
+  return config;
+}
+
+export async function getBillingConfig(): Promise<BillingConfig> {
+  if (billingConfigCache && Date.now() - billingConfigCache.ts < BILLING_CONFIG_TTL) {
+    return billingConfigCache.data;
+  }
+  const db = await getDb();
+  const { data } = await db.from("platform_settings").select("setting_key, setting_value");
+
+  const config = billingConfigFromSettingsRows(data || []);
   billingConfigCache = { data: config, ts: Date.now() };
   return config;
 }

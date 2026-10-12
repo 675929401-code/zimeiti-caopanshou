@@ -20,6 +20,7 @@ import {
 import { COVER_ATTEMPT_ACTIVE_STATES, coverAttemptProjection, isCoverAttemptRow } from "@/lib/cover-durable-attempt";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { imageProviderEvidenceProjection } from "@/lib/image-provider-request-audit";
+import { imageEphemeralStatus, isImageEphemeralReceipt } from "@/lib/image-ephemeral-delivery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,7 @@ function resumeInput(record: Awaited<ReturnType<DatabaseImageExactlyOnceStore["g
       referenceUsage: snapshot.referenceUsage || "general",
       historySurface: snapshot.surface,
       resumeDeliveryOnly: true,
+      ...(snapshot.deliveryRequirement === "recoverable_reference" ? {deliveryRequirement:"recoverable_reference"} : {}),
     },
     requestIntegrity: {
       schema: snapshot.schema,
@@ -157,19 +159,26 @@ export async function GET(request: NextRequest) {
     }
 
     if (record.state === "completed" && record.response) {
-      const delivered = record.deliveryState === "delivered" && Boolean(record.deliveryAssetId);
+      if (isImageEphemeralReceipt(record.response)) return response({ success: true, state: "completed",
+        ...imageEphemeralStatus(record.response), providerEvidence: imageProviderEvidenceProjection(record),
+        message: "本次任务与费用收据已保留；图片仅在原页面临时交付，刷新后无法恢复。", updatedAt: record.updatedAt });
+      const direct = record.response.deliveryMode === "provider_url" && typeof record.response.providerUrl === "string";
+      if (record.response.sourceExpiredAt) return response({ success: true, state: "expired",recordId:record.recordId,...(direct?{deliveryMode:"provider_url",generationCompleted:true,mediaAvailable:false,cashCharged:parseImageFailureRequestSnapshot(record.requestSnapshot)?.quotedPriceYuan,billingReferenceId:imageFailureBillingReferenceId(user.id,record.clientIdempotencyKey)}:{}), canRecover: false, canResubmit: false, deliveryReady: false,images:[], message: "上游图片已确认失效，任务与账务记录仍保留。" });
+      const delivered = record.deliveryState === "delivered" && (Boolean(record.deliveryAssetId) || direct);
       return response({
         success: true,
         providerEvidence: imageProviderEvidenceProjection(record),
         state: delivered ? "completed" : "provider_completed_pending_delivery",
-        canRecover: true,
+        canRecover: direct && delivered ? false : true,
         canResubmit: false,
         deliveryReady: delivered,
-        ...(delivered ? { assetId: record.deliveryAssetId } : {}),
-        ...resumeInput(record),
+        recordId: record.recordId,
+        ...(direct ? { deliveryMode: "provider_url",generationCompleted:delivered,mediaAvailable:delivered,billingReferenceId:imageFailureBillingReferenceId(user.id,record.clientIdempotencyKey),cashCharged:parseImageFailureRequestSnapshot(record.requestSnapshot)?.quotedPriceYuan } : {}),
+        ...(delivered && record.deliveryAssetId ? { assetId: record.deliveryAssetId } : {}),
+        ...(direct && delivered ? {} : resumeInput(record)),
         message: delivered
-          ? "图片已保存，可以直接查看。"
-          : "图片已生成，系统将继续完成保存和展示。",
+          ? "图片已交付，可以继续查看。"
+          : "图片已生成，系统将继续确认交付和展示。",
         updatedAt: record.updatedAt,
       });
     }

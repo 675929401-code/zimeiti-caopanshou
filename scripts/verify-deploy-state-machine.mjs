@@ -55,12 +55,53 @@ for (const marker of [
   '--property=ReadOnlyPaths --property=ReadWritePaths --property=InaccessiblePaths',
   '--property=CapabilityBoundingSet --property=AmbientCapabilities --property=RestrictNamespaces',
   '--property=KillMode --property=RuntimeMaxUSec --property=TimeoutStopUSec --property=UMask',
+  'LEGACY_BASELINE_RECEIPT_PATH',
+  'legacyFileInventory',
+  'DIRECT_HOOK_PM2_CONFIG_SHA256',
+  'DIRECT_TRANSACTION_ROOT',
+  'media-worker-state.json',
+  'direct_hook rollback-persisted',
+  'chmod 0600 -- "$PM2_DUMP_PATH"',
 ]) {
   assert.ok(deployer.includes(marker), `deployment state-machine marker is missing: ${marker}`);
 }
+assert.ok(
+  deployer.includes('archive contains special or malformed permission bits')
+    && deployer.includes('archive contains a group/other-writable entry'),
+  "archive audit must reject special and group/other-writable modes before permission-preserving extraction",
+);
+assert.ok(
+  deployer.includes('--no-same-owner --same-permissions'),
+  "execute extraction must preserve the already-audited signed inventory modes",
+);
+assert.ok(
+  !deployer.includes('--no-same-owner --no-same-permissions'),
+  "execute extraction must not mask signed modes through the deployer's restrictive umask",
+);
+for (const marker of [
+  'candidate_active_state="$(systemctl show --property=ActiveState',
+  'candidate_process_uid="$(awk \'$1 == "Uid:"',
+  '"$candidate_active_state" == "active" && "$candidate_process_uid" == "$CANDIDATE_UID"',
+  "candidate sandbox did not reach a stable dedicated non-root process identity",
+  "candidate sandbox main PID changed during process identity verification",
+  "candidate sandbox main PID changed after environment/status verification",
+]) assert.ok(deployer.includes(marker), `stable non-root candidate identity gate is missing: ${marker}`);
+for (const marker of [
+  'chown root:"$CANDIDATE_GID" -- "$STAGING_ROOT"',
+  'chmod 0710 -- "$STAGING_ROOT"',
+  '"0:$CANDIDATE_GID:710"',
+  "execute-only candidate-group traversal",
+]) assert.ok(deployer.includes(marker), `least-privilege candidate staging traversal is missing: ${marker}`);
+for (const marker of [
+  'CANDIDATE_NODE_BIN="/usr/local/libexec/zimeiti/node-v24.19.0"',
+  'CANDIDATE_NODE_SHA256="bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12"',
+  'require_trusted_root_executable "$CANDIDATE_NODE_BIN" "candidate Node runtime"',
+  "deployment and candidate Node runtimes are not byte-identical",
+  'NODE_BIN="$CANDIDATE_NODE_BIN"',
+]) assert.ok(deployer.includes(marker), `candidate runtime trust/access contract is missing: ${marker}`);
 
 const finalCleanup = sliceFunction("final_cleanup", "\n}\ntrap final_cleanup EXIT");
-const directHook = sliceFunction("direct_hook", "\n}\n\ncleanup_candidate()");
+const directHook = sliceFunction("direct_hook", "\n}\n\nvalidate_direct_hook_configuration()");
 const candidateCgroupEmpty = sliceFunction("candidate_cgroup_empty", "\n}\n\ncandidate_unit_stopped()");
 const candidateUnitStopped = sliceFunction("candidate_unit_stopped", "\n}\n\nwait_candidate_unit_stopped()");
 const waitCandidateUnitStopped = sliceFunction("wait_candidate_unit_stopped", "\n}\n\npublish_candidate_log()");
@@ -79,6 +120,13 @@ assertOrdered("final cleanup trap masking", finalCleanup, [
   'rollback_release "EXIT cleanup before deployment commit',
 ]);
 assert.match(finalCleanup, /exit "\$exit_status"/u, "final cleanup must preserve the triggering exit status");
+assertOrdered("direct prepare fallback", finalCleanup, [
+  'if [[ "$DIRECT_PREPARED" == "1"',
+  '[[ ! -f "${DIRECT_TRANSACTION_ROOT:-}/media-worker-state.json" ]]',
+  "direct_hook rollback-before",
+  "direct_hook rollback-after",
+  "direct_hook rollback-persisted",
+]);
 
 const signalFunction = sliceFunction("handle_termination", "\n}\n\nunexpected_error()");
 assertOrdered("termination handler masking", signalFunction, [
@@ -106,6 +154,37 @@ assert.match(rollbackFunction, /rm -- "\$CURRENT_LINK" \|\| pointer_ok=1/u, "fir
 assert.match(rollbackFunction, /verify_exact_first_deploy_composite "\$PREVIOUS_ASSET_TARGET"/u, "first-deploy rollback PASS must require the exact inactive composite");
 assert.match(rollbackFunction, /validate_payload_inventory "\$PREVIOUS_TARGET"/u, "rollback to an older release must revalidate its full SHA-256 inventory");
 assert.match(rollbackFunction, /verify_exact_active_composite/u, "rollback PASS must require the active composite identity verifier");
+assertOrdered("rollback worker persistence transaction", rollbackFunction, [
+  "direct_hook rollback-before",
+  "direct_hook rollback-after",
+  "persist_pm2_state",
+  "direct_hook rollback-persisted",
+  'ROLLBACK_SUCCEEDED="1"',
+]);
+
+for (const marker of [
+  "DIRECT_HOOK_PM2_CONFIG_PATH",
+  "DIRECT_HOOK_PM2_CONFIG_SHA256",
+  "DIRECT_TRANSACTION_ROOT",
+  "DIRECT_HOOK_DIRECTORY_UNSAFE",
+  "DIRECT_HOOK_PM2_CONFIG_CHANGED",
+  "DIRECT_TRANSACTION_PARENT_UNSAFE",
+]) assert.ok(directHook.includes(marker), `direct worker hook trust boundary is missing: ${marker}`);
+
+const productionWorkerTransaction = [
+  "direct_hook prepare",
+  "direct_hook activated",
+  "direct_hook precommit",
+  "persist_pm2_state",
+  "direct_hook persisted",
+  'DEPLOY_COMPLETE="1"',
+].map((marker) => ({ marker, index: deployer.lastIndexOf(marker) }));
+for (let index = 0; index < productionWorkerTransaction.length; index += 1) {
+  const current = productionWorkerTransaction[index];
+  assert.ok(current.index >= 0, `production worker transaction is missing: ${current.marker}`);
+  if (index > 0) assert.ok(current.index > productionWorkerTransaction[index - 1].index,
+    `production worker transaction ordering is invalid at: ${current.marker}`);
+}
 
 const firstComposite = sliceFunction("verify_exact_first_deploy_composite", "\n}\n\nverify_exact_active_composite()");
 for (const marker of [
@@ -125,6 +204,21 @@ for (const marker of [
   'find "$target" -type d -exec chmod 0555',
   'find "$target" -type f ! -perm /111 -exec chmod 0444',
 ]) assert.ok(sealFunction.includes(marker), `candidate seal is missing: ${marker}`);
+
+const inventoryFunction = sliceFunction("validate_payload_inventory", "\n}\n\nseal_candidate_release()");
+for (const marker of [
+  'local mode_contract="${2:-manifest}"',
+  '"$mode_contract" == "manifest" || "$mode_contract" == "sealed"',
+  'node - "$payload" "$mode_contract"',
+  'modeContract === "sealed"',
+  'item.kind === "directory" ? 0o555',
+  '((item.mode & 0o111) !== 0 ? 0o555 : 0o444)',
+]) assert.ok(inventoryFunction.includes(marker), `sealed inventory mode contract is missing: ${marker}`);
+for (const marker of [
+  'validate_payload_inventory "$current_target" sealed',
+  'validate_payload_inventory "$PREVIOUS_TARGET" sealed',
+  'validate_payload_inventory "$CANDIDATE" sealed',
+]) assert.ok(deployer.includes(marker), `sealed release inventory call is missing: ${marker}`);
 
 const promotion = deployer.indexOf('if ! mv -Tn -- "$PAYLOAD_DIR" "$CANDIDATE"');
 const promotedHash = deployer.indexOf('validate_payload_inventory "$CANDIDATE"', promotion);
@@ -154,7 +248,8 @@ for (const marker of [
   "ASSET_POLICY_TRANSITION_VERIFIER_SHA256",
   '--current-manifest "$current_manifest"',
   '--next-manifest "$next_manifest"',
-  '"$CONTROL_PLANE_ROOT/receipts/"*',
+  '^/data/direct-deploy/incoming/run-[0-9]+/control/receipts/',
+  '"$receipt_real" != "$CONTROL_PLANE_ROOT/"*',
   '--receipt-sha256 "${ASSET_POLICY_TRANSITION_SHA256,,}"',
 ]) assert.ok(compatibilityBody.includes(marker), `forward asset compatibility gate is missing: ${marker}`);
 

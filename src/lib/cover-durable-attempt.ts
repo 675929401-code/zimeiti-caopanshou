@@ -54,7 +54,15 @@ export type CoverAttemptRow = {
 const KEY = /^[A-Za-z0-9_-]{8,128}$/u;
 const RATIOS = ["16:9", "9:16", "4:3", "3:4"] as const;
 const RESOLUTIONS = ["1K", "2K", "4K"] as const;
-const unsafeReference = /(?:^|["'\s])(data|blob):/iu;
+const unsafeReference = /data:[^,\s]*;base64,|(?:^|["'\s])blob:https?:\/\//iu;
+
+export function projectCoverCompositionPlan(plan: CoverCompositionPlan): CoverCompositionPlan {
+  return { title: plan.title, subtitle: plan.subtitle, aspectRatio: plan.aspectRatio,
+    layoutTemplateId: plan.layoutTemplateId, animationStyleId: plan.animationStyleId,
+    ...(plan.coverModeId ? { coverModeId: plan.coverModeId } : {}),
+    ...(plan.materialSourceId ? { materialSourceId: plan.materialSourceId } : {}),
+    ...(plan.subjectModeId ? { subjectModeId: plan.subjectModeId } : {}), };
+}
 
 function stringValue(value: unknown, maximum: number, required = true) {
   if (typeof value !== "string" || value.length > maximum || (required && !value.trim()) || /[\x00-\x08\x0b-\x1f]/u.test(value)) return null;
@@ -110,7 +118,7 @@ function taskSnapshot(value: unknown): CoverAttemptTaskSnapshot | null {
     source: "生成",
     createdAt: row.createdAt,
     taskNo: Number(row.taskNo),
-    renderPlan: row.renderPlan as CoverCompositionPlan,
+    renderPlan: projectCoverCompositionPlan(row.renderPlan as CoverCompositionPlan),
   };
 }
 
@@ -159,7 +167,7 @@ export function coverAttemptProjection(row: CoverAttemptRow) {
       ? "failed"
       : row.state === "cancelled" ? "cancelled" : "unknown";
   const task = {
-    ...row.task,
+    ...taskSnapshot(row.task)!,
     status,
     clientIdempotencyKey: row.client_idempotency_key,
     clientTraceId: row.client_trace_id,

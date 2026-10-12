@@ -212,6 +212,29 @@ export interface LlmRequestAttemptStore {
 }
 
 export class DatabaseLlmRequestAttemptStore implements LlmRequestAttemptStore {
+  /** Read-only completed replay shortcut. All lease/retry decisions remain in atomic claim. */
+  async readSucceededReplay(input: {
+    userId: string; clientRequestId: string; payloadFingerprint: string;
+  }): Promise<Extract<LlmRequestAttemptClaim, { action: "replay" }> | null> {
+    validateLlmClientRequestId(input.clientRequestId);
+    if (!input.userId || !SHA256_PATTERN.test(input.payloadFingerprint)) {
+      throw new LlmRequestIdempotencyError("LLM_ATTEMPT_INPUT_INVALID", "对话幂等请求参数无效", 400);
+    }
+    const expectedRecordId = recordIdFor(input.userId, input.clientRequestId);
+    try {
+      const { data, error } = await getSupabaseAdminClient().from("llm_request_attempts")
+        .select("record_id,user_id,client_request_id,payload_fingerprint,state,attempt_no,lease_owner,lease_token,lease_expires_at,provider_call_started_at,http_status,response_headers,response_body,response_fingerprint,result_reference,error_code,error_message,created_at,updated_at")
+        .eq("record_id", expectedRecordId).eq("user_id", input.userId).eq("client_request_id", input.clientRequestId).maybeSingle();
+      if (error) normalizeStoreError(error);
+      if (!data) return null;
+      const record = rowToRecord(data as DatabaseLlmAttemptRow);
+      if (record.recordId !== expectedRecordId || record.userId !== input.userId || record.clientRequestId !== input.clientRequestId || record.payloadFingerprint !== input.payloadFingerprint) {
+        throw new LlmRequestIdempotencyError("LLM_IDEMPOTENCY_CONFLICT", "同一对话请求标识已绑定其他内容或执行终态", 409);
+      }
+      return record.state === "succeeded" ? { action: "replay", record } : null;
+    } catch (error) { normalizeStoreError(error); }
+  }
+
   async claim(input: {
     userId: string;
     clientRequestId: string;

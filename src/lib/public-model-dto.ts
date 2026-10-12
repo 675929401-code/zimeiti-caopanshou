@@ -120,17 +120,34 @@ export function normalizePublicModelAvatarUrl(value: unknown): string {
 export function publicModelDisplayName(row: Record<string, unknown>): string {
   const configured = String(row.public_name || "").trim();
   const sourceName = configured || String(row.name || "").trim();
-  const publicProName = sourceName.match(/^GPT-Image-2\s*·\s*渠道\s*([A-Z])\s+pro$/iu);
-  if (publicProName) return `GPT-Image-2 · 渠道${publicProName[1].toUpperCase()} pro`;
+  const protocolConfig = row.api_protocol_config && typeof row.api_protocol_config === "object"
+    && !Array.isArray(row.api_protocol_config) ? row.api_protocol_config as Record<string, unknown> : {};
+  const internalAnnotations = new Set(
+    [row.id, row.model_name, row.internal_model_id, protocolConfig.provider_group_name]
+      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+      .map((value) => value.trim().toLowerCase()),
+  );
+  const configuredHasRoutingMarker = /(?:(?<![A-Za-z0-9])[A-Z]\s*渠道|渠道\s*[A-Z0-9一二三四五六七八九十]+|中转|密钥|autodl(?:\.art)?|secure[-\s]?skill|lconai)/iu.test(sourceName);
+  // Older names created by configure-gpt-image2-channels-local can reach
+  // history without protocol metadata. Match only those evidenced names,
+  // never arbitrary hyphenated product names or capability annotations.
+  const legacyChannelName = sourceName.match(
+    /^GPT\s+Image\s+2\s*·\s*[A-Z]\s*渠道(?:低成本档|官方档)\s*[（(]\s*(image-2-1k|adobe-image2-mid|image2-官key)\s*[）)]$/iu,
+  );
+  if (legacyChannelName) internalAnnotations.add(legacyChannelName[1].toLowerCase());
 
   return (sourceName || "模型")
+    .replace(/\s*[（(]([^）)]*)[）)]/gu, (annotation, content: string) => (
+      (!configured || configuredHasRoutingMarker) && internalAnnotations.has(content.trim().toLowerCase()) ? "" : annotation
+    ))
     .replace(/\s*[（(][^）)]*(?:autodl(?:\.art)?|secure[-\s]?skill|lconai|中转|渠道)[^）)]*[）)]/giu, "")
     .replace(/\s*(?:中转\s*)?(?:lconai|secure[-\s]?skill)(?:\s*高质量)?(?:\s*渠道)?/giu, "")
     .replace(/\s*autodl(?:\.art)?(?:\s*(?:官方|托管|自租|在线|渠道|实例|工作流|加速版|pro\d*))*/giu, "")
-    .replace(/\s*[·|｜/-]?\s*[A-Z]\s*渠道\b/giu, "")
-    .replace(/\s*[·|｜/-]?\s*渠道\s*[A-Z0-9一二三四五六七八九十]+/giu, "")
+    .replace(/(?<![A-Za-z0-9])[A-Z]\s*渠道/giu, "")
+    .replace(/渠道\s*[A-Z0-9一二三四五六七八九十]+/giu, "")
     .replace(/\s*[（(]\s*密钥[^）)]*[）)]/giu, "")
     .replace(/\s*[（(]?\s*(?:配置待验收|待验收|待开放)\s*[）)]?\s*$/gu, "")
+    .replace(/\s*[·|｜/]\s*高端渠道\s*$/u, "")
     .replace(/\s*[·|｜/]\s*(?=[·|｜/])/gu, "")
     .replace(/\s{2,}/gu, " ")
     .replace(/\s*[·|｜/-]\s*$/u, "")

@@ -1,9 +1,43 @@
+import { WorkbenchCardPersistenceFields, WorkbenchRunPersistenceFields, StoryboardImageRequestSnapshotPersistenceFields, WorkbenchVideoContractPersistenceFields } from "@/lib/storyboard-project-contract";
+import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
+
+function scalar(value: unknown): unknown {
+  if (typeof value === "string") return /^(?:data:[^,]+;base64,|blob:)/iu.test(value) ? undefined : value;
+  return value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)) ? value : undefined;
+}
+function pickScalars(value: unknown, fields: readonly string[]): Record<string, unknown> {
+  const object = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return Object.fromEntries(fields.flatMap(key => { const item = scalar(object[key]); return item === undefined ? [] : [[key,item]]; }));
+}
+function urls(value: unknown) { return Array.isArray(value) ? value.filter(item => typeof item === "string" && !/^(?:data|blob):/iu.test(item)) : []; }
+/** Explicit persistence projection, including nested snapshots; unknown extras never enter storage. */
+export function sanitizeStoryboardPersistenceValue(value: unknown): unknown {
+  const object = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const run = pickScalars(object, WorkbenchRunPersistenceFields);
+  if (object.videoContract) run.videoContract = pickScalars(object.videoContract, WorkbenchVideoContractPersistenceFields);
+  run.cards = Array.isArray(object.cards) ? object.cards.map(value => {
+    const card = value && typeof value === "object" ? value as Record<string, unknown> : {};
+    const output = pickScalars(card, WorkbenchCardPersistenceFields);
+    output.referenceImageUrls = urls(card.referenceImageUrls);
+    const reference = GeneratedImageReferenceSchema.safeParse(card.imageRef);
+    if (reference.success) output.imageRef = reference.data;
+    if (card.imageRequestSnapshot) {
+      const snapshot = card.imageRequestSnapshot as Record<string, unknown>;
+      output.imageRequestSnapshot = { ...pickScalars(snapshot, StoryboardImageRequestSnapshotPersistenceFields), referenceImageUrls: urls(snapshot.referenceImageUrls) };
+    }
+    if (card.videoLifecycle) output.videoLifecycle = pickScalars(card.videoLifecycle, ["taskId","taskState","taskLabel","instanceState","instanceLabel","headline","detail","tone","progress","idleGraceSeconds","idleRemainingSeconds","taskTerminal","monitorComplete","observedAt"]);
+    return output;
+  }) : [];
+  return run;
+}
+
 type PersistableStoryboardCard = {
   referenceImageUrls: string[];
   imageUrl?: string;
   videoSourceImageUrl?: string;
   videoUrl?: string;
   videoContentUrl?: string;
+  imageDeliveryMode?: string;
 };
 
 type PersistableStoryboardRun = {
@@ -17,21 +51,23 @@ function stableLocalMediaUrl(value: string | undefined) {
 }
 
 /**
- * localStorage is only a lightweight submitted-history index. Binary payloads
- * belong in owned object storage (or IndexedDB while an upload is in progress).
+ * localStorage is only a lightweight submitted-history index. Generated image
+ * bytes and temporary preview URLs remain outside every persisted snapshot.
  */
 export function createStoryboardPersistenceSnapshot<T extends PersistableStoryboardRun>(run: T): T {
-  return {
+  return sanitizeStoryboardPersistenceValue({
     ...run,
     cards: run.cards.map((card) => ({
       ...card,
       referenceImageUrls: card.referenceImageUrls
         .map((url) => stableLocalMediaUrl(url))
         .filter((url): url is string => Boolean(url)),
-      imageUrl: stableLocalMediaUrl(card.imageUrl),
+      imageUrl: card.imageDeliveryMode === "inline_ephemeral" ? undefined : stableLocalMediaUrl(card.imageUrl),
+      ...(card.imageDeliveryMode === "inline_ephemeral" ? { imageValidatedAt: undefined, imageRecoveryReady: false, imageRetryBlocked: true,
+        imageError: "图片已成功生成且保留费用收据；临时图片仅当前页面可用，刷新后无法恢复" } : {}),
       videoSourceImageUrl: stableLocalMediaUrl(card.videoSourceImageUrl),
       videoUrl: stableLocalMediaUrl(card.videoUrl),
       videoContentUrl: stableLocalMediaUrl(card.videoContentUrl),
     })),
-  } as T;
+  }) as T;
 }

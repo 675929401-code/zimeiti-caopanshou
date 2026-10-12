@@ -115,7 +115,9 @@
     "release:vnext:state-machine:verify": "node ./scripts/verify-deploy-state-machine.mjs",
     "verify:manju-public-assets": "node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-manju-public-assets.ts",
     "verify:youcai-navigation-live": "node ./scripts/verify-youcai-navigation-live.mjs",
-    "release:vnext:verify": "node ./scripts/verify-release-workflow.mjs && node ./scripts/verify-artifact-secret-gates.mjs && node ./scripts/verify-storage-runtime-package.mjs && node ./scripts/verify-render-nginx-config-vnext.mjs && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-runtime-data-boundary.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-provider-surface-security.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-local-video-tools.ts",
+    "engineering:check": "node ./scripts/inspect-engineering-environment.mjs --check && node ./scripts/verify-engineering-environment.mjs && node ./scripts/verify-legacy-release-entrypoints.mjs && node ./scripts/verify-local-engineering-diagnostic.mjs",
+    "verify:media-chat-delivery:zero-network": "node ./scripts/verify-generated-image-provider-url-policy-zero-network.mjs && node ./scripts/verify-generated-image-reference-zero-network.mjs && node ./scripts/verify-generated-image-download.mjs && node ./scripts/verify-generated-media-direct-delivery-zero-network.mjs && node ./scripts/verify-llm-provider-stream.mjs && node ./scripts/verify-llm-standard-request-preflight-zero-network.mjs && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-agent-chat-prompt-authority-zero-network.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-media-history-expired-count.ts",
+    "release:vnext:verify": "pnpm run engineering:check && pnpm run verify:media-chat-delivery:zero-network && node ./scripts/verify-release-workflow.mjs && node ./scripts/verify-runtime-alignment-tooling.mjs && node ./scripts/verify-artifact-secret-gates.mjs && node ./scripts/verify-storage-runtime-package.mjs && node ./scripts/verify-render-nginx-config-vnext.mjs && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-runtime-data-boundary.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-provider-surface-security.ts && node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-local-video-tools.ts",
     "deploy:ready": "node ./scripts/verify-deployment-readiness.mjs --mode=production",
     "deploy:ready:code": "node ./scripts/verify-deployment-readiness.mjs --mode=code",
     "validate": "tsc -p tsconfig.json && eslint . --quiet"
@@ -222,6 +224,7 @@
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
+    "node": "24.19.0",
     "pnpm": "9.0.0"
   },
   "pnpm": {

@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "projectId": "zimeiti-caopanshou",
+  "layoutVersion": 1,
+  "entrypoint": "scripts/deploy-artifact-vnext.sh",
+  "limits": {
+    "entries": 32,
+    "fileBytes": 2097152,
+    "totalBytes": 8388608,
+    "archiveBytes": 12582912
+  },
+  "files": [
+    [
+      "scripts/deploy-artifact-vnext.sh",
+      "scripts/deploy-artifact-vnext.sh",
+      "0555"
+    ],
+    [
+      "scripts/deployment-control-plane.mjs",
+      "scripts/deployment-control-plane.mjs",
+      "0555"
+    ],
+    [
+      "deploy/policies/deployment-control-plane.v1.json",
+      "deploy/policies/deployment-control-plane.v1.json",
+      "0444"
+    ],
+    [
+      "scripts/normalize-legacy-runtime-vnext.mjs",
+      "normalize-legacy-runtime-vnext.mjs",
+      "0555"
+    ],
+    [
+      "scripts/media-worker-transaction-hook-vnext.mjs",
+      "transaction-hook.mjs",
+      "0500"
+    ],
+    [
+      "deploy/pm2/ecosystem.vnext.config.cjs",
+      "ecosystem.config.cjs",
+      "0400"
+    ],
+    [
+      "scripts/asset-policy-transition-proof-vnext.mjs",
+      "scripts/asset-policy-transition-proof-vnext.mjs",
+      "0555"
+    ],
+    [
+      "scripts/create-production-preflight-receipt.mjs",
+      "scripts/create-production-preflight-receipt.mjs",
+      "0555"
+    ],
+    [
+      "scripts/verify-production-preflight-receipt.mjs",
+      "scripts/verify-production-preflight-receipt.mjs",
+      "0555"
+    ],
+    [
+      "scripts/contracts/production-preflight-receipt.v1.schema.json",
+      "scripts/contracts/production-preflight-receipt.v1.schema.json",
+      "0444"
+    ],
+    [
+      "scripts/contracts/production-preflight-reference.v1.json",
+      "scripts/contracts/production-preflight-reference.v1.json",
+      "0444"
+    ],
+    [
+      "deploy/policies/database-contract.v1.json",
+      "deploy/policies/database-contract.v1.json",
+      "0444"
+    ],
+    [
+      "deploy/policies/database-semantic-contract.v1.json",
+      "deploy/policies/database-semantic-contract.v1.json",
+      "0444"
+    ],
+    [
+      "deploy/policies/release-policy.json",
+      "deploy/policies/release-policy.json",
+      "0444"
+    ]
+  ],
+  "externalInputs": {
+    "node": "v24.19.0:137",
+    "storageGuard": {
+      "path": "/usr/local/libexec/zimeiti/verify-deploy-storage-runtime.sh",
+      "sha256": "c7d32c01a8747cc2e354aa2f12bc6990970d4860daa5b22c345b6c2c4e8c52b6"
+    },
+    "readinessFixtureHelper": {
+      "path": "/usr/local/libexec/zimeiti/prepare-candidate-readiness-fixtures.py",
+      "sha256": "ea62e6aa0676b26514491109fe13e950799585f51d41398b82817f83a860c3c6"
+    },
+    "runtime": [
+      "root-controlled protected runtime configuration",
+      "PM2",
+      "bash/GNU tar",
+      "owned business releases and data/asset slots"
+    ]
+  },
+  "hookPhases": [
+    "prepare",
+    "activated",
+    "precommit",
+    "persisted",
+    "rollback-before",
+    "rollback-after",
+    "rollback-persisted"
+  ]
+}

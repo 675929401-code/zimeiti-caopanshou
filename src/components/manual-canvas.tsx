@@ -1,6 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import { getVideoMediaUnavailable } from "@/lib/video-media-availability";
+import { generatedImageReferenceUri, parseGeneratedImageReferenceUri } from "@/lib/generated-image-reference";
+import { videoWorkflowImageRequestFields } from "@/lib/video-workflow-draft";
 import {
   addEdge,
   applyEdgeChanges,
@@ -109,12 +112,13 @@ import {
   resolveVideoResolution,
   resolveVideoDuration,
 } from "@/lib/video-model-capabilities";
+import { resolveGeneratedImageClientDelivery, projectGeneratedImageClientReceipt, projectGeneratedImageDocument, type GeneratedImageClientDelivery } from "@/lib/generated-image-client-delivery";
 import {
   collectWorkflowInputs,
   getWorkflowExecutionOrder,
   resolveWorkflowPrompt,
   WorkflowGraphSchema,
-  type WorkflowNodeData,
+  type WorkflowNodeData as PersistedWorkflowNodeData,
   type WorkflowNodeKind,
   type WorkflowNodeRecord,
 } from "@/lib/workflow-schema";
@@ -303,6 +307,7 @@ const PRODUCTION_MODES: Array<{
   },
 ];
 
+type WorkflowNodeData = Omit<PersistedWorkflowNodeData,"history"> & {imagePreviewUrl?:string;history:Array<PersistedWorkflowNodeData["history"][number]&{imagePreviewUrl?:string}>};
 type WorkflowFlowNode = Node<WorkflowNodeData, "workflow">;
 type WorkflowFlowEdge = Edge;
 
@@ -658,6 +663,27 @@ type CanvasVideoPollResult = {
   videoUrl: string;
   priceCharged: number;
 };
+
+// VIDEO_MEDIA_UNAVAILABLE_CONSUMER_BEGIN
+function videoMediaUnavailablePatch(data: {
+  status?: string; mediaAvailable?: boolean; mediaUnavailableReason?: string;
+  processingStage?: string; errorMessage?: string; priceCharged?: number;
+}, taskId: string): Partial<WorkflowNodeData> | null {
+  const unavailable = getVideoMediaUnavailable(data);
+  if (!unavailable) return null;
+  const message = unavailable.message;
+  const charged = Number(data.priceCharged);
+  return {
+    status: "failed", outputUrl: "", taskId,
+    error: message, progressMessage: undefined,
+    playbackStatus: "failed", playbackError: message,
+    generationBlockedReason: message,
+    ...(Number.isFinite(charged) ? { actualCost: Math.max(0, charged) } : {}),
+    billingReferenceId: `video:${taskId}`,
+    completedAt: new Date().toISOString(),
+  };
+}
+// VIDEO_MEDIA_UNAVAILABLE_CONSUMER_END
 const IMAGE_BATCH_SUBMIT_INTERVAL_MS = 5_000;
 const IMAGE_BATCH_MAX_IN_FLIGHT = 3;
 const IMAGE_GENERATE_MAX_ATTEMPTS = 3;
@@ -870,7 +896,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
     && !data.taskId
     && Boolean(data.clientRequestId);
   const imageCandidates = data.kind === "image"
-    ? data.history.filter((item) => item.outputUrl).slice(0, 4)
+    ? data.history.filter((item) => item.imagePreviewUrl || item.outputUrl).slice(0, 4)
     : [];
   const hasGeneratedMediaOutput = Boolean(data.outputUrl)
     || (data.kind === "image" && imageCandidates.length > 0)
@@ -995,16 +1021,16 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation();
-                    context.selectImageCandidate(id, item.id, item.outputUrl || "");
+                    context.selectImageCandidate(id, item.id, item.imagePreviewUrl || item.outputUrl || "");
                   }}
                 >
-                  <Image src={item.outputUrl || ""} alt={`${candidateSubjectLabel}候选 ${index + 1}`} fill unoptimized sizes="250px" />
+                  <Image src={item.imagePreviewUrl || item.outputUrl || ""} alt={`${candidateSubjectLabel}候选 ${index + 1}`} fill unoptimized sizes="250px" />
                   <span>{index + 1}</span>
                 </button>
               ))}
             </div>
-          ) : data.outputUrl && data.kind === "image" && data.status !== "failed" ? (
-            <Image src={data.outputUrl} alt={data.title} fill unoptimized sizes="440px" />
+          ) : (data.imagePreviewUrl || data.outputUrl) && data.kind === "image" && data.status !== "failed" ? (
+            <Image src={data.imagePreviewUrl || data.outputUrl} alt={data.title} fill unoptimized sizes="440px" />
           ) : data.kind === "image" && data.status === "failed" ? (
             <div className="free-video-preview-error nodrag nowheel" onPointerDown={(event) => event.stopPropagation()}>
               <AlertCircle size={28} />
@@ -1119,7 +1145,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
           ) : (
             <div><KindIcon kind={data.kind} size={28} /><strong>{STATUS_LABEL[data.status]}</strong><span>{data.error || "选中节点以进行生成"}</span></div>
           )}
-          {data.outputUrl && (data.kind === "image" || data.kind === "video") && (
+          {(data.imagePreviewUrl || data.outputUrl) && (data.kind === "image" || data.kind === "video") && (
             <div className="free-node-result-actions nodrag nowheel" onPointerDown={(event) => event.stopPropagation()}>
               {data.kind === "image" && data.assetRole === "storyboard-keyframe" && (
                 <>
@@ -1866,6 +1892,7 @@ function normalizeEdges(edges: WorkflowFlowEdge[]): WorkflowFlowEdge[] {
 
 function normalizeInterruptedNodeStates(nodes: WorkflowFlowNode[]): WorkflowFlowNode[] {
   return nodes.map((node) => {
+    if(node.data.kind==="image" && node.data.imageDeliveryReceipt?.deliveryMode==="inline_ephemeral")return {...node,data:{...node.data,status:"succeeded",imagePreviewUrl:undefined,outputUrl:"",error:"生成已完成且费用收据已保留；临时图片刷新后无法恢复"}};
     if (node.data.status !== "running" && node.data.status !== "queued") return node;
     if (node.data.kind === "image") {
       const canResume = Boolean(node.data.pendingPersistUrl)
@@ -2085,6 +2112,10 @@ export function ManualCanvas({
   const [scriptCompileElapsedSeconds, setScriptCompileElapsedSeconds] = useState(0);
   const [batchRunElapsedSeconds, setBatchRunElapsedSeconds] = useState(0);
   const nodesRef = useRef(nodes);
+  const deliveryPageActiveRef=useRef(true);
+  const deliveryCanvasRef=useRef(activeCanvasId);deliveryCanvasRef.current=activeCanvasId;
+  const imageDeliveryReleases=useRef(new Map<string,()=>void>());
+  useEffect(()=>{deliveryPageActiveRef.current=true;return ()=>{deliveryPageActiveRef.current=false;for(const release of imageDeliveryReleases.current.values())release();imageDeliveryReleases.current.clear();};},[activeCanvasId]);
   const edgesRef = useRef(edges);
   const runHistoryRef = useRef(runHistory);
   const nextImageSubmitAtRef = useRef(0);
@@ -2627,7 +2658,7 @@ export function ManualCanvas({
       createdAt: updatedSession.createdAt,
       updatedAt: updatedSession.updatedAt,
       viewport: updatedSession.viewport,
-      nodes: updatedSession.nodes,
+      nodes: projectGeneratedImageDocument(updatedSession.nodes),
       edges: updatedSession.edges,
       storyboardSettings: updatedSession.storyboardSettings,
     };
@@ -2637,7 +2668,7 @@ export function ManualCanvas({
         schemaVersion: 1 as const,
         session: serverSession,
         viewport: viewportRef.current,
-        runHistory: runHistory.filter((record) => record.canvasId === updatedSession.id),
+        runHistory: projectGeneratedImageDocument(runHistory.filter((record) => record.canvasId === updatedSession.id)),
         diagnostics: generationDiagnostics.filter((entry) => entry.canvasId === updatedSession.id),
       },
     };
@@ -2645,6 +2676,7 @@ export function ManualCanvas({
 
   const persistCanvasDocument = useCallback(async (session: CanvasSession, document: CanvasServerDocument) => {
     const canvasId = session.id;
+    document=projectGeneratedImageDocument(document);
     const hash = await canvasDocumentDigest(document);
     const existingPromise = canvasSavePromiseRef.current.get(canvasId);
     if (lastCanvasSaveHashRef.current.get(canvasId) === hash) {
@@ -2943,6 +2975,7 @@ export function ManualCanvas({
   const selectImageCandidate = useCallback((id: string, candidateId: string, outputUrl: string) => {
     if (!outputUrl) return;
     const candidateNode = nodesRef.current.find((node) => node.id === id);
+    const chosen = candidateNode?.data.history.find(item=>item.id===candidateId);
     const descendants = new Set<string>();
     const queue = [id];
     while (queue.length > 0) {
@@ -2959,7 +2992,8 @@ export function ManualCanvas({
           ...node,
           data: {
             ...node.data,
-            outputUrl,
+            outputUrl: chosen?.imageDeliveryReceipt?.deliveryMode === "inline_ephemeral" ? "" : outputUrl,
+            imagePreviewUrl:chosen?.imagePreviewUrl, imageDeliveryReceipt:chosen?.imageDeliveryReceipt, imageRef:chosen?.imageRef,
             selectedCandidateId: candidateId,
             status: "succeeded" as const,
             error: undefined,
@@ -3481,8 +3515,17 @@ export function ManualCanvas({
         providerCompleted?: boolean;
         progress?: number | null;
         priceCharged?: number;
+        mediaAvailable?: boolean;
+        mediaUnavailableReason?: string;
       }>(response);
       transientErrors = 0;
+      const unavailablePatch = videoMediaUnavailablePatch(data, taskId);
+      if (unavailablePatch) {
+        // Preserve the original task and idempotency identity. This is a
+        // delivery terminal, never a reason to submit another generation.
+        replaceRuntimeNode(nodesRef.current, node.id, unavailablePatch);
+        throw new Error(String(unavailablePatch.error));
+      }
       if (data.status === "completed" && data.videoUrl) {
         return { videoUrl: data.videoUrl, priceCharged: Number(data.priceCharged || 0) } satisfies CanvasVideoPollResult;
       }
@@ -3514,6 +3557,7 @@ export function ManualCanvas({
     let node = runtime.find((item) => item.id === nodeId);
     if (!node) return runtime;
     const nodeStartedAtMs = Date.now();
+    const imageRunCanvasId=activeCanvasId;
     const rejectBeforeRun = (detail: string): never => {
       recordGenerationDiagnostic({
         nodeId,
@@ -3546,6 +3590,9 @@ export function ManualCanvas({
         title: node.data.title,
         detail: decorationPreflightError,
       });
+    }
+    if(node.data.kind==="image" && node.data.imageDeliveryReceipt?.deliveryMode==="inline_ephemeral" && node.data.imageDeliveryReceipt.generationCompleted) {
+      onNotice("图片已生成且费用收据已保留；临时图片仅原页面可用，不会自动重新生成");return runtime;
     }
     const token = localStorage.getItem(TOKEN_KEY);
     if ((node.data.kind === "image" || node.data.kind === "video" || node.data.kind === "upload") && !token) {
@@ -3739,6 +3786,7 @@ export function ManualCanvas({
             historyRecordId = previouslyPersisted.historyRecordId || historyRecordId;
             continue;
           }
+          let generatedDelivery: GeneratedImageClientDelivery | undefined;
           let generatedUrl = "";
           let generatedTraceId = "";
           let generatedBillingReferenceId: string | undefined;
@@ -3803,7 +3851,8 @@ export function ManualCanvas({
               runtime = replaceRuntimeNode(runtime, nodeId, { progressMessage: `正在恢复图片 ${index + 1}/${imageCount} 的永久保存，不会重新生成或扣费` });
             } else {
               const generated = await requestImageJsonWithRetry<{
-                images?: Array<{ url: string; width?: number; height?: number; assetId?: string; storageKey?: string }>;
+                recordId?:string;deliveryMode?:"provider_url"|"inline_ephemeral";
+                images?: Array<{ url: string; width?: number; height?: number; assetId?: string; storageKey?: string;recordId?:string;deliveryMode?:"provider_url"|"inline_ephemeral" }>;
                 cashCharged?: number;
                 cashRemaining?: number | null;
                 modelUsed?: string;
@@ -3835,7 +3884,11 @@ export function ManualCanvas({
                 runtime = replaceRuntimeNode(runtime, nodeId, { progressMessage });
               });
               const candidate = generated.images?.[0];
-              candidateUrl = candidate?.url || "";
+              const receipt=projectGeneratedImageClientReceipt(generated);
+              if(receipt) {
+                try {generatedDelivery=await resolveGeneratedImageClientDelivery(generated);}catch {generatedDelivery={kind:receipt.deliveryMode,receipt,url:"",revoke:()=>{}};}
+              }
+              candidateUrl = generatedDelivery?.url || candidate?.url || "";
               candidateAssetId = candidate?.assetId || "";
               candidateStorageKey = candidate?.storageKey || "";
               candidateWidth = candidate?.width;
@@ -3853,8 +3906,8 @@ export function ManualCanvas({
               cashRemaining = generated.cashRemaining ?? cashRemaining;
               publicModelName = generated.modelUsed || publicModelName || model.name;
             }
-            if (!candidateUrl) throw new Error(`图片模型没有返回第 ${index + 1} 张结果`);
-            if (!canResumePersistence && (!candidateAssetId || !candidateStorageKey || !returnedOperationId)) {
+            if (!candidateUrl && !generatedDelivery?.receipt) throw new Error(`图片模型没有返回第 ${index + 1} 张结果`);
+            if (!generatedDelivery?.receipt && !canResumePersistence && (!candidateAssetId || !candidateStorageKey || !returnedOperationId)) {
               throw new Error(`第 ${index + 1} 张图片缺少永久资产或计费操作标识，已停止二次转存`);
             }
             billingReferenceId = returnedBillingReferenceId || billingReferenceId;
@@ -3867,7 +3920,7 @@ export function ManualCanvas({
               billingReferenceId,
               assetId: candidateAssetId || undefined,
               storageKey: candidateStorageKey || undefined,
-              pendingPersistUrl: candidateUrl,
+              pendingPersistUrl: generatedDelivery?.receipt ? undefined : candidateUrl,
               pendingPersistIndex: index,
               pendingPersistWidth: candidateWidth,
               pendingPersistHeight: candidateHeight,
@@ -3876,6 +3929,7 @@ export function ManualCanvas({
             });
             console.info("[canvas-batch] image response received", { nodeId, title: node.data.title, clientTraceId });
             runtime = replaceRuntimeNode(runtime, nodeId, { progressMessage: `图片 ${index + 1}/${imageCount} 已返回，正在检查 ${node.data.aspectRatio} 画幅` });
+            if(generatedDelivery?.receipt) {generatedUrl=generatedDelivery.url;generatedTraceId=returnedTraceId;generatedBillingReferenceId=returnedBillingReferenceId;break;}
             try {
               await validateImageAspectRatio(candidateUrl, node.data.aspectRatio, { width: candidateWidth, height: candidateHeight });
               console.info("[canvas-batch] image aspect accepted", { nodeId, title: node.data.title, clientTraceId });
@@ -3902,6 +3956,17 @@ export function ManualCanvas({
             } catch (error) {
               if (aspectAttempt >= maxAspectAttempts) throw error;
             }
+          }
+          if(generatedDelivery?.receipt) {
+            if(!deliveryPageActiveRef.current || deliveryCanvasRef.current!==imageRunCanvasId || !nodesRef.current.some(n=>n.id===nodeId)){generatedDelivery.revoke();return runtime;}
+            imageDeliveryReleases.current.get(generatedDelivery.receipt.recordId)?.();imageDeliveryReleases.current.set(generatedDelivery.receipt.recordId,generatedDelivery.revoke);
+            const receipt=generatedDelivery.receipt;
+            outputUrl=generatedDelivery.kind==="provider_url"?generatedDelivery.url:"";
+            completedAt=new Date().toISOString();taskId=generatedTraceId||clientTraceId;billingReferenceId=receipt.billingReferenceId;assetId=undefined;storageKey=undefined;historyRecordId=undefined;
+            const receiptItem:WorkflowNodeData["history"][number]={id:crypto.randomUUID(),batchIndex:index,outputUrl,imagePreviewUrl:generatedDelivery.kind==="inline_ephemeral"?generatedDelivery.url:undefined,modelId:model.id,publicModelName,actualCost:receipt.cashCharged,taskId:generatedTraceId||clientTraceId,billingReferenceId:receipt.billingReferenceId,imageDeliveryReceipt:receipt,imageRef:generatedDelivery.imageRef,createdAt:completedAt};
+            runtime=replaceRuntimeNode(runtime,nodeId,{outputUrl,imagePreviewUrl:generatedDelivery.kind==="inline_ephemeral"?generatedDelivery.url:undefined,imageDeliveryReceipt:receipt,imageRef:generatedDelivery.imageRef,actualCost,cashRemaining,billingReferenceId:receipt.billingReferenceId,taskId:generatedTraceId||clientTraceId,assetId:undefined,storageKey:undefined,historyRecordId:undefined,pendingPersistUrl:undefined,pendingPersistIndex:undefined,completedAt});
+            generatedHistory.unshift(receiptItem);
+            continue;
           }
           if (!generatedUrl) throw new Error(`第 ${index + 1} 张图片未通过 ${node.data.aspectRatio} 画幅检查`);
           runtime = replaceRuntimeNode(runtime, nodeId, { progressMessage: `图片 ${index + 1}/${imageCount} 已生成，正在保存` });
@@ -3996,6 +4061,12 @@ export function ManualCanvas({
       } else if (node.data.kind === "video") {
         if (!prompt) throw new Error("视频节点没有提示词或前置文本");
         const sourceIds = new Set(edgesRef.current.filter((edge) => edge.target === nodeId).map((edge) => edge.source));
+        if(runtime.some(source=>sourceIds.has(source.id) && source.data.imageDeliveryReceipt?.deliveryMode==="inline_ephemeral"))throw new Error("临时图片仅当前页面可预览下载，当前视频通道不支持这类输入；本次未提交或扣费");
+        const referenceSources=runtime.filter(source=>sourceIds.has(source.id) && source.data.kind==="image");
+        const videoImageUrls = inputs.imageUrls.map((url) => {
+          const source = referenceSources.find((item) => item.data.outputUrl === url || item.data.imagePreviewUrl === url);
+          return source?.data.imageRef ? generatedImageReferenceUri(source.data.imageRef) : url;
+        });
         const unverifiedReferences = runtime.filter((source) => (
           sourceIds.has(source.id)
           && source.data.assetRole === "storyboard-keyframe"
@@ -4014,7 +4085,7 @@ export function ManualCanvas({
         if (node.data.requiresExactDuration && !node.data.allowDurationTrim && (!isCanvasStoryboardVideoModelCompatible(model) || timing.needsTrim)) {
           throw new Error("当前剧情镜头要求精确时长；该模型会生成额外片段并增加消耗，请切换短镜头模型");
         }
-        const imageUrl = inputs.imageUrls[0] || "";
+        const imageUrl = videoImageUrls[0] || "";
         if (imageUrl && !model.supportsImageInput) {
           throw new Error(`${model.name} 不支持关键帧输入，请切换关键帧驱动的视频模型`);
         }
@@ -4040,7 +4111,7 @@ export function ManualCanvas({
         const clientRequestFingerprint = JSON.stringify({
           modelId: model.id,
           prompt,
-          imageRefs: inputs.imageUrls.map((url) => stableCanvasMediaIdentity(url, runtime)),
+          imageRefs: videoImageUrls.map((url) => parseGeneratedImageReferenceUri(url) ? url : stableCanvasMediaIdentity(url, runtime)),
           audioRefs: inputs.audioUrls.map((url) => stableCanvasMediaIdentity(url, runtime)),
           duration: timing.target,
           aspectRatio: node.data.aspectRatio,
@@ -4080,12 +4151,14 @@ export function ManualCanvas({
               body: JSON.stringify({
                 model_id: model.id,
                 prompt,
-                image_url: imageUrl || undefined,
-                reference_image_urls: inputs.imageUrls.slice(1, Math.max(1, model.maxReferenceImages || 1)),
+                ...Object.fromEntries(Object.entries(videoWorkflowImageRequestFields({
+                  imageUrl,
+                  referenceImageUrls: videoImageUrls.slice(1, Math.max(1, model.maxReferenceImages || 1)),
+                  referenceImageUrl: node.data.videoMode === "multimodal" && videoImageUrls.length > 2 ? videoImageUrls[1] : undefined,
+                  lastFrameUrl: node.data.videoMode === "multimodal" ? videoImageUrls.at(-1) : undefined,
+                })).filter(([, value]) => value !== "")),
                 audio_url: inputs.audioUrls[0] || undefined,
                 reference_audio_urls: inputs.audioUrls.slice(1, maxReferenceAudios),
-                reference_image_url: node.data.videoMode === "multimodal" && inputs.imageUrls.length > 2 ? inputs.imageUrls[1] : undefined,
-                last_frame_url: node.data.videoMode === "multimodal" ? inputs.imageUrls.at(-1) || undefined : undefined,
                 duration: timing.target,
                 aspect_ratio: node.data.aspectRatio,
                 resolution_tier: coerceCanvasVideoResolution(model, node.data.resolution),
@@ -4715,7 +4788,7 @@ export function ManualCanvas({
       const allMediaCompleted = runtime
         .filter((node) => node.data.kind === "image" || node.data.kind === "video")
         .every((node) => node.data.status === "succeeded"
-          && Boolean(node.data.outputUrl)
+          && Boolean(node.data.outputUrl || node.data.imageDeliveryReceipt?.generationCompleted)
           && (node.data.kind !== "video" || node.data.playbackStatus === "ready"));
       updateRunRecord(runId, (record) => ({
         ...record,
@@ -6456,7 +6529,7 @@ export function ManualCanvas({
 
   function previewAsset(nodeId: string) {
     const node = nodesRef.current.find((item) => item.id === nodeId);
-    if (!node?.data.outputUrl) {
+    if (!node?.data.outputUrl && !node?.data.imagePreviewUrl) {
       onNotice("这个节点还没有可预览的结果");
       return;
     }
@@ -6464,7 +6537,8 @@ export function ManualCanvas({
   }
 
   async function saveWorkflowAsset(node: WorkflowFlowNode) {
-    if (!node.data.outputUrl) return false;
+    if (!node.data.outputUrl && !node.data.imagePreviewUrl) return false;
+    if(node.data.imagePreviewUrl){const anchor=document.createElement("a");anchor.href=node.data.imagePreviewUrl;anchor.download=assetFilename(node);anchor.click();return true;}
     const token = localStorage.getItem(TOKEN_KEY);
     const streamOriginalVideoDownload = async () => {
       const taskId = node.data.taskId || taskIdFromPlaybackUrl(node.data.outputUrl);
@@ -6531,7 +6605,7 @@ export function ManualCanvas({
           cache: "no-store",
         });
       } else {
-        response = await fetch(node.data.outputUrl);
+        response = await fetch(node.data.outputUrl,{headers:node.data.imageDeliveryReceipt?.deliveryMode==="provider_url" && token?{Authorization:"Bearer "+token}:{},cache:"no-store"});
       }
       await downloadResponse(response);
       return true;
@@ -6560,7 +6634,7 @@ export function ManualCanvas({
 
   function downloadAsset(nodeId: string) {
     const node = nodesRef.current.find((item) => item.id === nodeId);
-    if (!node?.data.outputUrl) {
+    if (!node?.data.outputUrl && !node?.data.imagePreviewUrl) {
       onNotice("这个节点还没有可下载的结果");
       return;
     }
@@ -6572,7 +6646,7 @@ export function ManualCanvas({
   async function downloadAssets(kind: "image" | "video") {
     const kindLabel = kind === "image" ? "参考图" : "视频";
     const assetsToDownload = nodesRef.current
-      .filter((node) => node.data.kind === kind && Boolean(node.data.outputUrl))
+      .filter((node) => node.data.kind === kind && Boolean(node.data.imagePreviewUrl || node.data.outputUrl))
       .sort((left, right) => {
         return (getShotNumber(left) ?? Number.MAX_SAFE_INTEGER) - (getShotNumber(right) ?? Number.MAX_SAFE_INTEGER);
       });
@@ -6607,7 +6681,7 @@ export function ManualCanvas({
       edges: edgesRef.current.map(({ id, source, target }) => ({ id, source, target })),
       updatedAt: new Date().toISOString(),
     };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(graph, null, 2)], { type: "application/json" }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(projectGeneratedImageDocument(graph), null, 2)], { type: "application/json" }));
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = `${fileSafeCanvasName}-${new Date().toISOString().slice(0, 10)}.json`;
@@ -6763,7 +6837,9 @@ export function ManualCanvas({
         return;
       }
 
+      // Historical candidates retain their own current-page previews until canvas cleanup.
       replaceRuntimeNode(nodesRef.current, nodeId, {
+        imagePreviewUrl:undefined,imageDeliveryReceipt:undefined,imageRef:undefined,
         outputUrl: "",
         taskId: "",
         clientRequestId: undefined,
@@ -7597,7 +7673,7 @@ export function ManualCanvas({
             </button>
           )}
 
-          {previewNode?.data.outputUrl && (previewNode.data.kind === "image" || previewNode.data.kind === "video") && (
+          {(previewNode?.data.imagePreviewUrl || previewNode?.data.outputUrl) && previewNode && (previewNode.data.kind === "image" || previewNode.data.kind === "video") && (
             <div className="free-result-viewer" role="dialog" aria-modal="true" aria-label={`${previewNode.data.title}预览`} onClick={() => setPreviewNodeId(null)}>
               <section onClick={(event) => event.stopPropagation()}>
                 <header>
@@ -7612,7 +7688,7 @@ export function ManualCanvas({
                 </header>
                 <div className={`free-result-viewer-media ${previewNode.data.kind}`}>
                   {previewNode.data.kind === "image" ? (
-                    <Image src={previewNode.data.outputUrl} alt={previewNode.data.title} fill unoptimized sizes="90vw" />
+                    <Image src={previewNode.data.imagePreviewUrl || previewNode.data.outputUrl} alt={previewNode.data.title} fill unoptimized sizes="90vw" />
                   ) : (
                     <video
                       src={videoPlaybackSrc(previewNode.data.outputUrl)}

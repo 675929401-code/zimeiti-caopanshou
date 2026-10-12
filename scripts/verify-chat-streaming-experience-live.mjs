@@ -50,16 +50,30 @@ function sameRuntimeIdentity(left, right) {
     && left.runningLatest === true && right.runningLatest === true);
 }
 
-export function auditSseEvidence(samples, minimumContentGrowthSamples = 1) {
+export function parseSseReadEvidence(value, expectedClientRequestId, atMs) {
+  if (!String(value).startsWith("[LLM_SSE_READ] ")) return null;
+  try {
+    const event = JSON.parse(value.slice("[LLM_SSE_READ] ".length));
+    if (event.schemaVersion !== 1 || !expectedClientRequestId || event.clientRequestId !== expectedClientRequestId) return null;
+    return { atMs, ordinal: event.ordinal, bytes: event.bytes, gapMs: event.gapMs,
+      cumulativeContentChars: event.cumulativeContentChars, terminal: event.terminal, failed: event.failed };
+  } catch { return null; }
+}
+
+export function auditSseEvidence(samples, minimumContentGrowthSamples = 2) {
   const safeSamples = Array.isArray(samples) ? samples : [];
-  const contentBearingSamples = safeSamples.filter((item) => Number(item?.cumulativeContentChars) > 0);
+  const terminalIndices = safeSamples.flatMap((item, index) => item?.terminal === true ? [index] : []);
+  const terminalReadAuditable = terminalIndices.length === 1 && terminalIndices[0] === safeSamples.length - 1;
+  const preTerminalSamples = safeSamples.slice(0, terminalIndices[0] ?? safeSamples.length);
+  const contentBearingSamples = preTerminalSamples.filter((item) => Number(item?.cumulativeContentChars) > 0);
   const distinctContentLengths = new Set(contentBearingSamples.map((item) => Number(item.cumulativeContentChars))).size;
   const rawSamplesAuditable = safeSamples.length > 0 && safeSamples.every((item) =>
     Number.isFinite(item?.atMs) && Number(item.atMs) >= 0
     && Number.isInteger(item?.ordinal) && Number(item.ordinal) > 0
     && Number.isFinite(item?.bytes) && Number(item.bytes) >= 0
     && Number.isFinite(item?.gapMs) && Number(item.gapMs) >= 0
-    && Number.isFinite(item?.cumulativeContentChars) && Number(item.cumulativeContentChars) >= 0);
+    && Number.isFinite(item?.cumulativeContentChars) && Number(item.cumulativeContentChars) >= 0
+    && typeof item?.terminal === "boolean" && typeof item?.failed === "boolean" && !item.failed);
   const orderedSamplesAuditable = safeSamples.every((item, index) => index === 0
     || (Number(item.ordinal) > Number(safeSamples[index - 1].ordinal)
       && Number(item.atMs) >= Number(safeSamples[index - 1].atMs)
@@ -73,7 +87,8 @@ export function auditSseEvidence(samples, minimumContentGrowthSamples = 1) {
     cumulativeContentChars: Number(item.cumulativeContentChars),
   }));
   const contentBearingSampleExists = contentBearingSamples.length > 0;
-  const sampledNetworkHasContent = distinctContentLengths >= minimumContentGrowthSamples;
+  const thresholdAuditable = Number.isSafeInteger(minimumContentGrowthSamples) && minimumContentGrowthSamples >= 1;
+  const sampledNetworkHasContent = thresholdAuditable && distinctContentLengths >= minimumContentGrowthSamples;
   const chunkIntervalSamplesAuditable = intervalSamples.length > 0 && rawSamplesAuditable && orderedSamplesAuditable
     && intervalSamples.every((item) => item.readOrdinal > 1 && item.previousReadOrdinal === item.readOrdinal - 1
       && Number.isFinite(item.gapMs) && item.gapMs >= 0
@@ -83,31 +98,57 @@ export function auditSseEvidence(samples, minimumContentGrowthSamples = 1) {
     sampledNetworkHasContent,
     rawSamplesAuditable,
     orderedSamplesAuditable,
+    terminalReadAuditable,
+    networkIncrementalEvidence: distinctContentLengths >= 2 && terminalReadAuditable && rawSamplesAuditable && orderedSamplesAuditable,
     chunkIntervalSampleCount: intervalSamples.length,
     chunkIntervalSamplesAuditable,
     contentBearingSampleCount: contentBearingSamples.length,
     distinctContentLengths,
     intervalSamples,
-    passed: contentBearingSampleExists && sampledNetworkHasContent && chunkIntervalSamplesAuditable,
+    passed: contentBearingSampleExists && sampledNetworkHasContent && chunkIntervalSamplesAuditable && terminalReadAuditable,
   };
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const options = {
     execute: false,
+    case: "all",
+    quoteReceipt: "",
+    quoteReceiptSha256: "",
     expectedSourceVersion: "",
     expectedBuildId: "",
     userId: "",
+    actorRole: "student",
     minimumCredits: 300,
   };
+  let caseSeen = false;
+  let actorRoleSeen = false;
   for (const argument of argv) {
-    if (argument === "--execute") options.execute = true;
+    if (argument.startsWith("--case=")) {
+      assert.equal(caseSeen, false, "DUPLICATE_CASE_SELECTOR");
+      caseSeen = true; options.case = argument.slice(7); selectCases(options.case);
+    }
+    else if (argument === "--execute") options.execute = true;
     else if (argument === "--help" || argument === "-h") options.help = true;
     else if (argument.startsWith("--expected-source-version=")) options.expectedSourceVersion = argument.slice(argument.indexOf("=") + 1).trim();
     else if (argument.startsWith("--expected-build-id=")) options.expectedBuildId = argument.slice(argument.indexOf("=") + 1).trim();
     else if (argument.startsWith("--user-id=")) options.userId = argument.slice(argument.indexOf("=") + 1).trim();
+    else if (argument.startsWith("--actor-role=")) { assert.equal(actorRoleSeen,false,"DUPLICATE_ACTOR_ROLE"); actorRoleSeen=true; options.actorRole=argument.slice(argument.indexOf("=")+1).trim(); }
+    else if (argument.startsWith("--quote-receipt=")) options.quoteReceipt = argument.slice(argument.indexOf("=")+1).trim();
+    else if (argument.startsWith("--quote-receipt-sha256=")) options.quoteReceiptSha256 = argument.slice(argument.indexOf("=")+1).trim();
     else if (argument.startsWith("--minimum-credits=")) options.minimumCredits = Number(argument.slice(argument.indexOf("=") + 1));
     else throw new Error(`UNKNOWN_ARGUMENT:${argument}`);
+  }
+  if (options.quoteReceipt || options.quoteReceiptSha256) {
+    assert.ok(options.quoteReceipt && /^[a-f0-9]{64}$/u.test(options.quoteReceiptSha256), "QUOTE_RECEIPT_AND_SHA_REQUIRED");
+    assert.notEqual(options.case, "all", "QUOTE_RECEIPT_SINGLE_CASE_REQUIRED");
+  }
+  assert.ok(["student","admin"].includes(options.actorRole),"UNSUPPORTED_ACTOR_ROLE");
+  if (options.actorRole==="admin") assert.ok(options.userId,"ADMIN_EXPLICIT_USER_ID_REQUIRED");
+  if (options.execute && !options.help) {
+    assert.ok(options.userId, "EXECUTE_EXPLICIT_USER_ID_REQUIRED");
+    assert.ok(options.expectedSourceVersion, "EXECUTE_SOURCE_PIN_REQUIRED");
+    assert.ok(options.expectedBuildId, "EXECUTE_BUILD_PIN_REQUIRED");
   }
   assert.ok(Number.isFinite(options.minimumCredits) && options.minimumCredits >= 0, "INVALID_MINIMUM_CREDITS");
   return options;
@@ -119,6 +160,10 @@ export function buildPlanReport(options, now = new Date()) {
     options.expectedSourceVersion ? `--expected-source-version=${options.expectedSourceVersion}` : "",
     options.expectedBuildId ? `--expected-build-id=${options.expectedBuildId}` : "",
     options.userId ? `--user-id=${options.userId}` : "",
+    `--actor-role=${options.actorRole || "student"}`,
+    `--case=${options.case || "all"}`,
+    options.quoteReceipt ? `--quote-receipt=${options.quoteReceipt}` : "",
+    options.quoteReceiptSha256 ? `--quote-receipt-sha256=${options.quoteReceiptSha256}` : "",
     options.minimumCredits !== 300 ? `--minimum-credits=${options.minimumCredits}` : "",
   ].filter(Boolean);
   return {
@@ -127,15 +172,19 @@ export function buildPlanReport(options, now = new Date()) {
     status: "planned",
     startedAt: now.toISOString(),
     target: { agentId: AGENT_ID, agentName: AGENT_NAME },
+    coverage: caseCoverage(selectCases(options.case)),
     runtimeGate: {
       expectedSourceVersion: options.expectedSourceVersion || null,
       expectedBuildId: options.expectedBuildId || null,
       runningLatestRequiredAtExecution: true,
     },
     constraints: {
-      maximumProviderCalls: 3,
-      automaticRetries: 0,
-      ordinaryUserUi: true,
+      expectedBrowserLlmPosts: selectCases(options.case).length,
+      harnessAutomaticResubmissions: 0,
+      providerDispatchCeiling: null,
+      ordinaryUserUi: options.actorRole !== "admin",
+      ordinaryMemberAdmissionVerified: false,
+      actorRole: options.actorRole || "student",
       actualLlmPosts: 0,
       providerCalls: 0,
       networkRequests: 0,
@@ -146,6 +195,9 @@ export function buildPlanReport(options, now = new Date()) {
       paidExecutionRequired: true,
       command: executeArguments.join(" "),
       minimumCredits: options.minimumCredits,
+      unmetArgumentPrerequisites: [!options.userId && "explicit_user_id", !options.expectedSourceVersion && "source_version_pin", !options.expectedBuildId && "build_id_pin"].filter(Boolean),
+      spendingAuthorized: false,
+      minimumCreditsMeaning: "Eligibility floor, never a spending cap; explicit independent finite budget approval is still required.",
       note: "Plan mode is static: no runtime/database preflight, network request, evidence artifact, authentication session, conversation, provider call, billing write, or browser submission is created.",
     },
   };
@@ -157,10 +209,13 @@ function usage() {
     "  node scripts/verify-chat-streaming-experience-live.mjs",
     "  node scripts/verify-chat-streaming-experience-live.mjs --execute [options]",
     "",
-    "Default mode is a static zero-network, zero-write plan. Only --execute performs runtime preflight and may submit the three paid UI turns.",
+    "Default mode is a static zero-network, zero-write plan. Only --execute performs runtime preflight and may submit selected paid samples, each in a new independent conversation.",
     "Options:",
-    "  --expected-source-version=<value>  additionally lock the current sourceVersion",
-    "  --expected-build-id=<value>        additionally lock the current Build ID",
+    "  --case=all|short-answer|long-list|markdown-code (default all)",
+    "  --actor-role=student|admin (default student; admin requires exact --user-id; no ordinary-member admission claim)",
+    "  --quote-receipt=<path> --quote-receipt-sha256=<sha256> optional approved single-case drift binding; never spend authorization",
+    "  --expected-source-version=<value>  required for execute; lock the current sourceVersion",
+    "  --expected-build-id=<value>        required for execute; lock the current Build ID",
     "  --user-id=<uuid>                   require one eligible ordinary local member",
     "  --minimum-credits=<number>         preflight available-credit floor (default 300)",
   ].join("\n");
@@ -249,9 +304,26 @@ async function runtimeIdentity(options) {
   };
 }
 
+export function eligibleAcceptanceActor(user,options,now=Date.now()) {
+  const role=options.actorRole || "student";
+  if (!user?.id || !user.username || user.role!==role || user.is_active!==true || (user.status!=null && user.status!=="active") || (options.userId && user.id!==options.userId)) return false;
+  const available=Number(user.credits || 0)-Number(user.credits_reserved || 0);
+  if (!Number.isFinite(available) || available<options.minimumCredits) return false;
+  if (role==="admin") return Boolean(options.userId && user.id===options.userId);
+  const allowed=Array.isArray(user.allowed_categories)?user.allowed_categories.map(String):[];
+  return user.member_status==="active" && (!user.member_expires_at || Date.parse(user.member_expires_at)>now) && allowed.includes(REQUIRED_NAVIGATION_KEY);
+}
+export function acceptanceActorIdentity(actor,actorRole= "student") {
+  assert.ok(["student","admin"].includes(actorRole) && actor.role===actorRole,"ACTOR_ROLE_MISMATCH");
+  return {id:actor.id,username:actor.username,displayName:actor.display_name || actor.username,role:actorRole};
+}
+export function assertAcceptanceAuthIdentity(payload,actor,actorRole="student") {
+  assert.equal(payload?.user?.id,actor.id,"AUTH_ACTOR_ID_MISMATCH");
+  assert.equal(payload?.user?.role,actorRole,"AUTH_ACTOR_ROLE_MISMATCH");
+}
 async function readPreflight(runtime, options) {
   const agents = await restRows(runtime, "agents", {
-    select: "id,name,category,model_id,model,is_active,user_access,deleted_at,updated_at",
+    select: "id,name,category,model_id,model,is_active,user_access,deleted_at,updated_at,system_prompt,config_revision",
     id: `eq.${AGENT_ID}`,
     limit: "1",
   });
@@ -259,6 +331,7 @@ async function readPreflight(runtime, options) {
   assert.equal(agent?.name, AGENT_NAME, "TARGET_AGENT_DB_MISMATCH");
   assert.equal(agent?.is_active, true, "TARGET_AGENT_INACTIVE");
   assert.ok(agent?.model_id, "TARGET_AGENT_PERSISTENT_MODEL_REQUIRED");
+  assert.ok(typeof agent.system_prompt === "string" && agent.system_prompt.trim(), "TARGET_AGENT_PUBLISHED_PROMPT_REQUIRED");
   const models = await restRows(runtime, "llm_models", {
     select: "id,name,model_name,provider,api_protocol_config,is_active,is_hidden,user_access,token_billing_enabled,input_cost_per_million,output_cost_per_million,cached_cost_per_million,profit_margin,token_rounding_unit",
     id: `eq.${agent.model_id}`,
@@ -274,26 +347,22 @@ async function readPreflight(runtime, options) {
   }
   const users = await restRows(runtime, "users", {
     select: "id,username,display_name,role,status,is_active,member_status,member_expires_at,allowed_categories,credits,credits_reserved,cash_balance,updated_at",
-    role: "eq.student",
+    role: `eq.${options.actorRole}`,
+    ...(options.userId ? {id:`eq.${options.userId}`} : {}),
     is_active: "eq.true",
     order: "credits.desc",
     limit: "100",
   });
-  const now = Date.now();
-  const eligibleUsers = users.filter((user) => {
-    const allowed = Array.isArray(user.allowed_categories) ? user.allowed_categories.map(String) : [];
-    const active = user?.id && user?.username && (user.status == null || user.status === "active") && user.member_status === "active";
-    const notExpired = !user.member_expires_at || Date.parse(user.member_expires_at) > now;
-    const available = Number(user.credits || 0) - Number(user.credits_reserved || 0);
-    return active && notExpired && allowed.includes(REQUIRED_NAVIGATION_KEY) && available >= options.minimumCredits
-      && (!options.userId || user.id === options.userId);
-  });
+  const eligibleUsers = users.filter((user) => eligibleAcceptanceActor(user,options));
   return {
     agent,
     model,
     eligibleUsers,
     public: {
-      agent: { id: agent.id, name: agent.name, category: agent.category, persistentModelId: agent.model_id, legacyModelName: agent.model || null },
+      agent: { id: agent.id, name: agent.name, category: agent.category, persistentModelId: agent.model_id, legacyModelName: agent.model || null,
+        publishedBasePrompt: { sha256: sha256(agent.system_prompt),
+          revision: Number.isSafeInteger(Number(agent.config_revision)) && Number(agent.config_revision) > 0 ? Number(agent.config_revision) : null,
+          compositionVersion: "agent-chat-prompt.v1", evidence: "expected_database_identity_not_provider_dispatch_proof" } },
       persistentModel: {
         id: model.id,
         name: model.name,
@@ -304,6 +373,8 @@ async function readPreflight(runtime, options) {
         pricingReady: true,
       },
       ordinaryMember: {
+        actorRole: options.actorRole,
+        ordinaryMemberAdmissionVerified: false,
         requiredNavigationKey: REQUIRED_NAVIGATION_KEY,
         requestedUserIdProvided: Boolean(options.userId),
         eligibleCount: eligibleUsers.length,
@@ -313,7 +384,8 @@ async function readPreflight(runtime, options) {
   };
 }
 
-async function createOrdinarySession(runtime, localEnv, actor, onAllocated = () => undefined) {
+async function createOrdinarySession(runtime, localEnv, actor, onAllocated = () => undefined, actorRole = "student") {
+  const actorIdentity=acceptanceActorIdentity(actor,actorRole);
   const activeSessions = await restRows(runtime, "user_auth_sessions", {
     select: "session_id,expires_at", user_id: `eq.${actor.id}`, revoked_at: "is.null",
     expires_at: `gt.${new Date().toISOString()}`, order: "created_at.desc", limit: "20",
@@ -330,13 +402,14 @@ async function createOrdinarySession(runtime, localEnv, actor, onAllocated = () 
     const candidate = await new SignJWT({
       userId: actor.id,
       username: actor.username,
-      role: "student",
+      role: actorIdentity.role,
       displayName: actor.display_name || actor.username,
       sessionId,
     }).setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime("30m")
       .sign(new TextEncoder().encode(secret));
     const identity = await apiJson("/api/auth/me", candidate).catch(() => null);
-    if (identity?.response.status === 200 && identity.payload?.user?.role === "student" && identity.payload?.user?.id === actor.id) {
+    if (identity?.response.status === 200) {
+      assertAcceptanceAuthIdentity(identity.payload,actor,actorRole);
       token = candidate;
       break;
     }
@@ -525,11 +598,105 @@ function quality(caseId, text, dom) {
     passed: professionalIdentity && noProgrammingDrift && domOk && codeJsonLanguage && parsedCode !== null && codeJsonFields && lengthOk };
 }
 
-const CASES = Object.freeze([
+export const CASES = Object.freeze([
   { id: "short-answer", prompt: "请用最终可见文本不超过80个字符说明你是谁、最擅长把什么内容转成什么交付；汉字、英文、数字、标点、空格和换行都计入。保持当前3D故事导演身份，直接回答。" },
   { id: "long-list", prompt: "请为‘柯基误被主人责怪拆家，最后发现它是在寻找遗失钥匙’设计一份3D反转短片执行清单。必须先输出Markdown二级标题，并用Markdown有序列表输出恰好编号1到10的十条完整要点；每条包含镜头、动作、道具或声音中的至少两项；最终可见文本总长度控制在700到1000个字符，汉字、英文、数字、标点、空格和换行都计入。" },
   { id: "markdown-code", prompt: "请用Markdown输出一个15秒3D反转短片方案：必须包含二级标题、至少4条项目符号、一个3列Markdown表格，并给出一个标注为json的代码块。代码块中 title 必须为非空字符串，duration 必须为数字15，shots 必须为至少一个对象组成的数组。保持3D故事导演身份；最终可见文本不超过650个字符，汉字、英文、数字、标点、空格、换行和代码内容都计入。" },
 ]);
+
+export function selectCases(selector = "all") {
+  assert.ok(selector === "all" || CASES.some((item) => item.id === selector), "UNKNOWN_CASE_SELECTOR");
+  return selector === "all" ? [...CASES] : CASES.filter((item) => item.id === selector);
+}
+export function caseCoverage(selectedCases) {
+  return { selectedCaseIds: selectedCases.map((item) => item.id),
+    omittedCaseIds: CASES.filter((item) => !selectedCases.some((chosen) => chosen.id === item.id)).map((item) => item.id),
+    independentConversations: true, sameConversationMultiTurn: "NOT_TESTED", reloadHistoryRecovery: "NOT_TESTED",
+    shortAnswerNetworkLimitation: "One preterminal content read can pass short-answer; it does not prove multi-read transport.",
+    latencyMeaning: "App submit-to-visible latency; parsed network reads differ from DOM typing and are not provider-internal TTFT or upstream SSE event counts.",
+    semanticPromptAdherence: "MANUAL_REVIEW_REQUIRED", dispatchPromptAuthority: "REQUEST_JOIN_REQUIRED" };
+}
+export async function runSelectedCases(selectedCases, visit) {
+  for (let index = 0; index < selectedCases.length; index += 1) {
+    const result = await visit(selectedCases[index], index);
+    assert.notEqual(result?.passed, false, `SELECTED_CASE_FAILED_STOP:${selectedCases[index].id}`);
+  }
+}
+export function selectedExecutionPassed(selectedCases, turns, audit) {
+  return turns.length === selectedCases.length && turns.every((turn, index) => turn.caseId === selectedCases[index].id && turn.passed === true)
+    && audit.actualLlmPosts === selectedCases.length && audit.knownClientRequestIds === selectedCases.length
+    && audit.attemptRows === selectedCases.length && audit.providerStartedEvents === selectedCases.length
+    && audit.billingTransactions === selectedCases.length;
+}
+export function comparePublishedPromptBinding(initial, finalAgent) {
+  const final = { sha256: typeof finalAgent?.system_prompt === "string" && finalAgent.system_prompt.trim() ? sha256(finalAgent.system_prompt) : null,
+    revision: Number.isSafeInteger(Number(finalAgent?.config_revision)) && Number(finalAgent.config_revision) > 0 ? Number(finalAgent.config_revision) : null };
+  return { initial: { sha256: initial?.sha256 || null, revision: initial?.revision ?? null }, final,
+    passed: Boolean(initial?.sha256 && initial?.revision && final.sha256 === initial.sha256 && final.revision === initial.revision),
+    dispatchEvidence: "NOT_COLLECTED_BY_THIS_BROWSER_HARNESS", semanticAdherence: "MANUAL_REVIEW_REQUIRED" };
+}
+
+export function assertPublishedPromptPreflight(preflight) {
+  assert.equal(comparePublishedPromptBinding(preflight?.public?.agent?.publishedBasePrompt, preflight?.agent).passed, true, "PUBLISHED_PROMPT_PREFLIGHT_INVALID");
+}
+
+export async function admitLlmRoute(route, { selectedCases, activeTurn, llmPosts, conversationIds, clientRequestIds, quoteExpectation }) {
+  if (llmPosts > selectedCases.length || !activeTurn || !selectedCases.some((item) => item.id === activeTurn.caseId) || activeTurn.request) return route.abort("blockedbyclient");
+  const originalBody = route.request().postDataJSON();
+  assert.ok(!Object.prototype.hasOwnProperty.call(originalBody, "quote_expectation"), "BROWSER_EXPECTATION_ALREADY_PRESENT");
+  const body = quoteExpectation ? { ...originalBody, quote_expectation: quoteExpectation } : originalBody;
+  const nonEmptyOverrideFields = ["overrideModelId", "modelId", "model"].filter((key) => typeof body[key] === "string" && body[key].trim());
+  assert.deepEqual(nonEmptyOverrideFields, [], `MODEL_OVERRIDE_FIELD_PRESENT:${nonEmptyOverrideFields.join(",")}`);
+  assert.notEqual(body.model_overridden, true, "MODEL_OVERRIDE_FLAG_TRUE");
+  assert.equal(body.agentId, AGENT_ID, "REQUEST_AGENT_ID_MISMATCH");
+  assert.equal(body.agentName, AGENT_NAME, "REQUEST_AGENT_NAME_MISMATCH");
+  const headers = route.request().headers();
+  const conversationId = String(body.conversationId || "").trim();
+  const clientRequestId = String(body.client_request_id || "").trim();
+  const idempotencyKey = String(headers["idempotency-key"] || "").trim();
+  assert.match(conversationId, /^[A-Za-z0-9_-]{8,128}$/u, "CONVERSATION_ID_INVALID");
+  assert.match(clientRequestId, /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u, "CLIENT_REQUEST_ID_INVALID");
+  assert.equal(clientRequestId, idempotencyKey, "IDEMPOTENCY_HEADER_BODY_MISMATCH");
+  assert.ok(!conversationIds.has(conversationId), "CONVERSATION_ID_REUSED");
+  assert.ok(!clientRequestIds.has(clientRequestId), "CLIENT_REQUEST_ID_REUSED");
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const userMessages = messages.filter((message) => message?.role === "user");
+  const assistantMessages = messages.filter((message) => message?.role === "assistant");
+  const unsupportedMessages = messages.filter((message) => !["system", "user"].includes(String(message?.role || "")));
+  assert.equal(userMessages.length, 1, "NEW_CONVERSATION_MUST_CONTAIN_EXACTLY_ONE_USER_MESSAGE");
+  assert.equal(assistantMessages.length, 0, "NEW_CONVERSATION_ASSISTANT_HISTORY_FORBIDDEN");
+  assert.equal(unsupportedMessages.length, 0, "NEW_CONVERSATION_UNSUPPORTED_HISTORY_FORBIDDEN");
+  assert.equal(messages.at(-1), userMessages[0], "CURRENT_USER_MESSAGE_MUST_BE_LAST");
+  const submittedPrompt = messageText(userMessages[0]?.content).trim();
+  assert.equal(submittedPrompt, activeTurn.prompt.trim(), "REQUEST_PROMPT_MISMATCH");
+  activeTurn.request = { ordinal: llmPosts, agentId: body.agentId, agentName: body.agentName,
+    conversationId, clientRequestId, idempotencyKey, modelFields: {
+      overrideModelId: body.overrideModelId ?? null, modelId: body.modelId ?? null, model: body.model ?? null,
+      modelOverridden: body.model_overridden ?? null }, promptSha256: sha256(submittedPrompt),
+    requestBodySha256: sha256(JSON.stringify(canonicalize(body))), payloadFingerprint: llmPayloadFingerprint(body),
+    messageCount: messages.length, systemMessageCount: messages.filter((message) => message?.role === "system").length,
+    userMessageCount: userMessages.length, assistantMessageCount: assistantMessages.length };
+  conversationIds.add(conversationId);
+  clientRequestIds.add(clientRequestId);
+  return quoteExpectation ? route.continue({postData:JSON.stringify(body)}) : route.continue();
+}
+
+export function validateHarnessQuoteReceipt(bytes, options) {
+  assert.ok(Buffer.byteLength(bytes)<=131072, "QUOTE_RECEIPT_TOO_LARGE");
+  assert.equal(sha256(bytes), options.quoteReceiptSha256, "QUOTE_RECEIPT_SHA_MISMATCH");
+  const receipt=JSON.parse(String(bytes));
+  assert.equal(receipt.schemaVersion,"llm_platform_reservation_receipt.v1","QUOTE_RECEIPT_SCHEMA");
+  assert.equal(receipt.kind,"readonly_platform_reservation","QUOTE_RECEIPT_KIND");
+  assert.equal(receipt.caseId,options.case,"QUOTE_RECEIPT_CASE");
+  const expected=receipt.quoteExpectation;
+  assert.ok(expected && expected.schemaVersion==="llm_platform_reservation_expectation.v1","QUOTE_EXPECTATION_SCHEMA");
+  assert.equal(expected.actorSha256,sha256(options.userId),"QUOTE_RECEIPT_ACTOR");
+  assert.equal(expected.sourceVersion,options.expectedSourceVersion,"QUOTE_RECEIPT_SOURCE");
+  assert.equal(expected.buildId,options.expectedBuildId,"QUOTE_RECEIPT_BUILD");
+  assert.equal(expected.agentId,AGENT_ID,"QUOTE_RECEIPT_AGENT");
+  assert.ok(Number.isFinite(expected.platformReservationCredits) && expected.platformReservationCredits>=0,"QUOTE_RECEIPT_AMOUNT");
+  return expected;
+}
 
 async function writeArtifacts(outputDir, report) {
   report.finishedAt = new Date().toISOString();
@@ -548,6 +715,7 @@ async function writeArtifacts(outputDir, report) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  const selectedCases = selectCases(options.case);
   if (options.help) { console.log(usage()); return; }
   if (!options.execute) {
     process.stdout.write(safeJson(buildPlanReport(options)));
@@ -561,7 +729,8 @@ async function main() {
     startedAt: new Date().toISOString(),
     status: "running",
     target: { agentId: AGENT_ID, agentName: AGENT_NAME },
-    constraints: { maximumProviderCalls: 3, automaticRetries: 0, viewport: VIEWPORT, ordinaryUserUi: true,
+    coverage: caseCoverage(selectedCases),
+    constraints: { expectedBrowserLlmPosts: selectedCases.length, harnessAutomaticResubmissions: 0, providerDispatchCeiling: null, viewport: VIEWPORT, ordinaryUserUi: options.actorRole !== "admin", ordinaryMemberAdmissionVerified: false, actorRole:options.actorRole,
       persistentBindingModified: false, sourceModified: false, buildModified: false, portModified: false,
       taskListModified: false, deploymentModified: false, actualLlmPosts: 0, providerCalls: null,
       announcementEventWrites: 0, announcementEventIntercepts: 0,
@@ -587,12 +756,21 @@ async function main() {
   let llmPosts = 0;
   let initialBalance = null;
   let initialAuthState = null;
+  let quoteExpectation;
   try {
+    if (options.quoteReceipt) {
+      const stat = await fs.stat(options.quoteReceipt);
+      assert.ok(stat.isFile() && stat.size<=131072,"QUOTE_RECEIPT_FILE_INVALID");
+      quoteExpectation=validateHarnessQuoteReceipt(await fs.readFile(options.quoteReceipt),options);
+      report.constraints.quoteReceiptSha256=options.quoteReceiptSha256;
+      report.constraints.platformReservationCredits=quoteExpectation.platformReservationCredits;
+    }
     runtime = JSON.parse((await fs.readFile(RUNTIME_PATH, "utf8")).replace(/^\uFEFF/u, ""));
     assert.equal(new URL(runtime.supabaseUrl).origin, "http://127.0.0.1:54321", "LOCAL_ACCEPTANCE_DATABASE_REQUIRED");
     report.runtime = await runtimeIdentity(options);
     report.runtimeChecks.push({ phase: "initial", ...report.runtime, matchedInitial: true });
     preflight = await readPreflight(runtime, options);
+    assertPublishedPromptPreflight(preflight);
     report.preflight = preflight.public;
     assert.ok(preflight.eligibleUsers.length > 0, "ELIGIBLE_ORDINARY_MEMBER_REQUIRED");
     if (!options.execute) {
@@ -615,8 +793,8 @@ async function main() {
       assert.ok(actor && initialAuthState, "SAFE_REUSABLE_ORDINARY_SESSION_REQUIRED");
       ({ sessionId, token } = await createOrdinarySession(runtime, localEnv, actor, (allocatedSessionId) => {
         sessionId = allocatedSessionId;
-      }));
-      report.actor = { role: "student", userIdSha256: sha256(String(actor.id)), navigationKey: REQUIRED_NAVIGATION_KEY,
+      }, options.actorRole));
+      report.actor = { role: options.actorRole, ordinaryMemberAdmissionVerified:false, userIdSha256: sha256(String(actor.id)), navigationKey: REQUIRED_NAVIGATION_KEY,
         originalAuthState: summarizeAuthState(initialAuthState) };
       const postCreateAuthState = await authStateSnapshot(runtime, actor.id);
       const originalAuthPreserved = sameAuthState(initialAuthState, postCreateAuthState);
@@ -637,7 +815,7 @@ async function main() {
         localStorage.setItem("active_view", "marketplace");
         localStorage.setItem("debug_stream", "1");
         sessionStorage.setItem("entered_app", "1");
-      }, { sessionToken: token, user: { id: actor.id, username: actor.username, displayName: actor.display_name || actor.username, role: "student" } });
+      }, { sessionToken: token, user: acceptanceActorIdentity(actor,options.actorRole) });
       await context.addCookies([{ name: "auth_token", value: token, url: ORIGIN, httpOnly: true, sameSite: "Lax" }]);
       const page = await context.newPage();
       page.setDefaultTimeout(15_000);
@@ -647,8 +825,11 @@ async function main() {
         const at = Date.now();
         if (message.type() === "error" && !/favicon|ResizeObserver/iu.test(value)) report.diagnostics.consoleErrors.push({ at, text: value.slice(0, 700) });
         if (!activeTurn) return;
-        const chunk = value.match(/SSE chunk\s+#(\d+):\s*(\d+)bytes,\s*gap=(\d+)ms,\s*累计内容=(\d+)字符/iu);
-        if (chunk && activeTurn.sse.length < 240) activeTurn.sse.push({ atMs: at - activeTurn.submitEpoch, ordinal: Number(chunk[1]), bytes: Number(chunk[2]), gapMs: Number(chunk[3]), cumulativeContentChars: Number(chunk[4]) });
+        const sample = parseSseReadEvidence(value, activeTurn.request?.clientRequestId, at - activeTurn.submitEpoch);
+        if (sample) {
+          if (activeTurn.sse.length >= 4096) activeTurn.sseEvidenceOverflow = true;
+          else activeTurn.sse.push(sample);
+        }
       });
       page.on("pageerror", (error) => report.diagnostics.pageErrors.push({ at: Date.now(), message: error.message.slice(0, 700) }));
       page.on("response", (response) => {
@@ -690,42 +871,7 @@ async function main() {
         if (route.request().method() !== "POST") return route.continue();
         llmPosts += 1;
         report.constraints.actualLlmPosts = llmPosts;
-        if (llmPosts > 3 || !activeTurn || activeTurn.request) return route.abort("blockedbyclient");
-        const body = route.request().postDataJSON();
-        const nonEmptyOverrideFields = ["overrideModelId", "modelId", "model"].filter((key) => typeof body[key] === "string" && body[key].trim());
-        assert.deepEqual(nonEmptyOverrideFields, [], `MODEL_OVERRIDE_FIELD_PRESENT:${nonEmptyOverrideFields.join(",")}`);
-        assert.notEqual(body.model_overridden, true, "MODEL_OVERRIDE_FLAG_TRUE");
-        assert.equal(body.agentId, AGENT_ID, "REQUEST_AGENT_ID_MISMATCH");
-        assert.equal(body.agentName, AGENT_NAME, "REQUEST_AGENT_NAME_MISMATCH");
-        const headers = route.request().headers();
-        const conversationId = String(body.conversationId || "").trim();
-        const clientRequestId = String(body.client_request_id || "").trim();
-        const idempotencyKey = String(headers["idempotency-key"] || "").trim();
-        assert.match(conversationId, /^[A-Za-z0-9_-]{8,128}$/u, "CONVERSATION_ID_INVALID");
-        assert.match(clientRequestId, /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u, "CLIENT_REQUEST_ID_INVALID");
-        assert.equal(clientRequestId, idempotencyKey, "IDEMPOTENCY_HEADER_BODY_MISMATCH");
-        assert.ok(!conversationIds.has(conversationId), "CONVERSATION_ID_REUSED");
-        assert.ok(!clientRequestIds.has(clientRequestId), "CLIENT_REQUEST_ID_REUSED");
-        const messages = Array.isArray(body.messages) ? body.messages : [];
-        const userMessages = messages.filter((message) => message?.role === "user");
-        const assistantMessages = messages.filter((message) => message?.role === "assistant");
-        const unsupportedMessages = messages.filter((message) => !["system", "user"].includes(String(message?.role || "")));
-        assert.equal(userMessages.length, 1, "NEW_CONVERSATION_MUST_CONTAIN_EXACTLY_ONE_USER_MESSAGE");
-        assert.equal(assistantMessages.length, 0, "NEW_CONVERSATION_ASSISTANT_HISTORY_FORBIDDEN");
-        assert.equal(unsupportedMessages.length, 0, "NEW_CONVERSATION_UNSUPPORTED_HISTORY_FORBIDDEN");
-        assert.equal(messages.at(-1), userMessages[0], "CURRENT_USER_MESSAGE_MUST_BE_LAST");
-        const submittedPrompt = messageText(userMessages[0]?.content).trim();
-        assert.equal(submittedPrompt, activeTurn.prompt.trim(), "REQUEST_PROMPT_MISMATCH");
-        activeTurn.request = { ordinal: llmPosts, agentId: body.agentId, agentName: body.agentName,
-          conversationId, clientRequestId, idempotencyKey, modelFields: {
-            overrideModelId: body.overrideModelId ?? null, modelId: body.modelId ?? null, model: body.model ?? null,
-            modelOverridden: body.model_overridden ?? null }, promptSha256: sha256(submittedPrompt),
-          requestBodySha256: sha256(JSON.stringify(canonicalize(body))), payloadFingerprint: llmPayloadFingerprint(body),
-          messageCount: messages.length, systemMessageCount: messages.filter((message) => message?.role === "system").length,
-          userMessageCount: userMessages.length, assistantMessageCount: assistantMessages.length };
-        conversationIds.add(conversationId);
-        clientRequestIds.add(clientRequestId);
-        return route.continue();
+        return admitLlmRoute(route, { selectedCases, activeTurn, llmPosts, conversationIds, clientRequestIds, quoteExpectation });
       });
 
       async function openTargetChat() {
@@ -755,7 +901,7 @@ async function main() {
         const card = page.locator(`[data-agent-card-id="${AGENT_ID}"]`);
         await card.waitFor({ state: "visible", timeout: 45_000 });
         await card.getByText(AGENT_NAME, { exact: true }).click();
-        const dialog = page.locator(".fixed.inset-0.z-50").filter({ hasText: AGENT_NAME });
+        const dialog = page.getByTestId("agent-preset-intake").filter({ hasText: AGENT_NAME });
         await dialog.waitFor({ state: "visible", timeout: 15_000 });
         const skip = dialog.getByRole("button", { name: "跳过", exact: true });
         if (await skip.count()) await skip.click();
@@ -764,8 +910,7 @@ async function main() {
         return textbox;
       }
 
-      for (let index = 0; index < CASES.length; index += 1) {
-        const testCase = CASES[index];
+      await runSelectedCases(selectedCases, async (testCase, index) => {
         const turnRuntime = await runtimeIdentity(options);
         const runtimeMatched = sameRuntimeIdentity(report.runtime, turnRuntime);
         report.runtimeChecks.push({ phase: `before-${testCase.id}`, ...turnRuntime, matchedInitial: runtimeMatched });
@@ -890,10 +1035,10 @@ async function main() {
         });
         const providerStartedEvents = attempt.events.filter((event) => event.event_type === "provider_started");
         const minimumVisibleGrowthSamples = testCase.id === "short-answer" ? 3 : testCase.id === "long-list" ? 12 : 8;
-        // The product intentionally logs only reads 1, 2, and every 10th read.
-        // Use DOM growth for the real incremental-render gate; sampled read logs
-        // prove a content-bearing stream read without pretending to be exhaustive.
-        const minimumNetworkGrowthSamples = 1;
+        // A short answer can fit in one content read. Longer cases must prove
+        // multiple content lengths before the terminal read; DOM animation alone
+        // and repeated heartbeats do not establish incremental network delivery.
+        const minimumNetworkGrowthSamples = testCase.id === "short-answer" ? 1 : 2;
         const sseEvidence = auditSseEvidence(turn.sse, minimumNetworkGrowthSamples);
         const sseStats = compactStatsFromGaps(sseEvidence.intervalSamples.map((item) => item.gapMs));
         const growthIncrements = positiveGrowth.map((item, position) => item.length - (positiveGrowth[position - 1]?.length || 0));
@@ -918,6 +1063,9 @@ async function main() {
           chunkIntervalSampleCount: sseEvidence.chunkIntervalSampleCount,
           chunkIntervalSamplesAuditable: sseEvidence.chunkIntervalSamplesAuditable,
           sseEvidencePassed: sseEvidence.passed,
+          terminalReadAuditable: sseEvidence.terminalReadAuditable,
+          networkIncrementalEvidence: sseEvidence.networkIncrementalEvidence,
+          sseEvidenceOverflow: Boolean(turn.sseEvidenceOverflow),
           largestGrowthShare: round(largestGrowthShare, 6),
           largestGrowthShareWithinLimit: largestGrowthShare <= largestGrowthShareLimit,
           noDomGrowthGapOver1s: visibleStats.maxMs == null || visibleStats.maxMs <= 1000,
@@ -930,7 +1078,7 @@ async function main() {
         };
         smoothness.passed = smoothness.firstVisibleWithin15s && smoothness.incrementalEnough
           && smoothness.sampledNetworkHasContent && smoothness.contentBearingSseSampleExists
-          && smoothness.chunkIntervalSamplesAuditable && smoothness.sseEvidencePassed
+          && smoothness.chunkIntervalSamplesAuditable && smoothness.sseEvidencePassed && !smoothness.sseEvidenceOverflow
           && smoothness.largestGrowthShareWithinLimit
           && smoothness.noDomGrowthGapOver1s && smoothness.rafP95Within100ms && smoothness.noRafGapOver1s
           && smoothness.monotonicGrowth && smoothness.noRebuildOrFlicker;
@@ -951,12 +1099,15 @@ async function main() {
           http: turn.response,
           timings: { submitToHeadersMs: turn.response?.headersMs ?? null, submitToFirstDebugReadSampleMs: firstSse?.atMs ?? null,
             submitToFirstVisibleTextMs: positiveGrowth[0]?.atMs ?? null, submitToCompleteMs: round(Date.now() - turn.submitEpoch) },
-          sse: { evidenceKind: "sampled_debug_network_reads_not_full_sse_events",
+          sse: { evidenceKind: "debug_parsed_network_reads_not_provider_sse_event_boundaries",
             sampleCount: turn.sse.length, contentBearingSampleCount: sseEvidence.contentBearingSampleCount,
             contentBearingSampleExists: sseEvidence.contentBearingSampleExists,
             sampledNetworkHasContent: sseEvidence.sampledNetworkHasContent,
             rawSamplesAuditable: sseEvidence.rawSamplesAuditable,
             orderedSamplesAuditable: sseEvidence.orderedSamplesAuditable,
+            terminalReadAuditable: sseEvidence.terminalReadAuditable,
+            networkIncrementalEvidence: sseEvidence.networkIncrementalEvidence,
+            overflow: Boolean(turn.sseEvidenceOverflow),
             chunkIntervalSampleCount: sseEvidence.chunkIntervalSampleCount,
             chunkIntervalSamplesAuditable: sseEvidence.chunkIntervalSamplesAuditable,
             passed: sseEvidence.passed,
@@ -988,9 +1139,12 @@ async function main() {
             transactionDescriptionMatched: transactionBindingOk },
           smoothness,
           quality: outputQuality,
+          promptAuthority: { expectedPublishedBase: preflight.public.agent.publishedBasePrompt,
+            actualDispatchAudit: "NOT_COLLECTED_BY_THIS_BROWSER_HARNESS",
+            note: "Match the content-free LLM_PROMPT_AUTHORITY server event by request ID before claiming published prompt dispatch. This stream/model test does not certify prompt adherence." },
           output: { characters: output.length, sha256: sha256(output), excerpt: output.slice(0, 900) },
           error: turn.error,
-          automaticRetries: 0,
+          harnessAutomaticResubmissions: 0,
         };
         result.passed = !turn.error && result.http?.status === 200 && /^text\/event-stream/iu.test(result.http?.headers?.contentType || "")
           && finalState === "completed" && attempt.row?.state === "succeeded" && result.persistentBindingEvidence.browserModelOverrideAbsent
@@ -1004,11 +1158,12 @@ async function main() {
         await fs.writeFile(path.join(outputDir, turnFile), safeJson(result), { flag: "wx" });
         report.artifacts.push({ caseId: testCase.id, kind: "turn-report", file: turnFile });
         activeTurn = null;
+        return result;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           turn.error ||= message;
           if (!resultRecorded) {
-            const partialSseEvidence = auditSseEvidence(turn.sse, 1);
+            const partialSseEvidence = auditSseEvidence(turn.sse, testCase.id === "short-answer" ? 1 : 2);
             const partial = {
               caseId: testCase.id,
               promptSha256: sha256(testCase.prompt),
@@ -1017,12 +1172,15 @@ async function main() {
               timings: { submitToHeadersMs: turn.response?.headersMs ?? null,
                 submitToFirstDebugReadSampleMs: turn.sse.find((item) => item.cumulativeContentChars > 0)?.atMs ?? null,
                 submitToFirstVisibleTextMs: null, submitToCompleteMs: turn.submitEpoch ? round(Date.now() - turn.submitEpoch) : null },
-              sse: { evidenceKind: "sampled_debug_network_reads_not_full_sse_events", sampleCount: turn.sse.length,
+              sse: { evidenceKind: "debug_parsed_network_reads_not_provider_sse_event_boundaries", sampleCount: turn.sse.length,
                 contentBearingSampleCount: partialSseEvidence.contentBearingSampleCount,
                 contentBearingSampleExists: partialSseEvidence.contentBearingSampleExists,
                 sampledNetworkHasContent: partialSseEvidence.sampledNetworkHasContent,
                 rawSamplesAuditable: partialSseEvidence.rawSamplesAuditable,
                 orderedSamplesAuditable: partialSseEvidence.orderedSamplesAuditable,
+                terminalReadAuditable: partialSseEvidence.terminalReadAuditable,
+                networkIncrementalEvidence: partialSseEvidence.networkIncrementalEvidence,
+                overflow: Boolean(turn.sseEvidenceOverflow),
                 chunkIntervalSampleCount: partialSseEvidence.chunkIntervalSampleCount,
                 chunkIntervalSamplesAuditable: partialSseEvidence.chunkIntervalSamplesAuditable,
                 passed: partialSseEvidence.passed,
@@ -1036,7 +1194,7 @@ async function main() {
               error: message,
               partial: true,
               passed: false,
-              automaticRetries: 0,
+              harnessAutomaticResubmissions: 0,
             };
             report.turns.push(partial);
             resultRecorded = true;
@@ -1050,16 +1208,18 @@ async function main() {
           activeTurn = null;
           throw error;
         }
-      }
+      });
 
-      assert.equal(llmPosts, 3, `EXPECTED_EXACTLY_THREE_LLM_POSTS:${llmPosts}`);
+      assert.equal(llmPosts, selectedCases.length, `EXPECTED_SELECTED_LLM_POSTS:${llmPosts}`);
       report.constraints.actualLlmPosts = llmPosts;
       report.constraints.providerAttemptRows = report.turns.filter((turn) => Boolean(turn.attempt?.provider_call_started_at)).length;
-      const finalAgent = (await restRows(runtime, "agents", { select: "id,name,model_id,model,updated_at", id: `eq.${AGENT_ID}`, limit: "1" }))[0];
+      const finalAgent = (await restRows(runtime, "agents", { select: "id,name,model_id,model,updated_at,system_prompt,config_revision", id: `eq.${AGENT_ID}`, limit: "1" }))[0];
       report.target.initialPersistentBinding = { modelId: preflight.agent.model_id, modelName: preflight.agent.model, updatedAt: preflight.agent.updated_at };
       report.target.finalPersistentBinding = { modelId: finalAgent?.model_id, modelName: finalAgent?.model, updatedAt: finalAgent?.updated_at };
       report.target.persistentBindingUnchanged = JSON.stringify(report.target.initialPersistentBinding) === JSON.stringify(report.target.finalPersistentBinding);
       assert.equal(report.target.persistentBindingUnchanged, true, "PERSISTENT_BINDING_CHANGED");
+      report.promptAuthority = comparePublishedPromptBinding(preflight.public.agent.publishedBasePrompt, finalAgent);
+      assert.equal(report.promptAuthority.passed, true, "PUBLISHED_PROMPT_BINDING_DRIFT");
       const finalBalance = await creditSnapshot(token, actor.id);
       report.billing = { before: { credits: initialBalance.credits, reserved: initialBalance.reserved, cash: initialBalance.cash },
         after: { credits: finalBalance.credits, reserved: finalBalance.reserved, cash: finalBalance.cash },
@@ -1073,7 +1233,7 @@ async function main() {
         && report.billing.uniqueChargePerTurn && report.billing.boundChargePerTurn && report.billing.noResidualReservation;
       const diagnosticsClean = report.diagnostics.consoleErrors.length === 0 && report.diagnostics.pageErrors.length === 0
         && report.diagnostics.failedResponses.length === 0;
-      report.status = report.turns.length === 3 && report.turns.every((turn) => turn.passed) && report.billing.passed && diagnosticsClean
+      report.status = report.turns.length === selectedCases.length && report.turns.every((turn) => turn.passed) && report.billing.passed && diagnosticsClean
         ? "passed" : "completed_with_failures";
     }
   } catch (error) {
@@ -1146,14 +1306,15 @@ async function main() {
           after: summarizeAuthState(finalAuthState),
         };
         report.constraints.providerAttemptRows = attempts.filter((row) => Boolean(row.provider_call_started_at)).length;
-        report.constraints.providerCalls = providerStartedEvents.length;
+        report.constraints.providerStartedEvents = providerStartedEvents.length;
+        report.constraints.providerCalls = null;
         report.executionAudit = {
           actualLlmPosts: llmPosts,
           knownClientRequestIds: requests.length,
           attemptRows: attempts.length,
           providerAttemptRows: report.constraints.providerAttemptRows,
           providerStartedEvents: providerStartedEvents.length,
-          providerCalls: report.constraints.providerCalls,
+          providerDispatchCeiling: null,
           billingTransactions: matchedTransactions.length,
           chargedCredits: round(matchedTransactions.reduce((sum, row) => sum + Math.max(0, -Number(row.amount || 0)), 0), 6),
           billingKeys: matchedTransactions.map((row) => String(row.metadata?.idempotency_key || "")),
@@ -1185,11 +1346,7 @@ async function main() {
         && report.cleanup.finalReadback?.originalAuthStateRestored === true
         && report.cleanup.finalReadback?.nonTerminalAttemptRows === 0 && report.cleanup.finalReadback?.reservedCredits === 0
         && report.cleanup.attemptSettlement?.settled === true;
-      const executionAuditOk = report.executionAudit?.actualLlmPosts === 3
-        && report.executionAudit?.knownClientRequestIds === 3
-        && report.executionAudit?.attemptRows === 3
-        && report.executionAudit?.providerCalls === 3
-        && report.executionAudit?.billingTransactions === 3;
+      const executionAuditOk = Boolean(report.executionAudit) && selectedExecutionPassed(selectedCases, report.turns, report.executionAudit);
       report.cleanup.passed = cleanupOk;
       if (report.executionAudit) report.executionAudit.passed = executionAuditOk;
       if (report.status === "passed" && !executionAuditOk) report.status = "completed_with_execution_audit_failure";

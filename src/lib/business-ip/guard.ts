@@ -10,7 +10,8 @@ export function messageText(content:unknown):string {
  if(Array.isArray(content))return content.map(part=>part&&typeof part==='object'&&typeof part.text==='string'?part.text:'').join('\n');
  return '';
 }
-function normalize(text:string){return text.normalize('NFKC').replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g,'').replace(/\s+/g,'').toLowerCase();}
+export function normalizeBipGuardText(text:string){return text.normalize('NFKC').replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g,'').replace(/\s+/g,'').toLowerCase();}
+const normalize = normalizeBipGuardText;
 const TARGET=/(?:你的?(?:系统|隐藏|内部|初始|原始|底层|完整|全部)?(?:提示词|指令|配置|规则)|系统提示词|系统指令|隐藏指令|隐藏上下文|开发者消息|systemprompt|systemmessage|developerinstructions|your(?:prompt|instructions|configuration)|api密钥|apikey|secretkey)/i;
 const EXTRACT=/(?:输出|展示|显示|给我|发给|告诉|透露|复述|重复|抄写|打印|列出|翻译|编码|base64|转码|首字|逐字|重建|还原|导出|验证|是否正确|第一句|前.{0,5}字|续写|reveal|show|repeat|print|output|translate|encode|export|extract|reconstruct)/i;
 function attack(text:string){

@@ -22,6 +22,12 @@ import type {
   ShortDramaEntityType,
 } from "@/lib/short-drama/contracts";
 import styles from "./film-studio-entity-panel.module.css";
+import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
+
+function entityGeneratedReference(entity: ShortDramaEntity) {
+  const ref = GeneratedImageReferenceSchema.safeParse(entity.attributes.generatedImageReference);
+  return !entity.referenceAssetUri && entity.attributes.generatedImageSourceUnavailable !== true && ref.success ? ref.data : null;
+}
 
 type EditableEntityType = Extract<ShortDramaEntityType, "character" | "location" | "prop">;
 type StorageMode = "native" | "compat";
@@ -310,6 +316,23 @@ export function FilmStudioEntityPanel({
   const [pending, setPending] = useState<"save" | "delete" | null>(null);
   const [uploading, setUploading] = useState(false);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [generatedPreviews, setGeneratedPreviews] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    const urls: string[] = [];
+    void Promise.all(entities.map(async entity => {
+      const ref = entityGeneratedReference(entity);
+      if (!ref) return [entity.id, ""] as const;
+      try {
+        const response = await fetch(`/api/media-history/content?recordId=${ref.recordId}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        if (!response.ok) return [entity.id, ""] as const;
+        const blob = await response.blob();
+        if (!active || !blob.type.startsWith("image/") || blob.size > 30 * 1024 * 1024) return [entity.id, ""] as const;
+        const url = URL.createObjectURL(blob); urls.push(url); return [entity.id, url] as const;
+      } catch { return [entity.id, ""] as const; }
+    })).then(entries => { if (active) setGeneratedPreviews(Object.fromEntries(entries)); });
+    return () => { active = false; urls.forEach(url => URL.revokeObjectURL(url)); };
+  }, [entities, token]);
   const [imageModels, setImageModels] = useState<PublicImageModel[]>([]);
   const [imageModelId, setImageModelId] = useState("");
   const [imageResolution, setImageResolution] = useState("");
@@ -613,7 +636,7 @@ export function FilmStudioEntityPanel({
     mode: "generate" | "repaint",
     existingRequest?: PendingEntityGeneration,
     skipConfirmation = false,
-  ): Promise<"completed" | "unresolved" | "failed"> {
+  ): Promise<"completed" | "unresolved" | "failed" | "blocked"> {
     const model = existingRequest
       ? imageModels.find((candidate) => candidate.id === existingRequest.modelId) || null
       : selectedImageModel;
@@ -626,7 +649,7 @@ export function FilmStudioEntityPanel({
       setError(apiFailure({ code: "ENTITY_IMAGE_MODEL_UNAVAILABLE", error: "请选择当前可用的生图模型与分辨率。" }, "实体生图模型不可用"));
       return "failed";
     }
-    if (mode === "repaint" && (!entity.referenceAssetUri || !modelSupportsReference(model))) {
+    if (mode === "repaint" && ((!entity.referenceAssetUri && !entityGeneratedReference(entity)) || !modelSupportsReference(model))) {
       setError(apiFailure({
         code: "ENTITY_REPAINT_NOT_READY",
         error: entity.referenceAssetUri
@@ -648,7 +671,7 @@ export function FilmStudioEntityPanel({
     };
     if (!existingRequest && !skipConfirmation) {
       const approved = window.confirm(
-        `${mode === "repaint" ? "参考当前版本重绘" : "首次生成"}${config.singular}“${entity.name}”？\n${model.displayName} · ${resolution} · ${request.layout === "three_view" ? "三视图" : "单视图"}\n单次公开报价 ${model.publicPrice.toFixed(2)}\n提交后会写入任务历史、稳定资产和实际结算记录。`,
+        `${mode === "repaint" ? "参考当前版本重绘" : "首次生成"}${config.singular}“${entity.name}”？\n${model.displayName} · ${resolution} · ${request.layout === "three_view" ? "三视图" : "单视图"}\n单次公开报价 ${model.publicPrice.toFixed(2)}\n提交后保留任务与实际费用收据；生成图片使用归属引用，不会自动备份到素材库。`,
       );
       if (!approved) return "failed";
     }
@@ -695,9 +718,11 @@ export function FilmStudioEntityPanel({
         throw apiFailure(payload, `实体图片任务${state === "failed" ? "失败" : "已终止"}`);
       }
       setGenerationPending(null);
-      setNotice(`“${entity.name}”图片已生成、归档并切换为当前版本。`);
+      setNotice(isRecord(job.resultPayload) && job.resultPayload.blockedOnInput === true
+        ? `“${entity.name}”图片已生成并结算，但临时素材不可恢复，自动编排已停止；不会自动重试。`
+        : `“${entity.name}”图片已生成，归属引用与费用收据已登记。`);
       await loadEntities({ silent: true });
-      return "completed";
+      return isRecord(job.resultPayload) && job.resultPayload.blockedOnInput === true ? "blocked" : "completed";
     } catch (cause) {
       if (!receivedResponse) {
         setGenerationPending(request);
@@ -741,7 +766,9 @@ export function FilmStudioEntityPanel({
       const state = textValue(job.state);
       if (state === "succeeded") {
         setGenerationPending(null);
-        setNotice(`“${request.entityName}”的原请求已完成并恢复到图片版本。`);
+        setNotice(isRecord(job.resultPayload) && job.resultPayload.blockedOnInput === true
+          ? `“${request.entityName}”的原请求已完成并结算，但素材不可恢复；不会自动重试。`
+          : `“${request.entityName}”的原请求已完成，图片引用与费用收据已保留。`);
         await loadEntities({ silent: true });
       } else if (state === "failed" || state === "cancelled") {
         setGenerationPending(null);
@@ -1020,10 +1047,10 @@ export function FilmStudioEntityPanel({
       <div className={styles.grid}>
         {entities.map((entity) => (
           <article className={styles.card} key={entity.id} data-source="persisted">
-            {entity.referenceAssetUri && previewUrls[entity.referenceAssetUri] && (
+            {(generatedPreviews[entity.id] || (entity.referenceAssetUri && previewUrls[entity.referenceAssetUri])) && (
               <img
                 className={styles.cardPreview}
-                src={previewUrls[entity.referenceAssetUri]}
+                src={generatedPreviews[entity.id] || previewUrls[entity.referenceAssetUri!]}
                 alt={`${entity.name} 当前参考图`}
               />
             )}
@@ -1062,7 +1089,7 @@ export function FilmStudioEntityPanel({
                 type="button"
                 disabled={
                   storageMode !== "native"
-                  || !entity.referenceAssetUri
+                  || (!entity.referenceAssetUri && !entityGeneratedReference(entity))
                   || !selectedImageModel
                   || !modelSupportsReference(selectedImageModel)
                   || !imageResolution
@@ -1070,7 +1097,7 @@ export function FilmStudioEntityPanel({
                   || batchPending
                   || generationPending !== null
                 }
-                title={!entity.referenceAssetUri
+                title={!entity.referenceAssetUri && !entityGeneratedReference(entity)
                   ? "请先保存一个当前图片版本"
                   : selectedImageModel && !modelSupportsReference(selectedImageModel)
                     ? "当前模型不支持参考图"

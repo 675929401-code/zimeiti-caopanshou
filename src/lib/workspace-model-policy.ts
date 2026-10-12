@@ -189,7 +189,7 @@ export function videoWorkspaceSurfaceFromRequest(value: unknown): WorkspaceModel
   return null;
 }
 
-function configuredAspectRatios(config: Record<string, unknown>) {
+export function configuredAspectRatios(config: Record<string, unknown>) {
   const value = Array.isArray(config.aspect_ratios)
     ? config.aspect_ratios
     : Array.isArray(config.supported_aspect_ratios)

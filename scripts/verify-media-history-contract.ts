@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { classifyVideoProviderError } from "../src/lib/video-error-policy";
 
 import {
   MEDIA_HISTORY_CATEGORY_KEYS,
@@ -45,7 +46,19 @@ assert.deepEqual(resolveMediaHistoryRetention({
   status: "completed",
   createdAt: "2026-09-27T00:00:01Z",
   now,
-}), { expiresAt: "2026-09-29T00:00:01.000Z", retentionSource: "policy", expired: false });
+}), { expiresAt: null, retentionSource: "none", expired: false });
+
+// Upstream metadata supplies the deadline; its passage does not prove deletion.
+for (const sourceExpiredAt of [null, "2026-09-28T12:00:00Z"]) {
+  assert.deepEqual(resolveMediaHistoryRetention({
+    kind: "image",
+    status: "completed",
+    createdAt: "2026-09-01T00:00:00Z",
+    upstreamExpiresAt: "2026-09-28T00:00:00Z",
+    sourceExpiredAt,
+    now,
+  }), { expiresAt: "2026-09-28T00:00:00.000Z", retentionSource: "upstream", expired: sourceExpiredAt !== null });
+}
 
 assert.deepEqual(resolveMediaHistoryRetention({
   kind: "video",
@@ -72,6 +85,26 @@ async function verifySourceContracts() {
     readFile(path.join(root, "src/lib/generated/database-contract.ts"), "utf8"),
     readdir(path.join(root, "supabase/migrations")),
   ]);
+
+  // Execute the actual route's pure status/error projection in RAM.
+  const statusBody = route.match(/function safeStatus\(value: unknown\): MediaStatus \{([\s\S]*?)\r?\n\}/u)?.[1];
+  assert.ok(statusBody, "actual media-history status mapping must be found");
+  const mappingStart = route.indexOf("const retainedVideos = videoRows.map");
+  const mappingEnd = route.indexOf("const videos = retainedVideos.filter", mappingStart);
+  assert.ok(mappingStart >= 0 && mappingEnd > mappingStart);
+  const errorExpression = route.slice(mappingStart, mappingEnd).match(/errorMessage:([\s\S]*?),\s*aspectRatio:/u)?.[1];
+  assert.ok(errorExpression, "actual video error projection must be found");
+  const normalizeStatus = new Function("value", statusBody);
+  const projectError = new Function("rawStatus", "hasAuthenticatedDeliverySource", "rawError", "modelName", "classifyVideoProviderError", `return (${errorExpression});`);
+  const errorFor = (status: string, rawError: string, hasDelivery = true) => projectError(normalizeStatus(status), hasDelivery, rawError, "公开视频模型", classifyVideoProviderError);
+  for (const status of ["pending", "queued", "processing", "generating", "finalizing", "submitting"]) {
+    assert.equal(errorFor(status, "供应商已接收任务，等待生成终态"), "", `${status} progress must not become a failure`);
+  }
+  assert.equal(errorFor("failed", "fixture generation failure"), classifyVideoProviderError("fixture generation failure", "公开视频模型").publicMessage);
+  assert.equal(errorFor("failed", ""), "");
+  assert.equal(errorFor("completed", "供应商已接收任务，等待生成终态"), "");
+  assert.equal(errorFor("completed", "", false), "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。");
+  assert.equal(errorFor("cancelled", "任务已取消"), "");
 
   for (const token of [
     '.from("short_drama_projects")',

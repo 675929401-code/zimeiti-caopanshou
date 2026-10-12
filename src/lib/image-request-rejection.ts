@@ -3,7 +3,7 @@ export type ImageRequestRejection = {
     | "IMAGE_UPSTREAM_TERMINAL_EVENT" | "IMAGE_UPSTREAM_ACCOUNT_UNAVAILABLE"
     | "IMAGE_OUTPUT_ASPECT_RATIO_MISMATCH" | "IMAGE_OUTPUT_RESOLUTION_MISMATCH"
     | "IMAGE_BILLING_RESERVATION_REJECTED" | "IMAGE_PLATFORM_REQUEST_INTERRUPTED"
-    | "IMAGE_PROVIDER_ADMISSION_BUSY" | "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE";
+    | "IMAGE_PROVIDER_ADMISSION_BUSY" | "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE" | "IMAGE_PROVIDER_LINK_REQUIRED";
   source: "input" | "provider" | "platform";
   upstreamStatus?: number;
   /** Required when a relay wraps a definite provider refusal in a generic 5xx. */
@@ -21,6 +21,9 @@ export function parseImageRequestRejectionReceipt(response: unknown, payloadFing
   if (!response || typeof response !== "object" || Array.isArray(response)) return null;
   const value = response as Record<string, unknown>;
   if (value.schema !== "image_request_rejection.v1" || value.payloadFingerprint !== payloadFingerprint) return null;
+  if (value.source === "provider" && value.code === "IMAGE_PROVIDER_LINK_REQUIRED" && value.upstreamStatus == null) {
+    return { source: "provider", code: "IMAGE_PROVIDER_LINK_REQUIRED" };
+  }
   if (value.source === "input" && value.code === "IMAGE_REFERENCE_READ_FAILED" && value.upstreamStatus == null) {
     return { source: "input", code: "IMAGE_REFERENCE_READ_FAILED" };
   }

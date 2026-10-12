@@ -2,18 +2,126 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 import { computeLocalBuildFingerprint } from "./local-build-fingerprint.mjs";
+import { safeHarnessErrorCode, readPaidDatabaseReadiness, parsePaidHarnessArgs, assertPaidActor, publicVideoQuote, makePaidPostGuard, safeHarnessEvidence, capturePaidDownload, runPaidHarnessSelfTest, assertPaidFinalPass } from './verify-image-workbench-live-e2e.mjs';
+import { makeMediaPaidRouteBoundary, observeMediaPromise, awaitMediaGenerationResponse, runMediaAsyncBoundarySelfTest } from './verify-storyboard-image-live-canary.mjs';
 
 const DEFAULT_ORIGIN = "http://127.0.0.1:5000";
 const PROJECT_ROOT = process.cwd();
-const CHEAPEST_MODEL_ID = "pm_Stp5Ka3hsbnsvqOaqdB0TUl3";
-const DURATION_SECONDS = 1;
-const RESOLUTION = "480p";
-const PRICE_CEILING_YUAN = 0.04;
+let CHEAPEST_MODEL_ID = "pm_Stp5Ka3hsbnsvqOaqdB0TUl3";
+let DURATION_SECONDS = 1;
+let RESOLUTION = "480p";
+let PRICE_CEILING_YUAN = 0.04;
+let paidOptions;
+
+export function parseVideoHarnessArgs(args) {
+  const options = parsePaidHarnessArgs(args, ['run-id','origin','model-id','duration','resolution','acceptance-scope','completion-timeout-ms','execute','health-only','reconcile','self-test']);
+  options.modelId = options.values['model-id'] || 'pm_Stp5Ka3hsbnsvqOaqdB0TUl3';
+  options.duration = Number(options.values.duration || 1);
+  options.resolution = options.values.resolution || '480p';
+  options.acceptanceScope = options.values['acceptance-scope'] || 'full';
+  assert.match(options.modelId, /^pm_[A-Za-z0-9_-]+$/u, 'PUBLIC_VIDEO_MODEL_REQUIRED');
+  assert.ok(Number.isInteger(options.duration) && options.duration >= 1 && options.duration <= 60, 'VIDEO_DURATION_INVALID');
+  assert.match(options.resolution, /^(?:480p|720p|768p|1080p|2K|4K|lite)$/u, 'VIDEO_RESOLUTION_INVALID');
+  assert.ok(['full','paid-route'].includes(options.acceptanceScope), 'VIDEO_ACCEPTANCE_SCOPE_INVALID');
+  return options;
+}
+
+export async function selectVideoDurationThroughUi({ page, seconds, stage, timeout = 30_000 }) {
+  const deadline = Date.now() + timeout;
+  const remaining = () => {
+    const milliseconds = deadline - Date.now();
+    if (milliseconds > 0) return milliseconds;
+    const error = new Error('VIDEO_UI_DURATION_CONTROL_TIMEOUT');
+    error.name = 'TimeoutError';
+    throw error;
+  };
+  const durationTrigger = page.getByRole('combobox', { name: '默认视频时长', exact: true });
+  const fixedDuration = page.getByText(new RegExp(`^固定\\s*${seconds}\\s*秒$`, 'u')).first();
+  const visibleControl = durationTrigger.or(fixedDuration).filter({ visible: true }).first();
+  await stage('duration-control-wait');
+  for (;;) {
+    await visibleControl.waitFor({ state: 'visible', timeout: remaining() });
+    if (await durationTrigger.isVisible()) {
+      await stage('duration-combobox-click');
+      await durationTrigger.click({ timeout: remaining() });
+      await stage('duration-option-selection');
+      await page.getByRole('option').filter({ hasText: new RegExp(`^${seconds}秒(?:\\s|$)`, 'u') }).click({ timeout: remaining() });
+      return 'combobox';
+    }
+    if (await fixedDuration.isVisible()) {
+      await stage('duration-fixed-visible');
+      return 'fixed';
+    }
+  }
+}
+
+async function runVideoDurationControlSelfTest() {
+  let checks = 0;
+  const fixture = ({ fixedText = '', triggerVisible = false, onWait = async () => {} } = {}) => {
+    const state = { triggerVisible, fixedText, clicks: [], stages: [], waits: 0 };
+    let fixedPattern;
+    const fixed = { first: () => fixed, isVisible: async () => fixedPattern.test(state.fixedText) };
+    const visible = {
+      filter: options => { assert.deepEqual(options, { visible: true }); return visible; },
+      first: () => visible,
+      waitFor: async options => {
+        assert.equal(options.state, 'visible');
+        assert.ok(options.timeout > 0 && options.timeout <= 30_000);
+        state.waits++;
+        if (!state.triggerVisible && !fixedPattern.test(state.fixedText)) await onWait(state);
+        assert.ok(state.triggerVisible || fixedPattern.test(state.fixedText), 'NO_LEGAL_DURATION_CONTROL_VISIBLE');
+      },
+    };
+    const trigger = {
+      count: async () => { throw new Error('DURATION_COUNT_BRANCH_FORBIDDEN'); },
+      or: other => { assert.equal(other, fixed); return visible; },
+      isVisible: async () => state.triggerVisible,
+      click: async () => { state.clicks.push('combobox'); },
+    };
+    const page = {
+      getByRole: (role, options) => {
+        if (role === 'combobox') { assert.deepEqual(options, { name: '默认视频时长', exact: true }); return trigger; }
+        assert.equal(role, 'option');
+        return { filter: ({ hasText }) => ({ click: async () => { assert.ok(hasText.test('4秒 · 生成5秒后裁剪')); assert.equal(hasText.test('40秒'), false); state.clicks.push('4秒'); } }) };
+      },
+      getByText: pattern => { fixedPattern = pattern; return fixed; },
+    };
+    return { state, page, stage: async value => { state.stages.push(value); } };
+  };
+  const delayed = fixture({ fixedText: '固定 10 秒', onWait: async state => { await new Promise(resolve => setImmediate(resolve)); state.triggerVisible = true; } });
+  assert.equal(await selectVideoDurationThroughUi({ ...delayed, seconds: 4 }), 'combobox'); checks++;
+  assert.equal(delayed.state.waits, 1); checks++;
+  assert.deepEqual(delayed.state.clicks, ['combobox', '4秒']); checks++;
+  assert.deepEqual(delayed.state.stages, ['duration-control-wait', 'duration-combobox-click', 'duration-option-selection']); checks++;
+  const fixed = fixture({ fixedText: '固定 4 秒' });
+  assert.equal(await selectVideoDurationThroughUi({ ...fixed, seconds: 4 }), 'fixed'); checks++;
+  assert.deepEqual(fixed.state.clicks, []); checks++;
+  assert.deepEqual(fixed.state.stages, ['duration-control-wait', 'duration-fixed-visible']); checks++;
+  const timeoutError = Object.assign(new Error('fixture-duration-timeout'), { name: 'TimeoutError' });
+  const unavailable = fixture({ fixedText: '固定 10 秒', onWait: async () => { throw timeoutError; } });
+  await assert.rejects(selectVideoDurationThroughUi({ ...unavailable, seconds: 4 }), error => error === timeoutError); checks++;
+  assert.deepEqual(unavailable.state.clicks, []); checks++;
+  assert.deepEqual(unavailable.state.stages, ['duration-control-wait']); checks++;
+  return { checks };
+}
+
+export async function runVideoHarnessSelfTest() {
+  const base=await runPaidHarnessSelfTest(); let checks=base.checks;
+  const defaults=parseVideoHarnessArgs([]); assert.equal(defaults.acceptanceScope,'full'); checks++;
+  const explicit=parseVideoHarnessArgs(['--model-id=pm_fixture','--duration=4','--resolution=720p','--acceptance-scope=paid-route']);
+  assert.equal(explicit.duration,4); checks++; assert.equal(explicit.acceptanceScope,'paid-route'); checks++;
+  for(const args of [['--duration=NaN'],['--duration=4.5'],['--resolution=bad'],['--acceptance-scope=unknown'],['--model-id=bad'],['--model-id=pm_a','--model-id=pm_b']]) {assert.throws(()=>parseVideoHarnessArgs(args));checks++;}
+  checks += (await runMediaAsyncBoundarySelfTest('/api/video/generate')).checks;
+  checks += (await runVideoDurationControlSelfTest()).checks;
+  checks += await runVideoBrowserEvidenceSelfTest();
+  console.log(JSON.stringify({kind:'video-harness-actual-parser-selftest',status:'PASS',checks,networkCalls:0,paidPosts:0,browserRuns:0,dbCalls:0}));
+}
 const TERMINAL_STATES = new Set(["completed", "failed", "cancelled", "expired"]);
 const POLL_INTERVAL_MS = 10_000;
 const SAFE_RUNTIME_ID = /^[A-Za-z0-9._:-]{4,180}$/u;
@@ -39,16 +147,6 @@ function parseJson(value, fallback = null) {
 
 function pathnameOnly(value) {
   try { return new URL(value).pathname; } catch { return "invalid-url"; }
-}
-
-function withTimeout(promise, timeoutMs, message) {
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-    }),
-  ]).finally(() => clearTimeout(timer));
 }
 
 function transactionId(row) {
@@ -148,7 +246,8 @@ async function ordinaryStudentBillingPolicy() {
   assert.match(source, /const billingExempt = false;/u, "VIDEO_BILLING_EXEMPTION_MUST_BE_DISABLED");
   return {
     route: VIDEO_GENERATE_ROUTE,
-    role: "student",
+    role: paidOptions.actorRole,
+    ordinaryMemberAdmissionVerified: paidOptions.actorRole === "student",
     billingExempt: false,
     assertion: "current runningLatest source fixes video billing exemption to false",
   };
@@ -260,7 +359,7 @@ async function billingSnapshot(client, userId) {
 
 function assertModelGate(model) {
   const capabilities = model?.capabilities || {};
-  const publicPrice = Number(model?.publicPrice);
+  const publicPrice = model ? publicVideoQuote(model,DURATION_SECONDS,RESOLUTION,paidOptions) : NaN;
   assert.ok(model, "CHEAPEST_MODEL_MISSING");
   assert.equal(capabilities.available ?? model.available, true, "CHEAPEST_MODEL_UNAVAILABLE");
   assert.equal(capabilities.generationReady ?? model.generationReady, true, `CHEAPEST_MODEL_NOT_READY:${capabilities.readinessMessage || model.availabilityMessage || ""}`);
@@ -281,8 +380,8 @@ function assertModelGate(model) {
 
 async function requireOrdinaryStudentIdentity(client, wrapperCustomer) {
   const identity = await client.requiredJson("/api/auth/me");
-  assert.equal(wrapperCustomer?.role, "student", "CUSTOMER_WRAPPER_STUDENT_REQUIRED");
-  assert.equal(identity?.user?.role, "student", "ORDINARY_STUDENT_IDENTITY_REQUIRED");
+  assert.equal(wrapperCustomer?.role, paidOptions.actorRole, "CUSTOMER_WRAPPER_ROLE_REQUIRED");
+  assertPaidActor(identity, paidOptions);
   assert.equal(identity?.user?.id, wrapperCustomer?.id, "CUSTOMER_WRAPPER_IDENTITY_MISMATCH");
   return identity;
 }
@@ -296,7 +395,7 @@ async function preflight(client, report, wrapperCustomer) {
   ]);
   assert.ok(Number.isFinite(billing.credits), "CREDITS_BALANCE_UNREADABLE");
   assert.ok(Number.isFinite(billing.reservedCredits), "RESERVED_CREDITS_UNREADABLE");
-  assert.equal(billing.memberStatus, "active", "ACTIVE_STUDENT_MEMBER_REQUIRED");
+  if (paidOptions.actorRole === "student") assert.equal(billing.memberStatus, "active", "ACTIVE_STUDENT_MEMBER_REQUIRED");
   const model = assertModelGate((catalog?.models || []).find((item) => item.id === CHEAPEST_MODEL_ID));
   assert.ok(billing.balance + 1e-9 >= model.publicPrice, `BALANCE_INSUFFICIENT:${billing.balance}:${model.publicPrice}`);
   Object.assign(report, {
@@ -315,7 +414,7 @@ async function preflight(client, report, wrapperCustomer) {
 
 async function saveReport(outputDir, report, name = "report.json") {
   await fs.mkdir(outputDir, { recursive: true });
-  await fs.writeFile(path.join(outputDir, name), `${JSON.stringify(report, null, 2)}\n`);
+  await fs.writeFile(path.join(outputDir, name), `${JSON.stringify(safeHarnessEvidence(report), null, 2)}\n`);
 }
 
 async function waitForTaskTerminal(client, taskId, modelId, timeoutMs, report) {
@@ -561,6 +660,29 @@ async function launchBrowser() {
   }
 }
 
+export function makeVideoBrowserEvidence() {
+  return { generationPosts:0, pageErrors:[], consoleErrors:[], responseFailures:[] };
+}
+
+async function runVideoBrowserEvidenceSelfTest() {
+  let checks=0;
+  const evidence=makeVideoBrowserEvidence(), page=new EventEmitter();
+  const context={addInitScript:async()=>{},route:async()=>{},newPage:async()=>page};
+  const attached=await attachAuthenticatedPage({newContext:async()=>context},{user:{id:'fixture'}},'RAM_FIXTURE_TOKEN',DEFAULT_ORIGIN,evidence);
+  assert.equal(attached.page,page);checks++;
+  const response=(status,url)=>({status:()=>status,url:()=>url,request:()=>({method:()=> 'GET'})});
+  page.emit('response',response(404,DEFAULT_ORIGIN+'/api/video/history?token=PRIVATE_QUERY'));
+  page.emit('response',response(500,DEFAULT_ORIGIN+'/api/video/proxy?ticket=PRIVATE_QUERY'));
+  page.emit('response',response(200,'https://external.invalid/media?secret=PRIVATE_QUERY'));
+  page.emit('response',response(500,'https://external.invalid/media?secret=PRIVATE_QUERY'));
+  page.emit('response',response(200,DEFAULT_ORIGIN+'/api/video/history'));
+  assert.deepEqual(evidence.responseFailures,[{status:404,method:'GET',path:'/api/video/history'},{status:500,method:'GET',path:'/api/video/proxy'}]);checks++;
+  assert.equal(JSON.stringify(evidence).includes('PRIVATE_QUERY'),false);checks++;
+  const independent=makeVideoBrowserEvidence();
+  assert.deepEqual(independent.responseFailures,[]);checks++;assert.notEqual(independent.pageErrors,evidence.pageErrors);checks++;
+  return checks;
+}
+
 async function attachAuthenticatedPage(browser, identity, token, origin, evidence) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
   await context.addInitScript(({ sessionToken, user }) => {
@@ -596,37 +718,48 @@ async function attachAuthenticatedPage(browser, identity, token, origin, evidenc
 }
 
 async function submitVideoThroughUi({ origin, token, identity, report, model, billingBefore, prompt }) {
+  const boundGuard=makePaidPostGuard({model_id:CHEAPEST_MODEL_ID,duration:DURATION_SECONDS,resolution:RESOLUTION,resolution_tier:RESOLUTION,aspect_ratio:'16:9',surface:'video-page',prompt});
   await fs.mkdir(report.outputDir, { recursive: true });
+  const stage=async value=>{report.uiSubmission.stage=value;await saveReport(report.outputDir,report,'progress.json');};
+  await stage('browser-launch');
   const browser = await launchBrowser();
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
   let clickArmed = false;
   let requestAttempts = 0;
   let continuedPosts = 0;
   let duplicatePostsBlocked = 0;
+  let submissionOccupied = false;
   let resolveCapture;
   let rejectCapture;
-  const capturePromise = new Promise((resolve, reject) => {
+  const capturePromise = observeMediaPromise(new Promise((resolve, reject) => {
     resolveCapture = resolve;
     rejectCapture = reject;
-  });
+  }));
   try {
+    await stage('auth-bootstrap');
     await context.addInitScript(({ sessionToken, user }) => {
       localStorage.setItem("auth_token", sessionToken);
       localStorage.setItem("auth_user", JSON.stringify(user));
       sessionStorage.setItem("entered_app", "1");
     }, { sessionToken: token, user: identity.user });
-    await context.route("**/api/video/generate", async (route) => {
+    const installed = async (route) => {
       requestAttempts += 1;
-      if (!clickArmed || continuedPosts >= 1) {
+      if (!clickArmed || submissionOccupied) {
         duplicatePostsBlocked += 1;
         Object.assign(report.uiSubmission, { requestAttempts, continuedPosts, duplicatePostsBlocked });
         await route.abort("blockedbyclient");
         return;
       }
+      submissionOccupied = true;
       try {
         const request = route.request();
         const rawBody = request.postData() || "";
         const body = parseJson(rawBody, null);
+        report.clientRequestId = report.request?.clientRequestId || null;
+        report.uiSubmission.clientRequestId = report.clientRequestId;
+        const latestCatalog=await createClient(origin,token).requiredJson('/api/video/models?surface=video-page');
+        const latestModel=assertModelGate(latestCatalog.models?.find(item=>item.id===CHEAPEST_MODEL_ID));
+        assert.equal(latestModel.publicPrice,model.publicPrice,'VIDEO_PRICE_DRIFT_BEFORE_FORWARD');
         assert.equal(request.method(), "POST", "VIDEO_UI_GENERATION_METHOD_INVALID");
         assert.equal(pathnameOnly(request.url()), "/api/video/generate", "VIDEO_UI_GENERATION_PATH_INVALID");
         assert.equal(body?.model_id, CHEAPEST_MODEL_ID, "VIDEO_UI_MODEL_MISMATCH");
@@ -656,7 +789,7 @@ async function submitVideoThroughUi({ origin, token, identity, report, model, bi
           aspectRatio: "16:9",
           publicPrice: model.publicPrice,
           priceCeilingYuan: PRICE_CEILING_YUAN,
-          providerPostLimit: 1,
+          providerPostLimit: 1, counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
           providerPosts: 1,
           automaticRetries: 0,
           prompt,
@@ -680,10 +813,10 @@ async function submitVideoThroughUi({ origin, token, identity, report, model, bi
         };
         await fs.writeFile(
           path.join(report.outputDir, "dispatch.json"),
-          `${JSON.stringify(dispatch, null, 2)}\n`,
+          `${JSON.stringify(safeHarnessEvidence(dispatch), null, 2)}\n`,
           { flag: "wx" },
         );
-        await route.continue();
+        await boundGuard(route);
         continuedPosts += 1;
         report.providerPosts = continuedPosts;
         Object.assign(report.uiSubmission, {
@@ -696,8 +829,11 @@ async function submitVideoThroughUi({ origin, token, identity, report, model, bi
       } catch (error) {
         rejectCapture(error);
         await route.abort("blockedbyclient").catch(() => undefined);
+        throw error;
       }
-    });
+    };
+    const routeBoundary=makeMediaPaidRouteBoundary(installed,report);
+    await context.route("**/api/video/generate",routeBoundary.handler);
     const page = await context.newPage();
     page.on("pageerror", error => report.uiSubmission.pageErrors.push(errorMessage(error).slice(0, 500)));
     page.on("console", message => {
@@ -705,9 +841,12 @@ async function submitVideoThroughUi({ origin, token, identity, report, model, bi
         report.uiSubmission.consoleErrors.push(message.text().slice(0, 500));
       }
     });
+    await stage('page-navigation');
     const navigation = await page.goto(`${origin}/video`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     assert.equal(navigation?.status(), 200, "VIDEO_UI_PAGE_LOAD_FAILED");
+    await stage('model-list');
     await page.locator("[data-video-model-list]").waitFor({ state: "visible", timeout: 30_000 });
+    await stage('model-selection');
     const modelButton = page.locator(`[data-video-model-list] button[data-video-model-id="${CHEAPEST_MODEL_ID}"]`);
     await modelButton.waitFor({ state: "visible", timeout: 30_000 });
     assert.equal(await modelButton.isEnabled(), true, "VIDEO_UI_MODEL_BUTTON_DISABLED");
@@ -717,43 +856,41 @@ async function submitVideoThroughUi({ origin, token, identity, report, model, bi
         ?.className.includes("shadow-[inset_3px_0_var(--primary)]")
     ), CHEAPEST_MODEL_ID, { timeout: 30_000 });
 
+    await stage('aspect-selection');
     const aspectTrigger = page.getByRole("combobox", { name: "视频比例", exact: true });
     await aspectTrigger.click();
     await page.getByRole("option", { name: "横屏 16:9", exact: true }).click();
+    await stage('resolution-selection');
     const resolutionTrigger = page.getByRole("combobox", { name: "视频分辨率", exact: true });
     if (await resolutionTrigger.count()) {
       await resolutionTrigger.click();
-      await page.getByRole("option").filter({ hasText: /^480p\b/u }).click();
+      await page.getByRole("option").filter({ hasText: new RegExp(`^${RESOLUTION}\\b`,"u") }).click();
     } else {
-      await page.getByText(/^480p\b/u).first().waitFor({ state: "visible", timeout: 10_000 });
+      await page.getByText(new RegExp(`^${RESOLUTION}\\b`,"u")).first().waitFor({ state: "visible", timeout: 10_000 });
     }
-    const durationTrigger = page.getByRole("combobox", { name: "默认视频时长", exact: true });
-    if (await durationTrigger.count()) {
-      await durationTrigger.click();
-      await page.getByRole("option").filter({ hasText: /^1秒/u }).click();
-    } else {
-      await page.getByText(/固定\s*1\s*秒/u).first().waitFor({ state: "visible", timeout: 10_000 });
-    }
+    await stage('duration-selection');
+    report.uiSubmission.durationControl = await selectVideoDurationThroughUi({ page, seconds: DURATION_SECONDS, stage });
+    await stage('prompt-entry');
     const taskCard = page.locator("[data-video-task-card]").first();
     await taskCard.waitFor({ state: "visible", timeout: 30_000 });
     const promptInput = taskCard.getByRole("textbox", { name: "任务1提示词", exact: true });
     await promptInput.fill(prompt);
     assert.equal(await promptInput.inputValue(), prompt, "VIDEO_UI_PROMPT_INPUT_MISMATCH");
+    await stage('price-assertion');
     assert.match(await page.locator("body").innerText(), new RegExp(`单条预计：\\s*¥${model.publicPrice.toFixed(2).replace(".", "\\.")}`, "u"), "VIDEO_UI_PRICE_MISMATCH");
+    await stage('before-submit-screenshot');
     await page.screenshot({ path: path.join(report.outputDir, "video-page-before-submit.png"), fullPage: true });
 
+    await stage('generation-button');
     const generateButton = taskCard.getByRole("button", { name: "生成视频", exact: true });
     await generateButton.waitFor({ state: "visible", timeout: 30_000 });
     assert.equal(await generateButton.isEnabled(), true, "VIDEO_UI_GENERATE_BUTTON_DISABLED");
-    const responsePromise = page.waitForResponse(response => response.request().method() === "POST"
-      && pathnameOnly(response.url()) === "/api/video/generate", { timeout: 240_000 });
     clickArmed = true;
     report.uiSubmission.clickedAt = new Date().toISOString();
-    await generateButton.click();
-    const [dispatch, response] = await Promise.all([
-      withTimeout(capturePromise, 30_000, "VIDEO_UI_GENERATION_REQUEST_NOT_CAPTURED"),
-      responsePromise,
-    ]);
+    await stage('generation-click');
+    const {capture:dispatch,response}=await awaitMediaGenerationResponse({page,click:()=>generateButton.click(),failure:routeBoundary.failure,
+      pathname:'/api/video/generate',timeoutMs:240_000,capture:capturePromise,captureTimeoutMs:30_000});
+    await stage('generation-response');
     const body = await response.json().catch(() => null);
     await page.waitForTimeout(500);
     report.providerPosts = continuedPosts;
@@ -819,7 +956,7 @@ async function enterAndExitFullscreen(page, dialog, enterButtonName) {
   return { entered: true, exited: true };
 }
 
-async function verifyVideoPageBrowser(page, origin, taskId, outputDir) {
+async function verifyVideoPageBrowser(page, origin, taskId, outputDir, paidRoute = false) {
   const openHistory = async () => {
     const historyButton = page.getByRole("button", { name: "历史", exact: true }).first();
     await historyButton.waitFor({ state: "visible", timeout: 60_000 });
@@ -836,9 +973,9 @@ async function verifyVideoPageBrowser(page, origin, taskId, outputDir) {
   const dialog = page.getByRole("dialog");
   await dialog.waitFor({ state: "visible", timeout: 30_000 });
   const playback = await playableVideoEvidence(dialog.locator("video"));
-  await dialog.getByRole("button", { name: "放大视频", exact: true }).click();
-  await dialog.getByText("放大预览 · 当前 110%", { exact: true }).waitFor({ state: "visible" });
-  const fullscreen = await enterAndExitFullscreen(page, dialog, "进入全屏");
+  if (!paidRoute) await dialog.getByRole("button", { name: "放大视频", exact: true }).click();
+  if (!paidRoute) await dialog.getByText("放大预览 · 当前 110%", { exact: true }).waitFor({ state: "visible" });
+  const fullscreen = paidRoute ? { skipped:true } : await enterAndExitFullscreen(page, dialog, "进入全屏");
   await dialog.getByRole("button", { name: "关闭视频预览", exact: true }).click();
   await dialog.waitFor({ state: "hidden" });
   await page.screenshot({ path: path.join(outputDir, "video-page-history.png"), fullPage: true });
@@ -849,6 +986,7 @@ async function verifyVideoPageBrowser(page, origin, taskId, outputDir) {
   const restoredDialog = page.getByRole("dialog");
   const restoredPlayback = await playableVideoEvidence(restoredDialog.locator("video"));
   await restoredDialog.getByRole("button", { name: "关闭视频预览", exact: true }).click();
+  const download=paidRoute ? await capturePaidDownload(page,restoredCard.getByRole('button',{name:'下载到电脑',exact:true}),outputDir,'video') : null;
   return {
     appearedWithoutRefreshButton: true,
     manualRefreshClicks: 0,
@@ -857,6 +995,7 @@ async function verifyVideoPageBrowser(page, origin, taskId, outputDir) {
     fullscreen,
     reloadRestored: true,
     restoredPlayback,
+    download,
   };
 }
 
@@ -981,12 +1120,13 @@ async function continueAcceptedTask({ client, origin, token, identity, report, d
   };
   report.media = await fetchMediaEvidence(origin, client, historyTask.id, report.runId);
   report.billing = await waitForSuccessfulBilling(client, dispatch.billingBefore, historyTask.id, expectedCharge);
-  assert.equal(report.actor?.role, "student", "FINAL_STUDENT_ROLE_REQUIRED");
+  assert.equal(report.actor?.role, paidOptions.actorRole, "FINAL_ACTOR_ROLE_REQUIRED");
   assert.equal(report.billingExempt, false, "FINAL_NON_EXEMPT_BILLING_REQUIRED");
   assert.ok(report.quotedPriceYuan > 0, "FINAL_POSITIVE_QUOTED_PRICE_REQUIRED");
   assert.equal(report.billing.taskId, historyTask.id, "FINAL_BILLING_TASK_MISMATCH");
   assert.equal(report.billing.creditsDelta, 0, "FINAL_VIDEO_MUST_NOT_CHARGE_CREDITS");
   assert.equal(report.billing.reservedCreditsDelta, 0, "FINAL_VIDEO_MUST_NOT_CHANGE_RESERVED_CREDITS");
+  assertPaidFinalPass({actor:report.actor,expectedRole:paidOptions.actorRole,completed:true,cashDelta:report.billing.balanceDelta,quote:report.quotedPriceYuan,newCashRows:report.billing.transactionCount,generationPosts:1});
 
   const storyboardSurface = await client.requiredJson("/api/video/history?surface=storyboard-workbench&limit=200&offset=0");
   const leakedAcrossSurface = (storyboardSurface?.tasks || []).some((item) => identifiers.has(String(item.id || "")) || identifiers.has(String(item.taskIdExternal || "")));
@@ -997,6 +1137,23 @@ async function continueAcceptedTask({ client, origin, token, identity, report, d
     reason: "生成记录按入口隔离；同一任务通过账号校验后的分镜项目历史绑定复用，不改写 task_label。",
   };
 
+  if (paidOptions.acceptanceScope === "paid-route") {
+    const browser = await launchBrowser();
+    try {
+      const observed=makeVideoBrowserEvidence();
+      const { context, page } = await attachAuthenticatedPage(browser,identity,token,origin,observed);
+      try {
+        report.browser = await verifyVideoPageBrowser(page,origin,historyTask.id,report.outputDir,true);
+        assert.equal(observed.generationPosts,0,'PLAYBACK_REPOST');
+      } finally { await context.close(); }
+    } finally { await browser.close(); }
+    report.skippedCoverage = ["synthetic storyboard project binding","two extra browsers","fullscreen/zoom exercises"];
+    const final = await billingSnapshot(client,dispatch.billingBefore.userId);
+    assert.equal(final.balance,report.billing.balanceAfter,"EXTRA_CHARGE_AFTER_PLAYBACK");
+    assert.deepEqual(new Set(final.ids),new Set(report.billing.allTransactionIds),"EXTRA_LEDGER_AFTER_PLAYBACK");
+    report.noAdditionalCharge=true; report.totalVideoGenerationPosts=1;
+    return;
+  }
   const fixture = {
     projectId: `sbw-live-${report.runId}`,
     cardId: `sbw-live-card-${report.runId}`,
@@ -1021,7 +1178,7 @@ async function continueAcceptedTask({ client, origin, token, identity, report, d
       safeOwnedTaskHydration: true,
       reusedExistingCanaryProject: binding.reused,
       revision: binding.project.revision,
-      providerPosts: 0,
+      providerPosts: 0, counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
     };
     report.browser = await verifyIndependentBrowsers({
       origin,
@@ -1061,12 +1218,16 @@ async function continueAcceptedTask({ client, origin, token, identity, report, d
 }
 
 async function main(args = process.argv.slice(2)) {
+  paidOptions = parseVideoHarnessArgs(args);
+  if (paidOptions.flags.has("self-test")) return runVideoHarnessSelfTest();
+  CHEAPEST_MODEL_ID = paidOptions.modelId; DURATION_SECONDS = paidOptions.duration; RESOLUTION = paidOptions.resolution; PRICE_CEILING_YUAN = paidOptions.maxCharge ?? 0.04;
+  paidOptions.maxCharge ??= 0.04; paidOptions.remainingBudget ??= 20;
   const runId = argument(args, "run-id");
   const origin = String(argument(args, "origin", process.env.LOCAL_NAV_ORIGIN || DEFAULT_ORIGIN)).replace(/\/+$/u, "");
   const expectedSourceVersion = argument(args, "expected-source-version");
   const expectedBuildId = argument(args, "expected-build-id");
-  const token = String(process.env.R267_CUSTOMER_TOKEN || "").trim();
-  const wrapperCustomer = parseJson(process.env.LOCAL_NAV_READONLY_CUSTOMER, null);
+  const token = String((paidOptions.actorRole === "admin" ? process.env.LOCAL_NAV_ADMIN_TOKEN : process.env.R267_CUSTOMER_TOKEN) || "").trim();
+  const wrapperCustomer = paidOptions.actorRole === "admin" ? { id:paidOptions.userId, role:"admin" } : parseJson(process.env.LOCAL_NAV_READONLY_CUSTOMER, null);
   const execute = args.includes("--execute");
   const healthOnly = args.includes("--health-only");
   const reconcile = args.includes("--reconcile");
@@ -1092,7 +1253,7 @@ async function main(args = process.argv.slice(2)) {
     startedAt: new Date().toISOString(),
     mode: execute ? "execute" : healthOnly ? "health-only" : reconcile ? "reconcile" : "plan",
     outputDir,
-    providerPosts: 0,
+    providerPosts: 0, counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
     automaticRetries: 0,
     polling: [],
     runtime: null,
@@ -1118,31 +1279,27 @@ async function main(args = process.argv.slice(2)) {
       databaseWrites: 0,
       filesystemWrites: 0,
       networkCalls: 0,
-      providerPosts: 0,
+      providerPosts: 0, counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
       automaticRetries: 0,
-      requiredExecuteGate: `fresh ${VIDEO_DATABASE_READINESS_CHECKER} local ledger/hash/live semantics/owner/ACL ready result`,
-      requiredActor: { role: "student", billingExempt: false },
-      executeCommand: `node scripts/with-local-customer-session.mjs scripts/verify-video-live-history-full-canary.mjs --execute --run-id=${runId} --expected-source-version=<sourceVersion> --expected-build-id=<buildId>`,
+      requiredExecuteGate: "externally pinned current application DB 173-ledger/semantic/function authority/REST readiness index",
+      requiredActor: { role: paidOptions.actorRole, billingExempt: false, ordinaryMemberAdmissionVerified:false },
+      executeCommand: `node scripts/verify-video-live-history-full-canary.mjs --execute --run-id=${runId} --actor-role=${paidOptions.actorRole} --user-id=<exact-id> --expected-source-version=<sourceVersion> --expected-build-id=<buildId> --max-charge=<allocated-yuan> --remaining-budget=<remaining-yuan> --database-readiness=<root-index-path> --database-readiness-sha256=<external-pin> --expected-database-target=<host:port/database> --expected-database-identity=<fingerprint> --acceptance-scope=${paidOptions.acceptanceScope} --model-id=${CHEAPEST_MODEL_ID} --duration=${DURATION_SECONDS} --resolution=${RESOLUTION}`,
+      controlledSession:"existing selected-role session in RAM; no wrapper guard bypass",
+      providerDispatchCount:"unknown",
     });
-    console.log(JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(safeHarnessEvidence(report), null, 2));
     return;
   }
 
   assert.ok(token, "R267_CUSTOMER_TOKEN_REQUIRED");
   assert.ok(wrapperCustomer?.id, "LOCAL_CUSTOMER_WRAPPER_IDENTITY_REQUIRED");
-  assert.equal(wrapperCustomer?.role, "student", "LOCAL_CUSTOMER_WRAPPER_STUDENT_REQUIRED");
+  assert.equal(wrapperCustomer?.role, paidOptions.actorRole, "LOCAL_CUSTOMER_WRAPPER_ROLE_REQUIRED");
   const client = createClient(origin, token);
   if (execute) {
     assert.match(expectedSourceVersion, SAFE_RUNTIME_ID, "EXPECTED_SOURCE_VERSION_REQUIRED");
     assert.match(expectedBuildId, SAFE_RUNTIME_ID, "EXPECTED_BUILD_ID_REQUIRED");
-    report.databaseReadiness = localVideoDatabaseReadiness();
-    await saveReport(outputDir, report, "progress.json");
-    assert.equal(
-      report.databaseReadiness.ready,
-      true,
-      "VIDEO_DATABASE_SNAPSHOT_READINESS_REQUIRED",
-    );
     report.runtime = await runtimeIdentity(client, expectedSourceVersion, expectedBuildId);
+    report.databaseReadiness = await readPaidDatabaseReadiness(paidOptions,report.runtime);
     report.billingPolicy = await ordinaryStudentBillingPolicy();
     await saveReport(outputDir, report, "progress.json");
   }
@@ -1159,12 +1316,12 @@ async function main(args = process.argv.slice(2)) {
     Object.assign(report, {
       success: true,
       completedAt: new Date().toISOString(),
-      providerPosts: 0,
-      databaseWrites: 0,
+      providerPosts: 0, counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
+      browserDirectWrites: 0,serverSideEffectsNotAudited:true,observedRequestScope:"GET status/billing; server recovery effects not audited",
       balance: preflightResult.billing.balance,
     });
     await saveReport(outputDir, report, "health.json");
-    console.log(JSON.stringify({ success: true, mode: "health-only", model: report.model, balance: report.balance, providerPosts: 0, databaseWrites: 0, report: path.join(outputDir, "health.json") }));
+    console.log(JSON.stringify({ success: true, mode: "health-only", model: report.model, balance: report.balance, providerPosts: 0, counterScope:"browser-generation-POST",providerDispatchCount:"unknown", browserDirectWrites: 0,serverSideEffectsNotAudited:true,observedRequestScope:"GET status/billing; server recovery effects not audited", report: path.join(outputDir, "health.json") }));
     return;
   }
 
@@ -1176,7 +1333,10 @@ async function main(args = process.argv.slice(2)) {
     assert.equal(dispatch.runId, runId, "DISPATCH_RUN_ID_MISMATCH");
     assert.equal(dispatch.modelId, CHEAPEST_MODEL_ID, "DISPATCH_MODEL_ID_MISMATCH");
     assert.equal(dispatch.actorId, preflightResult.identity.user.id, "RECONCILE_ACTOR_MISMATCH");
-    assert.equal(dispatch.actorRole, "student", "RECONCILE_STUDENT_ACTOR_REQUIRED");
+    assert.equal(dispatch.actorRole, paidOptions.actorRole, "RECONCILE_ACTOR_ROLE_REQUIRED");
+    assert.equal(dispatch.duration,DURATION_SECONDS,"RECONCILE_DURATION_DRIFT");
+    assert.equal(dispatch.resolution,RESOLUTION,"RECONCILE_RESOLUTION_DRIFT");
+    assert.equal(dispatch.priceCeilingYuan,PRICE_CEILING_YUAN,"RECONCILE_CAP_DRIFT");
     assert.equal(dispatch.billingExempt, false, "RECONCILE_NON_EXEMPT_TASK_REQUIRED");
     assert.ok(Number(dispatch.quotedPriceYuan) > 0, "RECONCILE_POSITIVE_QUOTE_REQUIRED");
     clientRequestId = String(dispatch.clientRequestId || "");
@@ -1196,12 +1356,12 @@ async function main(args = process.argv.slice(2)) {
     Object.assign(report, {
       success: true,
       completedAt: new Date().toISOString(),
-      readOnlyReconciliation: true,
+      noGenerationSubmission: true,
       originalRequestFound: true,
       recoveredTaskId: taskId,
       recoveredExternalTaskId: externalTaskId,
-      providerPosts: 0,
-      databaseWrites: 0,
+      providerPosts: 0, counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
+      browserDirectWrites: 0,serverSideEffectsNotAudited:true,observedRequestScope:"GET status/billing; server recovery effects not audited",
       automaticRetries: 0,
       nextStep: "Continue observing the original task only; never rerun --execute for this run-id.",
     });
@@ -1209,11 +1369,11 @@ async function main(args = process.argv.slice(2)) {
     console.log(JSON.stringify({
       success: true,
       mode: "reconcile",
-      readOnly: true,
+      noGenerationSubmission: true,
       originalRequestFound: true,
       taskId,
-      providerPosts: 0,
-      databaseWrites: 0,
+      providerPosts: 0, counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
+      browserDirectWrites: 0,serverSideEffectsNotAudited:true,observedRequestScope:"GET status/billing; server recovery effects not audited",
       automaticRetries: 0,
       report: path.join(outputDir, "reconcile.json"),
     }));
@@ -1242,8 +1402,13 @@ async function main(args = process.argv.slice(2)) {
         report.clientRequestId = clientRequestId || null;
       } catch {
         dispatch = null;
+        clientRequestId = String(report.request?.clientRequestId || '');
+        report.clientRequestId = clientRequestId || null;
       }
-      report.submission = { outcome: "unknown", error: errorMessage(error) };
+      report.submission = { outcome: "unknown", error: errorMessage(error),
+        failedStage:report.uiSubmission.stage || 'before-ui-bootstrap',
+        failureErrorClass:['TimeoutError','AssertionError','TypeError','Error'].includes(error?.name)?error.name:'UnknownError',
+      };
       report.reconcile = clientRequestId
         ? reconciliationGuide(runId, clientRequestId)
         : { automaticRetryForbidden: true, instruction: "页面未捕获可核验的 client_request_id；禁止再次提交，需先人工检查浏览器与服务器请求日志。" };
@@ -1289,6 +1454,8 @@ async function main(args = process.argv.slice(2)) {
     externalTaskId,
     timeoutMs,
   });
+  report.runtimeAfter=await runtimeIdentity(client,expectedSourceVersion,expectedBuildId);
+  assert.deepEqual(report.runtimeAfter,report.runtime,"RUNTIME_CHANGED_DURING_CANARY");
   Object.assign(report, {
     success: true,
     completedAt: new Date().toISOString(),
@@ -1299,7 +1466,7 @@ async function main(args = process.argv.slice(2)) {
     success: true,
     mode: report.mode,
     taskId: report.history.id,
-    providerPosts: report.totalVideoGenerationPosts,
+    providerPosts: report.totalVideoGenerationPosts,counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
     automaticRetries: 0,
     balanceDelta: report.billing.balanceDelta,
     cleanup: report.cleanup,
@@ -1341,7 +1508,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
           }),
     };
     await saveReport(outputDir, failure, "failure.json").catch(() => undefined);
-    console.error(JSON.stringify({ success: false, runnerError: failure.runnerError, reconcile: failure.reconcile, report: path.join(outputDir, "failure.json") }));
+    console.error(JSON.stringify({ success:false,errorCode:safeHarnessErrorCode(error),automaticRetries:0,allocationDisposition:"fully occupied until original task terminal readback",report:path.join(outputDir,"failure.json") }));
     process.exitCode = 1;
   });
 }

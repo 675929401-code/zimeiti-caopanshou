@@ -3,6 +3,7 @@ import fs from "node:fs";
 
 import {
   WORKSPACE_MODEL_SURFACES,
+  configuredAspectRatios,
   evaluateWorkspaceModelCompatibility,
   imageWorkspaceSurfaceFromRequest,
   isModelAssignedToWorkspace,
@@ -14,6 +15,7 @@ import {
   parseImageModelSurfaceOrders,
   serializeImageModelSurfaceOrders,
 } from "../src/lib/image-model-surface-order";
+import { containsForbiddenPublicModelKey, toPublicModelDto } from "../src/lib/public-model-dto";
 
 const baseVideo = {
   id: "fixture-i2v",
@@ -183,6 +185,31 @@ assert.match(publicVideoCatalogRoute, /isVisibleInPublicWorkspace/u, "public vid
 assert.match(publicVideoCatalogRoute, /model\.maxReferenceImages >= 1/u, "storyboard video catalog must require image input support");
 assert.match(publicImageCatalogRoute, /publicImageCatalogPriority/u, "image catalog priority must be explicit and regression tested");
 
+// Check the existing shared configuration contract and real public DTO serializer.
+const configuredRatios = ["16:9", "9:16", "1:1", "4:3", "3:4"];
+assert.deepEqual(configuredAspectRatios({ aspect_ratios: [" 16:9 ", "1:1", "16:9"], supported_aspect_ratios: ["9:16"] }), ["16:9", "1:1"]);
+assert.deepEqual(configuredAspectRatios({ aspect_ratios: [], supported_aspect_ratios: ["9:16"] }), [], "explicit empty primary array retains priority");
+const catalogFixture = { ...imageModel, name: "Fixture Image", provider: "fixture-private-provider", api_key: "fixture-private-key", api_endpoint: "https://fixture-private.invalid", selling_price: 0.1 };
+function serializedCatalog(config: Record<string, unknown>) {
+  const row = { ...catalogFixture, api_protocol_config: { ...config, secret: "fixture-config-secret" } };
+  const serialized = JSON.parse(JSON.stringify(toPublicModelDto("cover", row, 0, {
+    type: "image", aspectRatios: configuredAspectRatios(config),
+    provider: catalogFixture.provider, api_key: catalogFixture.api_key, secret: "fixture-config-secret",
+  })));
+  assert.equal(containsForbiddenPublicModelKey(serialized), false);
+  assert.deepEqual(Object.keys(serialized).sort(), ["avatarUrl", "capabilities", "displayName", "id", "publicPrice", "variantLabel"]);
+  for (const privateValue of [catalogFixture.provider, catalogFixture.api_key, catalogFixture.api_endpoint, "fixture-config-secret", "api_protocol_config"]) {
+    assert.equal(JSON.stringify(serialized).includes(privateValue), false, "public catalog must not expose private configuration");
+  }
+  return serialized;
+}
+assert.deepEqual(serializedCatalog({ aspect_ratios: configuredRatios }).capabilities.aspectRatios, configuredRatios, "actual cover DTO retains configured ratios in order");
+assert.deepEqual(serializedCatalog({ supported_aspect_ratios: [" 9:16 ", "1:1", "9:16"] }).capabilities.aspectRatios, ["9:16", "1:1"], "supported ratio fallback uses shared normalization");
+assert.deepEqual(serializedCatalog({ aspect_ratios: [], supported_aspect_ratios: ["16:9"] }).capabilities.aspectRatios, [], "public DTO respects explicit empty primary ratios");
+assert.deepEqual(serializedCatalog({}).capabilities.aspectRatios, [], "unknown ratios must stay unknown");
+assert.match(publicImageCatalogRoute, /aspectRatios: configuredAspectRatios\(imageProtocolConfig\(model\)\)\.filter/u, "public route must project configured ratios through its validation filter");
+assert.ok(publicImageCatalogRoute.indexOf("aspectRatios: [...AUTODL_H3_SELFHOST_IMAGE_VERIFIED_ASPECT_RATIOS]") > publicImageCatalogRoute.indexOf("aspectRatios: configuredAspectRatios"), "verified AUTODL capabilities retain final override priority");
+
 console.log(JSON.stringify({
   passed: true,
   upstreamRequests: 0,
@@ -191,4 +218,7 @@ console.log(JSON.stringify({
   rejectedStoryboardCapabilities: incompatibleFixtures.map((entry) => entry.code),
   submissionGates: ["image-capability-and-assignment", "video-capability-and-assignment"],
   adminRouting: true,
+  configuredImageAspectRatios: true,
+  actualPublicDtoSerialization: true,
+  publicDtoSecretsAbsent: true,
 }, null, 2));

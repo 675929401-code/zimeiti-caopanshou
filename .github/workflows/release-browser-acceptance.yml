@@ -1,6 +1,10 @@
 name: Release browser acceptance evidence
 
 on:
+  workflow_run:
+    workflows: [Release vNext staged candidate]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       candidate_run_id:
@@ -13,24 +17,53 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-browser-acceptance-${{ github.sha }}
+  group: release-browser-acceptance-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false
 
 jobs:
   browser-acceptance:
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' ||
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/release-vnext.yml' &&
+      github.event.workflow_run.repository.full_name == github.repository &&
+      github.event.workflow_run.repository.fork == false &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.fork == false
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      CANDIDATE_RUN_ID: ${{ github.event.workflow_run.id || inputs.candidate_run_id }}
       ACCEPTANCE_OUTPUT: ${{ github.workspace }}/.release-external-acceptance
       ACCEPTANCE_WORK_ROOT: /data/release-browser-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Read the single authoritative production toolchain
+        id: toolchain
+        run: |
+          set -euo pipefail
+          policy=deploy/policies/release-policy.json
+          node_version="$(jq -er '.release.productionBuild.nodeVersion | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$policy")"
+          pnpm_version="$(jq -er '.release.productionBuild.pnpmVersion | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$policy")"
+          jq -e '.release.productionBuild.requireFrozenLockfile == true' "$policy" >/dev/null
+          echo "node_version=$node_version" >> "$GITHUB_OUTPUT"
+          echo "pnpm_version=$pnpm_version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ steps.toolchain.outputs.node_version }}
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: ${{ steps.toolchain.outputs.pnpm_version }}
+          run_install: false
 
       - name: Resolve runner-scoped temporary paths
         run: |
@@ -46,29 +79,34 @@ jobs:
           set -euo pipefail
           [[ "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'candidate_run_id must be numeric' >&2; exit 2; }
           candidate="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
-          candidate_sha="$(jq -r .head_sha <<<"$candidate")"
+          RELEASE_TOOLCHAIN_SHA="$(git rev-parse HEAD)"
+          export RELEASE_TOOLCHAIN_SHA
+          printf '%s' "$candidate" > "$RUNNER_TEMP/candidate-run.json"
+          candidate_sha="$(PROVENANCE_RUN_ID="$CANDIDATE_RUN_ID" node scripts/release-run-provenance.mjs candidate "$RUNNER_TEMP/candidate-run.json")"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run ]]; then
+            test "$candidate_sha" = "$GITHUB_SHA" || { echo 'AUTOMATIC_ACCEPTANCE_HEAD_DRIFT' >&2; exit 2; }
+            test "$candidate_sha" = "$RELEASE_TOOLCHAIN_SHA"
+            test "$candidate_sha" = "$(jq -r '.workflow_run.head_sha' "$GITHUB_EVENT_PATH")"
+          fi
           [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]
           test "$(jq -r .conclusion <<<"$candidate")" = success
           test "$(jq -r .name <<<"$candidate")" = 'Release vNext staged candidate'
           git cat-file -e "$candidate_sha^{commit}"
-          git merge-base --is-ancestor "$candidate_sha" "$GITHUB_SHA"
-          unexpected="$(git diff --name-only "$candidate_sha..$GITHUB_SHA" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs|scripts/fixtures/release-browser-assets/portraits\.webp)$' || true)"
+          git merge-base --is-ancestor "$candidate_sha" "$RELEASE_TOOLCHAIN_SHA"
+          changed_paths="$(git diff --name-only "$candidate_sha..$RELEASE_TOOLCHAIN_SHA")"
+          unexpected="$(printf '%s\n' "$changed_paths" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/release-run-provenance\.mjs|scripts/verify-release-run-provenance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs|scripts/fixtures/release-browser-assets/portraits\.webp)$' || true)"
           [[ -z "$unexpected" ]] || { printf 'candidate reuse rejected because runtime source changed:\n%s\n' "$unexpected" >&2; exit 2; }
           echo "CANDIDATE_SUBJECT_SHA=$candidate_sha" >> "$GITHUB_ENV"
+          echo "ACCEPTANCE_CANDIDATE_RUN_PATH=$RUNNER_TEMP/candidate-run.json" >> "$GITHUB_ENV"
           echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
 
       - name: Download the exact immutable candidate output
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: release-candidate-${{ steps.candidate.outputs.sha }}
           path: ${{ runner.temp }}/candidate
           github-token: ${{ github.token }}
-          run-id: ${{ inputs.candidate_run_id }}
-
-      - uses: pnpm/action-setup@v4
-        with: {version: 9.0.0, run_install: false}
-      - uses: actions/setup-node@v4
-        with: {node-version: "24.19.0", cache: pnpm}
+          run-id: ${{ env.CANDIDATE_RUN_ID }}
 
       - name: Install the pinned verifier toolchain
         env:
@@ -123,9 +161,9 @@ jobs:
 
       - name: Upload signed browser evidence for the exact commit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: release-browser-acceptance-${{ github.sha }}
+          name: release-browser-acceptance-${{ github.event.workflow_run.head_sha || github.sha }}
           path: ${{ env.ACCEPTANCE_OUTPUT }}
           if-no-files-found: error
           retention-days: 14

@@ -1,4 +1,7 @@
 "use client";
+import { resolveGeneratedImageClientDelivery, projectGeneratedImageClientReceipt, type GeneratedImageClientReceipt } from "@/lib/generated-image-client-delivery";
+import { ImageDownloadOperations, readImageDownloadBlob, imageDownloadFilename, type ImageDownloadSource } from "@/lib/generated-image-download";
+
 
 import {
   Check,
@@ -96,6 +99,7 @@ type PromptJob = {
   prompt: string;
   status: JobStatus;
   imageUrl?: string;
+  deliveryReceipt?: GeneratedImageClientReceipt;
   storageKey?: string;
   assetId?: string;
   historyRecordId?: string;
@@ -179,6 +183,7 @@ type ImagePreviewTarget = {
   prompt?: string;
   assetId?: string;
   historyRecordId?: string;
+  deliveryReceipt?:GeneratedImageClientReceipt;
 };
 
 const STORAGE_KEY = "image_workbench_prompt_cards_v1";
@@ -595,6 +600,15 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
   const [jobs, setJobs] = useState<PromptJob[]>(createPromptCards);
   const [references, setReferences] = useState<ReferenceAsset[]>([]);
   const referenceUrlsRef = useRef<string[]>([]);
+  const transientImageReleases = useRef(new Map<string,()=>void>());
+  const transientImageBlobs = useRef(new Map<string,{jobId:string;recordId:string;blob:Blob}>());
+  const deliveryMounted=useRef(true);
+  const downloadOwner = useRef(identity.userId + "\0" + identity.token);
+  downloadOwner.current = identity.userId + "\0" + identity.token;
+  const downloadOperations = useRef(new ImageDownloadOperations(() => deliveryMounted.current ? downloadOwner.current : null));
+  useEffect(()=>()=>downloadOperations.current.cancelAll(),[identity.token]);
+  useEffect(()=>{deliveryMounted.current=true;return ()=>{deliveryMounted.current=false;downloadOperations.current.cancelAll();for(const release of transientImageReleases.current.values())release();transientImageReleases.current.clear();transientImageBlobs.current.clear();};},[]);
+  useEffect(()=>{for(const [id,release] of transientImageReleases.current){if(!jobs.some(job=>job.id===id && job.imageUrl)){release();transientImageReleases.current.delete(id);}}},[jobs]);
   const [models, setModels] = useState<CoverModel[]>([]);
   const [notice, setNotice] = useState("");
   const [cashBalance, setCashBalance] = useState(0);
@@ -614,7 +628,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
 
   const token = identity.token;
   const completedJobs = jobs.filter((job) => (
-    job.status === "done" && job.imageUrl && job.assetId && job.storageKey
+    job.status === "done" && job.imageUrl && (job.deliveryReceipt || (job.assetId && job.storageKey))
   ));
   const activeModel = useMemo(() => models.find((model) => model.id === modelId), [modelId, models]);
   const modelSupportsMode = Boolean(activeModel?.available && activeModel.price_ready
@@ -697,7 +711,11 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
     const restoredDraftJobs = (promptDraft?.jobs || [])
       .filter((job) => !occupiedIds.has(job.id))
       .map((job) => ({ id: job.id, prompt: job.prompt, status: "idle" as const }));
-    const initialJobs = [...restored, ...restoredDraftJobs];
+    let completedReceipts: PromptJob[] = [];
+    try {const saved=JSON.parse(sessionStorage.getItem(jobsStorageKey+":receipts")||"[]");
+      if(Array.isArray(saved))completedReceipts=saved.flatMap((item)=>{const receipt=projectGeneratedImageClientReceipt(item.receipt);return receipt && typeof item.id==="string" ? [{id:item.id,prompt:"",status:"done" as const,imageUrl:receipt.deliveryMode==="provider_url"?`/api/media-history/content?recordId=${receipt.recordId}`:undefined,deliveryReceipt:receipt,cashCharged:receipt.cashCharged,billingReferenceId:receipt.billingReferenceId,error:receipt.deliveryMode==="inline_ephemeral"?"任务与费用收据已保留；临时图片刷新后无法恢复":undefined}] : [];});
+    } catch { /* Ignore invalid receipt projections. */ }
+    const initialJobs = [...restored.filter(j=>!completedReceipts.some(r=>r.id===j.id)), ...restoredDraftJobs.filter(j=>!completedReceipts.some(r=>r.id===j.id)), ...completedReceipts];
     if (initialJobs.length < 4) initialJobs.push(...createPromptCards(4 - initialJobs.length));
     setJobs(initialJobs);
     jobsStorageInitializedRef.current = true;
@@ -769,6 +787,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
   useEffect(() => {
     if (!jobsStorageInitializedRef.current) return;
     const unresolvedReferences = createBrowserImageAttemptReferences(jobs);
+    try {sessionStorage.setItem(jobsStorageKey+":receipts",JSON.stringify(jobs.filter(j=>j.deliveryReceipt).map(j=>({id:j.id,receipt:projectGeneratedImageClientReceipt(j.deliveryReceipt)}))));} catch { /* Current receipt remains in RAM. */ }
     try {
       if (unresolvedReferences.length) sessionStorage.setItem(jobsStorageKey, JSON.stringify(unresolvedReferences));
       else sessionStorage.removeItem(jobsStorageKey);
@@ -966,6 +985,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
   }, [setJobs]);
 
   const removeJob = useCallback((id: string) => {
+    transientImageReleases.current.get(id)?.();transientImageReleases.current.delete(id);
     setJobs((current) => current.filter((job) => job.id !== id || hasUnresolvedImageAttempt(job)));
   }, [setJobs]);
 
@@ -1120,12 +1140,13 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
       cache: "no-store",
     });
     const data = await response.json().catch(() => ({})) as {
-      state?: "not_found" | "processing" | "completed" | "provider_completed_pending_delivery" | "unknown" | "rejected";
+      state?: "not_found" | "processing" | "completed" | "expired" | "provider_completed_pending_delivery" | "unknown" | "rejected";
       canRecover?: boolean;
       canResubmit?: boolean;
       sameKeyCanResubmit?: boolean;
       message?: string;
       error?: string;
+      recordId?: string; deliveryMode?: "provider_url"|"inline_ephemeral"; cashCharged?:number; billingReferenceId?:string;
       resumeInput?: ImageWorkbenchRecoveryPayload;
     };
     if (!response.ok) throw new Error(data.error || "生图状态暂时无法确认");
@@ -1159,6 +1180,12 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
       setJobs((current) => current.map((job) => {
         const checkedJob = byId.get(job.id);
         if (!checkedJob) return job;
+        if (["completed","expired"].includes(checkedJob.result?.state||"") && ["inline_ephemeral","provider_url"].includes(checkedJob.result?.deliveryMode||"")) {
+          const receipt=projectGeneratedImageClientReceipt(checkedJob.result);
+          if(!receipt)return {...job,status:"unknown",error:"原完成收据缺少身份或费用信息，请保留原请求号核查"};
+          const available=receipt.deliveryMode==="provider_url" && checkedJob.result?.state==="completed";
+          return {...job,status:"done",imageUrl:available?`/api/media-history/content?recordId=${receipt.recordId}`:undefined,deliveryReceipt:receipt,cashCharged:receipt.cashCharged,billingReferenceId:receipt.billingReferenceId,error:available?undefined:"任务与费用收据已保留；当前图片已不可恢复"};
+        }
         if (checkedJob.result?.state === "rejected" && checkedJob.result.canResubmit === true && checkedJob.result.sameKeyCanResubmit === false) {
           const message = checkedJob.result.message || "本次请求未被受理，请调整后重新生成。";
           return {
@@ -1204,8 +1231,9 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
       }));
       const recoverableCount = checked.filter((item) => item.result?.canRecover === true).length;
       const rejectedCount = checked.filter((item) => item.result?.state === "rejected" && item.result.canResubmit === true && item.result.sameKeyCanResubmit === false).length;
-      setNotice(recoverableCount || rejectedCount
-        ? [recoverableCount ? `${recoverableCount} 个结果正在自动保存` : "", rejectedCount ? `${rejectedCount} 个请求已确认未被受理，可调整后重新生成` : ""].filter(Boolean).join("；") + "。"
+      const confirmedReceipts=new Map(checked.flatMap(item=>{const receipt=projectGeneratedImageClientReceipt(item.result);return receipt && ["completed","expired"].includes(item.result?.state||"")?[[receipt.recordId,receipt.cashCharged] as const]:[];}));
+      setNotice(confirmedReceipts.size || recoverableCount || rejectedCount
+        ? [confirmedReceipts.size ? `${confirmedReceipts.size} 个生成任务已完成，已确认费用 ¥${[...confirmedReceipts.values()].reduce((sum,value)=>sum+value,0).toFixed(2)}；当前不可用图片仅保留收据` : "",recoverableCount ? `${recoverableCount} 个结果正在自动保存` : "", rejectedCount ? `${rejectedCount} 个请求已确认未被受理，可调整后重新生成` : ""].filter(Boolean).join("；") + "。"
         : "暂未取得生成结果，请稍后刷新状态。");
     } finally {
       setStatusRefreshing(false);
@@ -1263,6 +1291,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
       ? { ...job, status: "queued", error: undefined }
       : job));
     const committedHistory: ImageHistoryRecord[] = [];
+    const completedReceipts = new Map<string,number>();
     let unknownCount = 0;
     let recoverableCount = 0;
     try {
@@ -1373,7 +1402,8 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
             }),
           });
           const data = await response.json().catch(() => ({})) as {
-            images?: Array<{ url?: string; storageKey?: string; assetId?: string }>;
+            recordId?:string; deliveryMode?:"provider_url"|"inline_ephemeral";
+            images?: Array<{ url?: string; storageKey?: string; assetId?: string; recordId?:string; deliveryMode?:"provider_url"|"inline_ephemeral" }>;
             cashRemaining?: number | null;
             cashCharged?: number;
             resolution?: string;
@@ -1389,6 +1419,19 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
             canResubmit?: boolean;
             sameKeyCanResubmit?: boolean;
           };
+          const clientReceipt=projectGeneratedImageClientReceipt(data);
+          if(response.ok && clientReceipt) {
+            completedReceipts.set(clientReceipt.recordId,clientReceipt.cashCharged);
+            let delivery;
+            try {delivery=await resolveGeneratedImageClientDelivery(data);} catch {delivery={url:"",revoke:()=>{},receipt:clientReceipt};}
+            if(!deliveryMounted.current){delivery.revoke();continue;}
+            transientImageReleases.current.get(job.id)?.();
+            if("blob" in delivery && delivery.blob)transientImageBlobs.current.set(delivery.url,{jobId:job.id,recordId:clientReceipt.recordId,blob:delivery.blob});
+            transientImageReleases.current.set(job.id,()=>{transientImageBlobs.current.delete(delivery.url);delivery.revoke();});
+            setJobs(current=>current.map(item=>item.id===job.id?{...item,status:"done",imageUrl:delivery.url||undefined,deliveryReceipt:delivery.receipt||clientReceipt,storageKey:undefined,assetId:undefined,cashCharged:clientReceipt.cashCharged,billingReferenceId:clientReceipt.billingReferenceId,taskId:data.taskId||data.traceId,resolution:isImageResolution(data.resolution)?data.resolution:requestPayload.resolution,error:!delivery.url?"图片生成已完成；任务与费用收据已保留，当前图片无法恢复":clientReceipt.deliveryMode==="inline_ephemeral"?"图片仅当前页面可预览下载，请及时保存":undefined}:item));
+            if(typeof data.cashRemaining==="number")setCashBalance(data.cashRemaining);
+            continue;
+          }
           const generatedUrl = data.images?.[0]?.url;
           const generatedStorageKey = data.images?.[0]?.storageKey;
           const generatedAssetId = data.images?.[0]?.assetId;
@@ -1537,10 +1580,10 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
           ...current,
         ]));
       }
-      const totalCharged = committedHistory.reduce((sum, item) => sum + Number(item.totalCharged || 0), 0);
-      const completedCount = committedHistory.length;
+      const totalCharged = [...completedReceipts.values()].reduce((a,b)=>a+b,0)+committedHistory.reduce((sum, item) => sum + Number(item.totalCharged || 0), 0);
+      const completedCount = committedHistory.length+completedReceipts.size;
       setNotice([
-        completedCount ? `已保存 ${completedCount} 张图片，可下载或在历史中查看` : "本次暂无已保存的图片，请查看卡片上的提示",
+        completedCount ? `已完成 ${completedCount} 张图片；临时图片请在当前页面下载` : "本次暂无已保存的图片，请查看卡片上的提示",
         unknownCount || recoverableCount ? `已确认费用 ¥${totalCharged.toFixed(2)}，其余任务待确认` : `实际费用 ¥${totalCharged.toFixed(2)}`,
         ...(recoverableCount ? [`${recoverableCount} 张图片正在自动保存，无需重新生成`] : []),
         ...(unknownCount ? [`${unknownCount} 张图片状态待确认，请刷新任务状态，暂勿重复生成`] : []),
@@ -1579,9 +1622,24 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
     return () => window.clearTimeout(timer);
   }, [busy, generateAll, recoverableJobCount, statusRefreshing]);
 
-  const downloadImage = useCallback(async (reference: ImageDownloadReference, filename: string) => {
-    downloadBlob(await fetchWorkbenchImagePng(reference, token), filename);
+  const captureImageDownload = useCallback((reference: ImageDownloadReference & {id?:string;imageUrl?:string;url?:string;deliveryReceipt?:GeneratedImageClientReceipt}):ImageDownloadSource => {
+    const mediaUrl=reference.imageUrl||reference.url||"";
+    if(reference.deliveryReceipt?.deliveryMode==="inline_ephemeral") {
+      const held=transientImageBlobs.current.get(mediaUrl);
+      if(!held || held.recordId!==reference.deliveryReceipt.recordId || (reference.id && held.jobId!==reference.id))throw new Error("临时图片当前已不可下载；任务与费用收据仍保留");
+      return {kind:"inline_ephemeral",blob:held.blob};
+    }
+    if(reference.deliveryReceipt?.deliveryMode==="provider_url") {
+      if(mediaUrl!=="/api/media-history/content?recordId="+reference.deliveryReceipt.recordId)throw new Error("图片归属凭证无效；任务与费用收据仍保留");
+      return {kind:"provider_url",recordId:reference.deliveryReceipt.recordId};
+    }
+    return {kind:"legacy_owned",read:()=>fetchWorkbenchImagePng(reference,token)};
   }, [token]);
+  const downloadImage = useCallback(async (reference: Parameters<typeof captureImageDownload>[0], filename: string) => {
+    const source=captureImageDownload(reference),operation=downloadOperations.current.begin(identity.userId+"\0"+token);
+    try {operation.assertCurrent();const blob=await readImageDownloadBlob(source,token,operation.signal);operation.assertCurrent();downloadBlob(blob,imageDownloadFilename(filename,blob));}
+    finally {operation.finish();}
+  }, [captureImageDownload,identity.userId,token]);
   const downloadImageWithNotice = useCallback((reference: ImageDownloadReference, filename: string) => {
     void downloadImage(reference, filename).catch(error => setNotice(error instanceof Error ? error.message : "图片下载失败，请稍后重试"));
   }, [downloadImage]);
@@ -1592,26 +1650,33 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
       return;
     }
     setDownloadBusy(true);
+    const operation=downloadOperations.current.begin(identity.userId+"\0"+token);
     try {
+      operation.assertCurrent();
+      // Synchronous strong references keep an explicitly started ZIP valid if a card is deleted.
+      const sources=jobs.flatMap((job,index)=>job.status==="done" && job.imageUrl && (job.deliveryReceipt || (job.assetId && job.storageKey))?[{name:`${index+1}`,source:captureImageDownload(job)}]:[]);
       const entries: ZipEntry[] = [];
-      for (let index = 0; index < jobs.length; index += 1) {
-        const job = jobs[index];
-        if (job.status !== "done" || !job.imageUrl || !job.assetId || !job.storageKey) continue;
-        const image = await fetchWorkbenchImagePng(job, token);
-        entries.push({ name: `${index + 1}.png`, bytes: new Uint8Array(await image.arrayBuffer()) });
+      for (const item of sources) {
+        operation.assertCurrent();const image=await readImageDownloadBlob(item.source,token,operation.signal);
+        entries.push({ name:imageDownloadFilename(item.name,image),bytes:new Uint8Array(await image.arrayBuffer()) });
       }
+      operation.assertCurrent();
       downloadBlob(buildZip(entries), "AI生图工作台.zip");
       setNotice(`已打包 ${entries.length} 张图片，文件名按提示词顺序升序排列。`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "一键下载失败");
     } finally {
+      operation.finish();
       setDownloadBusy(false);
     }
-  }, [completedJobs.length, jobs, token]);
+  }, [completedJobs.length, jobs, token,captureImageDownload,identity.userId]);
 
   const pushGeneratedImagesToVideo = useCallback(() => {
+    if(jobs.some(job=>job.status==="done" && job.deliveryReceipt?.deliveryMode==="inline_ephemeral")){
+      setNotice("临时图片仅当前页面可预览下载，当前视频通道不支持这类输入；本次没有提交视频或扣费。");return;
+    }
     const generated = jobs.filter((job) => (
-      job.imageUrl && job.status === "done" && job.assetId && job.storageKey
+      job.imageUrl && job.status === "done" && ((job.assetId && job.storageKey) || job.deliveryReceipt?.deliveryMode==="provider_url")
     ));
     if (!generated.length) {
       setNotice("请先完成至少一张图片生成后再推送到视频任务。");
@@ -1626,7 +1691,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
       order: videoPushMode === "reference" ? index + 1 : Math.floor(index / 2) + 1,
       prompt: videoPushMode === "reference" || index % 2 === 0 ? job.prompt : undefined,
       promptKind: "image" as const,
-      imageUrl: normalizeImageUrl(job.imageUrl),
+      ...(job.deliveryReceipt?.deliveryMode==="provider_url" ? {imageRef:{schema:"generated_image_ref.v1" as const,recordId:job.deliveryReceipt.recordId}} : {imageUrl:normalizeImageUrl(job.imageUrl)}),
       imageTarget: videoPushMode === "reference"
         ? "reference" as const
         : index % 2 === 0 ? "first-frame" as const : "last-frame" as const,
@@ -1974,7 +2039,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
                         <button type="button" onClick={() => navigator.clipboard.writeText(job.prompt)} disabled={!job.prompt.trim()} className="w-7 h-7 rounded-md hover:bg-[var(--muted)] disabled:opacity-35 flex items-center justify-center" aria-label="复制提示词">
                           <Copy className="w-3.5 h-3.5" />
                         </button>
-                        {job.status === "done" && job.imageUrl && job.assetId && job.storageKey && <button type="button" onClick={() => downloadImageWithNotice(job, `${index + 1}.png`)} className="w-7 h-7 rounded-md hover:bg-[var(--muted)] flex items-center justify-center" aria-label="下载图片">
+                        {job.status === "done" && job.imageUrl && (job.deliveryReceipt || (job.assetId && job.storageKey)) && <button type="button" onClick={() => downloadImageWithNotice(job, `${index + 1}.png`)} className="w-7 h-7 rounded-md hover:bg-[var(--muted)] flex items-center justify-center" aria-label="下载图片">
                           <Download className="w-3.5 h-3.5" />
                         </button>}
                         <button type="button" onClick={() => removeJob(job.id)} disabled={hasUnresolvedImageAttempt(job)} className="w-7 h-7 rounded-md hover:bg-[var(--muted)] disabled:opacity-35 flex items-center justify-center" aria-label="删除生图卡片" title={hasUnresolvedImageAttempt(job) ? "请先确认本次生成结果，再删除卡片" : "删除生图卡片"}>
@@ -1986,7 +2051,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
                         label={`${index + 1}.png`}
                         status={job.status}
                         onOpen={() => {
-                          if (job.imageUrl) setPreviewTarget({ url: job.imageUrl, title: `${index + 1}.png`, prompt: job.prompt, assetId: job.assetId, historyRecordId: job.historyRecordId });
+                          if (job.imageUrl) setPreviewTarget({ url: job.imageUrl, title: `${index + 1}.png`, prompt: job.prompt, assetId: job.assetId, historyRecordId: job.historyRecordId,deliveryReceipt:job.deliveryReceipt });
                         }}
                       />
                       <textarea
@@ -2002,9 +2067,9 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
                       {job.status === "unknown" && job.generationTraceId ? (
                         <p className="truncate text-[10px] text-amber-600" title={job.generationTraceId}>处理编号：{job.generationTraceId}</p>
                       ) : null}
-                      {job.taskId ? (
-                        <p className="truncate text-[10px] text-[var(--muted-foreground)]" title={job.taskId}>
-                          任务 ID：{job.taskId} · {job.resolution || selectedResolution} · 实扣 ¥{Number(job.cashCharged || 0).toFixed(2)}
+                      {(job.taskId || job.deliveryReceipt?.recordId) ? (
+                        <p className="truncate text-[10px] text-[var(--muted-foreground)]" title={job.taskId || job.deliveryReceipt?.recordId}>
+                          任务 ID：{job.taskId || job.deliveryReceipt?.recordId} · {job.resolution || selectedResolution} · 实扣 ¥{Number(job.cashCharged || 0).toFixed(2)}
                         </p>
                       ) : null}
                     </article>

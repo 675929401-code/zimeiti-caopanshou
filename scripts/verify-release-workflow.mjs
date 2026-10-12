@@ -14,8 +14,163 @@ const releaseWorkflowSource = read("scripts/release-workflow.mjs");
 const ciWorkflow = read(".github/workflows/release-vnext.yml");
 const browserAcceptanceWorkflow = read(".github/workflows/release-browser-acceptance.yml");
 
+// Parse active step fields and literal scripts at their actual YAML indentation.
+// A command in a comment, a different step or a swallowed branch is not a gate.
+function activeWorkflowSteps(workflow) {
+  const lines = workflow.replace(/\r\n/gu, "\n").split("\n");
+  const starts = lines.flatMap((line, index) => /^      - (?:name|uses): /u.test(line) ? [index] : []);
+  return starts.map((start, index) => {
+    const block = lines.slice(start, starts[index + 1] ?? lines.length);
+    const fields = new Map();
+    for (const line of block) {
+      const match = line.match(/^(?:      - |        )([A-Za-z_-]+): (.*)$/u);
+      if (!match) continue;
+      assert.ok(!fields.has(match[1]), `duplicate workflow step field: ${match[1]}`);
+      fields.set(match[1], match[2]);
+    }
+    const run = block.findIndex((line) => /^        run: /u.test(line));
+    const scriptLines = [];
+    if (run >= 0) {
+      assert.equal(block[run], "        run: |", "workflow scripts require literal fail-closed blocks");
+      for (const line of block.slice(run + 1)) {
+        if (line.trim() && !line.startsWith("          ")) break;
+        scriptLines.push(line.slice(10));
+      }
+    }
+    return { name: fields.get("name"), uses: fields.get("uses"), fields, block: block.join("\n"), script: scriptLines.join("\n").trimEnd() };
+  });
+}
+
+const formalSourceGateName = "Verify the exact formal candidate source before installing";
+const formalSourceScript = String.raw`set -euo pipefail
+if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+  [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'CONTROL_PR_SHA_INVALID' >&2; exit 2; }
+  origin_url="$(git remote get-url origin)"
+  [[ "$origin_url" == "https://github.com/$GITHUB_REPOSITORY" || "$origin_url" == "https://github.com/$GITHUB_REPOSITORY.git" ]] || { echo 'CONTROL_PR_ORIGIN_INVALID' >&2; exit 2; }
+  git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch --no-tags --no-recurse-submodules --no-write-fetch-head origin "$GITHUB_SHA" 2>/dev/null || { echo 'CONTROL_PR_FETCH_FAILED' >&2; exit 2; }
+fi
+node scripts/deployment-control-plane.mjs verify-source --root "$GITHUB_WORKSPACE" --subject "$(node -e 'process.stdout.write(JSON.stringify({mode:"formal",sourceCommit:process.env.RELEASE_HEAD_SHA,repository:process.env.GITHUB_REPOSITORY,candidateRunId:process.env.GITHUB_RUN_ID,candidateRunAttempt:process.env.GITHUB_RUN_ATTEMPT}))')"`;
+
+function verifyFormalSourceGate(workflow) {
+  const steps = activeWorkflowSteps(workflow);
+  const matches = steps.flatMap((step, index) => step.name === formalSourceGateName ? [index] : []);
+  assert.equal(matches.length, 1, "candidate source has one active early verification step");
+  const index = matches[0], gate = steps[index];
+  assert.equal(gate.fields.get("if"), "env.RELEASE_PHASE == 'candidate'", "source verification applies to every candidate");
+  assert.equal(gate.fields.get("run"), "|");
+  assert.equal(gate.script, formalSourceScript, "exact PR object fetch and source verification must execute without alternate success paths");
+  const envStart = gate.block.split("\n").findIndex((line) => line === "        env:");
+  assert.ok(envStart >= 0);
+  assert.equal(gate.block.split("\n")[envStart + 1], "          GH_TOKEN: ${{ github.token }}", "token is scoped to the exact object fetch step");
+  assert.equal(gate.block.split("\n")[envStart + 2], "        run: |", "fetch token never uses persistent configuration");
+  const resolve = steps.findIndex((step) => step.fields.get("id") === "resolve");
+  assert.ok(resolve >= 0 && index === resolve + 1, "source gate runs immediately after immutable identity resolution");
+  const checkout = steps.find((step) => step.uses?.startsWith("actions/checkout@"));
+  assert.ok(checkout);
+  assert.match(checkout.block, /^          persist-credentials: false$/mu);
+  assert.match(checkout.block, /^          ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}$/mu);
+  const activeCommands = steps.flatMap((step, stepIndex) => step.script.split("\n")
+    .filter((line) => !/^\s*#/u.test(line)).map((line) => ({ line, stepIndex })));
+  assert.equal(activeCommands.filter(({ line }) => line.includes("deployment-control-plane.mjs verify-source ")).length, 1);
+  for (const { line, stepIndex } of activeCommands) {
+    if (/\bpnpm (?:install|[^\n]*\binstall --frozen-lockfile|run [^\n]*release:vnext:build:)/u.test(line)) {
+      assert.ok(index < stepIndex, "source identity must be proved before installing dependencies or building");
+    }
+    assert.doesNotMatch(line, /(?:^|\s)(?:export\s+)?GITHUB_SHA=/u, "original GitHub SHA cannot be overwritten");
+  }
+  const build = steps.findIndex((step) => step.name === "Build once, hash actual outputs, and bind the digest");
+  assert.ok(build > index);
+  assert.equal(steps[build].script.split("\n").filter((line) => line.includes("deployment-control-plane.mjs package ")).length, 1,
+    "late package independently revalidates the same formal source");
+  return gate.block;
+}
+
+function verifyFormalSourceGateMutations(workflow) {
+  const gate = verifyFormalSourceGate(workflow);
+  const command = formalSourceScript.split("\n").at(-1);
+  const mutants = [
+    ["commented verifier", workflow.replace(`          ${command}`, `          # ${command}`)],
+    ["swallowed verifier failure", workflow.replace(`          ${command}`, `          ${command} || true`)],
+    ["premature PASS", workflow.replace(`          ${command}`, `          echo PASS; exit 0\n          ${command}`)],
+    ["mutable PR merge ref", workflow.replace('origin "$GITHUB_SHA"', 'origin "refs/pull/7/merge"')],
+    ["persistent credentials", workflow.replace("git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch", "git config credential.helper '!gh auth git-credential'\n            git fetch")],
+    ["original SHA overwritten", workflow.replace(`          ${command}`, `          GITHUB_SHA="$RELEASE_HEAD_SHA"\n          ${command}`)],
+    ["commented gate", workflow.replace(gate, gate.split("\n").map((line) => `# ${line}`).join("\n"))],
+    ["late gate after build", workflow.replace(gate, "").replace("      - name: Upload exact output and pending-required bundle", `${gate}\n      - name: Upload exact output and pending-required bundle`)],
+    ["install before identity", workflow.replace('          toolchain_sha="$(git rev-parse HEAD)"', '          pnpm install --frozen-lockfile\n          toolchain_sha="$(git rev-parse HEAD)"')],
+  ];
+  for (const [name, mutant] of mutants) {
+    assert.notEqual(mutant, workflow, `workflow mutation must change active input: ${name}`);
+    assert.throws(() => verifyFormalSourceGate(mutant), undefined, `unsafe workflow variant must be rejected: ${name}`);
+  }
+  return mutants.length;
+}
+
 function verifyReleaseVnextWorkflowContract() {
-  assert.match(ciWorkflow, /node-version:\s*"24\.19\.0"/u);
+  const formalSourceMutationChecks = verifyFormalSourceGateMutations(ciWorkflow);
+  const sourceScripts = JSON.parse(read("package.json")).scripts;
+  const deliveryCommands = [
+    "node ./scripts/verify-generated-image-provider-url-policy-zero-network.mjs",
+    "node ./scripts/verify-generated-image-reference-zero-network.mjs",
+    "node ./scripts/verify-generated-image-download.mjs",
+    "node ./scripts/verify-generated-media-direct-delivery-zero-network.mjs",
+    "node ./scripts/verify-llm-provider-stream.mjs",
+    "node ./scripts/verify-llm-standard-request-preflight-zero-network.mjs",
+    "node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-agent-chat-prompt-authority-zero-network.ts",
+    "node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-media-history-expired-count.ts",
+  ];
+  assert.deepEqual(sourceScripts["verify:media-chat-delivery:zero-network"]?.split("&&").map((command) => command.trim()), deliveryCommands,
+    "media/chat source regressions must all run once without an alternate success path");
+  assert.equal(sourceScripts["release:vnext:verify"]?.split("&&").map((command) => command.trim())
+    .filter((command) => command === "pnpm run verify:media-chat-delivery:zero-network").length, 1,
+    "standard/full release verification must execute media/chat regressions exactly once");
+  for (const level of ["STANDARD", "FULL"]) {
+    const caseBlock = ciWorkflow.split(`            ${level})`)[1]?.split("              ;;")[0];
+    assert.ok(caseBlock, `${level} source verification branch is missing`);
+    const caseLines = caseBlock.split(/\r?\n/u).map((line) => line.trim());
+    const verificationCommand = "pnpm run release:vnext:verify";
+    assert.deepEqual(caseLines.filter((line) => line.includes(verificationCommand)), [verificationCommand],
+      `${level} source verification must execute the canonical regression command once without swallowing failure`);
+    if (level === "FULL") {
+      const recordCommand = 'node scripts/release-change-validation-gate.mjs record --bundle "$RELEASE_VALIDATION_BUNDLE" --validation full-zero-network-regression --executor ci --evidence-root "$RELEASE_VALIDATION_EVIDENCE" --evidence-label release-scope-and-media-chat-zero-network';
+      assert.deepEqual(caseLines.filter((line) => line.includes("--validation full-zero-network-regression")), [recordCommand],
+        "FULL regression evidence must use one exact record command without an alternate success path");
+      assert.ok(caseLines.indexOf(recordCommand) > caseLines.indexOf(verificationCommand),
+        "FULL regression evidence cannot be recorded before media/chat regressions pass");
+    }
+  }
+  const pinnedActions = {
+    'actions/checkout': '11d5960a326750d5838078e36cf38b85af677262',
+    'actions/setup-node': '49933ea5288caeca8642d1e84afbd3f7d6820020',
+    'actions/upload-artifact': 'ea165f8d65b6e75b540449e92b4886f43607fa02',
+    'actions/download-artifact': 'd3f86a106a0bac45b974a628896c90dbdf5c8093',
+    'pnpm/action-setup': 'b906affcce14559ad1aafd4ab0e942779e9f58b1',
+  };
+  for (const workflow of [ciWorkflow, browserAcceptanceWorkflow]) {
+    const actions = [...workflow.matchAll(/uses: ([^\s]+)@([^\s]+)/gu)];
+    assert.ok(actions.length >= 4);
+    for (const [, action, sha] of actions) assert.equal(sha, pinnedActions[action], `${action} must use the reviewed immutable SHA`);
+    assert.ok(workflow.indexOf('- uses: actions/setup-node@') < workflow.indexOf('node scripts/'), 'policy Node must be active before scripts, including finalize');
+    assert.ok(workflow.indexOf('- uses: actions/setup-node@') < workflow.indexOf('- uses: pnpm/action-setup@'), 'activate policy Node before pnpm');
+    assert.ok(workflow.includes('.release.productionBuild.nodeVersion'));
+    assert.ok(workflow.includes('.release.productionBuild.pnpmVersion'));
+    assert.ok(workflow.includes('.release.productionBuild.requireFrozenLockfile == true'));
+    assert.ok(workflow.includes('node-version: ${{ steps.toolchain.outputs.node_version }}'));
+    assert.ok(workflow.includes('version: ${{ steps.toolchain.outputs.pnpm_version }}'));
+    assert.match(workflow, /permissions:\s*\n  actions: read\s*\n  contents: read/u);
+    assert.match(workflow, /cancel-in-progress: false/u);
+  }
+  assert.match(browserAcceptanceWorkflow, /workflow_run:[\s\S]*types: \[completed\][\s\S]*branches: \[main\]/u);
+  assert.match(browserAcceptanceWorkflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/u);
+  assert.ok(browserAcceptanceWorkflow.includes('release-run-provenance.mjs candidate'));
+  const provenanceIndex = browserAcceptanceWorkflow.indexOf('release-run-provenance.mjs candidate');
+  for (const sideEffect of ['pnpm install --frozen-lockfile', 'sudo mount ', 'RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY:']) {
+    assert.ok(provenanceIndex < browserAcceptanceWorkflow.indexOf(sideEffect), `candidate provenance must precede ${sideEffect}`);
+  }
+  assert.match(browserAcceptanceWorkflow, /test "\$candidate_sha" = "\$GITHUB_SHA"[^\n]*AUTOMATIC_ACCEPTANCE_HEAD_DRIFT/u);
+  assert.ok(ciWorkflow.includes('release-run-provenance.mjs acceptance'));
+  const checks = spawnSync(process.execPath, ['scripts/verify-release-run-provenance.mjs'], { cwd: root, encoding: 'utf8', windowsHide: true });
+  assert.equal(checks.status, 0, checks.stderr || checks.stdout);
   assert.match(ciWorkflow, /PUPPETEER_SKIP_DOWNLOAD:\s*"true"/u);
   assert.match(ciWorkflow, /Install, verify, and audit source candidate[\s\S]*?NODE_OPTIONS:\s*"--max-old-space-size=8192"[\s\S]*?pnpm run validate/u,
     "source candidate validation must retain the audited Node heap ceiling");
@@ -40,12 +195,24 @@ function verifyReleaseVnextWorkflowContract() {
   assert.ok(mergeIndex > 0 && mergeIndex < promoteIndex && promoteIndex < readyIndex && readyIndex < packageIndex,
     "one staged bundle must merge evidence, promote, finalize, then package without rebuilding");
   assert.equal((ciWorkflow.match(/release:vnext:build:/gu) || []).length, 1, "workflow must build once and never rebuild during finalization");
-  assert.doesNotMatch(ciWorkflow, /^\s+push:/mu, "release workflow must not be tag-triggered");
+  assert.match(ciWorkflow, /push:\s*\n\s+branches: \[main\]/u, "only main push candidates are automatic");
+  assert.match(ciWorkflow, /CONTROLLED_BASE_SHA: \$\{\{ vars\.RELEASE_BASE_SHA \}\}/u);
+  assert.match(ciWorkflow, /CONTROLLED_ROUTES: \$\{\{ vars\.RELEASE_ACCEPTANCE_ROUTES_JSON \}\}/u);
+  assert.doesNotMatch(ciWorkflow, /github\.event\.before/u);
+  assert.match(ciWorkflow, /if \[\[ "\$EVENT_NAME" == push \]\]; then\s+REQUESTED_BASE_SHA="\$CONTROLLED_BASE_SHA"\s+REQUESTED_ROUTES="\$CONTROLLED_ROUTES"/u);
+  assert.match(ciWorkflow, /\[\[ "\$REQUESTED_BASE_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
   assert.doesNotMatch(ciWorkflow, /^\s+tags:/mu, "tags must not be a release entrypoint");
   assert.match(ciWorkflow, /git merge-base --is-ancestor "\$base_sha" "\$head_sha"/u, "manual release base must be a real ancestor");
   assert.doesNotMatch(ciWorkflow, /acceptance_trusted_issuers_path/u, "dispatcher must not replace issuer trust");
   assert.match(ciWorkflow, /bind-identity --bundle[^\n]+--service "\$service"[^\n]+--build-output-digest-receipt/u);
   assert.match(ciWorkflow, /bind-package-payload --bundle "\$RELEASE_VALIDATION_BUNDLE"/u);
+  assert.equal((ciWorkflow.match(/deployment-control-plane\.mjs package /gu) || []).length, 1, "control plane is produced exactly once");
+  assert.match(ciWorkflow, /bind-control-plane --bundle "\$RELEASE_VALIDATION_BUNDLE"/u);
+  assert.ok(ciWorkflow.includes('${{ runner.temp }}/candidate-packages/control-plane'), "candidate upload includes JSON archive, manifest and descriptor");
+  assert.match(ciWorkflow, /cp -R "\$RUNNER_TEMP\/candidate\/candidate-packages\/control-plane" "\$RUNNER_TEMP\/release-artifacts\/control-plane"/u);
+  const controlFinalize = ciWorkflow.slice(ciWorkflow.indexOf("Validate candidate and browser-evidence run provenance"));
+  assert.doesNotMatch(controlFinalize, /deployment-control-plane\.mjs package /u, "finalize never rebuilds the controller");
+  assert.ok((controlFinalize.match(/verify-control-plane --bundle/gu) || []).length >= 3, "download and promoted same bytes both verified");
   assert.match(ciWorkflow, /--finalize-candidate-archive "\$candidate_archive"/u);
   assert.match(ciWorkflow, /--finalize-candidate-archive "\$candidate_archive"[^\n]+--scope-receipt "\$RELEASE_SCOPE_RECEIPT"[^\n]+--evidence-root "\$RELEASE_VALIDATION_EVIDENCE"/u,
     "fresh finalizer must rerun the authoritative gate against scope and signed evidence");
@@ -60,12 +227,12 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(browserAcceptanceWorkflow, /^name: Release browser acceptance evidence$/mu);
   assert.match(browserAcceptanceWorkflow, /^\s+workflow_dispatch:/mu);
   assert.match(browserAcceptanceWorkflow, /^\s+candidate_run_id:/mu);
-  assert.match(browserAcceptanceWorkflow, /git merge-base --is-ancestor "\$candidate_sha" "\$GITHUB_SHA"/u);
+  assert.match(browserAcceptanceWorkflow, /git merge-base --is-ancestor "\$candidate_sha" "\$RELEASE_TOOLCHAIN_SHA"/u);
   assert.match(browserAcceptanceWorkflow, /candidate reuse rejected because runtime source changed/u);
   assert.match(browserAcceptanceWorkflow, /scripts\/fixtures\/release-browser-assets\/portraits\\\.webp/u,
     "browser acceptance candidate reuse must allow only the exact hash-bound portrait fixture path");
   assert.match(browserAcceptanceWorkflow, /name: release-candidate-\$\{\{ steps\.candidate\.outputs\.sha \}\}/u);
-  assert.match(browserAcceptanceWorkflow, /run-id: \$\{\{ inputs\.candidate_run_id \}\}/u);
+  assert.match(browserAcceptanceWorkflow, /run-id: \$\{\{ env\.CANDIDATE_RUN_ID \}\}/u);
   assert.doesNotMatch(browserAcceptanceWorkflow, /^\s{6}(?:PLAYWRIGHT_BROWSERS_PATH|DATA_IMAGE):[^\n]*\$\{\{ runner\.temp \}\}/mu,
     "runner context is unavailable while job-level env is evaluated");
   assert.match(browserAcceptanceWorkflow, /Resolve runner-scoped temporary paths[\s\S]*PLAYWRIGHT_BROWSERS_PATH=\$RUNNER_TEMP\/ms-playwright[\s\S]*DATA_IMAGE=\$RUNNER_TEMP\/release-browser-acceptance-data-/u,
@@ -75,7 +242,7 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(browserAcceptanceWorkflow, /run-release-browser-acceptance\.mjs/u);
   assert.match(browserAcceptanceWorkflow, /RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY: \$\{\{ secrets\.RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY \}\}/u);
   assert.match(browserAcceptanceWorkflow, /release-change-validation-gate\.mjs verify-release-ready/u);
-  assert.match(browserAcceptanceWorkflow, /name: release-browser-acceptance-\$\{\{ github\.sha \}\}/u);
+  assert.match(browserAcceptanceWorkflow, /name: release-browser-acceptance-\$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/u);
   assert.doesNotMatch(browserAcceptanceWorkflow, /\b(?:ssh|scp|rsync)\b|deploy-artifact-vnext|production\.env|DEPLOY_EXECUTION_APPROVED/u,
     "browser acceptance must remain an isolated build-only workflow and never connect to production");
   assert.match(ciWorkflow, /RELEASE_TOOLCHAIN_SHA=\$toolchain_sha/u);
@@ -85,13 +252,21 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(ciWorkflow, /name: release-candidate-\$\{\{ steps\.resolve\.outputs\.subject_sha \}\}/u);
   assert.match(ciWorkflow, /b\.subject\.commit!==process\.env\.RELEASE_HEAD_SHA/u,
     "finalize must bind the downloaded candidate bundle to the immutable subject commit");
+  return formalSourceMutationChecks;
 }
 
-verifyReleaseVnextWorkflowContract();
+const formalSourceMutationChecks = verifyReleaseVnextWorkflowContract();
 if (process.argv.includes("--workflow-contract-only")) {
   process.stdout.write("PASS release-vnext staged workflow contract\n");
   process.exit(0);
 }
+
+const controlPlaneChecks = spawnSync(process.execPath, [path.join(root, "scripts/verify-deployment-control-plane-zero-network.mjs")], {
+  cwd: root, encoding: "utf8", windowsHide: true, timeout: 120_000,
+});
+assert.equal(controlPlaneChecks.status, 0, `control-plane actual interface regression failed: ${controlPlaneChecks.stderr || controlPlaneChecks.stdout}`);
+const controlPlaneReport = JSON.parse(controlPlaneChecks.stdout);
+assert.equal(controlPlaneReport.ok, true);
 
 for (const marker of [
   "inspectMigrationWorktree",
@@ -951,6 +1126,8 @@ for (const marker of [
   "writeAtomic",
 ]) assert.ok(nginxRenderer.includes(marker), `nginx renderer gate missing: ${marker}`);
 assert.match(packageJson.scripts["release:vnext:verify"], /verify-render-nginx-config-vnext\.mjs/u, "formal release verification must execute the Nginx renderer test");
+assert.match(packageJson.scripts["release:vnext:verify"], /verify-runtime-alignment-tooling\.mjs/u,
+  "formal release verification must execute the runtime-alignment and media-worker transaction tests");
 assert.match(nginx, /location = \/api\/payment\/notify\s*\{[\s\S]*?client_max_body_size 64k;/u, "payment callback bodies must be bounded at the edge");
 assert.match(nginx, /location = \/api\/payment\/refund\s*\{[\s\S]*?client_max_body_size 16k;/u, "payment refund bodies must be bounded at the edge");
 assert.match(nginx, /location = \/api\/payment\/refund\s*\{[\s\S]*?limit_req zone=agent_hub_paid_write_ip burst=5 nodelay;/u, "payment refunds must use the shared paid-write limiter");
@@ -1032,6 +1209,8 @@ for (const marker of ["APP_DATA_DIR", "APP_RUNTIME_DIR", "COMMERCE_DATA_DIR", "C
   assert.ok(pm2.includes(marker), `PM2 release contract missing: ${marker}`);
 }
 const artifactDeployer = read("scripts/deploy-artifact-vnext.sh");
+const normalizeLegacyRuntime = read("scripts/normalize-legacy-runtime-vnext.mjs");
+const mediaWorkerTransactionHook = read("scripts/media-worker-transaction-hook-vnext.mjs");
 for (const marker of [
   'DEPLOY_NODE_BIN="/data/direct-deploy/toolchain/bin/node"',
   'DEPLOY_RUNTIME_PATH="/data/direct-deploy/toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"',
@@ -1072,8 +1251,12 @@ assert.equal((browserAcceptanceRunner.match(/maxBuffer: ARCHIVE_METADATA_MAX_BUF
   "browser acceptance must apply the archive metadata buffer to both compact and verbose tar listings");
 assert.match(browserAcceptanceRunner, /startCandidateDatabaseFixture/u,
   "browser acceptance must use an isolated local database fixture for authenticated routes");
-assert.match(browserAcceptanceRunner, /process\.env\.CANDIDATE_SUBJECT_SHA \|\| process\.env\.GITHUB_SHA/u,
-  "browser acceptance must separate the immutable candidate subject from the verifier toolchain commit");
+assert.match(browserAcceptanceRunner, /const toolchainCommit = run\("git", \["-C", checkoutRoot, "rev-parse", "HEAD"\]\)\.trim\(\)/u,
+  "browser acceptance toolchain must record the actual executable checkout HEAD");
+assert.match(browserAcceptanceRunner, /const expectedSubjectCommit = candidateCommit/u);
+for (const marker of ['executedCommit: toolchainCommit', 'eventCommit,', 'candidateCommit,', 'candidateRunId,']) assert.ok(browserAcceptanceRunner.includes(marker));
+const runnerProvenanceIndex = browserAcceptanceRunner.indexOf('if (eventName === "workflow_run") validateAutomaticTrigger(');
+for (const marker of ['const workRoot = requireFreshDirectory', 'const privateKeyPem = process.env[secretName]']) assert.ok(runnerProvenanceIndex < browserAcceptanceRunner.indexOf(marker));
 assert.match(browserAcceptanceRunner, /context\.addInitScript[\s\S]*localStorage\.setItem\("auth_token", token\)[\s\S]*localStorage\.setItem\("auth_user", JSON\.stringify\(user\)\)[\s\S]*sessionStorage\.setItem\("entered_app", "1"\)/u,
   "browser acceptance must seed the same client-side authenticated state used by protected pages");
 assert.match(browserAcceptanceRunner, /blockingFailures\.push[\s\S]*BROWSER_ROUTE_FAILURES/u,
@@ -1299,7 +1482,7 @@ assert.match(browserAcceptanceRunner, /rpcName\.startsWith\("read_"\)[\s\S]*reje
   "generic candidate RPC fixtures must reject non-read RPC names");
 assert.match(browserAcceptanceRunner, /result: missingRequiredIsolatedWrites\.length \|\| browserReport\.blockingFailures\.length/u,
   "browser acceptance report must fail when required isolated writes are missing");
-for (const marker of ["canonicalJson(expected)", 'item.kind === "directory"', "expectedFileCount", "observed.mode !== item.mode", "manifest.sourceVersion"]) {
+for (const marker of ["canonicalJson(expected)", 'item.kind === "directory"', "expectedFileCount", "observed.mode !== expectedMode", 'modeContract === "sealed"', "manifest.sourceVersion"]) {
   assert.ok(artifactDeployer.includes(marker), `artifact deployment v2 inventory/identity contract missing: ${marker}`);
 }
 for (const marker of [
@@ -1366,7 +1549,35 @@ for (const marker of [
   "verify-production-preflight-receipt.mjs",
   "PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY",
   "production preflight receipt identity missing at commit boundary",
+  "LEGACY_BASELINE_RECEIPT_PATH",
+  "legacyFileInventory",
+  "DIRECT_HOOK_PM2_CONFIG_SHA256",
+  "DIRECT_TRANSACTION_ROOT",
+  "assetOwnershipHardened",
+  "sourceUnexpectedDigest",
+  "media-worker reboot persistence verification failed",
+  "direct_hook rollback-persisted",
+  "chmod 0600 -- \"$PM2_DUMP_PATH\"",
 ]) assert.ok(artifactDeployer.includes(marker), `artifact deployment transaction gate missing: ${marker}`);
+for (const marker of [
+  "copySignedLegacyInventory",
+  "assetOwnershipHardeningRequired",
+  "sourceUnexpectedCount",
+  "failed-normalized-release",
+  "OBSERVED_LEGACY_VOICE_STATE_UNSAFE",
+  "OBSERVED_RUNTIME_COMPONENT_IDENTITY_DIVERGED",
+  "ROLLBACK_PM2_DUMP_CHANGED",
+]) assert.ok(normalizeLegacyRuntime.includes(marker), `legacy runtime normalization gate missing: ${marker}`);
+for (const marker of [
+  '"rollback-stopped"',
+  "MEDIA_WORKER_ROLLBACK_DUMP_MISMATCH",
+  "MEDIA_WORKER_CURRENT_POINTER_MISMATCH",
+]) assert.ok(mediaWorkerTransactionHook.includes(marker), `media worker transaction gate missing: ${marker}`);
+assert.ok(
+  artifactDeployer.lastIndexOf("\nvalidate_direct_hook_configuration\n")
+    < artifactDeployer.lastIndexOf("\nvalidate_current_rollback_baseline\n"),
+  "the pinned worker controller/configuration must be validated before a legacy rollback receipt can bind to it",
+);
 assert.ok(
   !artifactDeployer.includes('cp -a -- "$APP_DATA_DIR/." "$CANDIDATE_DATA_DIR/"'),
   "candidate must not clone the full mutable/user-derived application data tree",
@@ -1526,6 +1737,9 @@ for (const script of [
   "scripts/publish-public-assets-cos-vnext.mjs",
   "scripts/materialize-public-asset-release-vnext.mjs",
   "scripts/asset-policy-transition-proof-vnext.mjs",
+  "scripts/media-worker-transaction-hook-vnext.mjs",
+  "scripts/normalize-legacy-runtime-vnext.mjs",
+  "scripts/verify-runtime-alignment-tooling.mjs",
   "scripts/run-release-browser-acceptance.mjs",
 ]) {
   const checked = spawnSync(process.execPath, ["--check", path.join(root, script)], { encoding: "utf8" });
@@ -1546,6 +1760,8 @@ assert.match(auditJson.externalAssets.pinnedDigest, /^[0-9a-f]{64}$/u);
 
 console.log(JSON.stringify({
   ok: true,
+  formalSourceMutationChecks,
+  controlPlaneChecks: controlPlaneReport.checks,
   sourceFiles: auditJson.source.files,
   sourceBytes: auditJson.source.bytes,
   assetFiles: auditJson.externalAssets.files,

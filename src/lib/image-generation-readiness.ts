@@ -3,13 +3,29 @@ import {
   PRODUCTION_DATABASE_CONTRACT,
   type ProductionDatabaseReadiness,
 } from "@/lib/production-database-readiness";
-import { storageManager } from "@/storage/object";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
+import type { ImageProviderContract } from "@/lib/image-provider-contract";
+
+/** Mirrors generateLocalImageCandidate's actual request branch, not a model-name capability guess. */
+export function imageRecoverableReferenceCapability(input: {
+  contract: ImageProviderContract; referenceCount: number; boundH3: boolean; volcengine: boolean;
+}): "url_requested" | "inline_only" | "unknown" {
+  const { contract, referenceCount } = input;
+  if (contract.requestProtocol === "google_generate_content") return "inline_only";
+  if (contract.requestProtocol === "chat_completions" || contract.requestProtocol === "images_generations_async") return "unknown";
+  if (referenceCount > 0) return ["generations_url_array", "edits_multipart_single", "edits_multipart_array"].includes(contract.referenceTransport)
+    ? "url_requested" : "unknown";
+  if (contract.requestProtocol === "images_edits") return "unknown";
+  return (contract.requestProtocol === "images_generations" && contract.source === "configured") || input.boundH3 || input.volcengine
+    ? "url_requested" : "unknown";
+}
 
 const IMAGE_TABLES = new Set(["image_generation_requests", "user_files"]);
 const IMAGE_RPCS = new Set([
   "claim_image_generation_request", "claim_image_generation_request_v2",
   "save_image_generation_request", "finalize_image_generation_delivery",
+  "finalize_image_provider_delivery", "mark_image_provider_source_expired",
+  "complete_image_ephemeral_delivery",
 ]);
 const BILLING_TABLES = new Set(["wallet_operations", "wallet_ledger_entries", "cash_transactions", "cash_debt_records"]);
 const BILLING_RPCS = new Set(["apply_wallet_operation_atomic"]);
@@ -93,12 +109,8 @@ export function evaluateImageGenerationReadiness(
       };
     }
   }
-  if (!storage.initializedProviders.includes("tencent_cos")) {
-    return {
-      ready: false, code: "IMAGE_STORAGE_NOT_READY", missingDependencies: ["tencent_cos"],
-      error: "图片结果存储尚未配置完成，本次不会调用模型或扣费，请管理员检查对象存储配置",
-    };
-  }
+  void storage; // Direct delivery has no object-store dependency.
+
   return { ready: true };
 }
 
@@ -107,7 +119,7 @@ export async function probeImageGenerationReadiness(requiresBilling: boolean): P
   try {
     const [database, storage, tableReads] = await Promise.all([
       probeProductionDatabaseReadiness(),
-      storageManager.getStatus(),
+      Promise.resolve({ initializedProviders: [] }),
       readImageGenerationTablePrerequisites(requiresBilling),
     ]);
     return evaluateImageGenerationReadiness(database, storage, requiresBilling, tableReads);

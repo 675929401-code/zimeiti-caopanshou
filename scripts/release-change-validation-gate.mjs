@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { assertJsonSchema, canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
+import { assertDescriptor, verifyPackage, verifyCandidatePackage } from "./deployment-control-plane.mjs";
 
 const BUNDLE_SCHEMA_VERSION = "zimeiti-release-change-validation-bundle.v1";
 const AUTOMATED_REQUIRED = Object.freeze([
@@ -119,6 +120,11 @@ function assertBundleSemantic(bundle) {
   const sortedServices = [...bundle.subject.services].sort((left, right) => left.localeCompare(right));
   if (canonicalJson(bundle.subject.services) !== canonicalJson(sortedServices)) throw new Error("BUNDLE_SERVICES_NOT_SORTED");
   if (!bundle.subject.services.includes("web")) throw new Error("BUNDLE_WEB_BUILD_REQUIRED_FOR_BROWSER_ACCEPTANCE");
+  if (bundle.subject.controlPlane !== null) {
+    assertDescriptor(bundle.subject.controlPlane);
+    if (bundle.subject.controlPlane.subject.mode !== "formal"
+      || bundle.subject.controlPlane.subject.sourceCommit !== bundle.subject.commit) throw new Error("CONTROL_PLANE_CANDIDATE_SUBJECT_MISMATCH");
+  }
   const sortedRoutes = [...bundle.scope.browserAcceptance.requiredRoutes].sort((left, right) => left.localeCompare(right));
   if (canonicalJson(bundle.scope.browserAcceptance.requiredRoutes) !== canonicalJson(sortedRoutes)
     || new Set(sortedRoutes).size !== sortedRoutes.length || sortedRoutes.length < 3) throw new Error("BUNDLE_BROWSER_ROUTES_INVALID");
@@ -333,6 +339,7 @@ function validateBrowserEvidence(bundle, evidenceBytes, signatureBytes, contract
     builds: bundle.subject.builds,
     buildOutputDigests: bundle.subject.buildOutputDigests,
     candidatePayloads: bundle.subject.candidatePayloads,
+    controlPlane: bundle.subject.controlPlane,
   })) throw new Error("BROWSER_EVIDENCE_BUILD_IDENTITY_MISMATCH");
   for (const service of bundle.subject.services) {
     const readback = evidence.runtimeReadbacks[service];
@@ -458,6 +465,7 @@ function main() {
         builds: { web: null, voice: null },
         buildOutputDigests: { web: null, voice: null },
         candidatePayloads: { web: null, voice: null },
+        controlPlane: null,
       },
       target,
       status: "pending-required",
@@ -470,6 +478,27 @@ function main() {
 
   const bundlePath = path.resolve(args.get("--bundle") || "");
   const bundle = loadBundle(bundlePath, schema);
+
+  if (command === "bind-control-plane") {
+    const descriptor = readJson(path.resolve(args.get("--descriptor") || ""), "CONTROL_DESCRIPTOR_INVALID");
+    assertDescriptor(descriptor);
+    if (descriptor.subject.mode !== "formal" || descriptor.subject.sourceCommit !== bundle.subject.commit
+      || descriptor.subject.repository !== process.env.GITHUB_REPOSITORY
+      || descriptor.subject.candidateRunId !== process.env.GITHUB_RUN_ID
+      || descriptor.subject.candidateRunAttempt !== process.env.GITHUB_RUN_ATTEMPT) throw new Error("CONTROL_PLANE_CANDIDATE_SUBJECT_MISMATCH");
+    verifyPackage(path.dirname(path.resolve(args.get("--descriptor"))), descriptor);
+    if (bundle.subject.controlPlane !== null && canonicalJson(bundle.subject.controlPlane) !== canonicalJson(descriptor)) throw new Error("CONTROL_PLANE_ALREADY_BOUND");
+    bundle.subject.controlPlane = descriptor;
+    saveBundle(bundlePath, schema, bundle);
+    return;
+  }
+  if (command === "verify-control-plane") {
+    if (!bundle.subject.controlPlane) throw new Error("CONTROL_PLANE_REQUIRED");
+    verifyCandidatePackage(path.resolve(args.get("--package") || ""), bundle.subject.controlPlane,
+      readJson(path.resolve(args.get("--candidate-run-json") || ""), "CANDIDATE_RUN_INVALID"), process.env.GITHUB_REPOSITORY);
+    process.stdout.write(`${JSON.stringify({verified:true, controlPlane:bundle.subject.controlPlane})}\n`);
+    return;
+  }
 
   if (command === "record") {
     const validationId = args.get("--validation");
@@ -594,6 +623,7 @@ function main() {
   }
 
   if (command === "promote-release-ready") {
+    if (!bundle.subject.controlPlane) throw new Error("CONTROL_PLANE_REQUIRED");
     if (bundle.target !== "source-candidate"
       || !new Set(["source-candidate-pending-required", "source-candidate-complete"]).has(bundle.status)) {
       throw new Error("RELEASE_PROMOTION_SOURCE_CANDIDATE_REQUIRED");
@@ -618,6 +648,7 @@ function main() {
   }
 
   if (command === "verify-release-ready") {
+    if (!bundle.subject.controlPlane) throw new Error("CONTROL_PLANE_REQUIRED");
     if (bundle.target !== "release-ready" || bundle.status !== "release-ready") throw new Error("RELEASE_READY_BUNDLE_REQUIRED");
     const scopePath = path.resolve(args.get("--scope-receipt") || "");
     const evidenceRoot = path.resolve(args.get("--evidence-root") || "");
@@ -677,6 +708,7 @@ function main() {
       }
     }
     if (bundle.attestations.some((entry) => entry.status === "failed")) throw new Error("FAILED_ATTESTATION_PRESENT");
+    if (!bundle.subject.controlPlane) throw new Error("CONTROL_PLANE_REQUIRED");
     if (target === "release-ready") {
       if (!bundle.scope.input.trustedBase) throw new Error("RELEASE_TRUSTED_BASE_REQUIRED");
       if (!bundle.subject.sourceVersion

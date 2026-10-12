@@ -7,7 +7,7 @@ import { installStoryboardBrowserFixture } from "./storyboard-browser-fixture.mj
 
 const ORIGIN = process.env.LOCAL_APP_URL || "http://127.0.0.1:5000";
 assert.equal(ORIGIN, "http://127.0.0.1:5000", "ONLY_FIXED_LOCAL_APP_ALLOWED");
-const outputDir = path.resolve(".codex-evidence", "video-cancellation-ui-local-20261004");
+const outputDir = path.resolve(process.env.LOCAL_CANCELLATION_EVIDENCE_DIR || path.join(".codex-evidence", `video-cancellation-ui-local-${Date.now()}`));
 await fs.mkdir(outputDir, { recursive: true });
 
 const user = {
@@ -127,6 +127,7 @@ async function browserLayout(page, button) {
 
 async function runVideoPageScenario(browser, { viewport, mode }) {
   const context = await browser.newContext({ viewport, serviceWorkers: "block" });
+  await context.route("**/api/**", (route) => route.abort("blockedbyclient"));
   const page = await context.newPage();
   page.on("pageerror", (error) => report.pageErrors.push({ surface: "video", mode, message: error.message }));
   await installIdentity(page);
@@ -259,7 +260,8 @@ function storyboardProject(mode) {
       videoTaskModelId: model.id,
       videoTaskModelName: model.displayName,
       videoTaskDuration: 10,
-      videoSupportsRemoteCancel: false,
+      // The unsupported response simulates an upstream rejection after a channel declared remote cancellation.
+      videoSupportsRemoteCancel: mode !== "stop-wait",
       videoStartedAt: now - 20_000,
       videoStatusDetail: "等待上游处理",
       videoBillingState: "provider_submitted",
@@ -270,6 +272,7 @@ function storyboardProject(mode) {
 
 async function runStoryboardScenario(browser, { viewport, mode }) {
   const context = await browser.newContext({ viewport, serviceWorkers: "block" });
+  await context.route("**/api/**", (route) => route.abort("blockedbyclient"));
   const page = await context.newPage();
   page.on("pageerror", (error) => report.pageErrors.push({ surface: "storyboard", mode, message: error.message }));
   const project = storyboardProject(mode);
@@ -285,7 +288,7 @@ async function runStoryboardScenario(browser, { viewport, mode }) {
       capabilities: { family: "gpt", supportsImageInput: true, maxReferenceImages: 8, resolutionOptions: ["2K"], defaultResolution: "2K" },
     }] }),
   }));
-  await page.route("**/api/video/models**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ models: [model] }) }));
+  await page.route("**/api/video/models**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ models: [{ ...model, supportsRemoteCancel: mode !== "stop-wait" }] }) }));
   await page.route("https://media.storyboard.test/cancel-fixture.png", (route) => route.fulfill({ status: 200, contentType: "image/png", body: transparentPng }));
   await page.route("**/api/video/history**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ tasks: [], nextOffset: null }) }));
   await page.route("**/api/video/status**", (route) => route.fulfill({
@@ -327,19 +330,33 @@ async function runStoryboardScenario(browser, { viewport, mode }) {
   await projectRow.waitFor({ state: "visible", timeout: 10_000 });
   page.once("dialog", (dialog) => dialog.accept());
   await projectRow.getByRole("button", { name: "打开任务", exact: true }).click();
-  const button = page.getByRole("button", { name: "终止生成", exact: true }).first();
+  const button = page.getByRole("button", { name: mode === "stop-wait" ? "停止等待" : "终止生成", exact: true }).first();
   await button.waitFor({ state: "visible", timeout: 10_000 });
   const title = await button.getAttribute("title");
-  assert.match(title || "", /已投递任务须获上游确认/u, `storyboard ${mode}: honest upstream tooltip missing`);
+  assert.match(title || "", mode === "stop-wait" ? /上游任务与后台查询不受影响/u : /终止本次任务并同步上游/u, `storyboard ${mode}: honest upstream tooltip missing`);
   const layout = await browserLayout(page, button);
   assert.equal(layout.buttonVisible, true, `storyboard ${mode}: terminate control hidden`);
   assertDesktopLayout(layout, `storyboard ${mode}`);
   await button.click();
   await page.waitForTimeout(350);
-  assert.equal(cancelRequests.length, 1, `storyboard ${mode}: cancellation request count`);
-  assert.equal(cancelRequests[0].taskId, project.cards[0].videoTaskId, `storyboard ${mode}: wrong task id`);
-  assert.equal(cancelRequests[0].clientRequestId, project.cards[0].videoClientRequestId, `storyboard ${mode}: stable request id missing`);
-  if (mode === "confirmed") {
+  assert.equal(cancelRequests.length, mode === "stop-wait" ? 0 : 1, `storyboard ${mode}: cancellation request count`);
+  if (mode !== "stop-wait") {
+    assert.equal(cancelRequests[0].taskId, project.cards[0].videoTaskId, `storyboard ${mode}: wrong task id`);
+    assert.equal(cancelRequests[0].clientRequestId, project.cards[0].videoClientRequestId, `storyboard ${mode}: stable request id missing`);
+  }
+  if (mode === "stop-wait") {
+    const resume = page.getByRole("button", { name: "继续查询", exact: true }).first();
+    await resume.waitFor({ state: "visible", timeout: 10_000 });
+    await page.getByText(/上游任务未取消/u).first().waitFor({ timeout: 10_000 });
+    assert.equal(await page.getByText("视频已终止", { exact: true }).count(), 0, "stop-wait must not fabricate upstream cancellation");
+    for (let attempt = 0; attempt < 20 && !fixture.projects.get(project.id)?.document?.cards?.[0]?.videoMonitoringPaused; attempt++) {
+      await page.waitForTimeout(50);
+    }
+    const stored = fixture.projects.get(project.id)?.document?.cards?.[0];
+    assert.equal(stored?.videoTaskId, project.cards[0].videoTaskId, "stop-wait lost original task identity");
+    assert.ok(["queued", "running"].includes(stored?.videoStatus), "stop-wait changed task to a terminal state");
+    assert.equal(stored?.videoMonitoringPaused, true, "stop-wait state was not saved in the isolated project fixture");
+  } else if (mode === "confirmed") {
     await page.getByText("视频已终止", { exact: true }).waitFor({ timeout: 10_000 });
     assert.equal(await page.getByRole("button", { name: "终止生成", exact: true }).count(), 0, "confirmed storyboard task remained active");
   } else {
@@ -369,8 +386,9 @@ try {
   await runVideoPageScenario(browser, { viewport: { width: 1920, height: 1080 }, mode: "unsupported" });
   await runStoryboardScenario(browser, { viewport: { width: 1440, height: 900 }, mode: "confirmed" });
   await runStoryboardScenario(browser, { viewport: { width: 1920, height: 1080 }, mode: "unsupported" });
+  await runStoryboardScenario(browser, { viewport: { width: 1440, height: 900 }, mode: "stop-wait" });
   assert.equal(report.pageErrors.length, 0, `PAGE_ERRORS:${JSON.stringify(report.pageErrors)}`);
-  assert.equal(report.scenarios.length, 4, "ALL_DESKTOP_SCENARIOS_REQUIRED");
+  assert.equal(report.scenarios.length, 5, "ALL_DESKTOP_SCENARIOS_REQUIRED");
   report.passed = true;
 } finally {
   await browser?.close();

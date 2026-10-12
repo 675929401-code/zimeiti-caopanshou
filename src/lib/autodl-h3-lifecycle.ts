@@ -1,6 +1,8 @@
+import { probeAutodlH3ProviderDeliveryReadiness, type AutodlH3ProviderDeliveryReadiness } from "@/lib/autodl-h3-provider-delivery-readiness";
 import { createHash, randomUUID } from "node:crypto";
 
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
+import { resolveAutodlH3SelfhostResultUrl, AUTODL_H3_SELFHOST_VIDEO_ENDPOINT } from "@/lib/autodl-h3-selfhost";
 
 /**
  * Durable lifecycle primitives for the exact AutoDL self-hosted MiniMax H3
@@ -351,6 +353,16 @@ export function isStableAutodlH3ResultAssetUrl(value: unknown): boolean {
   }
 }
 
+export function isAutodlH3ProviderDeliveryResultUrl(value: unknown, upstreamTaskId: unknown): boolean {
+  if (isStableAutodlH3ResultAssetUrl(value)) return true;
+  try {
+    const jobId = String(upstreamTaskId || "");
+    if (!/^h3_[a-f0-9]+$/u.test(jobId)) return false;
+    const url = new URL(resolveAutodlH3SelfhostResultUrl(String(value || ""), AUTODL_H3_SELFHOST_VIDEO_ENDPOINT, { allowExpired: true }));
+    return url.pathname === `/v1/files/${jobId}`;
+  } catch { return false; }
+}
+
 function validatePayloadNode(value: unknown, path: string, depth: number): unknown {
   if (depth > 10) throw new Error("AUTODL_H3_PAYLOAD_TOO_DEEP");
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -671,7 +683,7 @@ export function createSupabaseAutodlH3LifecycleStore(client = getSupabaseAdminCl
         throw new Error("AUTODL_H3_SUCCESS_REQUIRES_ATOMIC_SETTLEMENT");
       }
       if (input.state === "SUCCEEDED"
-        && !isStableAutodlH3ResultAssetUrl(input.resultAssetUrl ?? current.resultAssetUrl)) {
+        && !isAutodlH3ProviderDeliveryResultUrl(input.resultAssetUrl ?? current.resultAssetUrl, current.upstreamTaskId)) {
         throw new Error("AUTODL_H3_SUCCEEDED_REQUIRES_STABLE_RESULT_ASSET");
       }
       const { data, error } = await client.rpc("autodl_h3_transition_claimed_job", {
@@ -1099,7 +1111,7 @@ export class InMemoryAutodlH3LifecycleStore implements AutodlH3LifecycleStore {
       throw new Error("AUTODL_H3_SUCCESS_REQUIRES_ATOMIC_SETTLEMENT");
     }
     const stableAsset = input.resultAssetUrl ?? job.resultAssetUrl;
-    if (input.state === "SUCCEEDED" && !isStableAutodlH3ResultAssetUrl(stableAsset)) {
+    if (input.state === "SUCCEEDED" && !isAutodlH3ProviderDeliveryResultUrl(stableAsset, job.upstreamTaskId)) {
       throw new Error("AUTODL_H3_SUCCEEDED_REQUIRES_STABLE_RESULT_ASSET");
     }
     job.state = input.state;
@@ -1151,6 +1163,7 @@ export class AutodlH3LifecycleController {
     dispatcher: AutodlH3JobDispatcher;
     config: AutodlH3LifecycleControllerConfig;
     now?: () => Date;
+    providerDeliveryReadiness?: () => Promise<AutodlH3ProviderDeliveryReadiness>;
   }) {}
 
   private now(): Date {
@@ -1265,6 +1278,7 @@ export class AutodlH3LifecycleController {
     options: { replay?: boolean } = {},
   ): Promise<AutodlH3LifecycleTickResult> {
     const { instanceClient, config } = this.dependencies;
+    if (!(await (this.dependencies.providerDeliveryReadiness || probeAutodlH3ProviderDeliveryReadiness)()).ready) return { action: "not_ready" };
     const nowIso = this.now().toISOString();
     let requested = lease.lifecycleState === "START_REQUESTED"
       ? lease
@@ -1387,6 +1401,7 @@ export class AutodlH3LifecycleController {
 
   private async recoverUnknownDispatch(lease: AutodlH3InstanceLease): Promise<AutodlH3LifecycleTickResult | null> {
     const { store, dispatcher, config } = this.dependencies;
+    if (!(await (this.dependencies.providerDeliveryReadiness || probeAutodlH3ProviderDeliveryReadiness)()).ready) return null;
     const job = await store.claimUnknownDispatchJob(config.instanceUuid, config.ownerId, config.leaseSeconds);
     if (!job) return null;
     try {
@@ -1483,6 +1498,7 @@ export class AutodlH3LifecycleController {
 
   private async dispatchNextJob(lease: AutodlH3InstanceLease): Promise<AutodlH3LifecycleTickResult> {
     const { store, dispatcher, config } = this.dependencies;
+    if (!(await (this.dependencies.providerDeliveryReadiness || probeAutodlH3ProviderDeliveryReadiness)()).ready) return { action: "not_ready" };
     const job = await store.claimNextJob(config.instanceUuid, config.ownerId, config.leaseSeconds);
     if (!job) return { action: "no_job" };
     if (job.attemptCount > config.maxDispatchAttempts) {

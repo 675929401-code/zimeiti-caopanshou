@@ -6,6 +6,29 @@ export class LlmStreamError extends Error {
   }
 }
 
+const RESPONSE_START_UNKNOWN_MESSAGE = "这次回复未完成，最终结果暂未确认。原请求已保留，请先查看聊天记录，避免重复发送。";
+
+/** Internal response-header diagnostics contain only measured, allowlisted fields. */
+export class LlmResponseStartError extends LlmStreamError {
+  readonly diagnostics: Readonly<{
+    phase: "response_headers";
+    outcome: "deadline_exceeded" | "transport_error";
+    elapsedMs: number;
+    timeoutMs: number;
+  }>;
+
+  constructor(outcome: "deadline_exceeded" | "transport_error", elapsedMs: number, timeoutMs: number) {
+    super(RESPONSE_START_UNKNOWN_MESSAGE, "LLM_UPSTREAM_RESULT_UNKNOWN");
+    this.name = "LlmResponseStartError";
+    this.diagnostics = Object.freeze({
+      phase: "response_headers",
+      outcome: outcome === "deadline_exceeded" ? "deadline_exceeded" : "transport_error",
+      elapsedMs: Number.isFinite(elapsedMs) ? Math.max(0, Math.trunc(elapsedMs)) : 0,
+      timeoutMs: Number.isFinite(timeoutMs) ? Math.max(0, Math.trunc(timeoutMs)) : 0,
+    });
+  }
+}
+
 const CONTENT_REJECTION_TERMINAL_REASONS = new Set([
   "blocked",
   "content_filter",
@@ -63,7 +86,7 @@ export function responseStartError(cause: unknown): LlmStreamError {
   const knownRejection = (status && status !== "408")
     || /UPSTREAM_(?:QUOTA|BALANCE)_EXHAUSTED|ZHIPU_BALANCE_EXHAUSTED/iu.test(diagnostic);
   if (knownRejection) return upstreamStreamError({ error: diagnostic });
-  return new LlmStreamError("这次回复未完成，最终结果暂未确认。原请求已保留，请先查看聊天记录，避免重复发送。", "LLM_UPSTREAM_RESULT_UNKNOWN");
+  return new LlmStreamError(RESPONSE_START_UNKNOWN_MESSAGE, "LLM_UPSTREAM_RESULT_UNKNOWN");
 }
 
 export function upstreamStreamError(payload: unknown): LlmStreamError {

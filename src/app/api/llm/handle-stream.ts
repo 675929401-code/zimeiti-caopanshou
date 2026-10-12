@@ -7,7 +7,7 @@
 
 import type { ChatRequest, LLMProxy } from "@/lib/llm-proxy";
 import { SseEventStreamDecoder, type DecodedSseEvent } from "@/lib/sse-stream-decoder";
-import { LlmStreamError, upstreamStreamError, responseStartError } from "@/lib/llm-proxy/stream-error";
+import { LlmResponseStartError, LlmStreamError, upstreamStreamError, responseStartError } from "@/lib/llm-proxy/stream-error";
 import {
   settleLlmUsage,
   type SelectedModelBillingSnapshot,
@@ -18,6 +18,8 @@ import { releaseLlmStreamCredits, type LlmStreamReservation } from "@/lib/llm-cr
 import type { ChatMessage } from "@/lib/llm-context";
 import { bipStep } from "@/lib/business-ip/catalog";
 import { containsPromptLeak, messageText } from "@/lib/business-ip/guard";
+import { BipStreamPromptLeakError, createBipGuardedStream } from "@/lib/server/bip-guarded-stream";
+import { requireAssistantPersistence } from "@/lib/server/agent-chat-prompt-authority";
 import {
   recordModelSuccess,
   recordModelFailure,
@@ -104,9 +106,10 @@ export function handleStreamResponse(
     async start(controller) {
       let outerClosed = false;
       // The caller enables live delivery only for a zero-charge quote or an
-      // atomically held bounded reservation. Prompt-protected agents still
-      // require complete-answer inspection before any text is exposed.
-      const liveDelivery = ctx.allowLiveStreamDelivery === true && !protectPrompt;
+      // atomically held bounded reservation. BIP additionally retains a reviewed
+      // normalized suffix; short answers remain held until terminal settlement.
+      const liveDelivery = ctx.allowLiveStreamDelivery === true;
+      const protectedDelivery = protectPrompt && liveDelivery ? createBipGuardedStream(protectedPrompt) : null;
       const bufferedResponseChunks: Uint8Array[] = [];
       const deliveryDecoder = new SseEventStreamDecoder();
       let lastProgressAt = 0;
@@ -140,7 +143,11 @@ export function handleStreamResponse(
           return;
         }
         const chunk = encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
-        if (liveDelivery) safeEnqueue(chunk);
+        if (protectedDelivery) {
+          const delta = protectedDelivery.update(fullContent);
+          if (delta) safeEnqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: delta }, finish_reason: null }] })}\n\n`));
+        }
+        else if (liveDelivery) safeEnqueue(chunk);
         else if (!protectPrompt) {
           bufferedResponseChunks.push(chunk);
           const receivedChars = fullContent.length + reasoningContent.length;
@@ -169,7 +176,7 @@ export function handleStreamResponse(
           type: "stream_delivery",
           stream_delivery: liveDelivery ? "live" : "buffered",
           stream_delivery_reason: protectPrompt
-            ? "prompt_output_review"
+            ? (liveDelivery ? "prompt_guarded_live_withheld_suffix" : "prompt_output_review")
             : ctx.streamDeliveryReason || (liveDelivery ? "live_delivery_allowed" : "buffer_until_atomic_settlement"),
         })}\n\n`))) return;
 
@@ -235,9 +242,10 @@ export function handleStreamResponse(
             try {
               const settlement = await settleCompletedUsage();
               if (protectPrompt) {
-                // Never expose reasoning/provider metadata; inspect the complete answer before first delivery.
+                // Full terminal review remains mandatory. Release the withheld tail only after settlement.
                 reasoningContent = '';
-                safeEnqueue(encoder.encode(`data: ${JSON.stringify({choices:[{delta:{content:fullContent},finish_reason:null}]})}\n\n`));
+                const delta = protectedDelivery ? protectedDelivery.finish(fullContent, true) : fullContent;
+                if (delta) safeEnqueue(encoder.encode(`data: ${JSON.stringify({choices:[{delta:{content:delta},finish_reason:null}]})}\n\n`));
               }
               if (!liveDelivery) {
                 for (const chunk of bufferedResponseChunks) {
@@ -247,14 +255,14 @@ export function handleStreamResponse(
               safeEnqueue(encoder.encode(`data: ${JSON.stringify({
                 billing_complete: true,
                 stream_delivery: liveDelivery ? "live" : "buffered",
-                stream_delivery_reason: protectPrompt ? 'prompt_output_review' : ctx.streamDeliveryReason || (liveDelivery ? "live_delivery_allowed" : "buffer_until_atomic_settlement"),
+                stream_delivery_reason: protectPrompt ? (liveDelivery ? 'prompt_guarded_live_withheld_suffix' : 'prompt_output_review') : ctx.streamDeliveryReason || (liveDelivery ? "live_delivery_allowed" : "buffer_until_atomic_settlement"),
                 operation_id: settlement.operationId,
                 credits_charged: settlement.billing?.creditsCharged || 0,
                 balance_after: settlement.balanceAfter,
                 already_fulfilled: settlement.alreadyFulfilled === true,
               })}\n\n`));
-            } catch (billingError) {
-              console.error("[Billing] LLM response settlement failed:", billingError);
+            } catch {
+              console.error("[Billing] LLM response settlement failed", { code: "LLM_BILLING_FAILED" });
               recordModelFailure(ctx.useModel, "billing_failed");
               reservationNeedsReconciliation = Boolean(ctx.reservation && liveDelivery);
               safeEnqueue(encoder.encode(`data: ${JSON.stringify({
@@ -266,21 +274,29 @@ export function handleStreamResponse(
               safeClose();
               return;
             }
-            recordModelSuccess(ctx.useModel);
-            safeEnqueue(encoder.encode("data: [DONE]\n\n"));
-            console.log(`[LLM Route] pipe完成: model=${ctx.useModel}, agent=${ctx.agentName}, 内容=${fullContent.length}字符, 推理=${reasoningContent.length}字符, delivery=${liveDelivery ? "live" : "buffered"}, reason=${ctx.streamDeliveryReason || "unknown"}`);
-            safeClose();
-            // ── 异步保存助手消息 ──
-            // 注意：用户消息已在 llm/route.ts 入口处保存，此处不再重复保存
+            // A resolved Supabase error is not persistence. Never report DONE
+            // until the delivered, settled answer has a confirmed history row.
             if (ctx.conversationId && ctx.verifiedUserId && fullContent) {
               const saveClient = getSupabaseClient();
-              saveClient.from("conversation_messages").insert({
+              try { await requireAssistantPersistence(saveClient.from("conversation_messages").insert({
                 id: crypto.randomUUID(), conversation_id: ctx.conversationId, user_id: ctx.verifiedUserId,
                 agent_id: ctx.agentId || "llm", role: "assistant", content: fullContent,
                 reasoning_content: reasoningContent || "",
                 created_at: new Date(Date.now() + 1).toISOString(),
-              }).then(() => {}).catch(() => {});
+              })); } catch {
+                console.error("[LLM] assistant persistence requires recovery", { code: "LLM_ASSISTANT_PERSISTENCE_FAILED", clientRequestId: ctx.clientRequestId });
+                safeEnqueue(encoder.encode(`data: ${JSON.stringify({
+                  error: "回复已生成并结算，聊天记录保存状态待恢复。请保留当前回复并刷新历史核对，勿重复发送。",
+                  code: "LLM_ASSISTANT_PERSISTENCE_FAILED", reconciliation_required: true, done: false,
+                })}\n\n`));
+                safeClose();
+                return;
+              }
             }
+            recordModelSuccess(ctx.useModel);
+            safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+            console.log(`[LLM Route] pipe完成: model=${ctx.useModel}, agent=${ctx.agentName}, 内容=${fullContent.length}字符, 推理=${reasoningContent.length}字符, delivery=${liveDelivery ? "live" : "buffered"}, reason=${ctx.streamDeliveryReason || "unknown"}`);
+            safeClose();
           },
           abort(reason) {
             if (heartbeatInterval) clearInterval(heartbeatInterval);
@@ -305,7 +321,16 @@ export function handleStreamResponse(
         // Fetch/HTTP failures used to emit an untyped error. The durable wrapper
         // then replaced the reason with TERMINAL_UNKNOWN. Always emit a safe code;
         // transport ambiguity remains unknown, while explicit rejection is retained.
-        const failure = responseStartError(e);
+        const failure = e instanceof BipStreamPromptLeakError
+          ? new LlmStreamError(e.message, e.code) : responseStartError(e);
+        if (e instanceof LlmResponseStartError) {
+          console.error(JSON.stringify({
+            kind: "LLM_RESPONSE_START_FAILURE",
+            requestId: ctx.clientRequestId,
+            code: e.code,
+            diagnostics: e.diagnostics,
+          }));
+        }
         recordModelFailure(ctx.useModel, failure.code);
         console.error(`[LLM Route] wrappedStream异常: model=${ctx.useModel}, 内容=${fullContent.length}字符, code=${failure.code}`);
         if (!outerClosed) {
@@ -337,9 +362,9 @@ export function handleStreamResponse(
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
-      "X-Stream-Delivery": ctx.allowLiveStreamDelivery === true && !protectPrompt ? "live" : "buffered",
+      "X-Stream-Delivery": ctx.allowLiveStreamDelivery === true ? "live" : "buffered",
       "X-Stream-Delivery-Reason": protectPrompt
-        ? "prompt_output_review"
+        ? (ctx.allowLiveStreamDelivery === true ? "prompt_guarded_live_withheld_suffix" : "prompt_output_review")
         : ctx.streamDeliveryReason || (ctx.allowLiveStreamDelivery === true ? "live_delivery_allowed" : "buffer_until_atomic_settlement"),
       ...(ctx.reservation ? { "X-LLM-Continue-After-Disconnect": "true" } : {}),
     },
@@ -385,10 +410,28 @@ export async function handleNonStreamResponse(
         billingSnapshot: ctx.selectedModelBillingSnapshot,
       },
     );
+    let persistenceWarning: { status: string; code: string; message: string } | undefined;
+    if (ctx.conversationId && ctx.verifiedUserId && result.content) {
+      try {
+        await requireAssistantPersistence(getSupabaseClient().from("conversation_messages").insert({
+          id: crypto.randomUUID(), conversation_id: ctx.conversationId, user_id: ctx.verifiedUserId,
+          agent_id: ctx.agentId || "llm", role: "assistant", content: result.content,
+          reasoning_content: protectPrompt ? "" : result.reasoning_content || "",
+          created_at: new Date(Date.now() + 1).toISOString(),
+        }));
+      } catch {
+        persistenceWarning = { status: "recovery_required", code: "LLM_ASSISTANT_PERSISTENCE_FAILED",
+          message: "回复已生成并结算，聊天记录保存状态待恢复。请保留当前回复并刷新历史核对，勿重复发送。" };
+        console.error("[LLM] non-stream assistant persistence requires recovery", { code: persistenceWarning.code, clientRequestId: ctx.clientRequestId });
+      }
+    }
     return new Response(JSON.stringify({
       ...(protectPrompt ? {choices:[{message:{role:'assistant',content:result.content},finish_reason:'stop'}]} : result.raw as Record<string, unknown>),
       stream_delivery: "buffered",
       stream_delivery_reason: "non_stream_requested",
+      // Preserve this exact paid response in the durable replay store even if
+      // the separate history insert failed. Same-key replay must not re-charge.
+      ...(persistenceWarning ? { _persistence: persistenceWarning, warning: persistenceWarning.message, reconciliation_required: true } : {}),
       _billing: {
         operation_id: settlement.operationId,
         credits_charged: settlement.billing?.creditsCharged || 0,
@@ -397,8 +440,8 @@ export async function handleNonStreamResponse(
         token_usage: tokenUsage,
       },
     }), { headers: { "Content-Type": "application/json", "X-Stream-Delivery": "buffered", "X-Stream-Delivery-Reason": "non_stream_requested" } });
-  } catch (billingError) {
-    console.error("[Billing] Non-stream LLM settlement failed:", billingError);
+  } catch {
+    console.error("[Billing] Non-stream LLM settlement failed", { code: "LLM_BILLING_FAILED" });
     return new Response(JSON.stringify({
       error: "模型已返回，但共享钱包结算失败，本次不会交付完成结果",
       code: "LLM_BILLING_FAILED",

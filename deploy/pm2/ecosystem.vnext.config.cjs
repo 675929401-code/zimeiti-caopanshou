@@ -27,11 +27,14 @@ const expectedBuildId = process.env.EXPECTED_BUILD_ID || "";
 const releaseSourceVersion = process.env.RELEASE_SOURCE_VERSION || "";
 const releaseBuildOutputDigest = process.env.RELEASE_BUILD_OUTPUT_DIGEST || "";
 const cozeProjectEnv = process.env.COZE_PROJECT_ENV || "PROD";
+const releaseNodeBinary = process.env.RELEASE_NODE_BINARY || process.execPath;
 const mediaWorkerInstances = Math.max(1, Math.min(8, Number.parseInt(process.env.MEDIA_QUEUE_WORKER_INSTANCES || "2", 10) || 2));
-const mediaWorkerPort = String(Math.max(1024, Math.min(65535, Number.parseInt(process.env.MEDIA_QUEUE_WORKER_PORT || "5102", 10) || 5102)));
+// Keep the seed numeric so PM2's increment_var performs arithmetic for the
+// second fork (5103) instead of reusing or concatenating a string value.
+const mediaWorkerPort = Math.max(1024, Math.min(65535, Number.parseInt(process.env.MEDIA_QUEUE_WORKER_PORT || "5102", 10) || 5102));
 
 const common = {
-  interpreter: process.execPath,
+  interpreter: releaseNodeBinary,
   exec_mode: "fork",
   instances: 1,
   autorestart: true,

@@ -35,7 +35,8 @@ const expected = new Map([
   ["src/lib/short-drama/general-script-profile-data.ts", expectedPromptModule()],
 ]);
 
-for (const [relativePath, content] of expected) {
+const selected = new Map([...expected].filter(([relativePath]) => !process.argv.includes("--database-only") || relativePath === "src/lib/generated/database-contract.ts"));
+for (const [relativePath, content] of selected) {
   if (shouldWrite) {
     fs.writeFileSync(path.join(root, relativePath), content, "utf8");
   }
@@ -43,4 +44,4 @@ for (const [relativePath, content] of expected) {
   assert.equal(actual, content, `${relativePath} is stale; regenerate it from the reviewed source resource`);
 }
 
-console.log(JSON.stringify({ status: "PASS", mode: shouldWrite ? "write-and-verify" : "verify", embeddedRuntimeResources: expected.size }, null, 2));
+console.log(JSON.stringify({ status: "PASS", mode: shouldWrite ? "write-and-verify" : "verify", embeddedRuntimeResources: selected.size }, null, 2));

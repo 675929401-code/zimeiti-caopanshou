@@ -4,6 +4,11 @@ import {spawnSync} from 'node:child_process';
 import {assertLocalReleaseAccepted} from './local-revision.mjs';
 import {recordOperation} from './project-operations.mjs';
 
+// Historical implementation is evidence only. Stop before local acceptance,
+// credentials, filesystem writes, or subprocesses can be reached.
+console.error('LEGACY_LOCAL_PUBLISH_DISABLED: see 自媒体操盘手部署执行规约-当前版.md');
+process.exit(2);
+
 // All remote writes are downstream of current local acceptance. No --force or bypass flag.
 const root=process.cwd();
 const accepted=assertLocalReleaseAccepted(root);

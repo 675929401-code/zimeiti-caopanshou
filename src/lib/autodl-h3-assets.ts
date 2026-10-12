@@ -1,4 +1,5 @@
 import type { FileCategory, StorageProviderType } from "@/storage/object";
+import { generatedImageReferenceUri, parseGeneratedImageReferenceUri } from "@/lib/generated-image-reference";
 
 const H3_ASSET_PREFIX = "object://tencent_cos/";
 const MAX_ASSET_KEY_LENGTH = 1024;
@@ -23,6 +24,7 @@ export interface AutodlH3OwnedAsset {
 }
 
 export interface AutodlH3AssetDependencies {
+  resolveGeneratedImage?(userId: string, ref: string): Promise<string>;
   findOwnedAsset(input: {
     userId: string;
     provider: "tencent_cos";
@@ -176,6 +178,13 @@ export async function stabilizeAutodlH3InputAssets(
   const output: AutodlH3StableInputAssets = {};
   const one = async (candidate: unknown, category: H3InputCategory) => {
     if (typeof candidate !== "string" || !candidate.trim()) return undefined;
+    const generated = parseGeneratedImageReferenceUri(candidate);
+    if (generated) {
+      if (category !== "image") throw new AutodlH3AssetError("H3_ASSET_REF_INVALID", "生成图片引用不能作为音频或视频");
+      if (deps.resolveGeneratedImage) await deps.resolveGeneratedImage(input.userId, candidate);
+      else await (await import("@/lib/server/generated-image-reference")).resolveGeneratedImageReference({ userId: input.userId, reference: generated, queued: true });
+      return generatedImageReferenceUri(generated);
+    }
     const asset = await requireOwnedAsset(input.userId, candidate, category, deps);
     return createAutodlH3AssetRef(asset.provider, asset.key);
   };
@@ -186,8 +195,7 @@ export async function stabilizeAutodlH3InputAssets(
   output.audioAssetRef = await one(input.candidates.audioUrl, "audio");
   output.sourceVideoAssetRef = await one(input.candidates.sourceVideoUrl, "video");
   output.imageAssetRefs = await Promise.all(values(input.candidates.imageUrls, 9).map(async (candidate) => {
-    const asset = await requireOwnedAsset(input.userId, candidate, "image", deps);
-    return createAutodlH3AssetRef(asset.provider, asset.key);
+    return (await one(candidate, "image"))!;
   }));
   output.audioAssetRefs = await Promise.all(values(input.candidates.audioUrls, 3).map(async (candidate) => {
     const asset = await requireOwnedAsset(input.userId, candidate, "audio", deps);
@@ -234,6 +242,12 @@ export async function resolveAutodlH3QueuedAssetPayload(
   const result: Record<string, unknown> = { ...input.payload };
   const hydrate = async (ref: unknown, category: H3InputCategory) => {
     if (typeof ref !== "string" || !ref.trim()) return undefined;
+    const generated = parseGeneratedImageReferenceUri(ref);
+    if (generated) {
+      if (category !== "image") throw new AutodlH3AssetError("H3_ASSET_REF_INVALID", "生成图片引用不能作为音频或视频");
+      return deps.resolveGeneratedImage ? deps.resolveGeneratedImage(input.userId, ref)
+        : (await import("@/lib/server/generated-image-reference")).resolveGeneratedImageReference({ userId: input.userId, reference: generated, queued: true });
+    }
     const parsed = parseAutodlH3AssetRef(ref);
     if (!parsed) throw new AutodlH3AssetError("H3_ASSET_REF_INVALID", "H3 输入资产引用无效");
     const owned = await requireOwnedAsset(input.userId, ref, category, deps);

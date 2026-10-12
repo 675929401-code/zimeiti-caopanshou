@@ -1,3 +1,4 @@
+import { projectGeneratedImageClientReceipt, resolveGeneratedImageClientDelivery, type GeneratedImageClientDelivery, type GeneratedImageClientReceipt } from "@/lib/generated-image-client-delivery";
 import type { ImageModelCapabilities, ImageResolution } from "@/lib/image-model-capabilities";
 
 export type ImageValidationProof = {
@@ -13,7 +14,7 @@ export type ImageValidationDto = {
   validationKey: string | null; clientIdempotencyKey: string | null; clientTraceId: string | null;
   busy: boolean; canRequestRetest: boolean;
   existingAttempt?: { validationId: string; imageRecordId: string; state: string; requestState: string;
-    deliveryState: string; assetId: string | null; hasProviderCheckpoint: boolean } | null;
+    deliveryState: string; assetId: string | null; hasProviderCheckpoint: boolean;deliveryReceipt?:unknown } | null;
 };
 export type ImageValidationInputs = {
   prompt: string; resolution: ImageResolution; aspectRatio: string;
@@ -29,10 +30,11 @@ export type ImageValidationAttempt = {
   version: 1; userId: string; model: { id: string; publicId: string; name: string; upstream: string };
   proof: ImageValidationProof; createdAt: string; body?: ImageValidationBody;
   status: "submitting" | "processing" | "finalizing" | "unknown" | "rejected" | "completed" | "published";
+  generationCompleted?:boolean; mediaAvailable?:boolean; deliveryReceipt?:GeneratedImageClientReceipt;
   imageRecordId: string; assetId: string; canRecover: boolean; error: string; errorCode: string;
 };
 type AttemptStorage = Pick<Storage, "getItem" | "setItem">;
-type AttemptIo = { storage: AttemptStorage; token: string; fetcher: typeof fetch; onChange?: (attempt: ImageValidationAttempt) => void };
+type AttemptIo = { storage: AttemptStorage; token: string; fetcher: typeof fetch; onChange?: (attempt: ImageValidationAttempt) => void; onDelivery?: (delivery:GeneratedImageClientDelivery)=>void };
 const KEY = /^iav_[a-f0-9]{64}$/u;
 const ASSET_ID = /^[A-Za-z0-9_-]{1,160}$/u;
 const TERMINAL = new Set(["rejected", "completed", "published"]);
@@ -75,7 +77,8 @@ export function readImageValidationAttempt(storage: AttemptStorage, userId: stri
 export function saveImageValidationAttempt(storage: AttemptStorage, attempt: ImageValidationAttempt) {
   // Store the user's original request (including supplied reference URLs) and proof.
   // Never store authorization, generated-result URLs or access tickets, or log this body.
-  const serialized = JSON.stringify(attempt), key = imageValidationStorageKey(attempt.userId, attempt.model.id);
+  const durable={version:attempt.version,userId:attempt.userId,model:attempt.model,proof:attempt.proof,createdAt:attempt.createdAt,body:attempt.body,status:attempt.status,imageRecordId:attempt.imageRecordId,assetId:attempt.assetId,canRecover:attempt.canRecover,error:attempt.error,errorCode:attempt.errorCode,generationCompleted:attempt.generationCompleted,mediaAvailable:attempt.deliveryReceipt?.deliveryMode==="inline_ephemeral"?false:attempt.mediaAvailable,deliveryReceipt:projectGeneratedImageClientReceipt(attempt.deliveryReceipt)||undefined};
+  const serialized = JSON.stringify(durable), key = imageValidationStorageKey(attempt.userId, attempt.model.id);
   storage.setItem(key, serialized);
   if (storage.getItem(key) !== serialized) throw new Error("无法保存原验证编号，请允许本站本地存储后再试");
 }
@@ -105,15 +108,19 @@ export function updateImageValidationReceipt(attempt: ImageValidationAttempt, da
     return { ...attempt, status: "unknown", error: "返回记录与原验证模型或请求号不一致，已保留原任务", errorCode: "IMAGE_VALIDATION_RECEIPT_MISMATCH" };
   }
   const state = String(data.state || data.status || "");
+  const first=Array.isArray(data.images)?data.images[0] as Record<string,unknown>|undefined:undefined;
+  const recordId=String(data.recordId||first?.recordId||attempt.imageRecordId||"");
+  if(recordId && (!/^[a-f0-9]{64}$/u.test(recordId) || (attempt.imageRecordId && attempt.imageRecordId!==recordId)))throw new Error("原验证任务编号不一致");
+  const deliveryReceipt=projectGeneratedImageClientReceipt(data)||attempt.deliveryReceipt;
   const returnedAsset = typeof data.assetId === "string" ? data.assetId : Array.isArray(data.images)
     && data.images[0] && typeof data.images[0] === "object" ? String((data.images[0] as Record<string, unknown>).assetId || "") : "";
   if (returnedAsset && !ASSET_ID.test(returnedAsset)) throw new Error("验证图片资产编号无效");
   if (attempt.assetId && returnedAsset && attempt.assetId !== returnedAsset) throw new Error("原验证的图片资产不一致，已停止替换结果");
   const assetId = returnedAsset || attempt.assetId;
-  const completed = responseOk && state === "completed" && Boolean(assetId) && data.deliveryReady !== false;
+  const completed = responseOk && (state === "completed" || (state==="expired" && Boolean(deliveryReceipt))) && (Boolean(deliveryReceipt) || (Boolean(assetId) && data.deliveryReady !== false) || (Boolean(recordId) && data.deliveryReady === true));
   const rejected = state === "rejected" && data.canResubmit === true && data.sameKeyCanResubmit === false;
   const finalizing = state === "provider_completed_pending_delivery" || data.hasProviderCheckpoint === true;
-  return { ...attempt, assetId,
+  return { ...attempt, assetId, imageRecordId:recordId,deliveryReceipt,generationCompleted:completed||attempt.generationCompleted,mediaAvailable:completed ? (data.mediaAvailable===true || Boolean(first?.url) || Boolean(assetId)) : attempt.mediaAvailable,
     status: completed ? attempt.status === "published" ? "published" : "completed" : rejected ? "rejected" : finalizing ? "finalizing"
       : responseOk && ["processing", "intent"].includes(state) ? "processing" : "unknown",
     canRecover: finalizing && data.canRecover === true,
@@ -129,6 +136,7 @@ export function adoptImageValidationAttempt(dto: ImageValidationDto, userId: str
   if (base.userId !== userId || base.model.id !== dto.modelId || (base.imageRecordId && base.imageRecordId !== receipt.imageRecordId)) throw new Error("原验证记录归属不一致");
   const deliveryPending = receipt.hasProviderCheckpoint || (receipt.requestState === "completed" && receipt.deliveryState !== "delivered");
   const next = updateImageValidationReceipt({ ...base, imageRecordId: receipt.imageRecordId }, {
+    ...((receipt.deliveryReceipt && typeof receipt.deliveryReceipt==="object")?receipt.deliveryReceipt:{}),
     state: receipt.requestState === "completed" && receipt.deliveryState === "delivered" ? "completed" : receipt.state === "rejected" ? "rejected" : deliveryPending ? "provider_completed_pending_delivery" : receipt.requestState,
     assetId: receipt.deliveryState === "delivered" ? receipt.assetId : undefined,
     deliveryReady: receipt.deliveryState === "delivered", canResubmit: receipt.state === "rejected", sameKeyCanResubmit: false, canRecover: deliveryPending,
@@ -151,12 +159,15 @@ export async function submitImageValidation(dto: ImageValidationDto, fields: Ima
   let next: ImageValidationAttempt;
   try {
     const response = await fetcher("/api/image/generate", { method: "POST", redirect: "error", headers: { "Content-Type": "application/json", Authorization: `Bearer ${io.token}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(180000) });
-    next = updateImageValidationReceipt(attempt, await response.json() as Record<string, unknown>, response.ok);
+    const data=await response.json() as Record<string,unknown>;
+    next = updateImageValidationReceipt(attempt,data,response.ok);
+    if(response.ok && next.generationCompleted && Array.isArray(data.images) && data.images.length) {try {io.onDelivery?.(await resolveGeneratedImageClientDelivery(data));}catch {next={...next,mediaAvailable:false,error:"生成已完成，当前图片暂不可读取；原收据已保留"};}}
   } catch { next = { ...attempt, status: "unknown", error: "连接中断，原验证编号已保留，请检查原任务", errorCode: "IMAGE_VALIDATION_RESPONSE_UNKNOWN" }; }
   saveImageValidationAttempt(io.storage, next); io.onChange?.(next); return next;
 }
 export function buildImageValidationPublishRequest(attempt: ImageValidationAttempt) {
-  if (!["completed", "published"].includes(attempt.status) || !attempt.assetId || !/^[a-f0-9]{64}$/u.test(attempt.imageRecordId)) throw new Error("请先确认原图片已完成并保存到当前账号");
+  if (!["completed", "published"].includes(attempt.status) || (!attempt.assetId && !attempt.deliveryReceipt) || !/^[a-f0-9]{64}$/u.test(attempt.imageRecordId)) throw new Error("请先确认原验证图片已完成");
+  if(attempt.deliveryReceipt)return {modelId:attempt.model.id,imageRecordId:attempt.imageRecordId,proof:imageValidationProof(attempt.proof),intent:"retain_validation_evidence_and_publish"};
   return { modelId: attempt.model.id, imageRecordId: attempt.imageRecordId, proof: imageValidationProof(attempt.proof), confirmation: "PUBLISH_VALIDATED_IMAGE_MODEL" };
 }
 /** Explicit recovery only after a fresh read confirms an original provider checkpoint. */
@@ -168,7 +179,7 @@ export async function recoverImageValidation(attempt: ImageValidationAttempt, io
   const query = new URLSearchParams({ clientIdempotencyKey: saved.proof.clientIdempotencyKey, clientTraceId: saved.proof.clientTraceId });
   const statusResponse = await fetcher(`/api/image/status?${query}`, { headers: { Authorization: `Bearer ${io.token}` }, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(30000) });
   const status = await statusResponse.json() as Record<string, unknown>;
-  if (statusResponse.ok && status.state === "completed" && status.deliveryReady === true) {
+  if (statusResponse.ok && status.state === "completed" && (status.deliveryReady === true || status.deliveryMode === "inline_ephemeral")) {
     const completed = updateImageValidationReceipt(saved, status); saveImageValidationAttempt(io.storage, completed); io.onChange?.(completed); return completed;
   }
   if (!statusResponse.ok || status.state !== "provider_completed_pending_delivery" || status.canRecover !== true || status.canResubmit !== false) {
@@ -186,7 +197,14 @@ export async function recoverImageValidation(attempt: ImageValidationAttempt, io
 }
 export async function fetchImageValidationAsset(assetId: string, token: string, fetcher: typeof fetch = fetch) {
   if (!token || !ASSET_ID.test(assetId)) throw new Error("图片归属信息不完整");
-  const response = await fetcher(`/api/storage/files/${encodeURIComponent(assetId)}/content?download=1`, { headers: { Authorization: `Bearer ${token}` }, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(60000) });
+  return fetchValidationPreview(`/api/storage/files/${encodeURIComponent(assetId)}/content?download=1`,token,fetcher);
+}
+export async function fetchImageValidationRecord(recordId:string,token:string,fetcher:typeof fetch=fetch){
+  if(!token || !/^[a-f0-9]{64}$/u.test(recordId))throw new Error("图片归属信息不完整");
+  return fetchValidationPreview(`/api/media-history/content?recordId=${recordId}`,token,fetcher);
+}
+async function fetchValidationPreview(url:string,token:string,fetcher:typeof fetch){
+  const response = await fetcher(url, { headers: { Authorization: `Bearer ${token}` }, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(60000) });
   const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase(), limit = 30 * 1024 * 1024;
   if (!response.ok || !["image/png", "image/jpeg", "image/webp"].includes(type) || !response.body) throw new Error("原验证图片暂时无法读取");
   if (Number(response.headers.get("content-length")) > limit) { await response.body.cancel(); throw new Error("图片超过 30MB 读取上限"); }

@@ -81,7 +81,7 @@ function normalizeEndpoint(value: unknown) {
 }
 
 function sanitizeStringValue(value: string): string | undefined {
-  if (value.length > MAX_SAFE_STRING_LENGTH || /data:/iu.test(value)) return undefined;
+  if (value.length > MAX_SAFE_STRING_LENGTH || /(?:data:|blob:)/iu.test(value)) return undefined;
   const compact = value.replace(/\s+/gu, "");
   if (compact.length > 256 && /^[A-Za-z0-9+/=_-]+$/u.test(compact)) return undefined;
   let invalidUrl = false;

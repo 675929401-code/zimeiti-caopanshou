@@ -4,6 +4,7 @@ import path from "node:path";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 import { resolveAppRuntimeDir } from "@/lib/runtime-paths";
 import { parseImageRequestRejectionReceipt, type ImageRequestRejection } from "@/lib/image-request-rejection";
+import { assertImageDurableMetadata, isImageEphemeralReceipt, matchesImageEphemeralReceipt, type ImageEphemeralReceipt, type ImageTransientDelivery } from "@/lib/image-ephemeral-delivery";
 import {
   assertImageProviderDispatchReceipt,
   assertImageProviderSubmissionReceipt,
@@ -36,9 +37,8 @@ export type ImageExactlyOnceRecord = {
   updatedAt: string;
 };
 
-export type ImageProviderResult = {
+type ImageProviderResultMetadata = {
   schema: "image_provider_result.v1";
-  rawUrl: string;
   mode: "local" | "workflow";
   selectedModelId: string;
   selectedCostPrice: number;
@@ -46,10 +46,13 @@ export type ImageProviderResult = {
   apiEndpoint: string;
   source: string;
 };
+export type ImageUrlProviderResult = ImageProviderResultMetadata & { kind?: "url"; rawUrl: string };
+export type ImageInlineProviderResult = ImageProviderResultMetadata & { kind: "inline"; inlineDataUrl: string };
+export type ImageProviderResult = ImageUrlProviderResult | ImageInlineProviderResult;
 
 type ImageProviderCheckpoint = {
   schema: "image_provider_checkpoint.v1";
-  providerResult: ImageProviderResult;
+  providerResult: ImageUrlProviderResult;
   resultFingerprint: string;
   persistenceLease?: { owner: string; expiresAt: string };
 };
@@ -65,13 +68,14 @@ function validProviderResult(value: unknown): value is ImageProviderResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const result = value as ImageProviderResult;
   if (result.schema !== "image_provider_result.v1"
-    || typeof result.rawUrl !== "string" || !result.rawUrl || result.rawUrl.length > 36 * 1024 * 1024
     || !["local", "workflow"].includes(result.mode)
     || typeof result.selectedModelId !== "string" || !result.selectedModelId
     || !Number.isFinite(result.selectedCostPrice) || result.selectedCostPrice < 0
     || typeof result.provider !== "string" || !result.provider
     || typeof result.apiEndpoint !== "string" || typeof result.source !== "string" || !result.source) return false;
-  if (/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+$/iu.test(result.rawUrl)) return true;
+  if (result.kind === "inline") return typeof result.inlineDataUrl === "string" && result.inlineDataUrl.startsWith("data:image/") && result.inlineDataUrl.length <= 42 * 1024 * 1024;
+  if (result.kind && result.kind !== "url") return false;
+  if (typeof result.rawUrl !== "string" || !result.rawUrl || result.rawUrl.length > 8192) return false;
   try {
     const url = new URL(result.rawUrl);
     return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password;
@@ -81,8 +85,12 @@ function validProviderResult(value: unknown): value is ImageProviderResult {
 function providerCheckpoint(record: ImageExactlyOnceRecord): ImageProviderCheckpoint | null {
   const response = record.response as ImageProviderCheckpoint | undefined;
   return record.state === "intent" && response?.schema === "image_provider_checkpoint.v1"
-    && validProviderResult(response.providerResult)
+    && validUrlProviderResult(response.providerResult)
     && response.resultFingerprint === providerResultFingerprint(response.providerResult) ? response : null;
+}
+
+function validUrlProviderResult(value: unknown): value is ImageUrlProviderResult {
+  return validProviderResult(value) && value.kind !== "inline";
 }
 
 /** Status callers receive a boolean, never the private provider URL. */
@@ -134,7 +142,9 @@ export class ImageExactlyOnceError extends Error {
 /** A typed, definitive rejection; never construct this for a generic timeout, 5xx or an accepted task. */
 export class ImageRequestRejectedError extends ImageExactlyOnceError {
   constructor(readonly rejection: ImageRequestRejection) {
-    super(rejection.code, rejection.code === "IMAGE_BILLING_RESERVATION_REJECTED"
+    super(rejection.code, rejection.code === "IMAGE_PROVIDER_LINK_REQUIRED"
+      ? "上游未返回可交付的图片链接；系统不会将内嵌图片另存为素材，预留费用将自动释放。"
+      : rejection.code === "IMAGE_BILLING_RESERVATION_REJECTED"
       ? "本次图片预算预留未成功，未调用生成服务，也未扣费。请检查余额后重新提交。"
       : rejection.code === "IMAGE_PROVIDER_ADMISSION_BUSY"
         ? "上游生图通道当前并发已满，本次未调用供应商，预留费用将自动释放。"
@@ -216,7 +226,8 @@ export interface ImageExactlyOnceStore {
     clientTraceId: string;
   }): Promise<ImageExactlyOnceRecord | null>;
   save(record: ImageExactlyOnceRecord): Promise<void>;
-  claimProviderPersistence?(record: ImageExactlyOnceRecord, result: ImageProviderResult, leaseOwner: string): Promise<ImageExactlyOnceRecord | null>;
+  claimProviderPersistence?(record: ImageExactlyOnceRecord, result: ImageUrlProviderResult, leaseOwner: string): Promise<ImageExactlyOnceRecord | null>;
+  completeEphemeralDelivery?(record: ImageExactlyOnceRecord, userId: string, receipt: ImageEphemeralReceipt, billingReferenceId: string): Promise<ImageExactlyOnceRecord | null>;
   releaseProviderPersistence?(record: ImageExactlyOnceRecord, leaseOwner: string): Promise<ImageProviderPersistenceReleaseResult>;
   completeProviderPersistence?(record: ImageExactlyOnceRecord, response: Record<string, unknown>, leaseOwner: string): Promise<ImageExactlyOnceRecord | null>;
   recordProviderOutputRejection?(record: ImageExactlyOnceRecord, rejection: ImageRequestRejection, leaseOwner: string, billingRelease?: ImageRejectionBillingRelease): Promise<ImageExactlyOnceRecord | null>;
@@ -279,6 +290,7 @@ export class FileImageExactlyOnceStore implements ImageExactlyOnceStore {
     payloadFingerprint: string;
     requestSnapshot?: Record<string, unknown>;
   }) {
+    assertImageDurableMetadata(input.requestSnapshot);
     validateStrictImageClientKeys(input.clientIdempotencyKey, input.clientTraceId);
     await mkdir(this.rootDir, { recursive: true });
     const recordId = sha256(`${input.userId}\u0000${input.clientIdempotencyKey}`);
@@ -340,6 +352,7 @@ export class FileImageExactlyOnceStore implements ImageExactlyOnceStore {
   }
 
   async save(record: ImageExactlyOnceRecord) {
+    assertImageDurableMetadata(record);
     const next = { ...record, updatedAt: new Date().toISOString() };
     const target = this.file(record.recordId);
     const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
@@ -478,6 +491,37 @@ function databaseRowToRecord(row: DatabaseImageExactlyOnceRow): ImageExactlyOnce
  * is intentionally not resubmitted: the caller must reconcile it manually.
  */
 export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
+  async readProviderPersistenceBinding(input: {
+    recordId: string; userId: string; payloadFingerprint: string; persistenceAttemptId: string; result: ImageUrlProviderResult;
+  }) {
+    const { data, error } = await getSupabaseAdminClient().from("image_generation_requests")
+      .select(IMAGE_RECORD_COLUMNS).eq("record_id", input.recordId).eq("user_id", input.userId).eq("state", "intent").maybeSingle();
+    if (error || !data) throw new ImageExactlyOnceError("IMAGE_H3_CHECKPOINT_BINDING_UNAVAILABLE", "原图片结果归属暂时无法确认，系统不会重新生成", 503);
+    const record = databaseRowToRecord(data as DatabaseImageExactlyOnceRow);
+    const checkpoint = providerCheckpoint(record);
+    if (record.recordId !== input.recordId || record.userHash !== sha256(input.userId)
+      || record.payloadFingerprint !== input.payloadFingerprint || !checkpoint
+      || checkpoint.persistenceLease?.owner !== input.persistenceAttemptId
+      || Date.parse(checkpoint.persistenceLease.expiresAt) <= Date.now()
+      || !Number.isFinite(Date.parse(checkpoint.persistenceLease.expiresAt))
+      || providerResultFingerprint(checkpoint.providerResult) !== providerResultFingerprint(input.result)) {
+      throw new ImageExactlyOnceError("IMAGE_H3_CHECKPOINT_BINDING_UNAVAILABLE", "原图片结果归属暂时无法确认，系统不会重新生成", 503);
+    }
+    return checkpoint.providerResult;
+  }
+  async completeEphemeralDelivery(record: ImageExactlyOnceRecord, userId: string, receipt: ImageEphemeralReceipt, billingReferenceId: string) {
+    if (!isImageEphemeralReceipt(receipt) || receipt.recordId !== record.recordId) throw new ImageExactlyOnceError("IMAGE_EPHEMERAL_METADATA_INVALID", "临时图片收据无效，原请求保持锁定", 503);
+    const { data, error } = await getSupabaseAdminClient().rpc("complete_image_ephemeral_delivery", {
+      p_record_id: record.recordId, p_user_id: userId, p_client_trace_id: record.clientTraceId,
+      p_payload_fingerprint: record.payloadFingerprint,
+      p_dispatch_receipt_sha256: record.providerDispatchReceipt?.receiptSha256 || "",
+      p_submission_receipt_sha256: record.providerSubmissionReceipt?.receiptSha256 || "",
+      p_billing_reference_id: billingReferenceId, p_metadata: receipt,
+    });
+    if (error) databaseImageExactlyOnceError(error);
+    const row = (data as { record?: DatabaseImageExactlyOnceRow } | null)?.record;
+    return row ? databaseRowToRecord(row) : null;
+  }
   async recordProviderDispatchReceipt(record: ImageExactlyOnceRecord, userId: string, receipt: ImageProviderDispatchReceipt) {
     assertImageProviderDispatchReceipt(receipt);
     const { data, error } = await getSupabaseAdminClient().rpc("record_image_provider_dispatch_receipt_atomic", {
@@ -579,7 +623,9 @@ export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
       : null;
   }
 
-  async claimProviderPersistence(record: ImageExactlyOnceRecord, result: ImageProviderResult, leaseOwner: string) {
+  async claimProviderPersistence(record: ImageExactlyOnceRecord, result: ImageUrlProviderResult, leaseOwner: string) {
+    assertImageDurableMetadata(result);
+    if (!validUrlProviderResult(result)) throw new Error("IMAGE_DURABLE_MEDIA_BYTES_FORBIDDEN");
     const previous = providerCheckpoint(record);
     if (record.state !== "intent" || (record.response && !previous)) throw persistencePending();
     if (previous?.persistenceLease && Date.parse(previous.persistenceLease.expiresAt) > Date.now()) {
@@ -689,6 +735,7 @@ export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
   }
 
   async completeProviderPersistence(record: ImageExactlyOnceRecord, response: Record<string, unknown>, leaseOwner: string) {
+    assertImageDurableMetadata(response);
     const checkpoint = providerCheckpoint(record);
     if (!checkpoint || checkpoint.persistenceLease?.owner !== leaseOwner) return null;
     const db = getSupabaseAdminClient();
@@ -735,6 +782,7 @@ export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
     payloadFingerprint: string;
     requestSnapshot?: Record<string, unknown>;
   }) {
+    assertImageDurableMetadata(input.requestSnapshot);
     validateStrictImageClientKeys(input.clientIdempotencyKey, input.clientTraceId);
     const recordId = sha256(`${input.userId}\u0000${input.clientIdempotencyKey}`);
     try {
@@ -796,6 +844,7 @@ export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
 
   async save(record: ImageExactlyOnceRecord) {
     try {
+      assertImageDurableMetadata(record);
       const db = getSupabaseAdminClient();
       const { data, error } = await db.rpc("save_image_generation_request", {
         p_record_id: record.recordId,
@@ -817,6 +866,20 @@ export class DatabaseImageExactlyOnceStore implements ImageExactlyOnceStore {
       databaseImageExactlyOnceError(error);
     }
   }
+}
+
+/** Billing-bound metadata delivery; intentionally creates no user_files row. */
+export async function finalizeImageProviderDelivery(input: { recordId: string; userId: string; providerUrl: string }) {
+  try {
+    const { data, error } = await getSupabaseAdminClient().rpc("finalize_image_provider_delivery", {
+      p_record_id: input.recordId, p_user_id: input.userId, p_provider_url: input.providerUrl,
+    });
+    if (error) databaseImageExactlyOnceError(error);
+    if ((data as { deliveryState?: string } | null)?.deliveryState !== "delivered") {
+      throw new ImageExactlyOnceError("IMAGE_DELIVERY_NOT_CONFIRMED", "图片交付尚未确认，请用原请求恢复", 503);
+    }
+    return { assetId: undefined, deliveryState: "delivered" as const };
+  } catch (error) { databaseImageExactlyOnceError(error); }
 }
 
 export async function finalizeImageExactlyOnceDelivery(input: {
@@ -875,6 +938,20 @@ export async function finalizeImageExactlyOnceDelivery(input: {
 }
 
 export class MemoryImageExactlyOnceStore implements ImageExactlyOnceStore {
+  async completeEphemeralDelivery(record: ImageExactlyOnceRecord, userId: string, receipt: ImageEphemeralReceipt, billingReferenceId: string) {
+    const stored = this.records.get(record.recordId);
+    if (!stored || stored.userHash !== sha256(userId) || stored.clientTraceId !== record.clientTraceId
+      || stored.payloadFingerprint !== record.payloadFingerprint || !isImageEphemeralReceipt(receipt)
+      || receipt.recordId !== record.recordId || !stored.providerDispatchReceipt || !stored.providerSubmissionReceipt
+      || stored.providerSubmissionReceipt.dispatchReceiptSha256 !== stored.providerDispatchReceipt.receiptSha256) return null;
+    if (stored.state === "completed") return matchesImageEphemeralReceipt(stored.response, receipt) ? structuredClone(stored) : null;
+    if (stored.state !== "intent" || stored.response) return null;
+    const next: ImageExactlyOnceRecord = { ...stored, state: "completed", deliveryState: "delivered", response: {
+      ...receipt, billingReferenceId, cashCharged: Number(stored.requestSnapshot?.quotedPriceYuan || 0),
+    }, updatedAt: new Date().toISOString() };
+    this.records.set(record.recordId, structuredClone(next));
+    return structuredClone(next);
+  }
   private readonly records = new Map<string, ImageExactlyOnceRecord>();
 
   async recordProviderDispatchReceipt(record: ImageExactlyOnceRecord, userId: string, receipt: ImageProviderDispatchReceipt) {
@@ -930,7 +1007,9 @@ export class MemoryImageExactlyOnceStore implements ImageExactlyOnceStore {
     return structuredClone(next);
   }
 
-  async claimProviderPersistence(record: ImageExactlyOnceRecord, result: ImageProviderResult, leaseOwner: string) {
+  async claimProviderPersistence(record: ImageExactlyOnceRecord, result: ImageUrlProviderResult, leaseOwner: string) {
+    assertImageDurableMetadata(result);
+    if (!validUrlProviderResult(result)) throw new Error("IMAGE_DURABLE_MEDIA_BYTES_FORBIDDEN");
     const stored = this.records.get(record.recordId);
     if (!stored || stored.payloadFingerprint !== record.payloadFingerprint) return null;
     if (stored.state === "completed" && stored.response) return structuredClone(stored);
@@ -972,6 +1051,7 @@ export class MemoryImageExactlyOnceStore implements ImageExactlyOnceStore {
   }
 
   async completeProviderPersistence(record: ImageExactlyOnceRecord, response: Record<string, unknown>, leaseOwner: string) {
+    assertImageDurableMetadata(response);
     const stored = this.records.get(record.recordId);
     const checkpoint = stored && providerCheckpoint(stored);
     if (!stored || !checkpoint || checkpoint.persistenceLease?.owner !== leaseOwner) return null;
@@ -1001,6 +1081,7 @@ export class MemoryImageExactlyOnceStore implements ImageExactlyOnceStore {
     payloadFingerprint: string;
     requestSnapshot?: Record<string, unknown>;
   }) {
+    assertImageDurableMetadata(input.requestSnapshot);
     validateStrictImageClientKeys(input.clientIdempotencyKey, input.clientTraceId);
     const recordId = sha256(`${input.userId}\u0000${input.clientIdempotencyKey}`);
     const existing = this.records.get(recordId);
@@ -1054,6 +1135,7 @@ export class MemoryImageExactlyOnceStore implements ImageExactlyOnceStore {
   }
 
   async save(record: ImageExactlyOnceRecord) {
+    assertImageDurableMetadata(record);
     const next = { ...record, updatedAt: new Date().toISOString() };
     this.records.set(record.recordId, structuredClone(next));
     Object.assign(record, next);
@@ -1079,8 +1161,14 @@ export async function runImageExactlyOnce(options: {
     recordProviderDispatchReceipt: (receipt: ImageProviderDispatchReceipt) => Promise<ImageProviderDispatchReceipt>;
     recordProviderSubmissionReceipt: (receipt: ImageProviderSubmissionReceipt) => Promise<ImageProviderSubmissionReceipt>;
   }) => Promise<Record<string, unknown>>;
-  persistProviderResult?: (result: ImageProviderResult, context: { persistenceAttemptId: string }) => Promise<Record<string, unknown>>;
+  persistProviderResult?: (result: ImageUrlProviderResult, context: { persistenceAttemptId: string; recordId: string; payloadFingerprint: string }) => Promise<Record<string, unknown>>;
+  prepareEphemeralResult?: (result: ImageInlineProviderResult, recordId: string) => Promise<{ receipt: ImageEphemeralReceipt; transientDelivery: ImageTransientDelivery }>;
+  billingReferenceId?: string;
 }) {
+  assertImageDurableMetadata(options.requestSnapshot);
+  if (options.prepareEphemeralResult && (!options.store.completeEphemeralDelivery || !options.billingReferenceId)) {
+    throw new ImageExactlyOnceError("IMAGE_EPHEMERAL_STORE_REQUIRED", "临时图片交付尚未就绪，本次不会调用模型或扣费", 503);
+  }
   if (options.persistProviderResult && (!options.store.claimProviderPersistence || !options.store.releaseProviderPersistence || !options.store.completeProviderPersistence)) {
     throw new ImageExactlyOnceError("IMAGE_CHECKPOINT_STORE_REQUIRED", "图片结果恢复存储尚未就绪，本次不会调用模型", 503);
   }
@@ -1122,7 +1210,9 @@ export async function runImageExactlyOnce(options: {
     };
   };
 
+  let ephemeralFinalizationAttempted = false;
   async function preserveFailure(error: unknown): Promise<never> {
+    if (ephemeralFinalizationAttempted) throw error; // Never overwrite a possibly committed atomic completion.
     if (error instanceof ImageRequestRejectedError) {
       let saved: ImageExactlyOnceRecord | null = null;
       try { saved = await options.store.recordRejection?.(claimed.record, error.rejection, pendingBillingRelease(error)) || null; } catch { /* The write acknowledgement may have been lost. */ }
@@ -1138,7 +1228,7 @@ export async function runImageExactlyOnce(options: {
     throw error;
   }
 
-  async function persistCheckpoint(result: ImageProviderResult, replayed: boolean) {
+  async function persistCheckpoint(result: ImageUrlProviderResult, replayed: boolean) {
     const leaseOwner = randomUUID();
     let acquired: ImageExactlyOnceRecord | null;
     try {
@@ -1158,7 +1248,9 @@ export async function runImageExactlyOnce(options: {
       throw persistencePending(getImageProviderCheckpointState(acquired).retryAfterMs);
     }
     try {
-      const response = await options.persistProviderResult!(acquiredCheckpoint.providerResult, { persistenceAttemptId: leaseOwner });
+      const response = await options.persistProviderResult!(acquiredCheckpoint.providerResult, {
+        persistenceAttemptId: leaseOwner, recordId: acquired.recordId, payloadFingerprint: acquired.payloadFingerprint,
+      });
       const completed = await options.store.completeProviderPersistence!(acquired, response, leaseOwner);
       if (!completed) throw persistencePending();
       return { response: completed.response!, replayed, record: completed };
@@ -1201,21 +1293,46 @@ export async function runImageExactlyOnce(options: {
     );
   }
 
-  if (options.persistProviderResult) {
+  if (options.persistProviderResult || options.prepareEphemeralResult) {
     let result: Record<string, unknown>;
     try {
       await options.beforeSubmitOnce?.(claimed.record);
       result = await options.submitOnce(receiptContext);
       if (!validProviderResult(result)) throw new ImageExactlyOnceError("IMAGE_PROVIDER_RESULT_INVALID", "上游未返回可保存的明确图片结果，请保留请求号核查", 503);
+      if (result.kind === "inline") {
+        if (!options.prepareEphemeralResult) throw new ImageExactlyOnceError("IMAGE_EPHEMERAL_STORE_REQUIRED", "临时图片交付尚未就绪，原请求保持锁定", 503);
+        const prepared = await options.prepareEphemeralResult(result, claimed.record.recordId);
+        if (!isImageEphemeralReceipt(prepared.receipt) || prepared.receipt.recordId !== claimed.record.recordId
+          || prepared.transientDelivery.sha256 !== prepared.receipt.sha256 || prepared.transientDelivery.byteLength !== prepared.receipt.byteLength) {
+          throw new ImageExactlyOnceError("IMAGE_EPHEMERAL_METADATA_INVALID", "临时图片收据校验失败，原请求保持锁定", 503);
+        }
+        let completed: ImageExactlyOnceRecord | null = null;
+        ephemeralFinalizationAttempted = true;
+        try { completed = await options.store.completeEphemeralDelivery!(claimed.record, options.userId, prepared.receipt, options.billingReferenceId!); }
+        catch { /* A lost write ACK is confirmed only by the same owner's durable row. */ }
+        if (!completed) completed = await options.store.get(options).catch(() => null);
+        if (!completed || completed.state !== "completed" || completed.deliveryState !== "delivered"
+          || completed.recordId !== claimed.record.recordId || completed.userHash !== claimed.record.userHash
+          || completed.payloadFingerprint !== claimed.record.payloadFingerprint || completed.clientTraceId !== claimed.record.clientTraceId
+          || !matchesImageEphemeralReceipt(completed.response, prepared.receipt)
+          || completed.response?.billingReferenceId !== options.billingReferenceId
+          || completed.response?.cashCharged !== Number(options.requestSnapshot?.quotedPriceYuan)) {
+          throw new ImageExactlyOnceError("IMAGE_EPHEMERAL_COMPLETION_UNCONFIRMED", "图片临时交付状态待确认，请保留请求号查询，系统不会重新生成", 503, { canRecover: false });
+        }
+        return { response: completed.response!, transientDelivery: prepared.transientDelivery, replayed: false, record: completed };
+      }
     } catch (error) {
       return preserveFailure(error);
     }
+    if (!options.persistProviderResult) throw new ImageExactlyOnceError("IMAGE_CHECKPOINT_STORE_REQUIRED", "图片链接交付未配置，原请求保持锁定", 503);
+    assertImageDurableMetadata(result);
     return persistCheckpoint(result, false);
   }
 
   try {
     await options.beforeSubmitOnce?.(claimed.record);
     const response = await options.submitOnce(receiptContext);
+    assertImageDurableMetadata(response);
     claimed.record.response = response;
     claimed.record.state = "completed";
     await options.store.save(claimed.record);

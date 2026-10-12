@@ -389,8 +389,8 @@ async function main() {
         const firstInput = page.locator("#preset-goal");
         await firstInput.waitFor({ state: "visible", timeout: 15_000 });
         const intake = await firstInput.evaluate((input) => {
-          const root = input.closest(".fixed.inset-0");
-          const panel = input.closest(".relative.w-full");
+          const root = input.closest('[role="dialog"]');
+          const panel = input.closest('[data-testid="agent-preset-intake"]');
           const textarea = document.querySelector("#preset-brief");
           const select = document.querySelector("#preset-audience");
           const label = input.closest("div")?.querySelector("label");

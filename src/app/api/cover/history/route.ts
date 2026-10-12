@@ -3,6 +3,8 @@ import { authorizeCurrentApiUser } from "@/lib/current-api-user";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { storageManager, type StorageProviderType } from "@/storage/object";
 import type { CoverCompositionPlan } from "@/lib/cover-composition";
+import { DatabaseImageExactlyOnceStore } from "@/lib/image-exactly-once";
+import { coverGeneratedReceipt, COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR } from "@/lib/cover-generated-delivery";
 import {
   COVER_FAILURE_HISTORY_SURFACE,
   imageFailureBillingReferenceId,
@@ -322,7 +324,20 @@ export async function GET(request: NextRequest) {
   }));
 
   const failed = await loadFailedCoverHistory(db, userId, page, windowStart, attemptsByKey);
-  const recordCandidates = [...completedRecords, ...failed.records, ...terminalAttemptRecords] as CoverTaskRecord[];
+  const temporaryReceipts = [];
+  const imageStore = new DatabaseImageExactlyOnceStore();
+  for (const value of attemptsLoaded.error ? [] : attemptsLoaded.data || []) {
+    if (!isCoverAttemptRow(value) || value.user_id !== userId || value.state !== "failed"
+      || ![COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR].includes(value.error_code || "")) continue;
+    const image = await imageStore.get({ userId, clientIdempotencyKey: value.client_idempotency_key, clientTraceId: value.client_trace_id });
+    const receipt = coverGeneratedReceipt(image, { userId, clientIdempotencyKey: value.client_idempotency_key });
+    if (!receipt) continue;
+    temporaryReceipts.push({ ...coverAttemptProjection(value).task, status: "done", cloudStored: false, cancellable: false,
+      canLoadForRetry: false, imageDeliveryReceipt: receipt,
+      billing: { state: receipt.cashCharged > 0 ? "charged" : "exempt", referenceId: receipt.billingReferenceId || receipt.recordId, chargedAmount: receipt.cashCharged },
+      error: "封面生成费用收据已保留；临时素材仅原页面可用，刷新后无法恢复" });
+  }
+  const recordCandidates = [...completedRecords, ...failed.records, ...terminalAttemptRecords, ...temporaryReceipts] as CoverTaskRecord[];
   const recordsByKey = new Map<string, CoverTaskRecord>();
   for (const record of recordCandidates) {
     const key = coverTaskStableKey(record);

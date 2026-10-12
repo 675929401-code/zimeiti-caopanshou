@@ -38,6 +38,7 @@ import {
 } from "@/lib/chat-pipeline";
 import { SseEventStreamDecoder } from "@/lib/sse-stream-decoder";
 import { knownChatFailureMessage } from "@/lib/chat-customer-failure";
+import { isConversationMetadataSyncBlocked, settledChatPersistenceWarning } from "@/contexts/chat-recovery-policy";
 
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import {
@@ -129,22 +130,35 @@ function hasAssistantHistoryMessage(conv: Conversation) {
 const MAX_INLINE_CHAT_IMAGE_CHARS = 12 * 1024 * 1024;
 const SAFE_INLINE_CHAT_IMAGE = /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\r\n]+$/i;
 
-// Paint the first provider text immediately, then keep every RAF increment
-// visibly progressive. A large upstream chunk must never collapse into a
-// one-frame block. Provider deltas remain visibly progressive without leaving
-// Markdown in tiny half-token states long enough to flicker or feel sluggish.
+// Paint the first glyph immediately. Ordinary chunks advance one glyph per
+// paint; only substantial backlogs accelerate, with an explicit upper bound.
 const TYPEWRITER_MIN_STEP = 1;
 const TYPEWRITER_MAX_STEP = 64;
-const TYPEWRITER_TARGET_CATCHUP_FRAMES = 6;
-// Settle waits are only an abnormal fallback; the normal path resolves as soon
-// as the RAF queue drains. Budget two 60 Hz frames per expected paint plus a
-// small frame margin so a long final provider chunk can finish progressively.
 const TYPEWRITER_SETTLE_FRAME_BUDGET_MS = 34;
 const TYPEWRITER_SETTLE_SAFETY_FRAMES = 6;
 const TYPEWRITER_SETTLE_MIN_WAIT_MS = 750;
 const TYPEWRITER_SETTLE_MAX_WAIT_MS = 15000;
+const typewriterSegmenter = typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+  : null;
 
-function safeTypewriterBoundary(target: string, requestedEnd: number): number {
+function typewriterStep(remaining: number): number {
+  if (remaining <= 48) return TYPEWRITER_MIN_STEP;
+  if (remaining <= 160) return 2;
+  if (remaining <= 480) return 4;
+  if (remaining <= 1200) return 8;
+  return Math.min(TYPEWRITER_MAX_STEP, Math.ceil(remaining / 40));
+}
+
+function safeTypewriterBoundary(target: string, requestedEnd: number, start = 0): number {
+  // Segment the unpainted suffix lazily, including flags and Indic clusters.
+  if (typewriterSegmenter) {
+    for (const part of typewriterSegmenter.segment(target.slice(start))) {
+      const end = start + part.index + part.segment.length;
+      if (end >= requestedEnd) return end;
+    }
+    return target.length;
+  }
   let end = Math.min(requestedEnd, target.length);
   if (end >= target.length) return target.length;
 
@@ -174,16 +188,13 @@ function safeTypewriterBoundary(target: string, requestedEnd: number): number {
   return end;
 }
 
-function takeTypewriterSlice(current: string, target: string, framesRemaining: number): string {
+function takeTypewriterSlice(current: string, target: string, firstPaint = false): string {
   if (current === target) return current;
   if (!target.startsWith(current)) return target;
   const remaining = target.length - current.length;
-  const step = Math.min(
-    TYPEWRITER_MAX_STEP,
-    Math.max(TYPEWRITER_MIN_STEP, Math.ceil(remaining / Math.max(1, framesRemaining))),
-  );
+  const step = firstPaint ? TYPEWRITER_MIN_STEP : typewriterStep(remaining);
   const requestedEnd = current.length + Math.min(step, remaining);
-  return target.slice(0, safeTypewriterBoundary(target, requestedEnd));
+  return target.slice(0, safeTypewriterBoundary(target, requestedEnd, current.length));
 }
 
 function undisplayedTypewriterChars(current: string, target: string): number {
@@ -204,10 +215,15 @@ function estimateTypewriterDrainWaitMs(
   );
   if (undisplayedChars === 0) return 0;
 
-  const estimatedFrames = Math.max(
-    TYPEWRITER_TARGET_CATCHUP_FRAMES,
-    Math.ceil(undisplayedChars / TYPEWRITER_MAX_STEP),
-  );
+  // Estimate the actual cadence. Code units overestimate multi-codepoint
+  // glyph work, so the normal queue drains before this fallback deadline.
+  let remaining = undisplayedChars;
+  let estimatedFrames = 0;
+  const frameCap = Math.ceil(TYPEWRITER_SETTLE_MAX_WAIT_MS / TYPEWRITER_SETTLE_FRAME_BUDGET_MS);
+  while (remaining > 0 && estimatedFrames < frameCap) {
+    remaining -= typewriterStep(remaining);
+    estimatedFrames += 1;
+  }
   const estimatedWaitMs = (estimatedFrames + TYPEWRITER_SETTLE_SAFETY_FRAMES)
     * TYPEWRITER_SETTLE_FRAME_BUDGET_MS;
   return Math.min(
@@ -748,10 +764,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const syncConversationToServer = useCallback(async (convId: string, retryAttempt = 0): Promise<void> => {
-    if (isStreamingRef.current) return;
     const conv = conversationsRef.current.find(c => c.id === convId);
     if (!conv) return;
     if (!hasAssistantHistoryMessage(conv)) return;
+    if (isConversationMetadataSyncBlocked(convId, streamingConvIdsRef.current, pendingSendConversationIdsRef.current)) {
+      if (!metadataSyncTimers.current.has(convId)) {
+        metadataSyncTimers.current.set(convId, setTimeout(() => {
+          metadataSyncTimers.current.delete(convId);
+          void syncConversationToServer(convId, retryAttempt);
+        }, 1000));
+      }
+      return;
+    }
 
     const token = safeGet(STORAGE_KEYS.AUTH_TOKEN);
     if (!token || metadataSyncInFlight.current.get(convId) === token) return;
@@ -1534,7 +1558,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     target: StreamingUpdatePayload;
     displayedContent: string;
     displayedReasoning: string;
-    framesRemaining: number;
+    firstPaint: boolean;
   };
   type StreamPerfRecord = {
     startedAt: number;
@@ -1680,9 +1704,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const targetReasoning = entry.target.reasoningContent ?? "";
       const previousContent = entry.displayedContent;
       const previousReasoning = entry.displayedReasoning;
-      const nextContent = takeTypewriterSlice(entry.displayedContent, entry.target.content || "", entry.framesRemaining);
+      const nextContent = takeTypewriterSlice(entry.displayedContent, entry.target.content || "", entry.firstPaint);
       const nextReasoning = entry.target.reasoningContent !== undefined
-        ? takeTypewriterSlice(entry.displayedReasoning, targetReasoning, entry.framesRemaining)
+        ? takeTypewriterSlice(entry.displayedReasoning, targetReasoning, entry.firstPaint)
         : undefined;
 
       entry.displayedContent = nextContent;
@@ -1716,7 +1740,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         typewriterEntriesRef.current.delete(key);
         resolveTypewriterDrain(key);
       } else {
-        entry.framesRemaining = Math.max(1, entry.framesRemaining - 1);
+        entry.firstPaint = false;
         hasMore = true;
       }
     }
@@ -1764,9 +1788,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Never blank the already painted response before that correction.
       displayedContent,
       displayedReasoning,
-      framesRemaining: TYPEWRITER_TARGET_CATCHUP_FRAMES,
+      firstPaint: !instantlyPaintedStreamKeysRef.current.has(key),
     });
-    // Every message paints its first chunk immediately. Later network targets
+    // Every message paints its first glyph immediately. Later network targets
     // coalesce into the next animation frame.
     if (!instantlyPaintedStreamKeysRef.current.has(key)) {
       instantlyPaintedStreamKeysRef.current.add(key);
@@ -1781,13 +1805,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [flushStreamingUpdate, markStreamTarget, streamKey]);
 
-  const settleTypewriterUpdate = useCallback((payload: StreamingUpdatePayload) => {
+  const settleTypewriterUpdate = useCallback((payload: StreamingUpdatePayload, signal?: AbortSignal) => {
     const key = streamKey(payload);
     return new Promise<void>((resolve) => {
       let settled = false;
       let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
       const cleanup = () => {
+        signal?.removeEventListener("abort", onAbort);
         const resolvers = typewriterDrainResolversRef.current.get(key);
         resolvers?.delete(finish);
         if (resolvers && resolvers.size === 0) {
@@ -1813,6 +1838,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         cleanup();
         resolve();
       };
+
+      // Stop also applies after the network has completed while the view is
+      // draining. Preserve received text once, then release this message's
+      // queue immediately without cancelling other conversations' RAF work.
+      const onAbort = () => {
+        if (settled) return;
+        dispatch({ type: "UPDATE_MESSAGE", payload });
+        finish("settle-aborted");
+      };
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener("abort", onAbort, { once: true });
 
       const targetReasoning = payload.reasoningContent ?? "";
       const existing = typewriterEntriesRef.current.get(key);
@@ -2118,6 +2157,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             });
             const { done, value } = await Promise.race([readPromise, timeoutPromise])
               .finally(() => { if (readTimeoutId) clearTimeout(readTimeoutId); });
+            let observedReadGapMs = 0;
             if (done) {
               sseStreamEndReason = "done";
               const duration = Date.now() - streamStartTime;
@@ -2133,10 +2173,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               sseChunkCount++;
               const chunkGap = Date.now() - lastChunkTime;
               lastChunkTime = Date.now();
-              // 每隔10个chunk或首个chunk记录一次
-              if (isStreamDebugEnabled() && (sseChunkCount <= 2 || sseChunkCount % 10 === 0)) {
-                console.log(`[sendLLMMessage] SSE chunk #${sseChunkCount}: ${value?.length || 0}bytes, gap=${chunkGap}ms, 累计内容=${fullContent.length}字符`);
-              }
+              observedReadGapMs = chunkGap;
             }
 
             for (const event of done ? sseDecoder.finish() : sseDecoder.push(value)) {
@@ -2255,11 +2292,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   // Skip non-JSON lines
                 }
             }
+            // Debug evidence describes parsed network reads, never message text.
+            // Record after decoding so a complete answer followed by heartbeats
+            // cannot be mistaken for incremental upstream content.
+            if (!done && isStreamDebugEnabled()) {
+              console.log("[LLM_SSE_READ]", JSON.stringify({
+                schemaVersion: 1, clientRequestId, ordinal: sseChunkCount,
+                bytes: value?.length || 0, gapMs: observedReadGapMs,
+                cumulativeContentChars: fullContent.length,
+                terminal: receivedDoneSignal, failed: streamErrored,
+              }));
+            }
             if (done) break;
           }
         } else {
           // Non-streaming JSON response
           const data = await res.json();
+          const persistenceWarning = settledChatPersistenceWarning(data);
+          if (persistenceWarning) toast.warning(persistenceWarning, { duration: 12000 });
           const choice = data.choices?.[0];
           if (choice?.message) {
             if (choice.message.content) markChatStreamLifecycle(assistantMsgId, "firstContentDelta");
@@ -2290,7 +2340,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           console.warn(`[sendLLMMessage] 流异常结束，追加中断提示：receivedDoneSignal=${receivedDoneSignal}, chunks=${sseChunkCount}`);
           finalContent = finalContent + "\n\n---\n*⚠️ 输出中断，内容可能不完整。如需继续，请点击重新生成。*";
         }
-        await settleTypewriterUpdate({ conversationId: convId, messageId: assistantMsgId, content: finalContent, reasoningContent: fullContent ? reasoningContent : "" });
+        await settleTypewriterUpdate({ conversationId: convId, messageId: assistantMsgId, content: finalContent, reasoningContent: fullContent ? reasoningContent : "" }, controller.signal);
 
         // Sync credits from backend — actual billing already done by /api/llm
         // The backend deducts credits based on real token usage after stream ends
@@ -2587,7 +2637,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // 最终内容仍走打字机队列。若本地临时会话随后要重命名，先在旧 ID 上追平，
         // 再整体 rename，避免旧 key 的动画队列残留或最终内容整段跳出。
         const finalContent = fullContent || reasoningContent || "（无回复内容）";
-        await settleTypewriterUpdate({ conversationId: convId, messageId: assistantMsgId, content: finalContent, reasoningContent: fullContent ? reasoningContent : "" });
+        await settleTypewriterUpdate({ conversationId: convId, messageId: assistantMsgId, content: finalContent, reasoningContent: fullContent ? reasoningContent : "" }, controller.signal);
 
         if (cozeConversationId && isLocalConvId(convId)) {
           // 用新action正确替换会话ID（UPDATE_CONVERSATION按新ID查找会找不到旧记录）
@@ -2857,7 +2907,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         const cozeFinalContent = fullContent || reasoningContent || "（无回复内容）";
-        await settleTypewriterUpdate({ conversationId: convId, messageId: assistantMsgId, content: cozeFinalContent, reasoningContent: fullContent ? reasoningContent : "" });
+        await settleTypewriterUpdate({ conversationId: convId, messageId: assistantMsgId, content: cozeFinalContent, reasoningContent: fullContent ? reasoningContent : "" }, controller.signal);
 
         // ── 更新会话ID：Coze Coding 返回的 session_id 需要保存，以维持上下文记忆 ──
         if (codingSessionId && isLocalConvId(convId)) {

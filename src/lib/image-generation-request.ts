@@ -20,7 +20,7 @@ const IMAGE_PUBLIC_REQUEST_FIELDS = new Set([
   "prompt", "modelId", "style", "mode", "aspectRatio", "resolution", "coverText",
   "referenceImageUrls", "referenceUsage", "imageUrl", "clientTraceId", "clientIdempotencyKey",
   "clientNodeId", "clientNodeTitle", "historySurface", "noRetry", "strictSingleSubmit",
-  "resumeDeliveryOnly", "adminValidation",
+  "resumeDeliveryOnly", "adminValidation", "deliveryRequirement",
 ]);
 
 export class ImageGenerationInputError extends Error {
@@ -148,6 +148,7 @@ export type NormalizedImageGenerationInput = {
   noRetry?: boolean;
   strictSingleSubmit?: boolean;
   resumeDeliveryOnly?: boolean;
+  deliveryRequirement?: "recoverable_reference";
   adminValidation?: Record<string, unknown>;
 };
 
@@ -219,6 +220,9 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
   const noRetry = optionalBoolean(value.noRetry, "noRetry");
   const strictSingleSubmit = optionalBoolean(value.strictSingleSubmit, "strictSingleSubmit");
   const resumeDeliveryOnly = optionalBoolean(value.resumeDeliveryOnly, "resumeDeliveryOnly");
+  if (value.deliveryRequirement !== undefined && value.deliveryRequirement !== "recoverable_reference") {
+    throw new ImageGenerationInputError("IMAGE_DELIVERY_REQUIREMENT_INVALID", "图片交付用途不受支持", 422);
+  }
   if (value.adminValidation != null && !plainObject(value.adminValidation)) {
     throw new ImageGenerationInputError("IMAGE_ADMIN_VALIDATION_INVALID", "图片验证参数格式无效", 422);
   }
@@ -242,6 +246,7 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
     ...(noRetry !== undefined ? { noRetry } : {}),
     ...(strictSingleSubmit !== undefined ? { strictSingleSubmit } : {}),
     ...(resumeDeliveryOnly !== undefined ? { resumeDeliveryOnly } : {}),
+    ...(value.deliveryRequirement === "recoverable_reference" ? { deliveryRequirement: "recoverable_reference" as const } : {}),
     ...(value.adminValidation ? { adminValidation: value.adminValidation } : {}),
   };
 }

@@ -18,6 +18,7 @@ import {
   parseImageModelSurfaceOrders,
 } from "@/lib/image-model-surface-order";
 import {
+  configuredAspectRatios,
   imageWorkspaceSurfaceFromRequest,
 } from "@/lib/workspace-model-policy";
 import {
@@ -176,6 +177,10 @@ export async function GET(request: Request) {
           ? [AUTODL_H3_SELFHOST_IMAGE_VERIFIED_RESOLUTION]
           : (Array.isArray(model.resolutionOptions) ? model.resolutionOptions as string[] : []),
         defaultResolution,
+        aspectRatios: configuredAspectRatios(imageProtocolConfig(model)).filter((ratio) => {
+          if (!/^\d+:\d+$/u.test(ratio)) return false;
+          return ratio.split(":").map(Number).every((value) => Number.isSafeInteger(value) && value > 0);
+        }),
         supportsReferenceInput: Boolean(model.supportsReferenceInput),
         referenceInputMode: String(model.referenceInputMode || "none"),
         identityReferenceLevel: String(model.identityReferenceLevel || "none"),

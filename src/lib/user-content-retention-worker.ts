@@ -1,6 +1,7 @@
 import 'server-only';
 import { DurableQueueLoop } from '@/lib/durable-queue-loop';
 import { getSupabaseAdminClient } from '@/storage/database/supabase-client';
+import { checkImageProviderSourcesBatch } from '@/lib/image-provider-delivery';
 
 const RETENTION_INTERVAL_MS = 15 * 60_000;
 const RETENTION_BATCH_LIMIT = 500;
@@ -76,7 +77,11 @@ function loop() {
   return retentionGlobal.__userContentRetentionWorker ??= new DurableQueueLoop({
     name: 'user-content-retention',
     intervalMs: RETENTION_INTERVAL_MS,
-    runOnce: async () => { await purgeExpiredUserContentBatch(); },
+    runOnce: async () => {
+      // Source checks have independent failure semantics from content cleanup.
+      await checkImageProviderSourcesBatch().catch(() => console.warn('[UserContentRetention] image source check deferred'));
+      await purgeExpiredUserContentBatch();
+    },
     onError: () => console.warn('[UserContentRetention] cleanup deferred'),
   });
 }

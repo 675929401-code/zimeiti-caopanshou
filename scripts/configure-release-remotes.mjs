@@ -5,6 +5,10 @@ import path from "node:path";
 
 const root = process.cwd();
 const args = process.argv.slice(2);
+if (args.some(arg => arg === '--apply' || arg.startsWith('--apply='))) {
+  console.error('LEGACY_REMOTE_REWRITE_DISABLED: see 自媒体操盘手部署执行规约-当前版.md');
+  process.exit(2);
+}
 const apply = args.includes("--apply");
 const policyPath = path.join(root, "deploy", "policies", "release-policy.json");
 const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));

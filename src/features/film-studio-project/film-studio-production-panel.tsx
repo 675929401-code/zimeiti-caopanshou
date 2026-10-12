@@ -28,6 +28,13 @@ import {
 } from "react";
 import styles from "./film-studio-production-panel.module.css";
 import { buildFilmVideoSubmission, canSubmitFilmVideo, filmJobModelLabel, filmVideoUnavailableReason } from "@/lib/short-drama/film-video-capabilities";
+import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
+
+function jobImageReference(job: ProductionJob | null | undefined) {
+  if (job?.state !== "succeeded" || job.resultPayload.blockedOnInput === true) return null;
+  const ref = GeneratedImageReferenceSchema.safeParse(job.resultPayload.generatedImageReference);
+  return ref.success ? ref.data : null;
+}
 
 type ProductionStage = "storyboard" | "final";
 
@@ -370,6 +377,22 @@ export function FilmStudioProductionPanel({
   onCountsChange?: (counts: PanelCounts) => void;
 }) {
   const [snapshot, setSnapshot] = useState<ProductionSnapshot>(EMPTY_SNAPSHOT);
+  const [generatedPreviews, setGeneratedPreviews] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    const urls: string[] = [];
+    const refs = snapshot.jobs.flatMap(job => { const ref = jobImageReference(job); return ref ? [ref] : []; });
+    void Promise.all(refs.map(async ref => {
+      try {
+        const response = await fetch(`/api/media-history/content?recordId=${ref.recordId}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        if (!response.ok) return [ref.recordId, ""] as const;
+        const blob = await response.blob();
+        if (!active || !blob.type.startsWith("image/") || blob.size > 30 * 1024 * 1024) return [ref.recordId, ""] as const;
+        const url = URL.createObjectURL(blob); urls.push(url); return [ref.recordId, url] as const;
+      } catch { return [ref.recordId, ""] as const; }
+    })).then(entries => { if (active) setGeneratedPreviews(Object.fromEntries(entries)); });
+    return () => { active = false; urls.forEach(url => URL.revokeObjectURL(url)); };
+  }, [snapshot.jobs, token]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<ProductionApiError | null>(null);
@@ -630,8 +653,8 @@ export function FilmStudioProductionPanel({
     setError(null);
     setNotice("");
     try {
-      await postAction(body);
-      setNotice(successMessage);
+      const result = await postAction(body);
+      setNotice(isRecord(result) && typeof result.message === "string" ? result.message : successMessage);
       await loadSnapshot({ silent: true });
       return true;
     } catch (actionError: unknown) {
@@ -675,6 +698,10 @@ export function FilmStudioProductionPanel({
 
   async function generateVideo(shot: ProductionShot) {
     if (!selectedVideoModel || !canSubmitFilmVideo(selectedVideoModel, videoResolution)) return;
+    const imageJob = newest(snapshot.jobs.filter(job => job.shotId === shot.id && job.stage === "image_generation"));
+    if (!shot.metadata.selectedImageAssetId && imageJob?.resultPayload.blockedOnInput === true) {
+      setNotice("当前图片已生成并结算，但素材不可恢复；请主动选择可用参考图，本次视频未提交。"); return;
+    }
     const approved = window.confirm(
       `使用已保存的镜头图片生成视频？\n${selectedVideoModel.displayName} · ${videoResolution || "模型默认规格"} · ${videoDuration} 秒\n报价 ${selectedVideoModel.publicPrice.toFixed(2)}`,
     );
@@ -728,6 +755,11 @@ export function FilmStudioProductionPanel({
           setBatchRecovery(null);
           throw apiFailure(payload, `镜头 ${entry.shotSequence} 批量生成失败`);
         }
+        if (isRecord(payload) && isRecord(payload.job) && isRecord(payload.job.resultPayload) && payload.job.resultPayload.blockedOnInput === true) {
+          setBatchRecovery(null);
+          setNotice(`镜头 ${entry.shotSequence} 已生成并结算，但素材不可恢复；批量任务已停止，未继续提交后续付费请求。`);
+          await loadSnapshot({ silent: true }); setPendingKey(""); return;
+        }
       } catch (batchError: unknown) {
         if (!receivedResponse) {
           setBatchRecovery({ ...plan, nextIndex: index });
@@ -767,7 +799,11 @@ export function FilmStudioProductionPanel({
       return;
     }
     if (kind === "video") {
-      const missing = shots.find((shot) => !selectedTake(shot, snapshot.assets, "image"));
+      const missing = shots.find((shot) => {
+        const job = newest(snapshot.jobs.filter(job => job.shotId === shot.id && job.stage === "image_generation"));
+        return (!shot.metadata.selectedImageAssetId && job?.resultPayload.blockedOnInput === true)
+          || (!selectedTake(shot, snapshot.assets, "image") && !jobImageReference(job));
+      });
       if (missing) {
         setError(new ProductionApiError(`镜头 ${missing.sequence} 尚无已归档图片 TAKE，批量视频未提交。`, "BATCH_VIDEO_REFERENCE_REQUIRED"));
         return;
@@ -1310,6 +1346,9 @@ export function FilmStudioProductionPanel({
                   const imageAsset = selectedTake(shot, imageTakes, "image");
                   const videoAsset = selectedTake(shot, videoTakes, "video");
                   const imageJob = newest(snapshot.jobs.filter((job) => job.shotId === shot.id && job.stage === "image_generation"));
+                  const imageReference = shot.metadata.selectedImageAssetId ? null : jobImageReference(imageJob);
+                  const imageBlocked = !shot.metadata.selectedImageAssetId && imageJob?.resultPayload.blockedOnInput === true;
+                  const imagePreview = imageReference ? generatedPreviews[imageReference.recordId] : assetUrl(imageAsset);
                   const videoJob = newest(snapshot.jobs.filter((job) => job.shotId === shot.id && job.stage === "video_generation"));
                   const imageBusy = Boolean(imageJob && ACTIVE_STATES.has(imageJob.state));
                   const videoBusy = Boolean(videoJob && ACTIVE_STATES.has(videoJob.state));
@@ -1339,13 +1378,13 @@ export function FilmStudioProductionPanel({
 
                       <div className={styles.mediaPair}>
                         <div className={styles.mediaFrame}>
-                          {assetUrl(imageAsset) ? (
+                          {imagePreview ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={assetUrl(imageAsset)} alt={`镜头 ${shot.sequence} 已持久化故事板`} />
+                            <img src={imagePreview} alt={`镜头 ${shot.sequence} 故事板参考图`} />
                           ) : (
                             <span>
                               <ImageIcon size={24} />
-                              {imageAsset ? "故事板已持久化，预览签名暂不可用" : "尚无持久化故事板"}
+                              {imageReference ? "生成图片引用已登记，预览暂不可用" : imageJob?.resultPayload.blockedOnInput ? "图片已生成并结算，临时素材不可恢复，自动编排已停止" : imageAsset ? "故事板已持久化，预览签名暂不可用" : "尚无可恢复故事板"}
                             </span>
                           )}
                           {imageJob && (
@@ -1469,7 +1508,7 @@ export function FilmStudioProductionPanel({
                         </button>
                         <button
                           type="button"
-                          disabled={!imageAsset || !canSubmitFilmVideo(selectedVideoModel, videoResolution) || videoBusy || Boolean(pendingKey)}
+                          disabled={imageBlocked || (!imageAsset && !imageReference) || !canSubmitFilmVideo(selectedVideoModel, videoResolution) || videoBusy || Boolean(pendingKey)}
                           onClick={() => void generateVideo(shot)}
                         >
                           {pendingKey === `video-${shot.id}` || videoBusy
@@ -1478,7 +1517,7 @@ export function FilmStudioProductionPanel({
                           {videoAsset ? "重新付费生成视频" : "付费生成镜头视频"}
                         </button>
                       </div>
-                      {!imageAsset && <small className={styles.dependencyHint}>视频任务必须先有当前项目内已持久化的镜头图片。</small>}
+                      {!imageAsset && !imageReference && <small className={styles.dependencyHint}>视频任务需要可恢复的生成图片引用或已保存素材。临时图片不能进入异步任务。</small>}
                     </article>
                   );
                 })}

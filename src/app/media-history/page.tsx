@@ -738,7 +738,7 @@ export default function MediaHistoryPage() {
           <Database aria-hidden="true" />
           <div>
             <strong>历史仅保存任务索引、受控预览地址与到期信息</strong>
-            <p>图片没有明确到期信息时保留两天；普通视频不设平台固定天数，源有效即可播放或下载，确认失效后自动移出历史。</p>
+            <p>图片和普通视频随上游资源有效期提供预览与下载，确认失效后自动移出历史，不在平台备份；仅返回图片数据的结果只供当前页面预览和下载，刷新后不保留。</p>
           </div>
           <span><Download aria-hidden="true" />下载到电脑长期保存{expiredCount > 0 ? ` · 已清理 ${expiredCount} 条过期索引` : ""}</span>
         </section>

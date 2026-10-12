@@ -44,11 +44,11 @@ if (failures.length === 0) pass("package release commands are self-contained and
 
 if (productionTopology.git?.primaryRemote?.name !== "origin"
   || productionTopology.git?.backupRemote?.name !== "backup"
-  || productionTopology.git?.primaryRemote?.recommendedProvider !== "Gitee private repository"
+  || productionTopology.git?.primaryRemote?.recommendedProvider !== "GitHub private repository"
   || !String(productionTopology.git?.backupRemote?.recommendedProvider || "").includes("independent private Git provider")
   || productionTopology.database?.migrationUrlEnv !== "DEPLOY_DATABASE_URL"
   || productionTopology.serverDeploy?.mode !== "immutable-artifact-overwrite-app-only") {
-  fail("production topology template must define Gitee origin, independent backup, DEPLOY_DATABASE_URL, and artifact-only server deployment");
+  fail("production topology template must define GitHub primary role, independent backup, DEPLOY_DATABASE_URL, and artifact-only server deployment");
 } else {
   pass("production topology template captures the selected industry-standard deployment shape");
 }
@@ -132,22 +132,21 @@ if (/db-migration-release\.mjs|DEPLOY_DATABASE_URL\s*=|ssh\s+root@|scp\s+/u.test
 
 const closeLoopSource = read("scripts/release-close-loop.mjs");
 for (const marker of [
-  "verify-deployment-readiness.mjs",
-  "--mode=code",
-  "--mode=production",
-  "verify-production-environment.mjs",
-  "db-migration-release.mjs",
-  "redactRemoteUrl",
+  "local-engineering-diagnostic.v1",
+  "collectEngineeringEnvironment",
+  "evaluateEngineeringEnvironment",
+  "UNKNOWN-not-inspected",
+  "READ_AUTHORITY",
   "--push-git",
   "--human",
-  "production-topology.template.json",
+  "LEGACY_GIT_PUSH_DISABLED",
 ]) {
-  if (!closeLoopSource.includes(marker)) fail(`close-loop orchestrator is missing marker: ${marker}`);
+  if (!closeLoopSource.includes(marker)) fail(`local diagnostic is missing contract: ${marker}`);
 }
-if (/db-migration-release\.mjs",\s*"apply"/u.test(closeLoopSource)) {
-  fail("close-loop orchestrator must not apply database migrations automatically");
+if (/db-migration-release\.mjs|verify-production-environment\.mjs|verify-deployment-readiness\.mjs|canExecuteServerDeploy/u.test(closeLoopSource)) {
+  fail("local diagnostic must not invoke production/database probes or grant deployment readiness");
 } else {
-  pass("close-loop orchestrator checks code, Git and database state without automatic database writes");
+  pass("local diagnostic inspects source contracts and local Git metadata; remote states remain unknown");
 }
 
 const storyboardVerifier = read("scripts/verify-storyboard-agent-output-import.ts");
