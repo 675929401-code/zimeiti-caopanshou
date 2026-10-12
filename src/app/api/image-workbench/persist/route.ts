@@ -171,6 +171,7 @@ export async function POST(request: NextRequest) {
       clientTraceId?: string;
       transform?: "first_storyboard_panel";
       targetAspectRatio?: string;
+      intent?: "user_asset_export";
     } | null;
     const clientTraceId = body?.clientTraceId?.trim() || "";
     if (clientTraceId && !/^[A-Za-z0-9_-]{8,128}$/u.test(clientTraceId)) {
@@ -185,6 +186,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid storage key" }, { status: 400 });
     }
     const sourceUrl = body?.url?.trim();
+    // Generation callers may retain references, but may not silently copy an
+    // upstream result. Upload/export is an explicit and separate user action.
+    if (!reusableStorageKey && body?.intent !== "user_asset_export") {
+      let directUrl: URL | null = null;
+      try { directUrl = sourceUrl ? new URL(sourceUrl) : null; } catch { /* invalid reference */ }
+      if (body?.transform || !directUrl || !["http:", "https:"].includes(directUrl.protocol) || directUrl.username || directUrl.password) {
+        return NextResponse.json({ error: "生成素材只保留上游链接；另存或裁切需要明确的导出操作", code: "IMAGE_EXPLICIT_EXPORT_REQUIRED" }, { status: 422 });
+      }
+      return NextResponse.json({ success: true, url: directUrl.href, deliveryMode: "provider_url" });
+    }
     if (!reusableStorageKey && sourceUrl?.startsWith("data:") && sourceUrl.length > MAX_JSON_BYTES) {
       return NextResponse.json({ error: "Image data too large" }, { status: 413 });
     }

@@ -1,3 +1,6 @@
+import { generatedImageReferenceUri, parseGeneratedImageReferenceUri, parseGeneratedVideoImageInputs } from "@/lib/generated-image-reference";
+import { GeneratedImageReferenceError, resolveGeneratedImageReference, readGeneratedImageMaterial } from "@/lib/server/generated-image-reference";
+import { probeAutodlH3ProviderDeliveryReadiness } from "@/lib/autodl-h3-provider-delivery-readiness";
 /**
  * 视频生成 API
  * POST - 提交视频生成任务（预检现金余额 + 直接提交 + 失败即时反馈）
@@ -287,6 +290,7 @@ function hasAnyVideoReference(input: {
 function stableVideoRequestAssetRef(value: unknown, ownedStorageKey = ""): string {
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return "";
+  if (parseGeneratedImageReferenceUri(value)) return String(value);
   if (ownedStorageKey) return createAutodlH3AssetRef("tencent_cos", ownedStorageKey);
   if (/^(?:object|asset):\/\//u.test(raw) || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(raw)) return raw;
   try {
@@ -432,8 +436,16 @@ export async function POST(req: NextRequest) {
     let userRole: "admin" | "student" = currentAuthorization.ok ? "admin" : "student";
 
     const body = await req.json();
-    const { image_url } = body;
-    const { model_id, prompt, last_frame_url, reference_image_url, audio_url, negative_prompt, duration, aspect_ratio, resolution, resolution_tier, source_video_url, task_label, batch_id, batch_topic, card_index, surface, client_request_id } = body;
+    let generatedInputs: ReturnType<typeof parseGeneratedVideoImageInputs>;
+    try { generatedInputs = parseGeneratedVideoImageInputs(body); } catch {
+      return NextResponse.json({ error: "生成图片引用格式无效或与原始地址冲突", error_code: "GENERATED_IMAGE_REFERENCE_INVALID", task_submitted: false }, { status: 422 });
+    }
+    const generatedImageRef = generatedInputs.typed.get("image_url") || null;
+    const generatedImageUri = generatedImageRef ? generatedImageReferenceUri(generatedImageRef) : null;
+    const image_url = generatedInputs.imageUrl;
+    const last_frame_url = generatedInputs.lastFrameUrl;
+    const reference_image_url = generatedInputs.referenceImageUrl;
+    const { model_id, prompt, audio_url, negative_prompt, duration, aspect_ratio, resolution, resolution_tier, source_video_url, task_label, batch_id, batch_topic, card_index, surface, client_request_id } = body;
     const generateAudio = Object.prototype.hasOwnProperty.call(body, "generate_audio")
       ? body.generate_audio
       : body.generateAudio;
@@ -480,7 +492,7 @@ export async function POST(req: NextRequest) {
       }
     }
     const image_storage_key = typeof body.image_storage_key === "string" ? body.image_storage_key.trim() : "";
-    const rawReferenceImageUrls = body.reference_image_urls;
+    const rawReferenceImageUrls = generatedInputs.referenceImageUrls;
     const rawReferenceAudioUrls = body.reference_audio_urls;
     if (rawReferenceImageUrls !== undefined && !Array.isArray(rawReferenceImageUrls)
       || rawReferenceAudioUrls !== undefined && !Array.isArray(rawReferenceAudioUrls)) {
@@ -534,7 +546,7 @@ export async function POST(req: NextRequest) {
       ...Object.fromEntries(referenceAudioUrls.map((url, index) => [`reference_audio_urls[${index}]`, url])),
     };
     for (const [fieldName, val] of Object.entries(urlFields)) {
-      if (typeof val === "string" && val && !isPublicVideoAssetUrl(val)) {
+      if (typeof val === "string" && val && !(generatedInputs.typed.has(fieldName) && generatedImageReferenceUri(generatedInputs.typed.get(fieldName)!) === val) && !isPublicVideoAssetUrl(val)) {
         return NextResponse.json(
           { error: `${fieldName} 必须是上游可访问的公网URL，请通过视频制作页上传按钮重新上传（不支持本地或局域网地址）`, error_code: "VIDEO_ASSET_URL_NOT_PUBLIC" },
           { status: 400 }
@@ -1043,9 +1055,35 @@ export async function POST(req: NextRequest) {
     let effectiveImageUrl = image_url;
     let effectiveLastFrameUrl = last_frame_url;
     let effectiveReferenceImageUrl = reference_image_url;
+    let effectiveReferenceImageUrls = [...referenceImageUrls];
+    if (generatedInputs.typed.size > 0) {
+      try {
+        if (isAutodlComfyuiHostedProtocol(selectedModel.protocol_type)) throw new GeneratedImageReferenceError("GENERATED_IMAGE_HOSTED_INPUT_UNSUPPORTED", "当前托管视频通道要求已上传素材，暂不支持直接复用生成结果；本次未提交或扣费");
+        const bytesCapable = selectedModel.protocol_type === "newapi_video" && selectedProtocolConfig.request_format === "multipart" && selectedModel.supports_image_input === true;
+        if (bytesCapable && [image_url, last_frame_url, reference_image_url, ...referenceImageUrls].filter(Boolean).length !== 1) throw new GeneratedImageReferenceError("GENERATED_IMAGE_SLOT_UNSUPPORTED", "当前图片字节通道仅支持一张主参考图，不能同时发送其他首尾帧或附参考；本次未提交或扣费");
+        for (const [field, reference] of generatedInputs.typed) {
+          const canonical = generatedImageReferenceUri(reference);
+          let resolved: string;
+          if (bytesCapable) {
+            if (field === "last_frame_url" || field.startsWith("reference_image_urls[")) throw new GeneratedImageReferenceError("GENERATED_IMAGE_SLOT_UNSUPPORTED", "当前图片字节通道仅支持单张主参考图，尚不支持此尾帧或附参考槽位；本次未提交或扣费");
+            await readGeneratedImageMaterial({ userId, reference });
+            resolved = canonical;
+          } else {
+            const freshUrl = await resolveGeneratedImageReference({ userId, reference });
+            resolved = useAutodlH3Lifecycle ? canonical : freshUrl;
+          }
+          if (field === "image_url") effectiveImageUrl = resolved;
+          else if (field === "last_frame_url") effectiveLastFrameUrl = resolved;
+          else if (field === "reference_image_url") effectiveReferenceImageUrl = resolved;
+          else effectiveReferenceImageUrls[Number(field.match(/\[(\d+)\]/u)![1])] = resolved;
+        }
+      } catch (error) {
+        const refError = error instanceof GeneratedImageReferenceError ? error : null;
+        return NextResponse.json({ error: refError?.message || "生成图片暂时无法安全读取，本次未提交", error_code: refError?.code || "GENERATED_IMAGE_REFERENCE_UNAVAILABLE", task_submitted: false, retryable: refError?.status === 503 }, { status: refError?.status || 503 });
+      }
+    }
     let effectiveAudioUrl = audio_url;
     let effectiveSourceVideoUrl = source_video_url;
-    let effectiveReferenceImageUrls = [...referenceImageUrls];
     let effectiveReferenceAudioUrls = [...referenceAudioUrls];
     const hasHostedReferenceInput = hasAnyVideoReference({
       imageUrl: effectiveImageUrl,
@@ -1076,17 +1114,17 @@ export async function POST(req: NextRequest) {
     // 的 COS 输入执行公开桥接；公开第三方 URL 仍按原协议透传。
     if (["secure_skill_grok_video", "secure_skill_flow_jobs", "secure_skill_video", "secure_skill_wan3_video"].includes(selectedModel.protocol_type)) {
       try {
-        if (effectiveImageUrl && isTencentCosAssetUrl(effectiveImageUrl)) {
+        if (!generatedInputs.typed.has("image_url") && effectiveImageUrl && isTencentCosAssetUrl(effectiveImageUrl)) {
           effectiveImageUrl = await bridgeVideoProviderAsset(effectiveImageUrl, userId, "image", image_storage_key);
         }
-        if (effectiveLastFrameUrl && isTencentCosAssetUrl(effectiveLastFrameUrl)) {
+        if (!generatedInputs.typed.has("last_frame_url") && effectiveLastFrameUrl && isTencentCosAssetUrl(effectiveLastFrameUrl)) {
           effectiveLastFrameUrl = await bridgeVideoProviderAsset(effectiveLastFrameUrl, userId, "image");
         }
-        if (effectiveReferenceImageUrl && isTencentCosAssetUrl(effectiveReferenceImageUrl)) {
+        if (!generatedInputs.typed.has("reference_image_url") && effectiveReferenceImageUrl && isTencentCosAssetUrl(effectiveReferenceImageUrl)) {
           effectiveReferenceImageUrl = await bridgeVideoProviderAsset(effectiveReferenceImageUrl, userId, "image");
         }
-        effectiveReferenceImageUrls = await Promise.all(effectiveReferenceImageUrls.map((url) => (
-          isTencentCosAssetUrl(url) ? bridgeVideoProviderAsset(url, userId, "image") : url
+        effectiveReferenceImageUrls = await Promise.all(effectiveReferenceImageUrls.map((url, index) => (
+          !generatedInputs.typed.has(`reference_image_urls[${index}]`) && isTencentCosAssetUrl(url) ? bridgeVideoProviderAsset(url, userId, "image") : url
         )));
         if (effectiveAudioUrl && isTencentCosAssetUrl(effectiveAudioUrl)) {
           effectiveAudioUrl = await bridgeVideoProviderAsset(effectiveAudioUrl, userId, "audio");
@@ -1265,6 +1303,11 @@ export async function POST(req: NextRequest) {
     const snapshotGenerateAudio = typeof generateAudio === "boolean" ? generateAudio : null;
 
     if (useAutodlH3Lifecycle) {
+      const deliveryReadiness = await probeAutodlH3ProviderDeliveryReadiness();
+      if (!deliveryReadiness.ready) return NextResponse.json({
+        error: "H3 结果交付依赖尚未就绪，任务未提交",
+        error_code: deliveryReadiness.code, task_submitted: false, retryable: true,
+      }, { status: 503 });
       let stableInputAssets: AutodlH3StableInputAssets;
       try {
         stableInputAssets = await stabilizeAutodlH3InputAssets({
@@ -1533,10 +1576,10 @@ export async function POST(req: NextRequest) {
     const requestFingerprint = buildVideoRequestFingerprint({
       modelId: channelConfig.id,
       prompt: executionPrompt,
-      imageUrl: effectiveImageUrl || null,
-      lastFrameUrl: effectiveLastFrameUrl || null,
-      referenceImageUrl: effectiveReferenceImageUrl || null,
-      referenceImageUrls: effectiveReferenceImageUrls,
+      imageUrl: generatedImageUri || effectiveImageUrl || null,
+      lastFrameUrl: generatedInputs.typed.has("last_frame_url") ? last_frame_url : effectiveLastFrameUrl || null,
+      referenceImageUrl: generatedInputs.typed.has("reference_image_url") ? reference_image_url : effectiveReferenceImageUrl || null,
+      referenceImageUrls: effectiveReferenceImageUrls.map((url, index) => generatedInputs.typed.has(`reference_image_urls[${index}]`) ? referenceImageUrls[index] : url),
       audioUrl: effectiveAudioUrl || null,
       referenceAudioUrls: effectiveReferenceAudioUrls,
       sourceVideoUrl: effectiveSourceVideoUrl || null,
@@ -1586,7 +1629,7 @@ export async function POST(req: NextRequest) {
       publicModelId: publicRequestedModelId,
       routingConfigHash: routingSnapshot.configVersion,
       adapterVersion: `video-adapter:${channelConfig.protocol_type}:v1`,
-      providerPayload: dispatch || adapterParams,
+      providerPayload: dispatch || (generatedInputs.typed.size ? { ...adapterParams, imageUrl: generatedImageUri || adapterParams.imageUrl, lastFrameUrl: generatedInputs.typed.has("last_frame_url") ? last_frame_url : adapterParams.lastFrameUrl, referenceImageUrl: generatedInputs.typed.has("reference_image_url") ? reference_image_url : adapterParams.referenceImageUrl, imageUrls: effectiveReferenceImageUrls.map((url, index) => generatedInputs.typed.has(`reference_image_urls[${index}]`) ? referenceImageUrls[index] : url) } : adapterParams),
     });
     const reservation = await reserveVideoGenerationTask({
       dispatch,

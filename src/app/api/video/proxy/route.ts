@@ -1,3 +1,4 @@
+import { resolveOwnedAutodlH3VideoResultJobId } from "@/lib/autodl-h3-owned-result";
 /**
  * 视频代理端点 — 解决上游视频 URL 在浏览器无法直接播放的问题
  *
@@ -30,7 +31,7 @@ import { SafeFetchError, validateSafeUrl } from "@/lib/safe-fetch";
 import { safeMediaFetch, trustedRelayHostnamesFromEnv, type SafeMediaAuthorization } from "@/lib/safe-media-fetch";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { markVideoUpstreamSourceExpired } from "@/lib/video-source-expiry";
-import { inferVideoContentType } from "@/lib/video-content-type";
+import { resolveVideoStreamContentType } from "@/lib/video-stream-prefix";
 import {
   AUTODL_H3_SELFHOST_PROTOCOL,
   assertAutodlH3SelfhostModelBinding,
@@ -46,9 +47,6 @@ const CDN_DOMAINS = ["media.veo9.uk", "vidgen.x.ai", "ngrok"];
 /** 对象存储域名（有 CORS 头 + faststart 已处理，可 302 重定向） */
 const OBJECT_STORAGE_DOMAINS = ["coze-storage", "supabase.co"];
 
-type CachedVideoTask = { task: Record<string, unknown>; cachedAt: number };
-const taskCache = new Map<string, CachedVideoTask>();
-const TASK_CACHE_TTL_MS = 5 * 60_000;
 const videoContentTypeCache = new Map<string, string>();
 
 // VIDEO_PROXY_RANGE_CONTRACT_BEGIN
@@ -150,12 +148,11 @@ function buildVideoProxyResponseHeaders(input: {
 // VIDEO_PROXY_RANGE_CONTRACT_END
 
 async function getCompletedVideoTask(taskId: string, userId: string, isAdmin: boolean) {
-  const cacheKey = `${isAdmin ? "admin" : userId}:${taskId}`;
-  const cached = taskCache.get(cacheKey);
-  if (cached && Date.now() - cached.cachedAt < TASK_CACHE_TTL_MS) return cached.task;
+  // Media availability and ownership can change after a ticket is minted.
+  // Re-read the task on every delivery rather than trusting a cached snapshot.
 
   const supabase = getSupabaseClient();
-  const fields = "id, video_url, storage_url, provider_result_url, model_id, status, user_id, task_id_external, source_expired_at";
+  const fields = "id, video_url, storage_url, provider_result_url, model_id, status, user_id, task_id_external, source_expired_at, history_hidden_at";
   let localQuery = supabase
     .from("video_tasks")
     .select(fields)
@@ -179,60 +176,7 @@ async function getCompletedVideoTask(taskId: string, userId: string, isAdmin: bo
     task = byExternal?.[0] as Record<string, unknown> | undefined;
   }
 
-  if (task?.status === "completed") {
-    taskCache.set(cacheKey, { task, cachedAt: Date.now() });
-    if (taskCache.size > 500) {
-      const cutoff = Date.now() - TASK_CACHE_TTL_MS;
-      for (const [key, value] of taskCache) {
-        if (value.cachedAt < cutoff) taskCache.delete(key);
-      }
-    }
-  }
   return task || null;
-}
-
-function clearCompletedVideoTaskCache(task: Record<string, unknown>, requestedTaskId: string) {
-  const ids = new Set([requestedTaskId, String(task.id || ''), String(task.task_id_external || '')].filter(Boolean));
-  for (const key of taskCache.keys()) {
-    if ([...ids].some((id) => key.endsWith(`:${id}`))) taskCache.delete(key);
-  }
-}
-
-async function peekStreamPrefix(body: ReadableStream<Uint8Array>, minimumBytes = 16) {
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  while (totalBytes < minimumBytes) {
-    const result = await reader.read();
-    if (result.done) break;
-    if (result.value?.byteLength) {
-      chunks.push(result.value);
-      totalBytes += result.value.byteLength;
-    }
-  }
-  const prefix = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    prefix.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  let replayIndex = 0;
-  const replayBody = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (replayIndex < chunks.length) {
-        controller.enqueue(chunks[replayIndex]);
-        replayIndex += 1;
-        return;
-      }
-      const result = await reader.read();
-      if (result.done) controller.close();
-      else controller.enqueue(result.value);
-    },
-    async cancel(reason) {
-      await reader.cancel(reason).catch(() => undefined);
-    },
-  });
-  return { prefix, replayBody };
 }
 
 export async function GET(request: NextRequest) {
@@ -283,9 +227,10 @@ export async function GET(request: NextRequest) {
     if (task.status !== "completed") {
       return NextResponse.json({ error: "任务未完成" }, { status: 400 });
     }
-    if (task.source_expired_at) {
-      clearCompletedVideoTaskCache(task, taskId);
-      return NextResponse.json({ error: "视频源已到期，请使用此前下载的文件" }, { status: 410 });
+    if (task.history_hidden_at || task.source_expired_at) {
+      return NextResponse.json({ error: task.history_hidden_at
+        ? "视频记录已从历史中移除，当前不可播放"
+        : "视频源已到期，请使用此前下载的文件" }, { status: 410 });
     }
 
     // 2. 确定最佳视频 URL：兼容既有对象存储；新任务直接代理上游结果。
@@ -372,7 +317,7 @@ export async function GET(request: NextRequest) {
 
     if (isAutodlH3TemporarySource) {
       try {
-        videoUrl = resolveAutodlH3SelfhostResultUrl(videoUrl, String(model?.api_endpoint || ""));
+        videoUrl = resolveAutodlH3SelfhostResultUrl(videoUrl, String(model?.api_endpoint || ""), { allowExpired: true });
       } catch {
         return NextResponse.json({ error: "AutoDL H3 自租视频地址未通过同源签名校验" }, { status: 502 });
       }
@@ -445,6 +390,7 @@ export async function GET(request: NextRequest) {
         ? await fetchAutodlH3SelfhostResult(videoUrl, String(model?.api_endpoint || ""), {
             headers: directHeaders,
             timeoutMs: 300_000,
+            ownedResultRecovery: { kind: "video", expectedJobId: await resolveOwnedAutodlH3VideoResultJobId({ id: task.id, user_id: task.user_id, model_id: task.model_id, task_id_external: task.task_id_external }), apiKey: resolveProviderSecret(model!.api_key) },
           })
         : await safeMediaFetch(videoUrl, {
             headers: directHeaders,
@@ -529,7 +475,6 @@ export async function GET(request: NextRequest) {
           userId: String(task.user_id || ''),
           httpStatus: confirmedExpiryStatus,
         });
-        clearCompletedVideoTaskCache(task, taskId);
       }
       return NextResponse.json(
         { error: confirmedExpiryStatus ? "视频源已到期，请使用此前下载的文件" : "视频源暂时不可达，请稍后重试" },
@@ -552,7 +497,6 @@ export async function GET(request: NextRequest) {
           userId: String(task.user_id || ''),
           httpStatus: confirmedExpiryStatus,
         });
-        clearCompletedVideoTaskCache(task, taskId);
       }
       console.error(`[视频代理] 上游返回 ${upstreamResp.status}${usedFallback ? '(fallback)' : ''}: taskId=${taskId}`);
       return NextResponse.json(
@@ -589,22 +533,21 @@ export async function GET(request: NextRequest) {
     // 6. 流式转发给浏览器（保持上游的 Range 响应）。未知二进制必须
     // 通过容器魔数确认，不能一律伪装成 MP4；否则 nosniff 下会产生跨浏览器差异。
     const contentTypeCacheKey = `${String(task.id || taskId)}:${upstreamSourceUrl}`;
-    let responseBody = upstreamResp.body;
-    let contentType = inferVideoContentType({
-      declaredContentType: upstreamResp.headers.get("content-type"),
+    const resolvedMedia = await resolveVideoStreamContentType({
+      response: upstreamResp,
       sourceUrl: upstreamSourceUrl,
       cachedContentType: videoContentTypeCache.get(contentTypeCacheKey),
+      fetchPrefix: async () => {
+        const headers = { Accept: "video/*,*/*;q=0.8", Range: "bytes=0-15" };
+        const result = isAutodlH3TemporarySource
+          ? await fetchAutodlH3SelfhostResult(upstreamSourceUrl, String(model?.api_endpoint || ""), { headers, timeoutMs: 10_000,
+              ownedResultRecovery: { kind: "video", expectedJobId: await resolveOwnedAutodlH3VideoResultJobId({ id: task.id, user_id: task.user_id, model_id: task.model_id, task_id_external: task.task_id_external }), apiKey: resolveProviderSecret(model!.api_key) } })
+          : await safeMediaFetch(upstreamSourceUrl, { headers, authorization: providerAuthorization, timeoutMs: 10_000, trustedHostnames: trustedMediaHostnames });
+        return result.response;
+      },
     });
-    const startsAtZero = !rangeHeader || /^bytes=0-/iu.test(rangeHeader);
-    if (!contentType && responseBody && startsAtZero) {
-      const peeked = await peekStreamPrefix(responseBody);
-      responseBody = peeked.replayBody;
-      contentType = inferVideoContentType({
-        declaredContentType: upstreamResp.headers.get("content-type"),
-        sourceUrl: upstreamSourceUrl,
-        prefix: peeked.prefix,
-      });
-    }
+    const responseBody = resolvedMedia.body;
+    const contentType = resolvedMedia.contentType;
     if (!contentType || !responseBody) {
       await responseBody?.cancel().catch(() => undefined);
       return NextResponse.json({ error: "视频源容器类型无法确认" }, { status: 502 });

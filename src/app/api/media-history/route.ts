@@ -129,6 +129,7 @@ type ImageMessageEntry = {
 };
 
 type DeliveredImageEntry = {
+  response: unknown;
   record_id: unknown;
   delivery_asset_id: unknown;
   request_snapshot: unknown;
@@ -170,12 +171,12 @@ async function loadVideoRows(db: MediaDb, userId: string) {
   return { rows, failed };
 }
 
-async function loadHiddenOrExpiredVideoCount(db: MediaDb, userId: string) {
+async function loadExpiredVideoCount(db: MediaDb, userId: string) {
   const result = await db
     .from("video_tasks")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
-    .or("source_expired_at.not.is.null,history_hidden_at.not.is.null")
+    .not("source_expired_at", "is", null)
     .or(`task_label.is.null,task_label.not.like.digital-human:%,${DIGITAL_HUMAN_TASK_FILTER}`);
   return {
     count: result.error ? 0 : result.count ?? 0,
@@ -222,7 +223,7 @@ async function loadDeliveredImageRows(db: MediaDb, userId: string) {
   while (true) {
     const result = await db
       .from("image_generation_requests")
-      .select("record_id, delivery_asset_id, request_snapshot, created_at, updated_at")
+      .select("record_id, delivery_asset_id, request_snapshot, response, created_at, updated_at")
       .eq("user_id", userId)
       .eq("state", "completed")
       .eq("delivery_state", "delivered")
@@ -246,7 +247,7 @@ const KIND_KEYS = new Set<MediaKind>(["image", "video"]);
 
 type SourcePages = {
   videoPage: Awaited<ReturnType<typeof loadVideoRows>>;
-  videoExcludedPage: Awaited<ReturnType<typeof loadHiddenOrExpiredVideoCount>>;
+  videoExcludedPage: Awaited<ReturnType<typeof loadExpiredVideoCount>>;
   imagePage: Awaited<ReturnType<typeof loadImageMessages>>;
   deliveredImagePage: Awaited<ReturnType<typeof loadDeliveredImageRows>>;
   commercePage: ReturnType<typeof loadCommerceMediaHistory>;
@@ -557,7 +558,7 @@ async function buildMediaHistoryAccountSnapshot(
     SourcePages["commercePage"],
   ] = await Promise.all([
     loadVideoRows(db, userId),
-    loadHiddenOrExpiredVideoCount(db, userId),
+    loadExpiredVideoCount(db, userId),
     loadImageMessages(db, userId),
     loadDeliveredImageRows(db, userId),
     Promise.resolve().then(() => loadCommerceMediaHistory(userId, role)),
@@ -707,7 +708,7 @@ async function buildMediaHistoryAccountSnapshot(
       preview: previewContract("video", previewPath, thumbnailPath),
       errorMessage: rawStatus === "completed" && !hasAuthenticatedDeliverySource
         ? "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。"
-        : rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : "",
+        : rawStatus === "failed" && rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : "",
       aspectRatio: String(row.aspect_ratio || ""),
       durationSeconds: Number.isFinite(Number(row.duration_seconds)) ? Number(row.duration_seconds) : null,
     }, sourceExpiredAt || upstreamMediaExpiry(row.provider_submission_receipt) || upstreamMediaExpiry(row.provider_dispatch_receipt));
@@ -778,7 +779,9 @@ async function buildMediaHistoryAccountSnapshot(
   const retainedDeliveredImages = deliveredImagePage.rows.flatMap((row) => {
     const recordId = String(row.record_id || "").trim();
     const assetId = String(row.delivery_asset_id || "").trim();
-    if (!recordId || !assetId || galleryAssetIds.has(assetId)) return [];
+    const delivery = row.response && typeof row.response === "object" ? row.response as Record<string, unknown> : {};
+    const direct = delivery.deliveryMode === "provider_url" && typeof delivery.providerUrl === "string";
+    if (!recordId || delivery.sourceExpiredAt || (!direct && (!assetId || galleryAssetIds.has(assetId)))) return [];
 
     const ownedAsset = ownedImageAssetMap.get(assetId);
     const snapshot = parseImageFailureRequestSnapshot(row.request_snapshot);
@@ -788,12 +791,12 @@ async function buildMediaHistoryAccountSnapshot(
       ? "short-drama" as const
       : mediaHistoryCategoryFromImageSurface({ surface });
     const presentation = imageHistoryPresentation(categoryKey, undefined);
-    const deliveryReady = Boolean(
+    const deliveryReady = direct || Boolean(
       ownedAsset
       && ownedAsset.storageKey
       && ownedAsset.contentType.startsWith("image/"),
     );
-    const query = new URLSearchParams({ assetId });
+    const query = new URLSearchParams(direct ? { recordId } : { assetId });
     const previewPath = deliveryReady ? `/api/media-history/content?${query.toString()}` : "";
     const title = categoryKey === "storyboard-workbench"
       ? "分镜故事板"
@@ -820,8 +823,8 @@ async function buildMediaHistoryAccountSnapshot(
       createdAt,
       completedAt: deliveryReady ? completedAt : null,
       publicModelName: publicModelBaseName(receipt?.modelName || snapshot?.modelName || "图片生成模型", "图片生成模型"),
-      cost: receipt?.cost ?? null,
-      costNote: receipt ? "原生成任务实际扣费" : "原记录未建立图片与账单的一对一关联",
+      cost: direct ? snapshot?.quotedPriceYuan ?? null : receipt?.cost ?? null,
+      costNote: direct ? "原请求交付时核验的账务金额" : receipt ? "原生成任务实际扣费" : "原记录未建立图片与账单的一对一关联",
       previewPath,
       thumbnailPath: previewPath,
       downloadPath: deliveryReady ? `/api/media-history/content?${query.toString()}&download=1` : "",
@@ -853,14 +856,14 @@ async function buildMediaHistoryAccountSnapshot(
     ...(imageProvenance.failed ? ["图片来源与费用"] : []),
     ...(shortDramaLookupFailed ? ["影视工坊视频来源"] : []),
     ...(shortDramaImageLookupFailed ? ["影视工坊图片来源"] : []),
-    ...(videoExcludedPage.failed ? ["视频已确认过期/隐藏统计"] : []),
+    ...(videoExcludedPage.failed ? ["视频已确认过期统计"] : []),
   ];
   const countFailures = [
     ...(videoPage.failed ? ["视频任务"] : []),
     ...(imagePage.failed ? ["聊天图片记录"] : []),
     ...(deliveredImagePage.failed ? ["生图交付记录"] : []),
     ...(commercePage.failed ? ["带货 Agent 媒体记录"] : []),
-    ...(videoExcludedPage.failed ? ["视频已确认过期/隐藏统计"] : []),
+    ...(videoExcludedPage.failed ? ["视频已确认过期统计"] : []),
   ];
   const facets = sourceEnumerationFailed ? unavailableFacets() : exactFacets(merged);
   return {
@@ -898,7 +901,7 @@ type MediaHistoryCacheTestHook = {
     keys: string[];
   };
   busyResponse: () => NextResponse;
-  loadHiddenOrExpiredVideoCount: (db: MediaDb, userId: string) => Promise<{ count: number; failed: boolean }>;
+  loadExpiredVideoCount: (db: MediaDb, userId: string) => Promise<{ count: number; failed: boolean }>;
   limits: { active: number; waiting: number; settled: number };
 };
 
@@ -933,7 +936,7 @@ if (process.env.MEDIA_HISTORY_CACHE_TEST_HOOK === "1") {
       };
     },
     busyResponse: mediaHistoryBusyResponse,
-    loadHiddenOrExpiredVideoCount,
+    loadExpiredVideoCount,
     limits: {
       active: MEDIA_HISTORY_SNAPSHOT_MAX_ACTIVE_BUILDS,
       waiting: MEDIA_HISTORY_SNAPSHOT_MAX_WAITING_BUILDS,

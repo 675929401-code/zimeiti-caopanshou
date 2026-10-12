@@ -1,5 +1,6 @@
 "use client";
 import { videoProgressLabel, videoProgressStatus } from '@/lib/video-task-progress';
+import { getVideoMediaUnavailable, videoCompletedDeliveryPatch } from "@/lib/video-media-availability";
 
 import { requiresVideoTaskTracking } from "@/lib/video-task-checkpoint";
 import { clearRetiredPageDrafts } from "@/lib/retired-page-drafts";
@@ -106,10 +107,14 @@ import {
   clearLegacyVideoWorkflowDraft,
   clearVideoWorkflowDraft,
   readVideoWorkflowDraft,
+  videoWorkflowImageRequestFields,
+  generatedVideoPreviewBlob,
   VIDEO_WORKFLOW_DRAFT_EVENT,
   type VideoWorkflowImageMode,
   type VideoWorkflowDraft,
 } from "@/lib/video-workflow-draft";
+
+import { generatedImageReferenceUri, parseGeneratedImageReferenceUri, generatedImagePreviewUrl } from "@/lib/generated-image-reference";
 
 const DEFAULT_TASK_COUNT = 3;
 
@@ -419,6 +424,10 @@ interface TaskCard {
   lastProgress?: number; // 上次轮询的progress值
   progress?: number; // 上游真实进度(0-100)
   statusDetail?: string; // 上游公开状态或本地追踪说明
+  mediaAvailable?: boolean;
+  mediaUnavailableReason?: string;
+  priceCharged?: number;
+  billingState?: string;
   lastSyncedAt?: number; // 后台 worker 最近一次真实查询上游的时间
   providerPollFailures?: number;
   cardIndex: number; // 卡片序号（任务1、任务2...）
@@ -658,6 +667,44 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   const [orderedImageMode, setOrderedImageMode] = useState<VideoWorkflowImageMode>("reference");
   const [isImportingOrderedImages, setIsImportingOrderedImages] = useState(false);
   const [inputImagePreview, setInputImagePreview] = useState<{ src: string; alt: string } | null>(null);
+  const generatedPreviewCache = useRef(new Map<string, string>());
+  const generatedPreviewOwner = useRef("");
+  const [generatedPreviews, setGeneratedPreviews] = useState<Record<string, string>>({});
+  const generatedPreviewKey = JSON.stringify([...new Set(tasks.flatMap(task => [task.firstFrameUrl, task.lastFrameUrl, task.referenceImageUrl, ...(task.referenceImageUrls || [])]).filter(url => Boolean(parseGeneratedImageReferenceUri(url))))].sort());
+  useEffect(() => {
+    const controller = new AbortController();
+    const owner = `${identity.userId}:${auth?.token || ""}`;
+    if (generatedPreviewOwner.current !== owner) {
+      for (const url of generatedPreviewCache.current.values()) URL.revokeObjectURL(url);
+      generatedPreviewCache.current.clear();
+      generatedPreviewOwner.current = owner;
+      setInputImagePreview(null);
+    }
+    const inputs: string[] = JSON.parse(generatedPreviewKey);
+    for (const [uri, blobUrl] of generatedPreviewCache.current) {
+      if (!inputs.includes(uri)) { URL.revokeObjectURL(blobUrl); generatedPreviewCache.current.delete(uri); }
+    }
+    setGeneratedPreviews(Object.fromEntries(generatedPreviewCache.current));
+    if (auth?.token) for (const uri of inputs) {
+      if (generatedPreviewCache.current.has(uri)) continue;
+      const reference = parseGeneratedImageReferenceUri(uri)!;
+      void fetch(generatedImagePreviewUrl(reference), { headers: { Authorization: `Bearer ${auth.token}` }, signal: controller.signal, cache: "no-store", redirect: "error" })
+        .then(async response => {
+          if (!response.ok) throw new Error("生成图片预览暂不可用");
+          const blob = await generatedVideoPreviewBlob(await response.blob(), reference);
+          if (controller.signal.aborted) return;
+          const blobUrl = URL.createObjectURL(blob);
+          generatedPreviewCache.current.set(uri, blobUrl);
+          setGeneratedPreviews(Object.fromEntries(generatedPreviewCache.current));
+        }).catch(() => { /* Owner/expiry is checked again before a paid submission. */ });
+    }
+    return () => controller.abort();
+  }, [generatedPreviewKey, auth?.token, identity.userId]);
+  useEffect(() => {
+    const cache = generatedPreviewCache.current;
+    return () => { for (const url of cache.values()) URL.revokeObjectURL(url); cache.clear(); };
+  }, []);
+  const videoInputPreview = (url: string | undefined) => parseGeneratedImageReferenceUri(url) ? generatedPreviews[url!] || undefined : url;
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<VideoTask[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -823,9 +870,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         base[index] = {
           ...current,
           prompt: slot.prompt || current.prompt,
-          referenceImageUrl: slot.referenceImageUrl || current.referenceImageUrl,
-          firstFrameUrl: slot.firstFrameUrl || current.firstFrameUrl,
-          lastFrameUrl: slot.lastFrameUrl || current.lastFrameUrl,
+          referenceImageUrl: slot.referenceImageRef ? generatedImageReferenceUri(slot.referenceImageRef) : slot.referenceImageUrl || current.referenceImageUrl,
+          firstFrameUrl: slot.firstFrameImageRef ? generatedImageReferenceUri(slot.firstFrameImageRef) : slot.firstFrameUrl || current.firstFrameUrl,
+          lastFrameUrl: slot.lastFrameImageRef ? generatedImageReferenceUri(slot.lastFrameImageRef) : slot.lastFrameUrl || current.lastFrameUrl,
           taskLabel: slot.label || current.taskLabel || `任务${slot.order}`,
           theme: slot.title || current.theme,
         };
@@ -1321,11 +1368,11 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                 case "completed":
                   receivedTerminal = true;
                   setTasks((prev) => prev.map((t) =>
-                    t.taskId === data.taskId ? { ...t, status: "completed", videoUrl: data.videoUrl || data.video_url || "", storageUrl: data.storageUrl || data.storage_url || "", thumbnailUrl: data.thumbnailUrl || "", needsProxy: data.needsProxy || false, error: "", progress: 100 } : t
+                    t.taskId === data.taskId ? { ...t, ...videoCompletedDeliveryPatch(data) } : t
                   ));
                   refreshHistoryFirstPage();
                   if (data.cashBalance !== undefined) setCashBalance(data.cashBalance);
-                  syncTaskToConversation(undefined, data.taskId, "", { status: "completed", videoUrl: data.videoUrl || data.video_url || "" });
+                  syncTaskToConversation(undefined, data.taskId, "", videoCompletedDeliveryPatch(data));
                   sseRefs.current.delete(task.taskId!);
                   break;
                 case "failed":
@@ -1373,10 +1420,10 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
               });
               const sd = await sr.json();
               if (sd.status === "completed") {
-                setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "completed", videoUrl: sd.videoUrl || sd.video_url || "", storageUrl: sd.storageUrl || sd.storage_url || "", thumbnailUrl: sd.thumbnailUrl || "", needsProxy: sd.needsProxy || false, error: "", progress: 100 } : t));
+                setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, ...videoCompletedDeliveryPatch(sd) } : t));
                 refreshHistoryFirstPage();
                 if (sd.cashBalance !== undefined) setCashBalance(sd.cashBalance);
-                syncTaskToConversation(undefined, task.taskId!, "", { status: "completed", videoUrl: sd.videoUrl || sd.video_url || "" });
+                syncTaskToConversation(undefined, task.taskId!, "", videoCompletedDeliveryPatch(sd));
                 sseRefs.current.delete(task.taskId!);
                 return;
               }
@@ -1406,7 +1453,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                 headers: { Authorization: `Bearer ${auth?.token || ""}` },
               });
               const sd = await sr.json();
-                if (sd.status === "completed") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "completed", videoUrl: sd.videoUrl || sd.video_url || "", storageUrl: sd.storageUrl || sd.storage_url || "", thumbnailUrl: sd.thumbnailUrl || "", needsProxy: sd.needsProxy || false, error: "", progress: 100 } : t)); refreshHistoryFirstPage(); if (sd.cashBalance !== undefined) setCashBalance(sd.cashBalance); sseRefs.current.delete(task.taskId!); return; }
+                if (sd.status === "completed") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, ...videoCompletedDeliveryPatch(sd) } : t)); refreshHistoryFirstPage(); if (sd.cashBalance !== undefined) setCashBalance(sd.cashBalance); sseRefs.current.delete(task.taskId!); return; }
               if (sd.status === "failed") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "failed", errorMessage: sd.errorMessage || "生成失败", clientRequestId: "", clientRequestFingerprint: "" } : t)); refreshHistoryFirstPage(); sseRefs.current.delete(task.taskId!); return; }
               if (sd.status === "cancelled") { setTasks((prev) => prev.map((t) => t.taskId === task.taskId ? { ...t, status: "cancelled", errorMessage: "已取消", clientRequestId: "", clientRequestFingerprint: "" } : t)); refreshHistoryFirstPage(); sseRefs.current.delete(task.taskId!); return; }
             } catch { /* ignore */ }
@@ -2422,15 +2469,17 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         const data = await res.json();
 
         // 上游已经成功 → 不终止，保留结果！
-        if (data.status === "completed" && data.videoUrl) {
+        if (data.status === "completed") {
           setTasks((prev) =>
             prev.map((t) =>
               t.localId === localId
-                ? { ...t, status: "completed" as const, videoUrl: data.videoUrl, storageUrl: data.storageUrl || "", thumbnailUrl: data.thumbnailUrl || "", needsProxy: data.needsProxy || false, errorMessage: "", pollStuckCount: 0, progress: 100 }
+                ? { ...t, ...videoCompletedDeliveryPatch(data), pollStuckCount: 0 }
                 : t
             )
           );
-          toast.success(`任务${task.cardIndex}视频已生成完成！终止前检测到任务成功，结果已保留`);
+          const unavailable = getVideoMediaUnavailable(data);
+          if (unavailable) toast.info(unavailable.message);
+          else toast.success(`任务${task.cardIndex}视频已生成完成！终止前检测到任务成功，结果已保留`);
           // 刷新余额和历史
           fetch("/api/cash/balance", { headers: { Authorization: `Bearer ${auth.token}` } })
             .then((r) => r.json()).then((bal) => setCashBalance(bal.balance ?? 0)).catch(() => {});
@@ -2738,6 +2787,8 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     let content = `🎬 **${modelName}**\n📝 ${prompt}`;
     if (result?.status === "completed" && result.videoUrl) {
       content += `\n✅ 生成完成`;
+    } else if (result?.status === "completed") {
+      content += `\n⚠️ 视频已生成，当前不可播放：${result.errorMessage || "视频源不可用，请使用此前下载的文件"}`;
     } else if (result?.status === "failed") {
       content += `\n❌ 生成失败：${result.errorMessage || "未知错误"}`;
     } else {
@@ -2789,6 +2840,8 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   };
   const submitVideoTask = async (localId: number) => {
     const original = tasksRef.current.find(item => item.localId === localId);
+    const unavailable = original && getVideoMediaUnavailable(original);
+    if (unavailable) { toast.info(unavailable.message); return; }
     if (original && requiresVideoTaskTracking(original)) {
       if (isActiveVideoTaskStatus(original.status)) return;
       try {
@@ -2882,7 +2935,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     };
     const inputViolation = validateVideoInputContract(inputCapabilities, submittedInputs);
     const nonPublicInput = [...submittedImageUrls, submittedInputs.audioUrl, ...submittedAudioUrls, submittedInputs.sourceVideoUrl]
-      .some((url) => Boolean(url?.trim()) && !isPublicVideoAssetUrl(url));
+      .some((url) => Boolean(url?.trim()) && !parseGeneratedImageReferenceUri(url) && !isPublicVideoAssetUrl(url));
     if (inputViolation || nonPublicInput) {
       const message = inputViolation?.message || "参考素材暂时无法读取，请等待上传完成，或通过上传按钮重新上传素材";
       showPreflightGuidance(message);
@@ -2971,10 +3024,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         body: JSON.stringify({
           model_id: selectedModelId,
           prompt: submittedInputs.prompt,
-          image_url: submittedInputs.imageUrl,
-          last_frame_url: submittedInputs.lastFrameUrl,
-          reference_image_url: submittedInputs.referenceImageUrl,
-          reference_image_urls: submittedInputs.referenceImageUrls,
+          ...videoWorkflowImageRequestFields(submittedInputs),
           reference_audio_urls: submittedInputs.referenceAudioUrls,
           audio_url: submittedInputs.audioUrl,
           negative_prompt: task.negativePrompt || "",
@@ -4055,9 +4105,10 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                     type="button"
                                     className="block h-full w-full cursor-zoom-in border-0 bg-transparent p-0"
                                     aria-label={`放大查看任务${task.cardIndex}首帧`}
-                                    onClick={() => setInputImagePreview({ src: task.firstFrameUrl, alt: `任务${task.cardIndex}首帧` })}
+                                    disabled={!videoInputPreview(task.firstFrameUrl)}
+                                    onClick={() => setInputImagePreview({ src: videoInputPreview(task.firstFrameUrl) || "", alt: `任务${task.cardIndex}首帧` })}
                                   >
-                                    <img src={task.firstFrameUrl} alt="首帧" className="h-full w-full object-contain" />
+                                    <img src={videoInputPreview(task.firstFrameUrl)} alt="首帧" className="h-full w-full object-contain" />
                                   </button>
                                   <button
                                     type="button"
@@ -4069,9 +4120,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                   </button>
                                 </div>
                                 <Input
-                                  value={task.firstFrameUrl || ""}
+                                  value={parseGeneratedImageReferenceUri(task.firstFrameUrl) ? "" : task.firstFrameUrl || ""}
                                   onChange={(e) => replaceTaskReferenceUrl(task.localId, "firstFrameUrl", e.target.value)}
-                                  placeholder="或粘贴图片URL"
+                                  placeholder="生成图片引用，或粘贴图片URL替换"
                                   className="bg-[var(--background)] border-[var(--border)] text-[11px] h-7 mt-1.5 focus:border-[var(--primary)]/50"
                                 />
                               </>
@@ -4123,9 +4174,10 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                     type="button"
                                     className="block h-full w-full cursor-zoom-in border-0 bg-transparent p-0"
                                     aria-label={`放大查看任务${task.cardIndex}尾帧`}
-                                    onClick={() => setInputImagePreview({ src: task.lastFrameUrl, alt: `任务${task.cardIndex}尾帧` })}
+                                    disabled={!videoInputPreview(task.lastFrameUrl)}
+                                    onClick={() => setInputImagePreview({ src: videoInputPreview(task.lastFrameUrl) || "", alt: `任务${task.cardIndex}尾帧` })}
                                   >
-                                    <img src={task.lastFrameUrl} alt="尾帧" className="h-full w-full object-contain" />
+                                    <img src={videoInputPreview(task.lastFrameUrl)} alt="尾帧" className="h-full w-full object-contain" />
                                   </button>
                                   <button
                                     type="button"
@@ -4137,9 +4189,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                   </button>
                                 </div>
                                 <Input
-                                  value={task.lastFrameUrl || ""}
+                                  value={parseGeneratedImageReferenceUri(task.lastFrameUrl) ? "" : task.lastFrameUrl || ""}
                                   onChange={(e) => replaceTaskReferenceUrl(task.localId, "lastFrameUrl", e.target.value)}
-                                  placeholder="或粘贴图片URL"
+                                  placeholder="生成图片引用，或粘贴图片URL替换"
                                   className="bg-[var(--background)] border-[var(--border)] text-[11px] h-7 mt-1.5 focus:border-[var(--primary)]/50"
                                 />
                               </>
@@ -4192,10 +4244,11 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                     type="button"
                                     className="block h-10 w-10 cursor-zoom-in overflow-hidden rounded-md border border-[var(--border)] bg-transparent p-0 shadow-sm"
                                     aria-label={`放大查看任务${task.cardIndex}参考图`}
-                                    onClick={() => setInputImagePreview({ src: task.referenceImageUrl, alt: `任务${task.cardIndex}参考图` })}
+                                    disabled={!videoInputPreview(task.referenceImageUrl)}
+                                    onClick={() => setInputImagePreview({ src: videoInputPreview(task.referenceImageUrl) || "", alt: `任务${task.cardIndex}参考图` })}
                                   >
                                     <img
-                                      src={task.referenceImageUrl}
+                                      src={videoInputPreview(task.referenceImageUrl)}
                                       alt="参考"
                                       className="h-full w-full object-contain"
                                     />
@@ -4210,9 +4263,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                   </button>
                                 </div>
                                 <Input
-                                  value={task.referenceImageUrl}
+                                  value={parseGeneratedImageReferenceUri(task.referenceImageUrl) ? "" : task.referenceImageUrl}
                                   onChange={(e) => replaceTaskReferenceUrl(task.localId, "referenceImageUrl", e.target.value)}
-                                  placeholder="或粘贴图片URL"
+                                  placeholder="生成图片引用，或粘贴图片URL替换"
                                   className="bg-[var(--background)] border-[var(--border)] text-[11px] h-8 flex-1 focus:border-[var(--primary)]/50"
                                 />
                               </div>
@@ -4249,7 +4302,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                 </button>
                                 <Input
                                   aria-label={`任务${task.cardIndex}参考图 URL`}
-                                  value={task.referenceImageUrl || ""}
+                                  value={parseGeneratedImageReferenceUri(task.referenceImageUrl) ? "" : task.referenceImageUrl || ""}
                                   onChange={(e) => replaceTaskReferenceUrl(task.localId, "referenceImageUrl", e.target.value)}
                                   placeholder="或粘贴图片URL后按回车添加"
                                   className="bg-[var(--background)] border-[var(--border)] text-[11px] h-8 focus:border-[var(--primary)]/50"
@@ -4276,10 +4329,11 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                     type="button"
                                     className="h-8 w-8 shrink-0 cursor-zoom-in overflow-hidden rounded border border-[var(--border)] bg-transparent p-0"
                                     aria-label={`放大查看任务${task.cardIndex}参考图${imageIndex + 1}`}
-                                    onClick={() => setInputImagePreview({ src: url, alt: `任务${task.cardIndex}参考图${imageIndex + 1}` })}
-                                  ><img src={url} alt={`参考图${imageIndex + 1}`} className="h-full w-full object-contain" /></button>}
+                                    disabled={!videoInputPreview(url)}
+                                    onClick={() => setInputImagePreview({ src: videoInputPreview(url) || "", alt: `任务${task.cardIndex}参考图${imageIndex + 1}` })}
+                                  ><img src={videoInputPreview(url)} alt={`参考图${imageIndex + 1}`} className="h-full w-full object-contain" /></button>}
                                   <Input
-                                    value={url}
+                                    value={parseGeneratedImageReferenceUri(url) ? "" : url}
                                     onChange={(event) => updateReferenceList(task.localId, "referenceImageUrls", (items) => items.map((item, index) => index === imageIndex ? event.target.value : item))}
                                     placeholder={`参考图 URL ${imageIndex + 1}`}
                                     className="h-8 flex-1 bg-[var(--background)] text-[11px]"
@@ -4394,7 +4448,13 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
                       </fieldset>
                       {/* Generate / Result */}
-                      {task.status === "completed" && (task.videoUrl || task.storageUrl) ? (
+                      {getVideoMediaUnavailable(task) ? (
+                        <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)]/40 p-4 space-y-2" role="status">
+                          <p className="text-sm font-medium text-[var(--foreground)]">视频已生成，当前不可播放</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">{task.errorMessage || "视频源已失效或记录已移除，请使用此前下载的文件。"}</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">原任务及费用记录已保留，不会自动重新提交。</p>
+                        </div>
+                      ) : task.status === "completed" && (task.videoUrl || task.storageUrl) ? (
                         <div className="space-y-3">
                           {/* Video preview */}
                           <div className="aspect-video bg-[var(--background)] rounded-xl overflow-hidden relative border border-[var(--border)]">

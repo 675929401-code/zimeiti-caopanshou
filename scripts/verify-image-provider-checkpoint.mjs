@@ -14,18 +14,13 @@ const routeSource = readFileSync(rootRoute, 'utf8');
 const preflightSource = routeSource.slice(routeSource.indexOf('    // A confirmed result resumes'), routeSource.indexOf('    const exactResult ='));
 const syntax = ts.createSourceFile(rootRoute, routeSource, ts.ScriptTarget.Latest, true);
 let optionsSource = '';
-let persistSource = '';
+
 function visit(node) {
   if (ts.isCallExpression(node) && node.expression.getText(syntax) === 'runImageExactlyOnce') optionsSource = node.arguments[0].getText(syntax);
-  if (ts.isFunctionDeclaration(node) && node.name?.text === 'persistGeneratedImage') persistSource = node.getText(syntax);
+
   ts.forEachChild(node, visit);
 }
-visit(syntax); assert.ok(optionsSource && persistSource);
-assert.match(routeSource, /const TRUSTED_GENERATED_IMAGE_HOSTS\s*=\s*\[/u);
-for (const hostname of ["source.openclaw-token.shop", "flow.secure-skill.com", "cdn.openaicn.com", "ark-acg-cn-beijing.tos-cn-beijing.volces.com"]) {
-  assert.ok(routeSource.includes(`"${hostname}"`), `missing trusted generated-image hostname: ${hostname}`);
-}
-assert.match(persistSource, /trustedHostnames:\s*TRUSTED_GENERATED_IMAGE_HOSTS/u);
+visit(syntax); assert.ok(optionsSource);
 const rawUrl = 'https://provider-media.invalid/private-image.png?signature=fixture-private-signature';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
@@ -105,6 +100,7 @@ function fixture() {
     'node:crypto': { createHash, randomUUID }, 'node:path': { default: path, ...path }, 'node:fs/promises': {},
     '@/lib/runtime-paths': { resolveAppRuntimeDir: () => '/fixture-runtime' },
     '@/lib/image-provider-request-audit': {
+      imageProviderEvidenceProjection: () => ({}),
       assertImageProviderDispatchReceipt: () => undefined,
       assertImageProviderSubmissionReceipt: () => undefined,
     },
@@ -121,7 +117,7 @@ function fixture() {
     '@/lib/auth': { getTokenFromHeaders: () => 'fixture-session', verifyToken: async () => ({ userId: 'fixture-user' }) },
     '@/lib/api-middleware': { withAuth: async (_request, handler) => handler({ id: 'fixture-user' }, db) },
   };
-  const globals = { Date: FixtureDate, Buffer, URL, structuredClone, process: { env: {} },
+  const globals = { Date: FixtureDate, Buffer, URL, structuredClone, createHash, process: { env: {} },
     console: { log: (...args) => events.push(args), error: (...args) => events.push(args), warn: (...args) => events.push(args) } };
   function evaluate(source, extra = {}) {
     const compiledModule = { exports: {} };
@@ -132,31 +128,14 @@ function fixture() {
   }
   modules['@/lib/image-request-rejection'] = evaluate(readFileSync('src/lib/image-request-rejection.ts', 'utf8'));
   modules['@/lib/image-failure-history'] = evaluate(readFileSync('src/lib/image-failure-history.ts', 'utf8'));
-  const lib = evaluate(readFileSync(libPath, 'utf8')); modules['@/lib/image-exactly-once'] = lib;
+  modules['@/lib/image-ephemeral-delivery'] = evaluate(readFileSync('src/lib/image-ephemeral-delivery.ts', 'utf8'));
+  const lib = evaluate(readFileSync(libPath, 'utf8'));  modules['@/lib/image-exactly-once'] = lib;
   const store = new lib.DatabaseImageExactlyOnceStore();
   const candidate = { id: 'fixture-image-model', provider: 'fixture-provider', api_endpoint: 'https://provider.invalid/v1/images/generations', api_key: 'fixture-provider-key', cost_price: 0.1 };
-  const persistedFunction = evaluate(`${persistSource}\nmodule.exports = persistGeneratedImage;`, {
-    AUTODL_H3_IMAGE_MAX_BYTES: 25 * 1024 * 1024, AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS: 120_000,
-    AUTODL_H3_IMAGE_CONTENT_TYPES: ['image/png', 'image/jpeg', 'image/webp'], GENERATED_IMAGE_STORAGE_PROVIDER: 'tencent_cos',
-    TRUSTED_GENERATED_IMAGE_HOSTS: ['source.openclaw-token.shop', 'flow.secure-skill.com', 'cdn.openaicn.com', 'ark-acg-cn-beijing.tos-cn-beijing.volces.com'],
-    async safeFetch(url) {
-      calls.downloads++; assert.equal(url, rawUrl);
-      const record = [...rows.values()][0];
-      if (!faults.allowOldDownload) assert.ok(record.response?.providerResult?.rawUrl === rawUrl && record.response?.persistenceLease, 'download requires a durable checkpoint and acquired lease');
-      if (faults.deferDownload) await faults.deferDownload;
-      if (faults.download) throw new Error(`fixture DNS download failed at ${rawUrl}`);
-      return { buffer: Buffer.from('fixture-image-bytes'), contentType: 'image/png' };
-    },
-    validateUploadBuffer: () => ({ contentType: 'image/png', extension: '.png' }),
-    parseImageDimensions: () => ({ width: 64, height: 64 }),
-    prepareGeneratedImageBytes: async ({ buffer }) => ({ buffer, dimensions: { width: 64, height: 64 } }),
-    toGeneratedImageObjectUri: key => `object://tencent_cos/${encodeURIComponent(key)}`,
-    storageManager: { async upload(buffer, fileName, contentType) { calls.uploads++; calls.uploadNames.push(fileName); return { provider: 'tencent_cos', key: `fixture-owned/${fileName}`, size: buffer.length, contentType }; } },
-  });
   function options(mode = 'local') {
     return evaluate(`module.exports = (${optionsSource});`, {
       imageExactlyOnceStore: store, userId: 'fixture-user', generationIdempotencyKey: 'fixture_image_key', traceId: 'fixture_image_trace',
-      generationFingerprint: hash('fixture bound model and request'), effectiveMode: mode,
+      generationFingerprint: hash('fixture bound model and request'), effectiveMode: mode, sellingPrice:0.2, billingReferenceId: 'image:fixture_operation_id',
       reserveImageBudgetOnce: async () => { calls.reservations++; },
       resumeSnapshot: null,
       failureRequestSnapshot: { schema: 'image_generation_request_snapshot.v1', surface: 'other', prompt: 'fixture prompt',
@@ -164,6 +143,8 @@ function fixture() {
         resolution: '1K', referenceAssetRefs: [], quotedPriceYuan: 0.2, billingExempt: false },
       workflowConfig: { apiToken: 'fixture-workflow-key', apiUrl: 'https://workflow.invalid/run', appId: 'fixture-workflow' },
       candidates: [candidate], ratio: '1:1', effectiveResolution: '1K', references: [], identityReferenceOnly: false,
+      prompt:'fixture prompt', acquireProviderAdmission: async () => ({release: async () => {}}), releaseProviderAdmission: async () => {}, imageAdmissionRejection: () => null, summarizeUpstreamImageError: value => value,
+      holdProviderAdmissionUntilResponseEnds: async response => response, fetchAuditedImageProviderPost: async () => {calls.provider++;return {response:new Response('fixture SSE'),dispatchReceipt:{}};},
       fullPrompt: 'fixture prompt', workflowPrompt: 'fixture workflow prompt', h3OperationId: 'fixture_operation_id', strictImageRequest: false,
       traceNodeId: '', traceNodeTitle: '', costPrice: 0.1,
       AUTODL_H3_SELFHOST_PROVIDER: 'autodl_h3_selfhost', ImageExactlyOnceError: lib.ImageExactlyOnceError, ImageRequestRejectedError: lib.ImageRequestRejectedError,
@@ -174,9 +155,22 @@ function fixture() {
       exactCoverText: '',
       writeImageTrace: async event => events.push(event),
       generateLocalImageCandidate: async () => { calls.provider++; if (faults.provider) throw new Error('fixture upstream unknown'); return rawUrl; },
-      persistGeneratedImage: persistedFunction,
+      providerMediaUrl: value => /^https?:/.test(value) ? value : null,
+      AUTODL_H3_IMAGE_MAX_BYTES: 25 * 1024 * 1024, AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS: 120_000,
+      AUTODL_H3_IMAGE_CONTENT_TYPES: ['image/png','image/jpeg','image/webp'], TRUSTED_GENERATED_IMAGE_HOSTS: ['provider-media.invalid'],
+      safeFetch: async url => {
+        calls.downloads++; assert.equal(url,rawUrl);
+        assert.ok([...rows.values()][0].response?.persistenceLease,'download requires durable lease');
+        if(faults.deferDownload) await faults.deferDownload;
+        if(faults.download) throw new Error('fixture download unavailable');
+        return {buffer:Buffer.from('fixture-image-bytes'),contentType:'image/png'};
+      },
+      validateUploadBuffer: () => ({contentType:'image/png',extension:'.png'}),
+      prepareGeneratedImageBytes: async ({buffer}) => ({buffer,dimensions:{width:64,height:64}}),
+
       persistAutodlH3SelfhostImageWithRecovery: async () => { throw new Error('H3 is outside this fixture'); },
       fetchImageUpstream: async () => { calls.provider++; return new Response('fixture SSE', { headers: { 'content-type': 'text/event-stream' } }); },
+      readAuditedImageProviderResponseText: async ({response}) => response.text(),
       readImageUpstreamResponseText: async response => response.text(),
       parseImageUpstreamResponse: () => ({ format: 'sse', payload: {}, error: null }),
       parseImageSseFrames: () => [],
@@ -186,7 +180,6 @@ function fixture() {
   }
   const status = evaluate(readFileSync('src/app/api/image/status/route.ts', 'utf8'));
   return { lib, store, faults, calls, rows, assets, events, options,
-    oldRun: evaluate(readFileSync('.codex-backups/20260902-image-provider-checkpoint-205142/src/lib/image-exactly-once.ts', 'utf8')).runImageExactlyOnce,
     advance: ms => { clock += ms; }, first: () => [...rows.values()][0],
     run: mode => lib.runImageExactlyOnce(options(mode)),
     preflight: async (changes = {}) => evaluate(`module.exports = async () => { const previousImageRequest = await imageExactlyOnceStore.get({ userId, clientIdempotencyKey: generationIdempotencyKey, clientTraceId: traceId }); ${preflightSource}\n return { continued: true }; };`, {
@@ -221,23 +214,24 @@ function fixture() {
 let scenarios = 0;
 async function test(name, action) { await action(); scenarios++; console.log(`PASS ${name}`); }
 const pending = error => error?.code === 'IMAGE_RESULT_PERSISTENCE_PENDING' && !error.message.includes(rawUrl);
-await test('old function loses a returned provider URL when download fails', async () => {
-  const f = fixture(); f.faults.allowOldDownload = true; f.faults.download = true; const options = f.options();
-  await assert.rejects(f.oldRun({ ...options, submitOnce: async () => options.persistProviderResult(await options.submitOnce(), { persistenceAttemptId: 'old_fixture' }) }));
-  assert.equal(f.calls.provider, 1); assert.equal(f.calls.downloads, 1);
-  assert.equal(f.first().state, 'failed_unknown'); assert.equal(f.first().response, null);
+await test('legacy COS completed receipt replay and asset finalization remain idempotent', async () => {
+  const f=fixture();const options=f.options();let legacySubmissions=0;
+  const response={storageUri:'object://tencent_cos/fixture-owned/legacy.png',storageKey:'fixture-owned/legacy.png',storageProvider:'tencent_cos',fileName:'legacy.png',fileSize:19,contentType:'image/png',source:'image-generation'};
+  const legacyOptions={...options,persistProviderResult:undefined,prepareEphemeralResult:undefined,submitOnce:async()=>{legacySubmissions++;return response;}};
+  const first=await f.lib.runImageExactlyOnce(legacyOptions);const replay=await f.lib.runImageExactlyOnce(legacyOptions);
+  assert.equal(first.record.state,'completed');assert.equal(replay.replayed,true);assert.equal(legacySubmissions,1);assert.deepEqual({...replay.response},response);
+  const delivery={recordId:first.record.recordId,userId:'fixture-user',...response,meta:{}};
+  const one=await f.lib.finalizeImageExactlyOnceDelivery(delivery);const two=await f.lib.finalizeImageExactlyOnceDelivery(delivery);
+  assert.equal(one.assetId,two.assetId);assert.equal(f.assets.size,1);assert.equal((await f.status()).deliveryReady,true);assert.equal(f.calls.provider,0);
 });
 await test('real callbacks checkpoint before download; completed replay and delivery stay idempotent', async () => {
   const f = fixture(); const result = await f.run();
-  assert.equal(result.record.state, 'completed'); assert.ok(!JSON.stringify(result).includes(rawUrl));
-  assert.equal(f.calls.provider, 1); assert.equal(f.calls.downloads, 1);
-  const response = result.response;
-  const delivery = { recordId: result.record.recordId, userId: 'fixture-user', storageKey: response.storageKey, storageProvider: response.storageProvider,
-    fileName: response.fileName, fileSize: response.fileSize, contentType: response.contentType, source: response.source, meta: {} };
-  const one = await f.lib.finalizeImageExactlyOnceDelivery(delivery);
-  const two = await f.lib.finalizeImageExactlyOnceDelivery(delivery); assert.equal(one.assetId, two.assetId); assert.equal(f.assets.size, 1);
-  assert.equal((await f.run()).replayed, true); assert.equal(f.calls.provider, 1); assert.equal(f.calls.downloads, 1);
-  assert.equal((await f.status()).deliveryReady, true); f.assertPrivate();
+  assert.equal(result.record.state, 'completed'); assert.equal(result.response.deliveryMode,'provider_url');
+  assert.equal(result.response.providerUrl,rawUrl); assert.equal(f.calls.provider,1); assert.equal(f.calls.downloads,1);
+  assert.equal(f.calls.uploads,0); assert.equal(f.assets.size,0,'direct delivery creates no media history');
+  f.first().delivery_state='delivered';
+  assert.equal((await f.run()).replayed,true); assert.equal(f.calls.provider,1); assert.equal(f.calls.downloads,1);
+  assert.equal((await f.status()).deliveryReady,true); f.assertPrivate();
 });
 await test('DNS failure retains checkpoint; same key resumes storage only', async () => {
   const f = fixture(); f.faults.download = true; await assert.rejects(f.run(), pending);
@@ -277,21 +271,21 @@ await test('concurrent same-key recovery only leases one download', async () => 
   const f = fixture(); f.faults.download = true; await assert.rejects(f.run(), pending); f.faults.download = false;
   let release; f.faults.deferDownload = new Promise(resolve => { release = resolve; });
   const winner = f.run();
-  for (let i = 0; i < 20 && f.calls.downloads < 2; i++) await Promise.resolve();
+  for (let i = 0; i < 100 && f.calls.downloads < 2; i++) await Promise.resolve();
   assert.equal(f.calls.downloads, 2); await assert.rejects(f.run(), pending);
   assert.equal(f.calls.downloads, 2); release(); await winner;
-  assert.equal(f.calls.provider, 1); assert.equal(f.calls.uploads, 1); f.assertPrivate();
+  assert.equal(f.calls.provider, 1); assert.equal(f.calls.uploads, 0); f.assertPrivate();
 });
 await test('expired lease takeover fences a late old worker from completing or releasing the winner', async () => {
   const f = fixture(); let release;
   f.faults.deferDownload = new Promise(resolve => { release = resolve; });
   const old = f.run();
-  for (let i = 0; i < 20 && f.calls.downloads < 1; i++) await Promise.resolve();
+  for (let i = 0; i < 100 && f.calls.downloads < 1; i++) await Promise.resolve();
   assert.equal(f.calls.downloads, 1); f.advance(300001); f.faults.deferDownload = null;
   const winner = await f.run(); const saved = JSON.stringify(f.first().response);
   release(); const late = await old; assert.equal(late.record.state, 'completed');
   assert.equal(JSON.stringify(f.first().response), saved); assert.equal(winner.record.state, 'completed');
-  assert.equal(new Set(f.calls.uploadNames).size, 2, 'late worker must not overwrite the winning object');
+  assert.equal(f.calls.uploads,0,'direct delivery never creates backup objects');
   assert.equal(f.calls.provider, 1); f.assertPrivate();
 });
 await test('no-checkpoint provider uncertainty stays frozen', async () => {
@@ -318,7 +312,7 @@ await test('workflow uses the same checkpoint-before-download contract', async (
 });
 await test('unsupported store is rejected before provider submission', async () => {
   const f = fixture(); const options = f.options();
-  await assert.rejects(f.lib.runImageExactlyOnce({ ...options, store: { claim: options.store.claim } }), error => error.code === 'IMAGE_CHECKPOINT_STORE_REQUIRED');
+  await assert.rejects(f.lib.runImageExactlyOnce({ ...options, prepareEphemeralResult:undefined, store: { claim: options.store.claim } }), error => error.code === 'IMAGE_CHECKPOINT_STORE_REQUIRED');
   assert.equal(f.calls.provider, 0);
 });
 await test('paid result recovery bypasses new-request balance/debt prechecks; changed payload cannot', async () => {
@@ -339,11 +333,12 @@ await test('paid budget is atomically reserved before provider submission and de
   assert.doesNotMatch(routeSource.slice(reserveAt - 500, runnerAt), /imageExactlyOnceStore\.claim\(/u,
     'the route must not pre-claim and then let the runner claim the same key again');
   const exactlyOnceSource = readFileSync(libPath, 'utf8');
+  assert.ok(exactlyOnceSource.indexOf('await options.beforeSubmitOnce?.(claimed.record)')>=0 && exactlyOnceSource.indexOf('result = await options.submitOnce(receiptContext)')>=0);
   assert.ok(exactlyOnceSource.indexOf('await options.beforeSubmitOnce?.(claimed.record)')
-    < exactlyOnceSource.indexOf('result = await options.submitOnce()'),
+    < exactlyOnceSource.indexOf('result = await options.submitOnce(receiptContext)'),
   'wallet reservation must run after the durable claim and before provider submission');
   assert.match(routeSource, /IMAGE_BILLING_RESERVATION_REJECTED/u);
   assert.match(routeSource, /ImageRequestRejectedError[\s\S]*?refundCash\([\s\S]*?:release/u);
   assert.match(routeSource, /IMAGE_BILLING_RELEASE_PENDING[\s\S]*?canResubmit:\s*false/u);
 });
-console.log(JSON.stringify({ passed: true, scenarios, actualDatabaseStore: true, actualGenerateCallbacks: true, actualPersistenceFunction: true, actualStatusHandler: true, realNetworkCalls: 0, realDatabaseWrites: 0 }));
+console.log(JSON.stringify({ passed: true, scenarios, actualDatabaseStore: true, actualGenerateCallbacks: true, actualLegacyReceiptReplay: true, actualStatusHandler: true, realNetworkCalls: 0, realDatabaseWrites: 0 }));

@@ -13,6 +13,9 @@ import {
 } from "@/lib/storyboard-project-video-state";
 import { storageManager, type StorageProviderType } from "@/storage/object";
 import { createVideoAccessUrl } from "@/lib/video-access-ticket";
+import { createStoryboardPersistenceSnapshot } from "@/lib/storyboard-local-persistence";
+import { generatedImagePreviewUrl } from "@/lib/generated-image-reference";
+import { validateOwnedGeneratedImageReference } from "@/lib/server/generated-image-reference";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,9 +86,17 @@ function possibleKey(value: unknown) {
 }
 
 async function stabilize(db: Database, owner: string, input: Document): Promise<Document> {
-  const document = structuredClone(input);
+  const document = createStoryboardPersistenceSnapshot(structuredClone(input));
   const keys = new Set<string>();
   for (const card of document.cards) {
+    if (card.imageRef) {
+      await validateOwnedGeneratedImageReference({ userId: owner, reference: card.imageRef });
+      card.imageUrl = generatedImagePreviewUrl(card.imageRef);
+      card.imageRecordId = card.imageRef.recordId;
+      card.imageDeliveryMode = "provider_url";
+      delete card.imageStorageKey;
+      delete card.imageAssetId;
+    }
     if (typeof card.imageStorageKey === "string" && card.imageStorageKey) keys.add(card.imageStorageKey);
     for (const url of [...card.referenceImageUrls, ...mediaFields.map((field) => card[field])]) {
       if (typeof url === "string" && /^(?:blob|data):/iu.test(url)) throw Error("EMBEDDED_MEDIA");
@@ -148,7 +159,8 @@ function unavailablePlaybackMessage(task: OwnedStoryboardVideoTask) {
 }
 
 function markPlaybackUnavailable(card: Document["cards"][number], message: string) {
-  card.videoStatus = "failed";
+  // Media availability must not rewrite a successful generation or its bill.
+  card.videoStatus = "done";
   card.videoRetryable = false;
   card.videoError = message;
   card.videoStatusDetail = message;
@@ -163,7 +175,20 @@ function markPlaybackUnavailable(card: Document["cards"][number], message: strin
 }
 
 async function hydrate(db: Database, owner: string, input: Document): Promise<HydratedDocument> {
-  let document = structuredClone(input);
+  let document = createStoryboardPersistenceSnapshot(structuredClone(input));
+  for (const card of document.cards) if (card.imageRef) {
+    try {
+      await validateOwnedGeneratedImageReference({ userId: owner, reference: card.imageRef });
+      card.imageUrl = generatedImagePreviewUrl(card.imageRef);
+      card.imageRecordId = card.imageRef.recordId;
+      card.imageDeliveryMode = "provider_url";
+    } catch {
+      delete card.imageUrl;
+      delete card.imageValidatedAt;
+      card.imageError = "生成图片归属或可用性暂时无法确认；原任务及费用收据保留";
+      card.imageRetryBlocked = true;
+    }
+  }
   const playbackUnavailableCardIds = new Set<string>();
   const ids = new Set<string>();
   for (const card of document.cards) for (const url of [...card.referenceImageUrls, ...mediaFields.map((field) => card[field])]) {
@@ -187,6 +212,42 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
   for (const card of document.cards) {
     for (const field of mediaFields) if (card[field]) card[field] = restore(card[field]);
     card.referenceImageUrls = card.referenceImageUrls.map((url) => String(restore(url))).filter(Boolean);
+  }
+  const imageRequestKeys = document.cards.map(card => String(card.imageClientRequestId || "")).filter(Boolean);
+  for (let offset = 0; offset < imageRequestKeys.length; offset += 100) {
+    const attempts = await db.from("image_generation_requests").select("record_id,client_idempotency_key,response")
+      .eq("user_id", owner).eq("state", "completed").eq("delivery_state", "delivered")
+      .in("client_idempotency_key", imageRequestKeys.slice(offset, offset + 100));
+    if (attempts.error) continue; // Unknown read failures must not erase media.
+    for (const row of attempts.data || []) {
+      const card = document.cards.find(item => item.imageClientRequestId === row.client_idempotency_key);
+      if (!card) continue;
+      if (row.response?.deliveryMode === "provider_url" && !row.response?.sourceExpiredAt && /^[a-f0-9]{64}$/u.test(String(row.record_id))) {
+        card.imageRef = { schema: "generated_image_ref.v1", recordId: String(row.record_id) };
+        card.imageRecordId = String(row.record_id);
+        card.imageDeliveryMode = "provider_url";
+        card.imageUrl = generatedImagePreviewUrl(card.imageRef);
+      } else if (row.response?.deliveryMode === "inline_ephemeral") {
+        card.imageRecordId = String(row.record_id);
+        card.imageDeliveryMode = "inline_ephemeral";
+        card.imageStatus = "done";
+        card.imageError = "图片已成功生成且费用收据已保留；临时图片仅原页面可用，刷新后无法恢复";
+        card.imageRetryBlocked = true;
+        card.imageRecoveryReady = false;
+        delete card.imageUrl;
+        delete card.imageValidatedAt;
+      }
+    }
+    const expiredKeys = new Set((attempts.data || []).filter(row => row.response?.deliveryMode === "provider_url" && row.response?.sourceExpiredAt)
+      .map(row => String(row.client_idempotency_key)));
+    for (const card of document.cards) if (expiredKeys.has(String(card.imageClientRequestId || ""))) {
+      delete card.imageUrl;
+      delete card.videoSourceImageUrl;
+      card.imageStatus = "done";
+      card.imageError = "生成已成功，上游图片已确认失效；原任务和账务凭据保留";
+      card.imageRetryBlocked = true;
+      card.imageRecoveryReady = false;
+    }
   }
   const taskIds = collectStoryboardVideoTaskIds([document]);
   if (taskIds.length) {

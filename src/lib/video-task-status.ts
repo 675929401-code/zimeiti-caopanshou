@@ -264,12 +264,22 @@ async function readLocalVideoTaskSnapshot(input: {
   const taskIdInternal = String(input.task.id || "");
   const priceCharged = Number(input.task.price_charged || 0);
   if (status === "completed") {
+    // Generation/accounting stays terminal even when delivery has expired or
+    // the user removed the record. Never mint a fresh ticket in either case.
+    const unavailableReason = input.task.history_hidden_at ? "history_hidden"
+      : input.task.source_expired_at ? "source_expired" : null;
+    const unavailableMessage = unavailableReason === "history_hidden"
+      ? "视频记录已从历史中移除，当前不可播放；不会自动重新提交"
+      : unavailableReason === "source_expired"
+        ? "视频源已过期，当前不可播放；不会自动重新提交" : "";
     return NextResponse.json({
       taskId: input.taskId,
       status: "completed",
-      processingStage: "ready",
+      processingStage: unavailableReason ? "media_unavailable" : "ready",
       providerCompleted: true,
-      videoUrl: await createVideoAccessUrl({
+      mediaAvailable: !unavailableReason,
+      mediaUnavailableReason: unavailableReason,
+      videoUrl: unavailableReason ? "" : await createVideoAccessUrl({
         taskId: taskIdInternal,
         userId: input.userId,
         role: input.userRole,
@@ -277,7 +287,8 @@ async function readLocalVideoTaskSnapshot(input: {
       }),
       storageUrl: "",
       thumbnailUrl: "",
-      errorMessage: "",
+      errorMessage: unavailableMessage,
+      retryable: false,
       priceCharged,
       billingState: String(input.task.billing_state || "settled"),
       needsProxy: false,
@@ -481,7 +492,8 @@ async function resolveOwnedVideoTaskStatus(payload: { userId: string; role: 'adm
         { status: 410 },
       );
     }
-    if (!advanceProvider) {
+    if (!advanceProvider || (existingTask.status === "completed"
+      && (existingTask.source_expired_at || existingTask.history_hidden_at))) {
       return readLocalVideoTaskSnapshot({
         task: existingTask as Record<string, unknown>,
         taskId,

@@ -294,6 +294,19 @@ class StorageManager {
     return result;
   }
 
+  async headPublicationObjectOnly(key:string){
+    const provider=await this.getProvider('tencent_cos');
+    if(!(provider instanceof TencentCOSProvider))throw new Error('IMAGE_PUBLICATION_COS_REQUIRED');
+    return provider.headPublicationObjectOnly(key);
+  }
+
+  /** Explicit admin publication only; the locked publication RPC registers ownership. */
+  async uploadPublicationObjectOnly(buffer:Buffer,key:string,contentType:string):Promise<void> {
+    const provider=await this.getProvider('tencent_cos');
+    if(!(provider instanceof TencentCOSProvider))throw new Error('IMAGE_PUBLICATION_COS_REQUIRED');
+    await provider.uploadPublicationObjectOnly(buffer,key,contentType);
+  }
+
   /** 从 URL 下载并上传 */
   async uploadFromUrl(
     url: string,

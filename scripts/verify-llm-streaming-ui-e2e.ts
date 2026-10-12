@@ -6,7 +6,9 @@ import { chromium, type Browser, type Page, type Route } from "playwright";
 const baseUrl = (process.env.VERIFY_BASE_URL || "http://127.0.0.1:5000").replace(/\/$/u, "");
 const baseOrigin = new URL(baseUrl).origin;
 const runStamp = new Date().toISOString().replace(/[:.]/gu, "-");
-const outputDir = path.resolve(".codex-evidence", "llm-streaming-ui-e2e-20260902", runStamp);
+const outputDir = process.env.LLM_UI_ACCEPTANCE_OUTPUT?.trim()
+  ? path.resolve(process.env.LLM_UI_ACCEPTANCE_OUTPUT.trim())
+  : path.resolve(".codex-evidence", "llm-streaming-ui-e2e-20260902", runStamp);
 const appContextPath = path.resolve("src", "contexts", "app-context.tsx");
 const standaloneBuildIdPath = path.resolve(".next", "standalone", ".next", "BUILD_ID");
 const selectedModelId = "22222222-2222-4222-8222-222222222222";
@@ -154,7 +156,18 @@ async function installZeroCostFixtures(page: Page, evidence: {
       return;
     }
     if (!url.pathname.startsWith("/api/")) {
-      await route.continue();
+      if (request.method() !== "GET") {
+        evidence.unexpectedApis.push(`${request.method()} ${url.pathname}`);
+        await route.abort("blockedbyclient");
+        return;
+      }
+      const response = await route.fetch({ maxRedirects: 0 });
+      if (!response.ok()) {
+        evidence.unexpectedApis.push(`GET ${url.pathname} STATUS_${response.status()}`);
+        await route.abort("blockedbyclient");
+        return;
+      }
+      await route.fulfill({ response });
       return;
     }
 
@@ -458,6 +471,7 @@ async function main() {
     const context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       baseURL: baseUrl,
+      serviceWorkers: "block",
       permissions: ["clipboard-read", "clipboard-write"],
     });
     await context.addInitScript(({ user }) => {
@@ -473,7 +487,7 @@ async function main() {
     page.on("console", (message) => {
       const text = message.text();
       if (message.type() === "error" && !/favicon|ResizeObserver/iu.test(text)) consoleErrors.push(text.slice(0, 500));
-      if (/stream-perf|sendLLMMessage|fetchWithRetry|FETCH RETURNED|SSE chunk/iu.test(text)) {
+      if (/stream-perf|sendLLMMessage|fetchWithRetry|FETCH RETURNED|SSE chunk|LLM_SSE_READ/iu.test(text)) {
         streamLogs.push(`[${message.type()}] ${text.slice(0, 500)}`);
       }
     });

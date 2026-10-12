@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { parseGeneratedImageReferenceUri } from "@/lib/generated-image-reference";
 
 import type { DigitalDispatchInput } from "@/lib/digital-video-dispatch";
 import {
@@ -150,7 +151,7 @@ function normalizeAssetRef(value: unknown): VideoRequestAssetRef {
   const role = requestText(asset.role, "VIDEO_REQUEST_ASSET_ROLE_INVALID", 32) as VideoRequestAssetRole;
   const index = finiteNumber(asset.index, "VIDEO_REQUEST_ASSET_INDEX_INVALID", 0, 255);
   const ref = requestText(asset.ref, "VIDEO_REQUEST_ASSET_REF_INVALID", 4096);
-  const durableRef = /^(?:object|asset):\/\/[^\s?#\u0000-\u001f]+$/u.test(ref)
+  const durableRef = Boolean(parseGeneratedImageReferenceUri(ref)) || /^(?:object|asset):\/\/[^\s?#\u0000-\u001f]+$/u.test(ref)
     || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(ref)
     || (() => {
       try {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import {
   AUTODL_H3_SELFHOST_IMAGE_ENDPOINT,
   AUTODL_H3_SELFHOST_IMAGE_MODEL,
@@ -61,23 +62,34 @@ function verifyRouteContract() {
     "utf8",
   );
   assert.match(routeSource, /const AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS = 120_000;/u);
-  assert.match(routeSource, /async function persistAutodlH3SelfhostImageWithRecovery/u);
-  assert.match(routeSource, /recoverAutodlH3SelfhostCompletedImageResultUrl\([\s\S]*?recovery: "get_completed_job_then_persist"/u);
 
   const h3PersistStart = routeSource.indexOf("for (let index = 0; index < candidates.length; index += 1)");
   const h3PersistEnd = routeSource.indexOf("idempotencyReplayed = exactResult.replayed", h3PersistStart);
   assert.ok(h3PersistStart > 0 && h3PersistEnd > h3PersistStart, "missing exactly-once candidate persistence block");
   const h3PersistBranch = routeSource.slice(h3PersistStart, h3PersistEnd);
   assert.match(h3PersistBranch, /candidate\.provider === AUTODL_H3_SELFHOST_PROVIDER/u);
-  assert.match(h3PersistBranch, /persistAutodlH3SelfhostImageWithRecovery\(\{/u);
-  assert.match(h3PersistBranch, /apiKey: resolveProviderSecret\(candidate\.api_key\)/u);
+  assert.match(h3PersistBranch, /imageExactlyOnceStore\.readProviderPersistenceBinding\(\{/u);
+  assert.match(h3PersistBranch, /persistenceAttemptId: persistence\.persistenceAttemptId/u);
+  assert.match(h3PersistBranch, /apiKey: resolveProviderSecret\(AUTODL_H3_SELFHOST_SECRET_REF\)/u);
+  assert.match(h3PersistBranch, /ownedResultRecovery,/u);
+  assert.match(h3PersistBranch, /providerUrl: "finalUrl" in imported \? imported\.finalUrl : providerUrl/u);
   assert.doesNotMatch(h3PersistBranch, /persistAutodlH3SelfhostImage\(\{/u);
+  // Actual callback + DB-bound held checkpoint + real GET-only selfhost recovery,
+  // including ten owner/lease/fingerprint/result negative fixtures. No real I/O.
+  const behavior = spawnSync(process.execPath, ["scripts/verify-generated-media-direct-delivery-zero-network.mjs"], {
+    cwd: process.cwd(), encoding: "utf8", timeout: 30_000, windowsHide: true,
+  });
+  assert.equal(behavior.status, 0, behavior.stderr || behavior.stdout);
+  const report = JSON.parse(behavior.stdout);
+  assert.ok(report.checks.includes("h3-held-checkpoint-get-only-recovery"));
+  assert.ok(report.checks.includes("h3-held-checkpoint-owner-lease-fingerprint-negatives"));
 
   // The established timeout for every pre-existing image provider is unchanged.
   const upstreamFetchStart = routeSource.indexOf("async function fetchImageUpstream");
   const upstreamFetchEnd = routeSource.indexOf("async function loadReferenceImage", upstreamFetchStart);
   const upstreamFetchBlock = routeSource.slice(upstreamFetchStart, upstreamFetchEnd);
-  assert.match(upstreamFetchBlock, /AbortSignal\.timeout\(5 \* 60 \* 1000\)/u);
+  assert.match(upstreamFetchBlock, /timeoutMs = 5 \* 60 \* 1000/u);
+  assert.match(upstreamFetchBlock, /AbortSignal\.timeout\(timeoutMs\)/u);
 }
 
 function verifyGatewayReplayContract() {

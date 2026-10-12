@@ -51,6 +51,7 @@ export type ImageFailureRequestSnapshot = {
   imageCount?: 1;
   referenceUsage?: "general" | "character-identity";
   payloadFingerprint?: string;
+  deliveryRequirement?: "recoverable_reference";
 };
 
 function isImageFailureHistorySurface(value: unknown): value is ImageFailureRequestSnapshot["surface"] {
@@ -105,6 +106,7 @@ export function createImageFailureRequestSnapshot(input: {
   imageCount?: 1;
   referenceUsage?: ImageFailureRequestSnapshot["referenceUsage"];
   payloadFingerprint?: string;
+  deliveryRequirement?: "recoverable_reference";
 }): ImageFailureRequestSnapshot | null {
   const prompt = input.prompt.trim();
   const publicModelId = input.publicModelId.trim();
@@ -127,6 +129,7 @@ export function createImageFailureRequestSnapshot(input: {
     referenceAssetRefs,
     quotedPriceYuan: input.quotedPriceYuan,
     billingExempt: input.billingExempt,
+    ...(input.deliveryRequirement ? { deliveryRequirement: input.deliveryRequirement } : {}),
     ...(input.exactCoverText?.trim() ? { exactCoverText: input.exactCoverText.trim() } : {}),
     ...(hasV2Integrity ? {
       style: input.style?.trim() || "",
@@ -144,6 +147,7 @@ export function createImageFailureRequestSnapshot(input: {
 export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRequestSnapshot | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Partial<ImageFailureRequestSnapshot>;
+  if (row.deliveryRequirement !== undefined && row.deliveryRequirement !== "recoverable_reference") return null;
   if ((row.schema !== "image_generation_request_snapshot.v1" && row.schema !== "image_generation_request_snapshot.v2")
     || !isImageFailureHistorySurface(row.surface)
     || typeof row.prompt !== "string" || !row.prompt.trim() || row.prompt.length > 50_000
@@ -181,6 +185,7 @@ export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRe
     referenceAssetRefs: [...row.referenceAssetRefs],
     quotedPriceYuan: Number(row.quotedPriceYuan),
     billingExempt: row.billingExempt,
+    ...(row.deliveryRequirement ? { deliveryRequirement: row.deliveryRequirement } : {}),
     ...(row.exactCoverText ? { exactCoverText: row.exactCoverText } : {}),
     ...(v2 ? {
       style: row.style!,

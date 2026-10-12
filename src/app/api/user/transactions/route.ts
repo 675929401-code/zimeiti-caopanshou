@@ -173,22 +173,22 @@ export async function GET(request: NextRequest) {
     let paymentOrders: any[] = [];
     let paymentTotal = 0;
 
-    {
+    if (transactionType !== 'consume') {
       let paymentQuery = client
         .from('payment_orders')
-        .select('id, type, amount, status, payment_method, credits_amount, cash_amount, trade_order_id, paid_at, created_at', { count: 'exact' })
+        .select('id, type, amount, status, payment_method, credits_amount, trade_order_id, paid_at, created_at', { count: 'exact' })
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
-
-      if (transactionType === 'consume') {
-        paymentQuery = paymentQuery.eq('id', 'never-match');
-      }
 
       paymentQuery = buildDateFilter(paymentQuery);
 
       const { data: pData, error: pError, count: pTotal } = await paymentQuery.range(from, to);
 
-      if (!pError && pData) {
+      if (pError) {
+        throw new Error('PAYMENT_ORDER_HISTORY_READ_FAILED');
+      }
+
+      if (pData) {
         paymentOrders = pData.map((o: any) => ({
           id: o.id,
           category: 'payment' as const,
@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
           status: o.status,
           paymentMethod: o.payment_method,
           creditsAmount: o.credits_amount,
-          cashAmount: o.cash_amount,
+          cashAmount: o.type === 'cash' ? Number(o.amount) : null,
           tradeOrderId: o.trade_order_id,
           paidAt: o.paid_at,
           createdAt: o.created_at,

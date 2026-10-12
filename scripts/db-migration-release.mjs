@@ -6,6 +6,8 @@ import path from "node:path";
 import process from "node:process";
 import dotenv from "dotenv";
 import pg from "pg";
+import { postgresErrorDiagnostics } from "./lib/postgres-error-diagnostics.mjs";
+import { readDatabaseTargetIdentity } from "./lib/database-target-identity.mjs";
 import {
   assertForwardMigrationRoot,
   parseForwardMigrationName,
@@ -34,8 +36,12 @@ const selectedOnly = (valueOf("--only") || "")
   .map((item) => item.trim())
   .filter(Boolean);
 const confirmedTargetHost = String(valueOf("--confirm-target-host") || "").trim().toLowerCase();
+const confirmedTargetPort = Number(valueOf("--confirm-target-port"));
+const confirmedTargetDatabase = String(valueOf("--confirm-target-database") || "").trim();
 const confirmedManifestSha256 = String(valueOf("--confirm-manifest-sha256") || "").trim().toLowerCase();
 const confirmedBackup = String(valueOf("--confirm-backup") || "").trim();
+const confirmedBackupReceiptFileSha256 = String(valueOf("--confirm-backup-receipt-file-sha256") || "").trim().toLowerCase();
+const confirmedBackupArchiveSha256 = String(valueOf("--confirm-backup-archive-sha256") || "").trim().toLowerCase();
 const semanticReceiptPath = String(valueOf("--semantic-receipt") || "").trim();
 const confirmedSemanticReceiptSha256 = String(valueOf("--confirm-semantic-receipt-sha256") || "").trim().toLowerCase();
 const confirmedTargetFingerprint = String(valueOf("--confirm-target-fingerprint") || "").trim().toLowerCase();
@@ -54,16 +60,15 @@ function validateForwardMigrationSource() {
     migrationRoot,
     rollbackRoot,
     legacyRollbackRelocations: policy.database?.legacyRollbackRelocations || [],
-    // Production release commands run only from a committed checkout. A
-    // missing/unborn Git repository or any HEAD/index/worktree drift must
-    // fail closed before environment loading or database access.
+    // Validate the canonical forward source and historical Git lineage.
+    // New canonical migrations may be untracked; plan does not require push.
     gitIndexMode: "required",
   });
 }
 
 validateForwardMigrationSource();
 
-dotenv.config({ path: path.join(root, ".env.local"), quiet: true });
+if (command !== "plan") dotenv.config({ path: path.join(root, ".env.local"), quiet: true });
 
 const FORBIDDEN_FORWARD_PATTERNS = [
   { code: "DROP_DATABASE_FORBIDDEN", expression: /^\s*DROP\s+DATABASE\b/imu },
@@ -242,8 +247,163 @@ function databaseHost(connectionString) {
   }
 }
 
+function confirmedWriteTarget(config) {
+  let url;
+  try { url = new URL(config.value); } catch { throw new Error("DATABASE_TARGET_INVALID"); }
+  if ([...url.searchParams.keys()].some((key) => ["host", "hostaddr", "port", "dbname", "database", "service"].includes(key.toLowerCase()))) {
+    throw new Error("DATABASE_TARGET_QUERY_OVERRIDE_FORBIDDEN");
+  }
+  let database;
+  try { database = decodeURIComponent(url.pathname.replace(/^\//u, "")); } catch { throw new Error("DATABASE_TARGET_INVALID"); }
+  const host = url.hostname.toLowerCase();
+  const port = Number(url.port || "5432");
+  if (!/^postgres(?:ql)?:$/u.test(url.protocol) || !host || !database || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("DATABASE_TARGET_INVALID");
+  }
+  if (confirmedTargetHost !== host) throw new Error("TARGET_HOST_CONFIRMATION_REQUIRED");
+  if (confirmedTargetPort !== port) throw new Error("TARGET_PORT_CONFIRMATION_REQUIRED");
+  if (confirmedTargetDatabase !== database) throw new Error("TARGET_DATABASE_CONFIRMATION_REQUIRED");
+  if (!/^[a-f0-9]{64}$/u.test(confirmedTargetFingerprint)) throw new Error("TARGET_FINGERPRINT_CONFIRMATION_REQUIRED");
+  // A production backup adapter and its trusted transport need separate review.
+  if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(host)) throw new Error("BACKUP_TARGET_CLASS_UNSUPPORTED");
+  return { host, port, database };
+}
+
+function verifiedFileBytes(filePath, code, maxBytes = 16 * 1024 * 1024) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size > maxBytes) throw new Error(code);
+    const bytes = fs.readFileSync(filePath);
+    if (bytes.length > maxBytes) throw new Error(code);
+    return bytes;
+  } catch { throw new Error(code); }
+}
+
+function verifiedArchiveDigest(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const before = fs.fstatSync(fd);
+    if (!before.isFile() || !Number.isSafeInteger(before.size) || before.size < 5) throw new Error("invalid");
+    const hash = crypto.createHash("sha256"), chunk = Buffer.alloc(1024 * 1024);
+    let bytes = 0, header = "";
+    while (true) {
+      const length = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (!length) break;
+      if (bytes < 5) header += chunk.subarray(0, Math.min(length, 5 - bytes)).toString("ascii");
+      hash.update(chunk.subarray(0, length));
+      bytes += length;
+    }
+    const after = fs.fstatSync(fd), current = fs.statSync(filePath);
+    for (const key of ["size", "dev", "ino", "mtimeMs", "ctimeMs"]) {
+      if (before[key] !== after[key] || before[key] !== current[key]) throw new Error("changed");
+    }
+    if (bytes !== before.size) throw new Error("changed");
+    return { sha256: hash.digest("hex"), bytes, header };
+  } catch { throw new Error("BACKUP_ARCHIVE_UNREADABLE_OR_CHANGED"); }
+  finally { if (fd !== undefined) fs.closeSync(fd); }
+}
+
+function confirmedDatabaseBackup(target) {
+  if (!confirmedBackup) throw new Error("PRE_MIGRATION_BACKUP_CONFIRMATION_REQUIRED");
+  const receiptPath = path.resolve(root, confirmedBackup);
+  const bytes = verifiedFileBytes(receiptPath, "BACKUP_RECEIPT_NOT_FOUND", 64 * 1024);
+  if (bytes.length > 64 * 1024) throw new Error("BACKUP_RECEIPT_TOO_LARGE");
+  const receiptFileSha256 = sha256(bytes);
+  if (!/^[a-f0-9]{64}$/u.test(confirmedBackupReceiptFileSha256) || receiptFileSha256 !== confirmedBackupReceiptFileSha256) {
+    throw new Error("BACKUP_RECEIPT_SHA256_MISMATCH");
+  }
+  let receipt;
+  try { receipt = JSON.parse(bytes.toString("utf8")); } catch { throw new Error("BACKUP_RECEIPT_INVALID"); }
+  assertBackupFields(receipt, ["kind", "schemaVersion", "targetClass", "targetHost", "targetPort", "database", "targetFingerprint",
+    "createdAt", "completedAt", "archivePath", "archiveSha256", "archiveBytes", "format", "readability", "restore"]);
+  if (!receipt || receipt.kind !== "pre-migration-database-backup-receipt.v1" || receipt.schemaVersion !== 1
+    || receipt.targetClass !== "local-loopback-only" || receipt.format !== "postgres-custom"
+    || receipt.targetHost !== target.host || receipt.targetPort !== target.port || receipt.database !== target.database
+    || receipt.targetFingerprint !== confirmedTargetFingerprint
+    || !Number.isSafeInteger(receipt.archiveBytes) || receipt.archiveBytes <= 0
+    || typeof receipt.archivePath !== "string" || !receipt.archivePath.trim()) {
+    throw new Error("BACKUP_RECEIPT_UNSAFE");
+  }
+  const archivePath = path.resolve(path.dirname(receiptPath), receipt.archivePath);
+  const archive = verifiedArchiveDigest(archivePath);
+  const archiveSha256 = archive.sha256;
+  if (!/^[a-f0-9]{64}$/u.test(confirmedBackupArchiveSha256)
+    || archiveSha256 !== receipt.archiveSha256 || archiveSha256 !== confirmedBackupArchiveSha256) {
+    throw new Error("BACKUP_ARCHIVE_SHA256_MISMATCH");
+  }
+  if (archive.bytes !== receipt.archiveBytes) throw new Error("BACKUP_ARCHIVE_BYTES_MISMATCH");
+  if (archive.header !== "PGDMP") throw new Error("BACKUP_ARCHIVE_NOT_READABLE");
+  const created = Date.parse(receipt.createdAt), completed = Date.parse(receipt.completedAt);
+  if (!isIsoTimestamp(receipt.createdAt) || !isIsoTimestamp(receipt.completedAt) || completed < created || completed > Date.now()) {
+    throw new Error("BACKUP_RECEIPT_TIME_INVALID");
+  }
+  const readability = receipt.readability;
+  assertBackupFields(readability, ["tool", "exitCode", "entryCount", "evidencePath", "evidenceSha256"]);
+  if (!readability || readability.tool !== "pg_restore --list" || readability.exitCode !== 0
+    || !Number.isSafeInteger(readability.entryCount) || readability.entryCount < 1) throw new Error("BACKUP_READABILITY_NOT_VERIFIED");
+  const listBytes = verifiedBackupEvidence(readability, receiptPath, "BACKUP_READABILITY_EVIDENCE");
+  const entries = listBytes.toString("utf8").split(/\r?\n/u).filter((line) => /^\d+;/u.test(line.trim())).length;
+  if (entries !== readability.entryCount) throw new Error("BACKUP_READABILITY_ENTRY_COUNT_MISMATCH");
+  assertBackupFields(receipt.restore, ["status", "evidencePath", "evidenceSha256"]);
+  if (receipt.restore?.status !== "verified") throw new Error("BACKUP_RESTORE_NOT_VERIFIED");
+  const restoreBytes = verifiedBackupEvidence(receipt.restore, receiptPath, "BACKUP_RESTORE_EVIDENCE");
+  let restored;
+  try { restored = JSON.parse(restoreBytes.toString("utf8")); } catch { throw new Error("BACKUP_RESTORE_EVIDENCE_INVALID"); }
+  assertBackupFields(restored, ["kind", "archiveSha256", "sourceTargetFingerprint", "exitCode", "targetIsolated", "target", "checks", "completedAt"]);
+  const destination = restored?.target;
+  assertBackupFields(destination, ["host", "port", "database"]);
+  assertBackupFields(restored.checks, ["schema", "data"]);
+  if (restored?.kind !== "database-isolated-restore-report.v1" || restored.archiveSha256 !== archiveSha256
+    || restored.sourceTargetFingerprint !== receipt.targetFingerprint || restored.exitCode !== 0
+    || restored.targetIsolated !== true || restored.checks?.schema !== true || restored.checks?.data !== true
+    || !destination || !["127.0.0.1", "localhost", "[::1]", "::1"].includes(destination.host)
+    || !Number.isInteger(destination.port) || destination.port < 1 || destination.port > 65535
+    || typeof destination.database !== "string" || !destination.database.trim()
+    || (normalizedLoopbackHost(destination.host) === normalizedLoopbackHost(target.host)
+      && destination.port === target.port && destination.database === target.database)
+    || !isIsoTimestamp(restored.completedAt) || Date.parse(restored.completedAt) < completed
+    || Date.parse(restored.completedAt) > Date.now()) throw new Error("BACKUP_RESTORE_EVIDENCE_UNSAFE");
+  return { receiptFileSha256, archiveSha256, archiveBytes: archive.bytes, targetFingerprint: receipt.targetFingerprint,
+    readabilityEvidenceSha256: readability.evidenceSha256, restoreEvidenceSha256: receipt.restore.evidenceSha256,
+    readabilityVerified: true, restoreDrillVerified: true };
+}
+
+function normalizedLoopbackHost(host) { return ["localhost", "127.0.0.1", "[::1]", "::1"].includes(host) ? "loopback" : host; }
+
+function assertBackupFields(value, allowed) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((key) => !allowed.includes(key))) {
+    throw new Error("BACKUP_EVIDENCE_FIELDS_INVALID");
+  }
+}
+
+function isIsoTimestamp(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(value) && Number.isFinite(Date.parse(value));
+}
+
+function verifiedBackupEvidence(evidence, receiptPath, code) {
+  if (typeof evidence.evidencePath !== "string" || !evidence.evidencePath.trim()
+    || evidence.evidencePath.length > 4096
+    || !/^[a-f0-9]{64}$/u.test(evidence.evidenceSha256 || "")) throw new Error(code + "_INVALID");
+  const bytes = verifiedFileBytes(path.resolve(path.dirname(receiptPath), evidence.evidencePath), code + "_NOT_FOUND");
+  if (bytes.length > 16 * 1024 * 1024) throw new Error(code + "_TOO_LARGE");
+  if (sha256(bytes) !== evidence.evidenceSha256) throw new Error(code + "_SHA256_MISMATCH");
+  return bytes;
+}
+
+function verifiedMigrationSql(migration) {
+  const bytes = verifiedFileBytes(path.join(root, migration.file), "MIGRATION_SOURCE_NOT_READABLE", Number.MAX_SAFE_INTEGER);
+  if (sha256(bytes) !== migration.sha256) throw new Error(`MIGRATION_SOURCE_HASH_CHANGED:${migration.version}`);
+  return bytes.toString("utf8");
+}
+
+function assertLiveWriteTarget(identity, target) {
+  if (identity.databaseName !== target.database) throw new Error("LIVE_DATABASE_TARGET_MISMATCH");
+  if (identity.fingerprint !== confirmedTargetFingerprint) throw new Error("TARGET_FINGERPRINT_CONFIRMATION_REQUIRED");
+}
+
 function pgClient(config) {
-  const local = config.host === "localhost" || config.host === "127.0.0.1" || config.host === "::1";
+  const local = config.host === "localhost" || config.host === "127.0.0.1" || config.host === "::1" || config.host === "[::1]";
   return new Client({
     connectionString: config.value,
     ssl: local ? false : { rejectUnauthorized: false },
@@ -638,7 +798,7 @@ async function probeMigrationSemanticNoop(client, migration) {
     await client.query("set local statement_timeout = '120s'");
     const before = await databaseSemanticSnapshot(client);
     const dmlBefore = await transactionDmlActivity(client);
-    const sql = fs.readFileSync(path.join(root, migration.file), "utf8");
+    const sql = verifiedMigrationSql(migration);
     await client.query(semanticProbeSql(sql, migration));
     const after = await databaseSemanticSnapshot(client);
     const dmlAfter = await transactionDmlActivity(client);
@@ -688,21 +848,7 @@ async function probeMigrationSemanticNoop(client, migration) {
 }
 
 async function databaseTargetIdentity(client, config) {
-  const result = await client.query(`
-    select current_database() as database_name,
-           current_setting('server_version_num') as server_version,
-           coalesce(inet_server_addr()::text, 'local') as server_address,
-           coalesce(inet_server_port()::text, 'local') as server_port
-  `);
-  const row = result.rows[0] || {};
-  const fingerprint = sha256(stableJson({
-    configuredHost: config.host,
-    databaseName: row.database_name,
-    serverVersion: row.server_version,
-    serverAddress: row.server_address,
-    serverPort: row.server_port,
-  }));
-  return { fingerprint, serverVersion: row.server_version || null };
+  return readDatabaseTargetIdentity(client, config.host);
 }
 
 async function pendingMigrationsFor(client, migrations) {
@@ -716,7 +862,7 @@ async function pendingMigrationsFor(client, migrations) {
 
 async function plan() {
   const migrations = listMigrations();
-  const config = databaseConfig();
+  const config = command === "plan" ? { configured: false, envName: null, host: null } : databaseConfig();
   const manifest = migrationManifest(migrations);
   const invalid = migrations.filter((migration) => !migration.valid);
   let database = {
@@ -726,6 +872,8 @@ async function plan() {
     ledgerReachable: null,
     appliedCount: null,
     pendingCount: null,
+    targetIdentityVerified: false,
+    targetIdentity: null,
   };
   let applied = [];
   let pending = migrations;
@@ -734,6 +882,7 @@ async function plan() {
     const client = pgClient(config);
     await client.connect();
     try {
+      const identity = await databaseTargetIdentity(client, config);
       const appliedRows = await readAppliedVersions(client);
       hashDrifts = appliedMigrationHashDrifts(migrations, appliedRows);
       applied = migrations.filter((migration) => appliedRows.has(migration.version));
@@ -743,6 +892,8 @@ async function plan() {
         ledgerReachable: true,
         appliedCount: applied.length,
         pendingCount: pending.length,
+        targetIdentityVerified: true,
+        targetIdentity: identity,
       };
     } finally {
       await client.end();
@@ -751,6 +902,7 @@ async function plan() {
   const result = {
     ok: invalid.length === 0 && hashDrifts.length === 0,
     mode: command,
+    readinessScope: command === "plan" ? "source-only" : "read-only-target-status",
     projectId: manifest.projectId,
     migrationRoot: manifest.migrationRoot,
     excludedForwardMigrations: manifest.excludedForwardMigrations,
@@ -775,6 +927,11 @@ async function plan() {
       `--confirm-target-host=${config.host || "<database-host>"}`,
       `--confirm-manifest-sha256=${manifest.manifestSha256}`,
       "--confirm-backup=<backup-receipt-or-path>",
+      "--confirm-target-port=<configured-port>",
+      "--confirm-target-database=<database-name>",
+      "--confirm-target-fingerprint=<read-only-target-fingerprint>",
+      "--confirm-backup-receipt-file-sha256=<receipt-file-sha256>",
+      "--confirm-backup-archive-sha256=<archive-sha256>",
     ],
     databaseWrites: 0,
     paidModelCalls: 0,
@@ -880,9 +1037,9 @@ async function adoptSemanticNoops() {
   const config = databaseConfig();
   if (!config.configured || !config.host) throw new Error("DEPLOY_DATABASE_URL_NOT_CONFIGURED");
   if (confirmedTargetHost !== config.host) throw new Error("TARGET_HOST_CONFIRMATION_REQUIRED");
-  if (policy.database?.preMigrationBackupRequired !== false && confirmedBackup.length < 8) {
-    throw new Error("PRE_MIGRATION_BACKUP_CONFIRMATION_REQUIRED");
-  }
+  const writeTarget = confirmedWriteTarget(config);
+  const backup = confirmedDatabaseBackup(writeTarget);
+  migrations.forEach(verifiedMigrationSql);
 
   const receiptByVersion = new Map(receipt.results.map((result) => [String(result.version), result]));
   for (const migration of migrations) {
@@ -902,6 +1059,7 @@ async function adoptSemanticNoops() {
     await client.query("select pg_advisory_lock($1)", [ADVISORY_LOCK_ID]);
     locked = true;
     const target = await databaseTargetIdentity(client, config);
+    assertLiveWriteTarget(target, writeTarget);
     if (receipt.targetFingerprint !== target.fingerprint || confirmedTargetFingerprint !== target.fingerprint) {
       throw new Error("TARGET_FINGERPRINT_CONFIRMATION_REQUIRED");
     }
@@ -921,6 +1079,8 @@ async function adoptSemanticNoops() {
       }
     }
 
+    migrations.forEach(verifiedMigrationSql);
+    confirmedDatabaseBackup(writeTarget);
     await client.query("begin");
     transactionOpen = true;
     await ensureMigrationLedger(client);
@@ -967,7 +1127,7 @@ async function adoptSemanticNoops() {
     adoptedCount: adopted.length,
     remainingPendingCount: pending.length - adopted.length,
     adopted,
-    backupReceipt: confirmedBackup,
+    backupReceipt: backup,
     committedMigrationSql: 0,
     databaseWrites: adopted.length,
     paidModelCalls: 0,
@@ -987,9 +1147,9 @@ async function apply() {
   const manifest = migrationManifest(migrations);
   if (confirmedTargetHost !== config.host) throw new Error("TARGET_HOST_CONFIRMATION_REQUIRED");
   if (confirmedManifestSha256 !== manifest.manifestSha256) throw new Error("MANIFEST_SHA256_CONFIRMATION_REQUIRED");
-  if (policy.database?.preMigrationBackupRequired !== false && confirmedBackup.length < 8) {
-    throw new Error("PRE_MIGRATION_BACKUP_CONFIRMATION_REQUIRED");
-  }
+  const writeTarget = confirmedWriteTarget(config);
+  const backup = confirmedDatabaseBackup(writeTarget);
+  migrations.forEach(verifiedMigrationSql);
 
   const client = pgClient(config);
   const startedAt = new Date().toISOString();
@@ -1009,13 +1169,20 @@ async function apply() {
   try {
     applyProgress.currentStage = "advisory-lock";
     await client.query("select pg_advisory_lock($1)", [ADVISORY_LOCK_ID]);
-    applyProgress.currentStage = "migration-ledger-readiness";
-    await ensureMigrationLedger(client);
+    applyProgress.currentStage = "target-identity";
+    const identity = await databaseTargetIdentity(client, config);
+    assertLiveWriteTarget(identity, writeTarget);
+    applyProgress.targetFingerprint = identity.fingerprint;
+    applyProgress.currentStage = "migration-ledger-read";
     const appliedRows = await readAppliedVersions(client);
     const hashDrifts = appliedMigrationHashDrifts(migrations, appliedRows);
     if (hashDrifts.length > 0) {
       throw new Error(`APPLIED_MIGRATION_HASH_DRIFT:${hashDrifts.map((item) => item.version).join(",")}`);
     }
+    migrations.forEach(verifiedMigrationSql);
+    confirmedDatabaseBackup(writeTarget);
+    applyProgress.currentStage = "migration-ledger-readiness";
+    await ensureMigrationLedger(client);
     for (const migration of migrations) {
       const already = appliedRows.get(migration.version);
       if (already && !hasFlag("--replay-applied")) {
@@ -1027,7 +1194,7 @@ async function apply() {
         });
         continue;
       }
-      const sql = fs.readFileSync(path.join(root, migration.file), "utf8");
+      const sql = verifiedMigrationSql(migration);
       applyProgress.currentMigration = { version: migration.version, name: migration.name, sha256: migration.sha256 };
       applyProgress.currentStage = "migration-sql";
       await client.query(applySql(sql, migration));
@@ -1082,7 +1249,7 @@ async function apply() {
     applied,
     skipped,
     onlySelection: selectedOnly.length > 0 ? onlySelectionReport : null,
-    backupReceipt: confirmedBackup,
+    backupReceipt: backup,
     postApplyRequired: [
       "run: pnpm deploy:ready",
       "confirm PostgREST schema readiness is ready",
@@ -1104,6 +1271,13 @@ function writeResult(result) {
   fs.mkdirSync(evidenceRoot, { recursive: true });
   const fileName = `${new Date().toISOString().replace(/[:.]/gu, "-")}-${command}.json`;
   fs.writeFileSync(path.join(evidenceRoot, fileName), `${json}\n`, "utf8");
+}
+
+function safeReleaseErrorCode(error) {
+  if (error instanceof pg.DatabaseError) return "MIGRATION_RELEASE_FAILED";
+  const message = typeof error?.message === "string" ? error.message : "";
+  if (/^[A-Z][A-Z0-9_]*(?::[A-Za-z0-9_.,-]+)?$/u.test(message)) return message.slice(0, 240);
+  return "MIGRATION_RELEASE_FAILED";
 }
 
 async function main() {
@@ -1129,7 +1303,8 @@ main().catch((error) => {
   const failure = {
     ok: false,
     mode: command,
-    code: error instanceof Error ? error.message.slice(0, 240) : "UNKNOWN_ERROR",
+    code: safeReleaseErrorCode(error),
+    ...(error instanceof pg.DatabaseError ? { postgresDiagnostic: postgresErrorDiagnostics(error, true) } : {}),
     ...(command === "apply" ? {
       startedAt: applyProgress?.startedAt || null,
       failedAt: new Date().toISOString(),

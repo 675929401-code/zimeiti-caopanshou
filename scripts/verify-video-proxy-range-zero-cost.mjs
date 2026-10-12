@@ -7,7 +7,7 @@ import ts from "typescript";
 
 const root = process.cwd();
 const routePath = path.join(root, "src/app/api/video/proxy/route.ts");
-const evidencePath = path.join(root, ".codex-evidence/video-proxy-range-zero-cost/report.json");
+const evidencePath = path.resolve(process.env.VIDEO_TEST_EVIDENCE_DIR || path.join(root, ".codex-evidence/video-proxy-range-zero-cost"), "range-report.json");
 const source = await readFile(routePath, "utf8");
 const beginMarker = "// VIDEO_PROXY_RANGE_CONTRACT_BEGIN";
 const endMarker = "// VIDEO_PROXY_RANGE_CONTRACT_END";
@@ -134,7 +134,7 @@ check("200 passthrough sanitizes length and advertises byte ranges", {
 
 assert.match(source, /status !== 206 && upstreamResp\.status !== 416/u, "route must preserve upstream 416");
 assert.ok((source.match(/buildVideoProxyResponseHeaders\(\{/gu) || []).length >= 2, "route must apply the contract to 416 and successful media responses");
-assert.match(source, /inferVideoContentType\(\{/u, "route must retain content-type correction and unknown-format rejection");
+assert.match(source, /resolveVideoStreamContentType\(\{/u, "route must retain bounded content-type correction and unknown-format rejection");
 assert.equal(networkCalls, 0, "zero-cost verifier must not use the network");
 
 const report = {

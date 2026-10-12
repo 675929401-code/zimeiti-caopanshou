@@ -31,13 +31,14 @@
       "VERSION.txt"
     ],
     "roots": [
+      ".engineering",
       ".github",
       "deploy",
       "docs",
       "prompts",
-    "public",
-    "runtime-tools",
-    "scripts",
+      "public",
+      "runtime-tools",
+      "scripts",
       "src",
       "supabase",
       "tests",
@@ -482,7 +483,11 @@
       "20261010131000_image_security_definer_owner_alignment.sql",
       "20261010132000_video_snapshot_function_owner_alignment.sql",
       "20261010133000_image_provider_dispatch_receipts.sql",
-      "20261010134000_video_provider_request_projection.sql"
+      "20261010134000_video_provider_request_projection.sql",
+      "20261012010000_image_provider_delivery.sql",
+      "20261012011000_h3_provider_delivery.sql",
+      "20261012012000_image_ephemeral_delivery.sql",
+      "20261012013000_image_model_validation_receipt_publication.sql"
     ],
     "rollbackStrategies": {
       "llm": {
@@ -492,7 +497,7 @@
         "requiresEmptyEvidenceTables": true,
         "requiresTransaction": true
       },
-    "video": {
+      "video": {
         "mode": "manual-destructive-guarded",
         "rollback": "supabase/rollbacks/20260825180000_video_terminal_billing_p0.rollback.sql",
         "blockedByDependentMigrations": [
@@ -501,33 +506,33 @@
           "20260904025500_video_provider_failure_terminal.sql"
         ],
         "requiresEmptyTaskTable": true,
-      "requiresTransaction": true
-    },
-    "videoSnapshotSecurity": {
-      "mode": "forward-repair-only-after-activation",
-      "rollback": "supabase/rollbacks/20261010132000_video_snapshot_function_owner_alignment.rollback.sql",
-      "reason": "video request snapshot functions must retain the video_tasks owner, fixed search_path and service_role-only execution; rollback is an invariant guard and must not delete ledger or business rows"
-    },
-    "imageProviderReceipts": {
-      "mode": "forward-repair-only-after-activation",
-      "rollback": "supabase/rollbacks/20261010133000_image_provider_dispatch_receipts.rollback.sql",
-      "reason": "provider dispatch/submission receipts and receipt-aware stale reconciliation are exactly-once evidence; rollback must preserve columns, rows, functions and ledger history while enforcing service-role-only public RPCs and an owner-only legacy helper"
-    },
-    "videoProviderRequestProjection": {
-      "mode": "forward-repair-only-after-activation",
-      "rollback": "supabase/rollbacks/20261010134000_video_provider_request_projection.rollback.sql",
-      "reason": "ordered dispatch identities, exact wire-body hashes and bound submission receipts are replay-prevention evidence; rollback must preserve evidence and fail closed on semantic or ACL drift"
-    },
-    "videoHistoryArchive": {
-      "mode": "forward-repair-only-after-activation",
-      "rollback": "supabase/rollbacks/20261009040000_video_history_archive_queue.rollback.sql",
-      "reason": "rollback may remove queue control objects but must preserve archived COS objects, completed tasks, wallet evidence and billing history"
-    },
-    "userContentRetention": {
-      "mode": "forward-repair-only-after-activation",
-      "rollback": "supabase/rollbacks/20261009043000_user_content_retention_and_video_direct_delivery.rollback.sql",
-      "reason": "purged user content cannot be reconstructed without the pre-migration backup; task identity, provider evidence and billing evidence must remain durable"
-    },
+        "requiresTransaction": true
+      },
+      "videoSnapshotSecurity": {
+        "mode": "forward-repair-only-after-activation",
+        "rollback": "supabase/rollbacks/20261010132000_video_snapshot_function_owner_alignment.rollback.sql",
+        "reason": "video request snapshot functions must retain the video_tasks owner, fixed search_path and service_role-only execution; rollback is an invariant guard and must not delete ledger or business rows"
+      },
+      "imageProviderReceipts": {
+        "mode": "forward-repair-only-after-activation",
+        "rollback": "supabase/rollbacks/20261010133000_image_provider_dispatch_receipts.rollback.sql",
+        "reason": "provider dispatch/submission receipts and receipt-aware stale reconciliation are exactly-once evidence; rollback must preserve columns, rows, functions and ledger history while enforcing service-role-only public RPCs and an owner-only legacy helper"
+      },
+      "videoProviderRequestProjection": {
+        "mode": "forward-repair-only-after-activation",
+        "rollback": "supabase/rollbacks/20261010134000_video_provider_request_projection.rollback.sql",
+        "reason": "ordered dispatch identities, exact wire-body hashes and bound submission receipts are replay-prevention evidence; rollback must preserve evidence and fail closed on semantic or ACL drift"
+      },
+      "videoHistoryArchive": {
+        "mode": "forward-repair-only-after-activation",
+        "rollback": "supabase/rollbacks/20261009040000_video_history_archive_queue.rollback.sql",
+        "reason": "rollback may remove queue control objects but must preserve archived COS objects, completed tasks, wallet evidence and billing history"
+      },
+      "userContentRetention": {
+        "mode": "forward-repair-only-after-activation",
+        "rollback": "supabase/rollbacks/20261009043000_user_content_retention_and_video_direct_delivery.rollback.sql",
+        "reason": "purged user content cannot be reconstructed without the pre-migration backup; task identity, provider evidence and billing evidence must remain durable"
+      },
       "refund": {
         "mode": "manual-destructive-guarded",
         "rollback": "supabase/rollbacks/20260904193000_payment_refund_exactly_once.rollback.sql",
@@ -553,6 +558,26 @@
       "h3Revenue": {
         "mode": "forward-repair-only-after-activation",
         "reason": "H3 settlement, wallet, task and revenue audit evidence must remain consistent after activation"
+      },
+      "imageProviderDelivery": {
+        "mode": "forward-repair-only-after-activation",
+        "forwardMigration": "supabase/migrations/20261012010000_image_provider_delivery.sql",
+        "reason": "Preserve task, provider and billing evidence, delivery functions and validated constraints; use a reviewed forward repair and verify runtime compatibility before any downgrade."
+      },
+      "h3ProviderDelivery": {
+        "mode": "forward-repair-only-after-activation",
+        "forwardMigration": "supabase/migrations/20261012011000_h3_provider_delivery.sql",
+        "reason": "Preserve task, provider and billing evidence, delivery functions and validated constraints; use a reviewed forward repair and verify runtime compatibility before any downgrade."
+      },
+      "imageEphemeralDelivery": {
+        "mode": "forward-repair-only-after-activation",
+        "forwardMigration": "supabase/migrations/20261012012000_image_ephemeral_delivery.sql",
+        "reason": "Preserve task, provider and billing evidence, delivery functions and validated constraints; use a reviewed forward repair and verify runtime compatibility before any downgrade."
+      },
+      "imageReceiptPublication": {
+        "mode": "forward-repair-only-after-activation",
+        "forwardMigration": "supabase/migrations/20261012013000_image_model_validation_receipt_publication.sql",
+        "reason": "Preserve immutable generation receipts, independent publication assets, validation CAS and all financial evidence; repair forward after activation. No inverse migration or automatic orphan deletion."
       }
     },
     "readinessProbe": "scripts/verify-production-schema-readiness.ts",
@@ -603,7 +628,10 @@
         "1340 ordered dispatch identity, duplicate wire-body conflict and V2 submission binding semantics",
         "SECURITY DEFINER with search_path=public, pg_temp",
         "service_role as the only non-owner direct EXECUTE grantee",
-        "no ordinary role other than owner/service_role has effective EXECUTE"
+        "no ordinary role other than owner/service_role has effective EXECUTE",
+        "20261012010000, 20261012011000 and 20261012012000 ledger rows with current source SHA-256",
+        "provider delivery RPC owners and exact definer/invoker flags, service-only effective execution",
+        "validated H3 provider URL constraints and immutable strict invoker predicate canonical body SHA-256"
       ]
     },
     "releaseGateSequence": [
@@ -646,8 +674,17 @@
       ]
     },
     "migrationApplyCommand": "pnpm deploy:db:apply -- --confirm-target-host=<database-host> --confirm-manifest-sha256=<plan-manifest-sha256> --confirm-backup=<backup-receipt-or-path>",
-    "migrationDatabaseUrlEnv": ["DEPLOY_DATABASE_URL", "SUPABASE_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL"],
-    "migrationApplyConfirmations": ["--confirm-target-host", "--confirm-manifest-sha256", "--confirm-backup"],
+    "migrationDatabaseUrlEnv": [
+      "DEPLOY_DATABASE_URL",
+      "SUPABASE_DATABASE_URL",
+      "DATABASE_URL",
+      "POSTGRES_URL"
+    ],
+    "migrationApplyConfirmations": [
+      "--confirm-target-host",
+      "--confirm-manifest-sha256",
+      "--confirm-backup"
+    ],
     "applicationManagedMigrationsAllowed": false,
     "preMigrationBackupRequired": true,
     "freshBootstrapStatus": "baseline-schema-not-yet-captured",
@@ -655,7 +692,13 @@
   },
   "services": {
     "web": {
-      "sourcePrefixes": ["src/", "public/", "next.config.ts", "package.json", "pnpm-lock.yaml"],
+      "sourcePrefixes": [
+        "src/",
+        "public/",
+        "next.config.ts",
+        "package.json",
+        "pnpm-lock.yaml"
+      ],
       "buildDirectory": ".next",
       "standaloneDirectory": ".next/standalone",
       "healthPath": "/api/version",
@@ -663,7 +706,9 @@
       "port": 5000
     },
     "voice": {
-      "sourcePrefixes": ["voice-platform/"],
+      "sourcePrefixes": [
+        "voice-platform/"
+      ],
       "buildDirectory": "voice-platform/.next",
       "standaloneDirectory": "voice-platform/.next/standalone",
       "healthPath": "/voice-platform",
@@ -672,20 +717,30 @@
     }
   },
   "git": {
+    "primaryRepository": "675929401-code/zimeiti-caopanshou",
     "primaryBranch": "main",
     "workBranchPrefix": "codex/",
-    "requiredRemotes": ["origin", "backup"],
+    "requiredRemotes": [
+      "origin",
+      "backup"
+    ],
     "allowLocalRemotes": false,
     "requireDistinctRemoteHosts": true,
     "deploymentRemoteAllowed": false,
     "forcePushAllowed": false
   },
   "release": {
-    "modes": ["DOCS", "ASSET", "WEB", "VOICE", "FULL"],
+    "modes": [
+      "DOCS",
+      "ASSET",
+      "WEB",
+      "VOICE",
+      "FULL"
+    ],
     "immutable": true,
     "serverBuildAllowed": false,
     "isolatedSameHostBuilder": {
-      "allowed": true,
+      "allowed": false,
       "root": "/data/direct-deploy/builders",
       "user": "zimeiti-build",
       "requiredSandbox": "systemd-rootdirectory-v1",
@@ -701,7 +756,9 @@
     "atomicSwitch": true,
     "productionBuild": {
       "platform": "linux",
-      "architectures": ["x64"],
+      "architectures": [
+        "x64"
+      ],
       "nodeMajor": 24,
       "nodeVersion": "24.19.0",
       "pnpmVersion": "9.0.0",

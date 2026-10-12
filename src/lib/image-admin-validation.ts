@@ -11,7 +11,7 @@ import { toPublicModelId } from "@/lib/public-model-dto";
 export const IMAGE_ADMIN_VALIDATION_CONFIRMATION = "RUN_SINGLE_REAL_IMAGE_VALIDATION";
 export const IMAGE_MODEL_PUBLICATION_CONFIRMATION = "PUBLISH_VALIDATED_IMAGE_MODEL";
 const SCHEMA = "image_admin_validation.v1";
-const ATTEMPT_COLUMNS = "validation_id,model_id,configuration_hash,model_snapshot_hash,epoch,user_id,client_idempotency_key,client_trace_id,image_record_id,payload_fingerprint,state,quoted_price_yuan,cost_price_yuan,rejection_code,rejection_http_status,asset_id,published_at";
+const ATTEMPT_COLUMNS = "validation_id,model_id,configuration_hash,model_snapshot_hash,epoch,user_id,client_idempotency_key,client_trace_id,image_record_id,payload_fingerprint,state,quoted_price_yuan,cost_price_yuan,rejection_code,rejection_http_status,asset_id,published_at,evidence";
 type Database = ReturnType<typeof getSupabaseAdminClient>;
 export type ImageValidationRow = Record<string, unknown>;
 export type ImageValidationProof = { validationKey: string; configurationHash: string; epoch: number; clientIdempotencyKey: string; clientTraceId: string };
@@ -165,7 +165,8 @@ export async function readImageValidationAttempt(db: Database, context: ImageAdm
   if (request.record_id && (request.payload_fingerprint !== attempt.payload_fingerprint || request.client_trace_id !== context.validationKey)) imageValidationFailure("IMAGE_VALIDATION_ATTEMPT_MISMATCH", "原图片参数不匹配", 503);
   return { busy: false, existingAttempt: { validationId: context.validationId, imageRecordId: identity.recordId, state: String(attempt.state),
     requestState: request.record_id ? String(request.state) : "not_recorded", deliveryState: String(request.delivery_state || "held"),
-    assetId: request.delivery_state === "delivered" ? String(request.delivery_asset_id || "") : null,
+    assetId: attempt.state==="published" ? String(attempt.asset_id||"") : request.delivery_state === "delivered" ? String(request.delivery_asset_id || "") : null,
+    ...(["provider_url","inline_ephemeral"].includes(String(row(request.response).deliveryMode)) ? {deliveryReceipt:{recordId:identity.recordId,deliveryMode:row(request.response).deliveryMode,cashCharged:Number(attempt.quoted_price_yuan),billingReferenceId:identity.billingKey,sha256:row(request.response).sha256,byteLength:row(request.response).byteLength,contentType:row(request.response).contentType,width:row(request.response).width,height:row(request.response).height}}:{}),
     hasProviderCheckpoint: row(request.response).schema === "image_provider_checkpoint.v1" } };
 }
 export async function recordImageAdminValidationOutcome(input: {

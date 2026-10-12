@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { GeneratedImageReferenceSchema, generatedImageReferenceUri, generatedImagePreviewUrl, type GeneratedImageReference } from "@/lib/generated-image-reference";
 import { useApp } from "@/contexts/app-context";
 import { createUserScopedWorkbenchStorage, resolveWorkbenchIdentity, workbenchUserStorageKey, type WorkbenchIdentity } from "@/lib/workbench-user-storage";
 import { NavButton, SubPageHeader } from "@/components/sub-page-header";
@@ -44,6 +45,9 @@ import {
 import type { AutodlH3LifecycleView } from "@/lib/autodl-h3-lifecycle-view";
 import { SseEventStreamDecoder } from "@/lib/sse-stream-decoder";
 import { createStoryboardPersistenceSnapshot } from "@/lib/storyboard-local-persistence";
+import { projectGeneratedImageClientReceipt, resolveGeneratedImageClientDelivery } from "@/lib/generated-image-client-delivery";
+import { ImageDownloadOperations, readImageDownloadBlob, imageDownloadFilename } from "@/lib/generated-image-download";
+import { MEDIA_CANCEL_DEADLINE_MS, providerMediaUrl, readMediaStreamWithDeadline } from "@/lib/generated-media-delivery";
 import { STORYBOARD_IDLE_DRAFT_KEY } from "@/lib/storyboard-idle-draft";
 import { useStoryboardProjects } from "@/hooks/use-storyboard-projects";
 import type { StoryboardAgentOutputSegment } from "@/lib/storyboard-agent-output";
@@ -121,10 +125,26 @@ type StoryboardImageAttemptStatus = {
   sameKeyCanResubmit?: boolean;
   deliveryReady?: boolean;
   assetId?: string;
+  recordId?: string;
+  deliveryMode?: "provider_url" | "inline_ephemeral";
+  cashCharged?: number;
+  idempotencyReplayed?: boolean;
   retryAfterMs?: number;
   message?: string;
   error?: string;
 };
+
+/** Completed inline receipt fields are independent of preview availability. */
+function storyboardGeneratedReceiptFields(value: unknown): Partial<WorkbenchCard> | null {
+  const receipt = projectGeneratedImageClientReceipt(value);
+  if (!receipt) return null;
+  return { imageRecordId: receipt.recordId, imageDeliveryMode: receipt.deliveryMode,
+    imagePriceCharged: receipt.cashCharged, imageBillingState: value && typeof value === "object" && "idempotencyReplayed" in value && value.idempotencyReplayed === true ? "restored" : "settled" };
+}
+function storyboardInlineReceiptFields(value: unknown): Partial<WorkbenchCard> | null {
+  const receipt = storyboardGeneratedReceiptFields(value);
+  return receipt?.imageDeliveryMode === "inline_ephemeral" ? receipt : null;
+}
 
 function isWorkbenchRatio(value: unknown): value is WorkbenchRatio {
   return WORKBENCH_RATIOS.includes(value as WorkbenchRatio);
@@ -143,6 +163,9 @@ type WorkbenchCard = {
   referenceImageUrls: string[];
   imageStatus: TaskStatus;
   imageUrl?: string;
+  imageRef?: GeneratedImageReference;
+  imageRecordId?: string;
+  imageDeliveryMode?: "provider_url" | "inline_ephemeral";
   imageAssetId?: string;
   imageStorageKey?: string;
   imageWidth?: number;
@@ -764,7 +787,20 @@ function hasValidatedImage(card: WorkbenchCard) {
   return card.imageStatus === "done" && Boolean(card.imageUrl) && Boolean(card.imageValidatedAt);
 }
 
+function isCompletedInlineImageReceipt(card: WorkbenchCard) {
+  return card.imageStatus === "done"
+    && card.imageDeliveryMode === "inline_ephemeral"
+    && typeof card.imageRecordId === "string" && /^[a-f0-9]{64}$/u.test(card.imageRecordId)
+    && typeof card.imagePriceCharged === "number" && Number.isFinite(card.imagePriceCharged) && card.imagePriceCharged >= 0
+    && (card.imageBillingState === "settled" || card.imageBillingState === "restored");
+}
+
+function isUnavailableCompletedInlineImage(card: WorkbenchCard) {
+  return isCompletedInlineImageReceipt(card) && !hasValidatedImage(card);
+}
+
 function imageAttemptNeedsResolution(card: WorkbenchCard) {
+  if (isCompletedInlineImageReceipt(card)) return false;
   return card.imageStatus === "running"
     || card.imageStatus === "queued"
     || card.imageRecoveryReady === true
@@ -1006,6 +1042,7 @@ function cardStatus(card: WorkbenchCard): { label: string; status: TaskStatus } 
   if (card.videoStatus === "failed") return { label: "视频失败", status: "failed" };
   if (card.videoStatus === "cancelled") return { label: "视频已终止", status: "cancelled" };
   if (card.imageStatus === "running" || card.imageStatus === "queued") return { label: card.imageStatus === "queued" ? "生图排队中" : "生图中", status: card.imageStatus };
+  if (isUnavailableCompletedInlineImage(card)) return { label: "已完成·临时图片不可恢复", status: "done" };
   if (card.imageRecoveryReady) return { label: "正在保存图片", status: "running" };
   if (card.imageRetryBlocked) return { label: "图片结果待确认", status: "failed" };
   if (card.imageStatus === "done") return { label: "图片完成", status: "done" };
@@ -1164,10 +1201,6 @@ function triggerDownload(targetUrl: string, filename: string) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-}
-
-function openImageDownload(url: string, filename: string) {
-  triggerDownload(url, filename);
 }
 
 async function openVideoDownload(taskId: string | undefined, filename: string, token: string) {
@@ -1402,6 +1435,39 @@ function UserStoryboardWorkbench({
   const uploadInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
   const videoSectionsRef = useRef<Record<string, HTMLElement | null>>({});
   const scopeMountedRef = useRef(true);
+  const ephemeralImageUrlsRef = useRef(new Set<string>());
+  const imageDownloadOwnerRef = useRef(userId + "\0" + token);
+  imageDownloadOwnerRef.current = userId + "\0" + token;
+  const imageDownloadOperationsRef = useRef(new ImageDownloadOperations(() => scopeMountedRef.current ? imageDownloadOwnerRef.current : null));
+  useEffect(() => () => imageDownloadOperationsRef.current.cancelAll(), [userId, token]);
+
+  const downloadStoryboardImage = useCallback(async (card: WorkbenchCard) => {
+    if (!scopeMountedRef.current || !card.imageUrl) return;
+    const filename = `${String(card.order).padStart(2, "0")}-故事板.png`;
+    if (card.imageDeliveryMode !== "provider_url") {
+      triggerDownload(card.imageUrl, filename);
+      return;
+    }
+    const owner = userId + "\0" + token;
+    const operation = imageDownloadOperationsRef.current.begin(owner);
+    let blobUrl: string | undefined;
+    try {
+      operation.assertCurrent();
+      const reference = GeneratedImageReferenceSchema.safeParse(card.imageRef || { schema: "generated_image_ref.v1", recordId: card.imageRecordId });
+      if (!reference.success || reference.data.recordId !== card.imageRecordId) throw new Error("图片归属凭证无效");
+      const blob = await readImageDownloadBlob({ kind: "provider_url", recordId: reference.data.recordId }, token, operation.signal);
+      operation.assertCurrent();
+      blobUrl = URL.createObjectURL(blob);
+      triggerDownload(blobUrl, imageDownloadFilename(filename, blob));
+    } catch {
+      if (!operation.signal.aborted && scopeMountedRef.current && imageDownloadOwnerRef.current === owner) {
+        setNotice("图片当前不可下载；任务与费用收据仍保留，请稍后重试");
+      }
+    } finally {
+      operation.finish();
+      if (blobUrl) window.setTimeout(() => URL.revokeObjectURL(blobUrl!), 500);
+    }
+  }, [userId, token]);
 
   useEffect(() => {
     // Submitted work is recovered from the owned project/history APIs. Older
@@ -1562,11 +1628,23 @@ function UserStoryboardWorkbench({
     const submissions = videoSubmissionControllersRef.current;
     return () => {
       scopeMountedRef.current = false;
+      imageDownloadOperationsRef.current.cancelAll();
+      for (const url of ephemeralImageUrlsRef.current) URL.revokeObjectURL(url);
+      ephemeralImageUrlsRef.current.clear();
       for (const controller of polls.values()) controller.abort();
       for (const controller of lifecycles.values()) controller.abort();
       for (const controller of submissions.values()) controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    const visible = new Set(run.cards.map(card => card.imageUrl).filter(Boolean));
+    if (previewMedia?.url) visible.add(previewMedia.url);
+    for (const url of ephemeralImageUrlsRef.current) if (!visible.has(url)) {
+      URL.revokeObjectURL(url);
+      ephemeralImageUrlsRef.current.delete(url);
+    }
+  }, [run.cards, previewMedia]);
 
   useEffect(() => {
     let active = true;
@@ -1787,6 +1865,7 @@ function UserStoryboardWorkbench({
     const inspectActiveImages = async () => {
       const candidates = runRef.current.cards.filter((card) => (
         !imageSubmissionsRef.current.has(card.id)
+        && !isCompletedInlineImageReceipt(card)
         && (card.imageStatus === "running"
           || card.imageStatus === "queued"
           || card.imageRetryBlocked === true)
@@ -1824,6 +1903,19 @@ function UserStoryboardWorkbench({
               imageError: status.message || "本次请求已确认未被受理，可以由用户重新提交。",
             });
             return;
+          }
+          if (status.state === "completed" && status.deliveryMode === "inline_ephemeral") {
+            const latest = runRef.current.cards.find(item => item.id === card.id);
+            const keepMedia = Boolean(latest && latest.imageRecordId === status.recordId && latest.imageDeliveryMode === "inline_ephemeral" && latest.imageUrl?.startsWith("blob:") && ephemeralImageUrlsRef.current.has(latest.imageUrl) && latest.imageValidatedAt);
+            patchCard(card.id, { ...storyboardInlineReceiptFields(status), imageStatus: "done", imageUrl: keepMedia ? latest?.imageUrl : undefined, imageValidatedAt: keepMedia ? latest?.imageValidatedAt : undefined, imageRef: undefined, imageRecordId: status.recordId, imageDeliveryMode: "inline_ephemeral", imageRecoveryReady: false, imageRetryBlocked: !keepMedia, imageError: keepMedia ? undefined : "图片已生成且费用收据已保留；临时图片仅原页面可用，刷新后无法恢复" });
+            return;
+          }
+          if (status.state === "completed" && status.deliveryMode === "provider_url" && status.recordId) {
+            const parsed = GeneratedImageReferenceSchema.safeParse({ schema: "generated_image_ref.v1", recordId: status.recordId });
+            if (parsed.success) {
+              patchCard(card.id, { ...storyboardGeneratedReceiptFields(status), imageStatus: "done", imageRef: parsed.data, imageRecordId: parsed.data.recordId, imageDeliveryMode: "provider_url", imageUrl: generatedImagePreviewUrl(parsed.data), imageValidatedAt: undefined, imageRecoveryReady: false, imageRetryBlocked: false, imageError: undefined });
+              return;
+            }
           }
           if (status.canRecover === true) {
             if (status.state === "completed" && status.assetId) {
@@ -2323,24 +2415,6 @@ function UserStoryboardWorkbench({
     setAgentHandoff({ status: "imported", handoff, plan });
   }, [agentHandoff, applyImportedSegments]);
 
-  const persistImage = useCallback(async (
-    url: string,
-    index: number,
-    options?: { transform?: "first_storyboard_panel"; storageKey?: string; assetId?: string; targetAspectRatio?: WorkbenchRatio },
-  ) => {
-    const response = await fetch("/api/image-workbench/persist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ url, index, transform: options?.transform, storageKey: options?.storageKey, assetId: options?.assetId, targetAspectRatio: options?.targetAspectRatio }),
-    });
-    const data = await response.json().catch(() => ({})) as { url?: string; key?: string; width?: number; height?: number; error?: string; code?: string };
-    if (!response.ok || !data.url) {
-      if (data.code === "IMAGE_DECODE_FAILED") throw new RetryableImageFileError(data.error || "生成图片损坏");
-      throw new Error(data.error || "故事板图片入库失败");
-    }
-    return { url: data.url, key: data.key, width: Number(data.width || 0), height: Number(data.height || 0) };
-  }, [token]);
-
   const uploadReferences = useCallback(async (card: WorkbenchCard, files: FileList | null) => {
     if (!files?.length || !token) return;
     if (!referenceLimit) return setNotice("当前图片模型不支持参考图，请切换模型后再上传");
@@ -2379,7 +2453,9 @@ function UserStoryboardWorkbench({
     if (!token) { setNotice("请先登录后再生成"); return null; }
     if (!card) { setNotice("分镜卡片不存在，请刷新后重试"); return null; }
     if (card.imageRetryBlocked) {
-      setNotice(`镜头${card.order}的原生图结果仍待确认，已禁止重复提交`);
+      setNotice(isCompletedInlineImageReceipt(card)
+        ? `镜头${card.order}的图片已完成，临时图片不可恢复，已禁止重复提交`
+        : `镜头${card.order}的原生图结果仍待确认，已禁止重复提交`);
       return null;
     }
     if (isActiveVideoStatus(card.videoStatus)) {
@@ -2390,6 +2466,7 @@ function UserStoryboardWorkbench({
     let clientIdempotencyKey = "";
     let clientTraceId = "";
     let requestSnapshot: StoryboardImageRequestSnapshot | null = null;
+    let completedInlineReceipt: Partial<WorkbenchCard> | null = null;
     try {
       const recovering = card.imageRecoveryReady === true;
       let modelName = "";
@@ -2408,6 +2485,19 @@ function UserStoryboardWorkbench({
         clientIdempotencyKey = card.imageClientRequestId;
         clientTraceId = deriveStoryboardImageTraceId(card);
         const confirmed = await inspectStoryboardImageAttempt(card).catch(() => null);
+        if (confirmed?.state === "completed" && confirmed.deliveryMode === "inline_ephemeral") {
+          const latest = runRef.current.cards.find(item => item.id === cardId);
+          const keepMedia = Boolean(latest && latest.imageRecordId === confirmed.recordId && latest.imageDeliveryMode === "inline_ephemeral" && latest.imageUrl?.startsWith("blob:") && ephemeralImageUrlsRef.current.has(latest.imageUrl) && latest.imageValidatedAt);
+          patchCard(cardId, { ...storyboardInlineReceiptFields(confirmed), imageStatus: "done", imageUrl: keepMedia ? latest?.imageUrl : undefined, imageValidatedAt: keepMedia ? latest?.imageValidatedAt : undefined, imageRef: undefined, imageRecordId: confirmed.recordId, imageDeliveryMode: "inline_ephemeral", imageRecoveryReady: false, imageRetryBlocked: !keepMedia, imageError: keepMedia ? undefined : "临时图片仅原页面可用，费用收据已保留；本次未重新生成" });
+          return null;
+        }
+        if (confirmed?.state === "completed" && confirmed.deliveryMode === "provider_url" && confirmed.recordId) {
+          const ref = GeneratedImageReferenceSchema.parse({ schema: "generated_image_ref.v1", recordId: confirmed.recordId });
+          const preview = generatedImagePreviewUrl(ref);
+          const decoded = await browserImageReady(preview);
+          patchCard(cardId, { ...storyboardGeneratedReceiptFields(confirmed), imageStatus: "done", imageRef: ref, imageRecordId: ref.recordId, imageDeliveryMode: "provider_url", imageUrl: preview, imageWidth: decoded.width, imageHeight: decoded.height, imageValidatedAt: Date.now(), imageRecoveryReady: false, imageRetryBlocked: false, imageError: undefined });
+          return { cardId, imageUrl: preview };
+        }
         if (confirmed?.state === "completed" && confirmed.assetId) {
           try {
             const restored = await readOwnedStoryboardImage(
@@ -2533,6 +2623,9 @@ function UserStoryboardWorkbench({
         imageUrl: undefined,
         imageAssetId: undefined,
         imageStorageKey: undefined,
+        imageRef: undefined,
+        imageRecordId: undefined,
+        imageDeliveryMode: undefined,
         imageWidth: undefined,
         imageHeight: undefined,
         videoSourceImageUrl: undefined,
@@ -2606,6 +2699,8 @@ function UserStoryboardWorkbench({
       const generationAttempts = requestSnapshot.strictSingleSubmit ? 1 : IMAGE_GENERATION_ATTEMPTS;
       for (let attempt = 1; attempt <= generationAttempts; attempt += 1) {
         if (!scopeMountedRef.current) return null;
+        let pendingInlineBlobUrl: string | undefined;
+        let pendingInlineRevoke: (() => void) | undefined;
         try {
           const response = await fetch("/api/image/generate", {
             method: "POST",
@@ -2631,7 +2726,9 @@ function UserStoryboardWorkbench({
             }),
           });
           const data = await response.json().catch(() => ({})) as {
-            images?: Array<{ url?: string; storageKey?: string; assetId?: string; width?: number; height?: number }>;
+            images?: Array<{ url?: string; recordId?: string; storageKey?: string; assetId?: string; width?: number; height?: number; deliveryMode?: string }>;
+            recordId?: string;
+            deliveryMode?: "provider_url" | "inline_ephemeral";
             error?: string;
             code?: string;
             state?: string;
@@ -2643,7 +2740,20 @@ function UserStoryboardWorkbench({
             cashCharged?: number;
             idempotencyReplayed?: boolean;
           };
-          const generatedUrl = data.images?.[0]?.url;
+          if (!scopeMountedRef.current || runRef.current.id !== current.id || !runRef.current.cards.some(item => item.id === cardId)) return null;
+          if (response.ok) completedInlineReceipt = storyboardInlineReceiptFields(data);
+          if (completedInlineReceipt) patchCard(cardId, completedInlineReceipt);
+          let generatedUrl = data.images?.[0]?.url;
+          if (response.ok && data.deliveryMode === "inline_ephemeral" && !generatedUrl) {
+            patchCard(cardId, { ...completedInlineReceipt, imageStatus: "done", imageUrl: undefined, imageRecordId: data.recordId, imageDeliveryMode: "inline_ephemeral", imageRef: undefined, imageValidatedAt: undefined, imageRecoveryReady: false, imageRetryBlocked: true, imageError: "图片已成功生成且费用收据已保留；临时图片仅原页面可用，无法恢复" });
+            return null;
+          }
+          if (data.images?.[0]?.deliveryMode === "inline_ephemeral" && generatedUrl) {
+            const delivery = await resolveGeneratedImageClientDelivery(data);
+            generatedUrl = delivery.url;
+            pendingInlineRevoke = delivery.revoke;
+            pendingInlineBlobUrl = generatedUrl;
+          }
           if (!response.ok || !generatedUrl) {
             const requestError = new Error(data.error || "图片模型没有返回故事板") as Error & {
               confirmedRejected?: boolean;
@@ -2663,22 +2773,16 @@ function UserStoryboardWorkbench({
           }
           const generatedImage = data.images?.[0];
           const isOwnedGeneratedAsset = Boolean(generatedImage?.assetId && generatedImage?.storageKey);
-          // /api/image/generate already downloaded, validated and persisted the
-          // bytes before returning an owned asset. Re-posting that URL through
-          // image-workbench/persist made history/index failures hide a valid
-          // image and forced the user into a needless recovery loop.
-          const stored = isOwnedGeneratedAsset
-            ? {
-                url: generatedUrl,
-                key: generatedImage!.storageKey,
-                width: Number(generatedImage!.width || 0),
-                height: Number(generatedImage!.height || 0),
-              }
-            : await persistImage(generatedUrl, card.order, {
-                storageKey: generatedImage?.storageKey,
-                assetId: generatedImage?.assetId,
-                targetAspectRatio: requestSnapshot.aspectRatio,
-              });
+          // A generated result is a provider reference, never an implicit upload.
+          const providerReference = providerMediaUrl(generatedUrl)
+            || (generatedImage?.deliveryMode === "provider_url" && generatedUrl.startsWith("/api/media-history/content?recordId=") ? generatedUrl : null);
+          if (!isOwnedGeneratedAsset && !providerReference && generatedImage?.deliveryMode !== "inline_ephemeral") throw new RetryableImageFileError("上游未提供可交付的图片链接");
+          const stored = {
+            url: generatedUrl,
+            key: generatedImage?.storageKey,
+            width: Number(generatedImage?.width || 0),
+            height: Number(generatedImage?.height || 0),
+          };
           try {
             const decoded = await browserImageReady(stored.url);
             if (!imageDimensionsMatchAspectRatio(decoded.width, decoded.height, requestSnapshot.aspectRatio)) {
@@ -2688,7 +2792,9 @@ function UserStoryboardWorkbench({
             stored.height = decoded.height;
           } catch (error) {
             if (error instanceof RetryableImageFileError) throw error;
-            if (!isOwnedGeneratedAsset) throw new RetryableImageFileError("图片已入库，但浏览器无法正常解码");
+            if (!isOwnedGeneratedAsset) {
+              throw new RetryableImageFileError("上游图片暂时无法预览，原请求仍保留");
+            }
             // The server-owned asset is authoritative. A transient signed-URL
             // or browser decode failure is a preview problem, not a failed paid
             // generation; the stored asset can be re-signed without a model call.
@@ -2705,9 +2811,14 @@ function UserStoryboardWorkbench({
               throw new RetryableImageFileError("图片已入库，但展示地址暂时无法读取");
             }
           }
+          if (!scopeMountedRef.current || runRef.current.id !== current.id || !runRef.current.cards.some((item) => item.id === cardId)) return null;
+          if (generatedImage?.deliveryMode === "inline_ephemeral" && stored.url.startsWith("blob:")) ephemeralImageUrlsRef.current.add(stored.url);
           patchCard(cardId, {
             imageStatus: "done",
             imageUrl: stored.url,
+            imageRecordId: generatedImage?.recordId || data.recordId,
+            imageDeliveryMode: generatedImage?.deliveryMode === "inline_ephemeral" ? "inline_ephemeral" : generatedImage?.deliveryMode === "provider_url" ? "provider_url" : undefined,
+            imageRef: generatedImage?.deliveryMode === "provider_url" && GeneratedImageReferenceSchema.safeParse({ schema: "generated_image_ref.v1", recordId: generatedImage.recordId || data.recordId }).success ? { schema: "generated_image_ref.v1", recordId: String(generatedImage.recordId || data.recordId) } : undefined,
             imageAssetId: generatedImage?.assetId,
             imageStorageKey: stored.key,
             imageWidth: stored.width,
@@ -2722,18 +2833,30 @@ function UserStoryboardWorkbench({
             imagePriceCharged: Number.isFinite(Number(data.cashCharged)) ? Math.max(0, Number(data.cashCharged)) : undefined,
             imageBillingState: data.idempotencyReplayed ? "restored" : "settled",
           });
+          pendingInlineBlobUrl = undefined;
           if (!requestSnapshot.strictSingleSubmit) {
             clearBrowserClientAttempt(`storyboard-image:${requestSnapshot.runId}:${requestSnapshot.cardId}`, clientIdempotencyKey);
           }
           setNotice(`任务${card.order}故事板已展示 · ${modelName}`);
           return { cardId, imageUrl: stored.url };
         } catch (error) {
+          if (completedInlineReceipt) {
+            if (scopeMountedRef.current && runRef.current.id === current.id && runRef.current.cards.some(item => item.id === cardId)) {
+              patchCard(cardId, { ...completedInlineReceipt, imageStatus: "done", imageUrl: undefined, imageRef: undefined,
+                imageValidatedAt: undefined, imageRecoveryReady: false, imageRetryBlocked: true,
+                imageError: "图片已成功生成且费用收据已保留；当前预览不可用，临时图片无法恢复。不会再次生成或扣费" });
+              setNotice(`镜头${card.order}已生成；当前预览不可用，费用收据已保留`);
+            }
+            return null;
+          }
           if (error instanceof RetryableImageFileError && attempt < generationAttempts) {
             setNotice(`镜头${card.order}图片读取失败，正在用原请求继续读取和保存结果`);
             await delay(1_000);
             continue;
           }
           throw error;
+        } finally {
+          if (pendingInlineBlobUrl) { if (pendingInlineRevoke) pendingInlineRevoke(); else URL.revokeObjectURL(pendingInlineBlobUrl); }
         }
       }
       return null;
@@ -2762,6 +2885,16 @@ function UserStoryboardWorkbench({
             imageClientTraceId: clientTraceId,
           }).catch(() => null)
         : null;
+      const recoveredInlineReceipt = status?.state === "completed" ? storyboardInlineReceiptFields(status) : null;
+      if (recoveredInlineReceipt) {
+        const latest = runRef.current.cards.find(item => item.id === cardId);
+        const keepMedia = Boolean(latest && latest.imageRecordId === recoveredInlineReceipt.imageRecordId && latest.imageDeliveryMode === "inline_ephemeral" && latest.imageUrl?.startsWith("blob:") && ephemeralImageUrlsRef.current.has(latest.imageUrl) && latest.imageValidatedAt);
+        patchCard(cardId, { ...recoveredInlineReceipt, imageStatus: "done", imageUrl: keepMedia ? latest?.imageUrl : undefined, imageRef: undefined,
+          imageValidatedAt: keepMedia ? latest?.imageValidatedAt : undefined, imageRecoveryReady: false, imageRetryBlocked: !keepMedia,
+          imageError: keepMedia ? undefined : "图片已成功生成且费用收据已保留；临时图片仅原页面可用，当前无法恢复。不会重新生成或扣费" });
+        setNotice(`镜头${card.order}已生成，费用收据已保留；本次未重新提交`);
+        return null;
+      }
       const confirmedRejected = typed.confirmedRejected === true
         || (status?.state === "rejected" && status.canResubmit === true && status.sameKeyCanResubmit === false)
         || (typed.upstreamCalled === false && typed.billed === false);
@@ -2805,7 +2938,7 @@ function UserStoryboardWorkbench({
     } finally {
       imageSubmissionsRef.current.delete(cardId);
     }
-  }, [archiveRunSnapshot, imageModels, inspectStoryboardImageAttempt, patchCard, persistImage, readOwnedStoryboardImage, saveStoryboardProject, token]);
+  }, [archiveRunSnapshot, imageModels, inspectStoryboardImageAttempt, patchCard, readOwnedStoryboardImage, saveStoryboardProject, token]);
 
   // Provider output recovery is infrastructure work, not a user command.
   // Reuse the same immutable request key with bounded exponential backoff; the
@@ -2863,12 +2996,28 @@ function UserStoryboardWorkbench({
       lastSyncedAt?: string;
       lastSyncAgeSeconds?: number | null;
       providerPollFailures?: number;
+      mediaAvailable?: boolean;
+      mediaUnavailableReason?: string;
     };
 
     const applyStatus = (data: StatusPayload, source: "stream" | "poll") => {
       const now = Date.now();
       const status = normalizeRemoteVideoStatus(data.status);
       const videoUrl = data.videoUrl || data.video_url || data.storageUrl || "";
+      if (status === "done" && data.mediaAvailable === false) {
+        const message = data.mediaUnavailableReason === "source_expired"
+          ? "生成已成功，上游视频已确认失效；原任务和账务凭据保留"
+          : "生成已成功，当前素材不可播放；原任务和账务凭据保留";
+        patchCard(cardId, {
+          videoStatus: "done", videoUrl: undefined, videoContentUrl: undefined,
+          videoError: message, videoStatusDetail: message, videoProgress: 100,
+          videoRetryable: false, videoPollFailures: 0, videoLastCheckedAt: now,
+          videoBillingState: data.billingState || "settled",
+          videoPriceCharged: Number.isFinite(Number(data.priceCharged)) ? Math.max(0, Number(data.priceCharged)) : undefined,
+        });
+        setNotice(message);
+        return { terminal: true, videoUrl: "" };
+      }
       if (status === "done" && videoUrl) {
         const target = runRef.current.cards.find((card) => card.id === cardId);
         if (target?.videoClientRequestId) {
@@ -2981,7 +3130,7 @@ function UserStoryboardWorkbench({
       let terminalVideoUrl: string | null = null;
       let terminalReached = false;
       while (!signal.aborted) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readMediaStreamWithDeadline(reader);
         const events = done ? decoder.finish() : decoder.push(value);
         for (const event of events) {
           const data = JSON.parse(event.data || "{}") as StatusPayload;
@@ -3099,6 +3248,7 @@ function UserStoryboardWorkbench({
     try {
       const response = await fetch("/api/video/cancel", {
         method: "POST",
+        signal: AbortSignal.timeout(MEDIA_CANCEL_DEADLINE_MS),
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           taskId: card.videoTaskId,
@@ -3183,6 +3333,7 @@ function UserStoryboardWorkbench({
     if (selectionIssue) { setNotice(selectionIssue); return null; }
     if (model.requiresSourceVideo) { setNotice("该模型必须上传源视频，不能用于仅提供故事板图片的分镜工作台；请切换图生视频模型"); return null; }
     if (!imageUrl) { setNotice("故事板图片地址缺失，请重新生成图片"); return null; }
+    if (card.imageDeliveryMode === "inline_ephemeral") { setNotice("临时图片仅当前页面可预览下载，当前视频通道不支持这类输入；本次未提交或扣费"); return null; }
     const duration = effectiveVideoDuration(model, current.videoDuration);
     const narration = String(card.narration || inferStoryboardNarration(card.label)).trim();
     const narrationChars = narrationCharacterCount(narration);
@@ -3240,43 +3391,14 @@ function UserStoryboardWorkbench({
     let confirmedUnsubmitted = false;
     try {
       let submissionImageUrl = imageUrl;
-      let submissionImageStorageKey = card.imageStorageKey;
+      const submissionImageStorageKey = card.imageStorageKey;
+      let submissionImageRef = card.imageRef;
       if (isMultiPanelStoryboardPrompt(card.imagePrompt)) {
-        setNotice(`镜头${card.order}正在由服务端安全裁取故事板第一格`);
-        const cropped = await persistImage(imageUrl, 100 + card.order, {
-          transform: "first_storyboard_panel",
-          storageKey: card.imageStorageKey,
-          targetAspectRatio: current.ratio,
-        });
-        submissionImageUrl = cropped.url;
-        submissionImageStorageKey = cropped.key;
-        const croppedDimensions = await browserImageReady(submissionImageUrl);
-        if (!imageDimensionsMatchAspectRatio(croppedDimensions.width, croppedDimensions.height, current.ratio)) {
-          throw new Error(`故事板首格 ${croppedDimensions.width}×${croppedDimensions.height} 与 ${current.ratio} 不一致，已阻止视频提交`);
-        }
-        patchCard(cardId, { videoSourceImageUrl: submissionImageUrl });
+        if (!submissionImageRef || !/(?:2\s*[×xX*]\s*2|(?:四|4)格)/u.test(card.imagePrompt) || !card.imageWidth || !card.imageHeight) throw new Error("该多格排布尚无可验证的首格裁切范围；本次未提交或扣费");
+        submissionImageRef = { ...submissionImageRef, transform: { kind: "crop", x: 0, y: 0, width: Math.floor(card.imageWidth / 2), height: Math.floor(card.imageHeight / 2) } };
       }
-      if (!isPublicHttpMediaUrl(submissionImageUrl)) {
-        setNotice(`镜头${card.order}的旧故事板正在同步到个人资产`);
-        const dataUrl = await mediaUrlToDataUrl(submissionImageUrl);
-        const migrated = await persistImage(dataUrl, card.order, { targetAspectRatio: current.ratio });
-        submissionImageUrl = migrated.url;
-        submissionImageStorageKey = migrated.key;
-        const migratedDimensions = await browserImageReady(submissionImageUrl);
-        if (!imageDimensionsMatchAspectRatio(migratedDimensions.width, migratedDimensions.height, current.ratio)) {
-          throw new Error(`同步后的故事板 ${migratedDimensions.width}×${migratedDimensions.height} 与 ${current.ratio} 不一致，已阻止视频提交`);
-        }
-        patchCard(cardId, {
-          imageUrl: submissionImageUrl,
-          imageStorageKey: migrated.key,
-          imageWidth: migratedDimensions.width,
-          imageHeight: migratedDimensions.height,
-          imageValidatedAt: Date.now(),
-          imageError: undefined,
-        });
-      }
-      if (!isPublicHttpMediaUrl(submissionImageUrl)) {
-        throw new Error("故事板已加载，但公网对象存储未返回可供视频模型访问的 URL");
+      if (!submissionImageRef && !isPublicHttpMediaUrl(submissionImageUrl)) {
+        throw new Error("上游参考图链接无法被视频模型访问；请主动上传可访问的参考图后继续");
       }
       const submissionController = new AbortController();
       videoSubmissionControllersRef.current.set(cardId, submissionController);
@@ -3289,7 +3411,7 @@ function UserStoryboardWorkbench({
         duration,
         aspectRatio: current.ratio,
         resolution,
-        sourceImage: submissionImageStorageKey || submissionImageUrl.split("?", 1)[0],
+        sourceImage: submissionImageRef ? generatedImageReferenceUri(submissionImageRef) : submissionImageStorageKey || submissionImageUrl.split("?", 1)[0],
       });
       const videoClientAttemptScope = `storyboard-video:${current.id}:${card.id}`;
       const videoClientAttempt = resolveBrowserClientAttempt({
@@ -3335,8 +3457,7 @@ function UserStoryboardWorkbench({
         body: JSON.stringify({
           model_id: model.id,
           prompt: executionPrompt,
-          image_url: submissionImageUrl,
-          image_storage_key: submissionImageStorageKey,
+          ...(submissionImageRef ? { image_ref: submissionImageRef } : { image_url: submissionImageUrl, image_storage_key: submissionImageStorageKey }),
           duration,
           aspect_ratio: current.ratio,
           resolution_tier: resolution,
@@ -3481,7 +3602,7 @@ function UserStoryboardWorkbench({
       videoSubmissionControllersRef.current.delete(cardId);
       videoSubmissionsRef.current.delete(cardId);
     }
-  }, [archiveRunSnapshot, patchCard, persistImage, saveStoryboardProject, startPolling, token, videoModels]);
+  }, [archiveRunSnapshot, patchCard, saveStoryboardProject, startPolling, token, videoModels]);
 
   const reconcileVideoRequest = useCallback(async (cardId: string, source: "auto" | "manual" = "manual") => {
     const card = runRef.current.cards.find((item) => item.id === cardId);
@@ -3668,13 +3789,13 @@ function UserStoryboardWorkbench({
 
   const batchImages = useCallback(async () => {
     if (batchMode) return;
-    const invalid = run.cards.filter((card) => !card.imagePrompt.trim());
+    const cardsNeedingGeneration = run.cards.filter((card) => !isCompletedInlineImageReceipt(card) && !card.imageRecoveryReady && (card.imageStatus === "idle" || card.imageStatus === "failed"));
+    const invalid = cardsNeedingGeneration.filter((card) => !card.imagePrompt.trim());
     if (invalid.length) return setNotice(`还有${invalid.length}张镜头卡没有粘贴生图 Prompt`);
-    const cardsNeedingGeneration = run.cards.filter((card) => !card.imageRecoveryReady && (card.imageStatus === "idle" || card.imageStatus === "failed"));
     if (cardsNeedingGeneration.length > 0 && activeImageSelectionIssue) return setNotice(activeImageSelectionIssue);
     const incompatibleReferences = cardsNeedingGeneration.filter((card) => card.referenceImageUrls.length > imageCapabilities.maxReferenceImages);
     if (incompatibleReferences.length) return setNotice(`还有${incompatibleReferences.length}张卡片的参考图超过当前模型上限，请替换或清除后再批量生成`);
-    const blockedCount = run.cards.filter((card) => card.imageRetryBlocked).length;
+    const blockedCount = run.cards.filter((card) => card.imageRetryBlocked && imageAttemptNeedsResolution(card)).length;
     if (blockedCount) return setNotice(`还有${blockedCount}张故事板结果待确认，已禁止批量重放`);
     const cardIds = run.cards.filter((card) => card.imageStatus === "idle"
       || (card.imageStatus === "failed" && !card.imageRetryBlocked)).map((card) => card.id);
@@ -3697,7 +3818,7 @@ function UserStoryboardWorkbench({
     if (batchMode) return;
     if (activeVideoSelectionIssue) return setNotice(activeVideoSelectionIssue);
     const missing = run.cards.filter((card) => !hasValidatedImage(card) || (videoPromptRequired && !card.videoPrompt.trim()));
-    if (missing.length) return setNotice(`还有${missing.length}张卡片未完成图片或未粘贴视频 Prompt`);
+    if (missing.length) return setNotice(`还有${missing.length}张卡片没有当前可用的图片或未粘贴视频 Prompt`);
     const ratioMismatches = run.cards.filter((card) => storyboardImageRatioIssue(card, run.ratio));
     if (ratioMismatches.length) return setNotice(`还有${ratioMismatches.length}张故事板的生成画幅与当前设置不一致，请重新生图后再批量生成视频`);
     const blockedFailures = run.cards.filter((card) => card.videoStatus === "failed" && card.videoRetryable !== true).length;
@@ -3722,9 +3843,10 @@ function UserStoryboardWorkbench({
     if (batchMode) return;
     if (activeImageSelectionIssue) return setNotice(activeImageSelectionIssue);
     if (activeVideoSelectionIssue) return setNotice(activeVideoSelectionIssue);
+    if (run.cards.some(isUnavailableCompletedInlineImage)) return setNotice("临时图片已完成但当前媒体不可恢复，全部生成未启动；请使用当前可用的图片素材");
     const invalid = run.cards.filter((card) => !card.imagePrompt.trim() || (videoPromptRequired && !card.videoPrompt.trim()));
     if (invalid.length) return setNotice(`还有${invalid.length}张卡片缺少当前模型所需的 Prompt，全部生成未启动`);
-    const blockedCount = run.cards.filter((card) => card.imageRetryBlocked).length;
+    const blockedCount = run.cards.filter((card) => card.imageRetryBlocked && imageAttemptNeedsResolution(card)).length;
     if (blockedCount) return setNotice(`还有${blockedCount}张故事板结果待确认，全部生成未启动，避免重复扣费或重复调用`);
     const blockedVideoFailures = run.cards.filter((card) => card.videoStatus === "failed" && card.videoRetryable !== true).length;
     if (blockedVideoFailures) return setNotice(`还有${blockedVideoFailures}条失败视频的原任务或费用尚未确认，全部生成未启动`);
@@ -4157,9 +4279,9 @@ function UserStoryboardWorkbench({
               </div>
             </div>
             <div className="sbw-toolbar-actions">
-              <button type="button" className="sbw-batch-action is-image-batch" onClick={batchImages} disabled={Boolean(activeImageSelectionIssue && !run.cards.some((card) => card.imageRecoveryReady)) || Boolean(batchMode) || run.cards.some((card) => card.imageRetryBlocked)}><ImageIcon />批量生图</button>
+              <button type="button" className="sbw-batch-action is-image-batch" onClick={batchImages} disabled={Boolean(activeImageSelectionIssue && !run.cards.some((card) => card.imageRecoveryReady)) || Boolean(batchMode) || run.cards.some((card) => card.imageRetryBlocked && imageAttemptNeedsResolution(card))}><ImageIcon />批量生图</button>
               <button type="button" className="sbw-batch-action is-video-batch" onClick={batchVideos} disabled={Boolean(activeVideoSelectionIssue) || Boolean(batchMode) || run.cards.some((card) => !hasValidatedImage(card) || Boolean(storyboardImageRatioIssue(card, run.ratio)))}><Film />批量视频</button>
-              <button type="button" className="sbw-batch-action is-full-batch is-primary" onClick={fullFlow} disabled={Boolean(activeImageSelectionIssue || activeVideoSelectionIssue) || Boolean(batchMode) || run.cards.some((card) => card.imageRetryBlocked)}>{batchMode === "full" ? <Loader2 className="animate-spin" /> : <Sparkles />}全部生成</button>
+              <button type="button" className="sbw-batch-action is-full-batch is-primary" onClick={fullFlow} disabled={Boolean(activeImageSelectionIssue || activeVideoSelectionIssue) || Boolean(batchMode) || run.cards.some((card) => card.imageRetryBlocked && imageAttemptNeedsResolution(card))}>{batchMode === "full" ? <Loader2 className="animate-spin" /> : <Sparkles />}全部生成</button>
             </div>
           </section>
 
@@ -4241,7 +4363,7 @@ function UserStoryboardWorkbench({
                       ) : card.imageStatus === "running" || card.imageStatus === "queued" ? (
                         <div className="sbw-loading-state"><Loader2 className="animate-spin" /><strong>{statusText(card.imageStatus)}</strong><span>故事板图片正在生成</span></div>
                       ) : (
-                        <div className="sbw-empty-state"><ImageIcon /><span>尚未生成</span></div>
+                        <div className="sbw-empty-state"><ImageIcon /><span>{isUnavailableCompletedInlineImage(card) ? "已完成·临时图片不可恢复" : "尚未生成"}</span></div>
                       )}
                     </div>
                     {card.imageError && <p className="sbw-error-line">{card.imageError}</p>}
@@ -4254,12 +4376,14 @@ function UserStoryboardWorkbench({
                           : `实际扣费 ¥${Number(card.imagePriceCharged || 0).toFixed(2)}`}</p>}
                     <div className="sbw-media-actions">
                       <button type="button" title="复制生图 Prompt" onClick={() => copyText(card.imagePrompt, `镜头${card.order}生图 Prompt`)}><ClipboardCopy /></button>
-                      {card.imageUrl && <button type="button" title="下载故事板" onClick={() => void openImageDownload(card.imageUrl!, `${String(card.order).padStart(2, "0")}-故事板.png`)}><Download /></button>}
+                      {card.imageUrl && <button type="button" title="下载故事板" onClick={() => void downloadStoryboardImage(card)}><Download /></button>}
                       <button
                         type="button"
                         className="is-command is-image-command"
                         title={isActiveVideoStatus(card.videoStatus)
                           ? "请先终止本镜头的视频任务"
+                          : isUnavailableCompletedInlineImage(card)
+                            ? "图片已完成，临时图片不可恢复，已禁止重复提交"
                           : card.imageRetryBlocked
                             ? "原结果待确认，已禁止重复提交"
                             : card.imageRecoveryReady
@@ -4280,6 +4404,8 @@ function UserStoryboardWorkbench({
                         {card.imageStatus === "running" || card.imageStatus === "queued" ? <Loader2 className="animate-spin" /> : card.imageStatus === "done" || card.imageStatus === "failed" ? <RotateCcw /> : <Sparkles />}
                         {card.imageStatus === "running" || card.imageStatus === "queued"
                           ? statusText(card.imageStatus)
+                          : isUnavailableCompletedInlineImage(card)
+                            ? "图片不可恢复"
                           : card.imageRetryBlocked
                             ? "结果待确认"
                             : card.imageRecoveryReady

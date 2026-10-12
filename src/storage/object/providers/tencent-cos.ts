@@ -18,6 +18,7 @@
  * - 支持生命周期规则（自动清理过期文件）
  */
 import { Writable } from "node:stream";
+import {createHash} from "node:crypto";
 import type {
   IStorageProvider,
   StorageProviderType,
@@ -89,6 +90,14 @@ export class TencentCOSProvider implements IStorageProvider {
     // 加日期子目录便于管理
     const datePath = new Date().toISOString().slice(0, 10).replace(/-/g, "/");
     return `${prefix}${datePath}/${name}`;
+  }
+
+  /** Server-only publication path. No user_files write and no arbitrary object keys. */
+  async uploadPublicationObjectOnly(buffer:Buffer,key:string,contentType:string):Promise<void> {
+    if(!new RegExp("^admin-image-publication/[a-f0-9]{64}/ivc_[a-f0-9]{64}/[a-f0-9]{64}/[a-f0-9]{64}$").test(key)
+      || createHash('sha256').update(buffer).digest('hex')!==key.split('/').at(-1) || !buffer.length || buffer.length>30*1024*1024 || !['image/png','image/jpeg','image/webp'].includes(contentType))throw new Error('IMAGE_PUBLICATION_OBJECT_INVALID');
+    await new Promise<void>((resolve,reject)=>this.cos.putObject({Bucket:this.bucket,Region:this.region,Key:key,Body:buffer,
+      ContentType:contentType,ContentLength:buffer.length,Headers:{'x-cos-forbid-overwrite':'true'}},(error:Error|null)=>error?reject(new Error('IMAGE_PUBLICATION_OBJECT_UPLOAD_UNKNOWN')):resolve()));
   }
 
   async upload(
@@ -195,7 +204,7 @@ export class TencentCOSProvider implements IStorageProvider {
     if (!key || key.startsWith("/") || key.includes("://") || /[\u0000\r\n\\]/u.test(key) || key.split("/").includes("..")) {
       throw new Error("STORAGE_OBJECT_KEY_INVALID");
     }
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 25 * 1024 * 1024
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > (new RegExp("^admin-image-publication/[a-f0-9]{64}/ivc_[a-f0-9]{64}/[a-f0-9]{64}/[a-f0-9]{64}$").test(key)?30:25) * 1024 * 1024
       || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) {
       throw new Error("STORAGE_READ_LIMIT_INVALID");
     }
@@ -435,6 +444,49 @@ export class TencentCOSProvider implements IStorageProvider {
             : typeof rawSize === "string" && /^\d+$/u.test(rawSize.trim()) ? Number(rawSize.trim()) : NaN;
           if (!Number.isSafeInteger(size) || size < 0) {
             resolve(null);
+            return;
+          }
+          const rawType = header("content-type", data?.ContentType);
+          const rawModified = header("last-modified", data?.LastModified);
+          const modifiedTime = rawModified instanceof Date ? rawModified.getTime()
+            : typeof rawModified === "string" ? Date.parse(rawModified) : NaN;
+          resolve({
+            size,
+            contentType: typeof rawType === "string" && rawType.trim() ? rawType.trim() : "application/octet-stream",
+            lastModified: new Date(Number.isFinite(modifiedTime) ? modifiedTime : 0),
+          });
+        }
+      );
+    });
+  }
+
+  async headPublicationObjectOnly(key: string): Promise<{ size: number; contentType: string; lastModified: Date } | null> {
+    if(!new RegExp("^admin-image-publication/[a-f0-9]{64}/ivc_[a-f0-9]{64}/[a-f0-9]{64}/[a-f0-9]{64}$").test(key))throw new Error("IMAGE_PUBLICATION_KEY_INVALID");
+    return new Promise((resolve,reject) => {
+      const timer=setTimeout(()=>reject(new Error("IMAGE_PUBLICATION_HEAD_UNKNOWN")),10000);
+      this.cos.headObject(
+        {
+          Bucket: this.bucket,
+          Region: this.region,
+          Key: key,
+        },
+        (err: (Error & {statusCode?:number}) | null, data: any) => {
+          clearTimeout(timer);
+          if (err) {
+            if(err.statusCode===404)resolve(null);else reject(new Error("IMAGE_PUBLICATION_HEAD_UNKNOWN"));
+            return;
+          }
+          // COS SDK exposes HTTP metadata under `headers`, not ContentLength.
+          const headers = data?.headers && typeof data.headers === "object" ? data.headers : {};
+          const header = (name: string, legacy: unknown): unknown => {
+            const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name);
+            return entry?.[1] ?? legacy;
+          };
+          const rawSize = header("content-length", data?.ContentLength);
+          const size = typeof rawSize === "number" ? rawSize
+            : typeof rawSize === "string" && /^\d+$/u.test(rawSize.trim()) ? Number(rawSize.trim()) : NaN;
+          if (!Number.isSafeInteger(size) || size < 0) {
+            reject(new Error("IMAGE_PUBLICATION_HEAD_UNKNOWN"));
             return;
           }
           const rawType = header("content-type", data?.ContentType);

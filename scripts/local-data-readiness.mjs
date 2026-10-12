@@ -36,12 +36,14 @@ export async function ensureLocalDataReady(plan, { restore = false } = {}, depen
   const probe = dependencies.probe || probeLocalData;
   if (await probe(plan)) return { ready: true, restored: false };
   if (!restore) throw new Error('LOCAL_DATA_UNAVAILABLE');
+  let restoreCommandReportedFailure = false;
   try {
     const launch = dependencies.restore || (() => run(plan.executable, [LOCAL_RUNTIME, 'start'], {
       cwd: plan.cwd, windowsHide: true, shell: false, timeout: 45_000, maxBuffer: 512 * 1024,
     }));
     await launch();
-  } catch { throw new Error('LOCAL_DATA_RESTORE_FAILED'); }
-  if (!await probe(plan)) throw new Error('LOCAL_DATA_UNAVAILABLE_AFTER_RESTORE');
+  } catch { restoreCommandReportedFailure = true; }
+  if (!await probe(plan)) throw new Error(restoreCommandReportedFailure ? 'LOCAL_DATA_RESTORE_FAILED' : 'LOCAL_DATA_UNAVAILABLE_AFTER_RESTORE');
+  if (restoreCommandReportedFailure) return { ready: true, restored: true, restoreCommandReportedFailure: true };
   return { ready: true, restored: true };
 }

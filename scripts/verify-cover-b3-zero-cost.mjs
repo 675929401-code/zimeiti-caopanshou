@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
+import { z } from "zod";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -157,10 +158,14 @@ assert.equal(cancelledProjection.task.cancellable, false);
 assert.match(cancelledProjection.task.error, /实际账单核对/u);
 checks.push("cancelled task is terminal and keeps truthful billing wording");
 
+const imageReferences = loadModule("src/lib/generated-image-reference.ts", { zod: { z } });
+const imageClientDelivery = loadModule("src/lib/generated-image-client-delivery.ts", { "@/lib/generated-image-reference": imageReferences });
 const generation = loadModule("src/lib/cover-generation-attempt.ts", {
   "@/lib/image-workbench-attempt-guard": { isConfirmedTerminalImageFailure: () => false },
   "@/lib/cover-composition": { coverCompositionMatches: () => true, coverCompositionValidationError: () => "" },
   "@/lib/image-resolution-pricing": { parsePublicImageResolutionPrices: () => ({}) },
+  "@/lib/generated-image-client-delivery": imageClientDelivery,
+  "@/lib/cover-durable-attempt": durable,
 });
 const values = new Map();
 const storage = {

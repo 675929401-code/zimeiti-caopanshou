@@ -10,6 +10,8 @@ CANDIDATE_FIXTURE_HELPER_PATH="/usr/local/libexec/zimeiti/prepare-candidate-read
 CANDIDATE_FIXTURE_HELPER_SHA256="ea62e6aa0676b26514491109fe13e950799585f51d41398b82817f83a860c3c6"
 DEPLOY_NODE_BIN="/data/direct-deploy/toolchain/bin/node"
 DEPLOY_RUNTIME_PATH="/data/direct-deploy/toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+CANDIDATE_NODE_BIN="/usr/local/libexec/zimeiti/node-v24.19.0"
+CANDIDATE_NODE_SHA256="bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12"
 ASSET_POLICY_TRANSITION_VERIFIER_SHA256="55294aef46841fe6362f2a41df44c6d13fe196e7ffb904543b9b062743187bee"
 
 usage() {
@@ -295,19 +297,76 @@ for command_name in readlink sha256sum awk tar mktemp grep head rm stat; do
   require_command "$command_name"
 done
 require_trusted_root_executable "$DEPLOY_NODE_BIN" "deployment Node runtime"
+require_trusted_root_executable "$CANDIDATE_NODE_BIN" "candidate Node runtime"
+[[ "$(sha256sum -- "$CANDIDATE_NODE_BIN" | awk 'NR == 1 { print $1 }')" == "$CANDIDATE_NODE_SHA256" ]] || \
+  die "candidate Node runtime SHA-256 does not match the reviewed runtime"
+[[ "$(sha256sum -- "$DEPLOY_NODE_BIN" | awk 'NR == 1 { print $1 }')" == "$CANDIDATE_NODE_SHA256" ]] || \
+  die "deployment and candidate Node runtimes are not byte-identical"
 PATH="$DEPLOY_RUNTIME_PATH"
 export PATH
+RELEASE_NODE_BINARY="$DEPLOY_NODE_BIN"
+export RELEASE_NODE_BINARY
 require_command node
 [[ "$(readlink -f -- "$(command -v node)")" == "$DEPLOY_NODE_BIN" ]] || \
   die "deployment PATH did not select the pinned Node runtime"
 [[ "$(node -p 'process.version + ":" + process.versions.modules')" == "v24.19.0:137" ]] || \
   die "deployment Node runtime must be exact Node v24.19.0 with ABI 137"
+[[ "$($CANDIDATE_NODE_BIN -p 'process.version + ":" + process.versions.modules')" == "v24.19.0:137" ]] || \
+  die "candidate Node runtime must be exact Node v24.19.0 with ABI 137"
 tar --version 2>/dev/null | head -n 1 | grep -q "GNU tar" || die "GNU tar is required for deterministic safe extraction"
 
 ARTIFACT="$(readlink -f -- "$ARTIFACT")"
 DEPLOY_SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 DEPLOY_SCRIPT_DIR="${DEPLOY_SCRIPT_PATH%/*}"
 CONTROL_PLANE_ROOT="$(readlink -f -- "$DEPLOY_SCRIPT_DIR/..")"
+# Bootstrap authority is supplied outside this incoming bundle. Never execute
+# its bundled verifier to establish trust in itself. No secret/side effect above.
+CONTROL_PLANE_TRUSTED_VERIFIER="${CONTROL_PLANE_TRUSTED_VERIFIER:-}"
+CONTROL_PLANE_TRUSTED_VERIFIER_SHA256="${CONTROL_PLANE_TRUSTED_VERIFIER_SHA256:-}"
+CONTROL_PLANE_INSTALLATION_RECEIPT="${CONTROL_PLANE_INSTALLATION_RECEIPT:-}"
+CONTROL_PLANE_INSTALLATION_RECEIPT_SHA256="${CONTROL_PLANE_INSTALLATION_RECEIPT_SHA256:-}"
+CONTROL_PLANE_EXPECTED_DESCRIPTOR="${CONTROL_PLANE_EXPECTED_DESCRIPTOR:-}"
+CONTROL_PLANE_EXPECTED_DESCRIPTOR_SHA256="${CONTROL_PLANE_EXPECTED_DESCRIPTOR_SHA256:-}"
+[[ "$CONTROL_PLANE_TRUSTED_VERIFIER" == /* && "$CONTROL_PLANE_TRUSTED_VERIFIER" != "$CONTROL_PLANE_ROOT/"* ]] || \
+  die "an external trusted control-plane verifier is required"
+require_trusted_root_executable "$CONTROL_PLANE_TRUSTED_VERIFIER" "control-plane bootstrap verifier"
+for control_path in "$CONTROL_PLANE_TRUSTED_VERIFIER" "$CONTROL_PLANE_INSTALLATION_RECEIPT" "$CONTROL_PLANE_EXPECTED_DESCRIPTOR"; do
+  [[ "$control_path" == /* ]] || die "control-plane trust path must be absolute"
+  control_parent="${control_path%/*}"
+  while [[ -n "$control_parent" ]]; do
+    [[ -d "$control_parent" && ! -L "$control_parent" && "$(readlink -f -- "$control_parent")" == "$control_parent" ]] || \
+      die "control-plane trust parent must be canonical"
+    [[ "$(stat -c '%u:%g' -- "$control_parent")" == "0:0" ]] || die "control-plane trust parent owner mismatch"
+    control_mode="$(stat -c '%a' -- "$control_parent")"
+    (( (8#$control_mode & 8#022) == 0 )) || die "control-plane trust parent is writable by untrusted roles"
+    [[ "$control_parent" == "/" ]] && break
+    control_parent="${control_parent%/*}"
+    [[ -n "$control_parent" ]] || control_parent="/"
+  done
+done
+for control_digest in "$CONTROL_PLANE_TRUSTED_VERIFIER_SHA256" "$CONTROL_PLANE_INSTALLATION_RECEIPT_SHA256" "$CONTROL_PLANE_EXPECTED_DESCRIPTOR_SHA256"; do
+  [[ "$control_digest" =~ ^[a-f0-9]{64}$ ]] || die "external control-plane trust digest is required"
+done
+[[ "$(sha256sum -- "$CONTROL_PLANE_TRUSTED_VERIFIER" | awk 'NR == 1 { print $1 }')" == "$CONTROL_PLANE_TRUSTED_VERIFIER_SHA256" ]] || \
+  die "control-plane bootstrap verifier digest mismatch"
+for control_file in "$CONTROL_PLANE_INSTALLATION_RECEIPT" "$CONTROL_PLANE_EXPECTED_DESCRIPTOR"; do
+  [[ "$control_file" == /* && "$control_file" != "$CONTROL_PLANE_ROOT/"* && -f "$control_file" && ! -L "$control_file" ]] || \
+    die "control-plane receipt/descriptor must be external regular trusted files"
+  [[ "$(stat -c '%u:%g:%h' -- "$control_file")" == "0:0:1" ]] || die "control-plane trust file owner/link mismatch"
+  control_mode="$(stat -c '%a' -- "$control_file")"
+  (( (8#$control_mode & 8#022) == 0 )) || die "control-plane trust file is writable by untrusted roles"
+done
+[[ "$(sha256sum -- "$CONTROL_PLANE_EXPECTED_DESCRIPTOR" | awk 'NR == 1 { print $1 }')" == "$CONTROL_PLANE_EXPECTED_DESCRIPTOR_SHA256" ]] || \
+  die "control-plane descriptor digest mismatch"
+"$DEPLOY_NODE_BIN" "$CONTROL_PLANE_TRUSTED_VERIFIER" verify-installed \
+  --installed-root "$CONTROL_PLANE_ROOT" --expected-descriptor "$CONTROL_PLANE_EXPECTED_DESCRIPTOR" \
+  --receipt "$CONTROL_PLANE_INSTALLATION_RECEIPT" --receipt-sha256 "$CONTROL_PLANE_INSTALLATION_RECEIPT_SHA256" \
+  --verifier-sha256 "$CONTROL_PLANE_TRUSTED_VERIFIER_SHA256" || die "complete installed control-plane gate failed"
+if [[ "$SERVICE" == "web" ]]; then
+  [[ "${DIRECT_HOOK_PATH:-}" == "$CONTROL_PLANE_ROOT/transaction-hook.mjs" && \
+     "${DIRECT_HOOK_PM2_CONFIG_PATH:-}" == "$CONTROL_PLANE_ROOT/ecosystem.config.cjs" ]] || \
+    die "media-worker hook/config must belong to this verified control-plane bundle"
+fi
 ASSET_POLICY_TRANSITION_VERIFIER="$CONTROL_PLANE_ROOT/scripts/asset-policy-transition-proof-vnext.mjs"
 PREFLIGHT_CREATOR="$CONTROL_PLANE_ROOT/scripts/create-production-preflight-receipt.mjs"
 PREFLIGHT_VERIFIER="$CONTROL_PLANE_ROOT/scripts/verify-production-preflight-receipt.mjs"
@@ -774,6 +833,15 @@ ROLLBACK_SUCCEEDED="0"
 FAILURE_CONTEXT=""
 DIRECT_PREPARED="0"
 DIRECT_ROLLBACK_COMPLETE="0"
+LEGACY_BASELINE_MODE="0"
+LEGACY_BASELINE_TARGET=""
+LEGACY_BASELINE_RELEASE_ID=""
+LEGACY_BASELINE_COMMIT_SHA=""
+LEGACY_BASELINE_BUILD_ID=""
+LEGACY_BASELINE_SOURCE_VERSION=""
+LEGACY_BASELINE_BUILD_OUTPUT_DIGEST=""
+LEGACY_BASELINE_ASSET_DIGEST=""
+LEGACY_BASELINE_ASSET_MANIFEST_SHA256=""
 PRODUCTION_PREFLIGHT_RECEIPT_SHA256="-"
 PRODUCTION_PREFLIGHT_RECEIPT_PATH=""
 
@@ -782,15 +850,126 @@ PRODUCTION_PREFLIGHT_RECEIPT_PATH=""
 # supplied by the product archive or by the application environment is allowed.
 direct_hook() {
   [[ -n "${DIRECT_HOOK_PATH:-}" ]] || return 0
-  node - "$DIRECT_HOOK_PATH" "${DIRECT_HOOK_SHA256:-}" <<'NODE'
+  local expected_transaction_root
+  expected_transaction_root="/data/direct-deploy/transactions/${RELEASE_ID}-${ACTUAL_SHA256:0:12}"
+  [[ "${DIRECT_TRANSACTION_ROOT:-}" == "$expected_transaction_root" ]] || return 1
+  node - "$DIRECT_HOOK_PATH" "${DIRECT_HOOK_SHA256:-}" \
+    "${DIRECT_HOOK_PM2_CONFIG_PATH:-}" "${DIRECT_HOOK_PM2_CONFIG_SHA256:-}" \
+    "$DIRECT_TRANSACTION_ROOT" "$expected_transaction_root" <<'NODE'
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const [p,sha]=process.argv.slice(2);
+const [p,sha,configPath,configSha,transactionRoot,expectedTransactionRoot]=process.argv.slice(2);
 if(!/^\/data\/direct-deploy\/bin\/V[1-9][0-9]*\.[0-9]+-[a-f0-9]{12}\/transaction-hook\.mjs$/.test(p)||!/^[a-f0-9]{64}$/.test(sha))throw Error('DIRECT_HOOK_IDENTITY_INVALID');
 for(let d=path.dirname(p);;d=path.dirname(d)){const s=fs.lstatSync(d);if(!s.isDirectory()||s.isSymbolicLink()||fs.realpathSync(d)!==d||s.uid!==0||s.gid!==0||(s.mode&0o022))throw Error('DIRECT_HOOK_DIRECTORY_UNSAFE');if(d==='/')break;}
 const s=fs.lstatSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.uid!==0||s.gid!==0||(s.mode&0o077)||crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')!==sha)throw Error('DIRECT_HOOK_CHANGED');
+if(path.dirname(configPath)!==path.dirname(p)||path.basename(configPath)!=='ecosystem.config.cjs'||!/^[a-f0-9]{64}$/.test(configSha))throw Error('DIRECT_HOOK_PM2_CONFIG_IDENTITY_INVALID');
+const c=fs.lstatSync(configPath);if(!c.isFile()||c.isSymbolicLink()||c.nlink!==1||c.uid!==0||c.gid!==0||(c.mode&0o077)||crypto.createHash('sha256').update(fs.readFileSync(configPath)).digest('hex')!==configSha)throw Error('DIRECT_HOOK_PM2_CONFIG_CHANGED');
+if(transactionRoot!==expectedTransactionRoot||!/^\/data\/direct-deploy\/transactions\/[A-Za-z0-9][A-Za-z0-9._-]{7,79}-[a-f0-9]{12}$/.test(transactionRoot))throw Error('DIRECT_TRANSACTION_ROOT_INVALID');
+const transactionParent=path.dirname(transactionRoot),parentStat=fs.lstatSync(transactionParent);if(!parentStat.isDirectory()||parentStat.isSymbolicLink()||fs.realpathSync(transactionParent)!==transactionParent||parentStat.uid!==0||parentStat.gid!==0||(parentStat.mode&0o022))throw Error('DIRECT_TRANSACTION_PARENT_UNSAFE');
 NODE
   [[ "$?" -eq 0 ]] || return 1
-  node "$DIRECT_HOOK_PATH" "$1" "${DIRECT_TRANSACTION_ROOT:?}"
+  [[ "$1" == "validate-only" ]] && return 0
+  DIRECT_HOOK_SERVICE="$SERVICE" DIRECT_HOOK_RELEASE_ROOT="$RELEASE_ROOT" \
+    DIRECT_HOOK_PM2_CONFIG_PATH="$DIRECT_HOOK_PM2_CONFIG_PATH" \
+    DIRECT_HOOK_PM2_CONFIG_SHA256="$DIRECT_HOOK_PM2_CONFIG_SHA256" \
+    node "$DIRECT_HOOK_PATH" "$1" "${DIRECT_TRANSACTION_ROOT:?}"
+}
+
+validate_direct_hook_configuration() {
+  if [[ "$SERVICE" == "web" ]]; then
+    for required_name in DIRECT_HOOK_PATH DIRECT_HOOK_SHA256 DIRECT_HOOK_PM2_CONFIG_PATH DIRECT_HOOK_PM2_CONFIG_SHA256 DIRECT_TRANSACTION_ROOT; do
+      [[ -n "${!required_name:-}" ]] || die "Web deployment requires the pinned media-worker transaction hook: $required_name"
+    done
+    direct_hook validate-only || die "media-worker transaction hook/configuration identity is invalid"
+  elif [[ -n "${DIRECT_HOOK_PATH:-}${DIRECT_HOOK_SHA256:-}${DIRECT_HOOK_PM2_CONFIG_PATH:-}${DIRECT_HOOK_PM2_CONFIG_SHA256:-}${DIRECT_TRANSACTION_ROOT:-}" ]]; then
+    die "media-worker transaction hook is valid only for Web deployment"
+  fi
+}
+
+load_legacy_baseline_receipt() {
+  [[ -n "${LEGACY_BASELINE_RECEIPT_PATH:-}" && -n "${LEGACY_BASELINE_RECEIPT_SHA256:-}" ]] || \
+    die "current rollback baseline uses the legacy readiness contract; an exact normalization receipt is required"
+  [[ "$LEGACY_BASELINE_RECEIPT_PATH" =~ ^/data/direct-deploy/incoming/run-[0-9]+/control/receipts/legacy-runtime-baseline-web-[A-Za-z0-9._-]{8,128}\.json$ ]] || \
+    die "legacy baseline receipt path is outside the trusted incoming control plane"
+  require_trusted_controller_file "$LEGACY_BASELINE_RECEIPT_PATH" "legacy runtime baseline receipt"
+  [[ "${LEGACY_BASELINE_RECEIPT_SHA256,,}" =~ ^[a-f0-9]{64}$ ]] || die "legacy baseline receipt SHA-256 is invalid"
+  [[ "$(sha256sum "$LEGACY_BASELINE_RECEIPT_PATH" | awk '{print $1}')" == "${LEGACY_BASELINE_RECEIPT_SHA256,,}" ]] || \
+    die "legacy baseline receipt SHA-256 mismatch"
+  local metadata version_response
+  metadata="$AUDIT_DIR/legacy-baseline-metadata.tsv"
+  version_response="$AUDIT_DIR/legacy-baseline-version.json"
+  node - "$LEGACY_BASELINE_RECEIPT_PATH" "$CURRENT_LINK" "$ASSET_CURRENT_LINK" "$SERVICE" \
+    "$DIRECT_HOOK_PM2_CONFIG_PATH" "$DIRECT_HOOK_PM2_CONFIG_SHA256" >"$metadata" <<'NODE'
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),cp=require('node:child_process');
+const [receiptPath,currentLink,assetLink,service,runtimeConfig,runtimeConfigSha]=process.argv.slice(2),hex=/^[a-f0-9]{64}$/;
+const sha=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const r=JSON.parse(fs.readFileSync(receiptPath,'utf8'));
+if(r.schemaVersion!==1||r.kind!=='legacy-runtime-baseline'||r.projectId!=='zimeiti-caopanshou'||r.service!==service)throw Error('LEGACY_BASELINE_RECEIPT_SCHEMA_INVALID');
+if(service!=='web'||r.releaseRoot!=='/data/web'||fs.realpathSync(currentLink)!==fs.realpathSync(r.target)||fs.realpathSync(assetLink)!==fs.realpathSync(r.assetTarget))throw Error('LEGACY_BASELINE_POINTER_MISMATCH');
+for(const key of ['buildOutputDigest','assetDigest','assetManifestSha256','assetOwnershipBeforeSha256','sourceUnexpectedDigest','targetManifestSha256','artifactDigest','sourceManifestSha256','publicVersionSha256','runtimeConfigSha256','normalizationPlanId','pm2DumpSha256','sharedDataDigest'])if(!hex.test(r[key]||''))throw Error(`LEGACY_BASELINE_DIGEST_INVALID:${key}`);
+// false means the immutable asset release was already root-owned and needed no
+// ownership mutation; validate_asset_release has already rechecked it in full.
+if(r.fullInventoryValidated!==true||typeof r.assetOwnershipHardened!=='boolean'||!Number.isSafeInteger(r.sourceUnexpectedCount)||r.sourceUnexpectedCount<0
+  ||typeof r.sourceTarget!=='string'||!r.sourceTarget.startsWith('/data/web/releases/')||fs.realpathSync(r.sourceTarget)===fs.realpathSync(r.target)
+  ||r.oldVoiceState!=='stopped-recoverable'||r.legacyReadinessPath!=='/api/version'||r.transactionRoot!=='/data/direct-deploy/transactions'||!Number.isFinite(Date.parse(r.normalizedAt)))throw Error('LEGACY_BASELINE_STATE_INVALID');
+const transactionStats=fs.lstatSync(r.transactionRoot);if(!transactionStats.isDirectory()||transactionStats.isSymbolicLink()||fs.realpathSync(r.transactionRoot)!==r.transactionRoot||transactionStats.uid!==0||transactionStats.gid!==0||(transactionStats.mode&0o022))throw Error('LEGACY_BASELINE_TRANSACTION_ROOT_UNSAFE');
+if(runtimeConfigSha!==r.runtimeConfigSha256||sha(runtimeConfig)!==runtimeConfigSha)throw Error('LEGACY_BASELINE_RUNTIME_CONFIG_MISMATCH');
+const manifestPath=path.join(r.target,'release-manifest.json'),manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
+if(sha(manifestPath)!==r.targetManifestSha256||manifest.schemaVersion!==2||manifest.service!==service||manifest.releaseId!==r.releaseId||manifest.commitSha!==r.commitSha||manifest.buildId!==r.buildId||manifest.assetDigest!==r.assetDigest||manifest.assetManifestSha256!==r.assetManifestSha256||manifest.artifactDigest!==r.artifactDigest||manifest.sourceManifestSha256!==r.sourceManifestSha256||!Array.isArray(manifest.files)||!manifest.files.length)throw Error('LEGACY_BASELINE_MANIFEST_BINDING_INVALID');
+const versionPath=path.join(r.target,'public/version.json'),version=JSON.parse(fs.readFileSync(versionPath,'utf8'));
+if(sha(versionPath)!==r.publicVersionSha256||version.sourceVersion!==r.sourceVersion)throw Error('LEGACY_BASELINE_SOURCE_VERSION_INVALID');
+const legacyDigest=crypto.createHash('sha256').update(`zimeiti-legacy-build-output.v1\0${r.releaseId}\0${r.commitSha}\0${r.buildId}\0${r.sourceVersion}\0${r.targetManifestSha256}\0${r.artifactDigest}`).digest('hex');
+if(legacyDigest!==r.buildOutputDigest)throw Error('LEGACY_BASELINE_BUILD_DIGEST_INVALID');
+const embedded=path.join(r.target,'.release/public-assets.v1.json'),server=path.join(r.assetTarget,'.release/public-assets.v1.json');
+if(sha(embedded)!==r.assetManifestSha256||sha(server)!==r.assetManifestSha256||!fs.readFileSync(embedded).equals(fs.readFileSync(server)))throw Error('LEGACY_BASELINE_ASSET_BINDING_INVALID');
+const status=e=>e?.pm2_env?.status??e?.status??'',value=(e,k)=>e?.pm2_env?.[k]??e?.pm2_env?.env?.[k]??e?.env?.[k]??e?.[k];
+function verifyProcesses(processes,label){
+ const managed=processes.filter(e=>e?.name==='agent-hub-web'),workers=processes.filter(e=>e?.name==='agent-hub-media-worker').sort((a,b)=>Number(value(a,'PORT'))-Number(value(b,'PORT')));
+ if(managed.length!==1||workers.length!==2)throw Error(`LEGACY_BASELINE_${label}_COUNT_INVALID`);
+ for(const [index,e] of [managed[0],...workers].entries()){
+  const cwd=e?.pm2_env?.pm_cwd??e?.pm_cwd,execPath=e?.pm2_env?.pm_exec_path??e?.pm_exec_path;
+  if(status(e)!=='online'||fs.realpathSync(cwd)!==fs.realpathSync(r.target)||fs.realpathSync(execPath)!==path.join(fs.realpathSync(r.target),'server.js')||Number(value(e,'PORT'))!==(index===0?5000:5101+index))throw Error(`LEGACY_BASELINE_${label}_TOPOLOGY_INVALID`);
+  for(const [k,v] of [['RELEASE_ID',r.releaseId],['DEPLOY_COMMIT_SHA',r.commitSha],['EXPECTED_BUILD_ID',r.buildId],['RELEASE_SOURCE_VERSION',r.sourceVersion],['RELEASE_BUILD_OUTPUT_DIGEST',r.buildOutputDigest],['ASSET_DIGEST',r.assetDigest],['ASSET_MANIFEST_SHA256',r.assetManifestSha256]])if(value(e,k)!==v)throw Error(`LEGACY_BASELINE_${label}_IDENTITY_INVALID:${k}`);
+  if(index>0&&(value(e,'MEDIA_QUEUE_WORKER_PROCESS')!=='1'||value(e,'DIGITAL_VIDEO_QUEUE_WORKER')!=='1'||value(e,'DIGITAL_HUMAN_LONG_WORKER')!=='1'||(e?.pm2_env?.exec_mode??e?.exec_mode)!=='fork_mode'))throw Error(`LEGACY_BASELINE_${label}_WORKER_ROLE_INVALID`);
+ }
+ const oldVoice=processes.find(e=>e?.name==='voice-platform');if(oldVoice&&status(oldVoice)!=='stopped')throw Error(`LEGACY_VOICE_${label}_NOT_STOPPED`);
+}
+const processes=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'}));verifyProcesses(processes,'LIVE');
+const dumpPath='/root/.pm2/dump.pm2',dumpStats=fs.lstatSync(dumpPath);if(!dumpStats.isFile()||dumpStats.isSymbolicLink()||dumpStats.nlink!==1||dumpStats.uid!==0||dumpStats.gid!==0||(dumpStats.mode&0o077)||sha(dumpPath)!==r.pm2DumpSha256)throw Error('LEGACY_BASELINE_PM2_DUMP_UNTRUSTED');
+verifyProcesses(JSON.parse(fs.readFileSync(dumpPath,'utf8')),'DUMP');
+process.stdout.write([r.target,r.releaseId,r.commitSha,r.buildId,r.sourceVersion,r.buildOutputDigest,r.assetDigest,r.assetManifestSha256].join('\t')+'\n');
+NODE
+  IFS=$'\t' read -r LEGACY_BASELINE_TARGET LEGACY_BASELINE_RELEASE_ID LEGACY_BASELINE_COMMIT_SHA \
+    LEGACY_BASELINE_BUILD_ID LEGACY_BASELINE_SOURCE_VERSION LEGACY_BASELINE_BUILD_OUTPUT_DIGEST \
+    LEGACY_BASELINE_ASSET_DIGEST LEGACY_BASELINE_ASSET_MANIFEST_SHA256 <"$metadata"
+  [[ -n "$LEGACY_BASELINE_TARGET" ]] || die "legacy baseline receipt metadata is empty"
+  validate_payload_inventory "$LEGACY_BASELINE_TARGET" sealed
+  curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+    "http://127.0.0.1:$LIVE_PORT/api/version" >"$version_response" || die "legacy baseline version endpoint is unavailable"
+  node - "$version_response" "$LEGACY_BASELINE_RELEASE_ID" "$LEGACY_BASELINE_COMMIT_SHA" \
+    "$LEGACY_BASELINE_BUILD_ID" "$LEGACY_BASELINE_SOURCE_VERSION" <<'NODE'
+const fs=require('node:fs');const [p,releaseId,commitSha,buildId,sourceVersion]=process.argv.slice(2),v=JSON.parse(fs.readFileSync(p,'utf8'));
+if(v.releaseId!==releaseId||v.deployCommitSha!==commitSha||v.buildId!==buildId||v.sourceVersion!==sourceVersion)throw Error('LEGACY_BASELINE_LIVE_VERSION_MISMATCH');
+NODE
+  LEGACY_BASELINE_MODE="1"
+}
+
+validate_current_rollback_baseline() {
+  [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]] || return 0
+  local current_target baseline_contract
+  current_target="$(readlink -f -- "$CURRENT_LINK")" || die "service current pointer is broken"
+  baseline_contract="$(node - "$current_target/release-manifest.json" "$SERVICE" <<'NODE'
+const fs=require('node:fs');const [p,service]=process.argv.slice(2),m=JSON.parse(fs.readFileSync(p,'utf8'));
+if(m.service!==service||!Array.isArray(m.files)||!m.files.length)throw Error('CURRENT_BASELINE_FULL_INVENTORY_REQUIRED');
+const full=typeof m.sourceVersion==='string'&&/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(m.sourceVersion)&&/^[a-f0-9]{64}$/.test(m.buildOutputDigest||'');
+process.stdout.write(full?'vnext':'legacy');
+NODE
+)" || die "current rollback baseline manifest is invalid"
+  validate_payload_inventory "$current_target" sealed
+  if [[ "$baseline_contract" == "legacy" ]]; then
+    load_legacy_baseline_receipt
+  elif [[ -n "${LEGACY_BASELINE_RECEIPT_PATH:-}${LEGACY_BASELINE_RECEIPT_SHA256:-}" ]]; then
+    die "legacy baseline receipt was supplied for a native vNext rollback baseline"
+  fi
 }
 
 candidate_cgroup_empty() {
@@ -828,7 +1007,7 @@ candidate_unit_stopped() {
 
 wait_candidate_unit_stopped() {
   local attempt
-  for ((attempt = 1; attempt <= 25; attempt += 1)); do
+  for ((attempt = 1; attempt <= 50; attempt += 1)); do
     candidate_unit_stopped && return 0
     sleep 0.2
   done
@@ -993,7 +1172,11 @@ final_cleanup() {
     echo "CLEANUP BLOCKED: candidate unit remains controlled; staging is retained for safe recovery: $candidate_unit" >&2
   fi
   if [[ "$DIRECT_PREPARED" == "1" && "$DEPLOY_COMPLETE" != "1" && "$DIRECT_ROLLBACK_COMPLETE" != "1" ]]; then
-    if direct_hook rollback-before && direct_hook rollback-after; then
+    if [[ ! -f "${DIRECT_TRANSACTION_ROOT:-}/media-worker-state.json" ]]; then
+      # prepare validates the current workers before it creates the state file.
+      # No state file therefore means it failed before any worker mutation.
+      DIRECT_ROLLBACK_COMPLETE="1"
+    elif direct_hook rollback-before && direct_hook rollback-after && direct_hook rollback-persisted; then
       DIRECT_ROLLBACK_COMPLETE="1"
     else
       FAILURE_CONTEXT="${FAILURE_CONTEXT};direct-rollback=unconfirmed"
@@ -1040,6 +1223,13 @@ const normalizedNames = new Set();
 for (const line of verbose) {
   const type = line[0];
   if (type !== "-" && type !== "d") throw new Error(`archive contains a forbidden non-regular entry type: ${type || "unknown"}`);
+  const permissions = line.slice(0, 10);
+  if (!/^[d-][r-][w-][x-][r-][w-][x-][r-][w-][x-]$/u.test(permissions)) {
+    throw new Error(`archive contains special or malformed permission bits: ${permissions}`);
+  }
+  if (permissions[5] === "w" || permissions[8] === "w") {
+    throw new Error(`archive contains a group/other-writable entry: ${permissions}`);
+  }
 }
 for (const rawName of names) {
   if (/[\\\u0000-\u001f\u007f]/u.test(rawName)) throw new Error("archive path contains a control character or escape");
@@ -1153,15 +1343,34 @@ metadata_value() {
 
 validate_payload_inventory() {
   local payload="$1"
-  node - "$payload" <<'NODE'
+  local mode_contract="${2:-manifest}"
+  [[ "$mode_contract" == "manifest" || "$mode_contract" == "sealed" ]] || \
+    die "payload inventory mode contract must be manifest or sealed"
+  node - "$payload" "$mode_contract" <<'NODE'
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const root = fs.realpathSync(process.argv[2]);
+const modeContract = process.argv[3];
+if (!new Set(["manifest", "sealed"]).has(modeContract)) throw new Error("payload inventory mode contract is invalid");
 const manifestPath = path.join(root, "release-manifest.json");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const expected = Array.isArray(manifest.files) ? manifest.files : null;
 if (!expected) throw new Error("release manifest files must be an array");
+const legacyFileInventory = manifest.schemaVersion === 2
+  && manifest.sourceVersion === undefined
+  && manifest.buildOutputDigest === undefined
+  && expected.every((item) => item && !Object.hasOwn(item, "kind") && !Object.hasOwn(item, "mode"));
+if (legacyFileInventory) {
+  const rootStats = fs.lstatSync(root);
+  const parent = path.dirname(root);
+  const parentStats = fs.lstatSync(parent);
+  if (!rootStats.isDirectory() || rootStats.isSymbolicLink() || (rootStats.mode & 0o222) !== 0
+    || !parentStats.isDirectory() || parentStats.isSymbolicLink() || fs.realpathSync(parent) !== parent
+    || parentStats.uid !== 0 || parentStats.gid !== 0 || (parentStats.mode & 0o022) !== 0) {
+    throw new Error("legacy rollback root is not immutable behind a root-controlled parent");
+  }
+}
 const hex64 = /^[0-9a-f]{64}$/u;
 const sensitiveDataExtensions = new Set(["", ".bin", ".conf", ".config", ".csv", ".dat", ".ini", ".json", ".properties", ".txt", ".xml", ".yaml", ".yml"]);
 const privateKeyExtensions = new Set([".key", ".keystore", ".p12", ".pfx"]);
@@ -1195,7 +1404,15 @@ function sensitiveReason(relativePath, kind = "file") {
   if (isKnownNonSecretDependencySchema(relativePath)) return null;
   const fileName = parts.at(-1).toLowerCase();
   const extension = path.posix.extname(fileName);
-  if (forbiddenArtifactExtensions.has(extension)) return "key, certificate, or source-map file";
+  // The signed legacy rollback baseline is a byte-for-byte normalization of
+  // the already-running pre-vNext release. It may contain dependency source
+  // maps that were already live before this deployer existed. Grandfather
+  // only that legacy inventory so a safe rollback remains possible; every
+  // newly packaged vNext candidate is still rejected when it contains .map.
+  if (forbiddenArtifactExtensions.has(extension)) {
+    if (legacyFileInventory && extension === ".map") return null;
+    return "key, certificate, or source-map file";
+  }
   if (privateKeyExtensions.has(extension)) return "private-key container";
   if (["id_dsa", "id_ecdsa", "id_ed25519", "id_rsa"].includes(fileName)) return "SSH private key";
   if (sensitiveDataExtensions.has(extension)) {
@@ -1239,6 +1456,10 @@ function containsStructurallyValidPrivateKeyPem(body) {
 function assertSafeContent(filePath, relativePath) {
   const body = fs.readFileSync(filePath);
   if (containsStructurallyValidPrivateKeyPem(body)) {
+    const normalizedPath = relativePath.toLowerCase();
+    const dependencyDocumentation = normalizedPath.split("/").includes("node_modules")
+      && new Set([".md", ".markdown"]).has(path.posix.extname(normalizedPath));
+    if (legacyFileInventory && dependencyDocumentation) return;
     throw new Error(`extracted payload contains forbidden private-key PEM content: ${relativePath}`);
   }
 }
@@ -1275,13 +1496,21 @@ function walk(directory) {
     assertNotSensitive(relativePath, "extracted payload", stats.isDirectory() ? "directory" : "file");
     if (stats.isSymbolicLink()) throw new Error(`extracted payload contains a symlink: ${relativePath}`);
     if (stats.isDirectory()) {
-      actual.push({ path: relativePath, kind: "directory", mode: stats.mode & 0o777, bytes: 0, sha256: null });
+      if (legacyFileInventory && (stats.mode & 0o222) !== 0) {
+        throw new Error(`legacy rollback directory metadata is unsafe: ${relativePath}`);
+      }
+      if (!legacyFileInventory) actual.push({ path: relativePath, kind: "directory", mode: stats.mode & 0o777, bytes: 0, sha256: null });
       walk(filePath);
     }
     else if (stats.isFile()) {
       assertSafeContent(filePath, relativePath);
       if (relativePath !== "release-manifest.json") {
-        actual.push({ path: relativePath, kind: "file", mode: stats.mode & 0o777, bytes: stats.size, sha256: sha256File(filePath) });
+        if (legacyFileInventory && (stats.mode & 0o222) !== 0) {
+          throw new Error(`legacy rollback file metadata is unsafe: ${relativePath}`);
+        }
+        actual.push(legacyFileInventory
+          ? { path: relativePath, bytes: stats.size, sha256: sha256File(filePath) }
+          : { path: relativePath, kind: "file", mode: stats.mode & 0o777, bytes: stats.size, sha256: sha256File(filePath) });
       }
     }
     else throw new Error(`extracted payload contains a non-regular entry: ${relativePath}`);
@@ -1302,14 +1531,15 @@ let totalBytes = 0;
 let expectedFileCount = 0;
 for (const item of expected) {
   if (!validateRelative(item?.path)) throw new Error(`unsafe manifest inventory path: ${String(item?.path)}`);
-  if (!new Set(["file", "directory"]).has(item.kind)) throw new Error(`invalid inventory kind: ${item.path}`);
-  assertNotSensitive(item.path, "manifest inventory", item.kind);
+  if (!legacyFileInventory && !new Set(["file", "directory"]).has(item.kind)) throw new Error(`invalid inventory kind: ${item.path}`);
+  if (legacyFileInventory) assertNotSensitive(item.path, "manifest inventory", "file");
+  else assertNotSensitive(item.path, "manifest inventory", item.kind);
   if (seen.has(item.path)) throw new Error(`duplicate manifest inventory path: ${item.path}`);
   if (previousPath && previousPath.localeCompare(item.path, "en") >= 0) throw new Error("manifest inventory is not strictly sorted");
-  if (!Number.isInteger(item.mode) || item.mode < 0 || item.mode > 0o777 || (item.mode & 0o022) !== 0) {
+  if (!legacyFileInventory && (!Number.isInteger(item.mode) || item.mode < 0 || item.mode > 0o777 || (item.mode & 0o022) !== 0)) {
     throw new Error(`invalid or writable inventory mode: ${item.path}`);
   }
-  if (item.kind === "directory") {
+  if (!legacyFileInventory && item.kind === "directory") {
     if (item.bytes !== 0 || item.sha256 !== null) throw new Error(`invalid directory inventory metadata: ${item.path}`);
   } else {
     if (!Number.isSafeInteger(item.bytes) || item.bytes < 0 || !hex64.test(item.sha256)) {
@@ -1321,23 +1551,34 @@ for (const item of expected) {
   seen.add(item.path);
   previousPath = item.path;
 }
-if (actual.length !== expected.length || actual.some((value, index) => value.path !== expected[index].path || value.kind !== expected[index].kind)) {
+if (actual.length !== expected.length || actual.some((value, index) => value.path !== expected[index].path
+  || (!legacyFileInventory && value.kind !== expected[index].kind))) {
   throw new Error("extracted path/type set does not exactly match the signed inventory");
 }
-for (let index = 0; index < expected.length; index += 1) {
-  const item = expected[index];
-  const observed = actual[index];
-  if (observed.mode !== item.mode) throw new Error(`inventory mode mismatch: ${item.path}`);
-  if (item.kind === "file" && (observed.bytes !== item.bytes || observed.sha256 !== item.sha256)) {
+const actualByPath = new Map(actual.map((item) => [item.path, item]));
+for (const item of expected) {
+  const observed = actualByPath.get(item.path);
+  if (!observed) throw new Error(`inventory path missing: ${item.path}`);
+  if (!legacyFileInventory) {
+    const expectedMode = modeContract === "sealed"
+      ? (item.kind === "directory" ? 0o555 : ((item.mode & 0o111) !== 0 ? 0o555 : 0o444))
+      : item.mode;
+    if (observed.mode !== expectedMode) throw new Error(`inventory mode mismatch (${modeContract}): ${item.path}`);
+  }
+  if ((legacyFileInventory || item.kind === "file") && (observed.bytes !== item.bytes || observed.sha256 !== item.sha256)) {
     throw new Error(`inventory content mismatch: ${item.path}`);
   }
 }
-const artifactDigest = crypto.createHash("sha256").update(canonicalJson(expected)).digest("hex");
+const artifactDigest = crypto.createHash("sha256")
+  .update(legacyFileInventory
+    ? expected.map((file) => `${file.sha256}  ${file.path}\n`).join("")
+    : canonicalJson(expected))
+  .digest("hex");
 if (manifest.artifactDigest !== artifactDigest) throw new Error("artifact digest mismatch");
 if (manifest.fileCount !== expectedFileCount) throw new Error("artifact fileCount mismatch");
 if (manifest.totalBytes !== totalBytes) throw new Error("artifact totalBytes mismatch");
 for (const required of ["server.js", ".release/ecosystem.config.cjs"]) {
-  if (!seen.has(required) || expected.find((entry) => entry.path === required)?.kind !== "file") {
+  if (!seen.has(required) || (!legacyFileInventory && expected.find((entry) => entry.path === required)?.kind !== "file")) {
     throw new Error(`artifact inventory omits required runtime file: ${required}`);
   }
 }
@@ -1878,8 +2119,9 @@ validate_asset_forward_compatibility() {
   if [[ -n "$ASSET_POLICY_TRANSITION_RECEIPT" ]]; then
     require_trusted_controller_file "$ASSET_POLICY_TRANSITION_RECEIPT" "asset policy transition receipt"
     receipt_real="$(readlink -f -- "$ASSET_POLICY_TRANSITION_RECEIPT")"
-    [[ "$receipt_real" == "$CONTROL_PLANE_ROOT/receipts/"* ]] || \
-      die "asset policy transition receipt must stay below the trusted control receipts directory"
+    [[ "$receipt_real" =~ ^/data/direct-deploy/incoming/run-[0-9]+/control/receipts/[A-Za-z0-9._-]+\.json$ && \
+       "$receipt_real" != "$CONTROL_PLANE_ROOT/"* ]] || \
+      die "asset policy transition receipt must be external trusted incoming evidence"
     actual_receipt_sha="$(sha256sum "$receipt_real" | awk '{print $1}')"
     [[ "$actual_receipt_sha" == "${ASSET_POLICY_TRANSITION_SHA256,,}" ]] || \
       die "asset policy transition receipt SHA-256 mismatch"
@@ -1953,6 +2195,22 @@ BUILD_ID="$(metadata_value buildId)"
 SOURCE_VERSION="$(metadata_value sourceVersion)"
 BUILD_OUTPUT_DIGEST="$(metadata_value buildOutputDigest)"
 SOURCE_MANIFEST_SHA256="$(metadata_value sourceManifestSha256)"
+# The external release-ready JSON is authenticated by its independently supplied
+# finalized-run SHA. It is never trusted because an incoming archive names it.
+RELEASE_VALIDATION_BUNDLE="${RELEASE_VALIDATION_BUNDLE:-}"
+RELEASE_VALIDATION_BUNDLE_SHA256="${RELEASE_VALIDATION_BUNDLE_SHA256:-}"
+[[ "$RELEASE_VALIDATION_BUNDLE" == /* && "$RELEASE_VALIDATION_BUNDLE" != "$CONTROL_PLANE_ROOT/"* && \
+   "$RELEASE_VALIDATION_BUNDLE_SHA256" =~ ^[a-f0-9]{64}$ ]] || die "external finalized release validation identity required"
+require_trusted_controller_file "$RELEASE_VALIDATION_BUNDLE" "finalized release validation bundle"
+[[ "$(sha256sum -- "$CONTROL_PLANE_TRUSTED_VERIFIER" | awk 'NR == 1 { print $1 }')" == "$CONTROL_PLANE_TRUSTED_VERIFIER_SHA256" && \
+   "$(sha256sum -- "$CONTROL_PLANE_EXPECTED_DESCRIPTOR" | awk 'NR == 1 { print $1 }')" == "$CONTROL_PLANE_EXPECTED_DESCRIPTOR_SHA256" ]] || \
+  die "external control-plane trust changed during artifact audit"
+"$DEPLOY_NODE_BIN" "$CONTROL_PLANE_TRUSTED_VERIFIER" verify-deployment-binding \
+  --expected-descriptor "$CONTROL_PLANE_EXPECTED_DESCRIPTOR" \
+  --release-validation-bundle "$RELEASE_VALIDATION_BUNDLE" --release-validation-sha256 "$RELEASE_VALIDATION_BUNDLE_SHA256" \
+  --service "$SERVICE" --artifact-sha256 "${ACTUAL_SHA256,,}" --release-id "$RELEASE_ID" \
+  --commit "$COMMIT_SHA" --source-version "$SOURCE_VERSION" --build-id "$BUILD_ID" \
+  --build-output-digest "$BUILD_OUTPUT_DIGEST" || die "business artifact/control-plane release binding failed"
 ASSET_DIGEST=""
 ASSET_VERSION=""
 ASSET_MANIFEST_SHA256=""
@@ -1999,6 +2257,8 @@ fi
 
 [[ ! -e "$CANDIDATE" && ! -L "$CANDIDATE" ]] || die "immutable release already exists: $CANDIDATE"
 validate_predeploy_runtime_alignment
+validate_direct_hook_configuration
+validate_current_rollback_baseline
 
 echo "MODE=$MODE"
 echo "RELEASE_MODE=$RELEASE_MODE"
@@ -2118,6 +2378,14 @@ for managed_root in "$RELEASES_ROOT" "$STAGING_ROOT"; do
   [[ -r "$managed_root" && -w "$managed_root" && -x "$managed_root" ]] || \
     die "managed release path is not readable/writable/traversable by the deploy service user: $managed_root"
 done
+# The locked candidate account needs search permission on the shared staging
+# parent to reach its one exact, unguessable run directory.  Give only that
+# dedicated primary group execute-only traversal: it cannot list or write the
+# staging root, and no unrelated local account gains access.
+chown root:"$CANDIDATE_GID" -- "$STAGING_ROOT"
+chmod 0710 -- "$STAGING_ROOT"
+[[ "$(stat -c '%u:%g:%a' -- "$STAGING_ROOT")" == "0:$CANDIDATE_GID:710" ]] || \
+  die "staging root must be root-owned with execute-only candidate-group traversal"
 [[ "$(stat -c '%d' -- "$RELEASES_ROOT")" == "$(stat -c '%d' -- "$STAGING_ROOT")" ]] || \
   die "staging and releases roots are on different filesystems; atomic candidate promotion is impossible"
 
@@ -2127,7 +2395,7 @@ mkdir --mode=0750 -- "$STAGING_DIR"
 PAYLOAD_DIR="$STAGING_DIR/payload"
 mkdir --mode=0750 -- "$PAYLOAD_DIR"
 
-tar "${TAR_COMPRESSION[@]}" --extract --restrict --no-same-owner --no-same-permissions \
+tar "${TAR_COMPRESSION[@]}" --extract --restrict --no-same-owner --same-permissions \
   --delay-directory-restore --file "$ARTIFACT" --directory "$PAYLOAD_DIR"
 POST_EXTRACT_ARTIFACT_SHA256="$(sha256sum "$ARTIFACT" | awk '{print $1}')"
 [[ "${POST_EXTRACT_ARTIFACT_SHA256,,}" == "${EXPECTED_SHA256,,}" ]] || fail "artifact changed during extraction"
@@ -2264,7 +2532,7 @@ chmod 0755 -- "$PAYLOAD_DIR"
 find "$PAYLOAD_DIR" -xdev -type d -exec chmod go-w,o+rx -- {} +
 find "$PAYLOAD_DIR" -xdev -type f -exec chmod go-w,o+r -- {} +
 
-NODE_BIN="$(readlink -f -- "$(command -v node)")"
+NODE_BIN="$CANDIDATE_NODE_BIN"
 ENV_BIN="$(readlink -f -- "$(command -v env)")"
 for trusted_binary in "$NODE_BIN" "$ENV_BIN"; do
   require_trusted_root_executable "$trusted_binary" "candidate launcher binary"
@@ -2347,14 +2615,27 @@ observed_candidate_cgroup="$(systemctl show --property=ControlGroup --value "$CA
   fail "candidate unit entered an unexpected control group"
 
 candidate_pid=""
+candidate_process_uid=""
+candidate_active_state=""
 for ((candidate_start_attempt = 1; candidate_start_attempt <= 40; candidate_start_attempt += 1)); do
-  candidate_pid="$(systemctl show --property=MainPID --value "$CANDIDATE_UNIT" 2>/dev/null || true)"
-  if [[ "$candidate_pid" =~ ^[1-9][0-9]*$ && -r "/proc/$candidate_pid/environ" ]]; then break; fi
-  systemctl is-failed --quiet "$CANDIDATE_UNIT" 2>/dev/null && break
+  observed_candidate_pid="$(systemctl show --property=MainPID --value "$CANDIDATE_UNIT" 2>/dev/null || true)"
+  candidate_active_state="$(systemctl show --property=ActiveState --value "$CANDIDATE_UNIT" 2>/dev/null || true)"
+  if [[ "$observed_candidate_pid" =~ ^[1-9][0-9]*$ && -r "/proc/$observed_candidate_pid/environ" && \
+        -r "/proc/$observed_candidate_pid/status" ]]; then
+    candidate_process_uid="$(awk '$1 == "Uid:" { print $2; exit }' "/proc/$observed_candidate_pid/status" 2>/dev/null || true)"
+    if [[ "$candidate_active_state" == "active" && "$candidate_process_uid" == "$CANDIDATE_UID" ]]; then
+      candidate_pid="$observed_candidate_pid"
+      break
+    fi
+  fi
+  [[ "$candidate_active_state" == "failed" || "$candidate_active_state" == "inactive" ]] && break
   sleep 0.25
 done
-[[ "$candidate_pid" =~ ^[1-9][0-9]*$ && -r "/proc/$candidate_pid/environ" ]] || \
-  fail "candidate sandbox exited before its process identity could be verified; see $CANDIDATE_LOG"
+[[ "$candidate_pid" =~ ^[1-9][0-9]*$ && "$candidate_active_state" == "active" && \
+   "$candidate_process_uid" == "$CANDIDATE_UID" && -r "/proc/$candidate_pid/environ" ]] || \
+  fail "candidate sandbox did not reach a stable dedicated non-root process identity; see $CANDIDATE_LOG"
+[[ "$(systemctl show --property=MainPID --value "$CANDIDATE_UNIT" 2>/dev/null || true)" == "$candidate_pid" ]] || \
+  fail "candidate sandbox main PID changed during process identity verification"
 [[ "$(stat -c '%u' -- "/proc/$candidate_pid")" == "$CANDIDATE_UID" ]] || \
   fail "candidate sandbox process is not running as the dedicated non-root user"
 node - "/proc/$candidate_pid/environ" "/proc/$candidate_pid/status" "$PAYLOAD_DIR" "$SERVICE" "$CANDIDATE_UID" "$CANDIDATE_GID" <<'NODE'
@@ -2396,6 +2677,8 @@ if (field("Gid").split(/\s+/u).some((value) => value !== expectedGid) || field("
 if (field("Groups").split(/\s+/u).filter(Boolean).join(" ") !== expectedGid) throw new Error("candidate process has supplementary groups");
 if (field("NoNewPrivs") !== "1") throw new Error("candidate process does not have NoNewPrivileges");
 NODE
+[[ "$(systemctl show --property=MainPID --value "$CANDIDATE_UNIT" 2>/dev/null || true)" == "$candidate_pid" ]] || \
+  fail "candidate sandbox main PID changed after environment/status verification"
 CANDIDATE_UNIT_SECURITY="$(systemctl show "$CANDIDATE_UNIT" \
   --property=User --property=PrivateNetwork --property=NoNewPrivileges --property=ProtectSystem \
   --property=ProtectHome --property=PrivateDevices --property=PrivateIPC --property=ProtectProc \
@@ -2578,9 +2861,23 @@ PREVIOUS_SOURCE_VERSION=""
 PREVIOUS_BUILD_OUTPUT_DIGEST=""
 PREVIOUS_ASSET_DIGEST=""
 PREVIOUS_ASSET_MANIFEST_SHA256=""
+PREVIOUS_BASELINE_MODE="vnext"
 if [[ -n "$PREVIOUS_TARGET" ]]; then
-  IFS=$'\t' read -r PREVIOUS_RELEASE_ID PREVIOUS_COMMIT_SHA PREVIOUS_BUILD_ID PREVIOUS_SOURCE_VERSION PREVIOUS_BUILD_OUTPUT_DIGEST PREVIOUS_ASSET_DIGEST PREVIOUS_ASSET_MANIFEST_SHA256 < <(read_release_identity "$PREVIOUS_TARGET")
-  validate_payload_inventory "$PREVIOUS_TARGET"
+  if [[ "$LEGACY_BASELINE_MODE" == "1" ]]; then
+    [[ "$(readlink -f -- "$PREVIOUS_TARGET")" == "$(readlink -f -- "$LEGACY_BASELINE_TARGET")" ]] || \
+      die "legacy baseline receipt does not describe the active rollback target"
+    PREVIOUS_BASELINE_MODE="legacy"
+    PREVIOUS_RELEASE_ID="$LEGACY_BASELINE_RELEASE_ID"
+    PREVIOUS_COMMIT_SHA="$LEGACY_BASELINE_COMMIT_SHA"
+    PREVIOUS_BUILD_ID="$LEGACY_BASELINE_BUILD_ID"
+    PREVIOUS_SOURCE_VERSION="$LEGACY_BASELINE_SOURCE_VERSION"
+    PREVIOUS_BUILD_OUTPUT_DIGEST="$LEGACY_BASELINE_BUILD_OUTPUT_DIGEST"
+    PREVIOUS_ASSET_DIGEST="$LEGACY_BASELINE_ASSET_DIGEST"
+    PREVIOUS_ASSET_MANIFEST_SHA256="$LEGACY_BASELINE_ASSET_MANIFEST_SHA256"
+  else
+    IFS=$'\t' read -r PREVIOUS_RELEASE_ID PREVIOUS_COMMIT_SHA PREVIOUS_BUILD_ID PREVIOUS_SOURCE_VERSION PREVIOUS_BUILD_OUTPUT_DIGEST PREVIOUS_ASSET_DIGEST PREVIOUS_ASSET_MANIFEST_SHA256 < <(read_release_identity "$PREVIOUS_TARGET")
+  fi
+  validate_payload_inventory "$PREVIOUS_TARGET" sealed
   if [[ "$SERVICE" == "web" ]]; then
     [[ "$PREVIOUS_ASSET_DIGEST" == "$CURRENT_ASSET_DIGEST" ]] || die "active Web release and current asset pointer are already inconsistent"
     validate_asset_manifest_binding "$PREVIOUS_TARGET/.release/public-assets.v1.json" "$CURRENT_EMBEDDED_ASSET_MANIFEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" || \
@@ -2726,6 +3023,8 @@ persist_pm2_state() {
   local expected_build_output_digest="${8:-}"
   pm2 save --force >/dev/null || return 1
   [[ -f "$PM2_DUMP_PATH" && ! -L "$PM2_DUMP_PATH" ]] || return 1
+  chown root:root -- "$PM2_DUMP_PATH" || return 1
+  chmod 0600 -- "$PM2_DUMP_PATH" || return 1
   sync -f "$PM2_DUMP_PATH" || return 1
   verify_pm2_dump_identity "$expected_target" "$expected_release" "$expected_commit" "$expected_build_id" \
     "$expected_asset_digest" "$expected_asset_manifest_sha256" "$expected_source_version" "$expected_build_output_digest"
@@ -2780,11 +3079,41 @@ verify_exact_active_composite() {
     "$expected_asset_digest" "$expected_asset_manifest_sha256" "$expected_source_version" "$expected_build_output_digest" || return 1
 }
 
+verify_legacy_active_composite() {
+  local expected_target="$1"
+  local expected_release="$2"
+  local expected_commit="$3"
+  local expected_build="$4"
+  local expected_asset_target="$5"
+  local expected_asset_digest="$6"
+  local expected_asset_manifest_sha256="$7"
+  local expected_source_version="$8"
+  local expected_build_output_digest="$9"
+  local label="${10}"
+  local response_file="$STAGING_DIR/$label-legacy-version.json"
+  link_resolves_to "$CURRENT_LINK" "$expected_target" || return 1
+  link_resolves_to "$ASSET_CURRENT_LINK" "$expected_asset_target" || return 1
+  wait_http "http://127.0.0.1:$LIVE_PORT/api/version" "$response_file" || return 1
+  node - "$response_file" "$expected_release" "$expected_commit" "$expected_build" "$expected_source_version" <<'NODE'
+const fs=require('node:fs');const [p,releaseId,commitSha,buildId,sourceVersion]=process.argv.slice(2),v=JSON.parse(fs.readFileSync(p,'utf8'));
+if(v.releaseId!==releaseId||v.deployCommitSha!==commitSha||v.buildId!==buildId||v.sourceVersion!==sourceVersion)throw Error('LEGACY_ACTIVE_VERSION_MISMATCH');
+NODE
+  verify_pm2_identity "$expected_target" "$expected_release" "$expected_commit" "$expected_build" \
+    "$expected_asset_digest" "$expected_asset_manifest_sha256" "$expected_source_version" "$expected_build_output_digest" || return 1
+}
+
 if [[ -n "$PREVIOUS_TARGET" ]]; then
-  verify_exact_active_composite "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
-    "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" \
-    "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" "predeploy" || \
-    die "rollback target code/asset/PM2/listener/readiness composite identity is not healthy before activation"
+  if [[ "$PREVIOUS_BASELINE_MODE" == "legacy" ]]; then
+    verify_legacy_active_composite "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
+      "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" \
+      "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" "predeploy" || \
+      die "legacy rollback target code/asset/PM2/listener/version identity is not healthy before activation"
+  else
+    verify_exact_active_composite "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
+      "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" \
+      "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" "predeploy" || \
+      die "rollback target code/asset/PM2/listener/readiness composite identity is not healthy before activation"
+  fi
 else
   verify_exact_first_deploy_composite "$PREVIOUS_ASSET_TARGET" || \
     die "first managed deployment requires current/previous/PM2 absence and the exact predeploy asset pointer"
@@ -2877,13 +3206,21 @@ rollback_release() {
     if ! atomic_symlink "$PREVIOUS_TARGET" "$CURRENT_LINK" "$APP_TEMP_LINK"; then
       pointer_ok=1
     fi
-    if [[ "$pointer_ok" -eq 0 ]] && validate_payload_inventory "$PREVIOUS_TARGET"; then
-      activate_pm2 "$PREVIOUS_TARGET/.release/ecosystem.config.cjs" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
+    if [[ "$pointer_ok" -eq 0 ]] && validate_payload_inventory "$PREVIOUS_TARGET" sealed; then
+      local rollback_pm2_config="$PREVIOUS_TARGET/.release/ecosystem.config.cjs"
+      if [[ "$PREVIOUS_BASELINE_MODE" == "legacy" ]]; then rollback_pm2_config="${DIRECT_HOOK_PM2_CONFIG_PATH:?}"; fi
+      activate_pm2 "$rollback_pm2_config" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
         "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" >/dev/null 2>&1
-      if ! verify_exact_active_composite "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
+      if [[ "$PREVIOUS_BASELINE_MODE" == "legacy" ]]; then
+        if ! verify_legacy_active_composite "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
+          "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" \
+          "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" "rollback"; then
+          process_ok=1
+        fi
+      elif ! verify_exact_active_composite "$PREVIOUS_TARGET" "$PREVIOUS_RELEASE_ID" "$PREVIOUS_COMMIT_SHA" "$PREVIOUS_BUILD_ID" \
         "$PREVIOUS_ASSET_TARGET" "$PREVIOUS_ASSET_DIGEST" "$PREVIOUS_ASSET_MANIFEST_SHA256" \
         "$PREVIOUS_SOURCE_VERSION" "$PREVIOUS_BUILD_OUTPUT_DIGEST" "rollback"; then
-        process_ok=1
+          process_ok=1
       fi
     else
       process_ok=1
@@ -2924,6 +3261,11 @@ rollback_release() {
       fi
     elif ! persist_pm2_state "" "" "" "" "-" "-" "" ""; then
       echo "ROLLBACK FAILED: first-deploy PM2 absence could not be persisted for reboot." >&2
+      IN_ROLLBACK="0"
+      return 1
+    fi
+    if ! direct_hook rollback-persisted; then
+      echo "ROLLBACK FAILED: restored media-worker reboot state is unconfirmed." >&2
       IN_ROLLBACK="0"
       return 1
     fi
@@ -2979,7 +3321,7 @@ else
   [[ ! -e "$CURRENT_LINK" && ! -L "$CURRENT_LINK" ]] || die "service pointer appeared before first activation"
 fi
 verify_candidate_release_seal "$CANDIDATE" || fail "candidate root-owned seal changed before activation"
-validate_payload_inventory "$CANDIDATE" || fail "sealed candidate full SHA-256 inventory changed before activation"
+validate_payload_inventory "$CANDIDATE" sealed || fail "sealed candidate full SHA-256 inventory changed before activation"
 [[ "$VALIDATED_PAYLOAD_ID" == "$(stat -c '%d:%i' -- "$CANDIDATE")" ]] || \
   fail "sealed candidate directory identity changed before activation"
 run_storage_boot_guard
@@ -3086,6 +3428,10 @@ if ! persist_pm2_state "$CANDIDATE" "$RELEASE_ID" "$COMMIT_SHA" "$BUILD_ID" \
   "${ASSET_DIGEST:--}" "${ASSET_MANIFEST_SHA256:--}" "$SOURCE_VERSION" "$BUILD_OUTPUT_DIGEST"; then
   rollback_release "PM2 reboot persistence verification failed" || true
   fail "PM2 reboot persistence verification failed"
+fi
+if ! direct_hook persisted; then
+  rollback_release "media-worker reboot persistence verification failed" || true
+  fail "media-worker reboot persistence verification failed"
 fi
 
 # SUCCESS and DEPLOY_COMPLETE form one short commit boundary. A termination

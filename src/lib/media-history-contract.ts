@@ -17,7 +17,7 @@ export type MediaHistoryStatus = "queued" | "processing" | "completed" | "failed
 export type MediaHistoryRetentionSource = "upstream" | "policy" | "none";
 
 export const MEDIA_HISTORY_FALLBACK_DAYS: Readonly<Record<MediaHistoryKind, number | null>> = {
-  image: 2,
+  image: null,
   video: null,
 };
 
@@ -56,18 +56,24 @@ export function resolveMediaHistoryRetention(input: {
   createdAt: string;
   completedAt?: string | null;
   upstreamExpiresAt?: string | null;
+  sourceExpiredAt?: string | null;
   now?: number;
 }): { expiresAt: string | null; retentionSource: MediaHistoryRetentionSource; expired: boolean } {
   if (!TERMINAL_MEDIA_STATUSES.has(input.status)) {
     return { expiresAt: null, retentionSource: "none", expired: false };
   }
 
+  if (validIsoTime(input.sourceExpiredAt)) {
+    return { expiresAt: validIsoTime(input.upstreamExpiresAt), retentionSource: "upstream", expired: true };
+  }
   const upstreamExpiry = validIsoTime(input.upstreamExpiresAt);
   if (upstreamExpiry) {
     return {
       expiresAt: upstreamExpiry,
       retentionSource: "upstream",
-      expired: Date.parse(upstreamExpiry) <= (input.now ?? Date.now()),
+      // An advertised URL deadline schedules a check; it is not evidence that
+      // the provider actually removed the source.
+      expired: Boolean(validIsoTime(input.sourceExpiredAt)),
     };
   }
 

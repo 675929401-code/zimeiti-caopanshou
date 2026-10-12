@@ -19,6 +19,7 @@ import {
   ImageRequestRejectedError,
 } from "@/lib/image-exactly-once";
 import { isConfirmedTerminalImageFailure } from "@/lib/image-workbench-attempt-guard";
+import { coverGeneratedReceipt, composeGeneratedCover, COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR } from "@/lib/cover-generated-delivery";
 // The durable wrapper must own the CAS dispatch before invoking the existing paid route.
 // eslint-disable-next-line no-restricted-imports
 import { POST as generateImage } from "@/app/api/image/generate/route";
@@ -152,6 +153,16 @@ async function renderDelivered(request: NextRequest, userId: string, row: CoverA
 }
 
 async function reconcile(request: NextRequest, userId: string, row: CoverAttemptRow) {
+  const boundImage = await imageStore.get({ userId, clientIdempotencyKey: row.client_idempotency_key, clientTraceId: row.client_trace_id });
+  const temporaryReceipt = coverGeneratedReceipt(boundImage, { userId, clientIdempotencyKey: row.client_idempotency_key });
+  if (temporaryReceipt && (COVER_ATTEMPT_ACTIVE_STATES.includes(row.state as typeof COVER_ATTEMPT_ACTIVE_STATES[number])
+    || (row.state === "failed" && [COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR].includes(row.error_code || "")))) {
+    if (row.state !== "failed") row = await settle(userId, row, "failed", { errorCode: COVER_TEMPORARY_DELIVERY_CODE });
+    if (row.state === "failed" && [COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR].includes(row.error_code || "")) {
+      return json({ success: true, completed: true, activeAttempt: null, ...temporaryReceipt, images: [],
+        message: "底图生成已完成，费用收据已保留；临时封面仅原页面可用，刷新后无法恢复" });
+    }
+  }
   if (row.state === "cancelled" || row.state === "failed") {
     return json({ success: true, ...terminalAttemptPayload(row,
       row.state === "cancelled" ? "封面任务已终止，可以继续创建新任务" : undefined) });
@@ -322,7 +333,8 @@ export async function POST(request: NextRequest) {
     const begunRoot = Array.isArray(begun.data) ? begun.data[0] : begun.data;
     const acquired = Boolean((begunRoot as Record<string, unknown> | null)?.acquired);
     const dispatched = rpcRecord(begun.data) || row;
-    if (!acquired) return dispatched.state === "cancelled" || dispatched.state === "failed"
+    if (!acquired && dispatched.state === "failed") return reconcile(request, userId, dispatched);
+    if (!acquired) return dispatched.state === "cancelled"
       ? json({ success: true, ...terminalAttemptPayload(dispatched) })
       : json({ success: true, completed: false, activeAttempt: coverAttemptProjection(dispatched),
         message: "原封面任务已提交，系统不会再次调用生图服务" }, 202);
@@ -360,11 +372,34 @@ export async function POST(request: NextRequest) {
       return json(generated, generatedResponse.status);
     }
     const latest = await exactAttempt(userId, keys);
-    if (latest && isTerminalAttempt(latest)) {
+    const temporaryTerminal = latest?.state === "failed"
+      && [COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR].includes(latest.error_code || "");
+    if (latest && isTerminalAttempt(latest) && !temporaryTerminal) {
       return json({ success: true, ...terminalAttemptPayload(latest,
         latest.state === "cancelled" ? "任务已终止；生成返回后不会继续封面排版" : undefined) });
     }
     const image = Array.isArray(generated.images) ? generated.images[0] as Record<string, unknown> | undefined : undefined;
+    const completedImage = await imageStore.get({ userId, clientIdempotencyKey: keys.clientIdempotencyKey, clientTraceId: keys.clientTraceId });
+    const receipt = coverGeneratedReceipt(completedImage, { userId, clientIdempotencyKey: keys.clientIdempotencyKey });
+    if (receipt && completedImage) {
+      let delivery: Record<string, unknown> = { ...receipt, images: [], message: "底图生成已完成；封面排版暂不可用，原费用收据已保留，请勿重复生成" };
+      let outcomeCode = COVER_TEMPORARY_COMPOSITION_ERROR;
+      try {
+        delivery = { ...await composeGeneratedCover({ userId, record: completedImage, response: generated, plan: dispatched.task.renderPlan }),
+          message: "封面已完成；仅当前页面可预览下载，请及时下载保存" };
+        outcomeCode = COVER_TEMPORARY_DELIVERY_CODE;
+      } catch { /* A composition problem does not invalidate or regenerate the completed paid image. */ }
+      try {
+        const settled = await settle(userId, dispatched, "failed", { errorCode: outcomeCode });
+        if (settled.state !== "failed" || ![COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR].includes(settled.error_code || "")) return json({ success: true, ...terminalAttemptPayload(settled) });
+      }
+      catch {
+        const acknowledged = await exactAttempt(userId, keys);
+        if (!acknowledged || acknowledged.state !== "failed" || ![COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR].includes(acknowledged.error_code || "")) return json({ success: true, completed: true,
+          ...delivery, activeAttempt: null, receiptAcknowledgementPending: true });
+      }
+      return json({ success: true, completed: true, activeAttempt: null, ...delivery });
+    }
     if (!image || typeof image.assetId !== "string") return json({ success: true, completed: false,
       activeAttempt: coverAttemptProjection(dispatched), message: "底图交付仍在核验，系统不会重复生图" }, 202);
     const rendered = await renderDelivered(request, userId, dispatched, image.assetId);

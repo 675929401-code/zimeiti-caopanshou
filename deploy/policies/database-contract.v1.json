@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "contractId": "zimeiti-caopanshou-production-database-v1",
-  "contractVersion": "20261010140000",
+  "contractVersion": "20261012014000",
   "openApiProfile": "public",
   "probeMode": "read-only-postgrest-openapi",
   "requiredProbeRole": "service_role",
@@ -53,6 +53,31 @@
           "version": "20261010140000",
           "file": "supabase/migrations/20261010140000_shared_agent_batch_cas.sql",
           "sha256": "9aaa21f3a75a063fe3c0a675f7b46a1e5f2be1f8053c4679751fa4007bc5241c"
+        },
+        {
+          "version": "20261012010000",
+          "file": "supabase/migrations/20261012010000_image_provider_delivery.sql",
+          "sha256": "21396c606c383ffe74685d4970296b4fb00434c252745a7f3f22578fc6ace2d8"
+        },
+        {
+          "version": "20261012011000",
+          "file": "supabase/migrations/20261012011000_h3_provider_delivery.sql",
+          "sha256": "f64ba0095efc497fa468998a48f3ea225a440aa1a2c547b214e596ab191a03bc"
+        },
+        {
+          "version": "20261012012000",
+          "file": "supabase/migrations/20261012012000_image_ephemeral_delivery.sql",
+          "sha256": "85f1ded41a617e67d61741082938fdeeb0074b520724795d9cd8124ebbf09593"
+        },
+        {
+          "version": "20261012013000",
+          "file": "supabase/migrations/20261012013000_image_model_validation_receipt_publication.sql",
+          "sha256": "75053bdad5e5d668f8dd3cf824e26ebbef72b4eb8f07515cfd3a4ff695ceb8f9"
+        },
+        {
+          "version": "20261012014000",
+          "file": "supabase/migrations/20261012014000_video_snapshot_dependency_execute.sql",
+          "sha256": "37ba6c09212d00649aa627426f66bdbda6fb9e3b1b0f9ed3c775d2c4304561b8"
         }
       ]
     },
@@ -157,6 +182,38 @@
           }
         ],
         "requiredConstraints": []
+      },
+      {
+        "relation": "public.autodl_h3_jobs",
+        "requiredColumns": [],
+        "requiredConstraints": [
+          {
+            "name": "autodl_h3_jobs_success_asset_check",
+            "validated": true,
+            "definitionTokens": [
+              "SUCCEEDED",
+              "result_asset_url IS NOT NULL",
+              "^object://tencent_cos/",
+              "COALESCE",
+              "autodl_h3_provider_delivery_url_valid(result_asset_url, upstream_task_id)"
+            ]
+          }
+        ]
+      },
+      {
+        "relation": "public.autodl_h3_settlements",
+        "requiredColumns": [],
+        "requiredConstraints": [
+          {
+            "name": "autodl_h3_settlement_asset_check",
+            "validated": true,
+            "definitionTokens": [
+              "^object://tencent_cos/",
+              "COALESCE",
+              "autodl_h3_provider_delivery_url_valid(stable_asset_url, upstream_task_id)"
+            ]
+          }
+        ]
       }
     ],
     "functionSecurityGroups": [
@@ -410,6 +467,124 @@
             "AGENT_CONFIG_REVISION_CONFLICT_AFTER_LOCK"
           ]
         }
+      },
+      {
+        "id": "image-provider-delivery",
+        "ownerRelation": "public.image_generation_requests",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.finalize_image_provider_delivery(text,text,text)",
+          "public.mark_image_provider_source_expired(text,text,text)",
+          "public.complete_image_ephemeral_delivery(text,text,text,text,text,text,text,jsonb)"
+        ]
+      },
+      {
+        "id": "h3-provider-delivery-finalizer",
+        "ownerRelation": "public.video_tasks",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.autodl_h3_finalize_video_provider_url(uuid,text,text,text,text,text,text,bigint,text,numeric,numeric,bigint)"
+        ]
+      },
+      {
+        "id": "h3-provider-delivery-marker",
+        "ownerRelation": "public.video_tasks",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": false,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.autodl_h3_provider_delivery_v1_ready()"
+        ]
+      },
+      {
+        "id": "image-model-receipt-publication",
+        "ownerRelation": "public.cover_models",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.publish_image_model_validation_receipt(text,text,text,text,boolean,boolean,text,bigint,text,jsonb)"
+        ]
+      }
+    ],
+    "functionDependencyEdges": [
+      {
+        "caller": "public.reserve_video_generation_task_request_snapshot_v1_atomic(text,text,text,text,text,numeric,numeric,text,numeric,boolean,boolean,jsonb,jsonb,text,text,text,text,text,integer,text,text,text,text,text,text,numeric,text)",
+        "callee": "public.reserve_video_generation_task_routing_atomic(text,text,text,text,text,numeric,numeric,text,numeric,boolean,boolean,jsonb,text,text,text,text,integer,text,text,text,text,text,text,numeric,text)",
+        "ownerRelation": "public.video_tasks"
+      },
+      {
+        "caller": "public.reserve_queued_digital_video_task_request_snapshot_v1_atomic(jsonb,jsonb,jsonb,jsonb,text)",
+        "callee": "public.reserve_queued_digital_video_task_routing_atomic(jsonb,jsonb,jsonb)",
+        "ownerRelation": "public.video_tasks"
       }
     ],
     "triggerSemantics": [
@@ -419,7 +594,21 @@
         "function": "public.guard_video_reference_assets_during_reservation_v1()",
         "enabled": true
       }
-    ]
+    ],
+    "h3ProviderUrlPredicate": {
+      "signature": "public.autodl_h3_provider_delivery_url_valid(text,text)",
+      "ownerRelation": "public.video_tasks",
+      "securityDefinerRequired": false,
+      "volatility": "i",
+      "strict": true,
+      "searchPath": [
+        "public",
+        "pg_temp"
+      ],
+      "requiredExecuteGrantee": "PUBLIC",
+      "sourceSha256": "6a82bd7745258d692bd2cf560c811237e20b6ab52c54231281dd675d201d52ca",
+      "sourceMigration": "supabase/migrations/20261012011000_h3_provider_delivery.sql"
+    }
   },
   "tables": [
     {
@@ -3141,6 +3330,77 @@
       "arguments": [
         "p_entries"
       ]
+    },
+    {
+      "name": "finalize_image_provider_delivery",
+      "feature": "image-exactly-once",
+      "arguments": [
+        "p_record_id",
+        "p_user_id",
+        "p_provider_url"
+      ]
+    },
+    {
+      "name": "mark_image_provider_source_expired",
+      "feature": "image-exactly-once",
+      "arguments": [
+        "p_record_id",
+        "p_user_id",
+        "p_provider_url"
+      ]
+    },
+    {
+      "name": "autodl_h3_provider_delivery_v1_ready",
+      "feature": "autodl-h3-revenue-audit",
+      "arguments": []
+    },
+    {
+      "name": "autodl_h3_finalize_video_provider_url",
+      "feature": "autodl-h3-revenue-audit",
+      "arguments": [
+        "p_job_id",
+        "p_public_task_id",
+        "p_video_task_internal_id",
+        "p_user_id",
+        "p_model_id",
+        "p_upstream_task_id",
+        "p_owner",
+        "p_lease_token",
+        "p_result_asset_url",
+        "p_price_yuan",
+        "p_cost_price",
+        "p_response_ms"
+      ]
+    },
+    {
+      "name": "complete_image_ephemeral_delivery",
+      "feature": "image-exactly-once",
+      "arguments": [
+        "p_record_id",
+        "p_user_id",
+        "p_client_trace_id",
+        "p_payload_fingerprint",
+        "p_dispatch_receipt_sha256",
+        "p_submission_receipt_sha256",
+        "p_billing_reference_id",
+        "p_metadata"
+      ]
+    },
+    {
+      "name": "publish_image_model_validation_receipt",
+      "feature": "admin-image-publication",
+      "arguments": [
+        "p_validation_id",
+        "p_user_id",
+        "p_configuration_hash",
+        "p_model_snapshot_hash",
+        "p_expected_active",
+        "p_expected_hidden",
+        "p_verified_key",
+        "p_verified_size",
+        "p_verified_type",
+        "p_evidence"
+      ]
     }
   ],
   "forbiddenRpcs": [
@@ -3150,6 +3410,21 @@
     }
   ],
   "rollbackArtifacts": [
+    {
+      "forwardMigration": "supabase/migrations/20261012014000_video_snapshot_dependency_execute.sql",
+      "rollback": "supabase/rollbacks/20261012014000_video_snapshot_dependency_execute.rollback.sql",
+      "rollbackSha256": "27ad969eda58ff8848ec444cada1e1a74472840a33eec9d80f5bf2790e9c9305",
+      "mode": "forward-repair-only",
+      "preserves": [
+        "video_tasks",
+        "reserve_video_generation_task_routing_atomic",
+        "reserve_queued_digital_video_task_routing_atomic",
+        "supabase_migrations.schema_migrations:20261012014000"
+      ],
+      "blocksWhen": [
+        "reviewed pre-migration ACL identity is unavailable"
+      ]
+    },
     {
       "forwardMigration": "supabase/migrations/20261009053000_platform_brand_contact_qr.sql",
       "rollback": "supabase/rollbacks/20261009053000_platform_brand_contact_qr.rollback.sql",
@@ -3222,6 +3497,81 @@
         "submission receipt is not bound to V2 dispatch hashes, identities and attempt count",
         "function owner, SECURITY DEFINER or search_path differs from the release contract",
         "direct or effective EXECUTE is available to a non-owner role other than service_role"
+      ]
+    },
+    {
+      "forwardMigration": "supabase/migrations/20261012010000_image_provider_delivery.sql",
+      "mode": "forward-repair-only-after-activation",
+      "preserves": [
+        "image_generation_requests",
+        "autodl_h3_jobs",
+        "autodl_h3_settlements",
+        "video_tasks",
+        "wallet_operations",
+        "cash_transactions",
+        "revenue_records",
+        "provider dispatch/submission and task/billing receipts",
+        "delivery RPCs and validated provider URL constraints"
+      ],
+      "blocksWhen": [
+        "task, receipt or financial evidence would be removed",
+        "delivery owner, ACL, predicate or constraint semantics differ from the release contract"
+      ]
+    },
+    {
+      "forwardMigration": "supabase/migrations/20261012011000_h3_provider_delivery.sql",
+      "mode": "forward-repair-only-after-activation",
+      "preserves": [
+        "image_generation_requests",
+        "autodl_h3_jobs",
+        "autodl_h3_settlements",
+        "video_tasks",
+        "wallet_operations",
+        "cash_transactions",
+        "revenue_records",
+        "provider dispatch/submission and task/billing receipts",
+        "delivery RPCs and validated provider URL constraints"
+      ],
+      "blocksWhen": [
+        "task, receipt or financial evidence would be removed",
+        "delivery owner, ACL, predicate or constraint semantics differ from the release contract"
+      ]
+    },
+    {
+      "forwardMigration": "supabase/migrations/20261012012000_image_ephemeral_delivery.sql",
+      "mode": "forward-repair-only-after-activation",
+      "preserves": [
+        "image_generation_requests",
+        "autodl_h3_jobs",
+        "autodl_h3_settlements",
+        "video_tasks",
+        "wallet_operations",
+        "cash_transactions",
+        "revenue_records",
+        "provider dispatch/submission and task/billing receipts",
+        "delivery RPCs and validated provider URL constraints"
+      ],
+      "blocksWhen": [
+        "task, receipt or financial evidence would be removed",
+        "delivery owner, ACL, predicate or constraint semantics differ from the release contract"
+      ]
+    },
+    {
+      "forwardMigration": "supabase/migrations/20261012013000_image_model_validation_receipt_publication.sql",
+      "mode": "forward-repair-only-after-activation",
+      "preserves": [
+        "image_generation_requests immutable response and delivery_asset_id",
+        "image_model_validations publication evidence",
+        "user_files independent publication artifacts",
+        "wallet_operations",
+        "wallet_ledger_entries",
+        "cash_transactions",
+        "revenue_records",
+        "publish_image_model_validation_receipt"
+      ],
+      "blocksWhen": [
+        "original generation receipt, publication or financial evidence would be removed",
+        "publication owner, ACL or CAS semantics differ from the release contract"
       ]
     }
   ],

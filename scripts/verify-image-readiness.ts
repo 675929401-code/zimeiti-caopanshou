@@ -40,8 +40,17 @@ assert.deepEqual(evaluateImageGenerationReadiness(missing({
   missingTables: ["short_drama_projects"], missingRpcs: ["publish_skill_package"],
   missingColumns: ["manju_admin_config.version"], missingRpcArguments: ["publish_skill_package.p_id"],
 }), cos, true), { ready: true }, "unrelated module migrations must not block image generation");
-const missingStorage = evaluateImageGenerationReadiness(complete, { initializedProviders: ["local"] }, true);
-assert.equal(!missingStorage.ready && missingStorage.code, "IMAGE_STORAGE_NOT_READY");
+assert.deepEqual(evaluateImageGenerationReadiness(complete, { initializedProviders: ["local"] }, true), { ready: true }, "provider URL and inline delivery do not need COS");
+assert.deepEqual(evaluateImageGenerationReadiness(complete, { initializedProviders: [] }, true), { ready: true });
+expectCode(missing({ missingRpcs: ["complete_image_ephemeral_delivery"] }), "IMAGE_IDEMPOTENCY_MIGRATION_NOT_READY");
+expectCode(missing({ missingRpcs: ["finalize_image_provider_delivery"] }), "IMAGE_IDEMPOTENCY_MIGRATION_NOT_READY");
+expectCode(missing({ missingRpcArguments: ["complete_image_ephemeral_delivery.p_payload_fingerprint"] }), "IMAGE_IDEMPOTENCY_MIGRATION_NOT_READY");
+for (const rpc of ["complete_image_ephemeral_delivery", "finalize_image_provider_delivery"]) {
+  let providerCalls = 0, charges = 0;
+  const readiness = evaluateImageGenerationReadiness(missing({ missingRpcs: [rpc] }), { initializedProviders: [] }, true);
+  if (readiness.ready) { charges++; providerCalls++; }
+  assert.equal(providerCalls, 0); assert.equal(charges, 0);
+}
 const staleSchema = evaluateImageGenerationReadiness(complete, cos, true, [
   { name: "image_generation_requests", ready: false, code: "42703" },
 ]);
@@ -57,10 +66,12 @@ assert.deepEqual(evaluateImageGenerationReadiness(complete, cos, false, [
 // Supplemental wiring assertions keep the tested decision before the first side effect.
 const route = readFileSync("src/app/api/image/generate/route.ts", "utf8");
 const handler = route.slice(route.indexOf("export async function POST"));
-assert.ok(handler.indexOf("probeImageGenerationReadiness(!isAdmin)") < handler.indexOf("await checkAndCollectDebt(userId)"));
-assert.ok(handler.indexOf("probeImageGenerationReadiness(!isAdmin)") < handler.indexOf("await runImageExactlyOnce({"));
-assert.ok(handler.indexOf("debtResult.availableBalance < sellingPrice") < handler.indexOf("await runImageExactlyOnce({"));
+const preflight = handler.indexOf("probeImageGenerationReadiness(sellingPrice > 0)");
+const budget = handler.indexOf("const reserveImageBudgetOnce");
+const exact = handler.indexOf("await runImageExactlyOnce({");
+assert.ok(preflight >= 0 && budget > preflight && exact > budget, "actual readiness must gate the reservation hook and exactly-once provider dispatch");
+assert.ok(handler.includes("beforeSubmitOnce: reserveImageBudgetOnce"));
 console.log(JSON.stringify({
-  ok: true, mode: "pure-decision-fixtures-plus-route-wiring", cases: 18,
+  ok: true, mode: "pure-decision-fixtures-plus-route-wiring", cases: 24,
   providerCalls: 0, databaseWrites: 0, realGenerationVerified: false,
 }, null, 2));

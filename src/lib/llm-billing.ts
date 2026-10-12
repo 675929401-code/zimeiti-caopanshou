@@ -76,13 +76,12 @@ export async function getSelectedModelBillingConfig(
   return resolveSelectedModelBillingConfig(modelRow, await getBillingConfig());
 }
 
-export async function getSelectedModelBillingSnapshot(
-  publicModelId: string,
-  modelRow: Record<string, unknown> | null | undefined,
-): Promise<SelectedModelBillingSnapshot | undefined> {
+export function buildSelectedModelBillingSnapshot(
+  publicModelId: string, modelRow: Record<string, unknown> | null | undefined, globalConfig: BillingConfig,
+): SelectedModelBillingSnapshot | undefined {
   const normalizedPublicModelId = publicModelId.trim();
   if (!normalizedPublicModelId || !modelRow) return undefined;
-  const config = resolveSelectedModelBillingConfig(modelRow, await getBillingConfig());
+  const config = resolveSelectedModelBillingConfig(modelRow, globalConfig);
   if (!config) return undefined;
 
   const internalModelId = String(modelRow.id || "").trim();
@@ -110,6 +109,14 @@ export async function getSelectedModelBillingSnapshot(
       tokenRoundingMax: config.tokenRoundingMax,
     },
   };
+}
+
+export async function getSelectedModelBillingSnapshot(
+  publicModelId: string,
+  modelRow: Record<string, unknown> | null | undefined,
+): Promise<SelectedModelBillingSnapshot | undefined> {
+  if (!publicModelId.trim() || !modelRow) return undefined;
+  return buildSelectedModelBillingSnapshot(publicModelId, modelRow, await getBillingConfig());
 }
 
 /**

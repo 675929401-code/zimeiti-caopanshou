@@ -53,6 +53,9 @@ import type {
   UpdateProductionTakeRequest,
 } from "./production-contracts";
 import { ProductionTimelineClipSchema } from "./production-contracts";
+import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
+import { projectGeneratedImageClientReceipt } from "@/lib/generated-image-client-delivery";
+import { resolveGeneratedImageReference } from "@/lib/server/generated-image-reference";
 
 const PRODUCTION_SURFACE = "short-drama-film-studio";
 const DURABLE_PROVIDER = "tencent_cos";
@@ -319,11 +322,17 @@ async function markJobFailureQuietly(input: {
 }
 
 function imageGenerationSnapshot(body: Record<string, unknown>): JsonObject {
+  const receipt = projectGeneratedImageClientReceipt(body);
+  if (receipt) return jsonObject({ ...receipt, images: [],
+    ...(receipt.deliveryMode === "provider_url" ? { generatedImageReference: { schema: "generated_image_ref.v1", recordId: receipt.recordId } } : { blockedOnInput: true }),
+  });
   const operationId = String(body.operationId || "").trim();
   const billingReferenceId = String(body.billingReferenceId || "").trim()
     || (operationId ? `image:${operationId}` : "");
   const images = Array.isArray(body.images)
-    ? body.images.filter(isRecord).slice(0, 1).map((image) => ({
+    ? body.images.filter(isRecord).filter(image => typeof image.assetId === "string" && Boolean(image.assetId)
+      && typeof image.storageKey === "string" && Boolean(image.storageKey)
+      && typeof image.url === "string" && /^https?:\/\//u.test(image.url)).slice(0, 1).map((image) => ({
       url: String(image.url || ""),
       assetId: String(image.assetId || ""),
       storageKey: String(image.storageKey || ""),
@@ -345,6 +354,41 @@ function imageGenerationSnapshot(body: Record<string, unknown>): JsonObject {
     cashCharged: Math.max(0, asFiniteNumber(body.cashCharged)),
     images,
   });
+}
+
+/** New generated results are receipts/references, never implicit durable assets. */
+async function completeReferencedImageJob(input: {
+  auth: ShortDramaAuthorizationContext; projectId: string; job: ProductionJob;
+  repository: ShortDramaProductionRepository;
+}) {
+  const generation = jsonObject(input.job.resultPayload.generation);
+  const receipt = projectGeneratedImageClientReceipt(generation);
+  if (!receipt) return null;
+  const reference = receipt.deliveryMode === "provider_url"
+    ? GeneratedImageReferenceSchema.parse({ schema: "generated_image_ref.v1", recordId: receipt.recordId }) : null;
+  let sourceUnavailable = false;
+  if (reference) {
+    // A completed owned receipt survives source expiry; availability only gates later inputs.
+    const owned = await input.auth.db.from("image_generation_requests").select("state,delivery_state,response")
+      .eq("record_id", reference.recordId).eq("user_id", input.auth.userId).maybeSingle();
+    const response = isRecord(owned.data?.response) ? owned.data.response : {};
+    if (owned.error || !owned.data || owned.data.state !== "completed" || owned.data.delivery_state !== "delivered" || response.deliveryMode !== "provider_url") {
+      throw new ShortDramaProductionError(403, "GENERATED_IMAGE_NOT_OWNED", "无法确认原生成结果归属；不会重新提交或扣费");
+    }
+    sourceUnavailable = Boolean(response.sourceExpiredAt);
+  }
+  await input.repository.createSettlement({ userId: input.auth.userId, projectId: input.projectId,
+    job: input.job, cashCharged: receipt.cashCharged, ledgerReference: receipt.billingReferenceId || null,
+    pricingSnapshot: jsonObject({ ...receipt, source: "image_generate_response" }), });
+  const job = await input.repository.updateJob(input.auth.userId, input.projectId, input.job.id, {
+    state: "succeeded", progress: 100, completedAt: new Date().toISOString(), errorCode: null, errorMessage: null,
+    billingSnapshot: jsonObject({ ...input.job.billingSnapshot, actualCashCharged: receipt.cashCharged }),
+    resultPayload: jsonObject({ generation, imageDeliveryReceipt: receipt, generationCompleted: true,
+      ...(reference ? { generatedImageReference: reference } : {}),
+      ...(!reference || sourceUnavailable ? { blockedOnInput: true } : {}), }),
+  });
+  return { status: 200, body: jobResponse(job, [], { generationCompleted: true,
+    blockedOnInput: !reference || sourceUnavailable, message: sourceUnavailable ? "图片已生成并结算，但上游图片已失效，自动编排已停止；不会重新提交或扣费" : reference ? "生成图片引用已登记；不会自动复制到素材库" : "图片已生成并结算，但该通道返回临时图片，无法继续自动编排；不会自动重试或再次扣费" }) };
 }
 
 function firstGeneratedImage(generation: JsonObject): {
@@ -377,6 +421,11 @@ async function persistImageJob(input: {
   job: ProductionJob;
   repository: ShortDramaProductionRepository;
 }): Promise<ProductionActionResult> {
+  const referenced = await completeReferencedImageJob(input);
+  if (referenced) {
+    await input.repository.updateShotStatus(input.auth.userId, input.projectId, input.shot.id, "ready");
+    return referenced;
+  }
   const existingAssets = await input.repository.listAssetsForJob(
     input.auth.userId,
     input.projectId,
@@ -588,6 +637,22 @@ async function persistEntityImageJob(input: {
   job: ProductionJob;
   repository: ShortDramaProductionRepository;
 }): Promise<ProductionActionResult> {
+  const referenced = await completeReferencedImageJob(input);
+  if (referenced) {
+    const projects = new ShortDramaProjectRepository(input.auth.db);
+    const entity = await projects.getEntity(input.auth.userId, input.projectId, input.entityId);
+    if (!entity) throw new ShortDramaProductionError(404, "ENTITY_NOT_FOUND", "实体档案不存在");
+    const generation = jsonObject(input.job.resultPayload.generation);
+    const receipt = projectGeneratedImageClientReceipt(generation)!;
+    const updated = await projects.updateEntity(input.auth.userId, input.projectId, entity.id, {
+      expectedRevision: entity.revision,
+      referenceAssetUri: null,
+      attributes: { ...entity.attributes, imageDeliveryReceipt: jsonObject(receipt),
+        generatedImageSourceUnavailable: referenced.body.blockedOnInput === true,
+        generatedImageReference: receipt.deliveryMode === "provider_url" ? jsonObject({ schema: "generated_image_ref.v1", recordId: receipt.recordId }) : null },
+    });
+    return { ...referenced, body: { ...referenced.body, entity: jsonObject(updated) } };
+  }
   const projects = new ShortDramaProjectRepository(input.auth.db);
   let entity = await projects.getEntity(input.auth.userId, input.projectId, input.entityId);
   if (!entity) throw new ShortDramaProductionError(404, "ENTITY_NOT_FOUND", "实体档案不存在");
@@ -1398,13 +1463,16 @@ export async function generateProductionEntityImage(input: {
   const prompt = entityImagePrompt(entity, input.body.layout, animationStyle);
   let referenceImageUrls: string[] = [];
   if (input.body.mode === "repaint") {
-    if (!entity.referenceAssetUri) {
+    const generatedReference = GeneratedImageReferenceSchema.safeParse(entity.attributes.generatedImageReference);
+    if (!entity.referenceAssetUri && !generatedReference.success) {
       throw new ShortDramaProductionError(422, "ENTITY_REFERENCE_REQUIRED", "参考重绘前请先为实体选择一个已保存图片版本");
     }
     try {
-      referenceImageUrls = [await signAutodlH3OwnedAssetRefForUser({
+      referenceImageUrls = generatedReference.success && !entity.referenceAssetUri
+        ? [await resolveGeneratedImageReference({ userId: input.auth.userId, reference: generatedReference.data })]
+        : [await signAutodlH3OwnedAssetRefForUser({
         userId: input.auth.userId,
-        assetRef: entity.referenceAssetUri,
+        assetRef: entity.referenceAssetUri!,
         category: "image",
       })];
     } catch {
@@ -1425,6 +1493,7 @@ export async function generateProductionEntityImage(input: {
       layout: input.body.layout,
       resolution: input.body.resolution || "",
       referenceAssetUri: entity.referenceAssetUri || "",
+      generatedImageReference: entity.attributes.generatedImageReference || null,
     }),
   });
   const requestPayload = jsonObject({
@@ -1440,6 +1509,7 @@ export async function generateProductionEntityImage(input: {
     modelId: input.body.modelId,
     resolution: input.body.resolution || "",
     referenceAssetUri: entity.referenceAssetUri || "",
+    generatedImageReference: entity.attributes.generatedImageReference || null,
     strictSingleSubmit: true,
     noRetry: true,
   });
@@ -1497,6 +1567,7 @@ export async function generateProductionEntityImage(input: {
           resolution: input.body.resolution || undefined,
           referenceImageUrls,
           historySurface: PRODUCTION_SURFACE,
+          deliveryRequirement: "recoverable_reference",
           clientTraceId: running.publicJobId,
           clientIdempotencyKey: input.body.clientRequestId,
           clientNodeId: entity.id,
@@ -1657,6 +1728,7 @@ export async function generateProductionImage(input: {
           resolution: input.body.resolution || undefined,
           referenceImageUrls,
           historySurface: PRODUCTION_SURFACE,
+          deliveryRequirement: "recoverable_reference",
           clientTraceId: running.publicJobId,
           clientIdempotencyKey: input.body.clientRequestId,
           clientNodeId: shot.id,
@@ -1722,32 +1794,38 @@ export async function generateProductionVideo(input: {
   if (!shot.videoPrompt.trim()) {
     throw new ShortDramaProductionError(422, "VIDEO_PROMPT_MISSING", "该镜头没有可执行的视频提示词");
   }
-  const imageAsset = await repository.findLatestShotAsset(
+  let imageAsset = await repository.findLatestShotAsset(
     input.auth.userId,
     input.projectId,
     shot.id,
     ["image", "storyboard"],
   );
-  if (!imageAsset || imageAsset.provider !== DURABLE_PROVIDER || !imageAsset.objectKey) {
-    throw new ShortDramaProductionError(
-      422,
-      "VIDEO_REFERENCE_REQUIRED",
-      "视频生成必须使用当前镜头已入库的稳定参考图；系统不会隐式自动生图",
-    );
+  const production = await repository.listProduction(input.auth.userId, input.projectId);
+  const latestImageJob = production.jobs.find((job) => job.shotId === shot.id && job.stage === "image_generation" && job.state === "succeeded");
+  const parsedReference = GeneratedImageReferenceSchema.safeParse(latestImageJob?.resultPayload.generatedImageReference);
+  const selectedImageId = typeof shot.metadata.selectedImageAssetId === "string" ? shot.metadata.selectedImageAssetId.trim() : "";
+  const selectedLegacy = Boolean(selectedImageId);
+  if (selectedLegacy) {
+    imageAsset = production.assets.find(asset => asset.id === selectedImageId && asset.shotId === shot.id
+      && ["image", "storyboard"].includes(asset.assetRole)) || null;
+    if (!imageAsset) throw new ShortDramaProductionError(422, "VIDEO_SELECTED_REFERENCE_NOT_AVAILABLE", "所选镜头参考图不存在或已移除；请重新选择，本次视频未提交或扣费");
   }
-  let imageUrl: string;
-  try {
-    imageUrl = await storageManager.getSignedUrl(
-      imageAsset.objectKey,
-      { expireTime: 60 * 60 },
-      DURABLE_PROVIDER,
-    );
-  } catch {
-    throw new ShortDramaProductionError(
-      503,
-      "VIDEO_REFERENCE_SIGN_FAILED",
-      "镜头参考图暂时无法签发，视频任务未提交",
-    );
+  if (latestImageJob?.resultPayload.blockedOnInput === true && !selectedLegacy
+    && (!imageAsset || Date.parse(latestImageJob.createdAt) >= Date.parse(imageAsset.createdAt))) {
+    throw new ShortDramaProductionError(422, "VIDEO_REFERENCE_NOT_RECOVERABLE", "当前镜头图片已生成并结算，但素材不可恢复，自动编排已停止；请主动选择可用参考图，不会自动重新生图");
+  }
+  const imageReference = parsedReference.success && !selectedLegacy
+    && (!imageAsset || Date.parse(latestImageJob!.createdAt) >= Date.parse(imageAsset.createdAt)) ? parsedReference.data : null;
+  let imageUrl = "";
+  if (imageReference) {
+    // Resolve afresh before creating/dispatching a video job; queue stores the stable typed reference.
+    await resolveGeneratedImageReference({ userId: input.auth.userId, reference: imageReference });
+  } else {
+    if (!imageAsset || imageAsset.provider !== DURABLE_PROVIDER || !imageAsset.objectKey) {
+      throw new ShortDramaProductionError(422, "VIDEO_REFERENCE_REQUIRED", "视频生成需要可恢复的生成图片引用或已保存素材；临时图片不能进入异步任务，不会自动重新生图");
+    }
+    try { imageUrl = await storageManager.getSignedUrl(imageAsset.objectKey, { expireTime: 60 * 60 }, DURABLE_PROVIDER); }
+    catch { throw new ShortDramaProductionError(503, "VIDEO_REFERENCE_SIGN_FAILED", "镜头参考图暂时无法签发，视频任务未提交"); }
   }
   const promptSnapshotId = await repository.getOrCreatePromptSnapshot({
     userId: input.auth.userId,
@@ -1757,7 +1835,7 @@ export async function generateProductionVideo(input: {
     modelPublicId: input.body.modelId,
     variables: jsonObject({
       shotId: shot.id,
-      imageAssetId: imageAsset.id,
+      ...(imageReference ? { generatedImageReference: imageReference } : { imageAssetId: imageAsset!.id }),
       aspectRatio: shot.aspectRatio,
       resolution: input.body.resolution || "",
       duration: input.body.duration,
@@ -1769,8 +1847,8 @@ export async function generateProductionVideo(input: {
     shotId: shot.id,
     prompt: shot.videoPrompt,
     negativePrompt: shot.negativePrompt,
-    imageAssetId: imageAsset.id,
-    imageStorageKey: imageAsset.objectKey,
+    ...(imageReference ? { generatedImageReference: imageReference } : { imageAssetId: imageAsset!.id }),
+    ...(imageReference ? {} : { imageStorageKey: imageAsset!.objectKey }),
     modelId: input.body.modelId,
     resolution: input.body.resolution || "",
     duration: input.body.duration,
@@ -1833,8 +1911,7 @@ export async function generateProductionVideo(input: {
           model_id: input.body.modelId,
           prompt: shot.videoPrompt,
           negative_prompt: shot.negativePrompt || undefined,
-          image_url: imageUrl,
-          image_storage_key: imageAsset.objectKey,
+          ...(imageReference ? { image_ref: imageReference } : { image_url: imageUrl, image_storage_key: imageAsset!.objectKey }),
           duration: input.body.duration,
           aspect_ratio: shot.aspectRatio,
           resolution_tier: input.body.resolution || undefined,

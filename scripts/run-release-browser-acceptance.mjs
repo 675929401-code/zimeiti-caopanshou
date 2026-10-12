@@ -8,6 +8,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { chromium } from "playwright";
 import { canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
+import { validateAcceptanceExecution, validateAutomaticTrigger, validateRun } from "./release-run-provenance.mjs";
+import { verifyCandidatePackage } from "./deployment-control-plane.mjs";
 
 const ARCHIVE_METADATA_MAX_BUFFER = 64 * 1024 * 1024;
 const BROWSER_VALIDATIONS = Object.freeze([
@@ -977,6 +979,7 @@ function signBrowserEvidence(bundle, validationId, index, privateKey, issuer, ev
       builds: bundle.subject.builds,
       buildOutputDigests: bundle.subject.buildOutputDigests,
       candidatePayloads: bundle.subject.candidatePayloads,
+      controlPlane: bundle.subject.controlPlane,
     },
     runtimeReadbacks: { web: runtimeIdentity(bundle, "web"), voice: runtimeIdentity(bundle, "voice") },
     viewport: VIEWPORT,
@@ -1085,6 +1088,26 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const checkoutRoot = requireDirectory(args.get("--checkout-root") || process.cwd(), "checkout-root");
   const candidateRoot = requireDirectory(args.get("--candidate-root") || "", "candidate-root");
+  // Observe the executable checkout, then reject provenance drift before output creation or secret access.
+  const toolchainCommit = run("git", ["-C", checkoutRoot, "rev-parse", "HEAD"]).trim();
+  if (!/^[0-9a-f]{40}$/u.test(toolchainCommit)) fail("TOOLCHAIN_COMMIT_INVALID");
+  const eventCommit = process.env.GITHUB_SHA;
+  const candidateRunId = process.env.CANDIDATE_RUN_ID;
+  const eventName = process.env.GITHUB_EVENT_NAME;
+  const event = readJson(process.env.GITHUB_EVENT_PATH, "ACCEPTANCE_EVENT_INVALID");
+  const candidateRun = readJson(process.env.ACCEPTANCE_CANDIDATE_RUN_PATH, "CANDIDATE_RUN_INVALID");
+  const policy = readJson(path.join(checkoutRoot, "deploy/policies/release-policy.json"), "RELEASE_POLICY_INVALID");
+  const provenanceOptions = { primaryRepository: policy.git?.primaryRepository, runId: candidateRunId, toolchainSha: toolchainCommit, eventCommit };
+  const candidateCommit = validateRun(candidateRun, { ...provenanceOptions, kind: "candidate", automatic: eventName === "workflow_run" });
+  if (eventName === "workflow_run") validateAutomaticTrigger(event, candidateRun, provenanceOptions);
+  else {
+    run("git", ["-C", checkoutRoot, "merge-base", "--is-ancestor", candidateCommit, toolchainCommit]);
+    const changedPaths = run("git", ["-C", checkoutRoot, "diff", "--name-only", "-z", `${candidateCommit}..${toolchainCommit}`]).split("\0").filter(Boolean);
+    validateAcceptanceExecution({ eventName, executedCommit: toolchainCommit, eventCommit, candidateCommit, candidateAncestor: true, changedPaths });
+  }
+  const bundle = readJson(path.join(candidateRoot, "release-change-validations.json"), "CANDIDATE_BUNDLE_INVALID");
+  // Bind and read the entire candidate control package before output or signing-key access.
+  verifyCandidatePackage(path.join(candidateRoot, "candidate-packages", "control-plane"), bundle.subject.controlPlane, candidateRun, process.env.GITHUB_REPOSITORY);
   const workRoot = requireFreshDirectory(args.get("--work-root") || "", "work-root");
   const outputRoot = requireFreshDirectory(args.get("--output-root") || "", "output-root");
   const evidenceRoot = path.join(outputRoot, "evidence");
@@ -1098,10 +1121,7 @@ async function main() {
     || fs.statSync("/").dev === fs.statSync("/data").dev || fs.statSync(workRoot).dev !== fs.statSync("/data").dev) {
     fail("DEDICATED_DATA_MOUNT_REQUIRED");
   }
-  const bundle = readJson(path.join(candidateRoot, "release-change-validations.json"), "CANDIDATE_BUNDLE_INVALID");
-  const toolchainCommit = String(process.env.GITHUB_SHA || run("git", ["-C", checkoutRoot, "rev-parse", "HEAD"]).trim()).toLowerCase();
-  if (!/^[0-9a-f]{40}$/u.test(toolchainCommit)) fail("TOOLCHAIN_COMMIT_INVALID");
-  const expectedSubjectCommit = String(process.env.CANDIDATE_SUBJECT_SHA || process.env.GITHUB_SHA || bundle.subject.commit).toLowerCase();
+  const expectedSubjectCommit = candidateCommit;
   if (bundle.target !== "source-candidate" || bundle.status !== "source-candidate-pending-required"
     || bundle.subject.commit !== expectedSubjectCommit
     || !bundle.subject.services.includes("web")) fail("CANDIDATE_BUNDLE_PHASE_INVALID");
@@ -1211,6 +1231,10 @@ async function main() {
     candidateBundleId: bundle.bundleId,
     toolchain: {
       commit: toolchainCommit,
+      executedCommit: toolchainCommit,
+      eventCommit,
+      candidateCommit,
+      candidateRunId,
       fixturePaths: assets.materialized.map((asset) => asset.fixturePath),
     },
     subject: bundle.subject,

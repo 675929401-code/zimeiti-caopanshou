@@ -3,74 +3,326 @@
   "$id": "https://zimeiti.local/contracts/release-browser-acceptance-evidence.v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "receiptId", "nonce", "checkedAt", "subject", "runtimeReadbacks", "viewport", "preciseRoute", "adjacentRoutes", "consoleErrors", "requestFailures", "result"],
+  "required": [
+    "schemaVersion",
+    "receiptId",
+    "nonce",
+    "checkedAt",
+    "subject",
+    "runtimeReadbacks",
+    "viewport",
+    "preciseRoute",
+    "adjacentRoutes",
+    "consoleErrors",
+    "requestFailures",
+    "result"
+  ],
   "properties": {
-    "schemaVersion": {"const": "zimeiti-release-browser-acceptance-evidence.v1"},
-    "receiptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{15,127}$"},
-    "nonce": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,128}$"},
-    "checkedAt": {"type": "string", "minLength": 20},
+    "schemaVersion": {
+      "const": "zimeiti-release-browser-acceptance-evidence.v1"
+    },
+    "receiptId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{15,127}$"
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$"
+    },
+    "checkedAt": {
+      "type": "string",
+      "minLength": 20
+    },
     "subject": {
-      "type": "object", "additionalProperties": false, "required": ["commit", "sourceVersion", "builds", "buildOutputDigests", "candidatePayloads"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "sourceVersion",
+        "builds",
+        "buildOutputDigests",
+        "candidatePayloads",
+        "controlPlane"
+      ],
       "properties": {
-        "commit": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"},
-        "sourceVersion": {"type": "string", "minLength": 1},
+        "commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "sourceVersion": {
+          "type": "string",
+          "minLength": 1
+        },
         "builds": {
-          "type": "object", "additionalProperties": false, "required": ["web", "voice"],
-          "properties": {"web": {"type": ["string", "null"]}, "voice": {"type": ["string", "null"]}}
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "web",
+            "voice"
+          ],
+          "properties": {
+            "web": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "voice": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         },
         "buildOutputDigests": {
-          "type": "object", "additionalProperties": false, "required": ["web", "voice"],
-          "properties": {"web": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}, "voice": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}}
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "web",
+            "voice"
+          ],
+          "properties": {
+            "web": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "voice": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
         },
         "candidatePayloads": {
-          "type": "object", "additionalProperties": false, "required": ["web", "voice"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "web",
+            "voice"
+          ],
           "properties": {
-            "web": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/candidatePayload"}]},
-            "voice": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/candidatePayload"}]}
+            "web": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/candidatePayload"
+                }
+              ]
+            },
+            "voice": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/candidatePayload"
+                }
+              ]
+            }
+          }
+        },
+        "controlPlane": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "archiveFile",
+            "manifestFile",
+            "manifestSha256",
+            "archiveSha256",
+            "contentDigest",
+            "subject"
+          ],
+          "properties": {
+            "kind": {
+              "const": "deployment-control-plane-descriptor.v1"
+            },
+            "archiveFile": {
+              "const": "deployment-control-plane.bundle.json"
+            },
+            "manifestFile": {
+              "const": "control-plane.manifest.json"
+            },
+            "manifestSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "archiveSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "subject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "sourceCommit",
+                "repository",
+                "candidateRunId",
+                "candidateRunAttempt"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "formal"
+                },
+                "sourceCommit": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40}$"
+                },
+                "repository": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+                },
+                "candidateRunId": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "candidateRunAttempt": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                }
+              }
+            }
           }
         }
       }
     },
     "runtimeReadbacks": {
-      "type": "object", "additionalProperties": false, "required": ["web", "voice"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "web",
+        "voice"
+      ],
       "properties": {
-        "web": {"$ref": "#/$defs/runtimeIdentity"},
-        "voice": {"anyOf": [{"$ref": "#/$defs/runtimeIdentity"}, {"type": "null"}]}
+        "web": {
+          "$ref": "#/$defs/runtimeIdentity"
+        },
+        "voice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/runtimeIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     },
     "viewport": {
-      "type": "object", "additionalProperties": false, "required": ["width", "height"],
-      "properties": {"width": {"const": 1440}, "height": {"const": 900}}
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "const": 1440
+        },
+        "height": {
+          "const": 900
+        }
+      }
     },
-    "preciseRoute": {"type": "string", "pattern": "^/[A-Za-z0-9_./?=&%-]*$"},
+    "preciseRoute": {
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9_./?=&%-]*$"
+    },
     "adjacentRoutes": {
-      "type": "array", "minItems": 2, "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^/[A-Za-z0-9_./?=&%-]*$"}
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^/[A-Za-z0-9_./?=&%-]*$"
+      }
     },
-    "consoleErrors": {"type": "array", "maxItems": 0},
-    "requestFailures": {"type": "array", "maxItems": 0},
-    "result": {"const": "passed"}
+    "consoleErrors": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "requestFailures": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "result": {
+      "const": "passed"
+    }
   },
   "$defs": {
     "runtimeIdentity": {
-      "type": "object", "additionalProperties": false,
-      "required": ["commit", "sourceVersion", "buildId", "buildOutputDigest"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "sourceVersion",
+        "buildId",
+        "buildOutputDigest"
+      ],
       "properties": {
-        "commit": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"},
-        "sourceVersion": {"type": "string", "minLength": 1},
-        "buildId": {"type": "string", "minLength": 1},
-        "buildOutputDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        "commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "sourceVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "buildId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "buildOutputDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
       }
     },
     "candidatePayload": {
-      "type": "object", "additionalProperties": false,
-      "required": ["releaseId", "artifactDigest", "archiveSha256", "fileCount", "totalBytes"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "releaseId",
+        "artifactDigest",
+        "archiveSha256",
+        "fileCount",
+        "totalBytes"
+      ],
       "properties": {
-        "releaseId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$"},
-        "artifactDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "archiveSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "fileCount": {"type": "integer", "minimum": 1},
-        "totalBytes": {"type": "integer", "minimum": 1}
+        "releaseId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$"
+        },
+        "artifactDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "archiveSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "fileCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     }
   }

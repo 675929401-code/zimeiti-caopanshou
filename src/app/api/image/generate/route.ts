@@ -91,20 +91,21 @@ import {
   restrictImageCandidatesForNoRetry,
   runImageExactlyOnce,
   finalizeImageExactlyOnceDelivery,
+  finalizeImageProviderDelivery,
   hasImageProviderCheckpoint,
   strictImagePayloadFingerprint,
   validateStrictImageClientKeys,
 } from "@/lib/image-exactly-once";
 import { storageManager } from "@/storage/object";
-import { probeImageGenerationReadiness } from "@/lib/image-generation-readiness";
+import { providerMediaUrl } from "@/lib/generated-media-delivery";
+import { imageRecoverableReferenceCapability, probeImageGenerationReadiness } from "@/lib/image-generation-readiness";
+import { createImageEphemeralDelivery, decodeInlineImage, imageEphemeralStatus, isImageEphemeralReceipt } from "@/lib/image-ephemeral-delivery";
 import {
   AUTODL_H3_SELFHOST_PROVIDER,
+  AUTODL_H3_SELFHOST_SECRET_REF,
   assertAutodlH3SelfhostModelBinding,
-  autodlH3SelfhostImageStoragePrefix,
   autodlH3ImagePixelSize,
-  isAmbiguousAutodlH3SelfhostTransportError,
   readAutodlH3SelfhostResult,
-  recoverAutodlH3SelfhostCompletedImageResultUrl,
   resolveAutodlH3SelfhostResultUrl,
 } from "@/lib/autodl-h3-selfhost";
 
@@ -256,7 +257,7 @@ async function prepareGeneratedImageBytes(options: {
   coverText?: string;
 }) {
   const dimensions = parseImageDimensions(options.buffer);
-  if (!dimensions) throw new Error("图片生成结果尺寸无法验明，未扣费");
+  if (!dimensions) throw new Error("图片生成结果尺寸无法验明，原请求与费用状态保留待核查");
   const issue = validateImageOutputContract({
     ...dimensions,
     aspectRatio: options.aspectRatio,
@@ -305,143 +306,6 @@ async function resolveGeneratedImageObjectUri(value: string) {
   );
 }
 
-async function persistGeneratedImage(options: {
-  rawUrl: string;
-  userId: string;
-  traceId: string;
-  modelId: string;
-  source: string;
-  aspectRatio: string;
-  resolution: ImageResolution;
-  expectedPixelSize: string;
-  coverText?: string;
-}) {
-  const dataMatch = options.rawUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/iu);
-  const imported = dataMatch
-    ? {
-        buffer: Buffer.from(dataMatch[2].replace(/\s/gu, ""), "base64"),
-        contentType: dataMatch[1].toLowerCase(),
-      }
-    : await safeFetch(options.rawUrl, {
-      maxBytes: AUTODL_H3_IMAGE_MAX_BYTES,
-      timeoutMs: AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS,
-      maxRedirects: 3,
-      allowedContentTypes: ["image/*"],
-      trustedHostnames: TRUSTED_GENERATED_IMAGE_HOSTS,
-    });
-  if (imported.buffer.byteLength === 0 || imported.buffer.byteLength > AUTODL_H3_IMAGE_MAX_BYTES) {
-    throw new Error("图片生成结果为空或超过 25MB，未扣费");
-  }
-  const validated = validateUploadBuffer(imported.buffer, imported.contentType);
-  if (!AUTODL_H3_IMAGE_CONTENT_TYPES.includes(validated.contentType)) {
-    throw new Error("图片生成结果仅支持 PNG、JPEG 或 WebP，未扣费");
-  }
-  const prepared = await prepareGeneratedImageBytes({
-    buffer: imported.buffer,
-    aspectRatio: options.aspectRatio,
-    resolution: options.resolution,
-    expectedPixelSize: options.expectedPixelSize,
-    coverText: options.coverText,
-  });
-  if (prepared.buffer.byteLength === 0 || prepared.buffer.byteLength > AUTODL_H3_IMAGE_MAX_BYTES) {
-    throw new Error("图片排版结果为空或超过 25MB，未扣费");
-  }
-  const outputContentType = options.coverText?.trim() ? "image/png" : validated.contentType;
-  const outputExtension = options.coverText?.trim() ? ".png" : validated.extension;
-  const fileName = `${options.traceId}${outputExtension}`;
-  const stored = await storageManager.upload(
-    prepared.buffer,
-    fileName,
-    outputContentType,
-    {
-      providerType: GENERATED_IMAGE_STORAGE_PROVIDER,
-      strictProvider: true,
-      category: "image",
-      prefix: `images/generated/${options.userId}/`,
-      fileName,
-    },
-  );
-  if (stored.provider !== GENERATED_IMAGE_STORAGE_PROVIDER) {
-    throw new Error("图片生成结果未能保存到腾讯 COS，未扣费");
-  }
-  return {
-    storageUri: toGeneratedImageObjectUri(stored.key),
-    storageKey: stored.key,
-    storageProvider: stored.provider,
-    fileName,
-    fileSize: stored.size,
-    contentType: stored.contentType,
-    source: options.source,
-    dimensions: prepared.dimensions,
-  };
-}
-
-async function persistAutodlH3SelfhostImage(options: {
-  rawUrl: string;
-  apiEndpoint: string;
-  userId: string;
-  traceId: string;
-  modelId: string;
-  resultTimeoutMs?: number;
-  aspectRatio: string;
-  resolution: ImageResolution;
-  expectedPixelSize: string;
-  coverText?: string;
-}) {
-  const imported = await readAutodlH3SelfhostResult(options.rawUrl, options.apiEndpoint, {
-    maxBytes: AUTODL_H3_IMAGE_MAX_BYTES,
-    timeoutMs: options.resultTimeoutMs ?? AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS,
-    allowedContentTypes: AUTODL_H3_IMAGE_CONTENT_TYPES,
-  });
-  if (imported.buffer.byteLength === 0) {
-    throw new Error("AutoDL H3 自租生图结果为空，未扣费");
-  }
-
-  const validated = validateUploadBuffer(imported.buffer, imported.contentType);
-  if (!AUTODL_H3_IMAGE_CONTENT_TYPES.includes(validated.contentType)) {
-    throw new Error("AutoDL H3 自租生图结果类型不受支持，未扣费");
-  }
-  const prepared = await prepareGeneratedImageBytes({
-    buffer: imported.buffer,
-    aspectRatio: options.aspectRatio,
-    resolution: options.resolution,
-    expectedPixelSize: options.expectedPixelSize,
-    coverText: options.coverText,
-  });
-  if (prepared.buffer.byteLength === 0 || prepared.buffer.byteLength > AUTODL_H3_IMAGE_MAX_BYTES) {
-    throw new Error("AutoDL H3 自租生图排版结果为空或超过 25MB，未扣费");
-  }
-
-  const outputContentType = options.coverText?.trim() ? "image/png" : validated.contentType;
-  const outputExtension = options.coverText?.trim() ? ".png" : validated.extension;
-  const fileName = `${options.traceId}${outputExtension}`;
-  const stored = await storageManager.upload(
-    prepared.buffer,
-    fileName,
-    outputContentType,
-    {
-      providerType: "tencent_cos",
-      category: "image",
-      prefix: autodlH3SelfhostImageStoragePrefix(options.userId),
-      fileName,
-     },
-  );
-  if (stored.provider !== "tencent_cos") {
-    throw new Error("AutoDL H3 自租生图未能保存到腾讯 COS，未扣费");
-  }
-
-  return {
-    storageUri: toGeneratedImageObjectUri(stored.key),
-    storageKey: stored.key,
-    storageProvider: stored.provider,
-    fileName,
-    fileSize: stored.size,
-    contentType: stored.contentType,
-    source: "autodl-h3-selfhost",
-    dimensions: prepared.dimensions,
-  };
-}
-
 async function writeImageTrace(event: Record<string, unknown>) {
   try {
     const traceDirectory = resolveAppRuntimeDir();
@@ -449,44 +313,6 @@ async function writeImageTrace(event: Record<string, unknown>) {
     await appendFile(path.join(traceDirectory, "canvas-image-generation.ndjson"), `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`, "utf8");
   } catch (error) {
     console.warn("[Image/Trace] Failed to persist trace:", error);
-  }
-}
-
-async function persistAutodlH3SelfhostImageWithRecovery(options: {
-  rawUrl: string;
-  apiEndpoint: string;
-  apiKey: string;
-  userId: string;
-  traceId: string;
-  modelId: string;
-  aspectRatio: string;
-  resolution: ImageResolution;
-  expectedPixelSize: string;
-  coverText?: string;
-}) {
-  try {
-    return await persistAutodlH3SelfhostImage(options);
-  } catch (error) {
-    if (!isAmbiguousAutodlH3SelfhostTransportError(error)) throw error;
-    // The synchronous gateway already completed the GPU job and its signed file
-    // URL embeds that job id. Refresh the URL with the read-only job endpoint,
-    // then repeat only download/COS persistence; never submit another GPU job.
-    const recoveredUrl = await recoverAutodlH3SelfhostCompletedImageResultUrl(
-      options.rawUrl,
-      options.apiEndpoint,
-      options.apiKey,
-    );
-    await writeImageTrace({
-      phase: "autodl_h3_result_recovery_started",
-      traceId: options.traceId,
-      modelId: options.modelId,
-      recovery: "get_completed_job_then_persist",
-    });
-    return persistAutodlH3SelfhostImage({
-      ...options,
-      rawUrl: recoveredUrl,
-      resultTimeoutMs: AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS,
-    });
   }
 }
 
@@ -1404,6 +1230,7 @@ export async function POST(request: NextRequest) {
       clientNodeId, clientNodeTitle, historySurface, noRetry,
       strictSingleSubmit, resumeDeliveryOnly = false, adminValidation: rawAdminValidation,
     } = body;
+    const deliveryRequirement = historySurface === "short-drama-film-studio" ? "recoverable_reference" : body.deliveryRequirement;
     const adminValidation = rawAdminValidation as ImageGenerationValidationInput | undefined;
     const internalModelIdRequested = typeof modelId === "string"
       && modelId.trim().length > 0
@@ -1510,6 +1337,7 @@ export async function POST(request: NextRequest) {
         || ratio !== resumeSnapshot.aspectRatio
         || String(resolution || "").toUpperCase() !== resumeSnapshot.resolution
         || (historySurface || "other") !== resumeSnapshot.surface
+        || deliveryRequirement !== resumeSnapshot.deliveryRequirement
         || exactCoverText.trim() !== (resumeSnapshot.exactCoverText || "")
         || (resumeSnapshot.schema === "image_generation_request_snapshot.v2"
           && ((style || "").trim() !== (resumeSnapshot.style || "")
@@ -1801,6 +1629,15 @@ export async function POST(request: NextRequest) {
           strictImageRequest,
         )
       : [];
+    if (!resumeDeliveryOnly && deliveryRequirement === "recoverable_reference") {
+      const capable = effectiveMode === "local" && candidates.length > 0 && candidates.every((candidate) => {
+        const boundH3 = assertAutodlH3SelfhostModelBinding({ kind: "image", provider: candidate.provider || "vectorengine",
+          modelName: candidate.model_name, apiEndpoint: candidate.api_endpoint, apiKey: candidate.api_key });
+        return imageRecoverableReferenceCapability({ contract: resolveImageProviderContract(candidate), referenceCount: references.length,
+          boundH3, volcengine: candidate.provider === "volcengine" }) === "url_requested";
+      });
+      if (!capable) return imageParameterRejection("当前生图通道没有可恢复链接输出合同，无法用于后台编排；本次未调用模型或扣费", "IMAGE_RECOVERABLE_REFERENCE_UNSUPPORTED");
+    }
     if (!resumeDeliveryOnly && effectiveMode === "local" && references.length === 0
       && candidates.some(candidate => resolveImageProviderContract(candidate).requestProtocol === "images_edits")) {
       return imageParameterRejection(
@@ -1812,6 +1649,7 @@ export async function POST(request: NextRequest) {
       ? previousImageRequest.payloadFingerprint
       : strictImagePayloadFingerprint({
       schema: "image_generation_request.v2",
+      ...(deliveryRequirement ? { deliveryRequirement } : {}),
       ...(validationControl ? { validationConfigurationHash: validationControl.configurationHash } : {}),
       userId,
       mode: effectiveMode,
@@ -1844,6 +1682,7 @@ export async function POST(request: NextRequest) {
       ? previousImageRequest.requestSnapshot
       : createImageFailureRequestSnapshot({
       surface: historySurface,
+      ...(deliveryRequirement ? { deliveryRequirement } : {}),
       prompt,
       publicModelId: selectedBillingPublicModelId,
       modelName: userVisibleImageModelLabel,
@@ -1995,6 +1834,7 @@ export async function POST(request: NextRequest) {
       clientTraceId: traceId,
       payloadFingerprint: generationFingerprint,
       requestSnapshot: failureRequestSnapshot,
+      billingReferenceId,
       ...(sellingPrice > 0 ? { rejectionBilling: { referenceId: billingReferenceId, amount: sellingPrice } } : {}),
       // runImageExactlyOnce first stores the durable intent and invokes this
       // hook only for its unique creator. Concurrent/replayed requests cannot
@@ -2149,7 +1989,7 @@ export async function POST(request: NextRequest) {
           }
           return {
             schema: "image_provider_result.v1",
-            rawUrl: extractedUrls[0],
+            ...(extractedUrls[0].startsWith("data:") ? { kind: "inline", inlineDataUrl: extractedUrls[0] } : { kind: "url", rawUrl: extractedUrls[0] }),
             mode: "workflow",
             selectedModelId: `workflow:${workflowConfig.appId}`,
             selectedCostPrice: costPrice,
@@ -2194,7 +2034,7 @@ export async function POST(request: NextRequest) {
             }
             return {
               schema: "image_provider_result.v1",
-              rawUrl: candidateImageUrl,
+              ...(candidateImageUrl.startsWith("data:") ? { kind: "inline", inlineDataUrl: candidateImageUrl } : { kind: "url", rawUrl: candidateImageUrl }),
               mode: "local",
               selectedModelId: candidate.id,
               selectedCostPrice: resolveImageResolutionPrice(candidate, effectiveResolution, "cost"),
@@ -2245,6 +2085,30 @@ export async function POST(request: NextRequest) {
           upstreamTarget: "",
         });
       },
+      prepareEphemeralResult: async (result, recordId) => {
+        const candidate = candidates.find((entry) => entry.id === result.selectedModelId);
+        const boundCost = result.mode === "local" && candidate
+          ? resolveImageResolutionPrice(candidate, effectiveResolution, "cost") : costPrice;
+        if (result.mode !== effectiveMode || result.selectedCostPrice !== boundCost || (result.mode === "local"
+          ? !candidate || candidate.provider !== result.provider || candidate.api_endpoint !== result.apiEndpoint
+          : result.selectedModelId !== `workflow:${workflowConfig.appId}` || result.apiEndpoint !== workflowConfig.apiUrl)) {
+          throw new ImageExactlyOnceError("IMAGE_MODEL_BINDING_CHANGED", "原图片结果的模型配置已变化，请保留请求号核查", 409);
+        }
+        const decoded = decodeInlineImage(result.inlineDataUrl);
+        const validated = validateUploadBuffer(decoded.buffer, decoded.contentType);
+        if (validated.contentType !== decoded.contentType || !AUTODL_H3_IMAGE_CONTENT_TYPES.includes(validated.contentType)) {
+          throw new ImageExactlyOnceError("IMAGE_INLINE_RESULT_INVALID", "上游图片格式无法确认，原请求保持锁定", 503);
+        }
+        const prepared = await prepareGeneratedImageBytes({
+          buffer: decoded.buffer, aspectRatio: ratio, resolution: effectiveResolution,
+          expectedPixelSize: expectedImagePixelSize(candidate, effectiveResolution, ratio),
+        });
+        return createImageEphemeralDelivery({
+          recordId, buffer: prepared.buffer, contentType: decoded.contentType,
+          width: prepared.dimensions.width, height: prepared.dimensions.height,
+          selectedModelId: result.selectedModelId, selectedCostPrice: result.selectedCostPrice,
+        });
+      },
       // This callback is invoked only after the private provider result and a
       // persistence lease are durably confirmed. Replays never enter submitOnce.
       persistProviderResult: async (result, persistence) => {
@@ -2254,55 +2118,71 @@ export async function POST(request: NextRequest) {
           : result.selectedModelId !== `workflow:${workflowConfig.appId}` || result.apiEndpoint !== workflowConfig.apiUrl))) {
           throw new ImageExactlyOnceError("IMAGE_MODEL_BINDING_CHANGED", "原图片结果的模型配置已变化，请保留请求号核查", 409);
         }
-        // A lease takeover uses a distinct private object. A late old upload
-        // cannot overwrite the winning object's bytes before its fenced commit.
-        const persistenceTraceId = `${h3OperationId}-${persistence.persistenceAttemptId}`;
-        let persisted; try { persisted = candidate?.provider === AUTODL_H3_SELFHOST_PROVIDER
-          ? await persistAutodlH3SelfhostImageWithRecovery({
-              rawUrl: result.rawUrl,
-              apiEndpoint: candidate.api_endpoint,
-              apiKey: resolveProviderSecret(candidate.api_key),
-              userId, traceId: persistenceTraceId, modelId: result.selectedModelId,
-              aspectRatio: ratio,
-              resolution: effectiveResolution,
-              expectedPixelSize: expectedImagePixelSize(candidate, effectiveResolution, ratio),
-              coverText: exactCoverText,
-            })
-          : await persistGeneratedImage({
-              rawUrl: result.rawUrl, userId, traceId: persistenceTraceId,
-              modelId: result.selectedModelId, source: result.source,
-              aspectRatio: ratio,
-              resolution: effectiveResolution,
-              expectedPixelSize: expectedImagePixelSize(candidate, effectiveResolution, ratio),
-              coverText: exactCoverText,
-            });
-        } catch (persistError) {
-          console.error("[Image] delivery persist failed", {
-            errorType: persistError instanceof Error ? persistError.name : "UnknownError",
-            code: persistError && typeof persistError === "object" && "code" in persistError
-              ? String((persistError as { code?: unknown }).code || "IMAGE_PERSISTENCE_ERROR")
-              : "IMAGE_PERSISTENCE_ERROR",
+        const providerUrl = providerMediaUrl(result.rawUrl);
+        if (!providerUrl) throw new ImageRequestRejectedError({ source: "provider", code: "IMAGE_PROVIDER_LINK_REQUIRED" });
+        // Inspect bytes in memory; deliver the original link without copying.
+        let ownedResultRecovery: { kind: "image"; expectedJobId: string; apiKey: string } | undefined;
+        if (result.provider === AUTODL_H3_SELFHOST_PROVIDER) {
+          const bound = await imageExactlyOnceStore.readProviderPersistenceBinding({
+            recordId: persistence.recordId, userId, payloadFingerprint: persistence.payloadFingerprint,
+            persistenceAttemptId: persistence.persistenceAttemptId, result,
           });
-          throw persistError;
+          const boundUrl = new URL(resolveAutodlH3SelfhostResultUrl(bound.rawUrl, bound.apiEndpoint, { allowExpired: true }));
+          ownedResultRecovery = { kind: "image", expectedJobId: boundUrl.pathname.slice("/v1/files/".length), apiKey: resolveProviderSecret(AUTODL_H3_SELFHOST_SECRET_REF) };
         }
+        const imported = result.provider === AUTODL_H3_SELFHOST_PROVIDER
+          ? await readAutodlH3SelfhostResult(providerUrl, result.apiEndpoint, {
+              maxBytes: AUTODL_H3_IMAGE_MAX_BYTES, timeoutMs: AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS,
+              allowedContentTypes: AUTODL_H3_IMAGE_CONTENT_TYPES,
+              ownedResultRecovery,
+            })
+          : await safeFetch(providerUrl, {
+              maxBytes: AUTODL_H3_IMAGE_MAX_BYTES, timeoutMs: AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS,
+              maxRedirects: 3, allowedContentTypes: ["image/*"], trustedHostnames: TRUSTED_GENERATED_IMAGE_HOSTS,
+            });
+        const validated = validateUploadBuffer(imported.buffer, imported.contentType);
+        if (!AUTODL_H3_IMAGE_CONTENT_TYPES.includes(validated.contentType)) throw new Error("上游图片格式不受支持");
+        const prepared = await prepareGeneratedImageBytes({
+          buffer: imported.buffer, aspectRatio: ratio, resolution: effectiveResolution,
+          expectedPixelSize: expectedImagePixelSize(candidate, effectiveResolution, ratio),
+        });
         return {
-          imageStorageUri: persisted.storageUri,
-          storageKey: persisted.storageKey,
-          storageProvider: persisted.storageProvider,
-          fileName: persisted.fileName,
-          fileSize: persisted.fileSize,
-          contentType: persisted.contentType,
-          source: persisted.source,
-          width: persisted.dimensions.width,
-          height: persisted.dimensions.height,
-          selectedModelId: result.selectedModelId,
-          selectedCostPrice: result.selectedCostPrice,
+          deliveryMode: "provider_url", providerUrl: "finalUrl" in imported ? imported.finalUrl : providerUrl, provider: result.provider, apiEndpoint: result.apiEndpoint,
+          contentType: validated.contentType, source: result.source,
+          width: prepared.dimensions.width, height: prepared.dimensions.height,
+          selectedModelId: result.selectedModelId, selectedCostPrice: result.selectedCostPrice,
         };
       },
     });
     deductResult = imageBudgetState.deduction;
     billingReservation = imageBudgetState.reservation;
     idempotencyReplayed = exactResult.replayed;
+    if (isImageEphemeralReceipt(exactResult.response)) {
+      const receipt = exactResult.response;
+      const transient = "transientDelivery" in exactResult ? exactResult.transientDelivery : undefined;
+      // The durable task/financial receipt does not claim browser receipt or future media availability.
+      // Existing revenue task identity is unique: receipt-only replays repair a
+      // lost projection without touching the wallet, provider or image bytes.
+      await recordRevenue({ userId, modelId: effectiveMode === "workflow" ? selectedBillingPublicModelId : receipt.selectedModelId,
+        taskId: receipt.billingReferenceId || billingReferenceId, costPrice: receipt.selectedCostPrice,
+        sellingPrice: receipt.cashCharged ?? sellingPrice,
+        userRole: (userRole as "admin" | "student") || "student", recordType: "image", cashCharged: receipt.cashCharged ?? sellingPrice,
+      }).catch(() => console.error("[Image] ephemeral revenue receipt projection unavailable"));
+      return NextResponse.json({
+        success: true, status: "completed", taskId: traceId, traceId, operationId: h3OperationId,
+        ...imageEphemeralStatus(receipt),
+        mediaAvailable: Boolean(transient), transientAvailable: Boolean(transient),
+        images: transient ? [{ url: transient.dataUrl, recordId: receipt.recordId, deliveryMode: "inline_ephemeral",
+          ephemeral: true, retention: "current_page_only", mediaAvailable: true, canRecover: false,
+          width: receipt.width, height: receipt.height, dimensionsVerified: true }] : [],
+        modelUsed: userVisibleModelLabel, modelIdUsed: modelId?.startsWith("pm_") ? modelId : null,
+        resolution: effectiveResolution, outputPixelSize, imageCount: IMAGE_FIXED_OUTPUT_COUNT, providerProtocol,
+        payloadFingerprint: generationFingerprint, idempotencyReplayed,
+        message: transient ? "图片仅在当前页面可预览和下载，请及时下载保存。" : "本次任务已完成；图片仅在原页面临时交付，刷新后无法恢复。",
+      }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+    const directProviderUrl = exactResult.response.deliveryMode === "provider_url" ? providerMediaUrl(exactResult.response.providerUrl) : null;
+    if (exactResult.response.sourceExpiredAt) throw new ImageExactlyOnceError("IMAGE_SOURCE_EXPIRED", "上游图片已确认失效，原任务与账务凭据仍保留", 410);
     const imageStorageUri = String(exactResult.response.imageStorageUri || "");
     autodlH3StoredObjectKey = String(exactResult.response.storageKey || "");
     const storedProvider = String(exactResult.response.storageProvider || "");
@@ -2318,12 +2198,12 @@ export async function POST(request: NextRequest) {
     const selectedModelId = String(exactResult.response.selectedModelId || "");
     const selectedCostPrice = configuredImagePrice(exactResult.response.selectedCostPrice);
     if (
-      !imageStorageUri
+      (!directProviderUrl && (!imageStorageUri
       || !autodlH3StoredObjectKey
       || storedProvider !== GENERATED_IMAGE_STORAGE_PROVIDER
       || !storedFileName
       || !Number.isInteger(storedFileSize)
-      || storedFileSize <= 0
+      || storedFileSize <= 0))
       || !AUTODL_H3_IMAGE_CONTENT_TYPES.includes(storedContentType)
       || !autodlH3StoredDimensions
       || !selectedModelId
@@ -2348,7 +2228,10 @@ export async function POST(request: NextRequest) {
       }
       if (selectedCandidate) modelConfig = selectedCandidate;
     }
-    imageUrl = await resolveGeneratedImageObjectUri(imageStorageUri);
+    imageUrl = directProviderUrl
+      ? (exactResult.response.provider === AUTODL_H3_SELFHOST_PROVIDER
+        ? `/api/media-history/content?recordId=${encodeURIComponent(exactResult.record.recordId)}` : directProviderUrl)
+      : await resolveGeneratedImageObjectUri(imageStorageUri);
 
     await recordRevenue({
       userId,
@@ -2364,7 +2247,9 @@ export async function POST(request: NextRequest) {
     // 图片对象先以“held”状态保存，不写 user_files，也不向用户暴露。
     // 只有扣费成功或配置明确为零价后，原子 RPC 才建立账号资产归属；
     // 重放同一请求会复用同一账单 reference 与同一 assetId。
-    const delivery = await finalizeImageExactlyOnceDelivery({
+    const delivery = directProviderUrl
+      ? await finalizeImageProviderDelivery({ recordId: exactResult.record.recordId, userId, providerUrl: directProviderUrl })
+      : await finalizeImageExactlyOnceDelivery({
       recordId: exactResult.record.recordId,
       userId,
       storageKey: autodlH3StoredObjectKey,
@@ -2402,7 +2287,7 @@ export async function POST(request: NextRequest) {
       modelId: modelConfig?.id || modelId || "",
       modelName: modelConfig?.name || "工作流",
       promptHash: tracePromptHash,
-      outputUrl: `object://${GENERATED_IMAGE_STORAGE_PROVIDER}/${encodeURIComponent(autodlH3StoredObjectKey)}`,
+      outputUrl: directProviderUrl ? "provider_url" : `object://${GENERATED_IMAGE_STORAGE_PROVIDER}/${encodeURIComponent(autodlH3StoredObjectKey)}`,
       durationMs: Date.now() - traceStartedAt,
     });
     let currentCashRemaining: number | null = null;
@@ -2419,9 +2304,11 @@ export async function POST(request: NextRequest) {
       taskId: traceId,
       traceId,
       operationId: h3OperationId,
+      billingReferenceId,
       images: [{
         url: imageUrl,
-        assetId: delivery.assetId,
+        ...(delivery.assetId ? { assetId: delivery.assetId } : {}),
+        ...(directProviderUrl ? { deliveryMode: "provider_url", recordId: exactResult.record.recordId } : {}),
         aspectRatio: ratio,
         width,
         height,
@@ -2436,11 +2323,13 @@ export async function POST(request: NextRequest) {
       providerProtocol,
       payloadFingerprint: generationFingerprint,
       idempotencyReplayed,
+      recordId: exactResult.record.recordId,
+      ...(directProviderUrl ? { deliveryMode: "provider_url" } : {}),
       // This is the total charge bound to the business request, not the delta
       // of an idempotent wallet replay (which is correctly zero internally).
       cashCharged: sellingPrice,
       cashRemaining: currentCashRemaining,
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     deductResult = imageBudgetState.deduction;
     billingReservation = imageBudgetState.reservation;

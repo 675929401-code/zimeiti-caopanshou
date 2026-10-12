@@ -11,7 +11,7 @@ import {
   createSupabaseAutodlH3LifecycleStore,
   installAutodlH3LifecycleRuntimeDependencies,
   isAutodlH3LifecycleEnabled,
-  isStableAutodlH3ResultAssetUrl,
+  isAutodlH3ProviderDeliveryResultUrl,
   type AutodlH3InstanceClient,
   type AutodlH3Job,
   type AutodlH3JobDispatcher,
@@ -33,6 +33,7 @@ import {
   normalizeAutodlH3VideoResolutionTier,
 } from "@/lib/autodl-h3-selfhost";
 import { resolveProviderSecret } from "@/lib/provider-secret";
+import { probeAutodlH3ProviderDeliveryReadiness } from "@/lib/autodl-h3-provider-delivery-readiness";
 import {
   createDefaultServerSecretFilePolicy,
   readServerOnlySecretFile,
@@ -909,6 +910,7 @@ export interface AutodlH3ProductionDispatcherOptions {
   poll?: typeof pollAutodlH3SelfhostVideo;
   finalizeSuccess?: typeof finalizeAutodlH3VideoSuccess;
   canSubmit?: () => boolean;
+  providerDeliveryReadiness?: typeof probeAutodlH3ProviderDeliveryReadiness;
   ensureGatewayReady(instanceUuid: string): Promise<AutodlH3GatewayHealth>;
 }
 
@@ -958,6 +960,7 @@ export function createAutodlH3ProductionDispatcher(
 
   const submit = async (job: AutodlH3Job): Promise<VideoTaskResult> => {
     if (!canSubmit()) throw new Error("AUTODL_H3_RUNTIME_SUBMISSION_NOT_ENABLED");
+    if (!(await (options.providerDeliveryReadiness || probeAutodlH3ProviderDeliveryReadiness)()).ready) throw new Error("AUTODL_H3_PROVIDER_DELIVERY_NOT_READY");
     // Ownership/existence is checked before a provider credential is resolved.
     const hydratedPayload = await resolveQueuedAssets({ userId: job.userId, payload: job.requestPayload });
     const uncredentialedModel = await modelFor(job, false);
@@ -1028,7 +1031,7 @@ export function createAutodlH3ProductionDispatcher(
           errorMessage: finalized.errorMessage,
         };
       }
-      if (!isStableAutodlH3ResultAssetUrl(finalized.resultAssetUrl)) {
+      if (!isAutodlH3ProviderDeliveryResultUrl(finalized.resultAssetUrl, job.upstreamTaskId)) {
         return {
           state: "RECOVERY_REQUIRED",
           progress: 99,

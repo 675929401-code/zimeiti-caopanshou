@@ -1,3 +1,4 @@
+import { resolveOwnedAutodlH3VideoResultJobId } from "@/lib/autodl-h3-owned-result";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { isPersistentVideoUri, resolvePersistentVideoUri } from "@/lib/video-persistence";
@@ -15,6 +16,7 @@ import {
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { isAutodlComfyuiHostedProtocol } from "@/lib/video-autodl-comfyui-workflow";
 import { markVideoUpstreamSourceExpired } from "@/lib/video-source-expiry";
+import { resolveVideoStreamContentType } from "@/lib/video-stream-prefix";
 import {
   AUTODL_H3_SELFHOST_GATEWAY_ORIGIN,
   AUTODL_H3_SELFHOST_VIDEO_ENDPOINT,
@@ -28,6 +30,14 @@ export const dynamic = "force-dynamic";
 
 function isUpstreamErrorDocument(contentType: string) {
   return /^(?:text\/html|application\/(?:json|problem\+json))(?:;|$)/iu.test(contentType.trim());
+}
+
+function videoDownloadDisposition(name: string, contentType: string) {
+  const extension = contentType === "video/webm" ? "webm"
+    : contentType === "video/quicktime" ? "mov"
+      : contentType === "video/mp4" ? "mp4" : "";
+  const filename = extension ? `${name.replace(/\.(?:mp4|m4v|webm|mov|qt)$/iu, "")}.${extension}` : name;
+  return `attachment; filename="${encodeURIComponent(filename)}"`;
 }
 
 /**
@@ -67,7 +77,7 @@ export async function GET(request: NextRequest) {
     try {
       const supabase = getSupabaseClient();
 
-      const taskFields = "id, video_url, storage_url, provider_result_url, model_id, user_id, task_id_external, status, source_expired_at";
+      const taskFields = "id, video_url, storage_url, provider_result_url, model_id, user_id, task_id_external, status, source_expired_at, history_hidden_at";
       const readTask = async (allowCrossMember: boolean) => {
         let localQuery = supabase
           .from("video_tasks")
@@ -115,8 +125,10 @@ export async function GET(request: NextRequest) {
         if (task.status !== "completed") {
           return NextResponse.json({ error: "任务尚未完成" }, { status: 409 });
         }
-        if (task.source_expired_at) {
-          return NextResponse.json({ error: "视频源已到期，请使用此前下载的文件" }, { status: 410 });
+        if (task.history_hidden_at || task.source_expired_at) {
+          return NextResponse.json({ error: task.history_hidden_at
+            ? "视频记录已从历史中移除，当前不可下载"
+            : "视频源已到期，请使用此前下载的文件" }, { status: 410 });
         }
         taskInternalId = String(task.id || taskId);
         taskOwnerId = String(task.user_id || "");
@@ -181,9 +193,9 @@ export async function GET(request: NextRequest) {
           }
           if (model?.api_endpoint && task.task_id_external && (isAutodlH3Selfhost(protocolType) || model.api_key)) {
             fallbackInfo = {
-              apiKey: isAutodlH3Selfhost(protocolType) ? "" : resolveProviderSecret(model.api_key),
+              apiKey: resolveProviderSecret(model.api_key),
               apiEndpoint: model.api_endpoint as string,
-              taskIdExternal: task.task_id_external as string,
+              taskIdExternal: isAutodlH3Selfhost(protocolType) ? await resolveOwnedAutodlH3VideoResultJobId({ id: task.id, user_id: task.user_id, model_id: task.model_id, task_id_external: task.task_id_external }) : task.task_id_external as string,
               protocolType,
             };
           }
@@ -230,6 +242,9 @@ export async function GET(request: NextRequest) {
     try {
       const { response } = await fetchAutodlH3SelfhostResult(effectiveUrl, fallbackInfo.apiEndpoint, {
         timeoutMs: 300_000,
+        ...(taskInternalId && taskOwnerId ? { ownedResultRecovery: {
+          kind: "video" as const, expectedJobId: fallbackInfo.taskIdExternal, apiKey: fallbackInfo.apiKey,
+        } } : {}),
       });
       if (!response.ok) {
         const expiredStatus = [404, 410].includes(response.status)
@@ -249,9 +264,10 @@ export async function GET(request: NextRequest) {
           { status: expiredStatus ? 410 : 502 },
         );
       }
-      const contentType = (response.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
-      if (contentType !== "video/mp4" || !response.body) {
-        await response.body?.cancel().catch(() => undefined);
+      const media = await resolveVideoStreamContentType({ response, sourceUrl: "" });
+      const contentType = media.contentType;
+      if (contentType !== "video/mp4" || !media.body) {
+        await media.body?.cancel().catch(() => undefined);
         console.warn("[下载代理] AutoDL H3 临时取件类型无效", {
           taskId,
           sourceUrl: redactedUrl,
@@ -259,11 +275,11 @@ export async function GET(request: NextRequest) {
         });
         return NextResponse.json({ error: "H3 临时结果类型无效" }, { status: 502 });
       }
-      return new NextResponse(response.body, {
+      return new NextResponse(media.body, {
         status: 200,
         headers: {
           "Content-Type": "video/mp4",
-          "Content-Disposition": `attachment; filename="${encodeURIComponent(name)}"`,
+          "Content-Disposition": videoDownloadDisposition(name, "video/mp4"),
           "Cache-Control": "private, no-store",
           "Referrer-Policy": "no-referrer",
         },
@@ -294,7 +310,7 @@ export async function GET(request: NextRequest) {
       "User-Agent": "Mozilla/5.0 (compatible; VideoProxy/1.0)",
       "Accept": "video/*,*/*;q=0.8",
     };
-    const { response } = await safeMediaFetch(downloadUrl, {
+    const { response, finalUrl } = await safeMediaFetch(downloadUrl, {
       headers,
       authorization,
       timeoutMs: 300_000,
@@ -310,15 +326,16 @@ export async function GET(request: NextRequest) {
       throw new Error(`上游返回 ${response.status}`);
     }
 
-    const contentType = response.headers.get("content-type") || "video/mp4";
-    const body = response.body;
+    const declaredType = response.headers.get("content-type") || "";
 
-    if (isUpstreamErrorDocument(contentType)) {
-      await body?.cancel().catch(() => undefined);
+    if (isUpstreamErrorDocument(declaredType)) {
+      await response.body?.cancel().catch(() => undefined);
       throw new Error("上游返回的不是视频文件");
     }
 
-    if (!body) {
+    const { body, contentType } = await resolveVideoStreamContentType({ response, sourceUrl: finalUrl || downloadUrl });
+    if (!body || !contentType) {
+      await body?.cancel().catch(() => undefined);
       throw new Error("上游无响应体");
     }
 
@@ -327,7 +344,7 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(name)}"`,
+        "Content-Disposition": videoDownloadDisposition(name, contentType),
         "Cache-Control": "private, max-age=300",
         "Referrer-Policy": "no-referrer",
       },
@@ -351,7 +368,7 @@ export async function GET(request: NextRequest) {
         "Accept": "video/*,*/*;q=0.8",
         "User-Agent": "Mozilla/5.0 (compatible; CanvasVideoProxy/1.0)",
       };
-      const { response: cdnResponse } = await safeMediaFetch(effectiveUrl, {
+      const { response: cdnResponse, finalUrl } = await safeMediaFetch(effectiveUrl, {
         headers: quickHeaders,
         authorization: providerAuthorization,
         timeoutMs: 30_000,
@@ -359,18 +376,21 @@ export async function GET(request: NextRequest) {
       });
 
       if (cdnResponse.ok) {
-        const contentType = cdnResponse.headers.get("content-type") || "video/mp4";
-        const body = cdnResponse.body;
-        if (body && !isUpstreamErrorDocument(contentType)) {
-          return new NextResponse(body, {
-            status: 200,
-            headers: {
-              "Content-Type": contentType,
-              "Content-Disposition": `attachment; filename="${encodeURIComponent(name)}"`,
-              "Cache-Control": "private, max-age=300",
-              "Referrer-Policy": "no-referrer",
-            },
-          });
+        const declaredType = cdnResponse.headers.get("content-type") || "";
+        if (!isUpstreamErrorDocument(declaredType)) {
+          const { body, contentType } = await resolveVideoStreamContentType({ response: cdnResponse, sourceUrl: finalUrl || effectiveUrl });
+          if (body && contentType) {
+            return new NextResponse(body, {
+              status: 200,
+              headers: {
+                "Content-Type": contentType,
+                "Content-Disposition": videoDownloadDisposition(name, contentType),
+                "Cache-Control": "private, max-age=300",
+                "Referrer-Policy": "no-referrer",
+              },
+            });
+          }
+          await body?.cancel().catch(() => undefined);
         }
       }
       if ([404, 410].includes(cdnResponse.status)) directExpiryStatus = cdnResponse.status as 404 | 410;

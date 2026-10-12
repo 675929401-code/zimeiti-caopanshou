@@ -14,10 +14,31 @@ const scopedClientQuota = classifyVideoProviderError("Client Key 限定范围中
 assert.equal(scopedClientQuota.code, "CHANNEL_QUOTA_UNAVAILABLE");
 assert.equal(scopedClientQuota.category, "account_quota");
 
-const signedDiagnostic = sanitizeVideoProviderDiagnostic("download video failed: status=403 url=https://media.example/video.mp4?q-ak=temporary&q-signature=secret");
+const signedDiagnostic = sanitizeVideoProviderDiagnostic("download video failed: status=403 url=https://media.example/video.mp4?q-ak=temporary&q-signature=secret#private-fragment");
 assert.match(signedDiagnostic, /download video failed: status=403/u);
-assert.match(signedDiagnostic, /video\.mp4\?\[redacted\]/u);
-assert.doesNotMatch(signedDiagnostic, /q-ak|q-signature|temporary|secret/u);
+const diagnosticUrl = new URL(signedDiagnostic.match(/https?:\/\/[^\s]+/u)?.[0] || "");
+assert.equal(diagnosticUrl.origin, "https://media.example");
+assert.equal(diagnosticUrl.pathname, "/video.mp4");
+assert.equal(diagnosticUrl.search, "");
+assert.equal(diagnosticUrl.hash, "");
+assert.doesNotMatch(signedDiagnostic, /q-ak|q-signature|temporary|secret|private-fragment/u);
+
+const credentialUrl = new URL("https://media.example/video.mp4");
+credentialUrl.username = "private-user";
+credentialUrl.password = "private-password";
+credentialUrl.searchParams.set("token", "private-query");
+credentialUrl.hash = "private-hash";
+
+for (const [raw, forbidden, expectedMarker] of [
+  [`fetch failed ${credentialUrl.toString()}`, /private-user|private-password|private-query|private-hash/u, "[url-redacted]"],
+  ["input data:image/png;base64,PRIVATE_DATA_PAYLOAD", /PRIVATE_DATA_PAYLOAD/u, "[data-redacted]"],
+  ["request failed Authorization: Bearer PRIVATE_BEARER_TOKEN", /PRIVATE_BEARER_TOKEN/u, "[redacted]"],
+  ["request failed api_key=PRIVATE_API_KEY token=PRIVATE_TOKEN", /PRIVATE_API_KEY|PRIVATE_TOKEN/u, "[redacted]"],
+] as const) {
+  const sanitized = sanitizeVideoProviderDiagnostic(raw);
+  assert.doesNotMatch(sanitized, forbidden);
+  assert.ok(sanitized.includes(expectedMarker));
+}
 
 const unavailable = classifyVideoProviderError("HTTP 503 service unavailable: distributor offline", "Grok Imagine 1.0 Super 20秒 渠道D");
 assert.equal(unavailable.code, "CHANNEL_SERVICE_UNAVAILABLE");
@@ -59,12 +80,13 @@ assert.equal(containsForbiddenPublicModelKey(dto), false);
 assert.doesNotMatch(JSON.stringify(dto), /internal-provider|private-upstream|private-key|private\.example/iu);
 
 async function main() {
-  const [billingSource, statusSource, streamSource, historySource, modelsSource] = await Promise.all([
+  const [billingSource, statusSource, streamSource, historySource, modelsSource, taskStatusSource] = await Promise.all([
     readFile(new URL("../src/lib/billing.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/app/api/video/status/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/app/api/video/stream/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/app/api/video/history/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/app/api/video/models/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/lib/video-task-status.ts", import.meta.url), "utf8"),
   ]);
   assert.match(
     billingSource,
@@ -75,8 +97,11 @@ async function main() {
     billingSource,
     /deductedAmount: result\.success && !result\.alreadyFulfilled \? numericAmount : 0/u,
   );
-  assert.match(statusSource, /status: "finalizing"/u);
-  assert.match(streamSource, /status: "finalizing"/u);
+  for (const source of [statusSource, streamSource]) {
+    assert.match(source, /import \{ readOwnedVideoTaskStatus \} from ['"]@\/lib\/video-task-status['"]/u);
+    assert.match(source, /readOwnedVideoTaskStatus\(authorization\.user,/u);
+  }
+  assert.match(taskStatusSource, /status: "finalizing"/u);
   assert.match(historySource, /classifyVideoProviderError\(rawError/u);
   assert.doesNotMatch(modelsSource, /select\(isAdmin[\s\S]*?\? "\*"/u);
 

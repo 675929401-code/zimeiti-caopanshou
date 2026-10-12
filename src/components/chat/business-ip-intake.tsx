@@ -23,7 +23,7 @@ import {
 } from '@/lib/business-ip/intake';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription,DialogFooter} from '@/components/ui/dialog';
 import {Button} from '@/components/ui/button';
-import styles from './business-ip-intake.module.css';
+import styles from '../agent-intake.module.css';
 
 type Field = {id:string;label:string;hint:string};
 type StepIntake = {
@@ -445,18 +445,18 @@ export function BusinessIpIntake({agentId,conversationId,open,onClose,onPrepare,
      ? '例如：已发过30条，但来的人很杂；想保留现有昵称，重新理清人群和内容。'
      : '例如：做过8年幼师，朋友常问亲子沟通，不想让孩子出镜，每周能拍3条。';
   const submit=()=>onPrepare(buildPositioningIntakeText({situation:positioningSituation,goal:positioningGoal,profile:positioningProfile,supplement}));
-  return <Dialog open={open} onOpenChange={value=>{if(!value)onClose();}}><DialogContent className={`${styles.surface} flex max-h-[88dvh] flex-col overflow-hidden sm:max-w-xl`} data-testid="business-ip-intake">
+  return <Dialog open={open} onOpenChange={value=>{if(!value)onClose();}}><DialogContent className={`${styles.surface} ${styles.businessSurface} flex max-h-[88dvh] flex-col overflow-hidden sm:max-w-xl`} data-testid="business-ip-intake">
    <DialogHeader>
     <DialogTitle>{supplement?'补充你的经历或想法':'商业IP定位 · 帮你找到方向'}</DialogTitle>
     <DialogDescription>先选你的起点，下面会换成对应模板。从零个人不用先有产品；实体商家则从真实生意、顾客问题和可拍现场开始。不会的地方可以空着。</DialogDescription>
    </DialogHeader>
-   <div className="min-h-0 space-y-5 overflow-y-auto pr-1">
+   <div className={`${styles.body} min-h-0 space-y-4 overflow-y-auto pr-1`}>
     <ChoiceGroup title="你现在最像哪种情况？" choices={POSITIONING_SITUATIONS} value={positioningSituation} onChange={chooseSituation} testId="positioning-situation" />
     <ChoiceGroup title="你做自媒体最想得到什么？" choices={POSITIONING_GOALS} value={positioningGoal} onChange={setPositioningGoal} testId="positioning-goal" />
     <label className="block space-y-2 text-sm">
      <span className="font-semibold text-[var(--foreground)]">照着这个模板说说你自己</span>
     <span className="block text-xs leading-5 text-[var(--text-secondary)]">知道多少写多少，写“不知道”也可以。{positioningExample}</span>
-     <textarea value={positioningProfile} onChange={e=>setPositioningProfile(e.target.value)} aria-label="照着模板说说你自己" rows={8} maxLength={12000} className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-3 text-sm leading-6 outline-none focus:border-[var(--primary)]" />
+     <textarea value={positioningProfile} onChange={e=>setPositioningProfile(e.target.value)} aria-label="照着模板说说你自己" rows={6} maxLength={12000} className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-3 text-sm leading-6 outline-none focus:border-[var(--primary)]" />
     </label>
     <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
      <p className="font-semibold text-[var(--foreground)]">你会得到</p>
@@ -519,9 +519,9 @@ export function BusinessIpIntake({agentId,conversationId,open,onClose,onPrepare,
    <span>{field.label} <span className="text-xs text-[var(--text-secondary)]">选填</span></span>
    <textarea value={values[field.id]||''} disabled={isConsultation&&profileControlsDisabled} onChange={e=>{setValues(v=>({...v,[field.id]:e.target.value}));if(isConsultation)setProfileDirty(true);}} aria-label={field.label} rows={field.id==='businessData'?8:field.id==='industryKnowledge'||field.id==='offerAndDelivery'||field.id==='customerEvidence'?4:2} maxLength={field.id==='businessData'?BUSINESS_IP_PROFILE_MAX_DATA:12000} placeholder={field.hint} className="w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-60" />
  </label>;
- return <Dialog open={open} onOpenChange={value=>{if(!value)onClose();}}><DialogContent className={`${styles.surface} flex max-h-[88dvh] flex-col overflow-hidden sm:max-w-2xl`} data-testid="business-ip-intake">
+ return <Dialog open={open} onOpenChange={value=>{if(!value)onClose();}}><DialogContent className={`${styles.surface} ${styles.businessSurface} flex max-h-[88dvh] flex-col overflow-hidden sm:max-w-2xl`} data-testid="business-ip-intake">
   <DialogHeader><DialogTitle>{supplement?'补充本项目资料':config.title}</DialogTitle><DialogDescription>{supplement?'已有资料不用重填，只写新增或更正；不会的地方可以留空。':config.description} 填写后先进入草稿，发送才开始分析。</DialogDescription></DialogHeader>
-  <div className="min-h-0 space-y-5 overflow-y-auto pr-1">
+  <div className={`${styles.body} min-h-0 space-y-4 overflow-y-auto pr-1`}>
    {isConsultation&&<section className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--muted)]/40 p-3" data-testid="business-profile-manager">
     <div><p className="text-sm font-semibold text-[var(--foreground)]">我的业务资料包</p><p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">这里保存的是你自己的业务事实，不是平台提示词。请由你本人选择要用于当前顾客对话的业务；绑定后，这个对话只读取这项业务，切换其他业务不会串档。</p></div>
     <div className="grid gap-3 sm:grid-cols-2">

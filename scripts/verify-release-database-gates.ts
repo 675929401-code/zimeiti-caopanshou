@@ -57,12 +57,14 @@ const contract = JSON.parse(read("deploy/policies/database-contract.v1.json")) a
       requiredColumns: Array<{ name: string; type: string }>;
       requiredConstraints: Array<{ name: string; validated: boolean; definitionTokens: string[] }>;
     }>;
+    h3ProviderUrlPredicate: { signature: string; ownerRelation: string; securityDefinerRequired: boolean; volatility: string; strict: boolean; searchPath: string[]; requiredExecuteGrantee: string; sourceSha256: string; sourceMigration: string };
     triggerSemantics: Array<{
       relation: string;
       name: string;
       function: string;
       enabled: boolean;
     }>;
+    functionDependencyEdges: Array<{ caller: string; callee: string; ownerRelation: string }>;
     functionSecurityGroups: Array<{
       id: string;
       ownerRelation: string;
@@ -81,7 +83,7 @@ const contract = JSON.parse(read("deploy/policies/database-contract.v1.json")) a
   rpcs: Array<{ name: string; arguments: string[] }>;
   rollbackArtifacts?: Array<{
     forwardMigration: string;
-    rollback: string;
+    rollback?: string;
     rollbackSha256?: string;
     mode: string;
     preserves: string[];
@@ -98,7 +100,7 @@ assertSharedAgentBatchCasCandidateCaptured(contract);
 const table = (name: string) => contract.tables.find((entry) => entry.name === name);
 const rpc = (name: string) => contract.rpcs.find((entry) => entry.name === name);
 
-assert.equal(contract.contractVersion, "20261010140000");
+assert.equal(contract.contractVersion, "20261012014000");
 assert.equal(contract.requiredProbeRole, "service_role");
 const liveCatalogChecks = (() => {
   const configured = contract.liveCatalogChecks;
@@ -151,6 +153,38 @@ assert.deepEqual(liveCatalogChecks.relationSemantics, [
     ],
     requiredConstraints: [],
   },
+{
+  "relation": "public.autodl_h3_jobs",
+  "requiredColumns": [],
+  "requiredConstraints": [
+    {
+      "name": "autodl_h3_jobs_success_asset_check",
+      "validated": true,
+      "definitionTokens": [
+        "SUCCEEDED",
+        "result_asset_url IS NOT NULL",
+        "^object://tencent_cos/",
+        "COALESCE",
+        "autodl_h3_provider_delivery_url_valid(result_asset_url, upstream_task_id)"
+      ]
+    }
+  ]
+},
+{
+  "relation": "public.autodl_h3_settlements",
+  "requiredColumns": [],
+  "requiredConstraints": [
+    {
+      "name": "autodl_h3_settlement_asset_check",
+      "validated": true,
+      "definitionTokens": [
+        "^object://tencent_cos/",
+        "COALESCE",
+        "autodl_h3_provider_delivery_url_valid(stable_asset_url, upstream_task_id)"
+      ]
+    }
+  ]
+},
 ]);
 assert.deepEqual(liveCatalogChecks.triggerSemantics, [
   {
@@ -162,171 +196,411 @@ assert.deepEqual(liveCatalogChecks.triggerSemantics, [
 ]);
 assert.deepEqual(liveCatalogChecks.functionSecurityGroups, [
   {
-    id: "image-generation-request",
-    ownerRelation: "public.image_generation_requests",
-    ownerMustMatchRelationOwner: true,
-    securityDefinerRequired: true,
-    searchPath: ["public", "pg_temp"],
-    requiredNonOwnerExecuteGrantees: ["service_role"],
-    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
-    superuserInherentPrivilegeExcluded: true,
-    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
-    functions: [
+    "id": "image-generation-request",
+    "ownerRelation": "public.image_generation_requests",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
+    ],
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
       "public.claim_image_generation_request_v2(text,text,text,text,text,text,jsonb)",
       "public.reconcile_stale_image_generation_request_atomic(text,text,integer)",
       "public.record_image_provider_dispatch_receipt_atomic(text,text,text,text,jsonb)",
-      "public.record_image_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)",
+      "public.record_image_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)"
     ],
-    requiredDefinitionTokens: {
-      "public.reconcile_stale_image_generation_request_atomic(text,text,integer)": ["provider_evidence_present"],
+    "requiredDefinitionTokens": {
+      "public.reconcile_stale_image_generation_request_atomic(text,text,integer)": [
+        "provider_evidence_present"
+      ],
       "public.record_image_provider_dispatch_receipt_atomic(text,text,text,text,jsonb)": [
-        "IMAGE_PROVIDER_DISPATCH_RECEIPT_INVALID", "requestProjection.referenceCount=",
+        "IMAGE_PROVIDER_DISPATCH_RECEIPT_INVALID",
+        "requestProjection.referenceCount="
       ],
       "public.record_image_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)": [
-        "IMAGE_PROVIDER_SUBMISSION_RECEIPT_INVALID", "providerAcknowledgementField=",
-      ],
-    },
+        "IMAGE_PROVIDER_SUBMISSION_RECEIPT_INVALID",
+        "providerAcknowledgementField="
+      ]
+    }
   },
   {
-    id: "image-provider-reconciliation-owner-helper",
-    ownerRelation: "public.image_generation_requests",
-    ownerMustMatchRelationOwner: true,
-    securityDefinerRequired: true,
-    searchPath: ["public", "pg_temp"],
-    requiredNonOwnerExecuteGrantees: [],
-    allowedEffectiveExecutePrincipals: ["relation_owner"],
-    superuserInherentPrivilegeExcluded: true,
-    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated", "service_role"],
-    functions: [
-      "public.reconcile_stale_image_generation_request_without_provider_receipt(text,text,integer)",
+    "id": "image-provider-reconciliation-owner-helper",
+    "ownerRelation": "public.image_generation_requests",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
     ],
+    "requiredNonOwnerExecuteGrantees": [],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "functions": [
+      "public.reconcile_stale_image_generation_request_without_provider_receipt(text,text,integer)"
+    ]
   },
   {
-    id: "video-generation-request-snapshot",
-    ownerRelation: "public.video_tasks",
-    ownerMustMatchRelationOwner: true,
-    securityDefinerRequired: true,
-    searchPath: ["public", "pg_temp"],
-    requiredNonOwnerExecuteGrantees: ["service_role"],
-    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
-    superuserInherentPrivilegeExcluded: true,
-    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
-    functions: [
+    "id": "video-generation-request-snapshot",
+    "ownerRelation": "public.video_tasks",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
+    ],
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
       "public.persist_video_generation_request_snapshot_v1_atomic(text,text,text,jsonb,text)",
       "public.reserve_video_generation_task_request_snapshot_v1_atomic(text,text,text,text,text,numeric,numeric,text,numeric,boolean,boolean,jsonb,jsonb,text,text,text,text,text,integer,text,text,text,text,text,text,numeric,text)",
-      "public.reserve_queued_digital_video_task_request_snapshot_v1_atomic(jsonb,jsonb,jsonb,jsonb,text)",
-    ],
+      "public.reserve_queued_digital_video_task_request_snapshot_v1_atomic(jsonb,jsonb,jsonb,jsonb,text)"
+    ]
   },
   {
-    id: "video-provider-request-projection",
-    ownerRelation: "public.video_tasks",
-    ownerMustMatchRelationOwner: true,
-    securityDefinerRequired: true,
-    searchPath: ["public", "pg_temp"],
-    requiredNonOwnerExecuteGrantees: ["service_role"],
-    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
-    superuserInherentPrivilegeExcluded: true,
-    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
-    functions: [
-      "public.record_video_provider_dispatch_receipt_atomic(text,text,text,jsonb)",
-      "public.record_video_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)",
+    "id": "video-provider-request-projection",
+    "ownerRelation": "public.video_tasks",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
     ],
-    requiredDefinitionTokens: {
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
+      "public.record_video_provider_dispatch_receipt_atomic(text,text,text,jsonb)",
+      "public.record_video_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)"
+    ],
+    "requiredDefinitionTokens": {
       "public.record_video_provider_dispatch_receipt_atomic(text,text,text,jsonb)": [
-        "wireBodySha256", "endpointPath", "attemptOrdinal", "dispatchIdentitySha256",
-        "VIDEO_PROVIDER_DISPATCH_ATTEMPT_ORDINAL_CONFLICT", "VIDEO_PROVIDER_DUPLICATE_WIRE_BODY_CONFLICT",
+        "wireBodySha256",
+        "endpointPath",
+        "attemptOrdinal",
+        "dispatchIdentitySha256",
+        "VIDEO_PROVIDER_DISPATCH_ATTEMPT_ORDINAL_CONFLICT",
+        "VIDEO_PROVIDER_DUPLICATE_WIRE_BODY_CONFLICT"
       ],
       "public.record_video_provider_submission_receipt_atomic(text,text,text,text,text,jsonb)": [
-        "dispatchReceiptSha256", "dispatchIdentitySha256s", "dispatchAttemptCount",
-        "VIDEO_PROVIDER_SUBMISSION_RECEIPT_WITHOUT_V2_DISPATCH",
-      ],
-    },
+        "dispatchReceiptSha256",
+        "dispatchIdentitySha256s",
+        "dispatchAttemptCount",
+        "VIDEO_PROVIDER_SUBMISSION_RECEIPT_WITHOUT_V2_DISPATCH"
+      ]
+    }
   },
   {
-    id: "video-reference-asset-reservation-guard",
-    ownerRelation: "public.video_tasks",
-    ownerMustMatchRelationOwner: true,
-    securityDefinerRequired: true,
-    searchPath: ["public", "pg_temp"],
-    requiredNonOwnerExecuteGrantees: [],
-    allowedEffectiveExecutePrincipals: ["relation_owner"],
-    superuserInherentPrivilegeExcluded: true,
-    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated", "service_role"],
-    functions: ["public.guard_video_reference_assets_during_reservation_v1()"],
-    requiredDefinitionTokens: {
+    "id": "video-reference-asset-reservation-guard",
+    "ownerRelation": "public.video_tasks",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
+    ],
+    "requiredNonOwnerExecuteGrantees": [],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "functions": [
+      "public.guard_video_reference_assets_during_reservation_v1()"
+    ],
+    "requiredDefinitionTokens": {
       "public.guard_video_reference_assets_during_reservation_v1()": [
-        "VIDEO_REFERENCE_ASSET_CLEANUP_IN_PROGRESS",
-      ],
-    },
+        "VIDEO_REFERENCE_ASSET_CLEANUP_IN_PROGRESS"
+      ]
+    }
   },
   {
-    id: "video-reference-asset-cleanup",
-    ownerRelation: "public.video_tasks",
-    ownerMustMatchRelationOwner: true,
-    securityDefinerRequired: true,
-    searchPath: ["public", "pg_temp"],
-    requiredNonOwnerExecuteGrantees: ["service_role"],
-    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
-    superuserInherentPrivilegeExcluded: true,
-    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
-    functions: [
+    "id": "video-reference-asset-cleanup",
+    "ownerRelation": "public.video_tasks",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
+    ],
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
       "public.register_video_reference_asset_guard_v1(text,text,text,text,text,text,text,text)",
       "public.claim_video_reference_asset_cleanup_v1(text,text,text,text,text,text,text,text)",
       "public.mark_video_reference_asset_object_deleted_v1(text,text)",
       "public.complete_video_reference_asset_cleanup_v1(text,text,text,text,text,text)",
-      "public.record_video_reference_asset_cleanup_failure_v1(text,text,text)",
+      "public.record_video_reference_asset_cleanup_failure_v1(text,text,text)"
     ],
-    requiredDefinitionTokens: {
+    "requiredDefinitionTokens": {
       "public.register_video_reference_asset_guard_v1(text,text,text,text,text,text,text,text)": [
-        "VIDEO_REFERENCE_GUARD_IDENTITY_MISMATCH",
+        "VIDEO_REFERENCE_GUARD_IDENTITY_MISMATCH"
       ],
       "public.claim_video_reference_asset_cleanup_v1(text,text,text,text,text,text,text,text)": [
-        "VIDEO_REFERENCE_DELETE_ACTIVE_TASK",
+        "VIDEO_REFERENCE_DELETE_ACTIVE_TASK"
       ],
       "public.mark_video_reference_asset_object_deleted_v1(text,text)": [
-        "VIDEO_REFERENCE_DELETE_STATE_INVALID",
+        "VIDEO_REFERENCE_DELETE_STATE_INVALID"
       ],
       "public.complete_video_reference_asset_cleanup_v1(text,text,text,text,text,text)": [
-        "delete from public.user_files",
+        "delete from public.user_files"
       ],
       "public.record_video_reference_asset_cleanup_failure_v1(text,text,text)": [
-        "VIDEO_REFERENCE_DELETE_RETRY_REQUIRED",
-      ],
-    },
+        "VIDEO_REFERENCE_DELETE_RETRY_REQUIRED"
+      ]
+    }
   },
   {
-    id: "shared-agent-batch-cas",
-    ownerRelation: "public.agents",
-    ownerMustMatchRelationOwner: true,
-    securityDefinerRequired: true,
-    searchPath: ["public", "pg_temp"],
-    requiredNonOwnerExecuteGrantees: ["service_role"],
-    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
-    superuserInherentPrivilegeExcluded: true,
-    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
-    functions: [
-      "public.apply_agent_reorder_cas_v1(jsonb)",
-      "public.apply_coze_agent_import_cas_v1(jsonb)",
+    "id": "shared-agent-batch-cas",
+    "ownerRelation": "public.agents",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
     ],
-    requiredDefinitionTokens: {
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
+      "public.apply_agent_reorder_cas_v1(jsonb)",
+      "public.apply_coze_agent_import_cas_v1(jsonb)"
+    ],
+    "requiredDefinitionTokens": {
       "public.apply_agent_reorder_cas_v1(jsonb)": [
-        "AGENT_REORDER_CATEGORY_INCOMPLETE", "AGENT_CONFIG_REVISION_CONFLICT",
+        "AGENT_REORDER_CATEGORY_INCOMPLETE",
+        "AGENT_CONFIG_REVISION_CONFLICT"
       ],
       "public.apply_coze_agent_import_cas_v1(jsonb)": [
-        "pg_advisory_xact_lock", "COZE_IMPORT_INSERT_TARGET_EXISTS", "AGENT_CONFIG_REVISION_CONFLICT_AFTER_LOCK",
-      ],
-    },
+        "pg_advisory_xact_lock",
+        "COZE_IMPORT_INSERT_TARGET_EXISTS",
+        "AGENT_CONFIG_REVISION_CONFLICT_AFTER_LOCK"
+      ]
+    }
   },
-]);
-assert.deepEqual(
+  {
+    "id": "image-provider-delivery",
+    "ownerRelation": "public.image_generation_requests",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
+    ],
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
+      "public.finalize_image_provider_delivery(text,text,text)",
+      "public.mark_image_provider_source_expired(text,text,text)",
+      "public.complete_image_ephemeral_delivery(text,text,text,text,text,text,text,jsonb)"
+    ]
+  },
+  {
+    "id": "h3-provider-delivery-finalizer",
+    "ownerRelation": "public.video_tasks",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
+    ],
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
+      "public.autodl_h3_finalize_video_provider_url(uuid,text,text,text,text,text,text,bigint,text,numeric,numeric,bigint)"
+    ]
+  },
+  {
+    "id": "h3-provider-delivery-marker",
+    "ownerRelation": "public.video_tasks",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": false,
+    "searchPath": [
+      "public",
+      "pg_temp"
+    ],
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
+      "public.autodl_h3_provider_delivery_v1_ready()"
+    ]
+  },
+  {
+    "id": "image-model-receipt-publication",
+    "ownerRelation": "public.cover_models",
+    "ownerMustMatchRelationOwner": true,
+    "securityDefinerRequired": true,
+    "searchPath": [
+      "public",
+      "pg_temp"
+    ],
+    "requiredNonOwnerExecuteGrantees": [
+      "service_role"
+    ],
+    "allowedEffectiveExecutePrincipals": [
+      "relation_owner",
+      "service_role"
+    ],
+    "superuserInherentPrivilegeExcluded": true,
+    "forbiddenExecutePrincipals": [
+      "PUBLIC",
+      "anon",
+      "authenticated"
+    ],
+    "functions": [
+      "public.publish_image_model_validation_receipt(text,text,text,text,boolean,boolean,text,bigint,text,jsonb)"
+    ]
+  }
+]);assert.deepEqual(
   liveCatalogChecks.migrationLedger.requiredMigrations.map((entry) => entry.version),
   [
     "20261010023000", "20261010130000", "20261010131000", "20261010132000",
     "20261010133000", "20261010134000", "20261010135000", "20261010140000",
+    "20261012010000", "20261012011000", "20261012012000", "20261012013000",
+    "20261012014000",
   ],
 );
 for (const migration of liveCatalogChecks.migrationLedger.requiredMigrations) {
   assert.equal(sha256(read(migration.file)), migration.sha256, `migration source hash changed: ${migration.file}`);
+}
+assert.deepEqual(liveCatalogChecks.functionDependencyEdges, [
+  {
+    "caller": "public.reserve_video_generation_task_request_snapshot_v1_atomic(text,text,text,text,text,numeric,numeric,text,numeric,boolean,boolean,jsonb,jsonb,text,text,text,text,text,integer,text,text,text,text,text,text,numeric,text)",
+    "callee": "public.reserve_video_generation_task_routing_atomic(text,text,text,text,text,numeric,numeric,text,numeric,boolean,boolean,jsonb,text,text,text,text,integer,text,text,text,text,text,text,numeric,text)",
+    "ownerRelation": "public.video_tasks"
+  },
+  {
+    "caller": "public.reserve_queued_digital_video_task_request_snapshot_v1_atomic(jsonb,jsonb,jsonb,jsonb,text)",
+    "callee": "public.reserve_queued_digital_video_task_routing_atomic(jsonb,jsonb,jsonb)",
+    "ownerRelation": "public.video_tasks"
+  }
+]);
+const dependencyForward = "supabase/migrations/20261012014000_video_snapshot_dependency_execute.sql";
+const dependencyRollback = "supabase/rollbacks/20261012014000_video_snapshot_dependency_execute.rollback.sql";
+const dependencyRollbackContract = contract.rollbackArtifacts?.find((entry) => entry.forwardMigration === dependencyForward);
+assert.ok(dependencyRollbackContract, "dependency rollback contract missing");
+assert.deepEqual(dependencyRollbackContract, {
+  forwardMigration: dependencyForward,
+  rollback: dependencyRollback,
+  rollbackSha256: "27ad969eda58ff8848ec444cada1e1a74472840a33eec9d80f5bf2790e9c9305",
+  mode: "forward-repair-only",
+  preserves: [
+    "video_tasks",
+    "reserve_video_generation_task_routing_atomic",
+    "reserve_queued_digital_video_task_routing_atomic",
+    "supabase_migrations.schema_migrations:20261012014000",
+  ],
+  blocksWhen: ["reviewed pre-migration ACL identity is unavailable"],
+});
+assert.equal(sha256(read(dependencyRollback)), dependencyRollbackContract.rollbackSha256);
+assert.ok(read(dependencyRollback).includes("VIDEO_SNAPSHOT_DEPENDENCY_ROLLBACK_REQUIRES_REVIEWED_PRE_ACL"));
+assert.doesNotMatch(read(dependencyRollback), /\b(?:revoke|drop|delete|update|grant)\b[^\n]*;/iu);
+for (const edge of liveCatalogChecks.functionDependencyEdges) {
+  assert.ok(liveCatalogChecks.functionSecurityGroups.some((group) =>
+    group.ownerRelation === edge.ownerRelation && group.securityDefinerRequired
+      && group.functions.includes(edge.caller)), "dependency caller must retain the existing owner/security contract");
+  assert.ok(read(dependencyForward).includes(edge.caller) && read(dependencyForward).includes(edge.callee));
 }
 const referenceCheckIds = new Set(
   (JSON.parse(read("deploy/policies/database-contract.v1.json")) as {
@@ -1119,7 +1393,7 @@ const policy = JSON.parse(read("deploy/policies/release-policy.json")) as {
   };
 };
 assert.ok(policy.database?.excludedForwardMigrations?.includes("20260822032000_aid_integration_bridge.sql"));
-assert.deepEqual(policy.database?.criticalMigrationOrder?.slice(-14), [
+assert.deepEqual(policy.database?.criticalMigrationOrder?.slice(-18), [
   "20260915231500_image_generation_failure_history.sql",
   "20260915233000_digital_human_long_history_visibility.sql",
   "20260915233500_extraction_request_snapshot.sql",
@@ -1134,6 +1408,10 @@ assert.deepEqual(policy.database?.criticalMigrationOrder?.slice(-14), [
   "20261010132000_video_snapshot_function_owner_alignment.sql",
   "20261010133000_image_provider_dispatch_receipts.sql",
   "20261010134000_video_provider_request_projection.sql",
+  "20261012010000_image_provider_delivery.sql",
+  "20261012011000_h3_provider_delivery.sql",
+  "20261012012000_image_ephemeral_delivery.sql",
+  "20261012013000_image_model_validation_receipt_publication.sql",
 ]);
 assert.deepEqual(policy.database?.liveCatalogVerification, {
   command: "node scripts/run-node-maintenance-tsx.mjs ./scripts/verify-release-database-gates.ts --live --confirm-target-host=<database-host> --confirm-target-database=<database-name>",
@@ -1153,6 +1431,9 @@ assert.deepEqual(policy.database?.liveCatalogVerification, {
     "SECURITY DEFINER with search_path=public, pg_temp",
     "service_role as the only non-owner direct EXECUTE grantee",
     "no ordinary role other than owner/service_role has effective EXECUTE",
+    "20261012010000, 20261012011000 and 20261012012000 ledger rows with current source SHA-256",
+    "provider delivery RPC owners and exact definer/invoker flags, service-only effective execution",
+    "validated H3 provider URL constraints and immutable strict invoker predicate canonical body SHA-256",
   ],
 });
 assert.deepEqual(policy.database?.releaseGateSequence, [
@@ -1230,6 +1511,23 @@ type LiveFunctionSecurityGroup = {
   functions: LiveFunctionSecurity[];
 };
 
+type LiveFunctionDependencyEdge = {
+  caller: string;
+  callee: string;
+  ownerRelation: string;
+  callerExists: boolean;
+  calleeExists: boolean;
+  callerOwner: string;
+  calleeOwner: string;
+  relationOwner: string;
+  callerSecurityDefiner: boolean;
+  calleeSecurityDefiner: boolean;
+  calleeSearchPath: string[];
+  callerExecute: boolean;
+  callerSchemaUsage: boolean;
+  serviceExecute: boolean;
+};
+
 type LiveRelationSemantics = {
   relation: string;
   owner: string;
@@ -1247,7 +1545,9 @@ type LiveTriggerSemantics = {
   enabled: boolean;
 };
 
+type H3PredicateProjection = { signature: string; owner: string; tableOwner: string; securityDefiner: boolean; volatility: string; strict: boolean; searchPath: string[]; publicExecute: boolean; source: string };
 type LiveCatalogProjection = {
+  h3ProviderUrlPredicate: H3PredicateProjection;
   identity: {
     database: string;
     currentUser: string;
@@ -1258,8 +1558,44 @@ type LiveCatalogProjection = {
   relationSemantics: LiveRelationSemantics[];
   triggerSemantics: LiveTriggerSemantics[];
   functionSecurityGroups: LiveFunctionSecurityGroup[];
+  functionDependencyEdges: LiveFunctionDependencyEdge[];
 };
 
+assert.deepEqual(liveCatalogChecks.h3ProviderUrlPredicate, {
+  "signature": "public.autodl_h3_provider_delivery_url_valid(text,text)",
+  "ownerRelation": "public.video_tasks",
+  "securityDefinerRequired": false,
+  "volatility": "i",
+  "strict": true,
+  "searchPath": [
+    "public",
+    "pg_temp"
+  ],
+  "requiredExecuteGrantee": "PUBLIC",
+  "sourceSha256": "6a82bd7745258d692bd2cf560c811237e20b6ab52c54231281dd675d201d52ca",
+  "sourceMigration": "supabase/migrations/20261012011000_h3_provider_delivery.sql"
+});
+const canonicalPredicateBody = read(liveCatalogChecks.h3ProviderUrlPredicate.sourceMigration).match(/AS \$valid\$([\s\S]*?)\$valid\$/u)?.[1].replace(/\r\n/gu,"\n").trim();
+assert.ok(canonicalPredicateBody,"canonical predicate body missing");
+assert.equal(sha256(canonicalPredicateBody),liveCatalogChecks.h3ProviderUrlPredicate.sourceSha256);
+assert.equal(liveCatalogChecks.migrationLedger.requiredMigrations.find(e=>e.version==="20261012010000")?.sha256,"21396c606c383ffe74685d4970296b4fb00434c252745a7f3f22578fc6ace2d8");
+assert.equal(liveCatalogChecks.migrationLedger.requiredMigrations.find(e=>e.version==="20261012011000")?.sha256,"f64ba0095efc497fa468998a48f3ea225a440aa1a2c547b214e596ab191a03bc");
+assert.equal(liveCatalogChecks.migrationLedger.requiredMigrations.find(e=>e.version==="20261012012000")?.sha256,"85f1ded41a617e67d61741082938fdeeb0074b520724795d9cd8124ebbf09593");
+for(const forwardMigration of [
+  "supabase/migrations/20261012010000_image_provider_delivery.sql",
+  "supabase/migrations/20261012011000_h3_provider_delivery.sql",
+  "supabase/migrations/20261012012000_image_ephemeral_delivery.sql"
+]) {
+  const artifact=contract.rollbackArtifacts?.find(e=>e.forwardMigration===forwardMigration);
+  assert.equal(artifact?.mode,"forward-repair-only-after-activation");
+  assert.equal(artifact?.rollback,undefined,"forward repair policy must not invent inverse SQL");
+  assert.ok(artifact?.preserves.includes("wallet_operations") && artifact.preserves.includes("video_tasks"));
+}
+for(const feature of [
+  "imageProviderDelivery",
+  "h3ProviderDelivery",
+  "imageEphemeralDelivery", "imageReceiptPublication"
+]) assert.equal(policy.database?.rollbackStrategies?.[feature]?.mode,"forward-repair-only-after-activation");
 const sortedUnique = (values: string[]) => [...new Set(values)].sort();
 
 function liveCatalogFailures(live: LiveCatalogProjection) {
@@ -1338,7 +1674,7 @@ function liveCatalogFailures(live: LiveCatalogProjection) {
         continue;
       }
       if (actual.owner !== actualGroup.tableOwner) failures.push(`FUNCTION_OWNER_MISMATCH:${signature}`);
-      if (!actual.securityDefiner) failures.push(`FUNCTION_SECURITY_DEFINER_REQUIRED:${signature}`);
+      if (actual.securityDefiner !== expectedGroup.securityDefinerRequired) failures.push(`FUNCTION_SECURITY_DEFINER_REQUIRED:${signature}`);
       if (actual.searchPath.length !== 1 || actual.searchPath[0] !== expectedSearchPath) {
         failures.push(`FUNCTION_SEARCH_PATH_MISMATCH:${signature}`);
       }
@@ -1367,6 +1703,45 @@ function liveCatalogFailures(live: LiveCatalogProjection) {
       }
     }
   }
+  for (const expected of liveCatalogChecks.functionDependencyEdges) {
+    const key = `${expected.caller}->${expected.callee}`;
+    const actual = (live.functionDependencyEdges || []).find((edge) =>
+      edge.caller === expected.caller && edge.callee === expected.callee);
+    if (!actual) {
+      failures.push(`FUNCTION_DEPENDENCY_EDGE_MISSING:${key}`);
+      continue;
+    }
+    if (!actual.callerExists || !actual.calleeExists) {
+      failures.push(`FUNCTION_DEPENDENCY_FUNCTION_MISSING:${key}`);
+    }
+    if (actual.ownerRelation !== expected.ownerRelation) {
+      failures.push(`FUNCTION_DEPENDENCY_OWNER_RELATION_MISMATCH:${key}`);
+    }
+    if (!actual.relationOwner || actual.callerOwner !== actual.relationOwner) {
+      failures.push(`FUNCTION_DEPENDENCY_CALLER_OWNER_MISMATCH:${key}`);
+    }
+    if (!actual.callerSecurityDefiner || !actual.calleeSecurityDefiner) {
+      failures.push(`FUNCTION_DEPENDENCY_SECURITY_DEFINER_REQUIRED:${key}`);
+    }
+    if (JSON.stringify(actual.calleeSearchPath) !== JSON.stringify(["search_path=public, pg_temp"])) {
+      failures.push(`FUNCTION_DEPENDENCY_CALLEE_SEARCH_PATH_MISMATCH:${key}`);
+    }
+    // service_role EXECUTE does not survive entry into a SECURITY DEFINER
+    // caller owned by another role. Check that caller's actual proowner.
+    if (actual.callerExecute !== true) {
+      failures.push(`FUNCTION_DEPENDENCY_CALLER_EXECUTE_REQUIRED:${key}`);
+    }
+    if (actual.callerSchemaUsage !== true) {
+      failures.push(`FUNCTION_DEPENDENCY_CALLER_SCHEMA_USAGE_REQUIRED:${key}`);
+    }
+  }
+  const predicate=live.h3ProviderUrlPredicate, expectedPredicate=liveCatalogChecks.h3ProviderUrlPredicate;
+  if(predicate.signature!==expectedPredicate.signature || !predicate.tableOwner || predicate.owner!==predicate.tableOwner
+    || predicate.securityDefiner!==false || predicate.volatility!=="i" || predicate.strict!==true
+    || JSON.stringify(predicate.searchPath)!==JSON.stringify(["search_path=public, pg_temp"])
+    || predicate.publicExecute!==true || sha256(predicate.source.replace(/\r\n/gu,"\n").trim())!==expectedPredicate.sourceSha256) {
+    failures.push("H3_PROVIDER_URL_PREDICATE_SEMANTICS_MISMATCH");
+  }
   return failures;
 }
 
@@ -1374,13 +1749,14 @@ const fixtureOwner = "zimeiti_owner";
 const fixtureFunction = (
   signature: string,
   group: {
+    securityDefinerRequired: boolean;
     requiredDefinitionTokens?: Record<string, string[]>;
     requiredNonOwnerExecuteGrantees: string[];
   },
 ): LiveFunctionSecurity => ({
   signature,
   owner: fixtureOwner,
-  securityDefiner: true,
+  securityDefiner: group.securityDefinerRequired,
   searchPath: ["search_path=public, pg_temp"],
   definition: (group.requiredDefinitionTokens?.[signature] || []).join("\n"),
   argumentNames: rpc(signature.match(/^public\.([^()]+)\(/u)?.[1] || "")?.arguments || [],
@@ -1393,6 +1769,7 @@ const fixtureFunction = (
   },
 });
 const validLiveFixture: LiveCatalogProjection = {
+  h3ProviderUrlPredicate:{signature:liveCatalogChecks.h3ProviderUrlPredicate.signature,owner:fixtureOwner,tableOwner:fixtureOwner,securityDefiner:false,volatility:"i",strict:true,searchPath:["search_path=public, pg_temp"],publicExecute:true,source:canonicalPredicateBody},
   identity: { database: "fixture", currentUser: "fixture_reader", serverAddress: null, serverPort: null },
   ledger: liveCatalogChecks.migrationLedger.requiredMigrations.map((entry) => ({
     version: entry.version,
@@ -1413,6 +1790,20 @@ const validLiveFixture: LiveCatalogProjection = {
     })),
   })),
   triggerSemantics: liveCatalogChecks.triggerSemantics.map((trigger) => ({ ...trigger })),
+  functionDependencyEdges: liveCatalogChecks.functionDependencyEdges.map((edge) => ({
+    ...edge,
+    callerExists: true,
+    calleeExists: true,
+    callerOwner: fixtureOwner,
+    calleeOwner: "postgres",
+    relationOwner: fixtureOwner,
+    callerSecurityDefiner: true,
+    calleeSecurityDefiner: true,
+    calleeSearchPath: ["search_path=public, pg_temp"],
+    callerExecute: true,
+    callerSchemaUsage: true,
+    serviceExecute: true,
+  })),
   functionSecurityGroups: liveCatalogChecks.functionSecurityGroups.map((group) => ({
     id: group.id,
     ownerRelation: group.ownerRelation,
@@ -1421,6 +1812,75 @@ const validLiveFixture: LiveCatalogProjection = {
   })),
 };
 assert.deepEqual(liveCatalogFailures(validLiveFixture), []);
+
+let functionDependencyFixtureCases = 1; // Valid catalog above includes both edges.
+for (const expected of liveCatalogChecks.functionDependencyEdges) {
+  const missing = structuredClone(validLiveFixture);
+  missing.functionDependencyEdges = missing.functionDependencyEdges.filter((edge) => edge.caller !== expected.caller);
+  assert.ok(liveCatalogFailures(missing).some((failure) => failure.startsWith("FUNCTION_DEPENDENCY_EDGE_MISSING:")));
+  functionDependencyFixtureCases += 1;
+  const mutations: Array<{ mutate: (edge: LiveFunctionDependencyEdge) => void; failure: string }> = [
+    { mutate: (edge) => { edge.callerExists = false; }, failure: "FUNCTION_MISSING" },
+    { mutate: (edge) => { edge.calleeExists = false; }, failure: "FUNCTION_MISSING" },
+    { mutate: (edge) => { edge.ownerRelation = "public.users"; }, failure: "OWNER_RELATION_MISMATCH" },
+    { mutate: (edge) => { edge.relationOwner = ""; }, failure: "CALLER_OWNER_MISMATCH" },
+    { mutate: (edge) => { edge.callerOwner = "postgres"; }, failure: "CALLER_OWNER_MISMATCH" },
+    { mutate: (edge) => { edge.callerSecurityDefiner = false; }, failure: "SECURITY_DEFINER_REQUIRED" },
+    { mutate: (edge) => { edge.calleeSecurityDefiner = false; }, failure: "SECURITY_DEFINER_REQUIRED" },
+    { mutate: (edge) => { edge.calleeSearchPath = []; }, failure: "CALLEE_SEARCH_PATH_MISMATCH" },
+    { mutate: (edge) => { edge.callerExecute = false; }, failure: "CALLER_EXECUTE_REQUIRED" },
+    { mutate: (edge) => { edge.callerSchemaUsage = false; }, failure: "CALLER_SCHEMA_USAGE_REQUIRED" },
+  ];
+  for (const { mutate, failure } of mutations) {
+    const bad = structuredClone(validLiveFixture);
+    const edge = bad.functionDependencyEdges.find((entry) => entry.caller === expected.caller)!;
+    mutate(edge);
+    // Reproduce the incident: service_role stays executable while the
+    // SECURITY DEFINER caller owner loses its dependency privilege.
+    assert.equal(edge.serviceExecute, true);
+    assert.ok(liveCatalogFailures(bad).includes(`FUNCTION_DEPENDENCY_${failure}:${expected.caller}->${expected.callee}`));
+    functionDependencyFixtureCases += 1;
+  }
+}
+const missingDependencyLedgerFixture = structuredClone(validLiveFixture);
+missingDependencyLedgerFixture.ledger = missingDependencyLedgerFixture.ledger.filter((entry) => entry.version !== "20261012014000");
+assert.ok(liveCatalogFailures(missingDependencyLedgerFixture).includes("MIGRATION_LEDGER_ROW_MISSING:20261012014000"));
+const changedDependencyLedgerFixture = structuredClone(validLiveFixture);
+changedDependencyLedgerFixture.ledger.find((entry) => entry.version === "20261012014000")!.hash = "0".repeat(64);
+assert.ok(liveCatalogFailures(changedDependencyLedgerFixture).includes("MIGRATION_LEDGER_HASH_MISMATCH:20261012014000"));
+functionDependencyFixtureCases += 2;
+
+for(const mutation of [
+  (p:H3PredicateProjection)=>{p.owner="wrong_owner";}, (p:H3PredicateProjection)=>{p.securityDefiner=true;},
+  (p:H3PredicateProjection)=>{p.volatility="v";},(p:H3PredicateProjection)=>{p.strict=false;},
+  (p:H3PredicateProjection)=>{p.searchPath=[];},(p:H3PredicateProjection)=>{p.publicExecute=false;},
+  (p:H3PredicateProjection)=>{p.source+=" SELECT true;";}
+]) {const bad=structuredClone(validLiveFixture);mutation(bad.h3ProviderUrlPredicate);assert.ok(liveCatalogFailures(bad).includes("H3_PROVIDER_URL_PREDICATE_SEMANTICS_MISMATCH"));}
+for(const id of ["image-provider-delivery","h3-provider-delivery-finalizer","h3-provider-delivery-marker","image-model-receipt-publication"]) {
+ for(const mutation of [(f:LiveFunctionSecurity)=>{f.owner="wrong_owner";},(f:LiveFunctionSecurity)=>{f.securityDefiner=!f.securityDefiner;},(f:LiveFunctionSecurity)=>{f.executeGrantees.push("PUBLIC");},(f:LiveFunctionSecurity)=>{f.unexpectedEffectiveGrantees.push("inherited_service");}]) {
+  const bad=structuredClone(validLiveFixture);mutation(bad.functionSecurityGroups.find(g=>g.id===id)!.functions[0]);assert.ok(liveCatalogFailures(bad).length>0);
+ }
+}
+for(const entry of [
+{"version":"20261012013000","file":"supabase/migrations/20261012013000_image_model_validation_receipt_publication.sql","sha256":"75053bdad5e5d668f8dd3cf824e26ebbef72b4eb8f07515cfd3a4ff695ceb8f9"},
+  {
+    "version": "20261012010000",
+    "file": "supabase/migrations/20261012010000_image_provider_delivery.sql",
+    "sha256": "21396c606c383ffe74685d4970296b4fb00434c252745a7f3f22578fc6ace2d8"
+  },
+  {
+    "version": "20261012011000",
+    "file": "supabase/migrations/20261012011000_h3_provider_delivery.sql",
+    "sha256": "f64ba0095efc497fa468998a48f3ea225a440aa1a2c547b214e596ab191a03bc"
+  },
+  {
+    "version": "20261012012000",
+    "file": "supabase/migrations/20261012012000_image_ephemeral_delivery.sql",
+    "sha256": "85f1ded41a617e67d61741082938fdeeb0074b520724795d9cd8124ebbf09593"
+  }
+]) {for(const missing of [true,false]) {const bad=structuredClone(validLiveFixture);if(missing)bad.ledger=bad.ledger.filter(e=>e.version!==entry.version);else bad.ledger.find(e=>e.version===entry.version)!.hash="0".repeat(64);assert.ok(liveCatalogFailures(bad).some(f=>f.startsWith("MIGRATION_LEDGER_")));}}
+for(const relation of ["public.autodl_h3_jobs","public.autodl_h3_settlements"]) {for(const invalidated of [true,false]) {const bad=structuredClone(validLiveFixture);const constraint=bad.relationSemantics.find(r=>r.relation===relation)!.constraints[0];if(invalidated)constraint.validated=false;else constraint.definition="CHECK (stable_asset_url ~ '^object://tencent_cos/')";assert.ok(liveCatalogFailures(bad).some(f=>f.startsWith("RELATION_CONSTRAINT_")));}}
+
 const missingLedgerFixture = structuredClone(validLiveFixture);
 missingLedgerFixture.ledger.pop();
 assert.match(liveCatalogFailures(missingLedgerFixture).join("\n"), /MIGRATION_LEDGER_ROW_MISSING/u);
@@ -1692,7 +2152,47 @@ async function verifyLiveCatalog(): Promise<LiveCatalogProjection> {
         functions,
       });
     }
+    const functionDependencyEdges: LiveFunctionDependencyEdge[] = [];
+    for (const expected of liveCatalogChecks.functionDependencyEdges) {
+      const row = (await client.query(
+        `select caller.oid is not null as caller_exists, callee.oid is not null as callee_exists,
+                pg_get_userbyid(caller.proowner) as caller_owner,
+                pg_get_userbyid(callee.proowner) as callee_owner,
+                pg_get_userbyid(relation.relowner) as relation_owner,
+                caller.prosecdef as caller_security_definer, callee.prosecdef as callee_security_definer,
+                callee.proconfig as callee_search_path,
+                coalesce(has_function_privilege(caller.proowner, callee.oid, 'EXECUTE'), false) as caller_execute,
+                coalesce(has_schema_privilege(caller.proowner, callee.pronamespace, 'USAGE'), false) as caller_schema_usage,
+                coalesce(has_function_privilege(to_regrole('service_role'), callee.oid, 'EXECUTE'), false) as service_execute
+           from (values (1)) as anchor(value)
+           left join pg_proc caller on caller.oid = to_regprocedure($1)
+           left join pg_proc callee on callee.oid = to_regprocedure($2)
+           left join pg_class relation on relation.oid = to_regclass($3)`,
+        [expected.caller, expected.callee, expected.ownerRelation],
+      )).rows[0];
+      functionDependencyEdges.push({
+        ...expected,
+        callerExists: row?.caller_exists === true,
+        calleeExists: row?.callee_exists === true,
+        callerOwner: String(row?.caller_owner || ""),
+        calleeOwner: String(row?.callee_owner || ""),
+        relationOwner: String(row?.relation_owner || ""),
+        callerSecurityDefiner: row?.caller_security_definer === true,
+        calleeSecurityDefiner: row?.callee_security_definer === true,
+        calleeSearchPath: Array.isArray(row?.callee_search_path) ? row.callee_search_path.map(String) : [],
+        callerExecute: row?.caller_execute === true,
+        callerSchemaUsage: row?.caller_schema_usage === true,
+        serviceExecute: row?.service_execute === true,
+      });
+    }
+    const predicateSignature=liveCatalogChecks.h3ProviderUrlPredicate.signature;
+    const predicateRow=(await client.query(`select pg_get_userbyid(p.proowner) as owner,p.prosecdef,p.provolatile,p.proisstrict,p.proconfig,p.prosrc,
+      pg_get_userbyid(c.relowner) as table_owner,
+      exists(select 1 from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl where acl.grantee=0 and acl.privilege_type='EXECUTE') as public_execute
+      from pg_proc p cross join pg_class c where p.oid=to_regprocedure($1) and c.oid=to_regclass($2)`,[predicateSignature,liveCatalogChecks.h3ProviderUrlPredicate.ownerRelation])).rows[0];
+    const h3ProviderUrlPredicate:H3PredicateProjection={signature:predicateSignature,owner:String(predicateRow?.owner||""),tableOwner:String(predicateRow?.table_owner||""),securityDefiner:predicateRow?.prosecdef===true,volatility:String(predicateRow?.provolatile||""),strict:predicateRow?.proisstrict===true,searchPath:Array.isArray(predicateRow?.proconfig)?predicateRow.proconfig.map(String):[],publicExecute:predicateRow?.public_execute===true,source:String(predicateRow?.prosrc||"")};
     const live: LiveCatalogProjection = {
+      h3ProviderUrlPredicate,
       identity: {
         database: String(identityRow?.database_name || ""),
         currentUser: String(identityRow?.current_user || ""),
@@ -1703,6 +2203,7 @@ async function verifyLiveCatalog(): Promise<LiveCatalogProjection> {
       relationSemantics,
       triggerSemantics,
       functionSecurityGroups,
+      functionDependencyEdges,
     };
     const failures = liveCatalogFailures(live);
     assert.deepEqual(failures, [], `LIVE_DATABASE_GATE_FAILED:${failures.join(",")}`);
@@ -1729,7 +2230,9 @@ async function main() {
     nonCommerceRepairObjectsChecked: 11,
     nonCommerceMissingObjectBlockingCases: 22,
     videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
-    liveCatalogFixtureCases: 20,
+    liveCatalogFixtureCases: 55,
+    functionDependencyFixtureCases,
+    deliveryCatalogFixtureCases: 35,
     liveCatalogChecked: liveMode,
     liveCatalog: live,
     forwardMigrationCount: forwardMigrationRoot.entries.length,
@@ -1754,3 +2257,5 @@ void main().catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+
+assert.deepEqual(rpc("publish_image_model_validation_receipt")?.arguments,["p_validation_id","p_user_id","p_configuration_hash","p_model_snapshot_hash","p_expected_active","p_expected_hidden","p_verified_key","p_verified_size","p_verified_type","p_evidence"]);

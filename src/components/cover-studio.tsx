@@ -21,7 +21,7 @@ import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useR
 import type { CoverRatio } from "@/lib/cover-templates";
 import { useApp } from "@/contexts/app-context";
 import {
-  clearCompletedCoverHistory, coverHistoryStableKey, detachCoverGenerationTracking, fetchCoverAccountHistory, mergeCoverAccountHistory, fetchCoverResultBlob, parseCoverGenerationModels, runCoverGeneration,
+  clearCompletedCoverHistory, coverHistoryStableKey, detachCoverGenerationTracking, fetchCoverAccountHistory, mergeCoverAccountHistory, fetchCoverResultBlob, parseCoverGenerationModels, runCoverGeneration, saveCoverEphemeralReceipt,
   type CoverGenerationModel, type CoverGenerationState, type CoverGenerationTask,
 } from "@/lib/cover-generation-attempt";
 import { buildCoverBackgroundPrompt } from "@/lib/cover-composition";
@@ -770,6 +770,18 @@ function CoverStudioForAccount() {
   const [promptAdvancedOpen, setPromptAdvancedOpen] = useState(false);
   const [results, setResults] = useState<CoverResult[]>([]);
   const [previewResult, setPreviewResult] = useState<CoverResult | null>(null);
+  const coverPageActiveRef = useRef(true);
+  const temporaryPreviewsRef = useRef(new Map<string, () => void>());
+  useEffect(() => {
+    coverPageActiveRef.current = true;
+    const previews = temporaryPreviewsRef.current;
+    return () => { coverPageActiveRef.current = false; for (const revoke of previews.values()) revoke(); previews.clear(); };
+  }, []);
+  useEffect(() => {
+    const visible = new Set(results.map(item => item.url));
+    if (previewResult?.url) visible.add(previewResult.url);
+    for (const [url, revoke] of temporaryPreviewsRef.current) if (!visible.has(url)) { revoke(); temporaryPreviewsRef.current.delete(url); }
+  }, [results, previewResult]);
   const previewDialogRef = useRef<HTMLDivElement | null>(null);
   const [models, setModels] = useState<CoverGenerationModel[]>([]);
   const [modelId, setModelId] = useState("");
@@ -935,7 +947,10 @@ function CoverStudioForAccount() {
     const candidates = saved.pending ? [saved.pending.task, ...saved.history] : [...saved.history];
     const tasks = [...new Map(candidates.map((task) => [coverHistoryStableKey(task), task])).values()]
       .sort((left, right) => (Date.parse(right.createdAt) || 0) - (Date.parse(left.createdAt) || 0));
-    setResults(tasks);
+    setResults(previous => tasks.map(task => {
+      const current = previous.find(item => item.imageDeliveryReceipt?.recordId && item.imageDeliveryReceipt.recordId === task.imageDeliveryReceipt?.recordId);
+      return current?.url?.startsWith("blob:") ? { ...task, url: current.url, error: current.error, revokePreview: current.revokePreview, readPreviewBlob: current.readPreviewBlob } : task;
+    }));
     taskCounterRef.current = Math.max(0, ...tasks.map((task) => task.taskNo));
     const latest = saved.pending?.task || saved.history[0];
     setSelectedResultId(previous => selectLatest ? latest?.id || "" : (tasks.some(task => task.id === previous) ? previous : ""));
@@ -1264,7 +1279,12 @@ function CoverStudioForAccount() {
   }
   const applyTaskRunState = useCallback((saved: CoverGenerationState, originalTaskId: string) => {
     const updated = saved.pending?.task || saved.history[0];
-    if (!updated || currentUserIdRef.current !== currentUserId) return;
+    if (!updated) return;
+    if (!coverPageActiveRef.current || currentUserIdRef.current !== currentUserId) { updated.revokePreview?.(); return; }
+    if (updated.url?.startsWith("blob:") && updated.revokePreview) temporaryPreviewsRef.current.set(updated.url, updated.revokePreview);
+    if (updated.imageDeliveryReceipt) {
+      try { saveCoverEphemeralReceipt(localStorage, currentUserId, updated); } catch { /* Browser storage cannot invalidate the paid result. */ }
+    }
     setResults((previous) => [updated, ...previous.filter((item) => item.id !== originalTaskId
       && item.id !== updated.id
       && (!updated.clientTraceId || item.clientTraceId !== updated.clientTraceId))]
@@ -1332,6 +1352,7 @@ function CoverStudioForAccount() {
       taskCounterRef.current = taskNo;
       const launched = runCoverGeneration({
         userId: currentUserId, token, task, storage: taskStorage,
+        isCurrentPageActive: () => coverPageActiveRef.current && currentUserIdRef.current === currentUserId,
         onState: (saved) => {
           applyTaskRunState(saved, task.id);
           if (!submissionAnnounced) {

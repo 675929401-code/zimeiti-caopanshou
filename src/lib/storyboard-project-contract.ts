@@ -1,4 +1,10 @@
 import { z } from "zod";
+import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
+
+export const StoryboardImageRequestSnapshotPersistenceFields = ["runId","cardId","cardOrder","prompt","modelId","aspectRatio","resolution","exactText","referenceImageUrls","strictSingleSubmit","attemptOrdinal"] as const;
+export const WorkbenchCardPersistenceFields = ["id","order","sourceNumber","label","narration","imagePrompt","imageExactText","imageTextLayoutEnabled","videoPrompt","referenceImageUrls","imageStatus","imageUrl","imageRef","imageRecordId","imageDeliveryMode","imageAssetId","imageStorageKey","imageWidth","imageHeight","videoSourceImageUrl","imageError","imageSubmittedAt","imageValidatedAt","imageModelIdUsed","imageModelNameUsed","imageClientRequestId","imageClientTraceId","imageClientRequestFingerprint","imageRequestSnapshot","imageAttemptOrdinal","imageQuotedPrice","imagePriceCharged","imageBillingState","imageRecoveryReady","imageRetryBlocked","videoStatus","videoUrl","videoError","videoTaskId","videoClientRequestId","videoClientRequestFingerprint","videoTaskModelId","videoTaskModelName","videoTaskDuration","videoSupportsRemoteCancel","videoContentUrl","videoProgress","videoStartedAt","videoLastCheckedAt","videoStatusDetail","videoPollFailures","videoMonitoringPaused","videoLifecycle","videoLifecycleError","videoRetryable","videoBillingState","videoPriceCharged"] as const;
+export const WorkbenchVideoContractPersistenceFields = ["modelId","resolution","duration","ratio"] as const;
+export const WorkbenchRunPersistenceFields = ["id","createdAt","updatedAt","lastSubmittedAt","ratio","imageResolution","videoResolution","videoDuration","imageModelId","videoModelId","videoContract","cards","title"] as const;
 
 export const StoryboardProjectId = z.string().regex(/^[A-Za-z0-9:_-]{8,160}$/u);
 const status = z.enum(["idle", "queued", "running", "done", "failed", "cancelled"]);
@@ -21,6 +27,9 @@ export const StoryboardProjectDocument = z.object({
     videoPrompt: z.string().max(50000),
     referenceImageUrls: z.array(z.string().max(4096)).max(20),
     imageStatus: status,
+    imageRef: GeneratedImageReferenceSchema.optional(),
+    imageRecordId: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+    imageDeliveryMode: z.enum(["provider_url", "inline_ephemeral"]).optional(),
     videoStatus: status,
     imageSubmittedAt: z.number().finite().nonnegative().max(8_640_000_000_000_000).optional(),
     videoStartedAt: z.number().finite().nonnegative().max(8_640_000_000_000_000).optional(),

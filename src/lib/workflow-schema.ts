@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { AspectRatioSchema, type StoryboardCard } from "@/lib/studio-schema";
 
+import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
+export const WorkflowImageDeliveryReceiptSchema = z.object({
+  recordId:z.string().regex(/^[a-f0-9]{64}$/u),deliveryMode:z.enum(["provider_url","inline_ephemeral"]),
+  generationCompleted:z.literal(true),mediaAvailable:z.literal(false),canRecover:z.boolean(),
+  cashCharged:z.number().nonnegative().finite(),billingReferenceId:z.string().regex(/^[A-Za-z0-9_:.-]{1,160}$/u).optional(),
+  retention:z.literal("current_page_only").optional(),width:z.number().int().positive().optional(),height:z.number().int().positive().optional(),
+  sha256:z.string().regex(/^[a-f0-9]{64}$/u).optional(),byteLength:z.number().int().positive().optional(),contentType:z.enum(["image/png","image/jpeg","image/webp"]).optional(),
+}).strict().refine(receipt=>receipt.deliveryMode!=="inline_ephemeral" || (receipt.canRecover===false && receipt.retention==="current_page_only"),"临时图片收据不可恢复");
 export const WORKFLOW_SCHEMA_VERSION = 1 as const;
 
 export const WorkflowNodeKindSchema = z.enum(["text", "image", "video", "upload"]);
@@ -21,6 +29,8 @@ export const WorkflowHistoryItemSchema = z.object({
   assetId: z.string().max(512).optional(),
   storageKey: z.string().max(2_048).optional(),
   historyRecordId: z.string().max(160).optional(),
+  imageDeliveryReceipt: WorkflowImageDeliveryReceiptSchema.optional(),
+  imageRef: GeneratedImageReferenceSchema.optional(),
   createdAt: z.string().datetime(),
 });
 
@@ -52,6 +62,8 @@ export const WorkflowNodeDataSchema = z.object({
   assetId: z.string().max(512).optional(),
   storageKey: z.string().max(2_048).optional(),
   historyRecordId: z.string().max(160).optional(),
+  imageDeliveryReceipt: WorkflowImageDeliveryReceiptSchema.optional(),
+  imageRef: GeneratedImageReferenceSchema.optional(),
   billingReferenceId: z.string().max(160).optional(),
   actualCost: z.number().nonnegative().optional(),
   creditsCharged: z.number().nonnegative().optional(),

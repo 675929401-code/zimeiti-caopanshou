@@ -234,7 +234,7 @@ export function autodlH3ImagePixelSize(aspectRatio: string) {
   return size;
 }
 
-export function resolveAutodlH3SelfhostResultUrl(rawUrl: string, apiEndpoint: string) {
+export function resolveAutodlH3SelfhostResultUrl(rawUrl: string, apiEndpoint: string, options: { allowExpired?: boolean } = {}) {
   const origin = autodlH3SelfhostGatewayOrigin(apiEndpoint);
   let result: URL;
   try {
@@ -263,14 +263,14 @@ export function resolveAutodlH3SelfhostResultUrl(rawUrl: string, apiEndpoint: st
   }
   const expires = Number(expiresRaw);
   const now = Math.floor(Date.now() / 1000);
-  if (!Number.isSafeInteger(expires) || expires <= now || expires > now + RESULT_URL_MAX_TTL_SECONDS) {
+  if (!Number.isSafeInteger(expires) || expires <= 0 || (!options.allowExpired && expires <= now) || expires > now + RESULT_URL_MAX_TTL_SECONDS) {
     throw new Error("AutoDL H3 自租网关结果签名已过期或有效期不合理");
   }
   return result.toString();
 }
 
 export function autodlH3SelfhostJobStatusEndpointFromResultUrl(rawUrl: string, apiEndpoint: string) {
-  const normalized = new URL(resolveAutodlH3SelfhostResultUrl(rawUrl, apiEndpoint));
+  const normalized = new URL(resolveAutodlH3SelfhostResultUrl(rawUrl, apiEndpoint, { allowExpired: true }));
   const jobId = normalized.pathname.match(RESULT_PATH_RE)?.[1] || "";
   if (!jobId) throw new Error("AutoDL H3 自租结果地址缺少任务标识");
   return `${autodlH3SelfhostGatewayOrigin(apiEndpoint)}/v1/jobs/${encodeURIComponent(jobId)}`;
@@ -318,12 +318,13 @@ export async function recoverAutodlH3SelfhostCompletedImageResultUrl(
     throw new Error(`AutoDL H3 自租结果恢复查询失败 (${response.status})`);
   }
   const payload = await response.json() as {
+    id?: unknown;
     object?: unknown;
     model?: unknown;
     status?: unknown;
     data?: Array<{ url?: unknown }>;
   };
-  if (payload.object !== "image.generation" || payload.model !== AUTODL_H3_SELFHOST_IMAGE_MODEL) {
+  if (payload.id !== new URL(statusUrl).pathname.split("/").pop() || payload.object !== "image.generation" || payload.model !== AUTODL_H3_SELFHOST_IMAGE_MODEL) {
     throw new Error("AutoDL H3 自租结果恢复返回了不匹配的任务");
   }
   if (payload.status !== "completed") {
@@ -333,7 +334,36 @@ export async function recoverAutodlH3SelfhostCompletedImageResultUrl(
   if (typeof recoveredUrl !== "string" || !recoveredUrl) {
     throw new Error("AutoDL H3 自租已完成任务未返回结果地址");
   }
-  return resolveAutodlH3SelfhostResultUrl(recoveredUrl, apiEndpoint);
+  const refreshed = resolveAutodlH3SelfhostResultUrl(recoveredUrl, apiEndpoint);
+  if (new URL(refreshed).pathname !== new URL(rawUrl, apiEndpoint).pathname) throw new Error("AutoDL H3 结果恢复任务不匹配");
+  return refreshed;
+}
+
+export class AutodlH3SelfhostSourceGoneError extends Error {}
+
+/** Caller must establish ownership from its stored task, never a client URL. */
+export async function recoverAutodlH3SelfhostOwnedResultUrl(rawUrl: string, apiEndpoint: string,
+  owned: { kind: "image" | "video"; expectedJobId: string; apiKey: string },
+  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}) {
+  const old = new URL(resolveAutodlH3SelfhostResultUrl(rawUrl, apiEndpoint, { allowExpired: true }));
+  const jobId = old.pathname.match(RESULT_PATH_RE)?.[1];
+  if (!jobId || jobId !== owned.expectedJobId || !owned.apiKey) throw new Error("AutoDL H3 结果恢复缺少已归属的任务绑定");
+  const response = await (options.fetchImpl || fetch)(`${old.origin}/v1/jobs/${encodeURIComponent(jobId)}`, {
+    method: "GET", headers: { Authorization: `Bearer ${owned.apiKey}` }, redirect: "manual",
+    signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
+  });
+  if (!response.ok || response.status >= 300) {
+    await response.body?.cancel().catch(() => undefined);
+    if (response.status === 404) throw new AutodlH3SelfhostSourceGoneError("AutoDL H3 已归属源任务不存在");
+    throw new Error(`AutoDL H3 结果签名刷新暂不可用 (${response.status})`);
+  }
+  const payload = await response.json() as { id?: unknown; task_id?: unknown; object?: unknown; model?: unknown; status?: unknown; data?: Array<{ url?: unknown }> };
+  if (payload.id !== jobId || (payload.task_id !== undefined && payload.task_id !== jobId)
+    || payload.object !== `${owned.kind}.generation` || payload.model !== (owned.kind === "image" ? AUTODL_H3_SELFHOST_IMAGE_MODEL : AUTODL_H3_SELFHOST_VIDEO_MODEL)
+    || payload.status !== "completed") throw new Error("AutoDL H3 结果恢复任务不匹配或未完成");
+  const refreshed = resolveAutodlH3SelfhostResultUrl(String(payload.data?.[0]?.url || ""), apiEndpoint);
+  if (new URL(refreshed).pathname !== old.pathname) throw new Error("AutoDL H3 结果恢复任务不匹配");
+  return refreshed;
 }
 
 export function redactAutodlH3SelfhostResultUrl(rawUrl: string, apiEndpoint: string) {
@@ -348,15 +378,57 @@ export function redactAutodlH3SelfhostResultUrl(rawUrl: string, apiEndpoint: str
 export async function fetchAutodlH3SelfhostResult(
   rawUrl: string,
   apiEndpoint: string,
-  init: RequestInit & { timeoutMs?: number } = {},
+  init: RequestInit & { timeoutMs?: number; ownedResultRecovery?: { kind: "image" | "video"; expectedJobId: string; apiKey: string } } = {},
 ) {
-  const normalizedUrl = resolveAutodlH3SelfhostResultUrl(rawUrl, apiEndpoint);
+  const candidate = resolveAutodlH3SelfhostResultUrl(rawUrl, apiEndpoint, { allowExpired: true });
+  const expired = Number(new URL(candidate).searchParams.get("expires")) <= Math.floor(Date.now() / 1000);
+  let refreshed = false;
+  const refresh = async () => {
+    if (!init.ownedResultRecovery || refreshed) throw new Error("AutoDL H3 下载签名暂不可用，源状态未知");
+    refreshed = true;
+    return recoverAutodlH3SelfhostOwnedResultUrl(candidate, apiEndpoint, init.ownedResultRecovery);
+  };
+  let normalizedUrl: string;
+  try { normalizedUrl = expired ? await refresh() : resolveAutodlH3SelfhostResultUrl(candidate, apiEndpoint); }
+  catch (error) {
+    if (error instanceof AutodlH3SelfhostSourceGoneError) return { response: new Response(null, { status: 404 }), finalUrl: candidate };
+    throw error;
+  }
+  const inputHeaders = new Headers(init.headers);
+  const headers = new Headers();
+  const range = inputHeaders.get("range");
+  if (range) {
+    if (range.length > 80 || !/^bytes=(?:\d{1,16}-\d{0,16}|-\d{1,16})$/u.test(range)) throw new Error("AutoDL H3 Range 无效");
+    const [start, end] = range.slice(6).split("-");
+    if ((start && !Number.isSafeInteger(Number(start))) || (end && !Number.isSafeInteger(Number(end))) || (!start && Number(end) === 0) || (start && end && Number(end) < Number(start))) throw new Error("AutoDL H3 Range 无效");
+    headers.set("Range", range);
+  }
+  const accept = inputHeaders.get("accept");
+  if (accept) {
+    if (accept.length > 512 || !/^[\x20-\x7e]+$/u.test(accept)) throw new Error("AutoDL H3 Accept 无效");
+    headers.set("Accept", accept);
+  }
   const { timeoutMs = 300_000, signal } = init;
-  const response = await fetch(normalizedUrl, {
+  const fetchResult = (url: string) => fetch(url, {
     method: "GET",
+    headers,
     redirect: "manual",
     signal: signal || AbortSignal.timeout(timeoutMs),
   });
+  let response = await fetchResult(normalizedUrl);
+  if (response.status === 410) {
+    await response.body?.cancel().catch(() => undefined);
+    try { normalizedUrl = await refresh(); }
+    catch (error) {
+      if (error instanceof AutodlH3SelfhostSourceGoneError) return { response: new Response(null, { status: 404 }), finalUrl: candidate };
+      throw error;
+    }
+    response = await fetchResult(normalizedUrl);
+    if (response.status === 410) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error("AutoDL H3 下载签名暂不可用，源状态未知");
+    }
+  }
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel().catch(() => undefined);
     throw new Error("AutoDL H3 自租结果取件禁止重定向");
@@ -367,10 +439,11 @@ export async function fetchAutodlH3SelfhostResult(
 export async function readAutodlH3SelfhostResult(
   rawUrl: string,
   apiEndpoint: string,
-  options: { maxBytes: number; allowedContentTypes: string[]; timeoutMs?: number },
+  options: { maxBytes: number; allowedContentTypes: string[]; timeoutMs?: number; ownedResultRecovery?: { kind: "image" | "video"; expectedJobId: string; apiKey: string } },
 ) {
   const { response, finalUrl } = await fetchAutodlH3SelfhostResult(rawUrl, apiEndpoint, {
     timeoutMs: options.timeoutMs,
+    ownedResultRecovery: options.ownedResultRecovery,
   });
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);

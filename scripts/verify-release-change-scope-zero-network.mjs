@@ -30,6 +30,14 @@ let scenarioIndex = 0;
 function run(command, args, cwd = root, expectedStatus = 0) {
   const result = spawnSync(command, args, { cwd, encoding: "utf8", timeout: 30_000 });
   assert.equal(result.status, expectedStatus, `${command} ${args.join(" ")} status=${result.status}: ${result.stderr || result.stdout}`);
+  // Synthetic descriptor only for this existing signature fixture; actual archive supply is tested separately.
+  if (args[0] === validationGatePath && args[1] === "init") {
+    const output = args[args.indexOf("--output") + 1];
+    const bundle = JSON.parse(fs.readFileSync(output, "utf8"));
+    bundle.subject.controlPlane = {kind:"deployment-control-plane-descriptor.v1",archiveFile:"deployment-control-plane.bundle.json",manifestFile:"control-plane.manifest.json",manifestSha256:sha256("fixture-control-manifest"),archiveSha256:sha256("fixture-control-archive"),contentDigest:sha256("fixture-control-content"),subject:{mode:"formal",sourceCommit:bundle.subject.commit,repository:"fixture/repository",candidateRunId:"1",candidateRunAttempt:"1"}};
+    bundle.bundleId = recomputeBundleId(bundle);
+    fs.writeFileSync(output, JSON.stringify(bundle, null, 2)+"\n");
+  }
   return result;
 }
 
@@ -706,6 +714,7 @@ try {
         builds: localReleaseBundle.subject.builds,
         buildOutputDigests: localReleaseBundle.subject.buildOutputDigests,
         candidatePayloads: localReleaseBundle.subject.candidatePayloads,
+        controlPlane: localReleaseBundle.subject.controlPlane,
       },
       runtimeReadbacks: {
         web: {
@@ -806,6 +815,30 @@ try {
   externalBundle.bundleId = recomputeBundleId(externalBundle);
   fs.writeFileSync(externalBundlePath, `${JSON.stringify(externalBundle, null, 2)}\n`, "utf8");
 
+  // A valid signature over another control bundle is still not this candidate.
+  for (const variant of ["missing", "replacement"]) {
+    const wrong = JSON.parse(originalEvidenceBytes.toString("utf8"));
+    if (variant === "missing") delete wrong.subject.controlPlane;
+    else wrong.subject.controlPlane.archiveSha256 = "e".repeat(64);
+    const wrongBytes = Buffer.from(JSON.stringify(wrong, null, 2)+"\n");
+    const sig = JSON.parse(originalSignatureBytes.toString("utf8"));
+    sig.targetSha256 = sha256(wrongBytes); delete sig.signature;
+    sig.signature = crypto.sign(null, Buffer.from(canonicalJson(sig)), privateKey).toString("base64");
+    fs.writeFileSync(tamperedEvidencePath, wrongBytes);
+    fs.writeFileSync(tamperedEvidencePath+".sig.json", JSON.stringify(sig, null, 2)+"\n");
+    const att = externalBundle.attestations.find(e=>e.validationId===firstMergedBrowserValidationId);
+    att.evidenceSha256=sha256(wrongBytes);att.signatureSha256=sha256(fs.readFileSync(tamperedEvidencePath+".sig.json"));
+    externalBundle.bundleId=recomputeBundleId(externalBundle);
+    fs.writeFileSync(externalBundlePath,JSON.stringify(externalBundle,null,2)+"\n");
+    assert.match(runFailure(process.execPath,[validationGatePath,"merge-external","--root",root,"--bundle",semanticTamperBundlePath,"--external-bundle",path.relative(root,externalBundlePath).replaceAll("\\","/"),"--external-evidence-root",path.relative(root,externalRoot).replaceAll("\\","/"),"--evidence-root",semanticTamperEvidenceRoot]).stderr,variant==="missing"?/BROWSER_EVIDENCE_SCHEMA_INVALID/u:/BROWSER_EVIDENCE_BUILD_IDENTITY_MISMATCH/u);
+  }
+  fs.writeFileSync(tamperedEvidencePath,originalEvidenceBytes);
+  fs.writeFileSync(tamperedEvidencePath+".sig.json",originalSignatureBytes);
+  externalBundle.attestations.find(e=>e.validationId===firstMergedBrowserValidationId).evidenceSha256=sha256(originalEvidenceBytes);
+  externalBundle.attestations.find(e=>e.validationId===firstMergedBrowserValidationId).signatureSha256=sha256(originalSignatureBytes);
+  externalBundle.bundleId=recomputeBundleId(externalBundle);
+  fs.writeFileSync(externalBundlePath,JSON.stringify(externalBundle,null,2)+"\n");
+
   const unrelatedRouteEvidence = JSON.parse(originalEvidenceBytes.toString("utf8"));
   unrelatedRouteEvidence.preciseRoute = "/unrelated";
   unrelatedRouteEvidence.adjacentRoutes = ["/cover", "/unrelated-neighbor"];
@@ -886,7 +919,7 @@ try {
   fs.mkdirSync(path.join(transitionRoot, "scripts"), { recursive: true });
   fs.cpSync(path.join(root, "scripts", "contracts"), path.join(transitionRoot, "scripts", "contracts"), { recursive: true });
   fs.cpSync(path.join(root, "scripts", "lib"), path.join(transitionRoot, "scripts", "lib"), { recursive: true });
-  for (const scriptName of ["classify-release-change-scope.mjs", "run-release-targeted-regressions.mjs", "verify-video-live-history-ui-only-zero-network.mjs"]) {
+  for (const scriptName of ["classify-release-change-scope.mjs", "deployment-control-plane.mjs", "run-release-targeted-regressions.mjs", "verify-video-live-history-ui-only-zero-network.mjs"]) {
     fs.copyFileSync(path.join(root, "scripts", scriptName), path.join(transitionRoot, "scripts", scriptName));
   }
   fs.mkdirSync(path.join(transitionRoot, "deploy", "policies"), { recursive: true });
@@ -980,7 +1013,7 @@ try {
       receiptId: `transition-browser-${index}-1234567890`,
       nonce: `transition_nonce_${index}_1234567890`,
       checkedAt: new Date(transitionNow - 1000).toISOString(),
-      subject: { commit: transitionHead, sourceVersion: "RTEST", builds: candidateBundle.subject.builds, buildOutputDigests: candidateBundle.subject.buildOutputDigests, candidatePayloads: candidateBundle.subject.candidatePayloads },
+      subject: { commit: transitionHead, sourceVersion: "RTEST", builds: candidateBundle.subject.builds, buildOutputDigests: candidateBundle.subject.buildOutputDigests, candidatePayloads: candidateBundle.subject.candidatePayloads, controlPlane: candidateBundle.subject.controlPlane },
       runtimeReadbacks: { web: { commit: transitionHead, sourceVersion: "RTEST", buildId: transitionHead, buildOutputDigest: candidateBundle.subject.buildOutputDigests.web }, voice: null },
       viewport: { width: 1440, height: 900 },
       preciseRoute: candidateBundle.scope.browserAcceptance.preciseRoute,
@@ -1031,6 +1064,7 @@ try {
   fs.cpSync(path.join(root, "scripts", "lib"), path.join(packageCandidateRoot, "scripts", "lib"), { recursive: true });
   fs.copyFileSync(classifierPath, path.join(packageCandidateRoot, "scripts", "classify-release-change-scope.mjs"));
   fs.copyFileSync(validationGatePath, path.join(packageCandidateRoot, "scripts", "release-change-validation-gate.mjs"));
+  fs.copyFileSync(path.join(root, "scripts", "deployment-control-plane.mjs"), path.join(packageCandidateRoot, "scripts", "deployment-control-plane.mjs"));
   fs.copyFileSync(path.join(transitionRoot, "deploy", "policies", "release-change-scope.v1.json"), path.join(packageCandidateRoot, "deploy", "policies", "release-change-scope.v1.json"));
   fs.copyFileSync(path.join(transitionRoot, "deploy", "policies", "release-acceptance-trusted-issuers.v1.json"), path.join(packageCandidateRoot, "deploy", "policies", "release-acceptance-trusted-issuers.v1.json"));
   const packageAssetManifestPath = path.join(packageCandidateRoot, "deploy", "assets", "public-assets.json");
@@ -1207,7 +1241,7 @@ try {
     const evidence = {
       schemaVersion: "zimeiti-release-browser-acceptance-evidence.v1",
       receiptId: `package-browser-${index}-1234567890`, nonce: `package_nonce_${index}_1234567890`, checkedAt: new Date(packageEvidenceNow - 1000).toISOString(),
-      subject: { commit: packageCommit, sourceVersion: "RTEST", builds: packageCandidateBundle.subject.builds, buildOutputDigests: packageCandidateBundle.subject.buildOutputDigests, candidatePayloads: packageCandidateBundle.subject.candidatePayloads },
+      subject: { commit: packageCommit, sourceVersion: "RTEST", builds: packageCandidateBundle.subject.builds, buildOutputDigests: packageCandidateBundle.subject.buildOutputDigests, candidatePayloads: packageCandidateBundle.subject.candidatePayloads, controlPlane: packageCandidateBundle.subject.controlPlane },
       runtimeReadbacks: { web: { commit: packageCommit, sourceVersion: "RTEST", buildId: packageBuildId, buildOutputDigest: packageDigestReceipt.outputDigest }, voice: null },
       viewport: { width: 1440, height: 900 }, preciseRoute: packageCandidateBundle.scope.browserAcceptance.preciseRoute,
       adjacentRoutes: packageCandidateBundle.scope.browserAcceptance.requiredRoutes.filter((route) => route !== packageCandidateBundle.scope.browserAcceptance.preciseRoute),
@@ -1447,7 +1481,7 @@ try {
   ]) {
     assert.ok(workflow.includes(marker), `workflow integration missing: ${marker}`);
   }
-  assert.doesNotMatch(workflow, /^\s+push:/mu, "release workflow must not be tag-triggered");
+  assert.match(workflow, /push:\s*\n\s+branches: \[main\]/u, "main push builds candidates only");
   assert.doesNotMatch(workflow, /^\s+tags:/mu, "tags must not be a release entrypoint");
   assert.match(workflow, /git merge-base --is-ancestor "\$base_sha" "\$head_sha"/u, "manual release base must be a real ancestor");
   assert.doesNotMatch(workflow, /acceptance_trusted_issuers_path/u, "dispatcher must not replace issuer trust");
@@ -1466,7 +1500,7 @@ try {
     "scripts/fixtures/release-browser-assets/portraits\\.webp",
     "RELEASE_BROWSER_ACCEPTANCE_ED25519_PRIVATE_KEY",
     "release-change-validation-gate.mjs verify-release-ready",
-    "release-browser-acceptance-${{ github.sha }}",
+    "release-browser-acceptance-${{ github.event.workflow_run.head_sha || github.sha }}",
   ]) assert.ok(browserAcceptanceWorkflow.includes(marker), `browser acceptance workflow integration missing: ${marker}`);
   assert.ok(workflow.includes("scripts/fixtures/release-browser-assets/portraits\\.webp"),
     "finalize candidate reuse allowlist must include the exact verifier-only portrait fixture");

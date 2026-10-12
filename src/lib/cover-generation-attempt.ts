@@ -1,6 +1,8 @@
 import { isConfirmedTerminalImageFailure } from "@/lib/image-workbench-attempt-guard";
 import { coverCompositionMatches, coverCompositionValidationError, type CoverCompositionPlan } from "@/lib/cover-composition";
 import { parsePublicImageResolutionPrices } from "@/lib/image-resolution-pricing";
+import { projectGeneratedImageClientReceipt, resolveGeneratedImageClientDelivery, type GeneratedImageClientReceipt } from "@/lib/generated-image-client-delivery";
+import { projectCoverCompositionPlan } from "@/lib/cover-durable-attempt";
 
 export type CoverGenerationModel = {
   id: string;
@@ -100,6 +102,10 @@ export type CoverGenerationTask = {
   clientTraceId?: string;
   attemptState?: "claimed" | "dispatched" | "delivery_pending" | "completed" | "failed" | "cancelled";
   cancellable?: boolean;
+  imageDeliveryReceipt?: GeneratedImageClientReceipt;
+  revokePreview?: () => void;
+  /** Current attempt RAM only; persistence projections deliberately omit this closure. */
+  readPreviewBlob?: (binding: { recordId: string; url: string }) => Blob | null;
 };
 
 type PendingCoverGeneration = {
@@ -138,13 +144,17 @@ export type CoverGenerationState = {
 
 /** Read an already-owned history asset through the same-origin authenticated route. */
 export async function fetchCoverResultBlob(
-  task: Pick<CoverGenerationTask, "historyRecordId" | "url">,
+  task: Pick<CoverGenerationTask, "historyRecordId" | "url" | "imageDeliveryReceipt" | "readPreviewBlob">,
   token: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Blob> {
   let path: string;
   let headers: HeadersInit | undefined;
-  if (task.historyRecordId && /^[a-zA-Z0-9_.-]+$/u.test(task.historyRecordId)) {
+  if (task.imageDeliveryReceipt?.deliveryMode === "inline_ephemeral") {
+    const blob = task.url?.startsWith("blob:") ? task.readPreviewBlob?.({ recordId: task.imageDeliveryReceipt.recordId, url: task.url }) : null;
+    if (!blob || !/^image\/(?:png|jpeg|webp)$/u.test(blob.type) || !blob.size || blob.size > 30 * 1024 * 1024) throw new Error("临时封面仅原页面可下载；图片不可恢复，生成与费用收据仍保留");
+    return blob;
+  } else if (task.historyRecordId && /^[a-zA-Z0-9_.-]+$/u.test(task.historyRecordId)) {
     if (!token.trim()) throw new Error("请先登录后下载封面");
     path = `/api/media-history/content?${new URLSearchParams({ id: task.historyRecordId, index: "0", download: "1" })}`;
     headers = { Authorization: `Bearer ${token}` };
@@ -230,7 +240,7 @@ function persistedCoverTask(value: unknown): CoverGenerationTask | undefined {
     status: "unknown",
     error: "系统正在核验并完成封面保存和展示",
     ...(row.briefText !== undefined ? { briefText: row.briefText } : {}),
-    ...(row.renderPlan ? { renderPlan: row.renderPlan } : {}),
+    ...(row.renderPlan ? { renderPlan: projectCoverCompositionPlan(row.renderPlan) } : {}),
   };
 }
 
@@ -307,8 +317,19 @@ function persistedReference(pending: PendingCoverGeneration): PersistedCoverAtte
   };
 }
 
-function serializedAttemptState(reference: PersistedCoverAttemptReference | null) {
-  return JSON.stringify({ version: 1, pending: reference, history: [] });
+function persistedCoverReceipt(value: unknown): CoverGenerationTask | null {
+  const task = persistedCoverTask(value);
+  const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const receipt = projectGeneratedImageClientReceipt(row.imageDeliveryReceipt);
+  if (!task || receipt?.deliveryMode !== "inline_ephemeral") return null;
+  return { ...task, status: "done", imageDeliveryReceipt: receipt, cloudStored: false, canLoadForRetry: false,
+    error: "封面生成费用收据已保留；临时图片仅原页面可用，刷新后无法恢复",
+    ...(validKey(row.clientIdempotencyKey) ? { clientIdempotencyKey: String(row.clientIdempotencyKey) } : {}),
+    ...(validKey(row.clientTraceId) ? { clientTraceId: String(row.clientTraceId) } : {}),
+    billing: { state: receipt.cashCharged > 0 ? "charged" : "exempt", referenceId: receipt.billingReferenceId || receipt.recordId, chargedAmount: receipt.cashCharged } };
+}
+function serializedAttemptState(reference: PersistedCoverAttemptReference | null, history: CoverGenerationTask[] = []) {
+  return JSON.stringify({ version: 1, pending: reference, history: [], receipts: history.map(persistedCoverReceipt).filter(Boolean).slice(0,30) });
 }
 
 export function readCoverGenerationState(storage: Pick<Storage, "getItem"> & Partial<Pick<Storage, "setItem">>, userId: string): CoverGenerationState {
@@ -321,6 +342,7 @@ export function readCoverGenerationState(storage: Pick<Storage, "getItem"> & Par
   const parsed = JSON.parse(raw) as {
     version?: unknown;
     pending?: (Partial<PersistedCoverAttemptReference> & { payload?: unknown }) | null;
+    receipts?: unknown[];
   };
   if (parsed.version !== 1) throw new Error("封面任务记录不可读取，请保留原记录并联系管理员");
   if (parsed.pending && (!validKey(parsed.pending.clientIdempotencyKey)
@@ -348,7 +370,8 @@ export function readCoverGenerationState(storage: Pick<Storage, "getItem"> & Par
       ? { ...reference, task: reference.task, ...(legacyPayload ? { payload: legacyPayload } : reference.resumePayload ? { payload: reference.resumePayload } : {}) }
       : pendingPlaceholder(reference) : null;
   if (pending && legacyPayload) inMemoryPendingCoverRequests.set(userId, pending);
-  const serialized = serializedAttemptState(reference);
+  const history = Array.isArray(parsed.receipts) ? parsed.receipts.map(persistedCoverReceipt).filter((task): task is CoverGenerationTask => Boolean(task)) : [];
+  const serialized = serializedAttemptState(reference, history);
   if (serialized !== raw && typeof storage.setItem === "function") {
     try {
       storage.setItem(stateKey(userId), serialized);
@@ -356,12 +379,12 @@ export function readCoverGenerationState(storage: Pick<Storage, "getItem"> & Par
       // Reading stays safe even when a legacy sensitive record cannot be scrubbed.
     }
   }
-  return { version: 1, pending, history: [] };
+  return { version: 1, pending, history };
 }
 
 function saveState(storage: Pick<Storage, "getItem" | "setItem">, userId: string, state: CoverGenerationState) {
   const reference = state.pending ? persistedReference(state.pending) : null;
-  const serialized = serializedAttemptState(reference);
+  const serialized = serializedAttemptState(reference, state.history);
   storage.setItem(stateKey(userId), serialized);
   if (storage.getItem(stateKey(userId)) !== serialized) throw new Error("无法保存封面任务追踪，本次尚未提交");
   if (!state.pending) {
@@ -369,6 +392,13 @@ function saveState(storage: Pick<Storage, "getItem" | "setItem">, userId: string
   } else if (state.pending.payload) {
     inMemoryPendingCoverRequests.set(userId, { ...state.pending, updatedAt: reference!.updatedAt });
   }
+}
+
+export function saveCoverEphemeralReceipt(storage: Storage, userId: string, task: CoverGenerationTask) {
+  const receipt = persistedCoverReceipt(task);
+  if (!receipt) return;
+  const state = readCoverGenerationState(storage, userId);
+  saveState(storage, userId, { ...state, history: [receipt, ...state.history.filter(item => item.imageDeliveryReceipt?.recordId !== receipt.imageDeliveryReceipt?.recordId)] });
 }
 
 export function clearCompletedCoverHistory(storage: Storage, userId: string) {
@@ -380,7 +410,8 @@ export function clearCompletedCoverHistory(storage: Storage, userId: string) {
 /** Detach the editor from an in-flight task. The server remains authoritative and
  * the task continues to appear in account history after refresh. */
 export function detachCoverGenerationTracking(storage: Storage, userId: string) {
-  saveState(storage, userId, { version: 1, pending: null, history: [] });
+  const current = readCoverGenerationState(storage, userId);
+  saveState(storage, userId, { ...current, pending: null });
 }
 
 export type CoverFailureHistoryReadiness = {
@@ -466,7 +497,7 @@ export async function fetchCoverAccountHistory(token: string, page = 1, signal?:
   const activeRecords = activeAttempts.map((attempt: ServerCoverAttempt) => attempt.task);
   const records = dedupeCoverHistory([...(data.records as CoverGenerationTask[]), ...activeRecords]);
   if (records.some(record => record.status === "done"
-    ? !record.assetId || !record.historyRecordId || !record.backgroundAssetId || !record.renderPlan || !record.url
+    ? record.imageDeliveryReceipt ? !persistedCoverReceipt(record) : !record.assetId || !record.historyRecordId || !record.backgroundAssetId || !record.renderPlan || !record.url
       || Boolean(coverCompositionValidationError(record.renderPlan)) || record.cloudStored !== true
     : record.status === "display_pending"
       ? !record.assetId || !record.historyRecordId || !record.backgroundAssetId || !record.renderPlan
@@ -521,13 +552,16 @@ export async function runCoverGeneration(input: {
   storage: Storage;
   fetcher?: typeof fetch;
   onState: (state: CoverGenerationState) => void;
+  isCurrentPageActive?: () => boolean;
 }): Promise<{ state: CoverGenerationState; message: string }> {
   const fetcher = input.fetcher || fetch;
   const execute = async () => {
     let current = readCoverGenerationState(input.storage, input.userId);
     const headers = { Authorization: `Bearer ${input.token}`, "Content-Type": "application/json" };
     const publish = (next: CoverGenerationState) => {
-      saveState(input.storage, input.userId, next);
+      if (!next.pending && next.history[0]?.imageDeliveryReceipt) {
+        try { saveState(input.storage, input.userId, next); } catch { /* An optional local receipt cannot invalidate a completed paid result. */ }
+      } else saveState(input.storage, input.userId, next);
       current = next;
       input.onState(next);
     };
@@ -562,7 +596,31 @@ export async function runCoverGeneration(input: {
       task: attempt.task,
       ...(payload ? { payload } : attempt.dispatchInput ? { payload: attempt.dispatchInput } : {}),
     });
-    const complete = (attempt: PendingCoverGeneration, data: Record<string, unknown>) => {
+    const complete = async (attempt: PendingCoverGeneration, data: Record<string, unknown>) => {
+      if (data.success === true && data.completed === true && data.generationCompleted === true && data.deliveryMode === "inline_ephemeral") {
+        const receipt = projectGeneratedImageClientReceipt(data);
+        const delivery = await resolveGeneratedImageClientDelivery(data).catch(error => {
+          if (receipt?.deliveryMode !== "inline_ephemeral") throw error;
+          return { kind: "inline_ephemeral" as const, receipt, url: "", revoke: () => {} };
+        });
+        if (delivery.kind !== "inline_ephemeral" || !delivery.receipt) return false;
+        let previewBlob = "blob" in delivery ? delivery.blob : undefined;
+        const revokeDelivery = delivery.revoke;
+        const revokePreview = () => { previewBlob = undefined; revokeDelivery(); };
+        const pageActive = input.isCurrentPageActive?.() !== false;
+        if (!pageActive) revokePreview();
+        const url = pageActive ? delivery.url : "";
+        const boundRecordId = delivery.receipt.recordId;
+        const completed: CoverGenerationTask = { ...attempt.task, status: "done", url: url || undefined, imageDeliveryReceipt: delivery.receipt,
+          cloudStored: false, cancellable: false, canLoadForRetry: false, attemptState: "failed",
+          revokePreview, readPreviewBlob: binding => previewBlob && binding.recordId === boundRecordId && binding.url === url ? previewBlob : null,
+          clientIdempotencyKey: attempt.clientIdempotencyKey, clientTraceId: attempt.clientTraceId,
+          outputWidth: delivery.receipt.width, outputHeight: delivery.receipt.height,
+          billing: { state: delivery.receipt.cashCharged > 0 ? "charged" : "exempt", referenceId: delivery.receipt.billingReferenceId || delivery.receipt.recordId, chargedAmount: delivery.receipt.cashCharged },
+          error: url ? "临时封面仅当前页面可用，请及时下载；刷新后只保留费用收据" : "生成已完成且费用收据已保留；临时封面无法恢复" };
+        publish({ version: 1, pending: null, history: [completed, ...current.history.filter(item => item.imageDeliveryReceipt?.recordId !== delivery.receipt?.recordId)].slice(0,30) });
+        return true;
+      }
       const stored = data.result && typeof data.result === "object" && !Array.isArray(data.result)
         ? data.result as Record<string, unknown>
         : null;
@@ -639,7 +697,7 @@ export async function runCoverGeneration(input: {
         clientIdempotencyKey: attempt.clientIdempotencyKey,
         clientTraceId: attempt.clientTraceId,
       });
-      if (response.ok && complete(attempt, data)) return { state: current, message: "封面已完成，图片与编辑历史已保存到账号" };
+      if (response.ok && await complete(attempt, data)) return { state: current, message: current.history[0]?.imageDeliveryReceipt ? "封面生成已完成；临时素材仅当前页面可用，费用收据已保留" : "封面已完成，图片与编辑历史已保存到账号" };
       if (response.ok && data.terminalAttempt) {
         const failed = serverCoverAttempt(data.terminalAttempt);
         const task = { ...(failed?.task || attempt.task), status: failed?.task.status === "cancelled" ? "cancelled" as const : "failed" as const,
@@ -670,7 +728,7 @@ export async function runCoverGeneration(input: {
           payload: { ...adoptedPayload, referenceImageUrls: [], resumeDeliveryOnly: undefined },
           referenceCount: localPayload?.referenceImageUrls.length || 0,
         }));
-        if (response.ok && complete(attempt, data)) return { state: current, message: "封面已完成，图片与编辑历史已保存到账号" };
+        if (response.ok && await complete(attempt, data)) return { state: current, message: current.history[0]?.imageDeliveryReceipt ? "封面生成已完成；临时素材仅当前页面可用，费用收据已保留" : "封面已完成，图片与编辑历史已保存到账号" };
         active = response.ok ? serverCoverAttempt(data.activeAttempt) : null;
         if (!active) return { state: current, message: responseMessage(data, "原任务仍在后台核验，系统不会重复生图") };
         const usablePayload = trustedResume
@@ -689,8 +747,8 @@ export async function runCoverGeneration(input: {
       clientIdempotencyKey: attempt.clientIdempotencyKey,
       clientTraceId: attempt.clientTraceId,
     });
-    if (activeResponse.response.ok && complete(attempt, activeResponse.data)) {
-      return { state: current, message: "封面已完成，图片与编辑历史已保存到账号" };
+    if (activeResponse.response.ok && await complete(attempt, activeResponse.data)) {
+      return { state: current, message: current.history[0]?.imageDeliveryReceipt ? "封面生成已完成；临时素材仅当前页面可用，费用收据已保留" : "封面已完成，图片与编辑历史已保存到账号" };
     }
     if (activeResponse.response.ok && activeResponse.data.terminalAttempt) {
       const terminal = serverCoverAttempt(activeResponse.data.terminalAttempt);
@@ -730,7 +788,7 @@ export async function runCoverGeneration(input: {
       publish(next);
       return { state: current, message: next.pending.task.error || "原请求状态待确认" };
     }
-    if (response.ok && complete(attempt, data)) return { state: current, message: "封面已完成，图片与编辑历史已保存到账号" };
+    if (response.ok && await complete(attempt, data)) return { state: current, message: current.history[0]?.imageDeliveryReceipt ? "封面生成已完成；临时素材仅当前页面可用，费用收据已保留" : "封面已完成，图片与编辑历史已保存到账号" };
     if (data.terminalAttempt) {
       const terminal = serverCoverAttempt(data.terminalAttempt);
       const task = { ...(terminal?.task || attempt.task),

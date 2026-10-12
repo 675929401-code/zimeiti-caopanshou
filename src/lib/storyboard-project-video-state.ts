@@ -18,6 +18,8 @@ export type StoryboardVideoTaskSnapshot = {
   price_charged?: unknown;
   provider_result_url?: unknown;
   completed_at?: unknown;
+  source_expired_at?: unknown;
+  history_hidden_at?: unknown;
 };
 
 type StoryboardCardLike = Record<string, unknown> & {
@@ -132,6 +134,15 @@ function applyTerminalState(
   if (status === "done") {
     card.videoProgress = 100;
     card.videoRetryable = false;
+    if (task.source_expired_at || task.history_hidden_at) {
+      const message = task.source_expired_at ? "生成已成功，上游视频已确认失效；原任务和账务凭据保留" : "生成已成功，素材已从可见历史移除；原任务和账务凭据保留";
+      card.videoStatusDetail = message;
+      card.videoError = message;
+      delete card.videoUrl;
+      delete card.videoContentUrl;
+      delete card.videoThumbnailUrl;
+      return;
+    }
     card.videoStatusDetail = "生成成功，播放地址正在同步";
     delete card.videoError;
     return;
@@ -199,6 +210,9 @@ export function shouldRetainStoryboardProject(
   submittedAt: string | null | undefined,
   now: number | Date = Date.now(),
 ) {
-  return isStoryboardProjectActive(document)
-    || isStoryboardProjectRecentBeijingDay(submittedAt, now);
+  // Project visibility must not expire a still-deliverable provider result.
+  // Explicit user deletion and confirmed source expiry are separate controls.
+  void submittedAt;
+  void now;
+  return Boolean(document && typeof document === "object");
 }

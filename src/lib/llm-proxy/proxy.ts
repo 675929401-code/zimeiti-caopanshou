@@ -43,7 +43,7 @@
 
 import type { ProxyConfig, ProxyResult, StreamCallbacks, ChatRequest } from "./types";
 import { SseEventStreamDecoder, type DecodedSseEvent } from "../sse-stream-decoder";
-import { LlmStreamError, upstreamStreamError } from "./stream-error";
+import { LlmResponseStartError, LlmStreamError, upstreamStreamError } from "./stream-error";
 import { buildOpenAIEndpoint } from "../api-endpoints";
 import { ensureServerRuntimeEnvLoaded } from "@/lib/server-runtime-env";
 
@@ -116,6 +116,7 @@ export class LLMProxy {
       : buildOpenAiBody(request, apiBase, model, true, includeUsage);
 
     const headers = providerHeaders(this.config, useClaudeMessages);
+    const serializedBody = JSON.stringify(body);
 
     const encoder = new TextEncoder();
 
@@ -134,16 +135,32 @@ export class LLMProxy {
         }
 
         const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), timeout * 1000);
+        const fetchStartedAt = Date.now();
+        const timeoutMs = timeout * 1000;
+        let timeoutFired = false;
+        const timeoutId = setTimeout(() => {
+          timeoutFired = true;
+          abortController.abort();
+        }, timeoutMs);
 
-        const fetchResponse = await fetch(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-          cache: "no-store",
-          signal: abortController.signal,
-        });
-        clearTimeout(timeoutId);
+        let fetchResponse: Response;
+        try {
+          fetchResponse = await fetch(url, {
+            method: "POST",
+            headers,
+            body: serializedBody,
+            cache: "no-store",
+            signal: abortController.signal,
+          });
+        } catch {
+          throw new LlmResponseStartError(
+            timeoutFired ? "deadline_exceeded" : "transport_error",
+            Date.now() - fetchStartedAt,
+            timeoutMs,
+          );
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         response = fetchResponse;
 

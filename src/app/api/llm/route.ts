@@ -64,6 +64,9 @@ import { handleDeepThinkingType1, type DeepThinkingContext } from "./handle-deep
 import { handleStreamResponse, handleNonStreamResponse, type StreamHandlerContext } from "./handle-stream";
 import { checkCreditsBalance, getSelectedModelBillingSnapshot } from "@/lib/llm-billing";
 import { resolveChatReplyLimit } from "@/lib/llm-reply-limit";
+import { readFileSync as readQuotePinFile } from "node:fs";
+import { join as quotePinPath } from "node:path";
+import { composeLlmRequestMessages, resolveLinkedModelRuntime, buildLlmChatRequest, readStandardSnapshot, prepareStandardLlmRequest, assertQuoteExpectation, LlmQuotePreparationError, STANDARD_AGENT_FIELDS, STANDARD_MODEL_FIELDS, STANDARD_SETTING_KEYS } from "@/lib/server/llm-standard-request-preparation";
 import { quoteLlmStreamReservation, reserveLlmStreamCredits, releaseLlmStreamCredits, recoverLlmCreditReservations, LlmCreditReservationError, type LlmStreamReservation } from "@/lib/llm-credit-reservation";
 import { getProductionAgentById, getProductionLlmModelById, getProductionLlmModelByName } from "@/lib/production-data-source";
 import { findModelByPublicId, toPublicModelId } from "@/lib/public-model-dto";
@@ -117,6 +120,7 @@ import { isLocalBuildChatDrainActive, localBuildChatDrainResponse } from "@/lib/
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { createOperationPerformanceTrace, type OperationPerformanceTrace } from "@/lib/operation-performance-trace";
 import { recordServerOperationPerformanceEventBestEffort } from "@/lib/operation-flight-recorder";
+import { AgentPromptUnavailableError, resolveAuthoritativeAgentPrompt, agentPromptAuditIdentity, clientChatHistory } from "@/lib/server/agent-chat-prompt-authority";
 import {
   acquireProviderAdmission,
   holdProviderAdmissionUntilResponseEnds,
@@ -270,6 +274,8 @@ export async function POST(request: Request) {
     // an already-dispatched LLM attempt still holds a live lease.
     if (isLocalBuildChatDrainActive()) return localBuildChatDrainResponse();
     const body = await request.json();
+    const quoteBound = Object.prototype.hasOwnProperty.call(body, "quote_expectation");
+    let preparedQuote: Awaited<ReturnType<typeof prepareStandardLlmRequest>> | undefined;
     const { messages, model: requestedModel, modelId: requestedModelId, model_overridden: requestedModelOverridden, stream = true, userId, agentName: requestAgentName, agent_name: requestAgentName2, agentId, conversationId, proxyUrl, proxy_url, deepThinkingType, deep_thinking_type, deepThinkingOverridden, deep_thinking_overridden, deductDeepThink, deduct_deep_think, maxContextRounds, max_context_rounds, maxContextTokens, max_context_tokens, maxReplyTokens, max_reply_tokens, timeout: reqTimeout, enableWebSearch, enable_web_search, enableWebSearchOverridden, enable_web_search_overridden, temperature: reqTemperature, responseFormat, response_format, internal_workflow, adminSecurityBypass, admin_security_bypass } = body;
     performanceTrace = createOperationPerformanceTrace({
       domain: "chat",
@@ -280,6 +286,14 @@ export async function POST(request: Request) {
       agentId,
     }, (event) => { void recordServerOperationPerformanceEventBestEffort(event); });
     performanceTrace.checkpoint("request.received", { outcome: "in_progress" });
+    const beginPreparationStage = (stage: string) => {
+      const trace = createOperationPerformanceTrace({
+        domain: "chat", operation: `llm.preparation.${stage}`, route: "/api/llm",
+        requestId: performanceTrace!.correlation.request_id,
+        traceId: performanceTrace!.correlation.trace_id, agentId,
+      }, (event) => { void recordServerOperationPerformanceEventBestEffort(event); });
+      return (outcome: "success" | "warning" | "error" = "success") => trace.checkpoint("database.read", { outcome });
+    };
     const requestFingerprintPayload = Object.fromEntries(
       Object.entries(body).filter(([key]) => !["client_request_id", "userId"].includes(key)),
     );
@@ -684,14 +698,47 @@ export async function POST(request: Request) {
         );
       }
     }
+    if (quoteBound) {
+      // Successful owner-bound receipts precede mutable quote configuration. This
+      // SELECT never creates an attempt; nonterminal lease semantics stay in claim below.
+      try {
+        const replay = await llmRequestAttemptStore.readSucceededReplay({
+          userId: verifiedUserId, clientRequestId,
+          payloadFingerprint: fingerprintLlmRequest(requestFingerprintPayload),
+        });
+        if (replay) return responseForLlmAttemptClaim(replay);
+      } catch (error) {
+        if (error instanceof LlmRequestIdempotencyError) return new Response(
+          JSON.stringify({ error: error.message, code: error.code, retryable: false }),
+          { status: error.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+        );
+        throw error;
+      }
+      if (!verifiedUserId || !agentId || isVirtualAgent || isCanvasInternalWorkflow || mangaSkillOrchestration) throw new LlmQuotePreparationError("LLM_QUOTE_SELECTION_UNSUPPORTED");
+      const rows = async (query: PromiseLike<{data: any; error: any}>) => { const result = await query; if (result.error || !Array.isArray(result.data)) throw new LlmQuotePreparationError("LLM_QUOTE_READ_UNKNOWN"); return result.data; };
+      const snapshot = await readStandardSnapshot({
+        readAgent: id => rows(client.from("agents").select(STANDARD_AGENT_FIELDS.join(",")).eq("id",id)),
+        readModel: id => rows(client.from("llm_models").select(STANDARD_MODEL_FIELDS.join(",")).eq("id",id)),
+        readSettings: () => rows(client.from("platform_settings").select("setting_key,setting_value").in("setting_key",[...STANDARD_SETTING_KEYS])),
+        readActor: id => rows(client.from("users").select("id,role,status,is_active").eq("id",id)),
+        readSkills: id => rows(client.from("agent_skills").select("skills!inner(id,is_active)").eq("agent_id",id).eq("is_enabled",true).eq("skills.is_active",true)),
+      }, verifiedUserId, agentId);
+      let pins;
+      try { pins = {sourceVersion:JSON.parse(readQuotePinFile(quotePinPath(process.cwd(),"public/version.json"),"utf8")).sourceVersion,
+        buildId:readQuotePinFile(quotePinPath(process.cwd(),".next/BUILD_ID"),"utf8").trim()}; }
+      catch { throw new LlmQuotePreparationError("LLM_QUOTE_RUNTIME_UNKNOWN"); }
+      preparedQuote = await prepareStandardLlmRequest(body,snapshot,verifiedUserId,toPublicModelId("chat",String(snapshot.model.id)),pins);
+      assertQuoteExpectation(body.quote_expectation,preparedQuote.expectation);
+    }
+
     let agentQueryPromise: Promise<{ data: Record<string, unknown> | null }>;
     if (agentId && !isVirtualAgent) {
       const cached = agentConfigCache.get(agentId);
-      if (cached && cached.expiry > Date.now()) {
+      if (!quoteBound && cached && cached.expiry > Date.now()) {
         agentQueryPromise = Promise.resolve({ data: cached.data });
       } else {
-        agentQueryPromise = client.from("agents").select("name, source, is_active, deleted_at, coze_coding_api_token, proxy_url, model, model_id, frequency_limit, image_parsing, file_parsing, system_prompt, deep_thinking_type, deduct_deep_think, max_context_rounds, max_context_tokens, max_reply_tokens, timeout, enable_web_search, temperature, response_format, user_access, category, token_billing_enabled, input_cost_per_million, output_cost_per_million, cached_cost_per_million, profit_margin, token_rounding_unit").eq("id", agentId).maybeSingle().then(async (result: { data: Record<string, unknown> | null }) => {
-          const data = await resolveAgentLookup(result.data, () => getProductionAgentById(agentId), configurationSourceStatus().configuration !== 'local-acceptance');
+        agentQueryPromise = client.from("agents").select("name, source, is_active, deleted_at, coze_coding_api_token, proxy_url, model, model_id, frequency_limit, image_parsing, file_parsing, system_prompt, config_revision, deep_thinking_type, deduct_deep_think, max_context_rounds, max_context_tokens, max_reply_tokens, timeout, enable_web_search, temperature, response_format, user_access, category, token_billing_enabled, input_cost_per_million, output_cost_per_million, cached_cost_per_million, profit_margin, token_rounding_unit").eq("id", agentId).maybeSingle().then(async (result: { data: Record<string, unknown> | null; error?: unknown }) => {
+          const data = quoteBound ? (result.error ? null : result.data) : await resolveAgentLookup(result.data, () => getProductionAgentById(agentId), configurationSourceStatus().configuration !== 'local-acceptance');
           if (data) {
             agentConfigCache.set(agentId, { data: data as Record<string, unknown>, expiry: Date.now() + AGENT_CONFIG_TTL });
           }
@@ -707,7 +754,7 @@ export async function POST(request: Request) {
     if (publicModelId) {
       const cacheKey = `public:${publicModelId}`;
       const cached = llmModelCache.get(cacheKey);
-      if (cached && cached.expiry > Date.now()) {
+      if (!quoteBound && cached && cached.expiry > Date.now()) {
         llmModelQueryPromise = Promise.resolve({ data: cached.data });
       } else {
         llmModelQueryPromise = client.from("llm_models")
@@ -726,7 +773,7 @@ export async function POST(request: Request) {
     } else if (_preModelControlsAuthorized && model) {
       const cacheKey = `name:${model}`;
       const cached = llmModelCache.get(cacheKey);
-      if (cached && cached.expiry > Date.now()) {
+      if (!quoteBound && cached && cached.expiry > Date.now()) {
         llmModelQueryPromise = Promise.resolve({ data: cached.data });
       } else {
         llmModelQueryPromise = client.from("llm_models").select("*").eq("model_name", model).eq("is_active", true).order("sort_order", { ascending: true }).limit(1).then((result: { data: Record<string, unknown>[] | null }) => {
@@ -742,6 +789,7 @@ export async function POST(request: Request) {
     // ── v4 优化：大并行 — 积分预检 + 智能体配置 + 模型配置 + 全局前缀 + 分类权限 ──
     // 将原来串行/分批的查询全部并行化，一次 await 拿齐所有数据
     const __t1 = Date.now();
+    const finishConfigurationStage = beginPreparationStage("configuration");
     const [creditsResult, agentResult, llmModelResult, globalPrefix, allCategoriesResult] = await Promise.all([
       // 1. 用户积分+会员状态（async IIFE 包装，防止 .single() 返回的 PromiseLike 无 .catch() 方法）
       (verifiedUserId && userRole !== "admin")
@@ -759,6 +807,7 @@ export async function POST(request: Request) {
     ]);
 
     const __t2 = Date.now();
+    finishConfigurationStage();
     console.log(`[PERF] 大并行Promise.all(积分+智能体+模型+前缀+分类权限): ${__t2 - __t1}ms`);
 
     // ── 优先检查智能体用户权限（403 优先于 402） ──
@@ -895,7 +944,6 @@ export async function POST(request: Request) {
     if (agentRow) {
       if (agentRow.coze_coding_api_token) agentApiKey = agentRow.coze_coding_api_token as string;
       if (agentRow.proxy_url) agentProxyUrl = agentRow.proxy_url as string;
-      if (agentRow.system_prompt) body.system_prompt = agentRow.system_prompt as string;
       if (!isDeepThinkingOverridden && agentRow.deep_thinking_type != null) agentDeepThinkingType = agentRow.deep_thinking_type as number;
       if (agentRow.deduct_deep_think != null) agentDeductDeepThink = agentRow.deduct_deep_think as number;
       if (agentRow.max_context_rounds != null) agentMaxContextRounds = agentRow.max_context_rounds as number;
@@ -911,7 +959,7 @@ export async function POST(request: Request) {
         const mid = agentRow.model_id as string;
         const cacheKey = `id:${mid}`;
         const cached = llmModelCache.get(cacheKey);
-        if (cached && cached.expiry > Date.now()) {
+        if (!quoteBound && cached && cached.expiry > Date.now()) {
           if (cached.data) {
             modelPresetConfig = cached.data;
             // model_id is the runtime source of truth. Agent-level fields are
@@ -922,7 +970,7 @@ export async function POST(request: Request) {
           }
         } else {
           modelIdFetchPromise = client.from("llm_models").select("*").eq("id", mid).single().then(async (result: { data: Record<string, unknown> | null }) => {
-            const data = result.data || await getProductionLlmModelById(mid);
+            const data = quoteBound ? result.data : result.data || await getProductionLlmModelById(mid);
             llmModelCache.set(cacheKey, { data: data as Record<string, unknown> | null, expiry: Date.now() + LLM_MODEL_CACHE_TTL });
             return data as Record<string, unknown> | null;
           });
@@ -983,7 +1031,7 @@ export async function POST(request: Request) {
     if (!llmModelByNameConfig && agentModel) {
       const cacheKey = `name:${agentModel}`;
       const cached = llmModelCache.get(cacheKey);
-      if (cached && cached.expiry > Date.now()) {
+      if (!quoteBound && cached && cached.expiry > Date.now()) {
         if (cached.data) {
           llmModelByNameConfig = cached.data;
           if (cached.data.api_endpoint) agentProxyUrl = cached.data.api_endpoint as string;
@@ -1208,6 +1256,13 @@ export async function POST(request: Request) {
       agentDeepThinkingType = FREE_CHAT_DEEP_THINKING_TYPE;
     }
 
+    if (agentRow?.model_id && !model_overridden && !isVirtualAgent) {
+      const linkedRow = modelPresetConfig || modelIdData;
+      if (!linkedRow || String(linkedRow.id) !== String(agentRow.model_id)) throw new LlmQuotePreparationError("LLM_LINKED_MODEL_UNAVAILABLE");
+      ({ agentDeepThinkingType, agentDeductDeepThink, agentMaxContextRounds, agentMaxContextTokens,
+        agentMaxReplyTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat } = resolveLinkedModelRuntime(body,agentRow,linkedRow));
+    }
+
     const lastUserInput = [...messages]
       .reverse()
       .find((entry: { role?: string }) => entry.role === "user");
@@ -1281,120 +1336,27 @@ export async function POST(request: Request) {
 
     console.log(`[LLM] Model selection: model_overridden=${!!model_overridden}, requestModel=${model}, agentModel=${agentModel || "none"}, presetModelName=${modelPresetConfig?.model_name || "none"}, useModel=${useModel}, agentId=${agentId || "none"}`);
     
-    let effectiveSystemPrompt = mangaSkillOrchestration?.systemPrompt
-      || (body.system_prompt as string)
-      || "";
-    const globalPresentationRules = wrapGlobalPresentationRules(globalPrefix);
-    if (globalPresentationRules) {
-      effectiveSystemPrompt = effectiveSystemPrompt
-        ? `${effectiveSystemPrompt}\n\n${globalPresentationRules}`
-        : globalPresentationRules;
-    }
-
-    // 咨询回复与跟进始终由服务端按登录会员读取当前业务档案。
-    // 会员维护的是自己的业务事实，不接触也不能替换平台通用调度底座。
-    const businessIpProfileContext = await buildBusinessIpConsultationProfileContext({
-      client,
-      userId: verifiedUserId,
-      agentId,
-      conversationId,
+    let composed;
+    try { composed = await composeLlmRequestMessages({
+      agentId, agentName, agentRow, mangaSkillOrchestration, isCanvasInternalWorkflow, verifiedUserId,
+      body, globalPrefix, messages, useModel, agentDeepThinkingType, agentDeductDeepThink,
+      agentMaxContextRounds, agentMaxContextTokens, agentMaxReplyTokens, agentTimeout,
+      agentEnableWebSearch, agentTemperature, agentResponseFormat, beginPreparationStage, logger: console,
+      loadProfileContext: () => buildBusinessIpConsultationProfileContext({ client, userId: verifiedUserId, agentId, conversationId }),
+      loadSkills: async () => (await import("@/lib/skill-registry")).injectSkillsForAgent(agentId),
+      onBasePrompt: (prompt: string, revision: unknown) => console.info("[LLM_PROMPT_AUTHORITY]", JSON.stringify({
+        requestId: performanceTrace!.correlation.request_id, traceId: performanceTrace!.correlation.trace_id,
+        agentId: performanceTrace!.correlation.agent_id, ...agentPromptAuditIdentity(prompt, revision),
+      })),
     });
-    if (businessIpProfileContext) {
-      effectiveSystemPrompt += `\n\n${businessIpProfileContext}`;
+    } catch (error) {
+      if (!(error instanceof AgentPromptUnavailableError)) throw error;
+      return new Response(JSON.stringify({error:error.message,code:error.code,retryable:true}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
     }
-
-    // ── 格式与身份约束 ──
-    // 平台通用前缀只负责呈现规则；专属智能体提示词才是角色与工作流权威。
-    // 身份边界在所有动态知识和技能注入完成后统一包裹首尾，防止长提示词、
-    // 历史消息或模型默认身份稀释当前智能体角色。
-    const effectiveAgentName = mangaSkillOrchestration
-      ? "漫剧工作台创作 Agent"
-      : (typeof agentRow?.name === "string" ? agentRow.name : agentName);
-
-    if (agentResponseFormat === "markdown" && effectiveSystemPrompt) {
-      // 仅当智能体没有自定义格式时，补上商业产品通用的可读性底线；
-      // 明确要求纯正文、口播稿或结构化协议的智能体仍以自身规范为准。
-      const hasOwnFormat = effectiveSystemPrompt.includes("输出规范")
-        || effectiveSystemPrompt.includes("输出格式")
-        || effectiveSystemPrompt.includes("格式要求")
-        || effectiveSystemPrompt.includes("输出模块")
-        || /(?:JSON|XML|YAML|结构化协议|机器可读|固定字段|全文纯正文|可直接朗读|不(?:要|使用).{0,8}(?:标题|列表|Markdown)|(?:口播稿|纯正文).{0,12}(?:输出|交付)|(?:输出|交付).{0,12}(?:口播稿|纯正文))/iu.test(effectiveSystemPrompt);
-      if (!hasOwnFormat && !effectiveSystemPrompt.includes("Markdown 格式输出")) {
-        effectiveSystemPrompt += `\n\n请使用 Markdown 格式输出，并按商业交付标准组织阅读层级：先给直接结论；内容较长时使用简短标题分节，每段控制在 2 至 4 句；并列信息或步骤使用列表，确有对比维度时再使用表格；重点可适度加粗。避免整篇密集长段、连续堆叠小标题、无意义重复和装饰性符号。用户明确要求纯正文、口播稿或指定格式时，以用户要求为准。`;
-      }
-    } else if (agentResponseFormat === "text" && effectiveSystemPrompt) {
-      const hasOwnFormat = effectiveSystemPrompt.includes("输出规范") || effectiveSystemPrompt.includes("输出格式") || effectiveSystemPrompt.includes("格式要求");
-      if (!hasOwnFormat && !effectiveSystemPrompt.includes("纯文本格式输出")) {
-        effectiveSystemPrompt += `\n\n请使用纯文本格式输出，不要使用 Markdown 排版语法（代码块除外）。`;
-      }
-    }
-
-    // ── 技能系统：动态注入（零影响，仅 LLM 智能体 + 有技能时激活） ──
-    // 动态 import 隔离：无技能时不加载 skill-registry 模块
-    let skillInjection: { skillPromptSuffix: string; tools: unknown[] } | null = null;
-    if (agentId && agentRow?.source === "llm" && (!bipStep(agentId) || bipAllowsSkills(agentId))) {
-      try {
-        const { injectSkillsForAgent } = await import("@/lib/skill-registry");
-        skillInjection = await injectSkillsForAgent(agentId);
-      } catch (err) {
-        console.warn("[LLM Route] 技能注入失败（不影响正常流程）:", err);
-      }
-    }
-    // 将技能调度提示词追加到系统提示词末尾
-    if (skillInjection?.skillPromptSuffix) {
-      effectiveSystemPrompt += skillInjection.skillPromptSuffix;
-    }
-
-    // 网站功能推广师使用构建期生成的只读知识快照。只按当前用户问题
-    // 召回少量 S1-S4 记录，不把 160 条痛点和全部样本常驻系统提示词。
-    // 精确 agent ID 门禁位于 helper 内，其他智能体不会装载这份知识。
-    const websitePromoterKnowledge = buildWebsitePromoterKnowledgeContext({
-      agentId,
-      messages,
-    });
-    if (websitePromoterKnowledge) {
-      effectiveSystemPrompt += `\n\n${websitePromoterKnowledge.systemPromptSuffix}`;
-      console.log(
-        `[WEBSITE_PROMOTER_KB] mode=${websitePromoterKnowledge.knowledgeMode} snapshot=${websitePromoterKnowledge.snapshotId} state=${websitePromoterKnowledge.topicSnapshotState} chars=${websitePromoterKnowledge.characterCount} selected=${Object.values(websitePromoterKnowledge.selectedIds).reduce((sum, ids) => sum + ids.length, 0)}`,
-      );
-    }
-
-    effectiveSystemPrompt = applyAgentIdentityEnvelope(effectiveSystemPrompt, effectiveAgentName);
-
-    // ── 上下文管理（不设上限，模型自身上下文窗口为天然限制） ──
-
-    // ★ 记忆诊断日志：输出最终上下文参数，排查"无记忆"问题
-    if (bipStep(agentId)) {
-      // Model presets must not erase the suite's project limits or route it
-      // through the separate global thinking pipeline (which has no BIP output guard).
-      agentDeepThinkingType = agentDeepThinkingType === 2 ? 2 : 0;
-      agentMaxContextRounds = Math.min(40, Math.max(1, Number(agentRow?.max_context_rounds) || 40));
-      agentMaxContextTokens = Math.min(30000, Math.max(8192, Number(agentRow?.max_context_tokens) || 30000));
-    }
-    const historyMessageCount = messages.filter((m: { role: string }) => m.role !== "system").length;
-    const estimatedInputTokens = messages.reduce((sum: number, msg: { content: unknown }) => {
-      const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? "");
-      return sum + Math.ceil(content.length / 2);
-    }, effectiveSystemPrompt ? Math.ceil(effectiveSystemPrompt.length / 2) : 0);
-    if (agentMaxContextRounds <= 0 && historyMessageCount > FAST_CONTEXT_ROUND_LIMIT * 2) {
-      agentMaxContextRounds = FAST_CONTEXT_ROUND_LIMIT;
-    }
-    if (agentMaxContextTokens <= 0 && estimatedInputTokens > FAST_CONTEXT_TOKEN_TRIGGER) {
-      agentMaxContextTokens = FAST_CONTEXT_TOKEN_LIMIT;
-    }
-
-    const _sysPromptTokens = effectiveSystemPrompt ? Math.ceil(effectiveSystemPrompt.length / 2) + 4 : 0;
-    const _historyBudget = agentMaxContextTokens > 0 ? Math.max(agentMaxContextTokens - _sysPromptTokens, 8192) : 0;
-    console.log(`[CONTEXT] agent=${agentName || agentId || "unknown"} rounds=${agentMaxContextRounds} maxTokens=${agentMaxContextTokens} sysPrompt=${_sysPromptTokens}tokens(${effectiveSystemPrompt?.length || 0}chars) historyBudget=${_historyBudget}tokens model=${useModel}`);
-
-    const finalMessages = await prepareContext(
-      (bipStep(agentId) ? messages.filter((m:ChatMessage)=>m.role==='user'||m.role==='assistant') : messages) as ChatMessage[],
-      {
-        maxContextRounds: agentMaxContextRounds,
-        maxContextTokens: agentMaxContextTokens,
-        systemPrompt: effectiveSystemPrompt || undefined,
-      }
-    );
+    const { effectiveSystemPrompt, skillInjection, finalMessages } = composed;
+    agentDeepThinkingType = composed.agentDeepThinkingType;
+    agentMaxContextRounds = composed.agentMaxContextRounds;
+    agentMaxContextTokens = composed.agentMaxContextTokens;
 
     // ── 多智能体协作上下文隔离 ──
     // 2026-08-03：先关闭自动协作提示，避免普通写文案对话被“协同”逻辑误导。
@@ -1483,6 +1445,8 @@ export async function POST(request: Request) {
       );
     }
 
+    if (preparedQuote && (agentEnableWebSearch || agentDeepThinkingType === 1 || skillInjection)) throw new LlmQuotePreparationError("LLM_QUOTE_CAPABILITY_DRIFT");
+
     // ── 前置搜索注入：联网搜索开启时，为不支持原生 web_search 的模型注入搜索结果 ──
     const selectedModelName = useModel || model || "";
     const webSearchTransport = resolveWebSearchTransport(selectedModelName, {
@@ -1497,6 +1461,8 @@ export async function POST(request: Request) {
     }
 
     if (agentEnableWebSearch && webSearchTransport === "presearch" && finalMessages.length > 0) {
+      const finishSearchStage = beginPreparationStage("presearch");
+      let searchStageOutcome: "success" | "error" = "success";
       try {
         // 提取用户最后一条消息作为搜索查询
         const lastUserMsg = [...finalMessages].reverse().find(m => m.role === "user");
@@ -1505,7 +1471,7 @@ export async function POST(request: Request) {
           : "";
 
         if (searchQuery) {
-          console.log(`[WEB-SEARCH] 模型 ${useModel || model} 不支持原生联网，执行前置搜索: "${searchQuery.slice(0, 50)}..."`);
+          console.log(`[WEB-SEARCH] 执行前置搜索: queryChars=${searchQuery.length}`);
           const __searchStart = Date.now();
 
           const searchConfig = new SearchConfig({
@@ -1563,10 +1529,13 @@ export async function POST(request: Request) {
           throw new Error("WEB_SEARCH_REQUIRED_FAILED:EMPTY_QUERY");
         }
       } catch (searchError) {
+        searchStageOutcome = "error";
         const detail = searchError instanceof Error ? searchError.message : String(searchError);
         console.error("[WEB-SEARCH] 前置搜索失败，已阻止模型调用:", detail);
         if (detail.startsWith("WEB_SEARCH_REQUIRED_FAILED:")) throw searchError;
         throw new Error(`WEB_SEARCH_REQUIRED_FAILED:${detail}`);
+      } finally {
+        finishSearchStage(searchStageOutcome);
       }
     } else if (agentEnableWebSearch && modelSupportsNativeSearch) {
       console.log(`[WEB-SEARCH] 模型 ${useModel || model} 支持原生联网搜索，使用 tools 注入`);
@@ -1662,25 +1631,21 @@ export async function POST(request: Request) {
     // The configured reply limit also bounds native reasoning plus output.
     const effectiveMaxTokens = agentMaxReplyTokens;
 
-    const chatRequest: ChatRequest = {
-      model: useModel,
-      messages: searchInjectedMessages,
-      max_tokens: effectiveMaxTokens,
-      temperature: agentTemperature,
-      enable_thinking: agentDeepThinkingType === 2,
-      response_format: agentResponseFormat === "json_object" ? { type: "json_object" } : undefined,
-      stream_options: stream ? { include_usage: true } : undefined,
-      // ── tools 合并：web_search + 技能 tools ──
-      ...((effectiveEnableWebSearch || skillInjection?.tools?.length) ? {
-        tools: [
-          ...(effectiveEnableWebSearch ? [{ type: "web_search", web_search: {} }] : []),
-          ...(skillInjection?.tools || []),
-        ],
-      } : {}),
-    };
+    const runtimeParameters = { agentDeepThinkingType, agentDeductDeepThink, agentMaxContextRounds, agentMaxContextTokens,
+      agentMaxReplyTokens: effectiveMaxTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat };
+    const builtChatRequest = buildLlmChatRequest(useModel, searchInjectedMessages, runtimeParameters, stream,
+      [...(effectiveEnableWebSearch ? [{ type: "web_search", web_search: {} }] : []), ...(skillInjection?.tools || [])]);
+    if (preparedQuote) {
+      // Do not execute stale/cached/fallback preparation. A read or configuration drift is a refusal, never an automatic refresh.
+      if (JSON.stringify(builtChatRequest) !== JSON.stringify(preparedQuote.chatRequest)
+        || JSON.stringify(selectedModelBillingSnapshot.priceSnapshot) !== JSON.stringify(preparedQuote.billing.priceSnapshot)) throw new LlmQuotePreparationError("LLM_QUOTE_EXECUTION_DRIFT");
+    }
+    const chatRequest: ChatRequest = preparedQuote?.chatRequest || builtChatRequest;
 
     const streamQuote = quoteLlmStreamReservation(chatRequest, selectedModelBillingSnapshot.config,
       agentDeepThinkingType === 2 ? agentDeductDeepThink : 1);
+
+    if (preparedQuote && (!streamQuote || streamQuote.amount !== preparedQuote.reservation.amount)) throw new LlmQuotePreparationError("LLM_QUOTE_RESERVATION_DRIFT");
 
     // ── 提前保存用户消息 + 创建会话记录（流开始前，fire-and-forget） ──
     // 对标 AIWeb：用户消息立即持久化，不等流结束
@@ -1881,6 +1846,10 @@ export async function POST(request: Request) {
         status: 503,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
+    }
+    if (error instanceof LlmQuotePreparationError) {
+      return new Response(JSON.stringify({error:"本次预留计划已失效或不支持，未继续调用模型",code:error.code,retryable:false,retry_safe:false}),
+        {status:409,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
     }
     if (error instanceof LlmCreditReservationError) {
       return new Response(JSON.stringify({ error: error.message, code: error.code, retryable: !llmProviderCallStarted }),

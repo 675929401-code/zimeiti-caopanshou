@@ -7,6 +7,7 @@ import {
   wrapGlobalPresentationRules,
 } from "../src/lib/agent-identity-envelope";
 import { injectSystemPrompt } from "../src/lib/llm-context";
+import { resolveAuthoritativeAgentPrompt } from "../src/lib/server/agent-chat-prompt-authority";
 
 const root = process.cwd();
 const route = fs.readFileSync(path.join(root, "src/app/api/llm/route.ts"), "utf8");
@@ -72,7 +73,9 @@ assert.equal(promptOwnership("coze"), "external_prompt_owned_not_locally_enforce
 assert.equal(promptOwnership("coze_coding"), "external_prompt_owned_not_locally_enforced");
 
 assert.match(route, /select\("name, source,[\s\S]*?system_prompt/u, "server must read the stored agent prompt");
-assert.match(route, /if \(agentRow\.system_prompt\) body\.system_prompt = agentRow\.system_prompt/u, "stored prompt must override client prompt data");
+assert.match(route, /resolveAuthoritativeAgentPrompt\(/u, "stored agent prompt must use the server authority boundary");
+assert.equal(resolveAuthoritativeAgentPrompt({ hasPersistedAgent: true, serverPrompt: 'server-role', authorizedInternalWorkflow: false, workflowPrompt: 'client-injection' }), 'server-role');
+assert.throws(() => resolveAuthoritativeAgentPrompt({ hasPersistedAgent: true, serverPrompt: '', authorizedInternalWorkflow: false, workflowPrompt: 'client-injection' }), /智能体运行设定暂不可用/u);
 assert.match(route, /wrapGlobalPresentationRules\(globalPrefix\)/u, "global formatting rules must be identity-neutralized");
 assert.match(route, /applyAgentIdentityEnvelope\(effectiveSystemPrompt, effectiveAgentName\)/u, "identity envelope must wrap the final prompt");
 assert.ok(

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "kind": "database-semantic-contract",
   "profile": "public-runtime-contract.v1",
-  "generatedAt": "2026-10-10T09:04:31.763Z",
-  "sourceLabel": "reviewed-local-transactional-preview:20261009054000_white_label_runtime_publish.sql",
-  "sourceDatabase": "zimeiti_local",
-  "migrationManifestSha256": "045ac236f35e578362e49c64ce4b27a2c31ed8ab498c4a062086d309fd85aece",
+  "generatedAt": "2026-10-12T02:12:44.553Z",
+  "sourceLabel": "Astra independently derived candidate: accepted 169 baseline + exact four SQL additions; isolated B catalog matched",
+  "sourceDatabase": "zimeiti_restore_20261012063000_91b7e8c2",
+  "migrationManifestSha256": "e550547855578ac0ff502b7e287ce8dad094dccea7cd500afab48a54e9293e08",
   "extraObjectPolicy": "structural extras warn; privilege extras block",
   "snapshot": {
     "profile": "public-runtime-contract.v1",
@@ -13249,8 +13249,8 @@
         ]
       },
       "constraints": {
-        "rows": 1634,
-        "sha256": "68e3a89d776840844d63de0971dd4fff74c3d3224031bff0292f94ffe854a6ec",
+        "rows": 1636,
+        "sha256": "7abbc9df058cd5193cc83cde9ac9fb9bbcbb9546ba6f0725b067162030dfd87d",
         "exactExtras": false,
         "objects": [
           {
@@ -13582,8 +13582,16 @@
             "sha256": "2c21278b394ef7f2822de86d0200163faf3e265ba16cb334b50b0b5bdde67f34"
           },
           {
+            "key": "public|autodl_h3_jobs|autodl_h3_jobs_success_asset_check",
+            "sha256": "138adebc3df16581a777c4413634004bc234f3867dc188ba718a7f19307da47c"
+          },
+          {
             "key": "public|autodl_h3_jobs|autodl_h3_jobs_user_id_fkey",
             "sha256": "7fd62a8a4704685dd0a08605c6efdd7d62585bf4bfde59ddc43a084ea80e9e85"
+          },
+          {
+            "key": "public|autodl_h3_settlements|autodl_h3_settlement_asset_check",
+            "sha256": "b1cf669612b3a6aaac9d06137e424993a9683d8f8a5c70c88264365eeeb4397b"
           },
           {
             "key": "public|autodl_h3_settlements|autodl_h3_settlements_job_id_fkey",
@@ -22255,8 +22263,8 @@
         ]
       },
       "functions": {
-        "rows": 342,
-        "sha256": "5a3478aa53b66f5d205dad89917e70be703611ceadd859ab217e28e955450ade",
+        "rows": 349,
+        "sha256": "1ce8b3065cf9195faa20d5d3df3deb170cd58481d9aeb478aa7031b410a950e3",
         "exactExtras": false,
         "objects": [
           {
@@ -22328,6 +22336,10 @@
             "sha256": "b3a37266ca1777addf37400cb8a944cda55c92135354e72bd778e631fdc5bfe9"
           },
           {
+            "key": "public|autodl_h3_finalize_video_provider_url|p_job_id uuid, p_public_task_id text, p_video_task_internal_id text, p_user_id text, p_model_id text, p_upstream_task_id text, p_owner text, p_lease_token bigint, p_result_asset_url text, p_price_yuan numeric, p_cost_price numeric, p_response_ms bigint",
+            "sha256": "af7bc4ea6b2b1d5a87326d74762b990bb88cf279cc8830aa4f5f223622f3fbcc"
+          },
+          {
             "key": "public|autodl_h3_job_rank|p_state text",
             "sha256": "14b3003fd5a0b40ada8d6145bc080da2e28ea83cb5bd49a0d0463f5234c8b73d"
           },
@@ -22342,6 +22354,14 @@
           {
             "key": "public|autodl_h3_prepare_shutdown|p_instance_uuid text, p_owner text, p_lease_token bigint, p_expected_activity_epoch bigint, p_idle_grace_seconds integer",
             "sha256": "2109cdd16962e122ea79949beb44fbf738743d168a3cf72fe48cd488806d167c"
+          },
+          {
+            "key": "public|autodl_h3_provider_delivery_url_valid|p_url text, p_upstream_task_id text",
+            "sha256": "dbab1524abfd56ec0ce35471c1c99b9d6bc837fed56859a164fb354f70e5e29d"
+          },
+          {
+            "key": "public|autodl_h3_provider_delivery_v1_ready|",
+            "sha256": "6cc97a767640630eed389525231f6169f9caa920071eeaaa7763199749051b22"
           },
           {
             "key": "public|autodl_h3_renew_instance_lease|p_instance_uuid text, p_owner text, p_lease_token bigint, p_lease_seconds integer",
@@ -22512,6 +22532,10 @@
             "sha256": "2032a02a950ec52d8241609a0b29e51a446416682367a0a85f06a0eb039eac64"
           },
           {
+            "key": "public|complete_image_ephemeral_delivery|p_record_id text, p_user_id text, p_client_trace_id text, p_payload_fingerprint text, p_dispatch_receipt_sha256 text, p_submission_receipt_sha256 text, p_billing_reference_id text, p_metadata jsonb",
+            "sha256": "684da9eacbb4a346c825038df6d9695f0d85b1b107d200be802e38489ffb3306"
+          },
+          {
             "key": "public|complete_skill_invocation|p_invocation_id uuid, p_payload_fingerprint text, p_output jsonb, p_model_id text, p_billing_operation_id text, p_task_id text, p_provider_task_id text, p_asset_ids text[], p_charged_credits numeric, p_charged_cash numeric, p_cost_snapshot jsonb",
             "sha256": "45790dfc046139487cc2371d4d23aa6915e45cce3c763e6b9c6b950224f55ebe"
           },
@@ -22650,6 +22674,10 @@
           {
             "key": "public|finalize_image_generation_delivery|p_record_id text, p_user_id text, p_storage_key text, p_storage_provider text, p_file_name text, p_file_size bigint, p_content_type text, p_source text, p_meta jsonb",
             "sha256": "8780b271ea68cfb60822d42ccc6741edbd9afceaa29fc82ecbf4606e0186ec60"
+          },
+          {
+            "key": "public|finalize_image_provider_delivery|p_record_id text, p_user_id text, p_provider_url text",
+            "sha256": "a2280a3bb0eaad98140aa616c4ffc120ff5c8ea935c1da99b667fce42de23198"
           },
           {
             "key": "public|finalize_llm_request_attempt_atomic|p_record_id text, p_payload_fingerprint text, p_lease_owner text, p_lease_token bigint, p_state text, p_http_status integer, p_response_headers jsonb, p_response_body text, p_response_fingerprint text, p_result_reference text, p_error_code text, p_error_message text",
@@ -22900,6 +22928,10 @@
             "sha256": "53a2e2627130ece31d0f323c315444faee57a9f5f1be3b444ca4e4cb13d88560"
           },
           {
+            "key": "public|mark_image_provider_source_expired|p_record_id text, p_user_id text, p_provider_url text",
+            "sha256": "6ae0cbbae3c412ade30e209544ae52ddd6bd24cbb2fce1b6e569a9951c59baa5"
+          },
+          {
             "key": "public|mark_llm_request_provider_started_atomic|p_record_id text, p_payload_fingerprint text, p_lease_owner text, p_lease_token bigint",
             "sha256": "831b3436cc1cdbfdb641ba514f901dd62ee4fa0593a45a17489f5b5ba24b3b15"
           },
@@ -22998,6 +23030,10 @@
           {
             "key": "public|publish_image_model_validation|p_validation_id text, p_user_id text, p_configuration_hash text, p_model_snapshot_hash text, p_expected_active boolean, p_expected_hidden boolean, p_asset_id text, p_verified_key text, p_verified_size bigint, p_verified_type text, p_evidence jsonb",
             "sha256": "7b22e5c01f51a8e9fe77f35cc8f511c4386840c6ae511f28b3958df79da9e754"
+          },
+          {
+            "key": "public|publish_image_model_validation_receipt|p_validation_id text, p_user_id text, p_configuration_hash text, p_model_snapshot_hash text, p_expected_active boolean, p_expected_hidden boolean, p_verified_key text, p_verified_size bigint, p_verified_type text, p_evidence jsonb",
+            "sha256": "e6a4151b700a8b5fc902584dbdbb0f7abed27e6ae38ef03640d2f215dfde6e16"
           },
           {
             "key": "public|publish_manju_config_revision|p_revision_id uuid, p_expected_active_release_id uuid, p_actor_id text",
@@ -29561,8 +29597,8 @@
         ]
       },
       "function-privileges": {
-        "rows": 254,
-        "sha256": "5109876209b2d1f17de2f02b652cd605f5f9cda181f24ddba771b46ebb8c6e97",
+        "rows": 261,
+        "sha256": "7f76fe397254e1da87279dc76dcaa448338f2baf57cd57efd3f45de9aa239243",
         "exactExtras": true,
         "objects": [
           {
@@ -29626,12 +29662,24 @@
             "sha256": "83045097cb18fee0c95aa1dcd8f4f7207dbf0a3cdb67c056e130778cbc2fd1af"
           },
           {
+            "key": "public|autodl_h3_finalize_video_provider_url|p_job_id uuid, p_public_task_id text, p_video_task_internal_id text, p_user_id text, p_model_id text, p_upstream_task_id text, p_owner text, p_lease_token bigint, p_result_asset_url text, p_price_yuan numeric, p_cost_price numeric, p_response_ms bigint|service_role|EXECUTE",
+            "sha256": "4f6b664ca7062aeaaf07b5db15c36ae3faef68e99871def67ebb8a17455d6143"
+          },
+          {
             "key": "public|autodl_h3_mark_claimed_job_progress|p_job_id uuid, p_public_task_id text, p_user_id text, p_owner text, p_lease_token bigint, p_state text, p_upstream_task_id text, p_content_url text, p_result_asset_url text, p_progress integer, p_error_code text, p_error_message text|service_role|EXECUTE",
             "sha256": "5ce3a18c91b575d4f9fee855a3db99fdb51cce5a812938cdda55d4350191fcc5"
           },
           {
             "key": "public|autodl_h3_prepare_shutdown|p_instance_uuid text, p_owner text, p_lease_token bigint, p_expected_activity_epoch bigint, p_idle_grace_seconds integer|service_role|EXECUTE",
             "sha256": "88fbe015cd659cf8ff680c83c0354dd64a51c9b37b014d9d318a87f1b6276ef6"
+          },
+          {
+            "key": "public|autodl_h3_provider_delivery_url_valid|p_url text, p_upstream_task_id text|PUBLIC|EXECUTE",
+            "sha256": "55dabd7406064176ebf02be922e1f5443ea2f7bca8e8e79ae299949f5f28a17a"
+          },
+          {
+            "key": "public|autodl_h3_provider_delivery_v1_ready||service_role|EXECUTE",
+            "sha256": "6c062b66fe517a35cc7572dfe000f73cc05aa300dd2cd20b995f8a03a5376122"
           },
           {
             "key": "public|autodl_h3_renew_instance_lease|p_instance_uuid text, p_owner text, p_lease_token bigint, p_lease_seconds integer|service_role|EXECUTE",
@@ -29790,6 +29838,10 @@
             "sha256": "b011d3ae5bb46b5d8322078d68c9d935aa9e4219f3bd5f690c89ed4bc1310a51"
           },
           {
+            "key": "public|complete_image_ephemeral_delivery|p_record_id text, p_user_id text, p_client_trace_id text, p_payload_fingerprint text, p_dispatch_receipt_sha256 text, p_submission_receipt_sha256 text, p_billing_reference_id text, p_metadata jsonb|service_role|EXECUTE",
+            "sha256": "8cde970b6cdddaace6a1acec3cf594f344ffb69e24c5d1b45aad7e659568aa7f"
+          },
+          {
             "key": "public|complete_skill_invocation|p_invocation_id uuid, p_payload_fingerprint text, p_output jsonb, p_model_id text, p_billing_operation_id text, p_task_id text, p_provider_task_id text, p_asset_ids text[], p_charged_credits numeric, p_charged_cash numeric, p_cost_snapshot jsonb|service_role|EXECUTE",
             "sha256": "6d8be09da1c142932ca809443f7b604a299ff391a63d0aa58f14b8bc824c2112"
           },
@@ -29884,6 +29936,10 @@
           {
             "key": "public|finalize_image_generation_delivery|p_record_id text, p_user_id text, p_storage_key text, p_storage_provider text, p_file_name text, p_file_size bigint, p_content_type text, p_source text, p_meta jsonb|service_role|EXECUTE",
             "sha256": "5ac98a5bb0f853fbeb80c9583a762048be6578974371b5f34ee76beb10eadcdc"
+          },
+          {
+            "key": "public|finalize_image_provider_delivery|p_record_id text, p_user_id text, p_provider_url text|service_role|EXECUTE",
+            "sha256": "5474a8aa260522a659f5dc0ddcbe507dde8ee7701b7af43a43eb3be2b8aec992"
           },
           {
             "key": "public|finalize_llm_request_attempt_atomic|p_record_id text, p_payload_fingerprint text, p_lease_owner text, p_lease_token bigint, p_state text, p_http_status integer, p_response_headers jsonb, p_response_body text, p_response_fingerprint text, p_result_reference text, p_error_code text, p_error_message text|service_role|EXECUTE",
@@ -30018,6 +30074,10 @@
             "sha256": "9d943e2ca09dd7e9b6a89f275b0b292537020bf8c1780d59a3003dc6f7dc6214"
           },
           {
+            "key": "public|mark_image_provider_source_expired|p_record_id text, p_user_id text, p_provider_url text|service_role|EXECUTE",
+            "sha256": "18cd1c8e6ed30c233942cbb0330143480a3ef5601183d8bd1ab8a4c98c9228d3"
+          },
+          {
             "key": "public|mark_llm_request_provider_started_atomic|p_record_id text, p_payload_fingerprint text, p_lease_owner text, p_lease_token bigint|service_role|EXECUTE",
             "sha256": "61eaaa4e74c1541088f3d92ba80b0b4b0bf53c95bd5867667ada3841efe85e22"
           },
@@ -30104,6 +30164,10 @@
           {
             "key": "public|publish_image_model_validation|p_validation_id text, p_user_id text, p_configuration_hash text, p_model_snapshot_hash text, p_expected_active boolean, p_expected_hidden boolean, p_asset_id text, p_verified_key text, p_verified_size bigint, p_verified_type text, p_evidence jsonb|service_role|EXECUTE",
             "sha256": "9a708d3f9a0771acc02524e44d4f9335c2b3ddccede65723c536591d07042ac7"
+          },
+          {
+            "key": "public|publish_image_model_validation_receipt|p_validation_id text, p_user_id text, p_configuration_hash text, p_model_snapshot_hash text, p_expected_active boolean, p_expected_hidden boolean, p_verified_key text, p_verified_size bigint, p_verified_type text, p_evidence jsonb|service_role|EXECUTE",
+            "sha256": "6ec28cc2c9f6c45e38d13b54bcb767427b11c3cfb478d4128812e6ee5062cdba"
           },
           {
             "key": "public|publish_manju_config_revision|p_revision_id uuid, p_expected_active_release_id uuid, p_actor_id text|service_role|EXECUTE",
@@ -30607,7 +30671,7 @@
         ]
       }
     },
-    "sha256": "1ca942ba00f301ed849f34713c396afcdc605510a69bf1c0ea4c379654329359"
+    "sha256": "227558bab22aa71f31baa736d46e15223138ac40a1290c3bc6bb3d19ea57c5f3"
   },
-  "contractSha256": "d27289f97dbdf4fd6da479add91de70ff562b4dd27dbf828f370924fa592d85c"
+  "contractSha256": "1f35f8108ebf5b910d2cecc8991f30af34aad8ab97f4d5aec81c7aef54d1a443"
 }

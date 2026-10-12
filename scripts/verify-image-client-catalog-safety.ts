@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
+import ts from "typescript";
 import { parseCoverGenerationModels } from "@/lib/cover-generation-attempt";
 
 const root = process.cwd();
@@ -34,11 +36,70 @@ assert.equal(unpriced.price, null, "unknown price must remain null rather than l
 assert.equal(ready.available, true, "fully ready cover model should remain selectable");
 assert.equal(ready.price, 1.25, "default-resolution public price should win over unrelated base price");
 
-const coverGuard = coverStudio.indexOf("if (!recovery && activeModel?.available !== true)");
-const coverPriceGuard = coverStudio.indexOf("if (!recovery && activeModel?.priceReady !== true)");
-const coverRequest = coverStudio.indexOf("runCoverGeneration({");
-assert.ok(coverGuard >= 0 && coverPriceGuard >= 0 && coverGuard < coverRequest && coverPriceGuard < coverRequest,
-  "cover readiness guards must run before runCoverGeneration can form a new image request");
+// Execute the component's actual callback, rather than duplicating its guards here.
+const parsedComponent = ts.createSourceFile("cover-studio.tsx", coverStudio, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const callbacks: ts.FunctionDeclaration[] = [];
+function visit(node: ts.Node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === "generateImage") callbacks.push(node);
+  ts.forEachChild(node, visit);
+}
+visit(parsedComponent);
+assert.equal(callbacks.length, 1, "the real generation callback must be uniquely identified");
+const callbackJavaScript = ts.transpileModule(callbacks[0].getText(parsedComponent), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+}).outputText;
+
+async function verifyGenerationCallback() {
+  const cases = [
+    { name: "unavailable", model: unavailable, expected: 0 },
+    { name: "unpriced", model: unpriced, expected: 0 },
+    // The parser also closes availability for unknown prices; isolate the second guard too.
+    { name: "price guard independently", model: { ...unpriced, available: true }, expected: 0 },
+    { name: "no selection", model: null, expected: 0 },
+    { name: "ready", model: ready, expected: 1 },
+  ];
+  let totalRequests = 0;
+  for (const fixture of cases) {
+    let runEntries = 0;
+    let tasksCreated = 0;
+    let storageCreated = 0;
+    const notices: string[] = [];
+    const submissionRef = { current: null };
+    const taskCounter = { current: 0 };
+    const context = {
+      activeModel: fixture.model, submissionInFlightRef: submissionRef, historyClearing: false,
+      localStorage: { getItem: () => "synthetic-local-token" }, TOKEN_KEY: "fixture",
+      currentUserId: "fixture-user", currentUserIdRef: { current: "fixture-user" },
+      briefText: "fixture brief", prompt: "fixture prompt", title: "fixture title", subtitle: "",
+      planNeedsRebuild: false, usesUploadedReference: false, usesBuiltInTemplate: false,
+      referenceImage: "", hasReferenceMaterial: false, layoutTemplate: {},
+      ratio: "1:1", layoutTemplateId: "fixture", animationStyleId: "fixture",
+      coverModeId: "fixture", materialSourceId: "fixture", subjectModeId: "semantic",
+      animationStyle: { name: "fixture" }, taskCounterRef: taskCounter,
+      setNotice: (notice: string) => notices.push(notice),
+      setLoginOpen: () => assert.fail("authenticated fixture must not open login"),
+      setGenerationBusy: () => {}, setPrompt: () => {}, setSelectedResultId: () => {},
+      syncCoverCopySemantics: (prompt: string) => prompt,
+      createTaskStorage: () => { storageCreated += 1; return {}; },
+      setResults: (update: (rows: unknown[]) => unknown[]) => { tasksCreated += update([]).length; },
+      getTaskLabel: String,
+      runCoverGeneration: () => { runEntries += 1; return new Promise(() => {}); },
+      fetch: () => assert.fail("callback regression must never access the network"),
+    };
+    vm.createContext(context);
+    vm.runInContext(callbackJavaScript, context);
+    await vm.runInContext("generateImage()", context);
+    assert.equal(runEntries, fixture.expected, fixture.name + ": actual runner entry count");
+    assert.equal(tasksCreated, fixture.expected, fixture.name + ": actual task insertion count");
+    assert.equal(storageCreated, fixture.expected, fixture.name + ": actual storage preparation count");
+    assert.equal(taskCounter.current, fixture.expected, fixture.name + ": task counter");
+    assert.ok(notices.length > 0, fixture.name + ": must explain rejection or submission");
+    if (!fixture.expected) assert.equal(submissionRef.current, null, fixture.name + ": no submission lock");
+    totalRequests += runEntries;
+  }
+  return { callbackCases: cases.length, generationRequests: totalRequests, rejectedGenerationRequests: 0 };
+}
+
 assert.ok(coverStudio.includes('disabled={!model.available}'), "unavailable cover catalog rows must be disabled");
 assert.ok(coverStudio.includes('activeModel?.available && activeModel.priceReady && activeModel.price != null'),
   "cover price must only render after availability and price readiness are confirmed");
@@ -61,16 +122,15 @@ assert.ok(!finitePriceSource.includes("cost_per_use"), "supplier cost must never
 assert.ok(coverModelsRoute.includes("selling_price: Number.isFinite(sellingPrice) ? sellingPrice"),
   "cover catalog must project the verified default-resolution selling price");
 
-let generationRequests = 0;
-for (const model of [unavailable, unpriced]) {
-  if (model.available && model.priceReady && model.price !== null) generationRequests += 1;
-}
-assert.equal(generationRequests, 0, "unavailable or unpriced catalog rows must form zero generation requests");
-
-console.log(JSON.stringify({
-  passed: true,
-  checks: 16,
-  generationRequests,
-  realNetworkRequests: 0,
-  databaseWrites: 0,
-}, null, 2));
+void verifyGenerationCallback().then((behavior) => {
+  console.log(JSON.stringify({
+    passed: true,
+    checks: 15,
+    ...behavior,
+    realNetworkRequests: 0,
+    databaseWrites: 0,
+  }, null, 2));
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

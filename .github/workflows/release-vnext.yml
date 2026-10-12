@@ -3,6 +3,8 @@ name: Release vNext staged candidate
 # Tags are metadata only. Release finalization is workflow_dispatch-only.
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       phase:
@@ -40,7 +42,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-vnext-${{ github.ref }}-${{ inputs.phase || 'pull-request' }}
+  group: release-vnext-${{ github.ref }}-${{ inputs.phase || 'candidate' }}
   cancel-in-progress: false
 
 jobs:
@@ -51,11 +53,29 @@ jobs:
       PUPPETEER_SKIP_DOWNLOAD: "true"
       RELEASE_ACCEPTANCE_TRUST_POLICY: deploy/policies/release-change-scope.v1.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Read the single authoritative production toolchain
+        id: toolchain
+        run: |
+          set -euo pipefail
+          policy=deploy/policies/release-policy.json
+          node_version="$(jq -er '.release.productionBuild.nodeVersion | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$policy")"
+          pnpm_version="$(jq -er '.release.productionBuild.pnpmVersion | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$policy")"
+          jq -e '.release.productionBuild.requireFrozenLockfile == true' "$policy" >/dev/null
+          echo "node_version=$node_version" >> "$GITHUB_OUTPUT"
+          echo "pnpm_version=$pnpm_version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ steps.toolchain.outputs.node_version }}
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: ${{ steps.toolchain.outputs.pnpm_version }}
+          run_install: false
 
       - name: Resolve immutable phase, services, and trusted range
         id: resolve
@@ -68,10 +88,13 @@ jobs:
           REQUESTED_SERVICE: ${{ inputs.service }}
           REQUESTED_BASE_SHA: ${{ inputs.release_base_sha }}
           REQUESTED_ROUTES: ${{ inputs.acceptance_routes_json }}
+          CONTROLLED_BASE_SHA: ${{ vars.RELEASE_BASE_SHA }}
+          CONTROLLED_ROUTES: ${{ vars.RELEASE_ACCEPTANCE_ROUTES_JSON }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
           ACCEPTANCE_RUN_ID: ${{ inputs.acceptance_run_id }}
         run: |
           set -euo pipefail
+          node scripts/release-run-provenance.mjs request
           toolchain_sha="$(git rev-parse HEAD)"
           head_sha="$toolchain_sha"
           phase="${REQUESTED_PHASE:-candidate}"
@@ -83,13 +106,21 @@ jobs:
             range_mode=merge-base
           else
             [[ "$phase" == candidate || "$phase" == finalize ]]
+            if [[ "$EVENT_NAME" == push ]]; then
+              REQUESTED_BASE_SHA="$CONTROLLED_BASE_SHA"
+              REQUESTED_ROUTES="$CONTROLLED_ROUTES"
+              requested=all
+              [[ -n "$CONTROLLED_ROUTES" ]] || { echo 'RELEASE_ACCEPTANCE_ROUTES_JSON is required' >&2; exit 2; }
+            fi
+            [[ "$REQUESTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'release base must be a complete SHA' >&2; exit 2; }
             [[ -n "${REQUESTED_BASE_SHA:-}" ]] || { echo 'release_base_sha is required' >&2; exit 2; }
             base_sha="$(git rev-parse "$REQUESTED_BASE_SHA^{commit}")"
             range_mode=direct
             if [[ "$phase" == finalize ]]; then
               [[ "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ && "$ACCEPTANCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'finalize requires candidate and acceptance run IDs' >&2; exit 2; }
               candidate="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
-              head_sha="$(jq -r .head_sha <<<"$candidate")"
+              printf '%s' "$candidate" > "$RUNNER_TEMP/candidate-run.json"
+              head_sha="$(PROVENANCE_RUN_ID="$CANDIDATE_RUN_ID" node scripts/release-run-provenance.mjs candidate "$RUNNER_TEMP/candidate-run.json")"
               [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
               test "$(jq -r .conclusion <<<"$candidate")" = success
               test "$(jq -r .name <<<"$candidate")" = 'Release vNext staged candidate'
@@ -127,13 +158,6 @@ jobs:
           node scripts/verify-release-secret-exposure.mjs --candidate-commit "$RELEASE_HEAD_SHA" --history-base "$RELEASE_BASE_SHA" --history-head "$RELEASE_HEAD_SHA" --scope-receipt "$RELEASE_SCOPE_RECEIPT" --require-clean-candidate --receipt "$RUNNER_TEMP/release-secret-exposure.json"
           node scripts/release-change-validation-gate.mjs record --bundle "$RELEASE_VALIDATION_BUNDLE" --validation credential-scan --executor ci --evidence-root "$RELEASE_VALIDATION_EVIDENCE" --evidence-file "$RUNNER_TEMP/release-secret-exposure.json"
 
-      - uses: pnpm/action-setup@v4
-        if: env.RELEASE_PHASE == 'candidate'
-        with: {version: 9.0.0, run_install: false}
-      - uses: actions/setup-node@v4
-        if: env.RELEASE_PHASE == 'candidate'
-        with: {node-version: "24.19.0", cache: pnpm}
-
       - name: Install, verify, and audit source candidate
         if: env.RELEASE_PHASE == 'candidate'
         env:
@@ -159,7 +183,6 @@ jobs:
               ;;
             FULL)
               node scripts/verify-release-change-scope-zero-network.mjs
-              node scripts/release-change-validation-gate.mjs record --bundle "$RELEASE_VALIDATION_BUNDLE" --validation full-zero-network-regression --executor ci --evidence-root "$RELEASE_VALIDATION_EVIDENCE" --evidence-label release-scope-zero-network
               pnpm run verify:security-p0-stage2
               node scripts/release-change-validation-gate.mjs record --bundle "$RELEASE_VALIDATION_BUNDLE" --validation security-and-permission-gates --executor ci --evidence-root "$RELEASE_VALIDATION_EVIDENCE" --evidence-label security-p0-stage2
               pnpm exec tsx scripts/verify-payment-atomic-hardening.ts
@@ -169,6 +192,7 @@ jobs:
               pnpm exec tsx scripts/verify-release-database-gates.ts
               node scripts/release-change-validation-gate.mjs record --bundle "$RELEASE_VALIDATION_BUNDLE" --validation database-and-rollback-gates --executor ci --evidence-root "$RELEASE_VALIDATION_EVIDENCE" --evidence-label release-database-gates
               pnpm run release:vnext:verify
+              node scripts/release-change-validation-gate.mjs record --bundle "$RELEASE_VALIDATION_BUNDLE" --validation full-zero-network-regression --executor ci --evidence-root "$RELEASE_VALIDATION_EVIDENCE" --evidence-label release-scope-and-media-chat-zero-network
               node scripts/release-change-validation-gate.mjs record --bundle "$RELEASE_VALIDATION_BUNDLE" --validation release-workflow-and-artifact-contracts --executor ci --evidence-root "$RELEASE_VALIDATION_EVIDENCE" --evidence-label release-vnext-verify
               ;;
             *) exit 2 ;;
@@ -203,16 +227,19 @@ jobs:
             node scripts/package-standalone-artifact.mjs --service "$service" --output "$artifact" --release-id "$candidate_release_id" --commit "$RELEASE_HEAD_SHA" --build-output-digest-receipt "$receipt" --archive --archive-path "$archive"
             node scripts/release-change-validation-gate.mjs bind-package-payload --bundle "$RELEASE_VALIDATION_BUNDLE" --service "$service" --manifest "$artifact/release-manifest.json" --archive "$archive"
           done
+          node scripts/deployment-control-plane.mjs package --root "$GITHUB_WORKSPACE" --output "$RELEASE_CANDIDATE_PACKAGES/control-plane" --subject "$(node -e 'process.stdout.write(JSON.stringify({mode:"formal",sourceCommit:process.env.RELEASE_HEAD_SHA,repository:process.env.GITHUB_REPOSITORY,candidateRunId:process.env.GITHUB_RUN_ID,candidateRunAttempt:process.env.GITHUB_RUN_ATTEMPT}))')"
+          node scripts/release-change-validation-gate.mjs bind-control-plane --bundle "$RELEASE_VALIDATION_BUNDLE" --descriptor "$RELEASE_CANDIDATE_PACKAGES/control-plane/control-plane.descriptor.json"
           node scripts/release-change-validation-gate.mjs finalize --bundle "$RELEASE_VALIDATION_BUNDLE" --target source-candidate --evidence-root "$RELEASE_VALIDATION_EVIDENCE"
 
       - name: Upload exact output and pending-required bundle
         if: env.RELEASE_PHASE == 'candidate'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: release-candidate-${{ github.sha }}
+          name: release-candidate-${{ steps.resolve.outputs.subject_sha }}
           path: |
             ${{ runner.temp }}/candidate-packages/*.tar.gz
             ${{ runner.temp }}/candidate-packages/*.tar.gz.sha256
+            ${{ runner.temp }}/candidate-packages/control-plane
             ${{ runner.temp }}/release-change-scope.json
             ${{ runner.temp }}/release-change-validations.json
             ${{ runner.temp }}/release-change-validation-evidence
@@ -235,17 +262,21 @@ jobs:
           test "$(jq -r .head_sha <<<"$candidate")" = "$RELEASE_HEAD_SHA"
           test "$(jq -r .conclusion <<<"$candidate")" = success
           test "$(jq -r .name <<<"$candidate")" = 'Release vNext staged candidate'
-          acceptance_head_sha="$(jq -r .head_sha <<<"$acceptance")"
+          printf '%s' "$candidate" > "$RUNNER_TEMP/candidate-run.json"
+          printf '%s' "$acceptance" > "$RUNNER_TEMP/acceptance-run.json"
+          PROVENANCE_RUN_ID="$CANDIDATE_RUN_ID" PROVENANCE_SUBJECT_SHA="$RELEASE_HEAD_SHA" node scripts/release-run-provenance.mjs candidate "$RUNNER_TEMP/candidate-run.json"
+          acceptance_head_sha="$(PROVENANCE_RUN_ID="$ACCEPTANCE_RUN_ID" node scripts/release-run-provenance.mjs acceptance "$RUNNER_TEMP/acceptance-run.json")"
           test "$acceptance_head_sha" = "$RELEASE_TOOLCHAIN_SHA"
           test "$(jq -r .conclusion <<<"$acceptance")" = success
           test "$(jq -r .name <<<"$acceptance")" = 'Release browser acceptance evidence'
-          unexpected="$(git diff --name-only "$RELEASE_HEAD_SHA..$RELEASE_TOOLCHAIN_SHA" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs|scripts/fixtures/release-browser-assets/portraits\.webp)$' || true)"
+          changed_paths="$(git diff --name-only "$RELEASE_HEAD_SHA..$RELEASE_TOOLCHAIN_SHA")"
+          unexpected="$(printf '%s\n' "$changed_paths" | grep -Ev '^(\.github/workflows/release-browser-acceptance\.yml|\.github/workflows/release-vnext\.yml|\.release/source-files\.v1\.json|scripts/run-release-browser-acceptance\.mjs|scripts/release-run-provenance\.mjs|scripts/verify-release-run-provenance\.mjs|scripts/verify-release-workflow\.mjs|scripts/verify-release-change-scope-zero-network\.mjs|scripts/fixtures/release-browser-assets/portraits\.webp)$' || true)"
           [[ -z "$unexpected" ]] || { printf 'candidate finalization rejected because runtime source changed:\n%s\n' "$unexpected" >&2; exit 2; }
           echo "acceptance_head_sha=$acceptance_head_sha" >> "$GITHUB_OUTPUT"
 
       - name: Download exact candidate output
         if: env.RELEASE_PHASE == 'finalize'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: release-candidate-${{ steps.resolve.outputs.subject_sha }}
           path: ${{ runner.temp }}/candidate
@@ -253,7 +284,7 @@ jobs:
           run-id: ${{ inputs.candidate_run_id }}
       - name: Download signed external browser evidence
         if: env.RELEASE_PHASE == 'finalize'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: release-browser-acceptance-${{ github.sha }}
           path: .release-external-acceptance
@@ -267,6 +298,7 @@ jobs:
           cp "$RUNNER_TEMP/candidate/release-change-validations.json" "$RELEASE_VALIDATION_BUNDLE"
           cp -R "$RUNNER_TEMP/candidate/release-change-validation-evidence/." "$RELEASE_VALIDATION_EVIDENCE/"
           node -e "const b=require(process.argv[1]); if(b.subject.commit!==process.env.RELEASE_HEAD_SHA) process.exit(2)" "$RELEASE_VALIDATION_BUNDLE"
+          node scripts/release-change-validation-gate.mjs verify-control-plane --bundle "$RELEASE_VALIDATION_BUNDLE" --package "$RUNNER_TEMP/candidate/candidate-packages/control-plane" --candidate-run-json "$RUNNER_TEMP/candidate-run.json"
           node scripts/classify-release-change-scope.mjs --verify-receipt "$RELEASE_SCOPE_RECEIPT" --quiet
           IFS=',' read -ra services <<< "$RELEASE_SERVICES"
           for service in "${services[@]}"; do
@@ -282,6 +314,10 @@ jobs:
         if: env.RELEASE_PHASE == 'finalize'
         run: |
           mkdir -p "$RUNNER_TEMP/release-artifacts"
+          node scripts/release-change-validation-gate.mjs verify-control-plane --bundle "$RELEASE_VALIDATION_BUNDLE" --package "$RUNNER_TEMP/candidate/candidate-packages/control-plane" --candidate-run-json "$RUNNER_TEMP/candidate-run.json"
+          cp -R "$RUNNER_TEMP/candidate/candidate-packages/control-plane" "$RUNNER_TEMP/release-artifacts/control-plane"
+          node scripts/release-change-validation-gate.mjs verify-control-plane --bundle "$RELEASE_VALIDATION_BUNDLE" --package "$RUNNER_TEMP/release-artifacts/control-plane" --candidate-run-json "$RUNNER_TEMP/candidate-run.json"
+          cp "$RELEASE_VALIDATION_BUNDLE" "$RUNNER_TEMP/release-artifacts/release-change-validations.json"
           IFS=',' read -ra services <<< "$RELEASE_SERVICES"
           for service in "${services[@]}"; do
             payload_release_id="$(node -e "const b=require(process.argv[1]); process.stdout.write(b.subject.candidatePayloads[process.argv[2]].releaseId)" "$RELEASE_VALIDATION_BUNDLE" "$service")"
@@ -294,7 +330,7 @@ jobs:
 
       - name: Upload immutable release artifacts
         if: env.RELEASE_PHASE == 'finalize'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-${{ env.RELEASE_ID }}
           path: ${{ runner.temp }}/release-artifacts
@@ -304,7 +340,7 @@ jobs:
 
       - name: Upload validation receipts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-change-validations-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
