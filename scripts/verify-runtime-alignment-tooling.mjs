@@ -4,6 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   canonicalJson,
   copySignedLegacyInventory,
@@ -56,6 +58,90 @@ function legacyInventoryFixture(root) {
   };
 }
 
+// Test-owned trees only. Never follow links or change production inventory modes.
+function cleanupFixtureTree(scopeRoot, target = scopeRoot, filesystem = fs) {
+  const root = path.resolve(scopeRoot);
+  const absolute = path.resolve(target);
+  assert.equal(path.dirname(root), path.resolve(os.tmpdir()), "FIXTURE_CLEANUP_ROOT_INVALID");
+  assert.match(path.basename(root), /^zimeiti-runtime-alignment-/u, "FIXTURE_CLEANUP_ROOT_INVALID");
+  const relative = path.relative(root, absolute);
+  assert.ok(relative === "" || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`)), "FIXTURE_CLEANUP_OUTSIDE_ROOT");
+  // A caller may request a subtree, but it must not enter through a link ancestor.
+  let ancestor = root;
+  const parts = relative ? relative.split(path.sep) : [];
+  for (let index = 0; index < parts.length; index += 1) {
+    let metadata;
+    try { metadata = filesystem.lstatSync(ancestor); }
+    catch (error) { if (error.code === "ENOENT") return; throw error; }
+    assert.ok(metadata.isDirectory() && !metadata.isSymbolicLink(), "FIXTURE_CLEANUP_LINK_ANCESTOR");
+    ancestor = path.join(ancestor, parts[index]);
+  }
+  function remove(entry) {
+    try {
+      const metadata = filesystem.lstatSync(entry);
+      if (metadata.isSymbolicLink()) { filesystem.unlinkSync(entry); return; }
+      if (metadata.isDirectory()) {
+        filesystem.chmodSync(entry, (metadata.mode & 0o055) | 0o700);
+        for (const name of filesystem.readdirSync(entry)) remove(path.join(entry, name));
+        filesystem.rmdirSync(entry);
+      } else {
+        assert.ok(metadata.isFile(), "FIXTURE_CLEANUP_ENTRY_UNSUPPORTED");
+        filesystem.chmodSync(entry, (metadata.mode & 0o155) | 0o600);
+        filesystem.unlinkSync(entry);
+      }
+    } catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+  remove(absolute);
+}
+
+function withFixtureCleanup(root, operation, cleanup = cleanupFixtureTree) {
+  let result;
+  let primaryError;
+  let cleanupError;
+  let primaryFailed = false;
+  let cleanupFailed = false;
+  try { result = operation(); } catch (error) { primaryFailed = true; primaryError = error; }
+  try {
+    cleanup(root);
+    try { fs.lstatSync(root); throw new Error("FIXTURE_ROOT_NOT_REMOVED"); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  } catch (error) { cleanupFailed = true; cleanupError = error; }
+  if (primaryFailed && cleanupFailed) throw new AggregateError([primaryError, cleanupError], "Verification and fixture cleanup both failed");
+  if (primaryFailed) throw primaryError;
+  if (cleanupFailed) throw cleanupError;
+  return result;
+}
+
+function sealedCleanupFixture(root) {
+  const nested = path.join(root, "nested", "deeper");
+  fs.mkdirSync(nested, { recursive: true, mode: 0o755 });
+  writeFixtureFile(nested, "sealed.txt", "fixture only\n");
+  for (const directory of [nested, path.dirname(nested), root]) fs.chmodSync(directory, 0o555);
+}
+
+function cleanupFailureChild(scenario) {
+  assert.ok(["assertion-failure", "cleanup-failure", "dual-failure"].includes(scenario));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zimeiti-runtime-alignment-"));
+  sealedCleanupFixture(root);
+  try {
+    withFixtureCleanup(root, () => {
+      if (scenario !== "cleanup-failure") assert.fail("INJECTED_ASSERTION_FAILURE");
+      return { ok: true };
+    }, (scope) => cleanupFixtureTree(scope, scope, scenario === "assertion-failure" ? fs : {
+      ...fs, chmodSync() { throw Object.assign(new Error("INJECTED_CLEANUP_FAILURE"), { code: "EACCES" }); },
+    }));
+    throw new Error("EXPECTED_FIXTURE_FAILURE_MISSING");
+  } catch (error) {
+    const rootRemovedBeforeRecovery = !fs.existsSync(root);
+    // The deliberate failure stays nonzero; release only this child's test residue.
+    cleanupFixtureTree(root);
+    process.stderr.write(`${JSON.stringify({ name: error.name, message: error.message,
+      errors: error instanceof AggregateError ? error.errors.map((cause) => ({ name: cause.name, message: cause.message })) : [],
+      rootRemovedBeforeRecovery, rootRemoved: !fs.existsSync(root) })}\n`);
+    process.exitCode = 1;
+  }
+}
+
 function workerEntry(cwd, port, overrides = {}, dump = false) {
   const identity = {
     PORT: String(port),
@@ -94,8 +180,11 @@ function workerEntry(cwd, port, overrides = {}, dump = false) {
   };
 }
 
+if (process.argv[2] === "--fixture-cleanup-selftest") {
+  cleanupFailureChild(process.argv[3]);
+} else {
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zimeiti-runtime-alignment-"));
-try {
+const verification = withFixtureCleanup(temporaryRoot, () => {
   const require = createRequire(import.meta.url);
   const pm2ConfigPath = path.resolve("deploy/pm2/ecosystem.vnext.config.cjs");
   const previousReleaseNodeBinary = process.env.RELEASE_NODE_BINARY;
@@ -178,7 +267,63 @@ try {
   fs.appendFileSync(tampered, "tampered\n");
   fs.chmodSync(tampered, 0o444);
   assert.throws(() => validateInventory(legacyRoot, manifest), /TARGET_FILE_MISMATCH/u);
-  fs.rmSync(legacyRoot, { recursive: true, force: true });
+  cleanupFixtureTree(temporaryRoot, legacyRoot);
+
+  const permissionRoot = path.join(temporaryRoot, "permission-rejections");
+  fs.mkdirSync(permissionRoot, { mode: 0o755 });
+  const permissionManifest = legacyInventoryFixture(permissionRoot);
+  const permissionFile = path.join(permissionRoot, "server.js");
+  fs.chmodSync(permissionFile, 0o644);
+  assert.throws(() => validateInventory(permissionRoot, permissionManifest), /TARGET_FILE_MISMATCH/u);
+  fs.chmodSync(permissionFile, 0o444);
+  const permissionDirectory = path.join(permissionRoot, ".next");
+  fs.chmodSync(permissionDirectory, 0o755);
+  assert.throws(() => validateInventory(permissionRoot, permissionManifest), /TARGET_TREE_METADATA_UNSAFE/u);
+  fs.chmodSync(permissionDirectory, 0o555);
+  validateInventory(permissionRoot, permissionManifest);
+
+  const nestedCleanupRoot = path.join(temporaryRoot, "nested-cleanup");
+  sealedCleanupFixture(nestedCleanupRoot);
+  let restoredModes = 0;
+  cleanupFixtureTree(temporaryRoot, nestedCleanupRoot, { ...fs, chmodSync(entry, mode) {
+    assert.equal(mode & 0o022, 0, "fixture cleanup must never grant group/other write or chmod 0777");
+    const ownerRequired = fs.lstatSync(entry).isDirectory() ? 0o700 : 0o600;
+    assert.equal(mode & ownerRequired, ownerRequired);
+    restoredModes += 1;
+    fs.chmodSync(entry, mode);
+  } });
+  assert.equal(restoredModes, 4);
+  assert.equal(fs.existsSync(nestedCleanupRoot), false);
+  cleanupFixtureTree(temporaryRoot, nestedCleanupRoot); // only missing entries are ignored
+  assert.throws(() => cleanupFixtureTree(temporaryRoot, `${temporaryRoot}-outside`), /FIXTURE_CLEANUP_OUTSIDE_ROOT/u);
+
+  const linkTarget = path.join(temporaryRoot, "link-target");
+  fs.mkdirSync(linkTarget);
+  const linkedFile = writeFixtureFile(linkTarget, "sealed.txt", "link target must remain untouched\n");
+  const linkedMode = fs.statSync(linkedFile).mode;
+  const linkRoot = path.join(temporaryRoot, "links");
+  fs.mkdirSync(linkRoot);
+  fs.symlinkSync(linkTarget, path.join(linkRoot, "directory-link"), process.platform === "win32" ? "junction" : "dir");
+  assert.throws(() => cleanupFixtureTree(temporaryRoot, path.join(linkRoot, "directory-link", "sealed.txt")), /FIXTURE_CLEANUP_LINK_ANCESTOR/u);
+  cleanupFixtureTree(temporaryRoot, linkRoot);
+  assert.equal(fs.readFileSync(linkedFile, "utf8"), "link target must remain untouched\n");
+  assert.equal(fs.statSync(linkedFile).mode, linkedMode);
+
+  const failureScenarios = ["assertion-failure", "cleanup-failure", "dual-failure"];
+  for (const scenario of failureScenarios) {
+    const result = spawnSync(process.execPath, ["--unhandled-rejections=strict", fileURLToPath(import.meta.url), "--fixture-cleanup-selftest", scenario], { cwd: process.cwd(), encoding: "utf8", timeout: 15_000 });
+    assert.equal(result.status, 1, `${scenario}: failure must remain nonzero`);
+    assert.equal(result.stdout, "", `${scenario}: must not print success before cleanup`);
+    const failure = JSON.parse(result.stderr.trim());
+    assert.equal(failure.rootRemoved, true);
+    assert.equal(failure.rootRemovedBeforeRecovery, scenario === "assertion-failure");
+    if (scenario === "assertion-failure") assert.match(failure.message, /INJECTED_ASSERTION_FAILURE/u);
+    if (scenario === "cleanup-failure") assert.match(failure.message, /INJECTED_CLEANUP_FAILURE/u);
+    if (scenario === "dual-failure") {
+      assert.equal(failure.name, "AggregateError");
+      assert.deepEqual(failure.errors.map((cause) => cause.message), ["INJECTED_ASSERTION_FAILURE", "INJECTED_CLEANUP_FAILURE"]);
+    }
+  }
 
   const extraRoot = path.join(temporaryRoot, "extra");
   fs.mkdirSync(extraRoot, { mode: 0o755 });
@@ -243,7 +388,7 @@ try {
   assert.match(legacyBuildOutputDigest(digestSubject), /^[a-f0-9]{64}$/u);
   assert.equal(canonicalJson({ b: 2, a: 1 }), '{"a":1,"b":2}');
 
-  process.stdout.write(`${JSON.stringify({
+  return {
     ok: true,
     legacyInventoryChecks: 8,
     mediaWorkerChecks: 11,
@@ -251,7 +396,10 @@ try {
     nodeRuntimeSelectionChecks: 11,
     rollbackRecoveryChecks: cleanupCases.length,
     rollbackRecoveryCases: cleanupCases.map((fixture) => fixture.name),
-  })}\n`);
-} finally {
-  fs.rmSync(temporaryRoot, { recursive: true, force: true });
+    fixturePermissionRejectionChecks: 3,
+    fixtureCleanupFailureCases: failureScenarios,
+    fixtureCleanupScopeAndLinkChecks: 6,
+  };
+});
+process.stdout.write(`${JSON.stringify({ ...verification, temporaryRootRemoved: true })}\n`);
 }
