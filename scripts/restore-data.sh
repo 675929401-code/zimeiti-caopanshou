@@ -264,6 +264,9 @@ for required in postgres/database.dump postgres/schema.sql postgres/globals.sql 
   [[ -f "$EXTRACTED/$required" ]] || die "PACKAGE_REQUIRED_FILE_MISSING"
 done
 
+PHASE="validate-backup-source-identity"
+node "$HELPER" validate-backup-source-identity --backup-version "$EXTRACTED/postgres/version.json" --production-identity "$RESTORE_PRODUCTION_IDENTITY_FILE" --attestation-key "$RESTORE_PROVISIONING_HMAC_KEY_FILE" --now-epoch "$(date +%s)"
+
 PHASE="prepare-isolated-files"
 mkdir "$FILES_STAGING"
 [[ "$(device_number "$FILES_STAGING")" = "$(device_number "$RESTORE_ISOLATION_MOUNTPOINT")" ]] || die "RESTORE_FILES_STAGING_UNEXPECTED_DEVICE"
@@ -295,6 +298,7 @@ PGSERVICE="$RESTORE_PG_SERVICE" pg_restore --exit-on-error --single-transaction 
 
 PHASE="validate-postgresql"
 PGSERVICE="$RESTORE_PG_SERVICE" psql -qAtX -v ON_ERROR_STOP=1 > "$WORK_ROOT/postgres-row-counts.json" <<'SQL'
+BEGIN;
 create temporary table backup_row_counts(name text primary key, rows text not null) on commit drop;
 do $$
 declare item record; total text;
@@ -305,6 +309,7 @@ begin
   end loop;
 end $$;
 select jsonb_object_agg(name, rows order by name) from backup_row_counts;
+COMMIT;
 SQL
 PGSERVICE="$RESTORE_PG_SERVICE" psql -qAtX -v ON_ERROR_STOP=1 > "$WORK_ROOT/postgres-financial-check.json" <<'SQL'
 select jsonb_build_object(
@@ -343,7 +348,7 @@ FINAL_PACKAGE_SHA="$(sha256sum "$RESTORE_PACKAGE" | awk '{print $1}')"
 
 PHASE="write-receipt"
 END_EPOCH="$(date +%s)"
-node "$HELPER" write-restore-success-receipt --output "$SUCCESS_RECEIPT" --restore-id "$RESTORE_ID" --phase complete --target-database "$TARGET_DATABASE" --started-epoch "$START_EPOCH" --completed-epoch "$END_EPOCH" --package-sha256 "$FINAL_PACKAGE_SHA" --metadata "$EXTRACTED/metadata/package.json" --before-identity "$WORK_ROOT/identity-before-report.json" --after-identity "$WORK_ROOT/identity-after-report.json" --isolated-file-root "$RESTORE_ROOT"
+node "$HELPER" write-restore-success-receipt --output "$SUCCESS_RECEIPT" --restore-id "$RESTORE_ID" --phase complete --target-database "$TARGET_DATABASE" --started-epoch "$START_EPOCH" --completed-epoch "$END_EPOCH" --package-sha256 "$FINAL_PACKAGE_SHA" --metadata "$EXTRACTED/metadata/package.json" --before-identity "$WORK_ROOT/identity-before-report.json" --after-identity "$WORK_ROOT/identity-after-report.json" --isolated-file-root "$RESTORE_ROOT" --backup-version "$EXTRACTED/postgres/version.json" --production-identity "$RESTORE_PRODUCTION_IDENTITY_FILE" --attestation-key "$RESTORE_PROVISIONING_HMAC_KEY_FILE"
 node "$HELPER" validate-receipt --kind restore --document "$SUCCESS_RECEIPT"
 trap - ERR
 ERROR_RECEIPT_ARMED=0

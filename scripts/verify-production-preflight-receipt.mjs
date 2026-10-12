@@ -308,13 +308,93 @@ function expectReject(label, action, expectedCode) {
   assert.throws(action, (error) => error instanceof PreflightReceiptError && error.code === expectedCode, label);
 }
 
-function runSelfTest() {
+async function runDynamicIdSelfTest(referenceContract) {
+  const originalEnvironment = process.env;
+  const originalFetch = globalThis.fetch;
+  const originalWriteFileSync = fs.writeFileSync;
+  const originalExitCode = process.exitCode;
+  const protectedVariables = new Set([
+    "COZE_SUPABASE_URL", "COZE_SUPABASE_SERVICE_ROLE_KEY",
+    "PRODUCTION_PREFLIGHT_RECEIPT_HMAC_KEY", "PRODUCTION_PREFLIGHT_RECEIPT_KEY_ID",
+    "RELEASE_ID", "ARTIFACT_SHA256", "DEPLOY_COMMIT_SHA", "EXPECTED_SOURCE_VERSION",
+    "EXPECTED_BUILD_ID", "MIGRATION_MANIFEST_SHA256",
+  ]);
+  const counters = { protectedEnvironmentReads: 0, networkRequests: 0, receiptWrites: 0 };
+  process.env = new Proxy(originalEnvironment, {
+    get(target, name) {
+      if (protectedVariables.has(name)) {
+        counters.protectedEnvironmentReads += 1;
+        throw new Error("SELF_TEST_PROTECTED_ENV_READ_FORBIDDEN");
+      }
+      return Reflect.get(target, name);
+    },
+  });
+  globalThis.fetch = () => {
+    counters.networkRequests += 1;
+    throw new Error("SELF_TEST_NETWORK_FORBIDDEN");
+  };
+  fs.writeFileSync = () => {
+    counters.receiptWrites += 1;
+    throw new Error("SELF_TEST_RECEIPT_WRITE_FORBIDDEN");
+  };
+  try {
+    // Import only after this verifier has evaluated; the creator imports its signing helpers.
+    const { safeDynamicIds, tableUrl } = await import("./create-production-preflight-receipt.mjs");
+    assert.equal(process.exitCode, originalExitCode, "import must not invoke the creator CLI");
+    const ids = ["fixture-model-2.0", "fixture-model-legacy"];
+    assert.deepEqual(safeDynamicIds(ids), ids, "dot and hyphen IDs must be preserved");
+    const table = referenceContract.tables.find((entry) => entry.name === "video_channel_health");
+    assert.ok(table, "actual video health reference table must exist");
+    const restBase = new URL("https://preflight-fixture.invalid/rest/v1/");
+    const serialized = tableUrl(restBase, table, { column: "channel_id", values: safeDynamicIds(ids) }, "2099-01-01T00:00:00.000Z").href;
+    const reparsed = new URL(serialized);
+    assert.equal(reparsed.origin, restBase.origin);
+    assert.equal(reparsed.pathname, "/rest/v1/video_channel_health");
+    assert.equal(reparsed.searchParams.get("channel_id"), `in.(${ids.join(",")})`);
+    assert.equal(reparsed.searchParams.get("select"), table.select.join(","));
+    assert.equal(reparsed.searchParams.get("order"), table.order.join(","));
+    assert.equal(reparsed.searchParams.get("limit"), String(table.limit));
+    assert.deepEqual([...reparsed.searchParams.keys()].sort(), ["channel_id", "limit", "order", "select"]);
+    assert.equal(reparsed.hash, "");
+
+    const syntheticIds = [
+      ...Array.from({ length: 5 }, (_, index) => `fixture-dot-${index}.0`),
+      ...Array.from({ length: 33 }, (_, index) => `fixture-legacy-${index}`),
+    ];
+    assert.deepEqual(safeDynamicIds(syntheticIds), syntheticIds, "38 unique synthetic IDs must survive unchanged");
+    assert.deepEqual(safeDynamicIds([" fixture-model-2.0 ", ids[0], "", "  ", null, undefined, ids[1]]), ids, "trim/dedup/empty filtering must be preserved");
+    assert.deepEqual(safeDynamicIds(["a".repeat(128)]), ["a".repeat(128)]);
+    const rejects = [
+      ["129 characters", ["a".repeat(129)]], ["empty-only", ["", "  ", null, undefined]],
+      ["comma", ["fixture,other"]], ["open parenthesis", ["fixture(other"]],
+      ["close parenthesis", ["fixture)other"]], ["double quote", ['fixture"other']],
+      ["single quote", ["fixture'other"]], ["backslash", ["fixture\\other"]],
+      ["percent", ["fixture%2Cother"]], ["ampersand", ["fixture&other"]],
+      ["equals", ["fixture=other"]], ["embedded space", ["fixture other"]],
+      ["embedded tab", ["fixture\tother"]], ["embedded newline", ["fixture\nother"]],
+      ["slash", ["fixture/other"]], ["underscore", ["fixture_other"]],
+      ["colon", ["fixture:other"]], ["non-ASCII", ["fixture模型"]],
+    ];
+    for (const [label, values] of rejects) {
+      assert.throws(() => safeDynamicIds(values), (error) => error?.code === "REFERENCE_DYNAMIC_ID_INVALID", label);
+    }
+    assert.deepEqual(counters, { protectedEnvironmentReads: 0, networkRequests: 0, receiptWrites: 0 });
+    return { syntheticIds: 38, dotSyntheticIds: 5, urlRoundTrip: true, normalizationPreserved: true, max128Accepted: true, rejectedInputs: rejects.length, ...counters };
+  } finally {
+    process.env = originalEnvironment;
+    globalThis.fetch = originalFetch;
+    fs.writeFileSync = originalWriteFileSync;
+  }
+}
+
+async function runSelfTest() {
   const contracts = localContracts();
   const creatorSource = fs.readFileSync(path.join(scriptDirectory, "create-production-preflight-receipt.mjs"), "utf8");
   assert.match(creatorSource, /method:\s*"GET"/u);
   assert.doesNotMatch(creatorSource, /method:\s*["'](?:POST|PUT|PATCH|DELETE)["']/u);
   const selectedReferenceFields = contracts.reference.tables.flatMap((table) => table.select);
   assert.equal(selectedReferenceFields.includes("api_key"), false, "reference probes must not select api_key");
+  const dynamicIds = await runDynamicIdSelfTest(contracts.reference);
   const key = "offline-fixture-key-only-not-a-production-secret-0123456789";
   const keyId = "offline-fixture-v1";
   const nowEpoch = 1_800_000_000;
@@ -415,6 +495,7 @@ function runSelfTest() {
     verifier: "production-preflight-receipt",
     cases: 9,
     rejected: ["tamper", "expiry", "wrong-binding", "database-write", "rpc", "provider", "paid", "post", "unknown-field"],
+    dynamicIds,
     networkRequests: 0,
     databaseWrites: 0,
     providerRequests: 0,
@@ -422,10 +503,10 @@ function runSelfTest() {
   }, null, 2));
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   if (args.includes("--self-test")) {
-    runSelfTest();
+    await runSelfTest();
     return;
   }
   const contracts = localContracts();
@@ -444,11 +525,9 @@ function main() {
 const invokedDirectly = process.argv[1]
   && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 if (invokedDirectly) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error) => {
     const code = error instanceof PreflightReceiptError ? error.code : "PRODUCTION_PREFLIGHT_RECEIPT_VERIFY_FAILED";
     console.error(JSON.stringify({ ok: false, code, credentialsPrinted: false }));
     process.exitCode = 1;
-  }
+  });
 }

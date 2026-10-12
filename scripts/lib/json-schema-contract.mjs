@@ -1,11 +1,22 @@
 import crypto from "node:crypto";
 
+// Preserve the accepted en-US wire ordering without depending on the host locale.
+// Equal collation values remain equal; raw strings are neither normalized nor tied.
+export const compareProtocolStrings = new Intl.Collator("en-US", {
+  usage: "sort",
+  localeMatcher: "lookup",
+  sensitivity: "variant",
+  numeric: false,
+  caseFirst: "false",
+  ignorePunctuation: false,
+}).compare;
+
 export function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.keys(value)
-        .sort((left, right) => left.localeCompare(right))
+        .sort(compareProtocolStrings)
         .map((key) => [key, canonicalize(value[key])]),
     );
   }

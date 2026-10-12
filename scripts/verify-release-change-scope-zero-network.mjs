@@ -6,7 +6,44 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { spawnSync } from "node:child_process";
-import { canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
+import { canonicalJson, compareProtocolStrings, sha256 } from "./lib/json-schema-contract.mjs";
+import { computeBuildOutputDigest } from "./compute-release-build-output-digest.mjs";
+import { verifyDeploymentBinding } from "./deployment-control-plane.mjs";
+
+// This is an actual child process with its inherited host locale, not a locale mock.
+if (process.argv[2] === "--locale-protocol-child") {
+  const request = JSON.parse(fs.readFileSync(0, "utf8"));
+  const runtime = {
+    platform: process.platform,
+    node: process.version,
+    icu: process.versions.icu,
+    cldr: process.versions.cldr,
+    unicode: process.versions.unicode,
+    defaultLocale: new Intl.Collator().resolvedOptions().locale,
+  };
+  if (request.action === "canonical") {
+    const value = Object.fromEntries(request.strings.map((label) => [label, { label }]));
+    const bytes = canonicalJson(value);
+    process.stdout.write(JSON.stringify({
+      runtime,
+      sorted: [...request.strings].sort(compareProtocolStrings),
+      hostSorted: [...request.strings].sort((left, right) => left.localeCompare(right)),
+      canonicalBytes: bytes,
+      canonicalSha256: sha256(bytes),
+      equalComparison: compareProtocolStrings("é", "e\u0301"),
+      equalForward: ["é", "e\u0301"].sort(compareProtocolStrings),
+      equalBackward: ["e\u0301", "é"].sort(compareProtocolStrings),
+    }) + "\n");
+  } else if (request.action === "digest") {
+    process.stdout.write(JSON.stringify({
+      runtime,
+      receipt: computeBuildOutputDigest(request.root, "web", request.commit, request.sourceVersion),
+    }) + "\n");
+  } else {
+    throw new Error("LOCALE_PROTOCOL_CHILD_ACTION_INVALID");
+  }
+  process.exit(0);
+}
 
 const root = process.cwd();
 const classifierPath = path.join(root, "scripts", "classify-release-change-scope.mjs");
@@ -26,6 +63,221 @@ const repositoryTemporaryParent = path.join(root, ".codex-temp");
 fs.mkdirSync(repositoryTemporaryParent, { recursive: true });
 const repositoryTemporaryRoot = fs.mkdtempSync(path.join(repositoryTemporaryParent, "release-change-scope-"));
 let scenarioIndex = 0;
+const localeProtocolOnly = process.argv.includes("--locale-protocol-only");
+
+function option(name) {
+  const index = process.argv.indexOf(name);
+  if (index < 0) return null;
+  const value = process.argv[index + 1];
+  assert.ok(value && !value.startsWith("--"), `${name} requires a value`);
+  return value;
+}
+
+function protocolChild(request) {
+  const child = spawnSync(process.execPath, [process.argv[1], "--locale-protocol-child"], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 30_000,
+    input: JSON.stringify(request),
+  });
+  assert.equal(child.status, 0, `real locale child failed: ${child.stderr || child.stdout}`);
+  const result = JSON.parse(child.stdout);
+  const expectedLocale = option("--expect-default-locale");
+  if (expectedLocale) assert.equal(result.runtime.defaultLocale, expectedLocale);
+  return result;
+}
+
+function verifyLocaleProtocolRegression() {
+  const strings = ["阿", "中", "文", "汉", "A", "a", "Z", "z", "a2", "a10", "a-2", "a_2", "a.2", "😀", "𐀀", "e\u0301", "é", "E\u0301"];
+  const expected = ["😀", "a", "A", "a_2", "a-2", "a.2", "a10", "a2", "e\u0301", "é", "E\u0301", "z", "Z", "𐀀", "中", "文", "汉", "阿"];
+  const probe = protocolChild({ action: "canonical", strings });
+  const expectedBytes = JSON.stringify(Object.fromEntries(expected.map((label) => [label, { label }])));
+  assert.deepEqual(probe.sorted, expected, "protocol strings must retain the accepted en-US order");
+  assert.equal(probe.canonicalBytes, expectedBytes, "canonical UTF-8 input must retain raw Unicode strings");
+  assert.equal(probe.canonicalSha256, sha256(expectedBytes));
+  assert.equal(probe.equalComparison, 0, "equivalent collation values must not receive a tie-breaker");
+  assert.deepEqual(probe.equalForward, ["é", "e\u0301"]);
+  assert.deepEqual(probe.equalBackward, ["e\u0301", "é"]);
+  for (const label of strings) assert.equal(JSON.parse(probe.canonicalBytes)[label].label, label);
+  if (probe.runtime.defaultLocale === "zh-CN") {
+    assert.notDeepEqual(probe.hostSorted, probe.sorted, "fixture must expose the real zh-CN/en-US difference");
+  }
+
+  const routes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
+  const changes = strings.map((label, index) => ({ status: "M", path: `scripts/locale-${label}-${index}.mjs`, content: "export const fixture = true;" }));
+  const first = runScenario("locale-unicode-a", changes, { acceptanceRoutes: routes });
+  const second = runScenario("locale-unicode-b", [...changes].reverse(), { acceptanceRoutes: routes });
+  assert.deepEqual(first, second, "actual receipt identity must be independent of input enumeration");
+  const firstPath = path.join(temporaryRoot, `${scenarioIndex - 1}-locale-unicode-a.receipt.json`);
+  const secondPath = path.join(temporaryRoot, `${scenarioIndex}-locale-unicode-b.receipt.json`);
+  assert.deepEqual(fs.readFileSync(firstPath), fs.readFileSync(secondPath), "actual receipt bytes must match");
+  run(process.execPath, [classifierPath, "--root", root, "--verify-receipt", firstPath, "--quiet"]);
+  const changedReceipt = structuredClone(first);
+  changedReceipt.changedFiles[0].path += "-tamper";
+  const changedReceiptPath = path.join(temporaryRoot, "locale-tampered.receipt.json");
+  fs.writeFileSync(changedReceiptPath, JSON.stringify(changedReceipt, null, 2) + "\n");
+  assert.match(runFailure(process.execPath, [classifierPath, "--root", root, "--verify-receipt", changedReceiptPath]).stderr, /RECEIPT_ID_MISMATCH/u);
+  const bundlePaths = ["locale-a.bundle.json", "locale-b.bundle.json"].map((name) => path.join(temporaryRoot, name));
+  for (const file of bundlePaths) {
+    run(process.execPath, [validationGatePath, "init", "--root", root, "--scope-receipt", firstPath, "--output", file, "--subject-commit", "a".repeat(40), "--services", "web,voice", "--target", "source-candidate"]);
+    run(process.execPath, [validationGatePath, "verify", "--root", root, "--bundle", file, "--quiet"]);
+  }
+  assert.deepEqual(fs.readFileSync(bundlePaths[0]), fs.readFileSync(bundlePaths[1]), "actual bundle bytes and IDs must match");
+  const bundle = JSON.parse(fs.readFileSync(bundlePaths[0], "utf8"));
+  const tamperPath = path.join(temporaryRoot, "locale-tampered.bundle.json");
+  const tamper = structuredClone(bundle);
+  tamper.subject.commit = "b".repeat(40);
+  fs.writeFileSync(tamperPath, JSON.stringify(tamper, null, 2) + "\n");
+  assert.match(runFailure(process.execPath, [validationGatePath, "verify", "--root", root, "--bundle", tamperPath]).stderr, /BUNDLE_ID_MISMATCH/u);
+
+  const digestRoot = path.join(temporaryRoot, "locale-digest-fixture");
+  fs.mkdirSync(path.join(digestRoot, ".next", "standalone"), { recursive: true });
+  fs.mkdirSync(path.join(digestRoot, ".next", "static"), { recursive: true });
+  fs.writeFileSync(path.join(digestRoot, ".next", "BUILD_ID"), "locale-build-id\n");
+  for (const [index, label] of strings.entries()) {
+    fs.writeFileSync(path.join(digestRoot, ".next", "standalone", `part-${label}-${index}.js`), `raw:${label}\n`);
+  }
+  fs.writeFileSync(path.join(digestRoot, ".next", "static", "fixed.js"), "fixed\n");
+  const request = { action: "digest", root: digestRoot, commit: "a".repeat(40), sourceVersion: "RLOCALE" };
+  const digestA = protocolChild(request);
+  const digestB = protocolChild(request);
+  assert.deepEqual(digestA.receipt, digestB.receipt);
+  const reference = new Intl.Collator("en-US", { usage: "sort", localeMatcher: "lookup", sensitivity: "variant", numeric: false, caseFirst: "false", ignorePunctuation: false });
+  const names = digestA.receipt.files.map((file) => file.path);
+  assert.deepEqual(names, [...names].sort(reference.compare), "actual digest file order must use the fixed profile");
+  fs.appendFileSync(path.join(digestRoot, ".next", "static", "fixed.js"), "tamper\n");
+  assert.notEqual(protocolChild(request).receipt.outputDigest, digestA.receipt.outputDigest, "changed output bytes must change the actual digest");
+  return {
+    runtime: probe.runtime,
+    rawUnicodePreserved: true,
+    equalComparisonAndStableOrderPreserved: true,
+    defaultLocaleDifferenceExposed: probe.runtime.defaultLocale === "zh-CN",
+    canonicalBytesSha256: probe.canonicalSha256,
+    receiptId: first.receiptId,
+    receiptBytesSha256: sha256(fs.readFileSync(firstPath)),
+    bundleId: bundle.bundleId,
+    bundleBytesSha256: sha256(fs.readFileSync(bundlePaths[0])),
+    outputDigest: digestA.receipt.outputDigest,
+    scopeTamperRejected: true,
+    bundleTamperRejected: true,
+    tamperRejected: true,
+  };
+}
+
+function verifyAcceptedLinuxGolden() {
+  const scopePath = option("--accepted-linux-scope");
+  const bundlePath = option("--accepted-linux-bundle");
+  const evidenceRoot = option("--accepted-linux-evidence-root");
+  if (!scopePath && !bundlePath && !evidenceRoot) return { supplied: false, linuxExecutedInThisRun: false };
+  assert.ok(scopePath && bundlePath && evidenceRoot, "all accepted Linux golden paths are required");
+  const scopeBytes = fs.readFileSync(scopePath);
+  const bundleBytes = fs.readFileSync(bundlePath);
+  assert.equal(sha256(scopeBytes), "25eb6f8de62099c3d1df73d3fb86df78ee7c4b0f1513277b9849878e19a9a02d");
+  assert.equal(sha256(bundleBytes), "644aa7f77b7c5d38fcba03932771c90f910c3f54ccb17c44bcd9627f2644aa7d");
+  const scope = JSON.parse(scopeBytes);
+  const bundle = JSON.parse(bundleBytes);
+  assert.equal(scope.receiptId, "scope-1641bccad44b798dd5d7237f");
+  assert.equal(bundle.bundleId, "validation-cedb0e31a14ba6c4e1eb9949");
+  const regeneratedScope = path.join(temporaryRoot, "accepted-linux.regenerated.scope.json");
+  run(process.execPath, [classifierPath, "--root", root, "--base", scope.input.base, "--head", scope.input.head, "--range-mode", scope.input.rangeMode, "--minimum-level", scope.input.minimumLevel, "--acceptance-routes-json", JSON.stringify(scope.input.acceptanceRoutes), "--output", regeneratedScope, "--quiet"]);
+  assert.deepEqual(fs.readFileSync(regeneratedScope), scopeBytes, "real Windows regeneration must retain accepted Linux receipt bytes");
+  run(process.execPath, [classifierPath, "--root", root, "--verify-receipt", scopePath, "--quiet"]);
+  const candidatePath = option("--accepted-linux-candidate-bundle");
+  const externalPath = option("--accepted-linux-browser-bundle");
+  const externalEvidenceRoot = option("--accepted-linux-browser-evidence-root");
+  let actualSignedMergeByteIdentical = false;
+  if (candidatePath || externalPath || externalEvidenceRoot) {
+    assert.ok(candidatePath && externalPath && externalEvidenceRoot, "all accepted candidate/browser paths are required");
+    const candidateBytes = fs.readFileSync(candidatePath);
+    const externalBytes = fs.readFileSync(externalPath);
+    const candidate = JSON.parse(candidateBytes);
+    const external = JSON.parse(externalBytes);
+    assert.equal(candidate.bundleId, "validation-28bb1b7d70f8c70bde517661");
+    assert.equal(external.bundleId, "validation-5343e0939803f58418c1b32a");
+    const mergedPath = path.join(temporaryRoot, "accepted-linux.merged.bundle.json");
+    const mergedEvidence = path.join(temporaryRoot, "accepted-linux.merged.evidence");
+    const localExternalPath = path.join(repositoryTemporaryRoot, "accepted-linux.browser.bundle.json");
+    const localExternalEvidence = path.join(repositoryTemporaryRoot, "accepted-linux.browser.evidence");
+    fs.writeFileSync(localExternalPath, externalBytes);
+    fs.cpSync(externalEvidenceRoot, localExternalEvidence, { recursive: true });
+    fs.mkdirSync(mergedEvidence);
+    fs.writeFileSync(mergedPath, candidateBytes);
+    for (const entry of candidate.attestations.filter((entry) => entry.status === "passed")) {
+      const source = path.join(evidenceRoot, entry.evidenceRef);
+      assert.equal(sha256(fs.readFileSync(source)), entry.evidenceSha256);
+      fs.copyFileSync(source, path.join(mergedEvidence, entry.evidenceRef));
+    }
+    run(process.execPath, [validationGatePath, "merge-external", "--root", root, "--bundle", mergedPath, "--external-bundle", path.relative(root, localExternalPath).split(path.sep).join("/"), "--external-evidence-root", path.relative(root, localExternalEvidence).split(path.sep).join("/"), "--evidence-root", mergedEvidence]);
+    run(process.execPath, [validationGatePath, "promote-release-ready", "--root", root, "--bundle", mergedPath]);
+    run(process.execPath, [validationGatePath, "finalize", "--root", root, "--bundle", mergedPath, "--target", "release-ready", "--evidence-root", mergedEvidence, "--quiet"]);
+    assert.deepEqual(fs.readFileSync(mergedPath), bundleBytes, "actual signed merge and promotion must retain the accepted Linux ready bundle bytes");
+    run(process.execPath, [validationGatePath, "verify-release-ready", "--root", root, "--bundle", mergedPath, "--scope-receipt", scopePath, "--evidence-root", mergedEvidence]);
+    assert.deepEqual(fs.readFileSync(candidatePath), candidateBytes);
+    assert.deepEqual(fs.readFileSync(externalPath), externalBytes);
+    actualSignedMergeByteIdentical = true;
+  }
+  const copiedBundle = path.join(temporaryRoot, "accepted-linux.copied.bundle.json");
+  fs.writeFileSync(copiedBundle, bundleBytes);
+  run(process.execPath, [validationGatePath, "finalize", "--root", root, "--bundle", copiedBundle, "--target", "release-ready", "--evidence-root", evidenceRoot, "--quiet"]);
+  assert.deepEqual(fs.readFileSync(copiedBundle), bundleBytes, "actual bundle save must retain accepted Linux bytes and ID");
+  run(process.execPath, [validationGatePath, "verify-release-ready", "--root", root, "--bundle", copiedBundle, "--scope-receipt", scopePath, "--evidence-root", evidenceRoot]);
+  const signatureEvidence = path.join(temporaryRoot, "accepted-linux.signature-tamper.evidence");
+  fs.cpSync(evidenceRoot, signatureEvidence, { recursive: true });
+  const signatureBundle = structuredClone(bundle);
+  const signedEntry = signatureBundle.attestations.find((entry) => entry.executor === "external-browser");
+  assert.ok(signedEntry);
+  const signaturePath = path.join(signatureEvidence, signedEntry.signatureRef);
+  const signature = JSON.parse(fs.readFileSync(signaturePath, "utf8"));
+  const changedSignature = Buffer.from(signature.signature, "base64");
+  changedSignature[0] ^= 1;
+  signature.signature = changedSignature.toString("base64");
+  fs.writeFileSync(signaturePath, JSON.stringify(signature, null, 2) + "\n");
+  signedEntry.signatureSha256 = sha256(fs.readFileSync(signaturePath));
+  signatureBundle.bundleId = recomputeBundleId(signatureBundle);
+  const signatureBundlePath = path.join(temporaryRoot, "accepted-linux.signature-tamper.bundle.json");
+  fs.writeFileSync(signatureBundlePath, JSON.stringify(signatureBundle, null, 2) + "\n");
+  assert.match(runFailure(process.execPath, [validationGatePath, "verify-release-ready", "--root", root, "--bundle", signatureBundlePath, "--scope-receipt", scopePath, "--evidence-root", signatureEvidence]).stderr, /BROWSER_SIGNATURE_INVALID/u);
+  for (const service of bundle.subject.services) {
+    const payload = bundle.subject.candidatePayloads[service];
+    assert.equal(verifyDeploymentBinding(bundleBytes, sha256(bundleBytes), bundle.subject.controlPlane, {
+      service,
+      archiveSha256: payload.archiveSha256,
+      releaseId: payload.releaseId,
+      commit: bundle.subject.commit,
+      sourceVersion: bundle.subject.sourceVersion,
+      buildId: bundle.subject.builds[service],
+      buildOutputDigest: bundle.subject.buildOutputDigests[service],
+    }).verified, true, "unchanged control-plane canonical contract must accept the complete legal bundle");
+  }
+  const tamperedBundle = structuredClone(bundle);
+  tamperedBundle.subject.sourceVersion += "-tamper";
+  const tamperPath = path.join(temporaryRoot, "accepted-linux.tampered.bundle.json");
+  fs.writeFileSync(tamperPath, JSON.stringify(tamperedBundle, null, 2) + "\n");
+  assert.match(runFailure(process.execPath, [validationGatePath, "verify", "--root", root, "--bundle", tamperPath]).stderr, /BUNDLE_ID_MISMATCH/u);
+  assert.throws(() => verifyDeploymentBinding(fs.readFileSync(tamperPath), sha256(fs.readFileSync(tamperPath)), bundle.subject.controlPlane, {
+    service: "web", archiveSha256: bundle.subject.candidatePayloads.web.archiveSha256,
+    releaseId: bundle.subject.candidatePayloads.web.releaseId, commit: bundle.subject.commit,
+    sourceVersion: bundle.subject.sourceVersion, buildId: bundle.subject.builds.web,
+    buildOutputDigest: bundle.subject.buildOutputDigests.web,
+  }), /CONTROL_RELEASE_BUNDLE_ID_MISMATCH/u);
+  assert.deepEqual(fs.readFileSync(scopePath), scopeBytes, "accepted scope must remain untouched");
+  assert.deepEqual(fs.readFileSync(bundlePath), bundleBytes, "accepted bundle must remain untouched");
+  return {
+    supplied: true,
+    scopeReceiptId: scope.receiptId,
+    scopeBytesSha256: sha256(scopeBytes),
+    bundleId: bundle.bundleId,
+    bundleBytesSha256: sha256(bundleBytes),
+    actualReceiptRegenerationByteIdentical: true,
+    actualBundleSaveByteIdentical: true,
+    actualSignedMergeByteIdentical,
+    fullSignedReleaseReadyGateVerified: true,
+    unchangedControlPlaneCompatible: true,
+    signatureTamperRejected: true,
+    tamperRejected: true,
+    linuxExecutedInThisRun: false,
+  };
+}
 
 function run(command, args, cwd = root, expectedStatus = 0) {
   const result = spawnSync(command, args, { cwd, encoding: "utf8", timeout: 30_000 });
@@ -180,6 +432,17 @@ function assertCommonValidations(receipt) {
 }
 
 try {
+  const localeProtocol = verifyLocaleProtocolRegression();
+  const acceptedLinuxGolden = verifyAcceptedLinuxGolden();
+  if (localeProtocolOnly) {
+    process.stdout.write(JSON.stringify({
+      verifier: "release-change-scope-locale-protocol",
+      status: "passed",
+      localeProtocol,
+      acceptedLinuxGolden,
+      networkCalls: 0,
+    }, null, 2) + "\n");
+  } else {
   const classifierSource = fs.readFileSync(classifierPath, "utf8");
   assert.doesNotMatch(classifierSource, /from\s+["']node:(?:http|https|net|tls|dns)["']/u, "classifier must remain zero-network");
   assert.doesNotMatch(classifierSource, /\bfetch\s*\(/u, "classifier must not use fetch");
@@ -824,7 +1087,7 @@ try {
   const tamperEvidenceRoot = path.join(temporaryRoot, "tamper-evidence");
   fs.mkdirSync(tamperEvidenceRoot, { recursive: true });
   fs.copyFileSync(releaseBundlePath, tamperBundlePath);
-  const firstMergedBrowserValidationId = [...browserValidationIds].sort((left, right) => left.localeCompare(right))[0];
+  const firstMergedBrowserValidationId = [...browserValidationIds].sort(compareProtocolStrings)[0];
   const tamperedEvidencePath = path.join(externalRoot, `${firstMergedBrowserValidationId}.json`);
   const originalEvidenceBytes = fs.readFileSync(tamperedEvidencePath);
   const tamperedEvidenceBytes = Buffer.concat([originalEvidenceBytes, Buffer.from(" ")]);
@@ -1572,7 +1835,10 @@ try {
     status: "passed",
     scenarios: scenarioIndex,
     networkCalls: 0,
+    localeProtocol,
+    acceptedLinuxGolden,
   }, null, 2) + "\n");
+  }
 } finally {
   const resolvedTemporaryRoot = path.resolve(temporaryRoot);
   const resolvedSystemTemp = path.resolve(os.tmpdir());

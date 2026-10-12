@@ -451,6 +451,9 @@ function canonicalAttestation(document) {
   if (document.schemaVersion === "zimeiti-production-postgres-identity.v1") {
     return JSON.stringify({ schemaVersion: document.schemaVersion, environment: document.environment, systemIdentifier: document.systemIdentifier, issuedEpoch: document.issuedEpoch, expiresEpoch: document.expiresEpoch });
   }
+  if (document.schemaVersion === "zimeiti-production-postgres-identity.v2") {
+    return JSON.stringify({ schemaVersion: document.schemaVersion, environment: document.environment, systemIdentifier: document.systemIdentifier, database: document.database, issuedEpoch: document.issuedEpoch, expiresEpoch: document.expiresEpoch });
+  }
   if (document.schemaVersion === "zimeiti-restore-provisioning-receipt.v1") {
     return JSON.stringify({ schemaVersion: document.schemaVersion, targetSystemIdentifier: document.targetSystemIdentifier, targetDatabase: document.targetDatabase, targetRole: document.targetRole, provisioningNonce: document.provisioningNonce, issuedEpoch: document.issuedEpoch, expiresEpoch: document.expiresEpoch });
   }
@@ -460,6 +463,10 @@ function canonicalAttestation(document) {
 function verifyAttestation(document, key, nowEpoch) {
   if (document.schemaVersion === "zimeiti-production-postgres-identity.v1") {
     exactKeys(document, ["schemaVersion", "environment", "systemIdentifier", "issuedEpoch", "expiresEpoch", "signature"]);
+  } else if (document.schemaVersion === "zimeiti-production-postgres-identity.v2") {
+    exactKeys(document, ["schemaVersion", "environment", "systemIdentifier", "database", "issuedEpoch", "expiresEpoch", "signature"]);
+    if (!validSourceDatabase(document.database)) fail("PRODUCTION_DATABASE_IDENTITY_REQUIRED");
+    if (document.environment !== "production" || typeof document.systemIdentifier !== "string" || !SYSTEM_IDENTIFIER.test(document.systemIdentifier)) fail("PRODUCTION_IDENTITY_INVALID");
   } else if (document.schemaVersion === "zimeiti-restore-provisioning-receipt.v1") {
     exactKeys(document, ["schemaVersion", "targetSystemIdentifier", "targetDatabase", "targetRole", "provisioningNonce", "issuedEpoch", "expiresEpoch", "signature"]);
   } else {
@@ -469,6 +476,31 @@ function verifyAttestation(document, key, nowEpoch) {
   if (!SHA256.test(String(document.signature || ""))) fail("ATTESTATION_SIGNATURE_INVALID");
   const expected = crypto.createHmac("sha256", key).update(canonicalAttestation(document)).digest("hex");
   if (!crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(document.signature, "hex"))) fail("ATTESTATION_SIGNATURE_MISMATCH");
+}
+
+function validSourceDatabase(value) {
+  return typeof value === "string" && value.length > 0 && !value.includes("\u0000");
+}
+
+function readSourceIdentityJson(file, code) {
+  try {
+    return readJson(file);
+  } catch {
+    fail(code);
+  }
+}
+
+function validateBackupSourceIdentity(backupVersionFile, productionIdentityFile, attestationKeyFile, nowEpoch) {
+  const production = readSourceIdentityJson(productionIdentityFile, "PRODUCTION_DATABASE_IDENTITY_REQUIRED");
+  if (production?.schemaVersion !== "zimeiti-production-postgres-identity.v2") fail("PRODUCTION_DATABASE_IDENTITY_REQUIRED");
+  const key = fs.readFileSync(attestationKeyFile);
+  if (key.length < 32) fail("ATTESTATION_KEY_TOO_SHORT");
+  verifyAttestation(production, key, nowEpoch);
+  if (production.environment !== "production" || typeof production.systemIdentifier !== "string" || !SYSTEM_IDENTIFIER.test(production.systemIdentifier)) fail("PRODUCTION_IDENTITY_INVALID");
+  const source = readSourceIdentityJson(backupVersionFile, "BACKUP_SOURCE_IDENTITY_INVALID");
+  if (typeof source?.systemIdentifier !== "string" || !SYSTEM_IDENTIFIER.test(source.systemIdentifier) || !validSourceDatabase(source.database)) fail("BACKUP_SOURCE_IDENTITY_INVALID");
+  if (source.systemIdentifier !== production.systemIdentifier) fail("BACKUP_SOURCE_SYSTEM_IDENTIFIER_MISMATCH");
+  if (source.database !== production.database) fail("BACKUP_SOURCE_DATABASE_MISMATCH");
 }
 
 function validateRestoreIdentity() {
@@ -545,6 +577,7 @@ function writeRestoreReceipt(status) {
     writeJson(output, base);
     return;
   }
+  validateBackupSourceIdentity(argument("--backup-version"), argument("--production-identity"), argument("--attestation-key"), completedEpoch);
   const metadata = readJson(argument("--metadata"));
   validateBackupMetadata(metadata);
   const before = readJson(argument("--before-identity"));
@@ -609,6 +642,8 @@ if (command === "copy-tree") {
   writeBackupReceipt();
 } else if (command === "validate-backup-metadata") {
   validateBackupMetadata(readJson(argument("--document")));
+} else if (command === "validate-backup-source-identity") {
+  validateBackupSourceIdentity(argument("--backup-version"), argument("--production-identity"), argument("--attestation-key"), integerArgument("--now-epoch", 1));
 } else if (command === "validate-restore-identity") {
   validateRestoreIdentity();
 } else if (command === "write-restore-success-receipt") {
