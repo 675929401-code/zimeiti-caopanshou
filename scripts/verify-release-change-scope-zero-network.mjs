@@ -234,6 +234,55 @@ try {
     assert.ok(mappedPlatformWide.browserAcceptance.requiredRoutes.includes(route), `platform-wide route mapping omitted ${route}`);
   }
 
+  const projectProfileChange = { status: "A", path: ".engineering/project-profile.v1.json", content: "{}" };
+  const projectProfile = runScenario("project-profile-control-plane", [projectProfileChange]);
+  assert.equal(projectProfile.classification, "FULL");
+  assert.ok(projectProfile.changedFiles[0].pathRuleIds.includes("full-deployment-script-policy-or-manifest"));
+  assert.deepEqual(projectProfile.browserAcceptance.requiredRoutes, ["/", "/tools", "/video"]);
+  assert.deepEqual(projectProfile.browserAcceptance.unresolvedPaths, []);
+  assert.equal(projectProfile.browserAcceptance.explicitRoutesRequired, false);
+  assert.equal(projectProfile.gate.validationState, "pending-required");
+  assert.equal(projectProfile.gate.releaseReady, false);
+  assertCommonValidations(projectProfile);
+  assert.ok(projectProfile.requiredValidations.includes("full-zero-network-regression"));
+
+  const projectProfileShared = runScenario("project-profile-with-platform-shared", [
+    projectProfileChange,
+    { status: "M", path: "src/components/feature-card.tsx", content: "const size = 'desktop';" },
+  ]);
+  assert.equal(projectProfileShared.classification, "FULL");
+  assert.deepEqual(projectProfileShared.browserAcceptance.requiredRoutes,
+    ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"]);
+  assert.deepEqual(projectProfileShared.browserAcceptance.unresolvedPaths, []);
+  assert.equal(projectProfileShared.gate.validationState, "pending-required");
+  assert.equal(projectProfileShared.gate.releaseReady, false);
+
+  for (const unknownPath of [".engineering/unknown.json", ".engineering/project-profile.v1.json.extra"]) {
+    const engineeringUnknown = runScenario(`unknown-engineering-${path.basename(unknownPath)}`, [
+      { status: "A", path: unknownPath, content: "{}" },
+    ]);
+    assert.equal(engineeringUnknown.classification, "FULL");
+    assert.equal(engineeringUnknown.failClosed, true);
+    assert.ok(engineeringUnknown.reasons.some((reason) => reason.code === "UNKNOWN_PATH_CLASSIFICATION"));
+    assert.ok(engineeringUnknown.browserAcceptance.unresolvedPaths.includes(unknownPath));
+    assert.equal(engineeringUnknown.gate.releaseReady, false);
+  }
+
+  const profileReviewedRoutes = runScenario("project-profile-exact-reviewed-routes", [projectProfileChange],
+    { acceptanceRoutes: ["/", "/tools", "/video"] });
+  assert.deepEqual(profileReviewedRoutes.browserAcceptance.unresolvedPaths, []);
+  assert.equal(profileReviewedRoutes.browserAcceptance.explicitRoutesProvided, true);
+  assert.equal(profileReviewedRoutes.gate.releaseReady, false);
+  for (const [name, routes] of [["missing", ["/", "/tools"]], ["extra", ["/", "/tools", "/video", "/admin"]]]) {
+    const rejectedProfileRoutes = runScenario(`project-profile-explicit-routes-${name}`, [projectProfileChange],
+      { acceptanceRoutes: routes });
+    assert.equal(rejectedProfileRoutes.classification, "FULL");
+    assert.equal(rejectedProfileRoutes.failClosed, true);
+    assert.ok(rejectedProfileRoutes.browserAcceptance.unresolvedPaths.includes("<caller-routes-not-policy-approved>"));
+    assert.equal(rejectedProfileRoutes.browserAcceptance.explicitRoutesProvided, false);
+    assert.equal(rejectedProfileRoutes.gate.releaseReady, false);
+  }
+
   const dynamicPageWithArbitraryRoutes = runScenario("dynamic-page-caller-route-bypass", [
     { status: "M", path: "src/app/blog/[slug]/page.tsx", content: "export default function Page() { return null; }" },
   ], { acceptanceRoutes: ["/", "/tools", "/video"] });

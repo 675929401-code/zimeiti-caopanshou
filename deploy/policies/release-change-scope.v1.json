@@ -83,7 +83,7 @@
       },
       {
         "id": "release-control-plane",
-        "patterns": ["^(?:deploy/|\\.github/workflows/|scripts/(?:classify-release-change-scope|release-change-validation-gate|compute-release-build-output-digest|package-standalone-artifact))"],
+        "patterns": ["^(?:deploy/|\\.github/workflows/|scripts/(?:classify-release-change-scope|release-change-validation-gate|compute-release-build-output-digest|package-standalone-artifact))", "^\\.engineering/project-profile\\.v1\\.json$"],
         "routes": ["/", "/tools", "/video"]
       }
     ]
@@ -226,6 +226,7 @@
       "precedence": 300,
       "patterns": [
         "^\\.github/workflows/",
+        "^\\.engineering/project-profile\\.v1\\.json$",
         "^deploy/(?:policies|manifests)/",
         "^scripts/(?:deploy-|package-standalone-artifact|build-release-vnext|release-workflow|release-preflight|materialize-public-asset-release|install-public-asset-release|provision-release-root)(?:[.-]|$)",
         "^\\.releaseignore$",
