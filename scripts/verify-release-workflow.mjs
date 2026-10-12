@@ -14,7 +14,100 @@ const releaseWorkflowSource = read("scripts/release-workflow.mjs");
 const ciWorkflow = read(".github/workflows/release-vnext.yml");
 const browserAcceptanceWorkflow = read(".github/workflows/release-browser-acceptance.yml");
 
+// Parse active step fields and literal scripts at their actual YAML indentation.
+// A command in a comment, a different step or a swallowed branch is not a gate.
+function activeWorkflowSteps(workflow) {
+  const lines = workflow.replace(/\r\n/gu, "\n").split("\n");
+  const starts = lines.flatMap((line, index) => /^      - (?:name|uses): /u.test(line) ? [index] : []);
+  return starts.map((start, index) => {
+    const block = lines.slice(start, starts[index + 1] ?? lines.length);
+    const fields = new Map();
+    for (const line of block) {
+      const match = line.match(/^(?:      - |        )([A-Za-z_-]+): (.*)$/u);
+      if (!match) continue;
+      assert.ok(!fields.has(match[1]), `duplicate workflow step field: ${match[1]}`);
+      fields.set(match[1], match[2]);
+    }
+    const run = block.findIndex((line) => /^        run: /u.test(line));
+    const scriptLines = [];
+    if (run >= 0) {
+      assert.equal(block[run], "        run: |", "workflow scripts require literal fail-closed blocks");
+      for (const line of block.slice(run + 1)) {
+        if (line.trim() && !line.startsWith("          ")) break;
+        scriptLines.push(line.slice(10));
+      }
+    }
+    return { name: fields.get("name"), uses: fields.get("uses"), fields, block: block.join("\n"), script: scriptLines.join("\n").trimEnd() };
+  });
+}
+
+const formalSourceGateName = "Verify the exact formal candidate source before installing";
+const formalSourceScript = String.raw`set -euo pipefail
+if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+  [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'CONTROL_PR_SHA_INVALID' >&2; exit 2; }
+  origin_url="$(git remote get-url origin)"
+  [[ "$origin_url" == "https://github.com/$GITHUB_REPOSITORY" || "$origin_url" == "https://github.com/$GITHUB_REPOSITORY.git" ]] || { echo 'CONTROL_PR_ORIGIN_INVALID' >&2; exit 2; }
+  git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch --no-tags --no-recurse-submodules --no-write-fetch-head origin "$GITHUB_SHA" 2>/dev/null || { echo 'CONTROL_PR_FETCH_FAILED' >&2; exit 2; }
+fi
+node scripts/deployment-control-plane.mjs verify-source --root "$GITHUB_WORKSPACE" --subject "$(node -e 'process.stdout.write(JSON.stringify({mode:"formal",sourceCommit:process.env.RELEASE_HEAD_SHA,repository:process.env.GITHUB_REPOSITORY,candidateRunId:process.env.GITHUB_RUN_ID,candidateRunAttempt:process.env.GITHUB_RUN_ATTEMPT}))')"`;
+
+function verifyFormalSourceGate(workflow) {
+  const steps = activeWorkflowSteps(workflow);
+  const matches = steps.flatMap((step, index) => step.name === formalSourceGateName ? [index] : []);
+  assert.equal(matches.length, 1, "candidate source has one active early verification step");
+  const index = matches[0], gate = steps[index];
+  assert.equal(gate.fields.get("if"), "env.RELEASE_PHASE == 'candidate'", "source verification applies to every candidate");
+  assert.equal(gate.fields.get("run"), "|");
+  assert.equal(gate.script, formalSourceScript, "exact PR object fetch and source verification must execute without alternate success paths");
+  const envStart = gate.block.split("\n").findIndex((line) => line === "        env:");
+  assert.ok(envStart >= 0);
+  assert.equal(gate.block.split("\n")[envStart + 1], "          GH_TOKEN: ${{ github.token }}", "token is scoped to the exact object fetch step");
+  assert.equal(gate.block.split("\n")[envStart + 2], "        run: |", "fetch token never uses persistent configuration");
+  const resolve = steps.findIndex((step) => step.fields.get("id") === "resolve");
+  assert.ok(resolve >= 0 && index === resolve + 1, "source gate runs immediately after immutable identity resolution");
+  const checkout = steps.find((step) => step.uses?.startsWith("actions/checkout@"));
+  assert.ok(checkout);
+  assert.match(checkout.block, /^          persist-credentials: false$/mu);
+  assert.match(checkout.block, /^          ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}$/mu);
+  const activeCommands = steps.flatMap((step, stepIndex) => step.script.split("\n")
+    .filter((line) => !/^\s*#/u.test(line)).map((line) => ({ line, stepIndex })));
+  assert.equal(activeCommands.filter(({ line }) => line.includes("deployment-control-plane.mjs verify-source ")).length, 1);
+  for (const { line, stepIndex } of activeCommands) {
+    if (/\bpnpm (?:install|[^\n]*\binstall --frozen-lockfile|run [^\n]*release:vnext:build:)/u.test(line)) {
+      assert.ok(index < stepIndex, "source identity must be proved before installing dependencies or building");
+    }
+    assert.doesNotMatch(line, /(?:^|\s)(?:export\s+)?GITHUB_SHA=/u, "original GitHub SHA cannot be overwritten");
+  }
+  const build = steps.findIndex((step) => step.name === "Build once, hash actual outputs, and bind the digest");
+  assert.ok(build > index);
+  assert.equal(steps[build].script.split("\n").filter((line) => line.includes("deployment-control-plane.mjs package ")).length, 1,
+    "late package independently revalidates the same formal source");
+  return gate.block;
+}
+
+function verifyFormalSourceGateMutations(workflow) {
+  const gate = verifyFormalSourceGate(workflow);
+  const command = formalSourceScript.split("\n").at(-1);
+  const mutants = [
+    ["commented verifier", workflow.replace(`          ${command}`, `          # ${command}`)],
+    ["swallowed verifier failure", workflow.replace(`          ${command}`, `          ${command} || true`)],
+    ["premature PASS", workflow.replace(`          ${command}`, `          echo PASS; exit 0\n          ${command}`)],
+    ["mutable PR merge ref", workflow.replace('origin "$GITHUB_SHA"', 'origin "refs/pull/7/merge"')],
+    ["persistent credentials", workflow.replace("git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch", "git config credential.helper '!gh auth git-credential'\n            git fetch")],
+    ["original SHA overwritten", workflow.replace(`          ${command}`, `          GITHUB_SHA="$RELEASE_HEAD_SHA"\n          ${command}`)],
+    ["commented gate", workflow.replace(gate, gate.split("\n").map((line) => `# ${line}`).join("\n"))],
+    ["late gate after build", workflow.replace(gate, "").replace("      - name: Upload exact output and pending-required bundle", `${gate}\n      - name: Upload exact output and pending-required bundle`)],
+    ["install before identity", workflow.replace('          toolchain_sha="$(git rev-parse HEAD)"', '          pnpm install --frozen-lockfile\n          toolchain_sha="$(git rev-parse HEAD)"')],
+  ];
+  for (const [name, mutant] of mutants) {
+    assert.notEqual(mutant, workflow, `workflow mutation must change active input: ${name}`);
+    assert.throws(() => verifyFormalSourceGate(mutant), undefined, `unsafe workflow variant must be rejected: ${name}`);
+  }
+  return mutants.length;
+}
+
 function verifyReleaseVnextWorkflowContract() {
+  const formalSourceMutationChecks = verifyFormalSourceGateMutations(ciWorkflow);
   const sourceScripts = JSON.parse(read("package.json")).scripts;
   const deliveryCommands = [
     "node ./scripts/verify-generated-image-provider-url-policy-zero-network.mjs",
@@ -159,9 +252,10 @@ function verifyReleaseVnextWorkflowContract() {
   assert.match(ciWorkflow, /name: release-candidate-\$\{\{ steps\.resolve\.outputs\.subject_sha \}\}/u);
   assert.match(ciWorkflow, /b\.subject\.commit!==process\.env\.RELEASE_HEAD_SHA/u,
     "finalize must bind the downloaded candidate bundle to the immutable subject commit");
+  return formalSourceMutationChecks;
 }
 
-verifyReleaseVnextWorkflowContract();
+const formalSourceMutationChecks = verifyReleaseVnextWorkflowContract();
 if (process.argv.includes("--workflow-contract-only")) {
   process.stdout.write("PASS release-vnext staged workflow contract\n");
   process.exit(0);
@@ -171,6 +265,8 @@ const controlPlaneChecks = spawnSync(process.execPath, [path.join(root, "scripts
   cwd: root, encoding: "utf8", windowsHide: true, timeout: 120_000,
 });
 assert.equal(controlPlaneChecks.status, 0, `control-plane actual interface regression failed: ${controlPlaneChecks.stderr || controlPlaneChecks.stdout}`);
+const controlPlaneReport = JSON.parse(controlPlaneChecks.stdout);
+assert.equal(controlPlaneReport.ok, true);
 
 for (const marker of [
   "inspectMigrationWorktree",
@@ -1664,6 +1760,8 @@ assert.match(auditJson.externalAssets.pinnedDigest, /^[0-9a-f]{64}$/u);
 
 console.log(JSON.stringify({
   ok: true,
+  formalSourceMutationChecks,
+  controlPlaneChecks: controlPlaneReport.checks,
   sourceFiles: auditJson.source.files,
   sourceBytes: auditJson.source.bytes,
   assetFiles: auditJson.externalAssets.files,

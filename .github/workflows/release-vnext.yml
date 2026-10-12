@@ -146,6 +146,20 @@ jobs:
           echo "subject_sha=$head_sha" >> "$GITHUB_OUTPUT"
           mkdir -p "$RUNNER_TEMP/release-change-validation-evidence"
 
+      - name: Verify the exact formal candidate source before installing
+        if: env.RELEASE_PHASE == 'candidate'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'CONTROL_PR_SHA_INVALID' >&2; exit 2; }
+            origin_url="$(git remote get-url origin)"
+            [[ "$origin_url" == "https://github.com/$GITHUB_REPOSITORY" || "$origin_url" == "https://github.com/$GITHUB_REPOSITORY.git" ]] || { echo 'CONTROL_PR_ORIGIN_INVALID' >&2; exit 2; }
+            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch --no-tags --no-recurse-submodules --no-write-fetch-head origin "$GITHUB_SHA" 2>/dev/null || { echo 'CONTROL_PR_FETCH_FAILED' >&2; exit 2; }
+          fi
+          node scripts/deployment-control-plane.mjs verify-source --root "$GITHUB_WORKSPACE" --subject "$(node -e 'process.stdout.write(JSON.stringify({mode:"formal",sourceCommit:process.env.RELEASE_HEAD_SHA,repository:process.env.GITHUB_REPOSITORY,candidateRunId:process.env.GITHUB_RUN_ID,candidateRunAttempt:process.env.GITHUB_RUN_ATTEMPT}))')"
+
       - name: Classify, diff-check, and scan the exact candidate range
         if: env.RELEASE_PHASE == 'candidate'
         id: scope

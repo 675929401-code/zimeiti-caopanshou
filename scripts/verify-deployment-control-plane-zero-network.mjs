@@ -6,7 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { plan,packageBundle,verifyPackage,verifyCandidatePackage,verifyDeploymentBinding,verifyBytes,installVerified,verifyInstalled,canonical,digest,MANIFEST,ARCHIVE,POLICY_PATH,main } from './deployment-control-plane.mjs';
+import { plan,verifySource,packageBundle,verifyPackage,verifyCandidatePackage,verifyDeploymentBinding,verifyBytes,installVerified,verifyInstalled,canonical,digest,MANIFEST,ARCHIVE,POLICY_PATH,main } from './deployment-control-plane.mjs';
 
 const root=process.cwd(),temp=fs.mkdtempSync(path.join(os.tmpdir(),'control-plane-tests-'));
 const checks=[];
@@ -30,7 +30,7 @@ try {
   // No real repository/index writes: the formal CI producer is exercised using
   // a private committed fixture and an explicitly mocked CI identity.
   const emptyGitConfig=path.join(temp,'empty-git-config');write(emptyGitConfig,'');
-  const fixtureGit=args=>{const r=spawnSync('git',['-c',`core.hooksPath=${path.join(temp,'disabled-hooks')}`,'-c','commit.gpgsign=false','-c','user.name=fixture','-c','user.email=fixture@invalid',...args],{cwd:source,encoding:'utf8',env:{...process.env,GIT_CONFIG_GLOBAL:emptyGitConfig,GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'}});assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
+  const fixtureGit=(args,input)=>{const r=spawnSync('git',['-c',`core.hooksPath=${path.join(temp,'disabled-hooks')}`,'-c','commit.gpgsign=false','-c','user.name=fixture','-c','user.email=fixture@invalid',...args],{cwd:source,input,encoding:'utf8',env:{...process.env,GIT_CONFIG_GLOBAL:emptyGitConfig,GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'}});assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
   fixtureGit(['init','--quiet']);fixtureGit(['add','.']);fixtureGit(['commit','--quiet','--no-gpg-sign','-m','isolated fixture']);
   const formal={...subject,sourceCommit:fixtureGit(['rev-parse','HEAD'])},ci={GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:subject.repository,GITHUB_SHA:formal.sourceCommit,GITHUB_RUN_ID:subject.candidateRunId,GITHUB_RUN_ATTEMPT:subject.candidateRunAttempt};
   check('clean committed fixture formal producer positive',()=>{const o=path.join(temp,'formal-clean'),descriptor=packageBundle(source,o,formal,ci);assert.equal(verifyPackage(o,descriptor).manifest.subject.sourceCommit,formal.sourceCommit);});
@@ -45,35 +45,80 @@ try {
   const prEvent={number:7,repository:{...repo},pull_request:{number:7,head:{sha:prHead,repo:{...repo}},base:{sha:initialHead,repo:{...repo}},merge_commit_sha:merge}};
   const eventFile=path.join(temp,'github-pr-event.json');
   const prCi={...ci,GITHUB_SHA:merge,GITHUB_EVENT_NAME:'pull_request',GITHUB_REF:'refs/pull/7/merge',GITHUB_EVENT_PATH:eventFile};
-  function prPackage(label,event=prEvent,env=prCi,expected=prSubject) {
+  function prCommand(command,label,event=prEvent,env=prCi,expected=prSubject) {
     write(eventFile,JSON.stringify(event));
     const output=path.join(temp,'pr-'+label);
-    const run=spawnSync(process.execPath,[path.join(source,'scripts/deployment-control-plane.mjs'),'package','--root',source,'--output',output,'--subject',JSON.stringify(expected)],{
+    const run=spawnSync(process.execPath,[path.join(source,'scripts/deployment-control-plane.mjs'),command,'--root',source,...(command==='package'?['--output',output]:[]),'--subject',JSON.stringify(expected)],{
       cwd:source,encoding:'utf8',windowsHide:true,timeout:20000,
       env:{...process.env,...env,GIT_CONFIG_GLOBAL:emptyGitConfig,GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'},
     });
     if(run.status!==0) {
       assert.equal(run.status,2,run.stderr||run.error?.message);
-      throw new Error(JSON.parse(run.stderr).error);
+      const blocked=JSON.parse(run.stderr);const error=new Error(blocked.error);error.diagnostics=blocked.sourceDiagnostics;error.cliOutput=run.stdout+run.stderr;throw error;
     }
     const descriptor=JSON.parse(run.stdout);
+    if(command==='verify-source'){assert.equal(descriptor.verified,true);assert.equal(fs.existsSync(output),false);return descriptor;}
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(output,'control-plane.descriptor.json'),'utf8')),descriptor);
     return descriptor;
   }
+  const prPackage=(...args)=>prCommand('package',...args);
+  const prVerify=(...args)=>prCommand('verify-source',...args);
   check('actual same-repository PR head differs from merge producer positive',()=>{assert.notEqual(prHead,merge);const descriptor=prPackage('valid');assert.equal(descriptor.subject.sourceCommit,prHead);assert.equal(verifyPackage(path.join(temp,'pr-valid'),descriptor).manifest.subject.sourceCommit,prHead);assert.equal(prCi.GITHUB_SHA,merge);});
+  for(const [label,field,classification]of [['null',null,'null'],['missing',undefined,'missing'],['stale',initialHead,'different'],['invalid','not-a-sha','invalid']])check('actual PR '+label+' merge field accepts proven ordered parents',()=>{
+    const event=structuredClone(prEvent);if(field===undefined)delete event.pull_request.merge_commit_sha;else event.pull_request.merge_commit_sha=field;
+    const before=tree(source);const verified=prVerify('verify-'+label,event);assert.equal(verified.diagnostics.mergeCommitField,classification);assert.equal(verified.diagnostics.mergeParentCountTwo,true);assert.equal(tree(source),before);
+    assert.equal(prPackage('field-'+label,event).subject.sourceCommit,prHead);
+  });
+  check('verify-source has no filesystem writes under mutation sentinels',()=>{
+    write(eventFile,JSON.stringify(prEvent));const before=tree(source),methods=['writeFileSync','appendFileSync','mkdirSync','mkdtempSync','unlinkSync','rmSync','renameSync','linkSync','symlinkSync','chmodSync','chownSync','truncateSync','createWriteStream'];
+    const saved=new Map(methods.map(name=>[name,fs[name]]));for(const name of methods)fs[name]=()=>{throw Error('VERIFY_SOURCE_WRITE_SENTINEL:'+name);};
+    try{assert.equal(verifySource(source,prSubject,prCi).verified,true);}finally{for(const[name,fn]of saved)fs[name]=fn;}assert.equal(tree(source),before);
+  });
   for(const [label,mutate]of [
     ['wrong-event-repository',e=>e.repository.full_name='other/repository'],
     ['fork-event',e=>e.repository.fork=true],
     ['wrong-head-repository',e=>e.pull_request.head.repo.full_name='other/repository'],
     ['fork-head',e=>e.pull_request.head.repo.fork=true],
     ['wrong-base-repository',e=>e.pull_request.base.repo.full_name='other/repository'],
+    ['fork-base',e=>e.pull_request.base.repo.fork=true],
     ['wrong-head',e=>e.pull_request.head.sha='b'.repeat(40)],
-    ['wrong-merge',e=>e.pull_request.merge_commit_sha='b'.repeat(40)],
+    ['wrong-base',e=>e.pull_request.base.sha=prHead],
+    ['invalid-base',e=>e.pull_request.base.sha='not-a-sha'],
+    ['invalid-head',e=>e.pull_request.head.sha='not-a-sha'],
     ['mismatched-number',e=>e.pull_request.number=8],
     ['invalid-number',e=>e.number='7'],
   ]) reject('actual PR '+label+' before package output',()=>{const event=structuredClone(prEvent);mutate(event);try{prPackage(label,event);}finally{assert.equal(fs.existsSync(path.join(temp,'pr-'+label)),false);}},/CONTROL_PR_IDENTITY_MISMATCH/u);
-  for(const [label,env]of [['wrong-ref',{...prCi,GITHUB_REF:'refs/pull/8/merge'}],['head-ref-not-merge',{...prCi,GITHUB_REF:'refs/heads/main'}],['missing-event',{...prCi,GITHUB_EVENT_PATH:''}],['spoofed-original-GITHUB_SHA',{...prCi,GITHUB_SHA:prHead}],['wrong-run',{...prCi,GITHUB_RUN_ID:'999'}],['wrong-attempt',{...prCi,GITHUB_RUN_ATTEMPT:'2'}]]) reject('actual PR '+label,()=>prPackage(label,prEvent,env));
-  reject('actual PR checkout drift rejected',()=>prPackage('checkout-drift',{...prEvent,pull_request:{...prEvent.pull_request,head:{...prEvent.pull_request.head,sha:initialHead}}},prCi,{...prSubject,sourceCommit:initialHead}),/CONTROL_EXECUTED_HEAD_DRIFT/u);
+  for(const [label,env]of [['wrong-ref',{...prCi,GITHUB_REF:'refs/pull/8/merge'}],['head-ref-not-merge',{...prCi,GITHUB_REF:'refs/heads/main'}],['missing-event',{...prCi,GITHUB_EVENT_PATH:''}],['invalid-original-sha',{...prCi,GITHUB_SHA:'not-a-sha'}],['spoofed-original-GITHUB_SHA',{...prCi,GITHUB_SHA:prHead}],['wrong-run',{...prCi,GITHUB_RUN_ID:'999'}],['wrong-attempt',{...prCi,GITHUB_RUN_ATTEMPT:'2'}],['wrong-environment-repository',{...prCi,GITHUB_REPOSITORY:'other/repository'}],['not-github-actions',{...prCi,GITHUB_ACTIONS:'false'}]]) reject('actual PR '+label,()=>prPackage(label,prEvent,env));
+  const headTree=fixtureGit(['rev-parse','HEAD^{tree}']),third=fixtureGit(['commit-tree',headTree,'-p',initialHead,'-m','isolated third parent']);
+  const alternate=fixtureGit(['commit-tree',headTree,'-p',initialHead,'-p',third,'-m','isolated wrong head']);
+  const reversed=fixtureGit(['commit-tree',headTree,'-p',prHead,'-p',initialHead,'-m','isolated reversed parents']);
+  const multi=fixtureGit(['commit-tree',headTree,'-p',initialHead,'-p',prHead,'-p',third,'-m','isolated three parents']);
+  const blob=fixtureGit(['hash-object','-w','--stdin'],'isolated blob object\n');
+  for(const [label,object]of [['wrong-head-parent',alternate],['reversed-parents',reversed],['multiple-parents',multi],['tree-object',headTree],['blob-object',blob],['missing-object','0'.repeat(40)]])reject('actual CLI PR '+label+' rejected by verifier and package',()=>{
+    const event=structuredClone(prEvent);event.pull_request.merge_commit_sha=object;const env={...prCi,GITHUB_SHA:object};
+    assert.throws(()=>prVerify('verify-'+label,event,env),/CONTROL_PR_IDENTITY_MISMATCH/u);
+    try{prPackage(label,event,env);}finally{assert.equal(fs.existsSync(path.join(temp,'pr-'+label)),false);}
+  },/CONTROL_PR_IDENTITY_MISMATCH/u);
+  const missingBase='f'.repeat(40),missingParentMerge=fixtureGit(['hash-object','-t','commit','-w','--stdin'],`tree ${headTree}\nparent ${missingBase}\nparent ${prHead}\nauthor fixture <fixture@invalid> 1 +0000\ncommitter fixture <fixture@invalid> 1 +0000\n\nisolated missing parent object\n`);
+  const missingParentEvent=structuredClone(prEvent);missingParentEvent.pull_request.base.sha=missingBase;
+  reject('actual PR referenced base object missing rejected',()=>prVerify('missing-parent-object',missingParentEvent,{...prCi,GITHUB_SHA:missingParentMerge}),/CONTROL_PR_IDENTITY_MISMATCH/u);
+  const driftEvent=structuredClone(prEvent);driftEvent.pull_request.base.sha=prHead;driftEvent.pull_request.head.sha=initialHead;
+  reject('actual PR checkout drift rejected',()=>prPackage('checkout-drift',driftEvent,{...prCi,GITHUB_SHA:reversed},{...prSubject,sourceCommit:initialHead}),/CONTROL_EXECUTED_HEAD_DRIFT/u);
+  check('actual CLI diagnostics expose only safe booleans and merge-field enum',()=>{
+    const canary='CONTROL_DIAGNOSTIC_SECRET_CANARY_7261',event=structuredClone(prEvent);event.secret=canary;event.repository.full_name=canary;event.pull_request.merge_commit_sha=canary;
+    for(const command of ['verify-source','package']){
+      let error;try{prCommand(command,'secret-'+command,event,{...prCi,GH_TOKEN:canary});}catch(blocked){error=blocked;}
+      assert.match(error.message,/CONTROL_PR_IDENTITY_MISMATCH/u);assert.ok(!error.cliOutput.includes(canary));
+      assert.equal(error.diagnostics.mergeCommitField,'invalid');for(const [key,value]of Object.entries(error.diagnostics))if(key!=='mergeCommitField')assert.equal(typeof value,'boolean');
+    }
+  });
+  check('actual source CLI malformed subject rejects without echoing JSON input',()=>{
+    const canary='MALFORMED_SUBJECT_CANARY_8419';
+    for(const command of ['verify-source','package']){
+      const output=path.join(temp,'malformed-'+command),run=spawnSync(process.execPath,[path.join(source,'scripts/deployment-control-plane.mjs'),command,'--root',source,...(command==='package'?['--output',output]:[]),'--subject',`{"secret":"${canary}`],{cwd:source,encoding:'utf8',windowsHide:true,env:{...process.env,...prCi}});
+      assert.equal(run.status,2);assert.equal(JSON.parse(run.stderr).error,'CONTROL_SUBJECT_JSON_INVALID');assert.ok(!(run.stdout+run.stderr).includes(canary));assert.equal(fs.existsSync(output),false);
+    }
+  });
   check('actual PR dirty committed closure rejected',()=>{const input=path.join(source,'scripts/normalize-legacy-runtime-vnext.mjs'),original=fs.readFileSync(input);write(input,Buffer.concat([original,Buffer.from('\n// dirty PR closure\n')]));try{assert.throws(()=>prPackage('dirty'),/CONTROL_FORMAL_SOURCE_DRIFT/u);assert.equal(fs.existsSync(path.join(temp,'pr-dirty')),false);}finally{write(input,original);}});
   for(const eventName of ['push','workflow_dispatch']) {
     reject('non-PR '+eventName+' still requires original SHA equal head',()=>prPackage('strict-'+eventName,prEvent,{...prCi,GITHUB_EVENT_NAME:eventName,GITHUB_REF:'refs/heads/main'}),/CONTROL_CI_IDENTITY_REQUIRED/u);
@@ -204,6 +249,38 @@ try {
     assert.ok(upload.includes('name: release-candidate-${{ steps.resolve.outputs.subject_sha }}'));
     assert.ok(!upload.includes('name: release-candidate-${{ github.sha }}'));
     assert.ok(!/^\s*(?:export\s+)?GITHUB_SHA=/mu.test(workflow));
+  });
+  // Execute the active workflow literal in Bash. Only Git's network fetch is a
+  // fixture stub; Node invokes the real verify-source CLI on the private repo.
+  const workflow=fs.readFileSync(path.join(root,'.github/workflows/release-vnext.yml'),'utf8');
+  const sourceGateBlock=workflow.slice(workflow.indexOf('      - name: Verify the exact formal candidate source before installing'),workflow.indexOf('      - name: Classify, diff-check, and scan the exact candidate range'));
+  const sourceGateScript=sourceGateBlock.split('        run: |')[1].trimEnd().split(/\r?\n/u).slice(1).map(line=>line.slice(10)).join('\n');
+  assert.ok(sourceGateScript.startsWith('set -euo pipefail\n'));
+  const sourceGateHarness=path.join(temp,'workflow-source-gate.sh');
+  write(sourceGateHarness,`#!/usr/bin/env bash\ngit(){
+    if [[ "$#" -eq 3 && "$1" == remote && "$2" == get-url && "$3" == origin ]]; then printf '%s\\n' "$FIXTURE_ORIGIN"; return 0; fi
+    [[ "$#" -eq 10 && "$1" == -c && "$2" == credential.helper= && "$3" == -c && "$4" == 'credential.helper=!gh auth git-credential' && "$5" == fetch && "$6" == --no-tags && "$7" == --no-recurse-submodules && "$8" == --no-write-fetch-head && "$9" == origin && "\${10}" == "$FIXTURE_EXPECTED_SHA" ]] || { echo 'UNEXPECTED_GIT_FETCH' >&2; return 2; }
+    [[ -n "$GH_TOKEN" ]] || { echo 'FETCH_TOKEN_MISSING' >&2; return 2; }
+    printf 'EXACT_FETCH_SENTINEL\\n'; return "$FIXTURE_FETCH_STATUS"
+  }
+  node(){ if [[ "$1" == scripts/deployment-control-plane.mjs && "$2" == verify-source ]]; then printf 'VERIFY_SOURCE_REACHED_SENTINEL\\n'; fi; '${unix(process.execPath)}' "$@"; }
+  ${sourceGateScript}
+  printf 'INSTALL_REACHED_SENTINEL\\n'
+  printf 'BUILD_REACHED_SENTINEL\\n'
+  `);
+  const sourceGateEnv={...process.env,...prCi,GITHUB_WORKSPACE:source,RELEASE_HEAD_SHA:prHead,GH_TOKEN:'RAM_ONLY_FIXTURE_TOKEN',FIXTURE_ORIGIN:`https://github.com/${subject.repository}.git`,FIXTURE_EXPECTED_SHA:merge,FIXTURE_FETCH_STATUS:'0'};
+  const runSourceGate=(event=prEvent,changes={})=>{write(eventFile,JSON.stringify(event));const before=tree(source);const result=spawnSync(bash,[unix(sourceGateHarness)],{cwd:source,encoding:'utf8',windowsHide:true,timeout:20000,env:{...sourceGateEnv,...changes,GIT_CONFIG_GLOBAL:emptyGitConfig,GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'}});assert.equal(tree(source),before,'source gate must not write source, index or credential config');return result;};
+  for(const suffix of ['.git',''])check('actual workflow trusted origin '+(suffix||'without suffix')+' fetches only exact SHA before real CLI/install/build',()=>{const x=runSourceGate(prEvent,{FIXTURE_ORIGIN:`https://github.com/${subject.repository}${suffix}`});assert.equal(x.status,0,x.stderr);assert.ok(x.stdout.includes('EXACT_FETCH_SENTINEL'));assert.ok(x.stdout.includes('VERIFY_SOURCE_REACHED_SENTINEL'));assert.ok(x.stdout.includes('INSTALL_REACHED_SENTINEL'));assert.ok(x.stdout.includes('BUILD_REACHED_SENTINEL'));assert.equal(prCi.GITHUB_SHA,merge);});
+  for(const [label,changes]of [['wrong-origin',{FIXTURE_ORIGIN:'https://github.com/other/repo.git'}],['invalid-sha',{GITHUB_SHA:'refs/pull/7/merge'}],['failed-fetch',{FIXTURE_FETCH_STATUS:'2'}],['wrong-ref',{GITHUB_REF:'refs/pull/8/merge'}],['wrong-head',{RELEASE_HEAD_SHA:initialHead}]])check('actual workflow '+label+' stops before dependency install and build',()=>{
+    const x=runSourceGate(prEvent,changes);assert.notEqual(x.status,0,label);assert.ok(!x.stdout.includes('INSTALL_REACHED_SENTINEL'),label);assert.ok(!x.stdout.includes('BUILD_REACHED_SENTINEL'),label);
+    if(['wrong-origin','invalid-sha'].includes(label))assert.ok(!x.stdout.includes('EXACT_FETCH_SENTINEL'),label);
+    if(['wrong-origin','invalid-sha','failed-fetch'].includes(label))assert.ok(!x.stdout.includes('VERIFY_SOURCE_REACHED_SENTINEL'),label);
+    if(label==='failed-fetch')assert.match(x.stderr,/CONTROL_PR_FETCH_FAILED/u);
+  });
+  for(const eventName of ['push','workflow_dispatch'])check('actual workflow '+eventName+' verifies original head without any fetch',()=>{const x=runSourceGate(prEvent,{GITHUB_EVENT_NAME:eventName,GITHUB_SHA:prHead,GITHUB_REF:'refs/heads/main'});assert.equal(x.status,0,x.stderr);assert.ok(!x.stdout.includes('EXACT_FETCH_SENTINEL'));assert.ok(x.stdout.includes('VERIFY_SOURCE_REACHED_SENTINEL'));assert.ok(x.stdout.includes('BUILD_REACHED_SENTINEL'));});
+  check('actual workflow dirty closure stops before dependency install and build',()=>{
+    const input=path.join(source,'scripts/normalize-legacy-runtime-vnext.mjs'),original=fs.readFileSync(input);write(input,Buffer.concat([original,Buffer.from('\n// workflow dirty fixture\n')]));
+    try{const x=runSourceGate();assert.notEqual(x.status,0);assert.match(x.stderr,/CONTROL_FORMAL_SOURCE_DRIFT/u);assert.ok(!x.stdout.includes('INSTALL_REACHED_SENTINEL'));assert.ok(!x.stdout.includes('BUILD_REACHED_SENTINEL'));}finally{write(input,original);}
   });
   console.log(JSON.stringify({ok:true,checks:checks.length,cases:checks,scope:'actual local producer/verifier/fixture installer and isolated real shell bootstrap; no CI/server trust or install claim',modelCalls:0,networkCalls:0,serverInstalls:0}));
 }finally{

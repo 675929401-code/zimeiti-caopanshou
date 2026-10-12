@@ -89,9 +89,16 @@ export function plan(root) {
   const core={kind:'deployment-control-plane-bundle.v1',schemaVersion:1,projectId:policy.projectId,layoutVersion:1,entrypoint:policy.entrypoint,compatibility,files};
   return {core,contentDigest:digest(encode(core)),dirtyInputs,deployable:false};
 }
-function assertFormalSource(root,s,env) {
-  subjectCheck(s); if(s.mode!=='formal')return;
-  if(env.GITHUB_ACTIONS!=='true'||env.GITHUB_REPOSITORY!==s.repository||env.GITHUB_RUN_ID!==s.candidateRunId||env.GITHUB_RUN_ATTEMPT!==s.candidateRunAttempt)fail('CONTROL_CI_IDENTITY_REQUIRED');
+export function verifySource(root,s,env=process.env,sourcePlan=null) {
+  subjectCheck(s); if(s.mode!=='formal')fail('CONTROL_FORMAL_SUBJECT_REQUIRED');
+  const sha=/^[a-f0-9]{40}$/u;
+  const diagnostics={actionsMatch:env.GITHUB_ACTIONS==='true',repositoryMatch:env.GITHUB_REPOSITORY===s.repository,runMatch:env.GITHUB_RUN_ID===s.candidateRunId,attemptMatch:env.GITHUB_RUN_ATTEMPT===s.candidateRunAttempt,
+    eventRepositoryMatch:false,headRepositoryMatch:false,baseRepositoryMatch:false,numberValid:false,numberMatch:false,refMatch:false,headShaMatch:false,baseShaValid:false,originalShaValid:false,
+    mergeCommitField:'missing',mergeObjectIsCommit:false,baseObjectIsCommit:false,headObjectIsCommit:false,mergeParentCountTwo:false,firstParentMatchesBase:false,secondParentMatchesHead:false,executedHeadMatch:false,closureHashesMatch:false};
+  // Git replacement refs cannot substitute the object whose SHA GitHub supplied.
+  const git=args=>execFileSync('git',['--no-optional-locks','--no-replace-objects','-c','core.fsmonitor=false','-c','core.untrackedCache=false',...args],{cwd:root,timeout:5000,maxBuffer:LIMITS.fileBytes+4096,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  try {
+  if(!diagnostics.actionsMatch||!diagnostics.repositoryMatch||!diagnostics.runMatch||!diagnostics.attemptMatch)fail('CONTROL_CI_IDENTITY_REQUIRED');
   if(env.GITHUB_EVENT_NAME==='pull_request') {
     // GitHub identifies this run by its merge commit, while checkout executes
     // the reviewed head. Both identities must come from the original event.
@@ -102,18 +109,40 @@ function assertFormalSource(root,s,env) {
     } catch { fail('CONTROL_PR_EVENT_INVALID'); }
     const pr=event?.pull_request;
     const sameRepo=repo=>repo?.full_name===s.repository && repo.fork===false;
-    if(!sameRepo(event?.repository)||!sameRepo(pr?.head?.repo)||!sameRepo(pr?.base?.repo)
-      ||!Number.isSafeInteger(event.number)||event.number<1||pr.number!==event.number
-      ||env.GITHUB_REF!==`refs/pull/${event.number}/merge`
-      ||pr.head.sha!==s.sourceCommit||!/^[a-f0-9]{40}$/u.test(env.GITHUB_SHA||'')
-      ||pr.merge_commit_sha!==env.GITHUB_SHA)fail('CONTROL_PR_IDENTITY_MISMATCH');
+    Object.assign(diagnostics,{eventRepositoryMatch:sameRepo(event?.repository),headRepositoryMatch:sameRepo(pr?.head?.repo),baseRepositoryMatch:sameRepo(pr?.base?.repo),
+      numberValid:Number.isSafeInteger(event?.number)&&event.number>0,numberMatch:pr?.number===event?.number,refMatch:env.GITHUB_REF===`refs/pull/${event?.number}/merge`,
+      headShaMatch:pr?.head?.sha===s.sourceCommit,baseShaValid:sha.test(pr?.base?.sha||''),originalShaValid:sha.test(env.GITHUB_SHA||'')});
+    // This event field may be null or stale. Report only its safe classification;
+    // trust comes from the exact original GITHUB_SHA commit and its ordered parents.
+    diagnostics.mergeCommitField=!pr||!Object.hasOwn(pr,'merge_commit_sha')?'missing':pr.merge_commit_sha===null?'null':!sha.test(pr.merge_commit_sha||'')?'invalid':pr.merge_commit_sha===env.GITHUB_SHA?'match':'different';
+    if(!diagnostics.eventRepositoryMatch||!diagnostics.headRepositoryMatch||!diagnostics.baseRepositoryMatch
+      ||!diagnostics.numberValid||!diagnostics.numberMatch||!diagnostics.refMatch||!diagnostics.headShaMatch||!diagnostics.baseShaValid||!diagnostics.originalShaValid)fail('CONTROL_PR_IDENTITY_MISMATCH');
+    try {diagnostics.mergeObjectIsCommit=git(['cat-file','-t',env.GITHUB_SHA]).toString().trim()==='commit';}catch{}
+    if(!diagnostics.mergeObjectIsCommit)fail('CONTROL_PR_IDENTITY_MISMATCH');
+    const header=git(['cat-file','-p',env.GITHUB_SHA]).toString('utf8').split('\n\n',1)[0];
+    const parents=header.split('\n').filter(line=>line.startsWith('parent ')).map(line=>line.slice(7));
+    diagnostics.mergeParentCountTwo=parents.length===2&&parents.every(parent=>sha.test(parent));
+    diagnostics.firstParentMatchesBase=parents[0]===pr.base.sha;
+    diagnostics.secondParentMatchesHead=parents[1]===s.sourceCommit;
+    if(!diagnostics.mergeParentCountTwo||!diagnostics.firstParentMatchesBase||!diagnostics.secondParentMatchesHead)fail('CONTROL_PR_IDENTITY_MISMATCH');
+    try {diagnostics.baseObjectIsCommit=git(['cat-file','-t',pr.base.sha]).toString().trim()==='commit';diagnostics.headObjectIsCommit=git(['cat-file','-t',s.sourceCommit]).toString().trim()==='commit';}catch{}
+    if(!diagnostics.baseObjectIsCommit||!diagnostics.headObjectIsCommit)fail('CONTROL_PR_IDENTITY_MISMATCH');
   } else if(env.GITHUB_SHA!==s.sourceCommit)fail('CONTROL_CI_IDENTITY_REQUIRED');
-  const git=args=>execFileSync('git',args,{cwd:root,timeout:5000,maxBuffer:LIMITS.fileBytes+4096,windowsHide:true,stdio:['ignore','pipe','pipe']});
-  if(git(['rev-parse','HEAD']).toString().trim()!==s.sourceCommit)fail('CONTROL_EXECUTED_HEAD_DRIFT');
-  for(const f of plan(root).core.files){const committed=git(['show',`${s.sourceCommit}:${f.sourcePath}`]);if(digest(committed)!==f.sha256)fail('CONTROL_FORMAL_SOURCE_DRIFT');}
+  diagnostics.executedHeadMatch=git(['rev-parse','HEAD']).toString().trim()===s.sourceCommit;
+  if(!diagnostics.executedHeadMatch)fail('CONTROL_EXECUTED_HEAD_DRIFT');
+  const result=sourcePlan||plan(root);
+  for(const f of result.core.files){const committed=git(['show',`${s.sourceCommit}:${f.sourcePath}`]);if(digest(committed)!==f.sha256)fail('CONTROL_FORMAL_SOURCE_DRIFT');}
+  diagnostics.closureHashesMatch=true;
+  return {verified:true,contentDigest:result.contentDigest,diagnostics};
+  } catch(error) {
+    // Git errors can contain event paths or environment-derived values. Never
+    // serialize their message, stdout or stderr into formal-source diagnostics.
+    const blocked=new Error(/^CONTROL_[A-Z0-9_]+$/u.test(error.message)?error.message:'CONTROL_FORMAL_SOURCE_INVALID');
+    blocked.controlSourceDiagnostics=diagnostics;throw blocked;
+  }
 }
 export function packageBundle(root,output,subject,env=process.env) {
-  const result=plan(root);assertFormalSource(root,subject,env);subjectCheck(subject);
+  subjectCheck(subject);const result=plan(root);if(subject.mode==='formal')verifySource(root,subject,env,result);
   const out=path.resolve(output),base=path.resolve(root);if(out===base||out.startsWith(base+path.sep))fail('CONTROL_OUTPUT_MUST_BE_EXTERNAL');
   if(fs.existsSync(out))fail('CONTROL_OUTPUT_EXISTS');
   const manifest={...result.core,contentDigest:result.contentDigest,subject};
@@ -251,10 +280,12 @@ export function installVerified(verified,parent,receiptPath,verifierSha256,{exec
 function args(argv){const a=new Map();for(let i=0;i<argv.length;i++){const t=argv[i];if(!t.startsWith('--')||a.has(t))fail('CONTROL_ARGUMENT_INVALID');a.set(t,argv[i+1]&&!argv[i+1].startsWith('--')?argv[++i]:'1');}return a;}
 export function main(argv=process.argv.slice(2)) {
   const [command,...rest]=argv,a=args(rest),root=path.resolve(a.get('--root')||process.cwd());
-  const allowed={plan:['--root'],package:['--root','--output','--subject'],verify:['--package','--expected-descriptor'],install:['--package','--expected-descriptor','--parent','--receipt','--verifier-sha256','--plan','--execute'],'verify-installed':['--installed-root','--expected-descriptor','--receipt','--receipt-sha256','--verifier-sha256'],'verify-deployment-binding':['--expected-descriptor','--release-validation-bundle','--release-validation-sha256','--service','--artifact-sha256','--release-id','--commit','--source-version','--build-id','--build-output-digest']};
+  const allowed={plan:['--root'],'verify-source':['--root','--subject'],package:['--root','--output','--subject'],verify:['--package','--expected-descriptor'],install:['--package','--expected-descriptor','--parent','--receipt','--verifier-sha256','--plan','--execute'],'verify-installed':['--installed-root','--expected-descriptor','--receipt','--receipt-sha256','--verifier-sha256'],'verify-deployment-binding':['--expected-descriptor','--release-validation-bundle','--release-validation-sha256','--service','--artifact-sha256','--release-id','--commit','--source-version','--build-id','--build-output-digest']};
   if(!allowed[command]||[...a.keys()].some(k=>!allowed[command].includes(k)))fail('CONTROL_ARGUMENT_INVALID');
   if(command==='plan')return plan(root);
-  if(command==='package')return packageBundle(root,a.get('--output'),JSON.parse(a.get('--subject')),process.env);
+  const sourceSubject=()=>{try{return JSON.parse(a.get('--subject'));}catch{fail('CONTROL_SUBJECT_JSON_INVALID');}};
+  if(command==='verify-source')return verifySource(root,sourceSubject(),process.env);
+  if(command==='package')return packageBundle(root,a.get('--output'),sourceSubject(),process.env);
   const expected=JSON.parse(read(path.resolve(a.get('--expected-descriptor'))));assertDescriptor(expected);
   if(command==='verify-deployment-binding')return verifyDeploymentBinding(read(path.resolve(a.get('--release-validation-bundle'))),a.get('--release-validation-sha256'),expected,{service:a.get('--service'),archiveSha256:a.get('--artifact-sha256'),releaseId:a.get('--release-id'),commit:a.get('--commit'),sourceVersion:a.get('--source-version'),buildId:a.get('--build-id'),buildOutputDigest:a.get('--build-output-digest')});
   if(command==='verify')return {verified:true,...verifyPackage(path.resolve(a.get('--package')),expected).descriptor};
@@ -268,4 +299,4 @@ export function main(argv=process.argv.slice(2)) {
   }
   fail('CONTROL_COMMAND_UNKNOWN');
 }
-if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url){try{process.stdout.write(canonical(main())+'\n');}catch(error){process.stderr.write(canonical({error:error.message,status:error.controlInstallState||'blocked',operationStage:error.operationStage||null})+'\n');process.exitCode=2;}}
+if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url){try{process.stdout.write(canonical(main())+'\n');}catch(error){process.stderr.write(canonical({error:error.message,status:error.controlInstallState||'blocked',operationStage:error.operationStage||null,...(error.controlSourceDiagnostics?{sourceDiagnostics:error.controlSourceDiagnostics}:{})})+'\n');process.exitCode=2;}}
