@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { assertJsonSchema, canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
+import { assertJsonSchema, canonicalJson, compareProtocolStrings, sha256 } from "./lib/json-schema-contract.mjs";
 
 const LEVEL_RANK = Object.freeze({ FAST: 0, STANDARD: 1, FULL: 2 });
 const RECEIPT_SCHEMA_VERSION = "zimeiti-release-change-scope-receipt.v1";
@@ -218,7 +218,7 @@ function targetedRegressionIds(policy, repoPath) {
   return (policy.fastTargetedRegressionRules || [])
     .filter((rule) => matchesRule(repoPath, rule))
     .map((rule) => rule.id)
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareProtocolStrings);
 }
 
 function normalizeRoute(candidate) {
@@ -286,18 +286,18 @@ function browserAcceptanceForChanges(policy, changes, explicitRoutes) {
     if (!next) break;
     mappedRoutes.add(next);
   }
-  const requiredRoutes = [...mappedRoutes].sort((left, right) => left.localeCompare(right));
+  const requiredRoutes = [...mappedRoutes].sort(compareProtocolStrings);
   const callerRoutesAccepted = explicitRoutes.length === 0
-    || canonicalJson([...explicitRoutes].sort((left, right) => left.localeCompare(right))) === canonicalJson(requiredRoutes);
+    || canonicalJson([...explicitRoutes].sort(compareProtocolStrings)) === canonicalJson(requiredRoutes);
   if (!callerRoutesAccepted) unresolvedPaths.add("<caller-routes-not-policy-approved>");
   const explicitRoutesRequired = unresolvedPaths.size > 0;
   return {
     preciseRoute: preciseRoute || [...mappedRoutes][0],
     requiredRoutes,
-    routeRuleIds: [...routeRuleIds].sort((left, right) => left.localeCompare(right)),
+    routeRuleIds: [...routeRuleIds].sort(compareProtocolStrings),
     explicitRoutesRequired,
     explicitRoutesProvided: explicitRoutes.length > 0 && callerRoutesAccepted,
-    unresolvedPaths: [...unresolvedPaths].sort((left, right) => left.localeCompare(right)),
+    unresolvedPaths: [...unresolvedPaths].sort(compareProtocolStrings),
   };
 }
 
@@ -411,8 +411,8 @@ function classifyChanges(policy, loaded, forcedFull, minimumLevel = "FAST", expl
     reasons.push({ code: "BROWSER_ACCEPTANCE_ROUTES_UNRESOLVED", level: "FULL", path: null, ruleId: null });
   }
 
-  changedFiles.sort((left, right) => `${left.path}\0${left.status}`.localeCompare(`${right.path}\0${right.status}`));
-  reasons.sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
+  changedFiles.sort((left, right) => compareProtocolStrings(`${left.path}\0${left.status}`, `${right.path}\0${right.status}`));
+  reasons.sort((left, right) => compareProtocolStrings(canonicalJson(left), canonicalJson(right)));
   const levels = [
     forcedFull || loaded.changes.length === 0 || minimumLevel === "FULL"
       || browserAcceptance.explicitRoutesRequired ? "FULL" : "FAST",
@@ -426,7 +426,7 @@ function classifyChanges(policy, loaded, forcedFull, minimumLevel = "FAST", expl
 }
 
 function uniqueSorted(values) {
-  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  return [...new Set(values)].sort(compareProtocolStrings);
 }
 
 function assertSameArray(actual, expected, code) {

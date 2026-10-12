@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   databaseFingerprintFromUrl,
   sha256,
@@ -248,13 +248,13 @@ function assertSelectedRows(rows, selectedFields, forbidden) {
   }
 }
 
-function safeDynamicIds(values) {
+export function safeDynamicIds(values) {
   const ids = [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
-  if (ids.length === 0 || ids.some((id) => !/^[A-Za-z0-9-]{1,128}$/u.test(id))) reject("REFERENCE_DYNAMIC_ID_INVALID");
+  if (ids.length === 0 || ids.some((id) => !/^[A-Za-z0-9.-]{1,128}$/u.test(id))) reject("REFERENCE_DYNAMIC_ID_INVALID");
   return ids;
 }
 
-function tableUrl(restBase, table, dynamicFilter, nowIso) {
+export function tableUrl(restBase, table, dynamicFilter, nowIso) {
   const url = new URL(table.name, restBase);
   url.searchParams.set("select", table.select.join(","));
   for (const filter of table.filters) {
@@ -485,8 +485,12 @@ async function main() {
   }, null, 2));
 }
 
-main().catch((error) => {
-  const code = error instanceof ProductionPreflightError ? error.code : "PRODUCTION_PREFLIGHT_FAILED";
-  console.error(JSON.stringify({ ok: false, code, credentialsPrinted: false }));
-  process.exitCode = 1;
-});
+const invokedDirectly = process.argv[1]
+  && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+if (invokedDirectly) {
+  main().catch((error) => {
+    const code = error instanceof ProductionPreflightError ? error.code : "PRODUCTION_PREFLIGHT_FAILED";
+    console.error(JSON.stringify({ ok: false, code, credentialsPrinted: false }));
+    process.exitCode = 1;
+  });
+}

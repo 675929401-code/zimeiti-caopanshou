@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertJsonSchema, canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
+import { assertJsonSchema, canonicalJson, compareProtocolStrings, sha256 } from "./lib/json-schema-contract.mjs";
 
 function args(argv) {
   const values = new Map();
@@ -48,7 +48,7 @@ function collect(absolute, relative, files, options) {
       if (options.activeRealDirectories.has(key)) throw new Error("BUILD_OUTPUT_SYMLINK_CYCLE");
       options.activeRealDirectories.add(key);
       try {
-        for (const entry of fs.readdirSync(realTarget).sort((a, b) => a.localeCompare(b))) {
+        for (const entry of fs.readdirSync(realTarget).sort(compareProtocolStrings)) {
           collect(path.join(realTarget, entry), `${relative}/${entry}`, files, { ...options, materialized: true });
         }
       } finally {
@@ -74,7 +74,7 @@ function collect(absolute, relative, files, options) {
     if (options.activeRealDirectories.has(key)) throw new Error("BUILD_OUTPUT_DIRECTORY_CYCLE");
     options.activeRealDirectories.add(key);
     try {
-      for (const entry of fs.readdirSync(absolute).sort((a, b) => a.localeCompare(b))) {
+      for (const entry of fs.readdirSync(absolute).sort(compareProtocolStrings)) {
         collect(path.join(absolute, entry), `${relative}/${entry}`, files, options);
       }
     } finally {
@@ -119,7 +119,7 @@ export function computeBuildOutputDigest(root, service, commit, sourceVersion) {
       materialized: false,
     });
   }
-  files.sort((left, right) => left.path.localeCompare(right.path));
+  files.sort((left, right) => compareProtocolStrings(left.path, right.path));
   const buildId = fs.readFileSync(path.join(buildRoot, "BUILD_ID"), "utf8").trim();
   if (!buildId || /[\u0000-\u001f\u007f]/u.test(buildId)) throw new Error("BUILD_OUTPUT_BUILD_ID_INVALID");
   const identity = { service, commit, sourceVersion, buildId, files };

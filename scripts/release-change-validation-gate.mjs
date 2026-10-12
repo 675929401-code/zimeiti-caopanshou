@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { assertJsonSchema, canonicalJson, sha256 } from "./lib/json-schema-contract.mjs";
+import { assertJsonSchema, canonicalJson, compareProtocolStrings, sha256 } from "./lib/json-schema-contract.mjs";
 import { assertDescriptor, verifyPackage, verifyCandidatePackage } from "./deployment-control-plane.mjs";
 
 const BUNDLE_SCHEMA_VERSION = "zimeiti-release-change-validation-bundle.v1";
@@ -112,12 +112,12 @@ function bundleId(bundle) {
 function assertBundleSemantic(bundle) {
   if (bundle.schemaVersion !== BUNDLE_SCHEMA_VERSION) throw new Error("BUNDLE_SCHEMA_VERSION_INVALID");
   if (bundle.bundleId !== bundleId(bundle)) throw new Error("BUNDLE_ID_MISMATCH");
-  const required = [...bundle.scope.requiredValidations].sort((left, right) => left.localeCompare(right));
-  const ids = bundle.attestations.map((entry) => entry.validationId).sort((left, right) => left.localeCompare(right));
+  const required = [...bundle.scope.requiredValidations].sort(compareProtocolStrings);
+  const ids = bundle.attestations.map((entry) => entry.validationId).sort(compareProtocolStrings);
   if (canonicalJson(ids) !== canonicalJson(required)) throw new Error("BUNDLE_ATTESTATION_SET_MISMATCH");
   if (new Set(ids).size !== ids.length) throw new Error("BUNDLE_DUPLICATE_ATTESTATION");
   if (canonicalJson(bundle.summary) !== canonicalJson(summary(bundle.attestations))) throw new Error("BUNDLE_SUMMARY_MISMATCH");
-  const sortedServices = [...bundle.subject.services].sort((left, right) => left.localeCompare(right));
+  const sortedServices = [...bundle.subject.services].sort(compareProtocolStrings);
   if (canonicalJson(bundle.subject.services) !== canonicalJson(sortedServices)) throw new Error("BUNDLE_SERVICES_NOT_SORTED");
   if (!bundle.subject.services.includes("web")) throw new Error("BUNDLE_WEB_BUILD_REQUIRED_FOR_BROWSER_ACCEPTANCE");
   if (bundle.subject.controlPlane !== null) {
@@ -125,7 +125,7 @@ function assertBundleSemantic(bundle) {
     if (bundle.subject.controlPlane.subject.mode !== "formal"
       || bundle.subject.controlPlane.subject.sourceCommit !== bundle.subject.commit) throw new Error("CONTROL_PLANE_CANDIDATE_SUBJECT_MISMATCH");
   }
-  const sortedRoutes = [...bundle.scope.browserAcceptance.requiredRoutes].sort((left, right) => left.localeCompare(right));
+  const sortedRoutes = [...bundle.scope.browserAcceptance.requiredRoutes].sort(compareProtocolStrings);
   if (canonicalJson(bundle.scope.browserAcceptance.requiredRoutes) !== canonicalJson(sortedRoutes)
     || new Set(sortedRoutes).size !== sortedRoutes.length || sortedRoutes.length < 3) throw new Error("BUNDLE_BROWSER_ROUTES_INVALID");
   if (!sortedRoutes.includes(bundle.scope.browserAcceptance.preciseRoute)) throw new Error("BUNDLE_PRECISE_ROUTE_INVALID");
@@ -211,7 +211,7 @@ function loadBundle(bundlePath, schema) {
 }
 
 function saveBundle(bundlePath, schema, bundle) {
-  bundle.attestations.sort((left, right) => left.validationId.localeCompare(right.validationId));
+  bundle.attestations.sort((left, right) => compareProtocolStrings(left.validationId, right.validationId));
   bundle.summary = summary(bundle.attestations);
   bundle.bundleId = bundleId({ ...bundle, bundleId: "validation-placeholder" });
   assertJsonSchema(schema, bundle, "BUNDLE_JSON_SCHEMA_INVALID");
@@ -331,7 +331,7 @@ function validateBrowserEvidence(bundle, evidenceBytes, signatureBytes, contract
   const evidenceRoutes = [evidence.preciseRoute, ...evidence.adjacentRoutes];
   if (new Set(evidenceRoutes).size !== evidenceRoutes.length) throw new Error("BROWSER_ROUTES_MUST_BE_DISTINCT");
   if (evidence.preciseRoute !== bundle.scope.browserAcceptance.preciseRoute) throw new Error("BROWSER_EVIDENCE_PRECISE_ROUTE_MISMATCH");
-  if (canonicalJson([...evidenceRoutes].sort((a, b) => a.localeCompare(b)))
+  if (canonicalJson([...evidenceRoutes].sort(compareProtocolStrings))
     !== canonicalJson(bundle.scope.browserAcceptance.requiredRoutes)) throw new Error("BROWSER_EVIDENCE_SCOPE_ROUTES_MISMATCH");
   if (canonicalJson(evidence.subject) !== canonicalJson({
     commit: bundle.subject.commit,
@@ -427,7 +427,7 @@ function main() {
     const commit = String(args.get("--subject-commit") || "").toLowerCase();
     const target = args.get("--target");
     const services = [...new Set(String(args.get("--services") || "web").split(",").filter(Boolean))]
-      .sort((left, right) => left.localeCompare(right));
+      .sort(compareProtocolStrings);
     if (!/^[0-9a-f]{40,64}$/u.test(commit)) throw new Error("SUBJECT_COMMIT_INVALID");
     if (!new Set(["source-candidate", "release-ready"]).has(target)) throw new Error("BUNDLE_TARGET_INVALID");
     if (services.length === 0 || services.some((service) => !new Set(["web", "voice"]).has(service))) throw new Error("BUNDLE_SERVICES_INVALID");
@@ -458,7 +458,7 @@ function main() {
           trustedBase: scope.input.trustedBase,
         },
         browserAcceptance: scope.browserAcceptance,
-        requiredValidations: [...scope.requiredValidations].sort((left, right) => left.localeCompare(right)),
+        requiredValidations: [...scope.requiredValidations].sort(compareProtocolStrings),
       },
       subject: {
         commit, sourceVersion: null, services,
@@ -665,7 +665,7 @@ function main() {
         trustedBase: scope.input.trustedBase,
       },
       browserAcceptance: scope.browserAcceptance,
-      requiredValidations: [...scope.requiredValidations].sort((left, right) => left.localeCompare(right)),
+      requiredValidations: [...scope.requiredValidations].sort(compareProtocolStrings),
     };
     if (canonicalJson(bundle.scope) !== canonicalJson(expectedScope) || scope.input.head !== bundle.subject.commit) {
       throw new Error("RELEASE_READY_SCOPE_RECLASSIFICATION_MISMATCH");
