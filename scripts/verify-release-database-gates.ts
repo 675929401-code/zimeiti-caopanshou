@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { runInNewContext } from "node:vm";
 import pg from "pg";
 import {
   VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
@@ -12,6 +14,7 @@ import {
 } from "../src/lib/production-database-readiness";
 import { assertSharedAgentBatchCasCandidateCaptured } from "./lib/shared-agent-batch-cas-candidate-gate";
 import { assertForwardMigrationRoot } from "./lib/forward-migration-source-validator.mjs";
+import { validateOpenApi as validatePreflightOpenApi } from "./create-production-preflight-receipt.mjs";
 
 const { Client } = pg;
 
@@ -100,7 +103,8 @@ assertSharedAgentBatchCasCandidateCaptured(contract);
 const table = (name: string) => contract.tables.find((entry) => entry.name === name);
 const rpc = (name: string) => contract.rpcs.find((entry) => entry.name === name);
 
-assert.equal(contract.contractVersion, "20261012014000");
+assert.equal(contract.contractVersion, "20261013011500");
+assert.deepEqual(PRODUCTION_DATABASE_CONTRACT, contract, "embedded database contract is stale");
 assert.equal(contract.requiredProbeRole, "service_role");
 const liveCatalogChecks = (() => {
   const configured = contract.liveCatalogChecks;
@@ -825,6 +829,79 @@ assert.deepEqual(rpc("finalize_payment_refund_attempt_atomic")?.arguments, [
   "p_provider_refund_id", "p_provider_refund_amount", "p_provider_response",
 ]);
 
+// Prove these declarations against the real consumers and accepted semantic
+// snapshot, rather than maintaining another copy of the authority field list.
+const adminAuthorityTables = ["admin_access_profiles", "admin_permission_catalog"] as const;
+const adminAccessConsumer = read("src/app/api/admin/access-control/route.ts");
+const adminAuthorityConsumer = read("src/lib/server/admin-governance-authority.ts");
+const semanticSections = (JSON.parse(read("deploy/policies/database-semantic-contract.v1.json")) as {
+  snapshot: { sections: Record<string, { objects: Array<{ key: string }> }> };
+}).snapshot.sections;
+const semanticTableKeys = new Set(semanticSections.tables.objects.map((entry) => entry.key));
+const semanticColumnKeys = new Set(semanticSections.columns.objects.map((entry) => entry.key));
+const adminAuthorityColumns = new Map(adminAuthorityTables.map((name) => {
+  const select = new RegExp(`\\.from\\("${name}"\\)\\s*\\.select\\("([^"]+)"\\)`, "u")
+    .exec(adminAccessConsumer);
+  assert.ok(select, `admin authority consumer select missing: ${name}`);
+  const columns = select[1].split(",").map((column) => column.trim());
+  assert.ok(columns.length > 0 && columns.every((column) => /^[a-z_][a-z0-9_]*$/u.test(column)));
+  assert.ok(semanticTableKeys.has(`public|${name}`), `semantic authority table missing: ${name}`);
+  for (const column of columns) {
+    assert.ok(semanticColumnKeys.has(`public|${name}|${column}`), `semantic authority column missing: ${name}.${column}`);
+  }
+  return [name, columns] as const;
+}));
+const adminAuthorityRpcName = "read_admin_access_snapshot";
+const adminAuthorityRpcCall = new RegExp(`\\.rpc\\("${adminAuthorityRpcName}",\\s*\\{([\\s\\S]*?)\\}\\)`, "u")
+  .exec(adminAuthorityConsumer);
+assert.ok(adminAuthorityRpcCall, "admin authority consumer RPC missing");
+const adminAuthorityRpcArguments = [...adminAuthorityRpcCall[1].matchAll(/\b(p_[a-z0-9_]+)\s*:/gu)]
+  .map((match) => match[1]);
+assert.ok(adminAuthorityRpcArguments.length > 0);
+const semanticAuthorityRpc = semanticSections.functions.objects
+  .find((entry) => entry.key.startsWith(`public|${adminAuthorityRpcName}|`));
+assert.ok(semanticAuthorityRpc, "semantic authority RPC missing");
+assert.deepEqual(
+  semanticAuthorityRpc.key.split("|")[2].split(",").map((argument) => argument.trim().split(/\s+/u)[0]),
+  adminAuthorityRpcArguments,
+  "admin authority consumer and semantic RPC arguments differ",
+);
+function assertAdminAuthorityContractCoverage(candidate: Pick<typeof contract, "tables" | "rpcs">) {
+  for (const [name, columns] of adminAuthorityColumns) {
+    const declared = candidate.tables.find((entry) => entry.name === name);
+    assert.ok(declared, `REST contract missing authority table ${name}`);
+    for (const column of columns) {
+      assert.ok(declared.columns.includes(column), `REST contract missing authority column ${name}.${column}`);
+    }
+  }
+  const declaredRpc = candidate.rpcs.find((entry) => entry.name === adminAuthorityRpcName);
+  assert.ok(declaredRpc, `REST contract missing authority RPC ${adminAuthorityRpcName}`);
+  assert.deepEqual(declaredRpc.arguments, adminAuthorityRpcArguments, "REST contract missing authority RPC argument");
+}
+assertAdminAuthorityContractCoverage(contract);
+const legacyAuthorityOmission = structuredClone(contract);
+legacyAuthorityOmission.tables = legacyAuthorityOmission.tables
+  .filter((entry) => !adminAuthorityTables.some((name) => name === entry.name));
+legacyAuthorityOmission.rpcs = legacyAuthorityOmission.rpcs.filter((entry) => entry.name !== adminAuthorityRpcName);
+assert.throws(() => assertAdminAuthorityContractCoverage(legacyAuthorityOmission), /REST contract missing authority table/u);
+for (const [name, columns] of adminAuthorityColumns) {
+  const omittedTable = structuredClone(contract);
+  omittedTable.tables = omittedTable.tables.filter((entry) => entry.name !== name);
+  assert.throws(() => assertAdminAuthorityContractCoverage(omittedTable), /REST contract missing authority table/u);
+  for (const column of columns) {
+    const omittedColumn = structuredClone(contract);
+    const declaration = omittedColumn.tables.find((entry) => entry.name === name)!;
+    declaration.columns = declaration.columns.filter((entry) => entry !== column);
+    assert.throws(() => assertAdminAuthorityContractCoverage(omittedColumn), /REST contract missing authority column/u);
+  }
+}
+const omittedAuthorityRpc = structuredClone(contract);
+omittedAuthorityRpc.rpcs = omittedAuthorityRpc.rpcs.filter((entry) => entry.name !== adminAuthorityRpcName);
+assert.throws(() => assertAdminAuthorityContractCoverage(omittedAuthorityRpc), /REST contract missing authority RPC/u);
+const omittedAuthorityArgument = structuredClone(contract);
+omittedAuthorityArgument.rpcs.find((entry) => entry.name === adminAuthorityRpcName)!.arguments = [];
+assert.throws(() => assertAdminAuthorityContractCoverage(omittedAuthorityArgument), /REST contract missing authority RPC argument/u);
+
 const openApiFixture = {
   paths: Object.fromEntries([
     ...PRODUCTION_DATABASE_CONTRACT.tables.map((entry) => [`/${entry.name}`, { get: {} }]),
@@ -839,6 +916,78 @@ const openApiFixture = {
   ])),
 };
 assert.equal(validateProductionDatabaseOpenApi(openApiFixture).ok, true);
+const preflightReferenceTables = new Map((JSON.parse(read("scripts/contracts/production-preflight-reference.v1.json")) as {
+  tables: Array<{ name: string; select: string[] }>;
+}).tables.map((entry) => [entry.name, entry]));
+// Deployment preflight also validates the independent read-only reference
+// projection, so the complete fixture includes that contract's fields too.
+for (const [name, reference] of preflightReferenceTables) {
+  const schema = openApiFixture.definitions[name];
+  assert.ok(schema, `preflight reference table missing from fixture: ${name}`);
+  for (const field of reference.select) schema.properties[field] = {};
+}
+assert.equal(validateProductionDatabaseOpenApi(openApiFixture).ok, true);
+assert.doesNotThrow(() => validatePreflightOpenApi(openApiFixture, contract, preflightReferenceTables));
+function assertAdminAuthorityOpenApiRejected(
+  document: typeof openApiFixture,
+  missingKind: "missingTables" | "missingColumns" | "missingRpcs" | "missingRpcArguments",
+  missingName: string,
+  preflightCode: string,
+) {
+  const runtime = validateProductionDatabaseOpenApi(document);
+  assert.equal(runtime.ok, false, `runtime must reject ${missingName}`);
+  assert.ok(runtime[missingKind].includes(missingName), `runtime must identify ${missingName}`);
+  assert.throws(
+    () => validatePreflightOpenApi(document, contract, preflightReferenceTables),
+    { code: preflightCode },
+    `deployment preflight must reject ${missingName}`,
+  );
+}
+for (const [name, columns] of adminAuthorityColumns) {
+  const missingTable = structuredClone(openApiFixture);
+  delete missingTable.paths[`/${name}`];
+  assertAdminAuthorityOpenApiRejected(missingTable, "missingTables", name, "OPENAPI_REQUIRED_TABLE_MISSING");
+  const missingSchema = structuredClone(openApiFixture);
+  delete missingSchema.definitions[name];
+  assertAdminAuthorityOpenApiRejected(missingSchema, "missingColumns", `${name}.*`, "OPENAPI_TABLE_SCHEMA_MISSING");
+  for (const column of columns) {
+    const missingColumn = structuredClone(openApiFixture);
+    delete missingColumn.definitions[name].properties[column];
+    assertAdminAuthorityOpenApiRejected(missingColumn, "missingColumns", `${name}.${column}`, "OPENAPI_REQUIRED_COLUMN_MISSING");
+  }
+}
+const missingAuthorityRpc = structuredClone(openApiFixture);
+delete missingAuthorityRpc.paths[`/rpc/${adminAuthorityRpcName}`];
+assertAdminAuthorityOpenApiRejected(missingAuthorityRpc, "missingRpcs", adminAuthorityRpcName, "OPENAPI_REQUIRED_RPC_MISSING");
+for (const argument of adminAuthorityRpcArguments) {
+  const missingArgument = structuredClone(openApiFixture);
+  delete missingArgument.paths[`/rpc/${adminAuthorityRpcName}`].post.requestBody.schema.properties[argument];
+  assertAdminAuthorityOpenApiRejected(
+    missingArgument, "missingRpcArguments", `${adminAuthorityRpcName}.${argument}`, "OPENAPI_REQUIRED_RPC_ARGUMENT_MISSING",
+  );
+}
+
+// Exercise the existing generator's real comparison with an in-memory stale
+// mirror. No source resource, generated file or business data is written.
+const embeddedVerifierSource = read("scripts/verify-embedded-runtime-resources.mjs")
+  .replace(/^#![^\n]*\n/u, "")
+  .replace(/^import [^\n]+;\r?\n/gmu, "");
+const embeddedDatabasePath = path.resolve("src/lib/generated/database-contract.ts");
+const embeddedDatabaseSource = read(embeddedDatabasePath);
+const staleEmbeddedDatabaseSource = embeddedDatabaseSource
+  .replace(`"contractVersion": "${contract.contractVersion}"`, '"contractVersion": "20261012014000"');
+assert.notEqual(staleEmbeddedDatabaseSource, embeddedDatabaseSource, "stale mirror fixture must differ");
+function verifyEmbeddedFixture(databaseSource: string) {
+  runInNewContext(embeddedVerifierSource, {
+    assert,
+    fs: { readFileSync: (file: string) => path.resolve(file) === embeddedDatabasePath ? databaseSource : read(file) },
+    path,
+    process: { cwd: () => process.cwd(), argv: ["node", "verify-embedded-runtime-resources.mjs", "--database-only"] },
+    console: { log: () => undefined },
+  });
+}
+assert.doesNotThrow(() => verifyEmbeddedFixture(embeddedDatabaseSource));
+assert.throws(() => verifyEmbeddedFixture(staleEmbeddedDatabaseSource), /is stale; regenerate/u);
 for (const name of ["short_drama_script_requests", "digital_human_long_jobs"]) {
   const missing = structuredClone(openApiFixture);
   delete missing.paths[`/${name}`];
@@ -2229,6 +2378,14 @@ async function main() {
     internalOnlyTablesChecked: 4,
     nonCommerceRepairObjectsChecked: 11,
     nonCommerceMissingObjectBlockingCases: 22,
+    adminAuthorityTablesChecked: adminAuthorityTables.length,
+    adminAuthorityColumnsChecked: [...adminAuthorityColumns.values()].reduce((sum, columns) => sum + columns.length, 0),
+    adminAuthorityRpcArgumentsChecked: adminAuthorityRpcArguments.length,
+    adminAuthorityDeclarationBlockingCases: 1 + adminAuthorityTables.length
+      + [...adminAuthorityColumns.values()].reduce((sum, columns) => sum + columns.length, 0) + 2,
+    adminAuthorityOpenApiBlockingCases: adminAuthorityTables.length * 2
+      + [...adminAuthorityColumns.values()].reduce((sum, columns) => sum + columns.length, 0) + 1 + adminAuthorityRpcArguments.length,
+    staleEmbeddedContractBlockingCases: 1,
     videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
     liveCatalogFixtureCases: 55,
     functionDependencyFixtureCases,

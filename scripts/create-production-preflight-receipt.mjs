@@ -188,7 +188,7 @@ function collectSchemaNames(document, value, names, seenRefs = new Set()) {
   Object.values(value).forEach((child) => collectSchemaNames(document, child, names, seenRefs));
 }
 
-function validateOpenApi(document, contract, referenceTables) {
+export function validateOpenApi(document, contract, referenceTables) {
   if (!isRecord(document) || !isRecord(document.paths)) reject("OPENAPI_DOCUMENT_INVALID");
   if (contract.requiredProbeRole !== "service_role" || contract.openApiProfile !== "public"
       || !Array.isArray(contract.tables) || !Array.isArray(contract.rpcs) || !Array.isArray(contract.forbiddenRpcs)) {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 
 const root = process.cwd();
 const read = (relativePath: string) => fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -31,11 +32,65 @@ assert.match(transformOwnership, /reusableAssetId\s*\?\s*ownedFileQuery\.eq\("id
 assert.doesNotMatch(transformOwnership, /\.eq\("source", "image-workbench"\)/, "storyboard transform must accept owned generated source values");
 
 const imageWorkbench = read("src/components/image-workbench.tsx");
+function imageAttemptStateUnion(source: string) {
+  const file = ts.createSourceFile("image-workbench.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const inspectors: ts.VariableDeclaration[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "inspectImageAttempt") {
+      inspectors.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  assert.equal(inspectors.length, 1, "inspectImageAttempt declaration must be unique");
+  const initializer = inspectors[0].initializer;
+  assert.ok(initializer && ts.isCallExpression(initializer), "inspectImageAttempt callback is missing");
+  const callback = initializer.arguments[0];
+  assert.ok(callback && ts.isArrowFunction(callback) && ts.isBlock(callback.body), "inspectImageAttempt body is missing");
+  const returns = callback.body.statements.filter(ts.isReturnStatement)
+    .filter((statement) => statement.expression && ts.isIdentifier(statement.expression));
+  assert.equal(returns.length, 1, "inspectImageAttempt must return one status DTO variable");
+  const returnedName = (returns[0].expression as ts.Identifier).text;
+  const declarations = callback.body.statements.filter(ts.isVariableStatement)
+    .flatMap((statement) => [...statement.declarationList.declarations])
+    .filter((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === returnedName);
+  assert.equal(declarations.length, 1, "returned image status DTO declaration is missing");
+  const value = declarations[0].initializer;
+  assert.ok(value && ts.isAsExpression(value) && ts.isTypeLiteralNode(value.type), "returned image status DTO type is missing");
+  const state = value.type.members.find((member) => ts.isPropertySignature(member)
+    && ts.isIdentifier(member.name) && member.name.text === "state");
+  assert.ok(state && ts.isPropertySignature(state) && state.type && ts.isUnionTypeNode(state.type), "returned image status state union is missing");
+  const union = state.type;
+  const members = union.types.map((member) => {
+    assert.ok(ts.isLiteralTypeNode(member) && ts.isStringLiteral(member.literal), "image status state must use string literals");
+    return member.literal.text;
+  });
+  return { union, members };
+}
+const requiredImageTerminalStates = ["completed", "expired", "provider_completed_pending_delivery"] as const;
+function assertImageAttemptTerminalStates(source: string) {
+  const { members } = imageAttemptStateUnion(source);
+  for (const state of requiredImageTerminalStates) {
+    assert.ok(members.includes(state), `inspectImageAttempt returned state must accept ${state}`);
+  }
+}
+assertImageAttemptTerminalStates(imageWorkbench);
+const imageAttemptUnion = imageAttemptStateUnion(imageWorkbench);
+const withStateMembers = (members: readonly string[]) => imageWorkbench.slice(0, imageAttemptUnion.union.getStart())
+  + members.map((member) => JSON.stringify(member)).join(" | ") + imageWorkbench.slice(imageAttemptUnion.union.end);
+for (const state of requiredImageTerminalStates) {
+  const missing = withStateMembers(imageAttemptUnion.members.filter((member) => member !== state));
+  assert.throws(() => assertImageAttemptTerminalStates(missing), /returned state must accept/u);
+  const unrelatedStates = `\ntype UnrelatedImageState = ${requiredImageTerminalStates.map((member) => JSON.stringify(member)).join(" | ")};\n`;
+  assert.throws(() => assertImageAttemptTerminalStates(missing + unrelatedStates), /returned state must accept/u,
+    "state literals outside inspectImageAttempt must not satisfy its returned DTO");
+}
+assertImageAttemptTerminalStates(withStateMembers([...imageAttemptUnion.members, "fixture_added_state"]));
+assertImageAttemptTerminalStates(withStateMembers([...imageAttemptUnion.members].reverse()));
 assert.match(imageWorkbench, /generatedStorageKey,\s*generatedAssetId,\s*\);/s, "ImageWorkbench must pass generated storageKey and assetId to persistence");
 assert.match(imageWorkbench, /!generatedStorageKey \|\| !generatedAssetId \|\| !generatedOperationId/, "ImageWorkbench must fail closed before any duplicate transfer");
 assert.match(imageWorkbench, /operationId\?: string;/, "ImageWorkbench must retain operationId");
 assert.match(imageWorkbench, /billingReferenceId\?: string;/, "ImageWorkbench must retain billingReferenceId");
-assert.match(imageWorkbench, /"completed"\s*\|\s*"provider_completed_pending_delivery"/, "status DTO must accept server terminal enums");
 assert.match(imageWorkbench, /checkedJob\.result\?\.canRecover === true/, "unknown-job refresh must use canRecover");
 assert.match(imageWorkbench, /if \(ambiguousTransport\)[\s\S]*?inspectImageAttempt/, "ambiguous recovery must query every model through the shared status contract");
 assert.doesNotMatch(imageWorkbench, /STRICT_GPT_IMAGE_PUBLIC_ID|state === "provider_completed"/, "recovery must not use a single-model or stale-enum gate");
@@ -70,6 +125,9 @@ assert.doesNotMatch(retiredBridge, /\/api\/image\/generate|getPlatformUrl|refere
 console.log(JSON.stringify({
   ok: true,
   checks: 42,
+  returnedStatusPositiveFixtures: 3,
+  returnedStatusMissingMemberFixtures: requiredImageTerminalStates.length,
+  returnedStatusUnrelatedLiteralFixtures: requiredImageTerminalStates.length,
   networkRequests: 0,
   paidCalls: 0,
   contracts: [

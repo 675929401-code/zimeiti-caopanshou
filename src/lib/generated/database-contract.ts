@@ -3,7 +3,7 @@
 const DATABASE_CONTRACT_SOURCE = {
   "schemaVersion": 1,
   "contractId": "zimeiti-caopanshou-production-database-v1",
-  "contractVersion": "20261012014000",
+  "contractVersion": "20261013011500",
   "openApiProfile": "public",
   "probeMode": "read-only-postgrest-openapi",
   "requiredProbeRole": "service_role",
@@ -613,6 +613,38 @@ const DATABASE_CONTRACT_SOURCE = {
     }
   },
   "tables": [
+    {
+      "name": "admin_access_profiles",
+      "feature": "admin-access-authority",
+      "columns": [
+        "user_id",
+        "admin_level",
+        "permission_keys",
+        "revision",
+        "checksum",
+        "is_active",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "updated_by"
+      ]
+    },
+    {
+      "name": "admin_permission_catalog",
+      "feature": "admin-access-authority",
+      "columns": [
+        "permission_key",
+        "group_key",
+        "label",
+        "description",
+        "risk_level",
+        "step_up_required",
+        "sort_order",
+        "is_active",
+        "is_delegable",
+        "dependency_keys"
+      ]
+    },
     {
       "name": "users",
       "feature": "account-wallet-voice",
@@ -1963,6 +1995,13 @@ const DATABASE_CONTRACT_SOURCE = {
     }
   ],
   "rpcs": [
+    {
+      "name": "read_admin_access_snapshot",
+      "feature": "admin-access-authority",
+      "arguments": [
+        "p_user_id"
+      ]
+    },
     {
       "name": "register_invited_user_atomic",
       "feature": "registration",
