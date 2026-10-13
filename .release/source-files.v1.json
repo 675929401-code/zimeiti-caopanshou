@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "8a54107e570f538abf6d6147c1279037a7c82f3c4bb32a2ee3a8de8bb742c450",
-  "sourceFingerprint": "946657f8d440e798f8d02c3cd0ada6d8df43b73769ac5b9fc179055f8c720c3a",
+  "sourceFingerprint": "2e6edb616978661dbfa1d200c26c80f92458188f1e99eb6f2a118e02e1a5ae4b",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4249,
-  "totalBytes": 68277672,
+  "totalBytes": 68296888,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1634,7 +1634,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "edb1c1ea184203aac4066fdbf3b854705c077a087d8e4bb0f9c30c3ce94808df"
+      "sha256": "c0dd69af71abe8303abaf25b68ddbbd6fd8620f2831d9a85cbfdac0df9719c5f"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2593,13 +2593,13 @@
     },
     {
       "path": "scripts/contracts/production-preflight-receipt.v1.schema.json",
-      "bytes": 5440,
-      "sha256": "e5ba3ade53819fa9be10e7ba2afe9fd399dd40699af6782c2f50fcbc69a2e4c8"
+      "bytes": 5966,
+      "sha256": "b90be75f14c86eaeee9f38de40dd7ffbecfc63f1751ac118636c0bfa50222764"
     },
     {
       "path": "scripts/contracts/production-preflight-reference.v1.json",
-      "bytes": 2763,
-      "sha256": "7f7edae8e47c2a3b8b944ea4178904f451122815e64e7aca7deec6bc7df92400"
+      "bytes": 2970,
+      "sha256": "431667177cc31f863389647ee8820471b3cd59c8fe8e3497df5395aa840e4f4d"
     },
     {
       "path": "scripts/contracts/recovery-catalog.v1.schema.json",
@@ -2708,8 +2708,8 @@
     },
     {
       "path": "scripts/create-production-preflight-receipt.mjs",
-      "bytes": 23149,
-      "sha256": "7977526d125e741cfd9c25590ebe22e3db204ddce8aa1d6be0728d5e639d850a"
+      "bytes": 24071,
+      "sha256": "ded8a8b6c51baedcdd8a2e8db72e6f3d39ede97bc2552262d80d40671b67a659"
     },
     {
       "path": "scripts/create-release-authorization.mjs",
@@ -8228,8 +8228,8 @@
     },
     {
       "path": "scripts/verify-production-preflight-receipt.mjs",
-      "bytes": 24946,
-      "sha256": "244d84ac2fac3d7d7096959479de6a84082431378619f92b9a78acd011a1cb11"
+      "bytes": 25252,
+      "sha256": "bf6f2a9d9975506b6e7621e412ef94191bae9dcc36babebead9ea4faea39b35f"
     },
     {
       "path": "scripts/verify-production-schema-readiness.ts",
@@ -8358,8 +8358,8 @@
     },
     {
       "path": "scripts/verify-release-readiness-profile-offline.mjs",
-      "bytes": 12766,
-      "sha256": "3430469991fef7068c88c44cc260a650308df220427c42b65798f074619a3e75"
+      "bytes": 30021,
+      "sha256": "b0d968005c84587e13ad7994f7ada769a73f96734d57c3c6637435a528a6f528"
     },
     {
       "path": "scripts/verify-release-run-provenance.mjs",

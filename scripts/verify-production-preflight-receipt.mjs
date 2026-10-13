@@ -148,7 +148,7 @@ function validateReceiptShape(receipt) {
   }
   exactKeys(receipt.database.referenceCounts, [
     "voiceActivePrice", "manjuActive", "manjuRelease", "manjuRevision", "manjuStorage",
-    "activeVideoModel", "verifiedVideoHealth",
+    "activeVideoModel", "verifiedVideoHealth", "unverifiedVideoHealth",
   ], "REFERENCE_COUNTS");
   for (const value of Object.values(receipt.database.referenceCounts)) {
     requireInteger(value, 0, "REFERENCE_COUNT_INVALID");
@@ -197,10 +197,10 @@ export function verifyProductionPreflightReceipt(receipt, options) {
   for (const key of ["manjuActive", "manjuRelease", "manjuRevision", "manjuStorage"]) {
     if (receipt.database.referenceCounts[key] !== referenceDomainCount) reject(`REFERENCE_${key.toUpperCase()}_NOT_READY`);
   }
-  if (receipt.database.referenceCounts.activeVideoModel < 1
-      || receipt.database.referenceCounts.verifiedVideoHealth !== receipt.database.referenceCounts.activeVideoModel) {
-    reject("REFERENCE_VIDEO_HEALTH_NOT_READY");
-  }
+  const { activeVideoModel, verifiedVideoHealth, unverifiedVideoHealth } = receipt.database.referenceCounts;
+  if (activeVideoModel < 1) reject("REFERENCE_VIDEO_MODEL_NOT_READY");
+  if (verifiedVideoHealth > activeVideoModel || unverifiedVideoHealth > activeVideoModel
+      || verifiedVideoHealth + unverifiedVideoHealth !== activeVideoModel) reject("REFERENCE_VIDEO_HEALTH_COUNT_INVALID");
 
   if (typeof options.key !== "string" || Buffer.byteLength(options.key, "utf8") < 32) reject("ATTESTATION_KEY_INVALID");
   requireString(options.keyId, SAFE_ID, "EXPECTED_KEY_ID_INVALID");
@@ -266,7 +266,8 @@ function localContracts() {
     reject("RECEIPT_SCHEMA_NOT_STRICT");
   }
   if (reference.contractId !== "zimeiti-production-preflight-reference.v1"
-      || !Array.isArray(reference.manjuDomains) || !Array.isArray(reference.tables)) {
+      || !Array.isArray(reference.manjuDomains) || !Array.isArray(reference.tables)
+      || reference.releaseReadinessPolicy?.videoHealth !== "metadata-diagnostic-only") {
     reject("REFERENCE_CONTRACT_INVALID");
   }
   if (!Array.isArray(database.tables) || !Array.isArray(database.rpcs)) reject("DATABASE_CONTRACT_INVALID");
@@ -440,6 +441,7 @@ async function runSelfTest() {
         manjuStorage: domains,
         activeVideoModel: 2,
         verifiedVideoHealth: 2,
+        unverifiedVideoHealth: 0,
       },
     },
     probe: {

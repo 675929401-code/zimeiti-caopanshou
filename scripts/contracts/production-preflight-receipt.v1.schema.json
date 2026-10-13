@@ -95,7 +95,8 @@
             "manjuRevision",
             "manjuStorage",
             "activeVideoModel",
-            "verifiedVideoHealth"
+            "verifiedVideoHealth",
+            "unverifiedVideoHealth"
           ],
           "properties": {
             "voiceActivePrice": { "const": 1 },
@@ -104,7 +105,14 @@
             "manjuRevision": { "type": "integer", "minimum": 1 },
             "manjuStorage": { "type": "integer", "minimum": 1 },
             "activeVideoModel": { "type": "integer", "minimum": 1 },
-            "verifiedVideoHealth": { "type": "integer", "minimum": 1 }
+            "verifiedVideoHealth": {
+              "type": "integer", "minimum": 0,
+              "description": "Diagnostic count passing the six selected health metadata checks; not binding or provider canary evidence. The signed verifier enforces the active catalog bound."
+            },
+            "unverifiedVideoHealth": {
+              "type": "integer", "minimum": 0,
+              "description": "Active catalog count minus verifiedVideoHealth, enforced by the signed verifier. This diagnostic count does not block release readiness."
+            }
           }
         }
       }

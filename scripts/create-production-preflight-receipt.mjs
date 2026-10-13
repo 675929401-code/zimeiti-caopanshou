@@ -104,14 +104,23 @@ function controlledEnvironment() {
   };
 }
 
-function validateReferenceContract(contract) {
+export function validateReferenceContract(contract) {
   exactKeys(contract, [
     "schemaVersion", "contractId", "environment", "manjuDomains", "videoHealthProtocolVersion",
-    "forbiddenSelectFields", "tables",
+    "releaseReadinessPolicy", "forbiddenSelectFields", "tables",
   ], "REFERENCE_CONTRACT_KEYS_INVALID");
   if (contract.schemaVersion !== 1 || contract.contractId !== "zimeiti-production-preflight-reference.v1"
       || contract.environment !== "production" || contract.videoHealthProtocolVersion !== "video-channel-health.v2") {
     reject("REFERENCE_CONTRACT_IDENTITY_INVALID");
+  }
+  exactKeys(contract.releaseReadinessPolicy, [
+    "voiceActivePrice", "manjuNativeBindings", "activeVideoCatalog", "videoHealth",
+  ], "REFERENCE_READINESS_POLICY_KEYS_INVALID");
+  if (contract.releaseReadinessPolicy.voiceActivePrice !== "required"
+      || contract.releaseReadinessPolicy.manjuNativeBindings !== "required"
+      || contract.releaseReadinessPolicy.activeVideoCatalog !== "required-nonempty"
+      || contract.releaseReadinessPolicy.videoHealth !== "metadata-diagnostic-only") {
+    reject("REFERENCE_READINESS_POLICY_INVALID");
   }
   const expectedTables = [
     "voice_nest_price_versions", "manju_config_active", "manju_config_releases",
@@ -316,7 +325,7 @@ function validDate(value) {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
-async function validateReferenceRows(reference, tables, context) {
+export async function validateReferenceRows(reference, tables, context) {
   const voice = await queryReference(tables.get("voice_nest_price_versions"), null, context);
   if (voice.length !== 1 || voice[0].status !== "active" || !validDate(voice[0].effective_at)
       || Date.parse(voice[0].effective_at) > Date.parse(context.nowIso)) reject("REFERENCE_VOICE_PRICE_NOT_READY");
@@ -356,15 +365,20 @@ async function validateReferenceRows(reference, tables, context) {
   const videoModels = await queryReference(tables.get("video_models"), null, context);
   if (videoModels.length < 1 || videoModels.some((row) => row.is_active !== true)) reject("REFERENCE_VIDEO_MODEL_NOT_READY");
   const videoIds = safeDynamicIds(videoModels.map((row) => row.id));
+  if (videoIds.length !== videoModels.length) reject("REFERENCE_VIDEO_MODEL_COUNT_NOT_READY");
   const health = await queryReference(tables.get("video_channel_health"), { column: "channel_id", values: videoIds }, context);
   const healthById = new Map(health.map((row) => [String(row.channel_id || ""), row]));
-  for (const id of videoIds) {
-    const row = healthById.get(id);
-    if (!row || row.is_healthy !== true || row.health_protocol_version !== reference.videoHealthProtocolVersion
-        || row.verification_state !== "verified" || !validDate(row.last_success_at) || !validDate(row.verified_at)
-        || Date.parse(row.verified_at) < Date.parse(row.last_success_at)) reject("REFERENCE_VIDEO_HEALTH_NOT_READY");
+  if (healthById.size !== health.length || health.some((row) => !videoIds.includes(String(row.channel_id || "")))) {
+    reject("REFERENCE_VIDEO_HEALTH_COUNT_NOT_READY");
   }
-  if (health.length !== videoIds.length || healthById.size !== videoIds.length) reject("REFERENCE_VIDEO_HEALTH_COUNT_NOT_READY");
+  // These six health metadata fields are diagnostic, not binding or provider
+  // canary evidence. Count only rows that satisfy the existing metadata checks.
+  const verifiedVideoHealth = videoIds.filter((id) => {
+    const row = healthById.get(id);
+    return row?.is_healthy === true && row.health_protocol_version === reference.videoHealthProtocolVersion
+      && row.verification_state === "verified" && validDate(row.last_success_at) && validDate(row.verified_at)
+      && Date.parse(row.verified_at) >= Date.parse(row.last_success_at);
+  }).length;
 
   return {
     voiceActivePrice: voice.length,
@@ -373,7 +387,8 @@ async function validateReferenceRows(reference, tables, context) {
     manjuRevision: revisions.length,
     manjuStorage: storage.length,
     activeVideoModel: videoModels.length,
-    verifiedVideoHealth: health.length,
+    verifiedVideoHealth,
+    unverifiedVideoHealth: videoIds.length - verifiedVideoHealth,
   };
 }
 
