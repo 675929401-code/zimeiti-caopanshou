@@ -102,6 +102,18 @@ for (const marker of [
 
 const finalCleanup = sliceFunction("final_cleanup", "\n}\ntrap final_cleanup EXIT");
 const directHook = sliceFunction("direct_hook", "\n}\n\nvalidate_direct_hook_configuration()");
+const activatePm2 = sliceFunction("activate_pm2", "\n}\n\nverify_pm2_identity()");
+const verifyPm2Identity = sliceFunction("verify_pm2_identity", "\n}\n\nverify_pm2_dump_identity()");
+const verifyPm2Dump = sliceFunction("verify_pm2_dump_identity", "\n}\n\npersist_pm2_state()");
+const verifyPm2Absent = sliceFunction("verify_pm2_absent", "\n}\n\nverify_exact_first_deploy_composite()");
+assert.doesNotMatch(activatePm2, /startOrReload/u, "activation must discard cached PM2 cwd/script slots");
+assertOrdered("PM2 replacement", activatePm2, [
+  'pm2 stop "$APP_NAME"',
+  'if port_in_use "$LIVE_PORT"',
+  'pm2 delete "$APP_NAME"',
+  "verify_pm2_absent || return 1",
+  'pm2 start "$config_path" --only "$APP_NAME"',
+]);
 const candidateCgroupEmpty = sliceFunction("candidate_cgroup_empty", "\n}\n\ncandidate_unit_stopped()");
 const candidateUnitStopped = sliceFunction("candidate_unit_stopped", "\n}\n\nwait_candidate_unit_stopped()");
 const waitCandidateUnitStopped = sliceFunction("wait_candidate_unit_stopped", "\n}\n\npublish_candidate_log()");
@@ -364,6 +376,207 @@ assert.ok(bash, "Git Bash or system bash is required for deployment state-machin
 const dynamicResults = [];
 const temporaryRoot = fs.mkdtempSync(path.join(process.platform === 'win32' ? path.resolve(root, '..', '运行日志') : os.tmpdir(), "deploy-state-machine-"));
 try {
+  // Stateful PM2 fixture models cached cwd/script on reload and shares state
+  // across the real activation subshell. It never starts a daemon or listener.
+  const pm2FixturePath = path.join(temporaryRoot, "pm2-fixture.cjs");
+  fs.writeFileSync(pm2FixturePath, String.raw`
+const fs = require('node:fs');
+const [statePath, action, ...args] = process.argv.slice(2);
+const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
+const name = args[0];
+const matches = state.processes.filter(p => p.name === state.name);
+if (action === 'jlist') {
+  if (state.scenario === 'jlist-fail') process.exit(2);
+  process.stdout.write(JSON.stringify(state.processes));
+} else if (action === 'port') {
+  process.exit(state.portHeld || matches.some(p => p.pm2_env.status === 'online') ? 0 : 1);
+} else if (action === 'stop' || action === 'delete') {
+  if (name !== state.name) throw Error('unrelated process mutation');
+  state.events.push(action); save();
+  if (state.scenario === action + '-fail') process.exit(3);
+  if (action === 'stop') for (const p of matches) p.pm2_env.status = 'stopped';
+  else if (state.scenario !== 'delete-retained') state.processes = state.processes.filter(p => p.name !== name);
+  save();
+} else if (action === 'start' || action === 'startOrReload') {
+  if (args.join(' ').indexOf('--only ' + state.name) < 0) throw Error('missing exact --only');
+  const config = JSON.parse(fs.readFileSync(args[0], 'utf8'));
+  state.events.push(action); save();
+  if (state.scenario === 'start-fail') process.exit(4);
+  const env = {status:'online', pm_cwd:config.target, pm_exec_path:config.script};
+  for (const key of ['RELEASE_ID','DEPLOY_COMMIT_SHA','EXPECTED_BUILD_ID','RELEASE_SOURCE_VERSION','RELEASE_BUILD_OUTPUT_DIGEST','ASSET_DIGEST','ASSET_MANIFEST_SHA256','COZE_PROJECT_ENV']) env[key] = process.env[key];
+  env.PORT = state.port;
+  if (action === 'startOrReload' && matches.length) {
+    env.pm_cwd = matches[0].pm2_env.pm_cwd;
+    env.pm_exec_path = matches[0].pm2_env.pm_exec_path;
+  } else if (matches.length) throw Error('start retained a previous slot');
+  state.processes = state.processes.filter(p => p.name !== state.name);
+  state.processes.push({name:state.name,pid:4242,pm2_env:env}); save();
+} else if (action === 'dump') {
+  fs.writeFileSync(args[0], JSON.stringify(state.processes.map(p => ({name:p.name,...p.pm2_env}))));
+} else if (action === 'corrupt') {
+  matches[0].pm2_env[args[0]] = args[1]; save();
+} else throw Error('unexpected fixture action ' + action);
+`);
+  const activationHarnessPath = path.join(temporaryRoot, "activation-rollback-harness.sh");
+  const activationHarness = String.raw`#!/usr/bin/env bash
+set -Eeuo pipefail
+test_root="$1"
+PM2_FIXTURE="$2"
+SERVICE="$3"
+scenario="$4"
+STATE_FILE="$test_root/state.json"
+EVENTS_FILE="$test_root/hooks.log"
+RELEASE_ROOT="$test_root"
+APP_NAME="agent-hub-$SERVICE"
+LIVE_PORT="5000"
+[[ "$SERVICE" != voice ]] || LIVE_PORT="5001"
+RELEASE_ID="candidate-operation"
+COMMIT_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ACTUAL_SHA256="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+ASSET_DIGEST="candidate-assets"
+ASSET_MANIFEST_SHA256="candidate-manifest"
+SOURCE_VERSION="candidate-source"
+BUILD_OUTPUT_DIGEST="candidate-output"
+APP_DATA_DIR="$test_root/data"
+APP_RUNTIME_DIR="$test_root/runtime"
+COMMERCE_DATA_DIR="$test_root/commerce"
+COMMERCE_DISCOVERY_CATALOG="$test_root/catalog"
+COMMERCE_GATEWAY_KEY_FILE="$test_root/key"
+IDEMPOTENCY_DIR="$test_root/idempotency"
+BACKUP_ROOT="$test_root/backups"
+ASSET_CURRENT_LINK="$test_root/assets-current"
+VOICE_DATABASE_PATH="$test_root/voice.db"
+VOICE_REFERENCE_AUDIO_ROOT="$test_root/reference"
+UPLOAD_ROOT="$test_root/uploads"
+CURRENT_LINK="$test_root/current"
+CANDIDATE="$test_root/new"
+PREVIOUS_TARGET="$test_root/old"
+PREVIOUS_RELEASE_ID="previous-release"
+PREVIOUS_COMMIT_SHA="cccccccccccccccccccccccccccccccccccccccc"
+PREVIOUS_BUILD_ID="previous-build"
+PREVIOUS_SOURCE_VERSION="previous-source"
+PREVIOUS_BUILD_OUTPUT_DIGEST="previous-output"
+PREVIOUS_ASSET_TARGET="$test_root/old-assets"
+PREVIOUS_ASSET_DIGEST="previous-assets"
+PREVIOUS_ASSET_MANIFEST_SHA256="previous-manifest"
+PREVIOUS_BASELINE_MODE="$scenario"
+DIRECT_HOOK_PATH="fixture-hook"
+DIRECT_HOOK_SHA256="fixture-sha"
+DIRECT_HOOK_PM2_CONFIG_PATH="$PREVIOUS_TARGET/.release/ecosystem.config.cjs"
+DIRECT_HOOK_PM2_CONFIG_SHA256="fixture-config-sha"
+DIRECT_TRANSACTION_ROOT="/data/direct-deploy/transactions/candidate-operation-bbbbbbbbbbbb"
+DIRECT_PREPARED="1"
+DIRECT_ROLLBACK_COMPLETE="0"
+ROLLBACK_ATTEMPTED="0"
+ROLLBACK_SUCCEEDED="0"
+IN_ROLLBACK="0"
+SWITCH_STARTED="1"
+DEPLOY_COMPLETE="0"
+FAILURE_CONTEXT="fixture-production-composite"
+DEPLOY_ACTOR="fixture"
+APP_TEMP_LINK=""
+ASSET_TEMP_LINK=""
+STAGING_DIR=""
+AUDIT_DIR=""
+candidate_unit=""
+node() {
+  # Trust-file validation has separate security coverage. Keep the real hook's
+  # shell transaction binding and dispatch, while avoiding privileged fixtures.
+  if [[ "$1" == - && "$2" == "$DIRECT_HOOK_PATH" ]]; then cat >/dev/null; return 0; fi
+  if [[ "$1" == "$DIRECT_HOOK_PATH" ]]; then
+    [[ "$3" == /data/direct-deploy/transactions/candidate-operation-bbbbbbbbbbbb ]] || return 1
+    printf '%s:%s\n' "$2" "$RELEASE_ID" >>"$EVENTS_FILE"
+    return 0
+  fi
+  command node "$@"
+}
+pm2() { command node "$PM2_FIXTURE" "$STATE_FILE" "$@"; }
+port_in_use() { pm2 port; }
+sleep() { :; }
+ss() { printf 'LISTEN pid=4242,\n'; }
+cleanup_candidate() { :; }
+safe_remove_staging() { :; }
+validate_payload_inventory() { :; }
+atomic_symlink() { :; }
+unexpected_error() { return 1; }
+require_trusted_controller_file() { :; }
+PM2_DUMP_PATH="$test_root/dump.json"
+verify_exact_active_composite() {
+  verify_pm2_identity "$1" "$2" "$3" "$4" "$6" "$7" "$8" "$9"
+}
+verify_legacy_active_composite() { verify_exact_active_composite "$@"; }
+persist_pm2_state() {
+  pm2 dump "$PM2_DUMP_PATH"
+  verify_pm2_dump_identity "$@"
+}
+`;
+  const activationFooter = String.raw`
+if [[ "$scenario" == *-fail || "$scenario" == duplicate || "$scenario" == port-held || "$scenario" == delete-retained ]]; then
+  if activate_pm2 "$CANDIDATE/.release/ecosystem.config.cjs" "$RELEASE_ID" "$COMMIT_SHA" candidate-build candidate-assets candidate-manifest candidate-source candidate-output; then exit 90; fi
+  [[ "$RELEASE_ID" == candidate-operation && "$ASSET_DIGEST" == candidate-assets ]] || exit 91
+  exit 42
+fi
+activate_pm2 "$CANDIDATE/.release/ecosystem.config.cjs" "$RELEASE_ID" "$COMMIT_SHA" candidate-build candidate-assets candidate-manifest candidate-source candidate-output
+[[ "$RELEASE_ID" == candidate-operation && "$ASSET_DIGEST" == candidate-assets ]] || exit 91
+verify_pm2_identity "$CANDIDATE" "$RELEASE_ID" "$COMMIT_SHA" candidate-build candidate-assets candidate-manifest candidate-source candidate-output
+persist_pm2_state "$CANDIDATE" "$RELEASE_ID" "$COMMIT_SHA" candidate-build candidate-assets candidate-manifest candidate-source candidate-output
+for field in pm_cwd pm_exec_path; do
+  wrong="$PREVIOUS_TARGET"
+  [[ "$field" != pm_exec_path ]] || wrong="$PREVIOUS_TARGET/server.js"
+  pm2 corrupt "$field" "$wrong"
+  if verify_pm2_identity "$CANDIDATE" "$RELEASE_ID" "$COMMIT_SHA" candidate-build candidate-assets candidate-manifest candidate-source candidate-output; then exit 92; fi
+  if persist_pm2_state "$CANDIDATE" "$RELEASE_ID" "$COMMIT_SHA" candidate-build candidate-assets candidate-manifest candidate-source candidate-output; then exit 93; fi
+  correct="$CANDIDATE"
+  [[ "$field" != pm_exec_path ]] || correct="$CANDIDATE/server.js"
+  pm2 corrupt "$field" "$correct"
+done
+rollback_release fixture-failed-production
+[[ "$RELEASE_ID" == candidate-operation && "$ASSET_DIGEST" == candidate-assets && "$ROLLBACK_SUCCEEDED" == 1 && "$DIRECT_ROLLBACK_COMPLETE" == 1 ]] || exit 94
+exec {HISTORY_FD}>"$test_root/history.tsv"
+trap final_cleanup EXIT
+exit 7
+`;
+  fs.writeFileSync(activationHarnessPath,
+    `${activationHarness}\n${activatePm2}\n${verifyPm2Identity}\n${verifyPm2Dump}\n${verifyPm2Absent}\n${directHook}\n${rollbackFunction}\n${finalCleanup}\n${activationFooter}`);
+  for (const service of ["web", "voice"]) {
+    for (const scenario of ["native", "legacy", "initially-absent", "jlist-fail", "stop-fail", "delete-fail", "start-fail", "duplicate", "port-held", "delete-retained"]) {
+      const caseRoot = path.join(temporaryRoot, `activation-${service}-${scenario}`);
+      fs.mkdirSync(caseRoot, { recursive: true });
+      for (const targetName of ["old", "new"]) {
+        const target = path.join(caseRoot, targetName);
+        fs.mkdirSync(path.join(target, ".release"), { recursive: true });
+        fs.writeFileSync(path.join(target, "server.js"), "// sealed fixture entrypoint\n");
+        fs.writeFileSync(path.join(target, ".release", "ecosystem.config.cjs"), JSON.stringify({ target, script: path.join(target, "server.js") }));
+      }
+      const sentinel = { name: "voice-studio", pid: 9876, pm2_env: { status: "online", pm_cwd: "unrelated", pm_exec_path: "unrelated", PORT: "9999" } };
+      const previous = { name: `agent-hub-${service}`, pid: 4242, pm2_env: { status: "online", pm_cwd: path.join(caseRoot, "old"), pm_exec_path: path.join(caseRoot, "old", "server.js") } };
+      fs.writeFileSync(path.join(caseRoot, "state.json"), JSON.stringify({ name: previous.name, port: service === "web" ? "5000" : "5001", scenario, portHeld: scenario === "port-held", events: [], processes: [sentinel, ...(scenario === "initially-absent" ? [] : [previous]), ...(scenario === "duplicate" ? [previous] : [])] }));
+      const run = runBash(bash, activationHarnessPath, [caseRoot, pm2FixturePath, service, scenario]);
+      const success = scenario === "native" || scenario === "legacy" || scenario === "initially-absent";
+      assert.equal(run.status, success ? 7 : 42, `${service}/${scenario} activation regression failed: ${run.stderr || run.stdout}`);
+      const state = JSON.parse(fs.readFileSync(path.join(caseRoot, "state.json"), "utf8"));
+      assert.deepEqual(state.processes.find(p => p.name === "voice-studio"), sentinel, "unrelated PM2 application must remain unchanged");
+      if (success) {
+        assert.deepEqual(state.events, [...(scenario === "initially-absent" ? [] : ["stop", "delete"]), "start", "stop", "stop", "delete", "start"]);
+        const restored = state.processes.find(p => p.name === previous.name);
+        assert.equal(fs.realpathSync(restored.pm2_env.pm_cwd), fs.realpathSync(path.join(caseRoot, "old")));
+        assert.equal(fs.realpathSync(restored.pm2_env.pm_exec_path), fs.realpathSync(path.join(caseRoot, "old", "server.js")));
+        assert.equal(restored.pm2_env.RELEASE_ID, "previous-release");
+        assert.deepEqual(fs.readFileSync(path.join(caseRoot, "hooks.log"), "utf8").trim().split(/\r?\n/u), ["rollback-before:candidate-operation", "rollback-after:candidate-operation", "rollback-persisted:candidate-operation"]);
+        const history = fs.readFileSync(path.join(caseRoot, "history.tsv"), "utf8").trim().split("\t");
+        assert.equal(history[1], "FAILED");
+        assert.equal(history[2], "candidate-operation");
+        assert.equal(history[4], "b".repeat(64));
+        assert.equal(history[5], "a".repeat(40));
+        assert.equal(history[6], "candidate-assets");
+      } else if (scenario !== "start-fail") {
+        assert.ok(!state.events.includes("start"), "a failed stop/delete/quiescence/absence prerequisite must prevent start");
+      }
+      dynamicResults.push({ harness: "activation-rollback", service, scenario, status: run.status, unrelatedAppPreserved: true });
+    }
+  }
+
   const candidateLogHarnessPath = path.join(temporaryRoot, "candidate-log-harness.sh");
   const candidateLogHarness = [
     "#!/usr/bin/env bash",

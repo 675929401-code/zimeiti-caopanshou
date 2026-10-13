@@ -2902,6 +2902,9 @@ APP_TEMP_LINK="$RELEASE_ROOT/.current-$SERVICE-$RELEASE_ID-$$.tmp"
 ASSET_TEMP_LINK="$ASSET_ROOT/.current-$RELEASE_ID-$$.tmp"
 
 activate_pm2() {
+  # Runtime exports belong only to this activation. In particular, rollback
+  # must not replace the caller's candidate RELEASE_ID or asset identity.
+  (
   local config_path="$1"
   local active_release_id="$2"
   local active_commit_sha="$3"
@@ -2926,12 +2929,40 @@ activate_pm2() {
     export STORAGE_LOCAL_BASE_PATH="$UPLOAD_ROOT"
     export ASSET_DIGEST="$active_asset_digest"
     export ASSET_MANIFEST_SHA256="$active_asset_manifest_sha256"
-    pm2 startOrReload "$config_path" --only "$APP_NAME" --env production --update-env
   else
     export VOICE_RELEASE_DIR="$CURRENT_LINK"
     export VOICE_DATABASE_URL="file:$VOICE_DATABASE_PATH"
-    pm2 startOrReload "$config_path" --only "$APP_NAME" --env production --update-env
   fi
+  # Reload can retain an existing slot's cwd/script while accepting new env.
+  # Recreate only the managed application, with every prerequisite explicit:
+  # callers use conditional contexts where errexit cannot enforce failures.
+  local existing_count
+  existing_count="$(pm2 jlist | node -e '
+const fs = require("node:fs");
+const processes = JSON.parse(fs.readFileSync(0, "utf8"));
+if (!Array.isArray(processes)) throw new Error("PM2 process list must be an array");
+const matches = processes.filter((entry) => entry?.name === process.argv[1]);
+if (matches.length > 1) throw new Error("PM2 managed application is duplicated");
+process.stdout.write(String(matches.length));
+' "$APP_NAME")" || return 1
+  if [[ "$existing_count" == "1" ]]; then
+    pm2 stop "$APP_NAME" >/dev/null || return 1
+  fi
+  local stop_attempt
+  for ((stop_attempt = 1; stop_attempt <= 50; stop_attempt += 1)); do
+    port_in_use "$LIVE_PORT" || break
+    sleep 0.2
+  done
+  if port_in_use "$LIVE_PORT"; then
+    echo "PM2 activation blocked: live port $LIVE_PORT did not quiesce." >&2
+    return 1
+  fi
+  if [[ "$existing_count" == "1" ]]; then
+    pm2 delete "$APP_NAME" >/dev/null || return 1
+  fi
+  verify_pm2_absent || return 1
+  pm2 start "$config_path" --only "$APP_NAME" --env production --update-env || return 1
+  )
 }
 
 verify_pm2_identity() {
@@ -2946,6 +2977,7 @@ verify_pm2_identity() {
   local pm2_pid
   pm2_pid="$(pm2 jlist | node -e '
 const fs = require("node:fs");
+const path = require("node:path");
 const [name, target, releaseId, commitSha, buildId, service, assetDigest, assetManifestSha256, sourceVersion, buildOutputDigest] = process.argv.slice(1);
 const processes = JSON.parse(fs.readFileSync(0, "utf8"));
 const matches = processes.filter((entry) => entry?.name === name);
@@ -2956,6 +2988,8 @@ if (env.status !== "online") throw new Error(`PM2 process is not online: ${Strin
 const cwd = fs.realpathSync(env.pm_cwd);
 const expected = fs.realpathSync(target);
 if (cwd !== expected) throw new Error(`PM2 cwd mismatch: ${cwd}`);
+if (!path.isAbsolute(env.pm_exec_path) || !fs.lstatSync(env.pm_exec_path).isFile()
+  || fs.realpathSync(env.pm_exec_path) !== path.join(expected, "server.js")) throw new Error("PM2 executable path mismatch");
 if (env.RELEASE_ID !== releaseId || env.DEPLOY_COMMIT_SHA !== commitSha || env.EXPECTED_BUILD_ID !== buildId
   || env.RELEASE_SOURCE_VERSION !== sourceVersion || env.RELEASE_BUILD_OUTPUT_DIGEST !== buildOutputDigest
   || env.COZE_PROJECT_ENV !== "PROD") throw new Error("PM2 release identity environment mismatch");
@@ -3008,7 +3042,10 @@ if (valueOf(entry, "RELEASE_ID") !== releaseId || valueOf(entry, "DEPLOY_COMMIT_
     portOf(entry) !== livePort) throw new Error("PM2 dump release identity environment mismatch");
 if (service === "web" && (valueOf(entry, "ASSET_DIGEST") !== assetDigest ||
     valueOf(entry, "ASSET_MANIFEST_SHA256") !== assetManifestSha256)) throw new Error("PM2 dump Web asset identity mismatch");
-if (!path.isAbsolute(entry.pm_exec_path)) throw new Error("PM2 dump executable path is not absolute");
+if (!path.isAbsolute(entry.pm_exec_path) || !fs.lstatSync(entry.pm_exec_path).isFile()
+    || fs.realpathSync(entry.pm_exec_path) !== path.join(fs.realpathSync(target), "server.js")) {
+  throw new Error("PM2 dump executable path mismatch");
+}
 NODE
 }
 
