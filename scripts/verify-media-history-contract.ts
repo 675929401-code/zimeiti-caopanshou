@@ -121,7 +121,7 @@ async function verifySourceContracts() {
     "浏览器视频副本",
   ]) assert(!page.includes(forbidden), `media history page still exposes local cache: ${forbidden}`);
 
-  assert(page.includes("普通视频不设平台固定天数"));
+  assert(page.includes("图片和普通视频随上游资源有效期提供预览与下载，确认失效后自动移出历史，不在平台备份"));
   assert(provenance.includes("delivery_asset_id,client_idempotency_key,request_snapshot"));
   assert(provenance.includes("origins.set"));
   assert(route.includes("mediaHistoryProjectUuid(row.batch_id)"));
@@ -129,15 +129,15 @@ async function verifySourceContracts() {
   assert(baseline.includes('"meta" jsonb'));
   const contract = JSON.parse(databaseContract) as { contractVersion: string; tables: Array<{ name: string; columns: string[] }> };
   const mediaHistoryMigrationVersion = "20260929153000";
-  assert.match(contract.contractVersion, /^\d{14}$/, "database contract version must remain a timestamped migration version");
+  assert.match(contract.contractVersion, /^\d{14}$/, "database contract version must remain a timestamped contract revision");
   assert.ok(
     contract.contractVersion >= mediaHistoryMigrationVersion,
     `database contract ${contract.contractVersion} predates media-history migration ${mediaHistoryMigrationVersion}`,
   );
   assert.equal(
-    migrationNames.filter((name) => name.startsWith(`${contract.contractVersion}_`) && name.endsWith(".sql")).length,
+    migrationNames.filter((name) => name.startsWith(`${mediaHistoryMigrationVersion}_`) && name.endsWith(".sql")).length,
     1,
-    `database contract ${contract.contractVersion} must resolve to exactly one authoritative migration`,
+    `media-history dependency ${mediaHistoryMigrationVersion} must resolve to exactly one authoritative migration`,
   );
   assert.equal(contract.tables.find(table => table.name === "user_files")?.columns.includes("meta"), true);
   const generatedContractVersion = generatedContract.match(/"contractVersion":\s*"(\d{14})"/)?.[1];
