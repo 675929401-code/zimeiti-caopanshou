@@ -2,6 +2,12 @@
   "schemaVersion": 1,
   "contractId": "zimeiti-production-preflight-reference.v1",
   "environment": "production",
+  "releaseReadinessPolicy": {
+    "voiceActivePrice": "required",
+    "manjuNativeBindings": "required",
+    "activeVideoCatalog": "required-nonempty",
+    "videoHealth": "metadata-diagnostic-only"
+  },
   "manjuDomains": [
     "prompt",
     "skill",
@@ -82,7 +88,7 @@
     },
     {
       "name": "video_channel_health",
-      "purpose": "release-verified-active-video-health",
+      "purpose": "active-video-health-metadata-diagnostics",
       "select": ["channel_id", "is_healthy", "last_success_at", "health_protocol_version", "verification_state", "verified_at"],
       "filters": [],
       "order": ["channel_id.asc"],

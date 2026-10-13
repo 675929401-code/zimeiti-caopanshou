@@ -5,6 +5,12 @@ import realFs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
+import { validateOpenApi, validateReferenceContract, validateReferenceRows } from "./create-production-preflight-receipt.mjs";
+import {
+  sha256File,
+  signReceiptPayload,
+  verifyProductionPreflightReceipt,
+} from "./verify-production-preflight-receipt.mjs";
 
 const routePath = path.join(process.cwd(), "src/app/api/release-readiness/route.ts");
 const routeSource = realFs.readFileSync(routePath, "utf8");
@@ -326,11 +332,276 @@ assert.equal(invalid.response.body.activationReady, false);
 assert.deepEqual(invalid.counters, { database: 0, referenceData: 0 });
 assert.match(invalid.response.body.error, /RELEASE_READINESS_PROFILE is invalid/u);
 
+async function verifyReferenceHealthBoundary() {
+  const referencePath = path.join(process.cwd(), "scripts/contracts/production-preflight-reference.v1.json");
+  const databasePath = path.join(process.cwd(), "deploy/policies/database-contract.v1.json");
+  const schemaPath = path.join(process.cwd(), "scripts/contracts/production-preflight-receipt.v1.schema.json");
+  const reference = JSON.parse(realFs.readFileSync(referencePath, "utf8"));
+  const database = JSON.parse(realFs.readFileSync(databasePath, "utf8"));
+  const schema = JSON.parse(realFs.readFileSync(schemaPath, "utf8"));
+  const tables = validateReferenceContract(reference);
+  const nowIso = "2099-01-01T00:00:00.000Z";
+  const fixtures = () => {
+    const rows = Object.fromEntries(reference.tables.map((table) => [table.name, []]));
+    rows.voice_nest_price_versions = [{ id: "voice-fixture", version: "v1", status: "active", effective_at: nowIso }];
+    for (const domain of reference.manjuDomains) {
+      const release = `release-${domain.replaceAll("_", "-")}`;
+      const revision = `revision-${domain.replaceAll("_", "-")}`;
+      rows.manju_config_active.push({ environment: "production", domain, active_release_id: release, active_revision_id: revision, etag: domain });
+      rows.manju_config_releases.push({ id: release, environment: "production", domain, revision_id: revision, release_kind: "publish", etag: domain });
+      rows.manju_config_revisions.push({ id: revision, environment: "production", domain, status: "published", published_at: nowIso });
+      rows.manju_config_storage_state.push({ environment: "production", domain, state: "native", generation: 1, native_active_release_id: release, native_active_revision_id: revision, last_verified_at: nowIso });
+    }
+    for (let index = 0; index < 38; index += 1) {
+      const id = `fixture-model-${index}.0`;
+      rows.video_models.push({ id, model_name: id, provider: "fixture", protocol_type: "fixture", is_active: true });
+      rows.video_channel_health.push({
+        channel_id: id,
+        is_healthy: index < 17 || index >= 34,
+        last_success_at: nowIso,
+        health_protocol_version: reference.videoHealthProtocolVersion,
+        verification_state: index < 17 ? "verified" : "unverified",
+        verified_at: index < 17 ? nowIso : null,
+      });
+    }
+    return rows;
+  };
+  const openApi = { paths: {}, definitions: {} };
+  for (const table of database.tables) {
+    openApi.paths[`/${table.name}`] = { get: {} };
+    openApi.definitions[table.name] = { properties: Object.fromEntries(table.columns.map((column) => [column, {}])) };
+  }
+  for (const table of reference.tables) {
+    openApi.definitions[table.name] ||= { properties: {} };
+    Object.assign(openApi.definitions[table.name].properties, Object.fromEntries(table.select.map((field) => [field, {}])));
+  }
+  for (const rpc of database.rpcs) openApi.paths[`/rpc/${rpc.name}`] = { post: { parameters: rpc.arguments.map((name) => ({ name })) } };
+  validateOpenApi(openApi, database, tables);
+  const noRequiredTable = structuredClone(openApi);
+  delete noRequiredTable.paths[`/${database.tables[0].name}`];
+  assert.throws(() => validateOpenApi(noRequiredTable, database, tables), (error) => error?.code === "OPENAPI_REQUIRED_TABLE_MISSING");
+  const invalidPolicy = structuredClone(reference);
+  invalidPolicy.releaseReadinessPolicy.videoHealth = "required";
+  assert.throws(() => validateReferenceContract(invalidPolicy), (error) => error?.code === "REFERENCE_READINESS_POLICY_INVALID");
+
+  let interceptedGetRequests = 0;
+  const originalFetch = globalThis.fetch;
+  async function probeCreator(rows) {
+    const counters = { httpGetRequests: 0 };
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input);
+      assert.equal(url.origin, "https://preflight-fixture.invalid");
+      assert.equal(init.method, "GET");
+      assert.equal(init.redirect, "error");
+      assert.equal(init.headers["Accept-Profile"], "public");
+      const name = url.pathname.slice("/rest/v1/".length);
+      assert.equal(url.pathname, `/rest/v1/${name}`);
+      assert.ok(tables.has(name), "only the actual reference GET allowlist can be queried");
+      const table = tables.get(name);
+      assert.equal(url.searchParams.get("select"), table.select.join(","));
+      assert.equal(url.searchParams.get("limit"), String(table.limit));
+      assert.equal(table.select.some((field) => /api_?key|secret|password|token/iu.test(field)), false);
+      interceptedGetRequests += 1;
+      return new Response(JSON.stringify(rows[name]), { headers: { "content-type": "application/json" } });
+    };
+    try {
+      const counts = await validateReferenceRows(reference, tables, {
+        env: { restBase: new URL("https://preflight-fixture.invalid/rest/v1/"), serviceRoleKey: "offline-fixture-only" },
+        counters, nowIso, forbidden: new Set(reference.forbiddenSelectFields),
+      });
+      assert.equal(counters.httpGetRequests, 7);
+      return counts;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  // Execute the actual Web readiness and its actual health / binding inspectors.
+  // All database reads use synthetic rows; credential resolution is forbidden.
+  const loadedModules = new Map();
+  function loadTypeScript(relativePath, dependencies) {
+    if (loadedModules.has(relativePath)) return loadedModules.get(relativePath);
+    const sourcePath = path.join(process.cwd(), relativePath);
+    const compiled = ts.transpileModule(realFs.readFileSync(sourcePath, "utf8"), {
+      compilerOptions: { esModuleInterop: true, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      fileName: sourcePath,
+    }).outputText;
+    const moduleRecord = { exports: {} };
+    const wrapper = vm.runInNewContext(`(function (exports, require, module) { ${compiled}\n })`, {
+      process: { env: { COZE_SUPABASE_SERVICE_ROLE_KEY: "offline-fixture-configured" } },
+      console, Buffer,
+    }, { filename: sourcePath });
+    wrapper(moduleRecord.exports, (specifier) => {
+      assert.ok(Object.hasOwn(dependencies, specifier), `unexpected reference dependency: ${specifier}`);
+      return dependencies[specifier];
+    }, moduleRecord);
+    loadedModules.set(relativePath, moduleRecord.exports);
+    return moduleRecord.exports;
+  }
+  const healthModule = loadTypeScript("src/lib/video-channel-health-release.ts", {});
+  const activationModule = loadTypeScript("src/lib/model-activation-gate.ts", {
+    "node:crypto": crypto,
+    "@/lib/provider-secret": { resolveProviderSecret: () => assert.fail("provider credential resolution is forbidden") },
+  });
+  let webRows;
+  let webQueries = 0;
+  const webModule = loadTypeScript("src/lib/production-reference-data-readiness.ts", {
+    "@/lib/server/manju-runtime-config": { MANJU_CONFIG_DOMAINS: reference.manjuDomains, MANJU_PUBLIC_ENVIRONMENT: reference.environment },
+    "@/lib/video-channel-health-release": healthModule,
+    "@/lib/model-activation-gate": activationModule,
+    "@/storage/database/supabase-client": { getSupabaseAdminClient: () => ({
+      from: (name) => {
+        assert.ok(tables.has(name));
+        const query = {
+          select() { return query; }, eq() { return query; }, lte() { return query; },
+          order() { return query; }, limit() { return query; }, in() { return query; },
+          then(resolve) {
+            webQueries += 1;
+            return Promise.resolve({ data: webRows[name], error: null }).then(resolve);
+          },
+        };
+        return query;
+      },
+    }) },
+  });
+  async function probeWeb(rows) {
+    webRows = structuredClone(rows);
+    // The Web diagnostic includes evidence; the controller deliberately reads
+    // only six metadata fields. These fixtures satisfy evidence for the same 17.
+    for (const row of webRows.video_channel_health) {
+      row.verification_evidence = { evidence_id: "fixture-evidence", task_id: "fixture-task" };
+    }
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = async () => assert.fail("Web reference readiness cannot make a real network or provider request");
+    try {
+      return await webModule.probeProductionReferenceDataReadiness();
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  }
+
+  const partialRows = fixtures();
+  const partial = await probeCreator(partialRows);
+  assert.deepEqual([partial.activeVideoModel, partial.verifiedVideoHealth, partial.unverifiedVideoHealth], [38, 17, 21]);
+  assert.equal(partialRows.video_channel_health.filter((row) => !row.is_healthy).length, 17);
+  assert.equal(partialRows.video_channel_health.filter((row) => row.is_healthy && row.verification_state !== "verified").length, 4);
+  const webPartial = await probeWeb(partialRows);
+  assert.equal(webPartial.ok, true);
+  assert.equal(webPartial.videoModelVerificationReady, false);
+  assert.deepEqual([webPartial.activeVideoModelCount, webPartial.verifiedVideoModelCount, webPartial.unverifiedVideoModelIds.length], [38, 17, 21]);
+  const zeroRows = fixtures();
+  zeroRows.video_channel_health.forEach((row) => { row.is_healthy = false; });
+  const zero = await probeCreator(zeroRows);
+  assert.deepEqual([zero.activeVideoModel, zero.verifiedVideoHealth, zero.unverifiedVideoHealth], [38, 0, 38]);
+  const webZero = await probeWeb(zeroRows);
+  assert.equal(webZero.ok, true);
+  assert.equal(webZero.verifiedVideoModelCount, 0);
+  const missingHealthRows = fixtures();
+  missingHealthRows.video_channel_health = [];
+  const missingHealth = await probeCreator(missingHealthRows);
+  assert.deepEqual([missingHealth.verifiedVideoHealth, missingHealth.unverifiedVideoHealth], [0, 38]);
+
+  const baseFailures = [
+    ["voice missing", (rows) => { rows.voice_nest_price_versions = []; }, "REFERENCE_VOICE_PRICE_NOT_READY"],
+    ["manju pointer missing", (rows) => { rows.manju_config_active.pop(); }, "REFERENCE_MANJU_ACTIVE_NOT_READY"],
+    ["manju binding wrong", (rows) => { rows.manju_config_releases[0].etag = "wrong"; }, "REFERENCE_MANJU_BINDING_NOT_READY"],
+    ["manju native storage missing", (rows) => { rows.manju_config_storage_state.pop(); }, "REFERENCE_MANJU_BINDING_NOT_READY"],
+    ["empty active catalog", (rows) => { rows.video_models = []; }, "REFERENCE_VIDEO_MODEL_NOT_READY"],
+  ];
+  for (const [label, mutate, code] of baseFailures) {
+    const rows = fixtures(); mutate(rows);
+    await assert.rejects(() => probeCreator(rows), (error) => error?.code === code, label);
+    assert.equal((await probeWeb(rows)).ok, false, `Web must retain the same required boundary: ${label}`);
+  }
+  const integrityFailures = [
+    ["duplicate active identity", (rows) => { rows.video_models.push(rows.video_models[0]); }, "REFERENCE_VIDEO_MODEL_COUNT_NOT_READY"],
+    ["duplicate health identity", (rows) => { rows.video_channel_health.push(rows.video_channel_health[0]); }, "REFERENCE_VIDEO_HEALTH_COUNT_NOT_READY"],
+    ["unselected response field", (rows) => { rows.video_models[0].extra = true; }, "REFERENCE_RESPONSE_UNSELECTED_FIELD_PRESENT"],
+    ["nested secret response field", (rows) => { rows.video_models[0].model_name = { token: "fixture-only" }; }, "REFERENCE_RESPONSE_SECRET_FIELD_PRESENT"],
+    ["reference result limit", (rows) => { rows.video_models = Array.from({ length: tables.get("video_models").limit }, () => rows.video_models[0]); }, "REFERENCE_RESULT_LIMIT_REACHED"],
+  ];
+  for (const [label, mutate, code] of integrityFailures) {
+    const rows = fixtures(); mutate(rows);
+    await assert.rejects(() => probeCreator(rows), (error) => error?.code === code, label);
+  }
+
+  const nowEpoch = Date.parse(nowIso) / 1000;
+  const binding = {
+    releaseId: "web-reference-offline-fixture", artifactSha256: "a".repeat(64), commitSha: "b".repeat(40),
+    sourceVersion: "R999999-offline-fixture", buildId: "offline-build", databaseFingerprint: "c".repeat(64),
+    databaseContractSha256: sha256File(databasePath), referenceContractSha256: sha256File(referencePath),
+    migrationManifestSha256: "d".repeat(64), receiptSchemaSha256: sha256File(schemaPath),
+    verifierSha256: sha256File(path.join(process.cwd(), "scripts/verify-production-preflight-receipt.mjs")),
+  };
+  const expectedDatabase = {
+    contractId: database.contractId, contractVersion: database.contractVersion, tableCount: database.tables.length,
+    rpcCount: database.rpcs.length, referenceContractId: reference.contractId,
+  };
+  const payload = {
+    schemaVersion: "zimeiti-production-preflight-receipt.v1", status: "passed",
+    receiptId: "preflight-20990101T000000Z-0123456789abcdef", issuedAtEpoch: nowEpoch, expiresAtEpoch: nowEpoch + 300, ttlSeconds: 300,
+    binding, database: { ...expectedDatabase, requiredProbeRole: "service_role", openApiProfile: "public", openApiSha256: "e".repeat(64), referenceCounts: partial },
+    probe: { mode: "controller-get-only-postgrest.v1", methods: ["GET"], httpGetRequests: 8, openApiValidated: true, referenceDataValidated: true, apiKeyFieldSelected: false },
+    counters: { databaseWrites: 0, rpcRequests: 0, providerRequests: 0, paidRequests: 0 },
+  };
+  const options = { key: "offline-reference-fixture-key-only-0123456789", keyId: "offline-reference-fixture", nowEpoch, expectedBinding: binding, expectedDatabase, referenceDomainCount: reference.manjuDomains.length };
+  const sign = (value) => signReceiptPayload(value, options.key, options.keyId);
+  for (const counts of [partial, zero, missingHealth]) {
+    const value = structuredClone(payload); value.database.referenceCounts = counts;
+    assert.equal(verifyProductionPreflightReceipt(sign(value), options).ok, true);
+  }
+  const countFailures = [
+    ["negative verified", { verifiedVideoHealth: -1, unverifiedVideoHealth: 39 }, "REFERENCE_COUNT_INVALID"],
+    ["negative unverified", { unverifiedVideoHealth: -1 }, "REFERENCE_COUNT_INVALID"],
+    ["fractional count", { verifiedVideoHealth: 17.5 }, "REFERENCE_COUNT_INVALID"],
+    ["verified above catalog", { verifiedVideoHealth: 39, unverifiedVideoHealth: 0 }, "REFERENCE_VIDEO_HEALTH_COUNT_INVALID"],
+    ["unverified above catalog", { verifiedVideoHealth: 0, unverifiedVideoHealth: 39 }, "REFERENCE_VIDEO_HEALTH_COUNT_INVALID"],
+    ["count sum mismatch", { unverifiedVideoHealth: 20 }, "REFERENCE_VIDEO_HEALTH_COUNT_INVALID"],
+    ["empty catalog", { activeVideoModel: 0, verifiedVideoHealth: 0, unverifiedVideoHealth: 0 }, "REFERENCE_VIDEO_MODEL_NOT_READY"],
+    ["missing voice", { voiceActivePrice: 0 }, "REFERENCE_VOICE_PRICE_NOT_READY"],
+    ["missing manju", { manjuActive: 0 }, "REFERENCE_MANJUACTIVE_NOT_READY"],
+  ];
+  for (const [label, counts, code] of countFailures) {
+    const value = structuredClone(payload); Object.assign(value.database.referenceCounts, counts);
+    assert.throws(() => verifyProductionPreflightReceipt(sign(value), options), (error) => error?.code === code, label);
+  }
+  for (const name of Object.keys(binding)) {
+    const expectedBinding = { ...binding, [name]: `${binding[name]}-mismatch` };
+    assert.throws(() => verifyProductionPreflightReceipt(sign(payload), { ...options, expectedBinding }), (error) => error?.code === `BINDING_${name.toUpperCase()}_MISMATCH`, name);
+  }
+  for (const name of Object.keys(expectedDatabase)) {
+    const wrongDatabase = { ...expectedDatabase, [name]: `${expectedDatabase[name]}-mismatch` };
+    assert.throws(() => verifyProductionPreflightReceipt(sign(payload), { ...options, expectedDatabase: wrongDatabase }), (error) => error?.code === `DATABASE_${name.toUpperCase()}_MISMATCH`, name);
+  }
+  const wrongSignature = sign(payload);
+  wrongSignature.attestation.signature = "f".repeat(64);
+  assert.throws(() => verifyProductionPreflightReceipt(wrongSignature, options), (error) => error?.code === "ATTESTATION_SIGNATURE_INVALID");
+  const countsSchema = schema.properties.database.properties.referenceCounts;
+  assert.equal(countsSchema.additionalProperties, false);
+  assert.deepEqual([...countsSchema.required].sort(), Object.keys(partial).sort());
+  assert.equal(countsSchema.properties.verifiedVideoHealth.minimum, 0);
+  assert.equal(countsSchema.properties.unverifiedVideoHealth.minimum, 0);
+  return {
+    partial: { active: 38, verifiedMetadata: 17, unverifiedMetadata: 21 },
+    zeroVerifiedAllowed: true, missingHealthDiagnostic: true,
+    baseFailureCases: baseFailures.length, integrityFailureCases: integrityFailures.length,
+    signedCountFailureCases: countFailures.length, identityBindingCases: Object.keys(binding).length,
+    databaseIdentityCases: Object.keys(expectedDatabase).length, signatureTamperRejected: true,
+    actualWebReadinessCalls: baseFailures.length + 2, webQueries, interceptedGetRequests,
+    realNetworkRequests: 0, providerRequests: 0, receiptWrites: 0,
+    creatorSha256: sha256File(path.join(process.cwd(), "scripts/create-production-preflight-receipt.mjs")),
+    referenceContractSha256: binding.referenceContractSha256, receiptSchemaSha256: binding.receiptSchemaSha256,
+  };
+}
+
+const referenceHealthBoundary = await verifyReferenceHealthBoundary();
+
 console.log(JSON.stringify({
   verifier: "release-readiness-profile-offline",
   passed: true,
   networkCalls: 0,
   productionWrites: 0,
+  referenceHealthBoundary,
   candidate: {
     ready: candidate.response.body.ready,
     activationReady: candidate.response.body.activationReady,
