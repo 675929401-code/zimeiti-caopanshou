@@ -183,6 +183,8 @@ function readAssetReceipt(publicAssetRoot: string) {
 export async function GET() {
   const checks: Record<string, unknown> = {};
   let readinessProfile: ReleaseReadinessProfile | null = null;
+  let fullVerificationReady = false;
+  let verificationState = "blocked";
   try {
     if (process.env.NODE_ENV !== "production" || process.env.COZE_PROJECT_ENV !== "PROD") {
       throw new Error("release readiness is only valid in production mode");
@@ -209,6 +211,7 @@ export async function GET() {
       // candidate and remains mandatory before activation.
       checks.database = externalAttestationRequired("database");
       checks.referenceData = externalAttestationRequired("reference-data");
+      verificationState = "external-attestation-required";
     } else {
       const databaseReadiness = await probeProductionDatabaseReadiness();
       checks.database = {
@@ -243,6 +246,8 @@ export async function GET() {
         videoModelVerificationReady: referenceDataReadiness.videoModelVerificationReady,
         unverifiedVideoModelCount: referenceDataReadiness.unverifiedVideoModelIds.length,
       };
+      fullVerificationReady = referenceDataReadiness.videoModelVerificationReady;
+      verificationState = fullVerificationReady ? "fully-verified" : "partial-video-model-verification";
       if (!referenceDataReadiness.ok) {
         throw new Error(`production reference data is not ready: ${referenceDataReadiness.code}`);
       }
@@ -305,6 +310,9 @@ export async function GET() {
     return NextResponse.json({
       ready: true,
       activationReady: readinessProfile === PRODUCTION_READINESS_PROFILE,
+      readinessScope: readinessProfile === CANDIDATE_READINESS_PROFILE ? "candidate-runtime" : "core-platform",
+      fullVerificationReady,
+      verificationState,
       readinessProfile,
       service: "web",
       releaseId,
@@ -319,6 +327,9 @@ export async function GET() {
     return NextResponse.json({
       ready: false,
       activationReady: false,
+      readinessScope: readinessProfile === CANDIDATE_READINESS_PROFILE ? "candidate-runtime" : "core-platform",
+      fullVerificationReady: false,
+      verificationState,
       readinessProfile,
       service: "web",
       releaseId: process.env.RELEASE_ID || null,
