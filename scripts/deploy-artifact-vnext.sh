@@ -2746,6 +2746,11 @@ if (body.buildId !== buildId) throw new Error(`readiness build identity mismatch
 if (body.sourceVersion !== sourceVersion) throw new Error(`readiness source version mismatch: ${String(body.sourceVersion)}`);
 if (body.buildOutputDigest !== buildOutputDigest) throw new Error(`readiness build output digest mismatch: ${String(body.buildOutputDigest)}`);
 if (service === "web" && body.assetDigest !== assetDigest) throw new Error(`readiness asset digest mismatch: ${String(body.assetDigest)}`);
+const expectedReadinessScope = label === "candidate" ? "candidate-runtime" : "core-platform";
+if (body.readinessScope !== expectedReadinessScope) throw new Error(`readiness scope mismatch: ${String(body.readinessScope)}`);
+if (typeof body.fullVerificationReady !== "boolean" || typeof body.verificationState !== "string" || body.verificationState.length === 0) {
+  throw new Error("readiness verification semantics are missing");
+}
 if (label === "candidate") {
   if (body.readinessProfile !== "candidate-runtime-v1" || body.activationReady !== false) {
     throw new Error("candidate readiness must be credential-free and non-activating");
