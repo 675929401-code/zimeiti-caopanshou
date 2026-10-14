@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "8a54107e570f538abf6d6147c1279037a7c82f3c4bb32a2ee3a8de8bb742c450",
-  "sourceFingerprint": "6c7e4170837e529839df07d01c58d772d93303dfc50c455769b45cdf6a87ef58",
+  "sourceFingerprint": "5e48ff49d516c1990ae9bc20b64f93ae29c08c83f3ed350e8d641782ef6fec36",
   "assetManifestSha256": "194b2c9d791287c4bcd4bf5643083eaad05d220ffd4fc2763afa872b7ed1c4ab",
   "assetDigest": "1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "assetVersion": "sha256-1d4d2287cf947fc69b2c3ad7ac9c4475b768d6bf3aa057aa6f9b23e1e9a071f2",
   "fileCount": 4249,
-  "totalBytes": 68310867,
+  "totalBytes": 68312466,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2758,8 +2758,8 @@
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
-      "bytes": 198027,
-      "sha256": "372f49c2e71f8a931093761f26bf7e0b6d978277df96fec678af3a3756e88c5f"
+      "bytes": 198459,
+      "sha256": "4c919d5bc26762c73eb6c3cbef1d09ab657a5230b4a4c4030d53b560d9d2dd3c"
     },
     {
       "path": "scripts/deploy-direct.js",
@@ -8358,8 +8358,8 @@
     },
     {
       "path": "scripts/verify-release-readiness-profile-offline.mjs",
-      "bytes": 30021,
-      "sha256": "b0d968005c84587e13ad7994f7ada769a73f96734d57c3c6637435a528a6f528"
+      "bytes": 30529,
+      "sha256": "a7fc650a829426fb246b10e5d19f0de4374ba2a3e1eb6c908e48512f5f9fee2e"
     },
     {
       "path": "scripts/verify-release-run-provenance.mjs",
@@ -11998,8 +11998,8 @@
     },
     {
       "path": "src/app/api/release-readiness/route.ts",
-      "bytes": 15740,
-      "sha256": "fceb1480a1a8df30a07b022a30be1f6c9cb02266627cbe094a2d20b24cf78db8"
+      "bytes": 16399,
+      "sha256": "85e3e64e170405dab50fee682172f4463c19da2062f18d8f91f1ff6693402769"
     },
     {
       "path": "src/app/api/restore/bootstrap/route.ts",
