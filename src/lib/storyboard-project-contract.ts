@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
+import { StoryboardVisualAssetPlanSchema, StoryboardVisualAssetRefSchema } from "@/lib/storyboard-workbench";
 
-export const StoryboardImageRequestSnapshotPersistenceFields = ["runId","cardId","cardOrder","prompt","modelId","aspectRatio","resolution","exactText","referenceImageUrls","strictSingleSubmit","attemptOrdinal"] as const;
-export const WorkbenchCardPersistenceFields = ["id","order","sourceNumber","label","narration","imagePrompt","imageExactText","imageTextLayoutEnabled","videoPrompt","referenceImageUrls","imageStatus","imageUrl","imageRef","imageRecordId","imageDeliveryMode","imageAssetId","imageStorageKey","imageWidth","imageHeight","videoSourceImageUrl","imageError","imageSubmittedAt","imageValidatedAt","imageModelIdUsed","imageModelNameUsed","imageClientRequestId","imageClientTraceId","imageClientRequestFingerprint","imageRequestSnapshot","imageAttemptOrdinal","imageQuotedPrice","imagePriceCharged","imageBillingState","imageRecoveryReady","imageRetryBlocked","videoStatus","videoUrl","videoError","videoTaskId","videoClientRequestId","videoClientRequestFingerprint","videoTaskModelId","videoTaskModelName","videoTaskDuration","videoSupportsRemoteCancel","videoContentUrl","videoProgress","videoStartedAt","videoLastCheckedAt","videoStatusDetail","videoPollFailures","videoMonitoringPaused","videoLifecycle","videoLifecycleError","videoRetryable","videoBillingState","videoPriceCharged"] as const;
+export const StoryboardImageRequestSnapshotPersistenceFields = ["runId","cardId","cardOrder","prompt","modelId","aspectRatio","resolution","exactText","referenceImageUrls","visualAssetRefs","strictSingleSubmit","attemptOrdinal"] as const;
+export const WorkbenchCardPersistenceFields = ["id","order","sourceNumber","label","narration","imagePrompt","imageExactText","imageTextLayoutEnabled","videoPrompt","referenceImageUrls","visualAssetRefs","imageStatus","imageUrl","imageRef","imageRecordId","imageDeliveryMode","imageAssetId","imageStorageKey","imageWidth","imageHeight","videoSourceImageUrl","imageError","imageSubmittedAt","imageValidatedAt","imageModelIdUsed","imageModelNameUsed","imageClientRequestId","imageClientTraceId","imageClientRequestFingerprint","imageRequestSnapshot","imageAttemptOrdinal","imageQuotedPrice","imagePriceCharged","imageBillingState","imageRecoveryReady","imageRetryBlocked","videoStatus","videoUrl","videoError","videoTaskId","videoClientRequestId","videoClientRequestFingerprint","videoTaskModelId","videoTaskModelName","videoTaskDuration","videoSupportsRemoteCancel","videoContentUrl","videoProgress","videoStartedAt","videoLastCheckedAt","videoStatusDetail","videoPollFailures","videoMonitoringPaused","videoLifecycle","videoLifecycleError","videoRetryable","videoBillingState","videoPriceCharged"] as const;
 export const WorkbenchVideoContractPersistenceFields = ["modelId","resolution","duration","ratio"] as const;
-export const WorkbenchRunPersistenceFields = ["id","createdAt","updatedAt","lastSubmittedAt","ratio","imageResolution","videoResolution","videoDuration","imageModelId","videoModelId","videoContract","cards","title"] as const;
+export const WorkbenchRunPersistenceFields = ["id","createdAt","updatedAt","lastSubmittedAt","ratio","imageResolution","videoResolution","videoDuration","imageModelId","videoModelId","videoContract","visualAssetPlan","cards","title"] as const;
 
 export const StoryboardProjectId = z.string().regex(/^[A-Za-z0-9:_-]{8,160}$/u);
 const status = z.enum(["idle", "queued", "running", "done", "failed", "cancelled"]);
@@ -20,12 +21,14 @@ export const StoryboardProjectDocument = z.object({
   videoDuration: z.number().finite().positive().max(3600),
   imageModelId: z.string().max(200),
   videoModelId: z.string().max(200),
+  visualAssetPlan: StoryboardVisualAssetPlanSchema.optional(),
   cards: z.array(z.object({
     id: z.string().min(1).max(160),
     order: z.number().int().positive(),
     imagePrompt: z.string().max(50000),
     videoPrompt: z.string().max(50000),
     referenceImageUrls: z.array(z.string().max(4096)).max(20),
+    visualAssetRefs: z.array(StoryboardVisualAssetRefSchema).max(16).optional(),
     imageStatus: status,
     imageRef: GeneratedImageReferenceSchema.optional(),
     imageRecordId: z.string().regex(/^[a-f0-9]{64}$/u).optional(),

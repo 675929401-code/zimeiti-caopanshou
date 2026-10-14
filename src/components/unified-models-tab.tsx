@@ -6,6 +6,7 @@ import AdminImageValidationDialog from "./admin-image-validation-dialog";
 import PlatformConfigurationReleasePanel from "./admin/PlatformConfigurationReleasePanel";
 import { modelConnectionSummary, formatModelPrice } from "@/lib/model-connection-summary";
 import { getVideoBillingUnit } from "@/lib/video-model-capabilities";
+import { normalizeDisplayText } from "@/lib/display-normalization";
 
 // ── 模型类型定义 ──
 type ModelType = "drawing" | "text" | "video" | "extract";
@@ -648,43 +649,36 @@ export default function UnifiedModelsTab({
     }
 
     try {
-      if (isEdit) {
-        // 编辑走统一API的PUT
-        const res = await fetch("/api/admin/models", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          body: JSON.stringify(formData),
-        });
-        if (res.ok) {
-          setShowDialog(false);
-          setEditingModel(null);
-          setModelPoolReleaseRefreshKey((value) => value + 1);
-          loadModels();
-          onModelsChange?.();
-        } else {
-          const data = await res.json();
-          alert(data.error || "保存失败");
-        }
-      } else {
-        // 新增走统一API的POST
-        const res = await fetch("/api/admin/models", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          body: JSON.stringify(formData),
-        });
-        if (res.ok) {
-          setShowDialog(false);
-          setEditingModel(null);
-          setModelPoolReleaseRefreshKey((value) => value + 1);
-          loadModels();
-          onModelsChange?.();
-        } else {
-          const data = await res.json();
-          alert(data.error || "保存失败");
-        }
+      // The API deliberately returns 202 while a model is staged in the
+      // candidate pool. Read the body in both success and error cases so the
+      // operator sees the release id instead of assuming the model vanished.
+      const res = await fetch("/api/admin/models", {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify(formData),
+      });
+      const data = await res.json().catch(() => ({})) as {
+        error?: string;
+        staged?: boolean;
+        published?: boolean;
+        result?: { release?: { id?: string; release_version?: string } };
+      };
+      if (!res.ok) {
+        alert(`${data.error || "保存失败"}${data.error ? `（HTTP ${res.status}）` : ""}`);
+        return;
       }
-    } catch {
-      alert("网络错误");
+      setShowDialog(false);
+      setEditingModel(null);
+      setModelPoolReleaseRefreshKey((value) => value + 1);
+      await loadModels();
+      onModelsChange?.();
+      if (data.staged && !data.published) {
+        const release = data.result?.release;
+        const releaseLabel = release?.release_version || release?.id || "待发布候选";
+        alert(`已保存为待发布候选（${releaseLabel}）。请在模型池发布面板完成校验、差异预览和发布后，才会进入现行模型目录。`);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? `保存失败：${error.message}` : "网络错误");
     }
   };
 
@@ -826,8 +820,10 @@ export default function UnifiedModelsTab({
     const mt = String(m.model_type || "") as ModelType;
     const tc = MODEL_TYPE_CONFIG[mt] || MODEL_TYPE_CONFIG.text;
     const isActive = m.is_active !== false;
-    const name = String(m.name || "未命名");
-    const modelName = canManageModels ? String(m.model_name || "") : "";
+    const name = normalizeDisplayText(m.name || m.display_name, "未命名");
+    // Keep the internal model id unchanged for requests/forms, but repair a
+    // mojibake display value in the administrator card.
+    const modelName = canManageModels ? normalizeDisplayText(m.model_name || "") : "";
     const apiEndpoint = canManageModels ? String(m.api_endpoint || "") : "";
     const apiKeyConfigured = canManageModels && m.api_key_configured === true;
     const connection = modelConnectionSummary(apiEndpoint, m.api_protocol_config);
@@ -846,7 +842,9 @@ export default function UnifiedModelsTab({
     const channelHealth = canManageModels && mt === "video" ? videoChannelHealth[modelId] : undefined;
 
     // 维护备注属于历史记录，不能据此推断当前可用性或余额。
-    const adminNotes = canManageModels ? String(m.admin_notes || "") : "";
+    const adminNotes = canManageModels ? normalizeDisplayText(m.admin_notes || "") : "";
+    const category = normalizeDisplayText(m.category || "");
+    const description = normalizeDisplayText(m.description || "");
     const iconValue = String(m.icon_url || "").trim();
     const iconIsImage = /^(?:https?:\/\/|\/|data:image\/)/iu.test(iconValue);
 
@@ -1014,9 +1012,9 @@ export default function UnifiedModelsTab({
             )}
             {mt === "text" && (
               <>
-                {m.category && m.category !== "通用" && (
+                {category && category !== "通用" && (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 font-medium">
-                    {String(m.category)}
+                    {category}
                   </span>
                 )}
                 {(m.token_billing_enabled === true || String(m.billing_mode) === "token") ? (
@@ -1044,8 +1042,8 @@ export default function UnifiedModelsTab({
           </div>
           <div className="text-xs text-[var(--muted-foreground)] mt-1 break-all">
             {canManageModels && modelName && <span className="mr-2">{modelName}</span>}
-            {mt === "text" && m.description && <span className="mr-2">· {String(m.description)}</span>}
-            {mt === "text" && m.category && m.category !== "通用" && <span className="mr-2">· {String(m.category)}</span>}
+            {mt === "text" && description && <span className="mr-2">· {description}</span>}
+            {mt === "text" && category && category !== "通用" && <span className="mr-2">· {category}</span>}
             {mt === "text" && m.image_parsing && m.image_parsing !== "none" && <span className="mr-2">· 图片解析:{m.image_parsing === "reverse" ? "逆向" : m.image_parsing === "gpt_vision" ? "GPT Vision" : "全局"}</span>}
             {mt === "text" && m.file_parsing && m.file_parsing !== "none" && <span className="mr-2">· 文件解析:{m.file_parsing === "reverse" ? "逆向" : "向量"}</span>}
             {mt === "text" && m.frequency_limit && m.frequency_limit > 0 && <span className="mr-2">· {m.frequency_limit}次/时</span>}

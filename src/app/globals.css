@@ -761,7 +761,8 @@ body::-webkit-scrollbar {
   display: flex;
   align-items: center;
   gap: max(3px, calc(9px * var(--sidebar-scale, 1)));
-  padding: max(3px, calc(7px * var(--sidebar-scale, 1))) max(5px, calc(12px * var(--sidebar-scale, 1)));
+  padding: max(3px, calc(7px * var(--sidebar-scale, 1))) max(5px, calc(12px * var(--sidebar-scale, 1))) max(3px, calc(7px * var(--sidebar-scale, 1))) max(5px, calc(12px * var(--sidebar-scale, 1)));
+  padding-right: max(45px, calc(48px * var(--sidebar-scale, 1)));
   margin-bottom: 1px;
   border-radius: 10px;
   border: 1px solid transparent;
@@ -785,30 +786,64 @@ body::-webkit-scrollbar {
   font-weight: 500;
 }
 
-/* 删除按钮 — 默认隐藏，hover 行才浮现于右端，自带遮罩防压字 */
+/* 删除按钮 — 右上角贴角三角形，hover/focus 时显示，避免圆角方框压住标题 */
 .sidebar-conv-delete {
   position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 3px;
+  top: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
-  border-radius: 6px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  z-index: 2;
+  border: 0;
+  border-radius: 0 10px 8px 10px;
   color: var(--muted-foreground);
   opacity: 0;
   flex-shrink: 0;
   background: color-mix(in srgb, var(--card) 92%, transparent);
-  box-shadow: -14px 0 14px 6px color-mix(in srgb, var(--card) 92%, transparent);
-  transition: opacity 0.18s ease, color 0.15s ease, background 0.15s ease;
+  box-shadow: -8px 8px 12px -10px color-mix(in srgb, var(--foreground) 38%, transparent);
+  transition: opacity 0.18s ease, color 0.15s ease, background 0.15s ease, filter 0.15s ease;
+}
+.sidebar-conv-delete::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 16px;
+  height: 16px;
+  z-index: 1;
+  background: color-mix(in srgb, var(--destructive) 18%, var(--card));
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+  pointer-events: none;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+.sidebar-conv-delete-icon {
+  position: absolute;
+  top: 9px;
+  right: 8px;
+  width: 12px;
+  height: 12px;
+  z-index: 2;
 }
 .sidebar-conv-item:hover .sidebar-conv-delete {
   opacity: 1;
 }
+.sidebar-conv-delete:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--primary) 55%, transparent));
+}
 .sidebar-conv-delete:hover {
-  background: color-mix(in srgb, var(--destructive) 12%, transparent) !important;
+  background: color-mix(in srgb, var(--destructive) 8%, var(--card)) !important;
   color: var(--destructive) !important;
+  filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--destructive) 28%, transparent));
+}
+.sidebar-conv-delete:hover::before {
+  background: color-mix(in srgb, var(--destructive) 34%, var(--card));
 }
 
 /* 侧边栏滚动条 — 苹果浏览器级纤细：4px 宽、轨道透明、滑块隐约可见 */
@@ -2683,8 +2718,13 @@ a:active:not(:disabled) {
 }
 
 [data-mode="dark"] .sidebar-conv-delete {
+  color: rgba(223, 235, 250, 0.78);
   background: rgba(9, 22, 45, 0.82);
-  box-shadow: -14px 0 14px 6px rgba(9, 22, 45, 0.82);
+  box-shadow: -8px 8px 12px -10px rgba(0, 0, 0, 0.72);
+}
+
+[data-mode="dark"] .sidebar-conv-delete::before {
+  background: color-mix(in srgb, var(--destructive) 20%, rgba(9, 22, 45, 0.82));
 }
 
 [data-mode="light"] .sidebar-conv-name {

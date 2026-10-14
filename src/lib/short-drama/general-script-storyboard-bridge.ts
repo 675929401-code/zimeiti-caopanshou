@@ -487,6 +487,7 @@ function mapProductionSegment(
       narration,
       imagePrompt,
       videoPrompt,
+      targetDurationSeconds: duration,
     },
     machineSegment: {
       segment_id: `episode-${String(episode.episodeNumber).padStart(3, "0")}-segment-${String(segmentIndex + 1).padStart(2, "0")}`,

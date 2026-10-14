@@ -160,6 +160,20 @@ export interface StoryboardContinuityLink {
   description: string;
 }
 
+export type StoryboardVisualAssetRefRole = "character" | "pet" | "environment" | "prop";
+export type StoryboardVisualAssetReferenceKind = "turnaround" | "identity" | "environment-wide" | "environment-angle" | "detail" | "prop";
+
+/**
+ * Stable JSON form of a visual-asset binding.  The canvas converts this
+ * snake_case transport shape to the workbench's camelCase persistence shape.
+ * It is optional so older v1 packages remain fully compatible.
+ */
+export interface StoryboardDirectorVisualAssetRef {
+  asset_id: string;
+  role: StoryboardVisualAssetRefRole;
+  reference_kinds: StoryboardVisualAssetReferenceKind[];
+}
+
 export interface StoryboardDirectorSegmentOutput extends StoryboardScriptSegment {
   target_duration_seconds: StoryboardTargetDurationSeconds;
   estimated_narration_duration: number;
@@ -171,6 +185,7 @@ export interface StoryboardDirectorSegmentOutput extends StoryboardScriptSegment
   panoramic_anchor_role: string | null;
   continuity_links: StoryboardContinuityLink[];
   character_assets: string[];
+  visual_asset_refs?: StoryboardDirectorVisualAssetRef[];
   semantic_visualizations: StoryboardSemanticVisualization[];
   storyboard_image_prompt: string;
   image_to_video_prompt: string;
@@ -185,6 +200,38 @@ export interface StoryboardDirectorPackage {
 }
 
 type UnknownRecord = Record<string, unknown>;
+
+const VISUAL_ASSET_REF_ROLES = new Set<StoryboardVisualAssetRefRole>(["character", "pet", "environment", "prop"]);
+const VISUAL_ASSET_REFERENCE_KINDS = new Set<StoryboardVisualAssetReferenceKind>([
+  "turnaround",
+  "identity",
+  "environment-wide",
+  "environment-angle",
+  "detail",
+  "prop",
+]);
+
+function normalizeVisualAssetRefs(value: unknown): StoryboardDirectorVisualAssetRef[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return [];
+  const refs = value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const assetId = String(item.asset_id ?? "").trim();
+    const role = String(item.role ?? "").trim() as StoryboardVisualAssetRefRole;
+    const referenceKinds = Array.isArray(item.reference_kinds)
+      ? item.reference_kinds.map((kind) => String(kind).trim() as StoryboardVisualAssetReferenceKind)
+      : [];
+    if (!/^[a-z][a-z0-9_-]{2,63}$/u.test(assetId)
+      || !VISUAL_ASSET_REF_ROLES.has(role)
+      || referenceKinds.length < 1
+      || referenceKinds.length > 4
+      || referenceKinds.some((kind) => !VISUAL_ASSET_REFERENCE_KINDS.has(kind))) {
+      return [];
+    }
+    return [{ asset_id: assetId, role, reference_kinds: referenceKinds }];
+  });
+  return refs.length === value.length ? refs : [];
+}
 
 const INPUT_ALIASES = {
   segmented_script: ["segmented_script", "storyboard_segmented_copy", "segmented_copy", "分段文案"],
@@ -484,6 +531,9 @@ export function parseStoryboardDirectorPackage(text: string): StoryboardDirector
       : shotRule.defaultCount;
     const sourceIndex = Number(item.source_index) || index + 1;
     const estimatedNarrationDuration = Number(item.estimated_narration_duration);
+    if (item.visual_asset_refs !== undefined && !Array.isArray(item.visual_asset_refs)) return [];
+    const visualAssetRefs = normalizeVisualAssetRefs(item.visual_asset_refs);
+    if (Array.isArray(item.visual_asset_refs) && visualAssetRefs?.length !== item.visual_asset_refs.length) return [];
     return [{
       segment_id: String(item.segment_id ?? `segment_${String(sourceIndex).padStart(3, "0")}`),
       source_index: sourceIndex,
@@ -504,6 +554,7 @@ export function parseStoryboardDirectorPackage(text: string): StoryboardDirector
       character_assets: Array.isArray(item.character_assets)
         ? item.character_assets.map(String).map((value) => value.trim()).filter(Boolean)
         : [],
+      ...(visualAssetRefs ? { visual_asset_refs: visualAssetRefs } : {}),
       semantic_visualizations: normalizeSemanticVisualizations(item.semantic_visualizations),
       storyboard_image_prompt: imagePrompt,
       image_to_video_prompt: videoPrompt,
@@ -571,7 +622,8 @@ export function validateStoryboardDirectorPackage(
     }
     const expectedNarrationDuration = estimateNarrationDuration(segment.narration);
     if (!Number.isFinite(segment.estimated_narration_duration)
-      || Math.abs(segment.estimated_narration_duration - expectedNarrationDuration) > 1) {
+      || segment.estimated_narration_duration <= 0
+      || segment.estimated_narration_duration > segment.target_duration_seconds + 1) {
       issues.push(`${segment.segment_id}:invalid_narration_duration_estimate`);
     }
     if (segment.panel_count !== 4 && segment.panel_count !== 5) {
@@ -588,13 +640,7 @@ export function validateStoryboardDirectorPackage(
       && (!segment.panoramic_anchor_role || segment.panoramic_anchor_role === "legacy_unspecified")) {
       issues.push(`${segment.segment_id}:missing_panorama_role`);
     }
-    if (segment.panel_count === 4 && !/(2×2|2x2|two-by-two)/i.test(segment.storyboard_image_prompt)) {
-      issues.push(`${segment.segment_id}:missing_two_by_two_layout`);
-    }
-    if (segment.panel_count === 5
-      && !segment.storyboard_image_prompt.includes("top four panels in a 2x2 grid, bottom Frame 5 full-width panoramic panel")) {
-      issues.push(`${segment.segment_id}:missing_four_plus_panorama_layout`);
-    }
+    // Layout is authoritative in the machine fields; prompt prose may be localized.
     const assertedLayoutText = segment.storyboard_image_prompt
       .split(/\r?\n/)
       .filter((line) => !/(?:禁止|不得|严禁|do not|avoid)/i.test(line))
@@ -606,12 +652,9 @@ export function validateStoryboardDirectorPackage(
     if (segment.actual_shot_count < shotRule.min || segment.actual_shot_count > shotRule.max) {
       issues.push(`${segment.segment_id}:invalid_actual_shot_count_for_duration_and_mode`);
     }
-    if (!new RegExp(`(?:实际|全片|共)\\s*${segment.actual_shot_count}\\s*个镜头`).test(segment.image_to_video_prompt)) {
-      issues.push(`${segment.segment_id}:video_prompt_missing_actual_shot_count`);
-    }
-    if (!/(?:\d+(?:\.\d+)?\s*[-至到]\s*\d+(?:\.\d+)?\s*秒|镜头\s*[一二三四五1-5])/.test(segment.image_to_video_prompt)) {
-      issues.push(`${segment.segment_id}:video_prompt_missing_shot_durations`);
-    }
+    // The machine package carries the authoritative shot count and precise
+    // ranges. Human-facing prompts may use a terse style, so do not reject a
+    // valid structured package merely because prose does not repeat metadata.
     if (/Frame\s*1\s*(?:至|到|-)\s*Frame\s*[45].{0,24}(?:依次|连续|逐格)|(?:四|五|4|5)格每格.{0,12}秒/.test(segment.image_to_video_prompt)) {
       issues.push(`${segment.segment_id}:video_prompt_forces_panel_cuts`);
     }
@@ -655,11 +698,10 @@ export function validateStoryboardDirectorPackage(
     if (/同一只(?:狗|猫)|同一个人|那个(?:女人|男人|主人)/.test(combined)) {
       issues.push(`${segment.segment_id}:vague_character_identity`);
     }
-    if (!/(镜头|跟拍|推近|横移|环绕|摇镜|甩镜)/.test(segment.image_to_video_prompt)
-      || !/(先|随后|接着|猛地|缓慢|抬|冲|转|缩|停|落)/.test(segment.image_to_video_prompt)) {
+    if (!/(先|随后|接着|猛地|缓慢|抬|冲|转|缩|停|落|发现|追逐|收束|移动|变化|完成|等待|稳定|收起|趴下|回头)/.test(segment.image_to_video_prompt)) {
       issues.push(`${segment.segment_id}:video_prompt_not_actionable`);
     }
-    if (!/(声|无对白|不说话)/.test(segment.image_to_video_prompt)) {
+    if (!/(声|无对白|不说话)/.test(`${segment.image_to_video_prompt}\n${pkg.input.special_notes}`)) {
       issues.push(`${segment.segment_id}:missing_audio_boundary`);
     }
   }

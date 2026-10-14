@@ -10,7 +10,6 @@ import {
   ChevronDown,
   KeyRound,
   Shield,
-  Type,
   Plus,
   LayoutGrid,
   Film,
@@ -155,26 +154,9 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
 
 
   const [presetAgent, setPresetAgent] = useState<{ id: string; name: string; iconUrl: string; presetFields: PresetField[] } | null>(null);
-  // 侧边栏设置
-  const [showSidebarSettings, setShowSidebarSettings] = useState(false);
-  const [sidebarFontSize, setSidebarFontSize] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = Number.parseFloat(localStorage.getItem("sidebar_font_scale") || "");
-        return Number.isFinite(stored) ? Math.min(1.25, Math.max(0.9, stored)) : 1.1;
-      } catch { return 1.1; }
-    }
-    return 1.1;
-  });
-  const [sidebarTimePosition, setSidebarTimePosition] = useState<"right" | "below" | "hidden">(() => {
-    if (typeof window !== "undefined") { try { const v = localStorage.getItem("sidebar_time_position"); return (v as "right" | "below" | "hidden") || "right"; } catch { return "right"; } } return "right";
-  });
-  const [sidebarTextOffsetX, setSidebarTextOffsetX] = useState<number>(() => {
-    if (typeof window !== "undefined") { try { const v = localStorage.getItem("sidebar_text_offset_x"); return v ? parseInt(v) : 0; } catch { return 0; } } return 0;
-  });
-  const [sidebarTimeOffsetX, setSidebarTimeOffsetX] = useState<number>(() => {
-    if (typeof window !== "undefined") { try { const v = localStorage.getItem("sidebar_time_offset_x"); return v ? parseInt(v) : 0; } catch { return 0; } } return 0;
-  });
+  // History uses one fixed desktop layout. Keep the scale stable so an
+  // administrator cannot accidentally push the delete action over the title.
+  const sidebarFontSize = 1.1;
 
   const { agents, conversations, activeConversationId, pinnedAgentIds, auth, view } = state;
   const user = auth?.user;
@@ -526,25 +508,6 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
     setPresetAgent(null);
   };
 
-  // 侧边栏设置保存
-  const updateSidebarFontSize = (scale: number) => {
-    const readableScale = Math.min(1.25, Math.max(0.9, Number.isFinite(scale) ? scale : 1.1));
-    setSidebarFontSize(readableScale);
-    localStorage.setItem("sidebar_font_scale", String(readableScale));
-  };
-  const updateSidebarTimePosition = (pos: "right" | "below" | "hidden") => {
-    setSidebarTimePosition(pos);
-    localStorage.setItem("sidebar_time_position", pos);
-  };
-  const updateSidebarTextOffsetX = (offset: number) => {
-    setSidebarTextOffsetX(offset);
-    localStorage.setItem("sidebar_text_offset_x", String(offset));
-  };
-  const updateSidebarTimeOffsetX = (offset: number) => {
-    setSidebarTimeOffsetX(offset);
-    localStorage.setItem("sidebar_time_offset_x", String(offset));
-  };
-
   const handleDeleteConversation = (id: string) => {
     dispatch({ type: "DELETE_CONVERSATION", payload: id });
   };
@@ -717,91 +680,12 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
         )}
 
         {/* 对话历史 */}
-        <div className="mt-2 pt-2 border-t border-[var(--border)]/30">
-          <div className="px-3 py-1.5 flex items-center">
+        <div className="mt-1 pt-1 border-t border-[var(--border)]/30">
+          <div className="px-3 py-1 flex items-center">
             <span className="text-[clamp(11px,calc(12px*var(--sidebar-scale,1)),14px)] font-semibold tracking-wider uppercase text-[var(--text-secondary)]/80">
               对话历史
             </span>
-            <div className="flex-1" />
-            {isAdmin && <button
-              onClick={() => setShowSidebarSettings(!showSidebarSettings)}
-              className={`p-1 rounded transition-all ${showSidebarSettings ? "bg-[var(--primary)]/15 text-[var(--primary)]" : "text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]"}`}
-              title="对话历史设置（仅管理员）"
-            >
-              <Type className="w-3.5 h-3.5" />
-            </button>}
           </div>
-          {/* 侧边栏设置面板 */}
-          {showSidebarSettings && (
-            <div className="mx-3 mt-1 mb-2 p-3 rounded-xl space-y-3 sidebar-settings-panel">
-              <div>
-                <label className="text-[11px] text-[var(--text-secondary)] mb-1 block">文字大小</label>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-[var(--text-secondary)]">小</span>
-                  <input
-                    type="range" min="0.5" max="1.4" step="0.02"
-                    value={sidebarFontSize}
-                    onChange={(e) => updateSidebarFontSize(parseFloat(e.target.value))}
-                    className="flex-1 h-1 accent-[var(--primary)] cursor-pointer"
-                  />
-                  <span className="text-[11px] text-[var(--text-secondary)]">大</span>
-                  <span className="text-[11px] text-[var(--primary)] font-mono w-8 text-right">{Math.round(sidebarFontSize * 100)}%</span>
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] text-[var(--text-secondary)] mb-1 block">标题左右位置</label>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-[var(--text-secondary)]">←</span>
-                  <input
-                    type="range" min="-20" max="20" step="1"
-                    value={sidebarTextOffsetX}
-                    onChange={(e) => updateSidebarTextOffsetX(parseInt(e.target.value))}
-                    className="flex-1 h-1 accent-[var(--primary)] cursor-pointer"
-                  />
-                  <span className="text-[11px] text-[var(--text-secondary)]">→</span>
-                  <span className="text-[11px] text-[var(--primary)] font-mono w-8 text-right">{sidebarTextOffsetX > 0 ? "+" : ""}{sidebarTextOffsetX}</span>
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] text-[var(--text-secondary)] mb-1 block">时间位置</label>
-                <div className="flex sidebar-seg">
-                  {([
-                    { value: "right" as const, label: "右侧", icon: <span className="text-[11px]">→</span> },
-                    { value: "below" as const, label: "下方", icon: <span className="text-[11px]">↓</span> },
-                    { value: "hidden" as const, label: "隐藏", icon: <span className="text-[11px]">—</span> },
-                  ]).map(opt => (
-                    <button
-                      key={opt.value}
-                      onClick={() => updateSidebarTimePosition(opt.value)}
-                      className={`flex-1 flex items-center justify-center gap-1 text-[11px] py-1.5 rounded-lg transition-all sidebar-seg-btn ${
-                        sidebarTimePosition === opt.value
-                          ? "bg-[var(--primary)] text-white sidebar-seg-btn-active"
-                          : "text-[var(--text-secondary)] hover:bg-[var(--foreground)]/5"
-                      }`}
-                    >
-                      {opt.icon}{opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {sidebarTimePosition !== "hidden" && (
-                <div>
-                  <label className="text-[11px] text-[var(--text-secondary)] mb-1 block">时间左右位置</label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-[var(--text-secondary)]">←</span>
-                    <input
-                      type="range" min="-20" max="20" step="1"
-                      value={sidebarTimeOffsetX}
-                      onChange={(e) => updateSidebarTimeOffsetX(parseInt(e.target.value))}
-                      className="flex-1 h-1 accent-[var(--primary)] cursor-pointer"
-                    />
-                    <span className="text-[11px] text-[var(--text-secondary)]">→</span>
-                    <span className="text-[11px] text-[var(--primary)] font-mono w-8 text-right">{sidebarTimeOffsetX > 0 ? "+" : ""}{sidebarTimeOffsetX}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -828,7 +712,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
               // 格式化时间
               const timeStr = formatConversationTime(conv.updatedAt || conv.createdAt);
               return (
-                <div key={conv.id} className={`sidebar-conv-item${isActive ? " active" : ""}${sidebarTimePosition === "below" ? " time-below" : ""}`}
+                <div key={conv.id} className={`sidebar-conv-item${isActive ? " active" : ""}`}
                   onClick={() => {
                     if (conv.source === "video") {
                       router.push("/video");
@@ -839,9 +723,11 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
                   }}>
                   {/* 删除按钮 — hover 行才浮现，浮于右端 */}
                   <button className="sidebar-conv-delete"
+                    type="button"
                     onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
-                    title="删除对话">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    title="删除对话"
+                    aria-label={`删除对话：${agentName}`}>
+                    <svg className="sidebar-conv-delete-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
                     </svg>
                   </button>
@@ -886,9 +772,9 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
                   </Avatar>
                   {/* 智能体名称 + 时间：right 模式时间右对齐对称，below 模式时间居名称下方 */}
                   <span className="sidebar-conv-text">
-                    <span className="sidebar-conv-name" title={agentName} style={{ fontSize: "clamp(13px, calc(14px * var(--sidebar-scale, 1)), 17px)", transform: `translateX(${sidebarTextOffsetX}px)` }}>{agentName}</span>
-                    {timeStr && sidebarTimePosition !== "hidden" && (
-                      <span className="sidebar-conv-time" style={{ fontSize: "clamp(11px, calc(12px * var(--sidebar-scale, 1)), 14px)", transform: `translateX(${sidebarTimeOffsetX}px)` }}>{timeStr}</span>
+                    <span className="sidebar-conv-name" title={agentName} style={{ fontSize: "clamp(13px, calc(14px * var(--sidebar-scale, 1)), 17px)" }}>{agentName}</span>
+                    {timeStr && (
+                      <span className="sidebar-conv-time" style={{ fontSize: "clamp(11px, calc(12px * var(--sidebar-scale, 1)), 14px)" }}>{timeStr}</span>
                     )}
                   </span>
                 </div>

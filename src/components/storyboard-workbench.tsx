@@ -51,6 +51,7 @@ import { MEDIA_CANCEL_DEADLINE_MS, providerMediaUrl, readMediaStreamWithDeadline
 import { STORYBOARD_IDLE_DRAFT_KEY } from "@/lib/storyboard-idle-draft";
 import { useStoryboardProjects } from "@/hooks/use-storyboard-projects";
 import type { StoryboardAgentOutputSegment } from "@/lib/storyboard-agent-output";
+import type { StoryboardVisualAssetPlan, StoryboardVisualAssetRef } from "@/lib/storyboard-workbench";
 import {
   GENERAL_SCRIPT_HANDOFF_RECEIPT_STORAGE_KEY,
   GENERAL_SCRIPT_HANDOFF_STORAGE_KEY,
@@ -83,17 +84,35 @@ import {
   resolveVideoResolution,
 } from "@/lib/video-model-capabilities";
 import { compactPublicVideoModelName } from "@/lib/video-history-presentation";
+import { groupVideoHistory } from "@/lib/video-history-groups";
 import {
   buildStoryboardVideoPrompt,
   inferStoryboardNarration,
   narrationCharacterCount,
+  storyboardVideoPromptViolation,
   storyboardVideoRuntimeGuard,
 } from "@/lib/storyboard-single-frame-video-prompt";
+import { validateStoryboardNarrationCapacity } from "@/lib/storyboard-duration-contract";
 
 type TaskStatus = "idle" | "queued" | "running" | "done" | "failed" | "cancelled";
 type BatchMode = "" | "images" | "videos" | "full";
 const WORKBENCH_RATIOS = ["16:9", "9:16", "1:1"] as const;
 type WorkbenchRatio = (typeof WORKBENCH_RATIOS)[number];
+type VisualAssetRole = "character" | "pet" | "environment" | "prop";
+type OwnedVisualAsset = {
+  assetId: string;
+  planId: string;
+  previewUrl: string;
+  name: string;
+  prompt?: string;
+  role: VisualAssetRole;
+  historyRecordId?: string;
+  storageKey?: string;
+  modelId?: string;
+  modelName?: string;
+  quotedPrice?: number;
+  createdAt?: string;
+};
 
 type StoryboardImageRequestSnapshot = {
   runId: string;
@@ -105,6 +124,7 @@ type StoryboardImageRequestSnapshot = {
   resolution: string;
   exactText?: string;
   referenceImageUrls: string[];
+  visualAssetRefs?: StoryboardVisualAssetRef[];
   strictSingleSubmit: boolean;
   /** A new explicit user generation gets a new ordinal; recovery keeps the original ordinal. */
   attemptOrdinal?: number;
@@ -161,6 +181,7 @@ type WorkbenchCard = {
   imageTextLayoutEnabled?: boolean;
   videoPrompt: string;
   referenceImageUrls: string[];
+  visualAssetRefs?: StoryboardVisualAssetRef[];
   imageStatus: TaskStatus;
   imageUrl?: string;
   imageRef?: GeneratedImageReference;
@@ -229,6 +250,7 @@ type WorkbenchRun = {
   imageModelId: string;
   videoModelId: string;
   videoContract?: WorkbenchVideoContract;
+  visualAssetPlan?: StoryboardVisualAssetPlan;
   cards: WorkbenchCard[];
   title: string;
 };
@@ -712,6 +734,7 @@ function storyboardImageFingerprintPayload(snapshot: StoryboardImageRequestSnaps
     resolution: snapshot.resolution,
     exactText: snapshot.exactText || "",
     referenceImageUrls: snapshot.referenceImageUrls,
+    visualAssetRefs: snapshot.visualAssetRefs || [],
     ...(Number.isInteger(snapshot.attemptOrdinal) ? { attemptOrdinal: snapshot.attemptOrdinal } : {}),
   };
 }
@@ -751,9 +774,21 @@ function createCard(order: number): WorkbenchCard {
     imageTextLayoutEnabled: false,
     videoPrompt: "",
     referenceImageUrls: [],
+    visualAssetRefs: [],
     imageStatus: "idle",
     videoStatus: "idle",
   };
+}
+
+function visualAssetPlanId(assetId: string, index = 0) {
+  const compact = assetId.toLowerCase().replace(/[^a-z0-9_-]/gu, "").slice(0, 54);
+  return `asset_${compact || index + 1}`.slice(0, 64);
+}
+
+function visualAssetReferenceKind(role: VisualAssetRole): StoryboardVisualAssetRef["referenceKinds"][number] {
+  if (role === "environment") return "environment-wide";
+  if (role === "prop") return "prop";
+  return "identity";
 }
 
 function browserImageReady(url: string, timeoutMs = 30_000) {
@@ -834,10 +869,6 @@ async function mediaUrlToDataUrl(url: string) {
   });
 }
 
-function isMultiPanelStoryboardPrompt(prompt: string) {
-  return /(?:严格\s*)?2\s*[×xX*]\s*2|(?:四|五|4|5)格(?:故事板|分镜)|Frame\s*1[\s\S]*Frame\s*2/iu.test(prompt);
-}
-
 function createRun(cardCount = 3): WorkbenchRun {
   const now = Date.now();
   return {
@@ -850,9 +881,19 @@ function createRun(cardCount = 3): WorkbenchRun {
     videoDuration: 10,
     imageModelId: "",
     videoModelId: "",
+    visualAssetPlan: { mode: "off", assets: [] },
     cards: Array.from({ length: cardCount }, (_, index) => createCard(index + 1)),
     title: "未命名分镜项目",
   };
+}
+
+function normalizeStoryboardVideoImageReference(reference?: GeneratedImageReference) {
+  if (!reference?.transform) return reference;
+  // Older browser snapshots stored a client-only crop on the generated-image
+  // reference. Video submission now follows the storyboard contract and uses
+  // the complete 4/5-panel asset, so keep the record identity and drop only
+  // the obsolete presentation transform.
+  return { schema: "generated_image_ref.v1" as const, recordId: reference.recordId };
 }
 
 function normalizeVideoContract(value: unknown): WorkbenchVideoContract | undefined {
@@ -932,6 +973,9 @@ function normalizeRun(value: unknown): WorkbenchRun | null {
     imageModelId: String(record.imageModelId || ""),
     videoModelId,
     videoContract,
+    visualAssetPlan: record.visualAssetPlan && typeof record.visualAssetPlan === "object"
+      ? record.visualAssetPlan as StoryboardVisualAssetPlan
+      : { mode: "off", assets: [] },
     cards: cards.map((card, index) => ({
       ...card,
       order: index + 1,
@@ -940,6 +984,9 @@ function normalizeRun(value: unknown): WorkbenchRun | null {
         || Boolean(String((card as Partial<WorkbenchCard>).imageExactText || "").trim()),
       imageError: normalizeLegacyImageError(card.imageError, (card as Partial<WorkbenchCard>).imageRecoveryReady === true),
       referenceImageUrls: Array.isArray(card.referenceImageUrls) ? card.referenceImageUrls.slice(0, MAX_REFERENCES) : [],
+      visualAssetRefs: Array.isArray((card as Partial<WorkbenchCard>).visualAssetRefs)
+        ? (card as Partial<WorkbenchCard>).visualAssetRefs!.slice(0, 16)
+        : [],
     })),
     title: String(record.title || record.project?.title || "历史分镜项目"),
   };
@@ -970,6 +1017,7 @@ type HistoryVideoTask = {
   status?: string;
   videoUrl?: string;
   batchId?: string;
+  batchTopic?: string;
   cardIndex?: number;
   canRetry?: boolean;
   billingState?: string;
@@ -1396,6 +1444,12 @@ function UserStoryboardWorkbench({
   const [imageFailureHistoryNextPage, setImageFailureHistoryNextPage] = useState<number | null>(null);
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [uploadingCardId, setUploadingCardId] = useState("");
+  const [visualAssetPickerOpen, setVisualAssetPickerOpen] = useState(false);
+  const [visualAssetLoading, setVisualAssetLoading] = useState(false);
+  const [visualAssetError, setVisualAssetError] = useState("");
+  const [visualAssetCandidates, setVisualAssetCandidates] = useState<OwnedVisualAsset[]>([]);
+  const [visualAssetRole, setVisualAssetRole] = useState<VisualAssetRole>("character");
+  const [visualAssetTargetCardId, setVisualAssetTargetCardId] = useState("");
   const [expandedVideoCards, setExpandedVideoCards] = useState<Set<string>>(() => new Set());
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [generalScriptHandoff, setGeneralScriptHandoff] = useState<GeneralScriptHandoffPanelState>({ status: "hidden" });
@@ -1432,6 +1486,15 @@ function UserStoryboardWorkbench({
   // Submitted runs stay in history; reopening the editor does not restore a draft.
   const submittedRunIdsRef = useRef(new Set<string>());
   const videoHistoryHydratedRef = useRef(false);
+  const groupedVideoHistory = useMemo(() => groupVideoHistory(
+    videoHistoryTasks.map((task, index) => ({
+      ...task,
+      id: String(task.id || task.taskIdExternal || `video-history-${index}`),
+      createdAt: String(task.createdAt || task.completedAt || ""),
+      batchId: task.batchId || undefined,
+      cardIndex: Number.isFinite(Number(task.cardIndex)) ? Number(task.cardIndex) : undefined,
+    })),
+  ), [videoHistoryTasks]);
   const uploadInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
   const videoSectionsRef = useRef<Record<string, HTMLElement | null>>({});
   const scopeMountedRef = useRef(true);
@@ -1815,6 +1878,151 @@ function UserStoryboardWorkbench({
       return next;
     });
   }, []);
+
+  const loadVisualAssetCandidates = useCallback(async () => {
+    if (!token) {
+      setVisualAssetError("请先登录后读取自己的视觉资产");
+      return;
+    }
+    setVisualAssetLoading(true);
+    setVisualAssetError("");
+    try {
+      const response = await fetch("/api/image-workbench/history?page=1", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({})) as {
+        records?: Array<{ items?: Array<{ assetId?: string; imageUrl?: string; prompt?: string; historyRecordId?: string; storageKey?: string; modelId?: string; modelName?: string; quotedPrice?: number; createdAt?: string }> }>;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(data.error || "视觉资产历史暂时无法读取");
+      const candidates: OwnedVisualAsset[] = [];
+      const seen = new Set<string>();
+      for (const record of data.records || []) {
+        for (const item of record.items || []) {
+          const assetId = String(item.assetId || "").trim();
+          const previewUrl = String(item.imageUrl || "").trim();
+          if (!assetId || !previewUrl || seen.has(assetId)) continue;
+          seen.add(assetId);
+          const prompt = String(item.prompt || "").trim();
+          candidates.push({
+            assetId,
+            planId: visualAssetPlanId(assetId, candidates.length),
+            previewUrl,
+            prompt,
+            name: prompt ? prompt.slice(0, 32) : `历史图片 ${candidates.length + 1}`,
+            role: visualAssetRole,
+            historyRecordId: item.historyRecordId,
+            storageKey: item.storageKey,
+            modelId: item.modelId,
+            modelName: item.modelName,
+            quotedPrice: Number.isFinite(Number(item.quotedPrice)) ? Number(item.quotedPrice) : undefined,
+            createdAt: item.createdAt,
+          });
+        }
+      }
+      setVisualAssetCandidates(candidates);
+      if (!candidates.length) setVisualAssetError("当前没有可用的已保存生成图片；请先在图片工作台生成并保存资产");
+    } catch (error) {
+      setVisualAssetError(error instanceof Error ? error.message : "视觉资产历史暂时无法读取");
+      setVisualAssetCandidates([]);
+    } finally {
+      setVisualAssetLoading(false);
+    }
+  }, [token, visualAssetRole]);
+
+  const bindVisualAsset = useCallback((candidate: OwnedVisualAsset) => {
+    const targetCardId = visualAssetTargetCardId || runRef.current.cards[0]?.id;
+    const target = runRef.current.cards.find((card) => card.id === targetCardId);
+    if (!target) {
+      setNotice("请先选择要绑定的镜头卡");
+      return;
+    }
+    if (!referenceLimit) {
+      setNotice("当前图片模型不支持参考图，视觉资产不会触发生成；请先切换到支持多参考图的模型");
+      return;
+    }
+    if (target.visualAssetRefs?.some((ref) => ref.assetId === candidate.planId)) {
+      setNotice(`镜头${target.order}已经绑定该视觉资产`);
+      return;
+    }
+    if (target.referenceImageUrls.length >= referenceLimit) {
+      setNotice(`镜头${target.order}最多接收${referenceLimit}张参考图，请先移除一张再绑定视觉资产`);
+      return;
+    }
+    const kind = visualAssetReferenceKind(visualAssetRole);
+    const ref: StoryboardVisualAssetRef = { assetId: candidate.planId, role: visualAssetRole, referenceKinds: [kind] };
+    const existingPlan = runRef.current.visualAssetPlan;
+    const existingAsset = existingPlan?.assets.find((asset) => asset.id === candidate.planId);
+    const asset = existingAsset || {
+      id: candidate.planId,
+      role: visualAssetRole,
+      name: candidate.name.slice(0, 80) || `视觉资产 ${candidate.planId}`,
+      identityLock: `用户已选择的视觉资产，来源资产 ${candidate.assetId}；保持主体外观、色彩、材质与关键识别特征稳定。`,
+      allowedChanges: ["姿态", "表情", "镜头位置"],
+      referencePrompts: [{
+        kind,
+        purpose: `作为${visualAssetRole === "character" ? "人物" : visualAssetRole === "pet" ? "宠物" : visualAssetRole === "environment" ? "环境" : "道具"}一致性参考`,
+        prompt: "使用该已选择视觉资产作为参考，保持外观、色彩、材质和关键识别特征一致。",
+      }],
+      source: {
+        kind: "generated-image-history",
+        assetId: candidate.assetId,
+        historyRecordId: candidate.historyRecordId,
+        storageKey: candidate.storageKey,
+        modelId: candidate.modelId,
+        modelName: candidate.modelName,
+        quotedPrice: candidate.quotedPrice,
+        createdAt: candidate.createdAt,
+      },
+    };
+    const next: WorkbenchRun = {
+      ...runRef.current,
+      updatedAt: Date.now(),
+      visualAssetPlan: { mode: "selected", assets: existingAsset ? existingPlan!.assets : [...(existingPlan?.assets || []), asset] },
+      cards: runRef.current.cards.map((card) => card.id === target.id
+        ? { ...card, referenceImageUrls: [...card.referenceImageUrls, candidate.previewUrl].slice(0, referenceLimit), visualAssetRefs: [...(card.visualAssetRefs || []), ref] }
+        : card),
+    };
+    runRef.current = next;
+    setRun(next);
+    setNotice(`视觉资产已绑定到镜头${target.order}；尚未调用模型或扣费`);
+  }, [referenceLimit, visualAssetRole, visualAssetTargetCardId]);
+
+  const unbindVisualAsset = useCallback((cardId: string, planId: string) => {
+    const candidate = visualAssetCandidates.find((item) => item.planId === planId);
+    const current = runRef.current;
+    const remainingRefs = current.cards.flatMap((card) => (card.id === cardId
+      ? (card.visualAssetRefs || []).filter((ref) => ref.assetId !== planId)
+      : (card.visualAssetRefs || [])));
+    const next: WorkbenchRun = {
+      ...current,
+      updatedAt: Date.now(),
+      visualAssetPlan: remainingRefs.length
+        ? current.visualAssetPlan
+        : { mode: "off", assets: [] },
+      cards: current.cards.map((card) => {
+        if (card.id !== cardId) return card;
+        const refs = (card.visualAssetRefs || []).filter((ref) => ref.assetId !== planId);
+        const urls = candidate ? card.referenceImageUrls.filter((url) => url !== candidate.previewUrl) : card.referenceImageUrls;
+        return { ...card, visualAssetRefs: refs, referenceImageUrls: urls };
+      }),
+    };
+    runRef.current = next;
+    setRun(next);
+    setNotice("视觉资产绑定已解除；尚未调用模型或扣费");
+  }, [visualAssetCandidates]);
+
+  const saveVisualAssetBinding = useCallback(async () => {
+    if (!runRef.current.cards.some((card) => card.visualAssetRefs?.length)) {
+      setNotice("当前没有需要保存的视觉资产绑定");
+      return;
+    }
+    const saved = await saveStoryboardProject(createStoryboardPersistenceSnapshot(runRef.current), true);
+    setNotice(saved
+      ? "视觉资产绑定已保存到当前项目；未调用模型或扣费"
+      : "视觉资产绑定保存未确认，请稍后重试；未调用模型或扣费");
+  }, [saveStoryboardProject]);
 
   const inspectStoryboardImageAttempt = useCallback(async (card: WorkbenchCard) => {
     const clientIdempotencyKey = String(card.imageClientRequestId || "").trim();
@@ -2341,9 +2549,10 @@ function UserStoryboardWorkbench({
   }, [patchCard]);
 
   const applyImportedSegments = useCallback((input: {
-    segments: StoryboardAgentOutputSegment[];
+    segments: Array<StoryboardAgentOutputSegment & { visualAssetRefs?: StoryboardVisualAssetRef[] }>;
     title: string;
     ratio?: WorkbenchRatio | null;
+    videoDuration?: 8 | 10 | 15;
     successNotice: string;
   }): string | null => {
     if (runRef.current.cards.some((card) => imageAttemptNeedsResolution(card) || isActiveVideoStatus(card.videoStatus))) {
@@ -2364,6 +2573,7 @@ function UserStoryboardWorkbench({
       createdAt: now,
       updatedAt: now,
       ratio: input.ratio && isWorkbenchRatio(input.ratio) ? input.ratio : current.ratio,
+      videoDuration: input.videoDuration || current.videoDuration,
       title: input.title,
       cards: input.segments.map((segment, index) => ({
         ...createCard(index + 1),
@@ -2372,6 +2582,7 @@ function UserStoryboardWorkbench({
         narration: segment.narration,
         imagePrompt: segment.imagePrompt,
         videoPrompt: segment.videoPrompt,
+        visualAssetRefs: segment.visualAssetRefs,
       })),
     };
     runRef.current = next;
@@ -2385,10 +2596,18 @@ function UserStoryboardWorkbench({
     if (generalScriptHandoff.status !== "ready") return;
     const { handoff } = generalScriptHandoff;
     const plan = handoff.bridge.workbenchImport;
+    const importedDurations = new Set(
+      plan.segments.map((segment) => segment.targetDurationSeconds).filter((duration): duration is 8 | 10 | 15 => Boolean(duration)),
+    );
+    if (importedDurations.size > 1) {
+      setNotice("通用短剧包含多个视频时长，当前工作台不能把不同段落安全合并到一个运行；请按时长分批导入");
+      return;
+    }
     const importedRunId = applyImportedSegments({
       segments: plan.segments,
       title: plan.title,
       ratio: plan.workbenchRatio,
+      videoDuration: [...importedDurations][0],
       successNotice: `已导入 ${plan.segments.length} 个生产段：生图 Prompt 和视频 Prompt 已建卡；没有调用模型或扣费`,
     });
     if (!importedRunId) return;
@@ -2406,9 +2625,11 @@ function UserStoryboardWorkbench({
         narration: segment.narration,
         imagePrompt: segment.imagePrompt,
         videoPrompt: segment.videoPrompt,
+        visualAssetRefs: segment.visualAssetRefs,
       })),
       title: `Agent 分镜 · ${plan.segments.length} 个生产段`,
       ratio: plan.settings.aspectRatio,
+      videoDuration: plan.settings.targetDurationSeconds,
       successNotice: `已导入 ${plan.segments.length} 个 Agent 分镜段；生图和视频 Prompt 已建卡，未调用模型、未扣费`,
     });
     if (!importedRunId) return;
@@ -2460,6 +2681,15 @@ function UserStoryboardWorkbench({
     }
     if (isActiveVideoStatus(card.videoStatus)) {
       setNotice(`镜头${card.order}的视频仍在生成，请先终止视频任务再重新生图`);
+      return null;
+    }
+    const targetDuration = current.videoDuration === 8 || current.videoDuration === 10 || current.videoDuration === 15
+      ? current.videoDuration
+      : 10;
+    const narration = String(card.narration || inferStoryboardNarration(card.label)).trim();
+    const narrationCapacity = validateStoryboardNarrationCapacity(narration, targetDuration);
+    if (!narrationCapacity.ok) {
+      setNotice(`镜头${card.order}口播${narrationCapacity.effectiveCharacters}个有效字/${targetDuration}秒，超过每秒6字要求；请重新分段后再生成图片`);
       return null;
     }
     imageSubmissionsRef.current.add(cardId);
@@ -2591,6 +2821,7 @@ function UserStoryboardWorkbench({
           aspectRatio: current.ratio,
           resolution: effectiveImageResolution(model, current.imageResolution),
           referenceImageUrls: [...card.referenceImageUrls],
+          visualAssetRefs: card.visualAssetRefs?.slice(0, 16) || [],
           strictSingleSubmit: model.id === STRICT_GPT_IMAGE_PUBLIC_ID,
           ...(model.id === STRICT_GPT_IMAGE_PUBLIC_ID
             ? { attemptOrdinal: Math.max(1, Number(card.imageAttemptOrdinal || 0) + 1) }
@@ -2715,7 +2946,9 @@ function UserStoryboardWorkbench({
               resolution: requestSnapshot.resolution,
               ...(requestSnapshot.exactText ? { coverText: requestSnapshot.exactText } : {}),
               referenceImageUrls: requestSnapshot.referenceImageUrls,
-              referenceUsage: "general",
+              referenceUsage: requestSnapshot.visualAssetRefs?.some((ref) => ref.role === "character" || ref.role === "pet")
+                ? "character-identity"
+                : "general",
               clientTraceId,
               clientIdempotencyKey,
               noRetry: requestSnapshot.strictSingleSubmit,
@@ -3342,6 +3575,8 @@ function UserStoryboardWorkbench({
       return null;
     }
     const executionPrompt = model.supportsPrompt ? submittedVideoPrompt(card.videoPrompt, model, duration) : "";
+    const promptViolation = model.supportsPrompt ? storyboardVideoPromptViolation(card.videoPrompt) : null;
+    if (promptViolation) { setNotice(promptViolation); return null; }
     const resolution = effectiveVideoResolution(model, current.videoResolution);
     const contract = current.videoContract;
     if (contract && model.id === contract.modelId && (
@@ -3390,13 +3625,14 @@ function UserStoryboardWorkbench({
     let providerSubmissionDispatched = false;
     let confirmedUnsubmitted = false;
     try {
-      let submissionImageUrl = imageUrl;
+      const submissionImageUrl = imageUrl;
       const submissionImageStorageKey = card.imageStorageKey;
-      let submissionImageRef = card.imageRef;
-      if (isMultiPanelStoryboardPrompt(card.imagePrompt)) {
-        if (!submissionImageRef || !/(?:2\s*[×xX*]\s*2|(?:四|4)格)/u.test(card.imagePrompt) || !card.imageWidth || !card.imageHeight) throw new Error("该多格排布尚无可验证的首格裁切范围；本次未提交或扣费");
-        submissionImageRef = { ...submissionImageRef, transform: { kind: "crop", x: 0, y: 0, width: Math.floor(card.imageWidth / 2), height: Math.floor(card.imageHeight / 2) } };
-      }
+      const submissionImageRef = normalizeStoryboardVideoImageReference(card.imageRef);
+      // A 2×2/4-panel storyboard is one continuous visual reference for this
+      // card. Panels define beats and identity anchors; they are not automatic
+      // edit points. Preserve the complete image for the image-to-video model.
+      // Cropping belongs to an explicit future "split panels" workflow, never
+      // to the default submit path.
       if (!submissionImageRef && !isPublicHttpMediaUrl(submissionImageUrl)) {
         throw new Error("上游参考图链接无法被视频模型访问；请主动上传可访问的参考图后继续");
       }
@@ -4285,6 +4521,54 @@ function UserStoryboardWorkbench({
             </div>
           </section>
 
+          <section className={`sbw-visual-assets ${visualAssetPickerOpen ? "is-open" : ""}`} aria-label="可选视觉资产">
+            <div className="sbw-visual-assets-header">
+              <div>
+                <strong>视觉资产（可选）</strong>
+                <small>{run.visualAssetPlan?.mode === "selected" ? `${run.visualAssetPlan.assets.length} 个资产已选` : "默认关闭；只在绑定时加入参考图"}</small>
+              </div>
+              <button type="button" className="sbw-visual-assets-toggle" aria-expanded={visualAssetPickerOpen} onClick={() => setVisualAssetPickerOpen((open) => !open)}>
+                {visualAssetPickerOpen ? "收起" : "选择资产"}
+              </button>
+            </div>
+            {visualAssetPickerOpen && (
+              <div className="sbw-visual-assets-body">
+                <div className="sbw-visual-assets-toolbar">
+                  <label><span>资产类型</span><select value={visualAssetRole} onChange={(event) => setVisualAssetRole(event.target.value as VisualAssetRole)}><option value="character">人物</option><option value="pet">宠物</option><option value="environment">环境</option><option value="prop">道具</option></select></label>
+                  <label><span>绑定镜头</span><select value={visualAssetTargetCardId || run.cards[0]?.id || ""} onChange={(event) => setVisualAssetTargetCardId(event.target.value)}>{run.cards.map((card) => <option key={card.id} value={card.id}>任务 {card.order}</option>)}</select></label>
+                  <button type="button" className="sbw-visual-assets-load" onClick={() => void loadVisualAssetCandidates()} disabled={visualAssetLoading}>{visualAssetLoading ? <Loader2 className="animate-spin" /> : <RefreshCw />}读取我的历史生成图</button>
+                </div>
+                <p className="sbw-visual-assets-hint">只读取本人已保存的图片，不会自动生图、不会扣费。选择后会把图片加入当前镜头的参考图，并记录角色/宠物/环境/道具引用。</p>
+                {visualAssetError && <p className="sbw-visual-assets-error" role="status">{visualAssetError}</p>}
+                {run.cards.some((card) => card.visualAssetRefs?.length) && (
+                  <button type="button" className="sbw-visual-assets-save" onClick={() => void saveVisualAssetBinding()}>保存当前资产绑定（不生成）</button>
+                )}
+                {visualAssetCandidates.length > 0 && (
+                  <div className="sbw-visual-asset-grid">
+                    {visualAssetCandidates.map((candidate) => {
+                      const targetCard = run.cards.find((card) => card.id === (visualAssetTargetCardId || run.cards[0]?.id));
+                      const selected = Boolean(targetCard?.visualAssetRefs?.some((ref) => ref.assetId === candidate.planId));
+                      return (
+                        <article className={`sbw-visual-asset-card ${selected ? "is-selected" : ""}`} key={candidate.assetId}>
+                          <img src={candidate.previewUrl} alt={candidate.name} loading="lazy" />
+                          <div><strong title={candidate.name}>{candidate.name}</strong><small>{selected ? "已绑定" : "历史生成图"}</small></div>
+                          <button type="button" onClick={() => selected
+                            ? unbindVisualAsset(targetCard?.id || "", candidate.planId)
+                            : bindVisualAsset(candidate)}>{selected ? "解除绑定" : "绑定到当前镜头"}</button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+                {run.cards.some((card) => card.visualAssetRefs?.length) && (
+                  <div className="sbw-visual-asset-bindings">
+                    {run.cards.flatMap((card) => (card.visualAssetRefs || []).map((ref) => <span key={`${card.id}-${ref.assetId}`} className="sbw-visual-asset-chip">任务 {card.order} · {ref.role === "character" ? "人物" : ref.role === "pet" ? "宠物" : ref.role === "environment" ? "环境" : "道具"}<button type="button" aria-label={`解除任务${card.order}视觉资产`} onClick={() => unbindVisualAsset(card.id, ref.assetId)}><X /></button></span>))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
           <div className="sbw-workspace-meta">
             <div><strong>{run.title}</strong><span>{run.cards.length}/{MAX_CARDS} 张镜头卡</span></div>
             <span className="sbw-guardrail-chip" title={activeVideoGuardrail}><LockKeyhole /><strong>当前模型护栏</strong></span>
@@ -4563,13 +4847,19 @@ function UserStoryboardWorkbench({
                 <button type="button" disabled={videoHistoryLoading} onClick={() => void loadVideoHistory()}>{videoHistoryLoading ? "读取中…" : "刷新"}</button>
               </div>
               {videoHistoryError && <p role="alert">{videoHistoryError}</p>}
-              {videoHistoryTasks.map((task, index) => {
-                const taskId = String(task.id || task.taskIdExternal || `video-history-${index}`);
-                const displayIndex = Number(task.cardIndex) > 0 ? Number(task.cardIndex) : index + 1;
-                const poster = String(task.thumbnailUrl || task.firstFrameUrl || "");
-                const completed = task.status === "completed" && Boolean(task.id || task.taskIdExternal);
-                return (
-                  <article key={taskId} data-video-history-task={taskId} className="sbw-history-video-task">
+              {groupedVideoHistory.map((group) => (
+                <div key={group.key} className="sbw-history-video-batch" data-video-history-batch={group.key}>
+                  <header className="sbw-history-video-batch-heading">
+                    <strong>{group.label}</strong>
+                    <span>{group.items.length} 个卡片，按顺序排列</span>
+                  </header>
+                  {group.items.map((task, index) => {
+                    const taskId = task.id;
+                    const displayIndex = Number(task.cardIndex) > 0 ? Number(task.cardIndex) : index + 1;
+                    const poster = String(task.thumbnailUrl || task.firstFrameUrl || "");
+                    const completed = task.status === "completed" && Boolean(task.id || task.taskIdExternal);
+                    return (
+                    <article key={taskId} data-video-history-task={taskId} className="sbw-history-video-task">
                     <div>
                       <strong><span className="sbw-history-day">{beijingHistoryDayLabel(task.completedAt || task.createdAt || Date.now())}</span>任务 {displayIndex} · {task.modelName || "视频模型"}</strong>
                       <span>{task.completedAt || task.createdAt ? new Date(task.completedAt || task.createdAt || "").toLocaleString("zh-CN") : ""}</span>
@@ -4598,9 +4888,11 @@ function UserStoryboardWorkbench({
                         )
                       ) : <div className="sbw-history-media-state">{task.status === "failed" ? "视频生成失败" : task.status === "cancelled" ? "视频已终止" : "视频生成中"}</div>}
                     </div>
-                  </article>
-                );
-              })}
+                    </article>
+                    );
+                  })}
+                </div>
+              ))}
               {!videoHistoryLoading && !videoHistoryError && !videoHistoryTasks.length && <p>暂无分镜视频记录。</p>}
             </section>
             <div className="sbw-history-list">

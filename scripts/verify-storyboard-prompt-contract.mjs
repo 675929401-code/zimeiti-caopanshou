@@ -5,8 +5,10 @@ import {
   STORYBOARD_AGENT_PROMPT,
   STORYBOARD_AGENT_VERSION,
   storyboardTextLayoutInstruction,
+  storyboardNarrationCharBudget,
   StoryboardTargetDurationSchema,
   StoryboardTextLayoutModeSchema,
+  StoryboardVisualAssetModeSchema,
 } from "../src/lib/storyboard-workbench.ts";
 import { buildStoryboardVideoPrompt, storyboardVideoRuntimeGuard } from "../src/lib/storyboard-video-prompt.ts";
 
@@ -38,6 +40,8 @@ for (const duration of [5, 9, 12, 16, "10"]) {
 assert.equal(StoryboardTextLayoutModeSchema.safeParse("visual-only").success, true);
 assert.equal(StoryboardTextLayoutModeSchema.safeParse("advanced-text-layout").success, true);
 assert.equal(StoryboardTextLayoutModeSchema.safeParse("always-text").success, false);
+assert.equal(StoryboardVisualAssetModeSchema.safeParse("off").success, true);
+assert.equal(StoryboardVisualAssetModeSchema.safeParse("selected").success, true);
 const visualOnlyInstruction = storyboardTextLayoutInstruction("visual-only");
 const advancedTextInstruction = storyboardTextLayoutInstruction("advanced-text-layout");
 assert.ok(visualOnlyInstruction.includes("不得要求或暗示生成任何可读文字"));
@@ -54,6 +58,11 @@ const defaultUserPrompt = buildStoryboardUserPrompt({
 });
 assert.ok(defaultUserPrompt.includes("画面文字模式：visual-only"));
 assert.ok(defaultUserPrompt.includes(visualOnlyInstruction));
+assert.ok(defaultUserPrompt.includes("视觉资产模式：off"));
+assert.ok(defaultUserPrompt.includes("口播容量基准：每秒约6个有效汉字"));
+assert.equal(storyboardNarrationCharBudget(8).target, 48);
+assert.equal(storyboardNarrationCharBudget(10).target, 60);
+assert.equal(storyboardNarrationCharBudget(15).target, 90);
 assert.ok(compileRoute.includes('StoryboardTextLayoutModeSchema.default("visual-only")'), "编译接口没有把纯视觉设为默认模式");
 assert.ok(compileRoute.includes("storyboardTextLayoutInstruction(input.textLayoutMode)"), "编译接口没有给数据库旧提示词追加最高优先级文字模式");
 assert.ok(runtimePrompt.includes("8秒、10秒或15秒"), "文字协议没有同时声明 8/10/15 秒");
@@ -111,7 +120,8 @@ for (const required of [
   "语义核唯一",
   "Prompt密度合格",
   "图视频强绑定",
-  "0秒直接进入第1格对应场景扩展后的全屏画面",
+  "视频阶段始终只上传一张完整的四宫格或五宫格故事板图",
+  "不能裁切、拆格、上传视觉资产图",
   "包装有物理来源",
   "失败预判明确",
   "风格指纹必须具体可见",
@@ -130,6 +140,9 @@ for (const required of [
   "开场绑定句 + 时间镜头 + 收尾边界句",
   "默认回归测试必须使用纯画面版",
   "高级文字排版另测平台后置渲染",
+  "visualAssetPlan",
+  "visualAssetRefs",
+  "角色/宠物资产只参与分镜生图阶段",
   "可迁移规律按三层处理",
   "stable_grammar",
   "semantic_router",

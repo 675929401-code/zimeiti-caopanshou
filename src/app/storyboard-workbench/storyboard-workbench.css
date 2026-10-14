@@ -2247,6 +2247,205 @@ body:has(.sbw-root) {
   line-height: 1.4;
 }
 
+.sbw-root .sbw-visual-assets {
+  margin: 14px 0 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, var(--primary));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 94%, var(--primary));
+  overflow: hidden;
+}
+
+.sbw-root .sbw-visual-assets-header,
+.sbw-root .sbw-visual-assets-toolbar,
+.sbw-root .sbw-visual-asset-card,
+.sbw-root .sbw-visual-asset-bindings {
+  display: flex;
+  align-items: center;
+}
+
+.sbw-root .sbw-visual-assets-header {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+}
+
+.sbw-root .sbw-visual-assets-header > div,
+.sbw-root .sbw-visual-asset-card > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sbw-root .sbw-visual-assets-header strong {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.sbw-root .sbw-visual-assets-header small,
+.sbw-root .sbw-visual-assets-hint,
+.sbw-root .sbw-visual-asset-card small {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.sbw-root .sbw-visual-assets-toggle,
+.sbw-root .sbw-visual-assets-load,
+.sbw-root .sbw-visual-assets-save,
+.sbw-root .sbw-visual-asset-card > button {
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-visual-assets-toggle:hover,
+.sbw-root .sbw-visual-assets-load:hover,
+.sbw-root .sbw-visual-assets-save:hover,
+.sbw-root .sbw-visual-asset-card > button:hover,
+.sbw-root .sbw-visual-assets-toggle:focus-visible,
+.sbw-root .sbw-visual-assets-load:focus-visible,
+.sbw-root .sbw-visual-assets-save:focus-visible,
+.sbw-root .sbw-visual-asset-card > button:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.sbw-root .sbw-visual-assets-body {
+  border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  padding: 12px 14px 14px;
+}
+
+.sbw-root .sbw-visual-assets-toolbar {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sbw-root .sbw-visual-assets-toolbar label {
+  display: grid;
+  gap: 4px;
+  min-width: 116px;
+}
+
+.sbw-root .sbw-visual-assets-toolbar label > span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.sbw-root .sbw-visual-assets-toolbar select {
+  min-width: 112px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 7px 8px;
+}
+
+.sbw-root .sbw-visual-assets-load {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.sbw-root .sbw-visual-assets-load svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sbw-root .sbw-visual-assets-hint {
+  margin: 10px 0;
+}
+
+.sbw-root .sbw-visual-assets-error {
+  margin: 8px 0;
+  color: var(--error);
+  font-size: 12px;
+}
+
+.sbw-root .sbw-visual-assets-save {
+  margin: 8px 0 10px;
+}
+
+.sbw-root .sbw-visual-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sbw-root .sbw-visual-asset-card {
+  min-width: 0;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+  padding: 8px;
+}
+
+.sbw-root .sbw-visual-asset-card.is-selected {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 32%, transparent);
+}
+
+.sbw-root .sbw-visual-asset-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+  object-fit: cover;
+}
+
+.sbw-root .sbw-visual-asset-card strong {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-visual-asset-card > button {
+  width: 100%;
+  padding: 6px 8px;
+}
+
+.sbw-root .sbw-visual-asset-bindings {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.sbw-root .sbw-visual-asset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  color: var(--foreground);
+  font-size: 11px;
+  padding: 5px 7px 5px 9px;
+}
+
+.sbw-root .sbw-visual-asset-chip button {
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 0;
+}
+
+.sbw-root .sbw-visual-asset-chip button svg {
+  width: 13px;
+  height: 13px;
+}
+
 /* Portal media viewer: keep it above every workbench stacking context and make
    every action keyboard-visible without changing the page's shared shell. */
 .sbw-lightbox {
@@ -2511,6 +2710,32 @@ body:has(.sbw-root) {
 .sbw-history-project {
   display: grid;
   gap: 10px;
+}
+
+.sbw-history-video-batch {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 26%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary) 5%, var(--card));
+}
+
+.sbw-history-video-batch-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--foreground);
+}
+
+.sbw-history-video-batch-heading strong {
+  font-size: 12px;
+}
+
+.sbw-history-video-batch-heading span {
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
 
 .sbw-history-project-cards {
