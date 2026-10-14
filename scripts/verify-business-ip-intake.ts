@@ -55,7 +55,7 @@ assert.match(benchmarkMessage, /宠物知识账号，不知道该学选题还是
 assert.match(benchmarkMessage, /每周能做3条，有真实养狗素材，不方便真人出镜/);
 assert.match(benchmarkMessage, /不知道的产品、价格|不得补写产品、价格/);
 assert.match(benchmarkMessage, /只有缺少会改变本环节结果的关键事实时，先问1个大白话问题/);
-assert.match(benchmarkMessage, /七环协议/);
+assert.doesNotMatch(benchmarkMessage, /七环协议/);
 
 const packagingMessage = buildBusinessIpStepIntakeText({
   agentId: 'agent-1787158020109-cj3wnh',
@@ -79,8 +79,6 @@ for (const oldLabel of ['业务与交付','目前能提供的产品或服务','�
 for (const contract of [
   '先分流，两个工作模式不得混做',
   '平台行业专业知识层',
-  'PROFESSIONAL-KNOWLEDGE-CARD v1',
-  'professional_reference_to_confirm',
   '平台先主动补充能负责提供的行业知识',
   '不能替会员编造自家产品参数、价格、库存、资质、案例、政策或服务承诺',
 ]) assert.ok(followupPromptSource.includes(contract), contract);

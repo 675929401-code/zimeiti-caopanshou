@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "storyboard_prompt_ab.v1",
+  "status": "candidate_only",
+  "runtimeBinding": null,
+  "comparisonBaseline": "3D故事导演｜高能版 original-runtime snapshot",
+  "outputContract": {
+    "chatOrder": ["storyboardImagePrompt", "videoPrompt"],
+    "codeFence": "text",
+    "durations": [8, 10, 15],
+    "panelModes": ["fixed-4", "fixed-5", "auto"],
+    "videoImageInput": "one_complete_storyboard_image",
+    "cropOrSplit": false
+  },
+  "candidates": [
+    {
+      "id": "A",
+      "path": "prompts/storyboard-high-energy-v3.5.3.md",
+      "parent": "3D故事导演｜高能版 original-runtime snapshot",
+      "strategy": "保守优化：保留原版实体状态账、Frame 注释校准和高能镜头语法，修正图片先视频、严格服装、纯视觉、完整四/五宫格单图视频和视觉资产先行边界。",
+      "runtimeEligible": false
+    },
+    {
+      "id": "B",
+      "path": "prompts/storyboard-voiceover-cinematic-v4.3.2.md",
+      "parent": "3D故事导演｜高能版 original-runtime snapshot",
+      "strategy": "重构候选：在与 A 相同的高能原版基线上，以语义拍点、实体状态、角色身份锚和模型适配为主线，减少模板化包装；保留同一接收字段、双代码框和生图先视频输出。",
+      "runtimeEligible": false
+    }
+  ],
+  "evaluation": {
+    "goldenSetRequired": 5,
+    "hardGates": [
+      "原文段落逐字保留且按8/10/15秒容量门禁",
+      "每段图片Prompt代码框先于视频Prompt代码框",
+      "角色/服装/宠物/环境身份跨段连续",
+      "视觉资产只进入生图阶段，视频只提交完整四宫格或五宫格单图",
+      "宠物不说话、无对白、无旁白、无字幕、无音乐",
+      "默认纯视觉模式不生成可读文字",
+      "无第一格裁切、无自动拆格、无未选资产绑定"
+    ],
+    "scoredDimensions": [
+      "文案语义覆盖",
+      "动作因果与实体状态",
+      "角色和服装连续",
+      "宠物非语言表演",
+      "镜头时间轴与时长适配",
+      "图视频强绑定",
+      "提示词密度与可执行性",
+      "输出协议遵从"
+    ],
+    "promotionRule": "候选只进入本地评测；通过全部硬门禁、黄金集和管理员读回后，才允许生成受控 platform_settings/agents 更新候选。"
+  }
+}

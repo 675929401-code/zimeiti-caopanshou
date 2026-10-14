@@ -7,6 +7,7 @@ import {
   canonicalLlmProtocolConfig,
   LlmProviderBindingError,
 } from "@/lib/llm-provider-contract";
+import { normalizeDisplayText } from "@/lib/display-normalization";
 /**
  * 缁熶竴妯″瀷绠＄悊 API
  * GET  - 鑱氬悎鍒楀嚭鎵€鏈夌被鍨嬫ā鍨嬶紙缁樺浘/鏂囨/瑙嗛锛?
@@ -416,7 +417,7 @@ export async function GET(req: NextRequest) {
       for (const m of coverModels) {
         models.push({
           id: m.id,
-          name: m.name,
+          name: normalizeDisplayText(m.name, "未命名模型"),
           model_type: "drawing",
           model_name: m.model_name || "",
           api_endpoint: m.api_endpoint || "",
@@ -459,7 +460,7 @@ export async function GET(req: NextRequest) {
           : {};
         models.push({
           id: m.id,
-          name: m.name,
+          name: normalizeDisplayText(m.name, "未命名模型"),
           model_type: "text",
           model_name: m.model_name || "",
           api_endpoint: m.api_endpoint || m.proxy_url || "",
@@ -489,9 +490,9 @@ export async function GET(req: NextRequest) {
           response_format: m.response_format,
           proxy_url: m.proxy_url || m.api_endpoint || "",
           api_protocol_config: protocolConfig,
-          admin_notes: m.admin_notes || "",
-          description: m.description || "",
-          category: m.category || "閫氱敤",
+          admin_notes: normalizeDisplayText(m.admin_notes || ""),
+          description: normalizeDisplayText(m.description || ""),
+          category: normalizeDisplayText(m.category || "通用", "通用"),
           user_access: m.user_access || "available",
           frequency_limit: m.frequency_limit ?? 50,
           image_parsing: m.image_parsing || "none",
@@ -514,7 +515,7 @@ export async function GET(req: NextRequest) {
       for (const m of videoModels) {
         models.push({
           id: m.id,
-          name: m.name,
+          name: normalizeDisplayText(m.name, "未命名模型"),
           model_type: "video",
           model_name: m.model_name || "",
           api_endpoint: m.api_endpoint || "",
@@ -533,7 +534,7 @@ export async function GET(req: NextRequest) {
           sort_order: m.sort_order || 0,
           provider: m.provider || m.protocol_type || "",
           protocol_type: m.protocol_type || "openai_compatible",
-          admin_notes: m.admin_notes || "",
+          admin_notes: normalizeDisplayText(m.admin_notes || ""),
           duration_seconds: m.duration_seconds || 5,
           max_duration: m.max_duration || 10,
           api_protocol_config: m.api_protocol_config || {},
@@ -680,7 +681,7 @@ export async function POST(req: NextRequest) {
         values: {
           name: fields.name,
           description: fields.description || "",
-          category: fields.category || "閫氱敤",
+          category: fields.category || "通用",
           model_name: fields.model_name || fields.name,
           api_endpoint: fields.api_endpoint || "",
           api_key: fields.api_key || "",

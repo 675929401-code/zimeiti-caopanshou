@@ -1,5 +1,7 @@
+import { z } from "zod";
 import { WorkbenchCardPersistenceFields, WorkbenchRunPersistenceFields, StoryboardImageRequestSnapshotPersistenceFields, WorkbenchVideoContractPersistenceFields } from "@/lib/storyboard-project-contract";
 import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
+import { StoryboardVisualAssetPlanSchema, StoryboardVisualAssetRefSchema } from "@/lib/storyboard-workbench";
 
 function scalar(value: unknown): unknown {
   if (typeof value === "string") return /^(?:data:[^,]+;base64,|blob:)/iu.test(value) ? undefined : value;
@@ -15,15 +17,25 @@ export function sanitizeStoryboardPersistenceValue(value: unknown): unknown {
   const object = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const run = pickScalars(object, WorkbenchRunPersistenceFields);
   if (object.videoContract) run.videoContract = pickScalars(object.videoContract, WorkbenchVideoContractPersistenceFields);
+  const visualAssetPlan = StoryboardVisualAssetPlanSchema.safeParse(object.visualAssetPlan);
+  if (visualAssetPlan.success) run.visualAssetPlan = visualAssetPlan.data;
   run.cards = Array.isArray(object.cards) ? object.cards.map(value => {
     const card = value && typeof value === "object" ? value as Record<string, unknown> : {};
     const output = pickScalars(card, WorkbenchCardPersistenceFields);
     output.referenceImageUrls = urls(card.referenceImageUrls);
+    const visualAssetRefs = z.array(StoryboardVisualAssetRefSchema).max(16).safeParse(card.visualAssetRefs);
+    if (visualAssetRefs.success) output.visualAssetRefs = visualAssetRefs.data;
     const reference = GeneratedImageReferenceSchema.safeParse(card.imageRef);
     if (reference.success) output.imageRef = reference.data;
     if (card.imageRequestSnapshot) {
       const snapshot = card.imageRequestSnapshot as Record<string, unknown>;
-      output.imageRequestSnapshot = { ...pickScalars(snapshot, StoryboardImageRequestSnapshotPersistenceFields), referenceImageUrls: urls(snapshot.referenceImageUrls) };
+      const persistedImageRequestSnapshot: Record<string, unknown> = {
+        ...pickScalars(snapshot, StoryboardImageRequestSnapshotPersistenceFields),
+        referenceImageUrls: urls(snapshot.referenceImageUrls),
+      };
+      const snapshotVisualAssetRefs = z.array(StoryboardVisualAssetRefSchema).max(16).safeParse(snapshot.visualAssetRefs);
+      if (snapshotVisualAssetRefs.success) persistedImageRequestSnapshot.visualAssetRefs = snapshotVisualAssetRefs.data;
+      output.imageRequestSnapshot = persistedImageRequestSnapshot;
     }
     if (card.videoLifecycle) output.videoLifecycle = pickScalars(card.videoLifecycle, ["taskId","taskState","taskLabel","instanceState","instanceLabel","headline","detail","tone","progress","idleGraceSeconds","idleRemainingSeconds","taskTerminal","monitorComplete","observedAt"]);
     return output;

@@ -90,8 +90,10 @@ const BILLING_MODES = {
 
 const TEXT_CONNECTION_PRESETS = [
   { value: "secure_skill", label: "Secure Skill · OpenAI 兼容", endpoint: "https://token.secure-skill.com/v1", protocol: "openai_chat" },
-  { value: "lc_openai", label: "LC · OpenAI 兼容", endpoint: "https://s.lconai.com/v1", protocol: "openai_chat" },
-  { value: "lc_anthropic", label: "LC · Anthropic 兼容", endpoint: "https://n.lconai.com/v1", protocol: "anthropic_messages" },
+  { value: "lc_openai", label: "LConAI · OpenAI 兼容（备用节点）", endpoint: "https://s.lconai.com/v1", protocol: "openai_chat" },
+  { value: "lc_openai_primary", label: "LConAI · OpenAI 兼容（候选，需验证）", endpoint: "https://n.lconai.com/v1", protocol: "openai_chat" },
+  { value: "lc_anthropic", label: "LConAI · Anthropic 兼容（候选，需验证）", endpoint: "https://n.lconai.com/v1", protocol: "anthropic_messages" },
+  { value: "gaorui", label: "高瑞 · OpenAI 兼容（候选，需验证）", endpoint: "https://gaorui.cc/v1", protocol: "openai_chat" },
   { value: "deepseek_official", label: "DeepSeek · 官方直连", endpoint: "https://api.deepseek.com/v1", protocol: "openai_chat" },
   { value: "openai_official", label: "OpenAI · 官方直连", endpoint: "https://api.openai.com/v1", protocol: "openai_chat" },
   { value: "anthropic_official", label: "Anthropic · 官方直连", endpoint: "https://api.anthropic.com/v1", protocol: "anthropic_messages" },

@@ -9,9 +9,16 @@ import {
   StoryboardProjectSchema,
   StoryboardTargetDurationSchema,
   StoryboardTextLayoutModeSchema,
+  StoryboardVisualAssetModeSchema,
+  StoryboardVisualAssetRoleSchema,
   storyboardTextLayoutInstruction,
 } from "@/lib/storyboard-workbench";
 import { loadStoryboardAgentConfig } from "@/lib/server/storyboard-agent-store";
+import {
+  parseExplicitStoryboardSegments,
+  storyboardNarrationCharBudget,
+  validateStoryboardNarrationCapacity,
+} from "@/lib/storyboard-duration-contract";
 
 const RequestSchema = z.object({
   script: z.string().trim().min(10).max(30000),
@@ -20,6 +27,12 @@ const RequestSchema = z.object({
   panelMode: StoryboardPanelModeSchema.default("fixed-4"),
   targetDuration: StoryboardTargetDurationSchema.default(10),
   textLayoutMode: StoryboardTextLayoutModeSchema.default("visual-only"),
+  visualAssetMode: StoryboardVisualAssetModeSchema.default("off"),
+  selectedVisualAssets: z.array(z.object({
+    id: z.string().trim().regex(/^[a-z][a-z0-9_-]{2,63}$/u),
+    role: StoryboardVisualAssetRoleSchema,
+    name: z.string().trim().min(2).max(80).optional(),
+  })).max(16).default([]),
 });
 // 模型名由服务端固定：/api/llm 的 model_overridden 覆盖要求 pm_ 公共ID，
 // 普通用户带 model_overridden 会 404；改走按名称解析（仅服务端可信名称）。
@@ -42,8 +55,44 @@ function extractMessageContent(payload: Record<string, unknown>) {
   return choices?.[0]?.message?.content || "";
 }
 
+function assertVisualAssetContract(
+  project: z.infer<typeof StoryboardProjectSchema>,
+  input: z.infer<typeof RequestSchema>,
+) {
+  if (project.visualAssetPlan.mode !== input.visualAssetMode) {
+    throw new Error(`视觉资产模式不一致：请求 ${input.visualAssetMode}，智能体返回 ${project.visualAssetPlan.mode}`);
+  }
+  const selectedById = new Map(input.selectedVisualAssets.map((asset) => [asset.id, asset]));
+  const assetsById = new Map(project.visualAssetPlan.assets.map((asset) => [asset.id, asset]));
+  if (input.visualAssetMode === "off" && (project.visualAssetPlan.assets.length || project.segments.some((segment) => segment.visualAssetRefs.length))) {
+    throw new Error("视觉资产模式关闭时不得返回资产计划或分镜资产引用");
+  }
+  for (const asset of project.visualAssetPlan.assets) {
+    const selected = selectedById.get(asset.id);
+    if (selected && selected.role !== asset.role) {
+      throw new Error(`视觉资产 ${asset.id} 的角色类型与用户选择不一致`);
+    }
+    if (input.selectedVisualAssets.length > 0 && !selected) {
+      throw new Error(`智能体返回了未选择的视觉资产：${asset.id}`);
+    }
+  }
+  for (const [segmentIndex, segment] of project.segments.entries()) {
+    const seen = new Set<string>();
+    for (const ref of segment.visualAssetRefs) {
+      const key = `${ref.assetId}:${ref.role}`;
+      if (seen.has(key)) throw new Error(`片段 ${segmentIndex + 1} 重复绑定视觉资产 ${ref.assetId}`);
+      seen.add(key);
+      const asset = assetsById.get(ref.assetId);
+      if (!asset) throw new Error(`片段 ${segmentIndex + 1} 引用了不存在的视觉资产 ${ref.assetId}`);
+      if (asset.role !== ref.role) throw new Error(`片段 ${segmentIndex + 1} 的资产 ${ref.assetId} 角色类型不一致`);
+    }
+  }
+}
+
 function normalizeVideoExecutionPrompt(value: string) {
   return value
+    .replace(/从故事板(?:第?一格|首格)裁(?:出|切)的[^。；\n]*/giu, "以完整四宫格或五宫格故事板作为唯一图片参考")
+    .replace(/工作台只提交故事板(?:第?一格|首格)[^。；\n]*裁(?:出|切)[^。；\n]*/giu, "视频阶段只提交完整四宫格或五宫格故事板图")
     .replace(/Frame\s*\d+\s*[:：][^。；\n]*/giu, "")
     .replace(/英文说明条|Frame文字|Frame说明条|导演注释|底部小字/gu, "图形化包装锚点")
     .replace(/医院名称|科室招牌|病历小字|药品标签|医疗说明/gu, "兽医十字图标贴纸")
@@ -123,7 +172,7 @@ function assertStoryboardImagePromptQuality(prompt: string, segmentIndex: number
 function storyboardVideoOpeningGuard(beatCount: number, duration: 8 | 10 | 15) {
   const shotCount = duration === 15 ? "4至6" : duration === 8 ? "3" : "3至4";
   return [
-    `读取输入的${beatCount}格故事板作为按时间顺序排列的视觉锚点、动作路线和角色资产依据，成片呈现正常全屏连续视频；参考图里的分格边界、角标和校准文字只作为内部读取依据。`,
+      `读取输入的一张完整${beatCount}格故事板作为按时间顺序排列的视觉锚点、动作路线和角色资产依据，成片呈现正常全屏连续视频；这张完整四宫格或五宫格图是视频阶段唯一图片输入，平台不裁切、不拆格、不把视觉资产图追加为视频参考；参考图里的分格边界、角标和校准文字只作为内部读取依据。`,
     `用${shotCount}个真实镜头完成${duration}秒演出，不按面板数机械强切；保持角色、场景、道具、光影、色彩与语义包装连续。`,
     "角色全程用非语言表演：人物用眼睛、眉毛、手势和身体重心表达情绪，口部只呈现短暂表情形态并回到自然闭合；宠物用眼白、瞳孔、耳朵、尾巴、毛发、爪子和重心表达情绪。",
     "现场声轨只包含纯环境拟音：安静室内或户外底噪、脚步声、布料摩擦、道具碰撞、粒子闪光、爪垫摩擦和轻微呼吸，全部声音来自画面中的物体、空间和动作；人物口部保持闭合表情节奏，宠物嘴部只承担呼吸和表情。",
@@ -137,8 +186,16 @@ export async function POST(request: Request) {
     const authorization = request.headers.get("authorization");
     if (!authorization) return NextResponse.json({ error: "请先登录" }, { status: 401 });
 
-    const segments = segmentNarration(input.script, input.targetDuration * 6);
+    const segments = parseExplicitStoryboardSegments(input.script)
+      || segmentNarration(input.script, storyboardNarrationCharBudget(input.targetDuration).target);
     if (!segments.length) return NextResponse.json({ error: "文案没有可拆分内容" }, { status: 400 });
+    const overlong = segments.find((segment) => !validateStoryboardNarrationCapacity(segment, input.targetDuration).ok);
+    if (overlong) {
+      const capacity = validateStoryboardNarrationCapacity(overlong, input.targetDuration);
+      return NextResponse.json({
+        error: `已编号分段超过 ${input.targetDuration} 秒容量（${capacity.effectiveCharacters} 个有效字，最多 ${capacity.recommendedMax} 个）；请在语义边界重新分段，不会自动截断或改写原文`,
+      }, { status: 400 });
+    }
     const config = await loadStoryboardAgentConfig(getSupabaseAdminClient());
     const response = await fetch(new URL("/api/llm", request.url), {
       method: "POST",
@@ -163,11 +220,16 @@ export async function POST(request: Request) {
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) throw new Error(String(payload.error || `导演智能体调用失败（${response.status}）`));
     const project = StoryboardProjectSchema.parse(parseJsonContent(extractMessageContent(payload)));
+    assertVisualAssetContract(project, input);
     if (project.segments.length !== segments.length) {
       throw new Error(`智能体返回 ${project.segments.length} 段，固定分段为 ${segments.length} 段`);
     }
     project.segments.forEach((segment, index) => {
       if (segment.narration !== segments[index]) throw new Error(`片段 ${index + 1} 改写了原文，已拒绝装卡`);
+      const narrationCapacity = validateStoryboardNarrationCapacity(segment.narration, input.targetDuration);
+      if (!narrationCapacity.ok) {
+        throw new Error(`片段 ${index + 1} 含 ${narrationCapacity.effectiveCharacters} 个有效字，超过 ${input.targetDuration} 秒最多 ${narrationCapacity.recommendedMax} 字；请重新分段，不会自动截断原文`);
+      }
       if (segment.durationSeconds !== input.targetDuration) {
         throw new Error(`片段 ${index + 1} 应为 ${input.targetDuration} 秒，智能体返回了 ${segment.durationSeconds} 秒`);
       }

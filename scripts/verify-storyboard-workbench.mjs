@@ -16,6 +16,7 @@ const source = {
 
 const IMAGE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90" viewBox="0 0 160 90"><rect width="160" height="90" fill="#0f172a"/><circle cx="80" cy="45" r="24" fill="#67e8f9"/></svg>';
 const IMAGE_URL = "https://example.com/storyboard-v50.svg";
+const ASSET_URL = "https://example.com/visual-asset-character.svg";
 const VIDEO_URL = "https://example.com/storyboard-v50.mp4";
 const browser = await chromium.launch({ headless: true });
 const checks = [];
@@ -64,6 +65,11 @@ async function createPage(viewport) {
         workspaceSurfaces: ["storyboard"],
       }],
     }),
+  }));
+  await page.route("**/api/image-workbench/history**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ records: [{ items: [{ assetId: "history-character-1", imageUrl: ASSET_URL, prompt: "固定人物资产，暖色短发与米白外套，保持外观一致。", historyRecordId: "history-record-1", storageKey: "images/history-character-1.png", modelId: "gpt-image-2-e2e", modelName: "GPT Image 2 测试通道", quotedPrice: 0.34, createdAt: "2026-10-15T00:00:00.000Z" }] }] }),
   }));
   return { context, page, fixture };
 }
@@ -124,6 +130,11 @@ async function typePrompt(locator, value) {
     contentType: "image/svg+xml",
     body: IMAGE_SVG,
   }));
+  await page.route(ASSET_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: IMAGE_SVG,
+  }));
 
   await page.goto(`${baseUrl}/storyboard-workbench`, { waitUntil: "domcontentloaded" });
   await page.waitForURL(/\/storyboard-workbench(?:\?|$)/u, { timeout: 30_000 });
@@ -132,7 +143,20 @@ async function typePrompt(locator, value) {
   assert.equal(await cards.count(), 3, "工作台默认不是3张镜头卡");
   const firstCard = cards.first();
   const textareas = firstCard.locator("textarea");
-  assert.equal(await textareas.count(), 3, "镜头卡应包含生图、画面精确文字和视频三个独立输入框");
+  // The exact-text overlay is optional and stays hidden until the user enables
+  // advanced text layout. The default card therefore exposes the two prompt
+  // editors that are part of the agent handoff contract.
+  assert.equal(await textareas.count(), 2, "默认镜头卡应包含生图和视频两个独立 Prompt 输入框");
+  assert.equal(await page.locator(".sbw-visual-assets-body").count(), 0, "视觉资产面板默认必须关闭");
+  await page.getByRole("button", { name: "选择资产", exact: true }).click();
+  await page.getByRole("button", { name: "读取我的历史生成图", exact: true }).click();
+  await page.getByText("固定人物资产，暖色短发与米白外套，保持外观一致。", { exact: false }).waitFor();
+  assert.equal(imageRequests.length, 0, "读取/选择视觉资产前不能触发生图请求");
+  await page.getByRole("button", { name: "绑定到当前镜头", exact: true }).click();
+  await page.getByText("任务 1 · 人物", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "保存当前资产绑定（不生成）", exact: true }).click();
+  await page.getByText("视觉资产绑定已保存到当前项目", { exact: false }).waitFor();
+  assert.equal(imageRequests.length, 0, "保存视觉资产绑定不应触发生图请求");
   await typePrompt(firstCard.getByRole("textbox", { name: "镜头1生图提示词" }), source.imagePrompt);
   await typePrompt(firstCard.getByRole("textbox", { name: "镜头1视频提示词" }), source.videoPrompt);
   await firstCard.getByRole("button", { name: "生成图片" }).waitFor({ state: "visible" });
@@ -149,7 +173,7 @@ async function typePrompt(locator, value) {
   assert.equal(imageRequests[0].prompt, source.imagePrompt, "工作台改写了智能体生图Prompt");
   assert.equal(imageRequests[0].aspectRatio, "16:9", "工作台没有提交选择的16:9比例");
   assert.equal(imageRequests[0].resolution, "1K", "工作台没有使用模型支持的分辨率");
-  assert.deepEqual(imageRequests[0].referenceImageUrls, [], "未上传参考图时生图请求不应携带旧参考图URL");
+  assert.deepEqual(imageRequests[0].referenceImageUrls, [ASSET_URL], "视觉资产绑定后应作为生图阶段参考图提交");
   assert.equal(videoRequests.length, 1, "单条视频不是一次请求");
   assert.equal(videoRequests[0].image_url, IMAGE_URL, "视频没有使用同一卡片刚生成并入库的故事板");
   assert.equal(videoRequests[0].prompt, source.videoPrompt, "工作台没有原样提交用户视频Prompt");
@@ -163,7 +187,7 @@ async function typePrompt(locator, value) {
   assert.equal(await page.locator(".sbw-shot-card").count(), 3, "刷新后工作台没有回到默认3张镜头卡");
   const restored = page.locator(".sbw-shot-card").first().locator("textarea");
   assert.equal(await restored.nth(0).inputValue(), "", "刷新后不应自动恢复生图Prompt草稿");
-  assert.equal(await restored.nth(2).inputValue(), "", "刷新后不应自动恢复视频Prompt草稿");
+  assert.equal(await restored.nth(1).inputValue(), "", "刷新后不应自动恢复视频Prompt草稿");
   assert.equal(await page.locator(".sbw-shot-card").first().getByText("视频完成").count(), 0, "刷新后不应自动恢复当前卡片生成状态");
 
   const grid = await page.locator(".sbw-shot-grid").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length);
@@ -176,14 +200,13 @@ async function typePrompt(locator, value) {
       clientWidth: document.documentElement.clientWidth,
       cardHeight: card?.getBoundingClientRect().height || 0,
       sidebarWidth: sidebar?.getBoundingClientRect().width || 0,
-      textareaHeights: textareas.map((item) => item.getBoundingClientRect().height),
+    textareaHeights: textareas.map((item) => item.getBoundingClientRect().height),
     };
   });
   assert.equal(grid, 3, `1600px 默认分镜卡片不是每行3张：${grid}`);
   assert.ok(metrics.sidebarWidth >= 311 && metrics.sidebarWidth <= 313, `桌面模型栏不是312px：${metrics.sidebarWidth}`);
   assert.ok(metrics.textareaHeights[0] >= 58 && metrics.textareaHeights[0] <= 84, `生图提示词输入框尺寸异常：${metrics.textareaHeights.join(",")}`);
-  assert.ok(metrics.textareaHeights[1] >= 44 && metrics.textareaHeights[1] <= 58, `画面精确文字输入框尺寸异常：${metrics.textareaHeights.join(",")}`);
-  assert.ok(metrics.textareaHeights[2] >= 58 && metrics.textareaHeights[2] <= 84, `视频提示词输入框尺寸异常：${metrics.textareaHeights.join(",")}`);
+  assert.ok(metrics.textareaHeights[1] >= 58 && metrics.textareaHeights[1] <= 84, `视频提示词输入框尺寸异常：${metrics.textareaHeights.join(",")}`);
   await page.screenshot({ path: path.join(outputDir, "storyboard-workbench-v50-desktop.png"), fullPage: true });
   checks.push({
     name: "desktop-real-agent-output",

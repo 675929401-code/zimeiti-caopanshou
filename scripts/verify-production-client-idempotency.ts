@@ -54,12 +54,18 @@ requireTokens("video-page:finalizing-is-active", videoPage, [
 ]);
 requireTokens("video-type:finalizing", videoTypes, ['"processing" | "finalizing" | "completed"']);
 
-requireTokens("storyboard:cropped-owned-key", storyboard, [
-  "let submissionImageStorageKey = card.imageStorageKey",
-  "submissionImageStorageKey = cropped.key",
-  "submissionImageStorageKey = migrated.key",
+requireTokens("storyboard:whole-reference-owned-key", storyboard, [
+  "function normalizeStoryboardVideoImageReference",
+  "const submissionImageRef = normalizeStoryboardVideoImageReference(card.imageRef)",
+  "const submissionImageStorageKey = card.imageStorageKey",
   "image_storage_key: submissionImageStorageKey",
+  "image_url: submissionImageUrl",
 ]);
+checks.push({
+  name: "storyboard:no-implicit-panel-crop",
+  passed: !storyboard.includes("first_storyboard_panel") && !storyboard.includes('transform: { kind: "crop"'),
+  detail: "the complete 4/5-panel reference remains the input unless an explicit split workflow is added",
+});
 requireTokens("storyboard:all-model-idempotency", storyboard, [
   "await buildClientRequestFingerprint({",
   "resolveBrowserClientAttempt({",

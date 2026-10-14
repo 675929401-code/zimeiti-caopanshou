@@ -38,6 +38,24 @@
   --dialog-shadow: 0 24px 72px rgba(0, 0, 0, .55);
 }
 
+/* The intake portal is rendered through a body portal, so the page theme's
+   variables are otherwise easy to lose at the surface boundary. Keep the
+   soft-white card legible with the same ivory paper palette as the dialog
+   system instead of inheriting a dark workspace foreground. */
+:global(html[data-theme="soft-white"]) .surface.surface {
+  --dialog-color-scheme: light;
+  --dialog-shell: #fbf7eb;
+  --dialog-body: #f6f0e4;
+  --dialog-chrome: #f1eadc;
+  --dialog-subtle: #eee7d8;
+  --dialog-text: #1f292d;
+  --dialog-muted: #536068;
+  --dialog-border: #c8bfae;
+  --dialog-accent: #7b3039;
+  --dialog-accent-foreground: #ffffff;
+  --dialog-shadow: 0 30px 72px rgba(31, 41, 45, .25), 0 7px 20px rgba(31, 41, 45, .12);
+}
+
 .surface :is(input, textarea, select)::placeholder {
   color: var(--dialog-muted);
   opacity: 1;

@@ -4,12 +4,16 @@ import {
   STORYBOARD_DIRECTOR_OUTPUT_SCHEMA_VERSION,
   parseStoryboardDirectorPackage,
   storyboardShotCountRule,
+  validateStoryboardDirectorPackage,
   type StoryboardContinuityLink,
   type StoryboardDirectorMode,
+  type StoryboardVisualAssetReferenceKind,
+  type StoryboardVisualAssetRefRole,
   type StoryboardLayout,
   type StoryboardPacingMode,
   type StoryboardShotTimeRange,
 } from "@/lib/storyboard-director-protocol";
+import type { StoryboardVisualAssetRef } from "@/lib/storyboard-workbench";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -35,6 +39,7 @@ export interface StoryboardCanvasImportSegment {
   panoramicAnchorRole: string | null;
   continuityLinks: StoryboardContinuityLink[];
   characterAssets: string[];
+  visualAssetRefs?: StoryboardVisualAssetRef[];
   semanticVisualizations: Array<{ trigger: string; visual_form: string; interaction: string }>;
 }
 
@@ -65,6 +70,11 @@ export function parseStoryboardCanvasImport(value: unknown): StoryboardCanvasImp
   }
   const pkg = parseStoryboardDirectorPackage(JSON.stringify(value.machine_payload));
   if (!pkg) return null;
+  // The parser normalizes legacy aliases for compatibility.  Before a package
+  // is handed to a production canvas, run the full stable-v1 validator so a
+  // malformed or semantically incomplete payload cannot bypass the handoff
+  // gate merely by looking structurally valid.
+  if (validateStoryboardDirectorPackage(pkg, pkg.input).length > 0) return null;
   const duration = pkg.input.target_duration_seconds;
   if (duration !== 8 && duration !== 10 && duration !== 15) return null;
   const shotRule = storyboardShotCountRule(duration, pkg.director_mode);
@@ -99,6 +109,11 @@ export function parseStoryboardCanvasImport(value: unknown): StoryboardCanvasImp
       panoramicAnchorRole: segment.panoramic_anchor_role,
       continuityLinks: segment.continuity_links,
       characterAssets: segment.character_assets,
+      visualAssetRefs: segment.visual_asset_refs?.map((ref) => ({
+        assetId: ref.asset_id,
+        role: ref.role as StoryboardVisualAssetRefRole,
+        referenceKinds: ref.reference_kinds as StoryboardVisualAssetReferenceKind[],
+      })),
       semanticVisualizations: segment.semantic_visualizations,
     })),
   };

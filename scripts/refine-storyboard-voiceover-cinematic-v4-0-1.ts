@@ -66,7 +66,7 @@ async function main() {
   assert.match(nextPrompt, /画面内不出现中文、英文、数字、字母、Frame编号、说明条/u);
   assert.match(nextPrompt, /人物从头顶到鞋底完整入框/u);
   assert.match(nextPrompt, /至少四个通道/u);
-  assert.match(nextPrompt, /工作台会自动裁出故事板第一格/u);
+  assert.match(nextPrompt, /工作台将完整四格或五格故事板作为一张参考图提交/u);
   assert.match(nextPrompt, /每个镜头只允许一个主要动作和一个回应动作/u);
   assert.match(nextPrompt, /禁止借弧面反射、镜像、屏幕画面、照片或画中画制造胖瘦/u);
 
