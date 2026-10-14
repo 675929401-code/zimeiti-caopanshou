@@ -65,7 +65,7 @@
       {
         "id": "platform-wide-shared-surface",
         "patterns": [
-          "^(?:\\.gitignore$|\\.release/|next\\.config\\.[^/]+$|package\\.json$|pnpm-lock\\.yaml$|public/|runtime-tools/|scripts/|supabase/|src/(?:app/api/|components/|contexts/|features/|hooks/|lib/|storage/|commerce/|types/|server\\.ts$|proxy\\.ts$|app/(?:layout|globals|dialog-theme|chat-glass-continuity|markdown-body|theme-crystal-aurora|ui-shell-fixes)\\.|app/.+\\.css$))"
+          "^(?:\\.gitignore$|\\.release/|next\\.config\\.[^/]+$|package\\.json$|pnpm-lock\\.yaml$|prompts/|public/|runtime-tools/|scripts/|supabase/|src/(?:app/api/|components/|contexts/|features/|hooks/|lib/|storage/|commerce/|types/|server\\.ts$|proxy\\.ts$|app/(?:layout|globals|dialog-theme|chat-glass-continuity|markdown-body|theme-crystal-aurora|ui-shell-fixes)\\.|app/.+\\.css$))"
         ],
         "routes": [
           "/",
@@ -272,6 +272,14 @@
         "^(?:package\\.json|pnpm-lock\\.yaml|next\\.config\\.[^/]+|tsconfig(?:\\.[^/]+)?\\.json)$",
         "^voice-platform/(?:package\\.json|pnpm-lock\\.yaml|next\\.config\\.[^/]+|tsconfig(?:\\.[^/]+)?\\.json)$",
         "^scripts/(?!verify-|test-).+\\.(?:mjs|js|ts|sh|ps1)$"
+      ]
+    },
+    {
+      "id": "standard-prompt-or-agent-contract",
+      "level": "STANDARD",
+      "precedence": 200,
+      "patterns": [
+        "^prompts/"
       ]
     },
     {
