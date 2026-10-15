@@ -297,3 +297,8 @@ Desktop.ini
 .next-validation/
 .next-local-acceptance-next/
 .next*/
+
+# local secrets
+*.key
+*.pem
+*tencent_key*

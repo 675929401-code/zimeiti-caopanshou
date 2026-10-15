@@ -1,0 +1,103 @@
+name: deploy-tencent
+
+# Build on GitHub (Node 24.19 / pnpm 9), ship a Next standalone tarball to the
+# Tencent server, health-check it on a spare port, then (only when asked)
+# atomically switch /data/web/current-web and reload pm2 agent-hub-web.
+# No DB migrations. No app secrets in GitHub: runtime env stays on the server.
+on:
+  pull_request:            # build only, never touches the server
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "build = build only; candidate = upload + health-check, no switch; deploy = switch production"
+        type: choice
+        options: [build, candidate, deploy]
+        default: build
+  push:
+    tags: ["deploy/*"]     # tag push = full deploy
+
+concurrency:
+  group: deploy-tencent-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  PUPPETEER_SKIP_DOWNLOAD: "1"
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    outputs:
+      release_id: ${{ steps.id.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.0.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.19.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - id: id
+        run: echo "release_id=gh-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - name: next build (standalone)
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          # build-time placeholders only; real values are read at runtime on the server
+          COZE_SUPABASE_URL: https://placeholder.supabase.co
+          COZE_SUPABASE_ANON_KEY: placeholder
+          NEXT_PUBLIC_DEPLOY_COMMIT_SHA: ${{ github.sha }}
+        run: pnpm exec next build
+      - name: assemble release
+        run: |
+          set -e
+          OUT=release/web
+          mkdir -p "$OUT"
+          cp -a .next/standalone/. "$OUT/"
+          mkdir -p "$OUT/.next" && cp -a .next/static "$OUT/.next/static"
+          git ls-files -z public | xargs -0 -I{} cp --parents {} "$OUT/"
+          find "$OUT" -name '.env*' ! -name '*.example' -prune -exec rm -rf {} +
+          printf '{"releaseId":"%s","commit":"%s","builtAt":"%s","node":"%s"}\n' \
+            "${{ steps.id.outputs.release_id }}" "$GITHUB_SHA" "$(date -u +%FT%TZ)" "$(node -v)" > "$OUT/.gh-release.json"
+          tar -czf web.tgz -C "$OUT" .
+          ls -lh web.tgz; du -sh "$OUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ steps.id.outputs.release_id }}
+          path: web.tgz
+          retention-days: 7
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'build')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: deploy/github }
+      - uses: actions/download-artifact@v4
+        with: { name: "web-${{ needs.build.outputs.release_id }}" }
+      - name: ssh setup
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: upload + remote deploy
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          RID: ${{ needs.build.outputs.release_id }}
+          SWITCH: ${{ (github.event_name == 'push' || inputs.mode == 'deploy') && '1' || '0' }}
+        run: |
+          set -e
+          S="ssh -i ~/.ssh/id_deploy -p ${PORT:-22} -o ServerAliveInterval=20 $USER@$HOST"
+          time scp -i ~/.ssh/id_deploy -P ${PORT:-22} web.tgz deploy/github/remote-deploy.sh $USER@$HOST:/tmp/
+          $S "chmod +x /tmp/remote-deploy.sh && SWITCH=$SWITCH /tmp/remote-deploy.sh $RID /tmp/web.tgz $GITHUB_SHA"
+      - name: public check
+        if: github.event_name == 'push' || inputs.mode == 'deploy'
+        run: curl -fsS -m 20 -o /dev/null -w '%{http_code}\n' https://zyuani8.com/
