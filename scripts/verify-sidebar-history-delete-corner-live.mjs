@@ -123,8 +123,8 @@ try {
   await deleteButton.focus();
   assert.match(await deleteButton.evaluate((element) => getComputedStyle(element).outlineStyle), /solid/iu, "DELETE_BUTTON_FOCUS_NOT_VISIBLE");
   const historyBox = await page.getByText("对话历史", { exact: true }).boundingBox();
-  const newChat = await page.getByRole("button", { name: /新建对话/u }).boundingBox();
-  assert.ok(historyBox && newChat && historyBox.y - (newChat.y + newChat.height) < 56, "HISTORY_GAP_NOT_COMPACT");
+  assert.ok(historyBox, "HISTORY_HEADING_MISSING");
+  assert.equal(await page.getByRole("button", { name: /新建对话/u }).count(), 0, "ORDINARY_CUSTOMER_MUST_NOT_SEE_NEW_CHAT");
   assert.deepEqual(blockedWrites, [], "READ_ONLY_BROWSER_EMITTED_WRITES");
   const outputDir = path.resolve(".codex-evidence/sidebar-history-delete-corner-live");
   fs.mkdirSync(outputDir, { recursive: true });

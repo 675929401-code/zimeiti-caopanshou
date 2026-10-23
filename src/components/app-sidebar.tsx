@@ -484,6 +484,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
       window.location.replace("/");
       return;
     }
+    if (!isAdmin || !canUseMarketplace) return;
 
     startFreeChat();
     onNavigate?.();
@@ -632,8 +633,8 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
         </div>
       </div>
 
-      {/* 新建对话：所有已登录用户统一进入自由对话。 */}
-      {canUseMarketplace && <div className="px-2.5 pb-2 pt-1 shrink-0">
+      {/* 新建对话：仅管理员进入自由对话。打开已有会话不走这里。 */}
+      {isAdmin && canUseMarketplace && <div className="px-2.5 pb-2 pt-1 shrink-0">
         <button
           onClick={handleNewConversation}
           className="new-chat-btn w-full flex items-center justify-center gap-2 py-2 rounded-lg transition-[transform,background-color,box-shadow] duration-200 cursor-pointer font-semibold tracking-wide hover:-translate-y-px active:translate-y-0"

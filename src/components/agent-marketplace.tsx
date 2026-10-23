@@ -36,6 +36,7 @@ import { getClientBootstrapAgentCatalog } from "@/lib/client-bootstrap-cache";
 const CARD_TITLE_FONT_FAMILY = "'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 const MARKETPLACE_EAGER_AVATAR_COUNT = 8;
 const FAVORITES_CATEGORY = "favorites";
+const FAVORITE_HEART_CLEARANCE_PX = 40;
 const GOOGLE_TITLE_FONT_QUERIES: Record<string, string> = {
   "noto-serif-sc": "family=Noto+Serif+SC:wght@400;600;700;900",
   "noto-sans-sc": "family=Noto+Sans+SC:wght@400;500;600;700",
@@ -2329,12 +2330,13 @@ export function AgentMarketplace() {
               const textEl = (
                 <div className={`marketplace-agent-copy relative z-[1] ${isAvatarTop ? "w-full text-center" : "flex-1 overflow-hidden"}`} style={{
                   transform: `translate(${cl.textOffsetX || 0}px, ${cl.textOffsetY || 0}px)`,
-                  ...(isAvatarCorner ? {
-                    paddingTop: cl.avatarPosition.includes("top") ? (avatarH + 8) : 0,
-                    paddingBottom: cl.avatarPosition.includes("bottom") ? (avatarH + 8) : 0,
-                    paddingLeft: cl.avatarPosition.includes("left") ? (avatarW + 8) : 0,
-                    paddingRight: cl.avatarPosition.includes("right") ? (avatarW + 8) : 0,
-                  } : undefined),
+                  paddingTop: isAvatarCorner && cl.avatarPosition.includes("top") ? (avatarH + 8) : undefined,
+                  paddingBottom: isAvatarCorner && cl.avatarPosition.includes("bottom") ? (avatarH + 8) : undefined,
+                  paddingLeft: isAvatarCorner && cl.avatarPosition.includes("left") ? (avatarW + 8) : undefined,
+                  paddingRight: Math.max(
+                    isAvatarCorner && cl.avatarPosition.includes("right") ? (avatarW + 8) : 0,
+                    FAVORITE_HEART_CLEARANCE_PX,
+                  ),
                 }}>
                   <h3
                     className="marketplace-agent-title truncate leading-snug"

@@ -32,7 +32,8 @@ assert.match(sidebar, /const handleNewConversation = \(\) => \{/u);
 assert.match(sidebar, /startFreeChat\(\)/u);
 assert.match(sidebar, /onClick=\{handleNewConversation\}/u);
 const newChatButton = sidebar.slice(sidebar.indexOf("{/* 新建对话："), sidebar.indexOf("{/* 🔒 新建对话按钮 — 锁定区域结束 */}"));
-assert.ok(!newChatButton.includes("{isAdmin && ("), "ordinary users must see the new conversation button");
+assert.match(newChatButton, /\{isAdmin && canUseMarketplace &&/u, "new conversation is limited to admins with marketplace access");
+assert.match(sidebar, /if \(!isAdmin \|\| !canUseMarketplace\) return;/u, "hidden new-conversation calls must not start free chat");
 assert.match(sidebar, /handleSelectConversation\(conv\.id\)/u);
 
 const marketplace = read("src/components/agent-marketplace.tsx");
@@ -41,11 +42,19 @@ assert.match(marketplace, /startConversation\(agentId\)/u);
 assert.match(marketplace, /const \{ state, dispatch, startChat,/u);
 assert.match(marketplace, /const newConvId = startChat\(agentId(?:,\s*requestedConversationId)?\)/u);
 assert.doesNotMatch(marketplace, /type: "ADD_CONVERSATION"/u, "marketplace must use the canonical pending-conversation path");
+assert.match(marketplace, /const FAVORITE_HEART_CLEARANCE_PX = 40;/u);
+assert.match(marketplace, /paddingRight: Math\.max\([\s\S]*FAVORITE_HEART_CLEARANCE_PX,/u);
+assert.match(marketplace, /favoriteAgentIds\.size/u, "favorite badge count stays independent of the current filter");
 
 const appContextSource = read("src/contexts/app-context.tsx");
 assert.match(appContextSource, /rememberPendingLocalConversation\(conversation\);\s*dispatch\(\{ type: "START_CONVERSATION", payload: conversation \}\);\s*return conversation\.id;/u);
 
 const genericChat = read("src/components/chat-view.tsx");
+assert.match(genericChat, /const canSwitchAssistant = isAdmin;/u, "assistant switching is admin-only");
+assert.match(genericChat, /if \(!canSwitchAssistant\) \{\s*setShowMentionDropdown\(false\);/u);
+assert.match(genericChat, /const mentionMatch = canSwitchAssistant \? trimmed\.match/u);
+assert.doesNotMatch(genericChat, /const \[fontSize, setFontSize\]/u, "chat font size state must not compete with the layout editor");
+assert.match(genericChat, /\{isAdmin && \(\s*<button[\s\S]{0,800}title="切换内容宽度"/u, "content width control stays admin-only");
 assert.doesNotMatch(genericChat, /\/api\/chat-models|切换对话模型|选择对话模型/u);
 assert.doesNotMatch(genericChat, /selectedPublicModelId|retryModelName/u);
 assert.match(genericChat, /FREE_CHAT_DEEP_THINKING_TYPE/u);

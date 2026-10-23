@@ -85,6 +85,7 @@ import {
 } from "@/lib/video-model-capabilities";
 import { compactPublicVideoModelName } from "@/lib/video-history-presentation";
 import { groupVideoHistory } from "@/lib/video-history-groups";
+import { coverFor } from "@/lib/video-poster";
 import {
   buildStoryboardVideoPrompt,
   inferStoryboardNarration,
@@ -4856,8 +4857,14 @@ function UserStoryboardWorkbench({
                   {group.items.map((task, index) => {
                     const taskId = task.id;
                     const displayIndex = Number(task.cardIndex) > 0 ? Number(task.cardIndex) : index + 1;
-                    const poster = String(task.thumbnailUrl || task.firstFrameUrl || "");
-                    const completed = task.status === "completed" && Boolean(task.id || task.taskIdExternal);
+                    const taskKey = String(task.id || task.taskIdExternal || "");
+                    const completed = task.status === "completed" && Boolean(taskKey);
+                    const poster = coverFor({
+                      posterUrl: task.thumbnailUrl,
+                      firstFrameUrl: task.firstFrameUrl,
+                      taskId: taskKey,
+                      completed,
+                    });
                     return (
                     <article key={taskId} data-video-history-task={taskId} className="sbw-history-video-task">
                     <div>
