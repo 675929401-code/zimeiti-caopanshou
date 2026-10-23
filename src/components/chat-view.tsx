@@ -71,6 +71,7 @@ export function ChatView() {
   const { state, sendMessage, abortCurrentStream, isConvStreaming, dispatch, setPendingPresetMessage } = useApp();
   const router = useRouter();
   const isAdmin = state.auth.user?.role === "admin";
+  const canSwitchAssistant = isAdmin;
   const [inputValue, setInputValue] = useState("");
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionSearch, setMentionSearch] = useState("");
@@ -83,7 +84,6 @@ export function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
-  const [fontSize, setFontSize] = useState(18); // 12-22px, larger Chinese reading baseline
   const [contentWidthClass, setContentWidthClass] = useState(2); // 0=紧凑, 1=标准, 2=宽屏, 3=全屏
   const [isExpanded, setIsExpanded] = useState(false); // 对话框放大状态（侧边栏折叠）
   const [isInputExpanded, setIsInputExpanded] = useState(false); // 输入框展开/收起（maxHeight切换）
@@ -643,6 +643,11 @@ export function ChatView() {
   const handleInputChange = (value: string) => {
     setInputValue(value);
 
+    // @ 切换助手仅管理员。普通用户输入里的 @ 保持原文，不打开选择器。
+    if (!canSwitchAssistant) {
+      setShowMentionDropdown(false);
+      return;
+    }
     // Detect @ mention — 仅在@位于开头或前面是空格时触发，避免匹配邮箱地址
     const lastAtIndex = value.lastIndexOf("@");
     if (lastAtIndex >= 0) {
@@ -663,6 +668,10 @@ export function ChatView() {
   };
 
   const handleMentionSelect = (agentId: string) => {
+    if (!canSwitchAssistant) {
+      setShowMentionDropdown(false);
+      return;
+    }
     const agent = state.agents.find((a) => a.id === agentId);
     if (!agent || mentionStartIndex < 0) return;
 
@@ -705,11 +714,11 @@ export function ChatView() {
     let messageContent = trimmed;
     let apiContent: string | undefined; // 实际发送给API的内容（协同时与展示内容不同）
 
-    // Check if there's a @mention
+    // Check if there's a @mention. 非管理员不把 @ 解析成助手切换。
     let mentionedAgentId: string | undefined = bipAgentId;
     // 仅匹配独立的@提及（@位于开头或前面是空格），避免匹配邮箱地址
-    const mentionMatch = trimmed.match(/(?:^|\s)@(\S+)(?:\s|$)/);
-    if (mentionMatch) {
+    const mentionMatch = canSwitchAssistant ? trimmed.match(/(?:^|\s)@(\S+)(?:\s|$)/) : null;
+    if (canSwitchAssistant && mentionMatch) {
       const mentionedAgent = state.agents.find((a) => a.name === mentionMatch[1]);
       if (mentionedAgent) {
         mentionedAgentId = mentionedAgent.id;
@@ -869,7 +878,7 @@ export function ChatView() {
               </div>
               <p className="text-sm font-medium text-[var(--foreground)]">选择一个智能体开始对话</p>
               <p className="text-xs mt-2 text-[var(--text-secondary)]">
-                从应用广场选择，或点击左侧「新建对话」
+                {isAdmin ? "从应用广场选择，或点击左侧「新建对话」" : "从应用广场选择智能体开始对话"}
               </p>
             </>
           )}
@@ -904,12 +913,10 @@ export function ChatView() {
                   setIsExpanded(false);
                   dispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: false });
                   setContentWidthClass(2);
-                  setFontSize(f => Math.max(12, f - 2));
                 } else {
                   setIsExpanded(true);
                   dispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: true });
                   setContentWidthClass(3);
-                  setFontSize(f => Math.min(22, f + 2));
                 }
               }}
               className={cn(
@@ -1000,7 +1007,7 @@ export function ChatView() {
           {/* Quick nav: back to marketplace */}
           <NavButton icon={Home} label="主页" variant="ghost" onClick={() => dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" })} title="返回应用广场" />
 
-          {/* Content width control */}
+          {isAdmin && (
           <button
             onClick={() => setContentWidthClass(c => (c + 1) % widthClasses.length)}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-[var(--text-secondary)] hover:text-[var(--foreground)] bg-[var(--background)] border border-[var(--border)] hover:border-[var(--primary)]/30 transition-colors"
@@ -1011,6 +1018,7 @@ export function ChatView() {
             </svg>
             {widthLabels[contentWidthClass]}
           </button>
+          )}
           {/* Credits badge */}
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#10B981]/10 text-[#10B981] text-xs font-medium">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6"/></svg>
@@ -1050,12 +1058,12 @@ export function ChatView() {
                       {isBipProject ? (activeAgent.guideMessage || activeAgent.guide_message) : (activeAgent.guideMessage || activeAgent.guide_message || '').split('\n')[0]}
                     </span>
                   </div>
-                  <p className="text-xs mt-3 text-[var(--text-secondary)]">{isBipProject ? '直接说你的情况，不清楚的内容由我协助判断。' : '输入问题，使用 @ 可以切换其他智能体'}</p>
+                  <p className="text-xs mt-3 text-[var(--text-secondary)]">{isBipProject ? '直接说你的情况，不清楚的内容由我协助判断。' : (canSwitchAssistant ? '输入问题，使用 @ 可以切换其他智能体' : '输入问题开始对话')}</p>
                 </>
               ) : (
                 <>
                   <p className="text-sm text-[var(--foreground)]">开始与 {activeConv?.agentName} 对话吧</p>
-                  <p className="text-xs mt-1.5 text-[var(--text-secondary)]">输入问题，使用 @ 可以切换其他智能体</p>
+                  <p className="text-xs mt-1.5 text-[var(--text-secondary)]">{canSwitchAssistant ? "输入问题，使用 @ 可以切换其他智能体" : "输入问题开始对话"}</p>
                 </>
               )}
             </div>
@@ -1066,7 +1074,6 @@ export function ChatView() {
               key={msg.id}
               message={msg}
               allMessages={activeConv?.messages}
-              fontSize={fontSize}
               outputStyle={agentOutputStyle}
               responseFormat={activeAgent?.responseFormat ?? activeAgent?.response_format}
               onStyleChange={(newStyle) => setAgentOutputStyle(newStyle)}

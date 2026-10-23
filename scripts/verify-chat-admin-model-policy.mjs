@@ -170,6 +170,14 @@ async function verifyFreeChatForRole(user, token) {
   const navigation = await page.goto(`${origin}/`, { waitUntil: "domcontentloaded", timeout: 60_000 });
   assert.ok(navigation?.ok(), `${user.role} home did not load`);
   const newConversation = page.getByRole("button", { name: "新建对话", exact: true });
+  if (user.role !== "admin") {
+    await page.getByText("对话历史", { exact: true }).waitFor({ state: "visible", timeout: 30_000 });
+    assert.equal(await newConversation.count(), 0, `${user.role} must not see 新建对话`);
+    assert.equal(await page.locator('button[title="切换对话模型"]').count(), 0, `${user.role} still sees a model switcher`);
+    assert.equal(await page.getByText("选择对话模型", { exact: true }).count(), 0, `${user.role} still sees a model catalog`);
+    await context.close();
+    return { role: user.role, newConversationVisible: false };
+  }
   await newConversation.waitFor({ state: "visible", timeout: 30_000 });
   await newConversation.click({ force: true });
 
@@ -226,7 +234,7 @@ const report = {
   paidRequests: 0,
   databaseMutations: 0,
   checks: {
-    ordinaryAndAdminFreeChatVisible: roleResults,
+    adminFreeChatVisibleOrdinaryNewChatHidden: roleResults,
     modelSwitcherHiddenForBothRoles: true,
     fixedModel: "gpt-5.6-terra",
     fixedDeepThinkingType: 2,

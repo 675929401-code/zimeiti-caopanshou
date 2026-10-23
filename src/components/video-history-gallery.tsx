@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Film, Maximize2, Minimize2, Minus, Play, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
 import type { VideoTask } from '@/types/coze';
 import { compactPublicVideoModelName, sortVideoHistoryBySubmission, videoHistoryTitle } from '@/lib/video-history-presentation';
+import { coverFor, safePoster } from '@/lib/video-poster';
 import styles from './video-history-gallery.module.css';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,17 +34,6 @@ function naturalDayGroup(createdAt: string, today: number) {
   if (ageDays === 1) return { key: 'yesterday', label: '昨天' };
   if (ageDays === 2) return { key: 'before-yesterday', label: '前天' };
   return { key: 'earlier', label: '更早记录' };
-}
-
-function safeImageUrl(value: string | undefined) {
-  const candidate = String(value || '').trim();
-  if (!candidate) return '';
-  if (candidate.startsWith('/') && !candidate.startsWith('//')) return candidate;
-  try {
-    return new URL(candidate).protocol === 'https:' ? candidate : '';
-  } catch {
-    return '';
-  }
 }
 
 function videoTicketUrl(value: string | undefined) {
@@ -211,7 +201,12 @@ export function VideoHistoryGallery({ tasks, loading, error, onRefresh, onRetry,
   const activePreviewTask = activePreviewTaskId ? tasks.find(task => task.id === activePreviewTaskId) : undefined;
   const activePreviewSource = activePreviewTask && activePlayback?.taskId === activePreviewTask.id ? activePlayback.url : '';
   const activePreviewPoster = activePreviewTask && !brokenPosterIds.has(activePreviewTask.id)
-    ? safeImageUrl(activePreviewTask.thumbnailUrl) || safeImageUrl(activePreviewTask.firstFrameUrl)
+    ? coverFor({
+      posterUrl: activePreviewTask.thumbnailUrl,
+      firstFrameUrl: activePreviewTask.firstFrameUrl,
+      taskId: activePreviewTask.id,
+      completed: activePreviewTask.status === 'completed',
+    }) || (activePreviewTask.status === 'completed' ? '' : safePoster(activePreviewTask.referenceImageUrl))
     : '';
   const previewPortal = portalReady && activePreviewTask && activePreviewSource
     ? createPortal(
@@ -250,10 +245,13 @@ export function VideoHistoryGallery({ tasks, loading, error, onRefresh, onRetry,
       <div className={styles.dayHeading}><h2 id={`video-history-${group.key}`}>{group.label}</h2><span>{group.tasks.length} 个任务</span></div>
       <div className={styles.grid}>{group.tasks.map(task => {
         const completed = task.status === 'completed';
-        const thumbnail = safeImageUrl(task.thumbnailUrl);
-        const firstFrame = safeImageUrl(task.firstFrameUrl);
-        const referenceImage = safeImageUrl(task.referenceImageUrl);
-        const selectedPoster = completed ? thumbnail || firstFrame : thumbnail || firstFrame || referenceImage;
+        const referenceImage = safePoster(task.referenceImageUrl);
+        const selectedPoster = coverFor({
+          posterUrl: task.thumbnailUrl,
+          firstFrameUrl: task.firstFrameUrl,
+          taskId: task.id,
+          completed,
+        }) || (completed ? '' : referenceImage);
         const poster = brokenPosterIds.has(task.id) ? '' : selectedPoster;
         const showingReferenceImage = !completed && Boolean(referenceImage) && selectedPoster === referenceImage;
         const playbackUrl = videoTicketUrl(task.videoUrl) || videoTicketUrl(task.storageUrl);

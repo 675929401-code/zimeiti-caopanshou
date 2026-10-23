@@ -28,8 +28,11 @@ const newConversationStart = sidebar.indexOf("const handleNewConversation");
 const newConversationEnd = sidebar.indexOf("const handlePresetStart", newConversationStart);
 const newConversation = sidebar.slice(newConversationStart, newConversationEnd);
 assert.match(newConversation, /if \(!auth\?\.isAuthenticated \|\| !user\)[\s\S]*?window\.location\.replace\("\/"\)/u, "未登录时必须返回首页登录边界");
-assert.match(newConversation, /startFreeChat\(\);\s*onNavigate\?\.\(\);/u, "所有已登录用户的新建对话必须进入自由对话");
-assert.doesNotMatch(newConversation, /if \(isAdmin\)|activeAgent|createConversationAndChat/u, "新建自由对话不得再按管理员角色或当前智能体分流");
+assert.match(newConversation, /if \(!isAdmin \|\| !canUseMarketplace\) return;/u, "非管理员不得通过新建对话进入自由聊");
+assert.match(newConversation, /startFreeChat\(\);\s*onNavigate\?\.\(\);/u, "管理员新建对话仍进入自由对话");
+assert.doesNotMatch(newConversation, /activeAgent|createConversationAndChat/u, "新建自由对话不得按当前智能体分流");
+const newChatButton = sidebar.slice(sidebar.indexOf("{/* 新建对话："), sidebar.indexOf("{/* 🔒 新建对话按钮 — 锁定区域结束 */}"));
+assert.match(newChatButton, /\{isAdmin && canUseMarketplace &&/u, "新建对话按钮仅管理员且具备广场权限时显示");
 
 assert.match(sidebar, /<UserThemeSwitcher\s+menuSide="top"\s*\/>/u, "左侧栏底部必须保留唯一主题切换入口");
 assert.doesNotMatch(marketplace, /UserThemeSwitcher|marketplace-nav-actions/u, "首页右上角不得继续渲染重复主题入口");
@@ -41,7 +44,7 @@ console.log(JSON.stringify({
     "sidebar-balance-card-removed",
     "media-history-routes-to-unified-history",
     "legacy-extract-shortcuts-filtered",
-    "new-chat-opens-free-chat-for-authenticated-users",
+    "new-chat-opens-free-chat-for-admins",
     "unauthenticated-new-chat-returns-home",
     "home-admin-actions-hidden",
     "theme-switcher-kept-in-sidebar-only",
