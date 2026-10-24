@@ -38,22 +38,29 @@
   --dialog-shadow: 0 24px 72px rgba(0, 0, 0, .55);
 }
 
-/* The intake portal is rendered through a body portal, so the page theme's
-   variables are otherwise easy to lose at the surface boundary. Keep the
-   soft-white card legible with the same ivory paper palette as the dialog
-   system instead of inheriting a dark workspace foreground. */
+/* Use the current Soft White palette, resolved at the theme root. These
+   aliases retain the canonical colours after the dialog remaps its tokens. */
 :global(html[data-theme="soft-white"]) .surface.surface {
   --dialog-color-scheme: light;
-  --dialog-shell: #fbf7eb;
-  --dialog-body: #f6f0e4;
-  --dialog-chrome: #f1eadc;
-  --dialog-subtle: #eee7d8;
-  --dialog-text: #1f292d;
-  --dialog-muted: #536068;
-  --dialog-border: #c8bfae;
-  --dialog-accent: #7b3039;
-  --dialog-accent-foreground: #ffffff;
-  --dialog-shadow: 0 30px 72px rgba(31, 41, 45, .25), 0 7px 20px rgba(31, 41, 45, .12);
+  --dialog-shell: var(--agent-intake-shell);
+  --dialog-body: var(--agent-intake-body);
+  --dialog-chrome: var(--agent-intake-chrome);
+  --dialog-raised: var(--agent-intake-raised);
+  --dialog-subtle: var(--agent-intake-subtle);
+  --dialog-footer: var(--agent-intake-footer);
+  --dialog-text: var(--agent-intake-text);
+  --dialog-muted: var(--agent-intake-muted);
+  --dialog-border: var(--agent-intake-border);
+  --dialog-accent: var(--agent-intake-accent);
+  --dialog-accent-foreground: var(--agent-intake-accent-foreground);
+  --dialog-accent-soft: var(--agent-intake-accent-soft);
+  --dialog-secondary-accent: var(--agent-intake-accent-soft);
+  --dialog-shadow: 0 24px 64px rgba(18, 36, 30, .20), 0 5px 18px rgba(18, 36, 30, .10);
+}
+
+:global(html[data-theme="soft-white"]) .surface.surface [data-slot="dialog-title"] {
+  font-family: inherit !important;
+  font-weight: 650;
 }
 
 .surface :is(input, textarea, select)::placeholder {

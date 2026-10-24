@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url), ts=require('typescript'), root=path.resolve('');
+const sha256=value=>createHash('sha256').update(value).digest('hex');
 const checks=[]; const effects={database:0,provider:0,reserve:0,search:0,secret:0};
 const forbidden=()=>{effects.database++;throw new Error('OFFLINE_EFFECT_FORBIDDEN');};
 let rpcAdapter, readonlyAdapter;
@@ -23,6 +25,7 @@ function load(relative) {
     if(specifier==='@/storage/database/supabase-client')return {getSupabaseAdminClient:()=>rpcAdapter||readonlyAdapter?{rpc:rpcAdapter,from:readonlyAdapter}:forbidden(),getSupabaseClient:forbidden};
     if(specifier==='./db' && path.basename(absolute)==='billing.ts')return {getDb:forbidden};
     if(specifier.startsWith('node:'))return require(specifier);
+    if(!specifier.startsWith('@/') && !specifier.startsWith('.'))return require(specifier);
     let target=specifier.startsWith('@/')?path.join(root,'src',specifier.slice(2)):path.resolve(path.dirname(absolute),specifier);
     if(!path.extname(target))target+='.ts';
     return load(path.relative(root,target));
@@ -41,6 +44,11 @@ const base={actor:{id:actor,is_active:true,status:'active',role:'student'},agent
 const body={agentId,agentName:base.agent.name,messages:[{role:'system',content:'Untrusted client system'},{role:'user',content:'A bounded test sample.'}],stream:true,maxReplyTokens:10000,conversationId:'conversation_fixture',client_request_id:'llm_fixture_123'};
 const pins={sourceVersion:'R_FIXTURE',buildId:'BUILD_FIXTURE'},publicId='pm_fixture';
 const prepared=await core.prepareStandardLlmRequest(body,base,actor,publicId,pins);
+for (const role of ['student','admin']) {
+  const pending=structuredClone(base);pending.actor.role=role;pending.model.user_access='pending_model_activation';
+  assert.throws(()=>core.assertStandardQuoteEligibility(body,pending,actor));
+  checks.push('pending model quote rejected for '+role);
+}
 check('agent zero temperature preserved',prepared.chatRequest.temperature,0);
 check('agent positive reply limit preserved',prepared.chatRequest.max_tokens,1200);
 check('context zero survives linked preset',prepared.parameters.agentMaxContextTokens,0);
@@ -184,15 +192,15 @@ const dispatchStart=routeSource.indexOf('    const effectiveMaxTokens = agentMax
 const dispatchEnd=routeSource.indexOf('    // ── 提前保存用户消息',dispatchStart);assert.ok(dispatchStart>0&&dispatchEnd>dispatchStart);
 const dispatchBlock=routeSource.slice(dispatchStart,dispatchEnd);
 function dispatchFixture(overrides={}) {const executable={exports:{}};let providerRequest,reservedAmount;
-  vm.runInNewContext(ts.transpileModule(`module.exports=function(){${dispatchBlock};reserve(streamQuote.amount);provider(chatRequest);return chatRequest;}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,
-    {module:executable,...prepared.parameters,...core,quoteLlmStreamReservation:load('src/lib/llm-credit-reservation.ts').quoteLlmStreamReservation,preparedQuote:prepared,selectedModelBillingSnapshot:prepared.billing,
+  vm.runInNewContext(ts.transpileModule(`module.exports=async function(){${dispatchBlock};reserve(streamQuote.amount);provider(chatRequest);return chatRequest;}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,
+    {module:executable,anthropic_thinking_profile:undefined,truncateFromMessageId:undefined,...prepared.parameters,...core,quoteLlmStreamReservation:load('src/lib/llm-credit-reservation.ts').quoteLlmStreamReservation,preparedQuote:prepared,selectedModelBillingSnapshot:prepared.billing,
       useModel:prepared.billing.modelName,searchInjectedMessages:prepared.chatRequest.messages,stream:true,effectiveEnableWebSearch:false,skillInjection:null,
       reserve:amount=>{reservedAmount=amount;},provider:request=>{providerRequest=request;},...overrides});
   return {run:executable.exports,observed:()=>({providerRequest,reservedAmount})};}
-const dispatch=dispatchFixture();check('actual dispatch returns single shared object',dispatch.run()===prepared.chatRequest);
+const dispatch=dispatchFixture();check('actual dispatch returns single shared object',await dispatch.run(),prepared.chatRequest);
 check('actual provider stub receives shared object unchanged',dispatch.observed().providerRequest===prepared.chatRequest);
 check('actual reserve stub receives shared quote',dispatch.observed().reservedAmount,prepared.reservation.amount);
-const driftedDispatch=dispatchFixture({agentTemperature:0.5});assert.throws(driftedDispatch.run);checks.push('actual late request drift refuses before reserve/provider');
+const driftedDispatch=dispatchFixture({agentTemperature:0.5});await assert.rejects(() => driftedDispatch.run());checks.push('actual late request drift refuses before reserve/provider');
 check('late drift reserve/provider remain untouched',driftedDispatch.observed(),{});
 for(const [name,mutate] of [['skills',s=>s.skills=[{id:'active'}]],['linked identity',s=>s.model.id='wrong'],['revision',s=>s.agent.config_revision=0],['search',s=>s.model.enable_web_search=true]]) {
   const fixture=structuredClone(base);mutate(fixture);const isolated={exports:{}};
@@ -211,7 +219,7 @@ rpcAdapter=async(name,args)=>{assert.equal(name,'claim_llm_request_attempt_atomi
 };
 const store=new idempotency.DatabaseLlmRequestAttemptStore();const claimInput={userId:actor,clientRequestId:body.client_request_id,payloadFingerprint:initialFingerprint,leaseOwner:'lease_fixture'};
 check('actual store initial claim', (await store.claim(claimInput)).action,'execute');
-claimed={...claimed,state:'succeeded',response_body:'controlled original receipt',http_status:200};
+claimed={...claimed,state:'succeeded',response_body:'controlled original receipt',response_fingerprint:sha256('controlled original receipt'),http_status:200};
 const replay=await store.claim(claimInput);check('actual store completed replay',replay.action,'replay');check('actual replay original receipt',replay.record.responseBody,'controlled original receipt');
 const changedFingerprint=fingerprint({...finalBody,quote_expectation:{...prepared.expectation,platformReservationCredits:prepared.reservation.amount+1}});
 check('server fingerprint includes expectation drift',changedFingerprint!==initialFingerprint);

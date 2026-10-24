@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,6 +21,11 @@ const landingSectionHeadings = [
   "真正有用的 AI，不只回答，还要接住下一步",
   "从持续表达，到用内容经营生意",
 ];
+const outputRoot = path.resolve(process.env.MAIN_THEME_OUTPUT_DIR || ".codex-evidence/main-theme-suite-20260928/live");
+const requestedRunId = process.env.MAIN_THEME_EVIDENCE_RUN_ID?.trim();
+const runId = requestedRunId || `${new Date().toISOString().replace(/[:.]/gu, "-")}-${process.pid}-${randomBytes(4).toString("hex")}`;
+assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u, "INVALID_EVIDENCE_RUN_ID");
+const outputDir = path.join(outputRoot, runId);
 
 function defaultModeForTheme(theme) {
   return theme === "soft-white" ? "light" : "dark";
@@ -28,11 +34,14 @@ function defaultModeForTheme(theme) {
 export async function main() {
   const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").replace(/\/+$/u, "");
   const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
-  const outputDir = path.resolve(process.env.MAIN_THEME_OUTPUT_DIR || ".codex-evidence/main-theme-suite-20260928/live");
   const injectSource = process.env.MAIN_THEME_INJECT_SOURCE === "1";
   assert.match(origin, /^http:\/\/127\.0\.0\.1(?::\d+)?$/u, "LOCAL_ONLY_ORIGIN_REQUIRED");
   assert.ok(token, "LOCAL_NAV_ADMIN_TOKEN_REQUIRED");
-  await mkdir(outputDir, { recursive: true });
+  await mkdir(outputRoot, { recursive: true });
+  try { await mkdir(outputDir); } catch (error) {
+    if (error?.code === "EEXIST") throw new Error(`EVIDENCE_RUN_DIRECTORY_EXISTS:${outputDir}`);
+    throw error;
+  }
 
   const routeShellSource = await readFile(path.resolve("src/components/app-route-shell.module.css"), "utf8");
   const latticeRouteBlock = routeShellSource.match(/:global\(html\[data-theme="lattice"\]\[data-mode="dark"\]\) \.shell \{([\s\S]*?)\n\}/u)?.[1] || "";
@@ -83,6 +92,9 @@ export async function main() {
   const report = {
     ok: false,
     testedAt: new Date().toISOString(),
+    runId,
+    outputRoot,
+    evidenceDirectory: outputDir,
     origin,
     injectSource,
     runtimeIdentity: {
@@ -1300,13 +1312,12 @@ export async function main() {
   assert.deepEqual(report.paidRequests, [], "THEME_PAID_REQUESTS");
   assert.deepEqual(report.unexpectedWrites, [], "THEME_UNEXPECTED_WRITES");
   report.ok = true;
-  await writeFile(path.join(outputDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeFile(path.join(outputDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   console.log(JSON.stringify(report, null, 2));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main().catch(async (error) => {
-    const outputDir = path.resolve(process.env.MAIN_THEME_OUTPUT_DIR || ".codex-evidence/main-theme-suite-20260928/live");
     const failure = {
       ok: false,
       failedAt: new Date().toISOString(),
@@ -1314,8 +1325,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       stack: error instanceof Error ? error.stack : undefined,
     };
     try {
-      await mkdir(outputDir, { recursive: true });
-      await writeFile(path.join(outputDir, "failure-report.json"), `${JSON.stringify(failure, null, 2)}\n`, "utf8");
+      await mkdir(outputRoot, { recursive: true });
+      try { await mkdir(outputDir); } catch (directoryError) {
+        if (directoryError?.code !== "EEXIST") throw directoryError;
+      }
+      await writeFile(path.join(outputDir, "failure-report.json"), `${JSON.stringify(failure, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
     } catch {}
     console.error(failure.stack || failure.message);
     process.exitCode = 1;

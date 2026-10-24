@@ -48,7 +48,7 @@ const checks: Array<[string, boolean]> = [
   ["long history GET does not start a worker", !longHistoryRoute.includes("startDigitalHumanLongWorker")],
   ["long status GET does not start a worker", !longStatusRoute.includes("startDigitalHumanLongWorker")],
   ["dedicated media process starts the long worker", mediaWorkerRuntime.includes("const long = startDigitalHumanLongWorker()")],
-  ["storyboard agent prompt GET requires admin", /export async function GET\(request: Request\)[\s\S]*requireAdmin\(request\)/u.test(storyboardAgentRoute)],
+  ["storyboard agent prompt GET requires prompt-view capability and step-up", /export async function GET\(request:\s*(?:Request|NextRequest)\)[\s\S]*authorizeAdminCapability[\s\S]*prompts\.view[\s\S]*requireStepUp:\s*true/u.test(storyboardAgentRoute)],
   ["long digital-human submit enforces activation readiness", digitalHumanLongCreate.includes("inspectVideoModelActivationReadiness") && digitalHumanLongCreate.includes("MODEL_ACCEPTANCE_EVIDENCE_INCOMPLETE")],
   ["long digital-human submit rejects unknown cost", digitalHumanLongCreate.includes("!Number.isFinite(unitCharge.costPrice)") && digitalHumanLongCreate.includes("DIGITAL_HUMAN_LONG_COST_INVALID")],
   ["voice catalog uses a read-only SQLite connection", voiceCatalog.includes("getVoiceReadonlyDb") && voiceDb.includes("readonly: true")],

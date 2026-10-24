@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Copy,
   KeyRound,
-  LockKeyhole,
   Plus,
   RefreshCw,
   Save,
@@ -26,6 +25,7 @@ import {
   ADMIN_CORE_TECH_PERMISSION_KEYS,
   ADMIN_JOB_TEMPLATES,
   ADMIN_OWNER_ONLY_PERMISSION_KEYS,
+  ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS,
   ADMIN_PERMISSION_DEPENDENCIES,
   normalizeDelegableAdminPermissionKeys,
   visibleAdminPermissionSurfaces,
@@ -294,6 +294,7 @@ function PermissionCatalogMatrix({
                       <span className="mt-1 block text-xs leading-5 text-[#667085]">{permission.description}</span>
                       <span className="mt-2 block break-all font-mono text-[10px] text-[#98a2b3]">{permission.key}</span>
                       {ownerOnly && <span className="mt-2 block text-[11px] font-bold text-[#475467]">已加载用于目录核验，不可委派给普通管理员</span>}
+                      {ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS.some((key) => key === permission.key) && <span className="mt-2 block text-[11px] font-bold text-[#475467]">仅所有者可授权；获授权管理员验证密码后执行</span>}
                     </button>
                   );
                 })}
@@ -794,10 +795,22 @@ export function SuperAdminGovernancePanel({
   };
 
   if (!isSuper) {
+    const directory = filterAdminPermissionCatalog(state.catalog, permissionSearch, permissionGroupFilter);
     return (
-      <div data-testid="super-admin-locked" className="grid min-h-[560px] place-items-center rounded-3xl border border-[#d0d5dd] bg-white p-8 shadow-sm">
-        <div className="max-w-xl text-center"><div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-amber-50 text-amber-700"><LockKeyhole className="h-8 w-8" /></div><h1 className="mt-5 text-2xl font-black text-[#101828]">此区域仅平台所有者可进入</h1><p className="mt-3 text-sm leading-7 text-[#667085]">你的账号没有访问此区域的资格，受保护的数据不会加载或显示。本次拒绝访问会按后台安全规则记录。</p><div className="mt-5 rounded-xl border border-[#eaecf0] bg-[#f9fafb] p-4 text-left text-sm text-[#475467]">如需调整工作范围，请联系平台所有者。页面入口和前端状态都不会替代服务端授权校验。</div></div>
-      </div>
+      <section data-testid="admin-permission-directory-readonly" className="space-y-5 rounded-3xl border border-[#d0d5dd] bg-white p-6 text-[#101828]">
+        <div><h1 className="text-2xl font-black">权限目录</h1><p className="mt-2 text-sm leading-6 text-[#667085]">查看完整权限说明与自己的授权状态。权限变更请联系平台所有者；敏感业务仍需验证密码。</p></div>
+        <div className="flex flex-wrap gap-3">
+          <input aria-label="搜索权限目录" value={permissionSearch} onChange={(event) => setPermissionSearch(event.target.value)} placeholder="搜索权限名称或说明" className="h-11 min-w-64 rounded-xl border border-[#d0d5dd] px-3 text-sm" />
+          <select aria-label="权限目录分组" value={permissionGroupFilter} onChange={(event) => setPermissionGroupFilter(event.target.value)} className="h-11 rounded-xl border border-[#d0d5dd] px-3 text-sm"><option value="">全部分组</option>{permissionGroups(state.catalog).map(([group]) => <option key={group} value={group}>{group}</option>)}</select>
+          <span className="self-center text-sm text-[#667085]">共 {state.catalog.length} 项 · 当前显示 {directory.length} 项</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">{directory.map((permission) => {
+          const ownerOnly = ADMIN_OWNER_ONLY_PERMISSION_KEYS.some((key) => key === permission.key);
+          const granted = !ownerOnly && state.access.permissionKeys.includes(permission.key);
+          return <article key={permission.key} data-permission-key={permission.key} data-granted={String(granted)} className="rounded-xl border border-[#eaecf0] p-4"><div className="flex items-start justify-between gap-3"><h2 className="text-sm font-bold">{permission.label}</h2><span className={`shrink-0 rounded-full px-2 py-1 text-xs ${ownerOnly ? "bg-[#f2f4f7] text-[#475467]" : granted ? "bg-emerald-50 text-emerald-800" : "bg-[#f2f4f7] text-[#475467]"}`}>{ownerOnly ? "仅所有者执行" : granted ? "已授权" : "未授权"}</span></div><p className="mt-2 text-sm leading-6 text-[#667085]">{permission.description}</p><p className="mt-2 text-xs leading-5 text-[#475467]">仅所有者可授予或撤销{permission.stepUpRequired ? " · 执行需验证密码" : ""}</p></article>;
+        })}</div>
+        {directory.length === 0 && <p className="py-8 text-center text-sm text-[#667085]">没有匹配的权限，请调整搜索或分组。</p>}
+      </section>
     );
   }
 

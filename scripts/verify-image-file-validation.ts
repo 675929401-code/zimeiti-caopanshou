@@ -3,13 +3,15 @@ import { readFile } from "node:fs/promises";
 import { InvalidImageFileError, validateImageFile } from "../src/lib/image-file-validation";
 
 async function main() {
-  const validPath = process.env.VALID_IMAGE_PATH || ".tmp-e2e/three-directors-golden-v53-media/01-故事版导演-高能夸张.png";
-  const corruptPath = process.env.CORRUPT_IMAGE_PATH || ".tmp-e2e/three-directors-golden-v53-media/03-source-redownload.png";
+  // Use a repository-owned icon by default. The old golden-media paths lived
+  // in an expired temporary evidence bundle and made this contract fail with
+  // ENOENT before it could test validation semantics.
+  const validPath = process.env.VALID_IMAGE_PATH || "src/app/icon.png";
   const valid = validateImageFile(await readFile(validPath), "image/png");
   assert.equal(valid.format, "png");
   assert.ok((valid.width || 0) > 0 && (valid.height || 0) > 0);
 
-  const corruptBytes = await readFile(corruptPath);
+  const corruptBytes = Buffer.from("not-an-image", "utf8");
   assert.throws(
     () => validateImageFile(corruptBytes, "image/png"),
     (error) => error instanceof InvalidImageFileError && error.code === "IMAGE_DECODE_FAILED",

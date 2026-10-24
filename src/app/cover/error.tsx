@@ -29,7 +29,7 @@ export default function CoverError({
       <div className="flex gap-3">
         <button
           onClick={reset}
-          className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors"
+          className="px-4 py-2 text-sm font-medium text-primary-foreground bg-primary rounded-lg hover:bg-primary/90 transition-colors"
         >
           重试
         </button>

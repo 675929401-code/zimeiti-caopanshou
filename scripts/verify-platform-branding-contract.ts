@@ -81,7 +81,7 @@ for (const purpose of ["contact_wechat_qr_primary", "contact_wechat_qr_secondary
 }
 assert.match(migration, /NOT snapshot \? 'contact'[\s\S]*?jsonb_typeof\(snapshot->'contact'\) = 'object'/u,
   "legacy brand snapshots must remain valid while new contact payloads are validated");
-assert.match(adminPanel, /对外联系信息[\s\S]*?联系人或客服名称[\s\S]*?微信号[\s\S]*?联系电话[\s\S]*?联系邮箱/u,
+assert.match(adminPanel, /data-testid="platform-brand-contact-settings"[\s\S]*?联系人或客服名称[\s\S]*?微信号[\s\S]*?联系电话[\s\S]*?联系邮箱/u,
   "brand admin must expose the complete contact draft form");
 assert.match(landing, /id="swh-contact"[\s\S]*?复制微信号[\s\S]*?swh-contact-qr-grid/u,
   "published contact information must close the public display and copy flow");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useApp } from "@/contexts/app-context";
+import { FeatureComingSoonOverlay } from "@/components/feature-coming-soon-gate";
 import { toast } from "sonner";
 import {
   MessageSquare,
@@ -123,7 +124,7 @@ function SidebarProfile() {
 }
 
 export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNavigate?: () => void }) {
-  const { state, dispatch, selectConversation, startChat, startFreeChat, setPendingPresetMessage, logout } = useApp();
+  const { state, dispatch, selectConversation, deleteConversation, startChat, startFreeChat, setPendingPresetMessage, logout } = useApp();
   const memberPermission = useMemberPermissions();
   const router = useRouter();
   const pathname = usePathname();
@@ -170,7 +171,11 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
   );
   const visibleConversations = [...conversations]
     .filter((conv) => {
-      if (!canUseMarketplace) return false;
+      // Conversation history belongs to the signed-in account. Keep it
+      // visible while the optional marketplace permission snapshot is loading
+      // or temporarily unavailable; that snapshot must not make persisted
+      // conversations disappear from the sidebar.
+      if (!auth?.isAuthenticated || !user) return false;
       if (!conv.id || conv.source === "video") return false;
       // 漫剧工作台对话使用同一账号持久化，但只在 /youcai 分支内展示。
       if (conv.agentId === MANGA_WORKBENCH_AGENT_ID) return false;
@@ -190,7 +195,11 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
       minute: "2-digit",
       hour12: false,
     });
-    return `${date.getMonth() + 1}.${date.getDate()} ${clock}`;
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    if (date.getTime() >= startOfToday.getTime()) return clock;
+    if (date.getTime() >= startOfToday.getTime() - 86_400_000) return "昨天";
+    return `${date.getMonth() + 1}.${date.getDate()}`;
   };
 
   const pinnedAgents = agents.filter((a) => {
@@ -404,6 +413,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
   }, []);
 
   // 快捷图标点击处理
+  const [comingSoonFeature, setComingSoonFeature] = useState<string | null>(null);
   const handleShortcutClick = useCallback((item: ShortcutItem) => {
     // 后台快捷项可能把“应用广场”保存成 internal；按标题也统一走主视图并重置筛选。
     if (item.link_value === "marketplace" || repairMojibake(item.title) === "应用广场") {
@@ -415,12 +425,18 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
     if (item.link_type === "action") {
       return;
     } else if (item.link_type === "internal") {
+      // 未上线功能：用户端显示玻璃遮罩，管理员直接进入
+      const title = repairMojibake(item.title);
+      const lockedFeature = /漫剧|有彩/.test(title) || item.link_value === "/youcai" ? "漫剧创作"
+        : /带货/.test(title) || item.link_value === "/commerce" ? "带货创作"
+        : "";
+      if (lockedFeature && state.auth.user?.role !== "admin") { setComingSoonFeature(lockedFeature); return; }
       router.push(item.link_value);
       onNavigate?.();
     } else if (item.link_type === "external") {
       window.open(item.link_value, "_blank");
     }
-  }, [dispatch, router, onNavigate]);
+  }, [dispatch, onNavigate, router, state.auth.user?.role]);
 
   const handleSelectConversation = (id: string) => {
     selectConversation(id);
@@ -484,6 +500,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
       window.location.replace("/");
       return;
     }
+    if (!isAdmin || !canUseMarketplace) return;
 
     startFreeChat();
     onNavigate?.();
@@ -509,7 +526,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
   };
 
   const handleDeleteConversation = (id: string) => {
-    dispatch({ type: "DELETE_CONVERSATION", payload: id });
+    deleteConversation(id);
   };
 
   const handleUnpin = (agentId: string) => {
@@ -632,8 +649,8 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
         </div>
       </div>
 
-      {/* 新建对话：所有已登录用户统一进入自由对话。 */}
-      {canUseMarketplace && <div className="px-2.5 pb-2 pt-1 shrink-0">
+      {/* 新建对话：仅管理员进入自由对话。打开已有会话不走这里。 */}
+      {isAdmin && canUseMarketplace && <div className="px-2.5 pb-2 pt-1 shrink-0">
         <button
           onClick={handleNewConversation}
           className="new-chat-btn w-full flex items-center justify-center gap-2 py-2 rounded-lg transition-[transform,background-color,box-shadow] duration-200 cursor-pointer font-semibold tracking-wide hover:-translate-y-px active:translate-y-0"
@@ -732,7 +749,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
                     </svg>
                   </button>
                                 {/* 智能体头像 — 视频任务用Film图标 */}
-                  <Avatar data-testid={`sidebar-history-avatar-${conv.id}`} className="shrink-0 rounded-lg" style={{ width: "calc(34px * var(--sidebar-scale, 1))", height: "calc(34px * var(--sidebar-scale, 1))", minWidth: "32px", minHeight: "32px" }}>
+                  <Avatar data-testid={`sidebar-history-avatar-${conv.id}`} className="shrink-0 rounded-lg" style={{ width: "calc(30px * var(--sidebar-scale, 1))", height: "calc(30px * var(--sidebar-scale, 1))", minWidth: "28px", minHeight: "28px" }}>
                     {conv.source === "video" ? (
                       <AvatarFallback
                         className="font-medium rounded-md"
@@ -774,7 +791,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
                   <span className="sidebar-conv-text">
                     <span className="sidebar-conv-name" title={agentName} style={{ fontSize: "clamp(13px, calc(14px * var(--sidebar-scale, 1)), 17px)" }}>{agentName}</span>
                     {timeStr && (
-                      <span className="sidebar-conv-time" style={{ fontSize: "clamp(11px, calc(12px * var(--sidebar-scale, 1)), 14px)" }}>{timeStr}</span>
+                      <span className="sidebar-conv-time" title={new Date(conv.updatedAt || conv.createdAt || 0).toLocaleString("zh-CN")} style={{ fontSize: "clamp(10px, calc(11px * var(--sidebar-scale, 1)), 13px)" }}>{timeStr}</span>
                     )}
                   </span>
                 </div>
@@ -918,6 +935,8 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
           </button>
         </div>
       </div>
+
+      {comingSoonFeature && <FeatureComingSoonOverlay title={comingSoonFeature} onClose={() => setComingSoonFeature(null)} />}
 
       {/* 预设配置弹窗 */}
       {presetAgent && (

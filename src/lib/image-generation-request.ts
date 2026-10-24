@@ -20,7 +20,7 @@ const IMAGE_PUBLIC_REQUEST_FIELDS = new Set([
   "prompt", "modelId", "style", "mode", "aspectRatio", "resolution", "coverText",
   "referenceImageUrls", "referenceUsage", "imageUrl", "clientTraceId", "clientIdempotencyKey",
   "clientNodeId", "clientNodeTitle", "historySurface", "noRetry", "strictSingleSubmit",
-  "resumeDeliveryOnly", "adminValidation", "deliveryRequirement",
+  "resumeDeliveryOnly", "adminValidation", "deliveryRequirement", "presetReferences",
 ]);
 
 export class ImageGenerationInputError extends Error {
@@ -138,6 +138,7 @@ export type NormalizedImageGenerationInput = {
   resolution?: string;
   coverText?: string;
   referenceImageUrls: string[];
+  presetReferences?: ImagePresetReference[];
   referenceUsage?: "general" | "character-identity";
   imageUrl?: string;
   clientTraceId?: string;
@@ -151,6 +152,8 @@ export type NormalizedImageGenerationInput = {
   deliveryRequirement?: "recoverable_reference";
   adminValidation?: Record<string, unknown>;
 };
+
+export type ImagePresetReference = { presetId: string; revision: number; referenceIndex: number };
 
 export function normalizeImageGenerationInput(value: unknown): NormalizedImageGenerationInput {
   if (!plainObject(value)) {
@@ -202,6 +205,20 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
     normalizeReference(reference, `第 ${index + 1} 张参考图`));
   const imageUrl = hasInputImage ? normalizeReference(value.imageUrl, "输入图片") : undefined;
   const referenceImageUrls = [...new Set([...normalizedReferences, ...(imageUrl ? [imageUrl] : [])])];
+  const presetReferences: ImagePresetReference[] = [];
+  if (value.presetReferences !== undefined) {
+    if (!Array.isArray(value.presetReferences) || value.presetReferences.length > MAX_IMAGE_REFERENCES) throw new ImageGenerationInputError("IMAGE_PRESET_REFERENCE_INVALID", "预设参考列表无效", 422);
+    const indices = new Set<number>();
+    for (const ref of value.presetReferences) {
+      if (!plainObject(ref) || Object.keys(ref).some(key => !["presetId", "revision", "referenceIndex"].includes(key))
+        || typeof ref.presetId !== "string" || !/^preset-[a-z0-9][a-z0-9_-]{2,63}$/u.test(ref.presetId)
+        || !Number.isSafeInteger(ref.revision) || Number(ref.revision) < 1 || !Number.isSafeInteger(ref.referenceIndex)
+        || Number(ref.referenceIndex) < 0 || Number(ref.referenceIndex) >= referenceImageUrls.length || indices.has(Number(ref.referenceIndex))) {
+        throw new ImageGenerationInputError("IMAGE_PRESET_REFERENCE_INVALID", "预设标识、版本或图片位置无效", 422);
+      }
+      indices.add(Number(ref.referenceIndex)); presetReferences.push({ presetId: ref.presetId, revision: Number(ref.revision), referenceIndex: Number(ref.referenceIndex) });
+    }
+  }
 
   const clientTraceId = optionalString(value.clientTraceId, "图片生成追踪键", 128, { allowEmpty: true, controls: false });
   if (clientTraceId && !STABLE_KEY.test(clientTraceId)) {
@@ -236,6 +253,7 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
     ...(resolution ? { resolution } : {}),
     ...(coverText !== undefined ? { coverText } : {}),
     referenceImageUrls,
+    ...(presetReferences.length ? { presetReferences } : {}),
     ...(referenceUsage ? { referenceUsage } : {}),
     ...(imageUrl ? { imageUrl } : {}),
     ...(clientTraceId ? { clientTraceId } : {}),

@@ -1,0 +1,39 @@
+/* Keep the gallery inside the workbench theme and its page boundary. */
+.sbh-storyboard-page { color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: 14px; min-width: 0; }
+.sbh-storyboard-page .sbh-storyboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.sbh-storyboard-page .sbh-storyboard-title-row { display: flex; align-items: center; gap: 18px; }
+.sbh-storyboard-page h2 { margin: 0; font-size: 20px; font-weight: 700; }
+.sbh-storyboard-page .sbh-storyboard-heading p { margin: 10px 0 0; font-size: 12px; color: var(--muted-foreground); }
+.sbh-storyboard-page button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px; color: var(--secondary-foreground); background: var(--secondary); font-size: 12px; cursor: pointer; }
+.sbh-storyboard-page button:hover:not(:disabled) { border-color: var(--primary); background: var(--accent); color: var(--accent-foreground); }
+.sbh-storyboard-page button:disabled { cursor: default; opacity: .5; }
+.sbh-storyboard-page button:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.sbh-storyboard-page .sbh-storyboard-back { padding: 6px 9px 6px 0; color: var(--muted-foreground); background: transparent; border-color: transparent; white-space: nowrap; }
+.sbh-storyboard-page .sbh-storyboard-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.sbh-storyboard-page .sbh-storyboard-message { margin: 12px 24px; color: var(--muted-foreground); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.sbh-storyboard-page .sbh-storyboard-message.is-error { color: var(--destructive); }
+.sbh-storyboard-page .sbh-storyboard-content { padding: 22px 24px; min-width: 0; }
+.sbh-storyboard-page .sbh-storyboard-day { margin-bottom: 24px; }
+.sbh-storyboard-page h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+.sbh-storyboard-page .sbh-storyboard-batch { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+.sbh-storyboard-page .sbh-storyboard-batch-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; }
+.sbh-storyboard-page .sbh-storyboard-batch-heading > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.sbh-storyboard-page h4 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.sbh-storyboard-page .sbh-storyboard-batch-heading span { color: var(--muted-foreground); font-size: 12px; }
+.sbh-storyboard-page .sbh-storyboard-batch-heading button { flex-shrink: 0; }
+.sbh-storyboard-page .sbh-storyboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 14px; align-items: stretch; min-width: 0; }
+.sbh-storyboard-page .sbh-storyboard-card { min-width: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--background); }
+.sbh-storyboard-page .sbh-storyboard-cover { position: relative; display: flex; width: 100%; aspect-ratio: 16 / 9; padding: 0; border: 0; border-radius: 0; overflow: hidden; background: var(--muted); color: var(--muted-foreground); }
+.sbh-storyboard-page .sbh-storyboard-cover:disabled { opacity: 1; }
+.sbh-storyboard-page .sbh-storyboard-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sbh-storyboard-page .sbh-storyboard-play { position: absolute; inset: 0; margin: auto; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: var(--primary-foreground); background: var(--primary); }
+.sbh-storyboard-page .sbh-cover-hint { position: absolute; inset: auto 7px 7px; font-size: 10px; background: var(--card); padding: 3px 6px; border-radius: 5px; }
+.sbh-storyboard-page .sbh-storyboard-duration { position: absolute; right: 8px; bottom: 8px; padding: 2px 6px; border-radius: 5px; color: var(--foreground); background: var(--card); font-size: 11px; line-height: 1.5; }
+.sbh-storyboard-page .sbh-storyboard-unavailable { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; width: 100%; height: 100%; margin: auto; font-size: 12px; }
+.sbh-storyboard-page .sbh-storyboard-card-footer { display: flex; align-items: center; gap: 9px; padding: 11px 12px; min-width: 0; }
+.sbh-storyboard-page .sbh-storyboard-card-footer strong { font-size: 12px; white-space: nowrap; }
+.sbh-storyboard-page .sbh-storyboard-card-footer time { color: var(--muted-foreground); font-size: 11px; white-space: nowrap; }
+.sbh-storyboard-page .sbh-storyboard-card-footer .sbh-storyboard-download { margin-left: auto; padding: 5px 7px; font-size: 11px; }
+.sbh-storyboard-page .sbh-storyboard-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; min-height: 220px; color: var(--muted-foreground); font-size: 12px; }
+.sbh-storyboard-page .sbh-storyboard-empty strong { color: var(--foreground); font-size: 14px; }
+.sbh-storyboard-page .sbh-storyboard-load-more { display: flex; margin: 18px auto; }

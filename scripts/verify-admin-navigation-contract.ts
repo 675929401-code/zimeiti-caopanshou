@@ -48,12 +48,12 @@ const modules = [...navigationMatch[1].matchAll(
 }));
 const mappedTabs = modules.flatMap((module) => module.tabs);
 
-assert.equal(validTabs.length, 27, "当前后台必须登记 27 个 tab");
-assert.equal(new Set(validTabs).size, 27, "VALID_TABS 不能包含重复项");
+assert.equal(validTabs.length, 28, "当前后台必须登记 28 个 tab");
+assert.equal(new Set(validTabs).size, 28, "VALID_TABS 不能包含重复项");
 assert.equal(modules.length, 14, "当前桌面后台必须登记 14 个一级模块");
 assert.equal(new Set(modules.map((module) => module.root)).size, 14, "一级模块 root 不能重复");
-assert.equal(mappedTabs.length, 27, "14 个一级模块必须完整映射 27 个 tab");
-assert.equal(new Set(mappedTabs).size, 27, "一级模块之间不能重复映射 tab");
+assert.equal(mappedTabs.length, 28, "14 个一级模块必须完整映射 28 个 tab");
+assert.equal(new Set(mappedTabs).size, 28, "一级模块之间不能重复映射 tab");
 assert.deepEqual(new Set(mappedTabs), new Set(validTabs), "一级模块映射必须与 VALID_TABS 完全一致");
 
 const expectedModules = [

@@ -5,7 +5,6 @@ import type { StorageProviderType } from "@/storage/object";
 import { validateUploadBuffer } from "@/lib/file-upload-security";
 import { safeFetch } from "@/lib/safe-fetch";
 import { readGaoruiVideoProviderResult, readVideoProviderResult } from "@/lib/video-provider-result";
-import { downloadAndTrimVideo, removeVideoTempDir } from "@/lib/video-postprocess";
 import {
   AUTODL_H3_SELFHOST_PROTOCOL,
   isAutodlH3Selfhost,
@@ -18,7 +17,7 @@ import { isSyntheticProxyAddress } from "@/lib/extract-media-network";
 
 const VIDEO_PROVIDER: StorageProviderType = "tencent_cos";
 const OBJECT_URI_PREFIX = `object://${VIDEO_PROVIDER}/`;
-export type ManagedVideoStorageScope = "autodl-h3" | "short-drama" | "model-acceptance";
+export type ManagedVideoStorageScope = "autodl-h3" | "short-drama" | "model-acceptance" | "video-delivery" | "storyboard-delivery";
 export const AUTODL_HOSTED_RESULT_HOST = "codewithgpu-image-1310972338.cos.ap-beijing.myqcloud.com";
 // CodeWithGPU 托管工作流的产物桶已迁移到火山 TOS；结果地址是带签名的私有桶 URL，
 // 下载必须保留完整签名 query，否则 TOS 返回 403。
@@ -88,6 +87,7 @@ async function persistAutodlHostedResult(
   userId: string,
   providerProtocol: string,
   storageScope: ManagedVideoStorageScope,
+  archiveOptions?: { storyboardArchiveKey?: string; storyboardArchiveExpiresAt?: string },
 ) {
   const trustedUrl = assertAutodlHostedResultUrl(videoUrl);
   const downloaded = await safeFetch(trustedUrl, {
@@ -117,7 +117,8 @@ async function persistAutodlHostedResult(
       fileName: `${taskId}.mp4`,
       userId,
       source: "video-generation",
-      meta: { taskId, providerProtocol },
+      storyboardArchiveKey: archiveOptions?.storyboardArchiveKey,
+      meta: { taskId, providerProtocol, ...(archiveOptions?.storyboardArchiveKey ? { archivePolicy: "storyboard-video-72h-v1", retainedUntil: String(archiveOptions.storyboardArchiveExpiresAt) } : {}) },
     },
   );
   return toPersistentVideoUri(result);
@@ -193,28 +194,15 @@ export async function persistVideoFromUrl(
   userId: string,
   options: {
     storageScope: ManagedVideoStorageScope;
-    trimDurationSeconds?: number;
-    sourceDurationSeconds?: number;
     providerProtocol?: string;
     providerEndpoint?: string;
     providerApiKey?: string;
     providerTaskId?: string;
     trustedProviderResultHostname?: string;
+    storyboardArchiveKey?: string;
+    storyboardArchiveExpiresAt?: string;
   },
 ) {
-  const trimDuration = Number(options?.trimDurationSeconds || 0);
-  const sourceDuration = Number(options?.sourceDurationSeconds || 0);
-  if (trimDuration > 0 && sourceDuration > trimDuration) {
-    if (isAutodlH3Selfhost(options?.providerProtocol)) {
-      throw new Error("AutoDL H3 自租协议只允许原生 5/10/15 秒，本地裁切未启用");
-    }
-    const { outputPath, tempDir } = await downloadAndTrimVideo(videoUrl, trimDuration);
-    try {
-      return await persistVideoFile(outputPath, taskId, userId, options.storageScope);
-    } finally {
-      await removeVideoTempDir(tempDir);
-    }
-  }
   if (isAutodlH3Selfhost(options?.providerProtocol)) {
     const providerEndpoint = String(options?.providerEndpoint || "");
     const media = await readAutodlH3SelfhostResult(videoUrl, providerEndpoint, {
@@ -227,7 +215,8 @@ export async function persistVideoFromUrl(
       `${taskId}.mp4`,
       media.contentType,
       {
-        providerType: VIDEO_PROVIDER,
+        storyboardArchiveKey: options.storyboardArchiveKey,
+      providerType: VIDEO_PROVIDER,
         strictProvider: true,
         requireOwnershipRecord: true,
         category: "video",
@@ -235,7 +224,7 @@ export async function persistVideoFromUrl(
         fileName: `${taskId}.mp4`,
         userId,
         source: "video-generation",
-        meta: { taskId, providerProtocol: AUTODL_H3_SELFHOST_PROTOCOL },
+        meta: { taskId, providerProtocol: AUTODL_H3_SELFHOST_PROTOCOL, ...(options.storyboardArchiveKey ? { archivePolicy: "storyboard-video-72h-v1", retainedUntil: String(options.storyboardArchiveExpiresAt) } : {}) },
       },
     );
     return toPersistentVideoUri(result);
@@ -247,6 +236,7 @@ export async function persistVideoFromUrl(
       userId,
       String(options?.providerProtocol || ""),
       options.storageScope,
+      options,
     );
   }
   if (["suanlicheng_video", "gaorui_video"].includes(String(options?.providerProtocol))) {
@@ -254,6 +244,7 @@ export async function persistVideoFromUrl(
       ? await readGaoruiVideoProviderResult({ resultUrl: videoUrl, providerEndpoint: String(options.providerEndpoint || ""), providerApiKey: String(options.providerApiKey || ""), providerTaskId: options.providerTaskId, trustedProviderResultHostname: options.trustedProviderResultHostname })
       : await readVideoProviderResult(videoUrl, String(options?.providerEndpoint || ""), String(options?.providerApiKey || ""));
     const result = await storageManager.upload(media.buffer, `${taskId}.mp4`, media.contentType, {
+      storyboardArchiveKey: options.storyboardArchiveKey,
       providerType: VIDEO_PROVIDER,
       strictProvider: true,
       requireOwnershipRecord: true,
@@ -262,7 +253,7 @@ export async function persistVideoFromUrl(
       fileName: `${taskId}.mp4`,
       userId,
       source: "video-generation",
-      meta: { taskId, providerProtocol: String(options?.providerProtocol || "") },
+      meta: { taskId, providerProtocol: String(options?.providerProtocol || ""), ...(options.storyboardArchiveKey ? { archivePolicy: "storyboard-video-72h-v1", retainedUntil: String(options.storyboardArchiveExpiresAt) } : {}) },
     });
     return toPersistentVideoUri(result);
   }
@@ -301,6 +292,7 @@ export async function persistVideoFromUrl(
     `${taskId}.${validated.extension}`,
     validated.contentType,
     {
+      storyboardArchiveKey: options.storyboardArchiveKey,
       providerType: VIDEO_PROVIDER,
       strictProvider: true,
       requireOwnershipRecord: true,
@@ -309,7 +301,7 @@ export async function persistVideoFromUrl(
       fileName: `${taskId}.${validated.extension}`,
       userId,
       source: "video-generation",
-      meta: { taskId },
+      meta: { taskId, ...(options.storyboardArchiveKey ? { archivePolicy: "storyboard-video-72h-v1", retainedUntil: String(options.storyboardArchiveExpiresAt) } : {}) },
     },
   );
   return toPersistentVideoUri(result);
@@ -322,13 +314,13 @@ export async function persistStableVideoFromUrl(
   userId: string,
   options: {
     storageScope: ManagedVideoStorageScope;
-    trimDurationSeconds?: number;
-    sourceDurationSeconds?: number;
     providerProtocol?: string;
     providerEndpoint?: string;
     providerApiKey?: string;
     providerTaskId?: string;
     trustedProviderResultHostname?: string;
+    storyboardArchiveKey?: string;
+    storyboardArchiveExpiresAt?: string;
   },
 ) {
   const storageUrl = await persistVideoFromUrl(videoUrl, taskId, userId, options);

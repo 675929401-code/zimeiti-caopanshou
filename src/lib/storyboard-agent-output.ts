@@ -2,6 +2,9 @@ import {
   StoryboardVisualAssetPlanSchema,
   StoryboardVisualAssetRefSchema,
   type StoryboardVisualAssetRef,
+  type StoryboardBottomPanelRole,
+  type StoryboardQualityCheck,
+  type StoryboardWardrobeChangeEvent,
 } from "./storyboard-workbench";
 
 type StoryboardVisualAssetPlan = ReturnType<typeof StoryboardVisualAssetPlanSchema.parse>;
@@ -12,7 +15,17 @@ export type StoryboardAgentOutputSegment = {
   imagePrompt: string;
   videoPrompt: string;
   targetDurationSeconds?: 8 | 10 | 15;
+  styleLock?: string;
+  sceneLock?: string;
+  bottomPanelRole?: StoryboardBottomPanelRole;
+  qualityChecks?: StoryboardQualityCheck[];
+  wardrobeChangeEvents?: StoryboardWardrobeChangeEvent[];
   visualAssetRefs?: StoryboardVisualAssetRef[];
+  sceneId?: string;
+  sceneZone?: string;
+  camera?: string;
+  dynamicState?: string[];
+  capabilityGaps?: string[];
 };
 
 export type StoryboardAgentOutputParseResult =
@@ -192,7 +205,24 @@ export function parseStoryboardAgentOutput(rawOutput: string, maxSegments = 20):
     if (!narration) return { ok: false, error: `第 ${sourceNumber} 段缺少原文案内容` };
     if (!imagePrompt || !videoPrompt) return { ok: false, error: `第 ${sourceNumber} 段存在空 Prompt 代码框` };
 
-    const segment: StoryboardAgentOutputSegment = { sourceNumber, narration, imagePrompt, videoPrompt };
+    const styleMarker = /(?:^|\n)\s*(?:风格锁|style[_ -]?lock)\s*[：:]\s*([^\n]+)/imu.exec(section);
+    const sceneMarker = /(?:^|\n)\s*(?:场景锁|scene[_ -]?lock)\s*[：:]\s*([^\n]+)/imu.exec(section);
+    const styleLock = styleMarker?.[1]?.trim();
+    const sceneLock = sceneMarker?.[1]?.trim();
+    if (styleLock && (styleLock.length < 20 || styleLock.length > 500)) {
+      return { ok: false, error: `第 ${sourceNumber} 段风格锁长度必须为 20 至 500 字` };
+    }
+    if (sceneLock && (sceneLock.length < 12 || sceneLock.length > 500)) {
+      return { ok: false, error: `第 ${sourceNumber} 段场景锁长度必须为 12 至 500 字` };
+    }
+    const segment: StoryboardAgentOutputSegment = {
+      sourceNumber,
+      narration,
+      imagePrompt,
+      videoPrompt,
+      ...(styleLock ? { styleLock } : {}),
+      ...(sceneLock ? { sceneLock } : {}),
+    };
     if (assetPackage.present) {
       const refs = parseVisualAssetRefs(section, sourceNumber, assetPackage.assetIds);
       if (!refs.ok) return refs;

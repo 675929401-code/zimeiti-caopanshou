@@ -4,7 +4,7 @@ import { authorizeCurrentApiUser } from "@/lib/current-api-user";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { publicVariantLabel } from "@/lib/public-model-dto";
 import { classifyVideoProviderError } from "@/lib/video-error-policy";
-import { canRetryVideoHistoryTask } from "@/lib/video-history-presentation";
+import { canRetryVideoHistoryTask, videoTokenBillingMessage } from "@/lib/video-history-presentation";
 
 import {
   loadCommerceMediaHistory,
@@ -708,7 +708,7 @@ async function buildMediaHistoryAccountSnapshot(
       preview: previewContract("video", previewPath, thumbnailPath),
       errorMessage: rawStatus === "completed" && !hasAuthenticatedDeliverySource
         ? "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。"
-        : rawStatus === "failed" && rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : "",
+        : rawStatus === "failed" && rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : videoTokenBillingMessage(row.billing_state),
       aspectRatio: String(row.aspect_ratio || ""),
       durationSeconds: Number.isFinite(Number(row.duration_seconds)) ? Number(row.duration_seconds) : null,
     }, sourceExpiredAt || upstreamMediaExpiry(row.provider_submission_receipt) || upstreamMediaExpiry(row.provider_dispatch_receipt));

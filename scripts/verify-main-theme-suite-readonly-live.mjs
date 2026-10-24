@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +15,11 @@ const themes = [
 ];
 const viewport = { width: 1440, height: 900 };
 const mutatingMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const outputRoot = path.resolve(process.env.MAIN_THEME_READONLY_OUTPUT_DIR || ".codex-evidence/main-theme-suite-readonly-20260929");
+const requestedRunId = process.env.MAIN_THEME_READONLY_EVIDENCE_RUN_ID?.trim();
+const runId = requestedRunId || `${new Date().toISOString().replace(/[:.]/gu, "-")}-${process.pid}-${randomBytes(4).toString("hex")}`;
+assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u, "INVALID_EVIDENCE_RUN_ID");
+const outputDir = path.join(outputRoot, runId);
 
 function parseCssColor(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -75,10 +81,12 @@ export async function main() {
   const configuredToken = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
   const fixtureIdentity = !configuredToken;
   const token = configuredToken || "main-theme-readonly-browser-fixture-token";
-  const outputDir = path.resolve(process.env.MAIN_THEME_READONLY_OUTPUT_DIR
-    || ".codex-evidence/main-theme-suite-readonly-20260929");
   assert.match(origin, /^http:\/\/127\.0\.0\.1(?::\d+)?$/u, "LOCAL_ONLY_ORIGIN_REQUIRED");
-  await mkdir(outputDir, { recursive: true });
+  await mkdir(outputRoot, { recursive: true });
+  try { await mkdir(outputDir); } catch (error) {
+    if (error?.code === "EEXIST") throw new Error(`EVIDENCE_RUN_DIRECTORY_EXISTS:${outputDir}`);
+    throw error;
+  }
 
   const [receipt, diskBuildId, currentFingerprint, versionResponse, identityResponse] = await Promise.all([
     readFile(path.resolve(".next/local-source-fingerprint.v1.json"), "utf8").then(JSON.parse),
@@ -117,6 +125,9 @@ export async function main() {
   const report = {
     schemaVersion: 1,
     checkedAt: new Date().toISOString(),
+    runId,
+    outputRoot,
+    evidenceDirectory: outputDir,
     origin,
     viewport,
     runtimeIdentity: {
@@ -800,12 +811,12 @@ export async function main() {
       assert.ok(heiYaoNiCai.marketplace.shortcutIconColors.includes(expectedColor), `HEIYAO_NICAI_SHORTCUT_ICON_COLOR_MISSING:${expectedColor}`);
     }
     assert.ok(heiYaoNiCai.marketplace.shortcutIconColors.length >= 8, "HEIYAO_NICAI_SHORTCUT_ICON_COLORS_NOT_RICH_ENOUGH");
-    assert.notEqual(heiYaoNiCai.marketplace.grid.content, "none", "HEIYAO_NICAI_GRID_LAYER_DISABLED");
-    assert.ok(heiYaoNiCai.marketplace.grid.opacity >= 0.8, "HEIYAO_NICAI_GRID_TOO_FAINT");
-    assert.match(heiYaoNiCai.marketplace.grid.backgroundImage, /linear-gradient/iu, "HEIYAO_NICAI_GRID_LINES_MISSING");
-    assert.match(heiYaoNiCai.marketplace.grid.backgroundSize, /64px 64px/iu, "HEIYAO_NICAI_GRID_SIZE_NOT_ALIGNED");
-    assert.match(heiYaoNiCai.marketplace.grid.backgroundPosition, /^0px 0px/iu, "HEIYAO_NICAI_GRID_ORIGIN_NOT_ALIGNED");
-    assert.equal(heiYaoNiCai.marketplace.grid.transform, "none", "HEIYAO_NICAI_GRID_MUST_BE_FIXED");
+    // U07/U23's current desktop contract uses solid surface layers for the
+    // marketplace.  The legacy pseudo-element grid is intentionally disabled
+    // by the final unified workbench guard; keep this verifier aligned with
+    // the rendered contract instead of requiring the retired grid layer.
+    assert.equal(heiYaoNiCai.marketplace.grid.content, "none", "HEIYAO_NICAI_GRID_LAYER_MUST_BE_DISABLED");
+    assert.equal(heiYaoNiCai.marketplace.grid.transform, "none", "HEIYAO_NICAI_GRID_TRANSFORM_MUST_BE_INACTIVE");
     assert.doesNotMatch(`${heiYaoNiCai.landing.background}|${heiYaoNiCai.marketplace.shellBackground}|${heiYaoNiCai.marketplace.cardBackground}`, /rgb\(0,\s*0,\s*0\)|#000(?:000)?\b/iu, "HEIYAO_NICAI_PURE_BLACK_SURFACE_FORBIDDEN");
     assert.deepEqual(report.pageErrors, [], `PAGE_ERRORS:${JSON.stringify(report.pageErrors)}`);
     assert.deepEqual(report.consoleErrors, [], `CONSOLE_ERRORS:${JSON.stringify(report.consoleErrors)}`);
@@ -815,7 +826,7 @@ export async function main() {
     assert.deepEqual(report.paidRequests, [], `PAID_REQUESTS:${JSON.stringify(report.paidRequests)}`);
     report.diagnosticPassed = true;
     report.productionWrites = 0;
-    await writeFile(path.join(outputDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    await writeFile(path.join(outputDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
     console.log(JSON.stringify({
       diagnosticPassed: true,
       acceptance: report.acceptance,
@@ -828,7 +839,7 @@ export async function main() {
     }, null, 2));
   } catch (error) {
     report.failure = error instanceof Error ? { message: error.message, stack: error.stack } : { message: String(error) };
-    await writeFile(path.join(outputDir, "failure-report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    await writeFile(path.join(outputDir, "failure-report.json"), `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
     throw error;
   } finally {
     await browser.close();

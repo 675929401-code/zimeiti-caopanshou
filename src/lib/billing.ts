@@ -611,6 +611,8 @@ export async function applyAtomicWalletOperation(input: {
         balanceAfter: 0,
         error: migrationMissing
           ? '原子钱包迁移尚未部署，已拒绝非原子余额操作'
+          : String(error.message || '').includes('VIDEO_BUDGET_CASH_RESERVED')
+            ? '部分现金余额已被在途视频任务预留，请等待原任务结算或补充可用余额'
           : '原子钱包操作失败',
       };
     }

@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import { drawerAssetMatchesSearch, parseDrawerAssetMetadata, summarizeDrawerAssetBatch } from '../src/lib/storyboard-asset-drawer-state';
+
+let checks = 0;
+const test = (name: string, run: () => void) => { run(); checks++; process.stdout.write(`PASS ${name}\n`); };
+test('标签分隔、去重与元数据修剪', () => assert.deepEqual(parseDrawerAssetMetadata(' 女主人 ', '日常， 蓝衣,日常', ' 宠物科普 '), { name: '女主人', tags: ['日常', '蓝衣'], customCategory: '宠物科普' }));
+test('空标签与分类兼容既有资产', () => assert.deepEqual(parseDrawerAssetMetadata('柯基', '', ''), { name: '柯基', tags: [], customCategory: '' }));
+test('空名称不能进入应用', () => assert.throws(() => parseDrawerAssetMetadata(' ', '', ''), /名称/));
+test('超长名称被明确拒绝', () => assert.throws(() => parseDrawerAssetMetadata('a'.repeat(121), '', ''), /名称/));
+test('标签数量越界被拒绝', () => assert.throws(() => parseDrawerAssetMetadata('人物', Array.from({ length: 13 }, (_, i) => `标签${i}`).join(','), ''), /标签/));
+test('超长单标签被拒绝', () => assert.throws(() => parseDrawerAssetMetadata('人物', 'a'.repeat(33), ''), /标签/));
+test('超长自定义分类被拒绝', () => assert.throws(() => parseDrawerAssetMetadata('人物', '', 'a'.repeat(41)), /分类/));
+test('批次取消不谎报提交', () => assert.deepEqual(summarizeDrawerAssetBatch(2, []), { succeeded: 0, unresolved: 0, unsubmitted: 2 }));
+test('部分成功后未知结果区分未提交', () => assert.deepEqual(summarizeDrawerAssetBatch(3, [{ previewUrl: 'owned-result' }, null]), { succeeded: 1, unresolved: 1, unsubmitted: 1 }));
+test('首项未知不把剩余项算失败', () => assert.deepEqual(summarizeDrawerAssetBatch(3, [null]), { succeeded: 0, unresolved: 1, unsubmitted: 2 }));
+test('全部成功摘要正确', () => assert.deepEqual(summarizeDrawerAssetBatch(2, [{ previewUrl: 'one' }, { previewUrl: 'two' }]), { succeeded: 2, unresolved: 0, unsubmitted: 0 }));
+test('无预览的返回不能算生成成功', () => assert.deepEqual(summarizeDrawerAssetBatch(1, [{}]), { succeeded: 0, unresolved: 1, unsubmitted: 0 }));
+test('回调多余结果不能超报总数', () => assert.deepEqual(summarizeDrawerAssetBatch(1, [{ previewUrl: 'one' }, { previewUrl: 'extra' }]), { succeeded: 1, unresolved: 0, unsubmitted: 0 }));
+const asset = { name: '女主人', prompt: '三视图', tags: ['蓝衣', '短发'], customCategory: '科普系列' };
+test('搜索标签', () => assert.equal(drawerAssetMatchesSearch(asset, '蓝衣'), true));
+test('搜索自定义分类', () => assert.equal(drawerAssetMatchesSearch(asset, '科普'), true));
+test('搜索提示词', () => assert.equal(drawerAssetMatchesSearch(asset, '三视图'), true));
+test('不匹配搜索不能混入结果', () => assert.equal(drawerAssetMatchesSearch(asset, '金毛'), false));
+test('缺少旧版元数据仍可搜索', () => assert.equal(drawerAssetMatchesSearch({ name: 'CORGI' }, ' corgi '), true));
+console.log(JSON.stringify({ passed: true, checks, providerCalls: 0, networkCalls: 0 }));

@@ -494,7 +494,8 @@ export interface VideoModel {
   maxReferenceAudios?: number;
   minReferenceAudios?: number;
   /** per_use=按次，output_second=按输出视频秒数。 */
-  billingUnit?: "per_use" | "output_second";
+  billingUnit?: "per_use" | "output_second" | "token";
+  tokenPricing?: { salePricesPerMillion: Record<string, number>; priceVersion: string };
   /** 模型可出现的工作台；video-edit 表示可用于重生成编辑素材。 */
   workspaceSurfaces?: string[];
   /** 上游是否提供真正的远程取消，false 时不能把“停止等待”伪装成取消计费。 */
@@ -597,6 +598,15 @@ export interface OutputStyle {
     modelId?: string;
     routingMode?: "auto" | "manual" | "always";
     defaultCount?: number;
+  };
+
+  /**
+   * Controls whether structured storyboard prompt replies expose the
+   * one-click handoff icon in chat. The two official storyboard directors
+   * default to enabled when this field is absent for backwards compatibility.
+   */
+  storyboardPromptHandoff?: {
+    enabled?: boolean;
   };
 }
 

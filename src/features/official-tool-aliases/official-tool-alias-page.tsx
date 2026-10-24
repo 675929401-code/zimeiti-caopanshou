@@ -1,4 +1,6 @@
 "use client";
+import { useApp } from "@/contexts/app-context";
+import { readOfficialPrivateCache, writeOfficialPrivateCache } from "@/lib/official-agent-private-cache";
 
 import { AppScopedLink as Link } from "@/components/app-scoped-link";
 import {
@@ -16,7 +18,7 @@ import {
   Video,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OfficialToolAliasDefinition } from "./official-tool-alias-map";
 import styles from "./official-tool-alias-page.module.css";
 
@@ -73,6 +75,10 @@ const CATEGORY_WORKSPACE: Record<
 };
 
 export function OfficialToolAliasPage({ definition }: { definition: OfficialToolAliasDefinition }) {
+  const { state } = useApp();
+  const ownerId = state.auth.isAuthenticated ? String(state.auth.user?.id || "").trim() : "";
+  const ownerRef = useRef(ownerId);
+  useLayoutEffect(() => { ownerRef.current = ownerId; }, [ownerId]);
   const categoryHref = `/tools/${definition.category}`;
   const workspace = CATEGORY_WORKSPACE[definition.category];
   const WorkspaceIcon = workspace.Icon;
@@ -82,20 +88,40 @@ export function OfficialToolAliasPage({ definition }: { definition: OfficialTool
   const [prompt, setPrompt] = useState("");
   const [referenceName, setReferenceName] = useState("");
   const [saved, setSaved] = useState(false);
+  const [draftOwner, setDraftOwner] = useState("");
+  const [draftError, setDraftError] = useState("");
   const draftKey = useMemo(() => `youcai_tool_draft:${definition.officialPath}`, [definition.officialPath]);
+  useEffect(() => {
+    setPrompt(""); setReferenceName(""); setSaved(false); setDraftOwner(""); setDraftError("");
+    if (!ownerId) return;
+    try {
+      const draft = readOfficialPrivateCache<unknown>(window.sessionStorage, ownerId, draftKey);
+      if (!draft.ok) throw new Error("DRAFT_READ_FAILED");
+      if (draft.value !== null) {
+        const value = draft.value as Record<string, unknown>;
+        if (typeof value.prompt !== "string" || value.prompt.length > 50_000 || typeof value.referenceName !== "string" || value.referenceName.length > 240) throw new Error("DRAFT_INVALID");
+        if (ownerRef.current !== ownerId) return;
+        setPrompt(value.prompt); setReferenceName(value.referenceName);
+      }
+      setDraftOwner(ownerId);
+    } catch { setDraftError("草稿未能读取，已阻止覆盖；请检查浏览器存储权限。"); }
+  }, [draftKey, ownerId]);
 
   const saveDraft = () => {
     if (unavailable) return;
+    if (!ownerId || draftOwner !== ownerId || ownerRef.current !== ownerId) { setDraftError("请登录并读取当前账户草稿后再保存。"); return; }
     try {
-      window.sessionStorage.setItem(draftKey, JSON.stringify({
+      if (!writeOfficialPrivateCache(window.sessionStorage, ownerId, draftKey, {
         prompt: prompt.trim(),
         referenceName,
         savedAt: new Date().toISOString(),
-      }));
+      }, () => ownerRef.current)) throw new Error("DRAFT_SAVE_FAILED");
+      setDraftError("");
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2200);
     } catch {
       setSaved(false);
+      setDraftError("草稿未能保存，请检查浏览器存储权限后重试。");
     }
   };
 
@@ -125,7 +151,7 @@ export function OfficialToolAliasPage({ definition }: { definition: OfficialTool
             </div>
             <span className={unavailable ? styles.unavailableState : styles.readyState}>
               {unavailable ? <CirclePause size={15} /> : <CheckCircle2 size={15} />}
-              {unavailable ? "能力筹备中" : "独立工作区"}
+              {unavailable ? "能力筹备中" : "创作准备区"}
             </span>
           </header>
 
@@ -140,7 +166,8 @@ export function OfficialToolAliasPage({ definition }: { definition: OfficialTool
               <label className={styles.promptField}>
                 <span>{workspace.promptLabel}</span>
                 <textarea
-                  value={prompt}
+                  value={draftOwner === ownerId ? prompt : ""}
+                  maxLength={50_000}
                   onChange={(event) => setPrompt(event.target.value)}
                   placeholder={workspace.placeholder}
                   rows={8}
@@ -151,30 +178,31 @@ export function OfficialToolAliasPage({ definition }: { definition: OfficialTool
 
               <label className={styles.uploadField} data-disabled={unavailable ? "true" : undefined}>
                 <Upload size={20} />
-                <span>{referenceName || "添加参考素材（可选）"}</span>
+                <span>{draftOwner === ownerId && referenceName || "选择素材名称作备忘（不上传）"}</span>
                 <small>{unavailable ? "该专项能力尚未开放素材提交" : "文件只在你选择后进入当前独立页面"}</small>
                 <input
+                  key={ownerId}
                   type="file"
                   accept={workspace.accept}
                   disabled={unavailable}
-                  onChange={(event) => setReferenceName(event.target.files?.[0]?.name || "")}
+                  onChange={(event) => setReferenceName((event.target.files?.[0]?.name || "").slice(0, 240))}
                 />
               </label>
 
               <div className={styles.boundaryNote}>
                 <strong>能力边界</strong>
                 <p>{unavailable
-                  ? "该专项能力正在准备中；页面会保留你的输入，不会自动提交或收费。"
-                  : "输入只会在你主动确认后提交；进入对应工作台后可查看可用能力和价格。"}</p>
+                  ? "该专项能力尚未开放；本页不提交生成或收费，未保存输入刷新后会清空。"
+                  : "本页保存当前账户的会话草稿和素材名称，不上传文件。进入实际工作台后，请填写创作要求、重新选择素材并确认价格。"}</p>
               </div>
             </section>
 
             <section className={styles.previewPanel} aria-label="创作预览">
               <span className={styles.previewIcon}><WorkspaceIcon size={28} /></span>
-              <h2>{unavailable ? "该工具正在准备中" : "独立创作区已就位"}</h2>
+              <h2>{unavailable ? "该工具正在准备中" : "准备创作要求"}</h2>
               <p>{unavailable
-                ? "你的输入会保留在当前页面，服务开放后可以继续使用。"
-                : "填写创作要求并添加参考素材后，可进入对应工作台继续制作。"}</p>
+                ? "专项能力尚未开放，请按需要进入相邻的现有工作台。"
+                : "草稿可在本页当前会话恢复；目标工作台尚不自动导入本页内容。"}</p>
               <div className={styles.previewSteps}>
                 {(unavailable
                   ? ["填写创作要求", "添加参考素材", "等待服务开放", "开放后继续"]
@@ -189,7 +217,8 @@ export function OfficialToolAliasPage({ definition }: { definition: OfficialTool
           <footer className={styles.workspaceFooter}>
             <Link className={styles.secondaryAction} href={categoryHref}><ArrowLeft size={16} />返回{CATEGORY_LABELS[definition.category]}</Link>
             <div>
-              {saved ? <span className={styles.savedMessage}><CheckCircle2 size={14} />草稿已保存在当前会话</span> : null}
+              {saved && draftOwner === ownerId ? <span className={styles.savedMessage}><CheckCircle2 size={14} />草稿已保存在当前会话</span> : null}
+              {draftError ? <span role="status">{draftError}</span> : null}
               <button type="button" className={styles.secondaryAction} onClick={saveDraft} disabled={unavailable || !prompt.trim()}>
                 <Save size={16} />保存创作草稿
               </button>

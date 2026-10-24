@@ -9,8 +9,9 @@ import {
 import {
   normalizeDelegableAdminPermissionKeys,
   ownerOnlyAdminPermissionKeys,
+  ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS,
 } from "@/lib/admin-permission-design";
-import { summarizeAdminPermissionCatalogCoverage } from "@/lib/admin-permission-catalog-coverage";
+import { expectedAdminPermissionCatalogRows, summarizeAdminPermissionCatalogCoverage } from "@/lib/admin-permission-catalog-coverage";
 import {
   appendAdminGovernanceAudit,
   authorizeAdminCapability,
@@ -19,6 +20,28 @@ import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 
 function requestKey(request: NextRequest): string {
   return request.headers.get("idempotency-key")?.trim() || crypto.randomUUID();
+}
+
+async function businessDelegationPolicyReady(permissionKeys: readonly string[]): Promise<boolean> {
+  const requested = ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS.filter((key) => permissionKeys.includes(key));
+  if (requested.length === 0) return true;
+  const { data, error } = await getSupabaseAdminClient().from("admin_permission_catalog")
+    .select("permission_key,is_active,is_delegable,step_up_required,dependency_keys")
+    .in("permission_key", [...requested, "agents.view"]);
+  if (error || !Array.isArray(data)) return false;
+  const expected = expectedAdminPermissionCatalogRows();
+  return [...requested, "agents.view"].every((key) => {
+    const row = data.find((item) => item.permission_key === key);
+    const contract = expected.find((item) => item.permission_key === key);
+    return row && contract && row.is_active === true && row.is_delegable === true
+      && row.step_up_required === contract.step_up_required
+      && Array.isArray(row.dependency_keys)
+      && JSON.stringify([...row.dependency_keys].sort()) === JSON.stringify([...contract.dependency_keys].sort());
+  });
+}
+
+function delegationPolicyNotReady() {
+  return NextResponse.json({ error: "权限目录尚未升级或与代码不一致，本次未保存，请先核对权限配置", code: "ADMIN_PERMISSION_POLICY_NOT_READY" }, { status: 503 });
 }
 
 async function requireSuperAdmin(request: NextRequest) {
@@ -142,6 +165,7 @@ export async function POST(request: NextRequest) {
     );
   }
   const delegatedPermissionKeys = normalizeDelegableAdminPermissionKeys(body.permissionKeys);
+  if (!await businessDelegationPolicyReady(delegatedPermissionKeys)) return delegationPolicyNotReady();
   if (mode === "promote") {
     const existingUserId = String(body.existingUserId || "").trim();
     if (!existingUserId) return NextResponse.json({ error: "请选择已注册会员" }, { status: 400 });
@@ -233,6 +257,7 @@ export async function PATCH(request: NextRequest) {
     }
     const expectedRevision = Number(body.expectedRevision);
     if (!Number.isInteger(expectedRevision) || expectedRevision < 1) return NextResponse.json({ error: "授权版本无效，请刷新后重试" }, { status: 409 });
+    if (!await businessDelegationPolicyReady(normalizeDelegableAdminPermissionKeys(body.permissionKeys))) return delegationPolicyNotReady();
     const { data, error } = await client.rpc("set_admin_access_profile_atomic", {
       p_actor_id: authorization.actor.userId,
       p_target_user_id: userId,

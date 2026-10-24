@@ -393,7 +393,11 @@ html[data-theme="crystal-aurora"] .marketplace-depth {
 
   html[data-theme] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id] {
     overflow: visible !important;
-    transform-style: preserve-3d;
+    /* Each card owns one flat stacking context. The grid can keep its
+     * perspective for the hover motion, but card copy must not move through
+     * the sibling favorite button on the Z axis. */
+    transform-style: flat;
+    isolation: isolate;
   }
 
   html[data-theme] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id]:is(:hover, :focus-within) {
@@ -404,7 +408,7 @@ html[data-theme="crystal-aurora"] .marketplace-depth {
     --marketplace-float-edge: var(--primary);
     animation: none;
     transform-origin: 50% 58%;
-    transform-style: preserve-3d;
+    transform-style: flat;
     will-change: transform, box-shadow;
     transition:
       transform 300ms cubic-bezier(.2, .82, .2, 1),
@@ -425,6 +429,11 @@ html[data-theme="crystal-aurora"] .marketplace-depth {
 
   html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover:is(:hover, :focus-visible) {
     transform: translate3d(0, -2px, 8px) scale(1.004) !important;
+  }
+
+  html[data-theme] .marketplace-shell .marketplace-agent-grid > [data-agent-card-id] > [data-agent-favorite-toggle] {
+    position: absolute;
+    z-index: 30;
   }
 
   html[data-theme] .marketplace-shell .marketplace-agent-grid .agent-card-hover .marketplace-agent-avatar {
@@ -1466,5 +1475,597 @@ html:is(
   [data-theme="crystal-aurora"]
 ) .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill-indicator {
   display: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+ * C210-44 主题与二级生成页收口
+ * 只修视觉层，不改变导航、数据、模型或提交行为。
+ * -------------------------------------------------------------------------- */
+
+/* 黑曜霓彩：让应用广场的底幕、卡片和头像形成明确的三层空间。 */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-depth {
+  background:
+    radial-gradient(760px 420px at 8% 0%, rgba(40, 213, 192, .12), transparent 68%),
+    radial-gradient(720px 420px at 96% 4%, rgba(59, 130, 246, .12), transparent 70%),
+    linear-gradient(180deg, rgba(4, 12, 16, .18), rgba(3, 9, 13, .62)) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-depth::before {
+  opacity: .32 !important;
+  background-image:
+    linear-gradient(rgba(96, 195, 201, .12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96, 195, 201, .12) 1px, transparent 1px) !important;
+  background-position: 0 0, 0 0 !important;
+  background-size: 64px 64px, 64px 64px !important;
+  transform: none !important;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .88), transparent 88%) !important;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .88), transparent 88%) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  min-height: 138px !important;
+  height: 138px !important;
+  gap: 14px !important;
+  padding: 13px 14px !important;
+  border: 1px solid rgba(96, 195, 201, .30) !important;
+  border-radius: 14px !important;
+  background:
+    linear-gradient(145deg, rgba(12, 38, 44, .96), rgba(7, 22, 28, .96) 62%, rgba(7, 17, 24, .98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(234, 255, 252, .09),
+    0 14px 34px rgba(0, 6, 10, .30),
+    0 0 0 1px rgba(42, 213, 192, .035) !important;
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover::before {
+  height: 2px !important;
+  background: linear-gradient(90deg, #28d5c0 0%, #379fda 52%, transparent 92%) !important;
+  opacity: .72 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:focus-visible {
+  border-color: rgba(77, 225, 211, .62) !important;
+  background:
+    linear-gradient(145deg, rgba(15, 52, 56, .98), rgba(8, 28, 35, .98) 62%, rgba(7, 20, 29, .99)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(241, 255, 253, .14),
+    0 24px 52px rgba(0, 6, 10, .44),
+    0 0 26px rgba(40, 213, 192, .10) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-avatar {
+  width: 86px !important;
+  height: 86px !important;
+  flex: 0 0 86px;
+  border: 1px solid rgba(129, 224, 225, .42) !important;
+  border-radius: 12px !important;
+  background: rgba(3, 13, 17, .74) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .12),
+    0 10px 24px rgba(0, 5, 8, .36) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-title {
+  color: #f2fffd !important;
+  font-size: 15px !important;
+  font-weight: 760 !important;
+  line-height: 1.35 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-description {
+  margin-top: 6px !important;
+  color: #a4c5c7 !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+}
+
+/* 黑曜霓彩侧栏快捷入口：同一行同一基线，效率工具不再单独漂移。 */
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid {
+  grid-auto-rows: 72px;
+  align-items: stretch;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .sidebar-tool-card,
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .toolbox-trigger-sidebar {
+  height: 72px !important;
+  min-height: 72px !important;
+  align-items: center;
+  justify-content: center;
+  gap: 5px !important;
+  padding: 7px 4px !important;
+  border-radius: 11px !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .sidebar-shortcut-icon,
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .toolbox-trigger-sidebar .toolbox-trigger-icon {
+  width: 32px !important;
+  height: 32px !important;
+  flex: 0 0 32px;
+  border-radius: 9px !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .sidebar-tool-card > span:last-child,
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .toolbox-trigger-sidebar > span:last-child {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* AI 生图工作台的黑底、深青面、细青蓝线成为普通二级生成页的共同基线。
+   漫剧和带货页面有自己的根容器，故意排除。 */
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .secondary-workbench,
+  .voice-studio-root:not(.marketplace-shell),
+  [data-page="tools"],
+  .cover-studio,
+  .sbw-root
+):not(:where(.commerce-root *, [data-testid="manju-content"] *)) {
+  --background: #04090c;
+  --foreground: #effefd;
+  --card: #091b20;
+  --card-foreground: #effefd;
+  --popover: #0b2228;
+  --popover-foreground: #effefd;
+  --secondary: #0b2228;
+  --secondary-foreground: #c1dddd;
+  --muted: #0a2025;
+  --muted-foreground: #86a9ad;
+  --accent: #10353c;
+  --accent-foreground: #effefd;
+  --border: rgba(96, 195, 201, .28);
+  --input: rgba(113, 198, 203, .36);
+  --primary: #28d5c0;
+  --primary-foreground: #031715;
+  --ring: #35d8cd;
+  --ui-surface: #091b20;
+  --ui-surface-strong: #0b2228;
+  --ui-line: rgba(96, 195, 201, .28);
+  --ui-line-strong: rgba(64, 225, 211, .58);
+  --ui-shadow-sm: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 16px 34px rgba(0, 6, 10, .28);
+  --ui-focus: 0 0 0 3px rgba(40, 213, 192, .24);
+  color: var(--foreground);
+}
+
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .secondary-workbench,
+  .voice-studio-root:not(.marketplace-shell),
+  [data-page="tools"],
+  .cover-studio
+):not(:where(.commerce-root *, [data-testid="manju-content"] *)) :where(
+  button, [role="button"], input, textarea, select
+) {
+  border-radius: 10px;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .secondary-workbench,
+  .voice-studio-root:not(.marketplace-shell),
+  [data-page="tools"],
+  .cover-studio
+):not(:where(.commerce-root *, [data-testid="manju-content"] *)) :where(
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select
+) {
+  border-color: rgba(96, 195, 201, .30) !important;
+  background: #06151a !important;
+  color: #effefd !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :where(
+  .secondary-workbench,
+  .voice-studio-root:not(.marketplace-shell),
+  [data-page="tools"],
+  .cover-studio,
+  .sbw-root
+):not(:where(.commerce-root *, [data-testid="manju-content"] *)) :where(
+  button, [role="button"]
+):focus-visible {
+  outline: 2px solid #35d8cd !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(40, 213, 192, .22) !important;
+}
+
+@media (min-width: 1200px) {
+  html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+    min-height: 146px !important;
+    height: 146px !important;
+  }
+}
+
+/* C210-44 refinement: raise crystal surfaces one step above the black backdrop. */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+  border-color: rgba(96, 195, 201, .40) !important;
+  background:
+    linear-gradient(145deg, rgba(13, 41, 48, .98), rgba(8, 27, 34, .98) 62%, rgba(7, 19, 26, .99)) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:hover,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-grid .agent-card-hover:focus-visible {
+  border-color: rgba(77, 225, 211, .72) !important;
+  background:
+    linear-gradient(145deg, rgba(18, 57, 62, .99), rgba(9, 32, 40, .99) 62%, rgba(7, 23, 31, 1)) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-avatar {
+  border-color: rgba(129, 224, 225, .50) !important;
+  background: #0b2026 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .sidebar-tool-card,
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .toolbox-trigger-sidebar {
+  box-sizing: border-box;
+  align-self: stretch;
+  border: 1px solid rgba(87, 168, 174, .30) !important;
+  background: rgba(8, 42, 49, .72) !important;
+  color: var(--text-secondary) !important;
+  line-height: 1.2;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .sidebar-tool-card:hover,
+html[data-theme="crystal-aurora"][data-mode="dark"] .sidebar-shell .sidebar-shortcut-grid .toolbox-trigger-sidebar:hover {
+  background: rgba(13, 57, 65, .90) !important;
+  color: var(--foreground) !important;
+}
+
+/* THEME-01 final visual closure: every ordinary secondary workbench inherits
+   the storyboard director's black glass tokens. This block is intentionally
+   last because route CSS and the legacy shell bridge load before it. Manju
+   and Commerce keep their own surfaces through the explicit exclusions. */
+html[data-theme="crystal-aurora"][data-mode="dark"] :is(
+  .secondary-workbench:not(.sbw-root),
+  .voice-studio-root.vs-workbench:not(.sbw-root):not(.marketplace-shell),
+  .voice-studio-root.vs-studio-shell,
+  [data-page="tools"],
+  [data-page="tools-utility"],
+  [data-testid="announcement-reading-center"],
+  [class*="media-history_page"],
+  .help-page
+):not(:where(.commerce-root *, [data-testid="manju-content"] *)) {
+  --background: #0b0c0f !important;
+  --foreground: #f2fbfa !important;
+  --card: rgba(24, 26, 31, .98) !important;
+  --card-foreground: #f2fbfa !important;
+  --popover: #181a1f !important;
+  --popover-foreground: #f2fbfa !important;
+  --secondary: #17191e !important;
+  --secondary-foreground: #d5e4e3 !important;
+  --muted: #17191e !important;
+  --muted-foreground: #9baead !important;
+  --accent: #1f3438 !important;
+  --accent-foreground: #f2fbfa !important;
+  --border: rgba(255, 255, 255, .18) !important;
+  --input: rgba(96, 195, 201, .30) !important;
+  --primary: #54e3d2 !important;
+  --primary-foreground: #021815 !important;
+  --ring: #35d8cd !important;
+  --vs-primary: #54e3d2 !important;
+  --vs-primary-hover: #6be9da !important;
+  --vs-secondary: #2f8cc3 !important;
+  --vs-accent: #4a92ff !important;
+  --vs-bg: #0b0c0f !important;
+  --vs-bg-secondary: #111318 !important;
+  --vs-surface: #17191e !important;
+  --vs-surface-hover: #20242a !important;
+  --vs-text: #f2fbfa !important;
+  --vs-text-secondary: #b9d1d1 !important;
+  --vs-text-muted: #9baead !important;
+  --vs-border: rgba(255, 255, 255, .18) !important;
+  --vs-card: rgba(24, 26, 31, .98) !important;
+  --vs-card-hover: rgba(33, 37, 43, .98) !important;
+  --vs-input-bg: #06151a !important;
+  --vs-input-border: rgba(96, 195, 201, .30) !important;
+  --vs-glow: #54e3d2 !important;
+  --vs-on-accent: #021815 !important;
+  color: var(--foreground) !important;
+
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .cover-rebuild-shell:not(:where(.commerce-root *, [data-testid="manju-content"] *)) {
+  --cover-ui-accent: #54e3d2 !important;
+  --cover-ui-accent-strong: #35d8cd !important;
+  --cover-ui-accent-soft: rgba(84, 227, 210, .14) !important;
+  --cover-ui-line: rgba(255, 255, 255, .18) !important;
+  --cover-ui-line-strong: rgba(84, 227, 210, .46) !important;
+  --cover-ui-text: #f2fbfa !important;
+  --cover-ui-text-secondary: #c4d7d6 !important;
+  --cover-ui-text-muted: #9baead !important;
+  --cover-ui-panel: rgba(24, 26, 31, .98) !important;
+  --cover-ui-panel-strong: #1b1e24 !important;
+  --cover-ui-panel-soft: #17191e !important;
+  --cover-ui-input: #06151a !important;
+  --cover-ui-preview: #0b0c0f !important;
+  --cover-ui-shadow: 0 1px 0 rgba(255,255,255,.055) inset, 0 22px 56px rgba(0,7,10,.32) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .cover-rebuild-shell:not(:where(.commerce-root *, [data-testid="manju-content"] *)) :is(
+  .cover-rebuild-topbar,
+  .cover-setup-grid,
+  .cover-card,
+  .cover-rebuild-stage,
+  .cover-stage-toolbar,
+  .cover-result-stage,
+  .cover-main-preview,
+  .cover-history-drawer,
+  .cover-template-library-dialog,
+  .cover-template-preview-dialog,
+  .cover-preview-dialog,
+  .cover-decomposition-editor
+) {
+  border-color: rgba(255, 255, 255, .18) !important;
+  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98)) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,.055) inset, 0 22px 56px rgba(0,7,10,.32) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .cover-rebuild-shell:not(:where(.commerce-root *, [data-testid="manju-content"] *)) .cover-rebuild-topbar {
+  background: linear-gradient(108deg, rgba(9, 48, 55, .92), rgba(7, 34, 43, .9)) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .cover-rebuild-shell:not(:where(.commerce-root *, [data-testid="manju-content"] *)) :is(
+  .cover-output-field textarea,
+  .cover-output-field input,
+  .cover-prompt-card > textarea,
+  .cover-brief-card textarea,
+  .cover-select-shell select,
+  .cover-template-search input,
+  .cover-decomposition-tools input,
+  .cover-decomposition-tools textarea
+) {
+  border-color: rgba(96, 195, 201, .30) !important;
+  background: #06151a !important;
+  color: #effefd !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :is(
+  .secondary-workbench:not(.sbw-root),
+  .voice-studio-root.vs-workbench:not(.sbw-root):not(.marketplace-shell),
+  .voice-studio-root.vs-studio-shell,
+  [data-page="tools"],
+  [data-page="tools-utility"],
+  [data-testid="announcement-reading-center"],
+  [class*="media-history_page"],
+  .help-page
+):not(:where(.commerce-root *, [data-testid="manju-content"] *)) :is(
+  .vs-model-toolbar,
+  .vs-text-input-card,
+  .vs-output-card,
+  .workbench-card,
+  .panel,
+  .surface-card,
+  .filterPanel,
+  .editor,
+  .results,
+  .asset,
+  .settings,
+  .durationChoice,
+  .job,
+  .card,
+  .toolbox-embedded-toolbar,
+  .toolbox-input-surface,
+  .toolbox-results-block,
+  .toolbox-empty-result,
+  .help-shell,
+  .media-history-shell,
+  [data-testid="announcement-reading-pane"]
+) {
+  border-color: rgba(255, 255, 255, .18) !important;
+  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98)) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,.055) inset, 0 22px 56px rgba(0,7,10,.32) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] :is(
+  .secondary-workbench:not(.sbw-root),
+  .voice-studio-root.vs-workbench:not(.sbw-root):not(.marketplace-shell),
+  .voice-studio-root.vs-studio-shell,
+  [data-page="tools"],
+  [data-page="tools-utility"],
+  [data-testid="announcement-reading-center"],
+  [class*="media-history_page"],
+  .help-page
+):not(:where(.commerce-root *, [data-testid="manju-content"] *)) :is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select) {
+  border-color: rgba(96, 195, 201, .30) !important;
+  background: #06151a !important;
+  color: #effefd !important;
+}
+
+/* Keep the marketplace's orthogonal depth grid visible in Crystal Aurora.
+   This is a theme-local final override; Manju and Commerce have no matching
+   marketplace shell and remain outside the rule. */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-depth::before {
+  opacity: .9 !important;
+}
+
+/* Ordinary desktop workbenches: one fixed field, three theme palettes.
+ * The outer page owns the grid; nested editors remain foreground surfaces.
+ * Commerce and Manju keep their independent shells. */
+html[data-theme][data-mode] {
+  --unified-workbench-grid-size: 64px;
+  --unified-workbench-field: var(--background);
+  --unified-workbench-card: var(--card);
+  --unified-workbench-control: var(--popover);
+  --unified-workbench-line: var(--border);
+  --unified-workbench-text: var(--foreground);
+  --unified-workbench-muted: var(--muted-foreground);
+  --unified-workbench-shadow: 0 1px 0 rgba(255,255,255,.055) inset, 0 18px 42px rgba(0,7,10,.20);
+  --unified-workbench-grid-image:
+  linear-gradient(var(--unified-workbench-grid-line) 1px, transparent 1px),
+  linear-gradient(90deg, var(--unified-workbench-grid-line) 1px, transparent 1px),
+  radial-gradient(ellipse at 8% 0%, var(--unified-workbench-glow-one), transparent 65%),
+  radial-gradient(ellipse at 94% 0%, var(--unified-workbench-glow-two), transparent 65%);
+}
+
+html[data-theme="lattice"][data-mode="dark"] {
+  --unified-workbench-grid-line: rgba(148,216,226,.18);
+  --unified-workbench-glow-one: rgba(0,143,158,.30);
+  --unified-workbench-glow-two: rgba(105,77,210,.28);
+  --unified-workbench-header: linear-gradient(110deg, rgba(7,26,42,.97), rgba(20,36,64,.96));
+}
+
+html[data-theme="soft-white"][data-mode="light"] {
+  --unified-workbench-grid-line: rgba(11,116,102,.11);
+  --unified-workbench-glow-one: rgba(11,116,102,.055);
+  --unified-workbench-glow-two: rgba(46,111,150,.045);
+  --unified-workbench-header: linear-gradient(110deg, rgba(255,254,250,.98), rgba(245,248,244,.96));
+  --unified-workbench-shadow: 0 1px 0 rgba(255,255,255,.92) inset, 0 12px 32px rgba(23,49,42,.08);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] {
+  --unified-workbench-grid-line: rgba(96,195,201,.16);
+  --unified-workbench-glow-one: rgba(40,213,192,.10);
+  --unified-workbench-glow-two: rgba(47,112,232,.10);
+  --unified-workbench-header: linear-gradient(180deg, #171b20, #111419);
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
+  color: var(--unified-workbench-text) !important;
+  background-color: var(--unified-workbench-field) !important;
+  background-image: var(--unified-workbench-grid-image) !important;
+  background-size: 64px 64px, 64px 64px, 100% 100%, 100% 100% !important;
+  background-position: 0 0, 0 0, center, center !important;
+  background-repeat: repeat, repeat, no-repeat, no-repeat !important;
+  background-attachment: fixed !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.sub-page-header, .vs-studio-header, .cover-rebuild-topbar) {
+  min-height: 56px !important;
+  border-color: var(--unified-workbench-line) !important;
+  background: var(--unified-workbench-header) !important;
+  color: var(--unified-workbench-text) !important;
+  box-shadow: var(--unified-workbench-shadow) !important;
+  backdrop-filter: blur(16px) saturate(1.05) !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.sub-page-header-inner, .vs-studio-header-inner) {
+  height: 56px !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.sub-page-back, .sub-page-open, .sub-page-nav-button, .vs-studio-home) {
+  height: 34px !important;
+  min-height: 34px !important;
+  border-radius: 9px !important;
+  border-color: var(--unified-workbench-line) !important;
+  background: var(--unified-workbench-control) !important;
+  color: var(--unified-workbench-muted) !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .sub-page-back {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--unified-workbench-line)) !important;
+  background: color-mix(in srgb, var(--primary) 12%, var(--unified-workbench-control)) !important;
+  color: var(--primary) !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .sub-page-nav-button[data-variant="primary"] {
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--unified-workbench-line)) !important;
+  background: color-mix(in srgb, var(--primary) 12%, var(--unified-workbench-control)) !important;
+  color: var(--primary) !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.sub-page-back, .sub-page-open, .sub-page-nav-button, .vs-studio-home):is(:hover, :focus-visible) {
+  border-color: var(--primary) !important;
+  background: color-mix(in srgb, var(--primary) 14%, var(--unified-workbench-control)) !important;
+  color: var(--unified-workbench-text) !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .vs-studio-logo-mark {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 10px !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .vs-studio-nav {
+  box-sizing: border-box !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  gap: 3px !important;
+  padding: 4px !important;
+  border-radius: 11px !important;
+  border-color: var(--unified-workbench-line) !important;
+  background: var(--unified-workbench-control) !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .vs-studio-nav-link {
+  box-sizing: border-box !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  border-radius: 8px !important;
+  padding-inline: 14px !important;
+  font-size: 13px !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .vs-studio-nav-link[data-active="true"]::after {
+  right: 12px !important;
+  bottom: -4px !important;
+  left: 12px !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .sub-page-nav-button[data-active="true"],
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .sub-page-nav-button[data-active="true"]:is(:hover, :focus-visible) {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+}
+
+/* Exactly one background layer under each scrollable work area. */
+html[data-theme][data-mode] .image-workbench-root:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) > main,
+html[data-theme][data-mode] .image-workbench-root:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) > main > section,
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.workspace-depth-frame, .workspace-depth-stage, .workspace-depth-canvas, .toolbox-embedded-workspace.secondary-workbench, .toolbox-embedded-workspace.voice-studio-root.vs-workbench, .vs-studio-main .secondary-workbench.voice-studio-root) {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+html[data-theme][data-mode] .image-workbench-root:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) > main > aside {
+  background: color-mix(in srgb, var(--unified-workbench-card) 86%, transparent) !important;
+  border-color: var(--unified-workbench-line) !important;
+  backdrop-filter: blur(14px) saturate(1.04) !important;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.workspace-depth-rail, .workspace-depth-header, .toolbox-embedded-toolbar, .toolbox-input-surface, .toolbox-results-block, .toolbox-state-surface, .toolbox-empty-result) {
+  border-color: var(--unified-workbench-line) !important;
+  background: color-mix(in srgb, var(--unified-workbench-card) 94%, transparent) !important;
+  box-shadow: var(--unified-workbench-shadow) !important;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.toolbox-input-surface, .toolbox-results-block):hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--unified-workbench-line)) !important;
+}
+
+html[data-theme][data-mode] .marketplace-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .marketplace-depth {
+  background: transparent !important;
+}
+
+html[data-theme][data-mode] .marketplace-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .marketplace-depth::before {
+  content: none !important;
+  animation: none !important;
+}
+
+html[data-theme][data-mode] [data-official-tool-directory="true"]:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(nav[aria-label="创作类型"], section[aria-label="工具筛选"], section[aria-label$="工具列表"] > a, section[aria-label$="工具列表"] > article) {
+  border-color: var(--unified-workbench-line) !important;
+  background: color-mix(in srgb, var(--unified-workbench-card) 94%, transparent) !important;
+  box-shadow: var(--unified-workbench-shadow) !important;
+}
+
+html[data-theme][data-mode] [data-official-tool-directory="true"]:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(h1, h3, p, span, small, footer, input, button, nav[aria-label="创作类型"] a) {
+  color: var(--unified-workbench-text) !important;
+}
+
+html[data-theme][data-mode] [data-official-tool-directory="true"]:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) section[aria-label="工具筛选"] :is(input, button),
+html[data-theme][data-mode] [data-official-tool-directory="true"]:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) section[aria-label$="工具列表"] > :is(a, article) > :last-child {
+  background: var(--unified-workbench-control) !important;
+  border-color: var(--unified-workbench-line) !important;
+}
+
+html[data-theme][data-mode] [data-official-tool-directory="true"]:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(nav[aria-label="创作类型"] a[data-active="true"], section[aria-label="工具筛选"] button[data-active="true"]) {
+  color: var(--primary-foreground) !important;
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
 }
 

@@ -355,7 +355,14 @@ export async function reserveVideoGenerationTask(
     p_duration_seconds: input.task.durationSeconds,
     p_content_url: typeof input.task.contentUrl === "string" ? input.task.contentUrl : null,
   };
-  const { data, error } = input.dispatch
+  const { data, error } = input.price.tokenQuote
+    ? await db.rpc("reserve_video_token_task_v1_atomic", {
+        p_task: reservationParams,
+        p_routing_snapshot: input.routingSnapshot,
+        p_request_snapshot: requestSnapshot,
+        p_token_quote: input.price.tokenQuote,
+      })
+    : input.dispatch
     ? await db.rpc("reserve_queued_digital_video_task_request_snapshot_v1_atomic", {
         p_task: reservationParams,
         p_dispatch: input.dispatch,

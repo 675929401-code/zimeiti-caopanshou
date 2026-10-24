@@ -40,7 +40,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   ownerOnlyAdminPermissionKeys(["prompts.view", "prompts.edit", "internal_tools.manage", "members.view"]),
-  ["prompts.view", "prompts.edit", "internal_tools.manage"],
+  [],
 );
 assert.ok(
   !normalizeDelegableAdminPermissionKeys(ADMIN_PERMISSION_KEYS).includes("admin.accounts.manage"),
@@ -48,8 +48,8 @@ assert.ok(
 );
 assert.deepEqual(
   normalizeDelegableAdminPermissionKeys(["prompts.edit"]),
-  [],
-  "prompt editing must remain inside the platform-owner boundary",
+  ["agents.view", "prompts.view", "prompts.edit"],
+  "owner-granted prompt editing must retain both read dependencies",
 );
 assert.deepEqual(
   normalizeDelegableAdminPermissionKeys(["models.manage"]),
@@ -262,7 +262,7 @@ assert.match(memberContentMigration, /admin_member_content_permission_v4_migrati
 const authoritySource = read("src/lib/server/admin-governance-authority.ts");
 assert.match(authoritySource, /privilegedDenialDetails/u);
 const selfSource = read("src/app/api/admin/access-control/self/route.ts");
-assert.match(selfSource, /isSuperAdmin \? ADMIN_PERMISSION_CATALOG : grantedCatalog/u);
+assert.match(selfSource, /catalog: adminPermissionCatalogForSelf\(access.permissionKeys\)/u);
 assert.match(selfSource, /filter\(\(\[, allowed\]\) => allowed === true\)/u);
 assert.match(selfSource, /: isSuperAdmin\s*\? true/u, "super administrators must retain every tab even if a stored permission row drifts");
 

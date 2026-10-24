@@ -513,7 +513,6 @@
 .cover-rebuild-shell {
   min-height: 100vh;
   color: #20231f;
-  background: #ecefe8;
   font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
 }
 
@@ -1387,13 +1386,6 @@
 /* High-tech cover studio override */
 .cover-rebuild-shell {
   color: #e8f3ff;
-  background:
-    linear-gradient(rgba(45, 212, 191, .05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(45, 212, 191, .05) 1px, transparent 1px),
-    radial-gradient(circle at 18% 10%, rgba(34, 211, 238, .22), transparent 34%),
-    radial-gradient(circle at 86% 18%, rgba(239, 68, 68, .16), transparent 28%),
-    #070b14;
-  background-size: 34px 34px, 34px 34px, auto, auto, auto;
 }
 
 .cover-rebuild-topbar,
@@ -1520,13 +1512,6 @@
 @media (max-width: 900px) {
   .cover-result-grid { grid-template-columns: 1fr; grid-template-rows: repeat(6, minmax(220px, 1fr)); }
 }
-/* Calm cover studio override */
-.cover-rebuild-shell {
-  background:
-    radial-gradient(circle at 18% 10%, rgba(34, 211, 238, .10), transparent 30%),
-    #08111f;
-}
-
 .cover-result-stage {
   background: #08111f;
 }
@@ -2131,61 +2116,62 @@
   gap: 7px;
 }
 
-.cover-task-day-label {
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-day-label {
   flex: 0 0 auto;
-  color: #8fb3c9;
+  color: var(--cover-ui-text-muted);
   font-size: 11px;
   font-weight: 800;
   white-space: nowrap;
 }
 
-.cover-task-strip button,
-.cover-task-empty {
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip button,
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-empty {
   min-width: 74px;
   height: 34px;
   display: grid;
   align-content: center;
   gap: 1px;
   padding: 0 10px;
-  border: 1px solid rgba(125, 211, 252, .20);
+  border: 1px solid var(--cover-ui-line);
   border-radius: 6px;
-  background: rgba(15, 23, 42, .72);
-  color: #dff7ff;
+  background: var(--cover-ui-panel-soft);
+  color: var(--cover-ui-text);
   font-size: 11px;
   text-align: left;
   white-space: nowrap;
 }
 
-.cover-task-strip button { cursor: pointer; }
-.cover-task-strip button.is-active {
-  border-color: rgba(34, 211, 238, .78);
-  background: linear-gradient(135deg, rgba(14, 165, 233, .85), rgba(37, 99, 235, .88));
-  box-shadow: 0 0 18px rgba(34, 211, 238, .18);
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip button { cursor: pointer; }
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip button.is-active {
+  border-color: var(--cover-ui-accent);
+  background: var(--cover-ui-accent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--cover-ui-accent) 18%, transparent);
+  color: var(--cover-ui-on-accent);
 }
-.cover-task-strip button.is-running {
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip button.is-running {
   position: relative;
   overflow: hidden;
-  border-color: rgba(52, 211, 153, .48);
+  border-color: color-mix(in srgb, var(--success) 48%, var(--cover-ui-line));
   background:
-    linear-gradient(135deg, rgba(8, 47, 73, .88), rgba(15, 23, 42, .86)),
-    linear-gradient(90deg, rgba(34, 211, 238, .0), rgba(52, 211, 153, .20), rgba(34, 211, 238, .0));
-  box-shadow: 0 0 18px rgba(34, 211, 238, .14), inset 0 0 16px rgba(52, 211, 153, .06);
+    color-mix(in srgb, var(--success) 10%, var(--cover-ui-panel-soft));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--success) 14%, transparent), inset 0 0 16px color-mix(in srgb, var(--success) 6%, transparent);
+  color: var(--cover-ui-text);
 }
-.cover-task-strip button.is-running::after {
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip button.is-running::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(110deg, transparent 0 20%, rgba(224, 242, 254, .20) 46%, transparent 70% 100%);
+  background: linear-gradient(110deg, transparent 0 20%, color-mix(in srgb, var(--success) 20%, transparent) 46%, transparent 70% 100%);
   transform: translateX(-130%);
   animation: cover-task-glide 2.8s ease-in-out infinite;
 }
-.cover-task-strip button.is-failed {
-  border-color: rgba(248, 113, 113, .45);
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip button.is-failed {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--cover-ui-line));
 }
-.cover-task-strip strong { font-size: 11px; color: #f8fbff; }
-.cover-task-strip span { color: #94b8ce; font-size: 11px; }
-.cover-task-strip button.is-active span { color: rgba(255,255,255,.82); }
-.cover-task-empty { place-items: center; color: #8ea6bd; }
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip strong { font-size: 11px; color: inherit; }
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip span { color: var(--cover-ui-text-muted); font-size: 11px; }
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-strip button.is-active span { color: inherit; }
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-empty { place-items: center; color: var(--cover-ui-text-muted); }
 .cover-stage-actions { flex: 0 0 auto; }
 
 .cover-single-stage {
@@ -2591,6 +2577,8 @@
   gap: 11px;
   text-align: left;
 }
+
+
 
 .cover-rebuild-shell .cover-brand-mark {
   width: 38px;
@@ -3909,9 +3897,6 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(3, 8, 20, .94), rgba(4, 13, 26, .98) 42%, #020617),
-    #020617;
 }
 
 .cover-rebuild-shell > * {
@@ -4448,8 +4433,11 @@
   font-size: 12px;
 }
 
-.cover-rebuild-shell .cover-task-empty {
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-task-empty {
   font-size: 11px;
+  border-color: var(--cover-ui-line);
+  background: var(--cover-ui-panel-soft);
+  color: var(--cover-ui-text-muted);
 }
 
 /* Final responsive contract: the task toolbar is a real grid (the previous
@@ -4743,7 +4731,6 @@ html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell {
 html:is([data-theme="lattice"], [data-theme="soft-white"]) .cover-rebuild-shell {
   min-height: 100vh;
   color: var(--cover-ui-text);
-  background: var(--cover-ui-bg);
   font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Segoe UI", sans-serif;
 }
 
@@ -6653,10 +6640,6 @@ html[data-theme="crystal-aurora"] .cover-rebuild-shell {
 html:is([data-theme="lattice"], [data-theme="crystal-aurora"]) .cover-rebuild-shell {
   min-height: 100vh;
   color: var(--cover-ui-text);
-  background:
-    radial-gradient(circle at 7% 28%, color-mix(in srgb, var(--cover-ui-accent) 10%, transparent), transparent 34%),
-    radial-gradient(circle at 88% 10%, color-mix(in srgb, #7c8cff 10%, transparent), transparent 34%),
-    var(--cover-ui-bg);
 }
 
 html:is([data-theme="lattice"], [data-theme="crystal-aurora"]) .cover-rebuild-shell::before,
@@ -6858,14 +6841,6 @@ html[data-theme="lattice"][data-mode="dark"] .cover-rebuild-shell {
   --cover-ui-input: rgba(3, 17, 30, .76);
   --cover-ui-preview: rgba(4, 18, 31, .82);
   --cover-ui-shadow: inset 0 1px rgba(255, 255, 255, .065), 0 20px 48px rgba(0, 0, 0, .26);
-  background-color: #112540;
-  background-image: var(--lattice-backdrop);
-  background-size:
-    var(--lattice-grid-size, 42px) var(--lattice-grid-size, 42px),
-    var(--lattice-grid-size, 42px) var(--lattice-grid-size, 42px),
-    100% 100%, 100% 100%, 100% 100%, 100% 100%;
-  background-position: 0 0, 0 0, center, center, center, center;
-  background-attachment: fixed;
 }
 
 html[data-theme="lattice"][data-mode="dark"] .cover-rebuild-shell::before {
@@ -7259,89 +7234,82 @@ html[data-theme="lattice"][data-mode="dark"] .cover-template-preview-dialog {
 /* 2026-09-28 selected Cover Studio direction: a quiet, compact production
    workspace. Theme differences are expressed through solid surfaces and one
    restrained accent; the workflow and spacing stay identical in every theme. */
-.cover-rebuild-shell {
-  --cover-ui-bg: #f5f4f0;
-  --cover-ui-panel: #ffffff;
-  --cover-ui-panel-strong: #fbfcfa;
-  --cover-ui-panel-soft: #f2f4f1;
-  --cover-ui-input: #fbfcfa;
-  --cover-ui-preview: #f4f6f4;
-  --cover-ui-text: #202421;
-  --cover-ui-text-secondary: #4f5853;
-  --cover-ui-text-muted: #7b837f;
-  --cover-ui-line: #dfe3df;
-  --cover-ui-line-strong: #c7d1cc;
-  --cover-ui-accent: #397d70;
-  --cover-ui-accent-strong: #2e6b60;
-  --cover-ui-accent-soft: #e7f0ed;
-  --cover-ui-on-accent: #ffffff;
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
+  --cover-ui-bg: var(--unified-workbench-field);
+  --cover-ui-panel: var(--unified-workbench-card);
+  --cover-ui-panel-strong: var(--unified-workbench-control);
+  --cover-ui-panel-soft: color-mix(in srgb, var(--unified-workbench-card) 90%, var(--unified-workbench-field));
+  --cover-ui-input: var(--unified-workbench-control);
+  --cover-ui-preview: var(--unified-workbench-field);
+  --cover-ui-text: var(--unified-workbench-text);
+  --cover-ui-text-secondary: color-mix(in srgb, var(--unified-workbench-text) 78%, var(--unified-workbench-muted));
+  --cover-ui-text-muted: var(--unified-workbench-muted);
+  --cover-ui-line: var(--unified-workbench-line);
+  --cover-ui-line-strong: color-mix(in srgb, var(--primary) 35%, var(--unified-workbench-line));
+  --cover-ui-accent: var(--primary);
+  --cover-ui-accent-strong: var(--primary-hover, var(--primary));
+  --cover-ui-accent-soft: color-mix(in srgb, var(--primary) 14%, var(--unified-workbench-card));
+  --cover-ui-on-accent: var(--primary-foreground);
   --cover-ui-shadow: 0 5px 18px rgba(36, 45, 41, .055);
   color: var(--cover-ui-text);
-  background: var(--cover-ui-bg);
-  background-image: none;
   font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
 }
 
-html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell {
-  --cover-ui-bg: #f5f4f0;
-  --cover-ui-panel: #ffffff;
-  --cover-ui-panel-strong: #fbfcfa;
-  --cover-ui-panel-soft: #f2f4f1;
-  --cover-ui-input: #fbfcfa;
-  --cover-ui-preview: #f4f6f4;
-  --cover-ui-text: #202421;
-  --cover-ui-text-secondary: #4f5853;
-  --cover-ui-text-muted: #7b837f;
-  --cover-ui-line: #dfe3df;
-  --cover-ui-line-strong: #c7d1cc;
-  --cover-ui-accent: #397d70;
-  --cover-ui-accent-strong: #2e6b60;
-  --cover-ui-accent-soft: #e7f0ed;
-  --cover-ui-on-accent: #ffffff;
+html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
+  --cover-ui-bg: var(--unified-workbench-field);
+  --cover-ui-panel: var(--unified-workbench-card);
+  --cover-ui-panel-strong: var(--unified-workbench-control);
+  --cover-ui-panel-soft: color-mix(in srgb, var(--unified-workbench-card) 90%, var(--unified-workbench-field));
+  --cover-ui-input: var(--unified-workbench-control);
+  --cover-ui-preview: var(--unified-workbench-field);
+  --cover-ui-text: var(--unified-workbench-text);
+  --cover-ui-text-secondary: color-mix(in srgb, var(--unified-workbench-text) 78%, var(--unified-workbench-muted));
+  --cover-ui-text-muted: var(--unified-workbench-muted);
+  --cover-ui-line: var(--unified-workbench-line);
+  --cover-ui-line-strong: color-mix(in srgb, var(--primary) 35%, var(--unified-workbench-line));
+  --cover-ui-accent: var(--primary);
+  --cover-ui-accent-strong: var(--primary-hover, var(--primary));
+  --cover-ui-accent-soft: color-mix(in srgb, var(--primary) 14%, var(--unified-workbench-card));
+  --cover-ui-on-accent: var(--primary-foreground);
   --cover-ui-shadow: 0 5px 18px rgba(36, 45, 41, .055);
 }
 
-html[data-theme="lattice"][data-mode="dark"] .cover-rebuild-shell {
-  --cover-ui-bg: #121719;
-  --cover-ui-panel: #181e20;
-  --cover-ui-panel-strong: #1d2426;
-  --cover-ui-panel-soft: #20282a;
-  --cover-ui-input: #141a1c;
-  --cover-ui-preview: #151c1e;
-  --cover-ui-text: #eef3f1;
-  --cover-ui-text-secondary: #c2ccc8;
-  --cover-ui-text-muted: #8f9c97;
-  --cover-ui-line: #303a3c;
-  --cover-ui-line-strong: #445250;
-  --cover-ui-accent: #71aa9e;
-  --cover-ui-accent-strong: #94c2b8;
-  --cover-ui-accent-soft: rgba(113, 170, 158, .16);
-  --cover-ui-on-accent: #101816;
+html[data-theme="lattice"][data-mode="dark"] .cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
+  --cover-ui-bg: var(--unified-workbench-field);
+  --cover-ui-panel: var(--unified-workbench-card);
+  --cover-ui-panel-strong: var(--unified-workbench-control);
+  --cover-ui-panel-soft: color-mix(in srgb, var(--unified-workbench-card) 90%, var(--unified-workbench-field));
+  --cover-ui-input: var(--unified-workbench-control);
+  --cover-ui-preview: var(--unified-workbench-field);
+  --cover-ui-text: var(--unified-workbench-text);
+  --cover-ui-text-secondary: color-mix(in srgb, var(--unified-workbench-text) 78%, var(--unified-workbench-muted));
+  --cover-ui-text-muted: var(--unified-workbench-muted);
+  --cover-ui-line: var(--unified-workbench-line);
+  --cover-ui-line-strong: color-mix(in srgb, var(--primary) 35%, var(--unified-workbench-line));
+  --cover-ui-accent: var(--primary);
+  --cover-ui-accent-strong: var(--primary-hover, var(--primary));
+  --cover-ui-accent-soft: color-mix(in srgb, var(--primary) 14%, var(--unified-workbench-card));
+  --cover-ui-on-accent: var(--primary-foreground);
   --cover-ui-shadow: 0 8px 24px rgba(0, 0, 0, .16);
-  background: var(--cover-ui-bg);
-  background-image: none;
-  background-attachment: scroll;
 }
 
-html[data-theme="crystal-aurora"][data-mode="dark"] .cover-rebuild-shell {
-  --cover-ui-bg: #050d11;
-  --cover-ui-panel: #0a1b22;
-  --cover-ui-panel-strong: #0f252d;
-  --cover-ui-panel-soft: #10252d;
-  --cover-ui-input: #07151b;
-  --cover-ui-preview: #071419;
-  --cover-ui-text: #f2fbfa;
-  --cover-ui-text-secondary: #b5c9c7;
-  --cover-ui-text-muted: #849d9b;
-  --cover-ui-line: #27464d;
-  --cover-ui-line-strong: #365a61;
-  --cover-ui-accent: #54e3d2;
-  --cover-ui-accent-strong: #79eee0;
-  --cover-ui-accent-soft: rgba(84, 227, 210, .16);
-  --cover-ui-on-accent: #031311;
+html[data-theme="crystal-aurora"][data-mode="dark"] .cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
+  --cover-ui-bg: var(--unified-workbench-field);
+  --cover-ui-panel: var(--unified-workbench-card);
+  --cover-ui-panel-strong: var(--unified-workbench-control);
+  --cover-ui-panel-soft: color-mix(in srgb, var(--unified-workbench-card) 90%, var(--unified-workbench-field));
+  --cover-ui-input: var(--unified-workbench-control);
+  --cover-ui-preview: var(--unified-workbench-field);
+  --cover-ui-text: var(--unified-workbench-text);
+  --cover-ui-text-secondary: color-mix(in srgb, var(--unified-workbench-text) 78%, var(--unified-workbench-muted));
+  --cover-ui-text-muted: var(--unified-workbench-muted);
+  --cover-ui-line: var(--unified-workbench-line);
+  --cover-ui-line-strong: color-mix(in srgb, var(--primary) 35%, var(--unified-workbench-line));
+  --cover-ui-accent: var(--primary);
+  --cover-ui-accent-strong: var(--primary-hover, var(--primary));
+  --cover-ui-accent-soft: color-mix(in srgb, var(--primary) 14%, var(--unified-workbench-card));
+  --cover-ui-on-accent: var(--primary-foreground);
   --cover-ui-shadow: 0 9px 28px rgba(0, 0, 0, .28);
-  background: var(--cover-ui-bg);
-  background-image: none;
 }
 
 .cover-rebuild-shell::before,
@@ -7638,6 +7606,7 @@ html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell .cover-reb
   grid-row: 2;
   min-height: 0;
   overflow: hidden;
+  scrollbar-gutter: auto;
 }
 
 .cover-rebuild-shell .has-reference-dock .cover-director-panel,
@@ -7797,7 +7766,7 @@ html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell .cover-reb
   font-size: 11px;
 }
 
-.cover-rebuild-shell .cover-rebuild-stage {
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-rebuild-stage {
   grid-column: 2;
   grid-row: 2;
   grid-template-rows: 54px minmax(0, 1fr);
@@ -7813,6 +7782,7 @@ html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell .cover-reb
   --cover-route-accent: var(--cover-ui-accent);
   --cover-route-accent-2: var(--cover-ui-accent-strong);
   --cover-route-glow: transparent;
+  background: transparent;
 }
 
 .cover-rebuild-shell :is(
@@ -7866,16 +7836,12 @@ html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell .cover-reb
   background: var(--cover-ui-accent-soft);
 }
 
-.cover-rebuild-shell .cover-result-stage {
+.cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-result-stage {
   position: relative;
   min-height: 0;
   padding: 16px;
   overflow: hidden;
-  background-color: var(--cover-ui-preview);
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--cover-ui-line) 45%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--cover-ui-line) 45%, transparent) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background: transparent;
 }
 
 .cover-rebuild-shell .cover-main-preview {
@@ -8123,6 +8089,48 @@ html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell .cover-reb
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--cover-ui-accent) 12%, transparent);
 }
 
+.cover-rebuild-shell .cover-model-select-shell {
+  width: 100%;
+  border-radius: 8px;
+}
+
+.cover-rebuild-shell .cover-model-select-shell select.cover-model-select {
+  width: 100%;
+  height: 44px;
+  padding: 0 34px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.cover-rebuild-shell .cover-model-select-shell svg {
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--cover-ui-accent);
+}
+
+.cover-rebuild-shell .cover-model-select-shell svg:first-child {
+  left: 11px;
+  right: auto;
+}
+
+.cover-rebuild-shell .cover-model-select option {
+  color: var(--cover-ui-text);
+  background: var(--cover-ui-input);
+}
+
+.cover-rebuild-shell .cover-model-catalog-status {
+  margin: 6px 0 0;
+  color: var(--cover-ui-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cover-rebuild-shell .cover-model-catalog-status:empty {
+  display: none;
+}
+
 .cover-rebuild-shell .cover-reference-dock {
   min-height: 68px;
   border-color: var(--cover-ui-line);
@@ -8355,12 +8363,8 @@ html:is(
   [data-theme="lattice"][data-mode="dark"],
   [data-theme="crystal-aurora"][data-mode="dark"],
   [data-theme="soft-white"][data-mode="light"]
-) .cover-rebuild-shell .cover-result-stage {
-  background-color: var(--cover-ui-preview);
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--cover-ui-line) 45%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--cover-ui-line) 45%, transparent) 1px, transparent 1px);
-  background-size: 32px 32px;
+) .cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .cover-result-stage {
+  background: transparent;
 }
 
 html:is(
@@ -8387,4 +8391,16 @@ html:is(
   box-shadow: var(--cover-ui-shadow);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+
+
+/* The selected theme owns the shared stationary secondary-page field. */
+html[data-theme][data-mode] .cover-rebuild-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
+  background-color: var(--unified-workbench-field, var(--background)) !important;
+  background-image: var(--unified-workbench-grid-image, none) !important;
+  background-size: var(--unified-workbench-grid-size, 64px) var(--unified-workbench-grid-size, 64px), var(--unified-workbench-grid-size, 64px) var(--unified-workbench-grid-size, 64px), 100% 100%, 100% 100% !important;
+  background-position: 0 0, 0 0, center, center !important;
+  background-repeat: repeat, repeat, no-repeat, no-repeat !important;
+  background-attachment: fixed !important;
 }

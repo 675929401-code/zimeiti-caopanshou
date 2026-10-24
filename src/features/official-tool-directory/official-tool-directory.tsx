@@ -127,7 +127,11 @@ export function OfficialToolDirectory({ category }: { category: ToolCategory }) 
   }), [config.tools, filter, normalizedQuery]);
 
   return (
-    <main className={styles.directoryPage} style={{ "--directory-accent": config.accent } as CSSProperties}>
+    <main
+      className={styles.directoryPage}
+      data-official-tool-directory="true"
+      style={{ "--directory-accent": config.accent } as CSSProperties}
+    >
       {bannerOverride?.enabled === false ? null : (
         <section
           className={styles.categoryBanner}

@@ -7,7 +7,7 @@
 
 import type { ChatRequest, LLMProxy } from "@/lib/llm-proxy";
 import { SseEventStreamDecoder, type DecodedSseEvent } from "@/lib/sse-stream-decoder";
-import { LlmResponseStartError, LlmStreamError, upstreamStreamError, responseStartError } from "@/lib/llm-proxy/stream-error";
+import { LlmResponseStartError, LlmStreamError, upstreamStreamError, responseStartError, sanitizeLlmSafeDiagnostics } from "@/lib/llm-proxy/stream-error";
 import {
   settleLlmUsage,
   type SelectedModelBillingSnapshot,
@@ -111,10 +111,11 @@ export function handleStreamResponse(
       const liveDelivery = ctx.allowLiveStreamDelivery === true;
       const protectedDelivery = protectPrompt && liveDelivery ? createBipGuardedStream(protectedPrompt) : null;
       const bufferedResponseChunks: Uint8Array[] = [];
-      const deliveryDecoder = new SseEventStreamDecoder();
+      let deliveryDecoder = new SseEventStreamDecoder();
       let lastProgressAt = 0;
       let lastProgressChars = 0;
       let reservationNeedsReconciliation = false;
+      let liveContentDelivered = false;
       let upstreamError: LlmStreamError | null = null;
       const safeEnqueue = (chunk: Uint8Array): boolean => {
         if (outerClosed) return false;
@@ -145,9 +146,14 @@ export function handleStreamResponse(
         const chunk = encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
         if (protectedDelivery) {
           const delta = protectedDelivery.update(fullContent);
-          if (delta) safeEnqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: delta }, finish_reason: null }] })}\n\n`));
+          if (delta && safeEnqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: delta }, finish_reason: null }] })}\n\n`))) liveContentDelivered = true;
         }
-        else if (liveDelivery) safeEnqueue(chunk);
+        else if (liveDelivery) {
+          if (safeEnqueue(chunk)) {
+            const delta = payload?.choices?.[0]?.delta;
+            if ([delta?.content, delta?.reasoning_content, delta?.reasoning].some(value => typeof value === "string" && value.length > 0)) liveContentDelivered = true;
+          }
+        }
         else if (!protectPrompt) {
           bufferedResponseChunks.push(chunk);
           const receivedChars = fullContent.length + reasoningContent.length;
@@ -165,6 +171,10 @@ export function handleStreamResponse(
       };
 
       let proxyStream: ReadableStream<Uint8Array>;
+      // A relay gateway answers 200 first and only then rejects the SSE stream
+      // while the account's concurrency slot is busy. Nothing was generated in
+      // that window, so a bounded retry is safe and avoids a burnt user send.
+      const MAX_CONCURRENCY_RETRIES = 2;
 
       // ── 周期性心跳定时器（在 try 外声明，确保 catch 可清理） ──
       let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -183,42 +193,18 @@ export function handleStreamResponse(
         // ── 周期性心跳：在等待上游首字节期间保持连接活跃 ──
         // 每 5 秒发一次心跳，防止 Nginx（proxy_read_timeout 60s）或 CDN 断连
         // SSE 注释行（: 开头）前端会自动跳过，不影响渲染
-        heartbeatInterval = setInterval(() => {
-          if (!safeEnqueue(encoder.encode(": heartbeat\n\n"))) {
-            if (heartbeatInterval) clearInterval(heartbeatInterval);
-          }
-        }, 5_000);
-
-        // ── 在流内连接上游 ──
-        if (ctx.isZhipuAI) {
-          proxyStream = await zhipuChatStream(chatRequest, {
-            apiBase: ctx.apiBase,
-            apiKey: ctx.useApiKey,
-            timeout: Math.min(ctx.agentTimeout, 300),
-            onContent: (text) => { fullContent += text; },
-            onReasoning: (text) => { reasoningContent += text; },
-            onUsage: (usage) => {
-              usageData = usage;
-            },
-            onFirstByte: (ttfb) => {
-              console.log(`[PERF] ZhipuAI TTFB: ${ttfb}ms (model=${ctx.useModel}), 路由总耗时=${Date.now() - __wrapStart}ms`);
-            },
-          });
-        } else {
-          proxyStream = await proxy!.chatStream(chatRequest, {
-            onContent: (text) => { fullContent += text; },
-            onReasoning: (text) => { reasoningContent += text; },
-            onUsage: (usage) => {
-              usageData = usage;
-            },
-            onFirstByte: (ttfb) => {
-              console.log(`[PERF] LLM Proxy TTFB: ${ttfb}ms (model=${ctx.useModel}), 路由总耗时=${Date.now() - __wrapStart}ms`);
-            },
-          });
-        }
+        const startHeartbeat = () => {
+          if (heartbeatInterval) clearInterval(heartbeatInterval);
+          heartbeatInterval = setInterval(() => {
+            if (!safeEnqueue(encoder.encode(": heartbeat\n\n"))) {
+              if (heartbeatInterval) clearInterval(heartbeatInterval);
+            }
+          }, 5_000);
+        };
+        startHeartbeat();
 
         // ── 响应交付：允许真流式时立即透传；否则结算成功前只缓冲正文 ──
-        await proxyStream.pipeTo(new WritableStream({
+        const pipeResponse = (stream: ReadableStream<Uint8Array>) => stream.pipeTo(new WritableStream({
           write(chunk) {
             for (const event of deliveryDecoder.push(chunk)) deliverEvent(event);
           },
@@ -306,6 +292,58 @@ export function handleStreamResponse(
             safeClose();
           },
         }), { preventAbort: true, preventCancel: true });
+
+        // ── 在流内连接上游；仅在上游以“并发排队已满”拒绝且本次未交付任何内容时重试 ──
+        for (let attempt = 0; ; attempt += 1) {
+          if (ctx.isZhipuAI) {
+            proxyStream = await zhipuChatStream(chatRequest, {
+              apiBase: ctx.apiBase,
+              apiKey: ctx.useApiKey,
+              timeout: Math.min(ctx.agentTimeout, 300),
+              onContent: (text) => { fullContent += text; },
+              onReasoning: (text) => { reasoningContent += text; },
+              onUsage: (usage) => {
+                usageData = usage;
+              },
+              onFirstByte: (ttfb) => {
+                console.log(`[PERF] ZhipuAI TTFB: ${ttfb}ms (model=${ctx.useModel}), 路由总耗时=${Date.now() - __wrapStart}ms`);
+              },
+            });
+          } else {
+            proxyStream = await proxy!.chatStream(chatRequest, {
+              onContent: (text) => { fullContent += text; },
+              onReasoning: (text) => { reasoningContent += text; },
+              onUsage: (usage) => {
+                usageData = usage;
+              },
+              onFirstByte: (ttfb) => {
+                console.log(`[PERF] LLM Proxy TTFB: ${ttfb}ms (model=${ctx.useModel}), 路由总耗时=${Date.now() - __wrapStart}ms`);
+              },
+            });
+          }
+          try {
+            await pipeResponse(proxyStream);
+            break;
+          } catch (cause) {
+            const failure = cause instanceof LlmStreamError ? cause : responseStartError(cause);
+            const retryQueueRejection = failure.code === "LLM_UPSTREAM_CONCURRENCY_LIMIT"
+              && !outerClosed && !liveContentDelivered
+              && fullContent.length === 0 && reasoningContent.length === 0
+              && attempt < MAX_CONCURRENCY_RETRIES;
+            if (!retryQueueRejection) throw cause;
+            console.warn(`[LLM Route] 上游通道并发已满，第 ${attempt + 1}/${MAX_CONCURRENCY_RETRIES} 次自动重试: model=${ctx.useModel}, agent=${ctx.agentName}`);
+            await new Promise((resolve) => setTimeout(resolve, 1_500 * (attempt + 1)));
+            startHeartbeat();
+            upstreamError = null;
+            deliveryDecoder = new SseEventStreamDecoder();
+            bufferedResponseChunks.length = 0;
+            lastProgressAt = 0;
+            lastProgressChars = 0;
+            fullContent = "";
+            reasoningContent = "";
+            usageData = null;
+          }
+        }
       } catch (e) {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         const errMsg = e instanceof Error ? e.message : String(e);
@@ -323,6 +361,9 @@ export function handleStreamResponse(
         // transport ambiguity remains unknown, while explicit rejection is retained.
         const failure = e instanceof BipStreamPromptLeakError
           ? new LlmStreamError(e.message, e.code) : responseStartError(e);
+        if (failure.code === "LLM_UPSTREAM_RESULT_UNKNOWN" && liveContentDelivered && ctx.reservation) {
+          reservationNeedsReconciliation = true;
+        }
         if (e instanceof LlmResponseStartError) {
           console.error(JSON.stringify({
             kind: "LLM_RESPONSE_START_FAILURE",
@@ -334,8 +375,11 @@ export function handleStreamResponse(
         recordModelFailure(ctx.useModel, failure.code);
         console.error(`[LLM Route] wrappedStream异常: model=${ctx.useModel}, 内容=${fullContent.length}字符, code=${failure.code}`);
         if (!outerClosed) {
+          const diagnostics = sanitizeLlmSafeDiagnostics(failure.diagnostics);
           const errorPayload: Record<string, unknown> = {
             error: failure.message, code: failure.code, done: false,
+            ...(diagnostics ? { diagnostics } : {}),
+            ...(failure.code === "LLM_UPSTREAM_RESULT_UNKNOWN" ? { retry_safe: false, reconciliation_required: reservationNeedsReconciliation } : {}),
           };
           safeEnqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorPayload)}\n\n`));
         }

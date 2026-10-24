@@ -577,7 +577,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
             <button
               onClick={handleGenerate}
               disabled={providerStatus !== 'available' || generating || recovering || Boolean(recoveryError) || !quote || !textPrompt.trim() || references.length === 0}
-              className="w-full max-w-lg h-14 text-lg font-semibold rounded-2xl bg-gradient-to-r from-[var(--vs-primary)] to-[var(--vs-accent)] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_0_24px_rgba(124,92,255,0.3)] flex items-center justify-center gap-2"
+              className="w-full max-w-lg h-14 text-lg font-semibold rounded-2xl bg-[var(--vs-primary)] text-[var(--vs-on-accent)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_0_24px_rgba(124,92,255,0.3)] flex items-center justify-center gap-2"
             >
               {providerStatus === 'checking' ? (
                 '正在检查服务状态'

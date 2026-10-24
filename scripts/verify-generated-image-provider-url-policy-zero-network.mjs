@@ -8,7 +8,7 @@ import {z} from 'zod';
 function load(file,dependencies){
  const module={exports:{}};
  const code=ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
- runInNewContext(code,{module,exports:module.exports,URL,Buffer,Headers,Response,Request,AbortController,AbortSignal,setTimeout,clearTimeout,process:{env:{}},require:name=>{assert(Object.hasOwn(dependencies,name),'UNMOCKED_DEPENDENCY');return dependencies[name];}});
+ runInNewContext(code,{module,exports:module.exports,URL,Buffer,Headers,Response,Request,AbortController,AbortSignal,setTimeout,clearTimeout,process:{env:{}},require:name=>{assert(Object.hasOwn(dependencies,name),`UNMOCKED_DEPENDENCY:${name}`);return dependencies[name];}});
  return module.exports;
 }
 let dnsReads=0;
@@ -18,7 +18,12 @@ const safe=load('src/lib/safe-fetch.ts',{
  './safe-fetch-public-dns':{usesDevelopmentPublicDns:()=>false},
 });
 const provider=load('src/lib/image-provider-delivery.ts',{
- '@/lib/safe-fetch':safe,'@/lib/autodl-h3-selfhost':{},'@/lib/provider-secret':{},
+ '@/lib/safe-fetch':safe,
+ '@/lib/image-result-network':{
+  readPublicImageResult:async()=>{throw new Error('UNEXPECTED_MEDIA_READ');},
+  validatePublicImageResultUrl:(url,dependencies={})=>safe.validateSafeUrl(url,{trustedHostnames:['flow.secure-skill.com']},dependencies),
+ },
+ '@/lib/autodl-h3-selfhost':{},'@/lib/provider-secret':{},
  '@/lib/generated-media-delivery':{},'@/storage/database/supabase-client':{},
 });
 const refs=load('src/lib/generated-image-reference.ts',{zod:{z}});

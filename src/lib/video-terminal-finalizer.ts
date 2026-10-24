@@ -5,9 +5,12 @@ import { executeCashDeduction } from "@/lib/billing-executor";
 import { toPublicModelId } from "@/lib/public-model-dto";
 import { recordRevenue } from "@/lib/revenue";
 import { createVideoAccessUrl } from "@/lib/video-access-ticket";
+import { resolveProviderSecret } from "@/lib/provider-secret";
+import { scheduleVideoDeliveryPersistence } from "@/lib/video-delivery-persistence";
 import { resolveVideoCharge, type VideoModelCapabilitySource } from "@/lib/video-model-capabilities";
 import { trustedVideoProviderResultHostname } from "@/lib/video-provider-result-url";
 import { recordVideoTerminalOutcome } from "@/lib/video-terminal-accounting";
+import { createVideoTokenQuote, type VideoTokenQuoteSnapshot, type VideoTokenUsage } from "@/lib/video-token-billing";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/u;
@@ -45,10 +48,11 @@ export class VideoTerminalError extends Error {
 export type VideoPriceSnapshot = {
   priceYuan: number;
   costPriceYuan: number;
-  billingUnit: "per_use" | "output_second";
+  billingUnit: "per_use" | "output_second" | "token";
   billingQuantity: number;
   resolution: string;
   explicitlyFree: boolean;
+  tokenQuote?: VideoTokenQuoteSnapshot;
 };
 
 export type VideoTaskReservation = {
@@ -61,7 +65,7 @@ export type VideoTaskReservation = {
 
 export type VideoTerminalOutcome = {
   state: "completed" | "finalizing" | "billing_pending";
-  code?: "BILLING_DEDUCTION_FAILED" | "VIDEO_ASSET_PERSISTENCE_FAILED" | "VIDEO_FINALIZATION_FAILED";
+  code?: "BILLING_DEDUCTION_FAILED" | "VIDEO_ASSET_PERSISTENCE_FAILED" | "VIDEO_FINALIZATION_FAILED" | "VIDEO_TOKEN_USAGE_PENDING" | "VIDEO_TOKEN_BILLING_REVIEW";
   taskIdInternal: string;
   providerTaskId: string;
   playbackUrl?: string;
@@ -105,6 +109,7 @@ type FinalizeVideoInput = {
   providerTaskId?: string;
   providerVideoUrl?: string;
   responseMs?: number;
+  usage?: VideoTokenUsage;
 };
 
 async function ensureVideoRevenue(input: {
@@ -214,7 +219,23 @@ export function requireVideoPriceSnapshot(
   model: VideoModelCapabilitySource,
   resolution: unknown,
   durationSeconds: unknown,
+  tokenBilling?: { hasReferenceVideo: boolean; maxChargeYuan: number; priceVersion: string },
 ): VideoPriceSnapshot {
+  if (asObject(model.api_protocol_config).provider_billing_unit === "token") {
+    try {
+      const tokenQuote = createVideoTokenQuote(model, {
+        resolution: String(resolution || ""), hasReferenceVideo: tokenBilling?.hasReferenceVideo === true,
+        maxChargeYuan: tokenBilling?.maxChargeYuan as number, priceVersion: tokenBilling?.priceVersion || "",
+      });
+      return { priceYuan: tokenQuote.maxChargeYuan, costPriceYuan: 0, billingUnit: "token",
+        billingQuantity: 1, resolution: tokenQuote.resolution, explicitlyFree: false, tokenQuote };
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "VIDEO_TOKEN_QUOTE_INVALID";
+      throw new VideoTerminalError(code, code === "VIDEO_TOKEN_PRICE_VERSION_CHANGED"
+        ? "Token 单价已更新，请刷新模型后重新确认本次扣款上限"
+        : "请为 Token 视频设置本次最多自动扣款金额；仅按上游实际用量结算，本次尚未提交", 400, false);
+    }
+  }
   const resolved = resolveVideoCharge(model, resolution, durationSeconds);
   const explicitlyFree = isExplicitlyFreeVideoModel(model);
   const priceYuan = finiteMoney(resolved.publicPrice, 2);
@@ -442,7 +463,7 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
   const db = getSupabaseAdminClient();
   const { data: taskData, error: taskError } = await db
     .from("video_tasks")
-    .select("id,user_id,model_id,task_id_external,status,video_url,storage_url,provider_result_url,billing_price_yuan,billing_cost_price_yuan,billing_state,billing_operation_id,billing_idempotency_key,request_fingerprint,explicitly_free,billing_exempt,duration_seconds,resolution,price_charged")
+    .select("id,user_id,model_id,task_label,task_id_external,status,video_url,storage_url,provider_result_url,billing_price_yuan,billing_cost_price_yuan,billing_state,billing_operation_id,billing_idempotency_key,request_fingerprint,explicitly_free,billing_exempt,duration_seconds,resolution,price_charged,billing_unit,billing_token_quote,billing_token_usage,billing_reserved_yuan")
     .eq("id", input.taskIdInternal)
     .eq("user_id", input.userId)
     .maybeSingle();
@@ -454,10 +475,23 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
   // The provider task ID bound to our task is the authoritative identity.
   // A caller-supplied value is only a compatibility fallback before a binding exists.
   const providerTaskId = String(task.task_id_external || input.providerTaskId || "");
-  const priceYuan = finiteMoney(task.billing_price_yuan, 2);
-  const costPriceYuan = finiteMoney(task.billing_cost_price_yuan, 4);
+  let priceYuan = finiteMoney(task.billing_price_yuan, 2);
+  let costPriceYuan = finiteMoney(task.billing_cost_price_yuan, 4);
   const explicitlyFree = task.explicitly_free === true;
   const billingExempt = task.billing_exempt === true;
+  const tokenBilled = task.billing_unit === "token";
+  if (tokenBilled && (!task.task_id_external
+    || (input.providerTaskId && input.providerTaskId !== String(task.task_id_external)))) {
+    throw new VideoTerminalError("VIDEO_TOKEN_PROVIDER_TASK_MISMATCH", "Token 用量与原供应商任务不一致，禁止结算", 409, false);
+  }
+  const tokenPending = (review: boolean): VideoTerminalOutcome => ({
+    state: "billing_pending", code: review ? "VIDEO_TOKEN_BILLING_REVIEW" : "VIDEO_TOKEN_USAGE_PENDING",
+    taskIdInternal: input.taskIdInternal, providerTaskId, priceCharged: 0,
+    billingState: review ? String(task.billing_state || "billing_review") : "usage_pending",
+    message: review ? "视频已生成，实际账单超出本次扣款上限或用量需要核对；系统保留原任务，不会自动追加扣费或重新生成"
+      : "视频已生成，正在查询原任务的实际 Token 用量；尚未扣费，请勿重复生成",
+  });
+  if (tokenBilled && ["billing_review", "quote_exceeded"].includes(String(task.billing_state))) return tokenPending(true);
   if (!Number.isFinite(priceYuan) || priceYuan < 0 || (!explicitlyFree && !billingExempt && priceYuan <= 0)) {
     throw new VideoTerminalError("VIDEO_PRICE_SNAPSHOT_INVALID", "视频任务缺少有效且不可变的计费快照，禁止交付", 503, false);
   }
@@ -508,14 +542,17 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
   const model = asObject(modelData);
   let stableStorageUrl = String(task.storage_url || "");
   const providerResultUrl = String(input.providerVideoUrl || task.provider_result_url || task.video_url || "").trim();
-  // Ordinary video delivery keeps the provider's remote URL only while that
-  // source remains available. It is played through our authenticated proxy,
-  // not copied into permanent platform storage. Existing object:// rows remain
-  // replayable, but new ordinary results do not create a second owned copy.
+  // A durable platform copy is required for ordinary deliveries too: some
+  // provider result hosts expire within hours, and a history row that only
+  // points at a dead upstream URL becomes an unplayable shell overnight.
+  // Existing object:// rows stay replayable; new results are copied to our own
+  // object storage below as a best-effort step that never blocks billing or
+  // changes the delivered URL of this request.
   if (!PERSISTENT_VIDEO_URI_PATTERN.test(stableStorageUrl)) stableStorageUrl = providerResultUrl;
+  let trustedResultHostname = "";
   if (providerResultUrl && !PERSISTENT_VIDEO_URI_PATTERN.test(stableStorageUrl)) {
     try {
-      trustedVideoProviderResultHostname(providerResultUrl, {
+      trustedResultHostname = trustedVideoProviderResultHostname(providerResultUrl, {
         protocolType: model.protocol_type,
         apiProtocolConfig: model.api_protocol_config,
         apiEndpoint: model.api_endpoint,
@@ -533,6 +570,61 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
     throw new VideoTerminalError("VIDEO_DELIVERY_SOURCE_REQUIRED", "供应商未返回可播放的视频地址", 503, true);
   }
   const usesPersistentCopy = PERSISTENT_VIDEO_URI_PATTERN.test(stableStorageUrl);
+  if (!String(task.task_label || "").startsWith("分镜工作台") && !usesPersistentCopy && providerResultUrl && !String(task.storage_url || "")) {
+    let providerKey = "";
+    try { providerKey = resolveProviderSecret(String(model.api_key || "")); } catch { providerKey = ""; }
+    scheduleVideoDeliveryPersistence({
+      taskId: input.taskIdInternal,
+      userId: input.userId,
+      providerResultUrl,
+      providerTaskId,
+      providerProtocol: String(model.protocol_type || ""),
+      providerEndpoint: String(model.api_endpoint || ""),
+      providerApiKey: providerKey,
+      trustedProviderResultHostname: trustedResultHostname,
+    });
+  }
+
+  // Token receipts come exclusively from the bound provider task. Freeze usage
+  // before handing its actual amount to the existing idempotent cash ledger.
+  if (tokenBilled) {
+    const { error: sourceError } = await db.from("video_tasks").update({
+      provider_result_url: providerResultUrl, video_url: stableStorageUrl,
+    }).eq("id", input.taskIdInternal).eq("user_id", input.userId)
+      .not("status", "in", "(completed,failed,cancelled,expired)");
+    if (sourceError) throw new VideoTerminalError("VIDEO_DELIVERY_STATE_PERSIST_FAILED", "视频播放源尚未保存，暂不结算", 503, true);
+    const storedUsage = asObject(task.billing_token_usage);
+    if (task.billing_token_usage && storedUsage.providerTaskId !== providerTaskId) {
+      throw new VideoTerminalError("VIDEO_TOKEN_PROVIDER_TASK_MISMATCH", "已保存的 Token 用量不属于当前任务，禁止结算", 409, false);
+    }
+    const usage = input.usage || (Number.isSafeInteger(storedUsage.totalTokens)
+      && Number(storedUsage.totalTokens) > 0 && storedUsage.totalTokens === storedUsage.completionTokens
+      ? { totalTokens: Number(storedUsage.totalTokens), completionTokens: Number(storedUsage.completionTokens) } : undefined);
+    if (!usage) {
+      const { error } = await db.from("video_tasks").update({
+        status: "finalizing", provider_result_url: providerResultUrl, video_url: stableStorageUrl,
+        billing_state: "usage_pending", error_message: "正在查询原任务实际 Token 用量，尚未扣费", completed_at: null,
+      }).eq("id", input.taskIdInternal).eq("user_id", input.userId)
+        .is("billing_token_usage", null).not("status", "in", "(completed,failed,cancelled,expired)");
+      if (error) throw new VideoTerminalError("VIDEO_TOKEN_USAGE_PERSIST_FAILED", "Token 用量查询状态无法保存，请查询原任务", 503, true);
+      return tokenPending(false);
+    }
+    const { data, error } = await db.rpc("record_video_token_usage_v1_atomic", {
+      p_task_id: input.taskIdInternal, p_user_id: input.userId, p_provider_task_id: providerTaskId,
+      p_total_tokens: usage.totalTokens, p_completion_tokens: usage.completionTokens,
+    });
+    if (error) throw new VideoTerminalError("VIDEO_TOKEN_USAGE_RECORD_FAILED", "实际 Token 用量暂时无法确认，尚未追加扣费，请查询原任务", 503, true);
+    const receipt = parseRpcObject(data);
+    task.billing_state = receipt.billing_state;
+    task.billing_token_usage = receipt.billing_token_usage;
+    if (["billing_review", "quote_exceeded"].includes(String(receipt.billing_state))) return tokenPending(true);
+    priceYuan = finiteMoney(receipt.price_yuan, 2);
+    costPriceYuan = finiteMoney(receipt.cost_price_yuan, 4);
+    if (!Number.isFinite(priceYuan) || priceYuan <= 0 || priceYuan > Number(task.billing_reserved_yuan)
+      || !Number.isFinite(costPriceYuan) || costPriceYuan < 0) {
+      throw new VideoTerminalError("VIDEO_TOKEN_ACTUAL_CHARGE_INVALID", "实际 Token 账单需要核对，系统不会自动追加扣费", 503, false);
+    }
+  }
 
   const { data: persistedState, error: persistedError } = await db.from("video_tasks").update({
     status: "finalizing",
@@ -545,6 +637,7 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
     price_charged: 0,
   }).eq("id", input.taskIdInternal).eq("user_id", input.userId)
     .not("status", "in", "(completed,failed,cancelled,expired)")
+    .not("billing_state", "in", "(billing_review,quote_exceeded)")
     .select("id,status").maybeSingle();
   if (persistedError || !persistedState) {
     throw new VideoTerminalError("VIDEO_DELIVERY_STATE_PERSIST_FAILED", "视频播放源状态无法确认，禁止扣费和交付", 503, true);
@@ -567,7 +660,16 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
       if (!billingIdempotencyKey) {
         throw new VideoTerminalError("VIDEO_BILLING_IDEMPOTENCY_KEY_MISSING", "视频任务缺少稳定计费编号，禁止交付", 503, false);
       }
-      const billing = await executeCashDeduction({
+      const billing = tokenBilled ? await (async () => {
+        const { data, error } = await db.rpc("settle_video_token_task_v1_atomic", {
+          p_task_id: input.taskIdInternal, p_user_id: input.userId, p_provider_task_id: providerTaskId,
+          p_description: `视频生成: ${String(model.name || modelId)}`,
+          p_metadata: { public_model_id: toPublicModelId("video", modelId), model_name: String(model.name || modelId) },
+        });
+        const settled = parseRpcObject(data);
+        return { success: !error && settled.success === true, operationId: settled.operation_id == null ? undefined : String(settled.operation_id),
+          error: error ? "Token 账务事务尚未确认，请查询原任务" : String(settled.error || "") };
+      })() : await executeCashDeduction({
         userId: input.userId,
         amount: priceYuan,
         idempotencyKey: billingIdempotencyKey,
@@ -582,6 +684,7 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
           resolution: task.resolution || null,
           duration_seconds: task.duration_seconds || null,
           request_fingerprint: task.request_fingerprint || null,
+          ...(tokenBilled ? { token_quote: task.billing_token_quote, token_usage: task.billing_token_usage } : {}),
         },
         metadata: {
           video_task_id: input.taskIdInternal,
@@ -590,13 +693,23 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
         },
       });
       if (!billing.success || !billing.operationId) {
+        if (tokenBilled) {
+          const { data: latest, error: latestError } = await db.from("video_tasks")
+            .select("billing_state").eq("id", input.taskIdInternal).eq("user_id", input.userId).maybeSingle();
+          if (latestError) throw new VideoTerminalError("VIDEO_TOKEN_SETTLEMENT_UNKNOWN", "原任务账务状态待确认，请勿重新生成", 503, true);
+          if (["billing_review", "quote_exceeded"].includes(String(latest?.billing_state))) {
+            task.billing_state = latest?.billing_state;
+            return tokenPending(true);
+          }
+        }
         await db.from("video_tasks").update({
           status: "finalizing",
           billing_state: "failed",
           error_message: `BILLING_DEDUCTION_FAILED: ${billing.error || "原子钱包结算未成功"}`,
           completed_at: null,
           price_charged: 0,
-        }).eq("id", input.taskIdInternal).eq("user_id", input.userId).not("status", "in", "(completed,failed,cancelled,expired)");
+        }).eq("id", input.taskIdInternal).eq("user_id", input.userId).not("status", "in", "(completed,failed,cancelled,expired)")
+          .not("billing_state", "in", "(billing_review,quote_exceeded)");
         return {
           state: "billing_pending",
           code: "BILLING_DEDUCTION_FAILED",
@@ -626,7 +739,8 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
       billing_state: billingOperationId || legacyH3Settled ? "settled_pending_commit" : "not_required",
       error_message: `VIDEO_FINALIZATION_FAILED: ${rpcErrorCode(finalizeError).slice(0, 500)}`,
       completed_at: null,
-    }).eq("id", input.taskIdInternal).eq("user_id", input.userId).not("status", "in", "(completed,failed,cancelled,expired)");
+    }).eq("id", input.taskIdInternal).eq("user_id", input.userId).not("status", "in", "(completed,failed,cancelled,expired)")
+      .not("billing_state", "in", "(billing_review,quote_exceeded)");
     return {
       state: "billing_pending",
       code: "VIDEO_FINALIZATION_FAILED",

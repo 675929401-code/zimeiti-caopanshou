@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { chromium } from "playwright";
 import { SignJWT } from "jose";
@@ -11,9 +12,13 @@ const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").r
 const adminToken = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
 const runtimePath = process.env.LOCAL_ACCEPTANCE_RUNTIME_PATH?.trim()
   || "F:/总项目文件/Skill存储系统/运行数据/自媒体操盘手/local-data-20260902/config/runtime.json";
-const outputDirectory = path.resolve(
+const outputRoot = path.resolve(
   process.env.AGENT_PERMISSION_EVIDENCE_DIR || ".codex-evidence/agent-navigation-permissions-current",
 );
+const requestedRunId = process.env.AGENT_PERMISSION_EVIDENCE_RUN_ID?.trim();
+const runId = requestedRunId || `${new Date().toISOString().replace(/[:.]/gu, "-")}-${process.pid}-${randomBytes(4).toString("hex")}`;
+assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u, "INVALID_EVIDENCE_RUN_ID");
+const outputDirectory = path.join(outputRoot, runId);
 const stableKeys = ["bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用"];
 const stableKeySet = new Set(stableKeys);
 const uuidPattern = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/iu;
@@ -402,7 +407,11 @@ export async function main() {
       };
     }
 
-    await mkdir(outputDirectory, { recursive: true });
+    await mkdir(outputRoot, { recursive: true });
+    try { await mkdir(outputDirectory); } catch (error) {
+      if (error?.code === "EEXIST") throw new Error(`EVIDENCE_RUN_DIRECTORY_EXISTS:${outputDirectory}`);
+      throw error;
+    }
     browserResults.push(await verifyMemberPage({
       user: fourGrantUser,
       token: fourToken,
@@ -437,6 +446,9 @@ export async function main() {
 
   const report = {
     observedAt: new Date().toISOString(),
+    runId,
+    outputRoot,
+    evidenceDirectory: outputDirectory,
     runtime: versionResult.body,
     passed: true,
     scope: "existing four-navigation and five-navigation local members; real local APIs and desktop UI",
@@ -475,7 +487,7 @@ export async function main() {
     consoleErrors,
   };
   const reportPath = path.join(outputDirectory, "report.json");
-  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   console.log(JSON.stringify({
     ok: true,
     sourceVersion: versionResult.body.sourceVersion,

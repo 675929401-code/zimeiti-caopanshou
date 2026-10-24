@@ -21,7 +21,7 @@ const primaryNavigation = [
   { root: "agents", title: "智能体管理", tabs: [["智能体管理", "agents"], ["智能体导入", "aiweb-import"], ["回收站", "trash"]] },
   { root: "models", title: "模型与服务", tabs: [["模型资源池", "models"], ["外部服务", "connection"]] },
   { root: "workspace-models", title: "工作台配置", tabs: [["工作台配置", "workspace-models"]] },
-  { root: "general", title: "品牌与界面", tabs: [["基本设置", "general"], ["界面设置", "theme"], ["卡片布局", "layout"]] },
+  { root: "general", title: "品牌与界面", tabs: [["品牌与联系", "general"], ["界面设置", "theme"], ["卡片布局", "layout"]] },
   { root: "white-label", title: "域名与贴牌", tabs: [["域名与贴牌", "white-label"]] },
   { root: "security", title: "安全审计", tabs: [["安全总览", "security"], ["提示词拦截", "guard-logs"], ["登录日志", "login-logs"]] },
   { root: "health", title: "系统运维", tabs: [["系统健康", "health"], ["数据同步", "sync"], ["灾备证据", "backup"]] },

@@ -11,7 +11,7 @@ import {
 import path from "node:path";
 
 const CACHE_FILE_PATTERN = /^[a-zA-Z0-9_-]+\.jpg$/u;
-const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_TTL_MS = 5 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_FILES = 1_000;
 const DEFAULT_MAX_BYTES = 512 * 1024 * 1024;
 const DEFAULT_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
@@ -182,6 +182,39 @@ async function removeCandidate(candidate: CacheCandidate): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Removes the rendered cover files of tasks whose history was cleared. Clearing
+ * history must not leave orphan covers behind on the runtime disk.
+ */
+export async function removeVideoThumbnailCacheFiles(
+  cacheRoot: string,
+  taskIds: readonly string[],
+): Promise<number> {
+  const root = normalizedCacheRoot(cacheRoot);
+  let removed = 0;
+  for (const taskId of taskIds) {
+    let filePath: string;
+    try {
+      filePath = resolveVideoThumbnailCacheFile(root, taskId);
+    } catch {
+      continue;
+    }
+    try {
+      const info = await lstat(filePath);
+      if (info.isSymbolicLink() || !info.isFile()) continue;
+      await unlink(filePath);
+      removed += 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.warn("[VideoThumbnail] cache removal failed", {
+          reason: error instanceof Error ? error.message.split(":", 1)[0] : "UNKNOWN",
+        });
+      }
+    }
+  }
+  return removed;
 }
 
 export async function pruneVideoThumbnailCache(options: {

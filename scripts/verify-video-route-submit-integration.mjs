@@ -82,7 +82,16 @@ const db = { from(table) {
   return chain;
 } };
 const payload = () => state.signatureValid ? { userId: 'fixture-owner', role: state.staleJwtRole, sessionId: 'fixture-session' } : null;
+const policyModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/video-error-policy.ts', 'utf8'), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+}).outputText, { module: policyModule, exports: policyModule.exports, URL });
+const sanitizeVideoProviderDiagnostic = policyModule.exports.sanitizeVideoProviderDiagnostic;
+assert.equal(typeof sanitizeVideoProviderDiagnostic, 'function');
+assert.equal(sanitizeVideoProviderDiagnostic('Actionable fixture failure https://fixture.invalid/result?token=private'),
+  'Actionable fixture failure https://fixture.invalid/result');
 const common = {
+  sanitizeVideoProviderDiagnostic,
   Request, Response, Headers, URL, Date, Error, Buffer, crypto: { randomUUID }, process: { env: { NODE_ENV: 'production' } }, console: { log() {}, warn() {}, error() {} },
   NextResponse: { json: (body, init) => Response.json(body, init) },
   getTokenFromHeaders: headers => headers.get('Authorization')?.slice(7) || null,
@@ -220,7 +229,7 @@ await test('accepted async response does not await accounting or trace telemetry
     channelConfig: { id: 'fixture-channel', name: 'Fixture channel' },
     traceId: 'fixture-trace', traceTaskLabel: 'fixture-task', tracePromptHash: 'fixture-prompt', providerTaskId: 'provider-original', totalMs: 321,
     result: { contentUrl: 'https://fixture.invalid/content' }, model_id: 'pm_fixture', selectedModel: { name: 'Fixture model' }, price: 1.25,
-    videoTiming: { target: 5, submit: 5, needsTrim: false }, normalizedTiming: { timelineNormalized: false },
+    videoTiming: { target: 5, submit: 5 }, normalizedTiming: { timelineNormalized: false },
     recordVideoSubmission: async modelId => { telemetryCalls.push(['accounting', modelId]); throw new Error('FIXTURE_ACCOUNTING_FAILED'); },
     writeVideoTrace: async event => { telemetryCalls.push(['trace', event.phase]); throw new Error('FIXTURE_TRACE_FAILED'); },
     console: { log() {}, error() {}, warn: (...args) => warnings.push(args.map(String).join(' ')) },

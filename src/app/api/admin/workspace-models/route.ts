@@ -12,6 +12,7 @@ import { RETIRED_MODEL_PROVIDER } from "@/lib/model-retirement";
 import { inspectVideoModelActivationReadiness, type VideoActivationBinding } from "@/lib/model-activation-gate";
 import { getVideoBillingUnit, getVideoDurationCapabilities, getVideoResolutionCapabilities } from "@/lib/video-model-capabilities";
 import { requireVideoPriceSnapshot } from "@/lib/video-terminal-finalizer";
+import { getVideoTokenPublicPricing } from "@/lib/video-token-billing";
 import {
   VIDEO_MODEL_SURFACE_ORDER_SETTING_KEY,
   parseVideoModelSurfaceOrders,
@@ -78,6 +79,15 @@ function imagePriceReady(model: Record<string, unknown>) {
 }
 
 function videoPriceReady(model: Record<string, unknown>) {
+  const config = model.api_protocol_config as Record<string, unknown> | undefined;
+  if (config?.provider_billing_unit === "token") {
+    const publicPricing = getVideoTokenPublicPricing(model);
+    const costs = config.token_cost_prices_per_million as Record<string, unknown> | undefined;
+    return publicPricing !== null && Object.keys(publicPricing.salePricesPerMillion).every(key => {
+      const cost = costs?.[key];
+      return typeof cost === "number" && Number.isFinite(cost) && cost > 0 && cost <= Number.MAX_SAFE_INTEGER;
+    });
+  }
   const resolution = getVideoResolutionCapabilities(model);
   const duration = getVideoDurationCapabilities(model);
   try {

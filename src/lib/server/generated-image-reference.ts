@@ -25,16 +25,23 @@ const defaults: GeneratedImageReferenceDependencies = {
   },
 };
 
-/** Resolves only a verified owner's completed record; never uploads or regenerates. */
-export async function validateOwnedGeneratedImageReference(input: { userId: string; reference: GeneratedImageReference }, deps = defaults) {
+/** Storage may retain an unavailable receipt, but this grants no media access. */
+export async function validateOwnedGeneratedImageReceipt(input: { userId: string; reference: GeneratedImageReference }, deps = defaults) {
   const ref = GeneratedImageReferenceSchema.parse(input.reference);
   if (!input.userId) throw new GeneratedImageReferenceError("GENERATED_IMAGE_NOT_OWNED", "生成图片不属于当前账号", 403);
   const row = await deps.findOwned(ref.recordId, input.userId);
   if (!row) throw new GeneratedImageReferenceError("GENERATED_IMAGE_NOT_OWNED", "生成图片不存在或不属于当前账号", 403);
   const delivery = row.response && typeof row.response === "object" ? row.response as Record<string, unknown> : {};
-  if (row.state !== "completed" || row.delivery_state !== "delivered" || delivery.deliveryMode !== "provider_url" || delivery.sourceExpiredAt) {
+  if (row.state !== "completed" || row.delivery_state !== "delivered" || delivery.deliveryMode !== "provider_url") {
     throw new GeneratedImageReferenceError("GENERATED_IMAGE_NOT_AVAILABLE", "生成图片尚未交付或已确认失效；不会重新生成或扣费");
   }
+  return delivery;
+}
+
+/** Resolves only a verified owner's available completed record; never regenerates. */
+export async function validateOwnedGeneratedImageReference(input: { userId: string; reference: GeneratedImageReference }, deps = defaults) {
+  const delivery = await validateOwnedGeneratedImageReceipt(input, deps);
+  if (delivery.sourceExpiredAt) throw new GeneratedImageReferenceError("GENERATED_IMAGE_NOT_AVAILABLE", "生成图片已确认失效；不会重新生成或扣费");
   return delivery;
 }
 

@@ -319,7 +319,9 @@ export default async function RootLayout({
             var cachedUserTheme = localStorage.getItem('user_theme_preference');
             var cachedUserMode = localStorage.getItem('user_theme_mode_preference');
             var cachedUserThemeExpiry = Date.parse(localStorage.getItem('user_theme_preference_expires_at') || '');
-            var hasValidatedUserAppearance = allowedThemes.indexOf(cachedUserTheme) >= 0
+            var hasAuthSession = Boolean((localStorage.getItem('auth_token') || '').trim());
+            var hasValidatedUserAppearance = hasAuthSession
+              && allowedThemes.indexOf(cachedUserTheme) >= 0
               && allowedModePreferences.indexOf(cachedUserMode) >= 0
               && Number.isFinite(cachedUserThemeExpiry)
               && cachedUserThemeExpiry > Date.now();

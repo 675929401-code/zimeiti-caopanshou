@@ -4,7 +4,9 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import {
   getVideoDurationCapabilities,
   getVideoResolutionCapabilities,
+  getVideoBillingUnit,
 } from "@/lib/video-model-capabilities";
+import { getVideoTokenPublicPricing } from "@/lib/video-token-billing";
 import { getVideoInputContract } from "@/lib/video-input-contract";
 import { isDigitalHumanWorkspaceModel } from "@/lib/video-model-surface";
 import { supportsConfirmedVideoCancellation } from "@/lib/video-cancellation";
@@ -57,6 +59,7 @@ interface RankedVideoModel {
   supportsImageInput: boolean;
   requiresImage: boolean;
   workflowInputMode: string;
+  referenceAspectRatioPolicy: "same" | "independent";
   supportsPrompt: boolean;
   requiresFirstFrame: boolean;
   requiresLastFrame: boolean;
@@ -64,7 +67,8 @@ interface RankedVideoModel {
   showLastFrame: boolean;
   showReferenceImages: boolean;
   showAudioInputs: boolean;
-  billingUnit: "per_use" | "output_second";
+  billingUnit: "per_use" | "output_second" | "token";
+  tokenPricing: ReturnType<typeof getVideoTokenPublicPricing>;
   workspaceSurfaces: string[];
   supportsRemoteCancel: boolean;
   supportsGenerateAudioToggle: boolean;
@@ -267,7 +271,10 @@ export async function GET(request: Request) {
         showFirstFrame, showLastFrame, showReferenceImages, showAudioInputs } = inputContract;
       const supportsAudioInput = inputContract.showAudioInputs;
       const workflowInputMode = inputContract.mode;
-      const billingUnit = protocolConfig.billing_unit === "output_second" ? "output_second" as const : "per_use" as const;
+      const referenceAspectRatioPolicy = protocolConfig.reference_aspect_ratio_policy === "independent"
+        && workflowInputMode === "flexible_image" && !requiresFirstFrame && !requiresLastFrame ? "independent" : "same";
+      const billingUnit = protocolConfig.provider_billing_unit === "token" ? "token" : getVideoBillingUnit(m);
+      const tokenPricing = billingUnit === "token" || protocolConfig.provider_billing_unit === "token" ? getVideoTokenPublicPricing(m) : null;
       const workspaceSurfaces = workspaceSurfaceList(m, protocolConfig);
       const supportsRemoteCancel = supportsConfirmedVideoCancellation(m.protocol_type, protocolConfig);
       const supportsGenerateAudioToggle = protocolConfig.supports_generate_audio_toggle === true;
@@ -280,18 +287,20 @@ export async function GET(request: Request) {
         : null;
       let priceSnapshotReady = true;
       try {
-        requireVideoPriceSnapshot(m, resolutionTier, durationCapabilities.defaultDuration);
+        if (billingUnit === "token" || protocolConfig.provider_billing_unit === "token") {
+          priceSnapshotReady = tokenPricing !== null;
+        } else requireVideoPriceSnapshot(m, resolutionTier, durationCapabilities.defaultDuration);
       } catch {
         priceSnapshotReady = false;
       }
       const billingAdmission = videoBillingAdapterAdmission(protocolConfig);
-      const priceReady = priceSnapshotReady && billingAdmission.ready;
+      const priceReady = priceSnapshotReady;
       // Publication evidence and circuit history stay as internal diagnostics.
       // They must not silently remove or disable an administrator-enabled row.
       const configuredForSubmission = String(m.api_key || "").trim().length > 0
         && String(m.protocol_type || "").trim().length > 0
         && /^https?:\/\//iu.test(String(m.api_endpoint || "").trim());
-      const baseAvailable = m.is_active === true && configuredForSubmission && priceReady;
+      const baseAvailable = m.is_active === true && configuredForSubmission && priceReady && billingAdmission.ready;
       const available = baseAvailable && surfaceCompatibility?.compatible !== false;
       const availabilityMessage = surfaceCompatibility?.compatible === false
         ? surfaceCompatibility.issues[0]?.message || "当前页面不支持该模型所需的输入方式"
@@ -334,6 +343,7 @@ export async function GET(request: Request) {
         supportsImageInput: inputContract.maxReferenceImages > 0,
         requiresImage: inputContract.minReferenceImages > 0,
         workflowInputMode,
+        referenceAspectRatioPolicy,
         supportsPrompt,
         requiresFirstFrame,
         requiresLastFrame,
@@ -342,6 +352,7 @@ export async function GET(request: Request) {
         showReferenceImages,
         showAudioInputs,
         billingUnit,
+        tokenPricing,
         workspaceSurfaces,
         supportsRemoteCancel,
         supportsGenerateAudioToggle,
@@ -425,6 +436,7 @@ export async function GET(request: Request) {
       minReferenceAudios: model.minReferenceAudios,
       supportsAudioInput: model.supportsAudioInput,
       workflowInputMode: model.workflowInputMode,
+      referenceAspectRatioPolicy: model.referenceAspectRatioPolicy,
       supportsPrompt: model.supportsPrompt,
       requiresFirstFrame: model.requiresFirstFrame,
       requiresLastFrame: model.requiresLastFrame,
@@ -454,7 +466,7 @@ export async function GET(request: Request) {
       priceReady: model.priceReady,
       generationReady: model.generationReady,
       availabilityMessage: model.availabilityMessage,
-    }));
+    }, model.tokenPricing));
 
     return NextResponse.json({ models }, { headers: { "Cache-Control": "no-store" } });
   } catch {

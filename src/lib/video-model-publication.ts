@@ -6,6 +6,7 @@ import { storageManager } from "@/storage/object";
 import { authorizeCompletedVideoAdminValidationProof, buildVideoAdminValidationClaimKey, buildVideoAdminValidationContext, loadVideoAdminValidationContext, VideoAdminValidationError, type CompletedVideoValidationProof, type VideoAdminValidationContext } from "@/lib/video-admin-validation";
 import { inspectVideoModelActivationReadiness, issueVideoModelAcceptanceEvidence, makePendingVideoProtocolConfig, MODEL_ACTIVATION_GATE_KEY, persistVideoModelAcceptanceEvidence, stripClientActivationGate, videoActivationBindingSha256V2, type VideoActivationBinding } from "@/lib/model-activation-gate";
 import { resolveVideoCharge } from "@/lib/video-model-capabilities";
+import { calculateVideoTokenCharge, createVideoTokenQuote, parseVideoTokenUsage, type VideoTokenQuoteSnapshot } from "@/lib/video-token-billing";
 import { VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION } from "@/lib/video-channel-health-release";
 import { persistStableVideoFromUrl } from "@/lib/video-persistence";
 import { resolveProviderSecret } from "@/lib/provider-secret";
@@ -15,7 +16,7 @@ type Database = ReturnType<typeof getSupabaseAdminClient>;
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
 export const VIDEO_MODEL_PUBLICATION_CONFIRMATION = "PUBLISH_VALIDATED_VIDEO_MODEL";
-const TASK_COLUMNS = "id,user_id,model_id,client_request_id,task_id_external,status,duration_seconds,resolution,billing_state,billing_exempt,explicitly_free,billing_price_yuan,billing_cost_price_yuan,price_charged,billing_operation_id,billing_idempotency_key,video_url,storage_url,provider_result_url,completed_at";
+const TASK_COLUMNS = "id,user_id,model_id,client_request_id,task_id_external,status,duration_seconds,resolution,billing_state,billing_exempt,explicitly_free,billing_price_yuan,billing_cost_price_yuan,price_charged,billing_operation_id,billing_idempotency_key,video_url,storage_url,provider_result_url,completed_at,billing_unit,billing_token_quote,billing_token_usage,billing_reserved_yuan,request_fingerprint";
 const PERSISTENT_VIDEO_URI_PATTERN = /^object:\/\/tencent_cos\/[^?#]+$/u;
 
 function failure(code: string, message: string, status = 409): never { throw new VideoAdminValidationError(code, message, status); }
@@ -108,6 +109,63 @@ function finiteMoney(value: unknown): number | null {
   const amount = Number(value); return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 
+/** Read-only proof check: the signed current configuration must match the task's frozen rates. */
+export function resolveVideoPublicationBilling(model: Row, task: Row): { price: number; cost: number } {
+  if (record(model.api_protocol_config).provider_billing_unit !== "token") {
+    const fixed = resolveVideoCharge(model, task.resolution, task.duration_seconds);
+    return { price: Math.round((fixed.publicPrice + Number.EPSILON) * 100) / 100, cost: fixed.costPrice };
+  }
+  try {
+    const quote = record(task.billing_token_quote) as VideoTokenQuoteSnapshot;
+    const usageRow = record(task.billing_token_usage);
+    const usage = parseVideoTokenUsage({ usage: {
+      total_tokens: usageRow.totalTokens, completion_tokens: usageRow.completionTokens,
+    } });
+    if (task.billing_unit !== "token" || task.model_id !== model.id || !task.task_id_external
+      || !/^[a-f0-9]{64}$/u.test(String(task.request_fingerprint || ""))
+      || usageRow.schema !== "video_token_usage.v1" || usageRow.providerTaskId !== task.task_id_external
+      || !Number.isFinite(Date.parse(String(usageRow.recordedAt || "")))
+      || task.resolution !== quote.resolution || finiteMoney(task.billing_reserved_yuan) !== quote.maxChargeYuan || !usage) {
+      throw new Error("Incomplete token task binding");
+    }
+    const current = createVideoTokenQuote(model, {
+      resolution: quote.resolution, hasReferenceVideo: quote.pricingClass === "reference_video",
+      maxChargeYuan: quote.maxChargeYuan, priceVersion: quote.priceVersion,
+    });
+    if (quote.schema !== current.schema || quote.pricingClass !== current.pricingClass
+      || quote.saleYuanPerMillionTokens !== current.saleYuanPerMillionTokens
+      || quote.costYuanPerMillionTokens !== current.costYuanPerMillionTokens) throw new Error("Token quote changed");
+    const actual = calculateVideoTokenCharge(quote, usage);
+    if (actual.saleAmountYuan > quote.maxChargeYuan || usageRow.saleAmountYuan !== actual.saleAmountYuan
+      || usageRow.costAmountYuan !== actual.costAmountYuan) throw new Error("Token receipt amount or consent mismatch");
+    return { price: actual.saleAmountYuan, cost: actual.costAmountYuan };
+  } catch {
+    failure("VIDEO_PUBLICATION_BILLING_INCOMPLETE", "原任务 Token 用量、冻结报价、扣款上限或配置绑定不一致");
+  }
+}
+
+function canonicalEvidence(value: unknown): string {
+  const ordered = (entry: unknown): unknown => Array.isArray(entry) ? entry.map(ordered)
+    : entry && typeof entry === "object" ? Object.fromEntries(Object.entries(entry as Row)
+      .sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, ordered(item)])) : entry;
+  return JSON.stringify(ordered(value));
+}
+export function assertVideoTokenPublicationReceipt(task: Row, operation: Row): void {
+  const metadata = record(operation.metadata), snapshot = record(metadata.price_snapshot);
+  if (metadata.video_task_id !== task.id || metadata.provider_task_id !== task.task_id_external
+    || metadata.phase !== "video_terminal" || snapshot.request_fingerprint !== task.request_fingerprint
+    || snapshot.billing_unit !== "token" || snapshot.resolution !== task.resolution
+    || snapshot.duration_seconds !== task.duration_seconds
+    || snapshot.price_yuan !== finiteMoney(task.billing_price_yuan)
+    || snapshot.cost_price_yuan !== finiteMoney(task.billing_cost_price_yuan)
+    || canonicalEvidence(metadata.token_quote) !== canonicalEvidence(task.billing_token_quote)
+    || canonicalEvidence(metadata.token_usage) !== canonicalEvidence(task.billing_token_usage)
+    || canonicalEvidence(snapshot.token_quote) !== canonicalEvidence(task.billing_token_quote)
+    || canonicalEvidence(snapshot.token_usage) !== canonicalEvidence(task.billing_token_usage)) {
+    failure("VIDEO_PUBLICATION_BILLING_INCOMPLETE", "Token 账务操作与原任务、供应商回执或冻结报价不匹配");
+  }
+}
+
 async function ensureValidationPublicationAsset(input: {
   db: Database;
   context: VideoAdminValidationContext;
@@ -140,8 +198,6 @@ async function ensureValidationPublicationAsset(input: {
       input.context.userId,
       {
         storageScope: "model-acceptance",
-        trimDurationSeconds: Number(input.task.duration_seconds) || undefined,
-        sourceDurationSeconds: Number(input.task.duration_seconds) || undefined,
         providerProtocol: protocolType,
         providerEndpoint: String(input.context.model.api_endpoint || ""),
         providerApiKey: ["suanlicheng_video", "gaorui_video"].includes(protocolType)
@@ -207,11 +263,9 @@ export async function publishValidatedVideoModel(input: {
   if (!asset.id || asset.user_id !== context.userId || asset.storage_key !== storageKey || asset.storage_provider !== "tencent_cos" || !String(asset.content_type).startsWith("video/") || !(Number(asset.file_size) > 0) || record(asset.meta).taskId !== input.taskId) failure("VIDEO_PUBLICATION_ASSET_INCOMPLETE", "原验证任务的自有视频记录尚未闭环");
   const price = finiteMoney(task.billing_price_yuan), cost = finiteMoney(task.billing_cost_price_yuan), charged = finiteMoney(task.price_charged);
   if (price === null || cost === null || charged === null || task.billing_idempotency_key !== identity.billingKey) failure("VIDEO_PUBLICATION_BILLING_INCOMPLETE", "验证任务账务快照不完整");
-  const expectedBilling = resolveVideoCharge(context.model, task.resolution, task.duration_seconds);
-  // Submission stores customer charges in cents and supplier costs to four decimals.
-  const expectedPrice = Math.round((expectedBilling.publicPrice + Number.EPSILON) * 100) / 100;
-  if (price !== expectedPrice || cost !== expectedBilling.costPrice) failure("VIDEO_PUBLICATION_BILLING_INCOMPLETE", "原任务报价与已签名模型配置不一致");
-  const { data: operationData, error: operationError } = await db.from("wallet_operations").select("id,user_id,wallet,operation_kind,idempotency_key,status,amount,delta").eq("user_id", context.userId).eq("idempotency_key", identity.billingKey).abortSignal(AbortSignal.timeout(10_000));
+  const expectedBilling = resolveVideoPublicationBilling(context.model, task);
+  if (price !== expectedBilling.price || cost !== expectedBilling.cost) failure("VIDEO_PUBLICATION_BILLING_INCOMPLETE", "原任务报价与已签名模型配置不一致");
+  const { data: operationData, error: operationError } = await db.from("wallet_operations").select("id,user_id,wallet,operation_kind,idempotency_key,status,amount,delta,metadata").eq("user_id", context.userId).eq("idempotency_key", identity.billingKey).abortSignal(AbortSignal.timeout(10_000));
   if (operationError) failure("VIDEO_PUBLICATION_EVIDENCE_UNAVAILABLE", "暂时无法读取账务证据", 503);
   const operations = Array.isArray(operationData) ? operationData.map(record) : [];
   if (task.billing_exempt === true || task.explicitly_free === true) {
@@ -219,6 +273,7 @@ export async function publishValidatedVideoModel(input: {
   } else {
     const operation = operations.find(row => row.id === task.billing_operation_id);
     if (task.billing_state !== "settled" || !(price > 0) || charged !== Math.round(price * 100) / 100 || operations.length !== 1 || !operation || operation.wallet !== "cash" || operation.operation_kind !== "cash_charge" || operation.status !== "completed" || Number(operation.amount) !== price || Number(operation.delta) !== -price) failure("VIDEO_PUBLICATION_BILLING_INCOMPLETE", "验证任务尚无匹配的原子结算记录");
+    if (record(context.model.api_protocol_config).provider_billing_unit === "token") assertVideoTokenPublicationReceipt(task, operation);
   }
   let head: { size: number; contentType: string } | null = null;
   try { head = await (dependencies.head || ((key: string) => storageManager.head(key, "tencent_cos")))(storageKey); } catch { failure("VIDEO_PUBLICATION_ASSET_UNAVAILABLE", "暂时无法确认稳定视频可读取，请保留原任务后重试发布", 503); }

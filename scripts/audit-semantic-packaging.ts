@@ -67,7 +67,6 @@ async function main() {
       effectsLevel: "rich",
       productionMode: "anime-story",
       assistantInstruction: `先分析全文演绎逻辑；每镜自行判断用物理剧情证据、语义图形包装或完整语义可视化。只在语义确有需要时添加，并写清形态、位置、绑定对象和指向关系；不套用固定图标。验收批次：${auditRunId}。`,
-      allowDurationTrim: true,
       videoModelDurationMode: "fixed",
       videoModelDurationSeconds: 8,
     }),

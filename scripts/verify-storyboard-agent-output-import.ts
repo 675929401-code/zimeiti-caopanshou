@@ -41,6 +41,12 @@ assert.match(result.segments[1].videoPrompt, /^从完整五格单图故事板开
 
 const visualAssetPlan = {
   mode: "selected" as const,
+  generationPolicy: {
+    maxInitialImages: 1,
+    initialRequiredAssetIds: ["character_main"],
+    initialDeferredAssetIds: [],
+    environmentAnchorPolicy: "per-scene-when-required" as const,
+  },
   assets: [{
     id: "character_main",
     role: "character" as const,
@@ -122,7 +128,7 @@ const duplicateAssetPackage = JSON.stringify({
   ...visualAssetPlan,
   assets: [visualAssetPlan.assets[0], visualAssetPlan.assets[0]],
 });
-expectImportFailure(`${validPromptPair}\n\`\`\`storyboard-assets\n${duplicateAssetPackage}\n\`\`\``, /asset id 重复/u);
+expectImportFailure(`${validPromptPair}\n\`\`\`storyboard-assets\n${duplicateAssetPackage}\n\`\`\``, /(?:asset id 重复|视觉资产语义标识不能重复)/u);
 expectImportFailure(`${validPromptPair.replace("测试口播", "测试口播\n视觉资产引用：[{\"assetId\":\"unknown_asset\",\"role\":\"character\",\"referenceKinds\":[\"identity\"]}]")}\n\`\`\`storyboard-assets\n${JSON.stringify(visualAssetPlan)}\n\`\`\``, /未知视觉资产/u);
 
 const legacy = parseStoryboardAgentOutput(`

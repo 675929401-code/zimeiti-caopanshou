@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import ts from 'typescript';
 
 const requireNative = createRequire(import.meta.url);
-const state = { models: [], health: [], healthError: null, modelError: null, admin: true, calls: [], responder: async () => Response.json({ data: [] }) };
+const state = { models: [], health: [], healthError: null, modelError: null, admin: true, calls: [], resolvedReferences: false, responder: async () => Response.json({ data: [] }) };
 const cache = new Map();
 function query(table) {
   const predicates = [];
@@ -32,10 +32,17 @@ const mocks = {
   '@/storage/database/supabase-client': { getSupabaseClient: () => ({ from: query }), getSupabaseAdminClient: () => ({ from: query }) },
   '@/lib/auth': { getTokenFromHeaders: (headers) => headers.get('authorization') },
   '@/lib/admin-auth': { verifyAdminToken: async () => state.admin ? { role: 'admin' } : null },
-  '@/lib/provider-secret': { resolveProviderSecret: (key) => { if (key === 'missing-reference') throw new Error('PRIVATE_REFERENCE_DETAILS'); return key; } },
+  '@/lib/provider-secret': { resolveProviderSecret: (key) => {
+    if (key === 'missing-reference') {
+      if (!state.resolvedReferences) throw new Error('PRIVATE_REFERENCE_DETAILS');
+      return 'fixture-resolved-reference-secret';
+    }
+    return String(key || '');
+  } },
+  '@/lib/video-adapter': { isRegisteredVideoProtocol: (value) => ['openai_compatible', 'dashscope_video_retalk', 'autodl_comfyui_workflow'].includes(value) },
   '@/lib/video-autodl-comfyui-workflow': { AUTODL_COMFYUI_WORKFLOW_PROTOCOL: 'autodl_comfyui_workflow' },
   '@/lib/autodl-h3-selfhost': { AUTODL_H3_SELFHOST_PROTOCOL: 'autodl_h3_selfhost' },
-  '@/lib/video-model-capabilities': { getVideoDurationCapabilities: () => ({ mode: 'fixed', minDuration: 5, maxDuration: 5, defaultDuration: 5, nativeDurations: [5] }), getVideoResolutionCapabilities: () => ({ options: ['720p'], defaultResolution: '720p', publicPrices: {}, labels: {} }) },
+  '@/lib/video-model-capabilities': { getVideoDurationCapabilities: (row) => row?.fixtureDurationCapabilities || ({ mode: 'fixed', minDuration: 5, maxDuration: 5, defaultDuration: 5, nativeDurations: [5] }), getVideoResolutionCapabilities: () => ({ options: ['720p'], defaultResolution: '720p', publicPrices: {}, labels: {} }) },
   '@/lib/video-input-contract': { getVideoInputContract: (row) => {
     const config = row?.api_protocol_config && typeof row.api_protocol_config === 'object'
       ? row.api_protocol_config : {};
@@ -93,7 +100,7 @@ const getResponse = (surface) => publicRoute.GET(new Request('http://127.0.0.1:5
 const getModels = async (surface) => (await getResponse(surface)).json();
 const post = (body, raw = false) => testRoute.POST(new Request('http://127.0.0.1:5000/api/admin/video-models/test', { method: 'POST', headers: { authorization: 'fixture-normal-session', 'content-type': 'application/json' }, body: raw ? body : JSON.stringify(body) }));
 let passed = 0;
-async function test(name, run) { state.calls = []; state.admin = true; state.healthError = null; state.modelError = null; await run(); passed++; console.log('PASS ' + name); }
+async function test(name, run) { state.calls = []; state.admin = true; state.healthError = null; state.modelError = null; state.resolvedReferences = false; await run(); passed++; console.log('PASS ' + name); }
 
 await test('health history does not hide configured active models from public creation workspaces', async () => {
   state.models = [base('healthy'), base('paused'), base('unverified'), base('null-health')];
@@ -115,6 +122,23 @@ await test('health lookup errors do not block configured active models', async (
     assert.doesNotMatch(JSON.stringify(body), /fixture schema failure/u);
   }
 });
+await test('fixed product public labels replace stale provider ranges without changing administrator names or variable products', async () => {
+  const name = 'Omni · 4–10秒 · 720P';
+  state.models = [{ ...base('fixed-label'), name, duration_seconds: 4,
+    fixtureDurationCapabilities: { mode: 'fixed', minDuration: 4, maxDuration: 4, defaultDuration: 4, nativeDurations: [4] },
+    api_protocol_config: { duration_options: [4, 6, 8, 10] } },
+    { ...base('variable-label'), name, duration_seconds: 4,
+      fixtureDurationCapabilities: { mode: 'discrete', minDuration: 4, maxDuration: 10, defaultDuration: 4, nativeDurations: [4, 6, 8, 10] },
+      api_protocol_config: { billing_unit: 'output_second', duration_options: [4, 6, 8, 10] } }];
+  const body = await getModels('video-page');
+  assert.equal(body.models.length, 2);
+  const fixed = body.models.find(model => model.capabilities.durationMode === 'fixed');
+  const variable = body.models.find(model => model.capabilities.durationMode === 'discrete');
+  assert.match(fixed.displayName, /4秒/u);
+  assert.doesNotMatch(fixed.displayName, /4–10秒/u);
+  assert.match(variable.displayName, /4–10秒/u);
+  assert.equal(state.models[0].name, name);
+});
 await test('stale gate evidence stays diagnostic while current configured binding remains usable', async () => {
   const accepted = base('accepted'); accepted.api_protocol_config = gate.makePendingVideoProtocolConfig(accepted.api_protocol_config);
   const check = { evidenceRef: 'fixture-evidence' };
@@ -128,29 +152,26 @@ await test('stale gate evidence stays diagnostic while current configured bindin
   assert.equal((await getModels('unknown-surface')).models[0].capabilities.available, true);
   state.models = [{ ...accepted, model_name: 'other-video' }]; assert.equal((await getModels('video-page')).models.length, 1);
 });
-await test('missing sale price or supplier cost stays visible but disabled in the public video creation catalog', async () => {
+await test('missing sale price or supplier cost does not enter the public creation catalog', async () => {
   state.models = [{ ...base('missing-sale'), price_per_use: null }, { ...base('missing-cost'), cost_price: null }];
   state.health = state.models.map((row) => healthy(row.id));
   const body = await getModels('video-page');
-  assert.equal(body.models.length, 2);
-  assert.ok(body.models.every((model) => model.capabilities.available === false));
-  assert.ok(body.models.every((model) => model.capabilities.priceReady === false));
+  assert.equal(body.models.length, 0);
+  assert.equal(state.models.length, 2, 'Administrator resource pool was not changed');
   assert.doesNotMatch(JSON.stringify(body), /成本价|销售价|管理员|canary|上游/u);
 });
-await test('quota remains selectable, pending remains visible but blocked, manual hiding remains respected', async () => {
+await test('quota remains selectable, technically inactive rows are not public, manual hiding remains respected', async () => {
   state.models = [base('quota'), { ...base('pending'), is_active: false }, { ...base('manual-hidden'), is_hidden: true }];
   state.health = [{ ...healthy('quota'), is_healthy: false, last_error: 'user quota is not enough', consecutive_failures: 1, last_fail_at: new Date().toISOString() }, healthy('pending')];
-  const body = await getModels('video-page'); assert.equal(body.models.length, 2);
+  const body = await getModels('video-page'); assert.equal(body.models.length, 1);
   const quota = body.models.find(m => m.capabilities.available === true);
   assert.ok(quota);
   assert.equal(quota.capabilities.available, true);
   assert.equal(quota.capabilities.availabilityMessage, '');
-  const pending = body.models.find(m => m.id !== quota.id);
-  assert.equal(pending.capabilities.available, false);
-  assert.equal(pending.capabilities.generationReady, false);
+  assert.equal(state.models.length, 3, 'Resource pool remains untouched');
   assert.doesNotMatch(JSON.stringify(body), /待充值|余额|额度|管理员|canary|渠道连续失败|配置保留/u);
 });
-await test('provider token billing stays visible and cannot be presented as flat per-use pricing', async () => {
+await test('provider token adapter pending is excluded from public creation while administrator row is retained', async () => {
   state.models = [{ ...base('provider-token'), api_protocol_config: {
     workspace_surfaces: ['ai-video', 'storyboard'],
     provider_billing_unit: 'token',
@@ -160,12 +181,49 @@ await test('provider token billing stays visible and cannot be presented as flat
   state.health = [healthy('provider-token')];
   for (const surface of ['video-page', 'storyboard-workbench']) {
     const body = await getModels(surface);
-    assert.equal(body.models.length, 1);
-    assert.equal(body.models[0].capabilities.available, false);
-    assert.equal(body.models[0].capabilities.priceReady, false);
-    assert.equal(body.models[0].capabilities.generationReady, false);
-    assert.match(body.models[0].capabilities.availabilityMessage, /Token.*精确结算/u);
+    assert.equal(body.models.length, 0);
+    assert.equal(state.models.length, 1);
+    assert.equal(state.models[0].is_active, true);
+    assert.equal(state.models[0].api_protocol_config.public_billing_pending, true);
   }
+});
+await test('real credential reference failure is not public and the next GET recovers after its secret is repaired', async () => {
+  state.models = [{ ...base('reference'), api_key: 'missing-reference' }];
+  for (const surface of [undefined, 'video-page', 'storyboard-workbench']) {
+    const body = await getModels(surface); assert.equal(body.models.length, 0);
+    assert.doesNotMatch(JSON.stringify(body), /missing-reference|PRIVATE_REFERENCE|fixture-resolved-reference-secret/u);
+  }
+  state.resolvedReferences = true;
+  const repaired = await getModels('video-page'); assert.equal(repaired.models.length, 1);
+  assert.equal(repaired.models[0].capabilities.available, true);
+  assert.equal(repaired.models[0].capabilities.generationReady, true);
+  assert.doesNotMatch(JSON.stringify(repaired), /missing-reference|PRIVATE_REFERENCE|fixture-resolved-reference-secret/u);
+  assert.equal(state.calls.length, 0, 'Secret resolution must not probe a provider');
+});
+await test('missing credentials and illegal endpoints cannot masquerade as configured public models', async () => {
+  // Construct this deliberately invalid fixture in memory; source artifacts
+  // must not contain credential-bearing URL literals, including test data.
+  const credentialUrl = new URL('https://provider.example/v1');
+  credentialUrl.username = 'fixture-user';
+  credentialUrl.password = 'fixture-password';
+  state.models = [{ ...base('no-key'), api_key: '' }, { ...base('bad-host'), api_endpoint: 'https://' }, { ...base('credential-url'), api_endpoint: credentialUrl.href }, { ...base('query-url'), api_endpoint: 'https://provider.example/v1?key=PRIVATE_QUERY' }];
+  const body = await getModels('video-page'); assert.equal(body.models.length, 0);
+  assert.doesNotMatch(JSON.stringify(body), /password|PRIVATE|provider\.example/u);
+  assert.equal(state.models.length, 4);
+});
+await test('explicitly free configured models are public and zero-price placeholders are not', async () => {
+  state.models = [{ ...base('free'), price_per_use: 0, cost_price: 0, api_protocol_config: { explicitly_free: true, workspace_surfaces: ['ai-video', 'storyboard'] } }, { ...base('zero-placeholder'), price_per_use: 0 }];
+  const body = await getModels('video-page'); assert.equal(body.models.length, 1);
+  assert.equal(body.models[0].capabilities.available, true);
+});
+await test('unknown protocol strings cannot impersonate registered video submitters', async () => {
+  state.models = [base('registered'), { ...base('unregistered'), protocol_type: 'invented_protocol' }, { ...base('blank'), protocol_type: '' }];
+  for (const surface of [undefined, 'video-page', 'storyboard-workbench']) {
+    const body = await getModels(surface); assert.equal(body.models.length, 1);
+    assert.equal(body.models[0].capabilities.available, true);
+    assert.doesNotMatch(JSON.stringify(body), /invented_protocol|fixture-private-key/u);
+  }
+  assert.equal(state.models.length, 3, 'Unknown row remains in administrator resource pool');
 });
 await test('surface capability filtering remains narrower than the generic healthy catalog', async () => {
   state.models = [base('image-capable'), { ...base('text-only'), supports_image_input: false }, { ...base('digital-human'), name: 'Fixture talking-head', api_protocol_config: { workspace_surfaces: ['digital-human'] } }, { ...base('legacy-retalk'), protocol_type: 'dashscope_video_retalk', name: 'Legacy Retalk', api_protocol_config: {} }]; state.health = state.models.map(row => healthy(row.id));

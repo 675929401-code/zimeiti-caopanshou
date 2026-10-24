@@ -191,8 +191,8 @@ async function main() {
     assert.ok(autoKeyframes.length > 0 && autoKeyframes.every((node) => node.data.imageMode === "image-to-image"), "关键帧必须参考本镜出场角色图");
     assert.ok(autoKeyframes.every((node) => autoGraph.edges.some((edge) => autoAnchors.some((anchor) => anchor.id === edge.source) && edge.target === node.id)), "每个关键帧必须连接本镜角色节点");
     assert.ok(autoVideos.length > 0 && autoVideos.every((node) => node.data.requiresExactDuration), "动漫剧情视频节点必须锁定目标镜头时长");
-    assert.ok(autoVideos.every((node) => node.data.allowDurationTrim), "动漫剧情视频节点必须继承默认自动裁剪策略");
-    assert.ok(compileRequestBodies.every((body) => body.allowDurationTrim === true), "拆镜编译必须获知固定时长模型可自动裁剪");
+    assert.ok(autoVideos.every((node) => !("allowDurationTrim" in node.data)), "新视频节点不得写入已移除的自动裁剪字段");
+    assert.ok(compileRequestBodies.every((body) => !("allowDurationTrim" in body)), "拆镜请求不得发送已移除的自动裁剪开关");
 
     await page.evaluate(() => localStorage.setItem("auth_token", "canvas-consistency-ui-mock"));
     const anchorCard = nodeCard(page, /角色\d+ · .*定妆图（先确认）/u);

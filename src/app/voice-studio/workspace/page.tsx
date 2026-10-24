@@ -156,6 +156,14 @@ function shouldReleaseVoiceAttempt(response: Response, payload: Record<string, a
     && ![408, 409, 425, 429].includes(response.status);
 }
 
+interface VoiceCatalogSourceStatus {
+  id: 'official' | 'user';
+  label: string;
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+}
+
 interface VoicePickerCardProps {
   title: string;
   icon: React.ReactNode;
@@ -173,6 +181,7 @@ interface VoicePickerCardProps {
   previewingSpeaker: string | null;
   previewLoading: string | null;
   previewError: string | null;
+  catalogSources: VoiceCatalogSourceStatus[];
   h?: string;
 }
 
@@ -193,6 +202,7 @@ function VoicePickerCard({
   previewingSpeaker,
   previewLoading,
   previewError,
+  catalogSources,
   h = 'h-[360px]',
 }: VoicePickerCardProps) {
   const VOICE_BATCH_SIZE = 24;
@@ -200,12 +210,15 @@ function VoicePickerCard({
   useEffect(() => { setVisibleCount(VOICE_BATCH_SIZE); }, [searchVal, catVal]);
   const visibleVoices = filtered.slice(0, visibleCount);
   const selectedInFilter = selected && filtered.some(voice => voice.speakerId === selected.speakerId);
+  const catalogPending = catalogSources.some(source => source.loading);
+  const catalogFailed = catalogSources.some(source => source.error);
+  const hasFilters = Boolean(searchVal.trim()) || catVal !== '全部';
   const renderedVoices = selectedInFilter && !visibleVoices.some(voice => voice.speakerId === selected.speakerId)
     ? [selected, ...visibleVoices]
     : visibleVoices;
 
   return (
-    <div className={`bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl overflow-hidden flex flex-col ${h}`}>
+    <div data-voice-picker={title} aria-busy={catalogPending} className={`bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl overflow-hidden flex flex-col ${h}`}>
       <div className="px-5 py-3.5 flex items-center gap-2.5 border-b border-[var(--vs-border)] shrink-0 bg-[var(--vs-surface)]/30">
         {icon}
         <span className="font-semibold text-[var(--vs-text)] text-base tracking-wide">{title}</span>
@@ -236,6 +249,27 @@ function VoicePickerCard({
             ))}
           </select>
         </div>
+        {hasFilters && <button
+          type="button"
+          aria-label={`${title}清除筛选`}
+          className="text-sm text-[var(--vs-primary)] underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--vs-primary)]"
+          onClick={() => { onSearch(''); onCat('全部'); }}
+        >清除筛选</button>}
+        {selected && <p className="text-xs text-[var(--vs-text-secondary)]">
+          已选：{selected.name}{!selectedInFilter && '（未显示在当前列表中）'}
+        </p>}
+        {catalogSources.map(source => source.loading ? (
+          <p key={source.id} role="status" data-voice-catalog-source={source.id} data-catalog-state="loading" className="text-sm text-[var(--vs-text-secondary)]">
+            正在读取{source.label}…
+          </p>
+        ) : source.error ? (
+          <div key={source.id} role="alert" data-voice-catalog-source={source.id} data-catalog-state="error" className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[var(--vs-border)] bg-[var(--vs-surface)] px-3 py-2 text-sm text-[var(--vs-text)]">
+            <span>{source.error}</span>
+            <button type="button" onClick={source.onRetry} className="text-[var(--vs-primary)] underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--vs-primary)]">
+              重新读取{source.label}
+            </button>
+          </div>
+        ) : null)}
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
         <div className="space-y-1.5">
@@ -322,9 +356,9 @@ function VoicePickerCard({
               </div>
             );
           })}
-          {filtered.length === 0 && (
+          {filtered.length === 0 && !catalogPending && !catalogFailed && (
             <div className="py-12 text-center text-sm text-[var(--vs-text-muted)]">
-              没有匹配的音色
+              {hasFilters ? '没有匹配的音色' : '暂无音色'}
             </div>
           )}
           {filtered.length > visibleCount && (
@@ -432,15 +466,24 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
     return () => { active = false; };
   }, [pricingReload]);
   const isModeAvailable = (value: string) => enabledPricingModels?.includes(value === 'mix' ? 'seed-tts-1.0' : value === 'audio-gen' || value === 'seed-audio' ? 'seed-audio-1.0' : 'seed-tts-2.0') === true;
-  const favoritesStorageKey = workbenchUserStorageKey('vs_favorites', identity.userId);
   const searchParams = useSearchParams();
   const preloadSpeaker = searchParams.get('speaker');
-  const preloadFlag = searchParams.get('preload');
-
-  const [voices, setVoices] = useState<Voice[]>([]);
-  const [loading, setLoading] = useState(false);
+  const preloadHandledRef = useRef<string | null>(null);
+  const [officialVoices, setOfficialVoices] = useState<Voice[]>([]);
+  const [userVoices, setUserVoices] = useState<Voice[]>([]);
+  const voices = useMemo(() => [...officialVoices, ...userVoices], [officialVoices, userVoices]);
+  const [officialLoading, setOfficialLoading] = useState(true);
+  const [userVoicesLoading, setUserVoicesLoading] = useState(true);
+  const [officialError, setOfficialError] = useState('');
+  const [userVoicesError, setUserVoicesError] = useState('');
+  const [officialReload, setOfficialReload] = useState(0);
+  const [userVoicesReload, setUserVoicesReload] = useState(0);
   const [selectedVoice, setSelectedVoice] = useState<Voice | null>(null);
   const [selectedVoice2, setSelectedVoice2] = useState<Voice | null>(null);
+  const selectPrimaryVoice = (voice: Voice) => {
+    preloadHandledRef.current = preloadSpeaker;
+    setSelectedVoice(voice);
+  };
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('全部');
   const [search2, setSearch2] = useState('');
@@ -647,11 +690,14 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
   const [aigcTag, setAigcTag] = useState(false);
 
   const [voiceInstruction, setVoiceInstruction] = useState('');
-  // 高级设置固定展示，不提供折叠功能
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'role1' | 'role2'>('role1');
 
   const categories = useMemo(() => {
     const cats = new Set(voices.map(v => v.category));
+    for (const selectedCategory of [category, category2]) {
+      if (selectedCategory !== '全部' && selectedCategory !== '我的收藏') cats.add(selectedCategory);
+    }
     // 把"模拟真人"置顶（高优先级分类），其他按字母序
     const list = Array.from(cats);
     const priorityOrder = ['模拟真人', '角色动漫', '情感治愈', '短视频配音', '克隆', '设计', '其他'];
@@ -664,7 +710,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
       return ai - bi;
     });
     return ['全部', '我的收藏', ...list];
-  }, [voices]);
+  }, [voices, category, category2]);
 
   const filteredVoices = useMemo(() => {
     return voices.filter(v => {
@@ -695,25 +741,65 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
   }, [voices, search2, category2, voiceFilter2, favorites]);
 
   useEffect(() => {
-    setLoading(true);
-    // 加载官方音色 + 用户自定义音色（设计/克隆）
-    Promise.all([
-      fetch('/api/voice/list?page=1&limit=500',{cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok||!result.success)throw new Error('音色目录暂时无法读取，请刷新重试');return result.data.voices.map((voice:Voice)=>({...voice,id:voice.speakerId,tags:voice.tags||[]}));}),
-      hasAuthToken ? fetch('/api/voice/user-voices', {
-        headers: authHeaders,
-        cache: 'no-store',
-      }).then(async response => {const result=await response.json();if(!response.ok||result?.success!==true||!Array.isArray(result.voices))throw new Error('我的定制音色暂时无法读取，请刷新重试');return result;}) : Promise.resolve({ success: true, voices: [] }),
-    ]).then(([official, userRes]) => {
-      const userVoices: Voice[] = (userRes.voices || []) as UserVoiceDto[];
-      const allVoices = [...official, ...userVoices];
-      setVoices(allVoices);
-      setLoading(false);
-      if (preloadSpeaker) {
-        const v = allVoices.find(x => x.speakerId === preloadSpeaker);
-        if (v) setSelectedVoice(v);
+    let active = true;
+    const controller = new AbortController();
+    setOfficialLoading(true);
+    setOfficialError('');
+    void (async () => {
+      try {
+        const response = await fetch('/api/voice/list?page=1&limit=500', {
+          cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+        });
+        const result = await response.json();
+        if (!response.ok || result.success !== true || !Array.isArray(result.data?.voices)) throw new Error('VOICE_CATALOG_UNAVAILABLE');
+        const official = result.data.voices.map((voice: Voice) => ({ ...voice, id: voice.speakerId, tags: voice.tags || [] }));
+        if (active) setOfficialVoices(official);
+      } catch {
+        if (active) setOfficialError('官方音色暂时无法读取。');
+      } finally {
+        if (active) setOfficialLoading(false);
       }
-    }).catch(error=>{setLoading(false);setPreviewError(error instanceof Error?error.message:'音色目录加载失败');});
-  }, [preloadSpeaker, hasAuthToken, auth?.token, favoritesStorageKey]);
+    })();
+    return () => { active = false; controller.abort(); };
+  }, [officialReload]);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    setUserVoicesLoading(true);
+    setUserVoicesError('');
+    void (async () => {
+      try {
+        const response = await fetch('/api/voice/user-voices', {
+          headers: { Authorization: `Bearer ${identity.token}` }, cache: 'no-store',
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+        });
+        const result = await response.json();
+        if (!response.ok || result.success !== true || !Array.isArray(result.voices)) throw new Error('USER_VOICE_CATALOG_UNAVAILABLE');
+        if (active) setUserVoices(result.voices as UserVoiceDto[]);
+      } catch {
+        if (active) setUserVoicesError('我的定制音色暂时无法读取。');
+      } finally {
+        if (active) setUserVoicesLoading(false);
+      }
+    })();
+    return () => { active = false; controller.abort(); };
+  }, [identity.token, userVoicesReload]);
+
+  useEffect(() => {
+    if (!preloadSpeaker) { preloadHandledRef.current = null; return; }
+    if (preloadHandledRef.current === preloadSpeaker) return;
+    const voice = voices.find(item => item.speakerId === preloadSpeaker);
+    if (voice) {
+      preloadHandledRef.current = preloadSpeaker;
+      setSelectedVoice(voice);
+    }
+  }, [preloadSpeaker, voices]);
+
+  const catalogSources: VoiceCatalogSourceStatus[] = [
+    { id: 'official', label: '官方音色', loading: officialLoading, error: officialError, onRetry: () => setOfficialReload(value => value + 1) },
+    { id: 'user', label: '我的定制音色', loading: userVoicesLoading, error: userVoicesError, onRetry: () => setUserVoicesReload(value => value + 1) },
+  ];
 
   const toggleFavorite = (speakerId:string) => { const voice=voices.find(v=>v.speakerId===speakerId); if(voice)void saveFavorite(voice); };
 
@@ -870,6 +956,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
   };
 
   const restoreHistoryGeneration = (item: VoiceGeneration) => {
+    preloadHandledRef.current = preloadSpeaker;
     if (item.status === 'success') {
       setResult({
         audioUrl: item.outputAudioUrl || '', duration: item.outputDuration || 0,
@@ -1117,6 +1204,14 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
     setModel(nextMode === 'audio-gen' ? 'audio' : 'tts');
   };
 
+  const basicVoiceControls = mode !== 'audio-gen' ? (
+    <div data-voice-basic-controls className={`grid gap-4 rounded-lg border border-[var(--vs-border)] bg-[var(--vs-surface)] px-3 py-2 ${mode === 'mix' ? 'grid-cols-2' : 'grid-cols-3'}`}>
+      <Slider label="语速" value={speed} onChange={setSpeed} min={-50} max={100} />
+      {mode !== 'mix' && <Slider label="音调" value={pitch} onChange={setPitch} min={-12} max={12} />}
+      <Slider label="音量" value={volume} onChange={setVolume} min={-50} max={100} />
+    </div>
+  ) : null;
+
   // -------- 主渲染 --------
 
   return (
@@ -1156,8 +1251,8 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
           {enabledPricingModels !== null && !isModeAvailable(mode) && <p role="status">当前模式暂不可用，请选择其他模式；已有历史仍可查看。</p>}
         </div>
         {/* 顶部工具栏 */}
-        <div className="vs-model-toolbar bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl px-6 py-4 mb-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+        <div className="vs-model-toolbar bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl px-4 py-3 mb-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2.5">
               <span className="text-sm font-medium text-[var(--vs-text-muted)]">模型</span>
               <div className="flex bg-[var(--vs-surface)]/80 rounded-xl p-1 border border-[var(--vs-border)]">
@@ -1177,24 +1272,9 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 </button>
               </div>
             </div>
-          </div>
-          <span className="text-[13px] text-[var(--vs-text-muted)]">
-            合成进度与结果由服务端统一确认，避免重复提交和重复扣费
-          </span>
-        </div>
-
-        {/* 主工作区：三行两列 Grid */}
-        <div id="voice-synthesis-editor" data-voice-editor className="vs-synthesis-editor grid scroll-mt-6 grid-cols-1 gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
-          {/* 第1行左：模式选择 + 语速·音调·音量（填充模式与音色之间留白） */}
-          {/* 第1行左：模式选择 + 语速·音调·音量（self-start 防止被右列 stretch 拉高） */}
-          <div className="flex flex-col gap-5 min-w-0 self-start">
-            <div className="min-h-[332px] bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl px-5 py-4 w-full">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-base font-semibold text-[var(--vs-text)]">模式</span>
-                <span className="text-xs text-[var(--vs-text-muted)] ml-auto">请选择合成模式</span>
-              </div>
-              <div className="flex flex-col gap-2">
-                {[
+            <div data-voice-mode-picker className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-[var(--vs-text-muted)]">模式</span>
+              {[
                   { v: 'single', icon: <Mic2 className="h-4 w-4" />, label: '单人模式' },
                   { v: 'dual', icon: <MessagesSquare className="h-4 w-4" />, label: '双人对话' },
                   { v: 'long-text', icon: <FileText className="h-4 w-4" />, label: '长文本合成' },
@@ -1203,7 +1283,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 ].filter(m => isModeAvailable(m.v)).map(m => (
                   <button
                     key={m.v}
-                    className={`w-full flex items-center justify-center gap-2.5 px-3.5 py-2.5 rounded-xl text-[15px] font-medium transition-all ${mode === m.v ? 'bg-gradient-to-r from-[var(--vs-primary)]/20 to-[var(--vs-secondary)]/15 text-[var(--vs-primary)] border border-[var(--vs-primary)]/40 shadow-[0_0_18px_rgba(56,189,248,0.18)]' : 'bg-[var(--vs-surface)]/60 border border-[var(--vs-border)] text-[var(--vs-text-muted)] hover:text-[var(--vs-text)] hover:border-[var(--vs-primary)]/25 hover:bg-[var(--vs-surface-hover)]'}`}
+                    className={`flex shrink-0 items-center justify-center gap-2 px-3 py-2 whitespace-nowrap rounded-xl text-[15px] font-medium transition-all ${mode === m.v ? 'bg-gradient-to-r from-[var(--vs-primary)]/20 to-[var(--vs-secondary)]/15 text-[var(--vs-primary)] border border-[var(--vs-primary)]/40 shadow-[0_0_18px_rgba(56,189,248,0.18)]' : 'bg-[var(--vs-surface)]/60 border border-[var(--vs-border)] text-[var(--vs-text-muted)] hover:text-[var(--vs-text)] hover:border-[var(--vs-primary)]/25 hover:bg-[var(--vs-surface-hover)]'}`}
                     onClick={() => handleSynthesisModeChange(m.v as typeof mode)}
                     disabled={synthesizing}
                     aria-pressed={mode === m.v}
@@ -1213,227 +1293,17 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                     {mode === m.v && <span className="ml-1 text-[var(--vs-primary)] text-xs">✓</span>}
                   </button>
                 ))}
-              </div>
-            </div>
-
-            {/* 语速·音调·音量（独立卡片，直接影响输出音质，填充模式与音色中间留白） */}
-            {mode !== 'audio-gen' && <div className="bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <SlidersHorizontal className="h-5 w-5 text-[var(--vs-primary)]" aria-hidden="true" />
-                <span className="text-base font-semibold text-[var(--vs-text)]">{mode === 'mix' ? '语速 · 音量' : '语速 · 音调 · 音量'}</span>
-                <span className="text-xs text-[var(--vs-primary)]/80 ml-auto">影响输出音质核心参数</span>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2.5">
-                    <div className="text-sm text-[var(--vs-text-muted)]">语速</div>
-                    <div className="text-sm font-mono font-medium text-[var(--vs-primary)]">{speed > 0 ? `+${speed}` : speed}</div>
-                  </div>
-                  <Slider value={speed} onChange={setSpeed} min={-50} max={100} />
-                </div>
-                {mode !== 'mix' && <div>
-                  <div className="flex items-center justify-between mb-2.5">
-                    <div className="text-sm text-[var(--vs-text-muted)]">音调</div>
-                    <div className="text-sm font-mono font-medium text-[var(--vs-primary)]">{pitch > 0 ? `+${pitch}` : pitch}</div>
-                  </div>
-                  <Slider value={pitch} onChange={setPitch} min={-12} max={12} />
-                </div>}
-                <div>
-                  <div className="flex items-center justify-between mb-2.5">
-                    <div className="text-sm text-[var(--vs-text-muted)]">音量</div>
-                    <div className="text-sm font-mono font-medium text-[var(--vs-primary)]">{volume > 0 ? `+${volume}` : volume}</div>
-                  </div>
-                  <Slider value={volume} onChange={setVolume} min={-50} max={100} />
-                </div>
-              </div>
-            </div>}
-          </div>
-
-          {/* 第1行右：高级设置（不再有已选音色卡，避免选择音色卡位移） */}
-          <div className="flex flex-col gap-5 min-w-0">
-            <div className="bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
-              <div className="w-full px-5 py-3.5 flex items-center justify-between bg-[var(--vs-surface)]/50 border-b border-[var(--vs-border)]">
-                <div className="flex items-center gap-2.5">
-                  <Settings2 className="h-5 w-5 text-[var(--vs-primary)]" aria-hidden="true" />
-                  <span className="text-base font-semibold text-[var(--vs-text)]">高级设置</span>
-                  <span className="text-sm text-[var(--vs-text-muted)]">
-                    当前：{mode === 'mix' ? 'TTS 1.0（混音）' : mode === 'audio-gen' ? 'Seed-Audio 1.0' : MODEL_VERSION_LABELS[modelVersion]} · {sampleRate >= 1000 ? `${sampleRate / 1000}kHz` : `${sampleRate}Hz`} {audioFormat.toUpperCase()}
-                  </span>
-                </div>
-              </div>
-
-                <div className="p-4 space-y-3.5 flex-1 overflow-auto min-h-0">
-                  <div className="text-sm text-[var(--vs-text-muted)] bg-[var(--vs-surface)]/50 rounded-lg px-3.5 py-2 border border-[var(--vs-border)]/50">
-                    {mode === 'audio-gen' ? '音频生成使用参考音频与提示词控制声音，输出支持音频格式和采样率设置。' : '语速/音调/音量在左侧调整，此处配置模型版本与音频输出。具体音色支持以所选模型和账号权限为准。'}
-                  </div>
-
-                  <div className={mode === 'audio-gen' || mode === 'mix' ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'}>
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">模型版本</div>
-                      <select
-                        aria-label="模型版本"
-                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
-                        value={mode === 'mix' ? 'seed-tts-1.0' : mode === 'audio-gen' ? 'seed-audio-1.0' : modelVersion}
-                        disabled={synthesizing || mode === 'mix' || mode === 'audio-gen'}
-                        onChange={e => setModelVersion(e.target.value as typeof modelVersion)}
-                      >
-                        {mode === 'mix' ? <option value="seed-tts-1.0">TTS 1.0（混音）</option> : mode === 'audio-gen' ? <option value="seed-audio-1.0">Seed-Audio 1.0</option> : MODEL_VERSIONS.map(v => (
-                          <option key={v.value} value={v.value}>{MODEL_VERSION_LABELS[v.value]}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">音频格式</div>
-                      <select
-                        aria-label="音频格式"
-                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
-                        value={audioFormat}
-                        onChange={e => { const next = e.target.value as typeof audioFormat; setAudioFormat(next); if (next === 'ogg_opus' && ![8000,16000,24000,48000].includes(sampleRate)) setSampleRate(24000); }}
-                      >
-                        {FILE_AUDIO_FORMATS.map(f => (
-                          <option key={f.value} value={f.value}>{f.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">采样率</div>
-                      <select
-                        aria-label="采样率"
-                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
-                        value={sampleRate}
-                        onChange={e => setSampleRate(Number(e.target.value) as typeof sampleRate)}
-                      >
-                        {SAMPLE_RATES.filter(r => audioFormat !== 'ogg_opus' || [8000,16000,24000,48000].includes(r)).map(r => (
-                          <option key={r} value={r}>{r}Hz</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {mode !== 'audio-gen' && mode !== 'mix' && <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-secondary)] mb-1.5">情绪强度</div>
-                      <Slider value={emotionIntensity * 100 - 50} onChange={v => setEmotionIntensity((v + 50) / 100)} min={-50} max={50} />
-                    </div>
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-secondary)] mb-1.5">句尾静音</div>
-                      <Slider value={silenceFinal / 20 - 10} onChange={v => setSilenceFinal((v + 10) * 20)} min={-10} max={40} />
-                    </div>
-                  </div>}
-
-
-                  {mode !== 'audio-gen' && mode !== 'mix' && <><div className="grid grid-cols-2 gap-2 items-center text-xs text-[var(--vs-text-secondary)] sm:grid-cols-4 xl:grid-cols-9">
-                    <span className="col-span-1">语种</span>
-                    <div className="col-span-2">
-                      <select
-                        aria-label="语种"
-                        className="w-full px-2 py-1.5 rounded-lg bg-[var(--vs-surface)] border border-[var(--vs-border)] text-[var(--vs-text)] text-xs"
-                        value={language}
-                        onChange={e => setLanguage(e.target.value)}
-                      >
-                        <option value="auto">自动</option>
-                        {EXPLICIT_LANGUAGES.map(l => (
-                          <option key={l.value} value={l.value}>{l.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={subtitle} onChange={e => setSubtitle(e.target.checked)} className="w-3.5 h-3.5" />
-                      字幕
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={subtitleTimestamp} onChange={e => setSubtitleTimestamp(e.target.checked)} className="w-3.5 h-3.5" />
-                      时间戳
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={useCache} onChange={e => setUseCache(e.target.checked)} className="w-3.5 h-3.5" />
-                      缓存
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={silenceSeg} onChange={e => setSilenceSeg(e.target.checked)} className="w-3.5 h-3.5" />
-                      自动切分
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={langDetect} onChange={e => setLangDetect(e.target.checked)} className="w-3.5 h-3.5" />
-                      自动识别语种
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={filterMd} onChange={e => setFilterMd(e.target.checked)} className="w-3.5 h-3.5" />
-                      无Markdown过滤
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={filterEmoji} onChange={e => setFilterEmoji(e.target.checked)} className="w-3.5 h-3.5" />
-                      无Emoji过滤
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={latex} onChange={e => setLatex(e.target.checked)} className="w-3.5 h-3.5" />
-                      LaTeX公式
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={aigcTag} onChange={e => setAigcTag(e.target.checked)} className="w-3.5 h-3.5" />
-                      AIGC水印
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-not-allowed text-[var(--vs-text-muted)]" title="当前公开的 TTS 2.0 模型不支持 SSML">
-                      <input type="checkbox" checked={false} disabled className="w-3.5 h-3.5" />
-                      <span>SSML <span className="text-xs">当前模型未开放</span></span>
-                    </label>
-                  </div>
-
-                  {/* 情感预设：一键应用常用参数组合（固定 8 个） */}
-                  <div className="pt-3 border-t border-[var(--vs-border)]/40">
-                    <div className="flex items-center justify-between mb-2.5 gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="flex items-center gap-1.5 text-sm text-[var(--vs-text-muted)] font-medium"><Heart className="h-4 w-4" aria-hidden="true" />情感预设</span>
-                        <span className="text-xs text-[var(--vs-text-muted)] opacity-70 truncate">固定 8 个，一键应用语速/音调/音量/情感</span>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {SYNTHESIS_PRESETS.map(preset => {
-                        const isActive = modelVersion === preset.config.modelVersion &&
-                          speed === preset.config.speed &&
-                          pitch === preset.config.pitch &&
-                          volume === preset.config.volume &&
-                          emotion === (preset.config.emotion || 'none') &&
-                          subtitle === preset.config.subtitle &&
-                          aigcTag === preset.config.aigcTag;
-                        return (
-                          <button
-                            key={preset.key}
-                            type="button"
-                            onClick={() => {
-                              setModelVersion(preset.config.modelVersion);
-                              setSpeed(preset.config.speed);
-                              setPitch(preset.config.pitch);
-                              setVolume(preset.config.volume);
-                              setEmotion(preset.config.emotion || 'none');
-                              setEmotionIntensity(preset.config.emotionIntensity ?? 0.5);
-                              setSubtitle(preset.config.subtitle);
-                              setAigcTag(preset.config.aigcTag);
-                            }}
-                            className={`flex flex-col items-start gap-1 px-3 py-2.5 rounded-lg text-left transition-all ${
-                              isActive
-                                ? 'bg-gradient-to-br from-[var(--vs-primary)]/20 to-[var(--vs-accent)]/15 border border-[var(--vs-primary)]/50 shadow-[0_0_12px_rgba(56,189,248,0.15)]'
-                                : 'bg-[var(--vs-surface)]/50 border border-[var(--vs-border)]/50 hover:border-[var(--vs-primary)]/40 hover:bg-[var(--vs-surface)]'
-                            }`}
-                            title={preset.desc}
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-base leading-none">{preset.icon}</span>
-                              <span className={`text-[13px] font-semibold leading-none ${isActive ? 'text-[var(--vs-primary)]' : 'text-[var(--vs-text)]'}`}>
-                                {preset.name}
-                              </span>
-                            </div>
-                            <span className="text-[11px] text-[var(--vs-text-muted)] leading-tight line-clamp-1">{preset.desc}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div></>}
-                </div>
             </div>
           </div>
+          <button type="button" data-voice-advanced-toggle aria-expanded={advancedOpen} aria-controls="voice-advanced-settings" onClick={() => setAdvancedOpen(value => !value)} className="flex shrink-0 items-center gap-2 rounded-xl border border-[var(--vs-border)] bg-[var(--vs-surface)] px-3 py-2 text-sm text-[var(--vs-text)] hover:border-[var(--vs-primary)]">
+            <Settings2 className="h-4 w-4 text-[var(--vs-primary)]" aria-hidden="true" />
+            高级设置 · {advancedOpen ? '收起' : '展开'}
+          </button>
+        </div>
 
-          {/* 第2行左：音色选择卡片 */}
+        {/* 主工作区先展示音色、文案与合成操作，高级参数放在其后。 */}
+        <div id="voice-synthesis-editor" data-voice-editor className="vs-synthesis-editor grid scroll-mt-6 grid-cols-1 gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+          {/* 主要输入：音色选择 */}
           {mode === 'single' && (
             <VoicePickerCard
               title="选择音色"
@@ -1445,13 +1315,14 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
               categories={categories}
               filtered={filteredVoices}
               selected={selectedVoice}
-              onSelect={setSelectedVoice}
+              onSelect={selectPrimaryVoice}
               favorites={favorites}
               onToggleFavorite={toggleFavorite}
               onPreview={handlePreviewVoice}
               previewingSpeaker={previewingSpeaker}
               previewLoading={previewLoading}
               previewError={previewError}
+              catalogSources={catalogSources}
               h="h-[400px]"
             />
           )}
@@ -1467,13 +1338,14 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 categories={categories}
                 filtered={filteredVoices}
                 selected={selectedVoice}
-                onSelect={setSelectedVoice}
+                onSelect={selectPrimaryVoice}
                 favorites={favorites}
                 onToggleFavorite={toggleFavorite}
                 onPreview={handlePreviewVoice}
                 previewingSpeaker={previewingSpeaker}
                 previewLoading={previewLoading}
                 previewError={previewError}
+                catalogSources={catalogSources}
                 h="h-[400px]"
               />
               <VoicePickerCard
@@ -1493,6 +1365,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 previewingSpeaker={previewingSpeaker}
                 previewLoading={previewLoading}
                 previewError={previewError}
+                catalogSources={catalogSources}
                 h="h-[400px]"
               />
             </div>
@@ -1508,17 +1381,18 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
               categories={categories}
               filtered={filteredVoices}
               selected={selectedVoice}
-              onSelect={setSelectedVoice}
+              onSelect={selectPrimaryVoice}
               favorites={favorites}
               onToggleFavorite={toggleFavorite}
               onPreview={handlePreviewVoice}
               previewingSpeaker={previewingSpeaker}
               previewLoading={previewLoading}
               previewError={previewError}
+              catalogSources={catalogSources}
               h="h-[400px]"
             />
           )}
-          {/* 第2行右：输入/配置内容（与左列音色卡片等高） */}
+          {/* 主要输入：文案与就近的语速、音调、音量 */}
           <div className={`flex flex-col gap-5 min-w-0 ${mode === 'audio-gen' || mode === 'mix' ? 'lg:col-span-2' : ''}`}>
             {/* 单人模式文本输入 */}
             {mode === 'single' && (
@@ -1530,7 +1404,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 maxLen={5000}
                 h="h-[400px]"
                 placeholder={useSsml ? '<speak>输入 SSML 内容...</speak>' : '输入要合成的文本内容...'}
-              />
+              >{basicVoiceControls}</TextInputCard>
             )}
 
             {/* 双人模式文本输入 */}
@@ -1544,7 +1418,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                   maxLen={5000}
                   h="flex-1 min-h-0"
                   placeholder="输入角色一的台词..."
-                />
+                >{basicVoiceControls}</TextInputCard>
                 <TextInputCard
                   title="角色二 台词"
                   icon={<AudioLines className="h-5 w-5" />}
@@ -1579,7 +1453,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 maxLen={5000}
                 h="h-[400px]"
                 placeholder="单次最多 5000 字符，提交后请在当前页面等待合成结果。更长内容请拆分后分次合成。&#10;请在此处粘贴或输入长文本内容..."
-              />
+              >{basicVoiceControls}</TextInputCard>
             )}
 
             {/* 混音合成配置 + 文本输入 */}
@@ -1661,7 +1535,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                   maxLen={5000}
                   h="flex-1 min-h-[160px]"
                   placeholder="输入要混音合成的文本内容..."
-                />
+                >{basicVoiceControls}</TextInputCard>
               </div>
             )}
 
@@ -1746,8 +1620,11 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
 
           {/* 结果区只占右列；未生成时不渲染大面积空结果卡。 */}
           <div data-voice-output-region className="vs-output-panel flex flex-col gap-5 min-w-0 lg:col-start-2">
-            {<div className="text-center text-sm text-[var(--vs-text-secondary)]" aria-live="polite">
-              {!quoteInputsReady ? '补充音色、文案和所需参考音频后显示本次费用' : quoteError ? <span role="alert">{quoteError} <button className="underline" onClick={() => setQuoteRetry(value => value + 1)}>重新读取费用</button></span> : !quoteReady ? '正在核算本次费用…' : <><strong className="text-[var(--vs-text)]">{`${voiceQuote!.reservationSeconds ? '本次预留' : '本次预计'} ${voiceQuote!.credits} 积分（¥${voiceQuote!.retailPrice.toFixed(2)}）`}</strong><p>{voiceQuote!.reservationSeconds ? '先按最长120秒预留积分，完成后按实际音频时长结算，多余积分自动退回。' : mode === 'dual' ? '按两个角色各自的文案计费，失败角色费用自动退回。' : '按本次文案计费，合成失败自动退回积分。'}</p></>}
+            {<div data-voice-fee-state={pricingError ? 'model-error' : enabledPricingModels === null ? 'model-loading' : !isModeAvailable(mode) ? 'mode-unavailable' : !quoteInputsReady ? 'incomplete' : quoteError ? 'quote-error' : !quoteReady ? 'quoting' : 'ready'} className="text-center text-sm text-[var(--vs-text-secondary)]" aria-live="polite">
+              {pricingError ? <span role="alert">模型信息暂时无法读取，恢复后再核算本次费用。 <button type="button" className="text-[var(--vs-primary)] underline" onClick={() => setPricingReload(value => value + 1)}>重新读取模型</button></span>
+                : enabledPricingModels === null ? '正在读取可用模型，读取后核算本次费用…'
+                : !isModeAvailable(mode) ? '当前模式暂不可用，暂不核算费用；已填写的文案和音色会保留。'
+                : !quoteInputsReady ? '补充音色、文案和所需参考音频后显示本次费用' : quoteError ? <span role="alert">{quoteError} <button type="button" className="underline" onClick={() => setQuoteRetry(value => value + 1)}>重新读取费用</button></span> : !quoteReady ? '正在核算本次费用…' : <><strong className="text-[var(--vs-text)]">{`${voiceQuote!.reservationSeconds ? '本次预留' : '本次预计'} ${voiceQuote!.credits} 积分（¥${voiceQuote!.retailPrice.toFixed(2)}）`}</strong><p>{voiceQuote!.reservationSeconds ? '先按最长120秒预留积分，完成后按实际音频时长结算，多余积分自动退回。' : mode === 'dual' ? '按两个角色各自的文案计费，失败角色费用自动退回。' : '按本次文案计费，合成失败自动退回积分。'}</p></>}
             </div>}
             <div className="flex justify-center">
               <Button
@@ -1841,6 +1718,192 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
               </div>
             )}
           </div>
+          {/* 高级参数保留挂载，折叠仅改变展示，不重置任何参数。 */}
+          <div id="voice-advanced-settings" data-voice-advanced-panel hidden={!advancedOpen} className={`${advancedOpen ? 'flex' : 'hidden'} flex-col gap-5 min-w-0 lg:col-span-2`}>
+            <div className="bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
+              <div className="w-full px-5 py-3.5 flex items-center justify-between bg-[var(--vs-surface)]/50 border-b border-[var(--vs-border)]">
+                <div className="flex items-center gap-2.5">
+                  <Settings2 className="h-5 w-5 text-[var(--vs-primary)]" aria-hidden="true" />
+                  <span className="text-base font-semibold text-[var(--vs-text)]">高级设置</span>
+                  <span className="text-sm text-[var(--vs-text-muted)]">
+                    当前：{mode === 'mix' ? 'TTS 1.0（混音）' : mode === 'audio-gen' ? 'Seed-Audio 1.0' : MODEL_VERSION_LABELS[modelVersion]} · {sampleRate >= 1000 ? `${sampleRate / 1000}kHz` : `${sampleRate}Hz`} {audioFormat.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+                <div className="p-4 space-y-3.5 flex-1 overflow-auto min-h-0">
+                  <div className="text-sm text-[var(--vs-text-muted)] bg-[var(--vs-surface)]/50 rounded-lg px-3.5 py-2 border border-[var(--vs-border)]/50">
+                    {mode === 'audio-gen' ? '音频生成使用参考音频与提示词控制声音，输出支持音频格式和采样率设置。' : '语速/音调/音量在文案区调整，此处配置模型版本与音频输出。具体音色支持以所选模型和账号权限为准。'}
+                  </div>
+
+                  <div className={mode === 'audio-gen' || mode === 'mix' ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'}>
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">模型版本</div>
+                      <select
+                        aria-label="模型版本"
+                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
+                        value={mode === 'mix' ? 'seed-tts-1.0' : mode === 'audio-gen' ? 'seed-audio-1.0' : modelVersion}
+                        disabled={synthesizing || mode === 'mix' || mode === 'audio-gen'}
+                        onChange={e => setModelVersion(e.target.value as typeof modelVersion)}
+                      >
+                        {mode === 'mix' ? <option value="seed-tts-1.0">TTS 1.0（混音）</option> : mode === 'audio-gen' ? <option value="seed-audio-1.0">Seed-Audio 1.0</option> : MODEL_VERSIONS.map(v => (
+                          <option key={v.value} value={v.value}>{MODEL_VERSION_LABELS[v.value]}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">音频格式</div>
+                      <select
+                        aria-label="音频格式"
+                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
+                        value={audioFormat}
+                        onChange={e => { const next = e.target.value as typeof audioFormat; setAudioFormat(next); if (next === 'ogg_opus' && ![8000,16000,24000,48000].includes(sampleRate)) setSampleRate(24000); }}
+                      >
+                        {FILE_AUDIO_FORMATS.map(f => (
+                          <option key={f.value} value={f.value}>{f.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">采样率</div>
+                      <select
+                        aria-label="采样率"
+                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
+                        value={sampleRate}
+                        onChange={e => setSampleRate(Number(e.target.value) as typeof sampleRate)}
+                      >
+                        {SAMPLE_RATES.filter(r => audioFormat !== 'ogg_opus' || [8000,16000,24000,48000].includes(r)).map(r => (
+                          <option key={r} value={r}>{r}Hz</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {mode !== 'audio-gen' && mode !== 'mix' && <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-secondary)] mb-1.5">情绪强度</div>
+                      <Slider value={emotionIntensity * 100 - 50} onChange={v => setEmotionIntensity((v + 50) / 100)} min={-50} max={50} />
+                    </div>
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-secondary)] mb-1.5">句尾静音</div>
+                      <Slider value={silenceFinal / 20 - 10} onChange={v => setSilenceFinal((v + 10) * 20)} min={-10} max={40} />
+                    </div>
+                  </div>}
+
+
+                  {mode !== 'audio-gen' && mode !== 'mix' && <><div className="flex flex-wrap items-center gap-x-4 gap-y-3 text-xs text-[var(--vs-text-secondary)]">
+                    <div className="flex shrink-0 items-center gap-2">
+                    <span className="shrink-0">语种</span>
+                    <div className="w-44">
+                      <select
+                        aria-label="语种"
+                        className="w-full px-2 py-1.5 rounded-lg bg-[var(--vs-surface)] border border-[var(--vs-border)] text-[var(--vs-text)] text-xs"
+                        value={language}
+                        onChange={e => setLanguage(e.target.value)}
+                      >
+                        <option value="auto">自动</option>
+                        {EXPLICIT_LANGUAGES.map(l => (
+                          <option key={l.value} value={l.value}>{l.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    </div>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={subtitle} onChange={e => setSubtitle(e.target.checked)} className="w-3.5 h-3.5" />
+                      字幕
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={subtitleTimestamp} onChange={e => setSubtitleTimestamp(e.target.checked)} className="w-3.5 h-3.5" />
+                      时间戳
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={useCache} onChange={e => setUseCache(e.target.checked)} className="w-3.5 h-3.5" />
+                      缓存
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={silenceSeg} onChange={e => setSilenceSeg(e.target.checked)} className="w-3.5 h-3.5" />
+                      自动切分
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={langDetect} onChange={e => setLangDetect(e.target.checked)} className="w-3.5 h-3.5" />
+                      自动识别语种
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={filterMd} onChange={e => setFilterMd(e.target.checked)} className="w-3.5 h-3.5" />
+                      无Markdown过滤
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={filterEmoji} onChange={e => setFilterEmoji(e.target.checked)} className="w-3.5 h-3.5" />
+                      无Emoji过滤
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={latex} onChange={e => setLatex(e.target.checked)} className="w-3.5 h-3.5" />
+                      LaTeX公式
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={aigcTag} onChange={e => setAigcTag(e.target.checked)} className="w-3.5 h-3.5" />
+                      AIGC水印
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-not-allowed text-[var(--vs-text-muted)]" title="当前公开的 TTS 2.0 模型不支持 SSML">
+                      <input type="checkbox" checked={false} disabled className="w-3.5 h-3.5" />
+                      <span>SSML <span className="text-xs">当前模型未开放</span></span>
+                    </label>
+                  </div>
+
+                  {/* 情感预设：一键应用常用参数组合（固定 8 个） */}
+                  <div className="pt-3 border-t border-[var(--vs-border)]/40">
+                    <div className="flex items-center justify-between mb-2.5 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="flex items-center gap-1.5 text-sm text-[var(--vs-text-muted)] font-medium"><Heart className="h-4 w-4" aria-hidden="true" />情感预设</span>
+                        <span className="text-xs text-[var(--vs-text-muted)] opacity-70 truncate">固定 8 个，一键应用语速/音调/音量/情感</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {SYNTHESIS_PRESETS.map(preset => {
+                        const isActive = modelVersion === preset.config.modelVersion &&
+                          speed === preset.config.speed &&
+                          pitch === preset.config.pitch &&
+                          volume === preset.config.volume &&
+                          emotion === (preset.config.emotion || 'none') &&
+                          subtitle === preset.config.subtitle &&
+                          aigcTag === preset.config.aigcTag;
+                        return (
+                          <button
+                            key={preset.key}
+                            type="button"
+                            onClick={() => {
+                              setModelVersion(preset.config.modelVersion);
+                              setSpeed(preset.config.speed);
+                              setPitch(preset.config.pitch);
+                              setVolume(preset.config.volume);
+                              setEmotion(preset.config.emotion || 'none');
+                              setEmotionIntensity(preset.config.emotionIntensity ?? 0.5);
+                              setSubtitle(preset.config.subtitle);
+                              setAigcTag(preset.config.aigcTag);
+                            }}
+                            className={`flex flex-col items-start gap-1 px-3 py-2.5 rounded-lg text-left transition-all ${
+                              isActive
+                                ? 'bg-gradient-to-br from-[var(--vs-primary)]/20 to-[var(--vs-accent)]/15 border border-[var(--vs-primary)]/50 shadow-[0_0_12px_rgba(56,189,248,0.15)]'
+                                : 'bg-[var(--vs-surface)]/50 border border-[var(--vs-border)]/50 hover:border-[var(--vs-primary)]/40 hover:bg-[var(--vs-surface)]'
+                            }`}
+                            title={preset.desc}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-base leading-none">{preset.icon}</span>
+                              <span className={`text-[13px] font-semibold leading-none ${isActive ? 'text-[var(--vs-primary)]' : 'text-[var(--vs-text)]'}`}>
+                                {preset.name}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-[var(--vs-text-muted)] leading-tight line-clamp-1">{preset.desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div></>}
+                </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

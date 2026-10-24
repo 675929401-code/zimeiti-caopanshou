@@ -55,6 +55,7 @@ import {
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
 import { createOperationPerformanceTrace, type OperationPerformanceTrace } from "@/lib/operation-performance-trace";
 import { recordServerOperationPerformanceEventBestEffort } from "@/lib/operation-flight-recorder";
+import { ensureConversationOwnership } from "@/lib/conversation-ownership";
 
 // ⚡ 流式路由强制动态渲染 — 防止 Next.js 静态优化缓冲 SSE
 export const dynamic = 'force-dynamic';
@@ -73,6 +74,74 @@ type CozeAgentRow = {
 };
 
 type CozeUsage = { input_tokens: number; output_tokens: number };
+
+const MAX_COZE_IMAGE_KEYS = 10;
+
+function isSafeCozeImageKey(value: string): boolean {
+  return value.length > 0
+    && value.length <= 1024
+    && !value.startsWith("/")
+    && !value.includes("://")
+    && !value.includes("\\")
+    && !value.split("/").includes("..")
+    && !/[?#\u0000-\u001f]/u.test(value);
+}
+
+async function validateOwnedCozeImageKeys(
+  supabase: ReturnType<typeof getSupabaseClient>,
+  userId: string,
+  rawImages: unknown,
+): Promise<{ ok: true; keys: string[] } | { ok: false; response: Response }> {
+  if (rawImages === undefined || rawImages === null) return { ok: true, keys: [] };
+  if (!Array.isArray(rawImages) || rawImages.length > MAX_COZE_IMAGE_KEYS) {
+    return {
+      ok: false,
+      response: new Response(
+        JSON.stringify({ error: "图片附件数量无效", code: "COZE_IMAGE_INPUT_INVALID" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      ),
+    };
+  }
+  const keys = [...new Set(rawImages.map((value) => typeof value === "string" ? value.trim() : ""))];
+  if (keys.length !== rawImages.length || keys.some((key) => !isSafeCozeImageKey(key))) {
+    return {
+      ok: false,
+      response: new Response(
+        JSON.stringify({ error: "图片附件标识无效", code: "COZE_IMAGE_INPUT_INVALID" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      ),
+    };
+  }
+  // An empty attachment list is valid; avoid issuing an empty PostgREST `in()`
+  // filter, which some deployments reject as malformed SQL.
+  if (keys.length === 0) return { ok: true, keys: [] };
+  const owned = await supabase
+    .from("user_files")
+    .select("storage_key")
+    .eq("user_id", userId)
+    .eq("file_category", "image")
+    .in("storage_key", keys);
+  if (owned.error) {
+    return {
+      ok: false,
+      response: new Response(
+        JSON.stringify({ error: "图片归属暂时无法确认，本次未调用模型", code: "COZE_IMAGE_OWNERSHIP_UNAVAILABLE", retryable: true }),
+        { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+      ),
+    };
+  }
+  const ownedKeys = new Set((owned.data || []).map((row: { storage_key?: unknown }) => String(row.storage_key || "")));
+  if (ownedKeys.size !== keys.length) {
+    return {
+      ok: false,
+      response: new Response(
+        JSON.stringify({ error: "图片不存在或不属于当前用户，本次未调用模型", code: "COZE_IMAGE_OWNERSHIP_FAILED", retryable: false }),
+        { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+      ),
+    };
+  }
+  return { ok: true, keys };
+}
 
 function finiteNonNegative(value: unknown): number | null {
   const numeric = Number(value);
@@ -140,31 +209,44 @@ async function persistCompletedCozeConversation(input: {
   answer: string;
 }): Promise<void> {
   const dbConversationId = input.cozeConversationId || input.conversationId;
-  if (!dbConversationId) return;
+  if (!dbConversationId) throw new Error("COZE_CONVERSATION_ID_MISSING");
   const supabase = getSupabaseClient();
   const needsMigration = Boolean(
     input.cozeConversationId
       && input.conversationId
       && input.cozeConversationId !== input.conversationId,
   );
-  if (needsMigration && input.conversationId) {
-    const oldMessages = await supabase.from("conversation_messages")
-      .delete().eq("conversation_id", input.conversationId);
-    if (oldMessages.error) throw new Error("旧会话消息迁移失败");
-    const oldConversation = await supabase.from("conversations")
-      .delete().eq("id", input.conversationId);
-    if (oldConversation.error) throw new Error("旧会话迁移失败");
-  }
   const now = new Date().toISOString();
-  const conversation = await supabase.from("conversations").upsert({
-    id: dbConversationId,
-    user_id: input.userId,
-    agent_id: input.agentId,
-    title: input.message.slice(0, 50),
-    source: "coze",
-    updated_at: now,
-  }, { onConflict: "id" });
-  if (conversation.error) throw new Error("会话记录保存失败");
+  const ownershipStore = {
+    async getOwner(conversationId: string): Promise<string | null> {
+      const result = await supabase.from("conversations").select("user_id").eq("id", conversationId).maybeSingle();
+      if (result.error) throw result.error;
+      return result.data?.user_id ? String(result.data.user_id) : null;
+    },
+    async create(conversationId: string, ownerId: string): Promise<"created" | "conflict"> {
+      const result = await supabase.from("conversations").insert({
+        id: conversationId,
+        user_id: ownerId,
+        agent_id: input.agentId,
+        title: input.message.trim().slice(0, 50),
+        source: "coze",
+        updated_at: now,
+      });
+      if (!result.error) return "created";
+      if (result.error.code === "23505") return "conflict";
+      throw result.error;
+    },
+  };
+  // Never upsert by provider conversation ID: a provider ID must not be able
+  // to overwrite another user's local conversation row.
+  await ensureConversationOwnership(ownershipStore, dbConversationId, input.userId);
+  const conversationUpdate = await supabase.from("conversations")
+    .update({ agent_id: input.agentId, source: "coze", updated_at: now })
+    .eq("id", dbConversationId)
+    .eq("user_id", input.userId)
+    .select("id")
+    .maybeSingle();
+  if (conversationUpdate.error || !conversationUpdate.data) throw new Error("会话记录保存失败");
   const messages = await supabase.from("conversation_messages").insert([
     {
       id: crypto.randomUUID(),
@@ -186,6 +268,22 @@ async function persistCompletedCozeConversation(input: {
     },
   ]);
   if (messages.error) throw new Error("会话消息保存失败");
+
+  // A provider may replace the client-side conversation ID. Clean up the old
+  // owned row only after the new row and both messages are durable; never
+  // delete first and risk losing the only local copy.
+  if (needsMigration && input.conversationId) {
+    const oldMessages = await supabase.from("conversation_messages")
+      .delete().eq("conversation_id", input.conversationId).eq("user_id", input.userId);
+    const oldConversation = await supabase.from("conversations")
+      .delete().eq("id", input.conversationId).eq("user_id", input.userId);
+    if (oldMessages.error || oldConversation.error) {
+      console.warn("[Chat] 新会话已保存，但旧会话清理未完成", {
+        messageError: oldMessages.error?.message,
+        conversationError: oldConversation.error?.message,
+      });
+    }
+  }
 }
 
 type CozeBufferedDeliveryOptions = {
@@ -393,6 +491,13 @@ function createBufferedCozeDeliveryStream(options: CozeBufferedDeliveryOptions):
             outcome: "warning",
             errorCode: "COZE_HISTORY_PERSIST_FAILED",
           });
+          safeEnqueue(encodeSseError(
+            "COZE_HISTORY_PERSIST_FAILED",
+            "对话已由上游完成并结算，但历史保存未确认；本次不发送成功终态，请稍后查看记录。",
+          ));
+          recordTerminal("error", "COZE_HISTORY_PERSIST_FAILED", response.status);
+          safeClose();
+          return;
         }
 
         for (const frame of bufferedFrames) {
@@ -445,7 +550,15 @@ export async function POST(request: Request) {
   let performanceTrace: OperationPerformanceTrace | null = null;
   try {
     const body = await request.json();
-    const { botId, message, conversationId, images } = body;
+    const {
+      botId,
+      message,
+      conversationId,
+      images,
+      persistUserMessage: persistUserMessageRaw,
+      truncateFromMessageId: truncateFromMessageIdRaw,
+      appendUserMessage: appendUserMessageRaw,
+    } = body;
     performanceTrace = createOperationPerformanceTrace({
       domain: "chat",
       operation: "chat.coze_request",
@@ -488,6 +601,50 @@ export async function POST(request: Request) {
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+    if (conversationId !== undefined && conversationId !== null && typeof conversationId !== "string") {
+      return new Response(
+        JSON.stringify({ error: "会话标识无效", code: "CONVERSATION_ID_INVALID" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const safeConversationId = typeof conversationId === "string" ? conversationId.trim() : "";
+
+    // The client sends these branch controls for regenerate/edit/retry.  The
+    // Coze transport cannot delete or replay a provider-side branch by local
+    // message ID, so silently ignoring them would persist duplicate user
+    // messages and show a transcript that differs from the provider context.
+    // Parse them explicitly and fail closed until a provider-native branch
+    // contract exists.  Normal sends use the default true/true/empty values.
+    if (persistUserMessageRaw !== undefined && typeof persistUserMessageRaw !== "boolean") {
+      return new Response(
+        JSON.stringify({ error: "Coze 消息持久化标记无效", code: "COZE_BRANCH_CONTRACT_INVALID", retryable: false }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (appendUserMessageRaw !== undefined && typeof appendUserMessageRaw !== "boolean") {
+      return new Response(
+        JSON.stringify({ error: "Coze 消息追加标记无效", code: "COZE_BRANCH_CONTRACT_INVALID", retryable: false }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (truncateFromMessageIdRaw !== undefined && typeof truncateFromMessageIdRaw !== "string") {
+      return new Response(
+        JSON.stringify({ error: "Coze 截断消息标识无效", code: "COZE_BRANCH_CONTRACT_INVALID", retryable: false }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const persistUserMessage = persistUserMessageRaw !== false;
+    const appendUserMessage = appendUserMessageRaw !== false;
+    const truncateFromMessageId = typeof truncateFromMessageIdRaw === "string"
+      ? truncateFromMessageIdRaw.trim()
+      : "";
+    if (truncateFromMessageId.length > 200 || /[\u0000-\u001f]/u.test(truncateFromMessageId)) {
+      return new Response(
+        JSON.stringify({ error: "Coze 截断消息标识无效", code: "COZE_BRANCH_CONTRACT_INVALID", retryable: false }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const cozeBranchRequested = !persistUserMessage || !appendUserMessage || Boolean(truncateFromMessageId);
 
     // ── ⚡ 性能优化：Token 只验证一次，全局复用 ──
     // 之前代码在 5 个分支中各自调用 verifyToken，造成 ~5x JWT 解析开销
@@ -509,6 +666,19 @@ export async function POST(request: Request) {
     }
     performanceTrace.enrichIdentity({ userId: verifiedUserId, accountId: verifiedUserId, agentId: botId });
     performanceTrace.checkpoint("auth.permission");
+
+    if (cozeBranchRequested) {
+      return new Response(
+        JSON.stringify({
+          error: "Coze 通道暂不支持按本地消息分支重试或改写，请保留原消息后重新发送",
+          code: "COZE_BRANCH_UNSUPPORTED",
+          retryable: false,
+          provider_call_started: false,
+          charged: false,
+        }),
+        { status: 409, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+      );
+    }
 
     const secIP = getSecIP(request);
     const secUA = getSecUA(request);
@@ -672,6 +842,28 @@ export async function POST(request: Request) {
         }),
         { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
       );
+    }
+    const ownedImageResult = await validateOwnedCozeImageKeys(dataClient, verifiedUserId, images);
+    if (!ownedImageResult.ok) return ownedImageResult.response;
+    const imageKeys = ownedImageResult.keys;
+    if (safeConversationId) {
+      const conversationOwner = await dataClient
+        .from("conversations")
+        .select("user_id")
+        .eq("id", safeConversationId)
+        .maybeSingle();
+      if (conversationOwner.error) {
+        return new Response(
+          JSON.stringify({ error: "会话归属暂时无法确认，本次未调用模型", code: "CONVERSATION_OWNERSHIP_UNAVAILABLE", retryable: true }),
+          { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+        );
+      }
+      if (conversationOwner.data?.user_id && String(conversationOwner.data.user_id) !== verifiedUserId) {
+        return new Response(
+          JSON.stringify({ error: "会话不存在或无权限，本次未调用模型", code: "CONVERSATION_NOT_FOUND" }),
+          { status: 404, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+        );
+      }
     }
     const internalModelId = String(serverAgent.model_id || "").trim();
     if (!internalModelId) {
@@ -851,9 +1043,9 @@ export async function POST(request: Request) {
           agentId: serverAgent.id,
           publicModelId: selectedModelBillingSnapshot.publicModelId,
           baseFeeCredits,
-          conversationId: conversationId || "",
+          conversationId: safeConversationId,
           message,
-          images: Array.isArray(images) ? images : [],
+          images: imageKeys,
         }),
         leaseOwner: createLlmAttemptLeaseOwner(),
       });
@@ -889,7 +1081,7 @@ export async function POST(request: Request) {
         const cozeConfig = await cozeConfigPromise;
         activeCozeAttempt = await cozeRequestAttemptStore.markProviderCallStarted(claimedCozeAttempt);
         cozeProviderCallStarted = true;
-        return streamChat(botId, verifiedUserId, securedMessage, conversationId, cozeConfig, images);
+        return streamChat(botId, verifiedUserId, securedMessage, safeConversationId || undefined, cozeConfig, imageKeys);
       },
       fallbackUsage: {
         input_tokens: Math.ceil(message.length * 1.2),
@@ -912,7 +1104,7 @@ export async function POST(request: Request) {
         },
       ),
       persist: async ({ cozeConversationId, fullContent }) => persistCompletedCozeConversation({
-        conversationId: typeof conversationId === "string" ? conversationId : undefined,
+        conversationId: safeConversationId || undefined,
         cozeConversationId,
         userId: verifiedUserId,
         agentId: serverAgent.id,

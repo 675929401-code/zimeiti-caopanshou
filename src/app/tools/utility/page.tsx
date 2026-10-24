@@ -67,7 +67,7 @@ function ToolboxWorkspace() {
         rightSlot={<NavButton icon={Home} label="创作中心" href="/tools" title="返回创作中心" />}
       />
 
-      <main className={styles.main}>
+      <main className={`${styles.main} workspace-depth-frame`}>
         <header className={styles.intro}>
           <div>
             <h1>短视频内容工具</h1>
@@ -113,7 +113,7 @@ function ToolboxWorkspace() {
           id="toolbox-active-panel"
           role="tabpanel"
           aria-labelledby={`tool-tab-${activeTab}`}
-          className={styles.workspace}
+          className={`${styles.workspace} workspace-depth-canvas`}
         >
           <ToolboxProvider activeTab={activeTab} onTabChange={selectTab}>
             {activeTab === "segment" && <SegmenterPage />}

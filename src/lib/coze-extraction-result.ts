@@ -63,14 +63,16 @@ export function parseCozeWorkflowResult(value: unknown, depth = 0): CozeWorkflow
 }
 
 export class CozeWorkflowExecutionError extends Error {
-  constructor(message: string, readonly terminal = false, readonly providerTaskId?: string) { super(message); this.name = 'CozeWorkflowExecutionError'; }
+  constructor(message: string, readonly terminal = false, readonly providerTaskId?: string, readonly code?: 'COZE_SOURCE_IDENTITY_MISMATCH') { super(message); this.name = 'CozeWorkflowExecutionError'; }
 }
 export function cozeWorkflowFailure(error: unknown) {
   const terminal = error instanceof CozeWorkflowExecutionError && error.terminal;
+  const identityMismatch = error instanceof CozeWorkflowExecutionError && error.code === 'COZE_SOURCE_IDENTITY_MISMATCH';
   return {
     success: false, charged: false, billing_unknown: false, provider_call_started: true,
     ...(terminal ? { upstream_completed: true } : { retry_safe: false }),
     ...(error instanceof CozeWorkflowExecutionError && error.providerTaskId ? { provider_task_id: error.providerTaskId } : {}),
-    error: terminal ? '文案提取未成功，本次未扣费。' : '文案结果待确认，原请求已保留，本次未扣费。',
+    ...(identityMismatch ? { error_code: 'COZE_SOURCE_IDENTITY_MISMATCH' } : {}),
+    error: identityMismatch ? '提取结果来自其他视频，已停止交付，本次未扣费。' : terminal ? '文案提取未成功，本次未扣费。' : '文案结果待确认，原请求已保留，本次未扣费。',
   };
 }

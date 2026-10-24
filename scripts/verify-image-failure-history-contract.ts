@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import vm from "node:vm";
+import ts from "typescript";
 import {
   COVER_FAILURE_HISTORY_SURFACE,
   FREE_CANVAS_FAILURE_HISTORY_SURFACE,
@@ -158,7 +160,13 @@ try {
   }
   assert(store.includes('db.rpc("claim_image_generation_request_v2"'));
   assert(store.includes("p_request_snapshot: input.requestSnapshot || null"));
-  assert(store.includes('payload_fingerprint,request_snapshot,state,response'));
+  const recordColumnsDeclaration = store.match(/const IMAGE_RECORD_COLUMNS = "([^"]+)"/u);
+  assert(recordColumnsDeclaration, "Missing image record select column declaration");
+  const recordColumns = new Set(recordColumnsDeclaration[1].split(","));
+  for (const field of ["record_id", "user_hash", "client_idempotency_key", "client_trace_id", "payload_fingerprint", "request_snapshot",
+    "provider_dispatch_receipt", "provider_submission_receipt", "state", "response", "delivery_state", "delivery_asset_id", "created_at", "updated_at"]) {
+    assert(recordColumns.has(field), `image record select missing ${field}`);
+  }
   assert(generationRoute.includes("createImageFailureRequestSnapshot"));
   assert(generationRoute.includes("clientNodeId, clientNodeTitle, historySurface"));
   assert(requestContract.includes('historySurface?: "image-workbench"'));
@@ -211,7 +219,31 @@ try {
     "failureRecordId",
   ]) assert(coverRoute.includes(token), "cover history route missing " + token);
   assert(coverAttempt.includes('historySurface: "cover-studio"'));
-  assert(coverAttempt.includes("serializedAttemptState(reference)"));
+  assert(coverAttempt.includes("serializedAttemptState(reference, state.history)"));
+  const coverTree = ts.createSourceFile("cover-generation-attempt.ts", coverAttempt, ts.ScriptTarget.Latest, true);
+  const projectionNames = new Set(["persistedCoverTask", "persistedReference", "persistedCoverReceipt", "serializedAttemptState"]);
+  const projectionFunctions = coverTree.statements.filter(node => ts.isFunctionDeclaration(node) && node.name && projectionNames.has(node.name.text));
+  assert.equal(projectionFunctions.length, projectionNames.size, "Missing durable cover projection functions");
+  const projectionJs = ts.transpileModule(projectionFunctions.map(node => node.getText(coverTree)).join("\n")
+    + "\nJSON.parse(serializedAttemptState(persistedReference(pending), []));", {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const projectedCover = vm.runInNewContext(projectionJs, { JSON, Date, Number,
+    pending: { clientIdempotencyKey: "original-cover-key", clientTraceId: "original-cover-trace", updatedAt: 1000,
+      task: { id: "cover-task", ratio: "16:9", title: "title", subtitle: "subtitle", prompt: "original prompt", source: "生成",
+        createdAt: "2026-10-23T00:00:00Z", taskNo: 1, status: "running", url: "blob:sensitive-preview", token: "secret-not-persisted",
+        imageUrl: "https://example.test/?signature=sensitive", readPreviewBlob: () => new Blob(["secret"]) } },
+  });
+  assert.equal(projectedCover.pending.clientIdempotencyKey, "original-cover-key");
+  assert.equal(projectedCover.pending.clientTraceId, "original-cover-trace");
+  assert.equal(projectedCover.pending.task.id, "cover-task");
+  assert.equal(projectedCover.pending.task.prompt, "original prompt");
+  assert.equal(projectedCover.pending.task.title, "title");
+  assert.equal(projectedCover.pending.task.status, "unknown");
+  assert.equal(projectedCover.history.length, 0);
+  for (const forbidden of ["blob:", "secret-not-persisted", "signature=", "readPreviewBlob", '"token"']) {
+    assert.equal(JSON.stringify(projectedCover).includes(forbidden), false, `Cover durable projection leaked ${forbidden}`);
+  }
   assert(coverAttempt.includes("inMemoryPendingCoverRequests"));
   assert.equal(coverAttempt.includes("JSON.stringify(browserState)"), false);
 

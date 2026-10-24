@@ -793,16 +793,13 @@
   box-shadow: 0 7px 18px rgba(15, 23, 42, .14);
 }
 
-:global(html[data-theme="soft-white"]) .main[data-testid="app-route-content"],
-:global(html[data-theme="crystal-aurora"]) .main[data-testid="app-route-content"],
-:global(html[data-theme="stellar-blue"]) .main[data-testid="app-route-content"] {
-  background-image:
-    linear-gradient(var(--route-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--route-grid) 1px, transparent 1px),
-    radial-gradient(circle at 86% 8%, var(--route-grid-glow), transparent 32rem);
-  background-position: 0 0, 0 0, 0 0;
-  background-size: 52px 52px, 52px 52px, 100% 100%;
-  background-attachment: local, local, local;
+:global(html[data-theme][data-mode]) .main[data-testid="app-route-content"]:not(:global(.commerce-root)):not(:global(.commerce-root *)):not(:global([data-testid="manju-content"])):not(:global([data-testid="manju-content"] *)):not(:has(:global(.commerce-root))):not(:has(:global([data-testid="manju-content"]))) {
+  background-color: var(--unified-workbench-field, var(--route-bg));
+  background-image: var(--unified-workbench-grid-image, none);
+  background-position: 0 0, 0 0, center, center;
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
+  background-size: var(--unified-workbench-grid-size, 64px) var(--unified-workbench-grid-size, 64px), var(--unified-workbench-grid-size, 64px) var(--unified-workbench-grid-size, 64px), 100% 100%, 100% 100%;
+  background-attachment: fixed;
 }
 
 /* Public auth pages share the route shell but also load editorial light-theme

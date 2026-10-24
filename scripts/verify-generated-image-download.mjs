@@ -100,6 +100,7 @@ function storyboardHarness() {
   const mounted = { current: true }; let refIndex = 0, cleanups = [];
   const sandbox = {
     module, userId: 'owner', token: 'synthetic', scopeMountedRef: mounted,
+    cloud: { save: async () => { throw new Error('CLOUD_WRITE_FORBIDDEN'); }, saveRetryAt: 0 },
     useRef: initial => { const index = refIndex++; return refs[index] ||= { current: initial }; },
     useCallback: callback => callback, useEffect: effect => cleanups.push(effect()),
     ImageDownloadOperations: helper.ImageDownloadOperations,

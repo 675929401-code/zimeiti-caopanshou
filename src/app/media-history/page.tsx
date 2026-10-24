@@ -646,7 +646,7 @@ export default function MediaHistoryPage() {
   }, [loadHistory, token]);
 
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} media-history-page`}>
       <SubPageHeader
         title="作品历史"
         subtitle="集中查看图片与视频作品，筛选来源、预览首帧并下载长期保存"

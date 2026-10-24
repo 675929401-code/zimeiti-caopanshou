@@ -6,6 +6,7 @@ import { getAccountGovernanceInfo } from '@/lib/account-governance';
 import { getAdminWalletRequestKey, mutateAdminWallet, parseAdminBalanceValue } from '@/lib/admin-wallet-mutation';
 import { enqueueUserNotificationOnce, walletNotificationCopy } from '@/lib/user-notification-server';
 import { getAuditRequestIp } from '@/lib/billing-audit';
+import { authorizeAdminCapability } from '@/lib/server/admin-governance-authority';
 
 async function requireAdmin(request: NextRequest) {
   const token = getTokenFromHeaders(request.headers);
@@ -16,6 +17,12 @@ async function requireAdmin(request: NextRequest) {
 }
 
 async function changeCredits(request: NextRequest, mode: 'topup' | 'set') {
+  const authorization = await authorizeAdminCapability(request, 'wallet.adjust', {
+    requireStepUp: true,
+    operation: mode === 'set' ? 'admin_credit_set' : 'admin_credit_topup',
+    auditAllowed: true,
+  });
+  if (!authorization.ok) return authorization.response;
   const admin = await requireAdmin(request);
   if (!admin) return NextResponse.json({ error: '无管理员权限' }, { status: 403 });
   try {
@@ -102,6 +109,10 @@ export async function PUT(request: NextRequest) { return changeCredits(request, 
 
 // GET - Get credit transactions for a user
 export async function GET(request: NextRequest) {
+  const authorization = await authorizeAdminCapability(request, 'billing.view', {
+    operation: 'admin_credit_transactions_view',
+  });
+  if (!authorization.ok) return authorization.response;
   const admin = await requireAdmin(request);
   if (!admin) {
     return NextResponse.json({ error: '无管理员权限' }, { status: 403 });

@@ -286,6 +286,7 @@ export async function GET(request: NextRequest) {
       const convIds = conversations.map((conversation: { id: string }) => conversation.id);
       const lastMessages: Array<{ conversation_id: string; content: string; role: string; created_at: string }> = [];
       const chunkSize = 40;
+      let lastMessageQueryFailed = false;
       for (let index = 0; index < convIds.length; index += chunkSize) {
         const chunk = convIds.slice(index, index + chunkSize);
         const { data, error } = await supabase
@@ -299,9 +300,21 @@ export async function GET(request: NextRequest) {
 
         if (error) {
           console.warn("[conversation-history] last message chunk failed:", error.message);
-          continue;
+          lastMessageQueryFailed = true;
+          break;
         }
         lastMessages.push(...(data || []));
+      }
+
+      // Do not turn a failed assistant-message read into a successful empty
+      // history response. The client treats an empty 200 as authoritative and
+      // clears its in-memory list, which made a transient DB/RLS failure look
+      // like permanent data loss.
+      if (lastMessageQueryFailed) {
+        return privateNoStore(NextResponse.json(
+          { error: "Realtime conversation data unavailable", code: "CONVERSATION_MESSAGES_UNAVAILABLE" },
+          { status: 503 },
+        ));
       }
 
       const lastMsgMap = new Map<string, { content: string; role: string }>();
@@ -388,16 +401,22 @@ export async function POST(request: NextRequest) {
           },
         };
         await ensureConversationOwnership(ownershipStore, conversation.id, userId);
-        await supabase
+        const updateResult = await supabase
           .from("conversations")
           .update({
-            agent_id: conversation.agentId || "unknown",
-            title: conversation.title || "",
+            ...(conversation.agentId ? { agent_id: conversation.agentId } : {}),
+            ...(typeof conversation.title === "string" && conversation.title.trim()
+              ? { title: conversation.title.trim().slice(0, 200) }
+              : {}),
             source: conversation.source || "llm",
             updated_at: new Date().toISOString(),
           })
           .eq("id", conversation.id)
-          .eq("user_id", userId);
+          .eq("user_id", userId)
+          .select("id")
+          .maybeSingle();
+        if (updateResult.error) throw updateResult.error;
+        if (!updateResult.data) throw new ConversationNotFoundError();
       })
     );
     const failedSave = saveResults.find((result) => result.status === "rejected");

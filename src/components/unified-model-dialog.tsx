@@ -4,6 +4,7 @@ import { modelEndpointError, modelStationLabel } from "@/lib/model-endpoint";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { formatModelPrice, modelConnectionSummary } from "@/lib/model-connection-summary";
 import { getVideoBillingUnit } from "@/lib/video-model-capabilities";
+import { LLM_PROVIDER_PRESETS, getLlmProviderPreset } from "@/lib/llm-provider-presets";
 
 // ── 视频协议选项 ──
 const VIDEO_PROTOCOLS = [
@@ -88,17 +89,7 @@ const BILLING_MODES = {
   ],
 };
 
-const TEXT_CONNECTION_PRESETS = [
-  { value: "secure_skill", label: "Secure Skill · OpenAI 兼容", endpoint: "https://token.secure-skill.com/v1", protocol: "openai_chat" },
-  { value: "lc_openai", label: "LConAI · OpenAI 兼容（备用节点）", endpoint: "https://s.lconai.com/v1", protocol: "openai_chat" },
-  { value: "lc_openai_primary", label: "LConAI · OpenAI 兼容（候选，需验证）", endpoint: "https://n.lconai.com/v1", protocol: "openai_chat" },
-  { value: "lc_anthropic", label: "LConAI · Anthropic 兼容（候选，需验证）", endpoint: "https://n.lconai.com/v1", protocol: "anthropic_messages" },
-  { value: "gaorui", label: "高瑞 · OpenAI 兼容（候选，需验证）", endpoint: "https://gaorui.cc/v1", protocol: "openai_chat" },
-  { value: "deepseek_official", label: "DeepSeek · 官方直连", endpoint: "https://api.deepseek.com/v1", protocol: "openai_chat" },
-  { value: "openai_official", label: "OpenAI · 官方直连", endpoint: "https://api.openai.com/v1", protocol: "openai_chat" },
-  { value: "anthropic_official", label: "Anthropic · 官方直连", endpoint: "https://api.anthropic.com/v1", protocol: "anthropic_messages" },
-  { value: "custom", label: "自定义接口", endpoint: "", protocol: "openai_chat" },
-] as const;
+const TEXT_CONNECTION_PRESETS = LLM_PROVIDER_PRESETS;
 
 // ── 深度思考选项 ──
 const DEEP_THINKING_OPTIONS = [
@@ -225,7 +216,7 @@ function normalizeResolutionPriceMap(value: unknown): Record<string, number> {
 }
 
 export default function UnifiedModelDialog({
-  model, modelType, onSave, onClose, onTest, testing, token,
+  model, modelType, onSave, onClose, token,
 }: UnifiedModelDialogProps) {
   const isEdit = !!model?.id;
   const apiKeyConfigured = model?.api_key_configured === true;
@@ -525,9 +516,11 @@ export default function UnifiedModelDialog({
             aria-label="中转站接口"
             value={selectedTextPreset}
             onChange={event => {
-              const preset = TEXT_CONNECTION_PRESETS.find(item => item.value === event.target.value);
+              const preset = getLlmProviderPreset(event.target.value);
               if (!preset) return;
               const endpoint = preset.endpoint || form.api_endpoint;
+              const protocolConfig = { ...form.api_protocol_config };
+              delete protocolConfig.output_token_field;
               setForm({
                 ...form,
                 provider: preset.value,
@@ -535,11 +528,12 @@ export default function UnifiedModelDialog({
                 api_endpoint: endpoint,
                 proxy_url: endpoint,
                 api_protocol_config: {
-                  ...form.api_protocol_config,
-                  provider: preset.value,
+                  ...protocolConfig,
+                  provider: preset.provider,
                   protocol: preset.protocol,
-                  auth_scheme: preset.value === "anthropic_official" ? "x-api-key" : "bearer",
-                  ...(preset.protocol === "anthropic_messages" ? { protocol_version: "2023-06-01" } : {}),
+                  auth_scheme: preset.authScheme,
+                  thinking_strategy: "provider_default",
+                  ...(preset.protocol === "anthropic_messages" ? { protocol_version: "2023-06-01", output_token_field: "max_tokens" } : {}),
                 },
               });
             }}
@@ -556,15 +550,17 @@ export default function UnifiedModelDialog({
             value={form.protocol_type}
             onChange={event => {
               const protocol = event.target.value;
+              const protocolConfig = { ...form.api_protocol_config };
+              delete protocolConfig.output_token_field;
               setForm({
                 ...form,
                 protocol_type: protocol,
                 api_protocol_config: {
-                  ...form.api_protocol_config,
-                  provider: form.provider || "custom",
+                  ...protocolConfig,
+                  provider: getLlmProviderPreset(form.provider)?.provider || form.provider || "custom",
                   protocol,
-                  auth_scheme: form.provider === "anthropic_official" ? "x-api-key" : "bearer",
-                  ...(protocol === "anthropic_messages" ? { protocol_version: "2023-06-01" } : {}),
+                  auth_scheme: form.api_protocol_config.auth_scheme || "bearer",
+                  ...(protocol === "anthropic_messages" ? { protocol_version: "2023-06-01", output_token_field: "max_tokens" } : {}),
                 },
               });
             }}
@@ -575,6 +571,37 @@ export default function UnifiedModelDialog({
           </select>
           <p className="mt-1 text-xs text-[var(--muted-foreground)]">协议随当前模型保存，不会根据域名或模型名自动猜测。</p>
         </div>
+
+        <div>
+          <label className={labelCls}>输出上限字段名</label>
+          {form.protocol_type === "anthropic_messages" ? <p className="text-sm text-[var(--muted-foreground)]">max_tokens（Anthropic 固定）</p> : <select
+            aria-label="输出上限字段名" value={String(form.api_protocol_config.output_token_field || "")}
+            onChange={event => {
+              const protocolConfig = { ...form.api_protocol_config };
+              if (event.target.value) protocolConfig.output_token_field = event.target.value;
+              else delete protocolConfig.output_token_field;
+              setForm({ ...form, api_protocol_config: protocolConfig });
+            }} className={inputCls}>
+            <option value="">自动兼容（保留已有规则）</option>
+            <option value="max_tokens">max_tokens</option>
+            <option value="max_completion_tokens">max_completion_tokens</option>
+          </select>}
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">新增型号可按供应商协议显式选择，无需靠模型名称推断；切换接口协议后请重新确认。</p>
+        </div>
+
+        <div>
+          <label className={labelCls}>认证方式</label>
+          <select aria-label="对话模型认证方式" value={String(form.api_protocol_config.auth_scheme || "bearer")}
+            onChange={event => setForm({ ...form, api_protocol_config: { ...form.api_protocol_config, auth_scheme: event.target.value } })} className={inputCls}>
+            <option value="bearer">Authorization: Bearer</option>
+            <option value="x-api-key">x-api-key</option>
+          </select>
+        </div>
+        {form.protocol_type === "anthropic_messages" && <div>
+          <label className={labelCls}>Anthropic API 版本</label>
+          <input aria-label="Anthropic API 版本" value={String(form.api_protocol_config.protocol_version || "2023-06-01")}
+            onChange={event => setForm({ ...form, api_protocol_config: { ...form.api_protocol_config, protocol_version: event.target.value } })} className={inputCls} />
+        </div>}
 
         <div>
           <label className={labelCls}>API 基础地址 <span className="text-red-500">*</span></label>
@@ -613,7 +640,7 @@ export default function UnifiedModelDialog({
         </div>
 
         <div>
-          <label className={labelCls}>模型名称 <span className="text-red-500">*</span></label>
+          <label className={labelCls}>供应商模型 ID <span className="text-red-500">*</span></label>
           <input
             aria-label="模型名称"
             value={form.model_name}
@@ -628,6 +655,10 @@ export default function UnifiedModelDialog({
             placeholder="填写中转站目录中的精确模型 ID"
             className={inputCls}
           />
+        </div>
+        <div>
+          <label className={labelCls}>用户展示名称</label>
+          <input aria-label="用户展示名称" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="例如：Claude Opus 5.5" className={inputCls} />
         </div>
       </section>
 
@@ -689,6 +720,31 @@ export default function UnifiedModelDialog({
         </div>
 
         <div>
+          <label className={labelCls}>最大回复 Token <span className="text-red-500">*</span></label>
+          <input aria-label="最大回复 Token" type="number" min="1" step="1" value={form.max_reply_tokens}
+            onChange={event => setForm({ ...form, max_reply_tokens: Number(event.target.value) })} className={inputCls} />
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">按供应商确认的限制填写，不得超过上下文长度。</p>
+        </div>
+        <div>
+          <label className={labelCls}>请求超时（秒） <span className="text-red-500">*</span></label>
+          <input aria-label="请求超时（秒）" type="number" min="1" step="1" value={form.timeout}
+            onChange={event => setForm({ ...form, timeout: Number(event.target.value) })} className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>思考请求策略</label>
+          {form.protocol_type === "anthropic_messages" && <label className="mb-2 flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+            <input type="checkbox" checked={form.api_protocol_config.supports_adaptive_thinking === true}
+              onChange={event => setForm({ ...form, api_protocol_config: { ...form.api_protocol_config, supports_adaptive_thinking: event.target.checked, ...(event.target.checked ? {} : { thinking_strategy: "provider_default" }) } })} />
+            供应商已确认此型号支持 Adaptive 思考
+          </label>}
+          <select aria-label="思考请求策略" value={String(form.api_protocol_config.thinking_strategy || "provider_default")}
+            onChange={event => setForm({ ...form, api_protocol_config: { ...form.api_protocol_config, thinking_strategy: event.target.value } })} className={inputCls}>
+            <option value="provider_default">供应商默认（不强行关闭推理）</option>
+            <option value="adaptive_low" disabled={form.protocol_type !== "anthropic_messages" || form.api_protocol_config.supports_adaptive_thinking !== true}>Adaptive + Low（已确认支持时可选）</option>
+          </select>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">原生思考能力与请求策略分别保存；“不开启”不会向不支持关闭推理的模型发送 disabled。</p>
+        </div>
+        <div>
           <label className={labelCls}>深度思考</label>
           <RadioGroup
             options={DEEP_THINKING_OPTIONS.filter(option => option.value !== 1)}
@@ -703,7 +759,7 @@ export default function UnifiedModelDialog({
   );
   return createPortal(
     <div ref={dialogRef} className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="model-dialog-title" tabIndex={-1} style={{ backgroundColor: "rgb(from var(--background, #101b2b) r g b / 1)" }} className="bg-[#101b2b] text-[var(--foreground)] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+      <div data-slot="dialog-content" role="dialog" aria-modal="true" aria-labelledby="model-dialog-title" tabIndex={-1} style={{ backgroundColor: "var(--card)" }} className="text-[var(--foreground)] rounded-2xl border border-[var(--border)] shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
         {/* ── 标题 ── */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -1243,37 +1299,7 @@ export default function UnifiedModelDialog({
             取消
           </button>
           <div className="flex items-center gap-3">
-            {/* 编辑模式：测试连接 */}
-            {form.model_type === "text" && isEdit && !!model?.id && (
-              <button onClick={async () => {
-                try {
-                  const res = await fetch("/api/admin/llm-test", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                    body: JSON.stringify({
-                      agent_id: (model.agent_id as string) || undefined,
-                      model_id: model.id,
-                      model_type: form.model_type,
-                      api_endpoint: form.api_endpoint || form.proxy_url || undefined,
-                      api_key: form.api_key || undefined,
-                      model_name: form.model_name || undefined,
-                    }),
-                  });
-                  const data = await res.json();
-                  if (data.success) {
-                    const icon = data.rate_limited ? "⚠️" : "✅";
-                    alert(`${icon} ${data.message}${data.latency ? ` (${data.latency}ms)` : ""}`);
-                  } else {
-                    alert(`❌ ${data.message || "测试失败"}`);
-                  }
-                } catch {
-                  alert("测试请求失败");
-                }
-              }}
-                className="px-6 py-2.5 rounded-lg border border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary)]/10 transition">
-                测试连接
-              </button>
-            )}
+            {form.model_type === "text" && <p className="max-w-xs text-xs text-[var(--muted-foreground)]">保存为候选后，请完成校验、预览和发布，再从模型卡片进行真实文字验证与启用。</p>}
             <button onClick={() => {
               const endpoint = form.model_type === "text" ? (form.proxy_url || form.api_endpoint) : form.api_endpoint;
               const invalid = modelEndpointError(endpoint);
@@ -1297,10 +1323,14 @@ export default function UnifiedModelDialog({
                   alert("利润率必须在 0（含）到 100（不含）之间");
                   return;
                 }
-                if (!Number.isFinite(form.max_context_tokens) || form.max_context_tokens <= 0) {
+                if (!Number.isInteger(form.max_context_tokens) || form.max_context_tokens <= 0) {
                   alert("请填写模型实际支持的上下文长度");
                   return;
                 }
+              }
+              if (form.model_type === "text" && (!Number.isInteger(form.max_reply_tokens) || form.max_reply_tokens <= 0 || form.max_reply_tokens > form.max_context_tokens || !Number.isInteger(form.timeout) || form.timeout <= 0)) {
+                alert("最大回复 Token 和请求超时必须为正整数，回复 Token 不得超过上下文长度");
+                return;
               }
               const modelName = form.model_name || form.name;
               const discreteDurations = form.duration_options_text
@@ -1420,10 +1450,11 @@ export default function UnifiedModelDialog({
                 saveData.max_context_rounds = 0;
                 saveData.api_protocol_config = {
                   ...form.api_protocol_config,
-                  provider: form.provider || "custom",
+                  provider: getLlmProviderPreset(form.provider)?.provider || form.provider || "custom",
                   protocol: form.protocol_type,
-                  auth_scheme: form.provider === "anthropic_official" ? "x-api-key" : "bearer",
-                  ...(form.protocol_type === "anthropic_messages" ? { protocol_version: "2023-06-01" } : {}),
+                  auth_scheme: form.api_protocol_config.auth_scheme || "bearer",
+                  thinking_strategy: form.api_protocol_config.thinking_strategy || "provider_default",
+                  ...(form.protocol_type === "anthropic_messages" ? { protocol_version: form.api_protocol_config.protocol_version || "2023-06-01", output_token_field: "max_tokens" } : {}),
                 };
               } else if (form.model_type === "drawing") {
                 const imageProtocol = IMAGE_PROTOCOLS.find(item => item.value === form.protocol_type);
@@ -1450,7 +1481,7 @@ export default function UnifiedModelDialog({
               onSave(saveData);
             }}
               className="px-8 py-2.5 rounded-lg bg-[var(--primary)] text-white font-bold hover:opacity-90 transition">
-              {isEdit ? "保存修改" : "确认新增"}
+              {form.model_type === "text" ? "保存为候选" : isEdit ? "保存修改" : "确认新增"}
             </button>
           </div>
         </div>

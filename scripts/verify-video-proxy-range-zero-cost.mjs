@@ -110,7 +110,6 @@ for (const [name, input, error] of [
   ["mismatched Content-Range fails closed", { ...base, requestRange: "bytes=0-9", upstreamStatus: 206, upstreamContentRange: "bytes 10-19/100" }, "视频源 Content-Range 与请求不匹配"],
   ["malformed Content-Range fails closed", { ...base, requestRange: "bytes=0-9", upstreamStatus: 206, upstreamContentRange: "bytes 0-10/*" }, "视频源返回了不完整的 Range 响应"],
   ["malformed 416 Content-Range fails closed", { ...base, requestRange: "bytes=100-", upstreamStatus: 416, upstreamContentRange: "bytes 100-99/100" }, "视频源返回了错误的 416 Content-Range"],
-  ["upstream ignoring Range fails closed", { ...base, requestRange: "bytes=0-9", upstreamStatus: 200, upstreamContentRange: null }, "视频源忽略了 Range 请求"],
   ["upstream error is not treated as media", { ...base, requestRange: null, upstreamStatus: 503, upstreamContentRange: null }, "视频源响应状态无效"],
   ["unknown media type fails closed", { ...base, requestRange: null, upstreamStatus: 200, upstreamContentRange: null, contentType: null }, "视频源容器类型无法确认"],
 ]) {
@@ -131,6 +130,16 @@ check("200 passthrough sanitizes length and advertises byte ranges", {
   "Accept-Ranges": "bytes",
   "Content-Length": "100",
 } });
+
+for (const requestRange of ["bytes=0-9", "bytes=20-", "bytes=-25"]) {
+  check("upstream ignores " + requestRange + " with complete 200", {
+    ...base, requestRange, upstreamStatus: 200,
+    upstreamContentRange: "bytes 0-9/100", upstreamContentLength: "100",
+  }, { ok: true, headers: {
+    "Cache-Control": "private, max-age=300", "Content-Disposition": "inline",
+    "Referrer-Policy": "no-referrer", "Content-Type": "video/mp4", "Content-Length": "100",
+  } });
+}
 
 assert.match(source, /status !== 206 && upstreamResp\.status !== 416/u, "route must preserve upstream 416");
 assert.ok((source.match(/buildVideoProxyResponseHeaders\(\{/gu) || []).length >= 2, "route must apply the contract to 416 and successful media responses");

@@ -1,0 +1,453 @@
+/* Shared asset surface, including the body-portal image preview. */
+
+.svad-surface,
+.svad-preview {
+  --svad-bg: var(--card, var(--background));
+  --svad-fg: var(--foreground);
+  --svad-line: var(--border);
+  --svad-muted: var(--muted-foreground);
+  --svad-soft: var(--muted, var(--background));
+  --svad-accent: var(--primary);
+  --svad-accent-fg: var(--primary-foreground);
+  --svad-field-bg: color-mix(in srgb, var(--svad-bg) 70%, var(--background));
+  background: var(--svad-bg);
+  color: var(--svad-fg);
+  border: 1px solid var(--svad-line);
+  font-family: var(--font-sans-theme, sans-serif);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.svad-surface {
+  position: relative;
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  box-shadow: none;
+}
+
+.svad-preview::backdrop {
+  background: rgb(10 18 28 / 44%);
+}
+
+.svad-surface *,
+.svad-preview * {
+  box-sizing: border-box;
+}
+
+.svad-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px 14px;
+  flex: none;
+}
+
+.svad-header h2,
+.svad-preview h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.svad-header p {
+  margin: 5px 0 0;
+  color: var(--svad-muted);
+  font-size: 12px;
+}
+
+.svad-surface button,
+.svad-preview button {
+  min-height: 36px;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+
+.svad-surface button:disabled,
+.svad-preview button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.svad-surface :is(button, input, select, textarea, summary):focus-visible,
+.svad-preview button:focus-visible {
+  outline: 2px solid var(--svad-accent);
+  outline-offset: 3px;
+}
+
+.svad-icon-button {
+  width: 36px;
+  flex: none;
+  border: 1px solid var(--svad-line);
+  background: var(--svad-bg);
+  color: var(--svad-fg);
+  font-size: 24px !important;
+  line-height: 1;
+}
+
+.svad-content {
+  padding: 18px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  flex: 1;
+  scrollbar-gutter: stable;
+}
+
+.svad-model,
+.svad-library-note {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--svad-muted);
+  font-size: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.svad-intro {
+  color: var(--svad-muted);
+  font-size: 12px;
+  margin: 12px 0 16px;
+}
+
+.svad-draft-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.svad-text-button {
+  border: 0;
+  background: transparent;
+  color: var(--svad-accent);
+  padding: 4px 6px;
+  font-size: 12px !important;
+}
+
+.svad-fields,
+.svad-library-tools {
+  display: grid;
+  grid-template-columns: 145px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.svad-fields label,
+.svad-prompt-label,
+.svad-library-tools label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 0;
+}
+
+.svad-surface input:not([type=checkbox]):not([type=radio]),
+.svad-surface select,
+.svad-surface textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--svad-line);
+  background: var(--svad-field-bg);
+  color: var(--svad-fg);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+.svad-surface :is(input, textarea)::placeholder {
+  color: var(--svad-muted);
+  opacity: 1;
+}
+
+.svad-surface textarea {
+  resize: vertical;
+  min-height: 104px;
+  max-height: 320px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.svad-prompt-label {
+  margin: 10px 0;
+}
+
+.svad-secondary {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--svad-line);
+  background: var(--svad-bg);
+  color: var(--svad-fg);
+}
+
+.svad-secondary:hover:not(:disabled),
+.svad-icon-button:hover:not(:disabled) {
+  background: var(--svad-soft);
+}
+
+.svad-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 14px 0 20px;
+}
+
+.svad-add > span {
+  width: 100%;
+  font-size: 12px;
+  color: var(--svad-muted);
+}
+
+.svad-assets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.svad-asset {
+  border: 1px solid var(--svad-line);
+  border-radius: 12px;
+  padding: 8px;
+  min-width: 0;
+  background: var(--svad-bg);
+}
+
+.svad-asset-picked {
+  border-color: var(--svad-accent);
+  box-shadow: 0 0 0 1px var(--svad-accent);
+}
+
+.svad-image-button {
+  width: 100%;
+  height: 132px;
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: var(--svad-soft);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.svad-image-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.svad-image-button > span {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  background: rgb(10 18 28 / 82%);
+  color: white;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.svad-surface input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  accent-color: var(--svad-accent);
+  margin: 3px 0 0;
+}
+
+.svad-muted {
+  color: var(--svad-muted);
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+.svad-existing h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.svad-library-tools {
+  grid-template-columns: minmax(0, 1fr) 145px;
+  margin: 16px 0 8px;
+}
+
+.svad-empty {
+  padding: 30px 20px;
+  text-align: center;
+  background: var(--svad-soft);
+  border: 1px dashed var(--svad-line);
+  border-radius: 12px;
+  color: var(--svad-muted);
+  font-size: 13px;
+  margin-top: 14px;
+}
+
+.svad-error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--destructive, #c74646) 45%, var(--svad-line));
+  background: color-mix(in srgb, var(--destructive, #c74646) 7%, var(--svad-bg));
+  border-radius: 8px;
+  color: var(--svad-fg);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  margin-bottom: 12px;
+}
+
+.svad-save {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.svad-primary {
+  padding: 8px 14px;
+  border: 1px solid var(--svad-accent);
+  background: var(--svad-accent);
+  color: var(--svad-accent-fg);
+  font-weight: 600 !important;
+  min-height: 36px !important;
+}
+
+/* Full image preview keeps its own bounded scroll area when portalled to body. */
+
+.svad-preview {
+  margin: auto;
+  width: min(1100px, calc(100vw - 80px));
+  max-height: calc(100dvh - 64px);
+  border-radius: 14px;
+  overflow: auto;
+}
+
+.svad-preview header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--svad-line);
+  position: sticky;
+  top: 0;
+  background: var(--svad-bg);
+  z-index: 1;
+}
+
+.svad-preview > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: calc(100dvh - 160px);
+  object-fit: contain;
+  padding: 12px;
+}
+
+.svad-recovery {
+  padding: 12px;
+  border: 1px solid var(--svad-line);
+  border-radius: 8px;
+  background: var(--svad-soft);
+  margin-bottom: 12px;
+}
+
+.svad-recovery p {
+  font-size: 13px;
+  margin: 0 0 10px;
+  color: var(--svad-fg);
+}
+
+.svad-metadata-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.svad-metadata-fields label,
+.svad-metadata-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 0;
+}
+
+.svad-metadata-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--svad-line);
+}
+
+.svad-asset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.svad-asset-actions .svad-text-button {
+  padding-left: 0;
+  text-align: left;
+}
+
+.svad-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 8px 0 0;
+}
+
+.svad-tags span {
+  font-size: 11px;
+  background: var(--svad-soft);
+  border: 1px solid var(--svad-line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+
+.svad-batch-panel {
+  padding: 12px;
+  background: var(--svad-soft);
+  border: 1px solid var(--svad-line);
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.svad-batch-panel p {
+  font-size: 12px;
+  color: var(--svad-muted);
+  margin: 7px 0 0;
+}
+
+.svad-library-save {
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--svad-line);
+}
+
+.svad-library-save p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--svad-muted);
+  margin: 7px 0 0;
+}

@@ -87,7 +87,7 @@ export function coverTitleLines(title: string, aspectRatio: RenderCoverCompositi
   return splitBalanced(value, value.length <= oneLineLimit ? 1 : value.length <= twoLineLimit ? 2 : 3);
 }
 
-export async function renderCoverComposition(source: Buffer, plan: RenderCoverCompositionPlan) {
+export async function renderCoverComposition(source: Buffer, plan: RenderCoverCompositionPlan, options: { preserveSourceDimensions?: boolean } = {}) {
   const profile = profileForPlan(plan);
   const font = coverCompositionFont(profile);
   if (!font) throw new Error("COVER_COMPOSITION_FONT_NOT_READY");
@@ -97,7 +97,8 @@ export async function renderCoverComposition(source: Buffer, plan: RenderCoverCo
   if (sourceWidth < 256 || sourceHeight < 256) throw new Error("COVER_BACKGROUND_TOO_SMALL");
   const [ratioWidth, ratioHeight] = plan.aspectRatio.split(":").map(Number);
   const unit = Math.floor(Math.min(sourceWidth / ratioWidth, sourceHeight / ratioHeight, 2560 / ratioWidth, 2560 / ratioHeight));
-  const width = ratioWidth * unit, height = ratioHeight * unit;
+  const width = options.preserveSourceDimensions ? sourceWidth : ratioWidth * unit;
+  const height = options.preserveSourceDimensions ? sourceHeight : ratioHeight * unit;
   // Crop/downsize only: a small provider image never becomes a claimed native 2K image.
   const background = await coverSharp(source).rotate().resize(width, height, { fit: "cover", withoutEnlargement: true }).png().toBuffer();
   const portrait = height > width;

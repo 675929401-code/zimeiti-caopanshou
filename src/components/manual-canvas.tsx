@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { canvasModelAdmissionIssue } from "@/lib/canvas-public-catalog-loader";
 import { getVideoMediaUnavailable } from "@/lib/video-media-availability";
 import { generatedImageReferenceUri, parseGeneratedImageReferenceUri } from "@/lib/generated-image-reference";
 import { videoWorkflowImageRequestFields } from "@/lib/video-workflow-draft";
@@ -87,8 +88,6 @@ import type {
 } from "@/lib/canvas-prompt-presets";
 import { composeStoryboardReferenceGenerationPrompt } from "@/lib/canvas-prompt-presets";
 import {
-  isCanvasStoryboardVideoModelCompatible,
-  selectCanvasVideoModel,
 } from "@/lib/canvas-model-defaults";
 import {
   CANVAS_HISTORY_MAX_RECORDS,
@@ -155,7 +154,6 @@ import {
 } from "@/lib/canvas-storage-scope";
 
 const TOKEN_KEY = "auth_token";
-const CANVAS_AUTO_TRIM_KEY = "ai-creation-studio-free-canvas-auto-trim-v1";
 const CANVAS_DEMO_LEASE_TTL_MS = 8 * 60 * 1000;
 const RATIOS: AspectRatio[] = ["16:9", "9:16", "4:3", "3:4", "1:1"];
 
@@ -342,6 +340,23 @@ function hasConcreteAnimeSemanticDesign(prompt: string) {
 function selectReferenceImageModel(selected?: CoverModel) {
   if (!selected || !getImageModelCapabilities(selected).supportsReferenceInput) return undefined;
   return selected;
+}
+
+function unresolvedCanvasImageAttempt(data: WorkflowNodeData, imageCount: number) {
+  if (!data.imageClientTraceId && !data.imageClientIdempotencyKey) return null;
+  const traceId = data.imageClientTraceId;
+  const confirmed = traceId && (data.history.some(item => item.taskId === traceId && Boolean(item.outputUrl || item.imagePreviewUrl || item.imageDeliveryReceipt?.generationCompleted))
+    || data.taskId === traceId && Boolean(data.imageDeliveryReceipt?.generationCompleted));
+  if (confirmed) return null;
+  if (!traceId || !data.imageClientIdempotencyKey || !data.imageRequestFingerprint) throw new Error("原图片请求身份不完整，请先核对历史；本次未创建新请求");
+  let index: unknown;
+  try { index = JSON.parse(data.imageRequestFingerprint).batchIndex; } catch { /* Reject below without replacing original keys. */ }
+  if (!Number.isSafeInteger(index) || Number(index) < 0 || Number(index) >= imageCount) throw new Error("原图片请求位置已变化，请先核对历史；本次未创建新请求");
+  return { traceId, key: data.imageClientIdempotencyKey, fingerprint: data.imageRequestFingerprint, index: Number(index) };
+}
+
+function assertCanvasImageAttemptRecovery(attempt: ReturnType<typeof unresolvedCanvasImageAttempt>, index: number, fingerprint: string) {
+  if (attempt && (attempt.index !== index || attempt.fingerprint !== fingerprint)) throw new Error("原图片请求参数已变化，请先核对历史；仅显式重新生成可创建新请求");
 }
 
 function getShotNumber(node: WorkflowFlowNode) {
@@ -842,21 +857,17 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
   const imageResolutionOptions = selectedImageCapabilities.resolutionOptions;
   const selectedImageResolution = coerceImageResolution(selectedImageModel, data.resolution);
   const selectedVideoModel = data.kind === "video" ? context.videoModels.find((model) => model.id === data.modelId) : undefined;
+  const imageAdmissionIssue = data.kind === "image" ? canvasModelAdmissionIssue(selectedImageModel, "image") : "";
+  const videoAdmissionIssue = data.kind === "video" ? canvasModelAdmissionIssue(selectedVideoModel, "video") : "";
   const videoAudioReferenceLimits = getVideoAudioReferenceLimits(selectedVideoModel);
   const videoTiming = data.kind === "video" ? resolveVideoDuration(selectedVideoModel, data.durationSeconds) : null;
-  const videoAutoTrimEnabled = data.kind === "video" && Boolean(data.allowDurationTrim);
   const videoExactTimingMismatch = data.kind === "video"
     && Boolean(data.requiresExactDuration)
-    && !videoAutoTrimEnabled
     && Boolean(selectedVideoModel)
     && (
-      !isCanvasStoryboardVideoModelCompatible(selectedVideoModel!)
-      || Boolean(videoTiming?.needsTrim)
+      !selectedVideoModel!.supportsImageInput
+      || !videoTiming?.supported
     );
-  const videoUsesAutoTrim = data.kind === "video"
-    && videoAutoTrimEnabled
-    && Boolean(videoTiming?.supported)
-    && Boolean(videoTiming?.needsTrim);
   const nativeTargetOptions = getVideoTargetDurationOptions(selectedVideoModel);
   const videoDurationOptions = nativeTargetOptions.includes(data.durationSeconds)
     ? nativeTargetOptions
@@ -910,7 +921,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
   const showReferenceRow = data.kind === "video"
     || (data.kind === "image" && (data.imageMode === "image-to-image" || data.imageMode === "edit"));
   const videoSubmitBlocked = data.kind === "video" && Boolean(
-    videoRatioUnsupported
+    videoAdmissionIssue || videoRatioUnsupported
     || !videoTiming?.supported
     || videoExactTimingMismatch
     || videoReferenceMissing
@@ -1093,8 +1104,6 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                   error: "视频生成任务已完成，但交付文件尚不可用",
                 });
               }}
-              onPlay={(event) => restartLimitedPreview(event.currentTarget, data.durationSeconds)}
-              onTimeUpdate={(event) => enforcePreviewDuration(event.currentTarget, data.durationSeconds)}
             />
           ) : data.kind === "video" && data.status === "failed" ? (
             <div className="free-video-preview-error nodrag nowheel" onPointerDown={(event) => event.stopPropagation()}>
@@ -1216,7 +1225,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
           )}
 
           {(data.kind === "image" || data.kind === "video") && (
-            <div className={`free-protocol-note ${(generationBlocked || videoSubmitBlocked || imageReferenceBlocked || imageReferenceLimitExceeded || imageReferenceMissing || (candidateSelectionPending && imageCandidates.length > 0)) ? "warn" : videoUsesAutoTrim ? "caution" : ""}`}>
+            <div className={`free-protocol-note ${(generationBlocked || videoSubmitBlocked || imageReferenceBlocked || imageReferenceLimitExceeded || imageReferenceMissing || (candidateSelectionPending && imageCandidates.length > 0)) ? "warn" : ""}`}>
               {data.kind === "image" ? (
                 <>
                   <strong>图片协议</strong>
@@ -1255,8 +1264,8 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                   <span>{selectedVideoModel?.requiresImage ? "当前模型由前置关键帧驱动，无需用户上传" : selectedVideoModel?.supportsImageInput ? "当前模型支持自动关键帧驱动" : "当前模型只能按文字生成视频"}</span>
                   <span>{videoTiming?.supported
                     ? videoExactTimingMismatch
-                      ? `本镜必须精确生成 ${videoTiming.target}s；当前模型会生成 ${videoTiming.submit}s，额外时长会增加消耗，因此不可用`
-                      : `目标 ${videoTiming.target}s，模型生成 ${videoTiming.submit}s${videoTiming.needsTrim ? `；在线预览按 ${videoTiming.target}s 停止，下载时裁掉多余 ${videoTiming.submit - videoTiming.target}s；费用按完整 ${videoTiming.submit}s 原片计算` : "，无需裁剪"}`
+                      ? "当前剧情镜头需要支持关键帧输入的模型"
+                      : `原生时长 ${videoTiming.target}s`
                     : `目标 ${videoTiming?.target}s，当前模型最多 ${videoTiming?.maxDuration}s，请缩短镜头或切换模型`}</span>
                   {videoHasGridInput && <span>已接入从探索候选中选定的单张图片；未选定的候选不会传给视频模型</span>}
                   {inputs.audioConnections > 0 && <span>已连接 {inputs.audioConnections} 个音频 / 音乐节点，其中 {inputs.audios} 个已有可用素材；生成时按连线顺序提交</span>}
@@ -1371,12 +1380,14 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                   lockedModelId: "",
                 });
               }}>
+                {!selectedImageModel && <option value={data.modelId} disabled>已选图片模型暂不可读取，请手动选择</option>}
                 {context.imageModels.map((model) => {
                   const capabilities = getImageModelCapabilities(model);
-                  const disabled = imageModelNeedsReferenceInput && !capabilities.supportsReferenceInput;
+                  const admissionIssue = canvasModelAdmissionIssue(model, "image");
+                  const disabled = Boolean(admissionIssue) || imageModelNeedsReferenceInput && !capabilities.supportsReferenceInput;
                   return (
                     <option key={model.id} value={model.id} disabled={disabled}>
-                      {model.name} · ¥{Number(model.selling_price ?? 0).toFixed(2)}/张 · {capabilities.referenceCapabilityLabel}{disabled ? " · 当前不可选" : ""}
+                      {model.name} · ¥{Number(model.selling_price ?? 0).toFixed(2)}/张 · {capabilities.referenceCapabilityLabel}{admissionIssue ? ` · ${admissionIssue}` : disabled ? " · 当前不可选" : ""}
                     </option>
                   );
                 })}
@@ -1386,7 +1397,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
               <select aria-label="图片分辨率" title={`${selectedImageModel?.name || "当前模型"} 支持：${imageResolutionOptions.join(" / ")}`} value={selectedImageResolution} onChange={(event) => context.updateNode(id, { resolution: event.target.value })}>
                 {imageResolutionOptions.map((resolution) => <option key={resolution} value={resolution}>{resolution}</option>)}
               </select>
-              <button type="button" title={generationBlocked ? "手动单张生成（忽略批量导演质检锁）" : "生成图片"} onClick={() => context.runNode(id, { ignoreGenerationBlock: true, trigger: "manual" })} disabled={isBusy || !data.prompt.trim() || imageReferenceBlocked || imageReferenceLimitExceeded || imageReferenceMissing}>{isBusy ? <LoaderCircle size={15} className="spin" /> : <Play size={15} />}生成</button>
+              <button type="button" title={imageAdmissionIssue || (generationBlocked ? "手动单张生成（忽略批量导演质检锁）" : "生成图片")} onClick={() => context.runNode(id, { ignoreGenerationBlock: true, trigger: "manual" })} disabled={isBusy || Boolean(imageAdmissionIssue) || !data.prompt.trim() || imageReferenceBlocked || imageReferenceLimitExceeded || imageReferenceMissing}>{isBusy ? <LoaderCircle size={15} className="spin" /> : <Play size={15} />}生成</button>
             </div>
           )}
 
@@ -1395,15 +1406,15 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
               <select value={data.modelId} title={canChangeMediaModel ? "视频生成模型" : "本轮生成已开始，模型不可更换"} disabled={!canChangeMediaModel} onChange={(event) => {
                 const model = context.videoModels.find((item) => item.id === event.target.value);
                 context.updateNode(id, { modelId: event.target.value, durationSeconds: coerceVideoTargetDuration(model, data.durationSeconds), resolution: coerceCanvasVideoResolution(model, data.resolution), status: "idle", taskId: "", modelLocked: false, lockedModelId: "" });
-              }}>{context.videoModels.map((model) => {
-                const modelTiming = resolveVideoDuration(model, data.durationSeconds);
-                const modelCharge = resolveVideoCharge(model, data.resolution, data.durationSeconds);
-                const exactTimingBlocked = Boolean(data.requiresExactDuration) && !videoAutoTrimEnabled && !isCanvasStoryboardVideoModelCompatible(model);
-                const disabled = (videoModelNeedsImageInput && !model.supportsImageInput) || exactTimingBlocked;
+              }}>{!selectedVideoModel && <option value={data.modelId} disabled>已选视频模型暂不可读取，请手动选择</option>}{context.videoModels.map((model) => {
+                const modelCharge = resolveVideoCharge(model, data.resolution, coerceVideoTargetDuration(model, data.durationSeconds));
+                const exactTimingBlocked = Boolean(data.requiresExactDuration) && !model.supportsImageInput;
+                const admissionIssue = canvasModelAdmissionIssue(model, "video");
+                const disabled = Boolean(admissionIssue) || (videoModelNeedsImageInput && !model.supportsImageInput) || exactTimingBlocked;
                 const modeLabel = model.requiresImage ? "关键帧驱动" : model.supportsImageInput ? "支持关键帧" : "纯文生视频";
                 return (
                   <option key={model.id} value={model.id} disabled={disabled}>
-                    {model.name} · ¥{modelCharge.publicPrice.toFixed(2)}{modelCharge.billingUnit === "output_second" ? `/${modelCharge.billingQuantity}秒` : "/次"} · {modeLabel}{exactTimingBlocked ? ` · 固定${modelTiming.submit}秒，开启下载时裁剪后可用` : disabled ? " · 当前不可选" : videoAutoTrimEnabled && modelTiming.needsTrim ? ` · 固定${modelTiming.submit}秒，下载时裁至${modelTiming.target}秒` : ""}
+                    {model.name} · ¥{modelCharge.publicPrice.toFixed(2)}{modelCharge.billingUnit === "output_second" ? `/${modelCharge.billingQuantity}秒` : "/次"} · {modeLabel}{admissionIssue ? ` · ${admissionIssue}` : exactTimingBlocked ? " · 当前模型不支持参考图" : disabled ? " · 当前不可选" : ""}
                   </option>
                 );
               })}</select>
@@ -1411,8 +1422,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
               <select aria-label="目标视频时长" value={data.durationSeconds} onChange={(event) => context.updateNode(id, { durationSeconds: Number(event.target.value) })}>
                 {videoDurationOptions.map((duration) => {
                   const timing = resolveVideoDuration(selectedVideoModel, duration);
-                  const exactTimingBlocked = Boolean(data.requiresExactDuration) && !videoAutoTrimEnabled && timing.needsTrim;
-                  return <option key={duration} value={duration} disabled={!timing.supported || exactTimingBlocked}>{duration} 秒{!timing.supported ? " · 当前模型不支持" : exactTimingBlocked ? " · 会产生额外时长" : timing.needsTrim ? ` · 生成 ${timing.submit} 秒再裁` : ""}</option>;
+                  return <option key={duration} value={duration} disabled={!timing.supported}>{duration} 秒{!timing.supported ? " · 当前模型不支持" : ""}</option>;
                 })}
               </select>
               <select
@@ -1424,13 +1434,13 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
               </select>
               <button
                 type="button"
-                title={videoAmbiguousSubmission
+                title={videoAdmissionIssue || (videoAmbiguousSubmission
                   ? "提交状态不确定；核对媒体历史后显式创建新任务，可能再次计费"
                   : generationBlocked
                     ? "手动单条生成（忽略批量导演质检锁）"
                     : data.status === "succeeded" && data.outputUrl
                       ? "保留历史结果并重新生成视频"
-                      : "生成视频"}
+                      : "生成视频")}
                 onClick={() => ((data.status === "succeeded" && Boolean(data.outputUrl)) || videoAmbiguousSubmission)
                   ? context.regenerateNode(id)
                   : context.runNode(id, { ignoreGenerationBlock: true, trigger: "manual" })}
@@ -1669,16 +1679,6 @@ function taskIdFromPlaybackUrl(value: string) {
     return "";
   }
   return "";
-}
-
-function enforcePreviewDuration(video: HTMLVideoElement, durationSeconds: number) {
-  if (durationSeconds <= 0 || video.currentTime < durationSeconds) return;
-  video.pause();
-  video.currentTime = durationSeconds;
-}
-
-function restartLimitedPreview(video: HTMLVideoElement, durationSeconds: number) {
-  if (durationSeconds > 0 && video.currentTime >= durationSeconds - 0.05) video.currentTime = 0;
 }
 
 function buildStoryboardNarrationManifest(allNodes: WorkflowFlowNode[], videoNodes: WorkflowFlowNode[]) {
@@ -2046,7 +2046,6 @@ export function ManualCanvas({
   onLocalDraftChange,
   onReferencePersisted,
 }: ManualCanvasProps) {
-  const canvasAutoTrimStorageKey = canvasScopedStorageKey(CANVAS_AUTO_TRIM_KEY, storageScope);
   const [nodes, setNodes] = useState<WorkflowFlowNode[]>([]);
   const [edges, setEdges] = useState<WorkflowFlowEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -2101,7 +2100,6 @@ export function ManualCanvas({
   );
   const [canvasVideoModelId, setCanvasVideoModelId] = useState("");
   const [canvasVideoResolution, setCanvasVideoResolution] = useState("1080p");
-  const [allowStoryboardAutoTrim, setAllowStoryboardAutoTrim] = useState(true);
   const [promptPresets, setPromptPresets] = useState<PublicCanvasPromptPreset[]>([]);
   const [keyframeStrategyDraft, setKeyframeStrategyDraft] = useState<KeyframeStrategy>("visual-anchor");
   const [effectsLevelDraft, setEffectsLevelDraft] = useState<VisualEffectsLevel>("rich");
@@ -2142,17 +2140,15 @@ export function ManualCanvas({
   const lastCanvasSaveHashRef = useRef(new Map<string, string>());
   const canvasSavePromiseRef = useRef(new Map<string, Promise<void>>());
   const canvasSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const currentModelCatalogRef = useRef({ imageModels, videoModels });
+  currentModelCatalogRef.current = { imageModels, videoModels };
   const selectedCanvasImageModel = useMemo(
     () => imageModels.find((model) => model.id === canvasImageModelId),
     [canvasImageModelId, imageModels],
   );
   const canvasImageResolutionOptions = getImageModelCapabilities(selectedCanvasImageModel).resolutionOptions;
   const requiresExactStoryboardTiming = productionModeId !== "product-video";
-  const selectableCanvasVideoModels = useMemo(() => videoModels.filter((model) => {
-    if (!model.supportsImageInput) return false;
-    if (!requiresExactStoryboardTiming || allowStoryboardAutoTrim) return true;
-    return isCanvasStoryboardVideoModelCompatible(model);
-  }), [allowStoryboardAutoTrim, requiresExactStoryboardTiming, videoModels]);
+  const selectableCanvasVideoModels = videoModels;
   const selectedCanvasVideoModel = useMemo(
     () => selectableCanvasVideoModels.find((model) => model.id === canvasVideoModelId)
       || videoModels.find((model) => model.id === canvasVideoModelId),
@@ -2296,16 +2292,7 @@ export function ManualCanvas({
     preferredReferenceId,
     viewportSaveTick,
   ]);
-  useEffect(() => {
-    if (!hydrated || !activeCanvasId) return;
-    const storedPolicy = window.localStorage.getItem(canvasAutoTrimStorageKey);
-    const enabled = storedPolicy === null ? true : storedPolicy === "true";
-    setAllowStoryboardAutoTrim(enabled);
-    setNodes((current) => current.map((node) => {
-      if (node.data.kind !== "video" || !node.data.requiresExactDuration || node.data.allowDurationTrim === enabled) return node;
-      return { ...node, data: { ...node.data, allowDurationTrim: enabled } };
-    }));
-  }, [activeCanvasId, canvasAutoTrimStorageKey, hydrated]);
+
   useEffect(() => {
     setNodes((current) => {
       let changed = false;
@@ -2372,23 +2359,15 @@ export function ManualCanvas({
   }, [onNotice]);
 
   useEffect(() => {
-    setCanvasImageModelId((current) => imageModels.some((model) => model.id === current)
-      ? current
-      : imageModels.find((model) => model.id === defaultImageModelId)?.id || imageModels[0]?.id || "");
-    setCanvasVideoModelId((current) => selectableCanvasVideoModels.some((model) => model.id === current)
-      ? current
-      : selectableCanvasVideoModels.find((model) => model.id === defaultVideoModelId)?.id || selectableCanvasVideoModels[0]?.id || "");
+    if (defaultImageModelId && imageModels.length) setCanvasImageModelId(current => current || defaultImageModelId);
+    if (defaultVideoModelId && selectableCanvasVideoModels.length) setCanvasVideoModelId(current => current || defaultVideoModelId);
   }, [defaultImageModelId, defaultVideoModelId, imageModels, selectableCanvasVideoModels]);
 
   useEffect(() => {
-    if (!requiresExactStoryboardTiming || allowStoryboardAutoTrim || videoModels.length === 0) return;
-    setCanvasVideoModelId((current) => {
-      const selected = videoModels.find((model) => model.id === current);
-      if (selected && isCanvasStoryboardVideoModelCompatible(selected)) return current;
-      const compatibleId = selectCanvasVideoModel(videoModels, defaultVideoModelId);
-      return videoModels.some((model) => model.id === compatibleId) ? compatibleId : current;
-    });
-  }, [allowStoryboardAutoTrim, defaultVideoModelId, requiresExactStoryboardTiming, videoModels]);
+    if (!requiresExactStoryboardTiming || videoModels.length === 0) return;
+    const selected = videoModels.find(model => model.id === canvasVideoModelId);
+    if (selected && !selected.supportsImageInput) onNotice(`${selected.name} 不支持当前精确时长，请手动选择支持参考图的视频模型。`);
+  }, [canvasVideoModelId, onNotice, requiresExactStoryboardTiming, videoModels]);
 
   useEffect(() => {
     setCanvasImageResolution((current) => {
@@ -2407,7 +2386,8 @@ export function ManualCanvas({
     if (imageModels.length === 0) return;
     setNodes((current) => current.map((node) => {
       if (node.data.kind !== "image") return node;
-      const model = imageModels.find((item) => item.id === node.data.modelId) || selectedCanvasImageModel || imageModels[0];
+      const model = imageModels.find((item) => item.id === node.data.modelId);
+      if (!model) return node; // Never replace a missing saved model with another paid channel.
       const resolution = coerceImageResolution(model, node.data.resolution);
       if (node.data.modelId === model.id && node.data.resolution === resolution) return node;
       return { ...node, data: { ...node.data, modelId: model.id, resolution } };
@@ -2417,7 +2397,7 @@ export function ManualCanvas({
   useEffect(() => {
     if (videoModels.length === 0) return;
     setNodes((current) => current.map((node) => {
-      if (node.data.kind !== "video" || node.data.prompt.trim() || node.data.history.length > 0) return node;
+      if (node.data.kind !== "video" || node.data.taskId || node.data.clientRequestId || node.data.outputUrl || node.data.status === "running" || node.data.status === "succeeded" || node.data.history.length > 0) return node;
       const model = videoModels.find((item) => item.id === node.data.modelId);
       if (!model) return node;
       const durationSeconds = coerceVideoTargetDuration(model, node.data.durationSeconds);
@@ -3129,12 +3109,11 @@ export function ManualCanvas({
         providerContentUrl: "",
         modelId: model,
         aspectRatio: defaultAspectRatio,
-        durationSeconds: 10,
+        durationSeconds: kind === "video" ? coerceVideoTargetDuration(videoModels.find(item => item.id === model), 10) : 10,
         resolution: kind === "image" ? canvasImageResolution : selectedCanvasVideoResolution,
         imageMode: "text-to-image",
         imageCount: 1,
         videoMode: "first-frame",
-        allowDurationTrim: kind === "video" ? allowStoryboardAutoTrim : undefined,
         status: "idle",
         history: [],
       },
@@ -3480,10 +3459,8 @@ export function ManualCanvas({
         modelId: node.data.modelId,
         prompt,
         imageUrl,
-        targetDuration: String(node.data.durationSeconds),
       });
       if (contentUrl) params.set("contentUrl", contentUrl);
-      if (node.data.allowDurationTrim) params.set("deferTrim", "1");
       await waitForVideoPollSlot();
       const response = await fetch(`/api/bridge/video/status?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -3540,7 +3517,7 @@ export function ManualCanvas({
         ? ` · ${Math.round(data.progress)}%`
         : "";
       const progressMessage = data.processingStage === "trimming"
-        ? "模型已完成，正在裁剪目标时长"
+        ? "模型已完成，正在处理已有任务"
         : data.processingStage === "persisting" || data.providerCompleted
           ? "模型已完成，正在保存视频"
           : data.status === "queued"
@@ -3573,6 +3550,13 @@ export function ManualCanvas({
       });
       throw new Error(detail);
     };
+    const recoveringAcceptedMedia = (node.data.kind === "video" && Boolean(node.data.taskId) && !options.forceVideoResubmit)
+      || (node.data.kind === "image" && Boolean(node.data.pendingPersistUrl || node.data.imageClientTraceId && node.data.imageClientIdempotencyKey));
+    if (!recoveringAcceptedMedia && (node.data.kind === "image" || node.data.kind === "video")) {
+      const model = node.data.kind === "image" ? currentModelCatalogRef.current.imageModels.find(item => item.id === node!.data.modelId) : currentModelCatalogRef.current.videoModels.find(item => item.id === node!.data.modelId);
+      const issue = canvasModelAdmissionIssue(model, node.data.kind);
+      if (issue) rejectBeforeRun(issue);
+    }
     if ((node.data.kind === "image" || node.data.kind === "video") && node.data.modelLocked
       && node.data.lockedModelId && node.data.modelId !== node.data.lockedModelId) {
       rejectBeforeRun(`${node.data.title} 已锁定生成模型，不能在本轮中途更换`);
@@ -3759,6 +3743,7 @@ export function ManualCanvas({
           throw new Error(`${model.name} 最多接收 ${imageCapabilities.maxReferenceImages} 张参考图，当前镜头连接了 ${referenceImageUrls.length} 张`);
         }
         const imageCount = Math.max(1, Math.min(4, node.data.imageCount || 1));
+        let pendingOriginalImageAttempt = unresolvedCanvasImageAttempt(node.data, imageCount);
         publicModelName = model.name;
         estimatedCost = Number(model.selling_price || 0) * imageCount;
         const referenceGuide = inputs.imageSources
@@ -3807,6 +3792,7 @@ export function ManualCanvas({
             referenceUsage: isAutomaticStoryboardKeyframe ? "character-identity" : "general",
             batchIndex: index,
           });
+          assertCanvasImageAttemptRecovery(pendingOriginalImageAttempt, index, imageRequestFingerprint);
           const canReuseImageAttempt = node.data.imageRequestFingerprint === imageRequestFingerprint
             && Boolean(node.data.imageClientTraceId)
             && Boolean(node.data.imageClientIdempotencyKey);
@@ -3860,7 +3846,10 @@ export function ManualCanvas({
                 traceId?: string;
                 operationId?: string;
                 billingReferenceId?: string;
-              }>(() => fetch("/api/bridge/image/generate", {
+              }>(() => {
+                const latestIssue = !canReuseImageAttempt && canvasModelAdmissionIssue(currentModelCatalogRef.current.imageModels.find(item => item.id === model.id), "image");
+                if (latestIssue) throw new Error(latestIssue);
+                return fetch("/api/bridge/image/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 signal: AbortSignal.timeout(180_000),
@@ -3877,10 +3866,11 @@ export function ManualCanvas({
                   clientIdempotencyKey,
                   strictSingleSubmit: true,
                   noRetry: true,
+                  ...(canReuseImageAttempt ? { resumeDeliveryOnly: true } : {}),
                   clientNodeId: node.id,
                   clientNodeTitle: node.data.title,
                 }),
-              }), (progressMessage) => {
+              }); }, (progressMessage) => {
                 runtime = replaceRuntimeNode(runtime, nodeId, { progressMessage });
               });
               const candidate = generated.images?.[0];
@@ -3966,6 +3956,7 @@ export function ManualCanvas({
             const receiptItem:WorkflowNodeData["history"][number]={id:crypto.randomUUID(),batchIndex:index,outputUrl,imagePreviewUrl:generatedDelivery.kind==="inline_ephemeral"?generatedDelivery.url:undefined,modelId:model.id,publicModelName,actualCost:receipt.cashCharged,taskId:generatedTraceId||clientTraceId,billingReferenceId:receipt.billingReferenceId,imageDeliveryReceipt:receipt,imageRef:generatedDelivery.imageRef,createdAt:completedAt};
             runtime=replaceRuntimeNode(runtime,nodeId,{outputUrl,imagePreviewUrl:generatedDelivery.kind==="inline_ephemeral"?generatedDelivery.url:undefined,imageDeliveryReceipt:receipt,imageRef:generatedDelivery.imageRef,actualCost,cashRemaining,billingReferenceId:receipt.billingReferenceId,taskId:generatedTraceId||clientTraceId,assetId:undefined,storageKey:undefined,historyRecordId:undefined,pendingPersistUrl:undefined,pendingPersistIndex:undefined,completedAt});
             generatedHistory.unshift(receiptItem);
+            pendingOriginalImageAttempt = null;
             continue;
           }
           if (!generatedUrl) throw new Error(`第 ${index + 1} 张图片未通过 ${node.data.aspectRatio} 画幅检查`);
@@ -4057,7 +4048,9 @@ export function ManualCanvas({
               .slice(0, 20),
           });
           generatedHistory.unshift(persistedHistoryItem);
+          pendingOriginalImageAttempt = null;
         }
+        if (pendingOriginalImageAttempt) throw new Error("原图片请求尚未确认，请先核对历史；不会创建新请求");
       } else if (node.data.kind === "video") {
         if (!prompt) throw new Error("视频节点没有提示词或前置文本");
         const sourceIds = new Set(edgesRef.current.filter((edge) => edge.target === nodeId).map((edge) => edge.source));
@@ -4082,8 +4075,8 @@ export function ManualCanvas({
         }
         const timing = resolveVideoDuration(model, node.data.durationSeconds);
         if (!timing.supported) throw new Error(`当前模型最长支持 ${timing.maxDuration} 秒，请缩短镜头或切换模型`);
-        if (node.data.requiresExactDuration && !node.data.allowDurationTrim && (!isCanvasStoryboardVideoModelCompatible(model) || timing.needsTrim)) {
-          throw new Error("当前剧情镜头要求精确时长；该模型会生成额外片段并增加消耗，请切换短镜头模型");
+        if (node.data.requiresExactDuration && !model.supportsImageInput) {
+          throw new Error("当前剧情镜头需要关键帧输入，请选择支持参考图的视频模型");
         }
         const imageUrl = videoImageUrls[0] || "";
         if (imageUrl && !model.supportsImageInput) {
@@ -4142,6 +4135,8 @@ export function ManualCanvas({
           const submitStartedAtMs = Date.now();
           for (let attempt = 1; attempt <= VIDEO_SUBMIT_MAX_ATTEMPTS; attempt += 1) {
             await waitForVideoSubmissionSlot();
+            const latestIssue = canvasModelAdmissionIssue(currentModelCatalogRef.current.videoModels.find(item => item.id === model.id), "video");
+            if (latestIssue) throw new Error(latestIssue);
             runtime = replaceRuntimeNode(runtime, nodeId, {
               progressMessage: attempt === 1 ? "正在提交视频任务" : `生成服务繁忙，正在第 ${attempt} 次重试提交`,
             });
@@ -4539,7 +4534,7 @@ export function ManualCanvas({
           errors.push(`${node.data.title}的参考图尚未确认，请先预览并点击 ✓ 确认`);
         }
         const timing = resolveVideoDuration(model, node.data.durationSeconds);
-        if (node.data.requiresExactDuration && !node.data.allowDurationTrim && (!isCanvasStoryboardVideoModelCompatible(model) || timing.needsTrim)) errors.push(`${node.data.title}不能按目标秒数直接生成；请切换短镜头模型，或在制作设置中开启下载时精确裁剪`);
+        if (node.data.requiresExactDuration && (!model.supportsImageInput || !timing.supported)) errors.push(`${node.data.title}不能按目标秒数直接生成；请按所选模型的原生时长设置任务`);
         if (node.data.videoMode === "multimodal" && imageSources.length < 2) errors.push(`${node.data.title}的首尾帧不足两张`);
         if (node.data.aspectRatio !== "16:9" && node.data.aspectRatio !== "9:16") errors.push(`${node.data.title}的比例不受当前视频服务支持`);
         if (!timing.supported) errors.push(`${node.data.title}的目标时长超出模型能力`);
@@ -5078,7 +5073,7 @@ export function ManualCanvas({
           || node.data.status === "succeeded"
           || Boolean(node.data.taskId)
           || Boolean(node.data.outputUrl);
-        if (node.data.modelLocked && hasCommittedGeneration) {
+        if (hasCommittedGeneration || node.data.clientRequestId) {
           skippedCount += 1;
           return node;
         }
@@ -5133,8 +5128,9 @@ export function ManualCanvas({
           skippedCount += 1;
           return node;
         }
-        const timing = resolveVideoDuration(videoModel, node.data.durationSeconds);
-        if (!timing.supported || (node.data.requiresExactDuration && !allowStoryboardAutoTrim && (!isCanvasStoryboardVideoModelCompatible(videoModel) || timing.needsTrim))) {
+        const nextDuration = coerceVideoTargetDuration(videoModel, node.data.durationSeconds);
+        const timing = resolveVideoDuration(videoModel, nextDuration);
+        if (!timing.supported || (node.data.requiresExactDuration && !videoModel.supportsImageInput)) {
           skippedCount += 1;
           return node;
         }
@@ -5144,10 +5140,10 @@ export function ManualCanvas({
           data: {
             ...node.data,
             modelId: videoModel.id,
+            durationSeconds: nextDuration,
             lockedModelId: "",
             modelLocked: false,
             resolution: selectedCanvasVideoResolution,
-            allowDurationTrim: node.data.requiresExactDuration ? allowStoryboardAutoTrim : node.data.allowDurationTrim,
             status: "idle",
             taskId: "",
             error: undefined,
@@ -5157,7 +5153,7 @@ export function ManualCanvas({
       return node;
     }));
     onNotice(`已批量更新 ${imageCount} 个图片节点、${videoCount} 个视频节点；图片 ${canvasImageResolution}，视频 ${selectedCanvasVideoResolution}${skippedCount ? `；${skippedCount} 个节点因模型能力不匹配已跳过` : ""}`);
-  }, [allowStoryboardAutoTrim, canvasImageModelId, canvasImageResolution, canvasVideoModelId, imageModels, onNotice, selectedCanvasVideoResolution, videoModels]);
+  }, [canvasImageModelId, canvasImageResolution, canvasVideoModelId, imageModels, onNotice, selectedCanvasVideoResolution, videoModels]);
 
   const applyStructuredStoryboardPlan = useCallback((plan: StoryboardCanvasImportPlan) => {
     if (!activeCanvasId || plan.segments.length === 0) return false;
@@ -5304,10 +5300,10 @@ export function ManualCanvas({
         title: `${shotLabel} · ${segment.actualShotCount}镜故事板生成视频 ${plan.settings.targetDurationSeconds}s`,
         prompt: "{{input.text}}",
         modelId: videoModelId,
+        durationSeconds: coerceVideoTargetDuration(videoModels.find(model => model.id === videoModelId), plan.settings.targetDurationSeconds),
         resolution: selectedCanvasVideoResolution,
         videoMode: "first-frame",
         requiresExactDuration: true,
-        allowDurationTrim: allowStoryboardAutoTrim,
         ambientSoundOnly: true,
         workflowRole: "video-output",
       };
@@ -5367,7 +5363,7 @@ export function ManualCanvas({
     window.setTimeout(() => flowRef.current?.fitView({ nodes: importedNodes.slice(0, 8), padding: 0.12, maxZoom: 0.68, duration: 260 }), 80);
     onNotice(`已接收 ${plan.schemaVersion}：${plan.segments.length} 段已按${plan.settings.directorLabel}映射为可编辑画布；未调用生图或视频服务`);
     return true;
-  }, [activeCanvasId, allowStoryboardAutoTrim, applyStoryboardSettings, canvasImageModelId, canvasImageResolution, canvasVideoModelId, defaultImageModelId, defaultVideoModelId, onNotice, persistRunHistory, selectedCanvasVideoResolution]);
+  }, [activeCanvasId, applyStoryboardSettings, canvasImageModelId, canvasImageResolution, canvasVideoModelId, defaultImageModelId, defaultVideoModelId, onNotice, persistRunHistory, selectedCanvasVideoResolution]);
 
   useEffect(() => {
     if (!hydrated || !activeCanvasId) return;
@@ -5431,26 +5427,24 @@ export function ManualCanvas({
       return;
     }
 
-    let consistencySource = options?.consistencySourceOverride ?? consistencySourceDraftRef.current;
+    const consistencySource = options?.consistencySourceOverride ?? consistencySourceDraftRef.current;
     const keyframeStrategy = options?.keyframeStrategyOverride ?? keyframeStrategyDraft;
     const effectsLevel = options?.effectsLevelOverride ?? effectsLevelDraft;
     const requestedImageModelId = options?.imageModelIdOverride || canvasImageModelId || defaultImageModelId;
-    const requestedImageModel = imageModels.find((model) => model.id === requestedImageModelId) || imageModels[0];
+    const requestedImageModel = imageModels.find((model) => model.id === requestedImageModelId);
     if (!requestedImageModel) {
       onNotice("当前暂无可用的图片生成模型");
       return;
     }
-    let usesIdentityAnchor = consistencySource !== "auto";
-    const fallbackReferenceImageModel = imageModels.find((model) => getImageModelCapabilities(model).supportsReferenceInput);
-    let referenceImageModel = usesIdentityAnchor
-      ? selectReferenceImageModel(requestedImageModel) || fallbackReferenceImageModel
+    const imageAdmissionIssue = canvasModelAdmissionIssue(requestedImageModel, "image");
+    if (imageAdmissionIssue) { onNotice(imageAdmissionIssue); return; }
+    const usesIdentityAnchor = consistencySource !== "auto";
+    const referenceImageModel = usesIdentityAnchor
+      ? selectReferenceImageModel(requestedImageModel)
       : undefined;
     if (usesIdentityAnchor && !referenceImageModel) {
-      consistencySource = "auto";
-      usesIdentityAnchor = false;
-      referenceImageModel = undefined;
-      updateConsistencySourceDraft("auto");
-      onNotice("当前没有可用的参考图输入图片模型，本次已自动改用文字资产锁定，仍会继续生成参考图提示词和视频提示词。");
+      onNotice(`${requestedImageModel.name} 不支持参考图输入，请手动选择支持参考图的模型，或明确改用文字资产锁定。`);
+      return;
     }
     const workflowImageModel = referenceImageModel || requestedImageModel;
     const workflowImageModelId = workflowImageModel.id;
@@ -5461,11 +5455,13 @@ export function ManualCanvas({
       onNotice("请选择一个可用的视频生成模型");
       return;
     }
+    const selectedVideoAdmissionIssue = canvasModelAdmissionIssue(requestedVideoModel, "video");
+    if (selectedVideoAdmissionIssue) { onNotice(selectedVideoAdmissionIssue); return; }
     const videoModelMatchesWorkflow = (model: VideoModel) => model.supportsImageInput
-      && (!requiresExactStoryboardTiming || allowStoryboardAutoTrim || isCanvasStoryboardVideoModelCompatible(model));
+      && (!requiresExactStoryboardTiming || model.supportsImageInput);
     if (!videoModelMatchesWorkflow(requestedVideoModel)) {
-      onNotice(requiresExactStoryboardTiming && !allowStoryboardAutoTrim
-        ? `${requestedVideoModel.name} 不能直接生成本流程要求的故事版视频；请主动更换支持目标时长的图生视频模型，或开启下载时精确裁剪`
+      onNotice(requiresExactStoryboardTiming
+        ? `${requestedVideoModel.name} 不能直接生成本流程要求的故事版视频；请主动选择支持参考图的模型并使用其原生时长`
         : `${requestedVideoModel.name} 不支持关键帧驱动，请主动选择图生视频模型`);
       return;
     }
@@ -5540,7 +5536,6 @@ export function ManualCanvas({
           videoModelName: compatibleVideoModel.name,
           videoModelDurationMode: workflowVideoTiming.mode,
           videoModelDurationSeconds: workflowVideoTiming.defaultDuration,
-          allowDurationTrim: requiresExactStoryboardTiming && allowStoryboardAutoTrim,
           consistencyMode: usesIdentityAnchor ? "reference" : "text-lock",
           assistantInstruction: compiledAssistantInstruction,
         }),
@@ -5857,9 +5852,8 @@ export function ManualCanvas({
         prompt: "{{input.text}}",
         modelId: workflowVideoModelId,
         aspectRatio: ratio,
-        durationSeconds: duration,
+        durationSeconds: coerceVideoTargetDuration(requestedVideoModel, duration),
         requiresExactDuration: requiresExactStoryboardTiming,
-        allowDurationTrim: requiresExactStoryboardTiming && allowStoryboardAutoTrim,
         ambientSoundOnly: true,
         resolution: workflowVideoResolution,
         videoMode: endFrameNode ? "multimodal" : "first-frame",
@@ -6014,7 +6008,7 @@ export function ManualCanvas({
       ? `已使用“${compiled.preset.name}”完成${compilerLabel}：${compiled.shots.length} 个分镜，每镜对应一段文案、一张参考图和一个视频，总时长约 ${formatDurationLabel(totalStoryboardSeconds)}；${consistencyLabel}`
       : directorQualityAdvisory || "AI导演方案未通过生产质检，当前已加载基础预览，仍可继续生成。");
     setScriptCompiling(false);
-  }, [activeCanvasId, allowStoryboardAutoTrim, animationStyleId, assistantInstruction, canvasImageModelId, canvasImageResolution, canvasSessions, canvasVideoModelId, defaultImageModelId, defaultVideoModelId, effectsLevelDraft, imageModels, keyframeStrategyDraft, onNotice, persistRunHistory, productionModeId, promptPresets, requiresExactStoryboardTiming, selectedCanvasVideoResolution, selectedProductionMode, storyDirectorMode, storyboardReferenceTextMode, storyTargetDurationSeconds, updateConsistencySourceDraft, videoModels]);
+  }, [activeCanvasId, animationStyleId, assistantInstruction, canvasImageModelId, canvasImageResolution, canvasSessions, canvasVideoModelId, defaultImageModelId, defaultVideoModelId, effectsLevelDraft, imageModels, keyframeStrategyDraft, onNotice, persistRunHistory, productionModeId, promptPresets, requiresExactStoryboardTiming, selectedCanvasVideoResolution, selectedProductionMode, storyDirectorMode, storyboardReferenceTextMode, storyTargetDurationSeconds, videoModels]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -6307,7 +6301,7 @@ export function ManualCanvas({
                 "检查项：GPT-5.6逐镜识别语义缺口，装饰内容不能套固定符号或贴纸模板。",
                 "检查项：先生成单角色中性身份定妆图，再让逐镜参考图只继承身份；剧情构图、道具和语义装饰仍由当前口播段决定。",
                 "检查项：脚步逼近、心虚伪装、误吞风险、体内堵塞和安全放松应采用各自最合适的可见表达，并保持前后道具状态连续。",
-                "检查项：全部参考图成功后，使用 Veo 3.1 Fast 8秒逐条提交视频，下载时按分镜目标秒数裁剪。",
+                "检查项：全部参考图成功后，使用 Veo 3.1 Fast 8秒逐条提交视频，按模型登记的原生时长提交。",
               ],
             }
           : isBorderCollieAudit
@@ -6331,7 +6325,7 @@ export function ManualCanvas({
           ? {
               qualityNotes: [
                 "复测项：口播原文必须完整保留，女主人设定只进入角色与画面约束，不得改写口播。",
-                "复测项：每个分镜按每秒约6字估算为3至5秒，优先保证语义完整；固定时长模型在线预览按目标秒数停止，下载时精确裁剪。",
+                "复测项：每个分镜按每秒约6字估算为3至5秒，优先保证语义完整；固定时长模型按登记秒数生成，预览与下载保留完整视频。",
                 "复测项：逐镜核对一段口播、一条视频提示词、一条生图提示词、一张自动关键帧和一个视频严格一一对应。",
                 "复测项：声音只保留与动作同步的场景音和道具接触声，不生成背景音乐、旁白、配音、对白或字幕。",
               ],
@@ -6385,18 +6379,21 @@ export function ManualCanvas({
   }, [activeCanvasId, createCanvasFromScript, hydrated, imageModels, onNotice, promptPresets.length, storageScope, updateConsistencySourceDraft, videoModels]);
 
   const applyCanvasTemplate = useCallback((template: "campaign" | "image" | "video") => {
-    const requestedImageModel = imageModels.find((model) => model.id === (canvasImageModelId || defaultImageModelId)) || imageModels[0];
+    const requestedImageModel = imageModels.find((model) => model.id === (canvasImageModelId || defaultImageModelId));
     const requestedVideoModel = videoModels.find((model) => model.id === (canvasVideoModelId || defaultVideoModelId));
+    const selectedImageIssue = canvasModelAdmissionIssue(requestedImageModel, "image");
+    const selectedVideoIssue = template !== "image" ? canvasModelAdmissionIssue(requestedVideoModel, "video") : "";
+    if (selectedImageIssue || selectedVideoIssue) { onNotice(selectedImageIssue || selectedVideoIssue); return; }
     const referenceVideoModel = requestedVideoModel?.supportsImageInput
       ? requestedVideoModel
-      : videoModels.find((model) => model.supportsImageInput);
+      : undefined;
     const needsReferenceVideoModel = template === "campaign" || template === "video";
     if (!requestedImageModel) {
       onNotice("当前暂无可用的图片生成模型");
       return;
     }
     if (needsReferenceVideoModel && !referenceVideoModel) {
-      onNotice("该模板需要支持图片参考的视频模型；当前暂无可用模型");
+      onNotice("该模板需要图片参考；请手动选择支持图生视频的模型，当前选择未改变。");
       return;
     }
     const templateImageModelId = requestedImageModel.id;
@@ -6413,9 +6410,6 @@ export function ManualCanvas({
     );
     if (templateImageResolution !== canvasImageResolution) {
       setCanvasImageResolution(templateImageResolution);
-    }
-    if (needsReferenceVideoModel && referenceVideoModel && referenceVideoModel.id !== requestedVideoModel?.id) {
-      setCanvasVideoModelId(referenceVideoModel.id);
     }
     const defaults = {
       imageModelId: templateImageModelId,
@@ -6571,35 +6565,17 @@ export function ManualCanvas({
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      // Keep the blob URL alive for the page session. Large trimmed videos can
+      // Keep the blob URL alive for the page session. Large videos can
       // take more than a minute to finish saving, and early revocation cancels
       // an otherwise valid browser download. The browser releases it on unload.
     };
-    const selectedVideoModel = node.data.kind === "video"
-      ? videoModels.find((model) => model.id === node.data.modelId)
-      : undefined;
-    const videoTiming = node.data.kind === "video"
-      ? resolveVideoDuration(selectedVideoModel, node.data.durationSeconds)
-      : null;
-    const shouldTrimOnDownload = node.data.kind === "video"
-      && Boolean(node.data.allowDurationTrim)
-      && Boolean(videoTiming?.needsTrim);
     try {
-      if (node.data.kind === "video" && !shouldTrimOnDownload) {
+      if (node.data.kind === "video") {
         await streamOriginalVideoDownload();
         return true;
       }
       let response: Response;
-      if (shouldTrimOnDownload) {
-        const taskId = node.data.taskId || taskIdFromPlaybackUrl(node.data.outputUrl);
-        if (!token || !taskId) throw new Error("缺少裁剪导出凭据");
-        onNotice(`正在按 ${node.data.durationSeconds} 秒裁剪 ${node.data.title}…`);
-        response = await fetch("/api/video/export", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ taskId, targetDurationSeconds: node.data.durationSeconds }),
-        });
-      } else if (node.data.assetId && token) {
+      if (node.data.assetId && token) {
         response = await fetch(`/api/storage/files/${encodeURIComponent(node.data.assetId)}/content?download=1`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
@@ -6610,16 +6586,6 @@ export function ManualCanvas({
       await downloadResponse(response);
       return true;
     } catch {
-      if (shouldTrimOnDownload) {
-        try {
-          onNotice(`${node.data.title} 裁剪导出失败，正在自动下载原片`);
-          await streamOriginalVideoDownload();
-          return true;
-        } catch {
-          onNotice(`${node.data.title} 裁剪版与原片均下载失败，请重试`);
-          return false;
-        }
-      }
       const anchor = document.createElement("a");
       anchor.href = node.data.outputUrl;
       anchor.download = assetFilename(node);
@@ -6751,6 +6717,13 @@ export function ManualCanvas({
     onNotice(null);
     const node = nodesRef.current.find((item) => item.id === nodeId);
     if (!node) return;
+    const recoveringAcceptedMedia = (node.data.kind === "video" && Boolean(node.data.taskId) && !options.forceVideoResubmit)
+      || (node.data.kind === "image" && Boolean(node.data.pendingPersistUrl || node.data.imageClientTraceId && node.data.imageClientIdempotencyKey));
+    if (!recoveringAcceptedMedia && (node.data.kind === "image" || node.data.kind === "video")) {
+      const model = node.data.kind === "image" ? currentModelCatalogRef.current.imageModels.find(item => item.id === node.data.modelId) : currentModelCatalogRef.current.videoModels.find(item => item.id === node.data.modelId);
+      const issue = canvasModelAdmissionIssue(model, node.data.kind);
+      if (issue) { onNotice(issue); return; }
+    }
     if (activeNodeRunsRef.current.has(nodeId) || node.data.status === "running" || node.data.status === "queued") {
       onNotice(`${node.data.title}仍在执行，已阻止重复提交`);
       return;
@@ -7695,8 +7668,6 @@ export function ManualCanvas({
                       controls
                       playsInline
                       preload="metadata"
-                      onPlay={(event) => restartLimitedPreview(event.currentTarget, previewNode.data.durationSeconds)}
-                      onTimeUpdate={(event) => enforcePreviewDuration(event.currentTarget, previewNode.data.durationSeconds)}
                     />
                   )}
                 </div>
@@ -7838,7 +7809,7 @@ export function ManualCanvas({
 
               <section className="free-pro-section free-global-models">
                 <div className="free-pro-title"><Layers3 size={15} />模型与输出规格</div>
-                <p>先确定生成通路。模型只展示当前流程可用项，分辨率按模型能力自动收窄；支持多档时可手动切换，默认优先 2K / 1080p。</p>
+                <p>选择模型，确认分辨率与费用后生成。</p>
                 <div className="free-global-model-grid">
                   <label>
                     <span>生图模型</span>
@@ -7847,10 +7818,10 @@ export function ManualCanvas({
                       setCanvasImageModelId(event.target.value);
                       setCanvasImageResolution(coerceImageResolution(nextModel, canvasImageResolution));
                     }}>
-                      {imageModels.length === 0 && <option value="">暂无可用图片模型</option>}
+                      {!selectedCanvasImageModel && <option value={canvasImageModelId} disabled>已选图片模型暂不可读取，请手动选择</option>}
                       {imageModels.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.name} · ¥{Number(model.selling_price ?? 0).toFixed(2)}/张 · {getImageModelCapabilities(model).referenceCapabilityLabel}
+                        <option key={model.id} value={model.id} disabled={Boolean(canvasModelAdmissionIssue(model, "image"))}>
+                          {model.name} · ¥{Number(model.selling_price ?? 0).toFixed(2)}/张 · {getImageModelCapabilities(model).referenceCapabilityLabel}{canvasModelAdmissionIssue(model, "image") ? ` · ${canvasModelAdmissionIssue(model, "image")}` : ""}
                         </option>
                       ))}
                     </select>
@@ -7882,17 +7853,15 @@ export function ManualCanvas({
                         setCanvasVideoResolution(coerceCanvasVideoResolution(nextModel, canvasVideoResolution));
                       }}
                     >
-                      {selectableCanvasVideoModels.length === 0 && <option value="">暂无可用图生视频模型</option>}
+                      {!selectedCanvasVideoModel && <option value={canvasVideoModelId} disabled>已选视频模型暂不可读取，请手动选择</option>}
                       {selectableCanvasVideoModels.map((model) => {
                         const modelTiming = getVideoDurationCapabilities(model);
-                        const previewDuration = Math.min(storyTargetDurationSeconds, modelTiming.maxDuration);
+                        const previewDuration = coerceVideoTargetDuration(model, storyTargetDurationSeconds);
                         const modelCharge = resolveVideoCharge(model, canvasVideoResolution, previewDuration);
-                        const trimLabel = requiresExactStoryboardTiming && allowStoryboardAutoTrim && !isCanvasStoryboardVideoModelCompatible(model)
-                          ? ` · 固定${modelTiming.defaultDuration}秒，自动裁到目标时长`
-                          : "";
+                        const admissionIssue = canvasModelAdmissionIssue(model, "video") || (!model.supportsImageInput ? "当前流程需要图生视频模型" : "");
                         return (
-                          <option key={model.id} value={model.id}>
-                            {model.name} · ¥{modelCharge.publicPrice.toFixed(2)}{modelCharge.billingUnit === "output_second" ? `/${modelCharge.billingQuantity}秒` : "/次"} · 图生视频 · {modelTiming.mode === "fixed" ? `${modelTiming.defaultDuration}秒固定` : `可变时长（最长${modelTiming.maxDuration}秒）`}{trimLabel}
+                          <option key={model.id} value={model.id} disabled={Boolean(admissionIssue)}>
+                            {model.name} · ¥{modelCharge.publicPrice.toFixed(2)}{modelCharge.billingUnit === "output_second" ? `/${modelCharge.billingQuantity}秒` : "/次"} · {modelTiming.mode === "fixed" ? `${modelTiming.defaultDuration}秒固定` : `可变时长（最长${modelTiming.maxDuration}秒）`}{admissionIssue ? ` · ${admissionIssue}` : ""}
                           </option>
                         );
                       })}

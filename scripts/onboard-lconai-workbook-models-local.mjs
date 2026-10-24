@@ -178,6 +178,7 @@ async function ensureCurrent(origin, headers, endpoint, changeNote) {
 }
 
 function textPayload(model) {
+  const isClaude = /^claude\b/iu.test(model.modelName);
   return {
     model_type: "text",
     name: model.name,
@@ -188,6 +189,14 @@ function textPayload(model) {
     api_endpoint: model.endpoint,
     proxy_url: model.endpoint,
     api_key: model.secretRef,
+    api_protocol_config: {
+      provider: "lconai",
+      protocol: isClaude ? "anthropic_messages" : "openai_chat",
+      auth_scheme: isClaude ? "x-api-key" : "bearer",
+      ...(isClaude
+        ? { protocol_version: "2023-06-01", output_token_field: "max_tokens" }
+        : { output_token_field: "max_completion_tokens" }),
+    },
     billing_mode: "token",
     token_billing_enabled: true,
     input_cost_per_million: model.inputCost,

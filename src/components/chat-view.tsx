@@ -30,6 +30,8 @@ import { MessageContent, StreamingContentWrapper } from "./chat/message-content"
 import { ReasoningBlock } from "./chat/reasoning-block";
 import { MessageBubble, inferAgentInstruction } from "./chat/message-item";
 import { ChatErrorBoundary } from "./chat/chat-error-boundary";
+import { ChatModelSwitcher } from "./chat/chat-model-switcher";
+import { useChatModelSelection } from "@/hooks/use-chat-model-selection";
 import { extractAllStructuredPrompts } from "./chat/message-content";
 import { NavButton } from "@/components/sub-page-header";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
@@ -68,12 +70,19 @@ function findNearestVideoTaskOrderContext(text: string): string {
 }
 
 export function ChatView() {
-  const { state, sendMessage, abortCurrentStream, isConvStreaming, dispatch, setPendingPresetMessage } = useApp();
+  const { state, sendMessage, abortCurrentStream, isConvStreaming, dispatch, setPendingPresetMessage, deleteMessage } = useApp();
   const router = useRouter();
   const isAdmin = state.auth.user?.role === "admin";
+  const canSwitchAssistant = isAdmin;
   const [inputValue, setInputValue] = useState("");
+  const composingRef = useRef(false);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionSearch, setMentionSearch] = useState("");
+  // 改写：记录被替换的用户消息；发送成功后由 sendMessage 截断旧分支并换上新内容
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  useEffect(() => {
+    setEditingMessageId(null);
+  }, [state.activeConversationId]);
 
   // @mention 临时提示：发送@消息后短暂显示；本次只做一次性转发，不接管后续对话
   const [mentionTip, setMentionTip] = useState<{ agentName: string; agentId: string; agentIconUrl: string } | null>(null);
@@ -83,7 +92,6 @@ export function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
-  const [fontSize, setFontSize] = useState(18); // 12-22px, larger Chinese reading baseline
   const [contentWidthClass, setContentWidthClass] = useState(2); // 0=紧凑, 1=标准, 2=宽屏, 3=全屏
   const [isExpanded, setIsExpanded] = useState(false); // 对话框放大状态（侧边栏折叠）
   const [isInputExpanded, setIsInputExpanded] = useState(false); // 输入框展开/收起（maxHeight切换）
@@ -334,8 +342,38 @@ export function ChatView() {
   }, [state.sidebarCollapsed]);
 
   const [pendingImages, setPendingImages] = useState<{ key: string; url: string; name: string }[]>([]);
+  type ComposerDraft = {
+    text: string;
+    images: { key: string; url: string; name: string }[];
+    editingMessageId: string | null;
+  };
+  const composerDraftsRef = useRef(new Map<string, ComposerDraft>());
+  const composerScopeKey = `${state.auth.user?.id || "anonymous"}:${state.activeConversationId || "none"}:${state.auth.token || ""}`;
+  const composerScopeRef = useRef(composerScopeKey);
+  const composerSnapshotRef = useRef<ComposerDraft>({ text: inputValue, images: [], editingMessageId: null });
+  const pendingImageScopeRef = useRef({ key: composerScopeKey });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // Keep the complete composer per account + conversation. A navigation or
+  // account switch saves the old draft, restores the new scope, and also
+  // invalidates in-flight uploads so a late response cannot cross the boundary.
+  useEffect(() => {
+    composerSnapshotRef.current = { text: inputValue, images: pendingImages, editingMessageId };
+  }, [inputValue, pendingImages, editingMessageId]);
+
+  useEffect(() => {
+    const previousScope = composerScopeRef.current;
+    composerDraftsRef.current.set(previousScope, composerSnapshotRef.current);
+    composerScopeRef.current = composerScopeKey;
+    pendingImageScopeRef.current = { key: composerScopeKey };
+    const emptyDraft: ComposerDraft = { text: "", images: [], editingMessageId: null };
+    const draft = composerDraftsRef.current.get(composerScopeKey) || emptyDraft;
+    setInputValue(draft.text);
+    setPendingImages(draft.images);
+    setEditingMessageId(draft.editingMessageId);
+    composerSnapshotRef.current = draft;
+  }, [composerScopeKey]);
 
   // 联网搜索保留为唯一的对话能力开关。自由对话的模型和深度思考
   // 由服务端固定策略控制，避免浏览器状态导致能力漂移。
@@ -354,6 +392,7 @@ export function ChatView() {
     const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
     const maxSize = 5 * 1024 * 1024; // 5MB
     const fileArray = Array.from(files);
+    const uploadScope = pendingImageScopeRef.current.key;
 
     for (const file of fileArray) {
       if (!allowedTypes.includes(file.type)) {
@@ -379,6 +418,9 @@ export function ChatView() {
           throw new Error(data.error || fallback);
         }
         if (data.success && data.key) {
+          // The user may have switched account/conversation while the upload
+          // was in flight. Never attach a completed upload to the new scope.
+          if (pendingImageScopeRef.current.key !== uploadScope) continue;
           setPendingImages(prev => [...prev, { key: data.key, url: data.url, name: file.name }]);
         } else {
           toast.error(`${file.name}：${data.error || "上传结果无效，请重试"}`);
@@ -423,13 +465,22 @@ export function ChatView() {
   const isBipProject = Boolean(bipStep(activeConv?.agentId));
   const bipDraftScope=useRef<{id?:string;wasBip:boolean}>({wasBip:false});
   useEffect(()=>{
-    if(bipDraftScope.current.id!==activeConv?.id&&(isBipProject||bipDraftScope.current.wasBip))setInputValue('');
     bipDraftScope.current={id:activeConv?.id,wasBip:isBipProject};
   },[activeConv?.id,isBipProject]);
   const lastBipReply = activeConv?.messages.slice().reverse().find(m=>m.role==='assistant'&&bipStep(m.agentId));
   const bipAgentId = isBipProject ? (bipSelection && bipSelection.conversationId===activeConv?.id ? bipSelection.agentId : lastBipReply?.agentId || activeConv?.agentId) : undefined;
   // BUG FIX: activeConv 可能为 undefined（如删除当前对话后），所有后续访问必须用 ?.
   // 不在 hooks 中间 early return（违反 React hooks 规则），改为安全访问
+
+  // 管理员在自由对话里热切换 GPT / Claude：只影响下一条消息，已有回复不变。
+  const isFreeChatConversation = (activeConv?.agentId || state.activeAgentId) === FREE_CHAT_AGENT_ID;
+  const chatModel = useChatModelSelection({
+    enabled: isAdmin && isFreeChatConversation,
+    conversationId: activeConv?.id ?? state.activeConversationId,
+  });
+  const chatModelOverride = isAdmin && isFreeChatConversation ? chatModel.explicitModelId : null;
+  // 重试 / 继续生成沿用的模型覆盖；只有当前智能体就是自由对话时才生效。
+  const activeChatModelOverride = state.activeAgentId === FREE_CHAT_AGENT_ID ? chatModelOverride ?? undefined : undefined;
 
   // A single scroll controller owns the transcript position. Layout changes must
   // never be mistaken for user scrolling, otherwise streaming content oscillates.
@@ -588,12 +639,20 @@ export function ChatView() {
         const webSearch = webSearchOverride || shouldAutoEnableWebSearch(msg.content)
           ? true
           : undefined;
-        sendMessage(msg.content, undefined, undefined, undefined, undefined, deepThinking, webSearch);
+        sendMessage(
+          msg.content,
+          undefined,
+          undefined,
+          state.activeAgentId === FREE_CHAT_AGENT_ID ? chatModelOverride ?? undefined : undefined,
+          undefined,
+          deepThinking,
+          webSearch,
+        );
       }, 500);
       return () => clearTimeout(timer);
     }
   }, [state.pendingPresetMessage, state.activeConversationId, state.activeAgentId, isBipProject,
-    webSearchOverride, sendMessage, setPendingPresetMessage]);
+    webSearchOverride, chatModelOverride, sendMessage, setPendingPresetMessage]);
 
   // ESC/F11 key to toggle fullscreen
   useEffect(() => {
@@ -643,6 +702,11 @@ export function ChatView() {
   const handleInputChange = (value: string) => {
     setInputValue(value);
 
+    // @ 切换助手仅管理员。普通用户输入里的 @ 保持原文，不打开选择器。
+    if (!canSwitchAssistant) {
+      setShowMentionDropdown(false);
+      return;
+    }
     // Detect @ mention — 仅在@位于开头或前面是空格时触发，避免匹配邮箱地址
     const lastAtIndex = value.lastIndexOf("@");
     if (lastAtIndex >= 0) {
@@ -663,6 +727,10 @@ export function ChatView() {
   };
 
   const handleMentionSelect = (agentId: string) => {
+    if (!canSwitchAssistant) {
+      setShowMentionDropdown(false);
+      return;
+    }
     const agent = state.agents.find((a) => a.id === agentId);
     if (!agent || mentionStartIndex < 0) return;
 
@@ -705,11 +773,11 @@ export function ChatView() {
     let messageContent = trimmed;
     let apiContent: string | undefined; // 实际发送给API的内容（协同时与展示内容不同）
 
-    // Check if there's a @mention
+    // Check if there's a @mention. 非管理员不把 @ 解析成助手切换。
     let mentionedAgentId: string | undefined = bipAgentId;
     // 仅匹配独立的@提及（@位于开头或前面是空格），避免匹配邮箱地址
-    const mentionMatch = trimmed.match(/(?:^|\s)@(\S+)(?:\s|$)/);
-    if (mentionMatch) {
+    const mentionMatch = canSwitchAssistant ? trimmed.match(/(?:^|\s)@(\S+)(?:\s|$)/) : null;
+    if (canSwitchAssistant && mentionMatch) {
       const mentionedAgent = state.agents.find((a) => a.name === mentionMatch[1]);
       if (mentionedAgent) {
         mentionedAgentId = mentionedAgent.id;
@@ -747,8 +815,14 @@ export function ChatView() {
       }
     }
 
+    const editingMessage = editingMessageId
+      ? activeConv?.messages.find((m) => m.id === editingMessageId)
+      : undefined;
+    const preservedAgentId = editingMessage?.agentId;
     const imageKeys = pendingImages.length > 0 ? pendingImages.map(img => img.key) : undefined;
-    const targetAgentId = mentionedAgentId || state.activeAgentId;
+    const targetAgentId = mentionedAgentId || preservedAgentId || state.activeAgentId;
+    // 模型热切换只作用于自由对话本体：@ 其他智能体时仍使用该智能体自己的模型。
+    const targetModelOverride = targetAgentId === FREE_CHAT_AGENT_ID ? chatModelOverride ?? undefined : undefined;
     const deepThinkingValue = targetAgentId === FREE_CHAT_AGENT_ID
       ? FREE_CHAT_DEEP_THINKING_TYPE
       : undefined;
@@ -763,14 +837,14 @@ export function ChatView() {
     const targetAgent = targetAgentId ? state.agents.find(a => a.id === targetAgentId) : null;
     const isVirtualAgent = targetAgentId?.startsWith("__");
     if (targetAgent && !isVirtualAgent && !targetAgent.is_active && state.auth.user?.role !== "admin") {
-      setInputValue("");
-      setPendingImages([]);
-      setShowMentionDropdown(false);
-      if (inputRef.current) inputRef.current.style.height = 'auto';
       toast.warning("该智能体已下架，暂不可使用");
       return;
     }
-    // ★ 先清空输入框，再发送消息 — 必须在 sendMessage 之前清空
+    // 改写模式：发送时从原消息起截断旧分支，后端同步截断历史，避免出现第二个“你好”。
+    const branch = editingMessage ? { truncateFromMessageId: editingMessage.id } : undefined;
+    // ★ 先暂存待发送内容，受理成功后才真正清空
+    const imagesToRestore = pendingImages;
+    const sendScope = pendingImageScopeRef.current.key;
     setInputValue("");
     setPendingImages([]);
     setShowMentionDropdown(false);
@@ -779,10 +853,24 @@ export function ChatView() {
       inputRef.current.style.height = 'auto';
     }
 
-    await sendMessage(contentToSend, mentionedAgentId, imageKeys, undefined, apiContent, deepThinkingValue, webSearchValue);
+    if (editingMessage) setEditingMessageId(null);
+    const accepted = await sendMessage(contentToSend, mentionedAgentId || preservedAgentId, imageKeys, targetModelOverride, apiContent, deepThinkingValue, webSearchValue, undefined, undefined, branch);
+    if (accepted === false) {
+      // 发送未被受理：把内容还给用户，避免“点了发送什么都没发生”
+      if (pendingImageScopeRef.current.key === sendScope) {
+        if (editingMessage) setEditingMessageId(editingMessage.id);
+        setInputValue(current => current || contentToSend);
+        if (imagesToRestore.length) setPendingImages(imagesToRestore);
+      }
+      toast.warning("消息未发送：当前会话尚未就绪，请稍后重试");
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Browsers emit Enter with isComposing/keyCode=229 while an IME is
+    // committing Chinese/Japanese/Korean text. Treat it as text input and
+    // never submit the chat until composition has ended.
+    if (composingRef.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (showMentionDropdown && mentionAgents.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -869,7 +957,7 @@ export function ChatView() {
               </div>
               <p className="text-sm font-medium text-[var(--foreground)]">选择一个智能体开始对话</p>
               <p className="text-xs mt-2 text-[var(--text-secondary)]">
-                从应用广场选择，或点击左侧「新建对话」
+                {isAdmin ? "从应用广场选择，或点击左侧「新建对话」" : "从应用广场选择智能体开始对话"}
               </p>
             </>
           )}
@@ -883,7 +971,7 @@ export function ChatView() {
     <div className="chat-stage relative flex flex-col h-full bg-[var(--background)]" data-chat-surface="unified-glass">
       {isBipProject && activeConv && bipAgentId && <BusinessIpFlow key={activeConv.id} value={bipAgentId} conversationId={activeConv.id} onChange={agentId=>setBipSelection({conversationId:activeConv.id,agentId})} agents={state.agents} disabled={isConvStreaming(activeConv.id)} onPrepare={text=>setInputValue(current=>current?`${current}\n\n${text}`:text)} />}
       {/* Corner float: expand/collapse/fullscreen — 圆角融为一体 */}
-      <div className="absolute top-1.5 right-1.5 z-50 flex items-center gap-0.5">
+      <div className="chat-corner-float absolute top-1.5 right-1.5 z-50 flex items-center gap-0.5">
         {activeConv?.messages?.length > 0 ? (
           <>
             {/* Fullscreen toggle — 仅常态下显示 */}
@@ -897,32 +985,6 @@ export function ChatView() {
                 <Maximize2 className="w-3 h-3" />
               </button>
             )}
-            {/* Expand/collapse toggle */}
-            <button
-              onClick={() => {
-                if (isExpanded) {
-                  setIsExpanded(false);
-                  dispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: false });
-                  setContentWidthClass(2);
-                  setFontSize(f => Math.max(12, f - 2));
-                } else {
-                  setIsExpanded(true);
-                  dispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: true });
-                  setContentWidthClass(3);
-                  setFontSize(f => Math.min(22, f + 2));
-                }
-              }}
-              className={cn(
-                "w-6 h-6 flex items-center justify-center rounded-md transition-all duration-200",
-                isExpanded
-                  ? "text-[var(--primary)] hover:bg-[var(--primary)]/10"
-                  : "text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]/80"
-              )}
-              title={isExpanded ? "恢复大小" : "放大对话"}
-              aria-label={isExpanded ? "恢复对话大小" : "放大对话"}
-            >
-              {isExpanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
-            </button>
             {/* Collapse from fullscreen */}
             {state.isChatFullscreen && (
               <button
@@ -991,6 +1053,19 @@ export function ChatView() {
                   <Search className="h-3.5 w-3.5" />
                 </button>
               )}
+              {isAdmin && isFreeChatConversation && (
+                <ChatModelSwitcher
+                  status={chatModel.status}
+                  groups={chatModel.groups}
+                  selectedModelId={chatModel.effectiveModelId}
+                  selectedLabel={chatModel.selectedLabel}
+                  onSelect={(model) => {
+                    chatModel.select(model);
+                    toast.success(`已切换到 ${model.label}，下一条消息生效`);
+                  }}
+                  onReload={chatModel.reload}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -1000,7 +1075,7 @@ export function ChatView() {
           {/* Quick nav: back to marketplace */}
           <NavButton icon={Home} label="主页" variant="ghost" onClick={() => dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" })} title="返回应用广场" />
 
-          {/* Content width control */}
+          {isAdmin && (
           <button
             onClick={() => setContentWidthClass(c => (c + 1) % widthClasses.length)}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-[var(--text-secondary)] hover:text-[var(--foreground)] bg-[var(--background)] border border-[var(--border)] hover:border-[var(--primary)]/30 transition-colors"
@@ -1011,6 +1086,7 @@ export function ChatView() {
             </svg>
             {widthLabels[contentWidthClass]}
           </button>
+          )}
           {/* Credits badge */}
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#10B981]/10 text-[#10B981] text-xs font-medium">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6"/></svg>
@@ -1034,7 +1110,7 @@ export function ChatView() {
             <div className="flex flex-col items-center justify-center py-16 animate-fade-up">
               {state.activeAgentId === FREE_CHAT_AGENT_ID ? (
                 <>
-                  <p className="text-sm text-[var(--foreground)]">GPT-5.6 已就绪，直接开始自由对话</p>
+                  <p className="text-sm text-[var(--foreground)]">{chatModel.selectedLabel || "GPT-5.6"} 已就绪，直接开始自由对话</p>
                   <p className="text-xs mt-1.5 text-[var(--text-secondary)]">深度思考默认开启；需要实时信息时点击联网图标，或直接说“联网找一下”</p>
                 </>
               ) : activeAgent?.guideMessage || activeAgent?.guide_message ? (
@@ -1050,12 +1126,12 @@ export function ChatView() {
                       {isBipProject ? (activeAgent.guideMessage || activeAgent.guide_message) : (activeAgent.guideMessage || activeAgent.guide_message || '').split('\n')[0]}
                     </span>
                   </div>
-                  <p className="text-xs mt-3 text-[var(--text-secondary)]">{isBipProject ? '直接说你的情况，不清楚的内容由我协助判断。' : '输入问题，使用 @ 可以切换其他智能体'}</p>
+                  <p className="text-xs mt-3 text-[var(--text-secondary)]">{isBipProject ? '直接说你的情况，不清楚的内容由我协助判断。' : (canSwitchAssistant ? '输入问题，使用 @ 可以切换其他智能体' : '输入问题开始对话')}</p>
                 </>
               ) : (
                 <>
                   <p className="text-sm text-[var(--foreground)]">开始与 {activeConv?.agentName} 对话吧</p>
-                  <p className="text-xs mt-1.5 text-[var(--text-secondary)]">输入问题，使用 @ 可以切换其他智能体</p>
+                  <p className="text-xs mt-1.5 text-[var(--text-secondary)]">{canSwitchAssistant ? "输入问题，使用 @ 可以切换其他智能体" : "输入问题开始对话"}</p>
                 </>
               )}
             </div>
@@ -1066,7 +1142,6 @@ export function ChatView() {
               key={msg.id}
               message={msg}
               allMessages={activeConv?.messages}
-              fontSize={fontSize}
               outputStyle={agentOutputStyle}
               responseFormat={activeAgent?.responseFormat ?? activeAgent?.response_format}
               onStyleChange={(newStyle) => setAgentOutputStyle(newStyle)}
@@ -1107,14 +1182,13 @@ export function ChatView() {
                   if (!res.ok) toast.error(res.status === 409 ? "模板已被另一端更新，请刷新后重试" : "保存失败");
                 } catch { toast.error("无法读取最新配置版本，模板未保存"); }
               }}
-              onRetry={!isChatOutcomeUnknown(msg) && ((msg.role === "assistant" && !msg.isStreaming) || (msg.role === "user" && msg.error)) ? () => {
+              onRetry={!isChatOutcomeUnknown(msg) && ((msg.role === "assistant" && !msg.isStreaming) || (msg.role === "user" && msg.error)) ? async () => {
                 if (msg.role === "assistant") {
                   // Retry: re-send the last user message before this assistant message
                   const msgIdx = activeConv?.messages?.findIndex(m => m.id === msg.id) ?? -1;
                   const prevUserMsg = msgIdx > 0 ? activeConv?.messages?.slice(0, msgIdx).reverse().find(m => m.role === "user") : undefined;
                   if (prevUserMsg) {
-                    // Remove this failed assistant message (do NOT re-add user message)
-                    dispatch({ type: "DELETE_MESSAGE", payload: { conversationId: activeConv?.id, messageId: msg.id } });
+                    // 重新生成：从这条回复起截断旧分支；不重复添加用户消息，也不重复落库用户消息。
                     const retryDeepThinking = state.activeAgentId === FREE_CHAT_AGENT_ID
                       ? FREE_CHAT_DEEP_THINKING_TYPE
                       : undefined;
@@ -1122,12 +1196,29 @@ export function ChatView() {
                       ? true
                       : undefined;
                     // content 现在始终存储发送给API的完整内容，直接使用
-                    sendMessage(prevUserMsg.content, undefined, undefined, undefined, undefined, retryDeepThinking, retryWebSearch, true);
+                    const accepted = await sendMessage(
+                      prevUserMsg.content,
+                      msg.agentId || prevUserMsg.agentId || activeConv?.agentId,
+                      prevUserMsg.images,
+                      activeChatModelOverride,
+                      undefined,
+                      retryDeepThinking,
+                      retryWebSearch,
+                      true,
+                      undefined,
+                      { persistUserMessage: false, truncateFromMessageId: msg.id, appendUserMessage: false },
+                    );
+                    if (!accepted) toast.warning("重新生成未受理：当前会话仍在加载或生成中");
                   }
                 } else if (msg.role === "user" && msg.error) {
                   // Preserve the user's original input. Clear the visible error
                   // while retrying and pass its ID through so another failure can
                   // mark this same message again without creating a duplicate.
+                  if (activeConv?.id && isConvStreaming(activeConv.id)) {
+                    toast.info("当前回复仍在生成，请先停止接收后再重试");
+                    return;
+                  }
+                  const previousError = msg.error;
                   dispatch({ type: "CLEAR_MESSAGE_ERROR", payload: { conversationId: activeConv?.id, messageId: msg.id } });
                   const retryDeepThinking = state.activeAgentId === FREE_CHAT_AGENT_ID
                     ? FREE_CHAT_DEEP_THINKING_TYPE
@@ -1135,29 +1226,66 @@ export function ChatView() {
                   const retryWebSearch = webSearchOverride || shouldAutoEnableWebSearch(msg.content)
                     ? true
                     : undefined;
-                  sendMessage(msg.content, undefined, undefined, undefined, undefined, retryDeepThinking, retryWebSearch, true, msg.id);
+                  const accepted = await sendMessage(
+                    msg.content,
+                    msg.agentId || activeConv?.agentId,
+                    msg.images,
+                    activeChatModelOverride,
+                    undefined,
+                    retryDeepThinking,
+                    retryWebSearch,
+                    true,
+                    msg.id,
+                    { persistUserMessage: false, appendUserMessage: false },
+                  );
+                  if (!accepted) {
+                    dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: activeConv?.id, messageId: msg.id, error: previousError } });
+                    toast.warning("重试未受理：当前会话仍在加载或生成中");
+                  }
                 }
               } : undefined}
               onContinue={msg.role === "assistant" && !msg.isStreaming && /(?:\[已终止\]|输出中断|网络中断|连接中断)/.test(msg.content || "") ? () => {
                 const retryDeepThinking = state.activeAgentId === FREE_CHAT_AGENT_ID
                   ? FREE_CHAT_DEEP_THINKING_TYPE
                   : undefined;
+                const msgIdx = activeConv?.messages?.findIndex((item) => item.id === msg.id) ?? -1;
+                const previousUserMessage = msgIdx > 0
+                  ? activeConv?.messages?.slice(0, msgIdx).reverse().find((item) => item.role === "user")
+                  : undefined;
                 const continuationInstruction = [
                   "请从上一条助手回复的中断位置继续，保留已经完成的正文，不要重复已完整输出的段落。",
                   "如果上一条正在输出 storyboard_director_output.v1 或 agent_prompt_package.v1，请在本次回复末尾只给出一个完整、可解析的最终机器 JSON 包。",
                   "不要重新解释任务，也不要把未闭合 JSON 当成完成结果。",
                 ].join("\n");
-                sendMessage("继续生成", undefined, undefined, undefined, continuationInstruction, retryDeepThinking, webSearchOverride ? true : undefined);
+                sendMessage(
+                  "继续生成",
+                  msg.agentId || previousUserMessage?.agentId || activeConv?.agentId,
+                  previousUserMessage?.images,
+                  activeChatModelOverride,
+                  continuationInstruction,
+                  retryDeepThinking,
+                  webSearchOverride ? true : undefined,
+                  true,
+                  undefined,
+                  { persistUserMessage: false },
+                );
               } : undefined}
               onDelete={() => {
-                dispatch({ type: "DELETE_MESSAGE", payload: { conversationId: activeConv?.id, messageId: msg.id } });
+                if (!activeConv?.id) return;
+                void deleteMessage(activeConv.id, msg.id).then((deleted) => {
+                  if (!deleted) toast.error("消息删除失败，请稍后重试");
+                });
               }}
               onEdit={msg.role === "user" ? (content: string) => {
-                // 改写：将用户消息内容填入输入框
+                // 改写：载入输入框；发送时替换原消息，而不是再追加一条。
                 setInputValue(content);
+                setPendingImages((msg.images || []).map((url, index) => ({ key: url, url, name: `附件${index + 1}` })));
+                setEditingMessageId(msg.id);
                 inputRef.current?.focus();
               } : undefined}
               primaryAgentId={activeConv?.agentId}
+              conversationId={activeConv.id}
+              ownerUserId={state.auth.user?.id}
             />
             </ChatErrorBoundary>
           ))}
@@ -1367,10 +1495,27 @@ export function ChatView() {
               </div>
             )}
             {/* Textarea — 排版参数与CSS .chat-input-box对齐 */}
+            {editingMessageId && (
+              <div className="mx-2 mt-2 flex items-center justify-between gap-2 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-3 py-1.5">
+                <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                  <Pencil className="h-3 w-3 shrink-0 text-[var(--primary)]" />
+                  <span className="truncate">正在改写这条消息，发送后会替换原消息</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setEditingMessageId(null); setInputValue(""); }}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                >
+                  取消
+                </button>
+              </div>
+            )}
             <textarea
               ref={inputRef}
               value={inputValue}
               onChange={handleTextareaInput}
+              onCompositionStart={() => { composingRef.current = true; }}
+              onCompositionEnd={() => { composingRef.current = false; }}
               onKeyDown={handleKeyDown}
               placeholder={activeConv && isConvStreaming(activeConv?.id || '') ? "当前回复生成中，可先停止接收" : isBipProject ? `向 ${activeAgent?.name || '当前步骤'} 补充信息或提出任务，不清楚也可以直接说` : `向 ${activeConv?.agentName || 'AI'} 发消息，使用 @ 一次性调用其他智能体`}
               aria-label={`向 ${activeConv?.agentName || "AI"} 发送消息`}

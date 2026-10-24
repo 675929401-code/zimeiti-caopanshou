@@ -36,6 +36,14 @@ function fixture() {
   const rowValue = (row, key) => key.replaceAll('->>', '.').replaceAll('->', '.').split('.').reduce((value, item) => value?.[item], row);
   const db = {
     from(table) {
+      if (table === 'wallet_operations') {
+        const ref = `image:h3_${hash('fixture-user:fixture_image_key').slice(0,48)}`;
+        const result = { data: [{ id:'fixture-op',user_id:'fixture-user',wallet:'cash',idempotency_key:ref,
+          operation_kind:'cash_charge',amount:0.2,delta:-0.2,status:'completed' }], error:null };
+        const wallet = { select(){return wallet;},eq(){return wallet;},in(){return wallet;},abortSignal(){return wallet;},
+          then(resolve,reject){return Promise.resolve(result).then(resolve,reject);} };
+        return wallet;
+      }
       assert.equal(table, 'image_generation_requests');
       const filters = []; let update;
       const execute = async () => {
@@ -59,7 +67,7 @@ function fixture() {
         update(value) { update = value; return query; }, select() { return query; },
         eq(key, value) { filters.push(['eq', key, value]); calls.queryFilters.push([key, value]); return query; },
         is(key, value) { filters.push(['is', key, value]); calls.queryFilters.push([key, value]); return query; },
-        maybeSingle: execute, then(resolve, reject) { return execute().then(resolve, reject); },
+        abortSignal() { return query; }, maybeSingle: execute, then(resolve, reject) { return execute().then(resolve, reject); },
       };
       return query;
     },
@@ -117,7 +125,7 @@ function fixture() {
     '@/lib/auth': { getTokenFromHeaders: () => 'fixture-session', verifyToken: async () => ({ userId: 'fixture-user' }) },
     '@/lib/api-middleware': { withAuth: async (_request, handler) => handler({ id: 'fixture-user' }, db) },
   };
-  const globals = { Date: FixtureDate, Buffer, URL, structuredClone, createHash, process: { env: {} },
+  const globals = { Date: FixtureDate, Buffer, URL, AbortSignal, structuredClone, createHash, process: { env: {} },
     console: { log: (...args) => events.push(args), error: (...args) => events.push(args), warn: (...args) => events.push(args) } };
   function evaluate(source, extra = {}) {
     const compiledModule = { exports: {} };
@@ -158,7 +166,7 @@ function fixture() {
       providerMediaUrl: value => /^https?:/.test(value) ? value : null,
       AUTODL_H3_IMAGE_MAX_BYTES: 25 * 1024 * 1024, AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS: 120_000,
       AUTODL_H3_IMAGE_CONTENT_TYPES: ['image/png','image/jpeg','image/webp'], TRUSTED_GENERATED_IMAGE_HOSTS: ['provider-media.invalid'],
-      safeFetch: async url => {
+      readPublicImageResult: async url => {
         calls.downloads++; assert.equal(url,rawUrl);
         assert.ok([...rows.values()][0].response?.persistenceLease,'download requires durable lease');
         if(faults.deferDownload) await faults.deferDownload;
@@ -188,7 +196,7 @@ function fixture() {
       failureRequestSnapshot: { schema: 'image_generation_request_snapshot.v1', surface: 'other', prompt: 'fixture prompt',
         publicModelId: 'pm_fixture', modelName: 'Fixture image model', mode: 'text-to-image', aspectRatio: '1:1',
         resolution: '1K', referenceAssetRefs: [], quotedPriceYuan: 0.2, billingExempt: false },
-      h3OperationId: 'fixture_operation_id', effectiveMode: 'local', workflowConfig: { appId: '' },
+      h3OperationId: 'fixture_operation_id', imageBudgetState: {reservation:null}, parseImageFailureRequestSnapshot: modules['@/lib/image-failure-history'].parseImageFailureRequestSnapshot, effectiveMode: 'local', workflowConfig: { appId: '' },
       publicModelLabel: 'Fixture image model', modelConfig: candidate, selectedBillingPublicModelId: 'pm_fixture',
       costPrice: 0.1, ratio: '1:1', effectiveResolution: '1K', deductResult: null, billingReservation: null,
       ImageExactlyOnceError: lib.ImageExactlyOnceError, hasImageProviderCheckpoint: lib.hasImageProviderCheckpoint,
@@ -220,7 +228,7 @@ await test('legacy COS completed receipt replay and asset finalization remain id
   const legacyOptions={...options,persistProviderResult:undefined,prepareEphemeralResult:undefined,submitOnce:async()=>{legacySubmissions++;return response;}};
   const first=await f.lib.runImageExactlyOnce(legacyOptions);const replay=await f.lib.runImageExactlyOnce(legacyOptions);
   assert.equal(first.record.state,'completed');assert.equal(replay.replayed,true);assert.equal(legacySubmissions,1);assert.deepEqual({...replay.response},response);
-  const delivery={recordId:first.record.recordId,userId:'fixture-user',...response,meta:{}};
+  const delivery={recordId:first.record.recordId,userId:'fixture-user',...response,meta:{ billingReferenceId: `image:h3_${hash('fixture-user:fixture_image_key').slice(0,48)}`, quotedPriceYuan:'0.2' }};
   const one=await f.lib.finalizeImageExactlyOnceDelivery(delivery);const two=await f.lib.finalizeImageExactlyOnceDelivery(delivery);
   assert.equal(one.assetId,two.assetId);assert.equal(f.assets.size,1);assert.equal((await f.status()).deliveryReady,true);assert.equal(f.calls.provider,0);
 });

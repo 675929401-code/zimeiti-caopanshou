@@ -26,6 +26,22 @@ export interface AdminPermissionDefinition {
   description: string;
   risk: "normal" | "sensitive" | "critical";
   stepUpRequired: boolean;
+  grantorRequirement?: "super_admin";
+  executorRequirement?: "super_admin" | "explicit_grant";
+  isDelegable?: boolean;
+  granted?: boolean;
+}
+
+/** Public directory projection: capability metadata and this actor's grants only. */
+export function adminPermissionCatalogForSelf(permissionKeys: readonly string[]): AdminPermissionDefinition[] {
+  const granted = new Set(permissionKeys);
+  return ADMIN_PERMISSION_CATALOG.map((permission) => ({
+    ...permission,
+    grantorRequirement: "super_admin",
+    executorRequirement: permission.key === "admin.accounts.manage" ? "super_admin" : "explicit_grant",
+    isDelegable: permission.key !== "admin.accounts.manage",
+    granted: granted.has(permission.key),
+  }));
 }
 
 export const ADMIN_PERMISSION_CATALOG: readonly AdminPermissionDefinition[] = [
@@ -99,6 +115,7 @@ export const ADMIN_TAB_PERMISSIONS: Readonly<Record<string, AdminPermissionRequi
   trash: "agents.manage",
   models: "models.view",
   "workspace-models": "models.view",
+  "storyboard-presets": "platform.settings.manage",
   "aiweb-import": "agents.manage",
   general: "brand.settings.manage",
   theme: "brand.settings.manage",
@@ -258,6 +275,10 @@ export function adminRequirementForRequest(
   if (!pathname.startsWith("/api/admin/")) return null;
 
   if (pathname.startsWith("/api/admin/access-control")) return { permission: "admin.accounts.manage", requireStepUp: true, operation: "admin_governance" };
+  if (pathname === "/api/admin/storyboard-presets") return {
+    permission: "platform.settings.manage", requireStepUp: true,
+    operation: write ? "storyboard_preset_manage" : "storyboard_preset_admin_read",
+  };
   if (pathname.startsWith("/api/admin/branding/assets")) return {
     permission: "brand.settings.manage",
     requireStepUp: write,

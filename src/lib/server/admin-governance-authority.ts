@@ -10,7 +10,7 @@ import {
   normalizeAdminPermissionKeys,
   type AdminLevel,
 } from "@/lib/admin-governance";
-import { ADMIN_OWNER_ONLY_PERMISSION_KEYS } from "@/lib/admin-permission-design";
+import { ADMIN_OWNER_ONLY_PERMISSION_KEYS, ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS } from "@/lib/admin-permission-design";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 
 export interface AdminAccessSnapshot {
@@ -73,6 +73,39 @@ function privilegedDenialDetails(access: AdminAccessSnapshot, permissionKey: str
 
 const OWNER_ONLY_PERMISSION_SET = new Set<string>(ADMIN_OWNER_ONLY_PERMISSION_KEYS);
 
+const ADMIN_AUTHORITY_SCHEMA_ABSENT_CODES = new Set(["42P01", "PGRST202", "PGRST204", "PGRST205"]);
+
+function isAdminAuthoritySchemaAbsent(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { code?: string; message?: string; details?: string };
+  const message = `${value.message || ""} ${value.details || ""}`;
+  return ADMIN_AUTHORITY_SCHEMA_ABSENT_CODES.has(String(value.code || ""))
+    || /read_admin_access_snapshot|admin_access|admin_permission/iu.test(message);
+}
+
+async function legacyAdminAccessSnapshot(userId: string): Promise<AdminAccessSnapshot | null> {
+  try {
+    const { data, error } = await getSupabaseAdminClient()
+      .from("users")
+      .select("role,is_active")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !data || data.is_active === false || data.role !== "admin") return null;
+    return {
+      authorityStatus: "ready",
+      integrityValid: true,
+      adminLevel: "super_admin",
+      permissionKeys: [...ADMIN_PERMISSION_KEYS],
+      revision: 0,
+      checksum: "legacy-schema-absent",
+      profileActive: true,
+      updatedAt: null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function permissionKeysForAdminLevel(adminLevel: AdminLevel | null, value: unknown): string[] {
   const normalized = normalizeAdminPermissionKeys(value);
   return adminLevel === "super_admin"
@@ -95,7 +128,16 @@ export async function readAdminAccessSnapshot(userId: string): Promise<AdminAcce
     const { data, error } = await getSupabaseAdminClient().rpc("read_admin_access_snapshot", {
       p_user_id: userId,
     });
-    if (error) throw error;
+    if (error) {
+      if (isAdminAuthoritySchemaAbsent(error)) {
+        const legacy = await legacyAdminAccessSnapshot(userId);
+        if (legacy) {
+          console.warn("[admin-governance] schema absent; using legacy admin access until migrations are applied");
+          return legacy;
+        }
+      }
+      throw error;
+    }
     const row = (data || {}) as Record<string, unknown>;
     const status = text(row.authority_status);
     const adminLevel = row.admin_level === "super_admin" || row.admin_level === "admin" ? row.admin_level : null;
@@ -115,6 +157,13 @@ export async function readAdminAccessSnapshot(userId: string): Promise<AdminAcce
       updatedAt: text(row.updated_at) || null,
     };
   } catch (error) {
+    if (isAdminAuthoritySchemaAbsent(error)) {
+      const legacy = await legacyAdminAccessSnapshot(userId);
+      if (legacy) {
+        console.warn("[admin-governance] schema absent (thrown); using legacy admin access until migrations are applied");
+        return legacy;
+      }
+    }
     console.error("[admin-governance] access snapshot unavailable", error);
     return {
       authorityStatus: "unavailable",
@@ -241,6 +290,11 @@ export async function authorizeAdminCapability(
   permissionKey: string,
   options: { requireStepUp?: boolean; operation?: string; auditAllowed?: boolean } = {},
 ): Promise<AdminCapabilityResult> {
+  // Prompt/internal-tool grants never waive password re-verification, even if
+  // a future route omits the option. This does not grant account administration.
+  if (ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS.some((key) => key === permissionKey)) {
+    options = { ...options, requireStepUp: true };
+  }
   const token = getTokenFromHeaders(request.headers);
   const admin = await authorizeAdminToken(token);
   if (!admin.ok) {

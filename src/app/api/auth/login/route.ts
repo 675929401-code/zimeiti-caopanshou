@@ -147,6 +147,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const password = body.password as string | undefined;
     const loginInput = (body.phone || body.username) as string | undefined;
+    // 勾选“记住登录”时签发 30 天会话：到期前打开站点无需再次输入密码。
+    const remember = body.remember === true;
+    const sessionTtlDays = remember ? 30 : 3;
 
     if (!loginInput || !password) {
       return NextResponse.json({ error: "请输入账号和密码" }, { status: 400 });
@@ -237,7 +240,7 @@ export async function POST(request: NextRequest) {
       sessionId,
       ipHash: hashIP(clientIP),
       userAgentHash: hashUserAgent(userAgent),
-      expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + sessionTtlDays * 24 * 60 * 60 * 1000).toISOString(),
     });
     if (!sessionUpdate.ok) {
       console.error("[auth/login] Current session could not be persisted");
@@ -254,7 +257,7 @@ export async function POST(request: NextRequest) {
       displayName: user.display_name,
       ipHash: hashIP(clientIP),
       sessionId,
-    });
+    }, { expiresIn: `${sessionTtlDays}d` });
 
     void writeLoginLog({
       userId: user.id,
@@ -300,7 +303,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production" && request.nextUrl.protocol === "https:",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 3,
+      maxAge: 60 * 60 * 24 * sessionTtlDays,
       path: "/",
     });
 

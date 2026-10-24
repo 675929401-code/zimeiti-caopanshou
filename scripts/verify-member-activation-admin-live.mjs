@@ -210,7 +210,7 @@ export async function main() {
         await page.getByRole("navigation", { name: "管理后台功能导航" }).waitFor({ state: "visible", timeout: 30_000 });
         await closeOptionalOverlays(page);
         const sideNav = page.getByRole("navigation", { name: "管理后台功能导航" });
-        for (const label of ["会员管理", "资金与计费", "工作台配置", "基本设置", "界面设置", "安全中心", "系统运维"]) {
+        for (const label of ["会员管理", "资金与计费", "工作台配置", "品牌与联系", "界面设置", "安全中心", "系统运维"]) {
           assert.equal(await sideNav.getByRole("button", { name: label, exact: true }).count(), 1, `PRIMARY_ADMIN_HUB_MISSING:${label}`);
         }
         assert.equal(await sideNav.getByRole("button", { name: "画布提示词", exact: true }).count(), 0, "RETIRED_CANVAS_ADMIN_NAV_VISIBLE");

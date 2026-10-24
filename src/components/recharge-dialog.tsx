@@ -543,7 +543,7 @@ export function RechargeDialog({
                   <button
                     className={`flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
                       activeTab === "credits"
-                        ? "bg-[var(--primary)] text-white"
+                        ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                         : "bg-transparent text-[var(--text-secondary)] hover:text-[var(--foreground)]"
                     }`}
                     onClick={() => handleTabChange("credits")}
@@ -554,7 +554,7 @@ export function RechargeDialog({
                   <button
                     className={`flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
                       activeTab === "cash"
-                        ? "bg-[var(--primary)] text-white"
+                        ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                         : "bg-transparent text-[var(--text-secondary)] hover:text-[var(--foreground)]"
                     }`}
                     onClick={() => handleTabChange("cash")}
@@ -919,7 +919,7 @@ export function RechargeDialog({
             )}
             <p className="text-green-400 text-sm mb-4">余额已自动到账，即将返回主页面...</p>
             <Button
-              className="bg-[var(--primary)] text-white hover:opacity-90"
+              className="bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
               onClick={() => onOpenChange(false)}
             >
               返回

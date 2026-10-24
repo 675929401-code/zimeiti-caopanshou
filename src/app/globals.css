@@ -4709,3 +4709,45 @@ html[data-mode="light"] .chat-message-bubble-assistant .markdown-body :where(p, 
   content: none !important;
   display: none !important;
 }
+
+/* ===== 会话行排版优化（2026-10-22）：名称优先，时间靠右，删除悬浮不占位 =====
+   目标：名称可用宽度从约 90px 提升到 150px+（占文本区 80–90%），
+   超长名称仍单行省略，时间始终右对齐且不抖动。 */
+[data-theme] .sidebar-shell .sidebar-conv-item {
+  padding-right: max(6px, calc(10px * var(--sidebar-scale, 1)));
+  gap: max(4px, calc(7px * var(--sidebar-scale, 1)));
+}
+[data-theme] .sidebar-shell .sidebar-conv-text {
+  gap: max(4px, calc(6px * var(--sidebar-scale, 1)));
+}
+[data-theme] .sidebar-shell .sidebar-conv-name {
+  flex: 1 1 auto;
+  max-width: none;
+  min-width: 0;
+}
+[data-theme] .sidebar-shell .sidebar-conv-time {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  min-width: 26px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.78;
+  transition: opacity 0.15s ease;
+}
+/* hover 时让位给删除按钮，避免文字被遮挡或行宽跳动 */
+[data-theme] .sidebar-shell .sidebar-conv-item:hover .sidebar-conv-time,
+[data-theme] .sidebar-shell .sidebar-conv-item:focus-within .sidebar-conv-time {
+  opacity: 0;
+}
+[data-theme] .sidebar-shell .sidebar-conv-delete {
+  right: max(4px, calc(6px * var(--sidebar-scale, 1)));
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+/* 窄侧栏时进一步压缩时间与头像，保证名称优先 */
+@media (max-width: 1360px) {
+  [data-theme] .sidebar-shell .sidebar-conv-time { font-size: 10.5px; }
+}

@@ -116,14 +116,16 @@ export function getImageProviderCheckpointState(record: ImageExactlyOnceRecord, 
   };
 }
 
-function persistencePending(retryAfterMs = 0) {
+function persistencePending(retryAfterMs = 0, diagnosticCode?: string) {
   return new ImageExactlyOnceError(
     "IMAGE_RESULT_PERSISTENCE_PENDING",
-    retryAfterMs > 0
+    diagnosticCode
+      ? "原图片已生成，但取回或保存暂未成功；原请求与费用记录已保留，请查询原任务，勿重新生图"
+      : retryAfterMs > 0
       ? "上游图片结果已安全记录，系统仍在保存原结果；请稍后刷新，系统不会重新生图"
       : "上游图片结果已安全记录，系统将继续完成图片保存；不会再次调用生图模型",
     503,
-    { retryAfterMs, canRecover: retryAfterMs <= 0 },
+    { retryAfterMs, canRecover: retryAfterMs <= 0, ...(diagnosticCode ? { diagnosticCode } : {}) },
   );
 }
 
@@ -911,6 +913,56 @@ export async function finalizeImageExactlyOnceDelivery(input: {
   }
   try {
     const db = getSupabaseAdminClient();
+    // The legacy asset-delivery RPC binds the image/storage row but does not
+    // inspect the wallet. Authorize from the original owned request, never from
+    // caller metadata or a successful charge in a different invocation.
+    // This read guard is not atomic with the legacy RPC; do not describe it as
+    // equivalent to the billing locks in provider/ephemeral delivery RPCs.
+    const request = await db.from("image_generation_requests")
+      .select("record_id,user_id,client_idempotency_key,client_trace_id,state,response,request_snapshot")
+      .eq("record_id", input.recordId).eq("user_id", input.userId)
+      .abortSignal(AbortSignal.timeout(10_000)).maybeSingle();
+    const row = request.data as Record<string, unknown> | null;
+    const snapshot = row?.request_snapshot as Record<string, unknown> | null;
+    const stored = row?.response as Record<string, unknown> | null;
+    const price = snapshot?.quotedPriceYuan;
+    const key = row?.client_idempotency_key;
+    const trace = row?.client_trace_id;
+    if (request.error || !row || row.record_id !== input.recordId || row.user_id !== input.userId
+      || row.state !== "completed" || stored?.storageKey !== input.storageKey || stored?.storageProvider !== input.storageProvider
+      || typeof key !== "string" || !key.trim() || typeof trace !== "string" || !trace.trim()
+      || typeof price !== "number" || !Number.isFinite(price) || price < 0) {
+      throw new ImageExactlyOnceError("IMAGE_DELIVERY_BILLING_NOT_CONFIRMED", "原图片与费用快照尚未确认，已停止发放结果", 503);
+    }
+    const billingReferenceId = key === `admin_${sha256(trace).slice(0, 48)}`
+      ? `image:${trace}` : `image:h3_${sha256(`${input.userId}:${key}`).slice(0, 48)}`;
+    if (input.meta.billingReferenceId !== billingReferenceId
+      || !input.meta.quotedPriceYuan?.trim() || Number(input.meta.quotedPriceYuan) !== price) {
+      throw new ImageExactlyOnceError("IMAGE_DELIVERY_BILLING_NOT_CONFIRMED", "原图片账单绑定不一致，已停止发放结果", 503);
+    }
+    const billing = await db.from("wallet_operations")
+      .select("id,user_id,wallet,idempotency_key,operation_kind,amount,delta,status")
+      .eq("user_id", input.userId)
+      .in("operation_kind", ["cash_charge", "cash_refund"])
+      .in("idempotency_key", [billingReferenceId, `${billingReferenceId}:release`])
+      .abortSignal(AbortSignal.timeout(10_000));
+    const operations = billing.data as Array<Record<string, unknown>> | null;
+    if (billing.error || !Array.isArray(operations)) {
+      throw new ImageExactlyOnceError("IMAGE_DELIVERY_BILLING_NOT_CONFIRMED", "原图片账单暂时无法确认，已停止发放结果", 503);
+    }
+    // Any refund intent is a blocker, including pending/failed refunds and
+    // legacy refunds using the original key rather than its :release suffix.
+    if (operations.some(operation => operation.operation_kind === "cash_refund")) {
+      throw new ImageExactlyOnceError("IMAGE_DELIVERY_BILLING_RELEASED", "原图片存在费用释放记录，已停止发放结果", 503);
+    }
+    const charge = operations[0];
+    if (price === 0 ? snapshot?.billingExempt !== true || operations.length !== 0
+      : operations.length !== 1 || !charge || charge.user_id !== input.userId || !charge.id
+        || charge.wallet !== "cash" || charge.operation_kind !== "cash_charge"
+        || charge.idempotency_key !== billingReferenceId || charge.status !== "completed"
+        || Number(charge.amount) !== price || Number(charge.delta) !== -price) {
+      throw new ImageExactlyOnceError("IMAGE_DELIVERY_BILLING_NOT_CONFIRMED", "原图片扣费或免扣证据尚未确认，已停止发放结果", 503);
+    }
     const { data, error } = await db.rpc("finalize_image_generation_delivery", {
       p_record_id: input.recordId,
       p_user_id: input.userId,
@@ -920,7 +972,8 @@ export async function finalizeImageExactlyOnceDelivery(input: {
       p_file_size: input.fileSize,
       p_content_type: input.contentType,
       p_source: input.source,
-      p_meta: input.meta,
+      p_meta: { ...input.meta, billingReferenceId, quotedPriceYuan: String(price),
+        billingExempt: String(price === 0), billingOperationId: price > 0 ? String(charge.id) : "" },
     });
     if (error) databaseImageExactlyOnceError(error);
     const result = data as { deliveryAssetId?: string; deliveryState?: string } | null;
@@ -1272,7 +1325,15 @@ export async function runImageExactlyOnce(options: {
       if (release.kind === "completed") {
         return { response: release.record.response!, replayed, record: release.record };
       }
-      if (release.kind === "released") throw persistencePending(0);
+      if (release.kind === "released") {
+        // Keep a bounded, public diagnostic without persisting provider URLs,
+        // credentials or arbitrary exception text. A retry resumes delivery
+        // from the checkpoint; it can never submit the image again.
+        const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+        const diagnosticCode = ["DNS_LOOKUP_FAILED", "IP_FORBIDDEN", "FETCH_ABORTED", "FETCH_FAILED", "UPSTREAM_STATUS", "RESPONSE_TOO_LARGE", "CONTENT_TYPE_FORBIDDEN"]
+          .includes(code) ? code : "IMAGE_RESULT_DELIVERY_FAILED";
+        throw persistencePending(0, diagnosticCode);
+      }
       if (release.kind === "busy") throw persistencePending(release.retryAfterMs);
       throw persistencePending(getImageProviderCheckpointState(acquired).retryAfterMs);
     }

@@ -6,6 +6,7 @@ import { getVideoInputContract } from "@/lib/video-input-contract";
 import { getVideoDurationCapabilities, getVideoResolutionCapabilities } from "@/lib/video-model-capabilities";
 import { publicModelDisplayName, toPublicModelId } from "@/lib/public-model-dto";
 import { inspectVideoModelActivationReadiness } from "@/lib/model-activation-gate";
+import { getVideoTokenPublicPricing } from "@/lib/video-token-billing";
 import { evaluateVideoChannelCircuit, sanitizeVideoChannelError, VIDEO_CHANNEL_RECOVERY_CONFIRMATION, type VideoChannelHealthRecord } from "@/lib/video-channel-health-circuit";
 
 export const VIDEO_ADMIN_VALIDATION_CONFIRMATION = VIDEO_CHANNEL_RECOVERY_CONFIRMATION;
@@ -205,6 +206,8 @@ export function toVideoAdminValidationDto(context: VideoAdminValidationContext) 
   const requiresSourceVideo = input.requiresSourceVideo || knownSourceVideoAdapter;
   const timing = getVideoDurationCapabilities(row);
   const output = getVideoResolutionCapabilities(row);
+  const tokenBilled = config.provider_billing_unit === "token";
+  const tokenPricing = tokenBilled ? getVideoTokenPublicPricing({ api_protocol_config: row.api_protocol_config }) : null;
   const activation = inspectVideoModelActivationReadiness({ id: row.id, model_name: row.model_name, provider: row.provider, protocol_type: row.protocol_type, api_endpoint: row.api_endpoint, api_key: row.api_key, api_protocol_config: row.api_protocol_config });
   const circuit = evaluateVideoChannelCircuit(context.health);
   const restrictions = [];
@@ -228,9 +231,10 @@ export function toVideoAdminValidationDto(context: VideoAdminValidationContext) 
     schema: context.schema, validationKey: context.validationKey, configurationHash: context.configurationHash, healthEpoch: context.healthEpoch,
     confirmation: VIDEO_ADMIN_VALIDATION_CONFIRMATION, endpoint: "/api/video/generate", localDatabaseOnly: false,
     publishEndpoint: "/api/admin/video-models/validation/publish", publishConfirmation: "PUBLISH_VALIDATED_VIDEO_MODEL",
-    minimumPrice: Number.isFinite(minimumUnitPrice) && minimumUnitPrice >= 0 ? Math.round(minimumUnitPrice * (config.billing_unit === "output_second" ? timing.minDuration : 1) * 10000) / 10000 : null,
-    billingUnit: config.billing_unit === "output_second" ? "output_second" : "per_use",
-    administratorCharge: Number.isFinite(minimumUnitPrice) && minimumUnitPrice >= 0
+    minimumPrice: !tokenBilled && Number.isFinite(minimumUnitPrice) && minimumUnitPrice >= 0 ? Math.round(minimumUnitPrice * (config.billing_unit === "output_second" ? timing.minDuration : 1) * 10000) / 10000 : null,
+    billingUnit: tokenBilled ? "token" : config.billing_unit === "output_second" ? "output_second" : "per_use",
+    ...(tokenBilled ? { tokenPricing, requiresMaxChargeYuan: true } : {}),
+    administratorCharge: !tokenBilled && Number.isFinite(minimumUnitPrice) && minimumUnitPrice >= 0
       ? Math.round(minimumUnitPrice * (config.billing_unit === "output_second" ? timing.minDuration : 1) * 10000) / 10000
       : null,
     model: { id: row.id, publicId: toPublicModelId("video", row.id), displayName: clean(publicModelDisplayName(row), 180), protocol: clean(row.protocol_type, 80), upstreamModel: clean(row.model_name, 180), workflowId: config.workflow_id ? clean(config.workflow_id, 180) : null, endpointHost, active: row.is_active === true, hidden: row.is_hidden === true },

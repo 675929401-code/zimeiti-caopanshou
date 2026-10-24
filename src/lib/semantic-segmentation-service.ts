@@ -11,11 +11,9 @@ import { buildOpenAIEndpoint } from "@/lib/api-endpoints";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import {
   DURATION_MODES,
-  applySemanticOverlapBridges,
   buildSegmentUnits,
   countChars,
   normalizeForIntegrity,
-  reconstructSegmentedText,
   segmentTextRule,
   type SegmentResult,
   type SegmentUnit,
@@ -51,12 +49,6 @@ function buildChatUrl(apiBase: string): string {
   return buildOpenAIEndpoint(apiBase, "chat/completions");
 }
 
-function getSemanticBounds(duration: number) {
-  const mode = DURATION_MODES[duration];
-  const tolerance = Math.max(3, Math.ceil(duration * 0.5));
-  return { min: Math.max(1, mode.min - tolerance), max: mode.max + tolerance };
-}
-
 function extractJson(text: string): LLMChoice | null {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/iu);
@@ -73,11 +65,10 @@ function extractJson(text: string): LLMChoice | null {
 
 function buildPrompt(units: SegmentUnit[], duration: number): string {
   const mode = DURATION_MODES[duration];
-  const bounds = getSemanticBounds(duration);
   return [
     "你是短视频口播文案的语义分段裁判。",
     "你只能判断哪些连续小句应该合并成一段，不能改写、删除或增加原文。",
-    `当前模式：${mode.label}，推荐每段 ${mode.min}-${mode.max} 字，语义软边界 ${bounds.min}-${bounds.max} 字。`,
+    `当前模式：${mode.label}，推荐每段 ${mode.min}-${mode.max} 字，最多 ${mode.max} 字；可保留原文短段，不得补字或复述凑数。`,
     "优先级：不破坏完整语义、因果与句法；其次满足字数；最后保证口播节奏自然。",
     "只返回 JSON：{\"groups\":[[0,1],[2]],\"reason\":\"简短说明\"}。",
     "groups 必须覆盖全部 index、顺序递增、不可跳号、重复或倒序。",
@@ -97,7 +88,6 @@ function validateGroups(
   model: string,
 ): SegmentResult | null {
   const mode = DURATION_MODES[duration];
-  const bounds = getSemanticBounds(duration);
   if (!Array.isArray(choice.groups) || choice.groups.length === 0) return null;
   const flattened = choice.groups.flat();
   if (flattened.length !== units.length || flattened.some((index, position) => index !== position)) return null;
@@ -110,30 +100,23 @@ function validateGroups(
       return null;
     }
     const part = group.map((index) => units[index]);
-    const text = part.map((unit) => unit.text).join("").trim();
+    const text = part.map((unit) => unit.text).join("");
     const chars = countChars(text);
-    const isLast = cursor + group.length === units.length;
-    const oversizedUnit = group.length === 1 && part[0].charCount > mode.max;
-    const shortTail = isLast && chars < mode.min;
-    if (!oversizedUnit && !shortTail && (chars < bounds.min || chars > bounds.max)) return null;
+    if (chars > mode.max) return null;
     segments.push(text);
     paragraphBreakBefore.push(part[0].paragraphBreakBefore);
     cursor += group.length;
   }
   if (segments.join("") !== units.map((unit) => unit.text).join("")) return null;
-  const bridged = applySemanticOverlapBridges(segments, mode, paragraphBreakBefore);
-  const counts = bridged.segments.map(countChars);
+  const counts = segments.map(countChars);
   return {
-    segments: bridged.segments,
+    segments,
     counts,
-    compliant: counts.map((count, index) => index === counts.length - 1 && count < mode.min
-      ? true
-      : count >= bounds.min && count <= bounds.max),
+    compliant: counts.map(count => count <= mode.max),
     paragraphBreakBefore,
-    overlapPrefixes: bridged.overlapPrefixes,
     method: "semantic",
     model,
-    note: choice.reason || "模型已优先保护语义，并在字数软边界内选择断点",
+    note: choice.reason || "模型已保留原文，并在字数上限内选择断点",
   };
 }
 
@@ -461,7 +444,7 @@ export async function runBillableSemanticSegmentation(input: {
     ? validateGroups(provider.choice, units, input.duration, model.model)
     : null;
   const integrityPassed = semanticResult
-    && normalizeForIntegrity(reconstructSegmentedText(semanticResult.segments, semanticResult.overlapPrefixes))
+    && normalizeForIntegrity(semanticResult.segments.join(""))
       === normalizeForIntegrity(input.text);
   if (!provider.usage || !semanticResult || !integrityPassed) {
     const validation = { ...provider.diagnostics, groups_valid: semanticResult !== null, integrity_passed: Boolean(integrityPassed) };

@@ -41,9 +41,10 @@
  * 5. 干净的错误隔离：代理层错误不影响系统
  */
 
+import { createHash } from "node:crypto";
 import type { ProxyConfig, ProxyResult, StreamCallbacks, ChatRequest } from "./types";
 import { SseEventStreamDecoder, type DecodedSseEvent } from "../sse-stream-decoder";
-import { LlmResponseStartError, LlmStreamError, upstreamStreamError } from "./stream-error";
+import { LlmResponseStartError, LlmStreamError, LlmStreamReadError, upstreamStreamError, buildLlmSafeDiagnostics, sanitizeLlmSafeDiagnostics, summarizeLlmProviderFailure, type LlmSafeDiagnostics } from "./stream-error";
 import { buildOpenAIEndpoint } from "../api-endpoints";
 import { ensureServerRuntimeEnvLoaded } from "@/lib/server-runtime-env";
 
@@ -52,6 +53,10 @@ type TokenUsage = {
   completion_tokens: number;
   cached_tokens: number;
 };
+const ANTHROPIC_STOP_REASONS = new Set([
+  "end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal", "model_context_window_exceeded",
+]);
+const ANTHROPIC_USAGE_FIELDS = ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"] as const;
 
 // ═══════════════════════════════════════════════════════════════
 // 默认固定模板 — 出问题时恢复此配置即可
@@ -112,8 +117,8 @@ export class LLMProxy {
 
     // 构建请求体（统一 OpenAI 格式）
     const body: Record<string, unknown> = useClaudeMessages
-      ? buildClaudeMessagesBody(request, apiBase, model, true)
-      : buildOpenAiBody(request, apiBase, model, true, includeUsage);
+      ? buildClaudeMessagesBody(request, apiBase, model, true, this.config.thinkingStrategy)
+      : buildOpenAiBody(request, apiBase, model, true, includeUsage, this.config.outputTokenField);
 
     const headers = providerHeaders(this.config, useClaudeMessages);
     const serializedBody = JSON.stringify(body);
@@ -126,9 +131,21 @@ export class LLMProxy {
     // 带重试的 fetch 请求
     let response: Response | null = null;
     let lastError: Error | null = null;
+    let httpDiagnostics: Readonly<LlmSafeDiagnostics> | undefined;
+    const readErrorBody = async (upstream: Response): Promise<string> => {
+      const text = await upstream.text().catch(() => "");
+      let payload: unknown;
+      try { payload = JSON.parse(text); } catch { payload = {}; }
+      httpDiagnostics = buildLlmSafeDiagnostics(payload, {
+        phase: "response_headers", transportStatus: upstream.status,
+        elapsedMs: Date.now() - __requestStart, receivedChars: text.length,
+      });
+      return text;
+    };
 
     for (let attempt = 0; attempt <= retryCount; attempt++) {
       try {
+        httpDiagnostics = undefined;
         if (attempt > 0) {
           console.log(`[LLMProxy] 重试第 ${attempt} 次，等待 ${retryDelay}ms...`);
           await new Promise(r => setTimeout(r, retryDelay));
@@ -170,7 +187,7 @@ export class LLMProxy {
         // 原因：上游已过载，重试只会加剧负载导致更多429，对标 AIWeb 也是快速失败策略
         // 让用户看到明确错误后手动重试，而非系统盲目重试消耗配额
         if (response.status === 429) {
-          const errText = await response.text().catch(() => "");
+          const errText = await readErrorBody(response);
           // 区分真正的限流 vs 模型配置错误 vs 余额不足（某些上游用429返回非限流错误）
           const isNotChatModel = errText.includes("not a chat model") || errText.includes("not supported in the v1/chat/completions");
           if (isNotChatModel) {
@@ -185,7 +202,7 @@ export class LLMProxy {
 
         // 503 渠道不可用：快速失败，不重试（上游无可用渠道，重试无意义）
         if (response.status === 503) {
-          const errText = await response.text().catch(() => "");
+          const errText = await readErrorBody(response);
           const isChannelUnavailable = errText.includes("无可用渠道") || errText.includes("distributor") || errText.includes("no available channel");
           if (isChannelUnavailable) {
             throw new Error(`上游渠道暂不可用: 该模型当前无可用渠道，请稍后重试或切换其他模型`);
@@ -197,7 +214,7 @@ export class LLMProxy {
         // 原因：524 = 上游服务器处理超时，通常因为推理模型 TTFB 过长
         // 重试只会浪费用户等待时间，不如直接告知用户切换模型
         if (response.status === 524) {
-          const errText = await response.text().catch(() => "");
+          const errText = await readErrorBody(response);
           throw new Error(`LLM API 524: ${errText}`);
         }
 
@@ -214,7 +231,7 @@ export class LLMProxy {
         // 403 渠道欠费（new_api: insufficient_user_quota）：快速失败，不重试
         // 上游账户余额不足是确定性问题，重试无意义；给用户可读、可行动的错误
         if (response.status === 403) {
-          const errText = await response.text().catch(() => "");
+          const errText = await readErrorBody(response);
           const isQuotaExhausted = /insufficient_user_quota|预扣费额度失败|余额不足/i.test(errText);
           if (isQuotaExhausted) {
             throw new Error(`UPSTREAM_QUOTA_EXHAUSTED: 该模型渠道账户余额不足，本次未调用成功也未扣费。请切换其他模型，或联系管理员为该渠道充值。`);
@@ -223,10 +240,11 @@ export class LLMProxy {
         }
 
         // 4xx 或最后一次重试仍然失败 — 不重试，直接抛出
-        const errText = await response.text().catch(() => "");
+        const errText = await readErrorBody(response);
         throw new Error(`LLM API ${response.status}: ${errText}`);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        if (httpDiagnostics) Object.assign(lastError, { diagnostics: httpDiagnostics });
         // ★ 4xx 与渠道欠费/余额类错误不重试（确定性失败，重试无意义）
         if (lastError.message.startsWith("LLM API 4") || lastError.message.startsWith("UPSTREAM_")) {
           throw lastError;
@@ -244,12 +262,46 @@ export class LLMProxy {
     // Complete SSE events preserve split UTF-8 and final frames without buffering the response.
     const upstreamReader = response.body.getReader();
     const events = new SseEventStreamDecoder();
+    let receivedChars = 0;
+    const receivedText = new TextDecoder();
+    const streamDiagnostics = (): LlmSafeDiagnostics => ({
+      phase: "sse_event", transportStatus: response!.status,
+      elapsedMs: Date.now() - __requestStart, receivedChars,
+    });
+    const rejectProviderEvent = (payload: unknown, raw: string) => {
+      const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex");
+      const diagnostics = streamDiagnostics();
+      // Internal console receives fixed enums, lengths and hashes only. The
+      // public SSE contract remains the existing allowlisted safe diagnostics.
+      console.error(JSON.stringify({
+        kind: "LLM_PROVIDER_STREAM_REJECTION",
+        requestSha256: fingerprint(serializedBody), payloadSha256: fingerprint(raw),
+        protocol, endpointHost: new URL(url).hostname,
+        requestShape: {
+          model, messageCount: request.messages.length,
+          messageRoles: request.messages.map(message => message.role),
+          messageChars: request.messages.map(message => typeof message.content === "string" ? message.content.length : null),
+          max_tokens: body.max_tokens, max_completion_tokens: body.max_completion_tokens,
+          temperature: body.temperature, responseFormat: request.response_format?.type,
+          includeUsage: !!(body.stream_options as { include_usage?: boolean } | undefined)?.include_usage,
+          hasTools: Array.isArray(body.tools) && body.tools.length > 0,
+          hasEnableThinking: Object.hasOwn(body, "enable_thinking"),
+        },
+        diagnostics, providerFailure: summarizeLlmProviderFailure(payload, fingerprint),
+      }));
+      return upstreamStreamError(payload, diagnostics);
+    };
     let fullContent = "";
     let fullReasoning = "";
     let firstChunkReceived = false;
     let upstreamCompleted = false;
     let finalEventReceived = false;
     let claudeUsage: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, cached_tokens: 0 };
+    let nativeStopReason: string | null = null;
+    let nativeTerminalSource: "native_message_stop" | "relay_done" | null = null;
+    let nativeUsageObserved = false;
+    let nativeTerminalEmitted = false;
+    const nativeUsageFieldsPresent = new Set<string>();
     const STREAM_READ_TIMEOUT = 60_000;
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -263,17 +315,41 @@ export class LLMProxy {
           try { controller.close(); } catch { /* consumer disconnected */ }
           controllerClosed = true;
         };
+        const emitNativeTerminal = () => {
+          if (!useClaudeMessages || nativeTerminalEmitted) return;
+          nativeTerminalEmitted = true;
+          // Preserve only observed, allowlisted evidence. Missing native usage
+          // fields still normalize to zero, so list their actual presence rather
+          // than claiming the provider reported a complete usage breakdown.
+          enqueue(encoder.encode(`data: ${JSON.stringify({
+            choices: [{ index: 0, delta: {}, finish_reason: nativeStopReason }],
+            ...(nativeUsageObserved ? { usage: claudeUsage } : {}),
+            provider_terminal: { protocol: "anthropic_messages", source: nativeTerminalSource,
+              stop_reason: nativeStopReason, usage_source: nativeUsageObserved ? "normalized_reported" : "not_reported",
+              usage_fields_present: ANTHROPIC_USAGE_FIELDS.filter(field => nativeUsageFieldsPresent.has(field)) },
+          })}\n\n`));
+        };
         const deliver = (event: DecodedSseEvent) => {
-          if (event.data.trim() === "[DONE]") { upstreamCompleted = true; finalEventReceived = true; return; }
-          let parsed;
-          try { parsed = JSON.parse(event.data); } catch {
-            if (event.event === "error") throw upstreamStreamError({});
+          if (event.data.trim() === "[DONE]") {
+            upstreamCompleted = true; finalEventReceived = true;
+            if (useClaudeMessages && nativeTerminalSource !== "native_message_stop") nativeTerminalSource = "relay_done";
             return;
           }
-          if (parsed?.error || event.event === "error") throw upstreamStreamError(parsed);
+          let parsed;
+          try { parsed = JSON.parse(event.data); } catch {
+            if (event.event === "error") throw rejectProviderEvent({}, event.data);
+            return;
+          }
+          if (parsed?.error || event.event === "error") throw rejectProviderEvent(parsed, event.data);
           if (!parsed || typeof parsed !== "object") return;
           if (useClaudeMessages) {
-            if (parsed.type === "message_stop") { upstreamCompleted = true; finalEventReceived = true; }
+            if (parsed.type === "message_stop") {
+              upstreamCompleted = true; finalEventReceived = true; nativeTerminalSource = "native_message_stop";
+            }
+            if (parsed.type === "message_delta" && parsed.delta?.stop_reason != null) {
+              nativeStopReason = typeof parsed.delta.stop_reason === "string" && ANTHROPIC_STOP_REASONS.has(parsed.delta.stop_reason)
+                ? parsed.delta.stop_reason : null;
+            }
             const converted = convertClaudeStreamEvent(parsed);
             if (converted.content) {
               fullContent += converted.content;
@@ -281,6 +357,11 @@ export class LLMProxy {
               enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: converted.content }, finish_reason: null }] })}\n\n`));
             }
             if (converted.usage) {
+              const reported = parsed.usage || parsed.message?.usage;
+              if (reported && typeof reported === "object" && !Array.isArray(reported)) {
+                nativeUsageObserved = true;
+                for (const field of ANTHROPIC_USAGE_FIELDS) if (Object.hasOwn(reported, field)) nativeUsageFieldsPresent.add(field);
+              }
               // Anthropic splits input/cache usage into message_start and the
               // cumulative output usage into message_delta. Preserve both
               // fragments so the settlement callback always receives totals.
@@ -311,13 +392,15 @@ export class LLMProxy {
             const result = await Promise.race([
               upstreamReader.read(),
               new Promise<never>((_, reject) => {
-                timer = setTimeout(() => reject(new LlmStreamError("该模型响应超时，未完成本次回复，请稍后重试", "LLM_UPSTREAM_TIMEOUT")), STREAM_READ_TIMEOUT);
+                timer = setTimeout(() => reject(new LlmStreamReadError("idle_deadline_exceeded")), STREAM_READ_TIMEOUT);
               }),
             ]).finally(() => { if (timer) clearTimeout(timer); });
             if (result.done) {
+              receivedChars += receivedText.decode().length;
               for (const event of events.finish()) deliver(event);
-              if (!upstreamCompleted) throw new LlmStreamError("该模型回复中断，未收到完整结果，请稍后重试", "LLM_STREAM_INTERRUPTED");
+              if (!upstreamCompleted) throw new LlmStreamReadError("incomplete_eof");
               callbacks?.onDone?.(fullContent, fullReasoning || undefined);
+              emitNativeTerminal();
               enqueue(encoder.encode("data: [DONE]\n\n"));
               close();
               return;
@@ -326,19 +409,25 @@ export class LLMProxy {
               firstChunkReceived = true;
               callbacks?.onFirstByte?.(Date.now() - __requestStart);
             }
+            receivedChars += receivedText.decode(result.value, { stream: true }).length;
             for (const event of events.push(result.value)) deliver(event);
             if (finalEventReceived) {
               callbacks?.onDone?.(fullContent, fullReasoning || undefined);
+              emitNativeTerminal();
               enqueue(encoder.encode("data: [DONE]\n\n"));
               close();
               return;
             }
           }
         } catch (cause) {
-          const error = cause instanceof LlmStreamError ? cause : upstreamStreamError({ error: cause instanceof Error ? cause.message : String(cause) });
+          const error = cause instanceof LlmStreamError ? cause : new LlmStreamReadError("transport_error");
+          if (error instanceof LlmStreamReadError) {
+            console.error(JSON.stringify({ kind: "LLM_STREAM_READ_FAILURE", code: error.code, diagnostics: error.diagnostics }));
+          }
           callbacks?.onError?.(error);
           console.error(`[LLMProxy] Stream失败: model=${model}, code=${error.code}, 内容=${fullContent.length}, 耗时=${Date.now() - __requestStart}ms`);
-          enqueue(encoder.encode(`data: ${JSON.stringify({ error: error.message, code: error.code, done: false })}\n\n`));
+          const diagnostics = sanitizeLlmSafeDiagnostics(error.diagnostics);
+          enqueue(encoder.encode(`data: ${JSON.stringify({ error: error.message, code: error.code, done: false, ...(diagnostics ? { diagnostics } : {}) })}\n\n`));
           close();
         } finally {
           // Release sockets after upstream errors and read timeouts as well.
@@ -361,8 +450,8 @@ export class LLMProxy {
     const url = buildOpenAIEndpoint(apiBase, useClaudeMessages ? "messages" : "chat/completions");
 
     const body: Record<string, unknown> = useClaudeMessages
-      ? buildClaudeMessagesBody(request, apiBase, model, false)
-      : buildOpenAiBody(request, apiBase, model, false);
+      ? buildClaudeMessagesBody(request, apiBase, model, false, this.config.thinkingStrategy)
+      : buildOpenAiBody(request, apiBase, model, false, false, this.config.outputTokenField);
 
     const headers = providerHeaders(this.config, useClaudeMessages);
 
@@ -370,13 +459,15 @@ export class LLMProxy {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= retryCount; attempt++) {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      let successfulResponse = false;
       try {
         if (attempt > 0) {
           await new Promise(r => setTimeout(r, retryDelay));
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout * 1000);
+        timeoutId = setTimeout(() => controller.abort(), timeout * 1000);
 
         response = await fetch(url, {
           method: "POST",
@@ -385,9 +476,17 @@ export class LLMProxy {
           signal: controller.signal,
         });
 
-        clearTimeout(timeoutId);
-
-        if (response.ok) break;
+        if (response.ok) {
+          successfulResponse = true;
+          // Fetch resolves at headers. Keep the same abort deadline active
+          // until the body is fully consumed, including a stalled JSON body.
+          const data = await response.json();
+          if (useClaudeMessages) return normalizeClaudeMessageResponse(data, model);
+          const usage = data.usage ? extractTokenUsage(data) : undefined;
+          const content = data.choices?.[0]?.message?.content || "";
+          const reasoning = data.choices?.[0]?.message?.reasoning_content || data.choices?.[0]?.message?.reasoning || undefined;
+          return { content, reasoning_content: reasoning, usage, model, raw: data };
+        }
         if (response.status >= 500 && attempt < retryCount) {
           lastError = new Error(`Upstream ${response.status}`);
           await response.text().catch(() => {});
@@ -398,22 +497,15 @@ export class LLMProxy {
         throw new Error(`LLM API ${response.status}: ${errText}`);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        if (attempt >= retryCount) throw lastError;
+        // Previously body decoding happened after the retry loop. Preserve
+        // its no-retry contract when headers already accepted the request.
+        if (successfulResponse || attempt >= retryCount) throw lastError;
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
       }
     }
 
-    if (!response) throw lastError || new Error("No response");
-
-    const data = await response.json();
-    if (useClaudeMessages) {
-      return normalizeClaudeMessageResponse(data, model);
-    }
-
-    const usage = data.usage ? extractTokenUsage(data) : undefined;
-    const content = data.choices?.[0]?.message?.content || "";
-    const reasoning = data.choices?.[0]?.message?.reasoning_content || data.choices?.[0]?.message?.reasoning || undefined;
-
-    return { content, reasoning_content: reasoning, usage, model, raw: data };
+    throw lastError || new Error("No response");
   }
 
   // ─────────────────────────────────────────────────────────
@@ -477,8 +569,9 @@ export function openAIThinkingOptions(request: Pick<ChatRequest, "enable_thinkin
   return request.enable_thinking ? { enable_thinking: true } : {};
 }
 
-function openAIOutputTokenOptions(request: Pick<ChatRequest, "max_tokens">, model: string): Record<string, number> {
+function openAIOutputTokenOptions(request: Pick<ChatRequest, "max_tokens">, model: string, configuredField?: ProxyConfig["outputTokenField"]): Record<string, number> {
   if (!request.max_tokens || request.max_tokens <= 0) return {};
+  if (configuredField) return { [configuredField]: request.max_tokens };
   // Modern OpenAI reasoning families use max_completion_tokens. This restores
   // the existing GPT-5 behaviour and extends it to the documented GPT-6 alias.
   const useMaxCompletionTokens = /^gpt-(?:chat-latest|[5-9](?:[.\-]|$))/iu.test(model);
@@ -537,10 +630,23 @@ function normalizeContentForClaude(content: string | unknown[]): string | Array<
 }
 
 function claudeThinkingOptions(
-  request: Pick<ChatRequest, "enable_thinking">,
+  request: Pick<ChatRequest, "enable_thinking" | "anthropic_thinking_profile">,
   apiBase: string,
   model: string,
+  strategy?: ProxyConfig["thinkingStrategy"],
 ): Record<string, unknown> {
+  const profile = request.anthropic_thinking_profile;
+  if ((profile?.id === "storyboard-high-energy-b-v6-adaptive-low-v1" || profile?.id === "storyboard-high-energy-b-v8-adaptive-low-v1")
+    && profile.thinkingMode === "adaptive" && profile.effort === "low" && model === "claude-opus-5-5") {
+    try {
+      const url = new URL(apiBase);
+      if (url.origin === "https://n.lconai.com" && !url.username && !url.password) {
+        return { thinking: { type: "adaptive" }, output_config: { effort: "low" } };
+      }
+    } catch { /* Non-URL configuration is validated by the caller. */ }
+  }
+  if (strategy === "provider_default") return {};
+  if (strategy === "adaptive_low") return { thinking: { type: "adaptive" }, output_config: { effort: "low" } };
   if (request.enable_thinking !== false) return {};
   try {
     const host = new URL(apiBase).hostname.toLowerCase();
@@ -548,14 +654,14 @@ function claudeThinkingOptions(
     // alias, but its native Sonnet 5.5 channel rejects the optional
     // `thinking: {type:"disabled"}` field with HTTP 400. Omitting the field is
     // the provider-compatible way to request its default behaviour.
-    if ((host === "n.lconai.com" || host === "s.lconai.com") && /^claude-sonnet-5-5$/iu.test(model)) {
+    if ((host === "n.lconai.com" || host === "s.lconai.com") && /^claude-(?:sonnet|opus)-5-5$/iu.test(model)) {
       return {};
     }
   } catch { /* The caller validates configured URLs before dispatch. */ }
   return { thinking: { type: "disabled" } };
 }
 
-function buildClaudeMessagesBody(request: ChatRequest, apiBase: string, model: string, stream: boolean): Record<string, unknown> {
+function buildClaudeMessagesBody(request: ChatRequest, apiBase: string, model: string, stream: boolean, thinkingStrategy?: ProxyConfig["thinkingStrategy"]): Record<string, unknown> {
   const systemParts: string[] = [];
   const messages = request.messages
     .map((message) => {
@@ -582,7 +688,7 @@ function buildClaudeMessagesBody(request: ChatRequest, apiBase: string, model: s
     // validates the visible answer instead of being consumed by thinking
     // blocks. When thinking is enabled we keep the provider default because an
     // explicit budget must be chosen together with the caller's output limit.
-    ...claudeThinkingOptions(request, apiBase, model),
+    ...claudeThinkingOptions(request, apiBase, model, thinkingStrategy),
     ...(shouldSendTemperature(request, "", model) ? { temperature: request.temperature } : {}),
   };
 }
@@ -594,12 +700,13 @@ function buildOpenAiBody(
   model: string,
   stream: boolean,
   includeUsage = false,
+  outputTokenField?: ProxyConfig["outputTokenField"],
 ): Record<string, unknown> {
   return {
     model,
     messages: request.messages,
     stream,
-    ...openAIOutputTokenOptions(request, model),
+    ...openAIOutputTokenOptions(request, model, outputTokenField),
     ...(shouldSendTemperature(request, apiBase, model) ? { temperature: request.temperature } : {}),
     ...openAIThinkingOptions(request, apiBase, model),
     ...(request.response_format ? { response_format: request.response_format } : {}),

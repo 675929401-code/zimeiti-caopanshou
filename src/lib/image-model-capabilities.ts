@@ -136,9 +136,20 @@ export function getImageModelCapabilities(model?: ImageModelIdentity | null): Im
               maxCharacterReferences: 1,
               referenceCapabilityLabel: "单张主体参考",
             };
-  const configured = normalizeConfiguredResolutions(configuredModel.resolution_options);
+  // Administrator saves have written both spellings over time: the public
+  // protocol config uses camelCase (`resolutionOptions`) while the runtime
+  // contract reads snake_case. Honour either one so a configured 1K/2K/4K set
+  // is never silently replaced by the 1K family fallback.
+  const configured = normalizeConfiguredResolutions(
+    configuredModel.resolution_options
+    ?? (configuredModel as { resolutionOptions?: string[] | null }).resolutionOptions,
+  );
   if (configured.length > 0) {
-    const configuredDefault = configuredModel.default_resolution?.toUpperCase() as ImageResolution | undefined;
+    const configuredDefault = String(
+      configuredModel.default_resolution
+      ?? (configuredModel as { defaultResolution?: string | null }).defaultResolution
+      ?? "",
+    ).toUpperCase() as ImageResolution | undefined;
     return {
       resolutionOptions: configured,
       defaultResolution: configuredDefault && configured.includes(configuredDefault)

@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { withAdminAuth } from "@/lib/api-middleware";
 import { getAccountGovernanceInfo } from "@/lib/account-governance";
+import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const CHANNELS = new Set(["wechat", "alipay", "bank_transfer", "cash", "other"]);
@@ -51,7 +52,11 @@ async function loadUsers(database: any, ids: string[]) {
   return users;
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const authorization = await authorizeAdminCapability(request, "billing.view", {
+    operation: "offline_payment_view",
+  });
+  if (!authorization.ok) return authorization.response;
   return withAdminAuth(request, async (_admin, database) => {
     try {
       const { searchParams } = new URL(request.url);
@@ -121,7 +126,13 @@ export async function GET(request: Request) {
   });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const authorization = await authorizeAdminCapability(request, "wallet.adjust", {
+    requireStepUp: true,
+    operation: "offline_payment_record",
+    auditAllowed: true,
+  });
+  if (!authorization.ok) return authorization.response;
   return withAdminAuth(request, async (admin, database) => {
     const adminDatabase = database as any;
     const body = await request.json() as Record<string, unknown>;
@@ -182,7 +193,13 @@ export async function POST(request: Request) {
   });
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
+  const authorization = await authorizeAdminCapability(request, "wallet.adjust", {
+    requireStepUp: true,
+    operation: "offline_payment_void",
+    auditAllowed: true,
+  });
+  if (!authorization.ok) return authorization.response;
   return withAdminAuth(request, async (admin, database) => {
     const body = await request.json() as Record<string, unknown>;
     const receiptId = typeof body.receiptId === "string" ? body.receiptId.trim() : "";

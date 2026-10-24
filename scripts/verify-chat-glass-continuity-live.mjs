@@ -434,14 +434,14 @@ function assertScene(scene) {
   const expectedComposerGradient = {
     lattice: [/rgba\(14, 37, 65, 0\.72\)/u, /rgba\(7, 24, 47, 0\.62\)/u],
     "soft-white": [/rgba\(255, 255, 255, 0\.8\)/u, /rgba\(247, 251, 248, 0\.67\)/u],
-    "crystal-aurora": [/rgba\(38, 53, 44, 0\.78\)/u, /rgba\(20, 33, 27, 0\.7\)/u],
+    "crystal-aurora": [/rgba\(9, 43, 51, 0\.92\)/u, /rgba\(5, 27, 34, 0\.9\)/u],
   }[scene.theme];
   assert.ok(expectedComposerGradient, `${scene.theme} has no historical composer contract`);
   for (const stop of expectedComposerGradient) assert.match(scene.composer.backgroundImage, stop, `${scene.theme} composer captured the wrong historical surface`);
   const expectedComposerBorder = {
     lattice: "rgba(135, 205, 226, 0.22)",
     "soft-white": "rgba(78, 126, 117, 0.18)",
-    "crystal-aurora": "rgba(255, 184, 95, 0.22)",
+    "crystal-aurora": "rgba(94, 181, 188, 0.24)",
   }[scene.theme];
   assert.equal(scene.composer.borderColor, expectedComposerBorder, `${scene.theme} composer did not restore the R598 border`);
   assert.notEqual(scene.composer.boxShadow, "none", `${scene.theme} composer lost the R598 soft shadow`);

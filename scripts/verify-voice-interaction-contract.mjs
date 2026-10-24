@@ -27,7 +27,8 @@ includes(featuredCard, ["<VoicePortrait", "loadPreview", "停止试听", "URL.re
 includes(workspace, [
   "<VoicePortrait", "useVoiceFavorites", "previewSequenceRef", "URL.revokeObjectURL",
   "aria-label={`${isThisPlaying ? '停止试听'", "aria-pressed={isFav}",
-  "lg:grid-cols-[360px_minmax(0,1fr)]", "sm:grid-cols-4 xl:grid-cols-9",
+  // Option wrapping and control geometry are checked in desktop browser acceptance.
+  "lg:grid-cols-[360px_minmax(0,1fr)]",
 ], "voice workspace interaction");
 if (workspace.includes("previewLockRef")) throw new Error("voice workspace still ignores a second preview click while the first is loading");
 

@@ -6,11 +6,13 @@ import {
   normalizeAdminPermissionKeys,
 } from "@/lib/admin-governance";
 
-// These permissions are never delegable to an ordinary administrator.  A
-// second-factor/step-up session proves who is operating the account; it must
-// never promote that account into the platform-owner trust boundary.
+// Granting and executing are separate trust boundaries. Only the owner may
+// grant any administrator permission. The account-control capability itself
+// remains non-delegable, including the fail-closed fallback for unknown APIs.
 export const ADMIN_OWNER_ONLY_PERMISSION_KEYS = [
   "admin.accounts.manage",
+] as const;
+export const ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS = [
   "prompts.view",
   "prompts.edit",
   "internal_tools.manage",

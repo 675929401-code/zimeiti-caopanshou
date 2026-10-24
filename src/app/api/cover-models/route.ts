@@ -4,6 +4,7 @@ import { cleanImageModelText, publicImageModelCapabilities } from "@/lib/image-a
 import { NextResponse } from "next/server";
 import { publicMediaBillingCapabilities, toPublicModelDto } from "@/lib/public-model-dto";
 import { publicImageResolutionPrices, resolveImageResolutionPrice } from "@/lib/image-resolution-pricing";
+import { ImageProviderBindingError, resolveImageProviderContract } from "@/lib/image-provider-contract";
 import {
   AUTODL_H3_SELFHOST_IMAGE_VERIFIED_ASPECT_RATIOS,
   AUTODL_H3_SELFHOST_IMAGE_VERIFIED_OUTPUT_PIXEL_SIZES,
@@ -31,6 +32,18 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
+
+function publicImageReferenceRequirement(model: Record<string, unknown>) {
+  try {
+    const requiresImage = resolveImageProviderContract(model).requestProtocol === "images_edits";
+    return { requiresImage, minReferenceImages: requiresImage ? 1 : 0 };
+  } catch (error) {
+    // An unbound catalog entry remains visible; its existing admission state
+    // still controls generation. Do not infer an input contract from its name.
+    if (error instanceof ImageProviderBindingError) return { requiresImage: false, minReferenceImages: 0 };
+    throw error;
+  }
+}
 
 function imageProtocolConfig(model: Record<string, unknown>): Record<string, unknown> {
   return model.api_protocol_config && typeof model.api_protocol_config === "object" && !Array.isArray(model.api_protocol_config)
@@ -135,11 +148,14 @@ export async function GET(request: Request) {
       .map((model): Record<string, unknown> => ({ ...model, name: cleanImageModelText(model, model.name), model_name: cleanImageModelText(model, model.model_name), ...publicImageModelCapabilities(model) }))
       .sort((left, right) => {
         const priorityDifference = publicImageCatalogPriority(left) - publicImageCatalogPriority(right);
-        if (priorityDifference !== 0) return priorityDifference;
+        // Cover's dropdown follows the administrator's workspace order. Other
+        // image workbenches keep their existing family-grouped presentation.
+        if (orderSurface !== "cover-studio" && priorityDifference !== 0) return priorityDifference;
         const leftSurfaceOrder = requestedWorkspaceSurface ? imageModelSurfaceSortOrder(surfaceOrders, orderSurface, left.id) : null;
         const rightSurfaceOrder = requestedWorkspaceSurface ? imageModelSurfaceSortOrder(surfaceOrders, orderSurface, right.id) : null;
         if ((leftSurfaceOrder !== null) !== (rightSurfaceOrder !== null)) return leftSurfaceOrder !== null ? -1 : 1;
         if (leftSurfaceOrder !== null && rightSurfaceOrder !== null && leftSurfaceOrder !== rightSurfaceOrder) return leftSurfaceOrder - rightSurfaceOrder;
+        if (priorityDifference !== 0) return priorityDifference;
         return Number((left as { sort_order?: unknown }).sort_order || 0) - Number((right as { sort_order?: unknown }).sort_order || 0)
           || String(left.id || '').localeCompare(String(right.id || ''));
       });
@@ -173,6 +189,7 @@ export async function GET(request: Request) {
                 ? "当前未开放"
               : "",
         supportsImageInput: Boolean(model.supports_image_input),
+        ...publicImageReferenceRequirement(model),
         resolutionOptions: model.provider === AUTODL_H3_SELFHOST_PROVIDER
           ? [AUTODL_H3_SELFHOST_IMAGE_VERIFIED_RESOLUTION]
           : (Array.isArray(model.resolutionOptions) ? model.resolutionOptions as string[] : []),

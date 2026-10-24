@@ -1,0 +1,86 @@
+﻿/* History-only selectors inherit semantic tokens from all three platform themes. */
+.sbh-dialog { width: min(1500px, calc(100vw - 64px)); max-width: calc(100vw - 64px); max-height: calc(100vh - 64px); padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--card); color: var(--foreground); margin: auto; box-shadow: 0 24px 90px #0005; overflow: hidden; }
+.sbh-dialog::backdrop { background: #040a148a; backdrop-filter: blur(6px); }
+.sbh-panel { display: flex; flex-direction: column; max-height: calc(100vh - 64px); background: var(--card); color: var(--foreground); min-height: 280px; }
+.sbh-inline .sbh-panel { border: 1px solid var(--border); border-radius: 14px; max-height: none; }
+.sbh-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 22px; border-bottom: 1px solid var(--border); background: var(--card); }
+.sbh-header h2 { margin: 0; color: var(--foreground); font-size: 19px; font-weight: 700; }
+.sbh-header p { margin: 6px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.sbh-panel button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--secondary); color: var(--secondary-foreground); cursor: pointer; font-size: 12px; }
+.sbh-panel button:hover:not(:disabled) { border-color: var(--primary); background: var(--accent); color: var(--accent-foreground); }
+.sbh-panel button:focus-visible, .sbh-panel summary:focus-visible, .sbh-panel input:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.sbh-panel button:disabled { opacity: .55; cursor: default; }
+.sbh-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.sbh-content { padding: 20px 22px; overflow: auto; min-height: 180px; overscroll-behavior: contain; }
+.sbh-day { margin-bottom: 24px; }
+.sbh-day h3 { margin: 0 0 12px; font-size: 15px; font-weight: 700; color: var(--foreground); }
+.sbh-batch { margin-bottom: 18px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--card) 88%, transparent); }
+.sbh-batch-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.sbh-batch-head h4 { margin: 0; }
+.sbh-batch-actions { display: flex; align-items: center; gap: 8px; }
+.sbh-batch-actions button { padding: 5px 10px; font-size: 11px; }
+.sbh-batch h4 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 13px; color: var(--foreground); font-weight: 600; overflow-wrap: anywhere; }
+.sbh-batch h4 span { color: var(--muted-foreground); font-size: 11px; white-space: nowrap; font-weight: 400; }
+.sbh-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(218px,258px)); gap: 14px; justify-content: start; }
+.sbh-card { border: 1px solid var(--border); border-radius: 12px; background: var(--background); overflow: hidden; min-width: 0; align-self: start; }
+.sbh-panel .sbh-card-play { display: flex; position: relative; width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 0; padding: 0; overflow: hidden; background: var(--muted); color: var(--muted-foreground); }
+.sbh-panel .sbh-card-play:disabled { opacity: 1; }
+.sbh-card-play img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sbh-card-status { position: absolute; left: 8px; top: 8px; padding: 3px 7px; border-radius: 5px; background: var(--card); color: var(--foreground); font-size: 10px; border: 1px solid var(--border); }
+.sbh-play-symbol { display: grid; place-items: center; position: absolute; inset: 0; margin: auto; width: 42px; height: 42px; border-radius: 50%; color: var(--primary-foreground); background: var(--primary); box-shadow: 0 3px 20px #0003; }
+.sbh-card-body { padding: 10px 12px; }
+.sbh-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.sbh-card-title strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sbh-card-title span { color: var(--muted-foreground); white-space: nowrap; }
+.sbh-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.6; color: var(--muted-foreground); margin: 5px 0; }
+.sbh-details { margin-top: 7px; color: var(--muted-foreground); font-size: 11px; }
+.sbh-details summary, .sbh-recovery summary { cursor: pointer; padding: 3px 0; }
+.sbh-details p { margin: 7px 0; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.6; max-height: 180px; overflow: auto; }
+.sbh-select { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 6px 0; color: var(--muted-foreground); }
+.sbh-select input { accent-color: var(--primary); }
+.sbh-empty { display: flex; min-height: 220px; align-items: center; justify-content: center; flex-direction: column; gap: 13px; color: var(--muted-foreground); font-size: 13px; }
+.sbh-empty strong { color: var(--foreground); }
+.sbh-error, .sbh-notice { margin: 10px 22px; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.sbh-error { color: var(--destructive); }
+.sbh-error button { margin-left: 10px; }
+.sbh-confirm { display: flex; align-items: center; justify-content: space-between; gap: 20px; background: var(--accent); color: var(--accent-foreground); margin: 14px 22px 4px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; line-height: 1.6; }
+.sbh-recovery { padding: 14px; margin-top: 20px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; color: var(--muted-foreground); }
+.sbh-panel .sbh-load-more { display: flex; margin: 18px auto; }
+.sbh-player-dialog { width: min(1100px,calc(100vw - 64px)); }
+.sbh-player { position: relative; display: flex; align-items: center; justify-content: center; background: #000; min-height: 180px; flex: 1; min-width: 0; overflow: hidden; }
+.sbh-player video { display: block; width: 100%; max-height: calc(100vh - 310px); min-height: 180px; object-fit: contain; }
+.sbh-player-loading { position: absolute; display: flex; align-items: center; gap: 8px; color: #eee; font-size: 13px; }
+.sbh-player-footer { padding: 14px 22px 18px; overflow: auto; }
+.sbh-player-footer > p { margin: 0 0 12px; font-size: 12px; color: var(--muted-foreground); line-height: 1.6; }
+.sbh-player-footer .sbh-actions { justify-content: flex-end; }
+@media (min-width: 1800px) { .sbh-dialog:not(.sbh-player-dialog) { width: min(1740px,calc(100vw - 80px)); } .sbh-grid { grid-template-columns: repeat(auto-fill,minmax(218px,258px)); } }
+@media (max-width: 1100px) { .sbh-grid { grid-template-columns: repeat(auto-fill,minmax(200px,240px)); } .sbh-header { align-items: flex-start; } }
+
+.sbh-filters { display: flex; gap: 8px; padding: 12px 22px 0; flex-wrap: wrap; }
+.sbh-filters button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+
+
+
+.sbh-card { position: relative; }
+.sbh-pick { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; align-items: center; justify-content: center; padding: 3px; border-radius: 6px; background: color-mix(in srgb, var(--card) 82%, transparent); border: 1px solid var(--border); }
+.sbh-pick input { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+.sbh-card.is-picked { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+
+/* 状态与进度：进行中显示进度条+已用时间，失败显示原因，费用待确认单独标色 */
+.sbh-card-status.is-processing, .sbh-card-status.is-generating, .sbh-card-status.is-finalizing { border-color: var(--primary); color: var(--primary); }
+.sbh-card-status.is-queued, .sbh-card-status.is-pending { color: var(--muted-foreground); }
+.sbh-card-status.is-failed, .sbh-card-status.is-cancelled, .sbh-card-status.is-expired { border-color: #f87171; color: #fca5a5; }
+.sbh-card-status.is-pending { border-color: #fbbf24; color: #fcd34d; }
+.sbh-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: color-mix(in srgb, var(--foreground) 18%, transparent); overflow: hidden; }
+.sbh-progress > span { display: block; height: 100%; background: var(--primary); transition: width .4s ease; }
+.sbh-progress-text { position: absolute; left: 8px; bottom: 10px; padding: 2px 7px; border-radius: 5px; background: color-mix(in srgb, var(--card) 78%, transparent); font-size: 10px; color: var(--foreground); }
+.sbh-card-error { margin: 4px 0 0; font-size: 11px; line-height: 1.5; color: #fca5a5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sbh-filter-count { margin-left: 6px; padding: 0 5px; border-radius: 6px; background: color-mix(in srgb, var(--foreground) 12%, transparent); font-size: 10px; }
+
+/* First-frame failures remain explicit and never hide replacement images. */
+.sbh-cover-hint { position: absolute; bottom: 7px; left: 8px; right: 8px; padding: 3px 6px; color: var(--foreground); background: color-mix(in srgb, var(--card) 86%, transparent); border-radius: 5px; font-size: 10px; line-height: 1.5; }
+.sbh-delivery { margin: 6px 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.6; }
+.sbh-delivery.is-saved { color: var(--primary); }
+.sbh-inline .sbh-content { overflow: visible; }
+.sbh-inline .sbh-header { align-items: flex-start; }
+.sbh-inline .sbh-header > div:first-child { min-width: 0; max-width: 700px; }

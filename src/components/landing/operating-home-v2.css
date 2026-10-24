@@ -300,10 +300,15 @@ html[data-theme="stellar-blue"][data-mode="dark"] .soft-white-home[data-landing-
 }
 
 .soft-white-home[data-landing-version="v2"]::before {
-  opacity: .28;
-  background:
+  opacity: .46;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--oh-accent-two) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--oh-accent-two) 22%, transparent) 1px, transparent 1px),
     radial-gradient(ellipse at 50% -12%, color-mix(in srgb, var(--oh-accent-two) 12%, transparent), transparent 54%),
     linear-gradient(180deg, transparent 58%, color-mix(in srgb, var(--oh-page-deep) 42%, transparent));
+  background-size: 64px 64px, 64px 64px, 100% 100%, 100% 100%;
+  background-position: 0 0, 0 0, center, center;
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
   mask-image: linear-gradient(to bottom, black, rgba(0, 0, 0, .3) 68%, transparent 98%);
 }
 
@@ -1118,8 +1123,8 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landin
 }
 
 html[data-theme][data-mode] .soft-white-home[data-landing-version="v2"]::before {
-  opacity: .09;
-  background-size: 120px 120px;
+  opacity: .58;
+  background-size: 64px 64px, 64px 64px, 100% 100%, 100% 100%;
   mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .7), rgba(0, 0, 0, .18) 62%, transparent 94%);
 }
 

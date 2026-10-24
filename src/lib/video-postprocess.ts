@@ -1,11 +1,22 @@
 import { spawn } from "child_process";
 import { promises as fs } from "fs";
-import os from "os";
 import path from "path";
 import { safeMediaFetch } from "@/lib/safe-media-fetch";
+import { resolveAppRuntimeDir } from "@/lib/runtime-paths";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const DEFAULT_MAX_VIDEO_BYTES = 512 * 1024 * 1024;
+
+/**
+ * ffmpeg 在本机写不进 Windows 的 %TEMP%（Image2 I/O error），
+ * 临时目录默认放在应用运行目录下，可用 VIDEO_TEMP_DIR 覆盖。
+ */
+async function createMediaTempDir(prefix: string): Promise<string> {
+  const configured = process.env.VIDEO_TEMP_DIR?.trim();
+  const root = configured || path.join(resolveAppRuntimeDir(), "tmp");
+  await fs.mkdir(/* turbopackIgnore: true */ root, { recursive: true });
+  return fs.mkdtemp(/* turbopackIgnore: true */ path.join(root, prefix));
+}
 
 type VideoDownloadOptions = {
   trustedHostnames?: string[];
@@ -166,7 +177,7 @@ export async function downloadAndTrimVideo(
   options: VideoDownloadOptions = {},
 ) {
   const duration = Math.max(0.5, Math.round(targetDurationSeconds * 10) / 10);
-  const tempDir = await fs.mkdtemp(/* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ os.tmpdir(), "video-trim-"));
+  const tempDir = await createMediaTempDir("video-trim-");
   const inputPath = path.join(/* turbopackIgnore: true */ tempDir, "source.mp4");
   const outputPath = path.join(/* turbopackIgnore: true */ tempDir, "trimmed.mp4");
 
@@ -214,7 +225,7 @@ export async function extractVideoThumbnail(
   videoUrl: string,
   options: VideoDownloadOptions = {},
 ): Promise<Buffer> {
-  const tempDir = await fs.mkdtemp(/* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ os.tmpdir(), "video-thumb-"));
+  const tempDir = await createMediaTempDir("video-thumb-");
   const inputPath = path.join(/* turbopackIgnore: true */ tempDir, "source.mp4");
   const outputPath = path.join(/* turbopackIgnore: true */ tempDir, "thumbnail.jpg");
 

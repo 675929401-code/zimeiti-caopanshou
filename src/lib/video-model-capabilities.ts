@@ -1,3 +1,5 @@
+import { isDigitalHumanWorkspaceModel } from "./video-model-surface";
+
 export type VideoDurationMode = "range" | "discrete" | "fixed";
 
 export type VideoModelCapabilitySource = {
@@ -7,6 +9,12 @@ export type VideoModelCapabilitySource = {
   modelName?: unknown;
   model_name?: unknown;
   protocol_type?: unknown;
+  protocolType?: unknown;
+  provider_billing_unit?: unknown;
+  providerBillingUnit?: unknown;
+  requires_source_video?: unknown;
+  requiresSourceVideo?: unknown;
+  workspaceSurfaces?: unknown;
   durationSeconds?: unknown;
   duration_seconds?: unknown;
   maxDuration?: unknown;
@@ -29,6 +37,7 @@ export type VideoModelCapabilitySource = {
   resolution_cost_prices?: unknown;
   billingUnit?: unknown;
   billing_unit?: unknown;
+  tokenPricing?: unknown;
   publicPrice?: unknown;
   pricePerUse?: unknown;
   price_per_use?: unknown;
@@ -49,7 +58,6 @@ export type VideoDurationCapabilities = {
 export type ResolvedVideoTiming = VideoDurationCapabilities & {
   target: number;
   submit: number;
-  needsTrim: boolean;
   supported: boolean;
 };
 
@@ -68,7 +76,47 @@ export type ResolvedVideoResolution = VideoResolutionCapabilities & {
   costPrice: number;
 };
 
-export type VideoBillingUnit = "per_use" | "output_second";
+export type VideoBillingUnit = "per_use" | "output_second" | "token";
+export type VideoTokenPublicPricing = { salePricesPerMillion: Record<string, number>; priceVersion: string };
+export type VideoTokenBillingRequest = { maxChargeYuan: number; priceVersion: string };
+export type VideoTokenChargeConsent = { modelId: string; priceVersion: string; amount: string };
+
+/** Accept public sales rates only; provider costs never enter this client contract. */
+export function readVideoTokenPublicPricing(value: unknown): VideoTokenPublicPricing | undefined {
+  const input = objectValue(value);
+  const rates = objectValue(input.salePricesPerMillion);
+  const keys = ["720p:no_reference_video", "720p:reference_video"];
+  if (typeof input.priceVersion !== "string" || !input.priceVersion.trim()
+    || !keys.every(key => typeof rates[key] === "number" && Number.isFinite(rates[key]) && Number(rates[key]) > 0)) return undefined;
+  return { salePricesPerMillion: Object.fromEntries(keys.map(key => [key, Number(rates[key])])), priceVersion: input.priceVersion };
+}
+
+/** Explicit positive yuan amount, at most two decimals; never coerce empty input to zero. */
+export function parseVideoTokenMaxCharge(value: string): number | undefined {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/u.test(value)) return undefined;
+  const amount = Number(value);
+  const cents = Math.round(amount * 100);
+  return amount > 0 && Number.isSafeInteger(cents) && cents > 0 ? cents / 100 : undefined;
+}
+
+export function videoTokenBudgetTotal(maxChargeYuan: number, taskCount: number): number {
+  if (parseVideoTokenMaxCharge(String(maxChargeYuan)) === undefined) return Number.NaN;
+  const totalCents = Math.round(maxChargeYuan * 100) * taskCount;
+  return Number.isSafeInteger(totalCents) && Number.isSafeInteger(taskCount) && taskCount > 0 ? totalCents / 100 : Number.NaN;
+}
+
+export function resolveVideoTokenBillingConsent(model: VideoModelCapabilitySource | undefined, consent: VideoTokenChargeConsent | null): VideoTokenBillingRequest | undefined {
+  const pricing = readVideoTokenPublicPricing(model?.tokenPricing);
+  if (getVideoBillingUnit(model) !== "token" || !pricing || consent?.modelId !== model?.id || consent?.priceVersion !== pricing.priceVersion) return undefined;
+  const maxChargeYuan = parseVideoTokenMaxCharge(consent.amount);
+  return maxChargeYuan === undefined ? undefined : { maxChargeYuan, priceVersion: pricing.priceVersion };
+}
+
+export function videoTokenRateLabel(model?: VideoModelCapabilitySource, resolution = "720p", hasReferenceVideo = false): string {
+  const pricing = readVideoTokenPublicPricing(model?.tokenPricing);
+  const rate = pricing?.salePricesPerMillion[`${resolution}:${hasReferenceVideo ? "reference_video" : "no_reference_video"}`];
+  return rate === undefined ? "Token 价格待配置" : `¥${rate.toLocaleString("zh-CN", { maximumFractionDigits: 6 })}/百万Token · 按实际用量结算`;
+}
 
 export type ResolvedVideoCharge = ResolvedVideoResolution & {
   billingUnit: VideoBillingUnit;
@@ -102,6 +150,12 @@ function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function requiresSourceVideoDuration(model?: VideoModelCapabilitySource) {
+  return model?.requiresSourceVideo === true || model?.requires_source_video === true
+    || objectValue(model?.capabilities).requiresSourceVideo === true
+    || objectValue(model?.api_protocol_config).requires_source_video === true;
 }
 
 function normalizedResolutionList(...values: unknown[]) {
@@ -268,7 +322,7 @@ export function getVideoBillingUnit(model?: VideoModelCapabilitySource): VideoBi
     ?? model.billing_unit
     ?? publicCapabilities.billingUnit
     ?? protocolConfig.billing_unit;
-  return configured === "output_second" ? "output_second" : "per_use";
+  return configured === "token" ? "token" : configured === "output_second" ? "output_second" : "per_use";
 }
 
 function money(value: number) {
@@ -285,6 +339,8 @@ export function resolveVideoCharge(
 ): ResolvedVideoCharge {
   const resolution = resolveVideoResolution(model, requestedResolution);
   const billingUnit = getVideoBillingUnit(model);
+  // Token usage is unknown before completion. A legacy flat quote must never substitute for it.
+  if (billingUnit === "token") return { ...resolution, billingUnit, billingQuantity: Number.NaN, publicPrice: Number.NaN, costPrice: Number.NaN };
   const parsedDuration = Number(outputDurationSeconds);
   const billingQuantity = billingUnit === "output_second"
     ? Math.max(1, Number.isFinite(parsedDuration) ? parsedDuration : 1)
@@ -382,69 +438,75 @@ export function getVideoDurationCapabilities(model?: VideoModelCapabilitySource)
     return { mode: "fixed", minDuration: fallbackDuration, maxDuration: fallbackDuration, defaultDuration: fallbackDuration, nativeDurations: [fallbackDuration] };
   }
 
-  const identity = normalizedIdentity(model);
+  const publicCapabilities = objectValue(model.capabilities);
+  const protocolConfig = objectValue(model.api_protocol_config);
+  const registeredDuration = Number(model.durationSeconds ?? model.duration_seconds);
+  const providerBillingUnit = String(model.providerBillingUnit ?? model.provider_billing_unit
+    ?? publicCapabilities.providerBillingUnit ?? protocolConfig.provider_billing_unit ?? "").trim().toLowerCase();
+  const followsSourceVideo = requiresSourceVideoDuration(model);
+  const digitalHuman = isDigitalHumanWorkspaceModel({
+    ...model,
+    protocol_type: model.protocol_type ?? model.protocolType,
+    api_protocol_config: {
+      ...protocolConfig,
+      workspace_surfaces: protocolConfig.workspace_surfaces ?? model.workspaceSurfaces ?? publicCapabilities.workspaceSurfaces,
+    },
+  });
+  // Source-driven editing does not submit an output duration. Its registered
+  // scalar/options describe the input ceiling, not a fixed-length product.
+  // Honour the explicit source-input contract and stored bounds together;
+  // optional source support alone must never exempt an ordinary fixed SKU.
+  if (followsSourceVideo && protocolConfig.supports_duration === false) {
+    const minimum = Number(protocolConfig.min_duration);
+    const maximum = Number(protocolConfig.max_duration ?? model.maxDuration ?? model.max_duration);
+    if (Number.isFinite(minimum) && minimum > 0 && Number.isFinite(maximum) && maximum >= minimum) {
+      return { mode: "range", minDuration: minimum, maxDuration: maximum,
+        defaultDuration: Math.max(minimum, Math.min(Number.isFinite(registeredDuration) && registeredDuration > 0
+          ? registeredDuration : maximum, maximum)), nativeDurations: [] };
+    }
+  }
+  // This is the registered per-use PRODUCT duration, not a claim that the
+  // provider's underlying model cannot technically produce other durations.
+  if (getVideoBillingUnit(model) === "per_use" && Number.isFinite(registeredDuration) && registeredDuration > 0
+    && providerBillingUnit !== "token" && !digitalHuman && !followsSourceVideo) {
+    return { mode: "fixed", minDuration: registeredDuration, maxDuration: registeredDuration,
+      defaultDuration: registeredDuration, nativeDurations: [registeredDuration] };
+  }
   const declared = declaredCapabilities(model);
   if (declared) return declared;
   const configured = configuredCapabilities(model);
-  // Provider-specific configuration takes precedence over name-based legacy defaults.
+  // Only explicit capability/protocol declarations enable variable duration.
   if (configured) return configured;
-  if (identity.includes("grok-imagine-1.0-video-super-20s") || (identity.includes("1.0 super") && identity.includes("20"))) {
-    return { mode: "discrete", minDuration: 6, maxDuration: 20, defaultDuration: 20, nativeDurations: [6, 10, 12, 16, 20] };
-  }
-  if (identity.includes("grok-imagine-image-pro")) {
-    return { mode: "fixed", minDuration: 10, maxDuration: 10, defaultDuration: 10, nativeDurations: [10] };
-  }
-  if (
-    identity.includes("grok-imagine-1.5")
-    || identity.includes("grok-imagine-video-1.5")
-    || identity.includes("grok-imagine-video-1-5")
-    || identity.includes("grok-imagine-video")
-  ) {
-    return { mode: "range", minDuration: 1, maxDuration: 15, defaultDuration: Math.min(fallbackDuration, 15), nativeDurations: [] };
-  }
-
-  if (configured) return configured;
-
-  const maxDuration = positiveInteger(model.maxDuration ?? model.max_duration, fallbackDuration);
-  if (maxDuration > fallbackDuration) {
-    return { mode: "range", minDuration: 1, maxDuration, defaultDuration: fallbackDuration, nativeDurations: [] };
-  }
   return { mode: "fixed", minDuration: fallbackDuration, maxDuration: fallbackDuration, defaultDuration: fallbackDuration, nativeDurations: [fallbackDuration] };
 }
 
+/** Validate a new request without changing its native duration or scheduling a trim. */
 export function resolveVideoDuration(model: VideoModelCapabilitySource | undefined, targetSeconds: number): ResolvedVideoTiming {
   const capabilities = getVideoDurationCapabilities(model);
-  const target = positiveDuration(targetSeconds, capabilities.defaultDuration);
-  const supported = target >= capabilities.minDuration && target <= capabilities.maxDuration;
-  let submit = target;
-
+  const requested = Number(targetSeconds);
+  const validTarget = Number.isFinite(requested) && requested > 0;
+  const target = validTarget ? requested : capabilities.defaultDuration;
+  let supported = validTarget && target >= capabilities.minDuration && target <= capabilities.maxDuration;
+  const protocolConfig = objectValue(model?.api_protocol_config);
   if (capabilities.mode === "fixed") {
-    submit = capabilities.defaultDuration;
+    supported = supported && target === capabilities.defaultDuration;
   } else if (capabilities.mode === "discrete") {
-    submit = capabilities.nativeDurations.find((duration) => duration >= target) ?? capabilities.maxDuration;
-  } else {
-    submit = Math.ceil(Math.max(capabilities.minDuration, Math.min(target, capabilities.maxDuration)));
+    supported = supported && capabilities.nativeDurations.includes(target);
+  } else if (!requiresSourceVideoDuration(model)) {
+    const publicCapabilities = objectValue(model?.capabilities);
+    const declaredStep = model?.durationStep ?? model?.duration_step ?? publicCapabilities.durationStep ?? protocolConfig.duration_step;
+    if (declaredStep !== undefined && declaredStep !== null) {
+      const step = Number(declaredStep);
+      const offset = (target - capabilities.minDuration) / step;
+      supported = supported && Number.isFinite(step) && step > 0
+        && Math.abs(offset - Math.round(offset)) < 1e-9;
+    }
   }
-
-  const protocolConfig = model?.api_protocol_config && typeof model.api_protocol_config === "object"
-    ? model.api_protocol_config as Record<string, unknown>
-    : null;
-  const identity = model ? normalizedIdentity(model) : "";
-  const observedMinimumSubmit = positiveInteger(
-    protocolConfig?.min_submit_duration,
-    identity.includes("minimax-h3") ? 5 : 0,
-  );
-  if (observedMinimumSubmit > 0) {
-    submit = Math.max(submit, Math.min(observedMinimumSubmit, capabilities.maxDuration));
+  const minimumSubmit = Number(protocolConfig.min_submit_duration);
+  if (Number.isFinite(minimumSubmit) && minimumSubmit > 0) {
+    supported = supported && target >= minimumSubmit;
   }
-
-  return {
-    ...capabilities,
-    target,
-    submit,
-    needsTrim: supported && submit > target,
-    supported,
-  };
+  return { ...capabilities, target, submit: target, supported };
 }
 
 export function getVideoTargetDurationOptions(model?: VideoModelCapabilitySource) {
@@ -461,6 +523,10 @@ export function getVideoTargetDurationOptions(model?: VideoModelCapabilitySource
 
 export function coerceVideoTargetDuration(model: VideoModelCapabilitySource | undefined, value: number) {
   const capabilities = getVideoDurationCapabilities(model);
+  if (requiresSourceVideoDuration(model) && capabilities.mode === "range") {
+    const sourceDuration = Number(value);
+    return Number.isFinite(sourceDuration) && sourceDuration > 0 ? sourceDuration : capabilities.defaultDuration;
+  }
   if (capabilities.mode === "fixed") return capabilities.defaultDuration;
   const requested = positiveDuration(value, capabilities.defaultDuration);
   if (capabilities.mode === "discrete") {

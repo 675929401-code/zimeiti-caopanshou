@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -112,9 +112,17 @@ export async function main() {
   const token = process.env.R267_CUSTOMER_TOKEN;
   assert.ok(token, 'LOCAL_CUSTOMER_SESSION_REQUIRED');
   const user = JSON.parse(process.env.LOCAL_NAV_READONLY_CUSTOMER || '{}');
-  const output = path.resolve(process.env.INTAKE_ACCEPTANCE_OUTPUT || '.codex-evidence/intake-theme-current');
-  fs.mkdirSync(output, { recursive: true });
-  const report = { checkedAt: new Date().toISOString(), runtime: await runtimeIdentity(origin), runtimeAfter: null, cases: [], adjacentPages: [], blockedWrites: [], blockedReads: [], readFailures: [], pageErrors: [], paidRequests: 0, scope: 'Actual current DOM, account and catalogs; empty task-history fixtures and initial-user credit fixture, not balance verification. Counters cover browser requests, not internal server/session-wrapper writes.' };
+  const outputRoot = path.resolve(process.env.INTAKE_ACCEPTANCE_OUTPUT || '.codex-evidence/intake-theme-current');
+  const requestedRunId = process.env.INTAKE_ACCEPTANCE_RUN_ID?.trim();
+  const runId = requestedRunId || `${new Date().toISOString().replace(/[:.]/gu, '-')}-${process.pid}-${randomBytes(4).toString('hex')}`;
+  assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u, 'INVALID_EVIDENCE_RUN_ID');
+  const output = path.join(outputRoot, runId);
+  fs.mkdirSync(outputRoot, { recursive: true });
+  try { fs.mkdirSync(output); } catch (error) {
+    if (error?.code === 'EEXIST') throw new Error(`EVIDENCE_RUN_DIRECTORY_EXISTS:${output}`);
+    throw error;
+  }
+  const report = { checkedAt: new Date().toISOString(), runId, outputRoot, evidenceDirectory: output, runtime: await runtimeIdentity(origin), runtimeAfter: null, cases: [], adjacentPages: [], blockedWrites: [], blockedReads: [], readFailures: [], pageErrors: [], paidRequests: 0, scope: 'Actual current DOM, account and catalogs; empty task-history fixtures and initial-user credit fixture, not balance verification. Counters cover browser requests, not internal server/session-wrapper writes.' };
   const names = ['商业IP定位', '账号主页包装', '对标账号拆解', '内容选题策划', '短视频文案成稿', '咨询回复与跟进', '运营数据复盘'];
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
   try {
@@ -138,6 +146,7 @@ export async function main() {
       assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
       const closeExisting = page.locator('[data-slot="dialog-close"]');
       if (await closeExisting.count() && await closeExisting.last().isVisible()) await closeExisting.last().click();
+      const surroundingBefore = await measureSurrounding(page);
       for (const name of names) {
         await page.getByLabel(`打开智能体：${name}`, { exact: true }).click();
         const dialog = page.getByTestId('business-ip-intake');
@@ -156,6 +165,8 @@ export async function main() {
         assert.ok(result.contrast >= 4.5, `${theme}:${name}:helper contrast ${result.contrast}`);
         assert.ok(result.opaqueSurfaces && result.scrollableBody && result.visibleActions && result.footerStableAfterScroll, `${theme}:${name}:controls`);
         assert.ok(result.refinedControls && result.businessGeometry, `${theme}:${name}:intake proportions`);
+        assert.ok(result.titleSansMatchesBody, `${theme}:${name}:title must use dialog sans family`);
+        if (theme === 'soft-white') assert.ok(result.canonicalPaletteMatches, `${theme}:${name}:canonical light palette ${JSON.stringify(result.paletteMismatches)}`);
 
         if (name === names[0] || name === names[5]) await page.screenshot({ path: path.join(output, `${theme}-${name}.png`) });
         await page.keyboard.press('Escape');
@@ -176,8 +187,18 @@ export async function main() {
       assert.ok(genericResult.insideViewport && genericResult.visibleActions && genericResult.footerStableAfterScroll, `${theme}:generic controls`);
       assert.ok(genericResult.refinedControls, `${theme}:generic scoped borders and radii`);
       assert.equal(genericResult.background, report.cases.find(item => item.theme === theme).background, 'INTAKE_SURFACES_MUST_AGREE');
+      assert.ok(genericResult.titleSansMatchesBody, `${theme}:generic title sans family`);
+      if (theme === 'soft-white') assert.ok(genericResult.canonicalPaletteMatches, `${theme}:generic canonical light palette ${JSON.stringify(genericResult.paletteMismatches)}`);
+      const interaction = await checkGenericInteractions(dialog);
+      report.cases.at(-1).interaction = interaction;
+      assert.ok(interaction.focusVisible && interaction.focusInside, `${theme}:generic focus feedback`);
+      if (interaction.requiredChecked) assert.ok(interaction.requiredBlocked && interaction.requiredFocused && interaction.requiredErrorVisible, `${theme}:required guard feedback`);
+      assert.ok(interaction.longInputRetained && interaction.longInputContained, `${theme}:long textarea containment`);
 
       await page.keyboard.press('Escape');
+      const surroundingAfter = await measureSurrounding(page);
+      assert.deepEqual(surroundingAfter, surroundingBefore, `${theme}:marketplace and sidebar styles changed after intake`);
+      report.cases.at(-1).surroundingProtected = { before: surroundingBefore, after: surroundingAfter };
       for (const route of ['/video', '/storyboard-workbench']) {
         await page.goto(`${origin}${route}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
         await page.waitForFunction(() => document.body.innerText.length > 100);
@@ -198,7 +219,7 @@ export async function main() {
     report.ok = true;
   } finally {
     await browser.close();
-    fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
+    fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2), { flag: 'wx' });
   }
   console.log(JSON.stringify({ ok: report.ok, cases: report.cases.length, adjacentPages: report.adjacentPages.length, paidRequests: report.paidRequests, output }));
 }
@@ -244,6 +265,30 @@ async function measureDialog(locator) {
       && choiceHeights.every(height => height >= 40 && height <= 64)
       && (!textarea || (textareaHeight >= 140 && textareaHeight <= 190))
     );
+    // Resolve canonical tokens on a probe attached to html, outside the dialog's
+    // private alias scope. Normalize through canvas so hex/rgb/color() compare equally.
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const normalize = value => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = value; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data].join(','); };
+    const probe = document.createElement('span'); probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none'; document.documentElement.append(probe);
+    const rootToken = name => { probe.style.color = `var(${name})`; return normalize(getComputedStyle(probe).color); };
+    const canonical = { surface: rootToken('--card'), text: rootToken('--foreground'), field: rootToken('--background'), popover: rootToken('--popover'), primary: rootToken('--primary'), primaryText: rootToken('--primary-foreground'), placeholder: rootToken('--text-secondary') };
+    probe.remove();
+    const fields = [...dialog.querySelectorAll('input:not([type=checkbox]):not([type=radio]),textarea,select')];
+    const fieldStyles = fields.map(node => { const css = getComputedStyle(node); return { tag: node.tagName, background: normalize(css.backgroundColor), color: normalize(css.color), fontSize: css.fontSize, placeholder: node.matches('input,textarea') && node.getAttribute('placeholder') ? normalize(getComputedStyle(node, '::placeholder').color) : null }; });
+    const options = [...dialog.querySelectorAll('option')].map(node => ({ background: normalize(getComputedStyle(node).backgroundColor), color: normalize(getComputedStyle(node).color) }));
+    const title = dialog.querySelector('[data-slot="dialog-title"],h2');
+    const titleFamily = title && getComputedStyle(title).fontFamily;
+    const titleSansMatchesBody = Boolean(titleFamily && titleFamily === style.fontFamily && /sans|arial|inter|system-ui|pingfang|yahei/iu.test(titleFamily) && !/(?:^|[,\s])(?:serif|georgia|times)(?:[,\s]|$)/iu.test(titleFamily));
+    const paletteMismatches = [];
+    if (normalize(background) !== canonical.surface) paletteMismatches.push('surface');
+    if (normalize(style.color) !== canonical.text) paletteMismatches.push('body text');
+    if (!primary || normalize(actionStyle.backgroundColor) !== canonical.primary) paletteMismatches.push('primary background');
+    if (!primary || normalize(actionStyle.color) !== canonical.primaryText) paletteMismatches.push('primary text');
+    if (fieldStyles.some(field => field.background !== canonical.field)) paletteMismatches.push('field background');
+    if (fieldStyles.some(field => field.color !== canonical.text)) paletteMismatches.push('field text');
+    if (fieldStyles.some(field => field.placeholder && field.placeholder !== canonical.placeholder)) paletteMismatches.push('placeholder');
+    if (options.some(option => option.color !== canonical.text || ![canonical.surface, canonical.field, canonical.popover].includes(option.background))) paletteMismatches.push('select options');
     return {
       background, color, contrast: Number(((Math.max(a, b) + .05) / (Math.min(a, b) + .05)).toFixed(2)),
       opaqueSurfaces: [background, color].every(value => channels(value).length === 3 || channels(value)[3] === 1),
@@ -252,7 +297,42 @@ async function measureDialog(locator) {
       radius: style.borderRadius, borders, controlRadii, refinedControls,
       businessGeometry: Boolean(businessGeometry), width: box.width, height: box.height,
       padding: style.padding, choiceHeights, textareaHeight,
+      canonical, fieldStyles, options, titleFamily, bodyFamily: style.fontFamily, titleSansMatchesBody,
+      canonicalPaletteMatches: paletteMismatches.length === 0, paletteMismatches,
     };
+  });
+}
+
+async function checkGenericInteractions(dialog) {
+  const field = dialog.locator('textarea,input:not([type=checkbox]):not([type=radio]),select').first();
+  const unfocused = await field.evaluate(node => { node.blur(); const css = getComputedStyle(node); return { border: css.borderColor, shadow: css.boxShadow, outline: css.outline }; });
+  await field.focus();
+  const focus = await field.evaluate((node, before) => { const css = getComputedStyle(node); return { focusInside: document.activeElement === node, focusVisible: css.outlineStyle !== 'none' && parseFloat(css.outlineWidth) > 0 || css.boxShadow !== before.shadow || css.borderColor !== before.border }; }, unfocused);
+  const requiredId = await dialog.evaluate(node => [...node.querySelectorAll('label[for]')].find(label => label.textContent.includes('*'))?.htmlFor || null);
+  let required = { requiredChecked: false };
+  if (requiredId) {
+    const missing = dialog.locator(`[id=${JSON.stringify(requiredId)}]`);
+    const tag = await missing.evaluate(node => node.tagName);
+    if (tag === 'SELECT') await missing.selectOption(''); else await missing.fill('');
+    await dialog.getByRole('button', { name: '开始', exact: true }).click();
+    required = await missing.evaluate(node => { const css = getComputedStyle(node); return { requiredChecked: true, requiredFocused: document.activeElement === node, requiredErrorVisible: css.boxShadow !== 'none' || css.outlineStyle !== 'none' }; });
+    required.requiredBlocked = await dialog.isVisible();
+  }
+  const textarea = dialog.locator('textarea').first();
+  let longInputRetained = true, longInputContained = true;
+  if (await textarea.count()) {
+    const value = '分段原文保留，不删字不改写。\n'.repeat(120);
+    await textarea.fill(value);
+    const measured = await textarea.evaluate(node => { const box = node.getBoundingClientRect(); const parent = node.closest('[role=dialog]').getBoundingClientRect(); return { value: node.value, contained: box.width <= parent.width && node.scrollHeight > node.clientHeight && document.documentElement.scrollWidth <= innerWidth + 1 }; });
+    longInputRetained = measured.value === value; longInputContained = measured.contained;
+  }
+  return { ...focus, ...required, longInputRetained, longInputContained };
+}
+
+async function measureSurrounding(page) {
+  return page.evaluate(() => {
+    const sample = node => { if (!node) return null; const css = getComputedStyle(node); return { background: css.backgroundColor, color: css.color, fontFamily: css.fontFamily, fontSize: css.fontSize, border: css.borderColor }; };
+    return { body: sample(document.body), sidebar: sample(document.querySelector('aside, [data-sidebar="sidebar"]')), marketplaceEntry: sample(document.querySelector('[aria-label="打开智能体：商业IP定位"]')) };
   });
 }
 

@@ -13,7 +13,7 @@ const thumbnailRoute = readFileSync(
 
 assert.match(
   proxyRoute,
-  /const trustedMediaHostnames = trustedPersistentStorageHostname\s*\? \[\.\.\.trustedRelayHostnamesFromEnv\(\), trustedPersistentStorageHostname\]\s*: trustedRelayHostnamesFromEnv\(\);/u,
+  /const trustedMediaHostnames = \[\.\.\.new Set\(\[[\s\S]*?\.\.\.trustedRelayHostnamesFromEnv\(\),[\s\S]*?trustedPersistentStorageHostname,[\s\S]*?trustedProviderResultHostname,[\s\S]*?\]\.filter\(Boolean\)\)\];/u,
   "视频代理必须为已验证的永久对象存储地址建立精确 hostname 信任列表",
 );
 assert.match(

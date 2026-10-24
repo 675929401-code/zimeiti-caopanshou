@@ -1536,7 +1536,7 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: (
             type="button"
             variant="outline"
             onClick={handleClearText}
-            disabled={!url && !result}
+            disabled={loading || (!url && !result)}
             className="h-10"
           >
             <Trash2 className="mr-1.5 h-4 w-4" />

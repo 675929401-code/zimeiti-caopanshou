@@ -12,20 +12,18 @@ assert.ok(fn);
 const context = vm.createContext({});
 vm.runInContext(ts.transpileModule(`${fn.getText(tree)}\nglobalThis.label=getSegmentCountLabel;`, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, context);
 const cases = [
-  [40, 40, 48, true, false, 'target', '✓ 目标范围内'],
-  [48, 40, 48, true, false, 'target', '✓ 目标范围内'],
-  [39, 40, 48, true, true, 'tail', '尾段偏短，保留完整句子'],
-  [39, 40, 48, false, false, 'outside', '偏短'],
-  [49, 40, 48, false, false, 'outside', '偏长'],
+  [40, 40, 48, true, 'target', '✓ 目标范围内'],
+  [48, 40, 48, true, 'target', '✓ 目标范围内'],
+  [39, 40, 48, true, 'tail', '短段，保留原文'],
+  [49, 50, 60, true, 'tail', '短段，保留原文'],
+  [39, 40, 48, false, 'outside', '偏短'],
+  [49, 40, 48, false, 'outside', '偏长'],
 ];
-for (const [count, min, max, accepted, last, kind, label] of cases) {
-  const result = context.label(count, min, max, accepted, last);
+for (const [count, min, max, accepted, kind, label] of cases) {
+  const result = context.label(count, min, max, accepted);
   assert.equal(result.kind, kind);
   assert.equal(result.label, label);
 }
 assert.doesNotMatch(source, /语义宽限|semanticAccepted/u);
 const result = { passed: true, scenarios: cases.length, ruleLabelsOnly: true, generationRequests: 0 };
-const out = '.codex-evidence/toolbox-format-segment-r473-20260927';
-fs.mkdirSync(out, { recursive: true });
-fs.writeFileSync(`${out}/segment-count-label-source.json`, JSON.stringify(result, null, 2));
 console.log(JSON.stringify(result));

@@ -59,15 +59,23 @@ export function splitParagraphClauses(text: string): string[] {
       buf = "";
     }
   }
-  if (buf.trim()) clauses.push(buf);
+  if (buf) clauses.push(buf);
   return clauses;
 }
 
-export function buildSegmentUnits(text: string): SegmentUnit[] {
-  const cleaned = text.replace(/\n{3,}/g, "\n\n").trim();
-  if (!cleaned) return [];
+function normalizedParagraphs(text: string): string[] {
+  // Keep spaces, punctuation and genuine repetitions; only remove line breaks.
+  const paragraphs = text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()
+    .split(/\n(?=[ \t]*\n)/u).map(paragraph => paragraph.replace(/\n/g, "")).filter(Boolean);
+  return paragraphs.reduce<string[]>((result, paragraph) => {
+    if (!paragraph.trim() && result.length) result[result.length - 1] += paragraph;
+    else result.push(paragraph);
+    return result;
+  }, []);
+}
 
-  const paragraphs = cleaned.split(/\n\s*\n/).filter(p => p.trim());
+export function buildSegmentUnits(text: string): SegmentUnit[] {
+  const paragraphs = normalizedParagraphs(text);
   const units: SegmentUnit[] = [];
 
   for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
@@ -112,9 +120,7 @@ function splitOversizedClause(text: string, min: number, max: number, ideal: num
   const minimumChunks = Math.ceil(total / max);
   const maximumChunks = Math.max(1, Math.floor(total / min));
   const idealChunks = Math.max(1, Math.round(total / ideal));
-  const chunkCount = minimumChunks <= maximumChunks
-    ? Math.min(maximumChunks, Math.max(minimumChunks, idealChunks))
-    : idealChunks;
+  const chunkCount = Math.max(minimumChunks, Math.min(Math.max(1, maximumChunks), idealChunks));
   if (chunkCount <= 1) return [text];
 
   const baseTarget = Math.floor(total / chunkCount);
@@ -158,8 +164,7 @@ function segmentParagraphRule(text: string, min: number, max: number, ideal: num
     for (let end = start; end < clauses.length; end++) {
       candidate += clauses[end];
       const chars = countChars(candidate);
-      const singleOversizedClause = start === end && chars > max;
-      if (chars > max + 12 && !singleOversizedClause) break;
+      if (chars > max) break;
       const next = end + 1;
       const score = best[start] + segmentCost(candidate, chars, min, max, ideal, next === clauses.length);
       if (score < best[next]) {
@@ -169,62 +174,20 @@ function segmentParagraphRule(text: string, min: number, max: number, ideal: num
     }
   }
 
-  if (previous[clauses.length] < 0) return [text.trim()];
+  if (previous[clauses.length] < 0) return [text];
   const segments: string[] = [];
   for (let cursor = clauses.length; cursor > 0;) {
     const start = previous[cursor];
-    segments.unshift(clauses.slice(start, cursor).join("").trim());
+    segments.unshift(clauses.slice(start, cursor).join(""));
     cursor = start;
   }
   return segments;
 }
 
-function trailingClauseBridge(text: string, maxChars: number) {
-  const trimmed = text.trim();
-  const pieces = trimmed.split(/(?<=[。！？!?，,；;、])/u).filter(Boolean);
-  const candidate = pieces.at(-1)?.trim() || "";
-  const chars = countChars(candidate);
-  if (chars >= 2 && chars <= maxChars) return candidate;
-
-  const symbols = Array.from(trimmed);
-  let counted = 0;
-  let start = symbols.length;
-  while (start > 0 && counted < maxChars) {
-    start -= 1;
-    if (/[一-鿿㐀-䶿0-9]/u.test(symbols[start])) counted += 1;
-  }
-  const suffix = symbols.slice(start).join("").trim();
-  return countChars(suffix) >= 2 ? suffix : "";
-}
-
-export function applySemanticOverlapBridges(
-  segments: string[],
-  mode: SegmentMode,
-  paragraphBreakBefore: boolean[] = segments.map(() => false),
-) {
-  const next = [...segments];
-  const overlapPrefixes = segments.map(() => "");
-  for (let index = 1; index < next.length; index++) {
-    if (paragraphBreakBefore[index]) continue;
-    const currentChars = countChars(next[index]);
-    if (currentChars >= mode.min) continue;
-    const bridge = trailingClauseBridge(next[index - 1], 10);
-    if (!bridge) continue;
-    const bridgeChars = countChars(bridge);
-    if (currentChars + bridgeChars > mode.max) continue;
-    next[index] = `${bridge}${next[index]}`;
-    overlapPrefixes[index] = bridge;
-  }
-  return { segments: next, overlapPrefixes };
-}
-
 export function segmentTextRule(text: string, duration: number): SegmentResult {
   const mode = DURATION_MODES[duration];
   if (!mode) return { segments: [], counts: [], compliant: [], paragraphBreakBefore: [] };
-  const cleaned = text.replace(/\n{3,}/g, "\n\n").trim();
-  if (!cleaned) return { segments: [], counts: [], compliant: [], paragraphBreakBefore: [] };
-
-  const paragraphs = cleaned.split(/\n\s*\n/).filter(p => p.trim());
+  const paragraphs = normalizedParagraphs(text);
   const allSegments: string[] = [];
   const allBreakBefore: boolean[] = [];
 
@@ -238,30 +201,70 @@ export function segmentTextRule(text: string, duration: number): SegmentResult {
     }
   }
 
-  const bridged = applySemanticOverlapBridges(allSegments, mode, allBreakBefore);
-  const counts = bridged.segments.map(s => countChars(s));
-  const compliant = counts.map((c, i) => {
-    if (i === counts.length - 1 && c < mode.min) return true;
-    return c >= mode.min && c <= mode.max;
-  });
+  const counts = allSegments.map(countChars);
+  // The lower bound is a pacing target; short original text must never be padded.
+  const compliant = counts.map(count => count <= mode.max);
 
   return {
-    segments: bridged.segments,
+    segments: allSegments,
     counts,
     compliant,
     paragraphBreakBefore: allBreakBefore,
-    overlapPrefixes: bridged.overlapPrefixes,
     method: "rule",
   };
 }
 
 export function normalizeForIntegrity(text: string): string {
-  return text.replace(/\n{3,}/g, "\n\n").trim().replace(/\n/g, "");
+  return text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().replace(/\n/g, "");
 }
 
+/** Legacy decoding only. New segment bodies never contain generated overlap. */
 export function reconstructSegmentedText(segments: string[], overlapPrefixes: string[] = []) {
   return segments.map((segment, index) => {
     const prefix = overlapPrefixes[index] || "";
     return prefix && segment.startsWith(prefix) ? segment.slice(prefix.length) : segment;
   }).join("");
+}
+
+export function restoreSegmentResult(value: unknown, originalText: string, duration: number): SegmentResult {
+  const mode = DURATION_MODES[duration];
+  if (!mode || !value || typeof value !== "object") throw new Error("分段历史结果不完整");
+  const parsed = value as Partial<SegmentResult>;
+  if (!Array.isArray(parsed.segments) || !parsed.segments.length
+    || parsed.segments.some(segment => typeof segment !== "string" || !segment.trim())) {
+    throw new Error("分段历史结果不完整");
+  }
+  const breaks = parsed.paragraphBreakBefore ?? parsed.segments.map(() => false);
+  if (!Array.isArray(breaks) || breaks.length !== parsed.segments.length
+    || breaks.some(value => typeof value !== "boolean")) throw new Error("分段历史段落边界不完整");
+  let segments = [...parsed.segments];
+  const original = normalizeForIntegrity(originalText);
+  // Original-text equality takes precedence over stale metadata, so genuine
+  // repeated phrases are never removed from a valid narration.
+  if (normalizeForIntegrity(segments.join("")) !== original) {
+    const prefixes = parsed.overlapPrefixes;
+    if (!Array.isArray(prefixes) || prefixes.length !== segments.length
+      || prefixes.some((prefix, index) => typeof prefix !== "string" || (prefix !== ""
+        && (index === 0 || !segments[index].startsWith(prefix) || !segments[index - 1].endsWith(prefix))))) {
+      throw new Error("分段历史衔接标记不完整");
+    }
+    segments = segments.map((segment, index) => segment.slice(prefixes[index].length));
+    if (segments.some(segment => !segment.trim()) || normalizeForIntegrity(segments.join("")) !== original) {
+      throw new Error("分段历史结果与原文不一致");
+    }
+  }
+  const counts = segments.map(countChars);
+  if (counts.some(count => count > mode.max)) return segmentTextRule(originalText, duration);
+  return {
+    segments, counts, compliant: counts.map(count => count <= mode.max), paragraphBreakBefore: breaks,
+    ...(parsed.method === "rule" || parsed.method === "semantic" || parsed.method === "semantic_fallback" ? { method: parsed.method } : {}),
+    ...(typeof parsed.model === "string" ? { model: parsed.model } : {}),
+  };
+}
+
+export function formatSegmentedCopy(result: Pick<SegmentResult, "segments">, originalText: string): string {
+  if (normalizeForIntegrity(result.segments.join("")) !== normalizeForIntegrity(originalText)) {
+    throw new Error("分段结果与原文不一致，请重新分段后复制。");
+  }
+  return result.segments.map((segment, index) => `${index + 1}.【${segment}】`).join("\n");
 }

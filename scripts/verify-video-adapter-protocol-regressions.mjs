@@ -226,8 +226,11 @@ await test("Secure Skill still enforces a lower configured duration ceiling", as
     model_name: "grok-imagine-video-1.5",
     api_protocol_config: { min_duration: 5, max_duration: 15 },
   });
-  await adapter.submitVideoTask(config, { prompt: "fixture", duration: 20, aspectRatio: "16:9" });
-  assert.equal(calls[0].body.seconds, 15);
+  await assert.rejects(
+    adapter.submitVideoTask(config, { prompt: "fixture", duration: 20, aspectRatio: "16:9" }),
+    error => error.name === "VideoParameterContractError" && error.status === 422 && error.parameter === "duration",
+  );
+  assert.equal(calls.length, 0, "Unsupported duration must not dispatch or silently clamp");
 });
 
 const secureSkillSubmitCases = [

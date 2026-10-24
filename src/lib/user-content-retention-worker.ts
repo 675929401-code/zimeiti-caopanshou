@@ -1,7 +1,10 @@
 import 'server-only';
+import path from 'node:path';
 import { DurableQueueLoop } from '@/lib/durable-queue-loop';
 import { getSupabaseAdminClient } from '@/storage/database/supabase-client';
 import { checkImageProviderSourcesBatch } from '@/lib/image-provider-delivery';
+import { resolveAppRuntimeDir } from '@/lib/runtime-paths';
+import { removeVideoThumbnailCacheFiles } from '@/lib/video-thumbnail-cache';
 
 const RETENTION_INTERVAL_MS = 15 * 60_000;
 const RETENTION_BATCH_LIMIT = 500;
@@ -73,6 +76,36 @@ export async function purgeExpiredUserContentBatch() {
   return totals;
 }
 
+/**
+ * 过期视频历史真实删除（不是隐藏）：删除数据库行并同步清理派生封面文件。
+ * 保护规则由数据库函数维持——进行中、未知计费、数字人任务不会被删。
+ */
+export async function purgeExpiredVideoHistoryBatch() {
+  const db = getSupabaseAdminClient();
+  const totals = { deletedRows: 0, deletedThumbnails: 0, batches: 0 };
+  for (let batch = 0; batch < 5; batch += 1) {
+    const { data, error } = await db.rpc('purge_expired_video_history', { p_retention_days: 5, p_limit: 500 });
+    if (error) {
+      const code = String(error.code || '');
+      if (code === 'PGRST202' || code === '42883') return totals;
+      throw new Error('VIDEO_HISTORY_PURGE_RPC_FAILED');
+    }
+    const result = (data || {}) as { deletedCount?: number; deletedIds?: unknown; hasMore?: boolean };
+    const ids = Array.isArray(result.deletedIds) ? result.deletedIds.filter((id): id is string => typeof id === 'string') : [];
+    totals.deletedRows += Number(result.deletedCount || 0);
+    totals.batches += 1;
+    if (ids.length) {
+      totals.deletedThumbnails += await removeVideoThumbnailCacheFiles(
+        path.join(/* turbopackIgnore: true */ resolveAppRuntimeDir(), 'video-thumbnails'),
+        ids,
+      ).catch(() => 0);
+    }
+    if (!result.hasMore) break;
+  }
+  if (totals.deletedRows > 0) console.info('[VideoHistoryPurge] expired history deleted', totals);
+  return totals;
+}
+
 function loop() {
   return retentionGlobal.__userContentRetentionWorker ??= new DurableQueueLoop({
     name: 'user-content-retention',
@@ -81,6 +114,7 @@ function loop() {
       // Source checks have independent failure semantics from content cleanup.
       await checkImageProviderSourcesBatch().catch(() => console.warn('[UserContentRetention] image source check deferred'));
       await purgeExpiredUserContentBatch();
+      await purgeExpiredVideoHistoryBatch().catch(() => console.warn('[VideoHistoryPurge] cleanup deferred'));
     },
     onError: () => console.warn('[UserContentRetention] cleanup deferred'),
   });

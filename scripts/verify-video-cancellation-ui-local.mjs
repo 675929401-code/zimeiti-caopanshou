@@ -325,7 +325,7 @@ async function runStoryboardScenario(browser, { viewport, mode }) {
   const response = await page.goto(`${ORIGIN}/storyboard-workbench?acceptance=cancellation-${mode}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
   assert.equal(response?.status(), 200, `storyboard ${mode}: page failed`);
   await page.locator(".sbw-shot-card").first().waitFor({ timeout: 30_000 });
-  await page.getByRole("button", { name: "最近任务", exact: true }).click();
+  await page.getByRole("button", { name: "历史", exact: true }).click();
   const projectRow = page.locator(`[data-storyboard-project-id="${project.id}"]`);
   await projectRow.waitFor({ state: "visible", timeout: 10_000 });
   page.once("dialog", (dialog) => dialog.accept());

@@ -158,6 +158,7 @@ export function PlatformBrandSettingsPanel({
   const [localPreviews, setLocalPreviews] = useState<Partial<Record<PlatformBrandAssetPurpose, LocalAssetPreview>>>({});
   const localPreviewsRef = useRef<Partial<Record<PlatformBrandAssetPurpose, LocalAssetPreview>>>({});
   const objectPreviewUrls = useRef<Set<string>>(new Set());
+  const contactSettingsRef = useRef<HTMLDivElement>(null);
 
   const clearLocalPreviews = () => {
     objectPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
@@ -440,7 +441,7 @@ export function PlatformBrandSettingsPanel({
       <div className="min-w-0">
         <p className="text-xs font-black text-[var(--foreground)]">{actionStatus}</p>
         <p className="mt-1 text-[11px] leading-4 text-[var(--muted-foreground)]">
-          保存后刷新页面仍会保留；发布后才同步到首页、登录页、工作台、后台标题与分享信息。
+          保存草稿保留修改；发布到全站后对访客生效。
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -482,6 +483,8 @@ export function PlatformBrandSettingsPanel({
           {working === "publish" ? "正在发布…" : "发布到全站"}
         </button>
       </div>
+      {error && <div role="alert" className="w-full rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
+      {notice && <div role="status" className="w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>}
     </div>
   );
 
@@ -500,7 +503,7 @@ export function PlatformBrandSettingsPanel({
     return (
       <article key={purpose} data-testid={`brand-asset-${purpose}`} className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3">
         <div className="flex items-start gap-3">
-          <div className={`grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-[var(--border)] bg-white ${purpose === "logo_square" || purpose === "favicon" ? "p-0" : "p-1.5"}`}>
+          <div className={`grid shrink-0 place-items-center overflow-hidden rounded-lg border border-[var(--border)] bg-white ${purpose.startsWith("contact_wechat_qr_") ? "h-40 w-40 p-2" : `h-14 w-14 ${purpose === "logo_square" || purpose === "favicon" ? "p-0" : "p-1.5"}`}`}>
             {preview
               ? <img src={preview} alt={`${PURPOSE_LABELS[purpose].title}预览`} className={purpose === "logo_square" || purpose === "favicon" ? "h-full w-full scale-[1.025] object-cover" : "h-full w-full object-contain"} />
               : <ImageUp size={20} className="text-slate-400" />}
@@ -531,9 +534,9 @@ export function PlatformBrandSettingsPanel({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-base font-black text-[var(--foreground)]">平台品牌中心</h3>
-                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700">服务器资产 · 版本化发布</span>
+                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700">草稿与发布</span>
               </div>
-              <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--muted-foreground)]">图片直接上传到平台对象存储，并以稳定的站内地址对外提供。名称、文案和图片先保存草稿，再一次发布到登录页、主站与分享入口。</p>
+              <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--muted-foreground)]">维护品牌、联系方式和二维码，保存草稿后发布到全站。</p>
               <p className="mt-2 text-[11px] text-[var(--muted-foreground)]">当前发布：{state.published ? `v${state.published.revisionVersion} · ${formatDate(state.published.publishedAt)}` : "尚无新品牌版本，前台继续读取兼容配置"} · 配置代次 {state.generation}</p>
             </div>
           </div>
@@ -543,17 +546,24 @@ export function PlatformBrandSettingsPanel({
 
       {state.migrationRequired && (
         <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-          <strong>品牌控制平面尚未启用。</strong> 当前仅展示旧配置的兼容读取结果；数据库迁移就绪前，上传、保存、发布和回滚保持禁用，避免出现“界面显示成功但实际未生效”。
+          <strong>品牌设置暂不可写。</strong> 请先完成配置库升级，再上传、保存或发布。当前已发布内容仍可查看。
         </div>
       )}
-      {error && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
-      {notice && <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
-
       {actionBar()}
+
+      <nav aria-label="品牌设置分区" className="flex flex-wrap items-center gap-2">
+        <button type="button" data-testid="brand-contact-jump" onClick={() => {
+          const target = contactSettingsRef.current;
+          if (!target) return;
+          target.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+          target.focus({ preventScroll: true });
+        }} className="rounded-lg border border-[var(--primary)] bg-[var(--primary)]/10 px-4 py-2 text-sm font-semibold text-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]">联系与二维码</button>
+        <span className="text-xs text-[var(--muted-foreground)]">首页、登录页和工具页共用已发布的联系方式</span>
+      </nav>
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div><h3 className="font-bold text-[var(--foreground)]">品牌信息</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">显示名称与 SEO 信息共用同一发布版本，避免各页面名称不一致。</p></div>
+          <div><h3 className="font-bold text-[var(--foreground)]">品牌信息</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">设置平台名称、欢迎语和搜索展示信息。</p></div>
           {dirty && <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-700">有未保存修改</span>}
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -570,10 +580,10 @@ export function PlatformBrandSettingsPanel({
         {validationIssue && <p role="alert" className="mt-3 text-xs font-semibold text-red-700">{validationIssue}</p>}
       </div>
 
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm" data-testid="platform-brand-contact-settings">
+      <div ref={contactSettingsRef} tabIndex={-1} className="scroll-mt-28 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm focus-visible:outline-2 focus-visible:outline-[var(--primary)]" data-testid="platform-brand-contact-settings">
         <div className="mb-4">
-          <h3 className="font-bold text-[var(--foreground)]">对外联系信息</h3>
-          <p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">单独维护平台对外联系人。保存草稿后刷新仍保留，发布后才显示到首页和工具页页脚；留空的项目不会展示。</p>
+          <h3 className="font-bold text-[var(--foreground)]">联系方式与客服二维码</h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">填写需要公开的联系方式，留空的项目不展示。</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="text-xs font-semibold text-[var(--foreground)]">联系人或客服名称<input value={brand.contact.name} maxLength={80} onChange={(event) => patchNested("contact", { name: event.target.value })} className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none focus:border-[var(--primary)]" placeholder="例如：平台客服" /></label>
@@ -582,7 +592,7 @@ export function PlatformBrandSettingsPanel({
           <label className="text-xs font-semibold text-[var(--foreground)]">联系邮箱<input value={brand.contact.email} maxLength={254} onChange={(event) => patchNested("contact", { email: event.target.value })} className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none focus:border-[var(--primary)]" placeholder="选填" /></label>
         </div>
         <div className="mt-5 border-t border-[var(--border)] pt-5">
-          <div className="mb-3"><h4 className="text-xs font-black text-[var(--foreground)]">微信二维码</h4><p className="mt-1 text-[11px] leading-5 text-[var(--muted-foreground)]">可上传一张或两张。图片上传后仍需点击“保存草稿”，再点击“发布到全站”才会对访客生效。</p></div>
+          <div className="mb-3"><h4 className="text-sm font-bold text-[var(--foreground)]">微信二维码</h4><p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">支持两张二维码。选择图片 → 保存草稿 → 发布到全站。</p></div>
           <div className="grid gap-3 md:grid-cols-2">
             {renderAssetCard("contact_wechat_qr_primary")}
             {renderAssetCard("contact_wechat_qr_secondary")}
@@ -592,7 +602,7 @@ export function PlatformBrandSettingsPanel({
 
       <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-sm" aria-labelledby="brand-preview-title">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-3">
-          <div><h3 id="brand-preview-title" className="font-bold text-[var(--foreground)]">发布前预览</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">预览当前编辑内容；它不会写入前台，直到草稿保存并完成发布。</p></div>
+          <div><h3 id="brand-preview-title" className="font-bold text-[var(--foreground)]">发布前预览</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">查看当前编辑效果。</p></div>
           <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${dirty ? "bg-amber-500/10 text-amber-700" : "bg-emerald-500/10 text-emerald-700"}`}>{dirty ? "本地未保存" : state.draft ? "草稿已保存" : "当前兼容版本"}</span>
         </div>
         <div className="p-5">

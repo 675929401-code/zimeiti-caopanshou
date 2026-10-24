@@ -324,11 +324,11 @@ export async function main(args = process.argv.slice(2)) {
       assert.equal(await button.isDisabled(), expectedDisabled, `Availability gate mismatch: ${publicName(model)}`);
       if (expectedDisabled) {
         const reason = await button.getAttribute("title") || "";
-        assert.match(reason, /上游账户异常|上游通道异常|暂不可用/u);
-        assert.match(await button.locator(".sbw-model-unavailable").innerText(), /上游账户异常|上游通道异常|暂不可用/u);
+        assert.match(reason, /上游账户异常|上游通道异常|Token结算适配中|暂不可用/u);
+        assert.match(await button.locator(".sbw-model-unavailable").innerText(), /上游账户异常|上游通道异常|Token结算适配中|暂不可用/u);
         assert.equal(await button.evaluate((element) => getComputedStyle(element).opacity), "1", `Unavailable model was visually hidden: ${publicName(model)}`);
         await button.click({ force: true });
-        assert.match(await page.locator(".sbw-notice").innerText(), /上游账户异常|上游通道异常|暂不可用/u, `Unavailable model did not explain its status: ${publicName(model)}`);
+        assert.match(await page.locator(".sbw-notice").innerText(), /上游账户异常|上游通道异常|Token结算适配中|暂不可用/u, `Unavailable model did not explain its status: ${publicName(model)}`);
         assert.equal(await button.evaluate((element) => element.classList.contains("is-active")), false, `Unavailable model became active: ${publicName(model)}`);
         report.browser.unavailableFeedbackChecked += 1;
       }

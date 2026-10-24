@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import UnifiedModelDialog from "./unified-model-dialog";
 import AdminVideoValidationDialog from "./admin-video-validation-dialog";
 import AdminImageValidationDialog from "./admin-image-validation-dialog";
@@ -26,6 +26,15 @@ interface PluginItem {
 }
 
 interface UnifiedModel {
+  validation?: {
+    passed: boolean;
+    fingerprint_current: boolean;
+    validated_at?: string | null;
+    latency_ms?: number | null;
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    reason?: string;
+  };
   id: string;
   model_name: string;
   name?: string;
@@ -55,6 +64,7 @@ interface UnifiedModel {
   max_context_tokens?: number;
   max_reply_tokens?: number;
   timeout?: number;
+  updated_at?: string;
   frequency_limit?: number;
   // 对话模型专属
   deep_thinking_type?: number;
@@ -191,6 +201,10 @@ function withoutModelSecret(model: UnifiedModel): UnifiedModel {
   return next;
 }
 
+function isOperationalActive(model: UnifiedModel): boolean {
+  return model.is_active !== false && (model.model_type !== "text" || model.user_access === "available");
+}
+
 export default function UnifiedModelsTab({
   token,
   onModelsChange,
@@ -215,6 +229,10 @@ export default function UnifiedModelsTab({
   const [credentialHealthError, setCredentialHealthError] = useState("");
   const [showCredentialDetails, setShowCredentialDetails] = useState(false);
   const [modelPoolReleaseRefreshKey, setModelPoolReleaseRefreshKey] = useState(0);
+  const [focusReleaseId, setFocusReleaseId] = useState<string | null>(null);
+  const [textActions, setTextActions] = useState<Record<string, { busy?: "validate" | "activate"; message?: string; failed?: boolean }>>({});
+  const textActionLocks = useRef(new Set<string>());
+  const textConfigurationSnapshots = useRef(new Map<string, string>());
   const [quickAddText, setQuickAddText] = useState("");
   const [quickAddCredential, setQuickAddCredential] = useState("");
   const [quickAddBusy, setQuickAddBusy] = useState(false);
@@ -298,6 +316,19 @@ export default function UnifiedModelsTab({
   }, [token, canManageModels]);
 
   useEffect(() => { loadModels(); }, [loadModels]);
+
+  useEffect(() => {
+    const changed = new Set<string>();
+    const next = new Map<string, string>();
+    for (const model of models.filter(item => item.model_type === "text")) {
+      const snapshot = JSON.stringify([model.updated_at, model.model_name, model.api_endpoint, model.provider, model.protocol_type, model.api_protocol_config, model.max_reply_tokens, model.max_context_tokens, model.timeout]);
+      const previous = textConfigurationSnapshots.current.get(model.id);
+      if (previous && previous !== snapshot) changed.add(model.id);
+      next.set(model.id, snapshot);
+    }
+    textConfigurationSnapshots.current = next;
+    if (changed.size) setTextActions(prev => Object.fromEntries(Object.entries(prev).filter(([id, state]) => !changed.has(id) || state.busy)));
+  }, [models]);
 
   useEffect(() => {
     if (canManageModels) return;
@@ -674,11 +705,47 @@ export default function UnifiedModelsTab({
       onModelsChange?.();
       if (data.staged && !data.published) {
         const release = data.result?.release;
+        setFocusReleaseId(release?.id || null);
         const releaseLabel = release?.release_version || release?.id || "待发布候选";
         alert(`已保存为待发布候选（${releaseLabel}）。请在模型池发布面板完成校验、差异预览和发布后，才会进入现行模型目录。`);
       }
     } catch (error) {
       alert(error instanceof Error ? `保存失败：${error.message}` : "网络错误");
+    }
+  };
+
+  const handleTextAction = async (model: UnifiedModel, action: "validate" | "activate") => {
+    if (!token || !canManageModels || textActionLocks.current.has(model.id)) return;
+    if (action === "validate" && !window.confirm(`对「${model.name || model.model_name}」执行一次真实文字验证？将调用已发布配置的供应商接口，产生供应商 Token 费用；不会自动重试。`)) return;
+    if (action === "activate" && !(model.validation?.passed === true && model.validation.fingerprint_current === true)) return;
+    textActionLocks.current.add(model.id);
+    setTextActions(prev => ({ ...prev, [model.id]: { busy: action } }));
+    try {
+      const response = await fetch(action === "validate" ? "/api/admin/llm-test" : "/api/admin/models/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify(action === "validate"
+          ? { scope: "saved", model_id: model.id, model_type: "text" }
+          : { id: model.id, model_type: "text" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      const passed = response.ok && (action === "validate" ? result.success === true && result.evidence?.evidenceRecorded === true : result.activated === true);
+      const evidence = action === "validate" ? [
+        result.latency != null ? `${result.latency}ms` : "",
+        result.usage ? `输入 ${result.usage.prompt_tokens ?? "未知"} / 输出 ${result.usage.completion_tokens ?? "未知"} Token` : "",
+        result.evidence?.checkedAt ? new Date(result.evidence.checkedAt).toLocaleString("zh-CN") : "",
+      ].filter(Boolean).join(" · ") : "";
+      setTextActions(prev => ({ ...prev, [model.id]: {
+        failed: !passed,
+        message: `${result.message || result.error || (passed ? "已启用，正在读回" : "操作未通过")}${evidence ? ` · ${evidence}` : ""}`,
+      } }));
+      await loadModels();
+      if (action === "activate" && passed) onModelsChange?.();
+    } catch (error) {
+      setTextActions(prev => ({ ...prev, [model.id]: { failed: true, message: error instanceof Error ? error.message : "请求失败；未自动重试" } }));
+    } finally {
+      textActionLocks.current.delete(model.id);
+      setTextActions(prev => ({ ...prev, [model.id]: { ...prev[model.id], busy: undefined } }));
     }
   };
 
@@ -819,7 +886,10 @@ export default function UnifiedModelsTab({
   const renderModelCard = (m: UnifiedModel) => {
     const mt = String(m.model_type || "") as ModelType;
     const tc = MODEL_TYPE_CONFIG[mt] || MODEL_TYPE_CONFIG.text;
-    const isActive = m.is_active !== false;
+    const isActive = isOperationalActive(m);
+    const activationLabel = isActive ? "已启用" : mt === "text" && m.user_access === "pending_model_activation"
+      ? m.validation?.passed === true && m.validation.fingerprint_current === true ? "已发布，待启用" : "已发布，待验证"
+      : "已暂停";
     const name = normalizeDisplayText(m.name || m.display_name, "未命名");
     // Keep the internal model id unchanged for requests/forms, but repair a
     // mojibake display value in the administrator card.
@@ -982,7 +1052,7 @@ export default function UnifiedModelsTab({
         {/* 状态指示灯 */}
         <div
           className={`w-2.5 h-2.5 rounded-full shrink-0 ${isActive ? "bg-green-500" : "bg-gray-400"}`}
-          title={isActive ? "已启用" : "已暂停"}
+          title={activationLabel}
         />
 
         {/* 模型信息 */}
@@ -1058,6 +1128,13 @@ export default function UnifiedModelsTab({
             {Number(m.profit_margin) < 100 && <> · 输入售价 ¥{formatModelPrice(Number(m.input_cost_per_million || 0) / (1 - Number(m.profit_margin || 0) / 100))}/百万Token · 输出售价 ¥{formatModelPrice(Number(m.output_cost_per_million || 0) / (1 - Number(m.profit_margin || 0) / 100))}/百万Token</>}
           </div>}
           {canManageModels && <div className="text-xs text-[var(--muted-foreground)] mt-1">{connection.label} · {connection.kind === "relay" ? "渠道分组：" : "权限："}{connection.group}</div>}
+          {canManageModels && mt === "text" && <div className="mt-2 space-y-1 text-xs text-[var(--muted-foreground)]" data-text-validation>
+            <p>调用状态：{activationLabel}</p>
+            <p>真实文字验证：{(m.validation?.passed === true && m.validation.fingerprint_current === true) ? "当前配置已通过" : m.validation?.reason || "尚无当前配置的有效证据"}</p>
+            {m.validation?.validated_at && <p>证据时间 {new Date(m.validation.validated_at).toLocaleString("zh-CN")} · {m.validation.latency_ms ?? "未知"}ms · 输入 {m.validation.input_tokens ?? "未知"} / 输出 {m.validation.output_tokens ?? "未知"} Token</p>}
+            {textActions[modelId]?.message && <p role="status" className={textActions[modelId].failed ? "text-red-600" : "text-emerald-700"}>{textActions[modelId].message}</p>}
+            <p>目录显示与调用启用分别管理；验证失败不会隐藏或删除模型。</p>
+          </div>}
           {canManageModels && (adminNotes || (channelHealth && mt === "video")) && <details className="mt-2 text-xs text-[var(--muted-foreground)]">
             <summary className="cursor-pointer">维护记录与检测详情</summary>
           {adminNotes && (
@@ -1081,6 +1158,10 @@ export default function UnifiedModelsTab({
 
         {/* 操作按钮 */}
         {canManageModels && <div className={mt === "video" || mt === "drawing" ? "flex flex-wrap items-center justify-end gap-2 shrink-0 max-w-md" : "flex items-center gap-2 shrink-0"} onPointerDown={(e) => e.stopPropagation()}>
+          {mt === "text" && <>
+            <button type="button" disabled={Boolean(textActions[modelId]?.busy)} onClick={() => void handleTextAction(m, "validate")} className="px-3 py-1.5 text-xs rounded-lg border border-orange-400 text-orange-600 disabled:opacity-50">{textActions[modelId]?.busy === "validate" ? "验证中…" : "真实文字验证（付费）"}</button>
+            <button type="button" disabled={Boolean(textActions[modelId]?.busy) || (m.validation?.passed === true && m.validation.fingerprint_current === true) !== true || isActive} onClick={() => void handleTextAction(m, "activate")} className="px-3 py-1.5 text-xs rounded-lg border border-emerald-500 text-emerald-700 disabled:opacity-40">{textActions[modelId]?.busy === "activate" ? "启用中…" : isActive ? "已启用" : "启用当前配置"}</button>
+          </>}
           {mt === "video" && (
             <button
               onClick={() => handleTest(String(m.id), mt)}
@@ -1151,7 +1232,8 @@ export default function UnifiedModelsTab({
           token={token}
           kind="model-pool"
           refreshKey={modelPoolReleaseRefreshKey}
-          onPublished={() => { void loadModels(); onModelsChange?.(); }}
+          focusReleaseId={focusReleaseId}
+          onPublished={() => { setTextActions({}); void loadModels(); onModelsChange?.(); alert("模型候选已发布。新增或变更的对话模型请从对应卡片执行真实文字验证，通过后再显式启用。"); }}
         />
       )}
 
@@ -1778,7 +1860,7 @@ export default function UnifiedModelsTab({
           {visibleModelTypes.map((type) => {
             const cfg = MODEL_TYPE_CONFIG[type];
             const count = typeCounts[type] || 0;
-            const activeCount = models.filter(m => String(m.model_type) === type && m.is_active !== false).length;
+            const activeCount = models.filter(m => String(m.model_type) === type && isOperationalActive(m)).length;
             return (
               <div key={type} className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-center">
                 <span className="text-xl">{cfg.icon}</span>

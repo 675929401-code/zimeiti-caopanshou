@@ -58,6 +58,20 @@ html[data-theme="soft-white"][data-mode="light"] {
   --msg-think-line: #d0d8d2;
   --msg-think-border: #74b8a7;
   --hover-bg: rgba(11, 116, 102, 0.08);
+  /* Resolve intake aliases at the theme root. Dialog surfaces remap --card,
+     --background and --primary; reading those directly inside them would cycle. */
+  --agent-intake-shell: var(--card);
+  --agent-intake-body: var(--background);
+  --agent-intake-chrome: var(--secondary);
+  --agent-intake-raised: var(--popover);
+  --agent-intake-subtle: var(--muted);
+  --agent-intake-footer: var(--secondary);
+  --agent-intake-text: var(--foreground);
+  --agent-intake-muted: var(--text-secondary);
+  --agent-intake-border: var(--border);
+  --agent-intake-accent: var(--primary);
+  --agent-intake-accent-foreground: var(--primary-foreground);
+  --agent-intake-accent-soft: var(--hover-bg);
   --scrollbar-thumb: #b8c7c1;
   --scrollbar-thumb-hover: #8e877d;
   --scrollbar-track: #ebe7df;

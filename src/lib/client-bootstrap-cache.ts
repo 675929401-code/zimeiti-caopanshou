@@ -10,6 +10,7 @@
  */
 
 export const CLIENT_BOOTSTRAP_CACHE_TTL_MS = 1_500;
+const AGENT_CATALOG_TIMEOUT_MS = 20_000;
 
 export interface ClientBootstrapRequestOptions {
   /** Bypass a settled TTL value. An equivalent request already in flight is still shared. */
@@ -192,11 +193,16 @@ export function getClientBootstrapAgentCatalog(
   return readResponse(
     agentCatalogEntry,
     scopeKey,
-    () => fetch("/api/bots?shape=agents", {
-      cache: "no-store",
-      credentials: "same-origin",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    }),
+    () => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), AGENT_CATALOG_TIMEOUT_MS);
+      return fetch("/api/bots?shape=agents", {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        signal: controller.signal,
+      }).finally(() => window.clearTimeout(timeoutId));
+    },
     options,
   );
 }

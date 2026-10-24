@@ -8,6 +8,8 @@
     "codeFence": "text",
     "durations": [8, 10, 15],
     "panelModes": ["fixed-4", "fixed-5", "auto"],
+    "visualAssetModes": ["off", "selected"],
+    "visualAssetRoles": ["character", "pet", "environment", "prop"],
     "videoImageInput": "one_complete_storyboard_image",
     "cropOrSplit": false
   },
@@ -16,7 +18,7 @@
       "id": "A",
       "path": "prompts/storyboard-high-energy-v3.5.3.md",
       "parent": "3D故事导演｜高能版 original-runtime snapshot",
-      "strategy": "保守优化：保留原版实体状态账、Frame 注释校准和高能镜头语法，修正图片先视频、严格服装、纯视觉、完整四/五宫格单图视频和视觉资产先行边界。",
+      "strategy": "保守优化：保留原版实体状态账、Frame 语义校准和高能镜头语法，修正图片先视频、严格服装、纯视觉、完整四/五宫格单图视频和视觉资产先行边界；说明只留在 Prompt/结构化字段，不绘入图片。",
       "runtimeEligible": false
     },
     {

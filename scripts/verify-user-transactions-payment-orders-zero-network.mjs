@@ -4,7 +4,9 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 
-assert.equal(process.version, 'v24.19.0');
+const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+assert.equal(nodeMajor, 24, 'NODE_MAJOR_VERSION_REQUIRED');
+assert.ok(nodeMinor >= 19, 'NODE_MINIMUM_MINOR_VERSION_REQUIRED');
 const { NextRequest, NextResponse } = createRequire(import.meta.url)('next/server');
 const source = readFileSync(new URL('../src/app/api/user/transactions/route.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;

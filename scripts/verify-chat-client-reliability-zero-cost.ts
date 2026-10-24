@@ -162,6 +162,7 @@ async function main() {
   }
 
   const appContext = source("src/contexts/app-context.tsx");
+  const recoveryPolicy = source("src/contexts/chat-recovery-policy.ts");
   assert.equal(appContext.split("mapHistoryMessages(").length - 1, 3, "all three history hydration paths must share one mapper");
   const sendStart = appContext.indexOf("const sendMessage = useCallback");
   const sendEnd = appContext.indexOf("// ---- Abort ongoing stream", sendStart);
@@ -181,8 +182,10 @@ async function main() {
     "a new controller must start with clean abort markers");
   assert.match(appContext, /if \(abortControllerMap\.current\.get\(convId\) !== controller\) return;[\s\S]*userAbortedSet\.current\.delete\(convId\);[\s\S]*watchdogAbortedSet\.current\.delete\(convId\)/u,
     "stream finally must clean markers without deleting a newer controller");
-  assert.match(appContext, /continueAfterDisconnect[\s\S]*?最终结果暂未确认[\s\S]*?请勿重复发送/u,
-    "a paid/background-capable stream disconnect must remain an unknown outcome without a resend action");
+  assert.match(recoveryPolicy, /CHAT_STREAM_RESULT_UNKNOWN_MESSAGE[\s\S]*?最终结果暂未确认[\s\S]*?避免重复发送/u,
+    "the shared recovery policy must explain that an ambiguous result is not safe to resend");
+  assert.match(appContext, /continueAfterDisconnect[\s\S]*?CHAT_STREAM_RESULT_UNKNOWN_MESSAGE/u,
+    "a paid/background-capable stream disconnect must use the shared unknown-result policy without a resend action");
 
   const chatView = source("src/components/chat-view.tsx");
   const messageItem = source("src/components/chat/message-item.tsx");
@@ -191,7 +194,8 @@ async function main() {
   const userRetryEnd = chatView.indexOf("onContinue=", userRetryStart);
   const userRetrySlice = chatView.slice(userRetryStart, userRetryEnd);
   assert.match(userRetrySlice, /CLEAR_MESSAGE_ERROR/u);
-  assert.match(userRetrySlice, /true, msg\.id\)/u);
+  assert.match(userRetrySlice, /sendMessage\([\s\S]*?true,\s*msg\.id,\s*\{\s*persistUserMessage:\s*false/u,
+    "a failed user-message retry must reuse the same message id without appending a duplicate");
   assert.doesNotMatch(userRetrySlice, /DELETE_MESSAGE/u);
   assert.match(streamHandler, /type:\s*"generation_progress"[\s\S]*?received_chars:\s*receivedChars/u,
     "buffered paid streams must emit visible progress without exposing unsettled output");
@@ -215,6 +219,44 @@ async function main() {
   assert.match(llmRoute, /requestedModelId\.startsWith\("pm_"\)/u,
     "the server must resolve explicit public model IDs");
   assert.doesNotMatch(chatView, /modelName|model_name/u, "the browser must not receive internal model names");
+
+  // History hydration must be generation-safe. A slower request from the
+  // previous account or conversation cannot replace the current transcript,
+  // and an empty/error response must not erase a locally pending send.
+  assert.match(appContext, /historyRequestGenerationRef\.current/iu,
+    "history loads need a monotonic request generation");
+  assert.match(appContext, /messageLoadGenerationRef\.current/iu,
+    "per-conversation message loads need their own generation");
+  assert.match(appContext, /if \(inMemoryMessages\.length > 0 \|\| conv\.dirty \|\| pendingSendConversationIdsRef\.current\.has\(conversationId\)\)/u,
+    "an empty history response must preserve pending local messages");
+  assert.match(appContext, /method:\s*"DELETE"[\s\S]*?\/messages/u,
+    "message deletion must use the authenticated message endpoint");
+  assert.match(appContext, /persistUserMessage:\s*branch\?\.persistUserMessage !== false/u,
+    "branch retries must explicitly control server-side user-message persistence");
+  assert.match(appContext, /truncate_from_message_id:\s*branch\?\.truncateFromMessageId/u,
+    "branch retries must send a stable server message id");
+  assert.match(appContext, /DELETE_MESSAGE[\s\S]*?MARK_MESSAGE_ERROR/u,
+    "a failed Coze request must keep the user message retryable");
+
+  // Drafts and keyboard input belong to the current account/conversation.
+  // Composition Enter is not a submit action while a CJK IME is active.
+  assert.match(chatView, /pendingImageScopeRef/iu,
+    "pending image uploads must be scoped to account and conversation");
+  assert.match(chatView, /composerDraftsRef/iu,
+    "text, attachments, and edit state must be retained per composer scope");
+  assert.match(chatView, /msg\.agentId\s*\|\|\s*prevUserMsg\.agentId/u,
+    "assistant retries must keep the original target agent");
+  assert.match(chatView, /prevUserMsg\.images/u,
+    "assistant retries must keep the original user attachments");
+  assert.match(chatView, /e\.nativeEvent\.isComposing|e\.keyCode === 229/u,
+    "IME composition Enter must not submit a message");
+  assert.match(chatView, /onCompositionStart/iu);
+  assert.match(chatView, /onCompositionEnd/iu);
+  assert.match(chatView, /deleteMessage\(activeConv\.id, msg\.id\)/u,
+    "message deletion must wait for the app-level ownership request");
+  const reducer = source("src/contexts/chat-reducer.ts");
+  assert.match(reducer, /case "DELETE_MESSAGE"[\s\S]*?dirty:\s*true/u,
+    "a local deletion must remain eligible for metadata synchronization");
 
   console.log(JSON.stringify({
     verifier: "chat-client-reliability-zero-cost",

@@ -9,6 +9,7 @@ import {
 } from "../src/components/admin/super-admin-governance-panel";
 import {
   ADMIN_PERMISSION_CATALOG,
+  adminPermissionCatalogForSelf,
   type AdminAccessClientState,
 } from "../src/lib/admin-governance";
 import {
@@ -74,8 +75,8 @@ for (const permission of ADMIN_PERMISSION_CATALOG) {
 assert.equal(ADMIN_JOB_TEMPLATES.length, 5, "the five least-privilege job templates must remain available");
 assert.deepEqual(
   [...ADMIN_OWNER_ONLY_PERMISSION_KEYS],
-  ["admin.accounts.manage", "prompts.view", "prompts.edit", "internal_tools.manage"],
-  "ordinary administrators must never receive owner accounts, prompt bodies or internal-tool authority",
+  ["admin.accounts.manage"],
+  "account control must remain owner-only; explicit business grants are separate",
 );
 for (const permissionKey of ADMIN_OWNER_ONLY_PERMISSION_KEYS) {
   assert.deepEqual(
@@ -128,7 +129,7 @@ assert.match(source, /data-testid="admin-core-technology-warning"/u, "core techn
 assert.match(source, /!draftCoreConfirmed/u, "saving must fail closed until core access is confirmed");
 assert.match(source, /!createCoreConfirmed/u, "creation must fail closed until core access is confirmed");
 assert.match(source, /catalog\.length === 31/u, "authorization must fail closed on a partial catalog");
-assert.match(selfRoute, /isSuperAdmin \? ADMIN_PERMISSION_CATALOG : grantedCatalog/u, "ordinary administrators must not receive the full catalog");
+assert.match(selfRoute, /catalog: adminPermissionCatalogForSelf\(access.permissionKeys\)/u, "ordinary administrators receive public directory metadata and their own grants only");
 assert.match(selfRoute, /filter\(\(\[, allowed\]\) => allowed === true\)/u, "ordinary administrators must receive only allowed tab names");
 assert.match(authoritySource, /permissionKeysForAdminLevel\(adminLevel, row\.permission_keys\)/u, "database snapshots must strip stale owner-only grants for ordinary admins");
 assert.match(authoritySource, /access\.adminLevel !== "super_admin" && OWNER_ONLY_PERMISSION_SET\.has\(permissionKey\)/u, "every centralized capability check must reject owner-only access for ordinary admins");
@@ -182,9 +183,9 @@ const ordinaryState: AdminAccessClientState = {
     disableReason: "",
     maxDurationMinutes: 30,
   },
-  tabAccess: { users: true },
+  tabAccess: { users: true, "super-admin": true },
   managementPasswordSet: false,
-  catalog: [grantedPermission],
+  catalog: adminPermissionCatalogForSelf([grantedPermission.key]),
 };
 const ordinaryMarkup = renderToStaticMarkup(createElement(SuperAdminGovernancePanel, {
   token: "ordinary-admin-token",
@@ -192,17 +193,19 @@ const ordinaryMarkup = renderToStaticMarkup(createElement(SuperAdminGovernancePa
   onRequestUnlock: () => undefined,
   onAccessChanged: () => undefined,
 }));
-assert.match(ordinaryMarkup, /data-testid="super-admin-locked"/u, "ordinary administrators must receive the locked view");
+assert.match(ordinaryMarkup, /data-testid="admin-permission-directory-readonly"/u, "ordinary administrators must receive a read-only public directory");
 for (const permission of ADMIN_PERMISSION_CATALOG) {
-  assert.equal(ordinaryMarkup.includes(permission.key), false, `${permission.key}: internal key leaked into locked markup`);
-  assert.equal(ordinaryMarkup.includes(permission.label), false, `${permission.key}: permission label leaked into locked markup`);
+  assert.ok(ordinaryMarkup.includes(permission.label), `${permission.key}: directory must explain every capability`);
 }
+assert.doesNotMatch(ordinaryMarkup, /添加管理员|保存权限与账号状态|管理密码|admin-governance-refresh/u, "ordinary directory must not include sensitive governance controls");
+assert.match(ordinaryMarkup, /data-permission-key="members.view" data-granted="true"/u);
+assert.match(ordinaryMarkup, /data-permission-key="prompts.edit" data-granted="false"/u);
 
 console.log(JSON.stringify({
   status: "PASS",
   permissionCount: ADMIN_PERMISSION_CATALOG.length,
   groupCount: groups.length,
   templateCount: ADMIN_JOB_TEMPLATES.length,
-  lockedMarkupContainsPermissionNames: false,
+  readonlyDirectoryContainsPermissionNames: true,
   catalogMutationGate: "31/31",
 }, null, 2));

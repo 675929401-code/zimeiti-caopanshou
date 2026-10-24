@@ -15,7 +15,8 @@ import { storageManager, type StorageProviderType } from "@/storage/object";
 import { createVideoAccessUrl } from "@/lib/video-access-ticket";
 import { createStoryboardPersistenceSnapshot } from "@/lib/storyboard-local-persistence";
 import { generatedImagePreviewUrl } from "@/lib/generated-image-reference";
-import { validateOwnedGeneratedImageReference } from "@/lib/server/generated-image-reference";
+import { validateOwnedGeneratedImageReceipt } from "@/lib/server/generated-image-reference";
+import { storyboardImageUnavailablePatch } from "@/lib/storyboard-image-result-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,13 +86,38 @@ function possibleKey(value: unknown) {
   try { return decodeURIComponent(new URL(value).pathname).replace(/^\/+/, ""); } catch { return ""; }
 }
 
+/** Repair only a uniquely identified owned object on this card, never an opaque/manual URL. */
+function sameOwnedReferenceObject(marker: string, currentUrl: string, storageKey: string): boolean {
+  try {
+    const previous = new URL(marker), current = new URL(currentUrl);
+    return [previous, current].every(url => (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password)
+      && previous.origin === current.origin && previous.pathname === current.pathname
+      && possibleKey(marker) === storageKey && possibleKey(currentUrl) === storageKey;
+  } catch { return false; }
+}
+
+function mapCurrentReferenceMarkers(card: Document["cards"][number], resolve: (marker: string) => string): void {
+  for (const ref of card.visualAssetRefs || []) {
+    // Empty ownedReferenceUrl explicitly belongs to a manual/shared input.
+    if (typeof ref.ownedReferenceUrl === "string" && ref.ownedReferenceUrl) ref.ownedReferenceUrl = resolve(ref.ownedReferenceUrl);
+    if (typeof ref.boundReferenceUrl === "string" && ref.boundReferenceUrl) ref.boundReferenceUrl = resolve(ref.boundReferenceUrl);
+  }
+}
+
 async function stabilize(db: Database, owner: string, input: Document): Promise<Document> {
   const document = createStoryboardPersistenceSnapshot(structuredClone(input));
   const keys = new Set<string>();
   for (const card of document.cards) {
     if (card.imageRef) {
-      await validateOwnedGeneratedImageReference({ userId: owner, reference: card.imageRef });
-      card.imageUrl = generatedImagePreviewUrl(card.imageRef);
+      const receipt = await validateOwnedGeneratedImageReceipt({ userId: owner, reference: card.imageRef });
+      if (receipt.sourceExpiredAt) {
+        Object.assign(card, storyboardImageUnavailablePatch("expired"));
+      } else if (card.imageMediaState === "unavailable") {
+        Object.assign(card, storyboardImageUnavailablePatch("unavailable"));
+      } else {
+        delete card.imageMediaState;
+        card.imageUrl = generatedImagePreviewUrl(card.imageRef);
+      }
       card.imageRecordId = card.imageRef.recordId;
       card.imageDeliveryMode = "provider_url";
       delete card.imageStorageKey;
@@ -118,6 +144,15 @@ async function stabilize(db: Database, owner: string, input: Document): Promise<
   };
   for (const card of document.cards) {
     for (const field of mediaFields) if (card[field]) card[field] = stableUrl(card[field]);
+    const referenceUrls = card.referenceImageUrls;
+    mapCurrentReferenceMarkers(card, marker => {
+      const matches = referenceUrls.flatMap(url => {
+        const asset = byKey.get(possibleKey(url));
+        return asset && sameOwnedReferenceObject(marker, url, asset.storage_key) ? [asset.id] : [];
+      });
+      const ids = [...new Set(matches)];
+      return ids.length === 1 ? `asset://${ids[0]}` : marker;
+    });
     card.referenceImageUrls = card.referenceImageUrls.map((url) => String(stableUrl(url)));
     if (card.imageStorageKey) {
       const asset = byKey.get(String(card.imageStorageKey));
@@ -178,13 +213,26 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
   let document = createStoryboardPersistenceSnapshot(structuredClone(input));
   for (const card of document.cards) if (card.imageRef) {
     try {
-      await validateOwnedGeneratedImageReference({ userId: owner, reference: card.imageRef });
-      card.imageUrl = generatedImagePreviewUrl(card.imageRef);
+      const receipt = await validateOwnedGeneratedImageReceipt({ userId: owner, reference: card.imageRef });
       card.imageRecordId = card.imageRef.recordId;
       card.imageDeliveryMode = "provider_url";
+      if (receipt.sourceExpiredAt) Object.assign(card, storyboardImageUnavailablePatch("expired"));
+      else {
+        // Ownership and generation are confirmed. A fresh strict media read
+        // determines availability; a stale client marker cannot assert expiry.
+        card.imageStatus = "done";
+        delete card.imageMediaState;
+        delete card.imageValidatedAt;
+        delete card.imageError;
+        card.imageRecoveryReady = false;
+        card.imageRetryBlocked = false;
+        card.imageUrl = generatedImagePreviewUrl(card.imageRef);
+      }
     } catch {
       delete card.imageUrl;
+      delete card.videoSourceImageUrl;
       delete card.imageValidatedAt;
+      delete card.imageMediaState;
       card.imageError = "生成图片归属或可用性暂时无法确认；原任务及费用收据保留";
       card.imageRetryBlocked = true;
     }
@@ -195,11 +243,13 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
     if (typeof url === "string" && url.startsWith("asset://")) ids.add(url.slice(8));
   }
   const urls = new Map<string, string>();
+  const ownedAssets = new Map<string, Asset>();
   const wanted = [...ids];
   for (let offset = 0; offset < wanted.length; offset += 100) {
     const result = await db.from("user_files").select("id,storage_key,storage_provider").eq("user_id", owner).in("id", wanted.slice(offset, offset + 100));
     if (result.error) throw result.error;
     const assets = (result.data || []) as Asset[];
+    for (const asset of assets) ownedAssets.set(asset.id, asset);
     const signed = await Promise.allSettled(assets.map(async (asset) => ({
       id: asset.id,
       url: await storageManager.getSignedUrl(asset.storage_key, { expireTime: 3600 }, asset.storage_provider),
@@ -211,6 +261,17 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
   const restore = (url: unknown) => typeof url === "string" && url.startsWith("asset://") ? urls.get(url.slice(8)) || "" : url;
   for (const card of document.cards) {
     for (const field of mediaFields) if (card[field]) card[field] = restore(card[field]);
+    const referenceUrls = card.referenceImageUrls;
+    mapCurrentReferenceMarkers(card, marker => {
+      if (marker.startsWith("asset://")) return referenceUrls.includes(marker) ? urls.get(marker.slice(8)) || marker : marker;
+      const matches = referenceUrls.flatMap(url => {
+        if (!url.startsWith("asset://")) return [];
+        const id = url.slice(8), asset = ownedAssets.get(id), signedUrl = urls.get(id);
+        return asset && signedUrl && sameOwnedReferenceObject(marker, signedUrl, asset.storage_key) ? [id] : [];
+      });
+      const ids = [...new Set(matches)];
+      return ids.length === 1 ? urls.get(ids[0])! : marker;
+    });
     card.referenceImageUrls = card.referenceImageUrls.map((url) => String(restore(url))).filter(Boolean);
   }
   const imageRequestKeys = document.cards.map(card => String(card.imageClientRequestId || "")).filter(Boolean);
@@ -226,8 +287,16 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
         card.imageRef = { schema: "generated_image_ref.v1", recordId: String(row.record_id) };
         card.imageRecordId = String(row.record_id);
         card.imageDeliveryMode = "provider_url";
+        card.imageStatus = "done";
+        delete card.imageMediaState;
+        delete card.imageValidatedAt;
+        delete card.videoSourceImageUrl;
+        delete card.imageError;
+        card.imageRetryBlocked = false;
+        card.imageRecoveryReady = false;
         card.imageUrl = generatedImagePreviewUrl(card.imageRef);
       } else if (row.response?.deliveryMode === "inline_ephemeral") {
+        delete card.imageMediaState;
         card.imageRecordId = String(row.record_id);
         card.imageDeliveryMode = "inline_ephemeral";
         card.imageStatus = "done";
@@ -241,12 +310,13 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
     const expiredKeys = new Set((attempts.data || []).filter(row => row.response?.deliveryMode === "provider_url" && row.response?.sourceExpiredAt)
       .map(row => String(row.client_idempotency_key)));
     for (const card of document.cards) if (expiredKeys.has(String(card.imageClientRequestId || ""))) {
-      delete card.imageUrl;
-      delete card.videoSourceImageUrl;
-      card.imageStatus = "done";
-      card.imageError = "生成已成功，上游图片已确认失效；原任务和账务凭据保留";
-      card.imageRetryBlocked = true;
-      card.imageRecoveryReady = false;
+      Object.assign(card, storyboardImageUnavailablePatch("expired"));
+      const row = (attempts.data || []).find(item => item.client_idempotency_key === card.imageClientRequestId);
+      if (/^[a-f0-9]{64}$/u.test(String(row?.record_id))) {
+        card.imageRef = { schema: "generated_image_ref.v1", recordId: String(row!.record_id) };
+        card.imageRecordId = String(row!.record_id);
+        card.imageDeliveryMode = "provider_url";
+      }
     }
   }
   const taskIds = collectStoryboardVideoTaskIds([document]);

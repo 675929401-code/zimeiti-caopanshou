@@ -296,9 +296,10 @@ assert.match(homeSource, /d\.settings\?\.page_layout/u);
 assert.match(homeSource, /d\.settings\?\.card_layout/u);
 assert.match(
   adminPageSource,
-  /if \(adminAccess\?\.stepUp\.status !== "ready"\) return;[\s\S]*?readableSettingScopes\.map[\s\S]*?fetch\(`\/api\/settings\/admin\?scope=\$\{scope\}`/u,
+  /if \(!sensitiveUnlocked \|\| !sensitiveUnlockedRef\.current \|\| readableSettingScopes\.length === 0\) return;[\s\S]*?readableSettingScopes\.map[\s\S]*?fetch\(`\/api\/settings\/admin\?scope=\$\{scope\}`/u,
   "admin page must read only granted scopes after step-up is ready",
 );
+assert.match(adminPageSource, /if \(!sensitiveUnlockedRef\.current\) return;[\s\S]*?setSettings\(\(prev\)/u, "relocking during a settings read must discard its sensitive response");
 
 console.log(JSON.stringify({
   status: "PASS",

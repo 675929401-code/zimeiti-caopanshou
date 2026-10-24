@@ -1,4 +1,5 @@
 import { ManjuPersistentLayout } from "@/components/manju-persistent-layout";
+import { FeatureComingSoonGate } from "@/components/feature-coming-soon-gate";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import {
@@ -16,6 +17,10 @@ export const metadata: Metadata = {
 };
 
 export default function ManjuWorkbenchLayout({ children }: { children: ReactNode }) {
-  return <ManjuPersistentLayout>{children}</ManjuPersistentLayout>;
+  return (
+    <FeatureComingSoonGate title="漫剧创作">
+      <ManjuPersistentLayout>{children}</ManjuPersistentLayout>
+    </FeatureComingSoonGate>
+  );
 }
 

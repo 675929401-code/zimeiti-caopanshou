@@ -73,7 +73,7 @@ await assert.rejects(preview.generatedVideoPreviewBlob(new Blob(['fixture'], { t
 const source = readFileSync('src/app/api/video/generate/route.ts', 'utf8');
 const gate = source.slice(source.indexOf('    let effectiveImageUrl = image_url;'), source.indexOf('    // 新版 AutoDL ComfyUI workflow'));
 const server = load('src/lib/server/generated-image-reference.ts', { '@/lib/generated-image-reference': refs, '@/storage/database/supabase-client': {}, '@/lib/video-public-url': {}, '@/lib/safe-fetch': {} });
-let version = 1, reserves = 0, providerPosts = 0, bridges = 0, ownerChecks = 0;
+let version = 1, reserves = 0, providerPosts = 0, bridges = 0, ownerChecks = 0, generatedBridges = 0;
 async function execute(body, options = {}) {
   const inputs = refs.parseGeneratedVideoImageInputs(body); const module = { exports: {} };
   const context = { module, image_url: inputs.imageUrl, last_frame_url: inputs.lastFrameUrl, reference_image_url: inputs.referenceImageUrl,
@@ -83,6 +83,7 @@ async function execute(body, options = {}) {
     isAutodlComfyuiHostedProtocol: value => value === 'hosted',
     resolveGeneratedImageReference: async ({ userId, reference }) => { ownerChecks++; assert.equal(userId, 'owner'); if (reference.recordId === options.forbidden) throw new server.GeneratedImageReferenceError('GENERATED_IMAGE_NOT_OWNED', 'not owned', 403); return `https://fixture.cos.ap-test.myqcloud.com/${reference.recordId}?sig=${version}`; },
     readGeneratedImageMaterial: async () => { ownerChecks++; return {}; },
+    bridgeGeneratedImageForVideoProvider: async ({ userId, reference }) => { ownerChecks++; assert.equal(userId, "owner"); if (reference.recordId === options.forbidden) throw new server.GeneratedImageReferenceError("GENERATED_IMAGE_NOT_OWNED", "not owned", 403); generatedBridges++; return `https://fixture.cos.ap-test.myqcloud.com/video-inputs/generated-provider-bridge/${reference.recordId}.png`; },
     NextResponse: { json: (body, init) => ({ body, status: init.status }) },
     audio_url: '', source_video_url: '', referenceAudioUrls: [], image_storage_key: '',
     hasAnyVideoReference: values => Object.values(values).some(value => Array.isArray(value) ? value.length : Boolean(value)),
@@ -98,7 +99,8 @@ assert.equal(bridges, 0); assert.equal(reserves, 1); assert.equal(providerPosts,
 for (const forbidden of [a.recordId, b.recordId, c.recordId]) { const before = reserves; const failed = await execute(body, { forbidden }); assert.equal(failed.status, 403); assert.equal(reserves, before); assert.equal(providerPosts, before); }
 const listOnly = { reference_image_inputs: [legacy, a] };
 assert.equal((await execute(listOnly, { forbidden: a.recordId })).status, 403);
-const beforeHosted = reserves; assert.equal((await execute({ last_frame_ref: b }, { protocol: 'hosted' })).status, 422); assert.equal(reserves, beforeHosted); assert.equal(bridges, 0);
+const beforeHosted = reserves; assert.ok((await execute({ last_frame_ref: b }, { protocol: 'hosted' })).lastFrameUrl.includes('video-inputs/generated-provider-bridge/')); assert.equal(reserves, beforeHosted + 1); assert.equal(generatedBridges, 1); assert.equal(bridges, 0);
+assert.equal((await execute({ last_frame_ref: b }, { protocol: 'hosted', forbidden: b.recordId })).status, 403); assert.equal(reserves, beforeHosted + 1); assert.equal(generatedBridges, 1); assert.equal(bridges, 0);
 for (const mixed of [{ image_ref: a, last_frame_url: legacy }, { image_url: legacy, reference_image_ref: b }, { image_ref: a, reference_image_inputs: [legacy] }, { last_frame_ref: b }]) {
   const before = reserves, checks = ownerChecks; assert.equal((await execute(mixed, { protocol: 'newapi_video', multipart: true })).status, 422); assert.equal(reserves, before); assert.equal(ownerChecks, checks);
 }
@@ -120,7 +122,7 @@ function persisted(fresh) {
   const module = { exports: {} }, fields = refs.parseGeneratedVideoImageInputs(body);
   const globals = { module, generatedInputs: fields, generatedImageUri: uri(a), image_url: fields.imageUrl, last_frame_url: fields.lastFrameUrl, reference_image_url: fields.referenceImageUrl, referenceImageUrls: fields.referenceImageUrls,
     effectiveImageUrl: fresh.imageUrl, effectiveLastFrameUrl: fresh.lastFrameUrl, effectiveReferenceImageUrl: fresh.referenceImageUrl, effectiveReferenceImageUrls: fresh.imageUrls,
-    channelConfig: { id: 'model', protocol_type: 'fixture' }, executionPrompt: prompt, prompt, promptNormalizations: [], negative_prompt: '', effectiveAudioUrl: '', effectiveReferenceAudioUrls: [], effectiveSourceVideoUrl: '', body,
+    channelConfig: { id: 'model', protocol_type: 'fixture' }, billing: {}, executionPrompt: prompt, prompt, promptNormalizations: [], negative_prompt: '', effectiveAudioUrl: '', effectiveReferenceAudioUrls: [], effectiveSourceVideoUrl: '', body,
     generateAudio: undefined, videoTiming: { target: 5, submit: 5 }, aspect_ratio: '16:9', selectedResolution: '720p', dispatch: undefined, adapterParams: fresh, image_storage_key: '', audio_url: '', referenceAudioUrls: [], source_video_url: '', ownedPageAssetRefs: new Map(),
     snapshotFps: null, snapshotSeed: null, snapshotGenerateAudio: null, publicRequestedModelId: 'public-model', routingSnapshot: { configVersion: 'a'.repeat(64) },
     buildVideoRequestFingerprint: input => crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex'), buildVideoGenerationRequestSnapshot: input => input, buildVideoRequestAssetRefs: input => input };

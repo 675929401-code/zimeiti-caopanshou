@@ -40,7 +40,6 @@ async function main() {
       effectsLevel: "rich",
       productionMode: "anime-story",
       assistantInstruction: `本轮为v24语义表演验收-${Date.now()}，输入是宠物科普口播，不是剧本。`,
-      allowDurationTrim: true,
       videoModelDurationMode: "fixed",
       videoModelDurationSeconds: 8,
     }),

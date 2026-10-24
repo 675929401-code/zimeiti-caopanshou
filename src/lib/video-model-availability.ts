@@ -1,4 +1,5 @@
 import { sanitizeVideoChannelError } from "@/lib/video-channel-health-circuit";
+import { createVideoTokenQuote, getVideoTokenPublicPricing } from "./video-token-billing";
 
 type VideoAvailabilityMessageInput = {
   available: boolean;
@@ -31,16 +32,25 @@ export function videoBillingAdapterAdmission(
 ): VideoBillingAdapterAdmission {
   const config = protocolConfig && typeof protocolConfig === "object" ? protocolConfig : {};
   const providerBillingUnit = String(config.provider_billing_unit || "").trim().toLowerCase();
+  let tokenConfigurationValid = false;
+  try {
+    const pricing = getVideoTokenPublicPricing({ api_protocol_config: config });
+    if (pricing) {
+      createVideoTokenQuote({ api_protocol_config: config }, { resolution: "720p", hasReferenceVideo: false, maxChargeYuan: 1, priceVersion: pricing.priceVersion });
+      tokenConfigurationValid = true;
+    }
+  } catch { /* Invalid rates keep token submission closed. */ }
   const tokenAdapterReady = config.token_billing_adapter_ready === true
-    && config.public_billing_pending !== true;
-  if (providerBillingUnit !== "token" || tokenAdapterReady) {
+    && config.public_billing_pending !== true && config.billing_unit === "token"
+    && config.token_billing_adapter_version === "video_token_quote.v1" && tokenConfigurationValid;
+  if ((providerBillingUnit !== "token" && config.billing_unit !== "token") || tokenAdapterReady) {
     return { ready: true, code: "", message: "" };
   }
 
   return {
     ready: false,
     code: VIDEO_TOKEN_BILLING_ADAPTER_REQUIRED,
-    message: "上游按 Token 计费，平台精确结算适配尚未完成；模型保留展示，暂不提交",
+    message: "上游按 Token 计费，平台正在完成精确结算适配；模型保留展示，暂不提交",
   };
 }
 

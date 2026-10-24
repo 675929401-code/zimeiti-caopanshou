@@ -8,6 +8,8 @@ import {
   LlmProviderBindingError,
 } from "@/lib/llm-provider-contract";
 import { normalizeDisplayText } from "@/lib/display-normalization";
+import { resolveProviderSecret } from "@/lib/provider-secret";
+import { assertFreshLlmModelValidationEvidence, assertLlmEndpointCredentialReplacement, LlmModelValidationError, llmModelValidationConfigurationHash, pendingLlmConfigurationUpdate } from "@/lib/llm-model-validation-gate";
 /**
  * 缁熶竴妯″瀷绠＄悊 API
  * GET  - 鑱氬悎鍒楀嚭鎵€鏈夌被鍨嬫ā鍨嬶紙缁樺浘/鏂囨/瑙嗛锛?
@@ -34,7 +36,6 @@ import {
 import {
   ModelActivationGateError,
   PENDING_TEXT_USER_ACCESS,
-  assertOrdinaryAdminUpdateDoesNotActivate,
   prepareVideoModelBindingUpdate,
   forceNewVideoModelPending,
   newPendingImageModelId,
@@ -311,6 +312,7 @@ export interface UnifiedModel {
   updated_at?: string;
   // 鍏宠仈
   agent_id?: string;         // 鏂囨妯″瀷鍏宠仈鐨?agents 琛?ID
+  validation?: { passed: boolean; validated_at: string | null; latency_ms: number | null; input_tokens: number | null; output_tokens: number | null; fingerprint_current: boolean; reason: string };
 }
 
 function unifiedStats(models: Array<{ model_type?: string; is_active?: boolean }>) {
@@ -453,15 +455,43 @@ export async function GET(req: NextRequest) {
       .order("id", { ascending: true });
 
     if (!llmError && llmModels) {
+      // Only stepped-up model managers receive operational verification state.
+      // The private configuration hash includes a secret digest and is never
+      // returned in this catalogue response.
+      const evidenceRows = canManageModels && llmModels.length
+        ? await dbClient.from("llm_model_validation_evidence").select("model_id,configuration_hash,checked_at,latency_ms,prompt_tokens,completion_tokens").in("model_id", llmModels.map((model: { id: string }) => model.id)).order("checked_at", { ascending: false })
+        : null;
       for (const m of llmModels) {
         const hasTokenBilling = m.token_billing_enabled === true;
         const protocolConfig = m.api_protocol_config && typeof m.api_protocol_config === "object"
           ? m.api_protocol_config as Record<string, unknown>
           : {};
+        let validation: UnifiedModel["validation"];
+        if (canManageModels) {
+          validation = { passed: false, validated_at: null, latency_ms: null, input_tokens: null, output_tokens: null, fingerprint_current: false, reason: evidenceRows?.error ? "验证记录读取失败" : "尚无当前配置的有效验证" };
+          try {
+            const secret = resolveProviderSecret(m.api_key);
+            const hash = llmModelValidationConfigurationHash(m, secret);
+            const evidence = evidenceRows?.data?.find((item: { model_id: string; configuration_hash: string; checked_at: string; latency_ms: number | null; prompt_tokens: number | null; completion_tokens: number | null }) => item.model_id === m.id && item.configuration_hash === hash);
+            if (evidence) {
+              validation.fingerprint_current = true;
+              validation.validated_at = evidence.checked_at;
+              validation.latency_ms = evidence.latency_ms;
+              validation.input_tokens = evidence.prompt_tokens;
+              validation.output_tokens = evidence.completion_tokens;
+              assertFreshLlmModelValidationEvidence(m, secret, evidence);
+              validation.passed = true;
+              validation.reason = "当前配置真实通路验证有效";
+            }
+          } catch (error) {
+            validation.reason = error instanceof LlmModelValidationError ? error.message : "服务端凭据不可用或配置需重新验证";
+          }
+        }
         models.push({
           id: m.id,
           name: normalizeDisplayText(m.name, "未命名模型"),
           model_type: "text",
+          ...(validation ? { validation } : {}),
           model_name: m.model_name || "",
           api_endpoint: m.api_endpoint || m.proxy_url || "",
           api_key_configured: Boolean(String(m.api_key || "").trim()),
@@ -905,18 +935,19 @@ export async function PUT(req: NextRequest) {
     } else if (model_type === "text") {
       const { data: currentTextModel, error: currentTextError } = await dbClient
         .from("llm_models")
-        .select("user_access,is_active,is_hidden,token_billing_enabled,input_cost_per_million,output_cost_per_million,cached_cost_per_million,profit_margin,max_context_tokens,api_protocol_config")
+        .select("*")
         .eq("id", id)
         .maybeSingle();
       if (currentTextError) {
         return NextResponse.json({ error: currentTextError.message }, { status: 500 });
       }
-      assertOrdinaryAdminUpdateDoesNotActivate(
-        "text",
-        id,
-        currentTextModel?.user_access,
-        fields,
-      );
+      if (!currentTextModel) return NextResponse.json({ error: "模型不存在" }, { status: 404 });
+      try {
+        assertLlmEndpointCredentialReplacement(currentTextModel, fields, nextApiKey);
+      } catch (error) {
+        if (error instanceof LlmModelValidationError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        throw error;
+      }
       assertAdminAutodlH3SelfhostBinding("text", fields);
       const tokenConfigurationError = textTokenConfigurationError({ ...currentTextModel, ...fields });
       if (tokenConfigurationError) {
@@ -925,7 +956,7 @@ export async function PUT(req: NextRequest) {
       let textProtocolConfig: Record<string, unknown>;
       try {
         textProtocolConfig = canonicalLlmProtocolConfig({
-          ...fields,
+          ...currentTextModel, ...fields,
           api_protocol_config: fields.api_protocol_config ?? currentTextModel?.api_protocol_config,
         });
       } catch (error) {
@@ -948,16 +979,17 @@ export async function PUT(req: NextRequest) {
       const isReasoningModel = REASONING_PATTERNS.some(p => p.test(modelName));
 
       // 濡傛灉model_name鍙樻洿浜嗕笖鐢ㄦ埛鏈墜鍔ㄦ寚瀹歞eep_thinking_type锛岃嚜鍔ㄦ帹鏂?
-      if (fields.model_name !== undefined && fields.deep_thinking_type === undefined) {
+      const modelIdentityChanged = fields.model_name !== undefined && fields.model_name !== currentTextModel.model_name;
+      if (modelIdentityChanged && fields.deep_thinking_type === undefined) {
         fields.deep_thinking_type = isReasoningModel ? 2 : 0;
       }
-      if (fields.model_name !== undefined && fields.timeout === undefined) {
+      if (modelIdentityChanged && fields.timeout === undefined) {
         fields.timeout = isReasoningModel ? 300 : 120;
       }
-      if (fields.model_name !== undefined && fields.max_reply_tokens === undefined) {
+      if (modelIdentityChanged && fields.max_reply_tokens === undefined) {
         fields.max_reply_tokens = isReasoningModel ? 65536 : 4096;
       }
-      if (fields.model_name !== undefined && fields.deduct_deep_think === undefined) {
+      if (modelIdentityChanged && fields.deduct_deep_think === undefined) {
         fields.deduct_deep_think = isReasoningModel ? 2 : 1;
       }
 
@@ -990,22 +1022,25 @@ export async function PUT(req: NextRequest) {
       for (const f of allowed) {
         if (fields[f] !== undefined) updateFields[f] = fields[f];
       }
-      if (currentTextModel?.user_access === PENDING_TEXT_USER_ACCESS) updateFields.user_access = "available";
       updateFields.billing_mode = "token";
       updateFields.token_billing_enabled = true;
       updateFields.cost_per_use = 0;
       updateFields.cost_price = 0;
       updateFields.token_rounding_unit = 0;
-      updateFields.is_active = true;
-      updateFields.is_hidden = false;
-      updateFields.user_access = "available";
       updateFields.api_protocol_config = textProtocolConfig;
+      let pendingFields: Record<string, unknown>;
+      try {
+        pendingFields = pendingLlmConfigurationUpdate(currentTextModel, updateFields);
+      } catch (error) {
+        if (error instanceof LlmModelValidationError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        throw error;
+      }
 
       const result = await stageLegacyModelPoolUpsert({
         actorId: admin.userId,
         table: "llm_models",
         id: String(id),
-        values: updateFields,
+        values: pendingFields,
         changeNote: `修改对话模型 ${id}`,
       });
       return NextResponse.json({ success: true, staged: true, published: false, result }, { status: 202 });

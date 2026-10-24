@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { imageOutputPolicyVersion, type ImageOutputPolicySnapshot } from "@/lib/image-output-contract";
 import { parseImageRequestRejectionReceipt, type ImageRequestRejection } from "@/lib/image-request-rejection";
 
 export const IMAGE_FAILURE_HISTORY_SURFACE = "image-workbench" as const;
@@ -48,6 +49,7 @@ export type ImageFailureRequestSnapshot = {
   effectivePrompt?: string;
   providerProtocol?: "google_generate_content" | "chat_completions" | "images_generations" | "images_generations_async" | "images_edits" | "cover_workflow";
   outputPixelSize?: string;
+  outputPolicy?: ImageOutputPolicySnapshot;
   imageCount?: 1;
   referenceUsage?: "general" | "character-identity";
   payloadFingerprint?: string;
@@ -103,6 +105,7 @@ export function createImageFailureRequestSnapshot(input: {
   effectivePrompt?: string;
   providerProtocol?: ImageFailureRequestSnapshot["providerProtocol"];
   outputPixelSize?: string;
+  outputPolicy?: ImageOutputPolicySnapshot;
   imageCount?: 1;
   referenceUsage?: ImageFailureRequestSnapshot["referenceUsage"];
   payloadFingerprint?: string;
@@ -136,6 +139,7 @@ export function createImageFailureRequestSnapshot(input: {
       effectivePrompt: input.effectivePrompt?.trim() || "",
       providerProtocol: input.providerProtocol,
       outputPixelSize: input.outputPixelSize?.trim().toLowerCase() || "",
+      ...(input.outputPolicy ? { outputPolicy: input.outputPolicy } : {}),
       imageCount: input.imageCount || 1,
       referenceUsage: input.referenceUsage || "general",
       payloadFingerprint: input.payloadFingerprint,
@@ -164,6 +168,16 @@ export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRe
     || (row.exactCoverText !== undefined && (typeof row.exactCoverText !== "string" || row.exactCoverText.length > 200))) return null;
   if ((row.mode === "text-to-image") !== (row.referenceAssetRefs.length === 0)) return null;
   const v2 = row.schema === "image_generation_request_snapshot.v2";
+  const policy = row.outputPolicy;
+  const policyVersion = imageOutputPolicyVersion(policy?.version);
+  if (policy !== undefined && (!v2 || !policy || typeof policy !== "object" || Array.isArray(policy)
+    || !policyVersion
+    || policy.minimumDimensionScale !== policyVersion.minimumDimensionScale
+    || policy.aspectRatioTolerance !== policyVersion.aspectRatioTolerance
+    || !policy.candidatePixelSizes || typeof policy.candidatePixelSizes !== "object" || Array.isArray(policy.candidatePixelSizes)
+    || Object.keys(policy.candidatePixelSizes).length > 100
+    || Object.entries(policy.candidatePixelSizes).some(([key, pixels]) => !key || key.length > 300
+      || typeof pixels !== "string" || !PIXEL_SIZE.test(pixels)))) return null;
   if (v2 && (
     typeof row.style !== "string" || row.style.length > 256
     || typeof row.effectivePrompt !== "string" || !row.effectivePrompt.trim() || row.effectivePrompt.length > 50_000
@@ -192,6 +206,7 @@ export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRe
       effectivePrompt: row.effectivePrompt!,
       providerProtocol: row.providerProtocol!,
       outputPixelSize: row.outputPixelSize!,
+      ...(policy ? { outputPolicy: { ...policy, candidatePixelSizes: { ...policy.candidatePixelSizes } } } : {}),
       imageCount: 1,
       referenceUsage: row.referenceUsage!,
       payloadFingerprint: row.payloadFingerprint!,

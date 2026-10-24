@@ -104,7 +104,7 @@ assert.ok(
 );
 
 const selfRoute = read("src/app/api/admin/access-control/self/route.ts");
-assert.match(selfRoute, /catalog: isSuperAdmin \? ADMIN_PERMISSION_CATALOG : grantedCatalog/u);
+assert.match(selfRoute, /catalog: adminPermissionCatalogForSelf\(access.permissionKeys\)/u);
 
 const panel = read("src/components/admin/super-admin-governance-panel.tsx");
 assert.match(panel, /missingCount: number/u);

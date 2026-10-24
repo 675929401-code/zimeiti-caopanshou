@@ -25,6 +25,8 @@ export type StorageProviderType =
 
 // ── 上传选项 ──
 export interface StorageUploadOptions {
+  /** Server-only key reserved by the durable storyboard queue. */
+  storyboardArchiveKey?: string;
   /** 文件分类，默认 "other" */
   category?: FileCategory;
   /** 自定义 key 前缀，默认按 category 自动生成 */

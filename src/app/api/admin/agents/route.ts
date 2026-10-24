@@ -14,6 +14,7 @@ import {
 import { invalidateBotsCache } from '@/lib/bots-cache';
 import { normalizeAgentPresetFields } from '@/lib/agent-preset-schema';
 import { visibleAdminAgentRows } from '@/lib/admin-agent-catalog-visibility';
+import { normalizeStoryboardDirectorContractActivation, StoryboardDirectorContractActivationError, STORYBOARD_DIRECTOR_CONTRACT_FIELDS } from '@/lib/storyboard-director-contract-activation';
 import { authorizeAdminCapability } from '@/lib/server/admin-governance-authority';
 import { invalidateAgentConfigCache } from '@/app/api/llm/llm-state';
 import {
@@ -92,6 +93,7 @@ const AGENT_MODEL_BINDING_COLUMNS = [
 const AGENT_PROMPT_INPUT_KEYS = [
   'system_prompt',
   'systemPrompt',
+  'directorContractAction',
 ] as const;
 
 const AGENT_CONFIGURATION_INPUT_KEYS = [
@@ -103,6 +105,7 @@ const AGENT_CONFIGURATION_INPUT_KEYS = [
   'coze_coding_project_id', 'cozeCodingProjectId',
   'credential_source_agent_id', 'credentialSourceAgentId',
   'output_style', 'outputStyle',
+  'directorContractAction',
   'enable_think_tags', 'enableThinkTags',
   'proxy_url', 'proxyUrl',
   'deep_thinking_type', 'deepThinkingType',
@@ -648,7 +651,7 @@ export async function PUT(request: NextRequest) {
     let revisionManaged = true;
     let currentAgentResult = await client
       .from('agents')
-      .select('id,category,user_access,avatar,cover_url,config_revision')
+      .select('id,category,user_access,avatar,cover_url,config_revision,system_prompt,output_style')
       .eq('id', agentId)
       .maybeSingle();
     if (currentAgentResult.error && isAgentRevisionSchemaMissing(currentAgentResult.error)) {
@@ -656,7 +659,7 @@ export async function PUT(request: NextRequest) {
       revisionManaged = false;
       currentAgentResult = await client
         .from('agents')
-        .select('id,category,user_access,avatar,cover_url')
+        .select('id,category,user_access,avatar,cover_url,system_prompt,output_style')
         .eq('id', agentId)
         .maybeSingle();
     }
@@ -681,7 +684,11 @@ export async function PUT(request: NextRequest) {
     if (revisionManaged && expectedRevision === null) {
       return expectedAgentRevisionRequired(currentAgent.config_revision);
     }
-    const fields: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (revisionManaged && expectedRevision !== Number(currentAgent.config_revision)) {
+      return agentRevisionConflict(expectedRevision as number, currentAgent.config_revision);
+    }
+    const savedAt = new Date();
+    const fields: Record<string, unknown> = { updated_at: savedAt.toISOString() };
 
     // 更新路径沿用相同的数值清理规则。
     const toSafeInt = (val: unknown): number | null => {
@@ -774,6 +781,34 @@ export async function PUT(request: NextRequest) {
     if (updateData.enable_knowledge_base !== undefined) fields.enable_knowledge_base = updateData.enable_knowledge_base;
     if (updateData.knowledgeBaseId !== undefined) fields.knowledge_base_id = updateData.knowledgeBaseId;
     if (updateData.knowledge_base_id !== undefined) fields.knowledge_base_id = updateData.knowledge_base_id;
+
+    if (fields.system_prompt !== undefined || fields.output_style !== undefined || hasOwnInput(updateData, ['directorContractAction'])) {
+      const previousStyle = currentAgent.output_style && typeof currentAgent.output_style === 'object'
+        ? currentAgent.output_style as Record<string, unknown> : {};
+      const nextStyle = fields.output_style !== undefined ? fields.output_style : currentAgent.output_style;
+      const submittedStyle = nextStyle && typeof nextStyle === 'object' ? nextStyle as Record<string, unknown> : {};
+      const contractChanged = STORYBOARD_DIRECTOR_CONTRACT_FIELDS.some((key) =>
+        Object.prototype.hasOwnProperty.call(previousStyle, key) !== Object.prototype.hasOwnProperty.call(submittedStyle, key)
+        || previousStyle[key] !== submittedStyle[key]);
+      if (contractChanged && !hasOwnInput(updateData, AGENT_PROMPT_INPUT_KEYS)) {
+        const contractAccess = await authorizeAdminCapability(request, 'prompts.edit', {
+          requireStepUp: true,
+          operation: 'agent_director_contract_edit',
+        });
+        if (!contractAccess.ok) return contractAccess.response;
+      }
+      // 旧提示词与合同配置来自同一条持久记录，并由下方版本条件原子保存。
+      const normalizedStyle = normalizeStoryboardDirectorContractActivation({
+        agentId,
+        prompt: fields.system_prompt !== undefined ? fields.system_prompt : currentAgent.system_prompt,
+        previousPrompt: currentAgent.system_prompt,
+        previousValue: currentAgent.output_style,
+        nextValue: fields.output_style !== undefined ? fields.output_style : currentAgent.output_style,
+        action: updateData.directorContractAction as 'activate' | 'preserve' | 'rollback' | undefined,
+        now: savedAt,
+      });
+      if (normalizedStyle !== undefined) fields.output_style = normalizedStyle;
+    }
 
     // Auto-store external avatar URL to object storage
     if (updateData.avatar !== undefined && updateData.avatar !== currentAgent.avatar) {
@@ -882,6 +917,9 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ success: true, agent: publicAgent(data as Record<string, unknown>) });
   } catch (err) {
+    if (err instanceof StoryboardDirectorContractActivationError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
+    }
     console.error('Update agent error:', err);
     const imageFailure = agentImageFailure(err, '智能体图片无效');
     if (imageFailure) return imageFailure;

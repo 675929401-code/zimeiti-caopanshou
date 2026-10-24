@@ -1112,3 +1112,8 @@ html[data-theme="lattice"] .soft-white-home {
   }
   .swh-motion-ready [data-swh-reveal] { opacity: 1 !important; transform: none !important; }
 }
+/* Public contact entry and published QR interaction, scoped to this landing. */
+.soft-white-home .swh-contact-entry{min-height:38px;white-space:nowrap;background:var(--swh-surface,var(--card));color:var(--swh-text,var(--foreground));border-color:var(--swh-border,var(--border));font-weight:600}
+.soft-white-home .swh-contact-qr-open{padding:0;border:0;background:#fff;cursor:zoom-in;border-radius:6px;display:block}
+.soft-white-home .swh-contact-qr-open>svg{display:none}
+.soft-white-home .swh-contact-qr-open img{min-width:160px;min-height:160px;object-fit:contain;background:#fff}

@@ -6,9 +6,13 @@ import { resolveVideoDetectionDraft } from "@/lib/model-endpoint";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { validateSafeUrl } from "@/lib/safe-fetch";
 import { LLMProxy } from "@/lib/llm-proxy/proxy";
-import { llmModelValidationConfigurationHash } from "@/lib/llm-model-validation-gate";
+import { LlmModelValidationError, assertLlmValidationConfigurationUnchanged, llmDiagnosticScope, llmModelValidationConfigurationHash } from "@/lib/llm-model-validation-gate";
 import { modelProbeFailure } from "@/lib/model-probe-result";
 import { llmProxyBindingConfig, resolveLlmProviderBinding } from "@/lib/llm-provider-contract";
+import { assertPublishedModelPoolEntry } from "@/lib/server/platform-configuration-compatibility";
+import { PlatformConfigurationError } from "@/lib/server/platform-configuration-admin";
+
+const MODEL_CONFIGURATION_COLUMNS = "*";
 
 export async function POST(req: NextRequest) {
   // Model diagnostics can spend supplier quota and persist activation evidence.
@@ -27,26 +31,27 @@ export async function POST(req: NextRequest) {
   let dispatched = false;
   try {
     const body = await req.json();
+    const scope = llmDiagnosticScope(body);
     if (body.model_type && body.model_type !== "text") return NextResponse.json({ success: false, message: "该接口仅验证对话模型，图片和视频请使用各自的检查入口" }, { status: 400 });
     let stored: Record<string, unknown> | undefined;
     const db = getSupabaseClient();
-    if (body.model_id) {
+    let modelId = String(body.model_id || "").trim();
+    if (!modelId && body.agent_id) {
+      const { data, error } = await db.from("agents").select("model_id").eq("id", body.agent_id).maybeSingle();
+      if (error || !data?.model_id) return NextResponse.json({ success: false, message: "智能体没有有效模型绑定，请先配置" }, { status: 400 });
+      modelId = String(data.model_id);
+    }
+    if (modelId) {
       const { data, error } = await db.from("llm_models")
-        .select("id,model_name,name,api_endpoint,proxy_url,api_key,billing_mode,token_billing_enabled,input_cost_per_million,output_cost_per_million,cached_cost_per_million,profit_margin,max_context_rounds,max_context_tokens,max_reply_tokens,timeout,deep_thinking_type,enable_web_search,api_protocol_config")
-        .eq("id", body.model_id)
+        .select(MODEL_CONFIGURATION_COLUMNS)
+        .eq("id", modelId)
         .maybeSingle();
       if (error || !data) return NextResponse.json({ success: false, message: "指定模型不存在，未回退到其他模型" }, { status: 404 });
       stored = { ...data, api_endpoint: data.api_endpoint || data.proxy_url };
-    } else if (body.agent_id) {
-      const { data } = await db.from("agents").select("model_id").eq("id", body.agent_id).maybeSingle();
-      if (data?.model_id) {
-        const { data: model } = await db.from("llm_models").select("model_name,api_endpoint,proxy_url,api_key,api_protocol_config").eq("id", data.model_id).maybeSingle();
-        if (model) stored = { ...model, api_endpoint: model.api_endpoint || model.proxy_url };
-      }
-      if (!stored) return NextResponse.json({ success: false, message: "智能体没有有效模型绑定，请先配置" }, { status: 400 });
     }
+    if (scope === "saved") await assertPublishedModelPoolEntry("llm_models", modelId);
     // This also prevents sending a saved key to a different draft origin.
-    const draft = resolveVideoDetectionDraft(body, stored);
+    const draft = resolveVideoDetectionDraft(scope === "saved" ? {} : body, stored);
     const key = resolveProviderSecret(draft.apiKey);
     // A local transparent proxy can resolve public HTTPS hosts into its
     // synthetic 198.18.0.0/15 range. Trust only the exact origin already saved
@@ -58,17 +63,19 @@ export async function POST(req: NextRequest) {
       ? [new URL(storedEndpoint).hostname]
       : [];
     await validateSafeUrl(draft.apiEndpoint, { trustedHostnames });
-    const llmProviderBinding = resolveLlmProviderBinding({
-      ...stored,
-      provider: body.provider,
-      protocol_type: body.protocol_type,
+    const effectiveConfiguration = scope === "saved" ? stored! : {
+      ...stored, ...body,
+      id: modelId || "",
+      model_name: draft.modelName, api_endpoint: draft.apiEndpoint,
       api_protocol_config: body.api_protocol_config ?? stored?.api_protocol_config,
-    });
+    };
+    const llmProviderBinding = resolveLlmProviderBinding(effectiveConfiguration);
+    const configurationHash = llmModelValidationConfigurationHash(effectiveConfiguration, key);
     const proxy = new LLMProxy({
       apiBase: draft.apiEndpoint,
       apiKey: key,
       defaultModel: draft.modelName,
-      timeout: 45,
+      timeout: Math.max(1, Math.min(45, Number(effectiveConfiguration.timeout) || 45)),
       retryCount: 0,
       ...llmProxyBindingConfig(llmProviderBinding),
     });
@@ -77,11 +84,16 @@ export async function POST(req: NextRequest) {
     const result = await proxy.chat({ model: draft.modelName, messages: [
       { role: "system", content: "Return exactly " + expected + " and no additional text." },
       { role: "user", content: "Run the instruction." },
-    ], max_tokens: 256, enable_thinking: false });
+    ], max_tokens: Math.min(256, Number(effectiveConfiguration.max_reply_tokens) > 0 ? Number(effectiveConfiguration.max_reply_tokens) : 256), enable_thinking: Number(effectiveConfiguration.deep_thinking_type) !== 0 });
     const passed = result.content.trim() === expected;
     let evidence: { id: string; checked_at: string } | null = null;
-    if (passed && body.model_id && stored?.id) {
-      const configurationHash = llmModelValidationConfigurationHash(stored, key);
+    if (passed && scope === "saved" && stored?.id) {
+      // A successful response to an obsolete configuration cannot authorize the
+      // current model. Re-read credentials and configuration after dispatch.
+      const latest = await db.from("llm_models").select(MODEL_CONFIGURATION_COLUMNS).eq("id", modelId).maybeSingle();
+      if (latest.error || !latest.data) throw new LlmModelValidationError("VALIDATION_CONFIGURATION_CHANGED", "验证期间模型配置无法重新读取，未记录激活证据");
+      assertLlmValidationConfigurationUnchanged(stored, latest.data, configurationHash, resolveProviderSecret(latest.data.api_key));
+      await assertPublishedModelPoolEntry("llm_models", modelId);
       const checkedAt = new Date().toISOString();
       const providerHost = new URL(draft.apiEndpoint).hostname;
       const persisted = await db.from("llm_model_validation_evidence").upsert({
@@ -108,13 +120,16 @@ export async function POST(req: NextRequest) {
       }
       evidence = persisted.data;
     }
-    return NextResponse.json({ success: passed, model_available: passed, latency: Date.now() - started,
+    return NextResponse.json({ success: passed, model_available: passed, scope, configurationHash, latency: Date.now() - started,
       diagnosticCode: passed ? "INSTRUCTION_CHECK_PASSED" : "INSTRUCTION_CHECK_FAILED",
       message: passed ? "指定模型已响应并遵守最小系统指令；实际业务输出质量需单独验收" : "上游已响应，但未遵守最小系统指令，不能标记通路验收通过",
       paidProbeUsed: true, usage: result.usage ? { prompt_tokens: result.usage.prompt_tokens, completion_tokens: result.usage.completion_tokens } : null,
       evidence: evidence ? { id: evidence.id, evidenceRecorded: true, checkedAt: evidence.checked_at } : null,
     });
   } catch (error) {
+    if (error instanceof LlmModelValidationError || error instanceof PlatformConfigurationError) {
+      return NextResponse.json({ success: false, model_available: false, diagnosticCode: error.code, message: error.message, paidProbeUsed: dispatched }, { status: error instanceof LlmModelValidationError ? error.status : 409 });
+    }
     const text = error instanceof Error ? error.message : "";
     const match = text.match(/LLM API (\d{3})/);
     const status = match ? Number(match[1]) : 0;

@@ -16,10 +16,11 @@ const endpointProjectionMigration = fs.readFileSync(
 
 assert.match(adminPage, /const AGENT_EDITABLE_FIELDS = \[/u, "AGENT_UPDATE_ALLOWLIST_REQUIRED");
 assert.match(adminPage, /buildAgentUpdatePayload\(editingAgent, originalAgent, canEditPrompts\)/u, "AGENT_DIFF_PAYLOAD_REQUIRED");
-assert.match(adminPage, /editOriginalAgentRef\.current = agent; setEditingAgent\(agent\)/u, "AGENT_EDIT_BASELINE_REQUIRED");
+assert.match(adminPage, /editOriginalAgentRef\.current = structuredClone\(agent\)/u, "AGENT_EDIT_BASELINE_REQUIRED");
+assert.match(adminPage, /setEditingAgentState\(structuredClone\(agent\)\)/u, "AGENT_EDIT_DRAFT_MUST_NOT_ALIAS_BASELINE");
 assert.doesNotMatch(adminPage, /JSON\.stringify\(\{ agentId: id, \.\.\.rest/u, "WHOLE_AGENT_PAYLOAD_FORBIDDEN");
 
-assert.match(agentsRoute, /\.select\('id,category,user_access,avatar,cover_url,config_revision'\)/u, "CURRENT_AGENT_MEDIA_AND_REVISION_READ_REQUIRED");
+assert.match(agentsRoute, /\.select\('id,category,user_access,avatar,cover_url,config_revision(?:,[^']+)?'\)/u, "CURRENT_AGENT_MEDIA_AND_REVISION_READ_REQUIRED");
 assert.match(agentsRoute, /updateData\.cover_url !== currentAgent\.cover_url/u, "UNCHANGED_COVER_MUST_NOT_REVALIDATE");
 assert.match(agentsRoute, /updateData\.avatar !== currentAgent\.avatar/u, "UNCHANGED_AVATAR_MUST_NOT_REVALIDATE");
 assert.match(agentsRoute, /updateData\.category !== currentAgent\.category/u, "UNCHANGED_CATEGORY_MUST_NOT_REORDER");

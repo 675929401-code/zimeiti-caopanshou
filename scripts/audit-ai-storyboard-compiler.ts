@@ -43,7 +43,6 @@ async function main() {
       effectsLevel: "rich",
       productionMode: "anime-story",
       assistantInstruction: "先分析全文的情绪、节奏、角色和演绎策略；每镜根据当前语义决定表演、道具、环境反馈与图形强化，不为了装饰而装饰；角色不说话；只保留现场环境音与动作音。",
-      allowDurationTrim: true,
       videoModelDurationMode: "fixed",
       videoModelDurationSeconds: 8,
     }),

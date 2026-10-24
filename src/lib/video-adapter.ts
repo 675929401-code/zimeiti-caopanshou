@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { seedanceRelayBody } from "./video-seedance-relay";
 import { doubaoSeedanceTaskBody, isDoubaoSeedanceModel } from "./video-doubao-seedance-relay";
+import { parseVideoTokenUsage, type VideoTokenUsage } from "./video-token-billing";
 import { submitVolcDigitalHuman, pollVolcDigitalHuman } from './volcengine-digital-human';
 import { submitVideoRetalk } from './digital-human-provider';
 import { videoProviderFetch as fetch, withVideoProviderRequestAudit, type VideoProviderRequestReceipt } from "./video-provider-request-audit";
@@ -133,6 +134,8 @@ export interface VideoGenerateParams {
 
 export interface VideoTaskResult {
   taskId: string;
+  /** Validated supplier token counters; absent usage must remain pending billing. */
+  usage?: VideoTokenUsage;
   status: "processing" | "queued" | "success" | "failed";
   videoUrl?: string;
   /** 异步任务的content_url，用于后续轮询 */
@@ -183,6 +186,8 @@ export interface VideoModelConfig {
 
 /** 通用OpenAPI视频协议配置 — 数据驱动，配置即生效 */
 export interface ApiProtocolConfig {
+  token_sale_prices_per_million?: Record<string, number>;
+  token_cost_prices_per_million?: Record<string, number>;
   /** 提交路径，如 /v1/videos（默认从 api_endpoint 推导） */
   submit_path?: string;
   /** 轮询路径，如 /v1/videos/{id}（{id}会被替换为任务ID） */
@@ -354,6 +359,50 @@ function configuredPositiveDurations(config: VideoModelConfig): number[] {
   return [...new Set(configured.map(Number).filter((value) => Number.isFinite(value) && value > 0))];
 }
 
+const NATIVE_INTEGER_DURATION_PROTOCOLS = new Set([
+  "secure_skill_grok_video", "secure_skill_video", "secure_skill_enterprise_video",
+  "secure_skill_wan3_video", "autodl_comfyui_h3",
+]);
+
+function nativeIntegerDurationIssue(config: VideoModelConfig, params: VideoGenerateParams): VideoParameterContractIssue | null {
+  if (!NATIVE_INTEGER_DURATION_PROTOCOLS.has(config.protocol_type)) return null;
+  const protocol = config.api_protocol_config || {};
+  const duration = Number(params.duration ?? config.duration_seconds ?? 5);
+  const fail = (message: string): VideoParameterContractIssue => ({
+    status: 422, code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL", parameter: "duration", message,
+  });
+  if (!Number.isInteger(duration) || duration <= 0) {
+    return fail("当前协议仅支持正整数原生秒数，不能取整后提交，本次未提交上游");
+  }
+  const options = configuredPositiveDurations(config);
+  const defaultMinimum = config.protocol_type === "secure_skill_enterprise_video" ? 5
+    : config.protocol_type === "secure_skill_wan3_video" ? 2 : 1;
+  const defaultMaximum = config.protocol_type === "autodl_comfyui_h3" ? 10
+    : config.protocol_type === "secure_skill_wan3_video" ? 30 : options.length ? Math.max(...options) : 15;
+  const minimum = Number(protocol.min_duration ?? defaultMinimum);
+  const minimumSubmit = Number(protocol.min_submit_duration ?? minimum);
+  const maximum = Number(protocol.max_duration ?? defaultMaximum);
+  if (![minimum, minimumSubmit, maximum].every(value => Number.isFinite(value) && value > 0)
+    || maximum < Math.max(minimum, minimumSubmit)) {
+    return fail("协议时长边界配置无效，本次未提交上游");
+  }
+  const protocolMaximum = config.protocol_type === "autodl_comfyui_h3" ? 10
+    : config.protocol_type === "secure_skill_wan3_video" ? 30 : Number.POSITIVE_INFINITY;
+  if (duration < Math.max(minimum, minimumSubmit) || duration > maximum || duration > protocolMaximum) {
+    return fail('当前协议原生时长须在 ' + Math.max(minimum, minimumSubmit) + '–' + maximum + ' 秒之间，本次未提交上游');
+  }
+  if (options.length && !options.includes(duration)) {
+    return { ...fail('当前协议只支持原生时长：' + options.join('/') + ' 秒'), acceptedValues: options };
+  }
+  return null;
+}
+
+function exactNativeIntegerDuration(config: VideoModelConfig, params: VideoGenerateParams): number {
+  const issue = nativeIntegerDurationIssue(config, params);
+  if (issue) throw new VideoParameterContractError(issue);
+  return Number(params.duration ?? config.duration_seconds ?? 5);
+}
+
 function requestedResolution(params: VideoGenerateParams): { value: string; explicit: boolean; conflict: boolean } {
   const pixel = typeof params.resolution === "string" ? params.resolution.trim() : "";
   const tier = typeof params.resolutionTier === "string" ? params.resolutionTier.trim() : "";
@@ -397,6 +446,9 @@ export function validateVideoParameterContract(
       message: "当前视频适配器尚未承诺随机种子会原样提交，本次未计费、未提交上游",
     };
   }
+
+  const nativeDurationIssue = nativeIntegerDurationIssue(config, params);
+  if (nativeDurationIssue) return nativeDurationIssue;
 
   if (!PRICED_PARAMETER_GUARDED_PROTOCOLS.has(config.protocol_type)) return null;
 
@@ -2900,28 +2952,7 @@ function secureSkillVideoSize(aspectRatio?: string, resolution?: string): string
 }
 
 function secureSkillSeconds(config: VideoModelConfig, params: VideoGenerateParams): number {
-  const raw = Number(params.duration || config.duration_seconds || 5);
-  if (!Number.isFinite(raw) || raw <= 0) return 5;
-  const configuredMinimum = Number(config.api_protocol_config?.min_submit_duration
-    ?? config.api_protocol_config?.min_duration);
-  const minimum = Number.isFinite(configuredMinimum) && configuredMinimum > 0
-    ? Math.round(configuredMinimum)
-    : 1;
-  const configuredMaximum = Number(config.api_protocol_config?.max_duration);
-  const optionMaximum = Array.isArray(config.api_protocol_config?.duration_options)
-    ? Math.max(
-        0,
-        ...config.api_protocol_config.duration_options
-          .map(Number)
-          .filter(value => Number.isFinite(value) && value > 0),
-      )
-    : 0;
-  const maximum = Number.isFinite(configuredMaximum) && configuredMaximum > 0
-    ? Math.round(configuredMaximum)
-    : optionMaximum > 0
-      ? Math.round(optionMaximum)
-      : 15;
-  return Math.min(Math.max(Math.round(raw), minimum), Math.max(minimum, maximum));
+  return exactNativeIntegerDuration(config, params);
 }
 
 function secureSkillStatus(status: string): VideoTaskResult["status"] {
@@ -3044,14 +3075,10 @@ async function generateSecureSkillGrokVideo(config: VideoModelConfig, params: Vi
     : "2k";
   const body: Record<string, unknown> = isMiniMaxH3
     ? (() => {
-        const configuredMinimum = Number(config.api_protocol_config?.min_submit_duration);
-        const minimumDuration = Number.isFinite(configuredMinimum) && configuredMinimum > 0
-          ? Math.max(1, Math.round(configuredMinimum))
-          : 5;
         const h3Body: Record<string, unknown> = {
           model: "minimax-h3",
           prompt: params.prompt,
-          duration: Math.max(minimumDuration, secureSkillSeconds(config, params)),
+          duration: secureSkillSeconds(config, params),
           resolution: normalizedH3Resolution,
           ratio: params.aspectRatio || "16:9",
         };
@@ -3109,10 +3136,7 @@ async function generateSecureSkillGrokVideo(config: VideoModelConfig, params: Vi
 
 async function generateSecureSkillEnterpriseVideo(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
   const modelName = config.model_name || config.id || config.name;
-  const minimumDuration = Math.max(1, Math.round(Number(config.api_protocol_config?.min_submit_duration) || 5));
-  const maximumDuration = Math.max(minimumDuration, Math.round(Number(config.api_protocol_config?.max_duration) || 15));
-  const requestedDuration = Number(params.duration || config.duration_seconds || minimumDuration);
-  const duration = Math.min(maximumDuration, Math.max(minimumDuration, Math.round(requestedDuration)));
+  const duration = exactNativeIntegerDuration(config, params);
   const images = uniquePublicUrls([
     params.imageUrl,
     params.referenceImageUrl,
@@ -3242,6 +3266,7 @@ async function generateSecureSkillDoubaoSeedance(
   if (!taskId) return videoSubmissionWithoutTask(resp, data, "Seedance 渠道任务协议", submissionReceipt);
   return {
     taskId,
+    usage: parseVideoTokenUsage(data),
     status: secureSkillStatus(String(data.status || "queued")),
     videoUrl: secureSkillVideoUrl(data) || undefined,
     progress: extractVideoTaskProgress(data),
@@ -3282,6 +3307,10 @@ async function pollSecureSkillDoubaoSeedance(
         || JSON.stringify(data).slice(0, 300);
     return { taskId, status: "failed", error: String(message).slice(0, 300) };
   }
+  const receiptId = secureSkillTaskIdFromBody(data);
+  if (receiptId && receiptId !== taskId) {
+    return { taskId, status: "processing", progress: null, error: "VIDEO_TASK_RECEIPT_ID_MISMATCH" };
+  }
   const status = secureSkillStatus(String(data.status || "processing"));
   const videoUrl = secureSkillVideoUrl(data);
   if (status === "success" && !videoUrl) return { taskId, status: "processing", progress: null };
@@ -3292,6 +3321,7 @@ async function pollSecureSkillDoubaoSeedance(
     taskId,
     status,
     videoUrl: videoUrl || undefined,
+    usage: parseVideoTokenUsage(data),
     error: status === "failed" ? String(error || data.message || "Seedance 视频生成失败") : undefined,
     progress: extractVideoTaskProgress(data),
   };
@@ -3539,7 +3569,7 @@ async function generateSecureSkillWan3Video(config: VideoModelConfig, params: Vi
     prompt: params.prompt,
     resolution: secureSkillWan3Resolution(params.resolutionTier || params.resolution),
     ratio: params.aspectRatio || "16:9",
-    duration: Math.max(2, Math.min(30, Math.round(Number(params.duration) || config.duration_seconds || 5))),
+    duration: exactNativeIntegerDuration(config, params),
     prompt_extend: false,
   };
   if (media.length > 0) body.media = media;
@@ -3988,7 +4018,7 @@ async function generateAutoDLComfyH3(config: VideoModelConfig, params: VideoGene
 
   const body: Record<string, unknown> = {
     prompt: params.prompt,
-    duration: Math.max(1, Math.min(10, Math.round(Number(params.duration) || config.duration_seconds || 5))),
+    duration: exactNativeIntegerDuration(config, params),
     resolution: autoDLResolution(params),
   };
   imageUrls.forEach((url, index) => { body[`ref_image_${index}`] = url; });
@@ -4215,6 +4245,42 @@ async function pollDashscopeWanS2v(
   };
 }
 
+/** The submission handlers are also the public catalog's protocol authority. */
+const VIDEO_PROTOCOL_SUBMITTERS: Record<string, (config: VideoModelConfig, params: VideoGenerateParams) => Promise<VideoTaskResult>> = {
+  siliconflow_kling: generateSiliconFlowKling,
+  siliconflow_vidu: generateSiliconFlowVidu,
+  runway: generateRunway,
+  replicate: generateReplicate,
+  unified_video: generateUnifiedVideo,
+  grok_video: generateGrokVideo,
+  kling: generateKling,
+  kling_official: generateKlingOfficial,
+  yunwu_video: generateYunwuVideo,
+  secure_skill_seedance_video: generateSecureSkillSeedance,
+  secure_skill_doubao_seedance: generateSecureSkillDoubaoSeedance,
+  secure_skill_grok_video: generateSecureSkillGrokVideo,
+  secure_skill_video: generateSecureSkillGrokVideo,
+  secure_skill_enterprise_video: generateSecureSkillEnterpriseVideo,
+  secure_skill_flow_jobs: generateSecureSkillFlowJob,
+  secure_skill_wan3_video: generateSecureSkillWan3Video,
+  suanlicheng_video: generateSuanlichengVideo,
+  gaorui_video: generateGaoruiVideo,
+  newapi_video: generateNewApiVideo,
+  lanmao_video: generateLanmaoVideo,
+  autodl_comfyui_h3: generateAutoDLComfyH3,
+  [AUTODL_COMFYUI_WORKFLOW_PROTOCOL]: generateAutodlComfyuiWorkflow,
+  autodl_h3_selfhost: generateAutodlH3SelfhostVideo,
+  volcengine_digital_human: submitVolcDigitalHuman,
+  dashscope_video_retalk: submitVideoRetalk,
+  dashscope_wan_s2v: generateDashscopeWanS2v,
+  openapi_video: generateOpenApiVideo,
+  openai_compatible: generateOpenAICompatible,
+};
+
+export function isRegisteredVideoProtocol(value: unknown): boolean {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(VIDEO_PROTOCOL_SUBMITTERS, value);
+}
+
 /** 提交视频生成任务 */
 export async function submitVideoTask(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
   return withVideoProviderRequestAudit(params.onProviderRequest, () => submitVideoTaskWithProtocol(config, params));
@@ -4227,73 +4293,18 @@ async function submitVideoTaskWithProtocol(config: VideoModelConfig, params: Vid
   // 全协议统一兜底：
   // 当用户只上传“参考图”而没有上传“首帧”时，如果该模型支持图片输入，
   // 则把参考图提升为真正的图片输入，避免部分协议忽略 referenceImageUrl 导致上游实际拿不到图。
-  if (!normalizedParams.imageUrl && normalizedParams.referenceImageUrl && config.supports_image_input) {
+  if (config.protocol_type !== "secure_skill_seedance_video"
+    && !normalizedParams.imageUrl && normalizedParams.referenceImageUrl && config.supports_image_input) {
     normalizedParams = {
       ...normalizedParams,
       imageUrl: normalizedParams.referenceImageUrl,
     };
   }
 
-  switch (config.protocol_type) {
-    case "siliconflow_kling":
-      return generateSiliconFlowKling(config, normalizedParams);
-    case "siliconflow_vidu":
-      return generateSiliconFlowVidu(config, normalizedParams);
-    case "runway":
-      return generateRunway(config, normalizedParams);
-    case "replicate":
-      return generateReplicate(config, normalizedParams);
-    case "unified_video":
-      return generateUnifiedVideo(config, normalizedParams);
-    case "grok_video":
-      return generateGrokVideo(config, normalizedParams);
-    case "kling":
-      return generateKling(config, normalizedParams);
-    case "kling_official":
-      return generateKlingOfficial(config, normalizedParams);
-    case "yunwu_video":
-      return generateYunwuVideo(config, normalizedParams);
-    case "secure_skill_seedance_video":
-      return generateSecureSkillSeedance(config, params);
-    case "secure_skill_doubao_seedance":
-      return generateSecureSkillDoubaoSeedance(config, normalizedParams);
-    case "secure_skill_grok_video":
-    case "secure_skill_video":
-      return generateSecureSkillGrokVideo(config, normalizedParams);
-    case "secure_skill_enterprise_video":
-      return generateSecureSkillEnterpriseVideo(config, normalizedParams);
-    case "secure_skill_flow_jobs":
-      return generateSecureSkillFlowJob(config, normalizedParams);
-    case "secure_skill_wan3_video":
-      return generateSecureSkillWan3Video(config, normalizedParams);
-    case "suanlicheng_video":
-      return generateSuanlichengVideo(config, normalizedParams);
-    case "gaorui_video":
-      return generateGaoruiVideo(config, normalizedParams);
-    case "newapi_video":
-      return generateNewApiVideo(config, normalizedParams);
-    case "lanmao_video":
-      return generateLanmaoVideo(config, normalizedParams);
-    case "autodl_comfyui_h3":
-      return generateAutoDLComfyH3(config, normalizedParams);
-    case AUTODL_COMFYUI_WORKFLOW_PROTOCOL:
-      return generateAutodlComfyuiWorkflow(config, normalizedParams);
-    case "autodl_h3_selfhost":
-      return generateAutodlH3SelfhostVideo(config, normalizedParams);
-    case "volcengine_digital_human":
-      return submitVolcDigitalHuman(config, normalizedParams);
-    case "dashscope_video_retalk":
-      return submitVideoRetalk(config, normalizedParams);
-    case "dashscope_wan_s2v":
-      return generateDashscopeWanS2v(config, normalizedParams);
-    // ── 以下协议走通用适配器（数据驱动，配置即生效） ──
-    case "openapi_video":
-      return generateOpenApiVideo(config, normalizedParams);
-    case "openai_compatible":
-      return generateOpenAICompatible(config, normalizedParams);
-    default:
-      throw new Error(`VIDEO_PROTOCOL_UNSUPPORTED:${String(config.protocol_type || "missing")}`);
+  if (!isRegisteredVideoProtocol(config.protocol_type)) {
+    throw new Error(`VIDEO_PROTOCOL_UNSUPPORTED:${String(config.protocol_type || "missing")}`);
   }
+  return VIDEO_PROTOCOL_SUBMITTERS[config.protocol_type](config, normalizedParams);
 }
 
 /** 轮询视频生成结果 */

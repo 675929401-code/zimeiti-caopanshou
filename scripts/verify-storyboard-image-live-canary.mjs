@@ -166,11 +166,21 @@ async function billingSnapshot(userId) {
 }
 
 export function parseStoryboardImageArgs(args) {
-  const paid=parsePaidHarnessArgs(args,['run-id','model-id','model-contains','resolution','expect-failure-code','execute','self-test']);
+  const paid=parsePaidHarnessArgs(args,['run-id','model-id','model-contains','resolution','expect-failure-code','execute','self-test','health-only']);
   assert.ok(['1K','2K','4K'].includes((paid.values.resolution || '1K').toUpperCase()),'STORYBOARD_IMAGE_RESOLUTION_INVALID');
   if(paid.values['model-id']) assert.match(paid.values['model-id'],/^pm_[A-Za-z0-9_-]+$/u,'PUBLIC_IMAGE_MODEL_REQUIRED');
   if(paid.flags.has('execute')) assert.ok(paid.values['model-id'],'EXACT_PUBLIC_IMAGE_MODEL_REQUIRED');
+  if(paid.flags.has('health-only')) {
+    assert.ok(!paid.flags.has('execute') && !paid.flags.has('self-test'),'STORYBOARD_PREFLIGHT_MODE_CONFLICT');
+    for(const key of ['model-id','user-id','expected-source-version','expected-build-id','max-charge','remaining-budget'])
+      assert.ok(paid.values[key],'STORYBOARD_PREFLIGHT_PIN_REQUIRED');
+  }
   return paid;
+}
+
+export function assertStoryboardImageConfirmation(type, message, {order, modelName, referenceCount, quote}) {
+  assert.equal(type,'confirm','STORYBOARD_UNEXPECTED_DIALOG');
+  assert.equal(message,`生成段落${order}分镜图 · ${modelName}\n参考图 ${referenceCount}张，预计 ¥${quote.toFixed(2)}。仅提交一次，不自动重试。`,'STORYBOARD_CONFIRMATION_DRIFT');
 }
 
 export async function runStoryboardImageSelfTest() {
@@ -179,6 +189,19 @@ export async function runStoryboardImageSelfTest() {
   for(const args of [['--resolution=8K'],['--model-id=internal'],['--resolution=1K','--resolution=2K']]) {assert.throws(()=>parseStoryboardImageArgs(args));checks++;}
   const projected=publicModelProjection({id:'pm_fixture',publicPrice:.1,capabilities:{resolutionPrices:{'1K':.1,'2K':.2}}});
   assert.equal(quotedModelPrice(projected,'2K'),.2);checks++;
+  const confirmation={order:1,modelName:'Example · A1',referenceCount:0,quote:.1};
+  const message='生成段落1分镜图 · Example · A1\n参考图 0张，预计 ¥0.10。仅提交一次，不自动重试。';
+  assertStoryboardImageConfirmation('confirm',message,confirmation);checks++;
+  for(const change of [{order:2},{modelName:'Other'},{referenceCount:2},{quote:.2}]) {
+    assert.throws(()=>assertStoryboardImageConfirmation('confirm',message,{...confirmation,...change}),/STORYBOARD_CONFIRMATION_DRIFT/u);checks++;
+  }
+  assert.throws(()=>assertStoryboardImageConfirmation('alert',message,confirmation),/STORYBOARD_UNEXPECTED_DIALOG/u);checks++;
+  const preflightArgs=['--health-only','--actor-role=admin','--model-id=pm_fixture','--user-id=b5cccb94-1d77-4e14-9391-fb3e6f823486','--expected-source-version=R001006','--expected-build-id=fixture','--max-charge=1','--remaining-budget=20'];
+  assert.equal(parseStoryboardImageArgs(preflightArgs).flags.has('health-only'),true);checks++;
+  assert.throws(()=>parseStoryboardImageArgs([...preflightArgs,'--self-test']),/STORYBOARD_PREFLIGHT_MODE_CONFLICT/u);checks++;
+  for(const key of ['model-id','user-id','expected-source-version','expected-build-id','max-charge','remaining-budget']) {
+    assert.throws(()=>parseStoryboardImageArgs(preflightArgs.filter(arg=>!arg.startsWith(`--${key}=`))));checks++;
+  }
   checks += (await runMediaAsyncBoundarySelfTest('/api/image/generate')).checks;
   console.log(JSON.stringify({kind:'storyboard-image-actual-parser-selftest',status:'PASS',checks,networkCalls:0,dbCalls:0,browserRuns:0,paidPosts:0}));
 }
@@ -194,12 +217,13 @@ export async function main(args = process.argv.slice(2)) {
   const expectedFailureCode = args.find((value) => value.startsWith("--expect-failure-code="))
     ?.slice("--expect-failure-code=".length).trim() || "";
   const execute = args.includes("--execute");
+  const preflight = paid.flags.has("health-only");
   assert.match(origin, /^http:\/\/127\.0\.0\.1(?::\d+)?$/u, "LOCAL_ONLY_ORIGIN_REQUIRED");
   assert.match(runId, /^[a-zA-Z0-9_-]{8,100}$/u, "UNIQUE_RUN_ID_REQUIRED");
 
 
   const outputDir = path.resolve(".codex-evidence/storyboard-image-platform-fix-20260920", runId);
-  if (!execute) {
+  if (!execute && !preflight) {
     console.log(JSON.stringify({ mode: "plan", providerPostLimit: 1, counterScope:"browser-generation-POST",providerDispatchCount:"unknown", outputDir }));
     return;
   }
@@ -209,13 +233,14 @@ export async function main(args = process.argv.slice(2)) {
   await fs.mkdir(outputDir,{recursive:true});
   const pins={origin,expectedSourceVersion:paid.values['expected-source-version'],expectedBuildId:paid.values['expected-build-id']};
   const runtimeBefore=await runtimeIdentity(pins);
-  const databaseReadiness=await readPaidDatabaseReadiness(paid,runtimeBefore);
-  const identityResponse = await fetch(`${origin}/api/auth/me`, {
+  const databaseReadiness=preflight ? null : await readPaidDatabaseReadiness(paid,runtimeBefore);
+  const readOnlyIdentity=preflight ? JSON.parse(process.env.LOCAL_NAV_READONLY_IDENTITY || 'null') : null;
+  const identityResponse = preflight ? null : await fetch(`${origin}/api/auth/me`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(15_000),
   });
-  const identity = await identityResponse.json();
-  assert.equal(identityResponse.status, 200, identity?.error || "ADMIN_IDENTITY_FAILED");
+  const identity = preflight ? readOnlyIdentity : await identityResponse.json();
+  if(!preflight) assert.equal(identityResponse.status, 200, identity?.error || "ADMIN_IDENTITY_FAILED");
   const actor=assertPaidActor(identity,paid);
 
   const catalogResponse = await fetch(`${origin}/api/cover-models?surface=storyboard-workbench`, {
@@ -238,7 +263,7 @@ export async function main(args = process.argv.slice(2)) {
   assert.ok(Number.isFinite(billingBefore.balance), "BILLING_BALANCE_BEFORE_INVALID");
 
   const marker = `SBW_IMAGE_FIX_${runId}_${randomUUID()}`;
-  const markerPath = path.join(outputDir, "dispatch.json");
+  const markerPath = path.join(outputDir, preflight ? "preflight-start.json" : "dispatch.json");
   await fs.writeFile(markerPath, `${JSON.stringify({
     createdAt: new Date().toISOString(),
     runId,
@@ -248,7 +273,7 @@ export async function main(args = process.argv.slice(2)) {
     requestedResolution,
     expectedFailureCode: expectedFailureCode || null,
     balanceBefore: billingBefore.balance,
-    providerPostLimit: 1, counterScope:"browser-generation-POST",providerDispatchCount:"unknown",
+    providerPostLimit: preflight ? 0 : 1, counterScope:"browser-generation-POST",providerDispatchCount:preflight ? 0 : "unknown",
   }, null, 2)}\n`, { flag: "wx" });
 
   const browser = await chromium.launch({ headless: true });
@@ -259,6 +284,9 @@ export async function main(args = process.argv.slice(2)) {
   let responseBody = null;
   let deliveryReceipt = null;
   const routeEvidence = {};
+  let stage = "browser-setup";
+  let currentPage;
+  const uiEvidence = {mode:preflight ? "ui-preflight" : "paid-canary",confirmations:0,confirmationMatched:false,confirmationAccepted:false,blockedWrites:[]};
   const admission={generationPostAttempts:0,generationPostsContinued:0,duplicateGenerationPostsBlocked:0};
   try {
     const context = await browser.newContext({
@@ -271,12 +299,31 @@ export async function main(args = process.argv.slice(2)) {
       localStorage.setItem("auth_user", JSON.stringify(user));
       sessionStorage.setItem("entered_app", "1");
     }, { sessionToken: token, user: identity.user });
+    if(preflight) await context.route("**/*",async route=>{
+      const request=route.request(), url=new URL(request.url());
+      if(!['GET','HEAD','OPTIONS'].includes(request.method())) {
+        uiEvidence.blockedWrites.push({method:request.method(),path:url.pathname});
+        await route.abort("blockedbyclient");
+        return;
+      }
+      if(url.origin===origin && url.pathname==='/api/auth/me') {
+        await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(identity)});
+        return;
+      }
+      await route.continue();
+    });
 
-    const prompt = `一只可爱的金毛幼犬在明亮整洁的木地板客厅里轻轻跳舞，商业级3D动画质感，完整身体，暖色自然光，16:9横构图，无文字，无水印。内部验收标记 ${marker}，标记仅用于请求核对，不得出现在画面中。`;
+    const promptFile = process.env.STORYBOARD_IMAGE_PROMPT_FILE?.trim();
+    const promptSource = promptFile
+      ? (await fs.readFile(path.resolve(promptFile), "utf8")).trim()
+      : "一只可爱的金毛幼犬在明亮整洁的木地板客厅里轻轻跳舞，商业级3D动画质感，完整身体，暖色自然光，16:9横构图，无文字，无水印。";
+    assert.ok(promptSource, "STORYBOARD_IMAGE_PROMPT_EMPTY");
+    const prompt = `${promptSource}\n内部验收标记 ${marker}，标记仅用于请求核对，不得出现在画面中。`;
     let clickArmed=false;
     const installed=makeWorkbenchPaidPostHandler({diagnostics:admission,isArmed:()=>clickArmed,
       expected:{modelId:selected.id,resolution:requestedResolution,aspectRatio:'16:9',historySurface:'storyboard-workbench',prompt},
       checkFresh:async()=>{
+        assert.ok(!preflight && uiEvidence.confirmationAccepted,'STORYBOARD_PAID_CONFIRMATION_REQUIRED');
         const current=await authenticatedJson('/api/cover-models?surface=storyboard-workbench');
         const model=current.models?.find(item=>item.id===selected.id);
         const projected=publicModelProjection(model);
@@ -287,6 +334,7 @@ export async function main(args = process.argv.slice(2)) {
     await context.route('**/api/image/generate',routeBoundary.handler);
     let savedProjectId;
     const page = await context.newPage();
+    currentPage=page;
     page.on('response',async response=>{
       if(response.request().method()==='POST' && new URL(response.url()).pathname==='/api/storyboard/projects' && response.ok()) {
         const result=await response.json().catch(()=>null); if(result?.project?.id) savedProjectId=result.project.id;
@@ -303,17 +351,23 @@ export async function main(args = process.argv.slice(2)) {
       }
     });
 
+    stage="navigate-workbench";
     await page.goto(`${origin}/storyboard-workbench`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     // The visible/accessible label may include a channel variant. Bind the
     // canary to the stable public model ID used by the request contract.
-    const modelButton = page.locator(`.sbw-image-model-list button[data-model-id="${selected.id}"]`).first();
+    stage="select-model";
+    const modelButton = page.locator(`.sbw-image-model-list button[data-model-id="${selected.id}"]`);
     await modelButton.waitFor({ state: "visible", timeout: 45_000 });
     await modelButton.click();
+    await page.waitForFunction(id=>document.querySelector(`.sbw-image-model-list button[data-model-id="${id}"]`)?.classList.contains('is-active'),selected.id);
+    assert.equal(await modelButton.getAttribute('data-model-id'),selected.id,'STORYBOARD_UI_MODEL_DRIFT');
+    assert.equal(await modelButton.getAttribute('data-model-selectable'),'true','STORYBOARD_UI_MODEL_UNAVAILABLE');
+    const uiModelName=(await modelButton.locator('.sbw-model-name').innerText()).trim();
+    assert.ok(uiModelName,'STORYBOARD_UI_MODEL_NAME_MISSING');
 
-    const removeButtons = page.getByTitle("删除镜头", { exact: true });
-    while (await removeButtons.count() > 1) await removeButtons.last().click();
-
-    const imageControls = page.locator(".sbw-control-group.is-image");
+    stage="configure-image";
+    // Preserve the default three-card project; this single canary owns only segment 1.
+    const imageControls = page.getByRole('region',{name:'分镜工作台全局设置',exact:true}).locator(".sbw-control-group.is-image");
     await imageControls.getByRole("button", { name: "16:9", exact: true }).click();
     const resolutionSelect = imageControls.getByRole("combobox", { name: "图片分辨率" });
     if (await resolutionSelect.count()) {
@@ -321,16 +375,60 @@ export async function main(args = process.argv.slice(2)) {
       assert.ok(options.some((value) => value.trim().toUpperCase() === requestedResolution),
         `IMAGE_RESOLUTION_OPTION_MISSING:${requestedResolution}`);
       await resolutionSelect.selectOption({ label: requestedResolution });
+    } else {
+      await imageControls.getByText(requestedResolution,{exact:true}).waitFor({state:'visible'});
     }
 
     const card = page.locator("article.sbw-shot-card").first();
-    await card.getByRole("textbox", { name: "镜头1生图提示词" }).fill(prompt);
+    stage="fill-segment-prompt";
+    await card.getByRole("textbox", { name: "分段1生图提示词",exact:true }).fill(prompt);
     const generateButton = card.getByRole("button", { name: "生成图片", exact: true });
     await generateButton.waitFor({ state: "visible" });
     assert.equal(await generateButton.isEnabled(), true, "STORYBOARD_IMAGE_BUTTON_DISABLED");
 
+    let resolveConfirmation, rejectConfirmation;
+    const confirmation=observeMediaPromise(new Promise((resolve,reject)=>{resolveConfirmation=resolve;rejectConfirmation=reject;}));
+    page.on("dialog",async dialog=>{
+      try {
+        uiEvidence.confirmations+=1;
+        assert.equal(uiEvidence.confirmations,1,'STORYBOARD_DUPLICATE_CONFIRMATION');
+        assertStoryboardImageConfirmation(dialog.type(),dialog.message(),{order:1,modelName:uiModelName,referenceCount:0,quote:lockedQuote});
+        uiEvidence.confirmationMatched=true;
+        if(preflight) await dialog.dismiss();
+        else {uiEvidence.confirmationAccepted=true;await dialog.accept();}
+        resolveConfirmation();
+      } catch(error) {
+        await dialog.dismiss().catch(()=>undefined);
+        rejectConfirmation(error);
+      }
+    });
+    stage="confirm-generation";
+    if(preflight) {
+      let timer;
+      try {
+        await Promise.race([Promise.all([confirmation,generateButton.click()]),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('STORYBOARD_CONFIRMATION_NOT_REACHED')),15000);})]);
+      } finally {clearTimeout(timer);}
+      const after=await billingSnapshot(identity.user.id);
+      assert.equal(after.balance,billingBefore.balance,'PREFLIGHT_BALANCE_CHANGED');
+      assert.equal(after.credits,billingBefore.credits,'PREFLIGHT_CREDITS_CHANGED');
+      assert.equal(after.reservedCredits,billingBefore.reservedCredits,'PREFLIGHT_RESERVATION_CHANGED');
+      assert.deepEqual([...after.cashIds],[...billingBefore.cashIds],'PREFLIGHT_TRANSACTIONS_CHANGED');
+      const runtimeAfter=await runtimeIdentity(pins);
+      assert.deepEqual(runtimeAfter,runtimeBefore,'RUNTIME_CHANGED_DURING_PREFLIGHT');
+      await page.screenshot({path:path.join(outputDir,'ui-preflight.png'),fullPage:true});
+      await context.close();
+      assert.equal(generationPosts,0,'PREFLIGHT_GENERATION_ATTEMPT');
+      assert.equal(admission.generationPostAttempts,0,'PREFLIGHT_GUARD_GENERATION_ATTEMPT');
+      assert.equal(admission.generationPostsContinued,0,'PREFLIGHT_GENERATION_FORWARDED');
+      assert.equal(uiEvidence.blockedWrites.filter(r=>!['/api/product-usage/events','/api/announcements/events'].includes(r.path)).length,0,'PREFLIGHT_UNEXPECTED_BUSINESS_WRITE');
+      const report={success:true,kind:'storyboard-image-ui-preflight.v1',checkedAt:new Date().toISOString(),runId,runtimeBefore,runtimeAfter,uiEvidence,admission,generationPosts,providerCalls:0,browserBusinessWriteRequestsForwarded:0,billingUnchanged:true,authIdentityMode:'controlled-readonly-fixture',authEndpointVerified:false,databaseReadinessVerified:false,paidMediaVerified:false,pageErrors,consoleErrorCount:consoleErrors.length};
+      await fs.writeFile(path.join(outputDir,'preflight.json'),JSON.stringify(safeHarnessEvidence(report),null,2)+'\n',{flag:'wx'});
+      console.log(JSON.stringify({success:true,mode:'ui-preflight',generationPosts,providerCalls:0,browserBusinessWriteRequestsForwarded:0,report:path.join(outputDir,'preflight.json')}));
+      return;
+    }
     clickArmed=true;
-    const generationResponse = await awaitMediaGenerationResponse({page,click:()=>generateButton.click(),failure:routeBoundary.failure,pathname:'/api/image/generate',timeoutMs:360_000});
+    const generationResponse = await awaitMediaGenerationResponse({page,click:()=>generateButton.click(),failure:routeBoundary.failure,pathname:'/api/image/generate',timeoutMs:360_000,capture:confirmation,captureTimeoutMs:15000}).then(result=>result.response);
+    stage="generation-response";
     responseBody = await generationResponse.json().catch(() => null);
     if (expectedFailureCode) {
       assert.ok(generationResponse.status() >= 400, "EXPECTED_IMAGE_FAILURE_DID_NOT_OCCUR");
@@ -483,7 +581,7 @@ export async function main(args = process.argv.slice(2)) {
         referenceId: newCashRows[0].referenceId,
         amount: Number(newCashRows[0].amount),
       },
-      actor, admission, forwarding:routeEvidence.forwarding, databaseReadiness, runtimeBefore, runtimeAfter, deliveryReceipt:receipt, reusableSource, rendered, download,
+      actor, admission, uiEvidence, forwarding:routeEvidence.forwarding, databaseReadiness, runtimeBefore, runtimeAfter, deliveryReceipt:receipt, reusableSource, rendered, download,
       asset: { width:metadata.width,height:metadata.height },
       consoleErrors,
       pageErrors,
@@ -500,11 +598,12 @@ export async function main(args = process.argv.slice(2)) {
       report: path.join(outputDir, "report.json"),
     }));
   } catch (error) {
-    const failure={success:false,errorCode:safeHarnessErrorCode(error),runId,failedAt:new Date().toISOString(),
-      automaticRetries:0,budgetDisposition:'full allocation occupied until original terminal readback',
-      allocatedBudget:paid.maxCharge,lockedQuote,generationPosts,counterScope:'browser-generation-POST',providerDispatchCount:'unknown',
+    const failure={success:false,errorCode:safeHarnessErrorCode(error),runId,stage,uiEvidence,failedAt:new Date().toISOString(),
+      automaticRetries:0,budgetDisposition:preflight ? 'no paid allocation' : 'full allocation occupied until original terminal readback',
+      allocatedBudget:preflight ? 0 : paid.maxCharge,lockedQuote,generationPosts,counterScope:'browser-generation-POST',providerDispatchCount:preflight ? 0 : 'unknown',
       actor,admission,...routeEvidence,deliveryReceipt,databaseReadiness,runtimeBefore};
     await fs.writeFile(path.join(outputDir,'failure.json'),`${JSON.stringify(safeHarnessEvidence(failure),null,2)}\n`,{flag:'wx'}).catch(()=>undefined);
+    if(currentPage) await currentPage.screenshot({path:path.join(outputDir,'failure.png'),fullPage:true}).catch(()=>undefined);
     throw error;
   } finally {
     await browser.close().catch(()=>undefined);

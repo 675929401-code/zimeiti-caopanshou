@@ -1,9 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readVideoTokenPublicPricing, type VideoTokenPublicPricing } from "./video-model-capabilities";
 
 export type PublicModelKind = "chat" | "cover" | "llm" | "video";
 export type PublicModelCapability = string | number | boolean | string[] | number[] | null;
-export type PublicMediaBillingUnit = "per_use" | "output_second";
-export type PublicMediaPricingMode = "fixed_per_use" | "output_second";
+export type PublicMediaBillingUnit = "per_use" | "output_second" | "token";
+export type PublicMediaPricingMode = "fixed_per_use" | "output_second" | "token";
 
 export interface PublicMediaBillingCapabilities {
   pricingMode: PublicMediaPricingMode;
@@ -17,6 +18,7 @@ export interface PublicModelDto {
   avatarUrl: string;
   capabilities: Record<string, PublicModelCapability>;
   publicPrice: number;
+  tokenPricing?: VideoTokenPublicPricing;
 }
 
 const PUBLIC_CAPABILITY_KEYS = new Set([
@@ -24,7 +26,7 @@ const PUBLIC_CAPABILITY_KEYS = new Set([
   "humanAudioMin", "humanAudioMax", "humanAudioMinExclusive", "humanAudioMaxExclusive", "humanVideoMin", "humanVideoMax",
   "type", "family", "deepThinking", "webSearch", "imageParsing", "fileParsing",
   "supportsImageInput", "requiresImage", "supportsSourceVideoInput", "requiresSourceVideo",
-  "workflowInputMode", "supportsPrompt", "requiresFirstFrame", "requiresLastFrame",
+  "workflowInputMode", "referenceAspectRatioPolicy", "supportsPrompt", "requiresFirstFrame", "requiresLastFrame",
   "showFirstFrame", "showLastFrame", "showReferenceImages", "showAudioInputs",
   "minReferenceImages", "minReferenceAudios",
   "durationMode", "minDuration", "maxDuration", "defaultDuration", "nativeDurations", "durationStep",
@@ -177,7 +179,7 @@ function sanitizeCapabilities(
 export function publicMediaBillingCapabilities(
   billingUnit: PublicMediaBillingUnit,
 ): PublicMediaBillingCapabilities {
-  return billingUnit === "output_second"
+  return billingUnit === "token" ? { pricingMode: "token", billingUnit: "token" } : billingUnit === "output_second"
     ? { pricingMode: "output_second", billingUnit: "output_second" }
     : { pricingMode: "fixed_per_use", billingUnit: "per_use" };
 }
@@ -187,6 +189,7 @@ export function toPublicModelDto(
   row: Record<string, unknown>,
   index: number,
   capabilities: Record<string, PublicModelCapability> = {},
+  tokenPricing?: VideoTokenPublicPricing | null,
 ): PublicModelDto {
   const internalId = String(row.id || "");
   if (!internalId) throw new Error("Model row is missing id");
@@ -197,6 +200,7 @@ export function toPublicModelDto(
     avatarUrl: normalizePublicModelAvatarUrl(row.avatar_url || row.icon_url || ""),
     capabilities: sanitizeCapabilities(capabilities),
     publicPrice: finitePublicPrice(row),
+    ...(kind === "video" && readVideoTokenPublicPricing(tokenPricing) ? { tokenPricing: readVideoTokenPublicPricing(tokenPricing) } : {}),
   };
 }
 

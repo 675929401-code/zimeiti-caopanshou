@@ -35,13 +35,16 @@ const promptTail = `# 稳定输入协议 v6.2
 # 固定输出格式（稳定协议 v6.2）
 不展示分析，不寒暄。严格保留原段落编号、边界、顺序和原字。每段先输出一个独立的标准 Markdown text 代码框“生图 Prompt”，再输出一个独立的标准 Markdown text 代码框“图生视频 Prompt”。两个代码框都必须能脱离解释直接复制提交。
 
-每段格式：
-**原文案内容段落 N**：逐字放入该段原文
-**生图 Prompt（共4格或5格）**：一个 text 代码框，只放完整故事板生图 Prompt
-**图生视频 Prompt（实际N个镜头）**：一个 text 代码框，只放完整动作型视频 Prompt
+整批段落前先输出一次“全局视觉资产计划”：只提出人物、宠物、场景和必要道具的资产角色、身份锁定项、允许变化项与参考图用途；人物/宠物使用角色参考板或转面表提示词，环境使用宽幅建立图提示词，道具使用多角度道具参考板提示词。没有用户已确认的真实资产时，只能标记为“待用户确认”，不得假装已经生成、保存、收费或绑定。
+
+每段格式（顺序不可改变）：
+**原文案内容段落 N**：逐字放入该段原文（可以放在标题同一行，不能改写）
+**生图 Prompt（共4格或5格）**：第一个独立 text 代码框，只放可直接提交的完整故事板生图 Prompt；必须写清使用哪些已确认资产
+**图生视频 Prompt（实际N个镜头）**：第二个独立 text 代码框，只放可直接提交的动作型视频 Prompt；只引用该段完整四宫格或五宫格故事板
+生图 Prompt 与视频 Prompt 之后才可以补充导演注释、资产引用或质量说明；不得把说明插入两个代码框。
 
 所有段落结束后，再输出一个标准 json 代码框作为机器包。平台不得按标题、代码框位置或顺序猜字段，只能读取以下稳定合同：
-schema_version 固定为 storyboard_director_output.v1；artifact_type 固定为 storyboard_director_package；director_mode 固定为 {{DIRECTOR_MODE}}；input 固定包含 schema_version=storyboard_director_input.v1、segmented_script、animation_style、aspect_ratio、target_duration_seconds、special_notes；segments 每项固定包含 segment_id、source_index、narration、target_duration_seconds、estimated_narration_duration、panel_count、layout、pacing_mode、actual_shot_count、shot_time_ranges、panoramic_anchor_role、continuity_links、character_assets、semantic_visualizations、storyboard_image_prompt、image_to_video_prompt；shot_time_ranges 每项包含 shot_id、start_seconds、end_seconds、action_beat；continuity_links 每项包含 from_shot、to_shot、link_type、description；semantic_visualizations 每项包含 trigger、visual_form、interaction。
+schema_version 固定为 storyboard_director_output.v1；artifact_type 固定为 storyboard_director_package；director_mode 固定为 {{DIRECTOR_MODE}}；input 固定包含 schema_version=storyboard_director_input.v1、segmented_script、animation_style、aspect_ratio、target_duration_seconds、special_notes；可选的 visual_asset_plan 固定包含 mode（off 或 selected）和 assets；每个资产固定包含 id、role（character/pet/environment/prop）、name、identity_lock、allowed_changes、reference_prompts；reference_prompts 固定包含 kind、purpose、prompt；如果已有账号资产，再附 source（kind、asset_id 及可选存储/模型字段）。segments 每项固定包含 segment_id、source_index、narration、target_duration_seconds、estimated_narration_duration、panel_count、layout、pacing_mode、actual_shot_count、shot_time_ranges、panoramic_anchor_role、continuity_links、character_assets、semantic_visualizations、storyboard_image_prompt、image_to_video_prompt；可选 visual_asset_refs 只能引用 visual_asset_plan 中已声明的语义 ID；shot_time_ranges 每项包含 shot_id、start_seconds、end_seconds、action_beat；continuity_links 每项包含 from_shot、to_shot、link_type、description；semantic_visualizations 每项包含 trigger、visual_form、interaction。
 
 storyboard_image_prompt 与该段生图代码框逐字一致，image_to_video_prompt 与该段视频代码框逐字一致。segment_id 使用 segment_001、segment_002 的稳定形式。panel_count 只能为4或5；四格时 layout=two_by_two 且 panoramic_anchor_role=null；五格时 layout=four_plus_panorama，并填写第5格独立承担的高潮、结论、警示揭示、空间全貌或情绪收束职责。pacing_mode 只能为 slow、medium、fast；actual_shot_count 只能为1至5。
 

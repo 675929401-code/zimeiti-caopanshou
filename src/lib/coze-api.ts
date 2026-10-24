@@ -234,7 +234,12 @@ export async function streamChat(botId: string, userId: string, message: string,
         });
       }
     } catch (err) {
-      console.warn("[Coze] Failed to resolve image URLs:", err);
+      // Never fall back to a text-only provider request after an attachment
+      // signing failure. The caller has already authenticated ownership; a
+      // signing error must fail closed so the user can retry without silently
+      // dropping their image context.
+      console.error("[Coze] Failed to resolve image URLs:", err);
+      throw new Error("COZE_IMAGE_SIGNING_FAILED");
     }
   }
 

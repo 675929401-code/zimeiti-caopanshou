@@ -12,6 +12,7 @@ import { recordVideoTerminalOutcome } from "@/lib/video-terminal-accounting";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { createVideoAccessUrl } from "@/lib/video-access-ticket";
 import { canRetryVideoHistoryTask } from "@/lib/video-history-presentation";
+import { canManuallyRetryUnsubmittedVideoTask } from "@/lib/video-manual-retry-eligibility";
 import {
   assertAutodlH3SelfhostModelBinding,
 } from "@/lib/autodl-h3-selfhost";
@@ -197,6 +198,7 @@ async function finalizeVideoStatusSuccess(input: {
   userRole: "admin" | "student";
   requestStartedAt: number;
   upstreamTaskId: string;
+  usage?: import("@/lib/video-token-billing").VideoTokenUsage;
 }) {
   const taskIdInternal = String(input.existingTask?.id || "");
   if (!taskIdInternal) {
@@ -218,6 +220,7 @@ async function finalizeVideoStatusSuccess(input: {
     userRole: input.userRole,
     providerTaskId: input.upstreamTaskId || input.taskId,
     providerVideoUrl: input.videoUrl || undefined,
+    usage: input.usage,
     responseMs: Date.now() - input.requestStartedAt,
   });
 
@@ -232,7 +235,7 @@ async function finalizeVideoStatusSuccess(input: {
       thumbnailUrl: "",
       errorMessage: outcome.message || "视频正在完成交付确认与原子结算",
       errorCode: outcome.code,
-      retryable: true,
+      retryable: outcome.code !== "VIDEO_TOKEN_BILLING_REVIEW",
       priceCharged: 0,
     }, { status: outcome.code === "BILLING_DEDUCTION_FAILED" ? 503 : 202 });
   }
@@ -311,10 +314,26 @@ async function readLocalVideoTaskSnapshot(input: {
           ? String(input.task.error_message || "任务已过期，请重新生成")
           : localFailure || classified.publicMessage,
       errorCode: String(input.task.submission_error_code || classified.code),
-      retryable: status === "failed" && !localFailure && canRetryVideoHistoryTask(input.task),
+      retryable: status === "failed" && (input.task.billing_state === "submission_failed"
+        ? await canManuallyRetryUnsubmittedVideoTask({ taskId: taskIdInternal, userId: input.userId }).catch(() => false)
+        : !localFailure && canRetryVideoHistoryTask(input.task)),
       priceCharged: status === "cancelled" ? 0 : priceCharged,
       billingState: String(input.task.billing_state || ""),
     });
+  }
+  if (input.task.billing_unit === "token"
+    && ["usage_pending", "quote_exceeded", "billing_review"].includes(String(input.task.billing_state))) {
+    const waitingForUsage = input.task.billing_state === "usage_pending";
+    const message = waitingForUsage
+      ? "视频已生成，正在查询原任务的实际 Token 用量，尚未扣费，请勿重复生成"
+      : input.task.billing_state === "quote_exceeded"
+        ? "视频已生成，实际费用超过本次扣款上限，账单待确认；未自动扣款，请保留原任务"
+        : "视频已生成，实际 Token 用量需要核对；未追加扣费，请保留原任务";
+    return NextResponse.json({ taskId: input.taskId, status: "billing_pending",
+      processingStage: waitingForUsage ? "billing" : "billing_review", providerCompleted: true,
+      videoUrl: "", thumbnailUrl: "", message, errorMessage: message,
+      errorCode: waitingForUsage ? "VIDEO_TOKEN_USAGE_PENDING" : "VIDEO_TOKEN_BILLING_REVIEW",
+      retryable: false, priceCharged: 0, billingState: input.task.billing_state });
   }
   const processingStage = status === "finalizing" || status === "billing_pending"
     ? status
@@ -538,6 +557,7 @@ async function resolveOwnedVideoTaskStatus(payload: { userId: string; role: 'adm
     if (
       ["finalizing", "billing_pending"].includes(String(existingTask?.status || ""))
       && (existingTask?.storage_url || existingTask?.provider_result_url || existingTask?.video_url)
+      && !(existingTask?.billing_unit === "token" && !existingTask?.billing_token_usage)
     ) {
       return finalizeVideoStatusSuccess({
         existingTask,
@@ -584,7 +604,7 @@ async function resolveOwnedVideoTaskStatus(payload: { userId: string; role: 'adm
           thumbnailUrl: "",
           errorMessage: localFailure || existingTask.error_message || existingFailure.publicMessage,
           errorCode: String(existingTask.submission_error_code || existingFailure.code),
-          retryable: localFailure ? false : existingFailure.retryable,
+          retryable: await canManuallyRetryUnsubmittedVideoTask({ taskId: String(existingTask.id), userId, db: supabase }).catch(() => false),
           priceCharged: 0,
           billingState: "submission_failed",
         });
@@ -695,6 +715,7 @@ async function resolveOwnedVideoTaskStatus(payload: { userId: string; role: 'adm
           userRole,
           requestStartedAt,
           upstreamTaskId: providerTaskId,
+          usage: result.usage,
         });
       }
 
@@ -858,6 +879,7 @@ async function resolveOwnedVideoTaskStatus(payload: { userId: string; role: 'adm
         userRole,
         requestStartedAt,
         upstreamTaskId: providerTaskId,
+        usage: result.usage,
       });
     }
 

@@ -40,20 +40,24 @@ html {
 }
 
 html[data-theme="soft-white"] {
-  /* 01 · 象牙纸墨 */
-  --dialog-shell: #fbf7eb;
-  --dialog-body: #f6f0e4;
-  --dialog-chrome: #f1eadc;
-  --dialog-raised: #fffaf0;
-  --dialog-subtle: #eee7d8;
-  --dialog-footer: #eee4d4;
-  --dialog-toast: #fbf7eb;
-  --dialog-text: #1f292d;
-  --dialog-muted: #536068;
-  --dialog-border: #c8bfae;
-  --dialog-accent: #7b3039;
-  --dialog-accent-soft: rgba(123, 48, 57, .10);
-  --dialog-secondary-accent: rgba(123, 48, 57, .10);
+  /* Resolve from the same theme-root palette as intake cards. Dialog children
+     remap --card and --primary, so use the resolved aliases rather than those
+     child tokens. Fallbacks also cover the initial render before data-mode. */
+  --dialog-color-scheme: light;
+  --dialog-shell: var(--agent-intake-shell, #fffefa);
+  --dialog-body: var(--agent-intake-body, #f3f4ef);
+  --dialog-chrome: var(--agent-intake-chrome, #e7ece6);
+  --dialog-raised: var(--agent-intake-raised, #ffffff);
+  --dialog-subtle: var(--agent-intake-subtle, #ebece6);
+  --dialog-footer: var(--agent-intake-footer, #e7ece6);
+  --dialog-toast: var(--agent-intake-shell, #fffefa);
+  --dialog-text: var(--agent-intake-text, #17201d);
+  --dialog-muted: var(--agent-intake-muted, #46534f);
+  --dialog-border: var(--agent-intake-border, #d0d8d2);
+  --dialog-accent: var(--agent-intake-accent, #0b7466);
+  --dialog-accent-foreground: var(--agent-intake-accent-foreground, #ffffff);
+  --dialog-accent-soft: var(--agent-intake-accent-soft, rgba(11, 116, 102, .08));
+  --dialog-secondary-accent: var(--agent-intake-accent-soft, rgba(11, 116, 102, .08));
   --dialog-overlay: rgba(31, 41, 45, .48);
   --dialog-shell-radius: 12px;
   --dialog-panel-radius: 9px;

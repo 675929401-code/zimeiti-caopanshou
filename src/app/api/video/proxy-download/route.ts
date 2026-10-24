@@ -17,6 +17,8 @@ import { resolveProviderSecret } from "@/lib/provider-secret";
 import { isAutodlComfyuiHostedProtocol } from "@/lib/video-autodl-comfyui-workflow";
 import { markVideoUpstreamSourceExpired } from "@/lib/video-source-expiry";
 import { resolveVideoStreamContentType } from "@/lib/video-stream-prefix";
+import { isStoryboardArchiveExpired, usableStoryboardArchive } from "@/lib/storyboard-video-archive-policy";
+import { isVideoHistoryExplicitlyHidden } from "@/lib/video-history-policy";
 import {
   AUTODL_H3_SELFHOST_GATEWAY_ORIGIN,
   AUTODL_H3_SELFHOST_VIDEO_ENDPOINT,
@@ -77,7 +79,7 @@ export async function GET(request: NextRequest) {
     try {
       const supabase = getSupabaseClient();
 
-      const taskFields = "id, video_url, storage_url, provider_result_url, model_id, user_id, task_id_external, status, source_expired_at, history_hidden_at";
+      const taskFields = "id, video_url, storage_url, provider_result_url, model_id, user_id, task_id_external, status, source_expired_at, history_hidden_at, task_label, completed_at, storyboard_archive_expires_at";
       const readTask = async (allowCrossMember: boolean) => {
         let localQuery = supabase
           .from("video_tasks")
@@ -125,8 +127,9 @@ export async function GET(request: NextRequest) {
         if (task.status !== "completed") {
           return NextResponse.json({ error: "任务尚未完成" }, { status: 409 });
         }
-        if (task.history_hidden_at || task.source_expired_at) {
-          return NextResponse.json({ error: task.history_hidden_at
+        if (isVideoHistoryExplicitlyHidden(task) || isStoryboardArchiveExpired(task)
+          || (task.source_expired_at && !usableStoryboardArchive(task))) {
+          return NextResponse.json({ error: isVideoHistoryExplicitlyHidden(task)
             ? "视频记录已从历史中移除，当前不可下载"
             : "视频源已到期，请使用此前下载的文件" }, { status: 410 });
         }

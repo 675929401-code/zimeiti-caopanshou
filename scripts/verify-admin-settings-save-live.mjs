@@ -59,7 +59,7 @@ const REQUIRED_PERMISSIONS = [
   "agents.manage",
 ];
 const TAB_HEADINGS = Object.freeze({
-  general: "品牌与基本设置",
+  general: "品牌与联系设置",
   theme: "主题风格",
   connection: "模型与外部服务",
   layout: "布局编辑器",
@@ -75,7 +75,7 @@ const TAB_SCOPES = Object.freeze({
   credits: "payment",
 });
 const TAB_NAVIGATION = Object.freeze({
-  general: { root: "general", label: "基本设置" },
+  general: { root: "general", label: "品牌与联系" },
   theme: { root: "general", label: "界面设置" },
   connection: { root: "models", label: "外部服务" },
   layout: { root: "general", label: "卡片布局" },

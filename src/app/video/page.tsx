@@ -4,8 +4,7 @@ import { getVideoMediaUnavailable, videoCompletedDeliveryPatch } from "@/lib/vid
 
 import { requiresVideoTaskTracking } from "@/lib/video-task-checkpoint";
 import { clearRetiredPageDrafts } from "@/lib/retired-page-drafts";
-import { VideoHistoryGallery } from "@/components/video-history-gallery";
-import { videoHistoryTitle } from "@/lib/video-history-presentation";
+import { VideoHistoryPanel, type VideoHistoryItem } from "@/components/video-history-panel";
 import { SseEventStreamDecoder } from "@/lib/sse-stream-decoder";
 import { useState, useEffect, useCallback, useRef, useId, Fragment } from "react";
 import { useAppScopedRouter } from "@/hooks/use-app-scoped-router";
@@ -33,6 +32,9 @@ import {
   coerceVideoTargetDuration,
   getVideoDurationCapabilities,
   getVideoBillingUnit,
+  readVideoTokenPublicPricing,
+  resolveVideoTokenBillingConsent,
+  videoTokenRateLabel,
   getVideoResolutionCapabilities,
   getVideoTargetDurationOptions,
   resolveVideoCharge,
@@ -58,6 +60,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import {
@@ -553,7 +556,8 @@ function normalizePublicVideoModel(value: unknown): VideoPageModel | null {
     supportsAudioInput: capabilities.supportsAudioInput === true,
     maxReferenceAudios: Math.max(0, Number(capabilities.maxReferenceAudios) || 0),
     minReferenceAudios: Math.max(0, Number(capabilities.minReferenceAudios) || 0),
-    billingUnit: capabilities.billingUnit === "output_second" ? "output_second" : "per_use",
+    billingUnit: getVideoBillingUnit(record),
+    tokenPricing: readVideoTokenPublicPricing(record.tokenPricing),
     workspaceSurfaces: Array.isArray(capabilities.workspaceSurfaces)
       ? capabilities.workspaceSurfaces.map(String)
       : ["ai-video"],
@@ -611,6 +615,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   });
   const [historyRetryNotice, setHistoryRetryNotice] = useState("");
   const [cashBalance, setCashBalance] = useState(0);
+  const [tokenChargeConsent, setTokenChargeConsent] = useState<{ modelId: string; priceVersion: string; amount: string } | null>(null);
   const [cashRechargeOpen, setCashRechargeOpen] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<(typeof AI_VIDEO_PAGE_ASPECT_RATIOS)[number]>(AI_VIDEO_PAGE_ASPECT_RATIOS[0]);
   const [duration, setDuration] = useState(8);
@@ -708,13 +713,13 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<VideoTask[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [taskRecoveryError, setTaskRecoveryError] = useState("");
   const [taskRecoveryNotice, setTaskRecoveryNotice] = useState("");
   const [taskRecoveryAttempt, setTaskRecoveryAttempt] = useState(0);
   const [historyNextOffset, setHistoryNextOffset] = useState<number | null>(null);
   const historyOffsetRef = useRef(0);
+  const historyWindowRef = useRef(100);
   const historyRequestRef = useRef<AbortController | null>(null);
   const nextLocalId = useRef(Math.max(4, ...tasks.map(task => task.localId + 1)));
   const sseRefs = useRef<Map<string, { abortController: AbortController }>>(new Map());
@@ -813,6 +818,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
   /* ── Smart import state ── */
   const [showSmartImport, setShowSmartImport] = useState(false);
+  const [cardAction, setCardAction] = useState<{ kind: "clear" | "remove-all" | "remove-one"; localId?: number; targetIds?: number[] } | null>(null);
   const [smartImportText, setSmartImportText] = useState("");
 
   const applyIncomingVideoTaskTransfer = useCallback((payload: VideoTaskTransferPayload | null | undefined) => {
@@ -1152,31 +1158,33 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 20000);
     setHistoryLoading(true);
     setHistoryError("");
-    fetch("/api/video/history?surface=video-page&limit=100&offset=" + offset, {
-      headers: { Authorization: `Bearer ${auth.token}` },
-      signal: controller.signal,
-      cache: "no-store",
-    })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(r.status === 401 ? "登录已过期，请重新登录" : "暂时无法读取历史，请稍后重试");
-        const data = await r.json();
+    const targetWindow = offset === 0 ? Math.max(100, historyWindowRef.current) : 100;
+    void (async () => {
+      const collected: VideoTask[] = [];
+      let cursor: number | null = offset;
+      do {
+        const response: Response = await fetch(`/api/video/history?surface=video-page&limit=100&offset=${cursor}`, {
+          headers: { Authorization: `Bearer ${auth.token}` }, signal: controller.signal, cache: "no-store",
+        });
+        if (!response.ok) throw new Error(response.status === 401 ? "登录已过期，请重新登录" : "暂时无法读取历史，请稍后重试");
+        const data: { tasks: VideoTask[]; nextOffset?: number | null } = await response.json();
         if (!Array.isArray(data.tasks)) throw new Error("历史记录返回异常，请稍后重试");
-        return data;
-      })
-      .then((data) => {
-        if (historyRequestRef.current !== controller) return;
-        const historyTasks: VideoTask[] = data.tasks;
-        historyOffsetRef.current = offset;
-        setHistoryNextOffset(data.nextOffset ?? null);
-        setHistory(previous => offset ? Array.from(new Map([...previous, ...historyTasks].map(item => [item.id, item])).values()) : historyTasks);
-        setTasks((current) => current.map((task) => {
-          const saved = historyTasks.find((entry) => entry.taskIdExternal === task.taskId || entry.id === task.taskId);
-          if (!task.taskId || !saved) return task;
-          const modelId = saved.publicModelId || task.modelId;
-          if (task.modelId === modelId && task.modelName === saved.modelName && task.supportsRemoteCancel === saved.supportsRemoteCancel) return task;
-          return { ...task, modelId, modelName: saved.modelName, supportsRemoteCancel: saved.supportsRemoteCancel };
-        }));
-      })
+        collected.push(...(data.tasks as VideoTask[]).filter((item) => !collected.some((existing) => existing.id === item.id)));
+        cursor = typeof data.nextOffset === "number" && data.nextOffset > (cursor ?? -1) ? data.nextOffset : null;
+      } while (offset === 0 && cursor !== null && collected.length < targetWindow);
+      if (historyRequestRef.current !== controller) return;
+      historyOffsetRef.current = offset;
+      historyWindowRef.current = Math.max(100, offset + collected.length);
+      setHistoryNextOffset(cursor);
+      setHistory(previous => offset ? Array.from(new Map([...previous, ...collected].map(item => [item.id, item])).values()) : collected);
+      setTasks((current) => current.map((task) => {
+        const saved = collected.find((entry) => entry.taskIdExternal === task.taskId || entry.id === task.taskId);
+        if (!task.taskId || !saved) return task;
+        const modelId = saved.publicModelId || task.modelId;
+        if (task.modelId === modelId && task.modelName === saved.modelName && task.supportsRemoteCancel === saved.supportsRemoteCancel) return task;
+        return { ...task, modelId, modelName: saved.modelName, supportsRemoteCancel: saved.supportsRemoteCancel };
+      }));
+    })()
       .catch((error: unknown) => {
         if (historyRequestRef.current !== controller) return;
         setHistoryError(timedOut ? "历史记录读取超时，请重试" : error instanceof Error && !/fetch|network/i.test(error.message) ? error.message : "暂时无法读取历史，请稍后重试");
@@ -1186,7 +1194,6 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         if (historyRequestRef.current !== controller) return;
         historyRequestRef.current = null;
         setHistoryLoading(false);
-        setHistoryLoaded(true);
       });
   }, [auth?.token]);
 
@@ -1255,6 +1262,11 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   }, [auth?.token]);
 
   useEffect(() => {
+    historyOffsetRef.current = 0;
+    historyWindowRef.current = 100;
+  }, [auth?.token]);
+
+  useEffect(() => {
     if (showHistory) loadHistory(0);
   }, [showHistory, loadHistory]);
 
@@ -1264,7 +1276,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
     const syncHistory = () => {
       if (document.visibilityState === "visible") {
-        loadHistory();
+        refreshHistoryFirstPage();
       }
     };
 
@@ -1281,7 +1293,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
 
-  }, [showHistory, auth?.token, loadHistory]);
+  }, [showHistory, auth?.token, refreshHistoryFirstPage]);
 
   // Submitted jobs remain in history; entering this editor always starts blank.
 
@@ -2420,6 +2432,27 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     });
   };
 
+  const confirmCardAction = () => {
+    if (!cardAction) return;
+    if (cardAction.kind === "remove-one") {
+      if (cardAction.localId !== undefined) removeTask(cardAction.localId);
+    } else {
+      const targetIds = new Set(cardAction.targetIds || []);
+      const editable = tasksRef.current.filter(task => targetIds.has(task.localId) && !requiresVideoTaskTracking(task));
+      if (editable.length) {
+        releaseReferenceAssets(editable.flatMap(task => task.uploadedReferenceAssets || []));
+        if (cardAction.kind === "clear") {
+          setTasks(previous => previous.map(task => !targetIds.has(task.localId) || requiresVideoTaskTracking(task) ? task : emptyCard(task.localId, task.cardIndex, task.batchId, task.batchTopic)));
+        } else {
+          setCurrentBatchId(`batch_${Date.now()}`);
+          currentCardCounter.current = 1;
+          setTasks(previous => previous.filter(task => !targetIds.has(task.localId) || requiresVideoTaskTracking(task)));
+        }
+      }
+    }
+    setCardAction(null);
+  };
+
   const classifyVideoError = (message: string) => {
     const detail = String(message || "").trim();
     if (/余额不足|积分不足|额度不足/u.test(detail)) return "当前余额不足，请充值后重试。";
@@ -2862,6 +2895,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     const currentModel = models.find((m) => m.id === selectedModelId);
     if (!auth?.token) { toast.error("请先登录后再生成视频"); return; }
     if (!currentModel) { toast.error("视频模型尚未加载，请刷新模型列表后重试"); return; }
+    const tokenBilling = resolveVideoTokenBillingConsent(currentModel, tokenChargeConsent);
+    if (getVideoBillingUnit(currentModel) === "token" && !tokenBilling) { toast.info("请明确填写本次每条视频最多自动扣款金额（正数，最多两位小数）"); return; }
+    if (tokenBilling && tokenBilling.maxChargeYuan > cashBalance) { toast.info("现金余额不足以预留本次额度；预留不是扣费，请调整额度或充值"); return; }
     const inputCapabilities = getAiVideoPageInputCapabilities(currentModel);
     const submittedImageUrls = taskImageInputs(task, inputCapabilities);
     const submittedAudioUrls = inputCapabilities.showAudioInputs ? (task.referenceAudioUrls || []) : [];
@@ -2973,6 +3009,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       fps: task.fps ?? null,
       seed: task.seed ?? null,
       generateAudio: submittedGenerateAudio ?? null,
+      tokenBilling,
     });
     const clientAttempt = resolveBrowserClientAttempt({
       storageKey: videoClientAttemptScope(identity.userId, task),
@@ -3023,6 +3060,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         },
         body: JSON.stringify({
           model_id: selectedModelId,
+          ...(tokenBilling ? { tokenBilling } : {}),
           prompt: submittedInputs.prompt,
           ...videoWorkflowImageRequestFields(submittedInputs),
           reference_audio_urls: submittedInputs.referenceAudioUrls,
@@ -3257,6 +3295,31 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
   /* ── Batch download ── */
   const downloadableHistory = history.filter((t) => t.status === "completed" && (t.videoUrl || t.storageUrl));
+  const videoHistoryItems: VideoHistoryItem[] = history.map((task) => ({
+    taskId: task.id,
+    batchId: task.batchId,
+    batchTopic: task.batchTopic,
+    // The AI video page persists cardIndex as one-based; the shared history
+    // policy sorts zero-based card positions for both workbenches.
+    cardIndex: Number.isInteger(task.cardIndex) && Number(task.cardIndex) > 0 ? Number(task.cardIndex) - 1 : undefined,
+    status: task.status,
+    createdAt: task.createdAt,
+    completedAt: task.completedAt || undefined,
+    posterUrl: task.thumbnailUrl || task.firstFrameUrl || undefined,
+    modelName: task.modelName,
+    duration: task.durationSeconds,
+    videoUrl: task.videoUrl,
+    storageUrl: task.storageUrl,
+    taskLabel: task.taskLabel,
+    prompt: task.prompt,
+    resolution: task.resolution,
+    aspectRatio: task.aspectRatio,
+    durationSeconds: task.durationSeconds,
+    billingState: task.billingState,
+    priceCharged: task.priceCharged,
+    errorMessage: task.errorMessage,
+    canRetry: task.canRetry === true,
+  }));
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -3534,28 +3597,32 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       )}
                     </>
                   )}
-                  <Button variant="ghost" size="sm" onClick={() => loadHistory(0)} disabled={historyLoading} className="gap-1.5 text-[var(--text-secondary)]">
+                  <Button variant="ghost" size="sm" onClick={refreshHistoryFirstPage} disabled={historyLoading} className="gap-1.5 text-[var(--text-secondary)]">
                     <RefreshCw className={`w-3.5 h-3.5${historyLoading ? " animate-spin" : ""}`} /> {historyLoading ? "读取中…" : "刷新"}
                   </Button>
                 </div>
               </div>
-              {historyError && <p role="alert" className="mb-4 rounded-lg border border-[var(--border)] p-3 text-sm text-[var(--text-secondary)]">{historyError}{history.length > 0 ? "，下方保留上次读取的记录。" : "。"}</p>}
-              {history.length === 0 && (historyLoading || !historyLoaded) ? (
-                <div role="status" aria-live="polite" className="py-24 text-center text-sm text-[var(--text-secondary)]">正在读取生成历史…</div>
-              ) : history.length === 0 && historyError ? null : history.length === 0 ? (
-                <div className="text-center py-24 text-[var(--text-secondary)]">
-                  <Video className="w-14 h-14 mx-auto mb-4 opacity-20" />
-                  <p className="text-sm">暂无生成记录</p>
-                  <p className="text-xs mt-1">生成完成后会在这里显示；长期保存请及时下载到电脑</p>
-                </div>
-              ) : (
-                <VideoHistoryGallery tasks={history} loading={historyLoading} error={undefined} hideToolbar authToken={auth?.token}
-                  onRefresh={() => loadHistory(0)} onRetry={prepareHistoryRetry} selectedIds={selectedIds}
-                  onLoadMore={historyNextOffset === null ? undefined : () => loadHistory(historyNextOffset)}
-                  onSelect={id => setSelectedIds(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
-                  onDownload={task => { void downloadVideo(task.videoUrl, videoHistoryTitle(task).replace(/[\\/:*?"<>|]/g, "-") + ".mp4", task.id, task.storageUrl); }} />
-
-            )}
+              <VideoHistoryPanel
+                  open
+                  presentation="inline"
+                  surface="video-page"
+                  userId={identity.userId}
+                  token={auth?.token || ""}
+                  items={videoHistoryItems}
+                  loading={historyLoading}
+                  error={historyError}
+                  onClose={() => setShowHistory(false)}
+                  onRefresh={() => refreshHistoryFirstPage()}
+                  hasMore={historyNextOffset !== null}
+                  onLoadMore={() => { if (historyNextOffset !== null) loadHistory(historyNextOffset); }}
+                  onRetry={(taskId) => { const saved = history.find((task) => task.id === taskId); if (saved) prepareHistoryRetry(saved); }}
+                  selectedTaskIds={selectedIds}
+                  onToggleSelect={toggleSelect}
+                  onCleared={(ids) => {
+                    setHistory((previous) => previous.filter((task) => !ids.includes(task.id)));
+                    setSelectedIds((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
+                  }}
+                />
           </div>
         ) : (
             /* ── Creator View ── */
@@ -3621,7 +3688,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                               <span className="mt-0.5 block truncate text-[12px] leading-4 text-[var(--text-secondary)]">{videoModelInputHint(model)}</span>
                             </span>
                             <span className="shrink-0 rounded border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[12px] font-semibold text-[var(--foreground)]">
-                              {!model.priceReady ? "价格待配置" : modelPrice === 0 ? "免费" : `¥${modelPrice.toFixed(2)}${getVideoBillingUnit(model) === "output_second" ? "/秒" : "/次"}`}
+                              {getVideoBillingUnit(model) === "token" ? videoTokenRateLabel(model, model.defaultResolution) : !model.priceReady ? "价格待配置" : modelPrice === 0 ? "免费" : `¥${modelPrice.toFixed(2)}${getVideoBillingUnit(model) === "output_second" ? "/秒" : "/次"}`}
                             </span>
                           </span>
                         </button>
@@ -3647,13 +3714,21 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   </div>
                   {selectedModel && (
                     <div className="text-xs text-[var(--text-secondary)]">
-                      单条预计：<span className="text-yellow-500 font-bold">¥{selectedPrice.toFixed(2)}</span>
-                      {cashBalance < selectedPrice && (
+                      {getVideoBillingUnit(selectedModel) === "token" ? videoTokenRateLabel(selectedModel, selectedResolution) : <>单条预计：<span className="text-yellow-500 font-bold">¥{selectedPrice.toFixed(2)}</span></>}
+                      {getVideoBillingUnit(selectedModel) !== "token" && cashBalance < selectedPrice && (
                         <span className="ml-2 text-red-500 font-medium">余额不足</span>
                       )}
                     </div>
                   )}
                 </div>
+                {selectedModel && getVideoBillingUnit(selectedModel) === "token" && <div className="mb-3 text-xs text-[var(--foreground)]">
+                  <label htmlFor="video-token-max-charge">每条任务本次最多自动扣款 ¥</label>
+                  <Input id="video-token-max-charge" aria-label="每条视频本次最多自动扣款金额" type="text" inputMode="decimal" autoComplete="off" placeholder="请填写金额（最多两位小数）" className="mt-1 max-w-xs"
+                    value={tokenChargeConsent?.modelId === selectedModel.id && tokenChargeConsent.priceVersion === selectedModel.tokenPricing?.priceVersion ? tokenChargeConsent.amount : ""}
+                    onChange={event => setTokenChargeConsent({ modelId: selectedModel.id, priceVersion: selectedModel.tokenPricing?.priceVersion || "", amount: event.target.value })} />
+                  <p className="mt-1 text-[var(--muted-foreground)]">按实际 Token 用量结算；预留不是扣费，超额待确认。每次点击生成均使用当前额度。</p>
+                  {selectedInputCapabilities.supportsSourceVideoInput && <p className="mt-1 text-[var(--muted-foreground)]">使用源视频：{videoTokenRateLabel(selectedModel, selectedResolution, true)}；未使用源视频：{videoTokenRateLabel(selectedModel, selectedResolution, false)}</p>}
+                </div>}
                 <div className="flex flex-wrap items-start gap-4">
                   {/* Aspect ratio */}
                   <div className="flex min-w-[190px] flex-1 flex-col">
@@ -3716,7 +3791,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                           >
                             {resolutionCapabilities.options.map((value) => (
                               <SelectItem key={value} value={value}>
-                                {resolutionCapabilities.labels[value] || value} · ¥{resolveVideoResolution(selectedModel, value).publicPrice.toFixed(2)}{getVideoBillingUnit(selectedModel) === "output_second" ? "/秒" : ""}
+                                {resolutionCapabilities.labels[value] || value} · {getVideoBillingUnit(selectedModel) === "token" ? videoTokenRateLabel(selectedModel, value) : `¥${resolveVideoResolution(selectedModel, value).publicPrice.toFixed(2)}${getVideoBillingUnit(selectedModel) === "output_second" ? "/秒" : ""}`}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -3763,10 +3838,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                           }}
                         >
                           {durationOptions.map((d) => {
-                            const timing = resolveVideoDuration(selectedModel, d);
                             return (
                               <SelectItem key={d} value={String(d)}>
-                                {d}秒{timing.needsTrim ? ` · 生成${timing.submit}秒后裁剪` : ""}
+                                {d}秒
                               </SelectItem>
                             );
                           })}
@@ -3850,55 +3924,41 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     <>
                       <Button
                         variant="outline"
-                        onClick={() => {
-                          releaseReferenceAssets(tasksRef.current
-                            .filter((task) => !requiresVideoTaskTracking(task))
-                            .flatMap((task) => task.uploadedReferenceAssets || []));
-                          setTasks((prev) => prev.map((t) => requiresVideoTaskTracking(t) ? t : ({
-                            ...emptyCard(t.localId, t.cardIndex, t.batchId, t.batchTopic),
-                            localId: t.localId,
-                            cardIndex: t.cardIndex,
-                            batchId: t.batchId,
-                            batchTopic: t.batchTopic,
-                          })));
-                        }}
+                        onClick={() => setCardAction({ kind: "clear", targetIds: tasksRef.current.filter(task => !requiresVideoTaskTracking(task)).map(task => task.localId) })}
+                        disabled={!tasks.some(task => !requiresVideoTaskTracking(task))}
+                        title="清空可编辑卡片的提示词、参考素材和当前结果，保留卡片；生成中及待确认任务保留"
                         className="gap-1.5 h-8 border-yellow-500 text-yellow-600 hover:bg-yellow-50 hover:text-yellow-700 dark:hover:bg-yellow-950/30"
                       >
-                        <Eraser className="w-4 h-4" /> 清除内容
+                        <Eraser className="w-4 h-4" /> 清空卡片内容
                       </Button>
                       <Button
                         variant="outline"
-                        onClick={() => {
-                          releaseReferenceAssets(tasksRef.current
-                            .filter((task) => !requiresVideoTaskTracking(task))
-                            .flatMap((task) => task.uploadedReferenceAssets || []));
-                          setCurrentBatchId(`batch_${Date.now()}`);
-                          currentCardCounter.current = 1;
-                          setTasks(prev => prev.filter(requiresVideoTaskTracking));
-                        }}
+                        onClick={() => setCardAction({ kind: "remove-all", targetIds: tasksRef.current.filter(task => !requiresVideoTaskTracking(task)).map(task => task.localId) })}
+                        disabled={!tasks.some(task => !requiresVideoTaskTracking(task))}
+                        title="移除当前可编辑卡片，生成中及待确认任务保留"
                         className="gap-1.5 h-8 border-red-300 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
                       >
-                        <Trash2 className="w-4 h-4" /> 删除所有
+                        <Trash2 className="w-4 h-4" /> 移除可编辑卡片
                       </Button>
                     </>
                   )}
                   {tasks.length > 0 && (
                     <Button
                       variant="outline"
-                      size="icon"
-                      onClick={() => { const last = tasksRef.current.at(-1); if (last) removeTask(last.localId); }}
+                      onClick={() => { const last = tasksRef.current.at(-1); if (last) setCardAction({ kind: "remove-one", localId: last.localId }); }}
                       disabled={Boolean(tasks.at(-1) && requiresVideoTaskTracking(tasks.at(-1)!))}
-                      title="删除最后一个任务"
-                      className="h-8 w-8 border-[var(--border)] text-[var(--text-secondary)] hover:text-red-400 hover:border-red-400/50"
+                      title={tasks.at(-1) && requiresVideoTaskTracking(tasks.at(-1)!) ? "末张任务仍在生成或待确认，暂不能移除" : "移除末张卡片及其输入内容，其他卡片保留"}
+                      aria-label="移除末张卡片"
+                      className="gap-1.5 h-8 border-[var(--border)] text-[var(--text-secondary)] hover:text-red-400 hover:border-red-400/50"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4" /> 移除末张卡片
                     </Button>
                   )}
                   {tasks.filter(t => t.status === "completed").length > 1 && (
                     <Button
                       onClick={batchDownload}
                       disabled={isBatchDownloading}
-                      className="gap-1.5 h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+                      className="gap-1.5 h-8"
                     >
                       {isBatchDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                       批量下载
@@ -3988,8 +4048,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                             <SelectContent className="bg-[var(--background)] text-[var(--foreground)] border-[var(--border)] shadow-xl">
                               <SelectItem value="default">默认 {duration}秒</SelectItem>
                               {durationOptions.map((seconds) => {
-                                const timing = resolveVideoDuration(selectedModel, seconds);
-                                return <SelectItem key={seconds} value={String(seconds)}>{seconds}秒{timing.needsTrim ? ` · 从${timing.submit}秒自动裁至目标` : ""}</SelectItem>;
+                                return <SelectItem key={seconds} value={String(seconds)}>{seconds}秒</SelectItem>;
                               })}
                             </SelectContent>
                           </Select>
@@ -4004,9 +4063,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                         {tasks.length > 1 && task.status === "idle" && (
                           <button
                             type="button"
-                            aria-label={`删除任务 ${task.cardIndex}`}
-                            title={`删除任务 ${task.cardIndex}`}
-                            onClick={() => removeTask(task.localId)}
+                            aria-label={`移除卡片 ${task.cardIndex}`}
+                            title={`移除卡片 ${task.cardIndex} 及其输入内容`}
+                            onClick={() => setCardAction({ kind: "remove-one", localId: task.localId })}
                             className="text-[var(--text-secondary)] hover:text-red-400 transition-colors p-0.5"
                           >
                             <X className="w-3.5 h-3.5" />
@@ -4017,6 +4076,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
                     <div className="p-4 space-y-3.5">
                       <fieldset disabled={requiresVideoTaskTracking(task)} className="min-w-0 space-y-3.5">
+                      {cardModel && getVideoBillingUnit(cardModel) === "token" && <p className="text-xs text-[var(--muted-foreground)]">本条费率：{videoTokenRateLabel(cardModel, selectedResolution, Boolean(cardInputCapabilities.supportsSourceVideoInput && task.sourceVideoUrl))}</p>}
                       {/* Prompt */}
                       <div>
                         <label className="text-xs text-[var(--text-secondary)] mb-1.5 block font-medium">
@@ -4036,21 +4096,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                         {cardInputCapabilities.supportsPrompt && !cardInputCapabilities.requiresSourceVideo && !task.followsSourceDuration && (() => {
                           const targetSeconds = task.durationSeconds ?? duration;
                           const promptSeconds = extractPromptDurationSeconds(task.prompt);
-                          const timing = resolveVideoDuration(cardModel, targetSeconds);
                           const hasConflict = promptSeconds !== null && promptSeconds !== targetSeconds;
-                          if (!hasConflict && !timing.needsTrim) return null;
+                          if (!hasConflict) return null;
                           return (
                             <div className="mt-1.5 space-y-1 text-[11px] leading-4">
                               {hasConflict && (
                                 <div className="flex items-start gap-1.5 text-amber-600 dark:text-amber-400">
                                   <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                                   <span>提示词写了 {promptSeconds} 秒，本次按任务卡的目标 {targetSeconds} 秒提交。</span>
-                                </div>
-                              )}
-                              {timing.needsTrim && (
-                                <div className="flex items-start gap-1.5 text-[var(--text-secondary)]">
-                                  <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                  <span>模型先生成 {timing.submit} 秒，完成后自动裁成 {targetSeconds} 秒。</span>
                                 </div>
                               )}
                             </div>
@@ -4602,6 +4655,26 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         </div>
       )}
       <BrandFooter privacyNote="视频由所选模型处理；普通视频不复制到平台存储，长期保存请下载到电脑" />
+
+      <AlertDialog open={cardAction !== null} onOpenChange={open => { if (!open) setCardAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{cardAction?.kind === "clear" ? "清空卡片内容？" : cardAction?.kind === "remove-all" ? "移除可编辑卡片？" : "移除这张卡片？"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cardAction?.kind === "clear"
+                ? "将清空可编辑卡片的提示词、参考素材和当前结果，卡片数量与编号保留。"
+                : cardAction?.kind === "remove-all"
+                  ? "将移除当前可编辑卡片及其输入内容，并开始一个新批次。"
+                  : "将移除这张卡片及其输入内容，其他卡片保留并重新编号。"}
+              {"生成中及待确认任务会保留；本次上传的关联参考素材将释放，已保存的生成历史不受影响。"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmCardAction}>{cardAction?.kind === "clear" ? "确认清空" : "确认移除"}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* 现金充值弹窗 */}
       <RechargeDialog

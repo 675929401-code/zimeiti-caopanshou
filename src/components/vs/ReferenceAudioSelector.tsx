@@ -396,7 +396,7 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
               autoFocus
             />
             <div className="flex gap-2">
-              <button onClick={confirmNameAndSelect} className="flex-1 py-2.5 rounded-xl bg-[var(--vs-primary)] text-white border border-[var(--vs-primary)] hover:opacity-90 text-sm font-medium transition-colors">
+              <button onClick={confirmNameAndSelect} className="flex-1 py-2.5 rounded-xl bg-[var(--vs-primary)] text-[var(--vs-on-accent)] border border-[var(--vs-primary)] hover:opacity-90 text-sm font-medium transition-colors">
                 确认并选用
               </button>
               <button onClick={() => void persistAndSelectPending(pendingAudio.title)} className="flex-1 py-2.5 rounded-xl text-[var(--vs-text-secondary)] hover:text-[var(--vs-text)] text-sm transition-colors">
@@ -581,7 +581,7 @@ export default function ReferenceAudioSelector({ onSelect, currentAudio }: Props
             <button
               onClick={requestExtractLink}
               disabled={extracting || !linkUrl.trim() || !runtimeGate.ready}
-              className="px-3 py-2 rounded-xl bg-[var(--vs-primary)] text-white border border-[var(--vs-primary)] hover:opacity-90 text-sm font-medium transition-colors disabled:opacity-50 shrink-0"
+              className="px-3 py-2 rounded-xl bg-[var(--vs-primary)] text-[var(--vs-on-accent)] border border-[var(--vs-primary)] hover:opacity-90 text-sm font-medium transition-colors disabled:opacity-50 shrink-0"
             >
               {extracting ? '提取中...' : '提取'}
             </button>

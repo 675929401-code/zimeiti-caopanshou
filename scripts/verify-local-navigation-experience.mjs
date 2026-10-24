@@ -6,14 +6,14 @@ import assert from 'node:assert/strict';
 
 export const PRIMARY_ROUTES = [
   { label: '应用广场', path: '/', names: ['应用广场'], ready: '.agent-card-hover' },
-  { label: '工具箱', path: '/tools', names: ['打开工具箱', '工具箱'], ready: '[data-page="tools"] [role="tabpanel"] textarea' },
-  { label: '视频制作', path: '/video', names: ['视频制作'], ready: '.secondary-workbench textarea' },
-  { label: '分镜工作台', path: '/storyboard-workbench', names: ['分镜工作台'], ready: '.sbw-root textarea' },
-  { label: 'AI生图工作台', path: '/image-workbench', names: ['AI生图工作台'], ready: '.voice-studio-root textarea' },
-  { label: '智音工坊', path: '/voice-studio/workspace', names: ['智音工坊'], ready: '.secondary-workbench textarea' },
-  { label: '封面制作', path: '/cover', names: ['封面制作'], ready: '.cover-rebuild-shell textarea' },
-  { label: '漫剧工作台', path: '/youcai', names: ['漫剧工作台'], ready: 'main textarea' },
-  { label: '带货 Agent', path: '/commerce', names: ['带货 Agent', '带货Agent'], ready: '[data-testid="commerce-workspace"]' },
+  { label: '效率工具', path: '/tools', names: ['效率工具', '打开效率工具'], ready: '[data-page="tools"] [role="tabpanel"] textarea:visible' },
+  { label: '视频创作', path: '/video', names: ['视频创作'], ready: '.secondary-workbench textarea' },
+  { label: '分镜编排', path: '/storyboard-workbench', names: ['分镜编排'], ready: '.sbw-root textarea' },
+  { label: '图像生成', path: '/image-workbench', names: ['图像生成'], ready: '.voice-studio-root textarea' },
+  { label: '声音制作', path: '/voice-studio/workspace', names: ['声音制作'], ready: '.secondary-workbench textarea' },
+  { label: '封面设计', path: '/cover', names: ['封面设计'], ready: '.cover-rebuild-shell textarea' },
+  { label: '漫剧创作', path: '/youcai', names: ['漫剧创作'], ready: 'main textarea' },
+  { label: '带货创作', path: '/commerce', names: ['带货创作'], ready: '[data-testid="commerce-workspace"]' },
 ];
 const CONTROL_SELECTOR = 'button,a,[role="button"],[role="link"]';
 const ADVANCING_GET = new Set([
@@ -111,7 +111,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (requestedRoutes) assert.ok(requestedRoutes.length > 0 && requestedRoutes.every(route => inventory.includes(route)), 'Unknown secondary route');
   const routesToVisit = requestedRoutes ? [...new Set(requestedRoutes)] : inventory;
   const report = { origin, mode, at: new Date().toISOString(), normalAdmin: true, firstVisit: null, navDom: [], transitions: [], secondary: [], secondaryRouteInventory: inventory,
-    errors: [], httpErrors: [], commerceSessionChallenges: [], blockedWrites: [], blockedAdvancingGets: [], allowedSessionBridges: [], generationRequests: 0, purpose: 'Read-only navigation and rendered page checks; only the same-origin Commerce main-session bridge may write an authentication session; no generation acceptance claim.' };
+    errors: [], httpErrors: [], commerceSessionChallenges: [], blockedWrites: [], blockedAdvancingGets: [], allowedSessionBridges: [], telemetryWrites: [], generationRequests: 0, purpose: 'Read-only navigation and rendered page checks; only passive product telemetry and the same-origin Commerce main-session bridge are allowed; no generation acceptance claim.' };
   // Preserve prior real acceptance evidence, including failures.
   await fs.writeFile(reportPath, JSON.stringify(report, null, 2), { flag: 'wx' });
   const save = () => fs.writeFile(reportPath, JSON.stringify(report, null, 2));
@@ -121,8 +121,14 @@ export async function main(argv = process.argv.slice(2)) {
   await context.addInitScript(({ origin, token, user }) => { if (location.origin === origin) { localStorage.setItem('auth_token', token); localStorage.setItem('auth_user', JSON.stringify(user)); sessionStorage.setItem('entered_app', '1'); } }, { origin, token, user: auth.user });
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
+    const passiveTelemetry = request.method() === 'POST' && url.origin === origin && url.pathname === '/api/product-usage/events';
     const sessionBridge = request.method() === 'POST' && url.origin === origin && url.pathname === '/api/commerce/session'
       && (() => { try { return request.postDataJSON()?.action === 'main-bind'; } catch { return false; } })();
+    if (passiveTelemetry) {
+      report.telemetryWrites.push({ path: url.pathname, method: request.method() });
+      await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ ok: true, source: 'LOCAL_NAV_READONLY_TELEMETRY' }) });
+      return;
+    }
     if (sessionBridge) {
       report.allowedSessionBridges.push({ path: url.pathname, method: request.method(), action: 'main-bind' });
       await route.continue();

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTokenFromHeaders } from "@/lib/auth";
-import { verifyAdminToken } from "@/lib/admin-auth";
+import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
 import {
   ModelActivationGateError,
   assertVideoModelActivationReady,
@@ -15,16 +14,13 @@ import { assertPublishedModelPoolEntry } from "@/lib/server/platform-configurati
 import { PlatformConfigurationError } from "@/lib/server/platform-configuration-admin";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 
-async function requireAdmin(request: NextRequest) {
-  const token = getTokenFromHeaders(request.headers);
-  if (!token) return null;
-  const payload = await verifyAdminToken(token);
-  return payload?.role === "admin" ? payload : null;
-}
-
 export async function POST(request: NextRequest) {
-  const admin = await requireAdmin(request);
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  const authorization = await authorizeAdminCapability(request, "models.manage", {
+    requireStepUp: true,
+    operation: "models_activate",
+    auditAllowed: true,
+  });
+  if (!authorization.ok) return authorization.response;
 
   try {
     const body = await request.json().catch(() => ({})) as {
@@ -49,7 +45,7 @@ export async function POST(request: NextRequest) {
       const supabase = getSupabaseAdminClient();
       const { data: model, error: readError } = await supabase
         .from("llm_models")
-        .select("id,name,model_name,api_endpoint,proxy_url,api_key,billing_mode,token_billing_enabled,input_cost_per_million,output_cost_per_million,cached_cost_per_million,profit_margin,max_context_rounds,max_context_tokens,max_reply_tokens,timeout,deep_thinking_type,enable_web_search,api_protocol_config,is_active,is_hidden,user_access,updated_at")
+        .select("*")
         .eq("id", id)
         .maybeSingle();
       if (readError || !model) {

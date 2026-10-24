@@ -59,7 +59,9 @@ const storyboardSource = readFileSync("src/components/storyboard-workbench.tsx",
 const accountHistorySource = readFileSync("src/components/account-video-history.tsx", "utf8");
 
 assert.match(imageRoute, /validateImageOutputContract/u);
-assert.match(imageRoute, /expectedPixelSize: expectedImagePixelSize/u);
+assert.match(imageRoute, /const deliveryOutputContract = \(selectedModelId: string\) =>/u);
+assert.match(imageRoute, /expectedPixelSize:\s*frozenTarget \|\| outputPixelSize/u);
+assert.match(imageRoute, /prepareGeneratedImageBytes\([\s\S]{0,260}deliveryOutputContract\(result\.selectedModelId\)/u);
 assert.match(imageRoute, /coverText: exactCoverText/u);
 assert.match(imageRoute, /billed:\s*false/u);
 
@@ -84,7 +86,7 @@ assert.match(videoModelsRoute, /secure_skill_enterprise_video" && modelName === 
 assert.match(videoModelsRoute, /secure_skill_seedance_video"\) return new Set\(\["480p", "720p"\]\)/u);
 assert.match(storyboardSource, /imageExactText/u);
 assert.match(storyboardSource, /imageTextLayoutEnabled/u);
-assert.match(storyboardSource, /默认关闭；普通生图只生成视觉画面/u);
+assert.ok(/function createCard[\s\S]{0,2000}imageTextLayoutEnabled:\s*false/u.test(storyboardSource), "New storyboard cards must opt out of exact-text composition by default");
 assert.match(storyboardSource, /\.\.\.\(requestSnapshot\.exactText \? \{ coverText: requestSnapshot\.exactText \} : \{\}\)/u);
 assert.doesNotMatch(storyboardSource, /coverText:\s*requestSnapshot\.exactText\s*\|\|\s*""/u);
 assert.match(storyboardSource, /实际图片[^`]+与 \$\{requestSnapshot\.aspectRatio\} 不一致/u);

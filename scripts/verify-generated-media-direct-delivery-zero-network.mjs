@@ -101,7 +101,9 @@ runInNewContext(ts.transpileModule(`module.exports = (${callbackText});`, { comp
   workflowConfig: {}, ImageExactlyOnceError: exact.ImageExactlyOnceError, ImageRequestRejectedError: exact.ImageRequestRejectedError,
   AUTODL_H3_SELFHOST_PROVIDER: 'autodl_h3_selfhost', AUTODL_H3_IMAGE_MAX_BYTES: 1024, AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS: 1000,
   AUTODL_H3_IMAGE_CONTENT_TYPES: ['image/png'], TRUSTED_GENERATED_IMAGE_HOSTS: [], ratio: '1:1', effectiveResolution: '1K',
-  safeFetch: async () => { downloads++; return { buffer: Buffer.from('fixture-png'), contentType: 'image/png' }; },
+  deliveryOutputContract: () => ({ expectedPixelSize: '1024x1024', minimumDimensionScale: 1, aspectRatioTolerance: 0.025 }), exactCoverText: '',
+  safeFetch: async () => { throw Error('Direct safeFetch forbidden; use the bounded media-result mock'); },
+  readPublicImageResult: async () => { downloads++; return { buffer: Buffer.from('fixture-png'), contentType: 'image/png' }; },
   validateUploadBuffer: () => ({ contentType: 'image/png' }), expectedImagePixelSize: () => '1024x1024',
   prepareGeneratedImageBytes: async () => ({ dimensions: { width: 1024, height: 1024 } }),
   storageManager: { upload() { throw Error('Generated media upload forbidden'); } },
@@ -129,6 +131,7 @@ function inlineCallback() {
     decodeInlineImage: ephemeral.decodeInlineImage, createImageEphemeralDelivery: ephemeral.createImageEphemeralDelivery,
     validateUploadBuffer: uploadSecurity.validateUploadBuffer, parseImageDimensions: dimensions.parseImageDimensions,
     validateImageOutputContract: outputContract.validateImageOutputContract, AUTODL_H3_IMAGE_CONTENT_TYPES: ['image/png','image/jpeg','image/webp'],
+    deliveryOutputContract: () => ({ expectedPixelSize: '1024x1024', minimumDimensionScale: 1, aspectRatioTolerance: 0.025 }), exactCoverText: '',
     expectedImagePixelSize: () => '1024x1024', storageManager: { upload() { throw Error('Media upload forbidden'); } },
   });
   return module.exports;
@@ -179,7 +182,7 @@ runInNewContext(ts.transpileModule(responseBlock, { compilerOptions: { target: t
   NextResponse: { json: (body, init) => Response.json(body, init) }, recordRevenue: async () => { revenueCalls++; },
   userId: embedded.input.userId, effectiveMode: 'local', billingReferenceId: embedded.input.billingReferenceId, sellingPrice: 0.2,
   userRole: 'student', traceId: embedded.input.clientTraceId, h3OperationId: 'fixture-op', userVisibleModelLabel: 'Fixture', modelId: 'pm_fixture',
-  effectiveResolution: '1K', outputPixelSize: '1024x1024', IMAGE_FIXED_OUTPUT_COUNT: 1, providerProtocol: 'images_generations', generationFingerprint: 'a'.repeat(64),
+  effectiveResolution: '1K', outputPixelSize: '1024x1024', deliveryOutputMetadata: () => ({ deliveryExpectedPixelSize: '1024x1024', minimumOutputWidth: 1024, minimumOutputHeight: 1024, outputPolicyVersion: 'image-output-policy-v2' }), IMAGE_FIXED_OUTPUT_COUNT: 1, providerProtocol: 'images_generations', generationFingerprint: 'a'.repeat(64),
 });
 const originalHttp = await httpModule.exports(inlineFirst);
 assert.match(originalHttp.headers.get('cache-control'), /no-store/u);
@@ -241,7 +244,7 @@ runInNewContext(ts.transpileModule(`module.exports=(${callbackText});`,{compiler
   imageExactlyOnceStore:new exact.DatabaseImageExactlyOnceStore(),userId:held.input.userId,
   resolveAutodlH3SelfhostResultUrl:selfhost.resolveAutodlH3SelfhostResultUrl,readAutodlH3SelfhostResult:selfhost.readAutodlH3SelfhostResult,
   resolveProviderSecret:ref=>{assert.equal(ref,selfhost.AUTODL_H3_SELFHOST_SECRET_REF);secretReads++;return 'fixture-gateway-key';},
-  validateUploadBuffer:uploadSecurity.validateUploadBuffer,expectedImagePixelSize:()=> '1024x1024',ratio:'1:1',effectiveResolution:'1K',
+  validateUploadBuffer:uploadSecurity.validateUploadBuffer,expectedImagePixelSize:()=> '1024x1024',deliveryOutputContract:()=>({expectedPixelSize:'1024x1024',minimumDimensionScale:1,aspectRatioTolerance:0.025}),exactCoverText:'',ratio:'1:1',effectiveResolution:'1K',
   prepareGeneratedImageBytes:async ({buffer})=>{assert.equal(buffer.equals(png),true);return {buffer,dimensions:{width:1024,height:1024}};},
 });
 const heldContext={recordId:acquiredHeld.recordId,payloadFingerprint:acquiredHeld.payloadFingerprint,persistenceAttemptId:lease};

@@ -121,7 +121,9 @@ async function verifySourceContracts() {
     "浏览器视频副本",
   ]) assert(!page.includes(forbidden), `media history page still exposes local cache: ${forbidden}`);
 
-  assert(page.includes("图片和普通视频随上游资源有效期提供预览与下载，确认失效后自动移出历史，不在平台备份"));
+  assert(page.includes("图片和普通视频随上游资源有效期提供预览与下载"));
+  assert(page.includes("确认失效后自动移出历史"));
+  assert(page.includes("不在平台备份"));
   assert(provenance.includes("delivery_asset_id,client_idempotency_key,request_snapshot"));
   assert(provenance.includes("origins.set"));
   assert(route.includes("mediaHistoryProjectUuid(row.batch_id)"));

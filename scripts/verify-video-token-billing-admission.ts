@@ -23,7 +23,11 @@ for (const config of [
 
 const explicitlyReady = videoBillingAdapterAdmission({
   provider_billing_unit: "token",
+  billing_unit: "token",
   token_billing_adapter_ready: true,
+  token_billing_adapter_version: "video_token_quote.v1",
+  token_sale_prices_per_million: { "720p:no_reference_video": 12, "720p:reference_video": 8 },
+  token_cost_prices_per_million: { "720p:no_reference_video": 10, "720p:reference_video": 6 },
   public_billing_pending: false,
 });
 assert.equal(explicitlyReady.ready, true);

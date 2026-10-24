@@ -7,6 +7,7 @@ import { cn, copyToClipboard, extractPureText } from "@/lib/utils";
 import { renderMarkdown, renderStreamingText, clearStreamingCache } from "@/lib/markdown-renderer";
 import { renderTextWithCodeBlocks } from "@/components/chat/render-helpers";
 import morphdom from "morphdom";
+import { hasStoryboardPromptPushCapability } from "@/lib/storyboard-prompt-push-capability";
 import type { OutputStyle } from "@/types/coze";
 import { dispatchVideoTaskTransfer, makeVideoTaskTransferPayload } from "@/lib/video-task-transfer";
 import {
@@ -29,6 +30,16 @@ function appendStreamingCaret(html: string, caretId: string): string {
   return insertionIndex >= 0
     ? `${html.slice(0, insertionIndex)}${caret}${html.slice(insertionIndex)}`
     : `${html}${caret}`;
+}
+
+/** Remove remaining transport comments, then hold only a trailing possible marker prefix. */
+export function hideStoryboardStreamingTransport(text: string): string {
+  const visible = text.replace(/<!--\s*storyboard_director_(?:output|assets|plan):v1\b[\s\S]*?(?:-->|$)/giu, "");
+  const start = visible.lastIndexOf("<");
+  if (start < 0) return visible;
+  const tail = visible.slice(start).replace(/^<!--\s*/u, "<!--").toLowerCase();
+  const markers = ["<!--storyboard_director_output:v1", "<!--storyboard_director_assets:v1", "<!--storyboard_director_plan:v1"];
+  return markers.some(marker => marker.startsWith(tail)) ? visible.slice(0, start).trimEnd() : visible;
 }
 
 /**
@@ -88,9 +99,10 @@ function ObjectStorageImage({ storageKey, index }: { storageKey: string; index: 
   );
 }
 
-function PromptBlock({ text, label, allMessages }: { text: string; label?: string; allMessages?: Message[] }) {
+function PromptBlock({ text, label, allMessages, agentId, outputStyle }: { text: string; label?: string; allMessages?: Message[]; agentId?: string; outputStyle?: OutputStyle }) {
   const [collapsed, setCollapsed] = useState(true);
   const [copied, setCopied] = useState(false);
+  const hasStoryboardPromptPush = hasStoryboardPromptPushCapability(agentId, outputStyle);
   const lineCount = text.split('\n').length;
   const isLong = lineCount > 20;
 
@@ -139,13 +151,13 @@ function PromptBlock({ text, label, allMessages }: { text: string; label?: strin
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <button
+          {!hasStoryboardPromptPush && <button
             onClick={handlePushToVideo}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-[var(--text-secondary)] hover:bg-[var(--muted)] transition-colors"
             title="推送提示词至视频生成平台"
           >
             <Film className="w-3 h-3" /> 推送至视频
-          </button>
+          </button>}
           <button
             onClick={handleCopy}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
@@ -188,7 +200,7 @@ function PromptBlock({ text, label, allMessages }: { text: string; label?: strin
 }
 
 /** Generic code block with copy button */
-function CodeBlockWithCopy({ text, language, children: highlightedChildren }: { text: string; language?: string; children?: React.ReactNode }) {
+function CodeBlockWithCopy({ text, language, children: highlightedChildren, agentId, outputStyle }: { text: string; language?: string; children?: React.ReactNode; agentId?: string; outputStyle?: OutputStyle }) {
   const [copied, setCopied] = useState(false);
   const [hovering, setHovering] = useState(false);
   const lineCount = text.split('\n').length;
@@ -197,7 +209,7 @@ function CodeBlockWithCopy({ text, language, children: highlightedChildren }: { 
   const isLongPrompt = isPromptLang && text.length > 200 && !hasCodeSyntax;
 
   if (isLongPrompt) {
-    return <PromptBlock text={text} label="提示词" />;
+    return <PromptBlock text={text} label="提示词" agentId={agentId} outputStyle={outputStyle} />;
   }
 
   const handleCopy = async () => {
@@ -364,13 +376,13 @@ function ThinkingIndicator() {
 }
 
 /** Streaming content wrapper — handles thinking→content transition */
-function StreamingContentWrapper({ text, messageId, isUser, outputStyle, fontSize, isStreaming, hasReasoning, responseFormat }: {
-  text: string; messageId?: string; isUser: boolean; outputStyle?: OutputStyle; fontSize?: number; isStreaming?: boolean; hasReasoning?: boolean; responseFormat?: string
+function StreamingContentWrapper({ text, messageId, isUser, outputStyle, fontSize, isStreaming, hasReasoning, responseFormat, agentId }: {
+  text: string; messageId?: string; isUser: boolean; outputStyle?: OutputStyle; fontSize?: number; isStreaming?: boolean; hasReasoning?: boolean; responseFormat?: string; agentId?: string
 }) {
   if (isStreaming && !text && !hasReasoning) {
     return <ThinkingIndicator />;
   }
-  return <MessageContent text={text} messageId={messageId} isUser={isUser} outputStyle={outputStyle} fontSize={fontSize} isStreaming={isStreaming} responseFormat={responseFormat} />;
+  return <MessageContent text={text} messageId={messageId} isUser={isUser} outputStyle={outputStyle} fontSize={fontSize} isStreaming={isStreaming} responseFormat={responseFormat} agentId={agentId} />;
 }
 
 // ======================== 核心渲染组件 ========================
@@ -540,7 +552,7 @@ function UserTextSegment({ text }: { text: string }) {
 }
 
 /** Core message content renderer — dual-path streaming/non-streaming */
-const MessageContent = React.memo(function MessageContent({ text, messageId, isUser, outputStyle, fontSize, isStreaming, responseFormat }: { text: string; messageId?: string; isUser: boolean; outputStyle?: OutputStyle; fontSize?: number; isStreaming?: boolean; responseFormat?: string }) {
+const MessageContent = React.memo(function MessageContent({ text, messageId, isUser, outputStyle, fontSize, isStreaming, responseFormat, agentId }: { text: string; messageId?: string; isUser: boolean; outputStyle?: OutputStyle; fontSize?: number; isStreaming?: boolean; responseFormat?: string; agentId?: string }) {
   const fallbackStreamingRenderKey = React.useId();
   // messageId is timestamp-based for newly-created local messages, so combine
   // it with React's per-mount ID to remain unique across concurrent chats.
@@ -565,11 +577,12 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
 
   const isPlainText = responseFormat === 'text';
   const structuredResult = useMemo(() => {
-    if (isUser || isStreaming) {
+    if (isUser) {
       return { status: "none", visible_text: processedText, errors: [] } as StructuredAgentOutputResult;
     }
-    return parseStructuredAgentOutput(processedText, true);
+    return parseStructuredAgentOutput(processedText, !isStreaming);
   }, [isUser, isStreaming, processedText]);
+  const streamingText = isUser ? processedText : hideStoryboardStreamingTransport(structuredResult.visible_text);
   useEffect(() => {
     if (!messageId || isUser || isStreaming || structuredResult.status !== "valid") return;
     publishStructuredAgentOutputOnce(messageId, structuredResult);
@@ -619,6 +632,9 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   // Non-streaming: extract images and process prompt blocks
   const imageUrls: string[] = [];
   const objKeys: string[] = [];
+  const renderStructuredStoryboardAsMarkdown = structuredResult.status === "valid"
+    && structuredResult.kind === "storyboard_director"
+    && structuredResult.source === "stable_json";
   let textWithoutImages = structuredResult.status === "valid" ? structuredResult.visible_text : processedText;
 
   if (!isStreaming) {
@@ -662,7 +678,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   const finalHtml = useMemo(() => {
     if (isStreaming) return '';
     try {
-      if (isPlainText && textWithoutImages) {
+      if (isPlainText && !renderStructuredStoryboardAsMarkdown && textWithoutImages) {
         return renderTextWithCodeBlocks(textWithoutImages);
       }
       return renderMarkdown(textWithoutImages);
@@ -670,7 +686,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
       // 降级：直接显示原始文本
       return `<p>${(textWithoutImages || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`;
     }
-  }, [isStreaming, textWithoutImages, isPlainText]);
+  }, [isStreaming, textWithoutImages, isPlainText, renderStructuredStoryboardAsMarkdown]);
 
   const shouldShowCopywritingCopy = !isUser && !isStreaming && isLikelyCopywriting(textWithoutImages, responseFormat);
 
@@ -698,13 +714,13 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
       // 未闭合代码块/文档块用骨架占位，闭合代码块走缓存。
       // 配合下方 morphdom 原地更新，稳定节点不再每帧重建，消除闪屏。
       streamingHtml = appendStreamingCaret(
-        renderStreamingText(processedText, streamingRenderKey),
+        renderStreamingText(streamingText, streamingRenderKey),
         streamingCaretId,
       );
     } catch {
       // 降级：渲染异常时保留可读文本。
       streamingHtml = appendStreamingCaret(
-        `<p>${processedText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`,
+        `<p>${streamingText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`,
         streamingCaretId,
       );
     }
@@ -720,6 +736,9 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   const firstPaintScheduledRef = useRef(false);
   const firstPaintRafRef = useRef<number | null>(null);
   const renderedHtml = isStreaming ? streamingHtml : finalHtml;
+  const hasStoryboardPromptPush = hasStoryboardPromptPushCapability(agentId, outputStyle);
+  const pendingStoryboardPushRef = useRef(hasStoryboardPromptPush);
+  const previousStoryboardPushRef = useRef(hasStoryboardPromptPush);
 
   // Keep one content-layer DOM root for the whole lifecycle. Streaming frames
   // and the final enhanced markdown both morph that root in place, so ending a
@@ -730,6 +749,11 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   // :last-child 淡入动画每帧重启，这就是文字闪屏的根因。
   useLayoutEffect(() => {
     if (!streamingLayerRef.current) return;
+    pendingStoryboardPushRef.current = hasStoryboardPromptPush;
+    if (previousStoryboardPushRef.current !== hasStoryboardPromptPush) {
+      previousStoryboardPushRef.current = hasStoryboardPromptPush;
+      prevMorphHtmlRef.current = "";
+    }
     pendingMorphHtmlRef.current = renderedHtml;
     if (prevMorphHtmlRef.current === renderedHtml) return;
 
@@ -739,7 +763,16 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
       const latestHtml = pendingMorphHtmlRef.current;
       if (!layer || prevMorphHtmlRef.current === latestHtml) return;
 
-      morphdom(layer, `<div class="render-layer">${latestHtml}</div>`, {
+      const target = layer.ownerDocument.createElement("div");
+      target.className = "render-layer";
+      target.innerHTML = latestHtml;
+      if (pendingStoryboardPushRef.current) {
+        // Remove only the renderer's known toolbar actions; retain copy and code text.
+        target.querySelectorAll(
+          ".code-block-wrapper .code-block-actions > button[data-video-task-send], .code-block-wrapper .code-block-actions > button[data-image-workbench-send]",
+        ).forEach(action => action.remove());
+      }
+      morphdom(layer, target, {
         childrenOnly: true,
         // 不使用 onBeforeElUpdated + isEqualNode：isEqualNode 会对每个元素做深度递归比较，
         // 在表格/代码块等大节点上开销极大，反而导致渲染延迟和闪屏。
@@ -782,7 +815,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
     } else if (morphTimerRef.current === null) {
       morphTimerRef.current = window.setTimeout(applyLatestMorph, remaining);
     }
-  }, [isStreaming, messageId, processedText, renderedHtml]);
+  }, [isStreaming, messageId, processedText, renderedHtml, hasStoryboardPromptPush]);
 
   // Timers are component resources; the morphed HTML state intentionally stays
   // intact across the streaming -> final transition.

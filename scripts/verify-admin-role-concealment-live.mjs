@@ -1356,7 +1356,7 @@ try {
     body: JSON.stringify({
       action: "permissions",
       userId: fixtureUserId,
-      permissionKeys: [...capabilityPermissions, "internal_tools.manage"],
+      permissionKeys: [...capabilityPermissions, "admin.accounts.manage"],
       isActive: true,
       expectedRevision: capabilityRevision,
       reason: "本地岗位权限隐藏验收：所有者权限不可委派",

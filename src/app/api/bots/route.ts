@@ -9,12 +9,13 @@ import {
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
+import { publicStoryboardDirectorOutputStyle } from "@/lib/storyboard-director-public-output-style";
 
 type AgentRecord = Record<string, unknown>;
 type CategoryRecord = { id: string; name: string; visibility?: string | null; is_active?: boolean | null };
 
 const AGENT_SELECT =
-  "id,name,description,avatar,source,bot_id,model,category,sort_order,cost_per_message,base_fee,is_active,preset_fields,user_access,model_id,cover_url,enable_think_tags,deep_thinking_type,enable_web_search,guide_message,response_format,token_billing_enabled";
+  "id,name,description,avatar,source,bot_id,model,category,sort_order,cost_per_message,base_fee,is_active,preset_fields,user_access,model_id,cover_url,enable_think_tags,deep_thinking_type,enable_web_search,guide_message,response_format,token_billing_enabled,output_style";
 
 async function getData() {
   try {
@@ -40,6 +41,7 @@ async function getData() {
 }
 
 function formatAgent(agent: AgentRecord) {
+  const outputStyle = publicStoryboardDirectorOutputStyle(agent.id, agent.output_style);
   return {
     id: agent.id,
     name: agent.name,
@@ -66,6 +68,7 @@ function formatAgent(agent: AgentRecord) {
     token_billing_enabled: !!agent.token_billing_enabled,
     deleted_at: agent.deleted_at || null,
     model_billing: null,
+    ...(outputStyle ? { output_style: outputStyle } : {}),
   };
 }
 
