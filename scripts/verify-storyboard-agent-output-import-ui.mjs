@@ -35,7 +35,7 @@ const machinePayload = {
     animation_style: "电影级高能3D动画喜剧",
     aspect_ratio: "16:9",
     target_duration_seconds: 10,
-    special_notes: "无对白口型；人物、宠物、服装与环境连续。",
+    special_notes: "仅保留环境声；无对白口型；人物、宠物、服装与环境连续。",
   },
   segments: [1, 2].map((sourceIndex) => ({
     segment_id: `segment_${String(sourceIndex).padStart(3, "0")}`,
@@ -70,20 +70,28 @@ const handoff = {
     commit_key: "fixture-commit-import",
     schema_version: "storyboard_director_output.v1",
     source: "stable_json",
+    expected_input: machinePayload.input,
     segments: [],
     machine_payload: machinePayload,
   },
 };
+const fixtureToken = `fixture.${Buffer.from(JSON.stringify({
+  userId: "storyboard-browser-fixture-user",
+  exp: Math.floor(Date.now() / 1000) + 3_600,
+})).toString("base64url")}.signature`;
 await mkdir(outputDir, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseUrl });
 const page = await context.newPage();
-const fixture = await installStoryboardBrowserFixture(page, { origin: baseUrl });
-await page.addInitScript(({ value }) => {
-  sessionStorage.setItem("agent_workbench_handoff_v1:storyboard-workbench:user:storyboard-browser-fixture-user", JSON.stringify(value));
-}, { value: handoff });
+// The fresh browser context is already empty. Keep the fixture's init script
+// from clearing the handoff envelope that the next init script installs.
+const fixture = await installStoryboardBrowserFixture(page, { origin: baseUrl, resetStorage: false });
+await page.addInitScript(({ value, token, handoffId }) => {
+  localStorage.setItem("auth_token", token);
+  localStorage.setItem(`agent_workbench_handoff_v1:storyboard-workbench:${handoffId}:user:storyboard-browser-fixture-user`, JSON.stringify(value));
+}, { value: handoff, token: fixtureToken, handoffId: handoff.handoff_id });
 await page.route("**/api/cover-models**", (route) => route.fulfill({
   status: 200,
   contentType: "application/json",
@@ -94,33 +102,41 @@ await page.route("**/api/video/models**", (route) => route.fulfill({
   contentType: "application/json",
   body: JSON.stringify({ models: [] }),
 }));
-await page.goto(`${baseUrl}/storyboard-workbench?entry=agent&handoff=storyboard`, { waitUntil: "domcontentloaded" });
-try {
-  await page.getByTestId("agent-storyboard-handoff-confirm").waitFor({ timeout: 30_000 });
-} catch (error) {
-  console.error(JSON.stringify({ url: page.url(), text: (await page.locator("body").innerText()).slice(0, 1200) }));
-  throw error;
-}
-await page.getByTestId("agent-storyboard-handoff-confirm").click();
-await page.locator(".sbw-notice").filter({ hasText: "已导入 2 个 Agent 分镜段" }).waitFor();
+await page.goto(`${baseUrl}/robots.txt`, { waitUntil: "domcontentloaded" });
+await page.evaluate(({ value, token, handoffId }) => {
+  // Init-script order is intentionally unspecified across Playwright/browser
+  // versions. Re-assert the final authenticated identity and handoff after the
+  // fixture's own bootstrap so the test exercises the real reader contract.
+  localStorage.setItem("auth_token", token);
+  localStorage.setItem(`agent_workbench_handoff_v1:storyboard-workbench:${handoffId}:user:storyboard-browser-fixture-user`, JSON.stringify(value));
+}, { value: handoff, token: fixtureToken, handoffId: handoff.handoff_id });
+await page.goto(`${baseUrl}/storyboard-workbench?entry=agent&handoff=storyboard&autoImport=1&handoffId=${encodeURIComponent(handoff.handoff_id)}`, { waitUntil: "domcontentloaded" });
+// The production new-window URL carries autoImport=1. The workbench confirms
+// the handoff after its durable project lookup/save gate, then replaces the
+// URL with the explicit project id. Wait for the resulting cards rather than
+// racing the transient confirmation button during that remount.
+await page.waitForFunction(() => (
+  document.querySelectorAll(".sbw-shot-card").length === 2
+  && new URLSearchParams(window.location.search).has("projectId")
+), undefined, { timeout: 30_000 });
 
 const cards = page.locator(".sbw-shot-card");
 assert.equal(await cards.count(), 2, "整段导入没有自动建立两张卡");
 assert.equal(await cards.nth(0).locator("textarea").count(), 2, "卡片仍显示了分段口播输入框");
 assert.equal(await cards.nth(1).locator("textarea").count(), 2, "第二张卡的输入区数量不正确");
 assert.equal(await page.getByText("分段口播", { exact: true }).count(), 0, "分段口播仍占用工作台界面");
-assert.equal(await cards.nth(0).locator(".sbw-card-title strong").textContent(), "任务 1");
-assert.equal(await cards.nth(1).locator(".sbw-card-title strong").textContent(), "任务 2");
+assert.equal(await cards.nth(0).locator(".sbw-card-title strong").textContent(), "分段 1");
+assert.equal(await cards.nth(1).locator(".sbw-card-title strong").textContent(), "分段 2");
 
-assert.equal(fixture.projectWrites.length, 0, "仅确认导入不应自动创建账户工程或调用模型");
-assert.match(await cards.nth(0).getByRole("textbox", { name: "镜头1生图提示词" }).inputValue(), /^一张16:9/u);
-assert.match(await cards.nth(0).getByRole("textbox", { name: "镜头1视频提示词" }).inputValue(), /^读取完整四宫格故事板/u);
+assert.equal(fixture.projectWrites.length, 1, "交接导入必须先完成一次账户工程保存，再允许继续操作");
+assert.match(await cards.nth(0).getByRole("textbox", { name: "分段1生图提示词" }).inputValue(), /^一张16:9/u);
+assert.match(await cards.nth(0).getByRole("textbox", { name: "分段1视频提示词" }).inputValue(), /^读取完整四宫格故事板/u);
 
 await page.screenshot({ path: path.join(outputDir, "desktop.png"), fullPage: true });
 
-const firstImagePrompt = await cards.nth(0).getByRole("textbox", { name: "镜头1生图提示词" }).inputValue();
+const firstImagePrompt = await cards.nth(0).getByRole("textbox", { name: "分段1生图提示词" }).inputValue();
 assert.equal(await cards.count(), 2, "机器包导入没有建立两张镜头卡");
-assert.equal(await cards.nth(0).getByRole("textbox", { name: "镜头1生图提示词" }).inputValue(), firstImagePrompt, "刷新后不应改写已有 Prompt");
+assert.equal(await cards.nth(0).getByRole("textbox", { name: "分段1生图提示词" }).inputValue(), firstImagePrompt, "刷新后不应改写已有 Prompt");
 await writeFile(path.join(outputDir, "result.json"), JSON.stringify({
   passed: true,
   cardCount: 2,

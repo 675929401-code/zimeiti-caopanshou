@@ -311,14 +311,29 @@ async function focusWithKeyboard(page, locator) {
   for (let attempt = 0; attempt < 24 && fixture.latestDocument()?.cards?.length !== 5; attempt += 1) await page.waitForTimeout(500);
   assert.equal(fixture.latestDocument()?.cards?.length, 5, "新增分段卡尚未完成持久化，刷新前不能宣称已保存");
 
-  await page.reload({ waitUntil: "domcontentloaded" });
+  // The role-reference workflow may leave an explicit ?projectId=... URL so
+  // that a deliberate refresh can restore the selected project. Navigate to
+  // the ordinary entry before asserting its fresh three-card contract.
+  await page.goto(`${baseUrl}/storyboard-workbench`, { waitUntil: "domcontentloaded" });
+  await page.locator(".sbw-shot-card").first().waitFor({ timeout: 30_000 });
+  // A plain refresh is a new blank workspace. Previously the recovery bridge
+  // picked the last submitted/failed task and made it look like a new push.
+  assert.equal(await page.locator(".sbw-shot-card").count(), 3, "普通入口刷新后必须回到3张空白分段卡");
+  const refreshedBlank = page.locator(".sbw-shot-card").first().locator("textarea");
+  assert.equal(await refreshedBlank.nth(0).inputValue(), "", "普通入口刷新后不应恢复旧生图Prompt");
+  assert.equal(await refreshedBlank.nth(1).inputValue(), "", "普通入口刷新后不应恢复旧视频Prompt");
+
+  // Explicit history/project navigation remains the supported restore path.
+  const savedProjectId = fixture.latestDocument().id;
+  await page.goto(`${baseUrl}/storyboard-workbench?projectId=${encodeURIComponent(savedProjectId)}`, { waitUntil: "domcontentloaded" });
   await page.locator(".sbw-shot-card").first().waitFor({ timeout: 30_000 });
   await page.getByRole("textbox", { name: "分段1生图提示词", exact: true }).waitFor({ timeout: 30_000 });
-  assert.equal(await page.locator(".sbw-shot-card").count(), 5, "刷新后工作台没有保持角色参考/普通模式新增的分段卡");
+  assert.equal(await page.locator(".sbw-shot-card").count(), 5, "显式项目入口没有恢复已保存分段卡");
   const restored = page.locator(".sbw-shot-card").first().locator("textarea");
-  assert.equal(await restored.nth(0).inputValue(), source.imagePrompt, "刷新后未恢复已保存生图Prompt");
-  assert.equal(await restored.nth(1).inputValue(), source.videoPrompt, "刷新后未恢复已保存视频Prompt");
-  assert.equal(fixture.latestDocument().visualAssetPlan.mode, "off", "刷新改变了已保存普通模式");
+  assert.equal(await restored.nth(0).inputValue(), source.imagePrompt, "显式项目入口未恢复已保存生图Prompt");
+  assert.equal(await restored.nth(1).inputValue(), source.videoPrompt, "显式项目入口未恢复已保存视频Prompt");
+  assert.ok(fixture.projectReads.some(read => read.id === savedProjectId), "显式项目入口没有读取指定项目");
+  assert.equal(fixture.latestDocument().visualAssetPlan.mode, "off", "显式项目恢复改变了已保存普通模式");
 
   const grid = await page.locator(".sbw-shot-grid").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length);
   const metrics = await page.evaluate(() => {

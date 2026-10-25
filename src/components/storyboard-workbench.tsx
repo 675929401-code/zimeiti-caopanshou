@@ -1804,8 +1804,22 @@ function UserStoryboardWorkbench({
         try { clearStoryboardWorkspaceRecovery(sessionStorage, key, [...discardedRecoveryRunIdsRef.current]); }
         catch { setNotice("当前工作区已清空；浏览器暂存未能完全移除，普通入口不会恢复旧内容。"); }
       }
-      // A plain entry never chooses a historical project from browser storage.
+      // A plain entry is intentionally a new blank workspace. Recovery is only
+      // a bridge for an explicit project URL; otherwise an old failed task or
+      // a previous browser draft must never reappear after refresh. History is
+      // still available through the dedicated history surface and an explicit
+      // ?projectId=... URL.
       if (!initialProjectIdRef.current || workspaceGeneration !== workspaceGenerationRef.current) {
+        try {
+          const primary = readStoryboardRecovery(sessionStorage, key);
+          const sidecars = readStoryboardRecoveryConflicts(sessionStorage, key);
+          const runIds = [...new Set([
+            primary?.run && typeof primary.run.id === "string" ? primary.run.id : "",
+            ...sidecars.map(item => item.run && typeof item.run.id === "string" ? item.run.id : ""),
+          ].filter(Boolean))];
+          if (runIds.length) clearStoryboardWorkspaceRecovery(sessionStorage, key, runIds);
+          else sessionStorage.removeItem(`${key}:conflict-index`);
+        } catch { /* A blank workspace is still safe when browser storage is unavailable. */ }
         setRecoveryReadReady(true);
         setStorageReady(true);
         contextReadyRef.current = true;
@@ -4082,7 +4096,7 @@ function UserStoryboardWorkbench({
     const isCurrentImport = () => scopeMountedRef.current && imageDownloadOwnerRef.current === ownerAtStart
       && workspaceGeneration === workspaceGenerationRef.current;
     try {
-    const projectId = await storyboardAgentImportProjectId(userId, handoff.payload);
+    const projectId = await storyboardAgentImportProjectId(userId, handoff.handoff_id, handoff.payload);
     if (!isCurrentImport()) return;
     if (runRef.current.id === projectId) {
       if (!await saveStoryboardProject(createStoryboardPersistenceSnapshot(runRef.current), true)) throw new Error("同一交接的项目保存未确认，当前草稿保留；请核对原项目，不会另建副本。");

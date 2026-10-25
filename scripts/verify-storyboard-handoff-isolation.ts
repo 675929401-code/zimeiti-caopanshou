@@ -78,7 +78,7 @@ test("A and B keep distinct slots and can arrive in either order", () => {
   assert.ok(acknowledgeAgentWorkbenchHandoff(target, first.handoff_id, storage), "ACK retry is idempotent");
 });
 
-test("same content repeated clicks have unique delivery IDs but stable project identity", () => {
+test("same content repeated clicks have unique delivery IDs", () => {
   const first = createAgentWorkbenchHandoff(detail("A"), target, now)!;
   const second = createAgentWorkbenchHandoff(detail("A"), target, now)!;
   assert.notEqual(first.handoff_id, second.handoff_id);

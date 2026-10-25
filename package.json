@@ -43,6 +43,7 @@
     "verify:commerce-depth-clone": "node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-commerce-depth-quote-contract.ts",
     "verify:storyboard-video-sync": "node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-storyboard-video-prompt-sync.ts",
     "verify:storyboard-import": "node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-storyboard-agent-output-import.ts",
+    "verify:storyboard-agent-import-target": "node ./scripts/run-node-maintenance-tsx.mjs ./scripts/verify-storyboard-agent-import-target.ts",
     "verify:extraction-ui-zero-cost": "node ./scripts/verify-extraction-ui-zero-cost.mjs",
     "verify:extraction-ui-zero-cost:source": "node ./scripts/verify-extraction-ui-zero-cost.mjs --source-only",
     "verify:local-experience-demo": "node ./scripts/verify-local-experience-demo-live.mjs",
