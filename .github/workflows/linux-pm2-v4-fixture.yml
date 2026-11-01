@@ -1,0 +1,49 @@
+name: Isolated Linux PM2 v4 identity fixture
+on:
+  push:
+    branches: [test/linux-pm2-v4-61e9-20261102]
+    paths: [.github/workflows/linux-pm2-v4-fixture.yml, .codex-linux-pm2-v4-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-pm2-v4-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify frozen inputs and exercise isolated kernel fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-linux-pm2-v4-fixture
+          test "$(find "$root" -type f | wc -l)" = 8
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 1
+          printf '%s\n' \
+            '3d57a641f374d77f6b7a76f5b1d07b2db15afa634edabcfa4b2b9f6b3fa74b32  .codex-linux-pm2-v4-fixture/linux-stage-engine-vnext.mjs' \
+            'cd45f666c5c780c77271bad297deeba3b3ae461eaec9ea7b56d30a1ef349926d  .codex-linux-pm2-v4-fixture/linux-journal-owned-vnext.mjs' \
+            '06a7aadaf52bc5c9ab1123172ad759d22a1233fd58ba1c36e7dc77574edf0cd9  .codex-linux-pm2-v4-fixture/hook-adoption-vnext.mjs' \
+            '66296e2e90fc63cb2bfc89c19ef33e5aa285190a90bbbf5feb0d533e9eec91c5  .codex-linux-pm2-v4-fixture/private-worker-owner-node.mjs' \
+            'f7e909a8b65133e23f0f27329b5c7b965276345c7522b971030bf511947b0552  .codex-linux-pm2-v4-fixture/journal-owner-child.py' \
+            'efbd418d4f4b90ac5c94537de97f2e75af7d337e3be6da99f1c3bb995563b041  .codex-linux-pm2-v4-fixture/current_identity.py' \
+            '005d2d2bb347831083fc51ffcc3f57c2d6236eb191dea441c979a9ebcd70263d  .codex-linux-pm2-v4-fixture/fixture-child.py' \
+            'e3d1689ed6edab9a20e78ddf2b3b7ece12c23c2da53e2f0d731afd1f8087e665  .codex-linux-pm2-v4-fixture/fixture-test.mjs' \
+            | sha256sum --check --strict
+          node_bin="$(command -v node)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 45s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C PM2_FIXTURE_ONLY=github-isolated-v1 \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 35s "$node_bin" "$root/fixture-test.mjs"
