@@ -1,0 +1,42 @@
+name: Isolated PM2 socket permission kernel fixture 61e9
+
+# Synthetic only; no PR, dispatch, release, artifact or deployment trigger.
+on:
+  push:
+    branches:
+      - test/linux-pm2-socket-isolation-61e9-20261101
+    paths:
+      - .github/workflows/linux-pm2-socket-isolation-61e9.yml
+      - scripts/fixtures/linux-pm2-socket-isolation-61e9/test_linux_synthetic.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-pm2-socket-isolation-61e9-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  socket-isolation-fixture:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/test/linux-pm2-socket-isolation-61e9-20261101'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout exact test commit without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify fixed synthetic fixture and run without external network
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '75481f35e3d12f1d51dc85e12b0701a78e7a0d26a485874c7dc18a67783fd786  scripts/fixtures/linux-pm2-socket-isolation-61e9/test_linux_synthetic.py' | sha256sum --check --strict
+          sudo -n /usr/bin/unshare --net -- /usr/bin/env -i \
+            PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 45s \
+            /usr/bin/python3 -I -S -B \
+            scripts/fixtures/linux-pm2-socket-isolation-61e9/test_linux_synthetic.py
