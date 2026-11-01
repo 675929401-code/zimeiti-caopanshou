@@ -1,0 +1,47 @@
+name: Isolated Voice SQLite readonly kernel fixture 61e9
+
+on:
+  push:
+    branches:
+      - test/linux-voice-readonly-61e9-20261101
+    paths:
+      - .github/workflows/linux-voice-readonly-fixture-61e9.yml
+      - scripts/fixtures/voice-compatibility-61e9/**
+      - scripts/fixtures/worker-quiescence-plan-61e9/observation/commerce-detail/probe.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-voice-readonly-fixture-61e9-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-kernel-fixture:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/test/linux-voice-readonly-61e9-20261101'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout the exact isolated test commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify fixed fixture inputs and isolate its network
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'fc42cd8294fe972b9a98dc1c046012d1a30c8c3333eb3bfaa4a2addbd8568e1d  scripts/fixtures/voice-compatibility-61e9/probe.py' \
+            '427139b83268880d6c08ecfa23d1c7a0c0b541d63619e0db64ba8bf3128c029c  scripts/fixtures/voice-compatibility-61e9/voice-schema-contract.json' \
+            'a927db616e2790269337586a402837901c64d17a490141cd0ecc0f226d0c158d  scripts/fixtures/worker-quiescence-plan-61e9/observation/commerce-detail/probe.py' \
+            'fa91d491f0cff2b00c3a990602727add7d15fc3a5759ce7f6f1a4dd1dbd24240  scripts/fixtures/voice-compatibility-61e9/linux-fixture/test_linux_voice.py' \
+            | sha256sum --check --strict
+          sudo -n /usr/bin/unshare --net -- /usr/bin/env -i \
+            PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=10s 120s \
+            /usr/bin/python3 -I -S -B \
+            scripts/fixtures/voice-compatibility-61e9/linux-fixture/test_linux_voice.py
