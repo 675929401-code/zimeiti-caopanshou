@@ -114,6 +114,7 @@ const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/segmenter|/",
   "/storyboard-workbench|/",
   "/tools|/",
+  "/tools/utility|/",
   "/video|/",
   "/voice-studio/imitate|/voice-studio/imitate",
   "/voice-studio/imitate|/voice-studio/voices",
@@ -122,6 +123,7 @@ const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/voice-studio/workspace|/voice-studio/voices",
   "/voice-studio/workspace|/voice-studio/workspace",
   "/youcai/storyboard-workbench|/",
+  "/youcai/storyboard-workbench|/youcai",
   "/youcai/storyboard-workbench|/youcai/profile",
 ]);
 
@@ -891,6 +893,55 @@ function utilityRequestDiagnostics(requestUrl) {
   };
 }
 
+function isReviewedUtilityRscRequest(request, baseUrl) {
+  if (!baseUrl || request.method() !== "GET" || request.resourceType() !== "fetch") return false;
+  const headers = request.headers();
+  if (headers.rsc !== "1" || headers["next-router-prefetch"] !== undefined
+    || headers["next-router-segment-prefetch"] !== undefined || headers.purpose === "prefetch"
+    || String(headers["sec-purpose"] || "").split(/\s*;\s*/u).includes("prefetch")) return false;
+  try {
+    const url = new URL(request.url());
+    const params = url.searchParams;
+    const rsc = params.getAll("_rsc");
+    return url.origin === new URL(baseUrl).origin && url.pathname === "/tools/utility"
+      && params.getAll("tab").length === 1 && params.get("tab") === "text"
+      && rsc.length === 1 && /^[a-z0-9]{1,32}$/u.test(rsc[0])
+      && [...params.keys()].every((key) => key === "tab" || key === "_rsc");
+  } catch {
+    return false;
+  }
+}
+
+function reviewedUtilityRscIdentity(request, baseUrl) {
+  if (!isReviewedUtilityRscRequest(request, baseUrl)) return null;
+  const headers = request.headers();
+  const state = headers["next-router-state-tree"];
+  if (typeof state !== "string" || !state.trim() || state.length > 65_536) return null;
+  const routerHeaders = Object.entries(headers)
+    .filter(([name]) => name === "rsc" || name.startsWith("next-"))
+    .sort(([left], [right]) => left.localeCompare(right, "en"));
+  if (routerHeaders.length > 64 || routerHeaders.some(([, value]) => typeof value !== "string" || value.length > 65_536)) return null;
+  try {
+    // This identity is used only in memory. It must never enter the report.
+    return JSON.stringify([new URL(request.url()).href, routerHeaders]);
+  } catch {
+    return null;
+  }
+}
+
+function reviewedUtilityAbortSuperseded({ pending, completed, routeFailures, finalUrlMatches, toolVerified }) {
+  if (pending.length !== 1 || typeof pending[0].identity !== "string" || !pending[0].identity
+    || routeFailures.length || !finalUrlMatches || !toolVerified) return false;
+  return completed.some((receipt) => receipt.sequence > pending[0].sequence
+    && receipt.identity === pending[0].identity && receipt.status === 200 && receipt.contentType === "text/x-component");
+}
+
+function reviewedUtilityAbortEvidence(pending, receipt) {
+  return { ...pending.item, failedSequence: pending.sequence,
+    subsequentCompletedRsc: { sequence: receipt.sequence, status: receipt.status, contentType: receipt.contentType },
+    finalUrlMatches: true, toolVerified: true };
+}
+
 function resolveBrowserRouteTarget(route, serviceOrigins) {
   const reviewed = BROWSER_ROUTE_TARGETS[route] || { service: "web", expectedRoute: route };
   const baseUrl = serviceOrigins[reviewed.service];
@@ -969,6 +1020,7 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
   const requestFailures = [];
   const nonBlockingHttpErrors = [];
   const benignNavigationAborts = [];
+  const reviewedUtilityNavigationAborts = [];
   const requiredAssetResponses = [];
   try {
     for (const asset of requiredAssets) {
@@ -1010,8 +1062,25 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
       const startedAt = Date.now();
       const requestStartedAt = new WeakMap();
       let pagePhase = "navigating";
+      let requestSequence = 0;
+      let finalUrlMatches = false;
+      let toolVerified = false;
+      const utilityPendingAborts = [];
+      const utilityCompletedPromises = [];
       page.setDefaultTimeout(30_000);
       page.on("request", (request) => requestStartedAt.set(request, Date.now()));
+      page.on("requestfinished", (request) => {
+        if (route !== "/tools/utility" || pagePhase !== "checking") return;
+        const identity = reviewedUtilityRscIdentity(request, target.baseUrl);
+        if (!identity) return;
+        const sequence = ++requestSequence;
+        utilityCompletedPromises.push(request.response().then((response) => ({
+          sequence,
+          identity,
+          status: response?.status() ?? null,
+          contentType: String(response?.headers()["content-type"] || "").split(";", 1)[0].trim().toLowerCase(),
+        })).catch(() => ({ sequence, identity, status: null, contentType: "" })));
+      });
       page.on("console", (message) => {
         const text = message.text();
         // Chromium duplicates HTTP failures as URL-less console messages.
@@ -1059,9 +1128,13 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
           item.requestDurationMs = requestStartedAt.has(request) ? Date.now() - requestStartedAt.get(request) : null;
         }
         const benignNavigationKey = `${route}|${pathname}`;
+        const utilityIdentity = route === "/tools/utility" && pagePhase === "checking" && error === "net::ERR_ABORTED"
+          ? reviewedUtilityRscIdentity(request, target.baseUrl) : null;
         if (sameOrigin && item.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"
           && nextRouterPrefetch && BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)) {
           benignNavigationAborts.push(item);
+        } else if (utilityIdentity) {
+          utilityPendingAborts.push({ item, sequence: ++requestSequence, identity: utilityIdentity });
         } else {
           requestFailures.push(item);
         }
@@ -1107,10 +1180,12 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         if (!response || responseStatus >= 400) {
           routeFailures.push({ code: "BROWSER_DOCUMENT_HTTP_FAILED", detail: `${route}:${responseStatus ?? "no-response"}` });
         }
-        if (!matchesReviewedRoute(finalUrl, target.expectedUrl)) {
+        finalUrlMatches = matchesReviewedRoute(finalUrl, target.expectedUrl);
+        if (!finalUrlMatches) {
           routeFailures.push({ code: "BROWSER_ROUTE_REDIRECTED", detail: `${route}:${finalPath}${finalSearch}` });
         } else {
           await verifyReviewedTool(page, target.expectedTool);
+          if (route === "/tools/utility") toolVerified = target.expectedTool === "text";
           if (route === "/help") await verifyHelpCaptions(page);
         }
         const body = page.locator("body");
@@ -1152,12 +1227,23 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
       });
       pagePhase = "closing";
       await page.close();
+      if (utilityPendingAborts.length) {
+        const completed = await Promise.all(utilityCompletedPromises);
+        if (reviewedUtilityAbortSuperseded({ pending: utilityPendingAborts, completed, routeFailures, finalUrlMatches, toolVerified })) {
+          const receipt = completed.find((entry) => entry.sequence > utilityPendingAborts[0].sequence
+            && entry.identity === utilityPendingAborts[0].identity
+            && entry.status === 200 && entry.contentType === "text/x-component");
+          reviewedUtilityNavigationAborts.push(reviewedUtilityAbortEvidence(utilityPendingAborts[0], receipt));
+        } else {
+          requestFailures.push(...utilityPendingAborts.map(({ item }) => item));
+        }
+      }
     }
   } finally {
     await context.close();
     await browser.close();
   }
-  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors, benignNavigationAborts, requiredAssetResponses };
+  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors, benignNavigationAborts, reviewedUtilityNavigationAborts, requiredAssetResponses };
 }
 
 function runtimeIdentity(bundle, service) {
@@ -1451,6 +1537,7 @@ async function main() {
     requestFailures: browserReport.requestFailures,
     nonBlockingHttpErrors: browserReport.nonBlockingHttpErrors,
     benignNavigationAborts: browserReport.benignNavigationAborts,
+    reviewedUtilityNavigationAborts: browserReport.reviewedUtilityNavigationAborts,
     requiredAssetResponses: browserReport.requiredAssetResponses,
     assetFixture: {
       localOnly: true,
