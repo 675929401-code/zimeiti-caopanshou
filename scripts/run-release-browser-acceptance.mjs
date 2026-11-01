@@ -30,6 +30,46 @@ const CANDIDATE_BROWSER_ASSETS = Object.freeze([
     sha256: "bed09115f796eedc58bffe927694ebe9e679232db7338d94efe62b396bd930cf",
     contentType: "image/webp",
   }),
+  Object.freeze({
+    path: "public/product-assets/youcai-demo-v1/storyboard-modes/manifest.json",
+    fixturePath: "scripts/fixtures/release-browser-assets/storyboard-modes-manifest.json",
+    urlPath: "/product-assets/youcai-demo-v1/storyboard-modes/manifest.json",
+    bytes: 1_959,
+    sha256: "c100d5a99653260d3f123fc1459e44a5c494947ed6052040b2a60365df8f6863",
+    contentType: "application/json",
+  }),
+  Object.freeze({
+    path: "public/product-assets/youcai-demo-v1/storyboard-modes/exaggerated.webp",
+    fixturePath: "scripts/fixtures/release-browser-assets/storyboard-modes-exaggerated.webp",
+    urlPath: "/product-assets/youcai-demo-v1/storyboard-modes/exaggerated.webp",
+    bytes: 177_510,
+    sha256: "5576636e227ec31f3906f620ea69511cf1b3949e3f6b01818ce160835557e590",
+    contentType: "image/webp",
+  }),
+  Object.freeze({
+    path: "public/product-assets/youcai-demo-v1/storyboard-modes/cinematic.webp",
+    fixturePath: "scripts/fixtures/release-browser-assets/storyboard-modes-cinematic.webp",
+    urlPath: "/product-assets/youcai-demo-v1/storyboard-modes/cinematic.webp",
+    bytes: 143_796,
+    sha256: "ab7ce5863a05656c8e1df1dc3d0c0e72db1a939ed43883d0e07a630df7a3bc12",
+    contentType: "image/webp",
+  }),
+  Object.freeze({
+    path: "public/product-assets/youcai-demo-v1/storyboard-modes/lyrical.webp",
+    fixturePath: "scripts/fixtures/release-browser-assets/storyboard-modes-lyrical.webp",
+    urlPath: "/product-assets/youcai-demo-v1/storyboard-modes/lyrical.webp",
+    bytes: 128_510,
+    sha256: "9af142b4015c0145041c7e7dd3c79f726e3567b17efa8b33affb35fdf540269a",
+    contentType: "image/webp",
+  }),
+  Object.freeze({
+    path: "public/help/storyboard-video-case.zh-CN.vtt",
+    fixturePath: "scripts/fixtures/release-browser-assets/storyboard-video-captions.vtt",
+    urlPath: "/help/storyboard-video-case.zh-CN.vtt",
+    bytes: 147,
+    sha256: "c44f2c33a2bb064b7dc60e5ddda7db9a9f8d58182fbf46cced73bcda0861902c",
+    contentType: "text/vtt",
+  }),
 ]);
 // The release scope is shared by the Web and Voice candidates. Keep the
 // user-visible route identity in the signed evidence, while opening each route
@@ -38,7 +78,9 @@ const CANDIDATE_BROWSER_ASSETS = Object.freeze([
 const BROWSER_ROUTE_TARGETS = Object.freeze({
   "/admin": Object.freeze({ service: "web", expectedRoute: "/admin?tab=dashboard&view=overview" }),
   "/extract": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
+  "/segmenter": Object.freeze({ service: "web", expectedRoute: "/tools?tab=segment", expectedTool: "segment" }),
   "/tools": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
+  "/tools/utility": Object.freeze({ service: "web", expectedRoute: "/tools/utility?tab=text", expectedTool: "text" }),
   "/workspace": Object.freeze({
     service: "voice",
     navigationRoute: "/voice-platform/workspace",
@@ -64,13 +106,23 @@ const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/admin|/admin/extraction-reconciliation",
   "/cover|/",
   "/demo/popup-styles|/",
+  "/digital-human|/",
+  "/digital-human|/voice-studio/workspace",
   "/extract|/",
+  "/help|/",
+  "/help|/admin/help",
+  "/segmenter|/",
   "/storyboard-workbench|/",
   "/tools|/",
   "/video|/",
+  "/voice-studio/imitate|/voice-studio/imitate",
+  "/voice-studio/imitate|/voice-studio/voices",
+  "/voice-studio/imitate|/voice-studio/workspace",
   "/voice-studio/workspace|/voice-studio/imitate",
   "/voice-studio/workspace|/voice-studio/voices",
   "/voice-studio/workspace|/voice-studio/workspace",
+  "/youcai/storyboard-workbench|/",
+  "/youcai/storyboard-workbench|/youcai/profile",
 ]);
 
 function fail(code, detail = "") {
@@ -159,6 +211,80 @@ function sendJson(request, response, status, value, count = null) {
   response.end(request.method === "HEAD" ? undefined : body);
 }
 
+// Isolated browser fixture: these values are synthetic and do not represent the live DB.
+const VOICE_TASK_RPCS = Object.freeze([
+  'begin_voice_generation_atomic','finalize_voice_generation_atomic','refund_voice_generation_atomic',
+  'reserve_voice_training_authorization_atomic','release_voice_training_authorization_atomic',
+  'finalize_voice_training_authorization_atomic','claim_voice_training_provider_call_atomic',
+  'mark_voice_training_provider_attempt_atomic','release_voice_training_terminal_atomic',
+  'finalize_voice_training_ready_atomic','apply_wallet_operation_atomic',
+]);
+const VOICE_OPENAPI = Object.freeze({paths:Object.fromEntries(VOICE_TASK_RPCS.map((name)=>[`/rpc/${name}`,{post:{}}]))});
+
+// Object keys must use the same JS code-point sorting as stableJson() in the
+// real manju-runtime-config module, rather than Intl.Collator ordering.
+function manjuStableJson(value) {
+ if(value===null || typeof value!=='object') return JSON.stringify(value);
+ if(Array.isArray(value)) return `[${value.map(manjuStableJson).join(',')}]`;
+ return `{${Object.keys(value).sort().map((key)=>`${JSON.stringify(key)}:${manjuStableJson(value[key])}`).join(',')}}`;
+}
+const MANJU_PAYLOADS=Object.freeze({
+ content:{brand:'漫剧工作台',navigation:['/youcai/assets','/youcai/skills','/youcai/tools','/youcai/tools/text/text-chat','/youcai/tools/film-studio','/youcai/tools/canvas','/youcai/inspiration','/youcai/youcai-tv','/youcai/articles','/youcai/recharge','/youcai/referral'],account_route:'/youcai/profile'},
+ media:{accepted_types:['image','video','audio','music'],source:'personal-assets',require_owned_asset:true,require_persisted_result:true,allow_temporary_success:false,selection_routes_stay_in_manju:true,showcase_catalog:{v1:{inspiration:{overrides:{}},canvas_examples:{overrides:{}},banners:{overrides:{}},hero:{}}}},
+ feature_flags:{creative_agent:true,film_studio:true,canvas:true,inspiration:true,assets:true,general_script:true,drama_script:true,formal_drama:false,script_upload:true},
+});
+const sha=(value)=>crypto.createHash('sha256').update(value,'utf8').digest('hex');
+const domains=['content','media','feature_flags'];
+const at='2026-01-01T00:00:00.000Z';
+const MANJU_ROWS=Object.freeze(domains.map((domain,index)=>{
+ const payload=MANJU_PAYLOADS[domain];
+ const payload_hash=sha(manjuStableJson(payload));
+ const releaseId=`00000000-0000-4000-8000-00000000010${index+1}`;
+ const revisionId=`00000000-0000-4000-8000-00000000020${index+1}`;
+ const etag=`${payload_hash}:1`;
+ return Object.freeze({
+  state:{environment:'production',domain,state:'native',generation:1},
+  active:{environment:'production',domain,active_release_id:releaseId,active_revision_id:revisionId,etag},
+  release:{id:releaseId,environment:'production',domain,release_number:1,revision_id:revisionId,release_kind:'publish',etag},
+  revision:{id:revisionId,environment:'production',domain,version:1,status:'published',payload,payload_hash,schema_version:'1.1.0',published_at:at},
+ });
+}));
+const tables=Object.freeze({manju_config_storage_state:'state',manju_config_active:'active',manju_config_releases:'release',manju_config_revisions:'revision'});
+// Integrate after `isReadOnlyTableRequest` and before generic REST fallback.
+// Returning undefined means this helper has no opinion; matched routes are GET/HEAD only.
+function candidateFixtureResponse(method,url,objectResponse=false) {
+ if(method!=='GET' && method!=='HEAD') return undefined;
+ const {pathname,searchParams}=url;
+ if(pathname==='/rest/v1/') return {status:200,value:VOICE_OPENAPI,count:null};
+ const table=pathname.startsWith('/rest/v1/')?pathname.slice('/rest/v1/'.length):'';
+ const kind=tables[table];
+ if(kind){
+  let rows=MANJU_ROWS.map((row)=>row[kind]);
+  for(const [key,filter] of searchParams){
+   if(key==='select') {
+    if(filter.split(',').some((column)=>!Object.hasOwn(MANJU_ROWS[0][kind],column))) return {status:400,value:{code:'CANDIDATE_FIXTURE_UNKNOWN_COLUMN'},count:null};
+    continue;
+   }
+   if(key==='limit') {
+    if(!/^\d+$/.test(filter)) return {status:400,value:{code:'CANDIDATE_FIXTURE_UNSUPPORTED_FILTER'},count:null};
+    continue;
+   }
+   if(!Object.hasOwn(rows[0] || MANJU_ROWS[0][kind],key)) return {status:400,value:{code:'CANDIDATE_FIXTURE_UNKNOWN_COLUMN'},count:null};
+   if(filter.startsWith('eq.')) rows=rows.filter((row)=>String(row[key])===filter.slice(3));
+   else if(filter.startsWith('in.(') && filter.endsWith(')')){
+    const accepted=filter.slice(4,-1).split(',').map((part)=>part.replace(/^"|"$/g,''));
+    rows=rows.filter((row)=>accepted.includes(String(row[key])));
+   } else return {status:400,value:{code:'CANDIDATE_FIXTURE_UNSUPPORTED_FILTER'},count:null};
+  }
+  const limit=searchParams.get('limit');
+  if(limit!==null) rows=rows.slice(0,Number(limit));
+  if(objectResponse && rows.length!==1)return {status:406,value:{code:'PGRST116',details:`The result contains ${rows.length} rows`,message:'JSON object requested, multiple (or no) rows returned'},count:null};
+  return {status:200,value:objectResponse?rows[0]:rows,count:rows.length};
+ }
+ if(table==='voice_generation_requests'||table==='voice_training_authorization_jobs')return {status:200,value:[],count:0};
+ return undefined;
+}
+
 async function startCandidateDatabaseFixture(port) {
   const sessionId = `candidate-${crypto.randomUUID()}`;
   const admin = {
@@ -191,6 +317,11 @@ async function startCandidateDatabaseFixture(port) {
     };
     requests.push({ method: requestMethod, path: url.pathname });
     const objectResponse = String(request.headers.accept || "").includes("application/vnd.pgrst.object+json");
+    const fixtureResponse = candidateFixtureResponse(requestMethod, url, objectResponse);
+    if (fixtureResponse) {
+      sendJson(request, response, fixtureResponse.status, fixtureResponse.value, fixtureResponse.count);
+      return;
+    }
     if (url.pathname === "/rest/v1/users") {
       if (!isReadOnlyTableRequest) {
         rejectMethod("GET, HEAD");
@@ -473,7 +604,7 @@ function materializeCandidateBrowserAssets(checkoutRoot, publicRoot, candidatePu
   const fixtureRealRoot = fs.realpathSync(fixtureRootPath);
   for (const expected of CANDIDATE_BROWSER_ASSETS) {
     const logical = canonicalArtifactPath(expected.path);
-    if (logical !== expected.path || expected.fixturePath !== `${CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT}/portraits.webp`) {
+    if (logical !== expected.path || !expected.fixturePath.startsWith(`${CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT}/`) || !/^[a-z0-9-]+\.(?:webp|json|vtt)$/u.test(expected.fixturePath.slice(CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT.length + 1))) {
       fail("BROWSER_ASSET_MAPPING_INVALID", logical);
     }
     const entry = manifestEntries.get(logical);
@@ -492,7 +623,7 @@ function materializeCandidateBrowserAssets(checkoutRoot, publicRoot, candidatePu
     const sourceRelativeToCheckout = path.relative(checkoutRealRoot, sourceRealPath);
     const sourceRelativeToFixture = path.relative(fixtureRealRoot, sourceRealPath).split(path.sep).join("/");
     if (!sourceRelativeToCheckout || sourceRelativeToCheckout.startsWith(`..${path.sep}`)
-      || path.isAbsolute(sourceRelativeToCheckout) || sourceRelativeToFixture !== "portraits.webp"
+      || path.isAbsolute(sourceRelativeToCheckout) || sourceRelativeToFixture !== expected.fixturePath.slice(CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT.length + 1)
       || !sourceStats.isFile() || sourceStats.isSymbolicLink() || sourceStats.nlink !== 1 || sourceStats.size !== entry.bytes
       || sha256File(sourcePath) !== entry.sha256) fail("BROWSER_ASSET_SOURCE_MISMATCH", logical);
     const destinations = [
@@ -739,12 +870,25 @@ function routeFileName(route, index) {
 function cleanUrl(raw) {
   try {
     const parsed = new URL(raw);
+    parsed.username = "";
+    parsed.password = "";
     parsed.search = "";
     parsed.hash = "";
     return parsed.toString();
   } catch {
-    return String(raw).slice(0, 300);
+    return "[invalid URL]";
   }
+}
+
+function utilityRequestDiagnostics(requestUrl) {
+  const tabs = requestUrl.searchParams.getAll("tab");
+  const reviewedTabs = new Set(["text", "video", "segment", "format"]);
+  return {
+    pathname: "/tools/utility",
+    tab: tabs.length === 1 && reviewedTabs.has(tabs[0]) ? tabs[0] : null,
+    rscPresent: requestUrl.searchParams.has("_rsc"),
+    otherParametersPresent: [...requestUrl.searchParams.keys()].some((key) => key !== "tab" && key !== "_rsc"),
+  };
 }
 
 function resolveBrowserRouteTarget(route, serviceOrigins) {
@@ -755,7 +899,50 @@ function resolveBrowserRouteTarget(route, serviceOrigins) {
     baseUrl,
     navigationUrl: baseUrl ? new URL(reviewed.navigationRoute || route, baseUrl) : null,
     expectedUrl: baseUrl ? new URL(reviewed.expectedRoute, baseUrl) : null,
+    expectedTool: reviewed.expectedTool || null,
   };
+}
+
+function matchesReviewedRoute(actualUrl, expectedUrl) {
+  return actualUrl.origin === expectedUrl.origin
+    && actualUrl.pathname === expectedUrl.pathname
+    && actualUrl.search === expectedUrl.search;
+}
+
+// Only the two reviewed legacy/default entries below get a tool-specific
+// smoke check.  Filling a synthetic value exercises hydration and input state;
+// it does not submit a request or invoke a paid provider.
+async function verifyReviewedTool(page, expectedTool) {
+  if (!expectedTool) return;
+  const controls = {
+    segment: { root: '[data-page="tools"]', panel: "#tool-panel-segment", tab: "#tool-tab-segment", label: "需要分段的文案" },
+    text: { root: '[data-page="tools-utility"]', panel: "#toolbox-active-panel", tab: "#tool-tab-text", label: "文案分享文本或链接" },
+  }[expectedTool];
+  if (!controls) fail("BROWSER_TOOL_CONTRACT_INVALID");
+  const root = page.locator(controls.root);
+  const tab = root.locator(controls.tab);
+  const panel = root.locator(controls.panel);
+  await tab.waitFor({ state: "visible", timeout: 15_000 });
+  if (await tab.getAttribute("role") !== "tab" || await tab.getAttribute("aria-selected") !== "true") {
+    fail("BROWSER_TOOL_TAB_INVALID", expectedTool);
+  }
+  await panel.waitFor({ state: "visible", timeout: 15_000 });
+  const input = panel.getByRole("textbox", { name: controls.label, exact: true });
+  await input.fill("候选验收输入", { timeout: 15_000 });
+  await page.waitForTimeout(250);
+  if (await input.inputValue() !== "候选验收输入") fail("BROWSER_TOOL_INPUT_INVALID", expectedTool);
+  await input.fill("");
+  if (await input.inputValue() !== "") fail("BROWSER_TOOL_INPUT_CLEAR_FAILED", expectedTool);
+}
+
+async function verifyHelpCaptions(page) {
+  const track = page.locator('track[src="/help/storyboard-video-case.zh-CN.vtt"]');
+  if (await track.count() !== 1) fail("BROWSER_HELP_CAPTION_TRACK_MISSING");
+  await track.evaluate((element) => { element.track.mode = "hidden"; });
+  await page.waitForFunction(() => {
+    const element = document.querySelector('track[src="/help/storyboard-video-case.zh-CN.vtt"]');
+    return element?.readyState === 2 && element.track.cues && element.track.cues.length > 0;
+  }, null, { timeout: 15_000 });
 }
 
 async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, authToken, authUser, requiredAssets) {
@@ -820,7 +1007,11 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
       let title = "";
       let bodyText = "";
       let screenshot = "";
+      const startedAt = Date.now();
+      const requestStartedAt = new WeakMap();
+      let pagePhase = "navigating";
       page.setDefaultTimeout(30_000);
+      page.on("request", (request) => requestStartedAt.set(request, Date.now()));
       page.on("console", (message) => {
         const text = message.text();
         // Chromium duplicates HTTP failures as URL-less console messages.
@@ -841,10 +1032,14 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
           || String(requestHeaders["sec-purpose"] || "").split(/\s*;\s*/u).includes("prefetch");
         let sameOrigin = false;
         let pathname = "";
+        let utilityDiagnostics = null;
         try {
           const requestUrl = new URL(request.url());
           sameOrigin = Boolean(target.baseUrl) && requestUrl.origin === new URL(target.baseUrl).origin;
           pathname = requestUrl.pathname;
+          if (sameOrigin && route === "/tools/utility" && pathname === "/tools/utility") {
+            utilityDiagnostics = utilityRequestDiagnostics(requestUrl);
+          }
         } catch {
           sameOrigin = false;
         }
@@ -857,6 +1052,12 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
           url: cleanUrl(request.url()),
           error,
         };
+        if (utilityDiagnostics) {
+          item.utilityDiagnostics = utilityDiagnostics;
+          item.pagePhase = pagePhase;
+          item.elapsedMs = Date.now() - startedAt;
+          item.requestDurationMs = requestStartedAt.has(request) ? Date.now() - requestStartedAt.get(request) : null;
+        }
         const benignNavigationKey = `${route}|${pathname}`;
         if (sameOrigin && item.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"
           && nextRouterPrefetch && BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)) {
@@ -892,12 +1093,12 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         if (sameOrigin || ["document", "script", "stylesheet"].includes(request.resourceType())) requestFailures.push(item);
         else nonBlockingHttpErrors.push(item);
       });
-      const startedAt = Date.now();
       try {
         if (!target.navigationUrl || !target.expectedUrl) {
           fail("BROWSER_ROUTE_SERVICE_UNAVAILABLE", `${route}:${target.service}`);
         }
         const response = await page.goto(target.navigationUrl.toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+        pagePhase = "checking";
         responseStatus = response?.status() ?? null;
         await page.waitForTimeout(1_500);
         const finalUrl = new URL(page.url());
@@ -906,8 +1107,11 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         if (!response || responseStatus >= 400) {
           routeFailures.push({ code: "BROWSER_DOCUMENT_HTTP_FAILED", detail: `${route}:${responseStatus ?? "no-response"}` });
         }
-        if (finalPath !== target.expectedUrl.pathname || finalSearch !== target.expectedUrl.search) {
+        if (!matchesReviewedRoute(finalUrl, target.expectedUrl)) {
           routeFailures.push({ code: "BROWSER_ROUTE_REDIRECTED", detail: `${route}:${finalPath}${finalSearch}` });
+        } else {
+          await verifyReviewedTool(page, target.expectedTool);
+          if (route === "/help") await verifyHelpCaptions(page);
         }
         const body = page.locator("body");
         await body.waitFor({ state: "visible" });
@@ -946,6 +1150,7 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         screenshotSha256: screenshot ? sha256File(screenshot) : null,
         failures: routeFailures,
       });
+      pagePhase = "closing";
       await page.close();
     }
   } finally {

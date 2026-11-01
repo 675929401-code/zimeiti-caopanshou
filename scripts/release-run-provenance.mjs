@@ -52,7 +52,8 @@ export function validateAutomaticTrigger(event, candidate, options) {
 export const reviewedAcceptanceToolchainPaths = Object.freeze([
   '.github/workflows/release-browser-acceptance.yml', '.github/workflows/release-vnext.yml', '.release/source-files.v1.json',
   'scripts/run-release-browser-acceptance.mjs', 'scripts/release-run-provenance.mjs', 'scripts/verify-release-run-provenance.mjs',
-  'scripts/verify-release-workflow.mjs', 'scripts/verify-release-change-scope-zero-network.mjs', 'scripts/fixtures/release-browser-assets/portraits.webp',
+  'scripts/verify-release-workflow.mjs', 'scripts/verify-release-change-scope-zero-network.mjs', 'scripts/fixtures/release-browser-assets/portraits.webp', 'scripts/fixtures/release-browser-assets/storyboard-video-captions.vtt',
+  'scripts/fixtures/release-browser-assets/storyboard-modes-manifest.json', 'scripts/fixtures/release-browser-assets/storyboard-modes-exaggerated.webp', 'scripts/fixtures/release-browser-assets/storyboard-modes-cinematic.webp', 'scripts/fixtures/release-browser-assets/storyboard-modes-lyrical.webp',
 ]);
 
 export function validateAcceptanceExecution({ eventName, executedCommit, eventCommit, candidateCommit, candidateAncestor = false, changedPaths = [] }) {
