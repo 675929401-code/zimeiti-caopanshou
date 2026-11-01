@@ -1,0 +1,40 @@
+name: isolated PM2 Unix listener fixture
+on:
+  push:
+    branches: [test/linux-pm2-listener-fix-61e9-20261102]
+    paths: [.github/workflows/linux-pm2-listener-fix.yml, .codex-pm2-listener-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: github.repository == '675929401-code/zimeiti-caopanshou' && github.event_name == 'push' && github.ref == 'refs/heads/test/linux-pm2-listener-fix-61e9-20261102' && github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify files and isolated real Linux Unix socket
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-pm2-listener-fixture
+          test "$(find "$root" -type f | wc -l)" = 2
+          test "$(find "$root" -type l | wc -l)" = 0
+          printf '%s\n' \
+            '7196856082edce034bb3cbe41e18a187068b645a6cb2d7a4450ac818477ea306  .codex-pm2-listener-fixture/live_drain.py' \
+            'dac693a59e5c9a1cf1602e2b83f0d825e69f38d935eccfa106e4a3d3e623d1fa  .codex-pm2-listener-fixture/test_listener.py' \
+            | sha256sum --check --strict
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 60s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /bin/bash -c '
+              set -euo pipefail
+              umask 077
+              /usr/bin/mount -t tmpfs -o mode=0700,nosuid,nodev,size=32m tmpfs /tmp
+              exec /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+                /usr/bin/timeout --signal=TERM --kill-after=5s 45s /usr/bin/python3 -I -B "$1" Synthetic Native
+            ' fixture "$PWD/$root/test_listener.py"
