@@ -39,6 +39,10 @@ check('automatic event head drift before side effects', () => {
 });
 const manualExecution = { eventName: 'workflow_dispatch', candidateCommit: sha, executedCommit: 'b'.repeat(40), eventCommit: 'b'.repeat(40), candidateAncestor: true, changedPaths: ['scripts/run-release-browser-acceptance.mjs', '.github/workflows/release-browser-acceptance.yml'] };
 check('manual reviewed toolchain recovery', () => validateAcceptanceExecution(manualExecution));
+for (const name of ['storyboard-video-captions.vtt', 'storyboard-modes-manifest.json', 'storyboard-modes-exaggerated.webp', 'storyboard-modes-cinematic.webp', 'storyboard-modes-lyrical.webp']) {
+  check('reviewed browser fixture ' + name, () => validateAcceptanceExecution({ ...manualExecution, changedPaths: ['scripts/fixtures/release-browser-assets/' + name] }));
+}
+rejects('unreviewed browser fixture rejected', () => validateAcceptanceExecution({ ...manualExecution, changedPaths: ['scripts/fixtures/release-browser-assets/other.webp'] }));
 rejects('manual runtime diff needs new candidate', () => validateAcceptanceExecution({ ...manualExecution, changedPaths: ['src/app/page.tsx'] }));
 rejects('manual nonancestor candidate', () => validateAcceptanceExecution({ ...manualExecution, candidateAncestor: false }));
 rejects('manual event and checkout mismatch', () => validateAcceptanceExecution({ ...manualExecution, eventCommit: sha }));

@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { runInNewContext } from "node:vm";
 
 const root = process.cwd();
 const read = (relativePath) => fs.readFileSync(path.join(root, ...relativePath.split("/")), "utf8");
@@ -1230,6 +1231,66 @@ assert.ok(
   "artifact deployer launcher validation must not trust stat's locale/version-specific file description",
 );
 const browserAcceptanceRunner = read("scripts/run-release-browser-acceptance.mjs");
+const diagnosticsStart = browserAcceptanceRunner.indexOf("function cleanUrl(raw) {");
+const diagnosticsEnd = browserAcceptanceRunner.indexOf("function resolveBrowserRouteTarget(", diagnosticsStart);
+assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart);
+const diagnostics = runInNewContext(`${browserAcceptanceRunner.slice(diagnosticsStart, diagnosticsEnd)}\n({ cleanUrl, utilityRequestDiagnostics })`, { URL });
+for (const tab of ["text", "video", "segment", "format"]) {
+  const url = new URL(`http://127.0.0.1/tools/utility?tab=${tab}&_rsc=secret-rsc&token=secret-token&secret=private-key&text=customer-content`);
+  const result = diagnostics.utilityRequestDiagnostics(url);
+  assert.equal(result.pathname, "/tools/utility");
+  assert.equal(result.tab, tab);
+  assert.equal(result.rscPresent, true);
+  assert.equal(result.otherParametersPresent, true);
+  const serialized = JSON.stringify(result);
+  for (const value of ["secret-rsc", "token", "secret-token", "secret", "private-key", "customer-content", "text="]) {
+    assert.ok(!serialized.includes(value), `utility diagnostics leaked ${value}`);
+  }
+}
+for (const query of ["tab=customer-content", "tab=text&tab=secret-value", "_rsc=secret-rsc&customer-content=private-value"]) {
+  const result = diagnostics.utilityRequestDiagnostics(new URL(`http://127.0.0.1/tools/utility?${query}`));
+  assert.equal(result.tab, null);
+  assert.doesNotMatch(JSON.stringify(result), /customer-content|secret-value|secret-rsc|private-value/u);
+}
+const syntheticCredentialUrl = new URL("http://127.0.0.1/tools/utility?token=secret#private");
+syntheticCredentialUrl.username = "username";
+syntheticCredentialUrl.password = "password";
+assert.equal(diagnostics.cleanUrl(syntheticCredentialUrl.toString()), "http://127.0.0.1/tools/utility");
+assert.equal(diagnostics.cleanUrl("not-a-url?token=secret"), "[invalid URL]");
+assert.ok(!browserAcceptanceRunner.includes("pathAndQuery"), "raw utility query must never be logged");
+const fixtureStart = browserAcceptanceRunner.indexOf("// Isolated browser fixture:");
+const fixtureEnd = browserAcceptanceRunner.indexOf("async function startCandidateDatabaseFixture(", fixtureStart);
+assert.ok(fixtureStart >= 0 && fixtureEnd > fixtureStart, "candidate fixture source missing");
+const candidateFixture = runInNewContext(`${browserAcceptanceRunner.slice(fixtureStart, fixtureEnd)}\n({ candidateFixtureResponse, VOICE_TASK_RPCS, MANJU_ROWS, manjuStableJson })`, { crypto });
+const fixtureGet = (route, objectResponse = false) => candidateFixture.candidateFixtureResponse("GET", new URL(route, "http://127.0.0.1"), objectResponse);
+const openapi = fixtureGet("/rest/v1/").value;
+assert.equal(Object.keys(openapi.paths).length, 11);
+for (const name of candidateFixture.VOICE_TASK_RPCS) assert.ok(openapi.paths[`/rpc/${name}`].post);
+for (const table of ["manju_config_storage_state", "manju_config_active"]) {
+  const base = `/rest/v1/${table}?environment=eq.production&domain=in.(content,media,feature_flags)`;
+  assert.equal(fixtureGet(base).value.length, 3);
+  assert.equal(fixtureGet(`/rest/v1/${table}?domain=eq.content`).value[0].domain, "content");
+  assert.equal(fixtureGet(`/rest/v1/${table}?domain=eq.prompt`).value.length, 0);
+  assert.equal(fixtureGet(`${base}&limit=0`).value.length, 0);
+  assert.equal(fixtureGet(`/rest/v1/${table}?domain=like.content`).status, 400);
+  assert.equal(fixtureGet(`/rest/v1/${table}?select=unknown`).status, 400);
+}
+for (const [table, kind] of [["manju_config_releases", "release"], ["manju_config_revisions", "revision"]]) {
+  const id = candidateFixture.MANJU_ROWS[0][kind].id;
+  assert.equal(fixtureGet(`/rest/v1/${table}?id=in.(${id})`).value.length, 1);
+  assert.equal(fixtureGet(`/rest/v1/${table}?id=eq.${id}`, true).value.id, id);
+  assert.equal(fixtureGet(`/rest/v1/${table}?id=eq.not-present`, true).status, 406);
+}
+for (const { active, release, revision } of candidateFixture.MANJU_ROWS) {
+  assert.equal(crypto.createHash("sha256").update(candidateFixture.manjuStableJson(revision.payload)).digest("hex"), revision.payload_hash);
+  assert.equal(active.etag, `${revision.payload_hash}:1`);
+  assert.equal(active.etag, release.etag);
+  assert.equal(active.active_revision_id, revision.id);
+  assert.equal(active.active_release_id, release.id);
+}
+for (const table of ["voice_generation_requests", "voice_training_authorization_jobs"]) assert.equal(fixtureGet(`/rest/v1/${table}?limit=0`).value.length, 0);
+assert.equal(candidateFixture.candidateFixtureResponse("POST", new URL("http://127.0.0.1/rest/v1/manju_config_active")), undefined);
+assert.equal(fixtureGet("/rest/v1/unrelated"), undefined);
 const standaloneAssetPreparer = read("scripts/prepare-next-standalone-assets.mjs");
 for (const marker of ["materializeVoiceReleaseIdentity", 'path.join(root, "public", "version.json")', "sourceVersion"]) {
   assert.ok(standaloneAssetPreparer.includes(marker), `Voice release identity materialization gate missing: ${marker}`);
@@ -1273,6 +1334,74 @@ assert.match(browserAcceptanceRunner, /"\/extract": Object\.freeze\(\{ service: 
   "browser acceptance must validate the retired extract bookmark against its reviewed toolbox destination");
 assert.match(browserAcceptanceRunner, /"\/tools": Object\.freeze\(\{ service: "web", expectedRoute: "\/tools\?tab=text" \}\)/u,
   "browser acceptance must validate the toolbox shell against its reviewed default tab");
+// Execute the actual route resolver and input smoke-check without network or a
+// production browser. The candidate browser run still verifies the real UI.
+const routeContractSource = browserAcceptanceRunner.slice(
+  browserAcceptanceRunner.indexOf("const BROWSER_ROUTE_TARGETS ="),
+  browserAcceptanceRunner.indexOf("const CANDIDATE_ADMIN_PERMISSIONS ="),
+);
+const routeHelperSource = browserAcceptanceRunner.slice(
+  browserAcceptanceRunner.indexOf("function resolveBrowserRouteTarget("),
+  browserAcceptanceRunner.indexOf("async function runBrowserAcceptance("),
+);
+assert.ok(routeContractSource.startsWith("const BROWSER_ROUTE_TARGETS =") && routeHelperSource.startsWith("function resolveBrowserRouteTarget("));
+const reviewedRouteHelpers = runInNewContext(`${routeContractSource}\n${routeHelperSource}\n({ resolveBrowserRouteTarget, matchesReviewedRoute, verifyReviewedTool })`, {
+  URL,
+  fail: (code, detail = "") => { throw new Error(detail ? `${code}:${detail}` : code); },
+});
+const origins = { web: "http://127.0.0.1:4011", voice: "http://127.0.0.1:4012" };
+for (const [route, expected, tool] of [
+  ["/segmenter", "/tools?tab=segment", "segment"],
+  ["/tools/utility", "/tools/utility?tab=text", "text"],
+]) {
+  const target = reviewedRouteHelpers.resolveBrowserRouteTarget(route, origins);
+  assert.equal(target.navigationUrl.pathname, route);
+  assert.equal(target.expectedUrl.pathname + target.expectedUrl.search, expected);
+  assert.equal(target.expectedTool, tool);
+  assert.equal(reviewedRouteHelpers.matchesReviewedRoute(new URL(expected, origins.web), target.expectedUrl), true);
+  assert.equal(reviewedRouteHelpers.matchesReviewedRoute(new URL(expected, "http://127.0.0.1:4999"), target.expectedUrl), false);
+  assert.equal(reviewedRouteHelpers.matchesReviewedRoute(new URL("/unreviewed?tab=text", origins.web), target.expectedUrl), false);
+  assert.equal(reviewedRouteHelpers.matchesReviewedRoute(new URL(expected + "&unexpected=1", origins.web), target.expectedUrl), false);
+}
+assert.equal(reviewedRouteHelpers.resolveBrowserRouteTarget("/unreviewed", origins).expectedUrl.pathname, "/unreviewed");
+const nextConfiguration = read("next.config.ts");
+assert.match(nextConfiguration, /source:\s*['"]\/segmenter['"][\s\S]{0,100}destination:\s*['"]\/tools\?tab=segment['"]/u);
+const utilityPageSource = read("src/app/tools/utility/page.tsx");
+assert.match(utilityPageSource, /router\.replace\(`\/tools\/utility\?tab=\$\{activeTab\}`/u);
+assert.match(utilityPageSource, /id:\s*"text"[\s\S]{0,160}label:\s*"文案提取"/u);
+function reviewedToolPage(tool, options = {}) {
+  let value = "";
+  const expected = tool === "segment"
+    ? { root: '[data-page="tools"]', panel: "#tool-panel-segment", tab: "#tool-tab-segment", label: "需要分段的文案" }
+    : { root: '[data-page="tools-utility"]', panel: "#toolbox-active-panel", tab: "#tool-tab-text", label: "文案分享文本或链接" };
+  const input = {
+    async fill(next) { if (options.notEditable) throw new Error("NOT_EDITABLE"); value = options.lostInput && next ? "" : next; },
+    async inputValue() { return value; },
+  };
+  const panel = {
+    async waitFor() { if (options.hiddenPanel) throw new Error("HIDDEN_PANEL"); },
+    getByRole(role, config) { assert.equal(role, "textbox"); assert.equal(config.name, expected.label); assert.equal(config.exact, true); return input; },
+  };
+  const tab = {
+    async waitFor() {},
+    async getAttribute(name) { return name === "role" ? "tab" : options.wrongTab ? "false" : "true"; },
+  };
+  return {
+    locator(selector) {
+      assert.equal(selector, expected.root);
+      return { locator(inner) { if (inner === expected.tab) return tab; assert.equal(inner, expected.panel); return panel; } };
+    },
+    async waitForTimeout() {},
+  };
+}
+for (const tool of ["segment", "text"]) {
+  await reviewedRouteHelpers.verifyReviewedTool(reviewedToolPage(tool), tool);
+  await assert.rejects(reviewedRouteHelpers.verifyReviewedTool(reviewedToolPage(tool, { wrongTab: true }), tool), /BROWSER_TOOL_TAB_INVALID/u);
+  await assert.rejects(reviewedRouteHelpers.verifyReviewedTool(reviewedToolPage(tool, { hiddenPanel: true }), tool), /HIDDEN_PANEL/u);
+  await assert.rejects(reviewedRouteHelpers.verifyReviewedTool(reviewedToolPage(tool, { notEditable: true }), tool), /NOT_EDITABLE/u);
+  await assert.rejects(reviewedRouteHelpers.verifyReviewedTool(reviewedToolPage(tool, { lostInput: true }), tool), /BROWSER_TOOL_INPUT_INVALID/u);
+}
+await assert.rejects(reviewedRouteHelpers.verifyReviewedTool({}, "unreviewed"), /BROWSER_TOOL_CONTRACT_INVALID/u);
 assert.match(browserAcceptanceRunner, /"\/admin": Object\.freeze\(\{ service: "web", expectedRoute: "\/admin\?tab=dashboard&view=overview" \}\)/u,
   "browser acceptance must validate the admin shell against its reviewed default view");
 assert.match(browserAcceptanceRunner, /"\/workspace": Object\.freeze\(\{[\s\S]*service: "voice"[\s\S]*navigationRoute: "\/voice-platform\/workspace"[\s\S]*expectedRoute: "\/voice-platform\/workspace"/u,
@@ -1411,6 +1540,39 @@ for (const marker of [
 ]) assert.ok(browserAcceptanceRunner.includes(marker), `benign navigation abort allowlist missing: ${marker}`);
 assert.match(browserAcceptanceRunner, /benignNavigationAborts: browserReport\.benignNavigationAborts/u,
   "benign navigation aborts must remain visible in the signed browser report");
+const reviewedAbortPairs = [
+  ["/digital-human", "/"], ["/digital-human", "/voice-studio/workspace"],
+  ["/help", "/"], ["/help", "/admin/help"], ["/segmenter", "/"],
+  ["/voice-studio/imitate", "/voice-studio/imitate"],
+  ["/voice-studio/imitate", "/voice-studio/voices"],
+  ["/voice-studio/imitate", "/voice-studio/workspace"],
+  ["/youcai/storyboard-workbench", "/"], ["/youcai/storyboard-workbench", "/youcai/profile"],
+];
+const abortSetStart = browserAcceptanceRunner.indexOf("const BENIGN_NAVIGATION_ABORT_KEYS = new Set([");
+const abortSetEnd = browserAcceptanceRunner.indexOf("]);", abortSetStart) + 3;
+const abortConditionStart = browserAcceptanceRunner.indexOf('if (sameOrigin && item.method === "GET"');
+const abortConditionEnd = browserAcceptanceRunner.indexOf(") {", abortConditionStart);
+assert.ok(abortSetStart >= 0 && abortSetEnd > abortSetStart && abortConditionStart >= 0 && abortConditionEnd > abortConditionStart);
+const abortCondition = browserAcceptanceRunner.slice(abortConditionStart + 4, abortConditionEnd);
+const classifyAbort = runInNewContext(`${browserAcceptanceRunner.slice(abortSetStart, abortSetEnd)}\n` +
+  `({route, pathname, sameOrigin, method, resourceType, error, nextRouterPrefetch}) => {` +
+  `const benignNavigationKey = route + "|" + pathname; const item = {method}; return (${abortCondition}); }`);
+for (const [route, pathname] of reviewedAbortPairs) {
+  const valid = { route, pathname, sameOrigin: true, method: "GET", resourceType: "fetch", error: "net::ERR_ABORTED", nextRouterPrefetch: true };
+  assert.equal(classifyAbort(valid), true, `reviewed prefetch not accepted: ${route}|${pathname}`);
+  for (const mutation of [{ sameOrigin: false }, { method: "POST" }, { resourceType: "texttrack" },
+    { error: "net::ERR_FAILED" }, { nextRouterPrefetch: false }, { route: "/unreviewed" }, { pathname: "/unreviewed" }]) {
+    assert.equal(classifyAbort({ ...valid, ...mutation }), false, `unreviewed abort accepted: ${JSON.stringify(mutation)}`);
+  }
+}
+const captionFixture = "scripts/fixtures/release-browser-assets/storyboard-video-captions.vtt";
+const captionBytes = fs.readFileSync(path.join(root, captionFixture));
+const captionSha256 = "c44f2c33a2bb064b7dc60e5ddda7db9a9f8d58182fbf46cced73bcda0861902c";
+assert.equal(captionBytes.length, 147);
+assert.equal(crypto.createHash("sha256").update(captionBytes).digest("hex"), captionSha256);
+assert.match(captionBytes.toString("utf8"), /^WEBVTT\s/u);
+assert.ok(browserAcceptanceRunner.includes('contentType: "text/vtt"'));
+assert.ok(browserAcceptanceRunner.includes("await verifyHelpCaptions(page)"));
 const browserAssetFixtureRelative = "scripts/fixtures/release-browser-assets/portraits.webp";
 const browserAssetFixturePath = path.join(root, ...browserAssetFixtureRelative.split("/"));
 const browserAssetFixtureStats = fs.lstatSync(browserAssetFixturePath);
@@ -1422,12 +1584,37 @@ assert.equal(crypto.createHash("sha256").update(browserAssetFixtureBytes).digest
   "bed09115f796eedc58bffe927694ebe9e679232db7338d94efe62b396bd930cf",
   "browser portrait fixture SHA-256 drifted");
 const managedSourceSnapshot = JSON.parse(read(".release/source-files.v1.json"));
+assert.deepEqual(managedSourceSnapshot.files.find((entry) => entry.path === captionFixture), {
+  path: captionFixture, bytes: 147, sha256: captionSha256,
+});
 const managedBrowserAssetFixture = managedSourceSnapshot.files.find((entry) => entry.path === browserAssetFixtureRelative);
 assert.deepEqual(managedBrowserAssetFixture, {
   path: browserAssetFixtureRelative,
   bytes: 110_838,
   sha256: "bed09115f796eedc58bffe927694ebe9e679232db7338d94efe62b396bd930cf",
 }, "managed source snapshot must bind the exact browser portrait fixture");
+const storyboardBrowserFixtures = [
+  ["manifest.json", "storyboard-modes-manifest.json", 1959, "c100d5a99653260d3f123fc1459e44a5c494947ed6052040b2a60365df8f6863"],
+  ["exaggerated.webp", "storyboard-modes-exaggerated.webp", 177510, "5576636e227ec31f3906f620ea69511cf1b3949e3f6b01818ce160835557e590"],
+  ["cinematic.webp", "storyboard-modes-cinematic.webp", 143796, "ab7ce5863a05656c8e1df1dc3d0c0e72db1a939ed43883d0e07a630df7a3bc12"],
+  ["lyrical.webp", "storyboard-modes-lyrical.webp", 128510, "9af142b4015c0145041c7e7dd3c79f726e3567b17efa8b33affb35fdf540269a"],
+];
+const candidateAssetManifest = JSON.parse(read("deploy/manifests/public-assets.v1.json"));
+assert.deepEqual(candidateAssetManifest.files.find((entry) => entry.path === "public/help/storyboard-video-case.zh-CN.vtt"), {
+  path: "public/help/storyboard-video-case.zh-CN.vtt", bytes: 147, sha256: captionSha256,
+});
+for (const [name, fixture, bytes, sha256] of storyboardBrowserFixtures) {
+  const fixtureRelative = `scripts/fixtures/release-browser-assets/${fixture}`;
+  const stats = fs.lstatSync(path.join(root, fixtureRelative));
+  const content = fs.readFileSync(path.join(root, fixtureRelative));
+  assert.ok(stats.isFile() && !stats.isSymbolicLink() && stats.nlink === 1);
+  assert.equal(content.length, bytes);
+  assert.equal(crypto.createHash("sha256").update(content).digest("hex"), sha256);
+  const assetPath = `public/product-assets/youcai-demo-v1/storyboard-modes/${name}`;
+  assert.deepEqual(candidateAssetManifest.files.find((entry) => entry.path === assetPath), { path: assetPath, bytes, sha256 });
+  assert.deepEqual(managedSourceSnapshot.files.find((entry) => entry.path === fixtureRelative), { path: fixtureRelative, bytes, sha256 });
+  assert.ok(browserAcceptanceRunner.includes(`fixturePath: "${fixtureRelative}"`));
+}
 for (const marker of [
   '"public/avatars/voice-studio/portraits.webp"',
   'CANDIDATE_BROWSER_ASSET_FIXTURE_ROOT = "scripts/fixtures/release-browser-assets"',
