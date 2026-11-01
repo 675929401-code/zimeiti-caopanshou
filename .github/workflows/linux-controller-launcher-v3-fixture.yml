@@ -1,0 +1,46 @@
+name: Isolated Linux controller launcher fixture
+on:
+  push:
+    branches: [test/linux-controller-launcher-v3-61e9-20261102]
+    paths: [.github/workflows/linux-controller-launcher-v3-fixture.yml, .codex-controller-launcher-v3-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-controller-launcher-v3-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify pinned inputs and run isolated launcher fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-controller-launcher-v3-fixture
+          test "$(find "$root" -type f | wc -l)" = 5
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 1
+          printf '%s\n' \
+            '5ed4c28355ee3ff3a58324883fd2144e5f5ced252ca39d41678a151bd92d1305  .codex-controller-launcher-v3-fixture/common.mjs' \
+            '0c49f4822ad1a0c40c8bb3ca9e83bca12c368072d5a2045714e14e6532099943  .codex-controller-launcher-v3-fixture/crash-parent.mjs' \
+            '650e1c720bc26df66141de5cc0c33cd4f694640f3b0fb6cc0e1bccd064209aaa  .codex-controller-launcher-v3-fixture/fixture-brand.mjs' \
+            'dd2177220d1b760a95f9a992f9d50f3e1738acd9cde8ed8e0cb8fc19dafec7a5  .codex-controller-launcher-v3-fixture/launcher.mjs' \
+            'd7a441068011838c1f09f87261ddd789af4f3850bfeb9b05961ac4eb8a59f9d7  .codex-controller-launcher-v3-fixture/test-launcher-linux.mjs' \
+            | sha256sum --check --strict
+          node_bin="$(command -v node)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 50s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 40s "$node_bin" "$root/test-launcher-linux.mjs"
