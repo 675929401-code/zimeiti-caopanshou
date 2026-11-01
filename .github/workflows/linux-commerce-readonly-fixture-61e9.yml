@@ -1,0 +1,45 @@
+name: Isolated Commerce SQLite readonly kernel fixture 61e9
+
+# Temporary test branch only. No PR, dispatch, release, artifact or deployment job.
+on:
+  push:
+    branches:
+      - test/linux-commerce-readonly-61e9-20261101
+    paths:
+      - .github/workflows/linux-commerce-readonly-fixture-61e9.yml
+      - scripts/fixtures/linux-commerce-readonly-61e9/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-commerce-readonly-fixture-61e9-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-kernel-fixture:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/test/linux-commerce-readonly-61e9-20261101'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout the exact test commit without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify fixed synthetic fixture and run in an isolated network namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'f89d7c9abf29e5651086a3c8a1cf29b15440406f5cb475595556fac3327c80e6  scripts/fixtures/linux-commerce-readonly-61e9/probe.py' \
+            '0eaffdfa151c34eb5c7e1facbd61f33bfe75bebf8c2d99878d702bbf39026de6  scripts/fixtures/linux-commerce-readonly-61e9/test_linux_isolation.py' \
+            | sha256sum --check --strict
+          sudo -n /usr/bin/unshare --net -- /usr/bin/env -i \
+            PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=10s 120s \
+            /usr/bin/python3 -I -S -B \
+            scripts/fixtures/linux-commerce-readonly-61e9/test_linux_isolation.py

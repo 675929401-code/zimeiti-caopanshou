@@ -1,0 +1,201 @@
+"""Commerce aggregate reader: SQLite opens only inside a private readonly mount."""
+import ctypes,errno,hashlib,json,os,re,select,signal,stat,sys,time
+from pathlib import Path
+SOURCE=b'import hashlib,json,os,re,shutil,stat,subprocess,time\nfrom pathlib import Path\nfrom urllib.parse import quote\nPG_QUERY="BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\\nSET LOCAL search_path = pg_catalog;\\nSET LOCAL statement_timeout = \'20000ms\';\\nSET LOCAL lock_timeout = \'2000ms\';\\nSELECT (current_database()=\'zimeiti_prod\'\\n AND (SELECT oid::text FROM pg_database WHERE datname=current_database())=\'57747\'\\n AND (SELECT system_identifier::text FROM pg_control_system())=\'7643457267499043593\'\\n AND current_setting(\'port\')=\'5432\' AND CURRENT_USER=\'postgres\' AND SESSION_USER=\'postgres\'\\n AND current_setting(\'server_version_num\')::integer BETWEEN 150000 AND 159999\\n AND inet_server_addr() IS NULL AND NOT pg_is_in_recovery()\\n AND current_setting(\'transaction_read_only\')=\'on\'\\n AND (SELECT count(*)=8 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace\\n      WHERE n.nspname=\'public\' AND c.relkind IN (\'r\',\'p\') AND c.relname IN\\n      (\'video_tasks\',\'digital_video_dispatch_jobs\',\'digital_human_long_jobs\',\'digital_human_long_segments\',\'conversations\',\'conversation_messages\',\'extraction_attempts\',\'image_generation_requests\'))\\n ) AS identity_ok\\n\\\\gset\\n\\\\if :identity_ok\\nWITH history AS (\\n SELECT\\n  count(*) FILTER (WHERE status IN (\'pending\',\'queued\',\'processing\',\'generating\',\'finalizing\',\'billing_pending\')) AS unfinished,\\n  count(*) FILTER (WHERE status IN (\'pending\',\'queued\',\'processing\',\'generating\',\'finalizing\') AND nullif(trim(task_id_external),\'\') IS NOT NULL AND left(task_id_external,4)<>\'h3q_\' AND (task_label IS NULL OR task_label NOT LIKE \'digital-human:%\') AND (provider_poll_lease_until IS NULL OR provider_poll_lease_until<=now())) AS poll_candidates,\\n  count(*) FILTER (WHERE status=\'billing_pending\' AND nullif(task_id_external,\'\') IS NOT NULL AND left(task_id_external,4)<>\'h3q_\' AND (task_label IS NULL OR task_label NOT LIKE \'digital-human:%\') AND (provider_poll_lease_until IS NULL OR provider_poll_lease_until<=now())) AS billing_candidates,\\n  count(*) FILTER (WHERE provider_poll_lease_until>now()) AS active_poll_leases,\\n  count(*) FILTER (WHERE submission_error_code=\'VIDEO_SUBMIT_OUTCOME_UNKNOWN\') AS submission_unknown,\\n  count(*) FILTER (WHERE status IN (\'pending\',\'queued\') AND billing_state=\'reserved\' AND submission_error_code=\'VIDEO_SUBMIT_OUTCOME_UNKNOWN\' AND nullif(task_id_external,\'\') IS NULL AND (task_label IS NULL OR task_label NOT LIKE \'digital-human:%\')) AS stale_submission_scope\\n FROM public.video_tasks\\n), digital AS (\\n SELECT count(*) FILTER (WHERE state NOT IN (\'completed\',\'failed\',\'cancelled\')) AS unfinished,\\n count(*) FILTER (WHERE state=\'queued\') AS queued,\\n count(*) FILTER (WHERE state IN (\'dispatching\',\'running\',\'finalizing\')) AS active_states,\\n count(*) FILTER (WHERE state=\'submission_unknown\') AS submission_unknown,\\n count(*) FILTER (WHERE lease_until>now()) AS active_leases,\\n count(*) FILTER (WHERE state IN (\'queued\',\'running\',\'finalizing\') AND next_run_at<=now() AND (lease_until IS NULL OR lease_until<now())) AS due_candidates_before_channel_locks,\\n count(*) FILTER (WHERE state=\'dispatching\' AND lease_until<now()) AS expired_dispatch_leases\\n FROM public.digital_video_dispatch_jobs\\n), long_segments AS (\\n SELECT count(*) FILTER (WHERE s.state NOT IN (\'completed\',\'failed\',\'cancelled\')) AS unfinished,\\n count(*) FILTER (WHERE s.state=\'queued\') AS queued,\\n count(*) FILTER (WHERE s.state IN (\'preparing\',\'dispatching\',\'running\',\'finalizing\')) AS active_states,\\n count(*) FILTER (WHERE s.state=\'submission_unknown\') AS submission_unknown,\\n count(*) FILTER (WHERE s.lease_until>now()) AS active_leases,\\n count(*) FILTER (WHERE p.state IN (\'queued\',\'processing\',\'confirming\') AND s.state IN (\'queued\',\'running\',\'finalizing\') AND s.next_run_at<=now() AND (s.lease_until IS NULL OR s.lease_until<now())\\n  AND NOT EXISTS(SELECT 1 FROM public.digital_human_long_segments prior WHERE prior.parent_id=s.parent_id AND prior.ordinal<s.ordinal AND prior.state<>\'completed\')) AS due_candidates_before_channel_locks\\n FROM public.digital_human_long_segments s LEFT JOIN public.digital_human_long_jobs p ON p.id=s.parent_id\\n), long_parents AS (\\n SELECT count(*) FILTER (WHERE p.state NOT IN (\'completed\',\'failed\',\'cancelled\')) AS unfinished,\\n count(*) FILTER (WHERE p.state IN (\'processing\',\'merging\',\'ready_to_settle\')) AS active_states,\\n count(*) FILTER (WHERE p.merge_lease_until>now()) AS active_merge_leases,\\n count(*) FILTER (WHERE p.state IN (\'processing\',\'merging\',\'ready_to_settle\') AND p.next_run_at<=now() AND (p.merge_lease_until IS NULL OR p.merge_lease_until<now())\\n  AND (p.state=\'ready_to_settle\' OR NOT EXISTS(SELECT 1 FROM public.digital_human_long_segments s WHERE s.parent_id=p.id AND s.state<>\'completed\'))) AS finalization_candidates\\n FROM public.digital_human_long_jobs p\\n), retention AS (\\n SELECT\\n (SELECT count(*) FROM public.conversation_messages WHERE created_at<=now()-interval \'30 days\') AS messages_due,\\n (SELECT count(*) FROM public.conversations WHERE coalesce(updated_at,created_at)<=now()-interval \'30 days\') AS conversations_due,\\n (SELECT count(*) FROM public.extraction_attempts WHERE state IN (\'succeeded\',\'failed\') AND content_purged_at IS NULL AND (lower(trim(coalesce(request_snapshot#>>\'{payload,extraction_mode}\',\'\')))=\'video\' OR created_at<=now()-interval \'10 days\')) AS extractions_due,\\n (SELECT count(*) FROM public.image_generation_requests WHERE state=\'completed\' AND delivery_state=\'delivered\' AND response->>\'deliveryMode\'=\'provider_url\' AND response->>\'sourceExpiredAt\' IS NULL) AS image_source_check_candidates_before_cursor\\n)\\nSELECT json_build_object(\\n \'identity_matches\',true,\'read_only\',current_setting(\'transaction_read_only\')=\'on\',\'business_functions_called\',false,\\n \'history\',(SELECT row_to_json(h) FROM history h),\'digital\',(SELECT row_to_json(d) FROM digital d),\\n \'long_segments\',(SELECT row_to_json(s) FROM long_segments s),\'long_parents\',(SELECT row_to_json(p) FROM long_parents p),\\n \'retention\',(SELECT row_to_json(r) FROM retention r),\\n \'claim_functions_present\',json_build_object(\\n  \'history\',to_regprocedure(\'public.claim_video_history_poll_batch(text,integer,integer)\') IS NOT NULL,\\n  \'digital\',to_regprocedure(\'public.claim_digital_video_dispatch(text)\') IS NOT NULL,\\n  \'long_segment\',to_regprocedure(\'public.claim_digital_human_long_segment(text)\') IS NOT NULL,\\n  \'long_finalize\',to_regprocedure(\'public.claim_digital_human_long_finalization(text)\') IS NOT NULL,\\n  \'retention\',to_regprocedure(\'public.purge_expired_user_content(integer,integer,integer)\') IS NOT NULL),\\n \'database_connections\',json_build_object(\'total\',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()),\'active\',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state=\'active\' AND pid<>pg_backend_pid()),\'waiting_lock\',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type=\'Lock\')),\\n \'live_function_bodies_verified\',false,\'claimability_guaranteed\',false,\'worker_memory_inflight_observed\',false,\'atomic_quiescence_proven\',false\\n)::text;\\n\\\\else\\nSELECT 1/0;\\n\\\\endif\\nROLLBACK;\\n"\nAPP=Path(\'/data/web\')\nCURRENT=APP/\'current-web\'\nRELEASE_ID=b\'candidate-704b8278e562-r30\'\nOLD_COMMIT=b\'704b8278e562d1048526d1abdc35801500e904b0\'\nENV_KEYS={b\'name\',b\'MEDIA_QUEUE_WORKER_PROCESS\',b\'RELEASE_ID\',b\'DEPLOY_COMMIT_SHA\',b\'COMMERCE_DATA_DIR\',b\'pm_id\',b\'shutdown_with_message\',b\'kill_timeout\',b\'MEDIA_QUEUE_WORKER_DRAIN_MS\'}\nclass ProbeError(Exception):pass\ndef fail(code):raise ProbeError(code)\ndef read_file(path,limit):\n    fd=os.open(path,os.O_RDONLY|getattr(os,\'O_NOFOLLOW\',0)|getattr(os,\'O_NONBLOCK\',0))\n    with os.fdopen(fd,\'rb\') as f:\n        info=os.fstat(f.fileno())\n        if not stat.S_ISREG(info.st_mode) or info.st_size>limit:fail(\'E_READ\')\n        data=f.read(limit+1)\n    if len(data)>limit:fail(\'E_LIMIT\')\n    return data\n\ndef parse_env(raw):\n    result={}\n    for entry in raw.split(b\'\\0\'):\n        name,sep,value=entry.partition(b\'=\')\n        if sep and name in ENV_KEYS:\n            if name in result:fail(\'E_ENV_DUPLICATE\')\n            result[name]=value\n    return result\n\ndef socket_counts(entry):\n    inodes=set();seen=0\n    for fd in (entry/\'fd\').iterdir():\n        seen+=1\n        if seen>4096:fail(\'E_FD_LIMIT\')\n        try:target=os.readlink(fd)\n        except FileNotFoundError:continue\n        match=re.fullmatch(r\'socket:\\[(\\d+)\\]\',target)\n        if match:inodes.add(match[1])\n    established=set();listening=set()\n    for name in (\'tcp\',\'tcp6\'):\n        data=read_file(entry/\'net\'/name,2097152)\n        for row in data.splitlines()[1:]:\n            parts=row.split()\n            if len(parts)<10:fail(\'E_SOCKET_FORMAT\')\n            inode=parts[9].decode(\'ascii\')\n            if inode in inodes:\n                if parts[3]==b\'01\':established.add(inode)\n                elif parts[3]==b\'0A\':listening.add(inode)\n    return len(inodes),len(established),len(listening)\n\ndef processes():\n    rows=[];identities=[];paths=set();errors=0;scanned=0;budget=16777216\n    current=Path(os.path.realpath(CURRENT))\n    boot=read_file(Path(\'/proc/sys/kernel/random/boot_id\'),128).strip()\n    for entry in Path(\'/proc\').iterdir():\n        if not entry.name.isdigit():continue\n        scanned+=1\n        if scanned>8192 or budget<=0:fail(\'E_PROC_LIMIT\')\n        try:\n            try:exe=os.readlink(entry/\'exe\')\n            except FileNotFoundError:continue\n            if not re.search(r\'/node(?:-v[0-9.]+)?$\',exe):continue\n            env_raw=read_file(entry/\'environ\',262144);budget-=len(env_raw);env=parse_env(env_raw);del env_raw\n            if env.get(b\'name\')!=b\'agent-hub-media-worker\':continue\n            raw=read_file(entry/\'stat\',8192);fields=raw.rsplit(b\')\',1)[1].split();start=int(fields[19]);pid=int(entry.name)\n            cwd=Path(os.path.realpath(entry/\'cwd\'))\n            sockets,established,listening=socket_counts(entry)\n            env_dir=env.get(b\'COMMERCE_DATA_DIR\')\n            if env_dir:paths.add(os.fsdecode(env_dir))\n            ident=(pid,start,env.get(b\'pm_id\',b\'\'),str(cwd),env.get(b\'RELEASE_ID\',b\'\'))\n            identities.append(ident)\n            rows.append({\'process_identity_sha\':hashlib.sha256(boot+b\'\\0\'+repr(ident).encode(\'utf-8\')).hexdigest(),\n                \'role_flag_matches\':env.get(b\'MEDIA_QUEUE_WORKER_PROCESS\')==b\'1\',\'release_matches\':env.get(b\'RELEASE_ID\')==RELEASE_ID,\n                \'commit_matches\':env.get(b\'DEPLOY_COMMIT_SHA\')==OLD_COMMIT,\'cwd_matches_current\':cwd==current,\n                \'pm2_id_present\':bool(re.fullmatch(rb\'[0-9]{1,8}\',env.get(b\'pm_id\',b\'\'))),\n                \'process_sleeping\':fields[0]==b\'S\',\'socket_fds\':sockets,\'tcp_established\':established,\'tcp_listening\':listening,\n                \'shutdown_message_enabled\':env.get(b\'shutdown_with_message\') in (b\'true\',b\'1\'),\n                \'runtime_inflight_observed\':False,\'fresh_drained_observed\':False})\n            if len(rows)>2:fail(\'E_WORKER_COUNT\')\n        except (FileNotFoundError,ProcessLookupError):errors+=1\n    rows.sort(key=lambda r:r[\'process_identity_sha\'])\n    return {\'worker_count\':len(rows),\'scan_races\':errors,\'scan_complete\':errors==0,\'workers\':rows},sorted(identities),paths,str(current)\n\ndef trusted(path,directory=False):\n    path=Path(path);cursor=Path(path.anchor)\n    for part in path.parts[1:]:\n        cursor/=part;info=os.lstat(cursor)\n        if stat.S_ISLNK(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022:fail(\'E_TRUST\')\n    if not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)):fail(\'E_TRUST\')\n    return info\n\ndef postgres(run):\n    sudo=shutil.which(\'sudo\',path=\'/usr/sbin:/usr/bin:/sbin:/bin\')\n    if not sudo:fail(\'E_PG_TOOL\')\n    trusted(Path(os.path.realpath(sudo)))\n    command=[sudo,\'-n\',\'-u\',\'postgres\',\'env\',\'-i\',\'PATH=/usr/bin:/bin\',\'LC_ALL=C\',\'PGOPTIONS=-c default_transaction_read_only=on -c statement_timeout=20000 -c lock_timeout=2000\',\'psql\',\'-X\',\'-qAt\',\'-v\',\'ON_ERROR_STOP=1\',\'-v\',\'VERBOSITY=sqlstate\',\'-d\',\'zimeiti_prod\']\n    result=run(command,input=PG_QUERY.encode(\'ascii\'),stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30,shell=False,check=False,env={\'PATH\':\'/usr/sbin:/usr/bin:/sbin:/bin\',\'LC_ALL\':\'C\'},cwd=\'/\')\n    if result.returncode!=0:fail(\'E_PG_IDENTITY_OR_QUERY\')\n    if type(result.stdout) is not bytes or len(result.stdout)>16384:fail(\'E_PG_OUTPUT\')\n    return pg_schema(load_json(result.stdout))\n\ndef collect(run=subprocess.run):\n    result={\'postgres_available\':False,\'postgres_error\':\'NOT_RUN\',\'postgres\':None,\'sqlite_available\':False,\'sqlite_error\':\'NOT_RUN\',\'sqlite\':None,\n        \'instances_available\':False,\'instances_error\':\'NOT_RUN\',\'instances\':None,\'instances_stable_across_capture\':False,\n        \'business_rows_returned\':0,\'media_requests\':0,\'business_writes\':0,\'business_functions_invoked\':False,\'cross_store_atomic_snapshot\':False,\'atomic_quiescence_proven\':False,\'safe_to_stop_workers\':False}\n    before=None\n    try:\n        instance,before,paths,current=processes();result.update(instances_available=True,instances_error=\'OK\',instances=instance)\n    except Exception:result[\'instances_error\']=\'E_PROC_CAPTURE\';paths=set()\n    try:result.update(postgres=postgres(run),postgres_available=True,postgres_error=\'OK\')\n    except Exception:result[\'postgres_error\']=\'E_PG_CAPTURE\'\n    # Disabled: normal read-only SQLite connections can create WAL/SHM in a race.\n    # No SQLite import, open, connection or PRAGMA is executed remotely.\n    result[\'sqlite_error\']=\'E_SQLITE_CAPTURE\'\n    try:\n        after_instance,after,after_paths,after_current=processes()\n        result[\'instances_stable_across_capture\']=before is not None and len(before)==2 and instance[\'scan_complete\'] and before==after and paths==after_paths and current==after_current and after_instance[\'scan_complete\']\n    except Exception:pass\n    return result\n\n\n"""Exact aggregate output schema. No unbounded strings or business rows."""\nimport json,re\nPG_COUNTS={\n\'history\':\'unfinished poll_candidates billing_candidates active_poll_leases submission_unknown stale_submission_scope\',\n\'digital\':\'unfinished queued active_states submission_unknown active_leases due_candidates_before_channel_locks expired_dispatch_leases\',\n\'long_segments\':\'unfinished queued active_states submission_unknown active_leases due_candidates_before_channel_locks\',\n\'long_parents\':\'unfinished active_states active_merge_leases finalization_candidates\',\n\'retention\':\'messages_due conversations_due extractions_due image_source_check_candidates_before_cursor\',\n\'database_connections\':\'total active waiting_lock\'}\nPG_FALSE=\'business_functions_called live_function_bodies_verified claimability_guaranteed worker_memory_inflight_observed atomic_quiescence_proven\'.split()\nGROUPS=\'ordinary_jobs media_edits frames depth hot_remix voice voice_replace rolling_jobs\'.split()\nMETRICS=\'total unfinished active_states unknown_states candidates_before_batch_limits candidates_without_live_record_lease\'.split()\nINSTANCE_BOOLS=\'role_flag_matches release_matches commit_matches cwd_matches_current pm2_id_present process_sleeping shutdown_message_enabled runtime_inflight_observed fresh_drained_observed\'.split()\ndef exact(v,ks):\n if type(v) is not dict or set(v)!=set(ks):raise ValueError(\'E_SCHEMA\')\ndef counts(v,ks):\n exact(v,ks)\n if any(type(x) is not int or not 0<=x<=9007199254740991 for x in v.values()):raise ValueError(\'E_SCHEMA\')\ndef fixed(v,k,b):\n if type(v[k]) is not bool or v[k] is not b:raise ValueError(\'E_SCHEMA\')\ndef pg_schema(v):\n exact(v,list(PG_COUNTS)+PG_FALSE+[\'identity_matches\',\'read_only\',\'claim_functions_present\'])\n for k,b in [(\'identity_matches\',True),(\'read_only\',True)]+[(k,False) for k in PG_FALSE]:fixed(v,k,b)\n for k,ks in PG_COUNTS.items():counts(v[k],ks.split())\n exact(v[\'claim_functions_present\'],\'history digital long_segment long_finalize retention\'.split())\n if any(type(x) is not bool for x in v[\'claim_functions_present\'].values()):raise ValueError(\'E_SCHEMA\')\n return v\ndef sqlite_schema(v):\n exact(v,\'read_only groups leases maintenance_coverage_complete claimability_guaranteed atomic_quiescence_proven\'.split());fixed(v,\'read_only\',True)\n for k in [\'maintenance_coverage_complete\',\'claimability_guaranteed\',\'atomic_quiescence_proven\']:fixed(v,k,False)\n exact(v[\'groups\'],GROUPS)\n for row in v[\'groups\'].values():\n  counts(row,METRICS)\n  if row[\'candidates_without_live_record_lease\']>row[\'candidates_before_batch_limits\'] or row[\'candidates_before_batch_limits\']>row[\'total\']:raise ValueError(\'E_SCHEMA\')\n counts(v[\'leases\'],\'ordinary_active rolling_active ordinary_expired rolling_expired maintenance_pending_not_measured\'.split())\n if v[\'leases\'][\'maintenance_pending_not_measured\']!=1:raise ValueError(\'E_SCHEMA\')\n return v\ndef instances_schema(v):\n exact(v,\'worker_count scan_races scan_complete workers\'.split());counts({k:v[k] for k in [\'worker_count\',\'scan_races\']},[\'worker_count\',\'scan_races\'])\n if type(v[\'scan_complete\']) is not bool or v[\'scan_complete\']!=(v[\'scan_races\']==0) or type(v[\'workers\']) is not list or len(v[\'workers\'])!=v[\'worker_count\'] or v[\'worker_count\']>2:raise ValueError(\'E_SCHEMA\')\n for row in v[\'workers\']:\n  exact(row,INSTANCE_BOOLS+[\'process_identity_sha\',\'socket_fds\',\'tcp_established\',\'tcp_listening\'])\n  if type(row[\'process_identity_sha\']) is not str or not re.fullmatch(\'[0-9a-f]{64}\',row[\'process_identity_sha\']):raise ValueError(\'E_SCHEMA\')\n  if any(type(row[k]) is not bool for k in INSTANCE_BOOLS):raise ValueError(\'E_SCHEMA\')\n  fixed(row,\'runtime_inflight_observed\',False);fixed(row,\'fresh_drained_observed\',False)\n  counts({k:row[k] for k in [\'socket_fds\',\'tcp_established\',\'tcp_listening\']},[\'socket_fds\',\'tcp_established\',\'tcp_listening\'])\n return v\ndef no_duplicates(pairs):\n v={}\n for k,x in pairs:\n  if k in v:raise ValueError(\'E_SCHEMA\')\n  v[k]=x\n return v\ndef load_json(raw):return json.loads(raw,object_pairs_hook=no_duplicates)\ndef validate_value(v):\n if type(v) is not dict or v.get(\'sqlite_available\') is not False:raise ValueError(\'E_SCHEMA\')\n fixed_false=\'business_functions_invoked cross_store_atomic_snapshot atomic_quiescence_proven safe_to_stop_workers\'.split()\n zero=\'business_rows_returned media_requests business_writes\'.split()\n domains={\'postgres\':(pg_schema,\'E_PG_CAPTURE\'),\'sqlite\':(sqlite_schema,\'E_SQLITE_CAPTURE\'),\'instances\':(instances_schema,\'E_PROC_CAPTURE\')}\n exact(v,[k+x for k in domains for x in [\'\',\'_available\',\'_error\']]+fixed_false+zero+[\'instances_stable_across_capture\'])\n for k in fixed_false:fixed(v,k,False)\n for k in zero:\n  if type(v[k]) is not int or v[k]!=0:raise ValueError(\'E_SCHEMA\')\n for k,(fn,error) in domains.items():\n  if type(v[k+\'_available\']) is not bool:raise ValueError(\'E_SCHEMA\')\n  if v[k+\'_available\']:\n   if v[k+\'_error\']!=\'OK\':raise ValueError(\'E_SCHEMA\')\n   fn(v[k])\n  elif v[k] is not None or v[k+\'_error\']!=error:raise ValueError(\'E_SCHEMA\')\n if type(v[\'instances_stable_across_capture\']) is not bool:raise ValueError(\'E_SCHEMA\')\n if v[\'instances_stable_across_capture\'] and (not v[\'instances_available\'] or not v[\'instances\'][\'scan_complete\'] or v[\'instances\'][\'worker_count\']!=2):raise ValueError(\'E_SCHEMA\')\n return v\ndef validate(raw):\n if type(raw) is not bytes or len(raw)>32768:raise ValueError(\'E_SCHEMA\')\n return validate_value(load_json(raw))\n\nif __name__==\'__main__\':\n    try:print(json.dumps(validate_value(collect()),sort_keys=True))\n    except Exception:\n        print(\'E_WORKER_OBSERVATION_FAILED\');raise SystemExit(1)\n'
+SOURCE_SHA='a8991f904000238616eff67299f84f76509f6f8517a92c9bc178c6882e70c333'
+EXPECTED_INSTANCES={'30cf8a49d038f2fcdcd264a870f97e63c323da57633049422fd06f76c3d1700e','607d349a373b4aa51d648d6c75365006cd4c148bd4a931859941f5d128eaa953'}
+"""Fixed SELECT aggregates copied from old worker candidate predicates.
+No application imports, business RPCs, task processing or external requests.
+"""
+COMMERCE_SQL = r'''
+WITH clock AS (SELECT :now_ms AS now), candidates(kind,id,owner,status,updated,lease_key) AS (
+ SELECT 'ordinary_jobs',r.id,r.owner,json_extract(r.value,'$.status'),r.updated,'job:'||r.id
+ FROM records r,clock WHERE r.bucket='jobs' AND json_extract(r.value,'$.input.rollingPlan') IS NULL
+ AND ((coalesce(json_extract(r.value,'$.input.rollingChild'),0)=0 AND
+  (json_extract(r.value,'$.status')='queued' OR (json_extract(r.value,'$.status') IN ('running','processing','unknown','saving') AND r.updated<=clock.now-5000)
+   OR (json_extract(r.value,'$.status') IN ('succeeded','failed') AND EXISTS(SELECT 1 FROM records billing WHERE billing.bucket='billing' AND billing.id=r.id AND billing.owner=r.owner AND json_extract(billing.value,'$.status') IN ('charge_pending','refund_pending','revenue_pending','reconciliation_required')))))
+  OR (coalesce(json_extract(r.value,'$.input.rollingChild'),0)=1 AND json_extract(r.value,'$.status')='saving' AND r.updated<=clock.now-5000))
+ UNION ALL SELECT 'media_edits',id,owner,json_extract(value,'$.status'),updated,'media-edit:'||id FROM records,clock WHERE bucket='media-edits' AND (json_extract(value,'$.status')='queued' OR (json_extract(value,'$.status')='running' AND updated<=clock.now-600000))
+ UNION ALL SELECT 'frames',id,owner,json_extract(value,'$.status'),updated,'frame-extraction:'||id FROM records WHERE bucket='frame-extractions' AND json_extract(value,'$.status')='queued'
+ UNION ALL SELECT 'depth',id,owner,json_extract(value,'$.preparation.status'),updated,'depth-preparation:'||id||':'||json_extract(value,'$.preparation.id') FROM records,clock WHERE bucket='depth-video-clones' AND coalesce(json_extract(value,'$.preparation.id'),'')<>'' AND (json_extract(value,'$.preparation.status')='queued' OR (json_extract(value,'$.preparation.status')='running' AND coalesce(json_extract(value,'$.preparation.leaseUntil'),0)<=clock.now))
+ UNION ALL SELECT 'hot_remix',id,owner,json_extract(value,'$.status'),updated,'hot-video-remix:'||id FROM records,clock WHERE bucket='hot-video-remix-jobs' AND (json_extract(value,'$.status')='queued' OR (json_extract(value,'$.status')='running' AND updated<=clock.now-600000))
+ UNION ALL SELECT 'voice',id,owner,json_extract(value,'$.status'),updated,'voice-synthesis:'||id FROM records,clock WHERE bucket='voice-jobs' AND ((json_extract(value,'$.status')='queued' AND json_extract(value,'$.billingState')='charged') OR (json_extract(value,'$.status') IN ('running','saving') AND json_extract(value,'$.billingState')='charged' AND updated<=clock.now-600000) OR (json_extract(value,'$.status')='succeeded' AND json_extract(value,'$.billingState') IN ('charged','revenue_pending')) OR (json_extract(value,'$.status')='failed' AND json_extract(value,'$.billingState') IN ('charged','refund_pending','reconciliation_required')))
+ UNION ALL SELECT 'voice_replace',id,owner,json_extract(value,'$.status'),updated,'voice-replacement:'||id FROM records,clock WHERE bucket='voice-replace-jobs' AND (json_extract(value,'$.status')='queued' OR (json_extract(value,'$.status')='running' AND updated<=clock.now-600000))
+ UNION ALL SELECT 'rolling_jobs',id,owner,json_extract(value,'$.status'),updated,id FROM records,clock WHERE bucket='jobs' AND json_extract(value,'$.input.rollingPlan') IS NOT NULL AND coalesce(json_extract(value,'$.input.rollingChild'),0)=0
+ AND (json_extract(value,'$.status') IN ('queued','running','processing','unknown','saving') OR (json_extract(value,'$.status')='save_failed' AND coalesce(json_extract(value,'$.rollingState.restitchAttempts'),0)<3 AND coalesce(json_extract(value,'$.rollingState.restitchRetryAt'),0)<=clock.now) OR (json_extract(value,'$.status')='succeeded' AND json_extract(value,'$.rollingState.temporaryAssetsCleanupStatus') IN ('pending','failed') AND coalesce(json_extract(value,'$.rollingState.temporaryAssetsCleanupRetryAt'),0)<=clock.now))
+), metrics(kind,total,unfinished,active_states,unknown_states,candidates_before_batch_limits,candidates_without_live_record_lease) AS (
+ SELECT kinds.kind,
+ (SELECT count(*) FROM records r WHERE r.bucket=kinds.bucket AND (kinds.kind<>'ordinary_jobs' OR json_extract(r.value,'$.input.rollingPlan') IS NULL) AND (kinds.kind<>'rolling_jobs' OR (json_extract(r.value,'$.input.rollingPlan') IS NOT NULL AND coalesce(json_extract(r.value,'$.input.rollingChild'),0)=0))),
+ (SELECT count(*) FROM records r WHERE r.bucket=kinds.bucket AND (kinds.kind<>'ordinary_jobs' OR json_extract(r.value,'$.input.rollingPlan') IS NULL) AND (kinds.kind<>'rolling_jobs' OR (json_extract(r.value,'$.input.rollingPlan') IS NOT NULL AND coalesce(json_extract(r.value,'$.input.rollingChild'),0)=0)) AND coalesce(json_extract(r.value,kinds.status_path),'') NOT IN ('succeeded','failed','cancelled','completed')),
+ (SELECT count(*) FROM records r WHERE r.bucket=kinds.bucket AND (kinds.kind<>'ordinary_jobs' OR json_extract(r.value,'$.input.rollingPlan') IS NULL) AND (kinds.kind<>'rolling_jobs' OR (json_extract(r.value,'$.input.rollingPlan') IS NOT NULL AND coalesce(json_extract(r.value,'$.input.rollingChild'),0)=0)) AND json_extract(r.value,kinds.status_path) IN ('running','processing','saving')),
+ (SELECT count(*) FROM records r WHERE r.bucket=kinds.bucket AND (kinds.kind<>'ordinary_jobs' OR json_extract(r.value,'$.input.rollingPlan') IS NULL) AND (kinds.kind<>'rolling_jobs' OR (json_extract(r.value,'$.input.rollingPlan') IS NOT NULL AND coalesce(json_extract(r.value,'$.input.rollingChild'),0)=0)) AND json_extract(r.value,kinds.status_path)='unknown'),
+ (SELECT count(*) FROM candidates c WHERE c.kind=kinds.kind),
+ (SELECT count(*) FROM candidates c,clock WHERE c.kind=kinds.kind AND NOT EXISTS(SELECT 1 FROM records l WHERE l.bucket=CASE WHEN c.kind='rolling_jobs' THEN 'rolling-job-leases' ELSE 'commerce-ordinary-worker-leases' END AND l.id=c.lease_key AND l.owner=c.owner AND json_extract(l.value,'$.expiresAt')>clock.now))
+ FROM (SELECT 'ordinary_jobs' kind,'jobs' bucket,'$.status' status_path UNION ALL SELECT 'media_edits','media-edits','$.status' UNION ALL SELECT 'frames','frame-extractions','$.status' UNION ALL SELECT 'depth','depth-video-clones','$.preparation.status' UNION ALL SELECT 'hot_remix','hot-video-remix-jobs','$.status' UNION ALL SELECT 'voice','voice-jobs','$.status' UNION ALL SELECT 'voice_replace','voice-replace-jobs','$.status' UNION ALL SELECT 'rolling_jobs','jobs','$.status') kinds
+)
+SELECT json_group_object(kind,json_object('total',total,'unfinished',unfinished,'active_states',active_states,'unknown_states',unknown_states,'candidates_before_batch_limits',candidates_before_batch_limits,'candidates_without_live_record_lease',candidates_without_live_record_lease)) FROM metrics
+'''
+LEASE_SQL = r'''SELECT json_object(
+ 'ordinary_active',(SELECT count(*) FROM records WHERE bucket='commerce-ordinary-worker-leases' AND json_extract(value,'$.expiresAt')>:now_ms),
+ 'rolling_active',(SELECT count(*) FROM records WHERE bucket='rolling-job-leases' AND json_extract(value,'$.expiresAt')>:now_ms),
+ 'ordinary_expired',(SELECT count(*) FROM records WHERE bucket='commerce-ordinary-worker-leases' AND coalesce(json_extract(value,'$.expiresAt'),0)<=:now_ms),
+ 'rolling_expired',(SELECT count(*) FROM records WHERE bucket='rolling-job-leases' AND coalesce(json_extract(value,'$.expiresAt'),0)<=:now_ms),
+ 'maintenance_pending_not_measured',1)
+'''
+
+CLONE_NEWNS=0x00020000
+MS_RDONLY=1;MS_NOSUID=2;MS_NODEV=4;MS_NOEXEC=8;MS_REMOUNT=32;MS_BIND=4096;MS_REC=16384;MS_PRIVATE=1<<18
+ERRORS={'E_PLATFORM','E_BINDING','E_NS_PERMISSION','E_NS_CREATE','E_NS_IDENTITY','E_NS_PRIVATE','E_NS_PROPAGATION','E_BIND_MOUNT','E_RO_REMOUNT','E_RO_VERIFY','E_MOUNT_FORMAT','E_NESTED_MOUNT','E_FILE_METADATA','E_SIDECARS_MISSING','E_SQLITE_HEADER','E_SQLITE_READ','E_SQLITE_SCHEMA','E_FILE_REPLACED','E_CHILD_TIMEOUT','E_CHILD_OUTPUT','E_CHILD_EXIT','E_PARENT_CHANGED','E_INTERNAL'}
+class CaptureError(Exception):pass
+def fail(code):raise CaptureError(code)
+def runtime():
+ if hashlib.sha256(SOURCE).hexdigest()!=SOURCE_SHA:fail('E_INTERNAL')
+ ns={'__name__':'frozen_commerce_runtime'};exec(compile(SOURCE,'<pinned-observation>','exec'),ns);return ns
+def bounded(path,limit):
+ fd=os.open(path,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0))
+ try:
+  if not stat.S_ISREG(os.fstat(fd).st_mode):fail('E_FILE_METADATA')
+  data=bytearray()
+  while True:
+   chunk=os.read(fd,min(65536,limit+1-len(data)))
+   if not chunk:break
+   data.extend(chunk)
+   if len(data)>limit:fail('E_CHILD_OUTPUT')
+  return bytes(data)
+ finally:os.close(fd)
+def mount_rows(raw):
+ if type(raw) is not bytes or len(raw)>2097152:fail('E_MOUNT_FORMAT')
+ rows=[]
+ for line in raw.splitlines():
+  fields=line.split();sep=fields.index(b'-') if b'-' in fields else -1
+  if sep<6 or len(fields)<sep+4:fail('E_MOUNT_FORMAT')
+  point=re.sub(rb'\\([0-7]{3})',lambda m:bytes([int(m.group(1),8)]),fields[4])
+  rows.append((os.fsdecode(point),set(fields[5].decode('ascii').split(',')),fields[6:sep]))
+ return rows
+class LinuxMount:
+ def __init__(self):
+  self.lib=ctypes.CDLL(None,use_errno=True)
+  self.lib.unshare.argtypes=[ctypes.c_int];self.lib.unshare.restype=ctypes.c_int
+  self.lib.mount.argtypes=[ctypes.c_char_p,ctypes.c_char_p,ctypes.c_char_p,ctypes.c_ulong,ctypes.c_void_p];self.lib.mount.restype=ctypes.c_int
+ def identity(self):return os.readlink('/proc/self/ns/mnt')
+ def rows(self):return mount_rows(bounded('/proc/self/mountinfo',2097152))
+ def unshare(self):
+  if self.lib.unshare(CLONE_NEWNS)!=0:fail('E_NS_PERMISSION' if ctypes.get_errno() in (errno.EPERM,errno.EACCES) else 'E_NS_CREATE')
+ def mount(self,source,target,flags,code):
+  src=None if source is None else os.fsencode(source)
+  if self.lib.mount(src,os.fsencode(target),None,flags,None)!=0:fail(code)
+def isolate(directory,backend):
+ original=backend.identity();backend.unshare()
+ if backend.identity()==original:fail('E_NS_IDENTITY')
+ backend.mount(None,'/',MS_REC|MS_PRIVATE,'E_NS_PRIVATE')
+ rows=backend.rows()
+ if any(any(x.startswith((b'shared:',b'master:',b'propagate_from:')) for x in extra) for _,_,extra in rows):fail('E_NS_PROPAGATION')
+ path=str(directory)
+ if any(point.startswith(path.rstrip('/')+'/') for point,_,_ in rows):fail('E_NESTED_MOUNT')
+ backend.mount(path,path,MS_BIND,'E_BIND_MOUNT')
+ backend.mount(None,path,MS_BIND|MS_REMOUNT|MS_RDONLY|MS_NOSUID|MS_NODEV|MS_NOEXEC,'E_RO_REMOUNT')
+ matches=[(opts,extra) for point,opts,extra in backend.rows() if point==path]
+ if len(matches)!=1 or not {'ro','nosuid','nodev','noexec'}<=matches[0][0] or matches[0][1]:fail('E_RO_VERIFY')
+ if not os.statvfs(directory).f_flag & os.ST_RDONLY:fail('E_RO_VERIFY')
+ return True
+def files(database,ns):
+ result={}
+ for path in [database,Path(str(database)+'-wal'),Path(str(database)+'-shm')]:
+  try:meta=ns['trusted'](path)
+  except FileNotFoundError:fail('E_SIDECARS_MISSING')
+  except Exception:fail('E_FILE_METADATA')
+  if meta.st_nlink!=1:fail('E_FILE_METADATA')
+  result[str(path)]=(meta.st_dev,meta.st_ino)
+ return result
+def sqlite_read(database,ns):
+ # Called only after isolate returned true; no immutable or fallback path exists.
+ import sqlite3
+ from urllib.parse import quote
+ before=files(database,ns)
+ fd=os.open(database,os.O_RDONLY|os.O_NOFOLLOW)
+ try:header=os.read(fd,100)
+ finally:os.close(fd)
+ if len(header)!=100 or header[:16]!=b'SQLite format 3\0' or header[18:20]!=b'\x02\x02':fail('E_SQLITE_HEADER')
+ conn=sqlite3.connect('file:'+quote(str(database),safe='/')+'?mode=ro&cache=private',uri=True,timeout=2)
+ try:
+  conn.enable_load_extension(False)
+  for pragma in ['query_only=ON','trusted_schema=OFF','busy_timeout=2000','temp_store=MEMORY','mmap_size=0']:conn.execute('PRAGMA '+pragma)
+  if conn.execute('PRAGMA query_only').fetchone()!=(1,) or conn.execute('PRAGMA temp_store').fetchone()!=(2,):fail('E_SQLITE_SCHEMA')
+  if conn.execute("SELECT type FROM sqlite_schema WHERE name='records'").fetchone()!=('table',):fail('E_SQLITE_SCHEMA')
+  if {r[1] for r in conn.execute('PRAGMA table_info(records)')}!={'bucket','id','owner','value','updated'}:fail('E_SQLITE_SCHEMA')
+  allowed={sqlite3.SQLITE_SELECT,sqlite3.SQLITE_READ,sqlite3.SQLITE_FUNCTION,sqlite3.SQLITE_TRANSACTION,sqlite3.SQLITE_RECURSIVE}
+  def auth(action,p1,p2,db,trigger):
+   if action not in allowed:return sqlite3.SQLITE_DENY
+   if action==sqlite3.SQLITE_FUNCTION and str(p2).lower() not in {'json_group_object','json_object','json_extract','count','coalesce'}:return sqlite3.SQLITE_DENY
+   if action==sqlite3.SQLITE_TRANSACTION and p1 not in ('BEGIN','ROLLBACK'):return sqlite3.SQLITE_DENY
+   if action==sqlite3.SQLITE_READ and (db!='main' or p1!='records'):return sqlite3.SQLITE_DENY
+   return sqlite3.SQLITE_OK
+  deadline=time.monotonic()+8;conn.set_authorizer(auth);conn.set_progress_handler(lambda:1 if time.monotonic()>deadline else 0,1000)
+  conn.execute('BEGIN');params={'now_ms':int(time.time()*1000)}
+  groups=ns['load_json'](conn.execute(COMMERCE_SQL,params).fetchone()[0]);leases=ns['load_json'](conn.execute(LEASE_SQL,params).fetchone()[0]);conn.execute('ROLLBACK')
+  if files(database,ns)!=before:fail('E_FILE_REPLACED')
+  return ns['sqlite_schema']({'read_only':True,'groups':groups,'leases':leases,'maintenance_coverage_complete':False,'claimability_guaranteed':False,'atomic_quiescence_proven':False})
+ finally:conn.close()
+def child_read(directory,ns,backend=None):
+ import resource
+ resource.setrlimit(resource.RLIMIT_CORE,(0,0));resource.setrlimit(resource.RLIMIT_FSIZE,(0,0));resource.setrlimit(resource.RLIMIT_CPU,(15,15));resource.setrlimit(resource.RLIMIT_AS,(536870912,536870912))
+ before=ns['trusted'](directory,True)
+ isolate(directory,LinuxMount() if backend is None else backend)
+ after=ns['trusted'](directory,True)
+ if (before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino):fail('E_BINDING')
+ return sqlite_read(directory/'commerce.sqlite',ns)
+def child_capture(directory,ns):
+ readfd,writefd=os.pipe();pid=os.fork()
+ if pid==0:
+  os.close(readfd)
+  try:
+   try:value={'ok':True,'error':'OK','sqlite':child_read(directory,ns)}
+   except Exception as exc:value={'ok':False,'error':str(exc) if isinstance(exc,CaptureError) and str(exc) in ERRORS else 'E_SQLITE_READ','sqlite':None}
+   raw=json.dumps(value,sort_keys=True).encode('ascii')
+   if len(raw)>16384:raw=b'{"ok":false,"error":"E_CHILD_OUTPUT","sqlite":null}'
+   while raw:
+    written=os.write(writefd,raw);raw=raw[written:]
+  finally:os.close(writefd);os._exit(0)
+ os.close(writefd);output=bytearray();deadline=time.monotonic()+25;reaped=False
+ try:
+  while True:
+   remaining=deadline-time.monotonic()
+   if remaining<=0:fail('E_CHILD_TIMEOUT')
+   ready,_,_=select.select([readfd],[],[],remaining)
+   if not ready:fail('E_CHILD_TIMEOUT')
+   chunk=os.read(readfd,4096)
+   if not chunk:break
+   output.extend(chunk)
+   if len(output)>16384:fail('E_CHILD_OUTPUT')
+  _,status=os.waitpid(pid,0);reaped=True
+  if not os.WIFEXITED(status) or os.WEXITSTATUS(status)!=0:fail('E_CHILD_EXIT')
+  return ns['load_json'](bytes(output))
+ finally:
+  os.close(readfd)
+  if not reaped:
+   try:os.kill(pid,signal.SIGKILL)
+   except ProcessLookupError:pass
+   os.waitpid(pid,0)
+def capture():
+ result={'available':False,'error':'E_INTERNAL','sqlite':None,'private_namespace_destroyed':False,'parent_mounts_unchanged':False,'instances_stable':False,'business_rows_returned':0,'media_requests':0,'business_writes':0,'atomic_quiescence_proven':False}
+ if sys.platform!='linux' or not hasattr(os,'fork'):result['error']='E_PLATFORM';return result
+ ns=runtime();mount_before=bounded('/proc/self/mountinfo',2097152);namespace_before=os.readlink('/proc/self/ns/mnt')
+ try:
+  inst,ident,paths,current=ns['processes']()
+  if not inst['scan_complete'] or inst['worker_count']!=2 or {r['process_identity_sha'] for r in inst['workers']}!=EXPECTED_INSTANCES or len(paths)!=1:fail('E_BINDING')
+  if any(not all(row[k] for k in ['role_flag_matches','release_matches','commit_matches','cwd_matches_current','pm2_id_present']) for row in inst['workers']):fail('E_BINDING')
+  directory=Path(next(iter(paths)))
+  if not directory.is_absolute() or Path('/data/web/shared/runtime') not in directory.parents:fail('E_BINDING')
+  ns['trusted'](directory,True)
+  child=child_capture(directory,ns);result['private_namespace_destroyed']=True
+  result['parent_mounts_unchanged']=namespace_before==os.readlink('/proc/self/ns/mnt') and mount_before==bounded('/proc/self/mountinfo',2097152)
+  after,after_ident,after_paths,after_current=ns['processes']()
+  result['instances_stable']=after['scan_complete'] and ident==after_ident and paths==after_paths and current==after_current
+  if not result['parent_mounts_unchanged'] or not result['instances_stable']:fail('E_PARENT_CHANGED')
+  if child.get('ok') is not True:fail(child.get('error') if child.get('error') in ERRORS else 'E_CHILD_OUTPUT')
+  result.update(available=True,error='OK',sqlite=ns['sqlite_schema'](child['sqlite']))
+ except Exception as exc:result['error']=str(exc) if isinstance(exc,CaptureError) and str(exc) in ERRORS else 'E_INTERNAL'
+ return result
+if __name__=='__main__':
+ try:print(json.dumps(capture(),sort_keys=True))
+ except Exception:print('E_COMMERCE_CAPTURE');raise SystemExit(1)
