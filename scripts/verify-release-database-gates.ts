@@ -72,6 +72,8 @@ const contract = JSON.parse(read("deploy/policies/database-contract.v1.json")) a
       id: string;
       ownerRelation: string;
       ownerMustMatchRelationOwner: boolean;
+      requiredOwnerRole?: string;
+      requiredSourceSha256?: Record<string, string>;
       securityDefinerRequired: boolean;
       searchPath: string[];
       requiredNonOwnerExecuteGrantees: string[];
@@ -103,7 +105,7 @@ assertSharedAgentBatchCasCandidateCaptured(contract);
 const table = (name: string) => contract.tables.find((entry) => entry.name === name);
 const rpc = (name: string) => contract.rpcs.find((entry) => entry.name === name);
 
-assert.equal(contract.contractVersion, "20261013011500");
+assert.equal(contract.contractVersion, "20261031010000");
 assert.deepEqual(PRODUCTION_DATABASE_CONTRACT, contract, "embedded database contract is stale");
 assert.equal(contract.requiredProbeRole, "service_role");
 const liveCatalogChecks = (() => {
@@ -189,6 +191,35 @@ assert.deepEqual(liveCatalogChecks.relationSemantics, [
     }
   ]
 },
+  {
+    relation: "public.video_tasks",
+    requiredColumns: [{ name: "provider_asset_preparation", type: "jsonb" }],
+    requiredConstraints: [{
+      name: "video_tasks_provider_asset_preparation_object",
+      validated: true,
+      definitionTokens: ["provider_asset_preparation", "jsonb_typeof", "object"],
+    }],
+  },
+  {
+    relation: "public.gaorui_provider_asset_operations",
+    requiredOwnerRelation: "public.user_files",
+    rlsRequired: true,
+    forbiddenPrivilegePrincipals: ["PUBLIC", "anon", "authenticated", "service_role"],
+    requiredColumns: [
+      { name: "scope_key", type: "text" },
+      { name: "operation_id", type: "uuid" },
+      { name: "scope", type: "jsonb" },
+      { name: "claim_token", type: "uuid" },
+      { name: "state", type: "text" },
+      { name: "result", type: "jsonb" },
+      { name: "error_code", type: "text" },
+      { name: "budget_authorization_id", type: "text" },
+      { name: "maximum_charge_cny", type: "numeric" },
+      { name: "created_at", type: "timestamp with time zone" },
+      { name: "updated_at", type: "timestamp with time zone" },
+    ],
+    requiredConstraints: [],
+  },
 ]);
 assert.deepEqual(liveCatalogChecks.triggerSemantics, [
   {
@@ -198,7 +229,8 @@ assert.deepEqual(liveCatalogChecks.triggerSemantics, [
     enabled: true,
   },
 ]);
-assert.deepEqual(liveCatalogChecks.functionSecurityGroups, [
+const purgeSignature = "public.purge_expired_video_history(integer,integer)";
+assert.deepEqual(liveCatalogChecks.functionSecurityGroups.filter(group => !group.functions.includes(purgeSignature)), [
   {
     "id": "image-generation-request",
     "ownerRelation": "public.image_generation_requests",
@@ -555,16 +587,170 @@ assert.deepEqual(liveCatalogChecks.functionSecurityGroups, [
     "functions": [
       "public.publish_image_model_validation_receipt(text,text,text,text,boolean,boolean,text,bigint,text,jsonb)"
     ]
+  },
+  {
+    id: "gaorui-person-reference-assets",
+    ownerRelation: "public.user_files",
+    ownerMustMatchRelationOwner: true,
+    securityDefinerRequired: true,
+    searchPath: ["pg_catalog", "public"],
+    requiredNonOwnerExecuteGrantees: ["service_role"],
+    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
+    superuserInherentPrivilegeExcluded: true,
+    forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
+    functions: [
+      "public.claim_gaorui_provider_person_asset_v1(text,jsonb,uuid,text,numeric)",
+      "public.settle_gaorui_provider_person_asset_v1(text,uuid,text,jsonb,text)",
+    ],
+    requiredSourceSha256: {
+      "public.claim_gaorui_provider_person_asset_v1(text,jsonb,uuid,text,numeric)": "d5c4ac422afa02ed51862f633218487f48087836f57d4f1ad65825578d6d997b",
+      "public.settle_gaorui_provider_person_asset_v1(text,uuid,text,jsonb,text)": "9a1cab4fbf54c9b5291d575ed92ae525be307b5be700fe586d3757d9cbd60c3a",
+    },
+  },
+{
+  "id": "digital-human-asset-preflight",
+  "ownerRelation": "public.user_files",
+  "ownerMustMatchRelationOwner": false,
+  "requiredOwnerRole": "zimeiti_owner",
+  "securityDefinerRequired": true,
+  "searchPath": [
+    "pg_catalog",
+    "pg_temp"
+  ],
+  "requiredNonOwnerExecuteGrantees": [
+    "service_role"
+  ],
+  "allowedEffectiveExecutePrincipals": [
+    "function_owner",
+    "service_role"
+  ],
+  "superuserInherentPrivilegeExcluded": true,
+  "forbiddenExecutePrincipals": [
+    "PUBLIC",
+    "anon",
+    "authenticated"
+  ],
+  "functions": [
+    "public.read_gaorui_person_asset_preflight_v1(text,text,text,text,text)"
+  ],
+  "requiredSourceSha256": {
+    "public.read_gaorui_person_asset_preflight_v1(text,text,text,text,text)": "3501638a81e522af349b44c053b9c859ac6626da40c9d365abdae4db48d6d411"
+  },
+  "requiredDefinitionTokens": {
+    "public.read_gaorui_person_asset_preflight_v1(text,text,text,text,text)": [
+      "STABLE",
+      "SECURITY DEFINER",
+      "operation.scope->>'user_id' = p_user_id",
+      "operation.scope->>'owned_asset_id' = p_owned_asset_id",
+      "operation.scope->>'model_id' = p_model_id",
+      "operation.scope->>'provider_origin' = p_provider_origin",
+      "operation.scope->>'credential_binding_fingerprint' = p_credential_binding_fingerprint",
+      "EXISTS",
+      "public.user_files",
+      "asset.id::text = p_owned_asset_id",
+      "asset.user_id::text = p_user_id",
+      "asset.storage_key = operation.scope->>'storage_key'",
+      "asset.file_category = 'image'",
+      "asset.source = 'digital-human-input'",
+      "asset.storage_provider = 'tencent_cos'",
+      "nullif(to_jsonb(asset)->>'deleted_at', '') IS NULL",
+      "coalesce(to_jsonb(asset)->>'is_deleted', 'false') <> 'true'",
+      "nullif(asset.meta->>'deleted_at', '') IS NULL",
+      "nullif(asset.meta->>'deletedAt', '') IS NULL",
+      "coalesce(asset.meta->>'deleted', 'false') <> 'true'",
+      "LIMIT 101"
+    ]
   }
-]);assert.deepEqual(
+}
+
+]);
+const purgeSecurityGroups = liveCatalogChecks.functionSecurityGroups.filter(group => group.functions.includes(purgeSignature));
+assert.deepEqual(purgeSecurityGroups, [{
+  id: "video-history-purge-billing-protection",
+  ownerRelation: "public.video_tasks",
+  ownerMustMatchRelationOwner: false,
+  requiredOwnerRole: "postgres",
+  securityDefinerRequired: true,
+  searchPath: ["public", "pg_temp"],
+  requiredNonOwnerExecuteGrantees: ["service_role"],
+  allowedEffectiveExecutePrincipals: ["function_owner", "service_role"],
+  superuserInherentPrivilegeExcluded: true,
+  forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
+  functions: [purgeSignature],
+  requiredSourceSha256: { [purgeSignature]: "b9258ff96251b71b8f441a7cb8afb910c53f9422207d353269f18360ff0f7cec" },
+}], "purge source, preserved function owner and ACL contract must be independently fixed");
+assert.deepEqual(
   liveCatalogChecks.migrationLedger.requiredMigrations.map((entry) => entry.version),
   [
     "20261010023000", "20261010130000", "20261010131000", "20261010132000",
     "20261010133000", "20261010134000", "20261010135000", "20261010140000",
     "20261012010000", "20261012011000", "20261012012000", "20261012013000",
-    "20261012014000",
+    "20261012014000", "20261030010000", "20261030020000", "20261030030000", "20261030040000", "20261030050000", "20261030060000", "20261030070000", "20261030080000", "20261031010000",
   ],
 );
+const pendingCredentialMigrations = [
+  { version: "20261030010000", file: "supabase/migrations/20261030010000_platform_configuration_pending_credentials.sql", sha256: "2823d96c17df7126859ae1f2f626007a62838f8d8802fcadcbb3844d98e593c3" },
+  { version: "20261030020000", file: "supabase/migrations/20261030020000_platform_pending_credentials_base_and_llm_removal.sql", sha256: "2b0de90f3a940d855f9be68232433bb7d67321e2ca87f9a1ad3ad1efbd1c8532" },
+  { version: "20261030030000", file: "supabase/migrations/20261030030000_model_pool_credential_removal_combination_guard.sql", sha256: "8a54330daa13d671a3662d8ebfbb2c565ab3143f4129b6389ac55b9f97b0184e" },
+] as const;
+for (const expected of pendingCredentialMigrations) assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === expected.version), expected, "pending credential migration identity must be independently fixed");
+const videoHistoryBillingProtectionMigration = {
+  version: "20261030040000",
+  file: "supabase/migrations/20261030040000_video_history_unsettled_billing_protection.sql",
+  sha256: "104beaa60970d24f3f776dde831d88da4ba49d28d7b161f7406e0b03ed390ec4",
+} as const;
+assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === videoHistoryBillingProtectionMigration.version), videoHistoryBillingProtectionMigration, "unsettled video billing protection migration identity must be independently fixed");
+assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === "20261030050000"), {
+  version: "20261030050000",
+  file: "supabase/migrations/20261030050000_video_credential_only_publication.sql",
+  sha256: "6ea6cea3b9b03ba1688e75ac344cda4425cb8cd967330ef3d666998a4accc069",
+}, "video credential-only publication migration identity must be independently fixed");
+assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === "20261030060000"), {
+  version: "20261030060000",
+  file: "supabase/migrations/20261030060000_video_pricing_only_publication.sql",
+  sha256: "53ae17629297d1dab7d8c049143774358c56bdd5082796ce331ab123f1fd11f1",
+}, "video pricing-only publication migration identity must be independently fixed");
+assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === "20261030070000"), {
+  version: "20261030070000",
+  file: "supabase/migrations/20261030070000_video_upsert_publication.sql",
+  sha256: "6bf7670160b5d7291da3a18d52561714c17964126dcb4edda232f57f262eb438",
+}, "video upsert publication migration identity must be independently fixed");
+// Independently matched to reviewed C9 intent, rollback fixtures and post-apply
+// ledger readback; never obtain this expected hash from the current candidate.
+const gaoruiAssetMigration = {
+  version: "20261030080000",
+  file: "supabase/migrations/20261030080000_gaorui_provider_asset_operations.sql",
+  sha256: "0c0dc5115f083ee3d260f895307b7912b26789c3d64e5854391151874bd1a007",
+};
+assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === gaoruiAssetMigration.version), gaoruiAssetMigration, "Gaorui asset migration identity must be independently fixed");
+assert.ok(table("video_tasks")?.columns.includes("provider_asset_preparation"), "video task asset preparation column is mandatory");
+assert.equal(table("gaorui_provider_asset_operations"), undefined, "internal asset operation table must not become a client table contract");
+const digitalPreflightMigration = {"version": "20261031010000", "file": "supabase/migrations/20261031010000_digital_human_asset_preflight.sql", "sha256": "35d412828f7128797f01f6387ccd7281c474126159d4f069a38de6c4f40a6a1e"};
+const digitalPreflightSignature = "public.read_gaorui_person_asset_preflight_v1(text,text,text,text,text)";
+const digitalPreflightGroup = liveCatalogChecks.functionSecurityGroups.find(group => group.id === "digital-human-asset-preflight")!;
+assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === digitalPreflightMigration.version), digitalPreflightMigration);
+assert.deepEqual(rpc("read_gaorui_person_asset_preflight_v1"), {"name": "read_gaorui_person_asset_preflight_v1", "feature": "digital-human-asset-preflight", "arguments": ["p_user_id", "p_owned_asset_id", "p_model_id", "p_provider_origin", "p_credential_binding_fingerprint"]});
+const digitalPreflightSql = read(digitalPreflightMigration.file);
+const digitalPreflightSource = digitalPreflightSql.match(/AS \$\$([\s\S]*?)\$\$;/u)?.[1];
+assert.ok(digitalPreflightSource);
+assert.equal(sha256(digitalPreflightSource), "3501638a81e522af349b44c053b9c859ac6626da40c9d365abdae4db48d6d411");
+assert.ok(!/\b(?:INSERT|UPDATE|DELETE|TRUNCATE|CREATE TABLE)\b/u.test(digitalPreflightSql), "preflight must remain read-only");
+assert.match(digitalPreflightSql, /ALTER FUNCTION[^;]+OWNER TO zimeiti_owner;/u);
+assert.match(digitalPreflightSql, /REVOKE ALL ON FUNCTION[^;]+FROM PUBLIC, anon, authenticated, service_role;/u);
+assert.match(digitalPreflightSql, /GRANT EXECUTE ON FUNCTION[^;]+TO service_role;/u);
+const gaoruiAssetRpcArguments = {
+  claim_gaorui_provider_person_asset_v1: ["p_scope_key", "p_scope", "p_claim_token", "p_budget_authorization_id", "p_maximum_charge_cny"],
+  settle_gaorui_provider_person_asset_v1: ["p_scope_key", "p_claim_token", "p_state", "p_result", "p_error_code"],
+};
+for (const [name, arguments_] of Object.entries(gaoruiAssetRpcArguments)) {
+  assert.deepEqual(rpc(name), { name, feature: "gaorui-person-reference-assets", arguments: arguments_ }, `Gaorui asset RPC must match reviewed contract: ${name}`);
+}
+const pendingCredentialRpcArguments = {
+  stage_model_pool_candidate_with_credentials_atomic: ["p_actor_id", "p_request_id", "p_request_payload", "p_snapshot", "p_snapshot_sha256", "p_validation_result", "p_status", "p_change_note", "p_parent_release_id", "p_credential_changes"],
+  read_platform_model_pending_credential_metadata: ["p_release_id"],
+  read_platform_model_mutation_receipt: ["p_actor_id", "p_request_id", "p_request_payload"],
+};
+for (const [name, args] of Object.entries(pendingCredentialRpcArguments)) assert.deepEqual(rpc(name)?.arguments, args, `pending credential RPC arguments must match approved contract: ${name}`);
 for (const migration of liveCatalogChecks.migrationLedger.requiredMigrations) {
   assert.equal(sha256(read(migration.file)), migration.sha256, `migration source hash changed: ${migration.file}`);
 }
@@ -916,6 +1102,29 @@ const openApiFixture = {
   ])),
 };
 assert.equal(validateProductionDatabaseOpenApi(openApiFixture).ok, true);
+for (const [name, args] of Object.entries(pendingCredentialRpcArguments)) {
+  const missingRpc = structuredClone(openApiFixture); delete missingRpc.paths[`/rpc/${name}`];
+  assert.ok(validateProductionDatabaseOpenApi(missingRpc).missingRpcs.includes(name));
+  for (const argument of args) {
+    const missingArgument = structuredClone(openApiFixture); delete missingArgument.paths[`/rpc/${name}`].post.requestBody.schema.properties[argument];
+    assert.ok(validateProductionDatabaseOpenApi(missingArgument).missingRpcArguments.includes(`${name}.${argument}`));
+  }
+}
+const exposedLegacyPublisher = structuredClone(openApiFixture);
+exposedLegacyPublisher.paths["/rpc/publish_platform_configuration_release_before_pending_credentials"] = { post: { requestBody: { schema: { properties: {} } } } };
+assert.ok(validateProductionDatabaseOpenApi(exposedLegacyPublisher).forbiddenRpcsPresent.includes("publish_platform_configuration_release_before_pending_credentials"), "legacy internal publisher must not be REST-executable");
+// PostgreSQL truncates identifiers to 63 bytes. The actual catalog/RPC path is
+// shorter than the historical spelling above; neither HTTP method may expose it.
+const actualLegacyPublisherName = "publish_platform_configuration_release_before_pending_credentia";
+assert.equal(Buffer.byteLength(actualLegacyPublisherName, "utf8"), 63);
+for (const method of ["get", "post"] as const) {
+  const exposedActualPublisher = structuredClone(openApiFixture);
+  exposedActualPublisher.paths[`/rpc/${actualLegacyPublisherName}`] = { [method]: {} };
+  const result = validateProductionDatabaseOpenApi(exposedActualPublisher);
+  assert.equal(result.ok, false, `actual private publisher ${method.toUpperCase()} must fail readiness`);
+  assert.ok(result.forbiddenRpcsPresent.includes(actualLegacyPublisherName), "actual PostgreSQL-truncated publisher name must be forbidden");
+}
+
 const preflightReferenceTables = new Map((JSON.parse(read("scripts/contracts/production-preflight-reference.v1.json")) as {
   tables: Array<{ name: string; select: string[] }>;
 }).tables.map((entry) => [entry.name, entry]));
@@ -1643,6 +1852,7 @@ type LiveFunctionSecurity = {
   securityDefiner: boolean;
   searchPath: string[];
   definition: string;
+  source?: string;
   argumentNames: string[];
   executeGrantees: string[];
   unexpectedEffectiveGrantees: string[];
@@ -1822,7 +2032,16 @@ function liveCatalogFailures(live: LiveCatalogProjection) {
         failures.push(`FUNCTION_MISSING:${signature}`);
         continue;
       }
-      if (actual.owner !== actualGroup.tableOwner) failures.push(`FUNCTION_OWNER_MISMATCH:${signature}`);
+      if (expectedGroup.ownerMustMatchRelationOwner) {
+        if (actual.owner !== actualGroup.tableOwner) failures.push(`FUNCTION_OWNER_MISMATCH:${signature}`);
+      } else if (!expectedGroup.requiredOwnerRole || actual.owner !== expectedGroup.requiredOwnerRole) {
+        failures.push(`FUNCTION_OWNER_MISMATCH:${signature}`);
+      }
+      const requiredSourceHash = expectedGroup.requiredSourceSha256?.[signature];
+      if (requiredSourceHash) {
+        if (typeof actual.source !== "string" || actual.source.length === 0) failures.push(`FUNCTION_SOURCE_MISSING:${signature}`);
+        else if (sha256(actual.source) !== requiredSourceHash) failures.push(`FUNCTION_SOURCE_HASH_MISMATCH:${signature}`);
+      }
       if (actual.securityDefiner !== expectedGroup.securityDefinerRequired) failures.push(`FUNCTION_SECURITY_DEFINER_REQUIRED:${signature}`);
       if (actual.searchPath.length !== 1 || actual.searchPath[0] !== expectedSearchPath) {
         failures.push(`FUNCTION_SEARCH_PATH_MISMATCH:${signature}`);
@@ -1835,7 +2054,7 @@ function liveCatalogFailures(live: LiveCatalogProjection) {
       if (expectedArguments && JSON.stringify(actual.argumentNames) !== JSON.stringify(expectedArguments)) {
         failures.push(`FUNCTION_ARGUMENT_NAMES_MISMATCH:${signature}`);
       }
-      const nonOwnerGrantees = sortedUnique(actual.executeGrantees.filter((name) => name !== actualGroup.tableOwner));
+      const nonOwnerGrantees = sortedUnique(actual.executeGrantees.filter((name) => name !== actual.owner));
       if (JSON.stringify(nonOwnerGrantees) !== JSON.stringify(expectedGroup.requiredNonOwnerExecuteGrantees)) {
         failures.push(`FUNCTION_EXECUTE_ACL_MISMATCH:${signature}`);
       }
@@ -1894,22 +2113,51 @@ function liveCatalogFailures(live: LiveCatalogProjection) {
   return failures;
 }
 
+// pg_proc includes OUT/TABLE names in proargnames; RPC ABI includes only inputs.
+function catalogInputArgumentNames(names: unknown, modes: unknown): string[] {
+  if (!Array.isArray(names)) return [];
+  if (modes == null) return names.map(String);
+  assert.ok(Array.isArray(modes) && modes.length === names.length, "CATALOG_ARGUMENT_MODES_INVALID");
+  assert.ok(modes.every(mode => ["i", "b", "v", "o", "t"].includes(String(mode))), "CATALOG_ARGUMENT_MODE_UNKNOWN");
+  return names.filter((_, index) => ["i", "b", "v"].includes(String(modes[index]))).map(String);
+}
+assert.deepEqual(catalogInputArgumentNames(["a", "b"], null), ["a", "b"]);
+assert.deepEqual(catalogInputArgumentNames(["a", "b", "c", "out", "row"], ["i", "b", "v", "o", "t"]), ["a", "b", "c"]);
+assert.throws(() => catalogInputArgumentNames(["a"], []), /CATALOG_ARGUMENT_MODES_INVALID/u);
+assert.throws(() => catalogInputArgumentNames(["a"], ["unknown"]), /CATALOG_ARGUMENT_MODE_UNKNOWN/u);
 const fixtureOwner = "zimeiti_owner";
+const canonicalPurgeSource = read(videoHistoryBillingProtectionMigration.file).match(/AS \$function\$([\s\S]*?)\$function\$;/u)?.[1];
+assert.ok(canonicalPurgeSource, "approved purge function source must be present");
+assert.equal(sha256(canonicalPurgeSource), purgeSecurityGroups[0].requiredSourceSha256?.[purgeSignature], "raw purge source hash must bind the approved 189 function body");
+const gaoruiAssetSecurityGroup = liveCatalogChecks.functionSecurityGroups.find(group => group.id === "gaorui-person-reference-assets")!;
+const canonicalGaoruiAssetSources: Record<string, string> = {};
+for (const signature of gaoruiAssetSecurityGroup.functions) {
+  const name = signature.match(/^public\.([a-z0-9_]+)\(/u)![1];
+  const source = read(gaoruiAssetMigration.file).match(new RegExp(`CREATE OR REPLACE FUNCTION public[.]${name}\\([\\s\\S]*?AS \\$\\$([\\s\\S]*?)\\$\\$;`, "u"))?.[1];
+  assert.ok(source, `reviewed Gaorui asset function source missing: ${signature}`);
+  assert.equal(sha256(source), gaoruiAssetSecurityGroup.requiredSourceSha256?.[signature], `reviewed Gaorui asset function raw body changed: ${signature}`);
+  canonicalGaoruiAssetSources[signature] = source;
+}
 const fixtureFunction = (
   signature: string,
   group: {
     securityDefinerRequired: boolean;
+    ownerMustMatchRelationOwner: boolean;
+    requiredOwnerRole?: string;
+    requiredSourceSha256?: Record<string, string>;
     requiredDefinitionTokens?: Record<string, string[]>;
     requiredNonOwnerExecuteGrantees: string[];
+    searchPath: string[];
   },
 ): LiveFunctionSecurity => ({
   signature,
-  owner: fixtureOwner,
+  owner: group.ownerMustMatchRelationOwner ? fixtureOwner : group.requiredOwnerRole || "",
+  source: signature === purgeSignature ? canonicalPurgeSource : signature === digitalPreflightSignature ? digitalPreflightSource : canonicalGaoruiAssetSources[signature],
   securityDefiner: group.securityDefinerRequired,
-  searchPath: ["search_path=public, pg_temp"],
+  searchPath: [`search_path=${group.searchPath.join(", ")}`],
   definition: (group.requiredDefinitionTokens?.[signature] || []).join("\n"),
   argumentNames: rpc(signature.match(/^public\.([^()]+)\(/u)?.[1] || "")?.arguments || [],
-  executeGrantees: [...group.requiredNonOwnerExecuteGrantees, fixtureOwner],
+  executeGrantees: [...group.requiredNonOwnerExecuteGrantees, group.ownerMustMatchRelationOwner ? fixtureOwner : group.requiredOwnerRole || ""],
   unexpectedEffectiveGrantees: [],
   privileges: {
     anonExecute: false,
@@ -1961,6 +2209,130 @@ const validLiveFixture: LiveCatalogProjection = {
   })),
 };
 assert.deepEqual(liveCatalogFailures(validLiveFixture), []);
+
+const preflightCatalogNames = ["p_user_id", "p_owned_asset_id", "p_model_id", "p_provider_origin", "p_credential_binding_fingerprint", "scope", "state", "result"];
+const preflightCatalogModes = ["i", "i", "i", "i", "i", "t", "t", "t"];
+const catalogShapeFixture = structuredClone(validLiveFixture);
+catalogShapeFixture.functionSecurityGroups.find(group => group.id === digitalPreflightGroup.id)!.functions[0].argumentNames = catalogInputArgumentNames(preflightCatalogNames, preflightCatalogModes);
+assert.deepEqual(liveCatalogFailures(catalogShapeFixture), [], "five IN plus three TABLE columns must preserve five-input RPC ABI");
+const wrongInputFixture = structuredClone(catalogShapeFixture);
+wrongInputFixture.functionSecurityGroups.find(group => group.id === digitalPreflightGroup.id)!.functions[0].argumentNames = catalogInputArgumentNames(["p_wrong", ...preflightCatalogNames.slice(1)], preflightCatalogModes);
+assert.ok(liveCatalogFailures(wrongInputFixture).some(failure => failure.startsWith("FUNCTION_ARGUMENT_NAMES_MISMATCH:")), "wrong input name must fail despite correct TABLE outputs");
+let digitalPreflightBlockingCases = 0;
+for (const missing of ["group", "function"]) {
+  const bad = structuredClone(validLiveFixture);
+  if (missing === "group") bad.functionSecurityGroups = bad.functionSecurityGroups.filter(group => group.id !== digitalPreflightGroup.id);
+  else bad.functionSecurityGroups.find(group => group.id === digitalPreflightGroup.id)!.functions = [];
+  assert.ok(liveCatalogFailures(bad).length > 0, "missing preflight group or function must block admission");
+  digitalPreflightBlockingCases++;
+}
+for (const mutate of [
+  (fn: LiveFunctionSecurity) => { fn.owner = "postgres"; },
+  (fn: LiveFunctionSecurity) => { fn.securityDefiner = false; },
+  (fn: LiveFunctionSecurity) => { fn.searchPath = ["search_path=pg_catalog, public"]; },
+  (fn: LiveFunctionSecurity) => { fn.source = "SELECT 1"; },
+  (fn: LiveFunctionSecurity) => { fn.argumentNames = []; },
+  (fn: LiveFunctionSecurity) => { fn.executeGrantees.push("anon"); },
+  (fn: LiveFunctionSecurity) => { fn.privileges.anonExecute = true; },
+  (fn: LiveFunctionSecurity) => { fn.privileges.authenticatedExecute = true; },
+  (fn: LiveFunctionSecurity) => { fn.unexpectedEffectiveGrantees.push("authenticated"); },
+  (fn: LiveFunctionSecurity) => { fn.privileges.serviceExecute = false; },
+  ...digitalPreflightGroup.requiredDefinitionTokens![digitalPreflightSignature].map(token => (fn: LiveFunctionSecurity) => { fn.definition = fn.definition.replace(token, ""); }),
+]) {
+  const bad = structuredClone(validLiveFixture);
+  mutate(bad.functionSecurityGroups.find(group => group.id === digitalPreflightGroup.id)!.functions[0]);
+  assert.ok(liveCatalogFailures(bad).length > 0, "preflight owner, ACL, source and scoped semantics drift must block admission");
+  digitalPreflightBlockingCases++;
+}
+for (const remove of [true, false]) {
+  const bad = structuredClone(validLiveFixture);
+  if (remove) bad.ledger = bad.ledger.filter(row => row.version !== digitalPreflightMigration.version);
+  else bad.ledger.find(row => row.version === digitalPreflightMigration.version)!.hash = "0".repeat(64);
+  assert.ok(liveCatalogFailures(bad).some(failure => failure.startsWith("MIGRATION_LEDGER_")), "migration 194 is independently mandatory");
+  digitalPreflightBlockingCases++;
+}
+let gaoruiAssetBlockingCases = 0;
+for (const relationName of ["public.video_tasks", "public.gaorui_provider_asset_operations"]) {
+  const expected = liveCatalogChecks.relationSemantics.find(relation => relation.relation === relationName)!;
+  const missing = structuredClone(validLiveFixture);
+  missing.relationSemantics = missing.relationSemantics.filter(relation => relation.relation !== relationName);
+  assert.ok(liveCatalogFailures(missing).length > 0, "missing Gaorui asset relation must block admission");
+  gaoruiAssetBlockingCases++;
+  for (const column of expected.requiredColumns) for (const remove of [true, false]) {
+    const bad = structuredClone(validLiveFixture);
+    const relation = bad.relationSemantics.find(entry => entry.relation === relationName)!;
+    if (remove) relation.columns = relation.columns.filter(entry => entry.name !== column.name);
+    else relation.columns.find(entry => entry.name === column.name)!.type = "wrong_type";
+    assert.ok(liveCatalogFailures(bad).length > 0, `Gaorui asset column drift must block admission: ${column.name}`);
+    gaoruiAssetBlockingCases++;
+  }
+}
+for (const mutate of [
+  (relation: LiveRelationSemantics) => { relation.owner = "wrong_owner"; },
+  (relation: LiveRelationSemantics) => { relation.rlsEnabled = false; },
+  ...["PUBLIC", "anon", "authenticated", "service_role"].map(principal => (relation: LiveRelationSemantics) => { relation.forbiddenPrivilegePrincipals.push(principal); }),
+]) {
+  const bad = structuredClone(validLiveFixture);
+  mutate(bad.relationSemantics.find(relation => relation.relation === "public.gaorui_provider_asset_operations")!);
+  assert.ok(liveCatalogFailures(bad).length > 0, "Gaorui operation owner/RLS/privilege drift must block admission");
+  gaoruiAssetBlockingCases++;
+}
+for (const change of ["missing", "invalidated", "provider_asset_preparation", "jsonb_typeof", "object"]) {
+  const bad = structuredClone(validLiveFixture);
+  const relation = bad.relationSemantics.find(entry => entry.relation === "public.video_tasks")!;
+  if (change === "missing") relation.constraints = [];
+  else if (change === "invalidated") relation.constraints[0].validated = false;
+  else relation.constraints[0].definition = relation.constraints[0].definition.replace(change, "");
+  assert.ok(liveCatalogFailures(bad).length > 0, "video asset preparation object constraint drift must block admission");
+  gaoruiAssetBlockingCases++;
+}
+for (const signature of gaoruiAssetSecurityGroup.functions) for (const mutate of [
+  (entry: LiveFunctionSecurity) => { entry.owner = "wrong_owner"; },
+  (entry: LiveFunctionSecurity) => { entry.securityDefiner = false; },
+  (entry: LiveFunctionSecurity) => { entry.searchPath = ["search_path=public, pg_temp"]; },
+  (entry: LiveFunctionSecurity) => { delete entry.source; },
+  (entry: LiveFunctionSecurity) => { entry.source += "\n-- drift"; },
+  (entry: LiveFunctionSecurity) => { entry.argumentNames.pop(); },
+  (entry: LiveFunctionSecurity) => { entry.privileges.serviceExecute = false; },
+  (entry: LiveFunctionSecurity) => { entry.executeGrantees.push("PUBLIC"); },
+  (entry: LiveFunctionSecurity) => { entry.unexpectedEffectiveGrantees.push("inherited_runtime_role"); },
+]) {
+  const bad = structuredClone(validLiveFixture);
+  mutate(bad.functionSecurityGroups.find(group => group.id === gaoruiAssetSecurityGroup.id)!.functions.find(entry => entry.signature === signature)!);
+  assert.ok(liveCatalogFailures(bad).length > 0, `Gaorui asset function drift must block admission: ${signature}`);
+  gaoruiAssetBlockingCases++;
+}
+for (const remove of [true, false]) {
+  const bad = structuredClone(validLiveFixture);
+  if (remove) bad.ledger = bad.ledger.filter(entry => entry.version !== gaoruiAssetMigration.version);
+  else bad.ledger.find(entry => entry.version === gaoruiAssetMigration.version)!.hash = "0".repeat(64);
+  assert.ok(liveCatalogFailures(bad).some(failure => failure.startsWith("MIGRATION_LEDGER_")), "migration 193 must remain independently mandatory");
+  gaoruiAssetBlockingCases++;
+}
+
+let purgeFunctionSemanticBlockingCases = 0;
+for (const mutation of [
+  (entry: LiveFunctionSecurity) => { entry.owner = "wrong_owner"; },
+  (entry: LiveFunctionSecurity) => { delete entry.source; },
+  (entry: LiveFunctionSecurity) => { entry.source = `${entry.source}\n-- changed`; },
+  (entry: LiveFunctionSecurity) => { entry.source = `${entry.source}\n-- provider_submitted`; },
+  (entry: LiveFunctionSecurity) => { entry.executeGrantees.push("PUBLIC"); },
+  (entry: LiveFunctionSecurity) => { entry.executeGrantees.push("extra_runtime_role"); },
+  (entry: LiveFunctionSecurity) => { entry.unexpectedEffectiveGrantees.push("inherited_runtime_role"); },
+]) {
+  const invalid = structuredClone(validLiveFixture);
+  const entry = invalid.functionSecurityGroups.find(group => group.id === "video-history-purge-billing-protection")!.functions[0];
+  mutation(entry);
+  assert.ok(liveCatalogFailures(invalid).length > 0, "purge owner/source/ACL mutation must fail");
+  purgeFunctionSemanticBlockingCases += 1;
+}
+const missingPurgeSource = structuredClone(validLiveFixture);
+delete missingPurgeSource.functionSecurityGroups.find(group => group.id === "video-history-purge-billing-protection")!.functions[0].source;
+assert.ok(liveCatalogFailures(missingPurgeSource).includes(`FUNCTION_SOURCE_MISSING:${purgeSignature}`));
+const changedPurgeSource = structuredClone(validLiveFixture);
+changedPurgeSource.functionSecurityGroups.find(group => group.id === "video-history-purge-billing-protection")!.functions[0].source += "\n";
+assert.ok(liveCatalogFailures(changedPurgeSource).includes(`FUNCTION_SOURCE_HASH_MISMATCH:${purgeSignature}`));
+purgeFunctionSemanticBlockingCases += 2;
 
 let functionDependencyFixtureCases = 1; // Valid catalog above includes both edges.
 for (const expected of liveCatalogChecks.functionDependencyEdges) {
@@ -2030,6 +2402,31 @@ for(const entry of [
 ]) {for(const missing of [true,false]) {const bad=structuredClone(validLiveFixture);if(missing)bad.ledger=bad.ledger.filter(e=>e.version!==entry.version);else bad.ledger.find(e=>e.version===entry.version)!.hash="0".repeat(64);assert.ok(liveCatalogFailures(bad).some(f=>f.startsWith("MIGRATION_LEDGER_")));}}
 for(const relation of ["public.autodl_h3_jobs","public.autodl_h3_settlements"]) {for(const invalidated of [true,false]) {const bad=structuredClone(validLiveFixture);const constraint=bad.relationSemantics.find(r=>r.relation===relation)!.constraints[0];if(invalidated)constraint.validated=false;else constraint.definition="CHECK (stable_asset_url ~ '^object://tencent_cos/')";assert.ok(liveCatalogFailures(bad).some(f=>f.startsWith("RELATION_CONSTRAINT_")));}}
 
+// Do not accept a pre-186 database or a database missing only the 187 behavior fix.
+const missingBothPendingMigrations = structuredClone(validLiveFixture);
+missingBothPendingMigrations.ledger = missingBothPendingMigrations.ledger.filter(entry => !["20261030010000", "20261030020000"].includes(entry.version));
+const missingBothFailures = liveCatalogFailures(missingBothPendingMigrations);
+for (const version of ["20261030010000", "20261030020000"]) assert.ok(missingBothFailures.includes(`MIGRATION_LEDGER_ROW_MISSING:${version}`));
+const missingOnlyPendingForward = structuredClone(validLiveFixture);
+missingOnlyPendingForward.ledger = missingOnlyPendingForward.ledger.filter(entry => entry.version !== "20261030020000");
+assert.ok(liveCatalogFailures(missingOnlyPendingForward).includes("MIGRATION_LEDGER_ROW_MISSING:20261030020000"));
+const driftedPendingForward = structuredClone(validLiveFixture);
+driftedPendingForward.ledger.find(entry => entry.version === "20261030020000")!.hash = "0".repeat(64);
+assert.ok(liveCatalogFailures(driftedPendingForward).includes("MIGRATION_LEDGER_HASH_MISMATCH:20261030020000"));
+// Migration 188 is independently mandatory even when 186 and 187 are present.
+const missingCredentialRemovalGuard = structuredClone(validLiveFixture);
+missingCredentialRemovalGuard.ledger = missingCredentialRemovalGuard.ledger.filter(entry => entry.version !== "20261030030000");
+assert.ok(liveCatalogFailures(missingCredentialRemovalGuard).includes("MIGRATION_LEDGER_ROW_MISSING:20261030030000"));
+const driftedCredentialRemovalGuard = structuredClone(validLiveFixture);
+driftedCredentialRemovalGuard.ledger.find(entry => entry.version === "20261030030000")!.hash = "0".repeat(64);
+assert.ok(liveCatalogFailures(driftedCredentialRemovalGuard).includes("MIGRATION_LEDGER_HASH_MISMATCH:20261030030000"));
+// Migration 189 must remain present and exact after all pending-credential fixes.
+const missingUnsettledVideoBillingProtection = structuredClone(validLiveFixture);
+missingUnsettledVideoBillingProtection.ledger = missingUnsettledVideoBillingProtection.ledger.filter(entry => entry.version !== "20261030040000");
+assert.ok(liveCatalogFailures(missingUnsettledVideoBillingProtection).includes("MIGRATION_LEDGER_ROW_MISSING:20261030040000"));
+const driftedUnsettledVideoBillingProtection = structuredClone(validLiveFixture);
+driftedUnsettledVideoBillingProtection.ledger.find(entry => entry.version === "20261030040000")!.hash = "0".repeat(64);
+assert.ok(liveCatalogFailures(driftedUnsettledVideoBillingProtection).includes("MIGRATION_LEDGER_HASH_MISMATCH:20261030040000"));
 const missingLedgerFixture = structuredClone(validLiveFixture);
 missingLedgerFixture.ledger.pop();
 assert.match(liveCatalogFailures(missingLedgerFixture).join("\n"), /MIGRATION_LEDGER_ROW_MISSING/u);
@@ -2251,8 +2648,8 @@ async function verifyLiveCatalog(): Promise<LiveCatalogProjection> {
       const functions: LiveFunctionSecurity[] = [];
       for (const signature of expectedGroup.functions) {
         const row = (await client.query(
-          `select pg_get_userbyid(p.proowner) as owner,p.prosecdef as security_definer,p.proconfig,p.proargnames,
-                  pg_get_functiondef(p.oid) as definition,
+          `select pg_get_userbyid(p.proowner) as owner,p.prosecdef as security_definer,p.proconfig,p.proargnames,p.proargmodes::text[] as proargmodes,
+                  pg_get_functiondef(p.oid) as definition,p.prosrc as source,
                   to_jsonb(array(
                     select distinct coalesce(pg_get_userbyid(acl.grantee),'PUBLIC')
                       from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
@@ -2283,7 +2680,8 @@ async function verifyLiveCatalog(): Promise<LiveCatalogProjection> {
           securityDefiner: row?.security_definer === true,
           searchPath: Array.isArray(row?.proconfig) ? row.proconfig.map(String) : [],
           definition: String(row?.definition || ""),
-          argumentNames: Array.isArray(row?.proargnames) ? row.proargnames.map(String) : [],
+          source: typeof row?.source === "string" ? row.source : undefined,
+          argumentNames: catalogInputArgumentNames(row?.proargnames, row?.proargmodes),
           executeGrantees: Array.isArray(row?.execute_grantees) ? row.execute_grantees.map(String) : [],
           unexpectedEffectiveGrantees: Array.isArray(row?.unexpected_effective_grantees)
             ? row.unexpected_effective_grantees.map(String) : [],
@@ -2374,7 +2772,7 @@ async function main() {
     contractTableCount: contract.tables.length,
     contractRpcCount: contract.rpcs.length,
     requiredTablesChecked: 17,
-    requiredRpcsChecked: 35,
+    requiredRpcsChecked: 36,
     internalOnlyTablesChecked: 4,
     nonCommerceRepairObjectsChecked: 11,
     nonCommerceMissingObjectBlockingCases: 22,
@@ -2387,7 +2785,17 @@ async function main() {
       + [...adminAuthorityColumns.values()].reduce((sum, columns) => sum + columns.length, 0) + 1 + adminAuthorityRpcArguments.length,
     staleEmbeddedContractBlockingCases: 1,
     videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
-    liveCatalogFixtureCases: 55,
+    liveCatalogFixtureCases: 62,
+    pendingCredentialLedgerBlockingCases: 5,
+    unsettledVideoBillingLedgerBlockingCases: 2,
+    purgeFunctionSemanticBlockingCases,
+    gaoruiAssetBlockingCases,
+    digitalPreflightBlockingCases,
+    digitalPreflightMigrationSha256: digitalPreflightMigration.sha256,
+    gaoruiAssetRpcArgumentsChecked: Object.values(gaoruiAssetRpcArguments).reduce((sum, args) => sum + args.length, 0),
+    gaoruiAssetMigrationSha256: gaoruiAssetMigration.sha256,
+    pendingCredentialRpcArgumentsChecked: Object.values(pendingCredentialRpcArguments).reduce((sum, args) => sum + args.length, 0),
+    legacyInternalPublisherBlockingCases: 3,
     functionDependencyFixtureCases,
     deliveryCatalogFixtureCases: 35,
     liveCatalogChecked: liveMode,

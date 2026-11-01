@@ -1,4 +1,4 @@
-﻿import {
+import {
   buildStructuredAgentOutputReadyDetail,
   parseStructuredAgentOutput,
   type StructuredAgentOutputReadyDetail,
@@ -9,6 +9,7 @@ import { STORYBOARD_DIRECTOR_PRODUCTION_CONTRACT_VERSION, type StoryboardDirecto
 import { parseStoryboardDirectorIntake } from "@/lib/storyboard-director-intake";
 import { collectStoryboardDirectorReferenceBindings } from "@/lib/storyboard-director-reference-verification";
 import { STORYBOARD_PERFORMANCE_CONTRACT_VERSION, storyboardPerformanceActivationTime } from "./storyboard-director-performance";
+import { buildStoryboardPromptDraftDetail } from "./storyboard-prompt-draft";
 
 export const AGENT_WORKBENCH_HANDOFF_SCHEMA_VERSION = "agent_workbench_handoff.v1";
 export const AGENT_WORKBENCH_HANDOFF_TTL_MS = 2 * 60 * 1_000;
@@ -166,13 +167,17 @@ export function buildHomepageStoryboardDraftDetail(message: {
   streamStatus?: string;
   error?: string;
 }, expectedInput?: StoryboardDirectorInput, requiredContractVersion?: typeof STORYBOARD_DIRECTOR_PRODUCTION_CONTRACT_VERSION,
-options: { previewAssetVerification?: boolean; referenceProjectId?: string; verifiedAssetBindings?: StoryboardVerifiedAssetBinding[]; allowLegacyUnverified?: boolean; requirePerformancePlan?: boolean } = {},
+options: { previewAssetVerification?: boolean; referenceProjectId?: string; verifiedAssetBindings?: StoryboardVerifiedAssetBinding[]; allowLegacyUnverified?: boolean; requirePerformancePlan?: boolean; allowQualityWarnings?: boolean } = {},
 ): StructuredAgentOutputReadyDetail | null {
   if (message.role !== "assistant" || message.isStreaming || message.error || !message.id.trim()) return null;
+  // Text handoff does not require the model's performance/quality self-review.
+  // Original-card matching and fresh media ownership remain separate checks.
+  const promptDraft = buildStoryboardPromptDraftDetail(message, expectedInput);
+  if (promptDraft) return promptDraft;
   const explicitFailure = /(?:最终结果|结果|终态).{0,12}(?:暂未确认|不明)|避免重复发送|禁止重复提交|RECONCILIATION_REQUIRED|RESULT_UNKNOWN|\[已终止\]|\[已停止接收[^\]]*\]|输出中断|网络中断|连接中断|^发送失败：/iu;
   if (explicitFailure.test(message.content)
     || /(?:error|failed|aborted|unknown|stopped|已停止|已终止|失败|中断)/iu.test(message.streamStatus || "")) return null;
-  const result = parseStructuredAgentOutput(message.content, true, { expectedInput, requirePerformancePlan: options.requirePerformancePlan });
+  const result = parseStructuredAgentOutput(message.content, true, { expectedInput, requirePerformancePlan: options.requirePerformancePlan, allowQualityWarnings: options.allowQualityWarnings === true });
   if (result.status !== "valid" || result.kind !== "storyboard_director" || result.source !== "stable_json") return null;
   const detail = buildStructuredAgentOutputReadyDetail(message.id, result);
   if (detail && expectedInput) detail.expected_input = expectedInput;
@@ -181,7 +186,7 @@ options: { previewAssetVerification?: boolean; referenceProjectId?: string; veri
   if (detail && detail.phase !== "planned" && options.referenceProjectId) detail.reference_project_id = options.referenceProjectId;
   if (detail && detail.phase !== "planned" && options.verifiedAssetBindings) detail.verified_asset_bindings = options.verifiedAssetBindings;
   if (detail && options.allowLegacyUnverified && isRecord(detail.machine_payload) && !detail.machine_payload.production_contract_version) detail.legacy_input_compatibility = true;
-  return detail && parseStoryboardCanvasImport(detail, { assetVerification: options.previewAssetVerification ? "preview" : "required" }) ? detail : null;
+  return detail && parseStoryboardCanvasImport(detail, { assetVerification: options.previewAssetVerification ? "preview" : "required", allowQualityWarnings: options.allowQualityWarnings === true }) ? detail : null;
 }
 
 /** Resolve real adopted images under the current account before revealing or sending reference boards. */
@@ -189,7 +194,7 @@ export async function verifyStoryboardHandoffReferenceAssets(
   detail: StructuredAgentOutputReadyDetail,
   options: { userId: string; token: string; fetcher?: typeof fetch; assertCurrent?: () => void },
 ): Promise<StructuredAgentOutputReadyDetail> {
-  const preview = parseStoryboardCanvasImport(detail, { assetVerification: "preview" });
+  const preview = parseStoryboardCanvasImport(detail, { assetVerification: "preview", allowQualityWarnings: Boolean(detail.review_warnings?.length) });
   if (!preview) throw new Error("分镜包或原接收卡未通过校验，未执行交接。");
   if (preview.phase === "planned" || preview.phase === "draft") {
     const plan = { ...detail };
@@ -226,7 +231,7 @@ export async function verifyStoryboardHandoffReferenceAssets(
   }));
   assertCurrent();
   const verified = { ...detail, verified_asset_bindings: bindings };
-  if (!parseStoryboardCanvasImport(verified)) throw new Error("正式分镜引用与已采用三视图不一致，请使用原项目续写卡重新生成。");
+  if (!parseStoryboardCanvasImport(verified, { allowQualityWarnings: Boolean(verified.review_warnings?.length) })) throw new Error("正式分镜引用与已采用三视图不一致，请使用原项目续写卡重新生成。");
   return verified;
 }
 
@@ -238,7 +243,7 @@ export function createAgentWorkbenchHandoff(
 ): AgentWorkbenchHandoffEnvelope | null {
   if (!detail.commit_key.trim() || !detail.message_id.trim()) return null;
   if (sourceRoute !== "/" && sourceRoute !== "/tools/text/text-chat") return null;
-  if (!parseStoryboardCanvasImport(detail)) return null;
+  if (!parseStoryboardCanvasImport(detail, { allowQualityWarnings: Boolean(detail.review_warnings?.length) })) return null;
   const createdAt = new Date(nowMs);
   const expiresAt = new Date(nowMs + AGENT_WORKBENCH_HANDOFF_TTL_MS);
   return {
@@ -313,7 +318,7 @@ export function parseAgentWorkbenchHandoff(
     return { ok: false, code: "EXPIRED", error: "Agent 交接已过期，请返回创作 Agent 重新确认。" };
   }
   const envelope = value as unknown as AgentWorkbenchHandoffEnvelope;
-  if (!parseStoryboardCanvasImport(envelope.payload)) {
+  if (!parseStoryboardCanvasImport(envelope.payload, { allowQualityWarnings: Boolean(envelope.payload.review_warnings?.length) })) {
     return { ok: false, code: "INVALID", error: "Agent 交接中的分镜机器包未通过校验，未执行导入。" };
   }
   return { ok: true, handoff: envelope };

@@ -9,6 +9,12 @@ import {
   writeLocalBuildFingerprintReceipt,
 } from "./local-build-fingerprint.mjs";
 import { assertNoActiveLocalLlmRequests } from "./local-build-active-llm-guard.mjs";
+import { verifyExtractionFeatureLock } from "./verify-extraction-feature-lock.mjs";
+import { verifyChatReliabilityLock } from "./verify-chat-reliability-lock.mjs";
+
+// Check before acquiring locks, draining the preview, or changing version data.
+verifyExtractionFeatureLock(process.cwd());
+verifyChatReliabilityLock(process.cwd());
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {

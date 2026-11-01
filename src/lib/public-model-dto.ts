@@ -1,5 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readVideoDurationBehavior } from "./video-duration-behavior";
 import { readVideoTokenPublicPricing, type VideoTokenPublicPricing } from "./video-model-capabilities";
+import { publicVideoModelCompatibilityCode, publicVideoModelCompatibilityMessage } from "./video-model-public-status";
+import { isDigitalHumanWorkspaceModel } from "./video-model-surface";
+import { RETIRED_MODEL_PROVIDER } from "./model-retirement";
+import { gaoruiVideoCreateContractAdmission } from "./gaorui-video-contract-admission";
+import { correctVideoModelBindingDisplayName, stripVideoModelOperationalAnnotation } from "./video-model-display-name";
 
 export type PublicModelKind = "chat" | "cover" | "llm" | "video";
 export type PublicModelCapability = string | number | boolean | string[] | number[] | null;
@@ -27,18 +33,22 @@ const PUBLIC_CAPABILITY_KEYS = new Set([
   "type", "family", "deepThinking", "webSearch", "imageParsing", "fileParsing",
   "supportsImageInput", "requiresImage", "supportsSourceVideoInput", "requiresSourceVideo",
   "workflowInputMode", "referenceAspectRatioPolicy", "supportsPrompt", "requiresFirstFrame", "requiresLastFrame",
-  "showFirstFrame", "showLastFrame", "showReferenceImages", "showAudioInputs",
+  "showFirstFrame", "showLastFrame", "showReferenceImages", "showAudioInputs", "firstFrameRatioPolicy",
   "minReferenceImages", "minReferenceAudios",
   "durationMode", "minDuration", "maxDuration", "defaultDuration", "nativeDurations", "durationStep",
   "resolutionTier", "resolutionOptions", "defaultResolution", "resolutionPrices", "resolutionLabels", "aspectRatios",
   "requestPixelSizes", "verifiedOutputPixelSizes",
   "directVerifiedCombinations", "verificationNotice",
-  "available", "priceReady", "activationReady", "generationReady", "readinessMessage",
-  "availabilityMessage", "pricingMode", "explicitlyFree",
+  // Keep the capability shape stable for existing workbenches, but sanitize
+  // acceptance copy below. `activationReady` is an internal gate and is never
+  // public; generationReady/priceReady remain the public admission booleans.
+  "available", "catalogVisible", "priceReady", "generationReady", "protocolBindingReady", "canaryVerified",
+  "readinessMessage", "verificationNotice", "availabilityMessage", "availabilityCode", "pricingMode", "explicitlyFree",
   "supportsReferenceInput", "referenceInputMode", "identityReferenceLevel",
   "maxReferenceImages", "maxCharacterReferences", "referenceCapabilityLabel",
   "supportsAudioInput", "maxReferenceAudios", "billingUnit", "workspaceSurfaces", "supportsRemoteCancel",
   "supportsGenerateAudioToggle",
+  "compatibilityCode", "capabilitiesVerified",
 ]);
 
 function publicIdSecret(): string {
@@ -121,7 +131,7 @@ export function normalizePublicModelAvatarUrl(value: unknown): string {
 
 export function publicModelDisplayName(row: Record<string, unknown>): string {
   const configured = String(row.public_name || "").trim();
-  const sourceName = configured || String(row.name || "").trim();
+  const sourceName = correctVideoModelBindingDisplayName(configured || String(row.name || "").trim(), row);
   const protocolConfig = row.api_protocol_config && typeof row.api_protocol_config === "object"
     && !Array.isArray(row.api_protocol_config) ? row.api_protocol_config as Record<string, unknown> : {};
   const internalAnnotations = new Set(
@@ -159,15 +169,27 @@ export function publicModelDisplayName(row: Record<string, unknown>): string {
 function sanitizeCapabilities(
   capabilities: Record<string, PublicModelCapability>,
 ): Record<string, PublicModelCapability> {
+  const compatibilityCode = publicVideoModelCompatibilityCode(capabilities.compatibilityCode);
+  const publicMessage = publicVideoModelCompatibilityMessage(compatibilityCode);
   return Object.fromEntries(
-    Object.entries(capabilities).filter(([key, value]) => (
-      PUBLIC_CAPABILITY_KEYS.has(key)
-      && (value === null
+    Object.entries(capabilities).flatMap(([key, value]) => {
+      if (!PUBLIC_CAPABILITY_KEYS.has(key)) return [];
+      // Provider/admin acceptance reasons must never cross the public DTO.
+      // Preserve the field shape, deriving only fixed public input/status
+      // copy from an allowlisted code. Raw diagnostics are never forwarded.
+      if (key === "readinessMessage" || key === "verificationNotice" || key === "availabilityMessage") {
+        return [[key, key === "verificationNotice" ? "" : publicMessage] as const];
+      }
+      if (key === "compatibilityCode") return [[key, compatibilityCode] as const];
+      if (value === null
         || typeof value === "string"
         || typeof value === "number"
         || typeof value === "boolean"
-        || (Array.isArray(value) && value.every((item) => typeof item === "string" || typeof item === "number")))
-    )),
+        || (Array.isArray(value) && value.every((item) => typeof item === "string" || typeof item === "number"))) {
+        return [[key, value] as const];
+      }
+      return [];
+    }),
   );
 }
 
@@ -193,12 +215,31 @@ export function toPublicModelDto(
 ): PublicModelDto {
   const internalId = String(row.id || "");
   if (!internalId) throw new Error("Model row is missing id");
+  const config = row.api_protocol_config;
+  const publicCapabilities = kind === "video" && !gaoruiVideoCreateContractAdmission(row).ready
+    ? { ...capabilities, available: false, generationReady: false, compatibilityCode: "VIDEO_CONFIGURATION_PENDING" }
+    : capabilities;
+  const durationBehavior = kind === "video" && config && typeof config === "object" && !Array.isArray(config)
+    ? readVideoDurationBehavior((config as Record<string, unknown>).duration_behavior) : undefined;
+  // Inspection is independent of generation admission. Derive this read-only
+  // capability from the server row, including when its generation contract is
+  // gated, rather than accepting a caller-provided public capability flag.
+  const supportsPersonAssetPreflight = kind === "video"
+    && row.provider !== RETIRED_MODEL_PROVIDER
+    && row.protocol_type === "gaorui_video" && row.model_name === "seedance-2.0-fast"
+    && isDigitalHumanWorkspaceModel(row);
   return {
     id: toPublicModelId(kind, internalId),
-    displayName: publicModelDisplayName(row),
+    displayName: kind === "video"
+      ? stripVideoModelOperationalAnnotation(publicModelDisplayName(row)) || "模型"
+      : publicModelDisplayName(row),
     variantLabel: publicVariantLabel(row, index),
     avatarUrl: normalizePublicModelAvatarUrl(row.avatar_url || row.icon_url || ""),
-    capabilities: sanitizeCapabilities(capabilities),
+    capabilities: {
+      ...sanitizeCapabilities(publicCapabilities),
+      ...(durationBehavior ? { durationBehavior } : {}),
+      ...(supportsPersonAssetPreflight ? { supportsPersonAssetPreflight: true } : {}),
+    },
     publicPrice: finitePublicPrice(row),
     ...(kind === "video" && readVideoTokenPublicPricing(tokenPricing) ? { tokenPricing: readVideoTokenPublicPricing(tokenPricing) } : {}),
   };

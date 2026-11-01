@@ -1,4 +1,5 @@
 import { canonicalAgentModelBinding } from '@/lib/agent-model-binding';
+import { isAgentPromptPushTargetConfigurationValid } from '@/lib/storyboard-prompt-push-capability';
 import {
   configurationSourceStatus,
   sharedConfigurationEnabled,
@@ -26,6 +27,15 @@ import {
 } from '@/lib/server/agent-config-cas';
 
 const MASKED_SECRET = /^(?:[*•●·]+|已配置)$/u;
+
+function invalidPromptPushTargetResponse(body: Record<string, unknown>) {
+  if (isAgentPromptPushTargetConfigurationValid(body.output_style)
+    && isAgentPromptPushTargetConfigurationValid(body.outputStyle)) return null;
+  return NextResponse.json({
+    error: '推送目标仅支持分镜编排或视频创作，请重新选择后保存。',
+    code: 'AGENT_PROMPT_PUSH_TARGET_INVALID',
+  }, { status: 400 });
+}
 
 const AGENT_PUBLIC_COLUMNS = [
   'id',
@@ -444,6 +454,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const fieldAccessFailure = await authorizeAgentFieldChanges(request, body as Record<string, unknown>);
     if (fieldAccessFailure) return fieldAccessFailure;
+    const targetFailure = invalidPromptPushTargetResponse(body);
+    if (targetFailure) return targetFailure;
     if (
       body.user_access === 'hidden'
       || body.userAccess === 'hidden'
@@ -634,6 +646,8 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const fieldAccessFailure = await authorizeAgentFieldChanges(request, body as Record<string, unknown>);
     if (fieldAccessFailure) return fieldAccessFailure;
+    const targetFailure = invalidPromptPushTargetResponse(body);
+    if (targetFailure) return targetFailure;
     const { agentId, ...updateData } = body;
 
     if (updateData.source === 'coze_coding') {

@@ -20,8 +20,8 @@ export const TASK_CATEGORIES = [
  {key:'task:文案创作',label:'文案创作',icon:'✍️'},
  {key:'task:获客转化',label:'运营增长',icon:'💬'},
 ] as const;
-// Display facets do not mutate legacy categories, which are also permission scopes.
-export function taskCategory(agent: {id:string;name:string;category?:string}) {
+// Keep the original projection for permission checks, even if a card moves in the UI.
+function authorizationTaskCategory(agent: {id:string;name:string;category?:string}) {
  const step=bipStep(agent.id); if(step) return step.task;
  if(agent.category==='自用') return '内部工具';
  if(/3D|2D|影像|故事导演/.test(agent.name)) return '影像编导';
@@ -31,6 +31,18 @@ export function taskCategory(agent: {id:string;name:string;category?:string}) {
  return '获客转化';
 }
 type DisplayAgent = {id:string;name:string;category?:string};
+export const MEME_STORYBOARD_DIRECTOR_ID = 'agent-1793171231055-r9qzu6';
+export function taskCategory(agent:DisplayAgent) {
+ if (!bipStep(agent.id) && agent.category !== '自用' && !agent.category?.startsWith('custom_cat_') && agent.id === MEME_STORYBOARD_DIRECTOR_ID) return '影像编导';
+ return authorizationTaskCategory(agent);
+}
+export function authorizationCategory(agent:DisplayAgent):string {
+ if(bipStep(agent.id)) return BIP_CATEGORY;
+ if(agent.category==='自用'||agent.category?.startsWith('custom_cat_')) return agent.category;
+ const task=authorizationTaskCategory(agent);
+ if(task==='定位策划'||task==='运营复盘') return 'task:获客转化';
+ return `task:${task}`;
+}
 // The seven-step suite has one home. Individual task roles remain step metadata.
 export function displayCategory(agent:DisplayAgent):string {
  if(bipStep(agent.id)) return BIP_CATEGORY;

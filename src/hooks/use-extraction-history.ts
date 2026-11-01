@@ -56,19 +56,22 @@ export function useExtractionHistory<T extends ExtractionHistoryRecord>(token: s
 
   const hasActiveRecords = history.some(record => record.pending === true || ["loading", "pending", "running", "active"].includes(String(record.status || "")));
   useEffect(() => {
-    if (!token || !userId || !ready || !hasActiveRecords) return;
+    if (!token || !userId) return;
     const refreshVisibleHistory = () => {
       if (document.visibilityState === "visible") void read();
     };
-    const interval = window.setInterval(refreshVisibleHistory, 15_000);
+    // Completed-only history and initial read failures also need focus recovery.
+    const interval = hasActiveRecords || Boolean(error)
+      ? window.setInterval(refreshVisibleHistory, 15_000)
+      : undefined;
     document.addEventListener("visibilitychange", refreshVisibleHistory);
     window.addEventListener("focus", refreshVisibleHistory);
     return () => {
-      window.clearInterval(interval);
+      if (interval !== undefined) window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refreshVisibleHistory);
       window.removeEventListener("focus", refreshVisibleHistory);
     };
-  }, [token, userId, ready, hasActiveRecords, read]);
+  }, [token, userId, hasActiveRecords, error, read]);
 
   const refresh = useCallback(() => { void read(); }, [read]);
   const remove = useCallback(async (recordId?: string) => {

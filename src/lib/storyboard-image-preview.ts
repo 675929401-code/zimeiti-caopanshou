@@ -1,8 +1,10 @@
 import { readImageDownloadBlob } from "./generated-image-download";
 
 export class StoryboardImagePreviewError extends Error {
-  constructor(public readonly mediaState: "expired" | "unavailable") {
-    super(mediaState === "expired"
+  constructor(public readonly mediaState: "expired" | "unavailable", public readonly accessIssue?: "authentication" | "permission") {
+    super(accessIssue === "authentication" ? "登录状态已失效，请重新登录后读取原图；原任务与费用收据保留"
+      : accessIssue === "permission" ? "当前账号无权读取此图片，请核对登录账号；原任务与费用收据保留"
+      : mediaState === "expired"
       ? "图片已生成，源文件已过期；原任务与费用收据保留"
       : "图片暂不可读取；原任务与费用收据保留，请稍后重新读取");
     this.name = "StoryboardImagePreviewError";
@@ -39,6 +41,10 @@ export async function readStoryboardProtectedPreview(
       signal: controller.signal, cache: "no-store", redirect: "error", credentials: "same-origin",
     }));
     if (response.status === 410) throw new StoryboardImagePreviewError("expired");
+    if (response.status === 401 || response.status === 403) {
+      void response.body?.cancel().catch(() => undefined);
+      throw new StoryboardImagePreviewError("unavailable", response.status === 401 ? "authentication" : "permission");
+    }
     if (!response.ok || response.headers.has("X-Media-Fallback")) {
       void response.body?.cancel().catch(() => undefined);
       throw new StoryboardImagePreviewError("unavailable");

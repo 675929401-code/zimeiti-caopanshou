@@ -1,3 +1,4 @@
+import { modelPoolMutationRequest, modelPoolMutationFailure, resumeModelPoolMutationResponse } from "@/lib/server/model-pool-mutation-http";
 import { NextRequest, NextResponse } from "next/server";
 import { updateVideoModelAtomic } from "@/lib/video-model-atomic-update";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
@@ -10,7 +11,7 @@ import {
   preservePersistedVideoActivationGate,
 } from "@/lib/model-activation-gate";
 import { AUTODL_COMFYUI_WORKFLOW_PROTOCOL } from "@/lib/video-autodl-comfyui-workflow";
-import { videoPriceConfigurationError } from "@/lib/model-price-rounding";
+import { videoPriceConfigurationError, invalidExplicitPriceField } from "@/lib/model-price-rounding";
 import { RETIRED_MODEL_PROVIDER } from "@/lib/model-retirement";
 import {
   stageLegacyModelPoolCatalogState,
@@ -280,6 +281,7 @@ function buildRecord(body: Record<string, unknown>, detectedProtocol: string, mo
   return {
     id: modelId,
     name: String(body.name || ""),
+    icon_url: String(body.icon_url || "").trim(),
     model_name: String(body.model_name || body.name || ""),
     provider: String(body.provider || ""),
     admin_notes: String(body.admin_notes || ""),
@@ -332,6 +334,8 @@ export async function GET(req: NextRequest) {
     console.error("[admin/video-models] Supabase query failed:", error.message);
     return NextResponse.json({ error: "Realtime video model data unavailable" }, { status: 503 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[admin/video-models] Supabase client failed:", error);
     return NextResponse.json({ error: "Realtime video model data unavailable" }, { status: 503 });
   }
@@ -343,6 +347,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = (await req.json()) as Record<string, unknown>;
+    const mutationRequest = modelPoolMutationRequest(req, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(admin.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const name = String(body.name || "");
     const endpoint = String(body.api_endpoint || "");
     const modelName = String(body.model_name || name);
@@ -356,6 +363,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Provider and protocol_type are required", code: "VIDEO_PROTOCOL_BINDING_REQUIRED" }, { status: 400 });
     }
     const bodyId = String(body.id || "");
+    const rawPriceError = videoPriceConfigurationError({ costPrice: body.cost_price, sellingPrice: body.price_per_use, protocolConfig: body.api_protocol_config });
+    if (rawPriceError) return NextResponse.json({ error: rawPriceError, code: "VIDEO_PRICE_CONFIGURATION_REQUIRED" }, { status: 400 });
     const modelId = bodyId && !bodyId.startsWith("temp-") ? bodyId : generateModelId(modelName, endpoint);
     const record = buildRecord(body, detectedProtocol, modelId);
     if (record.provider === RETIRED_MODEL_PROVIDER) {
@@ -433,6 +442,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
       actorId: admin.userId,
       table: "video_models",
       id: modelId,
@@ -447,6 +457,8 @@ export async function POST(req: NextRequest) {
       detected_protocol: detectedProtocol,
     }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     if (error instanceof ModelActivationGateError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
@@ -461,7 +473,13 @@ export async function PUT(req: NextRequest) {
 
   try {
     const body = (await req.json()) as Record<string, unknown>;
+    const mutationRequest = modelPoolMutationRequest(req, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(admin.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const id = String(body.id || "");
+    if (invalidExplicitPriceField(body, ["cost_price", "price_per_use"])) {
+      return NextResponse.json({ error: "填写的成本或售价必须是明确的非负金额", code: "VIDEO_PRICE_CONFIGURATION_REQUIRED" }, { status: 400 });
+    }
     if (!id) return NextResponse.json({ error: "Missing model id" }, { status: 400 });
 
     const supabase = getSupabaseAdminClient();
@@ -518,6 +536,7 @@ export async function PUT(req: NextRequest) {
     Object.assign(updates, prepareVideoModelBindingUpdate(current, updates));
 
     const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
       actorId: admin.userId,
       table: "video_models",
       id,
@@ -526,6 +545,8 @@ export async function PUT(req: NextRequest) {
     });
     return NextResponse.json({ success: true, staged: true, published: false, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     if (error instanceof ModelActivationGateError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }

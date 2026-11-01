@@ -53,6 +53,7 @@ import {
   resolveAllowedAgentNavigationKeys,
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
+import { canUseOwnerInternalAgent } from "@/lib/server/internal-agent-catalog-access";
 import { createOperationPerformanceTrace, type OperationPerformanceTrace } from "@/lib/operation-performance-trace";
 import { recordServerOperationPerformanceEventBestEffort } from "@/lib/operation-flight-recorder";
 import { ensureConversationOwnership } from "@/lib/conversation-ownership";
@@ -810,6 +811,13 @@ export async function POST(request: Request) {
       );
     }
     const serverAgent = agentResult.data as CozeAgentRow;
+
+    if (serverAgent.category === "自用" && !await canUseOwnerInternalAgent(request)) {
+      return new Response(
+        JSON.stringify({ error: "该内部工具仅限超级管理员使用", code: "OWNER_INTERNAL_AGENT_REQUIRED", retryable: false }),
+        { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+      );
+    }
 
     // The management role and product entitlements are intentionally separate.
     // Every account, including an administrator, must pass the same durable

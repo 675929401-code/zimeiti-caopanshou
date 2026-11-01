@@ -16,6 +16,9 @@ import {
 } from "@/lib/platform-configuration-contract";
 import {
   createPlatformConfigurationCandidate,
+  stagePlatformModelCandidateWithCredentials,
+  resumePlatformModelMutation,
+  PlatformConfigurationMutationOutcomeUnknown,
   PlatformConfigurationError,
   previewPlatformConfigurationRelease,
   readCurrentPlatformConfiguration,
@@ -33,6 +36,8 @@ import {
   parseVideoModelSurfaceOrders,
   VIDEO_MODEL_SURFACE_ORDER_SETTING_KEY,
 } from "@/lib/video-model-surface-order";
+
+import { MODEL_MUTATION_REQUEST_UUID, modelMutationLegacyId, type PlatformCredentialChange } from "@/lib/server/platform-configuration-pending-credentials";
 
 type Row = Record<string, unknown>;
 export type LegacyModelTable = "cover_models" | "video_models" | "llm_models" | "chat_models";
@@ -140,7 +145,11 @@ function entryFromLegacyRow(table: LegacyModelTable, raw: Row): ModelPoolEntry {
   const pricing = kind === "image"
     ? compactObject([["currency", "CNY"], ["cost", finite(raw.cost_price)], ["selling", finite(raw.selling_price ?? raw.cost_per_use)]])
     : kind === "video"
-      ? compactObject([["currency", string(raw.currency) || "CNY"], ["cost", finite(raw.cost_price)], ["selling", finite(raw.price_per_use ?? raw.cost_per_use)]])
+      ? compactObject([
+        ["currency", string(raw.currency) || "CNY"], ["cost", finite(raw.cost_price)], ["selling", finite(raw.price_per_use ?? raw.cost_per_use)],
+        ["costPerUse", finite(raw.cost_per_use)], ["inputCostPerMillion", finite(raw.input_cost_per_million)],
+        ["outputCostPerMillion", finite(raw.output_cost_per_million)],
+      ])
       : compactObject([
         ["currency", "CNY"], ["billingMode", string(raw.billing_mode) || "credit"],
         ["costPerUse", finite(raw.cost_per_use)], ["costPrice", finite(raw.cost_price)],
@@ -169,6 +178,7 @@ function entryFromLegacyRow(table: LegacyModelTable, raw: Row): ModelPoolEntry {
     ["temperature", finite(raw.temperature)],
     ["responseFormat", string(raw.response_format)],
     ["protocolConfig", apiProtocolConfig],
+    ...(table === "video_models" ? [["requestTemplate", raw.request_template], ["responseMapping", raw.response_mapping]] as Array<[string, unknown]> : []),
   ]);
   return {
     id: legacyModelId(table, legacyId),
@@ -244,20 +254,6 @@ async function currentLegacyRow(table: LegacyModelTable, id: string): Promise<Ro
   return record(result.data);
 }
 
-async function persistCredentialBinding(actorId: string, table: LegacyModelTable, id: string, apiKey: unknown) {
-  const secret = string(apiKey);
-  if (!secret || MASKED_SECRET.test(secret)) return;
-  const reference = credentialRef(table, id);
-  const result = await getSupabaseAdminClient().from("platform_model_credential_bindings").upsert({
-    credential_ref: reference,
-    model_key: `${table}:${id}`,
-    secret_value: secret,
-    updated_by: actorId,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "credential_ref" });
-  if (result.error) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_CREDENTIAL_STAGE_FAILED", `保存独立凭据绑定失败：${result.error.message}`);
-}
-
 async function createMutationCandidate(
   actorId: string,
   kind: "model-pool" | "workspace-models",
@@ -285,21 +281,54 @@ export async function stageInitialModelPoolCandidate(input: { actorId: string; c
 
 export async function stageLegacyModelPoolUpsert(input: {
   actorId: string;
+  requestId: string;
+  requestPayload: Row;
   table: LegacyModelTable;
   id?: string;
   values: Row;
   changeNote: string;
 }) {
-  const legacyId = string(input.id || input.values.id) || randomUUID();
+  if (!MODEL_MUTATION_REQUEST_UUID.test(String(input.requestId || ""))) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_REQUEST_ID_REQUIRED", "请提供有效的模型变更请求标识后重试");
+  if (!input.requestPayload || typeof input.requestPayload !== "object" || Array.isArray(input.requestPayload)) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_REQUEST_PAYLOAD_REQUIRED", "模型变更缺少原始逻辑请求");
+  const generatedId = modelMutationLegacyId(input.actorId, input.requestId, input.table);
+  const originalTargetId = string(input.requestPayload.targetId || record(input.requestPayload.body).id);
+  const imagePost = String(input.requestPayload.method || "").toUpperCase() === "POST" && input.table === "cover_models";
+  const imageCreate = imagePost && !originalTargetId;
+  const legacyId = imageCreate ? `pending-cover-model-${generatedId}` : (imagePost ? originalTargetId : "") || string(input.id || input.values.id) || generatedId;
+  const resumed = await resumePlatformModelMutation(input.actorId, input.requestId, input.requestPayload);
+  if (resumed) {
+    const rawSnapshot = record(resumed.snapshot);
+    const models = Array.isArray(rawSnapshot.models) ? rawSnapshot.models as Row[] : [];
+    const model = models.find(entry => record(entry.configuration).legacyTable === input.table && record(entry.configuration).legacyId === legacyId);
+    // The receipt is authoritative for the candidate; response identity is metadata.
+    try { return { release: resumed, preview: ["draft", "validated"].includes(String(resumed.status)) ? await previewPlatformConfigurationRelease("model-pool", string(resumed.id)) : null, modelId: model ? string(model.id) : legacyModelId(input.table, legacyId), legacyId }; }
+    catch { throw new PlatformConfigurationMutationOutcomeUnknown(input.requestId, string(resumed.id), "preview"); }
+  }
   const existing = await currentLegacyRow(input.table, legacyId);
-  await persistCredentialBinding(input.actorId, input.table, legacyId, input.values.api_key);
+  const secret = string(input.values.api_key);
+  const credentialChanges: PlatformCredentialChange[] = secret && !MASKED_SECRET.test(secret)
+    ? [{ model_key: `${input.table}:${legacyId}`, credential_ref: credentialRef(input.table, legacyId), secret_value: secret }]
+    : [];
   const merged: Row = { ...existing, ...input.values, id: legacyId };
   if (!string(merged.api_key) && string(input.values.api_key)) merged.api_key = input.values.api_key;
   const entry = entryFromLegacyRow(input.table, merged);
   if (string(merged.provider) !== "retired_configuration") entry.catalogState = "enabled";
   if (string(input.values.api_key) && !entry.credentialRef) entry.credentialRef = credentialRef(input.table, legacyId);
-  const snapshot = applyModelPoolCompatibilityMutation(await currentModelPoolWithLiveBindings(), { action: "upsert", entry });
-  return { ...(await createMutationCandidate(input.actorId, "model-pool", snapshot, input.changeNote)), modelId: entry.id, legacyId };
+  // Video upserts own exactly one entry. Re-reading all physical bindings here
+  // would silently import unrelated LLM drift into this immutable candidate.
+  const videoBase = input.table === "video_models" ? await readCurrentPlatformConfiguration("model-pool") : null;
+  if (input.table === "video_models" && !videoBase) throw new PlatformConfigurationError("MODEL_POOL_CURRENT_RELEASE_REQUIRED", "视频变更需要已发布的模型池基础版本");
+  if (videoBase && credentialChanges.length === 0) {
+    const previous = videoBase.snapshot.models.find((model) => model.id === entry.id);
+    delete entry.credentialRef;
+    if (previous?.credentialRef) entry.credentialRef = previous.credentialRef;
+  }
+  const snapshot = applyModelPoolCompatibilityMutation(videoBase ? videoBase.snapshot : await currentModelPoolWithLiveBindings(), { action: "upsert", entry });
+  const release = await stagePlatformModelCandidateWithCredentials({ actorId: input.actorId, requestId: input.requestId, requestPayload: input.requestPayload, snapshot, credentialChanges, changeNote: input.changeNote,
+    ...(videoBase ? { expectedBase: { releaseId: string(videoBase.release.id), snapshotSha256: string(videoBase.release.snapshot_sha256) } } : {}),
+  });
+  try { const preview = await previewPlatformConfigurationRelease("model-pool", string(release.id)); return { release, preview, modelId: entry.id, legacyId }; }
+  catch { throw new PlatformConfigurationMutationOutcomeUnknown(input.requestId, string(release.id), "preview"); }
 }
 
 export async function stageLegacyModelPoolCatalogState(input: {

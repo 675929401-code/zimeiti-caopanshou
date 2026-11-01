@@ -59,14 +59,14 @@ for (const operation of ["agent_create", "agent_update", "agent_delete"]) {
 for (const operation of ["internal_agent_create", "internal_agent_update", "internal_agent_delete"]) {
   assert.match(agentRoute, new RegExp(`authorizeInternalAgentMutation\\(request, '${operation}'\\)`, "u"));
 }
-assert.match(agentRoute, /\.select\('id,category,user_access'\)/u);
+assert.match(agentRoute, /\.select\('id,category,user_access(?:,[^']+)?'\)/u);
 assert.match(agentRoute, /categoryRequiresInternalAccess\(currentAgent\.category\)/u);
 assert.match(agentRoute, /if \(categoryName === '自用'\) return true/u);
 
 const publicCategoryRoute = read("src/app/api/categories/route.ts");
 assert.match(
   publicCategoryRoute,
-  /authorizeAdminCapability\(request, "internal_tools\.manage"[\s\S]{0,220}?requireStepUp: true/u,
+  /isAdmin = await canReadOwnerInternalAgentCatalog\(request\)/u,
 );
 assert.match(
   publicCategoryRoute,
@@ -76,7 +76,7 @@ assert.match(
 const publicAgentRoute = read("src/app/api/bots/route.ts");
 assert.match(
   publicAgentRoute,
-  /authorizeAdminCapability\(request, "internal_tools\.manage"[\s\S]{0,220}?requireStepUp: true/u,
+  /isAdmin = await canReadOwnerInternalAgentCatalog\(request\)/u,
 );
 assert.match(
   publicAgentRoute,

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import ts from "typescript";
 import { resolve } from "node:path";
 
 const read = (relativePath) => readFileSync(resolve(process.cwd(), relativePath), "utf8");
@@ -57,9 +59,39 @@ for (const mojibake of ["鏃犵", "绠＄", "鍒涘", "鏇存", "鏅鸿", "鈹�
 }
 
 assert.match(selfRoute, /const grantedCatalog = ADMIN_PERMISSION_CATALOG\.filter/u, "SELF_GRANTED_CATALOG_FILTER_MISSING");
-assert.match(selfRoute, /catalog: isSuperAdmin \? ADMIN_PERMISSION_CATALOG : grantedCatalog/u, "SELF_CATALOG_PROJECTION_MISSING");
+assert.match(selfRoute, /catalog: adminPermissionCatalogForSelf\(access.permissionKeys\)/u, "SELF_CATALOG_PROJECTION_MISSING");
+// Execute the exact source helper. The public directory describes all capabilities,
+// while granted flags must describe only this actor; metadata never grants authority.
+const syntax = ts.createSourceFile("governance.ts", governance, ts.ScriptTarget.Latest, true);
+const declarations = syntax.statements.filter(statement =>
+  (ts.isFunctionDeclaration(statement) && statement.name?.text === "adminPermissionCatalogForSelf") ||
+  (ts.isVariableStatement(statement) && statement.declarationList.declarations.some(declaration => ts.isIdentifier(declaration.name) && declaration.name.text === "ADMIN_PERMISSION_CATALOG")));
+assert.equal(declarations.length, 2);
+const projectionJs = ts.transpileModule(declarations.map(statement => statement.getText(syntax)).join("\n"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const projectionModule = { exports: {} };
+vm.runInNewContext(projectionJs, { exports: projectionModule.exports, module: projectionModule, Set });
+const catalog = projectionModule.exports.adminPermissionCatalogForSelf(["members.view", "not-a-real-permission"]);
+assert.equal(catalog.length, 31);
+assert.deepEqual(Array.from(catalog.filter(item => item.granted), item => item.key), ["members.view"]);
+assert.ok(catalog.every(item => item.grantorRequirement === "super_admin"));
+assert.equal(catalog.find(item => item.key === "admin.accounts.manage").isDelegable, false);
+const accessControl = read("src/app/api/admin/access-control/route.ts");
+const controlSyntax = ts.createSourceFile("control.ts", accessControl, ts.ScriptTarget.Latest, true);
+const ownerGuard = controlSyntax.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === "requireSuperAdmin");
+assert.ok(ownerGuard, "owner management guard required");
+const ownerContext = { authorizeAdminCapability: async () => ({ ok: true, access: { adminLevel: "admin" } }), NextResponse: { json: Response.json }, Response };
+const ownerJs = ts.transpileModule(ownerGuard.getText(controlSyntax), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+vm.runInNewContext(ownerJs, ownerContext);
+const deniedDirectoryActor = await ownerContext.requireSuperAdmin(new Request("http://fixture.local"));
+assert.equal(deniedDirectoryActor.ok, false);
+assert.equal(deniedDirectoryActor.response.status, 403, "public directory must not authorize owner management");
+ownerContext.authorizeAdminCapability = async () => ({ ok: false, response: Response.json({}, { status: 403 }) });
+assert.equal((await ownerContext.requireSuperAdmin(new Request("http://fixture.local"))).ok, false, "missing capability or step-up must deny even before level check");
 assert.match(selfRoute, /Object\.entries\(completeTabAccess\)\.filter\(\(\[, allowed\]\) => allowed === true\)/u, "SELF_ALLOWED_TABS_ONLY_MISSING");
-assert.match(selfRoute, /tab === "super-admin"[\s\S]*?\? isSuperAdmin/u, "SUPER_ADMIN_TAB_LEVEL_GATE_MISSING");
+assert.match(selfRoute, /tab === "super-admin"[\s\S]*?\? true/u, "PUBLIC_PERMISSION_DIRECTORY_TAB_MISSING");
+const ownerPanel = read("src/components/admin/super-admin-governance-panel.tsx");
+assert.match(ownerPanel, /if \(!isSuper \|\| !unlocked\) return false/u, "OWNER_MANAGEMENT_FETCH_LEVEL_AND_STEPUP_REQUIRED");
+assert.match(ownerPanel, /if \(!isSuper\)[\s\S]*?admin-permission-directory-readonly/u, "NON_OWNER_DIRECTORY_MUST_STAY_READONLY");
 assert.match(selfRoute, /tab === "aiweb-import"[\s\S]*?permissionKeys\.includes\("prompts\.edit"\)/u, "IMPORT_PROMPT_PERMISSION_MISSING");
 assert.doesNotMatch(selfRoute, /checksum:\s*access\.checksum/u, "SELF_CHECKSUM_EXPOSURE_FORBIDDEN");
 

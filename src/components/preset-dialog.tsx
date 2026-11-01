@@ -17,8 +17,11 @@ interface PresetDialogProps {
   onClose: () => void;
 }
 
-/** 下拉选项直接显示原始文本，不添加序号前缀 */
-function getDisplayText(opt: string): string {
+/** 高能版时长只显示秒数；选项 value 与发送内容仍保留接收卡原值。 */
+function getDisplayText(opt: string, fieldId: string, agentId?: string): string {
+  if (agentId === "agent-1786843330392-emdjv2" && (fieldId === "segment_duration" || fieldId === "target_duration_seconds")) {
+    return opt.match(/^\s*(\d+)\s*秒(?:版)?(?:\s*[：:].*)?\s*$/u)?.[1]?.concat("秒") ?? opt;
+  }
   return opt;
 }
 
@@ -179,7 +182,7 @@ export function PresetDialog({ agentId, agentName, agentIconUrl, fields, onStart
               </option>
               {field.options.map((opt, idx) => (
                 <option key={idx} value={opt} className="bg-[var(--card)] text-[var(--foreground)]">
-                  {getDisplayText(opt)}
+                  {getDisplayText(opt, field.id, agentId)}
                 </option>
               ))}
             </select>

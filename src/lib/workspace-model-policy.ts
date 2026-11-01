@@ -91,7 +91,7 @@ export const WORKSPACE_MODEL_SURFACES: ReadonlyArray<{
     id: "storyboard-video",
     kind: "video",
     label: "分镜工作台 · 生视频",
-    description: "必须能接收一张已验证的故事板图片，且不能强制额外源视频、尾帧或音频。",
+    description: "按模型能力提供提示词、分镜图、首尾帧、参考图片、音频和源视频；逐段校验素材后提交。",
     storageValue: "storyboard",
   },
   {
@@ -118,6 +118,13 @@ function record(value: unknown): Record<string, unknown> {
 
 function unique(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function declaredInputLimitsConflict(minimum: unknown, maximum: unknown) {
+  if (minimum === undefined || minimum === null || maximum === undefined || maximum === null) return false;
+  const min = Number(minimum);
+  const max = Number(maximum);
+  return Number.isFinite(min) && Number.isFinite(max) && min > max;
 }
 
 function surfaceDefinition(surface: WorkspaceModelSurface) {
@@ -256,18 +263,21 @@ export function evaluateWorkspaceModelCompatibility(
   if (duration.maxDuration <= 0) {
     issues.push({ code: "VIDEO_DURATION_INVALID", message: "视频时长能力配置无效" });
   }
-  if (input.minReferenceImages > input.maxReferenceImages) {
+  if (input.minReferenceImages > input.maxReferenceImages
+    || declaredInputLimitsConflict(config.min_reference_images ?? config.required_reference_images, config.max_reference_images)) {
     issues.push({ code: "VIDEO_IMAGE_LIMIT_CONFLICT", message: "参考图最小数量大于最大数量" });
   }
-  if (input.minReferenceAudios > input.maxReferenceAudios) {
+  if (input.minReferenceAudios > input.maxReferenceAudios
+    || declaredInputLimitsConflict(config.min_reference_audios ?? config.required_reference_audios, config.max_reference_audios)) {
     issues.push({ code: "VIDEO_AUDIO_LIMIT_CONFLICT", message: "参考音频最小数量大于最大数量" });
   }
   if (input.requiresSourceVideo && !input.supportsSourceVideoInput) {
     issues.push({ code: "VIDEO_SOURCE_CONTRACT_CONFLICT", message: "模型要求源视频但未声明源视频输入能力" });
   }
-  const singleImageSurface = surface === "storyboard-video" || surface === "film-studio-video";
-  const singleImageLabel = surface === "film-studio-video" ? "影视工坊镜头" : "分镜卡";
-  if (singleImageSurface) {
+  // Storyboard cards now collect the model's declared media inputs. Keep the
+  // existing single-keyframe restriction limited to the film workspace.
+  if (surface === "film-studio-video") {
+    const singleImageLabel = "影视工坊镜头";
     if (input.maxReferenceImages < 1) {
       issues.push({ code: "STORYBOARD_IMAGE_INPUT_REQUIRED", message: `${singleImageLabel}生视频必须支持至少一张图片` });
     }

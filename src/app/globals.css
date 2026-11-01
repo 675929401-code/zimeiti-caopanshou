@@ -3149,8 +3149,8 @@ html.dark .marketplace-agent-title,
 [data-mode="dark"] .marketplace-agent-title,
 [data-theme="nocturne"] .marketplace-agent-title {
   color: rgba(235, 244, 252, 0.92) !important;
-  font-size: clamp(15px, 1.02vw, 17px) !important;
-  font-weight: 650 !important;
+  font-size: clamp(15px, 1.02vw, 17px);
+  font-weight: 650;
 }
 
 html.dark .marketplace-agent-description,

@@ -4,10 +4,13 @@ import { modelEndpointError, modelStationLabel } from "@/lib/model-endpoint";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { formatModelPrice, modelConnectionSummary } from "@/lib/model-connection-summary";
 import { getVideoBillingUnit } from "@/lib/video-model-capabilities";
+import { MODEL_BRAND_OPTIONS } from "@/lib/model-brand";
 import { LLM_PROVIDER_PRESETS, getLlmProviderPreset } from "@/lib/llm-provider-presets";
+import { imageModelExtraConfiguration, parseImageModelExtraConfiguration } from "@/lib/image-model-extra-configuration";
 
 // ── 视频协议选项 ──
 const VIDEO_PROTOCOLS = [
+  { value: "secure_skill_kling_video", label: "Secure Skill · Kling", desc: "POST /v1/videos；同密钥查询；参考图及混合参考" },
   { value: "secure_skill_doubao_seedance", label: "渠道 A · Seedance 官方 Token", desc: "POST /api/v3/contents/generations/tasks；分组 37 专用密钥；按最终 Token 用量结算" },
   { value: "secure_skill_seedance_video", label: "Secure Skill · Seedance 2.5", desc: "POST /v1/videos；同密钥轮询；图片/视频/音频混合参考" },
   { value: "gaorui_video", label: "渠道 C · 高瑞视频", desc: "POST /v1/videos → GET /v1/videos/{id}" },
@@ -169,7 +172,11 @@ function HelpTip({ text }: { text: string }) {
 interface UnifiedModelDialogProps {
   model: Record<string, unknown> | null;
   modelType: "drawing" | "text" | "video";
+  initialDraft?: Record<string, unknown>;
   onSave: (model: Record<string, unknown>) => void;
+  saving?: boolean;
+  saveBlocked?: boolean;
+  saveError?: string;
   onClose: () => void;
   onTest?: (modelId: string, modelType: string) => void;
   testing?: boolean;
@@ -215,11 +222,80 @@ function normalizeResolutionPriceMap(value: unknown): Record<string, number> {
   );
 }
 
+function sameEditorValue(left: unknown, right: unknown): boolean {
+  const stable = (value: unknown): unknown => Array.isArray(value) ? value.map(stable)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)).map(([key, entry]) => [key, stable(entry)]))
+      : value;
+  return JSON.stringify(stable(left)) === JSON.stringify(stable(right));
+}
+
+/** Keep derived editor defaults out of an unchanged persisted video contract. */
+export function preserveUnchangedVideoEditPayload(
+  model: Record<string, unknown> | null,
+  baseline: Record<string, unknown> | null,
+  current: Record<string, unknown>,
+  computed: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!model?.id || !baseline || computed.model_type !== "video") return computed;
+  const changed = (...keys: string[]) => keys.some(key => !sameEditorValue(baseline[key], current[key]));
+  // An explicitly selected new protocol retains its existing preset mapping.
+  if (changed("protocol_type")) return computed;
+  const next = { ...computed };
+  const original = asObject(model.api_protocol_config);
+  const protocol = { ...asObject(current.api_protocol_config) };
+  const generated = asObject(computed.api_protocol_config);
+  const modeChanged = changed("duration_mode");
+  const fixedDurationChanged = current.duration_mode === "fixed" && changed("duration_seconds");
+  const discreteOptionsChanged = current.duration_mode === "discrete" && changed("duration_options_text");
+  const apply = (key: string, explicit: boolean) => {
+    if (!explicit) return;
+    if (Object.prototype.hasOwnProperty.call(generated, key)) protocol[key] = generated[key];
+    else delete protocol[key];
+  };
+  apply("supports_duration", modeChanged);
+  apply("duration_options", modeChanged || fixedDurationChanged || discreteOptionsChanged);
+  apply("min_duration", modeChanged || fixedDurationChanged || discreteOptionsChanged);
+  apply("min_submit_duration", modeChanged || fixedDurationChanged || discreteOptionsChanged);
+  apply("max_duration", modeChanged || fixedDurationChanged || discreteOptionsChanged || changed("max_duration"));
+  apply("resolution_options", changed("resolution_options"));
+  apply("default_resolution", changed("default_resolution"));
+  apply("resolution", changed("default_resolution"));
+  apply("resolution_cost_prices", changed("resolution_options", "resolution_cost_prices"));
+  apply("resolution_prices", changed("resolution_options", "resolution_prices"));
+  // Preserve omitted keys and their original representations when controls were untouched.
+  next.api_protocol_config = sameEditorValue(protocol, original) ? original : protocol;
+  for (const key of ["name", "model_name", "provider", "admin_notes", "icon_url", "api_endpoint", "api_key", "protocol_type", "duration_seconds", "supports_image_input", "requires_image", "is_active", "sort_order"]) {
+    if (!changed(key)) delete next[key];
+  }
+  if (!modeChanged && !fixedDurationChanged && !discreteOptionsChanged && !changed("max_duration")) delete next.max_duration;
+  if (!changed("cost_per_use", "default_resolution", "resolution_options", "resolution_prices")) {
+    delete next.cost_per_use;
+    delete next.price_per_use;
+  }
+  if (!changed("cost_price", "default_resolution", "resolution_options", "resolution_cost_prices")) delete next.cost_price;
+  return next;
+}
+
 export default function UnifiedModelDialog({
-  model, modelType, onSave, onClose, token,
+  model, modelType, initialDraft, onSave, onClose, token, saving = false, saveBlocked = false, saveError = "",
 }: UnifiedModelDialogProps) {
   const isEdit = !!model?.id;
   const apiKeyConfigured = model?.api_key_configured === true;
+  const editBaseline = useRef<Record<string, unknown> | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarUploadError, setAvatarUploadError] = useState("");
+  const [imageExtraRaw, setImageExtraRaw] = useState("{}");
+  const [imageExtraValid, setImageExtraValid] = useState<Record<string, unknown>>({});
+  const [imageExtraError, setImageExtraError] = useState("");
+  useEffect(() => {
+    const configuration = asObject(model?.api_protocol_config ?? initialDraft?.api_protocol_config);
+    const raw = JSON.stringify(imageModelExtraConfiguration(configuration), null, 2);
+    const parsed = parseImageModelExtraConfiguration(raw);
+    setImageExtraRaw(raw);
+    setImageExtraValid(parsed.ok ? parsed.value : {});
+    setImageExtraError(parsed.ok ? "" : parsed.error);
+  }, [model, modelType, initialDraft]);
 
   // ── 通用表单 ──
   const [form, setForm] = useState({
@@ -228,8 +304,8 @@ export default function UnifiedModelDialog({
     model_type: modelType,
     // 计费
     billing_mode: BILLING_MODES[modelType][0].value as string,
-    cost_per_use: 0,       // 售价
-    cost_price: 0,          // 进价
+    cost_per_use: "" as number | "",       // 未填写与明确0元分开
+    cost_price: "" as number | "",
     // Token 计费
     token_billing_enabled: false,
     input_cost_per_million: "" as string,
@@ -246,7 +322,7 @@ export default function UnifiedModelDialog({
     supports_image_input: true,
     requires_image: false,
     // 视频专属
-    protocol_type: modelType === "text" ? "openai_chat" : modelType === "drawing" ? "images_generations" : "unified_video",
+    protocol_type: modelType === "text" ? "openai_chat" : modelType === "drawing" ? "images_generations" : "",
     duration_seconds: 5,
     max_duration: 10,
     duration_mode: "fixed" as VideoDurationMode,
@@ -289,6 +365,8 @@ export default function UnifiedModelDialog({
     protocolName: string;
     modelName: string;
     apiEndpoint?: string;
+    keyValid?: boolean | null;
+    modelExists?: boolean | null;
     features: string[];
     error?: string;
     suggestion?: string;
@@ -315,14 +393,13 @@ export default function UnifiedModelDialog({
           : "range";
       const resolutionOptions = asStringArray(protocolConfig.resolution_options).map(normalizeAdminResolution);
       const configuredDefaultResolution = normalizeAdminResolution(String(protocolConfig.default_resolution || protocolConfig.resolution || resolutionOptions[0] || ""));
-      setForm(prev => ({
-        ...prev,
+      const editValues: typeof form = {
         model_type: mt as "drawing" | "text" | "video",
         name: (model.name as string) || "",
         model_name: (model.model_name as string) || "",
         billing_mode: mt === "text" ? "token" : ((model.billing_mode as string) || BILLING_MODES[mt as keyof typeof BILLING_MODES]?.[0]?.value || "per_use"),
-        cost_per_use: Number(model.cost_per_use) || 0,
-        cost_price: Number(model.cost_price) || 0,
+        cost_per_use: model.cost_per_use != null ? Number(model.cost_per_use) : model.price_per_use != null ? Number(model.price_per_use) : "",
+        cost_price: model.cost_price != null ? Number(model.cost_price) : "",
         token_billing_enabled: mt === "text" || model.token_billing_enabled === true,
         input_cost_per_million: model.input_cost_per_million != null ? String(model.input_cost_per_million) : "",
         output_cost_per_million: model.output_cost_per_million != null ? String(model.output_cost_per_million) : "",
@@ -364,9 +441,17 @@ export default function UnifiedModelDialog({
         icon_url: (model.icon_url as string) || "",
         is_active: model.is_active !== false,
         sort_order: Number(model.sort_order) || 0,
+      };
+      editBaseline.current = structuredClone(editValues);
+      setForm(prev => ({ ...prev, ...editValues }));
+    } else if (initialDraft) {
+      setForm(prev => ({ ...prev, model_type: modelType,
+        name: String(initialDraft.name || ""), model_name: String(initialDraft.model_name || ""),
+        api_endpoint: String(initialDraft.api_endpoint || ""), api_key: "", provider: "", protocol_type: "",
+        cost_price: "", cost_per_use: typeof initialDraft.cost_per_use === "number" ? initialDraft.cost_per_use : "",
       }));
     }
-  }, [model, modelType]);
+  }, [model, modelType, initialDraft]);
 
   useEffect(() => {
     detectionEpoch.current += 1;
@@ -455,6 +540,24 @@ export default function UnifiedModelDialog({
   }, []);
 
   const selectedProtocol = VIDEO_PROTOCOLS.find(p => p.value === form.protocol_type);
+  const uploadModelAvatar = async (file?: File) => {
+    if (!file || avatarUploading || saving) return;
+    setAvatarUploadError("");
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size <= 0 || file.size > 5 * 1024 * 1024) {
+      setAvatarUploadError("请选择5MB以内的PNG、JPEG或WebP图片");
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const body = new FormData();
+      body.append("file", file); body.append("category", "image"); body.append("source", "model-avatar-upload");
+      const response = await fetch("/api/storage/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body });
+      const result = await response.json();
+      if (!response.ok || !result.success || typeof result.file?.key !== "string") throw new Error("UPLOAD_FAILED");
+      setForm(current => ({ ...current, icon_url: `/api/avatars?key=${encodeURIComponent(result.file.key)}` }));
+    } catch { setAvatarUploadError("头像上传失败，请重试"); }
+    finally { setAvatarUploading(false); }
+  };
   const isAutoDLH3 = form.model_type === "video"
     && (form.protocol_type === "autodl_comfyui_h3" || form.protocol_type === "autodl_comfyui_workflow");
   const isAutoDLH3Selfhost = form.model_type === "video" && form.protocol_type === "autodl_h3_selfhost";
@@ -466,11 +569,12 @@ export default function UnifiedModelDialog({
       ? "元/输出秒"
       : "元/次";
   const connection = modelConnectionSummary(form.api_endpoint || form.proxy_url, form.api_protocol_config);
-  const profit = form.cost_per_use - form.cost_price;
-  const profitMargin = form.cost_price > 0 ? ((profit / form.cost_price) * 100).toFixed(1) : "—";
+  const profit = Number(form.cost_per_use) - Number(form.cost_price);
+  const profitMargin = Number(form.cost_price) > 0 ? ((profit / Number(form.cost_price)) * 100).toFixed(1) : "—";
   const liveTest = detectResult?.liveTest;
   const liveTestPassed = liveTest?.tested && liveTest.passed;
-  const liveTestFailed = liveTest?.tested && !liveTest.passed;
+  const detectConfirmed = detectResult?.success === true && detectResult.keyValid === true && detectResult.modelExists === true;
+  const detectRejected = detectResult?.keyValid === false || detectResult?.modelExists === false;
 
   // ── 对话模型的接口预设与 Token 售价预览 ──
   const normalizedTextEndpoint = (form.proxy_url || form.api_endpoint).trim().replace(/\/+$/, "");
@@ -769,7 +873,7 @@ export default function UnifiedModelDialog({
             </span>
             <h2 id="model-dialog-title" className="text-xl font-bold">{isEdit ? "编辑模型" : "新增模型"}</h2>
           </div>
-          <button aria-label="关闭模型设置" onClick={onClose} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-2xl leading-none">&times;</button>
+          <button aria-label="关闭模型设置" onClick={onClose} disabled={saving} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-2xl leading-none disabled:opacity-40">&times;</button>
         </div>
 
         <div className="space-y-5">
@@ -794,10 +898,41 @@ export default function UnifiedModelDialog({
                   <span className="inline-block w-2 h-2 rounded-full bg-[var(--primary)]" />
                   模型名称
                 </p>
+                {form.model_type === "video" && (
+                  <div className="flex items-center gap-4" data-model-avatar-editor>
+                    {form.icon_url ? <img src={form.icon_url} alt="模型头像预览" className="h-14 w-14 rounded-xl object-cover" /> : <div className="h-14 w-14 rounded-xl border border-[var(--border)]" aria-label="尚未设置模型头像" />}
+                    <div className="flex-1 space-y-2">
+                      <label className={labelCls}>模型头像</label>
+                      <input aria-label="模型头像地址" value={form.icon_url} onChange={event => setForm({ ...form, icon_url: event.target.value })} placeholder="填写头像地址，或上传图片" className={inputCls} />
+                      <fieldset disabled={saving || avatarUploading} className="space-y-2">
+                        <legend className="text-xs text-[var(--muted-foreground)]">选择已有品牌头像</legend>
+                        <div className="grid grid-cols-5 gap-2">
+                          {MODEL_BRAND_OPTIONS.map(option => (
+                            <button key={option.key} type="button" aria-label={`使用${option.label}头像`}
+                              aria-pressed={form.icon_url === option.asset} data-model-brand-option={option.key}
+                              onClick={() => setForm(current => ({ ...current, icon_url: option.asset }))}
+                              className={`flex min-w-0 flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] disabled:opacity-40 ${form.icon_url === option.asset ? "border-[var(--primary)] bg-[var(--primary)]/10" : "border-[var(--border)] hover:bg-[var(--muted)]/40"}`}>
+                              <img src={option.asset} alt="" className="h-7 w-7 shrink-0 rounded-md object-contain" />
+                              <span className="max-w-full break-words">{option.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </fieldset>
+                      <div className="flex items-center gap-3">
+                        <label className="cursor-pointer text-sm text-[var(--primary)]">
+                          {avatarUploading ? "正在上传…" : "上传模型头像"}
+                          <input aria-label="上传模型头像" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" disabled={saving || avatarUploading} onChange={event => { void uploadModelAvatar(event.target.files?.[0]); event.target.value = ""; }} />
+                        </label>
+                        <button type="button" onClick={() => setForm({ ...form, icon_url: "" })} disabled={saving || avatarUploading || !form.icon_url} className="text-sm text-[var(--muted-foreground)] disabled:opacity-40">清除头像</button>
+                      </div>
+                      {avatarUploadError && <p role="alert" className="text-xs text-red-500">{avatarUploadError}</p>}
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className={labelCls}>模型名称 *</label>
-                    <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+                    <input aria-label="用户展示名称" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
                       placeholder={form.model_type === "drawing" ? "如：豆包 SeeDream 5.0" : "如：Sora、可灵V2大师版"}
                       className={inputCls} />
                     <p className="text-xs text-[var(--muted-foreground)] mt-1">展示给用户看的名称</p>
@@ -861,14 +996,14 @@ export default function UnifiedModelDialog({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className={labelCls}>售价({videoPriceUnit})</label>
-                      <input type="number" step="any" min="0" value={form.cost_per_use}
-                        onChange={e => { const v = parseFloat(e.target.value); setForm({ ...form, cost_per_use: isNaN(v) ? 0 : v }) }}
+                      <input aria-label="售价" type="number" step="any" min="0" value={form.cost_per_use}
+                        onChange={e => { const v = parseFloat(e.target.value); setForm({ ...form, cost_per_use: isNaN(v) ? "" : v }) }}
                         className={inputCls} />
                     </div>
                     <div>
                       <label className={labelCls}>成本价({videoPriceUnit})</label>
-                      <input type="number" step="any" min="0" value={form.cost_price}
-                        onChange={e => { const v = parseFloat(e.target.value); setForm({ ...form, cost_price: isNaN(v) ? 0 : v }) }}
+                      <input aria-label="成本价" type="number" step="any" min="0" value={form.cost_price}
+                        onChange={e => { const v = parseFloat(e.target.value); setForm({ ...form, cost_price: isNaN(v) ? "" : v }) }}
                         className={inputCls} />
                     </div>
                     <div>
@@ -877,7 +1012,7 @@ export default function UnifiedModelDialog({
                         className={`${inputCls} opacity-70`} />
                     </div>
                   </div>
-                  {form.cost_per_use > 0 && form.cost_price > 0 && (
+                  {Number(form.cost_per_use) > 0 && Number(form.cost_price) > 0 && (
                     <div className="bg-amber-500/8 rounded-lg p-2.5 border border-amber-500/15 flex items-center justify-between text-xs">
                       <span className="text-[var(--muted-foreground)]">{isProviderTokenBilling ? "每百万Token利润" : videoPriceUnit.includes("输出秒") ? "每输出秒利润" : "单次利润"}</span>
                       <span className="font-bold text-amber-700 dark:text-amber-400">
@@ -904,14 +1039,14 @@ export default function UnifiedModelDialog({
                 <div className="space-y-3">
                   <div>
                     <label className={labelCls}>模型 ID *</label>
-                    <input value={form.model_name} onChange={e => setForm({ ...form, model_name: e.target.value })}
+                    <input aria-label="模型 ID" value={form.model_name} onChange={e => setForm({ ...form, model_name: e.target.value })}
                       placeholder={form.model_type === "drawing" ? "如：doubao-seedream-5-0" : "如：grok-video-3、veo3.1-fast"}
                       className={inputCls} />
                   </div>
                   {form.model_type === "video" && (
                     <div>
                       <label className={labelCls}>渠道标识 *</label>
-                      <input value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value.trim() })}
+                      <input aria-label="渠道标识" value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value.trim() })}
                         placeholder="例如：secure_skill、lconai、official"
                         className={inputCls} />
                       <p className="mt-1 text-xs text-[var(--muted-foreground)]">渠道与协议分别保存；同一渠道下的不同模型可选择不同协议。</p>
@@ -961,22 +1096,22 @@ export default function UnifiedModelDialog({
                           {isAutoDLH3Selfhost ? "自租 H3 仅允许保存后执行 GET /v1/models 无费用测试" : "读取模型目录，不生成、不保存"}
                         </span>
                       </div>
-                      {detectResult?.success && <button type="button" className="text-sm text-[var(--primary)] underline" onClick={() => {
+                      {detectConfirmed && detectResult && <button type="button" className="text-sm text-[var(--primary)] underline" onClick={() => {
                         setForm(prev => ({ ...prev, protocol_type: detectResult.protocolType }));
                       }}>使用协议建议（保存后生效）</button>}
                       {detectResult && (
                         <div className={`rounded-xl border-2 overflow-hidden ${
-                          liveTestPassed ? "border-green-500" : liveTestFailed ? "border-red-500"
-                            : detectResult.success ? "border-yellow-500" : "border-red-500"
+                          detectConfirmed ? "border-yellow-500" : detectRejected ? "border-red-500" : "border-[var(--border)]"
                         }`}>
                           <div className={`px-4 py-3 flex items-center gap-3 ${
-                            liveTestPassed ? "bg-green-500 text-white" : liveTestFailed ? "bg-red-500 text-white"
-                              : detectResult.success ? "bg-yellow-500 text-white" : "bg-red-500 text-white"
+                            detectConfirmed ? "bg-yellow-500 text-white" : detectRejected ? "bg-red-500 text-white" : "bg-[var(--muted)] text-[var(--foreground)]"
                           }`}>
-                            <span className="text-2xl">{liveTestPassed ? "✓" : liveTestFailed ? "✗" : detectResult.success ? "⚠" : "✗"}</span>
+                            <span className="text-2xl">{detectConfirmed ? "⚠" : detectRejected ? "✗" : "?"}</span>
                             <div className="flex-1">
                               <p className="font-black text-base">
-                                {liveTestPassed ? "验证通过" : liveTestFailed ? "验证未通过" : detectResult.success ? `配置检查通过：${detectResult.protocolName}` : `配置未确认：${detectResult.error || "未知错误"}`}
+                                {detectConfirmed ? `配置检查通过：${detectResult.protocolName}`
+                                  : detectRejected ? `配置检查未通过：${detectResult.error || "目录或认证已明确拒绝"}`
+                                    : `配置未确认：${detectResult.error || "暂时无法核实"}`}
                               </p>
                             </div>
                           </div>
@@ -1013,7 +1148,7 @@ export default function UnifiedModelDialog({
                       <summary className="cursor-pointer text-sm font-semibold">高级：接口协议与预设</summary>
                       <p className="text-xs text-[var(--muted-foreground)] my-2">协议决定请求格式；同一渠道的不同模型可能使用不同协议。</p>
                       <label className={labelCls}>接口协议</label>
-                      <select value={form.protocol_type} onChange={e => {
+                      <select aria-label="视频模型接口协议" value={form.protocol_type} onChange={e => {
                         const protocolType = e.target.value;
                         if (protocolType === "autodl_comfyui_workflow") {
                           setForm({
@@ -1136,7 +1271,8 @@ export default function UnifiedModelDialog({
                           setForm({ ...form, protocol_type: protocolType });
                         }
                       }} className={inputCls}>
-                        {!VIDEO_PROTOCOLS.some(p => p.value === form.protocol_type) && <option value={form.protocol_type}>{form.protocol_type}（当前配置）</option>}
+                        <option value="">请选择已核对的协议</option>
+                        {form.protocol_type && !VIDEO_PROTOCOLS.some(p => p.value === form.protocol_type) && <option value={form.protocol_type}>{form.protocol_type}（当前配置）</option>}
                         {VIDEO_PROTOCOLS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                       </select>
                       {selectedProtocol && (
@@ -1202,7 +1338,7 @@ export default function UnifiedModelDialog({
                         className="w-4 h-4 rounded accent-orange-500" />
                       必须上传图片
                     </label>
-                    <span className="text-sm text-[var(--muted-foreground)]">保存后自动启用</span>
+                    <span className="text-sm text-[var(--muted-foreground)]">保存仅建立候选，发布后仍需真实验证</span>
                   </div>
                   {form.duration_mode === "discrete" && (
                     <div className="mt-4">
@@ -1267,6 +1403,19 @@ export default function UnifiedModelDialog({
               )}
 
               {/* 四、管理员备注 */}
+              {form.model_type === "drawing" && <details className="rounded-xl border border-[var(--border)] bg-[var(--muted)]/20 p-4">
+                <summary className="cursor-pointer text-sm font-semibold">更多接口参数</summary>
+                <p className="mt-2 text-xs text-[var(--muted-foreground)]">保留模型所需的额外能力、价格档位和任务参数。填写 JSON 对象；协议、参考图传输和备注使用原有设置。</p>
+                <textarea aria-label="图片额外接口参数" aria-invalid={Boolean(imageExtraError)} aria-describedby={imageExtraError ? "image-extra-config-error" : undefined}
+                  value={imageExtraRaw} onChange={event => {
+                    const raw = event.target.value; setImageExtraRaw(raw);
+                    const parsed = parseImageModelExtraConfiguration(raw);
+                    if (parsed.ok) { setImageExtraValid(parsed.value); setImageExtraError(""); }
+                    else setImageExtraError(parsed.error);
+                  }} rows={7} spellCheck={false}
+                  className="mt-3 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-xs text-[var(--foreground)]" />
+                {imageExtraError && <p id="image-extra-config-error" role="alert" className="mt-2 text-xs text-red-600">{imageExtraError}</p>}
+              </details>}
               <details className="bg-orange-500/5 rounded-xl p-4 border border-orange-500/20">
                 <summary className="text-xs font-bold text-orange-500 mb-3 flex items-center gap-1.5">
                   <span className="inline-block w-2 h-2 rounded-full bg-orange-500" />
@@ -1286,7 +1435,7 @@ export default function UnifiedModelDialog({
                     <input type="number" min="0" value={form.sort_order}
                       onChange={e => setForm({ ...form, sort_order: parseInt(e.target.value) || 0 })} className={inputCls} />
                   </div>
-                  <div className="flex items-end pb-2 text-sm text-[var(--muted-foreground)]">保存后自动启用并在目录显示</div>
+                  <div className="flex items-end pb-2 text-sm text-[var(--muted-foreground)]">保存仅建立候选，通过真实验收与工作台分配后才可使用</div>
                 </div>
               )}
             </>
@@ -1294,13 +1443,17 @@ export default function UnifiedModelDialog({
         </div>
 
         {/* ── 底部按钮 ── */}
+        {saveError && <p role="alert" className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">{saveError}</p>}
         <div className="flex items-center justify-between mt-8 pt-4 border-t">
-          <button onClick={onClose} className="px-6 py-2.5 rounded-lg border hover:bg-[var(--muted)]/50 transition">
+          <button onClick={onClose} disabled={saving} className="px-6 py-2.5 rounded-lg border hover:bg-[var(--muted)]/50 transition disabled:opacity-40">
             取消
           </button>
           <div className="flex items-center gap-3">
-            {form.model_type === "text" && <p className="max-w-xs text-xs text-[var(--muted-foreground)]">保存为候选后，请完成校验、预览和发布，再从模型卡片进行真实文字验证与启用。</p>}
-            <button onClick={() => {
+            <p className="max-w-xs text-xs text-[var(--muted-foreground)]">保存为候选后，请完成校验、预览和发布，再进行真实验证、启用及工作台分配。</p>
+            <button disabled={saving || avatarUploading || saveBlocked || (form.model_type === "drawing" && Boolean(imageExtraError))} onClick={() => {
+              if (saving || avatarUploading || saveBlocked) return;
+              const parsedImageExtra = form.model_type === "drawing" ? parseImageModelExtraConfiguration(imageExtraRaw) : null;
+              if (parsedImageExtra && !parsedImageExtra.ok) { setImageExtraError(parsedImageExtra.error); return; }
               const endpoint = form.model_type === "text" ? (form.proxy_url || form.api_endpoint) : form.api_endpoint;
               const invalid = modelEndpointError(endpoint);
               if (invalid) { alert(invalid); return; }
@@ -1310,6 +1463,14 @@ export default function UnifiedModelDialog({
               }
               if (!form.api_key && !(isEdit && apiKeyConfigured)) {
                 alert("请填写API密钥");
+                return;
+              }
+              if (form.model_type !== "text" && [form.cost_price, form.cost_per_use].some(value => value === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) {
+                alert("请明确填写成本与售价；未知成本不能用0代替，已确认免费时才填写0。");
+                return;
+              }
+              if (form.model_type === "video" && (!form.provider.trim() || !form.protocol_type)) {
+                alert("请确认并填写渠道标识，主动选择已核对的接口协议。");
                 return;
               }
               if (form.model_type === "text") {
@@ -1459,7 +1620,7 @@ export default function UnifiedModelDialog({
               } else if (form.model_type === "drawing") {
                 const imageProtocol = IMAGE_PROTOCOLS.find(item => item.value === form.protocol_type);
                 saveData.api_protocol_config = {
-                  ...form.api_protocol_config,
+                  ...(parsedImageExtra?.ok ? parsedImageExtra.value : imageExtraValid),
                   protocol: form.protocol_type,
                   reference_transport: imageProtocol?.referenceTransport || form.api_protocol_config.reference_transport || "none",
                 };
@@ -1478,10 +1639,10 @@ export default function UnifiedModelDialog({
               }
               if (isEdit && model?.id) saveData.id = model.id;
               if (isEdit && model?.agent_id) saveData.agent_id = model.agent_id;
-              onSave(saveData);
+              onSave(preserveUnchangedVideoEditPayload(model, editBaseline.current, form, saveData));
             }}
-              className="px-8 py-2.5 rounded-lg bg-[var(--primary)] text-white font-bold hover:opacity-90 transition">
-              {form.model_type === "text" ? "保存为候选" : isEdit ? "保存修改" : "确认新增"}
+              className="px-8 py-2.5 rounded-lg bg-[var(--primary)] text-white font-bold hover:opacity-90 transition disabled:cursor-not-allowed disabled:opacity-40">
+              {saving ? "正在建立候选…" : saveBlocked ? "请先核对保存结果" : "保存为候选"}
             </button>
           </div>
         </div>

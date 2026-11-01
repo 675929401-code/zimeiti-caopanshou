@@ -4,6 +4,8 @@ import {
   normalizeVideoResolution,
   type VideoModelCapabilitySource,
 } from "@/lib/video-model-capabilities";
+import { isStoryboardImageWorkflow } from "@/lib/storyboard-video-inputs";
+import { getAiVideoPageInputCapabilities } from "@/lib/ai-video-page-capabilities";
 
 export type StoryboardVideoSelectionModel = VideoModelCapabilitySource & {
   supportsImageInput: boolean;
@@ -12,15 +14,20 @@ export type StoryboardVideoSelectionModel = VideoModelCapabilitySource & {
   aspectRatios: readonly string[];
   supportsAudioInput?: boolean;
   minReferenceAudios?: number;
+  maxReferenceAudios?: number;
   referenceInputMode?: string;
+  workflowInputMode?: string;
   minReferenceImages?: number;
   maxReferenceImages?: number;
   requiresFirstFrame?: boolean;
   requiresLastFrame?: boolean;
+  showFirstFrame?: boolean;
+  showLastFrame?: boolean;
   available?: boolean;
   priceReady?: boolean;
   generationReady?: boolean;
   readinessMessage?: string;
+  verificationNotice?: string;
   availabilityMessage?: string;
 };
 
@@ -40,11 +47,17 @@ export function resolveStoryboardInitialVideoModelId(
   if (requestedId) return requestedId;
   const selectable = models.filter(model => (
     model.available !== false
+    && model.priceReady !== false
+    && !storyboardVideoReadinessIssue(model)
     && !storyboardVideoInputModeIssue(model)
   ));
-  const selectedId = selectable.find(model => /omni.*flash.*10/iu.test(String(model.name)))?.id
-    || selectable.find(model => /veo.*3.*1.*fast/iu.test(String(model.name)))?.id
-    || selectable[0]?.id || "";
+  const ordinary = selectable.filter(model => isStoryboardImageWorkflow(model));
+  const selectedId = ordinary.find(model => /omni.*flash.*10/iu.test(String(model.name)))?.id
+    || ordinary.find(model => /veo.*3.*1.*fast/iu.test(String(model.name)))?.id
+    || ordinary[0]?.id || selectable.find(model => {
+      const caps = getAiVideoPageInputCapabilities(model);
+      return caps.minReferenceImages === 0 && !caps.requiresSourceVideo && caps.minReferenceAudios === 0 && !caps.requiresLastFrame;
+    })?.id || "";
   return typeof selectedId === "string" ? selectedId : "";
 }
 
@@ -93,35 +106,21 @@ function resolutionQuality(resolution: string) {
 }
 
 /**
- * Each storyboard card supplies one image plus a prompt. It
- * does not expose distinct first/last-frame slots or audio inputs, so those
- * workflow modes must stay in their dedicated workspaces.
+ * Acceptance prose remains diagnostic. Only the structured generation switch
+ * blocks submission; current price, activity and configuration have their own gates.
  */
-export function storyboardVideoInputModeIssue(model: StoryboardVideoSelectionModel) {
-  if (!model.supportsImageInput) return "不支持故事板图片输入";
-  if (model.requiresSourceVideo) return "需要源视频，不能用于故事板图片";
-  const inputMode = String(model.referenceInputMode || "").trim().toLowerCase();
-  // A few legacy catalog rows predate the explicit first/last-frame flags.
-  // Their public model name is still an authoritative workflow declaration;
-  // do not let those two-frame models enter a one-image storyboard card.
-  const legacyFirstLastFrameModel = /(?:首\s*尾\s*帧|first[\s_-]*(?:and[\s_-]*)?last[\s_-]*frame)/iu
-    .test(String(model.name || ""));
-  if (
-    model.requiresLastFrame
-    || legacyFirstLastFrameModel
-    || (model.requiresLastFrame !== false && (
-      inputMode === "first_last_frame"
-      || inputMode === "first-last-frame"
-    ))
-  ) return "需要分别提供首帧和尾帧，当前工作台不支持";
-  const requiredAudios = model.minReferenceAudios ?? (model.supportsAudioInput ? 1 : 0);
-  if (requiredAudios > 0 || inputMode === "image_audio_lipsync") {
-    return "需要音频输入，请在 AI 视频制作的对应模式使用";
+export function storyboardVideoReadinessIssue(model: StoryboardVideoSelectionModel) {
+  if (model.generationReady === false) {
+    return String(model.readinessMessage || model.verificationNotice || "").trim()
+      || "当前模型生成尚未验收";
   }
-  if (typeof model.minReferenceImages === "number" && model.minReferenceImages > 1) {
-    return `至少需要 ${model.minReferenceImages} 张参考图；分镜每张卡片仅提交一张故事板，请在视频制作页使用`;
-  }
-  if (model.maxReferenceImages === 0) return "当前模型不接收故事板图片";
+  return "";
+}
+
+/** Model selection is independent of a card's current media inputs.
+ * Per-card requirements are validated by resolveStoryboardVideoInputs before submission. */
+export function storyboardVideoInputModeIssue(_model: StoryboardVideoSelectionModel) {
+  void _model;
   return "";
 }
 
@@ -184,5 +183,7 @@ export function storyboardVideoModelSelectionIssue(
     return String(model.availabilityMessage || "").trim() || "当前未开放";
   }
   if (model.priceReady === false) return "当前未开放";
+  const readinessIssue = storyboardVideoReadinessIssue(model);
+  if (readinessIssue) return readinessIssue;
   return storyboardVideoInputModeIssue(model);
 }

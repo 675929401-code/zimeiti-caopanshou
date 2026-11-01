@@ -17,6 +17,7 @@ import {
   renderStoryboardDirectorAssetsVisibleOutput,
   validateStoryboardDirectorAssetsPackage,
   validateStoryboardDirectorPackage,
+  isQualityWarningIssue,
   type StoryboardActualShotCount,
   type StoryboardContinuityLink,
   type StoryboardDirectorPackage,
@@ -40,6 +41,8 @@ import {
 } from "@/lib/manju-skill-output-protocol";
 import type { StoryboardPerformancePlan } from "./storyboard-director-performance";
 import type { StoryboardPromptDraft } from "./storyboard-legacy-prompt-draft";
+import { storyboardPromptVisibleText, type StoryboardTextPromptDraft } from "./storyboard-prompt-draft";
+import type { AgentStoryboardPromptDraft } from "./agent-storyboard-prompt-draft";
 
 export const STRUCTURED_AGENT_OUTPUT_READY_EVENT = "agent-structured-output-ready";
 
@@ -66,12 +69,14 @@ export interface StructuredAgentOutputReadyDetail {
   schema_version: string;
   source: "stable_json" | "legacy_text_blocks";
   segments: StoryboardWorkbenchSegmentDTO[];
-  machine_payload: StoryboardDirectorPackage | StoryboardDirectorAssetsPackage | StoryboardDirectorPlanPackage | StoryboardPromptDraft | AgentPromptPackage | ManjuSkillOutput | null;
+  machine_payload: StoryboardDirectorPackage | StoryboardDirectorAssetsPackage | StoryboardDirectorPlanPackage | StoryboardPromptDraft | StoryboardTextPromptDraft | AgentStoryboardPromptDraft | AgentPromptPackage | ManjuSkillOutput | null;
   /** Independent original card snapshot assigned only by the host. */
   expected_input?: StoryboardDirectorInput;
   required_contract_version?: typeof STORYBOARD_DIRECTOR_PRODUCTION_CONTRACT_VERSION;
   require_performance_plan?: boolean;
   legacy_input_compatibility?: boolean;
+  /** Semantic quality findings retained for diagnostics; structural parsing remains strict. */
+  review_warnings?: string[];
   phase?: "assets" | "storyboard" | "planned" | "draft";
   reference_project_id?: string;
   verified_asset_bindings?: StoryboardVerifiedAssetBinding[];
@@ -84,7 +89,7 @@ export type StructuredAgentOutputResult =
       schema_version: string;
       source: "stable_json" | "legacy_text_blocks";
       segments: StoryboardWorkbenchSegmentDTO[];
-      machine_payload: StoryboardDirectorPackage | StoryboardDirectorAssetsPackage | StoryboardDirectorPlanPackage | StoryboardPromptDraft | AgentPromptPackage | ManjuSkillOutput | null;
+      machine_payload: StoryboardDirectorPackage | StoryboardDirectorAssetsPackage | StoryboardDirectorPlanPackage | StoryboardPromptDraft | StoryboardTextPromptDraft | AgentStoryboardPromptDraft | AgentPromptPackage | ManjuSkillOutput | null;
       phase?: "assets" | "storyboard" | "planned" | "draft";
       machine_json: string | null;
       visible_text: string;
@@ -194,7 +199,7 @@ function hideStoryboardTransport(text: string): string {
   return `${text.slice(0, opening.index)}${end >= 0 ? text.slice(end + opening[1].length) : ""}`.trim();
 }
 
-function strictStableResult(text: string, options: { hostVerifiedReferenceAssets?: boolean; expectedInput?: StoryboardDirectorInput; requirePerformancePlan?: boolean } = {}): StructuredAgentOutputResult | null {
+function strictStableResult(text: string, options: { hostVerifiedReferenceAssets?: boolean; expectedInput?: StoryboardDirectorInput; requirePerformancePlan?: boolean; allowQualityWarnings?: boolean } = {}): StructuredAgentOutputResult | null {
   for (const candidate of extractJsonCandidates(text)) {
     const source = unwrapCandidate(candidate.value);
     if (!source) continue;
@@ -203,23 +208,26 @@ function strictStableResult(text: string, options: { hostVerifiedReferenceAssets
       && source.artifact_type === STORYBOARD_DIRECTOR_PLAN_ARTIFACT_TYPE) {
       const parsed = parseStoryboardDirectorPlanPackage(JSON.stringify(source));
       const issues = parsed ? validateStoryboardDirectorPlanPackage(parsed, options.expectedInput) : ["planned_package_invalid"];
-      if (!parsed || issues.length) return { status: "invalid", visible_text: "完整制作计划尚未就绪，请保留原回复并核对分镜结构；当前不可推送。", errors: issues };
+      const hardIssues = issues.filter(issue => !isQualityWarningIssue(issue));
+      if (!parsed || hardIssues.length || (issues.length && !options.allowQualityWarnings)) return { status: "invalid", visible_text: storyboardPromptVisibleText(text), errors: issues };
       return { status: "valid", kind: "storyboard_director", phase: "planned",
         schema_version: STORYBOARD_DIRECTOR_PLAN_SCHEMA_VERSION, source: "stable_json",
         segments: storyboardDtos(storyboardDirectorPlanAsStoryboardPackage(parsed)), machine_payload: parsed,
-        machine_json: JSON.stringify(parsed, null, 2), visible_text: renderStoryboardDirectorPlanVisibleOutput(parsed), warnings: [] };
+        machine_json: JSON.stringify(parsed, null, 2), visible_text: renderStoryboardDirectorPlanVisibleOutput(parsed), warnings: issues.filter(isQualityWarningIssue) };
     }
 
     if (source.schema_version === STORYBOARD_DIRECTOR_ASSETS_SCHEMA_VERSION
       && source.artifact_type === STORYBOARD_DIRECTOR_ASSETS_ARTIFACT_TYPE) {
       const parsed = parseStoryboardDirectorAssetsPackage(JSON.stringify(source));
-      if (!parsed || validateStoryboardDirectorAssetsPackage(parsed).length) {
-        return { status: "invalid", visible_text: removeCandidate(text, candidate), errors: ["三视图资产包字段不完整或阶段不合法"] };
+      const issues = parsed ? validateStoryboardDirectorAssetsPackage(parsed) : ["三视图资产包字段不完整或阶段不合法"];
+      const hardIssues = issues.filter(issue => !isQualityWarningIssue(issue));
+      if (!parsed || hardIssues.length || (issues.length && !options.allowQualityWarnings)) {
+        return { status: "invalid", visible_text: removeCandidate(text, candidate), errors: issues };
       }
       return { status: "valid", kind: "storyboard_director", phase: "assets",
         schema_version: STORYBOARD_DIRECTOR_ASSETS_SCHEMA_VERSION, source: "stable_json", segments: [],
         machine_payload: parsed, machine_json: JSON.stringify(parsed, null, 2),
-        visible_text: renderStoryboardDirectorAssetsVisibleOutput(parsed), warnings: [] };
+        visible_text: renderStoryboardDirectorAssetsVisibleOutput(parsed), warnings: issues.filter(isQualityWarningIssue) };
     }
 
     if (source.schema_version === STORYBOARD_DIRECTOR_OUTPUT_SCHEMA_VERSION
@@ -228,9 +236,12 @@ function strictStableResult(text: string, options: { hostVerifiedReferenceAssets
       if (!parsed) {
         return { status: "invalid", visible_text: removeCandidate(text, candidate), errors: ["storyboard_director_output.v1 字段缺失或类型不合法"] };
       }
+      let qualityWarnings: string[] = [];
       if (options.requirePerformancePlan || parsed.segments.some(segment => segment.performance_plan !== undefined)) {
         const issues = validateStoryboardDirectorPackage(parsed, options.expectedInput, { requirePerformancePlan: options.requirePerformancePlan });
-        if (issues.length) return { status: "invalid", visible_text: "动作与表情结构尚未就绪，请保留原回复并核对分镜包；当前不可推送。", errors: issues };
+        const hardIssues = issues.filter(issue => !isQualityWarningIssue(issue));
+        qualityWarnings = issues.filter(isQualityWarningIssue);
+        if (hardIssues.length || (issues.length && !options.allowQualityWarnings)) return { status: "invalid", visible_text: storyboardPromptVisibleText(text), errors: issues };
       }
       return {
         status: "valid",
@@ -242,7 +253,7 @@ function strictStableResult(text: string, options: { hostVerifiedReferenceAssets
         machine_payload: parsed,
         machine_json: JSON.stringify(parsed, null, 2),
         visible_text: renderStoryboardDirectorVisibleOutput(parsed, options),
-        warnings: [],
+        warnings: qualityWarnings,
       };
     }
 
@@ -359,7 +370,7 @@ function legacyStoryboardResult(text: string): StructuredAgentOutputResult | nul
 export function parseStructuredAgentOutput(
   text: string,
   finalized = true,
-  options: { hostVerifiedReferenceAssets?: boolean; expectedInput?: StoryboardDirectorInput; requirePerformancePlan?: boolean } = {},
+  options: { hostVerifiedReferenceAssets?: boolean; expectedInput?: StoryboardDirectorInput; requirePerformancePlan?: boolean; allowQualityWarnings?: boolean } = {},
 ): StructuredAgentOutputResult {
   const normalized = text.replace(/\r\n?/g, "\n");
   const mentionsStableSchema = normalized.includes(STORYBOARD_DIRECTOR_OUTPUT_SCHEMA_VERSION)
@@ -381,7 +392,7 @@ export function parseStructuredAgentOutput(
     return { status: "invalid", visible_text: hideStoryboardTransport(normalized), errors: ["检测到稳定协议标识，但机器 JSON 未闭合或校验失败"] };
   }
   const legacy = legacyStoryboardResult(normalized);
-  if (options.requirePerformancePlan && legacy) return { status: "invalid", visible_text: "动作与表情结构尚未就绪，当前不可推送。", errors: ["performance_plan_requires_stable_package"] };
+  if (options.requirePerformancePlan && legacy) return { status: "invalid", visible_text: storyboardPromptVisibleText(normalized), errors: ["performance_plan_requires_stable_package"] };
 
   return legacy
     ?? { status: "none", visible_text: normalized, errors: [] };
@@ -415,6 +426,7 @@ export function buildStructuredAgentOutputReadyDetail(
     source: result.source,
     segments: result.segments,
     machine_payload: result.machine_payload,
+    ...(result.warnings.length ? { review_warnings: [...result.warnings] } : {}),
     ...(result.phase ? { phase: result.phase } : {}),
   };
 }

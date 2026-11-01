@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { invalidateGlobalSystemPrefixCache } from "@/app/api/llm/llm-state";
-import { clearCozeConfigCache } from "@/lib/coze-api";
+import { invalidatePlatformSettingsRuntimeCaches } from "@/lib/server/platform-settings-runtime-cache";
 import {
   adminPlatformSettingKeysForScope,
   adminPlatformSettingPermission,
@@ -171,6 +170,7 @@ export async function POST(request: NextRequest) {
         { onConflict: "setting_key" },
       );
       if (error) throw error;
+      invalidatePlatformSettingsRuntimeCaches(changedKeys);
     }
     const persisted = writeKeys.length
       ? await database
@@ -193,9 +193,6 @@ export async function POST(request: NextRequest) {
         mismatchedKey,
       );
     }
-    if (changedKeys.includes("global_system_prefix")) invalidateGlobalSystemPrefixCache();
-    if (changedKeys.some((key) => key.startsWith("coze_"))) clearCozeConfigCache();
-
     for (const item of authorizations) {
       await auditSettingsResult(request, item.authorization, item.scope, "write", "success", "PLATFORM_SETTINGS_SCOPE_UPDATED", {
         changedKeys: changedKeys.filter((key) => adminPlatformSettingScopeForKey(key) === item.scope),

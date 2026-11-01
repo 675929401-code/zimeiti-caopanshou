@@ -16,6 +16,10 @@ export function storyboardPerformanceActivationTime(value: unknown): number | un
 const labels = new Set(["setup", "drive", "contact", "feedback", "settle", "trigger", "before", "peak", "release", "endstate",
   "同上", "待补充", "未填写", "未提供", "无", "不适用", "na", "动作", "表情", "起点", "终点"]);
 const comparable = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+const containsAuthoredExcerpt = (container: string, excerpt: string) => {
+  if (container.includes(excerpt)) return true;
+  return container.normalize("NFKC").replace(/\s+/gu, " ").trim().includes(excerpt.normalize("NFKC").replace(/\s+/gu, " ").trim());
+};
 const clause = z.string().trim().min(4).max(360).refine(value => {
   const core = comparable(value);
   return core.length >= 2 && new Set(core).size > 1 && !labels.has(core);
@@ -29,6 +33,8 @@ export const StoryboardPerformancePlanSchema = z.object({
   peak_shot_id: z.string().trim().min(1).max(80),
   semantic_event: clause,
   action_chain: z.object({ setup: clause, drive: clause, contact: clause, feedback: clause, settle: clause }).strict(),
+  /** Explicit actorless scene intent; absence is not inferred from empty arrays. */
+  cast_presence: z.literal("none").optional(),
   expressions: z.array(z.object({
     actor_asset_id: actorId,
     actor_role: z.enum(["character", "pet"]),
@@ -36,11 +42,15 @@ export const StoryboardPerformancePlanSchema = z.object({
     before: clause,
     peak: clause,
     release: clause,
-  }).strict()).min(1).max(24),
+  }).strict()).max(24),
   image_excerpt: z.string().trim().min(20).max(6000),
   video_excerpt: z.string().trim().min(40).max(12000),
   end_state: clause,
 }).strict().superRefine((plan, context) => {
+  if (plan.cast_presence === "none" ? plan.expressions.length !== 0 : plan.expressions.length === 0) {
+    context.addIssue({ code: "custom", path: ["expressions"], message: plan.cast_presence === "none"
+      ? "明确无角色的场景不能声明人物或宠物表情" : "角色表情不能为空；确无角色的场景须明确声明cast_presence为none" });
+  }
   if (new Set(Object.values(plan.action_chain).map(comparable)).size === 1) {
     context.addIssue({ code: "custom", path: ["action_chain"], message: "动作链不能重复同一句占位" });
   }
@@ -77,6 +87,7 @@ export function validateStoryboardPerformancePlan(value: unknown, context: Story
   if (!parsed.success) return ["performance_plan_invalid"];
   const plan = parsed.data;
   const issues: string[] = [];
+  if (plan.cast_presence === "none" && context.actorIds.length !== 0) issues.push("performance_cast_presence_actor_mismatch");
   if (!context.shotIds.includes(plan.peak_shot_id)) issues.push("performance_peak_shot_unknown");
   const expressionIds = plan.expressions.map(expression => expression.actor_asset_id);
   if (new Set(context.actorIds).size !== context.actorIds.length || expressionIds.length !== context.actorIds.length
@@ -86,7 +97,7 @@ export function validateStoryboardPerformancePlan(value: unknown, context: Story
   if (context.referenceRoles && plan.expressions.some(expression => context.referenceRoles!.get(expression.actor_asset_id) !== expression.actor_role)) {
     issues.push("performance_expression_role_mismatch");
   }
-  if (context.imagePrompt !== undefined && !context.imagePrompt.includes(plan.image_excerpt)) issues.push("performance_image_excerpt_missing");
-  if (!context.videoPrompt.includes(plan.video_excerpt)) issues.push("performance_video_excerpt_missing");
+  if (context.imagePrompt !== undefined && !containsAuthoredExcerpt(context.imagePrompt, plan.image_excerpt)) issues.push("performance_image_excerpt_missing");
+  if (!containsAuthoredExcerpt(context.videoPrompt, plan.video_excerpt)) issues.push("performance_video_excerpt_missing");
   return issues;
 }

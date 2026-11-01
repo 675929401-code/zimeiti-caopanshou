@@ -36,6 +36,10 @@ export const StoryboardDirectorExecutionSchema = z.object({
   sourceVideoPrompt: z.string().max(50000),
   performancePlan: StoryboardPerformancePlanSchema.optional(),
 }).strict().superRefine((value, context) => {
+  if (value.performancePlan?.cast_presence === "none"
+    && (value.characterAssets.length !== 0 || !Array.isArray(value.characterAssetIds) || value.characterAssetIds.length !== 0)) {
+    context.addIssue({ code: "custom", path: ["characterAssets"], message: "明确无角色的执行计划必须同时保存空身份文字与空身份ID数组" });
+  }
   if (value.performancePlan) {
     for (const issue of validateStoryboardPerformancePlan(value.performancePlan, {
       shotIds: value.shotTimeRanges.map(shot => shot.shot_id), actorIds: value.characterAssetIds || [], videoPrompt: value.sourceVideoPrompt,

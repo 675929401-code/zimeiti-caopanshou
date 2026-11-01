@@ -36,6 +36,21 @@ const PROVIDER_PARAMETERS = new Set([
 function diagnosticRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
+/** Unwrap only the relay error envelopes supported by this boundary. */
+function providerErrorRecords(payload: unknown): Record<string, unknown>[] {
+  const row = diagnosticRecord(payload);
+  const outer = diagnosticRecord(row.error);
+  const nested = diagnosticRecord(outer.error);
+  const response = diagnosticRecord(diagnosticRecord(row.response).error);
+  return [row, outer, nested, response];
+}
+function providerErrorDetail(payload: unknown): Record<string, unknown> {
+  // Some relays put request metadata in a deeper error envelope. Descend only
+  // when that node actually contributes error semantics; metadata must not
+  // erase an explicit outer quota/authentication rejection.
+  return providerErrorRecords(payload).filter(row => [row.code, row.type, row.message]
+    .some(value => typeof value === "string" && value.trim().length > 0)).at(-1) || diagnosticRecord(payload);
+}
 function boundedDiagnosticNumber(value: unknown, maximum: number): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= maximum
     ? Math.trunc(value) : undefined;
@@ -68,8 +83,7 @@ export function sanitizeLlmSafeDiagnostics(value: unknown): Readonly<LlmSafeDiag
 
 /** Capture provider fields before generic mapping; supplied nested diagnostics are ignored. */
 export function buildLlmSafeDiagnostics(payload: unknown, measured: LlmSafeDiagnostics): Readonly<LlmSafeDiagnostics> {
-  const row = diagnosticRecord(payload);
-  const detail = diagnosticRecord(row.error && typeof row.error === "object" ? row.error : row);
+  const detail = providerErrorDetail(payload);
   return sanitizeLlmSafeDiagnostics({
     phase: measured.phase, transportStatus: measured.transportStatus,
     elapsedMs: measured.elapsedMs, receivedChars: measured.receivedChars,
@@ -170,36 +184,40 @@ export function upstreamContentRejection(payload: unknown): LlmStreamError | nul
 export function responseStartError(cause: unknown): LlmStreamError {
   if (cause instanceof LlmStreamError) return cause;
   const diagnostic = cause instanceof Error ? cause.message : String(cause);
-  const status = diagnostic.match(/(?:LLM API|HTTP|status)[\s:=]+(4\d{2})\b/iu)?.[1];
-  const knownRejection = (status && status !== "408")
-    || /UPSTREAM_(?:QUOTA|BALANCE)_EXHAUSTED|ZHIPU_BALANCE_EXHAUSTED/iu.test(diagnostic);
   const safe = sanitizeLlmSafeDiagnostics(diagnosticRecord(cause).diagnostics);
-  const failure = knownRejection ? upstreamStreamError({ error: diagnostic })
+  const status = safe?.transportStatus ?? Number(diagnostic.match(/(?:LLM API|HTTP|status)[\s:=]+(4\d{2})\b/iu)?.[1]);
+  const knownRejection = (status >= 400 && status < 500 && status !== 408)
+    || /UPSTREAM_(?:QUOTA|BALANCE)_EXHAUSTED|ZHIPU_BALANCE_EXHAUSTED/iu.test(diagnostic);
+  const failure = knownRejection ? classifyUpstreamStreamError({ error: diagnostic }, status)
     : new LlmStreamError(RESPONSE_START_UNKNOWN_MESSAGE, "LLM_UPSTREAM_RESULT_UNKNOWN");
   return safe ? new LlmStreamError(failure.message, failure.code, safe) : failure;
 }
 
 export function upstreamStreamError(payload: unknown, measured?: LlmSafeDiagnostics): LlmStreamError {
-  const failure = classifyUpstreamStreamError(payload);
   const safe = measured ? buildLlmSafeDiagnostics(payload, measured)
     : sanitizeLlmSafeDiagnostics(diagnosticRecord(payload).diagnostics);
+  const failure = classifyUpstreamStreamError(payload, safe?.transportStatus);
   return safe ? new LlmStreamError(failure.message, failure.code, safe) : failure;
 }
 
-function classifyUpstreamStreamError(payload: unknown): LlmStreamError {
-  const terminalRejection = upstreamContentRejection(payload);
-  if (terminalRejection) return terminalRejection;
-  const row = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
-  const detail = row.error && typeof row.error === "object" ? row.error as Record<string, unknown> : row;
+function classifyUpstreamStreamError(payload: unknown, transportStatus?: number): LlmStreamError {
+  const row = diagnosticRecord(payload);
+  const records = providerErrorRecords(payload);
   // Proxy errors cross an internal SSE boundary before the durable attempt is
   // finalized. Preserve uncertainty rather than reclassifying its safe message.
-  if (row.code === "LLM_UPSTREAM_RESULT_UNKNOWN" || detail.code === "LLM_UPSTREAM_RESULT_UNKNOWN") {
+  if (records.some(detail => detail.code === "LLM_UPSTREAM_RESULT_UNKNOWN")) {
     return new LlmStreamError(RESPONSE_START_UNKNOWN_MESSAGE, "LLM_UPSTREAM_RESULT_UNKNOWN");
   }
+  const terminalRejection = upstreamContentRejection(payload);
+  if (terminalRejection) return terminalRejection;
+  const detail = providerErrorDetail(payload);
   const diagnostic = [detail.type, detail.code, detail.message, typeof row.error === "string" ? row.error : ""]
     .filter(value => typeof value === "string").join(" ");
-  if (/insufficient[_\s-]*(?:user[_\s-]*)?quota|QUOTA_EXHAUSTED|balance|arrear|余额不足|欠费|无可用资源包|BALANCE_EXHAUSTED/iu.test(diagnostic)) {
-    return new LlmStreamError("该模型的上游账户额度不足，请联系管理员或选择其他模型", "LLM_UPSTREAM_BALANCE");
+  if (/insufficient[_\s-]*(?:user[_\s-]*)?quota|QUOTA_EXHAUSTED|balance|arrear|余额不足|预扣费额度失败|欠费|无可用资源包|BALANCE_EXHAUSTED/iu.test(diagnostic)) {
+    return new LlmStreamError("模型中转账户余额或额度不足，请管理员补充额度后再发起新请求。", "LLM_UPSTREAM_BALANCE");
+  }
+  if (transportStatus === 402 || detail.code === "LLM_UPSTREAM_BILLING") {
+    return new LlmStreamError("模型中转账户的额度或计费状态暂不可用，请管理员核对后再发起新请求。", "LLM_UPSTREAM_BILLING");
   }
   if (/content[._\s-]*(?:filter|policy)|moderation|safety|refusal|blocked|敏感|审核|内容.*(?:拦截|拒绝)/iu.test(diagnostic)) {
     return new LlmStreamError("该模型未通过内容审核，请调整输入后重试", "LLM_UPSTREAM_CONTENT_REJECTED");

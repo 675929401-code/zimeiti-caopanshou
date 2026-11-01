@@ -75,7 +75,7 @@ function cancelPending(scope: string, taskIds?: readonly string[]): void {
 }
 
 export class StoryboardLocalVideoError extends Error {
-  constructor(public readonly code: string, message: string) { super(message); this.name = "StoryboardLocalVideoError"; }
+  constructor(public readonly code: string, message: string, public readonly httpStatus?: number) { super(message); this.name = "StoryboardLocalVideoError"; }
 }
 const failure = (code: string, message: string): never => { throw new StoryboardLocalVideoError(code, message); };
 export function storyboardLocalVideoError(error: unknown): string {
@@ -158,6 +158,9 @@ function byteRequest(key: string) { return new Request(new URL(key, window.locat
 const safeByteKey = (key: string, scope: string) => key.startsWith(`/__storyboard_local_videos__/${scope}/`) && !/[?#]/u.test(key);
 
 export function assertCompleteStoryboardVideoResponse(response: Response): { mime: string; declared: number | null } {
+  // Preserve explicit authorization/removal responses from our authenticated
+  // proxy; network, quota, decoding and other HTTP errors remain separate.
+  if ([401, 403, 404, 410].includes(response.status)) throw new StoryboardLocalVideoError("VIDEO_ACCESS_DENIED", "原视频当前不可访问，本机副本未更新", response.status);
   if (response.status !== 200 || response.headers.has("content-range")) failure("PARTIAL_RESPONSE", "原视频未完整返回，未将片段保存为本机副本");
   const mime = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
   if (!MIME_TYPES.has(mime)) failure("INVALID_VIDEO_MIME", "返回内容不是支持的视频文件，未保存本机副本");

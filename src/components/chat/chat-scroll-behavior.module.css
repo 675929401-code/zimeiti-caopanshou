@@ -1,0 +1,6 @@
+/* Let a wheel gesture continue through the transcript at a code viewport edge.
+ * Keep horizontal containment and the transcript's own boundary unchanged. */
+.transcript :global(.markdown-body .code-block-wrapper .code-block-pre) {
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+}

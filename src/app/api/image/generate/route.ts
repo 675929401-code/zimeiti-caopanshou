@@ -1,3 +1,5 @@
+import { resolveStoryboardChainReferences, assertStoryboardChainDispatchCurrent, StoryboardChainReferenceError } from "@/lib/server/storyboard-chain-reference";
+import { storyboardChainFingerprint, buildStoryboardChainReferenceInstruction } from "@/lib/storyboard-chain-contract";
 import { ImageAdminValidationError } from "@/lib/image-admin-validation";
 import { readImagePublicationStates } from "@/lib/image-model-availability";
 import { prepareImageGenerationValidation, type ImageGenerationValidationInput } from "@/lib/image-generation-validation";
@@ -21,8 +23,8 @@ import { findModelByPublicId, publicModelDisplayName, toPublicModelId } from "@/
 import {
   isRetryableImageUpstreamStatus,
 } from "@/lib/image-model-fallback";
-import { safeFetch, validateSafeUrl } from "@/lib/safe-fetch";
-import { readPublicImageResult } from "@/lib/image-result-network";
+import { safeFetch } from "@/lib/safe-fetch";
+import { readPublicImageResult, validatePublicImageResultUrl } from "@/lib/image-result-network";
 import { readOwnedImageReference } from "@/lib/server/image-owned-reference";
 import { validateUploadBuffer } from "@/lib/file-upload-security";
 import {
@@ -55,6 +57,7 @@ import { IMAGE_FIXED_OUTPUT_COUNT, type ImagePublishedProtocol } from "@/lib/ima
 import { parseImageDimensions, type ImageDimensions } from "@/lib/image-dimensions";
 import { configuredImagePixelSizeFor, configuredImageDeliveryPixelSizeFor, validateImageOutputContract, IMAGE_OUTPUT_POLICY_V1, IMAGE_OUTPUT_POLICY_V2, parsePixelSize } from "@/lib/image-output-contract";
 import { renderCoverComposition } from "@/lib/cover-composition-server";
+import { isRestorableImageExactText, isValidImageExactText, parseAcceptedLegacyStoryboardAnnotationPanels, parseStoryboardAnnotationPanels, parseStoryboardAnnotationText } from "@/lib/storyboard-annotation-layout";
 import {
   evaluateWorkspaceModelCompatibility,
   imageWorkspaceSurfaceFromRequest,
@@ -243,7 +246,24 @@ function imageAdmissionRejection(error: unknown): ImageRequestRejectedError | nu
   return null;
 }
 
-function exactTextPlan(coverText: string, aspectRatio: string) {
+function exactTextPlan(coverText: string, aspectRatio: string, legacyAccepted = false) {
+  const strictPanels = parseStoryboardAnnotationPanels(coverText);
+  const storyboardAnnotationPanels = strictPanels || (legacyAccepted ? parseAcceptedLegacyStoryboardAnnotationPanels(coverText) : null);
+  if (storyboardAnnotationPanels) {
+    return {
+      title: "STORYBOARD ANNOTATIONS",
+      subtitle: "",
+      ...(strictPanels && storyboardAnnotationPanels.every(panel => panel.caption !== undefined)
+        ? { annotationPanels: storyboardAnnotationPanels }
+        : { annotationLines: legacyAccepted && !strictPanels
+          ? coverText.trim().split(/\r?\n/u).slice(1).map(line => line.trim())
+          : parseStoryboardAnnotationText(coverText)! }),
+      aspectRatio: aspectRatio as "16:9" | "9:16" | "4:3" | "3:4" | "1:1",
+      layoutTemplateId: "gaoding-storyboard-annotations",
+      animationStyleId: "cinematic-real",
+    } as const;
+  }
+  if (/^STORYBOARD_ANNOTATIONS_/iu.test(coverText.trimStart())) throw new Error("STORYBOARD_ANNOTATION_LAYOUT_INVALID");
   const lines = coverText.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
   return {
     title: lines[0] || "",
@@ -262,6 +282,7 @@ async function prepareGeneratedImageBytes(options: {
   minimumDimensionScale?: number;
   aspectRatioTolerance?: number;
   coverText?: string;
+  legacyAccepted?: boolean;
 }) {
   const dimensions = parseImageDimensions(options.buffer);
   if (!dimensions) throw new Error("图片生成结果尺寸无法验明，原请求与费用状态保留待核查");
@@ -284,7 +305,7 @@ async function prepareGeneratedImageBytes(options: {
     });
   }
   if (!options.coverText?.trim()) return { buffer: options.buffer, dimensions };
-  const rendered = await renderCoverComposition(options.buffer, exactTextPlan(options.coverText, options.aspectRatio), { preserveSourceDimensions: true });
+  const rendered = await renderCoverComposition(options.buffer, exactTextPlan(options.coverText, options.aspectRatio, options.legacyAccepted), { preserveSourceDimensions: true, legacyAccepted: options.legacyAccepted });
   const renderedIssue = validateImageOutputContract({
     width: rendered.width, height: rendered.height, aspectRatio: options.aspectRatio,
     resolution: options.resolution, expectedPixelSize: options.expectedPixelSize,
@@ -1200,7 +1221,29 @@ function extractImageUrlsFromSSE(rawText: string): string[] {
 
 // The provider creates artwork only. Exact glyphs are rendered after the
 // returned pixels pass the aspect-ratio and resolution contract.
-function buildCoverTextPrompt(_coverText: string, style: string, aspectRatio: string, prompt: string): string {
+function buildCoverTextPrompt(coverText: string, style: string, aspectRatio: string, prompt: string): string {
+  const panels = parseStoryboardAnnotationPanels(coverText);
+  if (panels) {
+    const lines = prompt.split(/\r?\n/u);
+    const annotationLineIndices = new Set<number>();
+    lines.forEach((line, index) => {
+      if (/^\s*SHOT\s*\d+\s*\|\s*CAMERA\s*:/iu.test(line)) {
+        annotationLineIndices.add(index); annotationLineIndices.add(index + 1);
+        if (/^\s*(?:“[^”]*”|"[^"]*")\s*$/u.test(lines[index - 1] || "")) annotationLineIndices.add(index - 1);
+      }
+    });
+    const artwork = lines.filter((line, index) => !annotationLineIndices.has(index)
+      && !/底栏三行|STORYBOARD_ANNOTATIONS_|(?:底部|上方)\s*\d+\s*%.*(?:注释|画面区)/iu.test(line)).join("\n");
+    return [
+      "Storyboard artwork: exactly four equal panels in a 2x2 grid, read left-to-right then top-to-bottom",
+      artwork,
+      style ? `Art style: ${style}` : "",
+      `Whole image aspect ratio: ${aspectRatio}; four equal cells separated by fine consistent grid lines`,
+      "Reserve the bottom 17% of EACH panel as a clean pale annotation band; keep faces, hands, paws, props and action above it",
+      "Do not generate any glyphs in the artwork or bands. The application will render each panel's exact Chinese caption, SHOT/CAMERA line and ACTION line after generation",
+      "Do not add a whole-image headline; use only the four panel-specific bottom annotation bands and preserve panel order",
+    ].filter(Boolean).join("\n");
+  }
   return [
     "Professional cover background artwork without any visible text",
     prompt.trim() ? `Main visual: ${prompt.trim()}` : "",
@@ -1322,9 +1365,11 @@ export async function POST(request: NextRequest) {
     if (!["3:4", "9:16", "4:3", "16:9", "1:1"].includes(ratio)) {
       return imageParameterRejection("图片画幅不受支持", "IMAGE_ASPECT_RATIO_UNSUPPORTED");
     }
-    const exactCoverText = coverText || "";
-    if (exactCoverText.length > 200 || /[\x00-\x08\x0b-\x1f]/u.test(exactCoverText)) {
-      return imageParameterRejection("精确画面文字不能超过 200 个字符且不能包含控制字符", "IMAGE_EXACT_TEXT_INVALID");
+    // New storyboard images follow their original prompt without a second text
+    // composition pass. Only recovery may use an already accepted frozen layout.
+    const exactCoverText = historySurface === "storyboard-workbench" && !resumeDeliveryOnly ? "" : coverText || "";
+    if (!(resumeDeliveryOnly ? isRestorableImageExactText(exactCoverText) : isValidImageExactText(exactCoverText))) {
+      return imageParameterRejection("精确文案最多200字；故事板注释必须是2048字以内的完整四格协议", "IMAGE_EXACT_TEXT_INVALID");
     }
     // Input validation has already rejected malformed/empty/non-string values
     // and enforced the platform-wide count before de-duplication. Never slice
@@ -1349,6 +1394,12 @@ export async function POST(request: NextRequest) {
     const resumeSnapshot = resumeDeliveryOnly
       ? parseImageFailureRequestSnapshot(previousImageRequest?.requestSnapshot)
       : null;
+    if (body.chainContext && previousImageRequest && !resumeDeliveryOnly) {
+      return NextResponse.json({ code: "IMAGE_IDEMPOTENCY_FAIL_CLOSED", error: "原串联图片请求已经受理，请查询或恢复原请求，不要重复生成", requestAccepted: true, canResubmit: false, state: previousImageRequest.state }, { status: 409 });
+    }
+    if (resumeDeliveryOnly && storyboardChainFingerprint(body.chainContext || null) !== storyboardChainFingerprint(resumeSnapshot?.chainContext || null)) {
+      throw new ImageExactlyOnceError("IMAGE_IDEMPOTENCY_CONFLICT", "串联上下文与原冻结请求不一致", 409);
+    }
     if (resumeDeliveryOnly) {
       const deliveryCanResume = Boolean(previousImageRequest && (
         (previousImageRequest.state === "completed" && previousImageRequest.response)
@@ -1370,6 +1421,10 @@ export async function POST(request: NextRequest) {
         throw new ImageExactlyOnceError("IMAGE_IDEMPOTENCY_CONFLICT", "自动交付参数与原请求不一致，已停止处理", 409);
       }
     }
+    // This flag is server-owned: only the same owner's original snapshot and
+    // confirmed response/checkpoint above can authorize legacy glyph recovery.
+    const legacyAcceptedAnnotation = Boolean(resumeSnapshot && !isValidImageExactText(exactCoverText)
+      && parseAcceptedLegacyStoryboardAnnotationPanels(exactCoverText));
 
     if (!resumeDeliveryOnly) {
       try { references = await resolveStoryboardPresetImageReferences(body, resolvePublishedStoryboardPresetReference); }
@@ -1406,7 +1461,9 @@ export async function POST(request: NextRequest) {
         modelId, mode: effectiveMode, proof: adminValidation, clientKey: generationIdempotencyKey, clientTraceId: traceId });
     }
 
-    if (effectiveMode === "workflow") {
+    if (resumeSnapshot) {
+      // Existing provider results use their original snapshot, never today's catalog or secrets.
+    } else if (effectiveMode === "workflow") {
       // ★ 优先从 plugins 表读取封面工作流配置（支持多备选切换）
       let workflowCostPrice = Number.NaN;
       let workflowSellingPrice = Number.NaN;
@@ -1510,6 +1567,16 @@ export async function POST(request: NextRequest) {
     }
 
     const imageCapabilities = getImageModelCapabilities(modelConfig);
+    if (!resumeSnapshot && body.chainContext) {
+      try {
+        references = await resolveStoryboardChainReferences({ userId, chainContext: body.chainContext, prompt,
+          modelId, aspectRatio: ratio, resolution, maxReferenceImages: imageCapabilities.supportsReferenceInput ? Math.min(IMAGE_GENERATION_REQUEST_LIMITS.maxReferences, imageCapabilities.maxReferenceImages) : 0,
+          manualReferences: references });
+      } catch (error) {
+        if (error instanceof StoryboardChainReferenceError) return imageParameterRejection(error.message, error.code, {}, error.status);
+        throw error;
+      }
+    }
     const userVisibleImageModelLabel = publicModelLabel
       || publicModelDisplayName(modelConfig as unknown as Record<string, unknown>);
     if (!resumeSnapshot && references.length > 0 && !imageCapabilities.supportsReferenceInput) {
@@ -1585,7 +1652,7 @@ export async function POST(request: NextRequest) {
       });
       if (issue) return imageParameterRejection(issue.message, issue.code);
       try {
-        for (const reference of references) await validateSafeUrl(reference);
+        for (const reference of references) await validatePublicImageResultUrl(reference);
       } catch { return imageParameterRejection("参考图片链接无法确认公开可访问，请重新选择或上传参考图片。", "IMAGE_REFERENCE_INVALID"); }
     }
     const strictImageRequest = effectiveMode === "local" && Boolean(
@@ -1671,7 +1738,8 @@ export async function POST(request: NextRequest) {
           "最终优先执行分镜中的剧情表演、叙事道具、环境反馈和明确指定的语义装饰；参考图不得带入原背景、站姿、机位或设定板排版，也不得覆盖这些画面内容。",
         ].join("\n")
       : basePrompt;
-    const fullPrompt = `${ratioConstraint}\n${scenePrompt}`;
+    const chainReferenceInstruction = body.chainContext && !resumeSnapshot ? buildStoryboardChainReferenceInstruction(body.chainContext) : "";
+    const fullPrompt = `${ratioConstraint}\n${scenePrompt}${chainReferenceInstruction ? "\n"+chainReferenceInstruction : ""}`;
     const workflowPromptBase = exactCoverText
       ? buildCoverTextPrompt(exactCoverText, style || "", ratio, prompt)
       : (style
@@ -1682,7 +1750,7 @@ export async function POST(request: NextRequest) {
     const providerProtocol: ImagePublishedProtocol = resumeSnapshot
       ? resumeSnapshot.providerProtocol || (effectiveMode === "workflow" ? "cover_workflow" : "images_generations")
       : (effectiveMode === "workflow" ? "cover_workflow" : resolveImageProviderContract(modelConfig!).requestProtocol);
-    const workflowPrompt = `${workflowPromptBase}。输出画幅：${ratio}；清晰度档位：${effectiveResolution}；目标像素尺寸：${outputPixelSize}。`;
+    const workflowPrompt = `${workflowPromptBase}。输出画幅：${ratio}；清晰度档位：${effectiveResolution}；目标像素尺寸：${outputPixelSize}。${chainReferenceInstruction ? "\n"+chainReferenceInstruction : ""}`;
     const candidates = effectiveMode === "local" && modelConfig
       ? restrictImageCandidatesForNoRetry(
           localModelCandidates.length > 0 ? localModelCandidates : [modelConfig],
@@ -1757,6 +1825,7 @@ export async function POST(request: NextRequest) {
       ? previousImageRequest.payloadFingerprint
       : strictImagePayloadFingerprint({
       schema: "image_generation_request.v2",
+      ...(body.chainContext ? { chainContext: body.chainContext } : {}),
       ...(deliveryRequirement ? { deliveryRequirement } : {}),
       ...(validationControl ? { validationConfigurationHash: validationControl.configurationHash } : {}),
       userId,
@@ -1795,6 +1864,7 @@ export async function POST(request: NextRequest) {
       ? previousImageRequest.requestSnapshot
       : createImageFailureRequestSnapshot({
       surface: historySurface,
+      ...(body.chainContext ? { chainContext: body.chainContext } : {}),
       ...(deliveryRequirement ? { deliveryRequirement } : {}),
       prompt,
       publicModelId: selectedBillingPublicModelId,
@@ -1909,6 +1979,13 @@ export async function POST(request: NextRequest) {
     const userVisibleModelLabel = effectiveMode === "workflow"
       ? "工作流"
       : publicModelLabel || publicModelDisplayName(modelConfig! as unknown as Record<string, unknown>);
+    const assertChainCurrent = async () => {
+      if (!body.chainContext || resumeDeliveryOnly) return;
+      try { await assertStoryboardChainDispatchCurrent({ userId, chainContext:body.chainContext, prompt, modelId,
+        aspectRatio:ratio, resolution, maxReferenceImages:imageCapabilities.supportsReferenceInput ? Math.min(IMAGE_GENERATION_REQUEST_LIMITS.maxReferences,imageCapabilities.maxReferenceImages) : 0,
+        manualReferences:referenceImageUrls });
+      } catch { throw new ImageRequestRejectedError({source:"input",code:"IMAGE_REFERENCE_READ_FAILED"}); }
+    };
     const reserveImageBudgetOnce = sellingPrice > 0 ? async () => {
       const quotedProfitRmb = Math.max(0, Math.round((sellingPrice - costPrice) * 10_000) / 10_000);
       const quotedProfitMargin = costPrice > 0
@@ -1966,8 +2043,12 @@ export async function POST(request: NextRequest) {
       // runImageExactlyOnce first stores the durable intent and invokes this
       // hook only for its unique creator. Concurrent/replayed requests cannot
       // reserve the wallet or reach the provider callback.
-      beforeSubmitOnce: reserveImageBudgetOnce,
+      beforeSubmitOnce: resumeDeliveryOnly ? async () => {
+        throw new ImageExactlyOnceError("IMAGE_DELIVERY_RESUME_ONLY", "仅可恢复原图片交付，不能创建新请求或预留费用", 409);
+      } : async () => { await assertChainCurrent(); await reserveImageBudgetOnce?.(); },
       submitOnce: async (receiptContext) => {
+        await assertChainCurrent();
+        if (resumeDeliveryOnly) throw new ImageExactlyOnceError("IMAGE_DELIVERY_RESUME_ONLY", "仅可恢复原图片交付，不能再次调用图片模型", 409);
         if (effectiveMode === "workflow") {
           if (!workflowConfig.apiToken || !workflowConfig.apiUrl || !workflowConfig.appId) {
             throw new ImageCandidateFailure({
@@ -2231,6 +2312,7 @@ export async function POST(request: NextRequest) {
           buffer: decoded.buffer, aspectRatio: ratio, resolution: effectiveResolution,
           ...deliveryOutputContract(result.selectedModelId),
           coverText: exactCoverText,
+          legacyAccepted: legacyAcceptedAnnotation,
         });
         return createImageEphemeralDelivery({
           recordId, buffer: prepared.buffer, contentType: prepared.contentType || decoded.contentType,
@@ -2275,6 +2357,7 @@ export async function POST(request: NextRequest) {
           buffer: imported.buffer, aspectRatio: ratio, resolution: effectiveResolution,
           ...deliveryOutputContract(result.selectedModelId),
           coverText: exactCoverText,
+          legacyAccepted: legacyAcceptedAnnotation,
         });
         if (exactCoverText.trim()) {
           // The composed bytes differ from the provider image. Keep them held
@@ -2590,6 +2673,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof ImageAdminValidationError) {
       return NextResponse.json({ error: error.message, code: error.code, traceId, canResubmit: false, taskSubmitted: false }, { status: error.status });
     }
+    if (error instanceof StoryboardChainReferenceError) return imageParameterRejection(error.message,error.code,{},error.status);
     if (error instanceof ImageRequestRejectedError) {
       const admissionRejected = error.rejection.code === "IMAGE_PROVIDER_ADMISSION_BUSY"
         || error.rejection.code === "IMAGE_PROVIDER_ADMISSION_UNAVAILABLE";

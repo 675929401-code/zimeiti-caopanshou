@@ -3,13 +3,16 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import vm from "node:vm";
+import path from "node:path";
 import ts from "typescript";
 import { classifyVideoProviderError, sanitizeVideoProviderDiagnostic } from "../src/lib/video-error-policy";
 
 const paths = ["src/lib/video-manual-retry-eligibility.ts", "src/app/api/video/generate/route.ts", "src/lib/video-terminal-finalizer.ts", "src/lib/video-error-policy.ts", "scripts/verify-video-manual-retry-eligibility.ts"];
 const hash = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");
 const sourceHashes = Object.fromEntries(paths.map(file => [file, hash(file)]));
-const output = `.codex-evidence/storyboard-delivery-audit-20261023/repair/manual-retry/verification-${new Date().toISOString().replace(/[:.]/gu, "-")}`;
+const output = process.env.VIDEO_TEST_EVIDENCE_DIR
+  || `.codex-evidence/storyboard-delivery-audit-20261023/repair/manual-retry/verification-${new Date().toISOString().replace(/[:.]/gu, "-")}`;
+assert.ok(path.resolve(output).startsWith(path.resolve(".codex-evidence") + path.sep), "EVIDENCE_DIRECTORY_MUST_STAY_IN_WORKSPACE");
 const checks: string[] = [];
 let realNetworkCalls = 0;
 globalThis.fetch = (async () => { realNetworkCalls++; throw new Error("REAL_NETWORK_FORBIDDEN"); }) as typeof fetch;

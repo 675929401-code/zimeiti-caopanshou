@@ -47,12 +47,16 @@ import type { PromptVersionHistoryHandle } from "@/components/prompt-version-his
 import { Switch } from "@/components/ui/switch";
 import StoryboardDirectorContractEditor from "@/components/admin/StoryboardDirectorContractEditor";
 import StoryboardPromptPushCapabilityToggle from "@/components/admin/StoryboardPromptPushCapabilityToggle";
+import AgentSearchToolbar from "@/components/admin/agent-search-toolbar";
+import { filterAdminAgents, normalizeAdminAgentSearchQuery } from "@/lib/admin-agent-search";
+import { BIP_CATEGORY, BIP_CATEGORY_LABEL, displayCategory, TASK_CATEGORIES } from "@/lib/business-ip/catalog";
 import { hasActivatedStoryboardDirectorContract, STORYBOARD_DIRECTOR_CONTRACT_FIELDS } from "@/lib/storyboard-director-contract-activation";
 import { normalizeAgentPresetFields, type AgentPresetField } from "@/lib/agent-preset-schema";
 import { readPendingAdminWalletAttempts, submitAdminWalletRequest, type AdminWalletKind, type AdminWalletPayload, type PendingAdminWalletAttempt } from "@/lib/admin-wallet-client";
 import { isQqEmail, normalizeQqEmail } from "@/lib/qq-email";
 import {
   AGENT_NAVIGATION_OPTIONS,
+  getAgentCategoryDisplayName,
   normalizeAllowedAgentNavigationKeys,
 } from "@/lib/agent-category-access";
 import {
@@ -327,6 +331,11 @@ function comparableAgentValue(value: unknown): string {
   return JSON.stringify(value === undefined ? null : value);
 }
 
+function adminDisplayCategoryLabel(key: string): string {
+  if (key === BIP_CATEGORY) return BIP_CATEGORY_LABEL;
+  return TASK_CATEGORIES.find((category) => category.key === key)?.label || getAgentCategoryDisplayName(key);
+}
+
 function normalizedAgentPresetFields(value: AgentInfo["preset_fields"]): PresetFieldConfig[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   return value.map((field, index) => ({ ...field, order: index, sendLabel: field.sendLabel ?? true }));
@@ -334,8 +343,9 @@ function normalizedAgentPresetFields(value: AgentInfo["preset_fields"]): PresetF
 
 function buildAgentUpdatePayload(current: AgentInfo, original: AgentInfo, canEditPrompts: boolean): Record<string, unknown> {
   const payload: Record<string, unknown> = { agentId: current.id };
-  if (Number.isSafeInteger(original.config_revision) && Number(original.config_revision) >= 1) {
-    payload.expected_revision = Number(original.config_revision);
+  const revision = Number(original.config_revision);
+  if (Number.isSafeInteger(revision) && revision >= 1) {
+    payload.expected_revision = revision;
   }
   for (const field of AGENT_EDITABLE_FIELDS) {
     if (field === "system_prompt" && !canEditPrompts) continue;
@@ -3320,6 +3330,13 @@ export default function AdminPage() {
   const [editingCategoryIcon, setEditingCategoryIcon] = useState("");
   const [deleteCategoryId, setDeleteCategoryId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null); // null=全部
+  const [selectedDisplayCategory, setSelectedDisplayCategory] = useState<string | null>(null);
+  const [agentSearchQuery, setAgentSearchQuery] = useState("");
+  const hasAgentSearchQuery = normalizeAdminAgentSearchQuery(agentSearchQuery).length > 0;
+  const [agentSortSaving, setAgentSortSaving] = useState(false);
+  const agentSortSavingRef = useRef(false);
+  const pendingAgentRevisionsRef = useRef<Record<string, { revision: number; category: string }>>({});
+  const canDragAgentRows = canManageAgents && !hasAgentSearchQuery && !selectedDisplayCategory && !agentSortSaving;
   const [pendingSortOrders, setPendingSortOrders] = useState<Record<string, number>>({});
   const [pendingAgentSortOrders, setPendingAgentSortOrders] = useState<Record<string, number>>({});
   const [showImportCoding, setShowImportCoding] = useState(false);
@@ -3332,6 +3349,13 @@ export default function AdminPage() {
   const [dragOverPosition, setDragOverPosition] = useState<"before" | "after">("before");
   // 列表行拖拽状态
   const [listDragOverIdx, setListDragOverIdx] = useState<number | null>(null);
+  const handleAgentSearchChange = (query: string) => {
+    setAgentSearchQuery(query);
+    setDraggedAgentId(null);
+    setDragOverCategoryId(null);
+    setDragOverAgentId(null);
+    setListDragOverIdx(null);
+  };
   // 操作密码确认
   const [pendingAction, setPendingAction] = useState<((verification?: AdminUserDeleteVerification) => void | Promise<void>) | null>(null);
   const [actionPassword, setActionPassword] = useState("");
@@ -3811,9 +3835,12 @@ export default function AdminPage() {
           system_prompt: agent.prompt_access === "visible" ? (agent.system_prompt || "") : undefined,
         })));
         setAgentDataSource(data.configurationAccess === "visible" ? (data.dataSource || null) : null);
+        return true;
       }
+      return false;
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) console.error("智能体列表加载失败:", error);
+      return false;
     } finally {
       if (requestSequence === agentsRequestSequenceRef.current) agentsAbortControllerRef.current = null;
     }
@@ -5716,27 +5743,51 @@ export default function AdminPage() {
 
   // 保存智能体排序号
   const handleSaveAgentSortOrders = async () => {
-    const entries = Object.entries(pendingAgentSortOrders);
-    if (entries.length === 0) return;
-    let allOk = true;
-    for (const [agentId, sortOrder] of entries) {
-      try {
-        const agent = agents.find((item) => item.id === agentId);
-        if (!agent) throw new Error("AGENT_NOT_FOUND");
-        const res = await fetch("/api/admin/agents", {
-          method: "PUT", headers: { ...authHeaders, "Content-Type": "application/json" },
-          body: JSON.stringify(buildAgentMutationPayload(agent, { sortOrder })),
-        });
-        const data = await res.json();
-        if (!data.success) { allOk = false; console.error("[saveSortOrder] failed:", agentId, data.error); }
-      } catch (e) { allOk = false; console.error("[saveSortOrder] exception:", agentId, e); }
+    if (hasAgentSearchQuery || agentSortSavingRef.current) return;
+    const ids = Object.keys(pendingAgentSortOrders);
+    if (ids.length === 0) return;
+    const byId = new Map(agents.map((agent) => [agent.id, agent]));
+    const snapshots = pendingAgentRevisionsRef.current;
+    if (ids.some((id) => !byId.has(id) || !snapshots[id] || byId.get(id)?.category !== snapshots[id].category)) {
+      showMessage("error", "分类或列表已变化，请放弃草稿并刷新后重新排序。");
+      return;
     }
-    if (allOk) { showSuccessAndSync("智能体排序已保存"); setPendingAgentSortOrders({}); loadAgents(); }
-    else { showMessage("error", "部分智能体排序保存失败"); loadAgents(); }
+    // Each affected storage category is submitted in full; the server verifies
+    // completeness and revisions atomically, including rows not visible here.
+    const entries = ids.sort((a, b) => pendingAgentSortOrders[a] - pendingAgentSortOrders[b])
+      .map((id) => ({ id, expected_revision: snapshots[id].revision }));
+    agentSortSavingRef.current = true;
+    setAgentSortSaving(true);
+    try {
+      const res = await fetch("/api/admin/agents/reorder", {
+        method: "PUT", headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: entries }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        const fallback = res.status === 409 ? "排序或分类已被其他操作更改，请放弃草稿、刷新后重排。" : "排序保存失败，请稍后重试。";
+        showMessage("error", `${data.error || fallback}${res.status === 409 ? " 请放弃草稿并刷新后重新排序。" : ""}`);
+        return;
+      }
+      pendingAgentRevisionsRef.current = {};
+      setPendingAgentSortOrders({});
+      const refreshed = await loadAgents();
+      if (refreshed) showSuccessAndSync("智能体排序已保存");
+      else showMessage("error", "排序已保存，但列表刷新失败，请手动刷新。");
+    } catch {
+      showMessage("error", "排序结果未确认，请刷新核对后再重新排序。");
+    } finally {
+      agentSortSavingRef.current = false;
+      setAgentSortSaving(false);
+    }
   };
 
   // 移动单个智能体到指定分类
   const handleMoveAgentToCategory = async (agentId: string, targetCategory: string) => {
+    if (Object.keys(pendingAgentSortOrders).length > 0 || agentSortSavingRef.current) {
+      showMessage("error", "请先保存或放弃当前排序，再迁移智能体。");
+      return;
+    }
     try {
       const agent = agents.find((item) => item.id === agentId);
       if (!agent) throw new Error("AGENT_NOT_FOUND");
@@ -5753,15 +5804,19 @@ export default function AdminPage() {
 
   // 拖拽排序：在智能体列表中拖拽调整顺序
   // 获取过滤并排序后的智能体列表
-  const getFilteredAndSortedAgents = () => {
-    // 先过滤
+  const getCategoryFilteredAgents = () => {
     let filtered = agents;
+    if (selectedDisplayCategory) return agents.filter((agent) => displayCategory(agent) === selectedDisplayCategory);
     if (selectedCategoryId) {
       const cat = categories.find((c) => c.id === selectedCategoryId);
       if (cat) {
         filtered = agents.filter((a) => a.category === cat.name);
       }
     }
+    return filtered;
+  };
+  const getFilteredAndSortedAgents = () => {
+    const filtered = filterAdminAgents(getCategoryFilteredAgents(), agentSearchQuery, llmModels);
     // 按分类排序顺序 + 智能体排序号排序
     const catOrderMap = new Map(categories.map((c, i) => [c.name, i]));
     return [...filtered].sort((a, b) => {
@@ -5774,17 +5829,21 @@ export default function AdminPage() {
     });
   };
   const handleDragReorderAgent = async (draggedId: string, targetId: string, position: "before" | "after") => {
-    // 获取当前过滤后的智能体列表
-    const filteredAgents = getFilteredAndSortedAgents();
-    // 从列表中移除被拖拽项
-    const draggedIdx = filteredAgents.findIndex((a) => a.id === draggedId);
-    if (draggedIdx === -1) return;
-    const targetIdx = filteredAgents.findIndex((a) => a.id === targetId);
-    if (targetIdx === -1) return;
-    // 重新排列
-    const reordered = filteredAgents.filter((a) => a.id !== draggedId);
-    const insertIdx = position === "before" ? targetIdx : targetIdx + (draggedIdx < targetIdx ? 0 : 1);
-    reordered.splice(insertIdx, 0, filteredAgents[draggedIdx]);
+    if (!canDragAgentRows || draggedId === targetId) return;
+    const dragged = agents.find((agent) => agent.id === draggedId);
+    const target = agents.find((agent) => agent.id === targetId);
+    if (!dragged || !target || dragged.category !== target.category) return;
+    const reordered = agents.filter((agent) => agent.category === dragged.category)
+      .sort((a, b) => (pendingAgentSortOrders[a.id] ?? a.sort_order ?? 0) - (pendingAgentSortOrders[b.id] ?? b.sort_order ?? 0));
+    if (reordered.some((agent) => !Number.isSafeInteger(Number(agent.config_revision)) || Number(agent.config_revision) < 1)) {
+      showMessage("error", "缺少有效配置版本，请刷新后重试。");
+      return;
+    }
+    const snapshot = pendingAgentRevisionsRef.current;
+    reordered.forEach((agent) => { if (!snapshot[agent.id]) snapshot[agent.id] = { revision: Number(agent.config_revision), category: agent.category }; });
+    reordered.splice(reordered.findIndex((agent) => agent.id === draggedId), 1);
+    const targetIdx = reordered.findIndex((agent) => agent.id === targetId);
+    reordered.splice(targetIdx + (position === "after" ? 1 : 0), 0, dragged);
     // 按10递增分配sort_order
     const updates: Record<string, number> = {};
     reordered.forEach((a, i) => { updates[a.id] = (i + 1) * 10; });
@@ -6379,9 +6438,21 @@ const handleDeleteCategory = async () => {
               </div>
             ) : null}
             {/* Category Management */}
+            <div className="mb-5">
+              <h2 className="mb-1 text-lg font-semibold text-[var(--foreground)]">前台展示分类</h2>
+              <p className="mb-3 text-xs text-[var(--muted-foreground)]">与应用广场使用同一分类；这里只筛选展示，原始分类和权限不随之改变。前台分类筛选期间暂停排序。</p>
+              <div className="flex flex-wrap gap-2">
+                {[BIP_CATEGORY, ...TASK_CATEGORIES.map((category) => category.key), ...new Set(agents.map((agent) => displayCategory(agent)).filter((key) => key !== BIP_CATEGORY && !TASK_CATEGORIES.some((category) => category.key === key)))].map((key) => (
+                  <button key={key} type="button" onClick={() => { setSelectedCategoryId(null); setSelectedDisplayCategory((current) => current === key ? null : key); }}
+                    className={`rounded-lg border px-3 py-2 text-sm ${selectedDisplayCategory === key ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]"}`}>
+                    {adminDisplayCategoryLabel(key)} <span className="text-xs text-[var(--muted-foreground)]">{agents.filter((agent) => displayCategory(agent) === key).length}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-[var(--foreground)]">分类管理 ({categories.length})</h2>
+                <h2 className="text-lg font-semibold text-[var(--foreground)]">原始分类管理 ({categories.length})</h2>
                 {canManageInternalTools && <div className="flex items-center gap-2">
                   {Object.keys(pendingSortOrders).length > 0 && (
                     <button onClick={handleSaveSortOrders} className="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm font-medium transition-colors shadow-sm">
@@ -6398,11 +6469,11 @@ const handleDeleteCategory = async () => {
                 {/* "全部"卡片 */}
                 <div
                   className={`bg-[var(--card)] border rounded-xl p-3 transition-all cursor-pointer select-none ${
-                    selectedCategoryId === null
+                    selectedCategoryId === null && selectedDisplayCategory === null
                       ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/20 shadow-md shadow-[var(--primary)]/10"
                       : "border-[var(--border)] hover:border-[var(--primary)]/50 hover:shadow-sm"
                   }`}
-                  onClick={() => setSelectedCategoryId(null)}
+                  onClick={() => { setSelectedCategoryId(null); setSelectedDisplayCategory(null); }}
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-base">📋</span>
@@ -6426,11 +6497,11 @@ const handleDeleteCategory = async () => {
                             ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/40 bg-[var(--primary)]/5 shadow-lg shadow-[var(--primary)]/20 scale-[1.02]"
                             : "border-[var(--border)] hover:border-[var(--primary)]/50 hover:shadow-sm"
                       }`}
-                      onClick={() => setSelectedCategoryId(isSelected ? null : cat.id)}
-                      onDragOver={(e) => { if (!canManageAgents) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverCategoryId(cat.id); }}
+                      onClick={() => { setSelectedDisplayCategory(null); setSelectedCategoryId(isSelected ? null : cat.id); }}
+                      onDragOver={(e) => { if (!canDragAgentRows) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverCategoryId(cat.id); }}
                       onDragLeave={() => setDragOverCategoryId(null)}
                       onDrop={async (e) => {
-                        if (!canManageAgents) return;
+                        if (!canDragAgentRows) return;
                         e.preventDefault();
                         setDragOverCategoryId(null);
                         const agentId = e.dataTransfer.getData("agent-id");
@@ -6555,7 +6626,7 @@ const handleDeleteCategory = async () => {
 
             {/* Agent List */}
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-semibold text-[var(--foreground)]">智能体列表 ({getFilteredAndSortedAgents().length}{selectedCategoryId ? ` / ${agents.length}` : ""})</h2>
+              <h2 className="text-lg font-semibold text-[var(--foreground)]">智能体列表 ({getFilteredAndSortedAgents().length}{selectedCategoryId || selectedDisplayCategory || hasAgentSearchQuery ? ` / ${agents.length}` : ""})</h2>
               {canManageAgentConfiguration && <div className="flex items-center gap-2">
                 <button
                   onClick={handleImportCoze}
@@ -6598,10 +6669,10 @@ const handleDeleteCategory = async () => {
               </div>}
             </div>
             <div className="mb-4 flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
-              {selectedCategoryId ? (
+              {selectedCategoryId || selectedDisplayCategory ? (
                 <span className="text-[var(--primary)] font-medium">
-                  {(() => { const cat = categories.find(c => c.id === selectedCategoryId); return cat ? `筛选: ${cat.name}` : ''; })()}
-                  <button onClick={() => setSelectedCategoryId(null)} className="ml-2 underline text-[var(--muted-foreground)] hover:text-[var(--foreground)]">查看全部</button>
+                  {selectedDisplayCategory ? `前台分类: ${adminDisplayCategoryLabel(selectedDisplayCategory)}` : `原始分类: ${categories.find(c => c.id === selectedCategoryId)?.name || ''}`}
+                  <button onClick={() => { setSelectedCategoryId(null); setSelectedDisplayCategory(null); }} className="ml-2 underline text-[var(--muted-foreground)] hover:text-[var(--foreground)]">查看全部</button>
                 </span>
               ) : null}
               <span>编程智能体: {getFilteredAndSortedAgents().filter(a => a.source === 'coze_coding').length} 个</span>
@@ -6614,6 +6685,20 @@ const handleDeleteCategory = async () => {
               <span className="ml-3">{agentDataSource.configuration === 'local-acceptance' ? '配置与账号数据均隔离在本机验收库，刷新页面会读取最新配置。' : agentDataSource.configuration === 'shared-cloud' ? '模型绑定与分类配置保存到云端，重新打开卡片读取最新配置。' : '保存修改无需重新部署代码。'}</span>
               <p className="mt-1">账号、聊天与账单：{agentDataSource.businessData === 'local' ? '本地测试库；未与线上用户数据合并' : '云端数据库'}。</p>
             </div>}
+            <AgentSearchToolbar
+              value={agentSearchQuery}
+              onChange={handleAgentSearchChange}
+              matchedCount={getFilteredAndSortedAgents().length}
+              scopeCount={getCategoryFilteredAgents().length}
+              totalCount={agents.length}
+              categoryName={selectedDisplayCategory ? adminDisplayCategoryLabel(selectedDisplayCategory) : categories.find((category) => category.id === selectedCategoryId)?.name}
+              isSearching={hasAgentSearchQuery}
+              showAvatarScopeHint={canManageAgentConfiguration}
+              onRefresh={async () => {
+                if (Object.keys(pendingAgentSortOrders).length > 0) { showMessage("error", "请先保存或放弃排序草稿再刷新。"); return; }
+                if (!await loadAgents()) showMessage("error", "智能体列表刷新失败，请检查连接或权限后重试。");
+              }}
+            />
             {canReadPrompts && viewingPromptAgentId && (() => {
               const promptAgent = agents.find((agent) => agent.id === viewingPromptAgentId);
               if (!promptAgent) return null;
@@ -7787,17 +7872,20 @@ const handleDeleteCategory = async () => {
               {/* 拖拽排序保存提示 */}
               {canManageAgents && Object.keys(pendingAgentSortOrders).length > 0 && (
                 <div className="flex items-center justify-between px-4 py-2 bg-blue-500/10 border-b border-blue-500/20">
-                  <span className="text-xs text-blue-600 font-medium">排序已修改，请点击保存</span>
-                  <button onClick={handleSaveAgentSortOrders} className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-xs font-medium transition-colors shadow-sm">
-                    保存排序
-                  </button>
+                  <span className="text-xs text-blue-600 font-medium">排序已修改，请保存或放弃草稿</span>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={agentSortSaving} onClick={() => { pendingAgentRevisionsRef.current = {}; setPendingAgentSortOrders({}); }} className="px-3 py-1 text-xs text-blue-600 disabled:opacity-50">放弃排序</button>
+                    <button onClick={handleSaveAgentSortOrders} disabled={hasAgentSearchQuery || agentSortSaving} title={hasAgentSearchQuery ? "请先清空搜索再保存排序" : undefined} className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-xs font-medium transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                      {agentSortSaving ? "保存中…" : "保存排序"}
+                    </button>
+                  </div>
                 </div>
               )}
               <table className="w-full">
                 <thead className="bg-[var(--card)] border-b border-[var(--border)]">
                   <tr>
                     <th className="text-left px-2 py-3 text-xs font-medium text-[var(--muted-foreground)] w-8"></th>
-                    {["头像", "名称", "分类", "来源", "模型", "计费模式", "状态", "操作"].map((h) => (
+                    {["头像", "名称", "前台分类 / 原始分类", "来源", "模型", "计费模式", "状态", "操作"].map((h) => (
                       <th key={h} className={`text-left px-4 py-3 text-xs font-medium text-[var(--muted-foreground)] uppercase ${h === "操作" ? "text-right" : ""}`}>{h}</th>
                     ))}
                   </tr>
@@ -7809,9 +7897,9 @@ const handleDeleteCategory = async () => {
                     return (
                       <tr key={agent.id}
                         className={`transition-colors ${isDragged ? "opacity-40 bg-[var(--border)]" : isDragTarget ? "bg-[var(--primary)]/[0.06]" : "hover:bg-[var(--border)]"}`}
-                        draggable={canManageAgents}
+                        draggable={canDragAgentRows}
                         onDragStart={(e) => {
-                          if (!canManageAgents) return;
+                          if (!canDragAgentRows) return;
                           e.dataTransfer.setData("agent-id", agent.id);
                           e.dataTransfer.setData("agent-category", agent.category);
                           e.dataTransfer.effectAllowed = "move";
@@ -7819,10 +7907,10 @@ const handleDeleteCategory = async () => {
                           setDragOverAgentId(null);
                         }}
                         onDragOver={(e) => {
-                          if (!canManageAgents) return;
+                          if (!canDragAgentRows) return;
                           e.preventDefault();
                           e.dataTransfer.dropEffect = "move";
-                          if (draggedAgentId && draggedAgentId !== agent.id) {
+                          if (draggedAgentId && draggedAgentId !== agent.id && agents.find((item) => item.id === draggedAgentId)?.category === agent.category) {
                             const rect = e.currentTarget.getBoundingClientRect();
                             const midY = rect.top + rect.height / 2;
                             setDragOverAgentId(agent.id);
@@ -7836,7 +7924,7 @@ const handleDeleteCategory = async () => {
                           }
                         }}
                         onDrop={(e) => {
-                          if (!canManageAgents) return;
+                          if (!canDragAgentRows) return;
                           e.preventDefault();
                           const draggedId = e.dataTransfer.getData("agent-id");
                           const draggedCat = e.dataTransfer.getData("agent-category");
@@ -7846,16 +7934,13 @@ const handleDeleteCategory = async () => {
                           if (draggedCat === agent.category && draggedId !== agent.id) {
                             // 同分类内排序
                             handleDragReorderAgent(draggedId, agent.id, dragOverPosition);
-                          } else if (draggedCat !== agent.category) {
-                            // 跨分类迁移
-                            handleMoveAgentToCategory(draggedId, agent.category);
-                          }
+                          } else if (draggedCat !== agent.category) showMessage("error", "排序只能在同一原始分类内进行；迁移请使用分类操作。");
                         }}
                         onDragEnd={() => { setDraggedAgentId(null); setDragOverAgentId(null); }}
                       >
                         {/* 拖拽手柄列 + 插入指示线 */}
                         <td className="px-1 py-3 relative">
-                          {canManageAgents && <span className="cursor-grab active:cursor-grabbing text-[var(--muted-foreground)]/40 hover:text-[var(--muted-foreground)] select-none" title="拖拽排序">⠿</span>}
+                          {canDragAgentRows && <span className="cursor-grab active:cursor-grabbing text-[var(--muted-foreground)]/40 hover:text-[var(--muted-foreground)] select-none" title="拖拽排序">⠿</span>}
                           {isDragTarget && dragOverPosition === "before" && !isDragged && (
                             <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--primary)] rounded-full z-20 shadow-[0_0_6px_var(--primary)]" />
                           )}
@@ -7871,13 +7956,13 @@ const handleDeleteCategory = async () => {
                         <td className="px-4 py-3"><div className="font-medium text-[var(--foreground)] text-sm">{agent.name}</div><div className="text-xs text-[var(--muted-foreground)] mt-0.5">{(agent.description as string)?.slice(0, 40)}</div></td>
                         <td className="px-4 py-3">
                           <div className="group relative">
-                            <span className="text-sm text-[var(--secondary-foreground)] cursor-pointer hover:text-[var(--primary)]">{agent.category}</span>
+                            <span className="block text-sm text-[var(--secondary-foreground)]">{adminDisplayCategoryLabel(displayCategory(agent))}</span>
+                            <span className="text-xs text-[var(--muted-foreground)] cursor-pointer hover:text-[var(--primary)]">原始：{agent.category || "未分类"}</span>
                             {canManageAgents && <div className="absolute left-0 top-full mt-1 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-xl py-1 z-10 hidden group-hover:block min-w-[120px]">
                               <div className="text-[10px] text-[var(--muted-foreground)] px-3 py-1">迁移到：</div>
                               {categoryOptions.filter((c) => c !== agent.category).map((c) => (
                                 <button key={c} onClick={async () => {
-                                  const res = await fetch("/api/admin/agents", { method: "PUT", headers: authHeaders, body: JSON.stringify(buildAgentMutationPayload(agent, { category: c })) });
-                                  if (res.ok) { showSuccessAndSync(`已迁移至"${c}"`); loadAgents(); loadCategories(); }
+                                  await handleMoveAgentToCategory(agent.id, c);
                                 }} className="block w-full text-left px-3 py-1.5 text-xs text-[var(--secondary-foreground)] hover:bg-[var(--border)] hover:text-[var(--foreground)] transition-colors">{c}</button>
                               ))}
                             </div>}
@@ -7920,7 +8005,7 @@ const handleDeleteCategory = async () => {
                       </tr>
                     );
                   })}
-                  {getFilteredAndSortedAgents().length === 0 && (<tr><td colSpan={9} className="text-center py-8 text-[var(--muted-foreground)] text-sm">暂无智能体，点击上方按钮添加</td></tr>)}
+                  {getFilteredAndSortedAgents().length === 0 && (<tr><td colSpan={9} className="text-center py-8 text-[var(--muted-foreground)] text-sm">{hasAgentSearchQuery ? "没有找到匹配的智能体，请调整关键词或清空搜索。" : "暂无智能体，点击上方按钮添加"}</td></tr>)}
                 </tbody>
               </table>
             </div>
@@ -8416,8 +8501,8 @@ const handleDeleteCategory = async () => {
                   <label className={labelCls}>选择学员</label>
                   <select value={rechargeUserId} onChange={(e) => setRechargeUserId(e.target.value)} className={inputCls}>
                     <option value="">请选择</option>
-                    {users.filter((u) => u.role !== "admin" && !isFixtureUser(u)).map((u) => (
-                      <option key={u.id} value={u.id}>{u.name || u.phone || u.username} ({u.phone || '-'}) - {u.credits}积分</option>
+                    {users.filter((u) => !isFixtureUser(u)).map((u) => (
+                      <option key={u.id} value={u.id}>{u.name || u.phone || u.username}{u.role === "admin" ? "（管理员）" : ""} ({u.phone || '-'}) - {u.credits}积分</option>
                     ))}
                   </select>
                 </div>

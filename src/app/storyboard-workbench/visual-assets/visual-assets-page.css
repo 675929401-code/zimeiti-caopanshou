@@ -495,6 +495,15 @@
   padding: 0;
 }
 
+/* Keep the inline reference row on the same content edges as the segment
+   cards below it.  The workbench grid uses 14px horizontal gutters; the
+   shared asset surface defaults to 16px, which made the two rows visibly
+   drift apart and broke the alignment contract at desktop widths. */
+.sbw-root .sbw-reference-step .svad-inline .svad-drafts {
+  box-sizing: border-box;
+  padding-inline: 14px;
+}
+
 .svad-inline .svad-drafts > .svad-reference-slot {
   --svad-role-tone: var(--svad-accent);
   min-width: 0;

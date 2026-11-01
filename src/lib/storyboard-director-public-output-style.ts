@@ -2,7 +2,7 @@ import { STORY_DIRECTOR_HIGH_ENERGY_AGENT_ID } from "./story-director-overtime-g
 import { STORYBOARD_PERFORMANCE_CONTRACT_VERSION, storyboardPerformanceActivationTime } from "./storyboard-director-performance";
 import { STORYBOARD_DIRECTOR_PRODUCTION_CONTRACT_VERSION } from "./storyboard-director-protocol";
 import { officialStoryboardDirectorIdentity } from "./storyboard-director-identity";
-import { STORYBOARD_PROMPT_HANDOFF_KEY } from "./storyboard-prompt-push-capability";
+import { STORYBOARD_PROMPT_HANDOFF_KEY, isAgentPromptPushTarget } from "./storyboard-prompt-push-capability";
 
 /** Publish only quality-contract scalars, never private prompt/style configuration. */
 export function publicStoryboardDirectorOutputStyle(agentId: unknown, value: unknown): Record<string, unknown> | undefined {
@@ -12,9 +12,12 @@ export function publicStoryboardDirectorOutputStyle(agentId: unknown, value: unk
   const source = value as Record<string, unknown>;
   const configuredHandoff = source[STORYBOARD_PROMPT_HANDOFF_KEY];
   const output: Record<string, unknown> = {};
-  if (configuredHandoff && typeof configuredHandoff === "object" && !Array.isArray(configuredHandoff)
-    && typeof (configuredHandoff as Record<string, unknown>).enabled === "boolean") {
-    output[STORYBOARD_PROMPT_HANDOFF_KEY] = { enabled: (configuredHandoff as Record<string, unknown>).enabled };
+  if (configuredHandoff && typeof configuredHandoff === "object" && !Array.isArray(configuredHandoff)) {
+    const handoff = configuredHandoff as Record<string, unknown>;
+    const safe: Record<string, unknown> = {};
+    if (typeof handoff.enabled === "boolean") safe.enabled = handoff.enabled;
+    if (Object.hasOwn(handoff, "target")) safe.target = isAgentPromptPushTarget(handoff.target) ? handoff.target : "invalid";
+    if (Object.keys(safe).length > 0) output[STORYBOARD_PROMPT_HANDOFF_KEY] = safe;
   }
   if (!identity) return Object.keys(output).length > 0 ? output : undefined;
   if (agentId !== STORY_DIRECTOR_HIGH_ENERGY_AGENT_ID

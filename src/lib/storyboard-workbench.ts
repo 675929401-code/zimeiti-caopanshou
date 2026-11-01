@@ -344,6 +344,14 @@ videoPrompt字段禁用过程词和说明词：配音语义、画面语义、口
 20. 最终Prompt通过行业标杆十维门禁，尤其是语义核唯一、Prompt密度合格、图视频强绑定、包装有物理来源和失败预判明确。
 21. 如果Prompt出现大段解释、重复服装外貌、重复画质形容词、任何可读标题/副标题/字幕/字牌/模拟文字、无来源光效、同镜多主动作、视频另起故事、道具凭空出现在手中、狗狗表情没有峰值、参考包装没有同形态运动继承、高能强事件被剪掉，或 beats[].videoPrompt 写成“已完成/不单独成镜/只作参考”这类非执行句，必须先按高密度结构提纯重写再输出。
 
+## 发送前字段回读与修复
+发送前只修复具体字段，不以“请重试”代替修复：
+- 先完整写定每段最终的 \`storyboard_image_prompt\` 与 \`image_to_video_prompt\`，再从同一段最终字符串中逐字连续复制 \`performance_plan.image_excerpt\` 与 \`performance_plan.video_excerpt\`。\`image_excerpt\` 必须覆盖本段动作或表情峰值，\`video_excerpt\` 必须覆盖实际镜头动作；不得凭记忆改写、摘要或换词。
+- \`performance_plan.peak_shot_id\` 必须存在于本段 \`shot_time_ranges\`；\`expressions[].actor_asset_id\` 必须来自本段 \`cast\`，角色类型和资产 ID 必须一致；\`action_chain\`、\`end_state\` 与最终 Prompt 必须描述同一个事件。
+- 发现上述语义引用不一致时，只补齐或更正对应字段，保留原始 \`narration\`、分段顺序和已确认资产；不得因为单字段缺失重写整篇文案。
+- \`visualAssetMode=off\` 为普通模式：不绑定人物、宠物或环境参考图，不要求三视图；仍需在文字中保持角色身份连续。\`visualAssetMode=selected\` 才进入角色参考流程，只为本轮实际声明的人物或宠物准备对应三视图，并等待工作台逐项确认“使用这张”后再绑定；不得虚构已生成、已保存或已确认的资产。
+- 仅有结构、原文、模式、资产归属或三视图缺失时才停止机器推送；发现可修复的表演引用、动作可执行性或声音边界问题，应在本轮内部修复后输出完整机器包，并在展示层保留两个可复制代码框。
+
 # 固定输出格式与工作台交接
 服务端机器响应只输出合法JSON，不输出分析、解释或Markdown；工作台展示层必须把同一段渲染为“生图 Prompt → 图生视频 Prompt”，不得把视频 Prompt 放到前面。整批段落前先生成一次全局视觉资产计划，资产计划只负责提出人物、宠物、场景和必要道具的身份锁定与参考板提示词；人物/宠物身份参考与服装计划分开，服装必须写入 baseLook、continuityRule 和明确的换装事件；没有用户确认的真实资产时不得假装已经生成、保存、收费或绑定。
 每段在展示层固定为：原文案标题（逐字）→ 第一个生图 Prompt 代码框 → 第二个视频 Prompt 代码框 → 可选导演注释。生图 Prompt 使用已确认视觉资产参考图生成完整四宫格或五宫格故事板；视频 Prompt 只接收这一张完整故事板图，不裁切、不拆格、不追加视觉资产图。
@@ -438,15 +446,15 @@ export const StoryboardEnvironmentGroupSchema = z.object({
 export const StoryboardVisualAssetReferenceSchema = z.object({
   kind: z.enum(["turnaround", "identity", "environment-wide", "environment-angle", "detail", "prop"]),
   purpose: z.string().trim().min(4).max(160),
-  prompt: z.string().trim().min(20).max(2400),
+  prompt: z.string().trim().min(1).max(50000),
 });
 export const StoryboardVisualAssetSchema = z.object({
   id: z.string().trim().regex(/^[a-z][a-z0-9_-]{2,63}$/u),
   role: StoryboardVisualAssetRoleSchema,
-  name: z.string().trim().min(2).max(80),
+  name: z.string().trim().min(1).max(80),
   tags: z.array(z.string().trim().min(1).max(32)).max(12).optional(),
   customCategory: z.string().trim().max(40).optional(),
-  identityLock: z.string().trim().min(12).max(1200),
+  identityLock: z.string().trim().min(1).max(50000),
   allowedChanges: z.array(z.string().trim().min(2).max(80)).max(12).default([]),
   referencePrompts: z.array(StoryboardVisualAssetReferenceSchema).min(1).max(4),
   sceneId: StoryboardSceneIdentifierSchema.optional(),

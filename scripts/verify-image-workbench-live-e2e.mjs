@@ -243,10 +243,13 @@ const PAID_AUTHORITY_FUNCTIONS = [
     }
   }
 ];
-// Bound to the current 179-migration local application contract. Refresh this
-// only when the canonical readiness collector captures a new full semantic
-// snapshot and the existing consumer accepts that snapshot.
-const PAID_SEMANTIC_SHA = '9efa9720a837fc159d660a33623388a7b06dfabef520787e6f0278e6e2a9b8bd';
+// Root-reviewed 193-migration LOCAL application baseline: trusted provider
+// asset operations, two bounded RPCs and video-task preparation metadata.
+// Backup/restore, 24 PostgreSQL rollback checks and final semantic readback:
+// admin-full-acceptance-20261030-9592a6d0/resume-ab2de6f7/completion-c9dd/
+// migration193-post-apply-readback.json. This does not approve production SQL.
+// Keep all seven canonical body/ACL checks and fresh runtime evidence gates.
+const PAID_SEMANTIC_SHA = 'f0a13364b6e141163a335a32465e2bc869738c7f1533636a42a75333f40e96e6';
 const HASH64 = /^[a-f0-9]{64}$/u;
 
 export function assertPaidDatabaseReadiness(index, evidence, sourcePlan, options, runtime, now=Date.now(), expectedSemanticSha=PAID_SEMANTIC_SHA) {
@@ -731,11 +734,11 @@ export function runPaidReadinessSelfTest() {
   const fingerprint='b'.repeat(64), manifest='c'.repeat(64), now=Date.now();
   const databaseContract=JSON.parse(readFileSync(path.join(PROJECT_ROOT,'deploy/policies/database-contract.v1.json'),'utf8'));
   const requiredMigrations=databaseContract.liveCatalogChecks.migrationLedger.requiredMigrations;
-  const requiredVersion=requiredMigrations[0]?.version;
-  assert.ok(requiredVersion,'READINESS_FIXTURE_REQUIRES_MIGRATION');
+  const requiredVersion='20261031010000';
+  assert.ok(requiredMigrations.some(row=>row.version===requiredVersion),'READINESS_FIXTURE_REQUIRES_MIGRATION_194');
   const runtime={sourceVersion:'R001006',buildId:'fixture-build'};
   const identity={configuredHost:'127.0.0.1',serverPort:'54322',databaseName:'zimeiti_local',fingerprint};
-  const migrations=[...requiredMigrations.map(({version,sha256})=>({version,sha256})),...Array.from({length:174-requiredMigrations.length},(_,i)=>({version:String(i).padStart(14,'0'),sha256:sha256(String(i))}))];
+  const migrations=[...requiredMigrations.map(({version,sha256})=>({version,sha256})),...Array.from({length:194-requiredMigrations.length},(_,i)=>({version:String(i).padStart(14,'0'),sha256:sha256(String(i))}))];
   const sourcePlan={ok:true,mode:'plan',readinessScope:'source-only',manifestSha256:manifest,invalid:[],migrations};
   const expectedCount=migrations.length;
   const status={ok:true,mode:'status',manifestSha256:manifest,migrationCount:expectedCount,invalid:[],hashDrifts:[],database:{targetIdentityVerified:true,targetIdentity:identity,appliedCount:expectedCount,pendingCount:0},migrations:sourcePlan.migrations.map(m=>({...m,valid:true,applied:true}))};

@@ -163,7 +163,9 @@ async function main() {
 
   const appContext = source("src/contexts/app-context.tsx");
   const recoveryPolicy = source("src/contexts/chat-recovery-policy.ts");
-  assert.equal(appContext.split("mapHistoryMessages(").length - 1, 3, "all three history hydration paths must share one mapper");
+  assert.equal(appContext.split("mapHistoryMessagesWithAttemptStatus(").length - 1, 4, "all three history hydration paths must share the status-aware mapper declaration and calls");
+  assert.match(appContext, /return restoreChatHistoryAttemptStatus\(mapHistoryMessages\(input\), input\)/u,
+    "the status-aware mapper must retain canonical content and attempt status");
   const sendStart = appContext.indexOf("const sendMessage = useCallback");
   const sendEnd = appContext.indexOf("// ---- Abort ongoing stream", sendStart);
   const sendSlice = appContext.slice(sendStart, sendEnd);
@@ -201,11 +203,11 @@ async function main() {
     "buffered paid streams must emit visible progress without exposing unsettled output");
   assert.match(appContext, /data\.type === "generation_progress"[\s\S]*?streamStatus:/u,
     "the browser must consume generation progress separately from final message text");
-  assert.match(appContext, /data\.type === "stream_delivery"[\s\S]*?已连接，模型思考中/u,
-    "a live stream must acknowledge the connected thinking phase before the first text delta");
-  assert.match(appContext, /if \(!visibleContentStarted\)[\s\S]*?streamStatus: "正在生成"/u,
+  assert.match(appContext, /data\.type === "stream_delivery"[\s\S]*?智能体正在准备回复/u,
+    "connection acknowledgement must not invent a reasoning phase");
+  assert.match(appContext, /if \(fullContent\.trim\(\) && !visibleContentStarted\)[\s\S]*?streamStatus: "智能体正在回复"/u,
     "the first visible delta must advance the status without dispatching it for every chunk");
-  assert.match(messageItem, /message\.streamStatus \|\| "正在生成"/u,
+  assert.match(messageItem, /message\.streamStatus \|\| "智能体正在准备回复"/u,
     "the chat status row must render long-running generation progress");
 
   // The retired client-side model picker no longer owns or persists a model

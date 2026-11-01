@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import {
   PLATFORM_CONFIGURATION_COMPATIBILITY_WRITERS,
   PLATFORM_CONFIGURATION_LEGACY_WRITERS,
@@ -61,11 +62,10 @@ check("旧逻辑配置绕过清单归零", () => {
   assert.deepEqual([...PLATFORM_CONFIGURATION_LEGACY_WRITERS.workspaceModels], []);
 });
 
-check("八条兼容入口生成候选与差异预览且不声称发布", () => {
+check("七条兼容写入口生成候选与差异预览且不声称发布", () => {
   const requirements: Array<[string, RegExp[]]> = [
     [candidateRoutes[0], [/stageLegacyModelPoolUpsert/u, /stageLegacyModelPoolCatalogState/u, /stageLegacyModelPoolOrder/u, /stageLegacyWorkspaceMutation/u]],
     [candidateRoutes[1], [/stageLegacyModelPoolUpsert/u, /stageLegacyModelPoolCatalogState/u]],
-    [candidateRoutes[2], [/stageLegacyModelPoolUpsert/u]],
     [candidateRoutes[3], [/stageLegacyModelPoolUpsert/u, /stageLegacyModelPoolCatalogState/u]],
     [candidateRoutes[4], [/stageLegacyModelPoolUpsert/u]],
     [candidateRoutes[5], [/stageLegacyModelPoolUpsert/u, /stageLegacyModelPoolCatalogState/u]],
@@ -80,6 +80,21 @@ check("八条兼容入口生成候选与差异预览且不声称发布", () => {
   const compatibility = read("src/lib/server/platform-configuration-compatibility.ts");
   assert.match(compatibility, /createPlatformConfigurationCandidate/u);
   assert.match(compatibility, /previewPlatformConfigurationRelease/u);
+});
+
+check("快捷添加只解析草稿，必须进入详细配置且无任何持久化或供应商请求", () => {
+  const source = read(candidateRoutes[2]);
+  assert.match(source, /DETAIL_CONFIGURATION_REQUIRED/u);
+  assert.match(source, /requiresDetails:\s*true/u);
+  assert.match(source, /status:\s*422/u);
+  assert.doesNotMatch(source, /stageLegacy|saveModelCredential|fetch\s*\(|getSupabaseClient|\.rpc\s*\(/u);
+  execFileSync(process.execPath, ["scripts/verify-video-quick-add-draft-boundary-zero-network.mjs"], {
+    cwd: root,
+    env: process.env,
+    stdio: "pipe",
+    timeout: 30_000,
+    windowsHide: true,
+  });
 });
 
 check("候选入口不直接改四张物理模型表", () => {
@@ -159,7 +174,11 @@ check("密钥与逻辑快照分离", () => {
   const compatibility = read("src/lib/server/platform-configuration-compatibility.ts");
   const migration = read("supabase/migrations/20260925054500_platform_configuration_versioning.sql");
   assert.match(compatibility, /secret:\/\/platform-model\//u);
-  assert.match(compatibility, /from\("platform_model_credential_bindings"\)\.upsert/u);
+  assert.doesNotMatch(compatibility, /from\("platform_model_credential_bindings"\)\.(?:upsert|insert|update|delete)/u);
+  assert.doesNotMatch(compatibility, /persistCredentialBinding/u);
+  assert.match(compatibility, /stagePlatformModelCandidateWithCredentials/u);
+  const server = read("src/lib/server/platform-configuration-admin.ts");
+  assert.match(server, /rpc\("stage_model_pool_candidate_with_credentials_atomic"/u);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.platform_model_credential_bindings/u);
   assert.match(migration, /REVOKE ALL ON public\.platform_model_credential_bindings FROM PUBLIC, anon, authenticated/u);
 });
@@ -192,6 +211,8 @@ check("发布保持迁移与数据库读回 fail-closed", () => {
     "workspace_model_config_releases",
     "platform_model_credential_bindings",
     "platform_configuration_order_map",
+    "read_platform_model_pending_credential_metadata",
+    "read_platform_model_mutation_receipt",
   ]);
   const source = read("src/lib/server/platform-configuration-admin.ts");
   assert.match(source, /export async function readPlatformConfigurationRuntimeStatus/u);

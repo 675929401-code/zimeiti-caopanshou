@@ -128,14 +128,14 @@ export type ResolvedVideoCharge = ResolvedVideoResolution & {
 // of mislabelling it as 480p.
 const VIDEO_RESOLUTIONS = new Set(["lite", "480p", "720p", "768p", "1080p", "2K", "4K"]);
 
-/** Only the Gaorui preview variant (or an explicit legacy flag) requires an input image. */
+/** Gaorui's current 1.5 variants accept text or images; retain an explicit operator requirement. */
 export function requiresGaoruiGrok15InputImage(model?: VideoModelCapabilitySource): boolean {
   const modelName = typeof model?.model_name === "string" ? model.model_name : "";
   const protocolConfig = objectValue(model?.api_protocol_config);
   return model?.protocol_type === "gaorui_video"
     && modelName.startsWith("grok")
     && modelName.includes("1.5")
-    && (modelName.includes("preview") || protocolConfig.requires_image_v15 === true);
+    && protocolConfig.requires_image_v15 === true;
 }
 
 export function normalizeVideoResolution(value: unknown) {

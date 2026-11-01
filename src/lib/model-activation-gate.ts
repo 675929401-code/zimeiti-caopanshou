@@ -436,6 +436,45 @@ export function inspectVideoModelActivationReadiness(binding: VideoActivationBin
   };
 }
 
+/**
+ * Resolve the single server-side admission decision used by both the public
+ * catalog and the paid submit route.  A model may stay visible while this
+ * resolver keeps generation blocked until its current binding has a complete
+ * acceptance receipt.  The optional verification notice is deliberately
+ * reduced to a stable internal reason; provider or admin diagnostics never
+ * need to cross the public API boundary.
+ */
+export function resolveVideoModelGenerationReadiness(
+  binding: VideoActivationBinding,
+  options: { verificationNotice?: unknown } = {},
+): {
+  gated: boolean;
+  ready: boolean;
+  generationReady: boolean;
+  reason: string;
+  acceptanceIssue: string;
+  evidenceId?: string;
+} {
+  const activation = inspectVideoModelActivationReadiness(binding);
+  let acceptanceIssue = "";
+  let reason = activation.reason;
+  if (activation.gated && (!activation.ready || !activation.evidenceId)) {
+    acceptanceIssue = "该模型尚未完成协议、真实生成和结果交付验收，暂不可提交";
+  } else {
+    const notice = String(options.verificationNotice || "").replace(/\s+/gu, " ").trim();
+    if (/尚未验收|未完成真实验收|暂不进入.*工作台|真实付费生成.*未|结果持久化.*未/u.test(notice)) {
+      acceptanceIssue = "该模型尚未完成协议、真实生成和结果交付验收，暂不可提交";
+      reason = "acceptance_verification_notice_incomplete";
+    }
+  }
+  return {
+    ...activation,
+    generationReady: !acceptanceIssue,
+    acceptanceIssue,
+    reason,
+  };
+}
+
 export function assertVideoModelActivationReady(binding: VideoActivationBinding): string {
   const readiness = inspectVideoModelActivationReadiness(binding);
   if (!readiness.gated) {

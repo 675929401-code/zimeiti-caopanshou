@@ -136,10 +136,11 @@ function ToolboxWorkspace() {
       />
 
       <main className={styles.main}>
-        <section className={`${styles.workbenchFrame} workspace-depth-frame`} aria-label="短视频效率工具工作区">
-          <aside className={`${styles.toolRail} workspace-depth-rail`} aria-label="工具功能">
+        <section className={styles.workbenchFrame} aria-label="短视频效率工具工作区">
+          <aside className={styles.toolRail} aria-label="工具功能">
             <header className={styles.railHeader}>
-              <strong>选择工具</strong>
+              <strong>效率工具</strong>
+              <span>提取、整理与分段</span>
             </header>
 
             <div className={styles.tabs} role="tablist" aria-label="工具箱功能" aria-orientation="vertical">
@@ -174,12 +175,18 @@ function ToolboxWorkspace() {
                 </button>
               ))}
             </div>
+            <div className={styles.railSummary}>
+              <span>当前工具</span>
+              <strong>{activeTool.label}</strong>
+              <small>{activeTool.processing}</small>
+              <p>切换工具时，已输入的内容会保留</p>
+            </div>
           </aside>
 
-          <section className={`${styles.stage} workspace-depth-stage`}>
+          <section className={styles.stage}>
             <h1 className={styles.srOnly}>{activeTool.label}</h1>
 
-            <div className={`${styles.workspace} workspace-depth-canvas`}>
+            <div className={styles.workspace}>
               <ToolboxProvider activeTab={activeTab} onTabChange={selectTab}>
                 {mountedPanels.has("extract") && (
                   <div

@@ -1,14 +1,20 @@
 "use client";
-import { videoProgressLabel, videoProgressStatus } from '@/lib/video-task-progress';
+import { resolveAiVideoInputAspectRatio } from "@/lib/ai-video-page-capabilities";
+import { readVideoDurationBehavior, type VideoDurationBehavior } from "@/lib/video-duration-behavior";
+import { VideoDurationBehaviorNotice } from "@/components/video-duration-behavior-notice";
+import { videoProgressLabel, videoProgressStatus, videoSubmissionConfirmationSignal } from '@/lib/video-task-progress';
 import { getVideoMediaUnavailable, videoCompletedDeliveryPatch } from "@/lib/video-media-availability";
 
 import { requiresVideoTaskTracking } from "@/lib/video-task-checkpoint";
 import { clearRetiredPageDrafts } from "@/lib/retired-page-drafts";
 import { VideoHistoryPanel, type VideoHistoryItem } from "@/components/video-history-panel";
+import { MediaHistoryWorkspace } from "@/components/media-history-workspace";
+import { VideoLocalAutoCache, type AutoCacheResult } from "@/lib/video-local-auto-cache";
 import { SseEventStreamDecoder } from "@/lib/sse-stream-decoder";
-import { useState, useEffect, useCallback, useRef, useId, Fragment } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useId, Fragment } from "react";
 import { useAppScopedRouter } from "@/hooks/use-app-scoped-router";
-import { boundVideoTaskModel, reconcileVideoModelSelection, videoModelInputHint } from "@/lib/video-model-selection-state";
+import { boundVideoTaskModel, reconcileVideoModelSelection, videoModelInputHint, videoModelInputLabel } from "@/lib/video-model-selection-state";
+import { publicVideoModelCompatibilityCode } from "@/lib/video-model-public-status";
 import { reportVideoSubmitFailed, reportVideoPollTimeout } from "@/lib/diagnostic-sentry";
 import { validateVideoInputContract } from "@/lib/video-input-contract";
 import { isPublicVideoAssetUrl } from "@/lib/video-public-url";
@@ -412,6 +418,8 @@ interface TaskCard {
   clientRequestId?: string; // 所有付费视频通道的幂等键；网络/5xx 重试必须复用
   clientRequestFingerprint?: string;
   taskId: string;
+  /** Only set from the server's business_task_id for this exact submission. */
+  businessTaskId?: string;
   modelId: string;
   modelName?: string;
   modelSnapshot?: VideoModel;
@@ -438,6 +446,80 @@ interface TaskCard {
   taskLabel?: string; // 卡片标签（如"段落1"）
   theme?: string;   // 段落主题（从【】提取）
   batchTopic: string; // 批次主题/文案名称
+}
+
+function submittedBusinessTaskId(value: unknown): string | undefined {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{8,128}$/u.test(value) ? value : undefined;
+}
+
+function videoCacheSubmissionBinding(task: Pick<TaskCard, "clientRequestId">, requestId: string, value: unknown): string | undefined {
+  return requestId && task.clientRequestId === requestId ? submittedBusinessTaskId(value) : undefined;
+}
+
+/** The active-tasks endpoint returns its database id in both fields. */
+function recoveredVideoBusinessTaskId(row: Record<string, unknown>): string | undefined {
+  return typeof row.id === "string" && row.id === row.taskId ? submittedBusinessTaskId(row.id) : undefined;
+}
+
+type AutoCachePageScope = { cache: VideoLocalAutoCache; attempted: Set<string>; active: boolean };
+
+/** Local copies are best-effort and independent of the server's delivery. */
+function useVideoAutomaticLocalCache(userId: string, token: string | null | undefined, tasks: TaskCard[]) {
+  const scopeRef = useRef<AutoCachePageScope | null>(null);
+  const [failedIds, setFailedIds] = useState<string[]>([]);
+  const [removalWarning, setRemovalWarning] = useState("");
+  useLayoutEffect(() => {
+    setFailedIds([]);
+    setRemovalWarning("");
+    if (!userId || !token) return;
+    let scope: AutoCachePageScope;
+    try {
+      const cache = new VideoLocalAutoCache({ userId, token, surface: "video-page", onRemovalSyncFailure: () => {
+        if (scopeRef.current === scope && scope.active) setRemovalWarning("历史已移除，但本机副本清理未完成，请在作品历史中重试。");
+      } });
+      scope = { cache, attempted: new Set(), active: true };
+      scopeRef.current = scope;
+    } catch {
+      // The browser may not support private cache storage. Report only if a
+      // completed task actually needs a local copy, below.
+      scopeRef.current = null;
+      return;
+    }
+    return () => { scope.active = false; scope.cache.dispose(); if (scopeRef.current === scope) scopeRef.current = null; };
+  }, [userId, token]);
+
+  const enqueue = useCallback((id: string, retry = false) => {
+    const scope = scopeRef.current;
+    if (!scope || !scope.active) { setFailedIds(previous => previous.includes(id) ? previous : [...previous, id]); return; }
+    if (scope.attempted.has(id) && !retry) return;
+    scope.attempted.add(id);
+    setFailedIds(previous => previous.filter(value => value !== id));
+    void scope.cache.enqueue(id).then((result: AutoCacheResult) => {
+      if (!scope.active || scopeRef.current !== scope) return;
+      if (result.state === "saved" || result.state === "removed" || result.state === "cancelled") return;
+      setFailedIds(previous => previous.includes(id) ? previous : [...previous, id]);
+    }).catch(() => {
+      if (scope.active && scopeRef.current === scope) setFailedIds(previous => previous.includes(id) ? previous : [...previous, id]);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    for (const task of tasks) {
+      if (task.status === "completed" && task.businessTaskId) enqueue(task.businessTaskId);
+    }
+  }, [tasks, token, enqueue]);
+
+  const retry = useCallback(() => { for (const id of failedIds) enqueue(id, true); }, [enqueue, failedIds]);
+  const onHistoryCleared = useCallback((ids: string[]) => {
+    const scope = scopeRef.current;
+    setFailedIds(previous => previous.filter(id => !ids.includes(id)));
+    if (!scope?.active) return;
+    void scope.cache.applyTombstones(ids).then(ok => {
+      if (!ok && scope.active && scopeRef.current === scope) setRemovalWarning("历史已移除，但本机副本清理未完成，请在作品历史中重试。");
+    }).catch(() => { if (scope.active && scopeRef.current === scope) setRemovalWarning("历史已移除，但本机副本清理未完成，请在作品历史中重试。"); });
+  }, []);
+  return { failedCount: failedIds.length, removalWarning, retry, onHistoryCleared };
 }
 
 const emptyCard = (localId: number, cardIndex: number, batchId: string, batchTopic: string): TaskCard => ({
@@ -468,6 +550,18 @@ const emptyCard = (localId: number, cardIndex: number, batchId: string, batchTop
   batchTopic,
 });
 
+function hasExistingVideoWork(task: TaskCard): boolean {
+  return task.status !== "idle" || Boolean(
+    task.prompt?.trim() || task.negativePrompt?.trim() || task.firstFrameUrl || task.lastFrameUrl
+    || task.referenceImageUrl || task.referenceImageUrls?.length || task.referenceAudioUrls?.length
+    || task.sourceVideoUrl || task.audioUrl || task.uploadedReferenceAssets?.length
+    || task.taskId || task.clientRequestId || task.requestSnapshot || task.modelId
+    || task.aspectRatio || task.resolution || task.fps !== undefined || task.seed !== undefined
+    || task.durationSeconds != null || task.generateAudio !== undefined || task.followsSourceDuration
+    || task.batchTopic?.trim() || task.taskLabel?.trim() || task.theme?.trim(),
+  );
+}
+
 function taskImageInputs(
   task: TaskCard,
   capabilities: ReturnType<typeof getAiVideoPageInputCapabilities>,
@@ -492,11 +586,15 @@ function isActiveVideoTaskStatus(status: TaskCard["status"]) {
 }
 
 type VideoPageModel = VideoModel & {
+  durationBehavior?: VideoDurationBehavior;
   available: boolean;
   priceReady: boolean;
   generationReady: boolean;
   readinessMessage: string;
   availabilityMessage: string;
+  compatibilityCode: string;
+  capabilitiesVerified: boolean;
+  firstFrameRatioPolicy?: "adaptive";
 };
 
 function normalizePublicVideoModel(value: unknown): VideoPageModel | null {
@@ -527,6 +625,7 @@ function normalizePublicVideoModel(value: unknown): VideoPageModel | null {
     maxDuration: durationCapabilities.maxDuration,
     durationMode: durationCapabilities.mode,
     nativeDurations: durationCapabilities.nativeDurations,
+    durationBehavior: readVideoDurationBehavior(capabilities.durationBehavior),
     durationStep: Number(capabilities.durationStep) || 0.5,
     supportsImageInput: Boolean(capabilities.supportsImageInput ?? record.supportsImageInput),
     requiresImage: Boolean(capabilities.requiresImage ?? record.requiresImage),
@@ -566,6 +665,9 @@ function normalizePublicVideoModel(value: unknown): VideoPageModel | null {
     aspectRatios: Array.isArray(capabilities.aspectRatios)
       ? capabilities.aspectRatios.map(String)
       : [],
+    capabilitiesVerified: capabilities.capabilitiesVerified !== false,
+    firstFrameRatioPolicy: capabilities.firstFrameRatioPolicy === "adaptive" ? "adaptive" : undefined,
+    compatibilityCode: publicVideoModelCompatibilityCode(capabilities.compatibilityCode),
     available: capabilities.available !== false,
     priceReady: capabilities.priceReady !== false,
     generationReady: capabilities.generationReady !== false,
@@ -629,6 +731,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     emptyCard(2, 2, currentBatchId, ""),
     emptyCard(3, 3, currentBatchId, ""),
   ]);
+  const localVideoCache = useVideoAutomaticLocalCache(identity.userId, auth?.token, tasks);
   const submissionLocksRef = useRef(new Set<number>());
   useEffect(() => {
     try {
@@ -711,6 +814,8 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   }, []);
   const videoInputPreview = (url: string | undefined) => parseGeneratedImageReferenceUri(url) ? generatedPreviews[url!] || undefined : url;
   const [showHistory, setShowHistory] = useState(false);
+  const [historyRecoveryOpen, setHistoryRecoveryOpen] = useState(false);
+  const historyRecoveryActiveRef = useRef(false);
   const [history, setHistory] = useState<VideoTask[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -721,6 +826,23 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   const historyOffsetRef = useRef(0);
   const historyWindowRef = useRef(100);
   const historyRequestRef = useRef<AbortController | null>(null);
+  const historyRequestPurposeRef = useRef<"panel" | "reconcile" | null>(null);
+  const cancelPanelHistoryRequest = useCallback(() => {
+    if (historyRequestPurposeRef.current !== "panel") return;
+    historyRequestRef.current?.abort();
+    historyRequestRef.current = null;
+    historyRequestPurposeRef.current = null;
+    setHistoryLoading(false);
+  }, []);
+  const handleHistoryRecoveryToggle = useCallback((open: boolean) => {
+    historyRecoveryActiveRef.current = open;
+    setHistoryRecoveryOpen(open);
+    if (!open) cancelPanelHistoryRequest();
+  }, [cancelPanelHistoryRequest]);
+  const closeUnifiedHistory = useCallback(() => {
+    handleHistoryRecoveryToggle(false);
+    setShowHistory(false);
+  }, [handleHistoryRecoveryToggle]);
   const nextLocalId = useRef(Math.max(4, ...tasks.map(task => task.localId + 1)));
   const sseRefs = useRef<Map<string, { abortController: AbortController }>>(new Map());
   const reconnectRef = useRef(0); // SSE 重连计数器
@@ -1099,6 +1221,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
             referenceImageUrl: String(row.referenceImageUrl || ""),
             status,
             taskId,
+            businessTaskId: recoveredVideoBusinessTaskId(row),
             modelId,
             modelName: model?.name || "提交时所选模型",
             modelSnapshot: model,
@@ -1144,16 +1267,26 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   /* ── Load history ── */
   const loadHistory = useCallback((
     offset = historyOffsetRef.current,
-    options: { supersedeInFlight?: boolean } = {},
+    options: { supersedeInFlight?: boolean; purpose?: "panel" | "reconcile" } = {},
   ) => {
+    // This callback is also used by SSE/task transitions to reconcile the
+    // editor's model and remote-cancel metadata. Only panel-driven polling is
+    // gated below; event-driven reconciliation must remain available.
     if (!auth?.token) return;
+    const purpose = options.purpose || "reconcile";
+    if (purpose === "panel" && !historyRecoveryActiveRef.current) return;
     if (historyRequestRef.current) {
+      // A manual refresh or poll in the recovery view must not cancel a task
+      // status reconciliation that is already updating the editor.
+      if (purpose === "panel" && historyRequestPurposeRef.current === "reconcile") return;
       if (!options.supersedeInFlight) return;
       historyRequestRef.current.abort();
       historyRequestRef.current = null;
+      historyRequestPurposeRef.current = null;
     }
     const controller = new AbortController();
     historyRequestRef.current = controller;
+    historyRequestPurposeRef.current = purpose;
     let timedOut = false;
     const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 20000);
     setHistoryLoading(true);
@@ -1193,6 +1326,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
         window.clearTimeout(timeout);
         if (historyRequestRef.current !== controller) return;
         historyRequestRef.current = null;
+        historyRequestPurposeRef.current = null;
         setHistoryLoading(false);
       });
   }, [auth?.token]);
@@ -1204,8 +1338,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     loadHistory(0, { supersedeInFlight: true });
   }, [loadHistory]);
 
+  const refreshRecoveryHistory = useCallback(() => {
+    loadHistory(0, { supersedeInFlight: true, purpose: "panel" });
+  }, [loadHistory]);
+
   const prepareHistoryRetry = useCallback((saved: VideoTask) => {
     if (saved.canRetry !== true) { toast.error("原任务结果或费用尚未确认，请先刷新状态"); return; }
+    const preserveCurrent = tasksRef.current.some(hasExistingVideoWork);
+    if (preserveCurrent && !window.confirm("载入原任务会调整当前模型和参数，已有任务卡片会保留。确认继续？")) return;
     const snapshotTask = saved as SnapshotVideoTask;
     const snapshot = snapshotTask.requestSnapshot;
     const retryInputs = snapshotTask.retryInputs;
@@ -1229,12 +1369,12 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       generateAudio: restoreVideoGenerateAudio(snapshot?.generateAudio),
       ...(snapshot ? { requestSnapshot: snapshot } : {}) };
     setSelectedModelId(model?.id || '');
-    setTasks(previous => previous.some(requiresVideoTaskTracking) ? [...previous, card] : [card]);
+    setTasks(previous => previous.some(hasExistingVideoWork) ? [...previous, card] : [card]);
     if (card.durationSeconds) setDuration(card.durationSeconds);
     if (card.resolution) setResolution(card.resolution);
     const ratio = AI_VIDEO_PAGE_ASPECT_RATIOS.find(item => item.value === card.aspectRatio);
     if (ratio) setAspectRatio(ratio);
-    setShowHistory(false);
+    closeUnifiedHistory();
     if (!model) {
       const unavailableName = saved.modelName?.trim() || "原视频模型";
       const notice = `${unavailableName}已不在当前可用模型目录。已载入原提示词和已保存素材，请重新选择兼容模型并确认最新价格；选择模型前不会提交。`;
@@ -1244,7 +1384,40 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     }
     setHistoryRetryNotice("");
     toast.info("已载入原提示词和已保存素材。请核对模型价格、参考图/音频后点击生成；本次会创建新任务。");
-  }, [models]);
+  }, [closeUnifiedHistory, models]);
+
+  const unifiedRetryRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    unifiedRetryRequest.current?.abort();
+    unifiedRetryRequest.current = null;
+  }, [auth?.token, showHistory]);
+
+  const prepareUnifiedHistoryRetry = useCallback(async (taskId: string) => {
+    if (!auth?.token || !showHistory || !taskId) return;
+    unifiedRetryRequest.current?.abort();
+    const controller = new AbortController();
+    unifiedRetryRequest.current = controller;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 15_000);
+    try {
+      const response = await fetch('/api/video/history?' + new URLSearchParams({ surface: 'video-page', taskId }), {
+        headers: { Authorization: 'Bearer ' + auth.token }, cache: 'no-store', signal: controller.signal,
+      });
+      const data = await response.json() as { tasks?: VideoTask[] };
+      if (controller.signal.aborted || unifiedRetryRequest.current !== controller) return;
+      const saved = Array.isArray(data.tasks) ? data.tasks.find(task => task.id === taskId) : undefined;
+      if (!response.ok || !saved) throw new Error('原任务无法读取');
+      // The authoritative task owns canRetry, original request snapshot and billing state.
+      // Loading it never submits another generation request.
+      prepareHistoryRetry(saved);
+    } catch {
+      if (timedOut) toast.error('原任务读取超时，请刷新历史后重试');
+      else if (!controller.signal.aborted) toast.error('原任务无法读取，请刷新历史后重试');
+    } finally {
+      window.clearTimeout(timeout);
+      if (unifiedRetryRequest.current === controller) unifiedRetryRequest.current = null;
+    }
+  }, [auth?.token, prepareHistoryRetry, showHistory]);
   useEffect(() => {
     if (!auth?.token || !models.length) return;
     const url = new URL(window.location.href), id = url.searchParams.get('retryTask');
@@ -1259,6 +1432,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   useEffect(() => () => {
     historyRequestRef.current?.abort();
     historyRequestRef.current = null;
+    historyRequestPurposeRef.current = null;
   }, [auth?.token]);
 
   useEffect(() => {
@@ -1267,16 +1441,22 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   }, [auth?.token]);
 
   useEffect(() => {
-    if (showHistory) loadHistory(0);
-  }, [showHistory, loadHistory]);
+    if (!showHistory || !historyRecoveryOpen) return;
+    historyRecoveryActiveRef.current = true;
+    loadHistory(0, { purpose: "panel" });
+    return () => {
+      historyRecoveryActiveRef.current = false;
+      cancelPanelHistoryRequest();
+    };
+  }, [showHistory, historyRecoveryOpen, loadHistory, cancelPanelHistoryRequest]);
 
   useEffect(() => {
 
-    if (!showHistory || !auth?.token) return;
+    if (!showHistory || !historyRecoveryOpen || !auth?.token) return;
 
     const syncHistory = () => {
       if (document.visibilityState === "visible") {
-        refreshHistoryFirstPage();
+        loadHistory(0, { purpose: "panel" });
       }
     };
 
@@ -1293,7 +1473,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
 
-  }, [showHistory, auth?.token, refreshHistoryFirstPage]);
+  }, [showHistory, historyRecoveryOpen, auth?.token, loadHistory]);
 
   // Submitted jobs remain in history; entering this editor always starts blank.
 
@@ -1555,6 +1735,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
   /* ── Get selected model ── */
   const selectedModel = models.find((m) => m.id === selectedModelId);
+  const selectedModelSubmissionUnavailable = selectedModel?.generationReady === false;
   const selectedDurationDisplay = videoDurationDisplay(selectedModel);
   const supportedAspectRatios = selectedModel?.aspectRatios?.length
     ? AI_VIDEO_PAGE_ASPECT_RATIOS.filter((ratio) => selectedModel.aspectRatios?.includes(ratio.value))
@@ -1568,7 +1749,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   /* ── 切换模型时自动同步时长 ── */
   const prevModelIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!selectedModel) return;
+    if (!selectedModel || selectedModel.generationReady === false) return;
     if (selectedModel.id === prevModelIdRef.current) return;
     prevModelIdRef.current = selectedModel.id;
     setDuration(getVideoDurationCapabilities(selectedModel).defaultDuration);
@@ -2879,14 +3060,16 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       if (isActiveVideoTaskStatus(original.status)) return;
       try {
         let taskId = original.taskId;
+        let businessTaskId = original.businessTaskId;
         if (!taskId && original.clientRequestId) {
           const response = await fetch('/api/video/request-status?' + new URLSearchParams({ clientRequestId: original.clientRequestId }),
             { headers: { Authorization: 'Bearer ' + auth?.token }, cache: 'no-store' });
           const data = await response.json();
           if (!response.ok || !data.found) { toast.info(data.message || data.error || '原请求仍待确认，请稍后查询'); return; }
           taskId = data.taskId;
+          businessTaskId = submittedBusinessTaskId(data.businessTaskId);
         }
-        if (taskId) setTasks(previous => previous.map(item => item.localId === localId ? { ...item, taskId, status: 'queued', errorMessage: '', pollStuckCount: 0 } : item));
+        if (taskId) setTasks(previous => previous.map(item => item.localId === localId ? { ...item, taskId, businessTaskId: item.clientRequestId === original.clientRequestId ? businessTaskId : undefined, status: 'queued', errorMessage: '', pollStuckCount: 0 } : item));
       } catch { toast.info('暂时无法查询原任务，请稍后重试；不会重新生成'); }
       return;
     }
@@ -2895,6 +3078,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     const currentModel = models.find((m) => m.id === selectedModelId);
     if (!auth?.token) { toast.error("请先登录后再生成视频"); return; }
     if (!currentModel) { toast.error("视频模型尚未加载，请刷新模型列表后重试"); return; }
+    if (currentModel.generationReady === false) { toast.info("请选择其他视频模型"); return; }
     const tokenBilling = resolveVideoTokenBillingConsent(currentModel, tokenChargeConsent);
     if (getVideoBillingUnit(currentModel) === "token" && !tokenBilling) { toast.info("请明确填写本次每条视频最多自动扣款金额（正数，最多两位小数）"); return; }
     if (tokenBilling && tokenBilling.maxChargeYuan > cashBalance) { toast.info("现金余额不足以预留本次额度；预留不是扣费，请调整额度或充值"); return; }
@@ -2929,9 +3113,8 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     }
 
     // 检查该模型是否必须提供参考图片
-    if (currentModel && !currentModel.available) {
-      const message = currentModel.availabilityMessage || "该模型渠道当前不可用，请切换模型";
-      showPreflightGuidance(message);
+    if (currentModel && (!currentModel.available || !currentModel.generationReady)) {
+      showPreflightGuidance("暂时无法生成，请选择其他模型或稍后重试");
       return;
     }
     if (inputCapabilities.requiresFirstFrame && !task.firstFrameUrl) {
@@ -2969,6 +3152,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       referenceAudioUrls: submittedAudioUrls,
       sourceVideoUrl: inputCapabilities.supportsSourceVideoInput ? (task.sourceVideoUrl || "") : "",
     };
+    const submittedAspectRatio = resolveAiVideoInputAspectRatio(currentModel, aspectRatio.value, submittedInputs);
     const inputViolation = validateVideoInputContract(inputCapabilities, submittedInputs);
     const nonPublicInput = [...submittedImageUrls, submittedInputs.audioUrl, ...submittedAudioUrls, submittedInputs.sourceVideoUrl]
       .some((url) => Boolean(url?.trim()) && !parseGeneratedImageReferenceUri(url) && !isPublicVideoAssetUrl(url));
@@ -3004,7 +3188,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       audioUrl: task.audioUrl || "",
       sourceVideoUrl: task.sourceVideoUrl || "",
       duration: videoTiming.target,
-      aspectRatio: aspectRatio.value,
+      aspectRatio: submittedAspectRatio,
       resolution: selectedResolution,
       fps: task.fps ?? null,
       seed: task.seed ?? null,
@@ -3021,8 +3205,8 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     });
     const clientRequestId = clientAttempt.clientRequestId;
 
-    const checkpoint: TaskCard = { ...task, clientRequestId, clientRequestFingerprint, modelId: currentModel.id, modelName: currentModel.name,
-      modelSnapshot: currentModel, aspectRatio: aspectRatio.value, resolution: selectedResolution, followsSourceDuration: inputCapabilities.requiresSourceVideo, supportsRemoteCancel: currentModel.supportsRemoteCancel === true,
+    const checkpoint: TaskCard = { ...task, businessTaskId: undefined, clientRequestId, clientRequestFingerprint, modelId: currentModel.id, modelName: currentModel.name,
+      modelSnapshot: currentModel, aspectRatio: submittedAspectRatio, resolution: selectedResolution, followsSourceDuration: inputCapabilities.requiresSourceVideo, supportsRemoteCancel: currentModel.supportsRemoteCancel === true,
       generateAudio: submittedGenerateAudio, status: 'pending', durationSeconds: targetDuration, errorMessage: '', submittedAt: Date.now(), videoUrl: '', taskId: '', progress: undefined, thumbnailUrl: '', contentUrl: '' };
 
     // 关闭旧任务的 SSE 连接（防止旧回调覆盖新状态）
@@ -3067,7 +3251,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           audio_url: submittedInputs.audioUrl,
           negative_prompt: task.negativePrompt || "",
           duration: targetDuration,
-          aspect_ratio: aspectRatio.value,
+          aspect_ratio: submittedAspectRatio,
           resolution: selectedResolution,
           resolution_tier: selectedResolution,
           ...(task.fps !== undefined ? { fps: task.fps } : {}),
@@ -3146,7 +3330,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           setTasks((prev) =>
             prev.map((t) =>
               t.localId === localId
-                ? { ...t, taskId, status: "completed", videoUrl: data.video_url }
+                ? { ...t, taskId, businessTaskId: videoCacheSubmissionBinding(t, clientRequestId, data.business_task_id), status: "completed", videoUrl: data.video_url }
                 : t
             )
           );
@@ -3186,17 +3370,18 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           refreshHistoryFirstPage();
         } else {
           // 异步模式：已提交成功，等待上游排队/渲染
+          const confirmationPending = videoSubmissionConfirmationSignal(data) === true;
           setTasks((prev) =>
             prev.map((t) =>
               t.localId === localId
-                ? { ...t, taskId, modelId: currentModel.id, modelName: currentModel.name, contentUrl: data.content_url || "", status: "queued" }
+                ? { ...t, taskId, businessTaskId: videoCacheSubmissionBinding(t, clientRequestId, data.business_task_id), modelId: currentModel.id, modelName: currentModel.name, contentUrl: data.content_url || "", status: "queued", processingStage: confirmationPending ? "confirming_submission" : undefined }
                 : t
             )
           );
-          toast.info(data.submission_outcome === "unknown" ? data.message : `任务${task.cardIndex}已提交，正在排队生成...`);
+          toast.info(confirmationPending ? "正在确认结果" : `任务${task.cardIndex}已提交，正在排队生成...`);
           // 同步到历史对话记录（刷新不丢失）
           syncTaskToConversation(task, taskId, selectedModel?.modelName || selectedModelId, { status: "processing" });
-          loadHistory();
+          refreshHistoryFirstPage();
         }
       } else {
         const rawErr = data.error || "提交失败";
@@ -3406,11 +3591,10 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   return (
     <div className="secondary-workbench voice-studio-root vs-workbench h-screen overflow-hidden flex flex-col">
       {/* ── Top bar ── */}
-      <SubPageHeader
+      {!showHistory && <SubPageHeader
         title="AI 视频创作台"
         subtitle="单图 / 首尾帧视频生成 · 批量任务 · 高清输出"
-        backHref={showHistory ? undefined : "/"}
-        onBack={showHistory ? () => setShowHistory(false) : undefined}
+        backHref="/"
         rightSlot={
           <div className="flex items-center gap-1.5">
             {isAdmin && (
@@ -3431,10 +3615,10 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
             <NavButton icon={History} label="历史" variant="ghost" active={showHistory} onClick={() => setShowHistory(!showHistory)} />
           </div>
         }
-      />
+      />}
 
       {/* ── Admin config panel ── */}
-      {isAdmin && showConfigPanel && (
+      {isAdmin && showConfigPanel && !showHistory && (
         <div className="border-b border-[var(--border)] bg-[var(--card)]/60 backdrop-blur-md">
           <div className="mx-auto w-full max-w-[1760px] px-3 py-4 sm:px-6">
             <div className="flex items-center gap-2 mb-3">
@@ -3561,8 +3745,19 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
       {/* ── Main content ── */}
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1760px] px-3 pb-2 pt-1 sm:px-6 sm:pb-3 sm:pt-2" data-video-creator-layout>
+          {(localVideoCache.failedCount > 0 || localVideoCache.removalWarning) && (
+            <div role="status" className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+              <span>{localVideoCache.removalWarning || `有 ${localVideoCache.failedCount} 个视频暂未保存到本机，可重试或下载到电脑。`}</span>
+              {localVideoCache.failedCount > 0 && <button type="button" className="underline" onClick={localVideoCache.retry}>重试本机保存</button>}
+            </div>
+          )}
           {showHistory ? (
-            /* ── History View - Timeline List ── */
+            <MediaHistoryWorkspace
+              initialCategory="video-production"
+              onBack={closeUnifiedHistory}
+              onRecoveryToggle={handleHistoryRecoveryToggle}
+              onRetryVideo={(taskId) => void prepareUnifiedHistoryRetry(taskId)}
+              recoveryContent={(
             <div>
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-3">
@@ -3597,7 +3792,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       )}
                     </>
                   )}
-                  <Button variant="ghost" size="sm" onClick={refreshHistoryFirstPage} disabled={historyLoading} className="gap-1.5 text-[var(--text-secondary)]">
+                  <Button variant="ghost" size="sm" onClick={refreshRecoveryHistory} disabled={historyLoading} className="gap-1.5 text-[var(--text-secondary)]">
                     <RefreshCw className={`w-3.5 h-3.5${historyLoading ? " animate-spin" : ""}`} /> {historyLoading ? "读取中…" : "刷新"}
                   </Button>
                 </div>
@@ -3611,19 +3806,22 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   items={videoHistoryItems}
                   loading={historyLoading}
                   error={historyError}
-                  onClose={() => setShowHistory(false)}
-                  onRefresh={() => refreshHistoryFirstPage()}
+                  onClose={closeUnifiedHistory}
+                  onRefresh={() => refreshRecoveryHistory()}
                   hasMore={historyNextOffset !== null}
-                  onLoadMore={() => { if (historyNextOffset !== null) loadHistory(historyNextOffset); }}
+                  onLoadMore={() => { if (historyNextOffset !== null) loadHistory(historyNextOffset, { purpose: "panel" }); }}
                   onRetry={(taskId) => { const saved = history.find((task) => task.id === taskId); if (saved) prepareHistoryRetry(saved); }}
                   selectedTaskIds={selectedIds}
                   onToggleSelect={toggleSelect}
                   onCleared={(ids) => {
+                    localVideoCache.onHistoryCleared(ids);
                     setHistory((previous) => previous.filter((task) => !ids.includes(task.id)));
                     setSelectedIds((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
                   }}
                 />
           </div>
+              )}
+            />
         ) : (
             /* ── Creator View ── */
             <>
@@ -3646,7 +3844,6 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       <h2 className="text-sm font-semibold">视频模型</h2>
                       <span className="text-xs text-[var(--text-secondary)]">{models.length} 个</span>
                     </div>
-                    <p className="mt-1 text-xs text-[var(--text-secondary)]">按后台配置展示，能力选项随模型联动</p>
                   </div>
                   <div className="max-h-72 space-y-1.5 overflow-y-auto p-2.5 xl:max-h-[calc(100vh-190px)]">
                     {modelsLoading ? (
@@ -3654,23 +3851,21 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     ) : models.length === 0 ? (
                       <p className="px-2 py-4 text-center text-xs text-[var(--text-secondary)]">当前暂无可用视频模型，请稍后刷新重试</p>
                     ) : models.map((model) => {
-                      const modelPrice = resolveVideoResolution(model, model.defaultResolution).publicPrice;
+                      const modelPrice = model.generationReady === false ? model.pricePerUse : resolveVideoResolution(model, model.defaultResolution).publicPrice;
                       const selected = model.id === selectedModelId;
-                      const selectable = model.available;
-                      const selectionMessage = !model.available
-                        ? model.availabilityMessage || "暂不可用"
-                        : "可提交";
+                      const selectable = model.available && model.generationReady;
+                      const inputLabel = videoModelInputLabel(model);
                       return (
                         <button
                           key={model.id}
                           type="button"
                           data-video-model-id={model.id}
                           disabled={!selectable}
-                          onClick={() => setSelectedModelId(model.id)}
-                          className={`group min-h-[76px] w-full rounded-md border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] ${selected ? "border-[var(--primary)] bg-[var(--accent)] shadow-[inset_3px_0_var(--primary)]" : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/35 hover:bg-[var(--muted)]/45"} ${selectable ? "" : "cursor-not-allowed opacity-70"}`}
-                          title={selectable ? model.name : selectionMessage}
+                          onClick={() => { if (selectable) setSelectedModelId(model.id); }}
+                          className={`group min-h-[76px] w-full min-w-0 max-w-full rounded-md border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] ${selected ? "border-[var(--primary)] bg-[var(--accent)] shadow-[inset_3px_0_var(--primary)]" : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/35 hover:bg-[var(--muted)]/45"} ${selectable ? "" : "cursor-not-allowed opacity-70"}`}
+                          title={model.name}
                         >
-                          <span className="flex items-start gap-3">
+                          <span className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2">
                             <ModelBadge
                               name={model.name}
                               avatarUrl={model.avatarUrl}
@@ -3679,16 +3874,12 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                               availability={selectable ? "ready" : "unavailable"}
                               data-video-model-avatar="true"
                             />
-                            <span className="min-w-0 flex-1">
+                            <span className="min-w-0 max-w-full">
                               <span className="line-clamp-2 block text-[14px] font-semibold leading-5 text-[var(--foreground)]">{model.name}</span>
-                              <span className={`mt-1 flex items-center gap-1.5 text-[12px] leading-4 ${selectable ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${selectable ? "bg-emerald-500" : "bg-amber-500"}`} />
-                                <span className="truncate">{selectionMessage}</span>
-                              </span>
-                              <span className="mt-0.5 block truncate text-[12px] leading-4 text-[var(--text-secondary)]">{videoModelInputHint(model)}</span>
+                              {inputLabel && <span className="mt-0.5 block whitespace-normal break-words text-[12px] leading-4 text-[var(--text-secondary)]" title={videoModelInputHint(model)}>{inputLabel}</span>}
                             </span>
-                            <span className="shrink-0 rounded border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[12px] font-semibold text-[var(--foreground)]">
-                              {getVideoBillingUnit(model) === "token" ? videoTokenRateLabel(model, model.defaultResolution) : !model.priceReady ? "价格待配置" : modelPrice === 0 ? "免费" : `¥${modelPrice.toFixed(2)}${getVideoBillingUnit(model) === "output_second" ? "/秒" : "/次"}`}
+                            <span data-video-model-price className="col-start-2 min-w-0 max-w-full justify-self-start whitespace-normal break-words rounded border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[12px] font-semibold leading-4 text-[var(--foreground)] [overflow-wrap:anywhere]">
+                              {getVideoBillingUnit(model) === "token" ? model.generationReady === false ? "Token 计价" : videoTokenRateLabel(model, model.defaultResolution) : !model.priceReady ? "—" : modelPrice === 0 ? "免费" : `¥${modelPrice.toFixed(2)}${getVideoBillingUnit(model) === "output_second" ? "/秒" : "/次"}`}
                             </span>
                           </span>
                         </button>
@@ -3712,7 +3903,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       + 充值
                     </button>
                   </div>
-                  {selectedModel && (
+                  {selectedModel && !selectedModelSubmissionUnavailable && (
                     <div className="text-xs text-[var(--text-secondary)]">
                       {getVideoBillingUnit(selectedModel) === "token" ? videoTokenRateLabel(selectedModel, selectedResolution) : <>单条预计：<span className="text-yellow-500 font-bold">¥{selectedPrice.toFixed(2)}</span></>}
                       {getVideoBillingUnit(selectedModel) !== "token" && cashBalance < selectedPrice && (
@@ -3721,7 +3912,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     </div>
                   )}
                 </div>
-                {selectedModel && getVideoBillingUnit(selectedModel) === "token" && <div className="mb-3 text-xs text-[var(--foreground)]">
+                {selectedModel && !selectedModelSubmissionUnavailable && getVideoBillingUnit(selectedModel) === "token" && <div className="mb-3 text-xs text-[var(--foreground)]">
                   <label htmlFor="video-token-max-charge">每条任务本次最多自动扣款 ¥</label>
                   <Input id="video-token-max-charge" aria-label="每条视频本次最多自动扣款金额" type="text" inputMode="decimal" autoComplete="off" placeholder="请填写金额（最多两位小数）" className="mt-1 max-w-xs"
                     value={tokenChargeConsent?.modelId === selectedModel.id && tokenChargeConsent.priceVersion === selectedModel.tokenPricing?.priceVersion ? tokenChargeConsent.amount : ""}
@@ -3729,11 +3920,11 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   <p className="mt-1 text-[var(--muted-foreground)]">按实际 Token 用量结算；预留不是扣费，超额待确认。每次点击生成均使用当前额度。</p>
                   {selectedInputCapabilities.supportsSourceVideoInput && <p className="mt-1 text-[var(--muted-foreground)]">使用源视频：{videoTokenRateLabel(selectedModel, selectedResolution, true)}；未使用源视频：{videoTokenRateLabel(selectedModel, selectedResolution, false)}</p>}
                 </div>}
-                <div className="flex flex-wrap items-start gap-4">
+                {selectedModelSubmissionUnavailable ? null : <div className="flex flex-wrap items-start gap-4">
                   {/* Aspect ratio */}
                   <div className="flex min-w-[190px] flex-1 flex-col">
                     <label className="mb-2 block h-4 text-xs font-medium leading-4 text-[var(--text-secondary)]">
-                      视频比例
+                      视频比例{selectedModel?.firstFrameRatioPolicy === "adaptive" && "（有首帧时跟随首帧比例）"}
                     </label>
                     <Select
                       value={aspectRatio.label}
@@ -3852,10 +4043,12 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       </div>
                     )}
                     {selectedDurationDisplay.description && <p className="mt-1.5 text-[11px] leading-4 text-[var(--text-secondary)]">{selectedDurationDisplay.description}</p>}
+                    <VideoDurationBehaviorNotice durationBehavior={selectedModel?.durationBehavior} />
                   </div>
 
                 </div>
 
+                }
                 {/* Batch topic & add task bar */}
                 <div className="mt-3 flex flex-wrap items-center gap-2 sm:gap-3">
                   <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto lg:min-w-[280px] lg:flex-1">
@@ -4005,7 +4198,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))" }}
                 >
                 {tasks.map((task) => {
+                  const confirmingVideoSubmission = isActiveVideoTaskStatus(task.status) && videoSubmissionConfirmationSignal(task) === true;
                   const cardModel = requiresVideoTaskTracking(task) || task.taskId ? task.modelSnapshot || models.find((model) => model.id === task.modelId) : selectedModel;
+                  const cardCapabilitiesUnverified = !requiresVideoTaskTracking(task) && !task.taskId && selectedModelSubmissionUnavailable;
                   const cardInputCapabilities = getAiVideoPageInputCapabilities(cardModel);
                   const cardDurationDisplay = videoDurationDisplay(cardModel);
                   return (
@@ -4027,7 +4222,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                         {(task.taskId || requiresVideoTaskTracking(task)) && <span className="mt-0.5 block truncate text-[11px] text-[var(--text-secondary)]" title={boundVideoTaskModel(task, models).name}>{boundVideoTaskModel(task, models).name}{task.resolution ? ` · ${task.resolution}` : ""}</span>}
                       </div>
                       <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5">
-                        {((requiresVideoTaskTracking(task) || task.taskId) ? task.followsSourceDuration : cardInputCapabilities.requiresSourceVideo) ? (
+                        {cardCapabilitiesUnverified ? null : ((requiresVideoTaskTracking(task) || task.taskId) ? task.followsSourceDuration : cardInputCapabilities.requiresSourceVideo) ? (
                           <span className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-[var(--border)] px-1.5 text-[11px]"><Clock className="h-3 w-3 shrink-0" />随源视频时长</span>
                         ) : (isActiveVideoTaskStatus(task.status) || task.status === "completed") && task.durationSeconds ? (
                           <span className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-[var(--border)] px-1.5 text-[11px]"><Clock className="h-3 w-3 shrink-0" />{cardDurationDisplay.label} {task.durationSeconds} 秒</span>
@@ -4057,8 +4252,8 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                             <Clock className="h-3 w-3 shrink-0" />{cardDurationDisplay.label} {durationOptions[0] || duration} 秒
                           </span>
                         )}
-                        {isActiveVideoTaskStatus(task.status) && (task.processingStage === 'confirming_submission' || task.processingStage === 'submission_unknown')
-                          ? <span role="status" className="video-task-status-label inline-flex h-5 shrink-0 items-center whitespace-nowrap text-[11px] font-medium leading-none text-amber-600 dark:text-amber-400">待确认</span>
+                        {confirmingVideoSubmission
+                          ? <span role="status" className="video-task-status-label inline-flex h-5 shrink-0 items-center whitespace-nowrap text-[11px] font-medium leading-none text-amber-600 dark:text-amber-400">正在确认结果</span>
                           : statusBadge(task.status, task.status === "failed" && requiresVideoTaskTracking(task))}
                         {tasks.length > 1 && task.status === "idle" && (
                           <button
@@ -4075,7 +4270,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     </div>
 
                     <div className="p-4 space-y-3.5">
-                      <fieldset disabled={requiresVideoTaskTracking(task)} className="min-w-0 space-y-3.5">
+                      {cardCapabilitiesUnverified ? null : <fieldset disabled={requiresVideoTaskTracking(task)} className="min-w-0 space-y-3.5">
                       {cardModel && getVideoBillingUnit(cardModel) === "token" && <p className="text-xs text-[var(--muted-foreground)]">本条费率：{videoTokenRateLabel(cardModel, selectedResolution, Boolean(cardInputCapabilities.supportsSourceVideoInput && task.sourceVideoUrl))}</p>}
                       {/* Prompt */}
                       <div>
@@ -4499,7 +4694,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                         )}
                       </div>
 
-                      </fieldset>
+                      </fieldset>}
                       {/* Generate / Result */}
                       {getVideoMediaUnavailable(task) ? (
                         <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)]/40 p-4 space-y-2" role="status">
@@ -4580,6 +4775,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                             <Loader2 className="w-3 h-3 animate-spin text-[var(--primary)]" />
                             {videoProgressLabel(task)}
                           </span>
+                          {!confirmingVideoSubmission && <>
                           <div className="flex items-center gap-2.5" role="progressbar" aria-label="视频生成进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={typeof task.progress === "number" ? Math.min(100, Math.max(0, task.progress)) : undefined}>
                             <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-[var(--muted)]/60">
                               <div className={"h-full rounded-full bg-[var(--primary)] transition-all " + (task.progress == null ? "animate-pulse" : "")} style={{ width: task.progress == null ? "35%" : Math.min(100, Math.max(0, task.progress)) + "%" }} />
@@ -4599,15 +4795,16 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                           {task.statusDetail && <p className="text-[11px] leading-4 text-[var(--text-secondary)]">{task.statusDetail}</p>}
                           {task.lastSyncedAt && (
                             <p className={"text-[11px] " + ((task.providerPollFailures || 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-[var(--text-secondary)]")}>
-                              后台检查 {Math.max(0, Math.floor((nowTick - task.lastSyncedAt) / 1000))} 秒前
+                              上次查询：{Math.max(0, Math.floor((nowTick - task.lastSyncedAt) / 1000))} 秒前
                               {(task.providerPollFailures || 0) > 0 ? ` · 连续 ${task.providerPollFailures} 次未收到上游状态` : ""}
                             </p>
                           )}
+                          </>}
                         </div>
                       ) : (
                         <Button
                           onClick={() => generate(task.localId)}
-                          disabled={!selectedModel?.available || (cardInputCapabilities.supportsPrompt && !task.prompt.trim())}
+                          disabled={!selectedModel?.available || !selectedModel.generationReady || (cardInputCapabilities.supportsPrompt && !task.prompt.trim())}
                           className="w-full gap-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
                         >
                             <>

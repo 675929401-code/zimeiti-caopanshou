@@ -15,11 +15,14 @@ const RUNTIME_FILE = process.env.LOCAL_ACCEPTANCE_RUNTIME_PATH?.trim()
   || "F:/总项目文件/Skill存储系统/运行数据/自媒体操盘手/local-data-20260902/config/runtime.json";
 const nativeRequire = createRequire(import.meta.url);
 
-assert.ok(process.argv.includes("--execute"), "EXPLICIT_FIXTURE_EXECUTION_REQUIRED");
-assert.ok(
-  process.argv.includes("--confirm-local-announcement-event-integrity"),
-  "LOCAL_ANNOUNCEMENT_EVENT_CONFIRMATION_REQUIRED",
-);
+const executeDatabaseFixtures = process.argv.includes("--execute");
+if (executeDatabaseFixtures) {
+  assert.ok(!process.argv.includes("--zero-network"), "EXECUTE_AND_ZERO_NETWORK_ARE_EXCLUSIVE");
+  assert.ok(
+    process.argv.includes("--confirm-local-announcement-event-integrity"),
+    "LOCAL_ANNOUNCEMENT_EVENT_CONFIRMATION_REQUIRED",
+  );
+}
 
 const routeSource = fsSync.readFileSync("src/app/api/announcements/events/route.ts", "utf8");
 const componentSource = fsSync.readFileSync("src/components/announcement-popup.tsx", "utf8");
@@ -203,6 +206,22 @@ const failedWriteResponse = await route.POST(routeRequest("fixture-token"));
 assert.equal(failedWriteResponse.status, 503, "DATABASE_FAILURE_MUST_NOT_RETURN_SUCCESS");
 assert.notEqual((await failedWriteResponse.json()).success, true);
 
+if (!executeDatabaseFixtures) {
+  console.log(JSON.stringify({
+    passed: true,
+    stage: "L1",
+    routeScenarios: 5,
+    databaseIntegration: "not_executed",
+    networkCalls: 0,
+    databaseWrites: 0,
+    providerCalls: 0,
+    paidCalls: 0,
+  }));
+} else {
+const fixtureTargetUserId = process.env.LOCAL_ANNOUNCEMENT_FIXTURE_TARGET_USER_ID?.trim();
+const fixtureNonTargetUserId = process.env.LOCAL_ANNOUNCEMENT_FIXTURE_NON_TARGET_USER_ID?.trim();
+assert.ok(fixtureTargetUserId && fixtureNonTargetUserId, "EXPLICIT_DISPOSABLE_FIXTURE_USERS_REQUIRED");
+assert.notEqual(fixtureTargetUserId, fixtureNonTargetUserId, "DISTINCT_FIXTURE_USERS_REQUIRED");
 const runtime = JSON.parse((await fs.readFile(RUNTIME_FILE, "utf8")).replace(/^\uFEFF/u, ""));
 assert.equal(runtime.localOnly, true, "LOCAL_RUNTIME_REQUIRED");
 assert.equal(runtime.ownerConnection?.host, "127.0.0.1", "LOCAL_DATABASE_HOST_REQUIRED");
@@ -278,11 +297,13 @@ try {
        FROM public.users
       WHERE is_active IS TRUE
         AND coalesce(status, 'active') = 'active'
-      ORDER BY id
-      LIMIT 2`,
+        AND id::text = ANY($1::text[])
+      ORDER BY id`,
+    [[fixtureTargetUserId, fixtureNonTargetUserId]],
   )).rows;
   assert.equal(users.length, 2, "TWO_ACTIVE_LOCAL_USERS_REQUIRED");
-  [targetUserId, nonTargetUserId] = users.map((row) => String(row.id));
+  targetUserId = fixtureTargetUserId;
+  nonTargetUserId = fixtureNonTargetUserId;
 
   await control.query("BEGIN");
   await control.query(
@@ -510,3 +531,4 @@ const evidenceDir = path.resolve(".codex-evidence", "announcement-event-integrit
 await fs.mkdir(evidenceDir, { recursive: true });
 await fs.writeFile(path.join(evidenceDir, "verification.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
 console.log(JSON.stringify(report, null, 2));
+}

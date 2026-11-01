@@ -8,7 +8,10 @@ import {
   previewPlatformConfigurationRelease,
   publishPlatformConfigurationRelease,
   validatePlatformConfigurationCandidate,
+  readPlatformModelMutationReceipt,
 } from "@/lib/server/platform-configuration-admin";
+import { modelPoolMutationFailure } from "@/lib/server/model-pool-mutation-http";
+import { modelPoolCredentialStatus } from "@/lib/server/model-pool-credential-status";
 import { stageInitialModelPoolCandidate } from "@/lib/server/platform-configuration-compatibility";
 
 export const runtime = "nodejs";
@@ -22,14 +25,21 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 function failure(error: unknown, fallback: string, status = 409) {
+  const classified = modelPoolMutationFailure(error);
+  if (classified) return classified;
   const code = error instanceof PlatformConfigurationError ? error.code : "PLATFORM_CONFIGURATION_OPERATION_FAILED";
-  return NextResponse.json({ ok: false, code, error: error instanceof Error ? error.message : fallback }, { status, headers: noStore });
+  return NextResponse.json({ ok: false, code, error: fallback }, { status, headers: noStore });
 }
 
 export async function GET(request: NextRequest) {
   const auth = await requireCommerceAdmin(request);
   if ("response" in auth) return auth.response;
   try {
+    const requestId = request.nextUrl.searchParams.get("requestId");
+    if (requestId) return NextResponse.json({ ok: true, requestId, receipt: await readPlatformModelMutationReceipt(auth.actor.userId, requestId) }, { headers: noStore });
+    const credentialReleaseId = request.nextUrl.searchParams.get("credentialReleaseId");
+    if (credentialReleaseId) return NextResponse.json({ ok: true, releaseId: credentialReleaseId,
+      credentialChanges: await modelPoolCredentialStatus(credentialReleaseId) }, { headers: noStore });
     const releaseId = request.nextUrl.searchParams.get("previewReleaseId");
     if (releaseId) return NextResponse.json({ ok: true, preview: await previewPlatformConfigurationRelease(kind, releaseId) }, { headers: noStore });
     return NextResponse.json({ ok: true, ...(await platformConfigurationOverview(kind)) }, { headers: noStore });

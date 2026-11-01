@@ -51,6 +51,23 @@ export function pendingImageConfigurationUpdate(current: ImageValidationRow, req
   ];
   const next = { ...requested };
   for (const key of ["api_key", "api_endpoint"]) if (typeof next[key] === "string" && !next[key].trim()) delete next[key];
+  const protectedReadinessKeys = [
+    "canary_verified",
+    "canaryVerified",
+    "verification_notice",
+    "verificationNotice",
+    "__model_activation_gate",
+  ];
+  const currentConfig = object(current.api_protocol_config);
+  const requestedConfig = object(next.api_protocol_config);
+  if (Object.hasOwn(next, "api_protocol_config")) {
+    const sanitizedConfig = { ...requestedConfig };
+    for (const key of protectedReadinessKeys) {
+      delete sanitizedConfig[key];
+      if (Object.hasOwn(currentConfig, key)) sanitizedConfig[key] = currentConfig[key];
+    }
+    next.api_protocol_config = sanitizedConfig;
+  }
   const changed = executionFields.some(key => Object.hasOwn(next, key) && JSON.stringify(current[key]) !== JSON.stringify(next[key]));
   // Configuration evidence is diagnostic. Editing a configured model must not
   // silently switch off a model that an administrator has kept online.

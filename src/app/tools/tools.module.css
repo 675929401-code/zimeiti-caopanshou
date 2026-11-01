@@ -1282,3 +1282,258 @@
 @media (prefers-reduced-motion: reduce) {
   .tabs button { transition-duration: 0.01ms; }
 }
+
+/* Main toolbox: one connected workspace with task-specific desktop layouts.
+   Utility and Manju retain their own shells and component styling. */
+@media (min-width: 1200px) {
+  .page[data-page="tools"] .workbenchFrame {
+    grid-template-columns: 252px minmax(0, 1fr);
+    gap: 0;
+    border: 1px solid var(--toolbox-crystal-line);
+    border-radius: 16px;
+    background: var(--card);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 5%, transparent);
+  }
+
+  .page[data-page="tools"] .toolRail {
+    align-self: stretch;
+    min-height: 0;
+    gap: 18px;
+    padding: 20px 14px 16px;
+    border: 0;
+    border-right: 1px solid var(--toolbox-crystal-line);
+    border-radius: 0;
+    background: color-mix(in srgb, var(--card) 96%, var(--muted));
+  }
+
+  .page[data-page="tools"] .railHeader {
+    gap: 5px;
+    padding: 0 8px 4px;
+    border: 0;
+  }
+
+  .page[data-page="tools"] .railHeader > strong {
+    font-size: 17px;
+    letter-spacing: .01em;
+  }
+
+  .page[data-page="tools"] .railHeader > span {
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .page[data-page="tools"] .tabs { flex: none; gap: 5px; }
+
+  .page[data-page="tools"] .tabs button {
+    min-height: 68px;
+    gap: 11px;
+    padding: 10px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+  }
+
+  .page[data-page="tools"] .tabs button:hover {
+    border-color: var(--toolbox-crystal-line);
+    background: color-mix(in srgb, var(--primary) 5%, var(--card));
+    transform: none;
+  }
+
+  .page[data-page="tools"] .tabs .activeTab {
+    border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
+    background: color-mix(in srgb, var(--primary) 9%, var(--card));
+  }
+
+  .page[data-page="tools"] .tabs .activeTab::before { inset: 12px auto 12px 0; }
+  .page[data-page="tools"] .tabIcon { width: 36px; height: 36px; }
+  .page[data-page="tools"] .tabs strong { font-size: 15px; }
+  .page[data-page="tools"] .tabs small { font-size: 12px; }
+
+  .page[data-page="tools"] .railSummary {
+    margin-top: auto;
+    padding: 14px 12px;
+    border: 1px solid color-mix(in srgb, var(--primary) 15%, var(--border));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--primary) 5%, var(--card));
+  }
+
+  .page[data-page="tools"] .railSummary > span,
+  .page[data-page="tools"] .railSummary > small,
+  .page[data-page="tools"] .railSummary > strong { display: block; }
+  .page[data-page="tools"] .railSummary > span { color: var(--muted-foreground); font-size: 11px; }
+  .page[data-page="tools"] .railSummary > strong { margin-top: 7px; color: var(--foreground); font-size: 14px; }
+  .page[data-page="tools"] .railSummary > small { margin-top: 4px; color: var(--primary); font-size: 12px; line-height: 1.5; }
+  .page[data-page="tools"] .railSummary > p { margin: 11px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.55; }
+
+  .page[data-page="tools"] .stage {
+    min-height: 0;
+    padding: 16px 18px;
+    background: color-mix(in srgb, var(--card) 94%, var(--muted));
+  }
+
+  /* One simple header line, aligned with the navigation heading. */
+  :global(html[data-theme][data-mode]) .page[data-page="tools"] .workspace :global(.toolbox-embedded-workspace .toolbox-embedded-toolbar) {
+    min-height: 58px;
+    margin: 0;
+    padding: 0 0 12px;
+    border: 0;
+    border-bottom: 1px solid var(--toolbox-crystal-line) !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  /* Keep the segmentation settings together as one themed control group. */
+  :global(html[data-theme][data-mode]) .page[data-page="tools"] .workspace :global(.toolbox-embedded-workspace .toolbox-duration-toolbar) {
+    padding: 10px 12px;
+    border: 1px solid var(--toolbox-crystal-line) !important;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--card) 96%, var(--primary)) !important;
+  }
+
+  .page[data-page="tools"] .workspace :global(.toolbox-embedded-toolbar p:first-child) {
+    font-size: 15px;
+    font-weight: 750;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-embedded-toolbar p + p) { font-size: 12px; }
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-main),
+  .page[data-page="tools"] .workspace :global(.toolbox-segment-shell),
+  .page[data-page="tools"] .workspace :global(.toolbox-format-layout) { padding-block: 12px 0; }
+
+  /* Link extraction gets a compact form above a full-width reading surface. */
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-layout) {
+    height: 100%;
+    min-height: 480px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content minmax(180px, 1fr);
+    align-content: stretch;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-primary-pane) {
+    height: auto;
+    min-height: 0;
+    align-self: start;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-primary-pane > .toolbox-input-surface) {
+    height: auto;
+    flex: none;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-card .toolbox-extract-textarea) {
+    height: 72px;
+    min-height: 72px;
+    max-height: 72px;
+    flex: none;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-result-pane) {
+    height: 100%;
+    min-height: 180px;
+    max-height: none;
+    align-self: stretch;
+    overflow: hidden;
+  }
+
+  /* Editors benefit from side-by-side comparison and matching edges. */
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout) {
+    height: auto;
+    min-height: 480px;
+    flex: 1 0 480px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane),
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-result-pane) {
+    height: 100%;
+    min-height: 0;
+    align-self: stretch;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane) { display: flex; overflow: visible; }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane > .toolbox-input-surface) { height: 100%; flex: 1; }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane .toolbox-balanced-textarea) {
+    height: auto;
+    min-height: 180px;
+    max-height: none;
+    flex: 1 1 auto;
+  }
+
+  .page[data-page="tools"] .workspace :global(.toolbox-result-pane > .toolbox-results-block),
+  .page[data-page="tools"] .workspace :global(.toolbox-result-pane > .toolbox-empty-result),
+  .page[data-page="tools"] .workspace :global(.toolbox-result-pane > .toolbox-state-surface) {
+    height: 100%;
+    max-height: none;
+    flex: 1 1 auto;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-result-pane > .toolbox-results-block),
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-result-pane > .toolbox-empty-result),
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-result-pane > .toolbox-state-surface) {
+    min-height: 0;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-text-result-pane > .toolbox-results-block),
+  .page[data-page="tools"] .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result),
+  .page[data-page="tools"] .workspace :global(.toolbox-text-result-pane > .toolbox-state-surface) { height: auto; max-height: none; }
+  .page[data-page="tools"] .workspace :global(.toolbox-text-result-pane > .toolbox-results-block > .flex:first-child) { flex-wrap: wrap; gap: 8px; }
+  .page[data-page="tools"] .workspace :global(.toolbox-text-result-pane > .toolbox-results-block > .flex:first-child > .flex) { flex-wrap: wrap; }
+  .page[data-page="tools"] .workspace :global(.toolbox-text-result-pane > .toolbox-results-block > .flex:first-child span) { white-space: nowrap; }
+
+  .page[data-page="tools"] .workspace :global(.toolbox-card-actions.toolbox-command-row-two),
+  .page[data-page="tools"] .workspace :global(.toolbox-card-actions > .toolbox-command-row-two) {
+    grid-template-columns: minmax(80px, 120px) minmax(180px, 300px);
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-card-actions.toolbox-command-row-three),
+  .page[data-page="tools"] .workspace :global(.toolbox-card-actions > .toolbox-command-row-three) {
+    grid-template-columns: minmax(76px, 110px) minmax(0, 1fr) minmax(90px, auto);
+  }
+
+  .page[data-page="tools"] .workspace :global(.toolbox-embedded-workspace:has(.toolbox-segment-shell) > main) { overflow-y: auto; }
+  .page[data-page="tools"] .workspace :global(.toolbox-segment-shell) { height: auto; min-height: 100%; }
+  .page[data-page="tools"] .workspace :global(.toolbox-segment-shell > .toolbox-two-column) { height: auto; flex: 1 0 480px; }
+}
+
+@media (max-width: 1199px) {
+  .page[data-page="tools"] .railSummary { display: none; }
+}
+
+/* Keep the input focus treatment inside each toolbox card on every side. */
+.page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea),
+.page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea),
+.page[data-page="tools"] .workspace :global(.toolbox-extract-layout .toolbox-extract-textarea) {
+  box-sizing: border-box;
+  border: 1px solid var(--toolbox-crystal-line) !important;
+  border-radius: 8px;
+  background: var(--toolbox-crystal-field) !important;
+  color: var(--foreground) !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Extract cards already have padding; the segment and format cards do not. */
+.page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea),
+.page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea) {
+  align-self: center;
+  width: calc(100% - 28px);
+  margin: 12px 14px;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea::placeholder),
+.page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea::placeholder),
+.page[data-page="tools"] .workspace :global(.toolbox-extract-layout .toolbox-extract-textarea::placeholder) {
+  color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground)) !important;
+  opacity: 1 !important;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea:focus),
+.page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea:focus),
+.page[data-page="tools"] .workspace :global(.toolbox-extract-layout .toolbox-extract-textarea:focus) {
+  border-color: var(--primary) !important;
+  box-shadow: inset 0 0 0 1px var(--primary) !important;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-duration-toolbar .toolbox-toolbar-label) {
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 700;
+}

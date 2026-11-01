@@ -28,6 +28,16 @@ function isUpstreamVideoUrl(value: string) {
 function isVideoDeliveryUri(value: string) {
   return PERSISTENT_VIDEO_URI_PATTERN.test(value) || isUpstreamVideoUrl(value);
 }
+
+/** The atomic receipt is authoritative after completion; older RPCs may omit it. */
+function confirmedVideoDeliveryUri(receipt: JsonObject, original: string): string {
+  if (!Object.prototype.hasOwnProperty.call(receipt, "stable_storage_url")) return original;
+  const value = receipt.stable_storage_url;
+  if (typeof value !== "string" || value !== value.trim() || !isVideoDeliveryUri(value)) {
+    throw new VideoTerminalError("VIDEO_FINALIZATION_INVALID_DELIVERY", "视频交付地址无法确认，请查询原任务", 503, true);
+  }
+  return value;
+}
 const terminalGlobal = globalThis as typeof globalThis & { __videoTerminalLocks?: Map<string, Promise<VideoTerminalOutcome>> };
 const terminalLocks = terminalGlobal.__videoTerminalLocks ?? (terminalGlobal.__videoTerminalLocks = new Map<string, Promise<VideoTerminalOutcome>>());
 
@@ -510,6 +520,7 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
     });
     const completed = parseRpcObject(data);
     if (error || completed.already_completed !== true) throw new VideoTerminalError("VIDEO_FINALIZATION_INCOMPLETE", "无法确认原视频的完成状态", 503, true);
+    const confirmedStorageUrl = confirmedVideoDeliveryUri(completed, stableStorageUrl);
     const chargedYuan = finiteMoney(completed.price_charged, 2);
     await ensureVideoRevenue({
       userId: input.userId,
@@ -522,7 +533,7 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
       billingExempt,
     });
     return {
-      state: "completed", taskIdInternal: input.taskIdInternal, providerTaskId, stableStorageUrl,
+      state: "completed", taskIdInternal: input.taskIdInternal, providerTaskId, stableStorageUrl: confirmedStorageUrl,
       playbackUrl: await createVideoAccessUrl({ taskId: input.taskIdInternal, userId: input.userId, role: input.userRole, scope: "playback" }),
       priceCharged: chargedYuan, billingState: String(completed.billing_state || task.billing_state), newlyCompleted: false,
     };
@@ -756,6 +767,7 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
   if (String(finalized.status || "") !== "completed") {
     throw new VideoTerminalError("VIDEO_FINALIZATION_INCOMPLETE", "视频终态事务未返回完成状态，禁止交付", 503, true);
   }
+  const confirmedStorageUrl = confirmedVideoDeliveryUri(finalized, stableStorageUrl);
   const chargedYuan = finiteMoney(finalized.price_charged, 2);
   const newlyCompleted = finalized.already_completed !== true;
   const playbackUrl = await createVideoAccessUrl({
@@ -786,7 +798,7 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
     taskIdInternal: input.taskIdInternal,
     providerTaskId,
     playbackUrl,
-    stableStorageUrl,
+    stableStorageUrl: confirmedStorageUrl,
     priceCharged: Number.isFinite(chargedYuan) ? chargedYuan : 0,
     billingState: String(finalized.billing_state || (billingExempt || explicitlyFree ? "not_required" : "settled")),
     newlyCompleted,

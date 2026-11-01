@@ -1,9 +1,12 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { modelMutationAttempt, type ModelMutationAttempt } from "@/components/admin/model-mutation-request";
 import UnifiedModelDialog from "./unified-model-dialog";
 import AdminVideoValidationDialog from "./admin-video-validation-dialog";
 import AdminImageValidationDialog from "./admin-image-validation-dialog";
 import PlatformConfigurationReleasePanel from "./admin/PlatformConfigurationReleasePanel";
+import ModelCandidateNotice, { type ModelCandidateNoticeState } from "./admin/ModelCandidateNotice";
+import { readModelCandidateReceipt, modelCandidateRequestUncertain, modelCandidateSaveMessage } from "./admin/model-candidate-receipt";
 import { modelConnectionSummary, formatModelPrice } from "@/lib/model-connection-summary";
 import { getVideoBillingUnit } from "@/lib/video-model-capabilities";
 import { normalizeDisplayText } from "@/lib/display-normalization";
@@ -218,6 +221,7 @@ export default function UnifiedModelsTab({
   const [activeType, setActiveType] = useState<ModelType>("video");
   const [showDialog, setShowDialog] = useState(false);
   const [editingModel, setEditingModel] = useState<UnifiedModel | null>(null);
+  const [modelDraft, setModelDraft] = useState<Record<string, unknown> | null>(null);
   const [dialogModelType, setDialogModelType] = useState<ModelType>("video");
   const [searchQuery, setSearchQuery] = useState("");
   const [testingModelId, setTestingModelId] = useState<string | null>(null);
@@ -230,11 +234,20 @@ export default function UnifiedModelsTab({
   const [showCredentialDetails, setShowCredentialDetails] = useState(false);
   const [modelPoolReleaseRefreshKey, setModelPoolReleaseRefreshKey] = useState(0);
   const [focusReleaseId, setFocusReleaseId] = useState<string | null>(null);
+  const [candidateNotice, setCandidateNotice] = useState<ModelCandidateNoticeState | null>(null);
+  const [candidateSaving, setCandidateSaving] = useState(false);
+  const [candidateUncertain, setCandidateUncertain] = useState(false);
+  const [modelSaveError, setModelSaveError] = useState("");
+  const candidateWriteLock = useRef(false);
+  const saveAttempt = useRef<ModelMutationAttempt | null>(null);
+  useEffect(() => {
+    const candidateId = new URLSearchParams(window.location.search).get("candidateId");
+    if (candidateId && /^[a-f0-9-]{36}$/iu.test(candidateId)) setFocusReleaseId(candidateId);
+  }, []);
   const [textActions, setTextActions] = useState<Record<string, { busy?: "validate" | "activate"; message?: string; failed?: boolean }>>({});
   const textActionLocks = useRef(new Set<string>());
   const textConfigurationSnapshots = useRef(new Map<string, string>());
   const [quickAddText, setQuickAddText] = useState("");
-  const [quickAddCredential, setQuickAddCredential] = useState("");
   const [quickAddBusy, setQuickAddBusy] = useState(false);
   const [quickAddMsg, setQuickAddMsg] = useState("");
   const [extractPrice, setExtractPrice] = useState<string>("");
@@ -336,7 +349,6 @@ export default function UnifiedModelsTab({
     setEditingModel(null);
     setValidatingVideo(null);
     setValidatingImage(null);
-    setQuickAddCredential("");
     setQuickAddText("");
     setQuickAddMsg("");
     setDraggedModelId(null);
@@ -481,39 +493,49 @@ export default function UnifiedModelsTab({
 
   // ── 添加模型 ──
   const handleAdd = (type: ModelType) => {
-    if (!canManageModels) return;
+    if (!canManageModels || candidateWriteLock.current || candidateUncertain) return;
+    setModelSaveError("");
+    setModelDraft(null);
     setEditingModel(null);
     setDialogModelType(type);
     setShowDialog(true);
   };
 
-  // ── 一句话添加视频模型（即见即所得）──
+  // ── 一句话只解析非敏感信息，完整配置仍经详细表单确认 ──
   const handleQuickAdd = async () => {
-    if (!canManageModels || !quickAddText.trim() || !quickAddCredential.trim() || quickAddBusy) return;
+    if (!canManageModels || !quickAddText.trim() || quickAddBusy || candidateWriteLock.current || candidateUncertain) return;
     setQuickAddBusy(true); setQuickAddMsg("");
     try {
       const response = await fetch("/api/admin/video-models/quick-add", {
         method: "POST",
         headers: { ...authHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify({ text: quickAddText, credential: quickAddCredential }),
+        body: JSON.stringify({ text: quickAddText }),
       });
       const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || "添加失败");
-      setQuickAddMsg("✅ 已建立待发布候选：" + (data.model?.name || "") + (data.model?.price ? "（售 ¥" + data.model.price + "）" : "") + "；完成差异预览和发布后才会生效");
-      setQuickAddText("");
-      setModelPoolReleaseRefreshKey((value) => value + 1);
-      void loadModels();
+      if (data.requiresDetails === true && data.code === "DETAIL_CONFIGURATION_REQUIRED" && data.parsed?.base && data.parsed?.model) {
+        setEditingModel(null);
+        setDialogModelType("video");
+        setModelDraft({ model_type: "video", name: String(data.parsed.model), model_name: String(data.parsed.model),
+          api_endpoint: `${String(data.parsed.base).replace(/\/+$/u, "")}/v1`,
+          cost_per_use: typeof data.parsed.price === "number" && Number.isFinite(data.parsed.price) ? data.parsed.price : "" });
+        setModelSaveError("");
+        setShowDialog(true);
+        setQuickAddMsg("已解析，尚未保存。请在详细表单确认渠道、协议、成本、计费单位和能力后，再保存为候选。");
+        return;
+      }
+      throw new Error(data.error || data.message || "未获得完整解析结果，请使用上方详细添加入口。");
     } catch (cause) {
-      setQuickAddMsg(cause instanceof Error ? cause.message : "添加失败");
+      setQuickAddMsg(cause instanceof Error ? cause.message : "解析未完成，请使用详细添加入口；尚未保存任何候选。");
     } finally {
-      setQuickAddCredential("");
       setQuickAddBusy(false);
     }
   };
 
   // ── 编辑模型 ──
   const handleEdit = (model: UnifiedModel) => {
-    if (!canManageModels) return;
+    if (!canManageModels || candidateWriteLock.current || candidateUncertain) return;
+    setModelSaveError("");
+    setModelDraft(null);
     setEditingModel(model);
     setDialogModelType(String(model.model_type) as ModelType);
     setShowDialog(true);
@@ -560,15 +582,22 @@ export default function UnifiedModelsTab({
   }, [loadModels, orderSaveState]);
 
   const savePendingOrder = useCallback(async () => {
-    if (!canManageModels || orderSaveState === "saving" || !pendingOrderType || pendingOrders.length === 0) return;
+    if (!canManageModels || orderSaveState === "saving" || !pendingOrderType || pendingOrders.length === 0 || candidateWriteLock.current || candidateUncertain) return;
+    candidateWriteLock.current = true;
+    setCandidateSaving(true);
     setOrderSaveState("saving");
+    let stagedReleaseId = "";
+    let publishAttempted = false;
+    let lastStatus: number | undefined;
     try {
       const requestJson = async (pathname: string, init: RequestInit = {}) => {
+        lastStatus = undefined;
         const response = await fetch(pathname, {
           ...init,
           headers: { "Content-Type": "application/json", ...authHeaders, ...(init.headers || {}) },
           cache: "no-store",
         });
+        lastStatus = response.status;
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(body.error || `请求失败 (${response.status})`);
         return body;
@@ -577,8 +606,11 @@ export default function UnifiedModelsTab({
         method: "PATCH",
         body: JSON.stringify({ model_type: pendingOrderType, orders: pendingOrders }),
       });
-      const releaseId = String(staged.result?.release?.id || "");
-      if (!releaseId) throw new Error("排序候选缺少版本编号");
+      const receipt = readModelCandidateReceipt(staged);
+      const releaseId = receipt.id;
+      stagedReleaseId = releaseId;
+      setFocusReleaseId(releaseId);
+      setModelPoolReleaseRefreshKey(value => value + 1);
       await requestJson("/api/admin/model-pool-releases", {
         method: "POST",
         body: JSON.stringify({ action: "validate", releaseId }),
@@ -586,6 +618,7 @@ export default function UnifiedModelsTab({
       const preview = await requestJson(`/api/admin/model-pool-releases?previewReleaseId=${encodeURIComponent(releaseId)}`);
       const previewSha256 = String(preview.preview?.previewSha256 || "");
       if (!/^[a-f0-9]{64}$/u.test(previewSha256)) throw new Error("排序差异预览指纹无效");
+      publishAttempted = true;
       await requestJson("/api/admin/model-pool-releases", {
         method: "POST",
         body: JSON.stringify({ action: "publish", releaseId, previewSha256 }),
@@ -599,6 +632,7 @@ export default function UnifiedModelsTab({
       setPendingOrders([]);
       setModelPoolReleaseRefreshKey((value) => value + 1);
       setOrderSaveState("saved");
+      setCandidateNotice(null);
       onModelsChange?.();
       setTimeout(() => setOrderSaveState("idle"), 3000);
     } catch (cause) {
@@ -606,9 +640,19 @@ export default function UnifiedModelsTab({
       setPendingOrders([]);
       await loadModels();
       setOrderSaveState("failed");
-      alert(cause instanceof Error ? `排序保存失败：${cause.message}` : "排序保存失败，已恢复服务器顺序");
+      const unknown = publishAttempted || modelCandidateRequestUncertain(lastStatus)
+        || (!stagedReleaseId && lastStatus != null && lastStatus >= 200 && lastStatus < 300);
+      setCandidateUncertain(unknown);
+      setModelPoolReleaseRefreshKey(value => value + 1);
+      const message = unknown ? "排序发布结果待确认。已重新读取当前顺序，请核对版本列表和本次候选，勿重复保存。"
+        : `排序候选流程未完成：${cause instanceof Error ? cause.message : "操作未通过"}；当前顺序已重新读取。`;
+      setCandidateNotice({ kind: unknown ? "unknown" : stagedReleaseId ? "staged" : "rejected", message,
+        ...(stagedReleaseId ? { receipt: { id: stagedReleaseId, version: null } } : {}) });
+    } finally {
+      candidateWriteLock.current = false;
+      setCandidateSaving(false);
     }
-  }, [authHeaders, canManageModels, loadModels, onModelsChange, orderSaveState, pendingOrderType, pendingOrders]);
+  }, [authHeaders, canManageModels, candidateUncertain, loadModels, onModelsChange, orderSaveState, pendingOrderType, pendingOrders]);
 
   // ── 检查计费字段是否变更 ──
   const checkBillingChange = (formData: Record<string, unknown>, original: UnifiedModel | null): { changed: boolean; details: string[] } => {
@@ -662,7 +706,7 @@ export default function UnifiedModelsTab({
 
   // ── 保存模型 ──
   const handleSave = async (formData: Record<string, unknown>) => {
-    if (!token || !canManageModels) return;
+    if (!token || !canManageModels || candidateWriteLock.current || candidateUncertain) return;
     const isEdit = !!formData.id;
 
     // 编辑时检查计费字段变更，需二次确认
@@ -679,38 +723,58 @@ export default function UnifiedModelsTab({
       }
     }
 
+    candidateWriteLock.current = true;
+    setCandidateSaving(true);
+    setModelSaveError("");
+    let responseStatus: number | undefined;
+    let responseCode = "";
+    let savedReceipt: ReturnType<typeof readModelCandidateReceipt> | null = null;
     try {
       // The API deliberately returns 202 while a model is staged in the
       // candidate pool. Read the body in both success and error cases so the
       // operator sees the release id instead of assuming the model vanished.
       const res = await fetch("/api/admin/models", {
         method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
+        headers: { "Content-Type": "application/json", ...authHeaders,
+          "Idempotency-Key": (saveAttempt.current = modelMutationAttempt(saveAttempt.current, isEdit ? "PUT" : "POST", formData)).id },
         body: JSON.stringify(formData),
       });
       const data = await res.json().catch(() => ({})) as {
         error?: string;
+        code?: string;
         staged?: boolean;
         published?: boolean;
         result?: { release?: { id?: string; release_version?: string } };
       };
+      responseStatus = res.status;
+      responseCode = data.code || "";
       if (!res.ok) {
-        alert(`${data.error || "保存失败"}${data.error ? `（HTTP ${res.status}）` : ""}`);
-        return;
+        throw new Error(`${data.error || "模型候选未保存"}（HTTP ${res.status}）`);
       }
+      const receipt = readModelCandidateReceipt(data);
+      savedReceipt = receipt;
+      saveAttempt.current = null;
+      setFocusReleaseId(receipt.id);
+      setCandidateNotice({ kind: "staged", receipt, message: modelCandidateSaveMessage(receipt, "已保存为待发布候选，当前用户目录未改变。请核对本次候选并完成后续步骤。") });
       setShowDialog(false);
       setEditingModel(null);
       setModelPoolReleaseRefreshKey((value) => value + 1);
       await loadModels();
       onModelsChange?.();
-      if (data.staged && !data.published) {
-        const release = data.result?.release;
-        setFocusReleaseId(release?.id || null);
-        const releaseLabel = release?.release_version || release?.id || "待发布候选";
-        alert(`已保存为待发布候选（${releaseLabel}）。请在模型池发布面板完成校验、差异预览和发布后，才会进入现行模型目录。`);
-      }
     } catch (error) {
-      alert(error instanceof Error ? `保存失败：${error.message}` : "网络错误");
+      if (savedReceipt) {
+        setCandidateNotice({ kind: "staged", receipt: savedReceipt, message: modelCandidateSaveMessage(savedReceipt, "候选已保存，目录刷新暂未完成。请刷新版本列表核对本次候选，无需重新提交。") });
+        return;
+      }
+      const unknown = modelCandidateRequestUncertain(responseStatus, responseCode) || (responseStatus != null && responseStatus >= 200 && responseStatus < 300);
+      const message = unknown ? "保存结果待确认。请关闭编辑窗口后刷新候选列表核对，避免重复创建；本次不会自动重试。"
+        : error instanceof Error ? error.message : "模型候选未保存，请检查填写内容。";
+      setCandidateUncertain(unknown);
+      setModelSaveError(message);
+      setCandidateNotice({ kind: unknown ? "unknown" : "rejected", message });
+    } finally {
+      candidateWriteLock.current = false;
+      setCandidateSaving(false);
     }
   };
 
@@ -751,11 +815,16 @@ export default function UnifiedModelsTab({
 
   // ── 删除模型 ──
   const handleDelete = async (model: UnifiedModel) => {
-    if (!canManageModels) return;
+    if (!canManageModels || candidateWriteLock.current || candidateUncertain) return;
     const mt = String(model.model_type || "");
     const name = String(model.name || "");
     if (!confirm(`确认给模型「${name}」建立退役候选？发布前不会影响当前运行版本；发布后也可从历史版本建立回滚候选。`)) return;
 
+    candidateWriteLock.current = true;
+    setCandidateSaving(true);
+    let responseStatus: number | undefined;
+    let responseCode = "";
+    let savedRetirementReceipt: ReturnType<typeof readModelCandidateReceipt> | null = null;
     try {
       const params = new URLSearchParams({
         model_type: mt,
@@ -769,16 +838,29 @@ export default function UnifiedModelsTab({
         method: "DELETE",
         headers: authHeaders,
       });
-      if (res.ok) {
-        setModelPoolReleaseRefreshKey((value) => value + 1);
-        loadModels();
-        onModelsChange?.();
-      } else {
-        const data = await res.json();
-        alert(data.error || "删除失败");
+      const data = await res.json().catch(() => ({}));
+      responseStatus = res.status;
+      responseCode = String(data.code || "");
+      if (!res.ok) throw new Error(data.error || "未能建立退役候选");
+      const receipt = readModelCandidateReceipt(data);
+      savedRetirementReceipt = receipt;
+      setFocusReleaseId(receipt.id);
+      setCandidateNotice({ kind: "staged", receipt, message: `已为「${name}」建立退役候选，当前运行模型未删除。请先核对差异，再决定是否发布。` });
+      setModelPoolReleaseRefreshKey((value) => value + 1);
+      await loadModels();
+      onModelsChange?.();
+    } catch (cause) {
+      if (savedRetirementReceipt) {
+        setCandidateNotice({ kind: "staged", receipt: savedRetirementReceipt, message: "退役候选已保存，目录刷新暂未完成。请核对本次候选，无需重新提交。" });
+        return;
       }
-    } catch {
-      alert("网络错误");
+      const unknown = modelCandidateRequestUncertain(responseStatus, responseCode) || (responseStatus != null && responseStatus >= 200 && responseStatus < 300);
+      const message = unknown ? "退役候选保存结果待确认。请先刷新版本列表核对，本次不会自动重试。" : cause instanceof Error ? cause.message : "未能建立退役候选";
+      setCandidateUncertain(unknown);
+      setCandidateNotice({ kind: unknown ? "unknown" : "rejected", message });
+    } finally {
+      candidateWriteLock.current = false;
+      setCandidateSaving(false);
     }
   };
 
@@ -1184,22 +1266,27 @@ export default function UnifiedModelsTab({
           )}
           <button
             onClick={() => handleEdit(m)}
-            className="px-3 py-1.5 text-xs rounded-lg border hover:bg-[var(--muted)]/50 transition"
+            disabled={candidateSaving || candidateUncertain}
+            className="px-3 py-1.5 text-xs rounded-lg border hover:bg-[var(--muted)]/50 transition disabled:opacity-40"
           >
             编辑
           </button>
           <button
             onClick={() => handleDelete(m)}
-            className="px-3 py-1.5 text-xs rounded-lg border border-red-300 text-red-500 hover:bg-red-50 transition"
+            disabled={candidateSaving || candidateUncertain}
+            className="px-3 py-1.5 text-xs rounded-lg border border-red-300 text-red-500 hover:bg-red-50 transition disabled:opacity-40"
           >
             删除
           </button>
         </div>}
       </div>
+
     );
   };
 
   const tc = MODEL_TYPE_CONFIG[activeType];
+  const ModelHelpContainer = isExtractTab ? "div" : "details";
+  const ModelHelpHeading = isExtractTab ? "p" : "summary";
 
   return (
     <div className="space-y-4">
@@ -1217,7 +1304,8 @@ export default function UnifiedModelsTab({
         {!isExtractTab && canManageModels && (
           <button
             onClick={() => handleAdd(activeType)}
-            className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white font-medium hover:opacity-90 transition flex items-center gap-1.5"
+            disabled={candidateSaving || candidateUncertain}
+            className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white font-medium hover:opacity-90 transition flex items-center gap-1.5 disabled:opacity-40"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 4v16m8-8H4" />
@@ -1227,19 +1315,35 @@ export default function UnifiedModelsTab({
         )}
       </div>
 
+      {canManageModels && !isExtractTab && <ModelCandidateNotice
+        state={candidateNotice}
+        onReview={() => {
+          setFocusReleaseId(candidateNotice?.receipt?.id || null);
+          setModelPoolReleaseRefreshKey(value => value + 1);
+          const panel = document.querySelector('[data-testid="platform-release-panel-model-pool"]');
+          panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
+        onAcknowledge={() => {
+          if (!confirm("请先核对模型池版本列表。确认已经查清本次保存结果后，才继续编辑；这不会自动重发原请求。")) return;
+          setCandidateUncertain(false);
+          setModelSaveError("");
+          setCandidateNotice(null);
+        }}
+      />}
+
       {token && canManageModels && (
         <PlatformConfigurationReleasePanel
           token={token}
           kind="model-pool"
           refreshKey={modelPoolReleaseRefreshKey}
           focusReleaseId={focusReleaseId}
-          onPublished={() => { setTextActions({}); void loadModels(); onModelsChange?.(); alert("模型候选已发布。新增或变更的对话模型请从对应卡片执行真实文字验证，通过后再显式启用。"); }}
+          onPublished={() => { setTextActions({}); setCandidateNotice(null); void loadModels(); onModelsChange?.(); alert("模型池版本已发布。新增或变更模型仍需按对应卡片完成真实验证与启用，并核对工作台分配及普通用户使用结果。"); }}
         />
       )}
 
       {canManageModels && <section
         data-testid="credential-safety-panel"
-        className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.04] p-4"
+        className={`rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.04] ${isExtractTab ? "p-4" : "p-3"}`}
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1254,6 +1358,8 @@ export default function UnifiedModelsTab({
           <button
             type="button"
             onClick={() => setShowCredentialDetails((value) => !value)}
+            aria-expanded={showCredentialDetails}
+            aria-controls="credential-safety-details"
             className="rounded-lg border border-emerald-600/35 bg-[var(--card)] px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-500/10"
           >
             {showCredentialDetails ? "收起清单" : "查看安全清单"}
@@ -1261,7 +1367,13 @@ export default function UnifiedModelsTab({
         </div>
         {credentialHealth ? (
           <>
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6" data-testid="credential-safety-summary">
+            {!isExtractTab && <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]" data-testid="credential-safety-compact-summary">
+              <span>模型 <strong className="font-semibold text-[var(--foreground)]">{credentialHealth.summary.total}</strong></span>
+              <span>已配置 <strong className="font-semibold text-[var(--foreground)]">{credentialHealth.summary.configured}</strong></span>
+              <span>未配置 <strong className="font-semibold text-[var(--foreground)]">{credentialHealth.summary.missing}</strong></span>
+              {credentialHealth.summary.legacyReview > 0 && <span className="text-amber-700">{credentialHealth.summary.legacyReview} 项旧字段待迁移</span>}
+            </div>}
+            {(isExtractTab || showCredentialDetails) && <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6" data-testid="credential-safety-summary">
               {[
                 ["模型总数", credentialHealth.summary.total],
                 ["已配置", credentialHealth.summary.configured],
@@ -1275,14 +1387,14 @@ export default function UnifiedModelsTab({
                   <div className="mt-1 text-lg font-semibold text-[var(--foreground)]">{value}</div>
                 </div>
               ))}
-            </div>
-            {credentialHealth.summary.legacyReview > 0 && (
+            </div>}
+            {(isExtractTab || showCredentialDetails) && credentialHealth.summary.legacyReview > 0 && (
               <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
                 {credentialHealth.summary.legacyReview} 项仍使用受权限保护的旧版字段；可以运行，但应逐项迁移到独立凭据绑定或服务器密钥引用。迁移不等于调用成功，仍需单独做真实验收。
               </p>
             )}
             {showCredentialDetails && (
-              <div className="mt-4 max-h-80 space-y-2 overflow-y-auto pr-1" data-testid="credential-safety-details">
+              <div id="credential-safety-details" className="mt-4 max-h-80 space-y-2 overflow-y-auto pr-1" data-testid="credential-safety-details">
                 {credentialHealth.credentials.map((item) => {
                   const validationLabel = item.validationStatus === "verified" ? "真实成功"
                     : item.validationStatus === "pending" ? "待终态"
@@ -1313,8 +1425,13 @@ export default function UnifiedModelsTab({
 
       {/* ── 视频模型快速候选：非敏感配置与只写密钥分离 ── */}
       {canManageModels && activeType === "video" && (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3" data-testid="secure-video-quick-add">
-          <div className="flex items-center gap-2 flex-wrap">
+        <details className="group rounded-xl border border-[var(--border)] bg-[var(--card)] p-3" data-testid="secure-video-quick-add">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold">
+            <svg aria-hidden="true" className="h-3.5 w-3.5 transition-transform group-open:rotate-90" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m7 4 6 6-6 6" /></svg>
+            已有视频配置解析
+            <span className="ml-auto font-normal text-[var(--muted-foreground)]">可选 · 仅解析，不保存</span>
+          </summary>
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
           <input
             value={quickAddText}
             onChange={(e) => setQuickAddText(e.target.value)}
@@ -1322,27 +1439,17 @@ export default function UnifiedModelsTab({
             aria-label="视频模型非敏感配置"
             className="min-w-[360px] flex-[2] px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm outline-none focus:border-green-500"
           />
-          <input
-            type="password"
-            value={quickAddCredential}
-            onChange={(e) => setQuickAddCredential(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void handleQuickAdd(); }}
-            placeholder="渠道密钥（只写，本页不回显）"
-            aria-label="视频模型渠道密钥"
-            autoComplete="new-password"
-            className="min-w-[260px] flex-1 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm outline-none focus:border-green-500"
-          />
           <button
             onClick={() => void handleQuickAdd()}
-            disabled={quickAddBusy || !quickAddText.trim() || !quickAddCredential.trim()}
+            disabled={quickAddBusy || !quickAddText.trim() || candidateSaving || candidateUncertain}
             className="px-4 py-2 rounded-lg border border-green-500 text-green-600 text-sm font-medium hover:bg-green-500/10 transition disabled:opacity-50 whitespace-nowrap"
           >
-            {quickAddBusy ? "校验建候选中…" : "校验并建立候选"}
+            {quickAddBusy ? "解析中…" : "解析并补充配置"}
           </button>
           </div>
-          <p className="mt-2 text-[11px] text-[var(--muted-foreground)]">密钥仅随本次 HTTPS 请求提交，响应与候选预览不含明文或尾号；这里只建立候选，不会绕过差异预览、真实验收和发布门禁。</p>
+          <p className="mt-2 text-[11px] text-[var(--muted-foreground)]">这里只解析地址、模型名和售价，不检测外站、不接收密钥、不保存候选。请勿在此粘贴密钥；完整接入资料请在详细表单确认。</p>
           {quickAddMsg && <p className="mt-2 text-xs text-[var(--muted-foreground)]">{quickAddMsg}</p>}
-        </div>
+        </details>
       )}
 
       {/* ── 模型类型切换 ── */}
@@ -1435,7 +1542,7 @@ export default function UnifiedModelsTab({
               {orderSaveState === "dirty" ? `${MODEL_TYPE_CONFIG[pendingOrderType || activeType].label}排序已修改，尚未保存`
                 : orderSaveState === "saving" ? "正在校验、预览并发布排序…"
                   : orderSaveState === "saved" ? "排序已发布，刷新页面仍会保持"
-                    : orderSaveState === "failed" ? "排序保存失败，已恢复服务器顺序"
+                    : orderSaveState === "failed" ? "排序流程未确认完成，请核对候选与当前顺序"
                       : "拖拽、置顶或输入序号后，请点击“保存排序”"}
             </p>
             <p className="mt-0.5 text-[11px] opacity-80">保存会为本次排序建立独立候选，并完成校验、差异预览、原子发布和数据库读回。</p>
@@ -1460,12 +1567,13 @@ export default function UnifiedModelsTab({
       )}
 
       {/* ── 模型配置说明 ── */}
-      <div className={`rounded-xl p-4 border ${tc.borderColor} ${tc.bgColor}`}>
-        <p className={`text-xs font-bold ${tc.color} mb-2 flex items-center gap-1.5`}>
+      <ModelHelpContainer className={`rounded-xl border ${isExtractTab ? "p-4" : "group px-4 py-3"} ${tc.borderColor} ${tc.bgColor}`}>
+        <ModelHelpHeading className={`text-xs font-bold ${tc.color} ${isExtractTab ? "mb-2" : "cursor-pointer list-none"} flex items-center gap-1.5`}>
           <span className={`inline-block w-2 h-2 rounded-full ${tc.color.replace("text-", "bg-")}`} />
           {tc.label}配置说明
-        </p>
-        <div className="text-xs text-[var(--muted-foreground)] space-y-1">
+          {!isExtractTab && <svg aria-hidden="true" className="ml-auto h-3.5 w-3.5 transition-transform group-open:rotate-90" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m7 4 6 6-6 6" /></svg>}
+        </ModelHelpHeading>
+        <div className={`text-xs text-[var(--muted-foreground)] space-y-1 ${isExtractTab ? "" : "mt-2"}`}>
           {!canManageModels && !isExtractTab && (
             <>
               <p>• 只读账号仅显示用户侧可见的模型名称、能力、状态和售价</p>
@@ -1501,7 +1609,7 @@ export default function UnifiedModelsTab({
             </>
           )}
         </div>
-      </div>
+      </ModelHelpContainer>
 
       {/* ── 模型列表 / 提取插件选择 ── */}
       {isExtractTab ? (
@@ -1914,9 +2022,13 @@ export default function UnifiedModelsTab({
       {canManageModels && showDialog && (
         <UnifiedModelDialog
           model={editingModel as Record<string, unknown> | null}
+          initialDraft={modelDraft || undefined}
           modelType={dialogModelType as "drawing" | "text" | "video"}
           onSave={handleSave}
-          onClose={() => { setShowDialog(false); setEditingModel(null); }}
+          onClose={() => { if (!candidateWriteLock.current) { setShowDialog(false); setEditingModel(null); } }}
+          saving={candidateSaving}
+          saveBlocked={candidateUncertain}
+          saveError={modelSaveError}
           onTest={handleTest}
           testing={testingModelId !== null}
           token={token || undefined}

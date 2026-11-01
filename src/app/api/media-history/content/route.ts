@@ -3,6 +3,7 @@ import { authorizeCurrentApiUser } from "@/lib/current-api-user";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { storageManager, type StorageProviderType } from "@/storage/object";
 import { confirmedImageSourceExpiry, markImageProviderSourceExpired, readProviderImage } from "@/lib/image-provider-delivery";
+import { parseMediaHistoryGallery } from "@/lib/media-history-gallery";
 
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
 
@@ -34,20 +35,10 @@ interface OwnedImageRow {
 }
 
 function imageAssetFromGallery(content: unknown, index: number): GalleryAssetReference | null {
-  if (typeof content !== "string") return null;
-  try {
-    const parsed = JSON.parse(content) as {
-      type?: string;
-      images?: Array<{ assetId?: unknown; storageKey?: unknown }>;
-    };
-    if (parsed.type !== "image_gallery" || !Array.isArray(parsed.images)) return null;
-    const image = parsed.images[index];
-    const assetId = String(image?.assetId || "").trim();
-    const storageKey = String(image?.storageKey || "").trim();
-    return assetId && storageKey ? { assetId, storageKey } : null;
-  } catch {
-    return null;
-  }
+  const image = parseMediaHistoryGallery(content)?.images[index];
+  const assetId = String(image?.assetId || "").trim();
+  const storageKey = String(image?.storageKey || "").trim();
+  return assetId && storageKey ? { assetId, storageKey } : null;
 }
 
 function safeFileName(value: unknown, index: number): string {
@@ -127,7 +118,7 @@ export async function GET(request: NextRequest) {
   if (directAssetRequest && !ASSET_UUID.test(assetId)) {
     return NextResponse.json({ error: "媒体参数无效" }, { status: 400 });
   }
-  if (!directAssetRequest && (!/^[a-zA-Z0-9_.-]+$/.test(id) || !Number.isInteger(index) || index < 0 || index > 40)) {
+  if (!directAssetRequest && (!/^[a-zA-Z0-9_.-]+$/.test(id) || !Number.isSafeInteger(index) || index < 0)) {
     return NextResponse.json({ error: "媒体参数无效" }, { status: 400 });
   }
 

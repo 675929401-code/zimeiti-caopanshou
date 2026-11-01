@@ -111,7 +111,7 @@ export function handleStreamResponse(
       const liveDelivery = ctx.allowLiveStreamDelivery === true;
       const protectedDelivery = protectPrompt && liveDelivery ? createBipGuardedStream(protectedPrompt) : null;
       const bufferedResponseChunks: Uint8Array[] = [];
-      let deliveryDecoder = new SseEventStreamDecoder();
+      const deliveryDecoder = new SseEventStreamDecoder();
       let lastProgressAt = 0;
       let lastProgressChars = 0;
       let reservationNeedsReconciliation = false;
@@ -171,10 +171,8 @@ export function handleStreamResponse(
       };
 
       let proxyStream: ReadableStream<Uint8Array>;
-      // A relay gateway answers 200 first and only then rejects the SSE stream
-      // while the account's concurrency slot is busy. Nothing was generated in
-      // that window, so a bounded retry is safe and avoids a burnt user send.
-      const MAX_CONCURRENCY_RETRIES = 2;
+      // One explicit send authorizes one provider invocation, including when
+      // the relay rejects its concurrency queue. Retrying is a user decision.
 
       // ── 周期性心跳定时器（在 try 外声明，确保 catch 可清理） ──
       let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -264,8 +262,9 @@ export function handleStreamResponse(
             // until the delivered, settled answer has a confirmed history row.
             if (ctx.conversationId && ctx.verifiedUserId && fullContent) {
               const saveClient = getSupabaseClient();
+              const persistedMessageId = crypto.randomUUID();
               try { await requireAssistantPersistence(saveClient.from("conversation_messages").insert({
-                id: crypto.randomUUID(), conversation_id: ctx.conversationId, user_id: ctx.verifiedUserId,
+                id: persistedMessageId, conversation_id: ctx.conversationId, user_id: ctx.verifiedUserId,
                 agent_id: ctx.agentId || "llm", role: "assistant", content: fullContent,
                 reasoning_content: reasoningContent || "",
                 created_at: new Date(Date.now() + 1).toISOString(),
@@ -278,6 +277,10 @@ export function handleStreamResponse(
                 safeClose();
                 return;
               }
+              safeEnqueue(encoder.encode(`data: ${JSON.stringify({
+                type: "message_persisted", role: "assistant", conversation_id: ctx.conversationId,
+                message_id: persistedMessageId,
+              })}\n\n`));
             }
             recordModelSuccess(ctx.useModel);
             safeEnqueue(encoder.encode("data: [DONE]\n\n"));
@@ -293,57 +296,35 @@ export function handleStreamResponse(
           },
         }), { preventAbort: true, preventCancel: true });
 
-        // ── 在流内连接上游；仅在上游以“并发排队已满”拒绝且本次未交付任何内容时重试 ──
-        for (let attempt = 0; ; attempt += 1) {
-          if (ctx.isZhipuAI) {
-            proxyStream = await zhipuChatStream(chatRequest, {
-              apiBase: ctx.apiBase,
-              apiKey: ctx.useApiKey,
-              timeout: Math.min(ctx.agentTimeout, 300),
-              onContent: (text) => { fullContent += text; },
-              onReasoning: (text) => { reasoningContent += text; },
-              onUsage: (usage) => {
-                usageData = usage;
-              },
-              onFirstByte: (ttfb) => {
-                console.log(`[PERF] ZhipuAI TTFB: ${ttfb}ms (model=${ctx.useModel}), 路由总耗时=${Date.now() - __wrapStart}ms`);
-              },
-            });
-          } else {
-            proxyStream = await proxy!.chatStream(chatRequest, {
-              onContent: (text) => { fullContent += text; },
-              onReasoning: (text) => { reasoningContent += text; },
-              onUsage: (usage) => {
-                usageData = usage;
-              },
-              onFirstByte: (ttfb) => {
-                console.log(`[PERF] LLM Proxy TTFB: ${ttfb}ms (model=${ctx.useModel}), 路由总耗时=${Date.now() - __wrapStart}ms`);
-              },
-            });
-          }
-          try {
-            await pipeResponse(proxyStream);
-            break;
-          } catch (cause) {
-            const failure = cause instanceof LlmStreamError ? cause : responseStartError(cause);
-            const retryQueueRejection = failure.code === "LLM_UPSTREAM_CONCURRENCY_LIMIT"
-              && !outerClosed && !liveContentDelivered
-              && fullContent.length === 0 && reasoningContent.length === 0
-              && attempt < MAX_CONCURRENCY_RETRIES;
-            if (!retryQueueRejection) throw cause;
-            console.warn(`[LLM Route] 上游通道并发已满，第 ${attempt + 1}/${MAX_CONCURRENCY_RETRIES} 次自动重试: model=${ctx.useModel}, agent=${ctx.agentName}`);
-            await new Promise((resolve) => setTimeout(resolve, 1_500 * (attempt + 1)));
-            startHeartbeat();
-            upstreamError = null;
-            deliveryDecoder = new SseEventStreamDecoder();
-            bufferedResponseChunks.length = 0;
-            lastProgressAt = 0;
-            lastProgressChars = 0;
-            fullContent = "";
-            reasoningContent = "";
-            usageData = null;
-          }
+        // Connect exactly once. Queue rejection, network failure and partial
+        // output all flow to the same visible terminal failure below.
+        if (ctx.isZhipuAI) {
+          proxyStream = await zhipuChatStream(chatRequest, {
+            apiBase: ctx.apiBase,
+            apiKey: ctx.useApiKey,
+            timeout: Math.min(ctx.agentTimeout, 300),
+            onContent: (text) => { fullContent += text; },
+            onReasoning: (text) => { reasoningContent += text; },
+            onUsage: (usage) => {
+              usageData = usage;
+            },
+            onFirstByte: (ttfb) => {
+              console.log(`[PERF] ZhipuAI TTFB: ${ttfb}ms (model=${ctx.useModel}), 路由总耗时=${Date.now() - __wrapStart}ms`);
+            },
+          });
+        } else {
+          proxyStream = await proxy!.chatStream(chatRequest, {
+            onContent: (text) => { fullContent += text; },
+            onReasoning: (text) => { reasoningContent += text; },
+            onUsage: (usage) => {
+              usageData = usage;
+            },
+            onFirstByte: (ttfb) => {
+              console.log(`[PERF] LLM Proxy TTFB: ${ttfb}ms (model=${ctx.useModel}), 路由总耗时=${Date.now() - __wrapStart}ms`);
+            },
+          });
         }
+        await pipeResponse(proxyStream);
       } catch (e) {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         const errMsg = e instanceof Error ? e.message : String(e);

@@ -13,6 +13,7 @@ export type AiVideoWorkflowInputMode =
   | "flexible_image";
 
 export type AiVideoPageCapabilitySource = VideoModelCapabilitySource & {
+  firstFrameRatioPolicy?: unknown;
   workflowInputMode?: unknown;
   supportsPrompt?: unknown;
   minReferenceImages?: unknown;
@@ -31,6 +32,12 @@ export type AiVideoPageCapabilitySource = VideoModelCapabilitySource & {
   supportsSourceVideoInput?: unknown;
   requiresSourceVideo?: unknown;
 };
+/** Public parameter rule; the request and visible UI must agree before submission. */
+export function resolveAiVideoInputAspectRatio(model: AiVideoPageCapabilitySource | undefined, requested: string, input: { imageUrl?: unknown }) {
+  const caps = model?.capabilities && typeof model.capabilities === "object" ? model.capabilities as Record<string, unknown> : {};
+  return (model?.firstFrameRatioPolicy ?? caps.firstFrameRatioPolicy) === "adaptive"
+    && typeof input.imageUrl === "string" && Boolean(input.imageUrl.trim()) ? "adaptive" : requested;
+}
 
 export type AiVideoPageInputCapabilities = {
   mode: AiVideoWorkflowInputMode;
@@ -202,7 +209,7 @@ export function getAiVideoPageInputCapabilities(
     ? ""
     : declaredMode;
   const mode: AiVideoWorkflowInputMode = effectiveDeclaredMode
-    || (requiresFirstFrame || requiresLastFrame
+    || (requiresLastFrame
       ? "first_last_frame"
       : maxReferenceAudios > 0 && maxReferenceImages > 1
         ? "multi_image_audio"

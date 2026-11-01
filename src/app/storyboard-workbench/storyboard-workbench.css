@@ -38,17 +38,6 @@ body:has(.sbw-root) {
   padding: 14px 12px 16px;
 }
 
-.sbw-rail-summary {
-  display: grid;
-  gap: 3px;
-  margin: 0 4px 12px;
-  border-bottom: 1px solid var(--border);
-  padding: 0 2px 12px;
-}
-.sbw-rail-summary > span { color: #67e8f9; font-size: 11px; font-weight: 800; }
-.sbw-rail-summary strong { font-size: 15px; }
-.sbw-rail-summary small { color: var(--muted-foreground); font-size: 11px; }
-
 .sbw-model-section { display: flex; min-height: 0; flex-direction: column; }
 .sbw-model-section > header {
   display: flex;
@@ -459,7 +448,6 @@ body:has(.sbw-root) {
 @media (max-width: 900px) {
   .sbw-shell { display: block; }
   .sbw-model-rail { position: static; display: grid; height: auto; grid-template-columns: 1fr 1fr; gap: 8px; overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); }
-  .sbw-rail-summary { grid-column: 1 / -1; }
   .sbw-video-model-section > header { margin-top: 0; border-top: 0; padding-top: 0; }
   .sbw-model-list { min-height: 0; max-height: none; flex-direction: row; overflow-x: auto; overflow-y: hidden; }
   .sbw-model-list > button { min-width: 200px; }
@@ -739,7 +727,6 @@ body:has(.sbw-root) {
 
 @media (max-width: 560px) {
   .sbw-model-rail { grid-template-columns: 1fr; }
-  .sbw-rail-summary { grid-column: auto; }
   .sbw-toolbar-settings { display: grid; width: 100%; }
   .sbw-control-group { overflow-x: auto; }
   .sbw-toolbar-actions { display: grid; width: 100%; grid-template-columns: 1fr 1fr; }
@@ -773,8 +760,6 @@ body:has(.sbw-root) {
   background: color-mix(in srgb, var(--card) 72%, transparent);
   backdrop-filter: blur(18px);
 }
-
-.sbw-rail-summary { margin: 0 3px 8px; padding: 0 2px 9px; }
 .sbw-model-section > header { min-height: 26px; padding-inline: 4px; }
 .sbw-video-model-section > header { margin-top: 7px; padding-top: 7px; }
 .sbw-model-list { gap: 5px; padding: 1px 2px 2px; }
@@ -1433,8 +1418,8 @@ body:has(.sbw-root) {
 
 .sbw-root .sbw-model-icon {
   grid-area: icon;
-  align-self: start;
-  margin-top: 2px;
+  align-self: center;
+  margin-top: 0;
 }
 
 .sbw-root .sbw-model-copy {
@@ -2251,16 +2236,6 @@ body:has(.sbw-root) {
 .sbw-root .sbw-model-rail {
   padding: 14px 12px 16px;
 }
-
-.sbw-root .sbw-rail-summary {
-  gap: 4px;
-  margin-bottom: 10px;
-  padding-bottom: 12px;
-}
-
-.sbw-root .sbw-rail-summary > span { font-size: 12px; }
-.sbw-root .sbw-rail-summary strong { font-size: 18px; line-height: 1.25; }
-.sbw-root .sbw-rail-summary small { font-size: 12px; line-height: 1.4; }
 
 .sbw-root .sbw-model-section > header {
   min-height: 34px;
@@ -3226,7 +3201,6 @@ html[data-mode="light"] .sbw-root {
   box-shadow: inset 3px 0 var(--primary);
 }
 
-.sbw-root .sbw-rail-summary > span,
 .sbw-root .sbw-guardrail-chip,
 .sbw-root .sbw-model-id-copy:hover,
 .sbw-root .sbw-model-id-copy:focus-visible {
@@ -3454,7 +3428,6 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button.is-active {
 .sbw-root .sbw-model-list { overflow-y:auto; overflow-x:hidden; overscroll-behavior-y:contain; }
 .sbw-root .sbw-model-list > button { flex:none; padding:10px 12px; border-radius:10px; }
 .sbw-root .sbw-model-copy strong { font-size:13px; font-weight:600; }
-.sbw-root .sbw-rail-summary { padding-bottom:10px; margin-bottom:10px; }
 .sbw-root .sbw-toolbar { position:sticky; top:0; z-index:20; display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:10px 14px; border-bottom:1px solid var(--sbw-stroke-soft); background:var(--card); box-shadow:0 2px 8px #10291e06; backdrop-filter:none; }
 .sbw-root .sbw-toolbar-settings { display:flex; flex:1; flex-wrap:wrap; gap:6px; }
 .sbw-root .sbw-toolbar-actions { flex:none; flex-wrap:nowrap; margin-left:auto; gap:8px; }
@@ -4370,8 +4343,10 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button.is-active {
   .sbw-root .sbw-shot-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* At 1440px the production buttons get their own aligned row, while image,
-   video and mode controls stay on one line in the requested order. */
+/* At desktop widths where the full control set no longer fits, keep the
+   parameters readable and give production actions their own complete row.
+   The previous nowrap + horizontal-scroll treatment clipped the first image
+   group and the last action at ordinary 1344px desktop viewports. */
 @media (min-width: 1301px) and (max-width: 1600px) {
   .sbw-root .sbw-toolbar {
     display: grid;
@@ -4381,17 +4356,83 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button.is-active {
 
   .sbw-root .sbw-toolbar-settings {
     min-width: 0;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    overflow: visible;
+    row-gap: 8px;
   }
 
-  .sbw-root .sbw-toolbar-settings::-webkit-scrollbar { display: none; }
+  .sbw-root .sbw-control-group {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
 
   .sbw-root .sbw-toolbar-actions {
+    width: 100%;
     min-width: 0;
+    margin-left: 0;
     justify-content: flex-end;
+    flex-wrap: wrap;
   }
+}
+
+/* The storyboard workspace is narrower than the browser viewport when it is
+   embedded beside a model rail. Use its own container width as the second
+   guard so the same controls never become a clipped horizontal strip. */
+@container storyboard-workspace (max-width: 1180px) {
+  .sbw-root .sbw-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .sbw-root .sbw-toolbar-settings {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    overflow: visible;
+    row-gap: 8px;
+  }
+
+  .sbw-root .sbw-control-group {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .sbw-root .sbw-toolbar-actions {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+/* Keep the title, icon and subtitle as one centered visual group. The
+   subtitle previously received a vertical transform that made the icon/title
+   baseline look detached in the light storyboard screenshot. */
+.sbw-root > .sub-page-header .sub-page-heading {
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.sbw-root > .sub-page-header .sub-page-heading > div {
+  min-width: 0;
+  align-items: center;
+  text-align: center;
+}
+
+.sbw-root > .sub-page-header .sub-page-title {
+  line-height: 1.12;
+}
+
+.sbw-root > .sub-page-header .sub-page-subtitle {
+  transform: none;
+  line-height: 1.25;
+  text-align: center;
 }
 
 /* 2026-10-17：分镜卡片与 AI 视频创作台共用同一媒体槽位。
@@ -4605,13 +4646,6 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button.is-active {
   padding: 12px 10px 14px;
 }
 
-.sbw-root .sbw-rail-summary {
-  margin: 0 3px 8px;
-  border-bottom-color: rgba(255, 255, 255, .12);
-  padding: 0 3px 10px;
-}
-
-.sbw-root .sbw-rail-summary > span,
 .sbw-root .sbw-model-section > header span {
   color: var(--sbw-video-primary);
 }
@@ -4865,6 +4899,22 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button.is-active {
 .sbw-root .sbw-zone-title strong {
   color: var(--sbw-video-text);
   font-size: 12px;
+}
+
+/* 分镜图/媒体结果标题：图标与标题文字同一个节点，直接继承标题色。
+   普通模式与角色参考模式共用，避免浅色主题下图标发灰看不清。 */
+.sbw-root .sbw-zone-title strong.sbw-zone-title-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sbw-root .sbw-zone-title-main svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: currentColor;
+  stroke: currentColor;
+  opacity: 1;
 }
 
 .sbw-root .sbw-media-actions {
@@ -5361,4 +5411,1109 @@ html[data-theme][data-mode] .sbw-root .sbw-media-actions button.is-video-command
   border-color: var(--primary) !important;
   background: var(--primary) !important;
   color: var(--primary-foreground) !important;
+}
+
+/* Compact, shared model cards: image and video use the same three-line rhythm. */
+.sbw-root .sbw-model-list > button {
+  min-height: 60px;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 0 9px;
+  padding: 7px 8px;
+  border-radius: 9px;
+}
+
+.sbw-root .sbw-model-icon {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+  border-radius: 10px;
+}
+
+.sbw-root .sbw-model-icon img,
+.sbw-root .sbw-model-icon svg {
+  width: 38px;
+  height: 38px;
+}
+
+.sbw-root .sbw-model-copy {
+  gap: 1px;
+  padding-top: 0;
+}
+
+.sbw-root .sbw-model-copy strong {
+  min-height: 0;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.sbw-root .sbw-model-name {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.sbw-root .sbw-model-inline-meta,
+.sbw-root .sbw-model-copy small {
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+.sbw-root .sbw-model-copy small {
+  max-width: 100%;
+}
+
+/* ==========================================================================
+   分镜工作台 · 模型轨道与工作区视觉升级（2026-10-25）
+   仅作用于 .sbw-* 命名空间；不改动公共主题、其他页面或任何全局选择器。
+   ========================================================================== */
+
+.sbw-model-rail {
+  gap: 6px;
+  background:
+    radial-gradient(130% 46% at 0% 0%, color-mix(in srgb, #22d3ee 11%, transparent), transparent 62%),
+    radial-gradient(85% 42% at 100% 100%, color-mix(in srgb, #7c3aed 12%, transparent), transparent 66%),
+    color-mix(in srgb, var(--card) 84%, var(--background));
+}
+
+.sbw-model-section > header {
+  min-height: 28px;
+  padding-inline: 2px;
+}
+.sbw-model-section > header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+.sbw-model-section > header span::before {
+  content: "";
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  background: linear-gradient(#22d3ee, #a855f7);
+}
+.sbw-model-section > header small.sbw-model-hint {
+  border: 1px solid color-mix(in srgb, #22d3ee 22%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, #0e7490 14%, transparent);
+  color: #9fb0c4;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sbw-model-list {
+  gap: 6px;
+  padding: 2px 3px 6px;
+  /* No smooth scrolling: the wheel must move the list by exactly one notch so
+     that reaching an edge is deterministic before the selection steps. */
+  scroll-behavior: auto;
+  overscroll-behavior: contain;
+}
+.sbw-image-model-list { max-height: 232px; }
+.sbw-model-list::-webkit-scrollbar { width: 6px; }
+.sbw-model-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, #64748b 46%, transparent);
+}
+.sbw-model-list::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, #67e8f9 55%, transparent); }
+.sbw-model-list::-webkit-scrollbar-track { background: transparent; }
+
+.sbw-model-list > button {
+  position: relative;
+  min-height: 52px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: 9px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 72%, transparent), color-mix(in srgb, var(--background) 90%, transparent));
+  padding: 7px 8px 7px 11px;
+  transition: transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+}
+.sbw-model-list > button::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--sbw-brand, linear-gradient(#22d3ee, #0e7490));
+  opacity: .5;
+  transition: opacity .14s ease;
+}
+.sbw-model-list > button:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, #67e8f9 46%, var(--border));
+  box-shadow: 0 8px 18px -12px color-mix(in srgb, #22d3ee 65%, transparent);
+}
+.sbw-model-list > button:hover::before { opacity: 1; }
+.sbw-model-list > button.is-active {
+  border-color: color-mix(in srgb, #a855f7 64%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #6d28d9 30%, var(--card)), color-mix(in srgb, #4c1d95 16%, var(--background)));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #a855f7 36%, transparent),
+    0 12px 24px -18px #a855f7;
+}
+.sbw-model-list > button.is-active::before { opacity: 1; }
+.sbw-model-list > button[data-model-selectable="false"]::before { filter: grayscale(1); opacity: .24; }
+.sbw-model-list > button[data-model-selectable="false"]:hover { transform: none; box-shadow: none; }
+
+.sbw-model-list > button[data-model-brand="openai"] { --sbw-brand: linear-gradient(#10b981, #047857); }
+.sbw-model-list > button[data-model-brand="google"] { --sbw-brand: linear-gradient(#60a5fa, #1d4ed8); }
+.sbw-model-list > button[data-model-brand="bytedance"] { --sbw-brand: linear-gradient(#f472b6, #be185d); }
+.sbw-model-list > button[data-model-brand="xai"] { --sbw-brand: linear-gradient(#e2e8f0, #94a3b8); }
+.sbw-model-list > button[data-model-brand="generic"] { --sbw-brand: linear-gradient(#22d3ee, #0e7490); }
+
+.sbw-model-list > button .sbw-model-icon {
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #0f172a 22%, var(--muted));
+}
+.sbw-model-list > button.is-active .sbw-model-icon {
+  border-color: color-mix(in srgb, #a855f7 52%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #a855f7 14%, transparent);
+}
+
+.sbw-model-copy { gap: 2px; }
+.sbw-model-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.sbw-model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbw-model-variant {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, #a855f7 36%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, #7c3aed 30%, transparent);
+  color: #ddd6fe;
+  padding: 0 4px;
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.5;
+}
+.sbw-model-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: #93a3b8;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.sbw-model-tier { flex: 0 0 auto; color: #7dd3fc; font-weight: 800; }
+.sbw-model-cap { overflow: hidden; text-overflow: ellipsis; }
+.sbw-model-channel {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: color-mix(in srgb, #0e7490 28%, transparent);
+  color: #67e8f9;
+  padding: 0 4px;
+  font-weight: 800;
+}
+.sbw-model-need { flex: 0 0 auto; color: #fbbf24; font-weight: 800; }
+
+.sbw-model-list > button .sbw-model-price {
+  align-self: center;
+  max-width: 96px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #f59e0b 28%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  color: #f4c862;
+  padding: 2px 6px;
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1.35;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sbw-model-list > button .sbw-model-price em {
+  font-style: normal;
+  font-weight: 700;
+  opacity: .72;
+}
+.sbw-model-list > button .sbw-model-price.is-pending {
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  color: #94a3b8;
+}
+
+.sbw-workspace {
+  background:
+    radial-gradient(88% 38% at 10% 0%, color-mix(in srgb, #0e7490 12%, transparent), transparent 64%),
+    radial-gradient(64% 34% at 100% 24%, color-mix(in srgb, #6d28d9 10%, transparent), transparent 68%);
+}
+
+.sbw-overview {
+  display: grid;
+  grid-template-columns: minmax(64px, .55fr) minmax(64px, .7fr) minmax(64px, .7fr) minmax(0, 1.6fr) minmax(0, 1.6fr);
+  gap: 8px;
+  margin: 16px 18px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 74%, transparent), color-mix(in srgb, var(--background) 92%, transparent));
+  padding: 9px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 5%, transparent);
+}
+.sbw-overview-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, #0b1220 26%, transparent);
+  padding: 6px 10px;
+}
+.sbw-overview-item > span {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+.sbw-overview-item > strong {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  color: #e6edf6;
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.sbw-overview-item > strong em {
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+.sbw-overview-item > em {
+  overflow: hidden;
+  color: #7c8ba1;
+  font-size: 10px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbw-overview-item.is-model { border-color: color-mix(in srgb, #22d3ee 20%, var(--border)); }
+.sbw-overview-item.is-model > span { color: #7dd3fc; }
+.sbw-overview-item.is-model > strong {
+  display: block;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 浅色主题下的可读性覆盖：深色轨道配色只服务 dark；light 走品牌主色 + 前景色。 */
+html[data-mode="light"] .sbw-model-rail {
+  background:
+    radial-gradient(130% 46% at 0% 0%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 62%),
+    radial-gradient(85% 42% at 100% 100%, color-mix(in srgb, var(--accent, var(--primary)) 8%, transparent), transparent 66%),
+    color-mix(in srgb, var(--card) 92%, var(--background));
+}
+
+html[data-mode="light"] .sbw-model-section > header span { color: var(--foreground); }
+html[data-mode="light"] .sbw-model-section > header span::before {
+  background: linear-gradient(color-mix(in srgb, var(--primary) 88%, #0f172a), color-mix(in srgb, var(--primary) 40%, #0f172a));
+}
+html[data-mode="light"] .sbw-model-section > header small.sbw-model-hint {
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--muted-foreground);
+}
+html[data-mode="light"] .sbw-model-list > button {
+  background: linear-gradient(180deg, var(--card), color-mix(in srgb, var(--card) 88%, var(--background)));
+}
+html[data-mode="light"] .sbw-model-list > button.is-active {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 12%, var(--card)), color-mix(in srgb, var(--primary) 5%, var(--card)));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 26%, transparent),
+    0 12px 24px -18px color-mix(in srgb, var(--primary) 70%, transparent);
+}
+html[data-mode="light"] .sbw-model-list > button .sbw-model-icon {
+  background: color-mix(in srgb, var(--primary) 8%, var(--muted));
+  color: color-mix(in srgb, var(--primary) 82%, #0f172a);
+}
+html[data-mode="light"] .sbw-model-meta { color: var(--muted-foreground); }
+html[data-mode="light"] .sbw-model-tier { color: color-mix(in srgb, var(--primary) 90%, #0f172a); }
+html[data-mode="light"] .sbw-model-channel {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: color-mix(in srgb, var(--primary) 88%, #0f172a);
+}
+html[data-mode="light"] .sbw-model-variant {
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: color-mix(in srgb, var(--primary) 86%, #0f172a);
+}
+html[data-mode="light"] .sbw-model-list > button .sbw-model-price {
+  border-color: color-mix(in srgb, #b7791f 26%, transparent);
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  color: #8a5a12;
+}
+
+html[data-mode="light"] .sbw-workspace {
+  background:
+    radial-gradient(88% 38% at 10% 0%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 64%),
+    radial-gradient(64% 34% at 100% 24%, color-mix(in srgb, var(--accent, var(--primary)) 6%, transparent), transparent 68%);
+}
+html[data-mode="light"] .sbw-overview {
+  background: linear-gradient(180deg, var(--card), color-mix(in srgb, var(--card) 88%, var(--background)));
+}
+html[data-mode="light"] .sbw-overview-item {
+  background: color-mix(in srgb, var(--card) 70%, var(--background));
+  border-color: color-mix(in srgb, var(--border) 86%, transparent);
+}
+html[data-mode="light"] .sbw-overview-item > span,
+html[data-mode="light"] .sbw-overview-item > em { color: var(--muted-foreground); }
+html[data-mode="light"] .sbw-overview-item > strong { color: var(--foreground); }
+html[data-mode="light"] .sbw-overview-item.is-model { border-color: color-mix(in srgb, var(--primary) 26%, var(--border)); }
+html[data-mode="light"] .sbw-overview-item.is-model > span { color: color-mix(in srgb, var(--primary) 88%, #0f172a); }
+
+/* === 2026-10-25 修正：价格并入元信息行，卡片保持两列命名区域布局 === */
+.sbw-root .sbw-model-list > button {
+  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-areas: "icon copy";
+}
+.sbw-root .sbw-model-copy strong {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.sbw-root .sbw-model-copy .sbw-model-name {
+  flex: 1 1 auto;
+  flex-basis: auto;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbw-root .sbw-model-copy .sbw-model-meta {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+}
+.sbw-root .sbw-model-copy .sbw-model-cap { flex: 1 1 auto; min-width: 0; }
+.sbw-root .sbw-model-copy .sbw-model-price {
+  flex: 0 0 auto;
+  margin-left: auto;
+  align-self: center;
+  max-width: 108px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, #f59e0b 13%, transparent);
+  color: #f4c862;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.5;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sbw-root .sbw-model-copy .sbw-model-price em {
+  font-style: normal;
+  font-weight: 700;
+  opacity: .72;
+}
+.sbw-root .sbw-model-copy .sbw-model-price.is-pending {
+  border-color: color-mix(in srgb, var(--border) 84%, transparent);
+  background: color-mix(in srgb, var(--muted) 46%, transparent);
+  color: var(--muted-foreground);
+}
+html[data-mode="light"] .sbw-root .sbw-model-copy .sbw-model-price {
+  border-color: color-mix(in srgb, #b7791f 24%, transparent);
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
+  color: #8a5a12;
+}
+.sbw-root .sbw-model-variant {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 0 3px;
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   2026-10-25 P0 修复：分镜工作台“页面/模型列无法滚动”
+   根节点 .sbw-root 是 flex column + height:100dvh + overflow:hidden；
+   但工作区前有一层包裹 div（.sbw-main）不是弹性子项，flex:1 失效，
+   工作区被内容撑到 2400px 后被根节点裁掉，页面与列表都滚不动。
+   这里把高度链重新接通：.sbw-root → .sbw-main → .sbw-body → .sbw-shell → 工作区。
+   ========================================================================== */
+.sbw-root > .sbw-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.sbw-root .sbw-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.sbw-root .sbw-body > .sbw-shell {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.sbw-root .sbw-body .sbw-workspace {
+  height: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+}
+.sbw-root .sbw-body .sbw-model-rail {
+  height: auto;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 参考图提示词在分镜内联使用时保持与普通模式一致的紧凑高度。
+   visual-assets-page.css 用 `.svad-surface .svad-reference-slot textarea`
+   + `min-height: max(var(--svad-prompt-height),128px)` + `field-sizing:content`
+   把空框撑到 128px，这里用更高优先级的选择器收回到 84px。 */
+.sbw-root .sbw-reference-step .svad-surface .svad-reference-slot textarea,
+.sbw-root .sbw-reference-step .svad-surface .svad-slot-prompt textarea,
+.sbw-root .sbw-reference-step .svad-prompt-label textarea {
+  height: auto;
+  min-height: 136px;
+  max-height: 240px;
+  padding: 8px 10px;
+  line-height: 1.6;
+  field-sizing: content;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-drafts {
+  gap: 10px;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-reference-slot {
+  padding: 8px 10px;
+}
+/* 第一步角色参考卡片：收紧标题区与内边距，把高度让给提示词框。 */
+.sbw-root .sbw-reference-step .svad-inline .svad-header {
+  padding: 0 2px 6px;
+}
+.sbw-root .sbw-reference-step .svad-header .svad-context-line {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-draft-heading {
+  margin-bottom: 6px;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-prompt-label {
+  margin: 4px 0 6px;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-reference-slot > small[role="status"] {
+  margin-top: 4px;
+}
+
+/* 模型列与卡片的分隔：用虚线把相邻模型和两个分区切开，减少“空洞感”。 */
+.sbw-root .sbw-model-list > button + button {
+  border-top-style: dashed;
+  border-top-color: color-mix(in srgb, var(--sbw-stroke, var(--border)) 88%, transparent);
+  margin-top: 2px;
+}
+.sbw-root .sbw-model-section + .sbw-model-section > header {
+  margin-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--sbw-stroke, var(--border)) 92%, transparent);
+  padding-top: 10px;
+}
+.sbw-root .sbw-model-list > button {
+  border-style: solid;
+  border-width: 1px 1px 1px 1px;
+  border-left-width: 3px;
+}
+.sbw-root .sbw-model-list > button.is-active {
+  border-top-style: solid;
+}
+
+/* 工作区与卡片更像一个整体：收窄外边距，弱化“漂浮的白块”。 */
+.sbw-root .sbw-body .sbw-workspace {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--primary) 3%, var(--background)), var(--background) 220px);
+}
+.sbw-root .sbw-shot-grid {
+  padding: 4px 14px 24px;
+  align-content: start;
+}
+.sbw-root .sbw-overview {
+  margin: 10px 14px 12px;
+}
+
+/* 模型列表排版：图标严格收在 32px 图标格内，不再压住右侧文字；
+   名称维持单行省略、字号略收，卡片高度保持 60px 档位。 */
+.sbw-root .sbw-model-list > button .sbw-model-icon img,
+.sbw-root .sbw-model-list > button .sbw-model-icon svg {
+  width: 100%;
+  height: 100%;
+  padding: 1px;
+  box-sizing: border-box;
+  object-fit: contain;
+}
+
+/* Keep the OpenAI brand mark readable in the dark model rail. The SVG is
+   rendered through <img>, so its currentColor cannot inherit the page text;
+   recolor the monochrome asset only for dark mode. */
+html[data-mode="dark"] .sbw-root .sbw-model-list > button .sbw-model-icon[data-model-badge-source="brand"][data-model-brand="openai"] {
+  border-color: color-mix(in srgb, #7bdcca 62%, var(--border));
+  background: color-mix(in srgb, #0f172a 22%, var(--muted));
+  color: #f5f7f6;
+}
+
+html[data-mode="dark"] .sbw-root .sbw-model-list > button .sbw-model-icon[data-model-badge-source="brand"][data-model-brand="openai"] img {
+  filter: invert(1) brightness(1.18) drop-shadow(0 0 1px rgba(255, 255, 255, .3));
+}
+
+/* 模型栏滚动条：细、圆角、悬停加深，避免原生滚动条的廉价感。 */
+.sbw-root .sbw-model-list {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--primary) 38%, transparent) transparent;
+}
+.sbw-root .sbw-model-list::-webkit-scrollbar {
+  width: 8px;
+}
+.sbw-root .sbw-model-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sbw-root .sbw-model-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 34%, transparent);
+  background-clip: content-box;
+}
+.sbw-root .sbw-model-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--primary) 58%, transparent);
+  background-clip: content-box;
+}
+.sbw-root .sbw-model-list > button .sbw-model-name {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbw-root .sbw-model-list > button .sbw-model-meta {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.sbw-root .sbw-model-list > button .sbw-model-price {
+  flex: 0 0 auto;
+}
+
+/* 视频能力另行显示，渠道、清晰度和完整计价不再被长标签裁切。 */
+.sbw-root .sbw-video-model-list > button .sbw-model-meta {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  row-gap: 3px;
+  overflow: visible;
+  white-space: normal;
+}
+.sbw-root .sbw-video-model-list > button .sbw-model-need {
+  order: 2;
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.sbw-root .sbw-video-model-list > button .sbw-model-price {
+  order: 1;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+/* 03「分镜图」序号与 01/02 使用同一套青绿样式，避免同一张卡里出现两种序号颜色。 */
+.sbw-root .sbw-zone-title .sbw-stage-index {
+  width: 22px;
+  height: 22px;
+  border-color: rgba(84, 227, 210, .46);
+  background: rgba(84, 227, 210, .1);
+  color: var(--sbw-video-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1);
+}
+
+/* 生成中卡片：框内进度条 + 流光。普通模式与角色参考模式共用同一张卡片结构。 */
+.sbw-root .sbw-shared-media-frame .sbw-realtime-state {
+  position: relative;
+  overflow: hidden;
+}
+.sbw-root .sbw-shared-media-frame .sbw-realtime-state::after {
+  content: "";
+  position: absolute;
+  inset: -30% -60%;
+  background: linear-gradient(110deg, transparent 38%, color-mix(in srgb, var(--primary) 16%, transparent) 50%, transparent 62%);
+  animation: sbw-render-sheen 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes sbw-render-sheen {
+  0% { transform: translateX(-45%); }
+  100% { transform: translateX(45%); }
+}
+.sbw-root .sbw-render-progress {
+  width: 100%;
+  height: 4px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.sbw-root .sbw-render-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 45%, transparent), var(--primary));
+  transition: width .6s ease;
+}
+.sbw-root .sbw-render-progress[data-indeterminate="true"] > span {
+  width: 34%;
+  animation: sbw-render-slide 1.5s ease-in-out infinite;
+}
+@keyframes sbw-render-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(310%); }
+}
+.sbw-root .sbw-render-progress-label {
+  color: color-mix(in srgb, var(--primary) 78%, var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbw-root .sbw-shared-media-frame .sbw-realtime-state::after,
+  .sbw-root .sbw-render-progress[data-indeterminate="true"] > span {
+    animation: none;
+  }
+}
+
+/* 模型条目：图标与右侧文字整块垂直居中（此前 copy 被 grid 拉伸到顶端）。 */
+.sbw-root .sbw-model-list > button {
+  align-items: center;
+}
+.sbw-root .sbw-model-list > button .sbw-model-copy {
+  align-self: center;
+  justify-content: center;
+}
+
+/* 空态：呼吸光晕 + 图标浮动，颜色全部取自主题主色，三套主题自动跟随。 */
+.sbw-root .sbw-empty-state {
+  position: relative;
+  isolation: isolate;
+}
+.sbw-root .sbw-empty-state::before {
+  content: "";
+  position: absolute;
+  inset: 12% 18%;
+  z-index: -1;
+  border-radius: 999px;
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 72%);
+  animation: sbw-empty-breathe 4.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.sbw-root .sbw-empty-state > svg {
+  animation: sbw-empty-float 3.4s ease-in-out infinite;
+}
+@keyframes sbw-empty-breathe {
+  0%, 100% { transform: scale(.94); opacity: .55; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes sbw-empty-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+/* 柔光白：底色本来就亮，光晕压低一档，避免发脏。 */
+html[data-theme="soft-white"][data-mode="light"] .sbw-root .sbw-empty-state::before {
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 72%);
+}
+html[data-theme="soft-white"][data-mode="light"] .sbw-root .sbw-empty-state > svg {
+  opacity: .82;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbw-root .sbw-empty-state::before,
+  .sbw-root .sbw-empty-state > svg {
+    animation: none;
+  }
+}
+
+/* 卡片精致度：更大的圆角、内高光、hover 轻微上浮与主色描边。 */
+.sbw-root .sbw-shot-card {
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 38%, transparent),
+    var(--sbw-shadow);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.sbw-root .sbw-shot-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--sbw-stroke));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
+    0 12px 26px -20px color-mix(in srgb, var(--primary) 70%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbw-root .sbw-shot-card,
+  .sbw-root .sbw-shot-card:hover {
+    transform: none;
+  }
+}
+
+/* 选中指示条：单个滑块在行间平滑滑动，替代原先“消失再出现”的静态条。 */
+.sbw-root .sbw-model-list {
+  position: relative;
+}
+.sbw-root .sbw-model-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 92%, #ffffff), color-mix(in srgb, var(--primary) 62%, transparent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+  pointer-events: none;
+  transition: transform .24s cubic-bezier(.22, .61, .36, 1), height .24s cubic-bezier(.22, .61, .36, 1);
+  z-index: 1;
+}
+.sbw-root .sbw-model-list > button.is-active::before {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbw-root .sbw-model-indicator {
+    transition: none;
+  }
+}
+
+
+/* Editor-only visual cleanup: solid theme surfaces and independent model panels.
+   This scope excludes the reference-assets page, history and modal content. */
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main {
+  --sbw-editor-card: #fffdf8;
+  --sbw-editor-field: #ffffff;
+  --sbw-editor-media: #f3f1ea;
+  --sbw-editor-line: #d7d2c5;
+  --sbw-editor-text: #242b29;
+  --sbw-editor-muted: #65716c;
+  --sbw-editor-image: #fffdf8;
+  --sbw-editor-image-line: #d7d2c5;
+  --sbw-editor-image-accent: #176b57;
+  --sbw-editor-video: #fffdf8;
+  --sbw-editor-video-line: #d7d2c5;
+  --sbw-editor-video-accent: #176b57;
+  /* Local surface/text aliases affect this editor subtree only. The theme's
+     primary action colors, brand assets and outer stationary grid stay owned
+     by the existing theme. */
+  --card: #fffdf8;
+  --background: #f3f1ea;
+  --foreground: #242b29;
+  --muted: #f3f1ea;
+  --muted-foreground: #65716c;
+  --border: #d7d2c5;
+  --input: #d7d2c5;
+  --sbw-stroke: #d7d2c5;
+  --sbw-stroke-soft: #e4dfd5;
+  --sbw-field: #ffffff;
+  --sbw-subtle: #65716c;
+  --sbw-video-primary: #176b57;
+  --sbw-video-card: #fffdf8;
+  --sbw-video-field: #ffffff;
+  --sbw-video-text: #242b29;
+  --sbw-video-line: #d7d2c5;
+  --sbw-video-muted: #65716c;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root.sbw-editor .sbw-main {
+  --sbw-editor-card: #191c22;
+  --sbw-editor-field: #101319;
+  --sbw-editor-media: #0b0e14;
+  --sbw-editor-line: #393f49;
+  --sbw-editor-text: #f0f6f6;
+  --sbw-editor-muted: #a4b3b8;
+  --sbw-editor-image: #183431;
+  --sbw-editor-image-line: #37675e;
+  --sbw-editor-image-accent: #77dfc7;
+  --sbw-editor-video: #272c45;
+  --sbw-editor-video-line: #505c88;
+  --sbw-editor-video-accent: #b2beff;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-rail {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 24px;
+  padding: 12px;
+  background: var(--sbw-editor-card, var(--card)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--sbw-editor-panel-line);
+  border-radius: 10px;
+  padding: 12px 10px;
+  background: var(--sbw-editor-panel);
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-image-model-section {
+  --sbw-editor-panel: var(--sbw-editor-image, var(--card));
+  --sbw-editor-panel-line: var(--sbw-editor-image-line, var(--border));
+  --sbw-editor-panel-accent: var(--sbw-editor-image-accent, var(--primary));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-video-model-section {
+  --sbw-editor-panel: var(--sbw-editor-video, var(--card));
+  --sbw-editor-panel-line: var(--sbw-editor-video-line, var(--border));
+  --sbw-editor-panel-accent: var(--sbw-editor-video-accent, var(--primary));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section > header {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 30px;
+  margin: 0 0 10px;
+  border: 0;
+  padding: 0;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section > header span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--sbw-editor-panel-accent) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section > header span::before {
+  background: var(--sbw-editor-panel-accent);
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section > header small.sbw-model-hint {
+  border-color: var(--sbw-editor-panel-line);
+  background: var(--sbw-editor-panel);
+  color: var(--sbw-editor-muted, var(--muted-foreground));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--sbw-editor-panel-accent) transparent;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-indicator {
+  background: var(--sbw-editor-panel-accent);
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shot-card {
+  background: var(--sbw-editor-card, var(--card)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+  box-shadow: none !important;
+  color: var(--sbw-editor-text, var(--foreground));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shot-card:hover {
+  box-shadow: none !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-card-header {
+  background: var(--sbw-editor-card, var(--card)) !important;
+  border-bottom-color: var(--sbw-editor-line, var(--border)) !important;
+  padding: 12px 14px;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-generation-stack {
+  gap: 10px;
+  padding: 14px;
+  background: var(--sbw-editor-card, var(--card));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-generation-stack > .sbw-flow-section {
+  display: contents;
+  background: var(--sbw-editor-card, var(--card)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-flow-prompt {
+  background: var(--sbw-editor-card, var(--card)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-flow-prompt textarea {
+  background: var(--sbw-editor-field, var(--card)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+  color: var(--sbw-editor-text, var(--foreground)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame {
+  background: var(--sbw-editor-media, var(--muted)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame > button,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame img,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame video {
+  background: var(--sbw-editor-media, var(--muted)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame .sbw-empty-state {
+  width: 100%;
+  height: 100%;
+  align-self: stretch;
+  background: var(--sbw-editor-media, var(--muted));
+  color: var(--sbw-editor-muted, var(--muted-foreground));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-empty-state::before {
+  display: none;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-empty-state > svg {
+  border-color: var(--sbw-editor-line, var(--border));
+  background: var(--sbw-editor-card, var(--card));
+  box-shadow: none;
+}
+
+/* Model rows use the complete panel surface; selection follows its own accent. */
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button {
+  border-color: var(--sbw-editor-panel-line) !important;
+  background: color-mix(in srgb, var(--sbw-editor-panel-accent) 6%, var(--sbw-editor-panel)) !important;
+  color: var(--sbw-editor-text, var(--foreground)) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
+  border-color: var(--sbw-editor-panel-accent) !important;
+  background: color-mix(in srgb, var(--sbw-editor-panel-accent) 18%, var(--sbw-editor-panel)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active {
+  border-color: var(--sbw-editor-panel-accent) !important;
+  background: color-mix(in srgb, var(--sbw-editor-panel-accent) 24%, var(--sbw-editor-panel)) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
+  outline: 2px solid var(--sbw-editor-panel-accent);
+  outline-offset: -4px;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:disabled {
+  opacity: .76;
+  color: var(--sbw-editor-text, var(--foreground)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-name {
+  color: var(--sbw-editor-text, var(--foreground)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-meta,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-price,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-need,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-inline-meta {
+  color: var(--sbw-editor-muted, var(--muted-foreground)) !important;
+}
+
+/* Fixed-ratio previews keep task details at their natural line height. */
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame > .sbw-realtime-state {
+  overflow-x: hidden;
+  overflow-y: auto;
+  justify-content: flex-start;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame > .sbw-realtime-state > * {
+  flex-shrink: 0;
+}
+
+/* The oversized decorative sheen must not create extra scrollable space. */
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame > .sbw-realtime-state::after {
+  display: none;
+}
+
+/* Keep the original prompt sequence contiguous. Supplementary video material
+   follows the 02 prompt and precedes the 03 media result in the flattened grid. */
+.sbw-root.sbw-editor .sbw-main .sbw-generation-stack > .sbw-video-flow > .sbw-note {
+  order: 2;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar {
+  background: var(--sbw-editor-card) !important;
+  border-color: var(--sbw-editor-line) !important;
+  color: var(--sbw-editor-text);
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-group,
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-group,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group {
+  background: var(--sbw-editor-card) !important;
+  border-color: var(--sbw-editor-line) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active),
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active) {
+  background: var(--sbw-editor-card) !important;
+  color: var(--sbw-editor-muted) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag {
+  background: #f6f4ed !important;
+  border-color: var(--sbw-editor-line) !important;
+  color: var(--sbw-editor-image-accent) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-stage-label strong,
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-stage-label strong,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main {
+  color: var(--sbw-editor-text) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button {
+  background: var(--sbw-editor-card) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
+  background: #f6f4ed !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active {
+  background: #f1f1e8 !important;
 }

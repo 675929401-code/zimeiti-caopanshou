@@ -442,9 +442,8 @@ for (const [type, code] of [['authentication_error', 'LLM_UPSTREAM_AUTH'], ['rat
   cases.push(`safe specific ${code} without leaking provider diagnostic payload`);
 }
 
-// Relay gateways answer 200 and only then reject the stream while the account's
-// concurrency slot is busy. Nothing was generated, so the route retries instead
-// of burning the user's send.
+// An explicit gateway queue rejection is surfaced once. The shared route must
+// not turn a logical send into extra provider calls.
 {
   const queueRejection = frame({ error: { type: 'rate_limit_error', code: 'gateway_concurrency_limit', message: 'Concurrency limit exceeded for account, please retry later' } });
   let attempts = 0;
@@ -457,26 +456,80 @@ for (const [type, code] of [['authentication_error', 'LLM_UPSTREAM_AUTH'], ['rat
         : chunks(frame(content('重试成功')) + frame(stop) + 'data: [DONE]\n\n')();
     },
   });
-  assert.equal(attempts, 2, 'queue rejection before any content must be retried once');
-  assert.equal(result.state.posts, 2);
-  assert.match(result.text, /重试成功/);
-  assert.match(result.text, /data: \[DONE\]/);
-  assert.equal(result.state.settlements, 1);
-  assert.equal(result.state.saves, 1);
-  assert.doesNotMatch(result.text, /CONCURRENCY_LIMIT/);
-  cases.push('gateway concurrency rejection before content retries transparently and settles once');
+  assert.equal(attempts, 1, 'queue rejection must not trigger another provider call');
+  assert.equal(result.state.posts, 1);
+  assert.match(result.text, /LLM_UPSTREAM_CONCURRENCY_LIMIT/);
+  assert.doesNotMatch(result.text, /重试成功|data: \[DONE\]/);
+  assert.equal(result.state.settlements, 0);
+  assert.equal(result.state.saves, 0);
+  cases.push('gateway concurrency rejection is surfaced after one provider call without settlement');
 }
 
 {
   const queueRejection = frame({ error: { type: 'rate_limit_error', code: 'gateway_concurrency_limit', message: 'Concurrency limit exceeded for account, please retry later' } });
   const result = await run({ withinMs: 15_000, upstream: () => chunks(queueRejection)() });
-  assert.equal(result.state.posts, 3, 'one attempt plus two bounded retries');
+  assert.equal(result.state.posts, 1, 'explicit queue rejection has no automatic retry');
   assert.match(result.text, /LLM_UPSTREAM_CONCURRENCY_LIMIT/);
   assert.equal(result.state.settlements, 0);
   assert.equal(result.state.saves, 0);
   assert.deepEqual(result.state.failures, ['LLM_UPSTREAM_CONCURRENCY_LIMIT']);
   assert.doesNotMatch(result.text, /SECRET_FIXTURE|Concurrency limit exceeded/);
-  cases.push('exhausted concurrency retries surface a safe code without settlement');
+  cases.push('persistent concurrency rejection surfaces a safe code after one call without settlement');
+}
+
+for (const scenario of [
+  { status: 402, body: JSON.stringify({ error: { code: 'insufficient_quota', message: 'private-provider-detail SECRET_FIXTURE_MUST_NOT_LEAK' } }), code: 'LLM_UPSTREAM_BALANCE' },
+  { status: 402, body: 'Payment Required', code: 'LLM_UPSTREAM_BILLING' },
+  { status: 402, body: '', code: 'LLM_UPSTREAM_BILLING' },
+  { status: 403, body: JSON.stringify({ error: { code: 'insufficient_user_quota' } }), code: 'LLM_UPSTREAM_BALANCE' },
+  { status: 429, body: JSON.stringify({ error: { code: 'insufficient_quota' } }), code: 'LLM_UPSTREAM_BALANCE' },
+]) {
+  const result = await run({ responseStatus: scenario.status, upstream: chunks(scenario.body) });
+  assert.match(result.text, new RegExp(scenario.code));
+  assert.match(result.text, /模型中转账户/);
+  assert.doesNotMatch(result.text, /积分不足|未扣费|SECRET_FIXTURE|private-provider-detail/);
+  assert.equal(result.state.posts, 1);
+  assert.equal(result.state.settlements, 0);
+  let receipt;
+  const wrap = result.load('src/lib/llm-request-idempotency.ts').completeLlmAttemptResponse;
+  const output = await wrap({ async finalize(value) { receipt = value; return {}; } }, { record: { recordId: 'fixture', attemptNo: 1 } }, new Response(result.text, { headers: { 'content-type': 'text/event-stream' } }));
+  await within(output.text());
+  assert.equal(receipt.state, 'failed');
+  assert.equal(receipt.errorCode, scenario.code);
+  cases.push(`HTTP ${scenario.status} maps ${scenario.code} to a specific safe known failure after one provider call`);
+}
+
+for (const payload of [
+  { error: { error: { code: 'insufficient_user_quota', message: 'private-provider-detail SECRET_FIXTURE_MUST_NOT_LEAK' } } },
+  { response: { error: { message: '预扣费额度失败 private-provider-detail SECRET_FIXTURE_MUST_NOT_LEAK' } } },
+  { error: { code: 'insufficient_quota', error: { request_id: 'fixture' } } },
+  { error: { code: 'insufficient_quota' }, response: { error: { request_id: 'fixture' } } },
+]) {
+  const result = await run({ upstream: chunks(frame(payload)) });
+  assert.match(result.text, /LLM_UPSTREAM_BALANCE/);
+  assert.match(result.text, /模型中转账户余额或额度不足/);
+  assertNoSensitiveStreamDetails(result.text);
+  assert.equal(result.state.posts, 1);
+  assert.equal(result.state.settlements, 0);
+  cases.push('bounded relay error envelope retains explicit balance rejection without leaking raw details');
+}
+
+{
+  const env = rig();
+  const { upstreamStreamError, responseStartError } = env.load('src/lib/llm-proxy/stream-error.ts');
+  for (const payload of [
+    { code: 'LLM_UPSTREAM_RESULT_UNKNOWN', error: { code: 'insufficient_quota' } },
+    { error: { code: 'LLM_UPSTREAM_RESULT_UNKNOWN', error: { code: 'insufficient_balance' } } },
+    { response: { error: { code: 'LLM_UPSTREAM_RESULT_UNKNOWN', message: 'balance insufficient' } } },
+  ]) {
+    assert.equal(upstreamStreamError(payload, { phase: 'response_headers', transportStatus: 402 }).code, 'LLM_UPSTREAM_RESULT_UNKNOWN');
+  }
+  const error = new Error('billing status unavailable');
+  error.diagnostics = { phase: 'response_headers', transportStatus: 402 };
+  assert.equal(responseStartError(error).code, 'LLM_UPSTREAM_BILLING', 'actual HTTP status is sufficient even when the diagnostic string has no numeric status');
+  assert.equal(responseStartError(new Error('LLM API 402: Payment Required')).code, 'LLM_UPSTREAM_BILLING', 'legacy explicit HTTP 402 rejection preserves the already parsed status');
+  assert.equal(responseStartError(new Error('quota unknown connection')).code, 'LLM_UPSTREAM_RESULT_UNKNOWN', 'a transport failure with billing words is not an explicit rejection');
+  cases.push('UNKNOWN outranks nested balance and actual measured 402 is distinguished from an unconfirmed transport failure');
 }
 
 {

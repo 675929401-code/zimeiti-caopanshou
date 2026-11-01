@@ -7713,7 +7713,7 @@ html[data-theme="soft-white"][data-mode="light"] .cover-rebuild-shell .cover-reb
   color: var(--cover-ui-text);
   background: var(--cover-ui-input);
   font-size: 16px;
-  font-weight: 750;
+  font-weight: 600;
   line-height: 1.62;
 }
 

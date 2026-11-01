@@ -495,7 +495,7 @@ html[data-theme="lattice"] .marketplace-agent-avatar {
 
 html[data-theme="lattice"] .marketplace-agent-title {
   color: #f1f7fa !important;
-  font-size: 15px !important;
+  font-size: 15px;
   line-height: 1.28 !important;
   display: -webkit-box !important;
   overflow: hidden !important;

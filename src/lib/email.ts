@@ -35,7 +35,18 @@ function emailLogLabel(value: string): string {
 // 数据库配置缓存（5分钟）
 let dbConfigCache: EmailConfig | null = null;
 let dbConfigCacheTime = 0;
+let dbConfigCacheEpoch = 0;
 const DB_CONFIG_CACHE_TTL = 5 * 60 * 1000;
+
+/** Invalidate this process only; in-flight sends retain their captured transport/config. */
+export function invalidateEmailConfigCache(): void {
+  dbConfigCacheEpoch += 1;
+  dbConfigCache = null;
+  dbConfigCacheTime = 0;
+  // Do not close the old transport: it may still be sending an earlier message.
+  transporter = null;
+  cachedConfigHash = '';
+}
 
 async function getPlatformName(): Promise<string> {
   try {
@@ -52,6 +63,7 @@ async function getEmailConfigFromDB(): Promise<EmailConfig | null> {
   if (dbConfigCache && now - dbConfigCacheTime < DB_CONFIG_CACHE_TTL) {
     return dbConfigCache;
   }
+  const readEpoch = dbConfigCacheEpoch;
 
   try {
     const client = getSupabaseClient();
@@ -79,8 +91,12 @@ async function getEmailConfigFromDB(): Promise<EmailConfig | null> {
           auth: { user, pass },
           from,
         };
-        dbConfigCache = config;
-        dbConfigCacheTime = now;
+        // A read started before a settings save may finish afterwards. Its caller
+        // can keep that snapshot, but it must not repopulate the shared cache.
+        if (readEpoch === dbConfigCacheEpoch) {
+          dbConfigCache = config;
+          dbConfigCacheTime = now;
+        }
         return config;
       }
     }
@@ -124,8 +140,7 @@ function configHash(config: EmailConfig): string {
   return `${config.host}:${config.port}:${config.auth.user}:${config.auth.pass}`;
 }
 
-async function getTransporter(): Promise<nodemailer.Transporter | null> {
-  const config = await getEmailConfig();
+function getTransporter(config: EmailConfig | null): nodemailer.Transporter | null {
   if (!config) return null;
 
   const hash = configHash(config);
@@ -145,7 +160,7 @@ async function getTransporter(): Promise<nodemailer.Transporter | null> {
 }
 
 export async function isEmailConfigured(): Promise<boolean> {
-  return (await getTransporter()) !== null;
+  return getTransporter(await getEmailConfig()) !== null;
 }
 
 export async function sendVerificationCode(
@@ -154,7 +169,7 @@ export async function sendVerificationCode(
   purpose: VerificationEmailPurpose = '身份验证',
 ): Promise<boolean> {
   const config = await getEmailConfig();
-  const transport = await getTransporter();
+  const transport = getTransporter(config);
   if (!transport || !config) {
     console.warn('[Email] SMTP not configured, code not sent');
     return false;

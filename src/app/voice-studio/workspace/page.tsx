@@ -221,14 +221,14 @@ function VoicePickerCard({
     <div data-voice-picker={title} aria-busy={catalogPending} className={`bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl overflow-hidden flex flex-col ${h}`}>
       <div className="px-5 py-3.5 flex items-center gap-2.5 border-b border-[var(--vs-border)] shrink-0 bg-[var(--vs-surface)]/30">
         {icon}
-        <span className="font-semibold text-[var(--vs-text)] text-base tracking-wide">{title}</span>
+        <span className="font-semibold text-[var(--vs-text)] text-base leading-6">{title}</span>
       </div>
       <div className="p-4 space-y-3.5 shrink-0">
         <div className="flex items-center gap-2.5">
           <span className="text-sm font-medium text-[var(--vs-text)] shrink-0">搜索音色</span>
           <input
             aria-label={`${title}搜索`}
-            className="flex-1 px-3 py-2 rounded-lg bg-[var(--vs-surface)] border border-[var(--vs-border)] text-[var(--vs-text)] placeholder-[var(--vs-text-secondary)] focus:outline-none focus:border-[var(--vs-primary)]/50 text-base"
+            className="h-9 min-w-0 flex-1 px-3 py-1 rounded-lg bg-[var(--vs-surface)] border border-[var(--vs-border)] text-[var(--vs-text)] placeholder-[var(--vs-text-secondary)] text-sm leading-5 focus:outline-none focus:border-[var(--vs-primary)]/50 focus-visible:ring-2 focus-visible:ring-[var(--vs-primary)]/20"
             placeholder="名称或ID..."
             value={searchVal}
             onChange={event => onSearch(event.target.value)}
@@ -238,7 +238,7 @@ function VoicePickerCard({
           <span className="text-sm font-medium text-[var(--vs-text)] shrink-0">音色分类</span>
           <select
             aria-label={`${title}分类`}
-            className="flex-1 px-3 py-2 rounded-lg bg-[var(--vs-surface)] border border-[var(--vs-border)] text-[var(--vs-text)] text-base focus:outline-none focus:border-[var(--vs-primary)]/50 cursor-pointer"
+            className="h-9 min-w-0 flex-1 px-3 py-1 rounded-lg bg-[var(--vs-surface)] border border-[var(--vs-border)] text-[var(--vs-text)] text-sm leading-5 focus:outline-none focus:border-[var(--vs-primary)]/50 focus-visible:ring-2 focus-visible:ring-[var(--vs-primary)]/20 cursor-pointer"
             value={catVal}
             onChange={event => onCat(event.target.value)}
           >

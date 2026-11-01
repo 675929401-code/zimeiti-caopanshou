@@ -4,7 +4,7 @@
  * 当前在线主题：
  *   lattice        深空晶（固定深色主题，保留晶格结构光）
  *   soft-white     柔光白（固定浅色主题）
- *   crystal-aurora 黑曜霓彩（固定深色主题，黑曜底座与青蓝双色结构光）
+ *   crystal-aurora 黑曜彩（固定深色主题，黑曜底座与青蓝双色结构光）
  *
  * 安全机制：
  *   所有入口（用户偏好 DB / localStorage / 管理员设置）必须经过
@@ -93,12 +93,12 @@ export function resolveRenderedTheme(
 export const USER_THEME_OPTIONS = [
   { id: "lattice", label: "深空晶", description: "深空底座、晶格结构光与澄澈重点", dot: "#6EE7E0", ring: "rgba(110,231,224,0.30)" },
   { id: "soft-white", label: "柔光白", description: "温润柔白底色、玉石强调与克制状态", dot: "#17675A", ring: "rgba(23,103,90,0.20)" },
-  { id: "crystal-aurora", label: "黑曜霓彩", description: "黑曜底座、青绿与曜蓝双色结构光、霓彩功能图标", dot: "#28D5C0", ring: "rgba(40,213,192,0.28)" },
+  { id: "crystal-aurora", label: "黑曜彩", description: "黑曜底座、青绿与曜蓝双色结构光、霓彩功能图标", dot: "#28D5C0", ring: "rgba(40,213,192,0.28)" },
 ] as const;
 
 /** 管理后台主题卡片选项（带预览色板） */
 export const ADMIN_THEME_OPTIONS = [
   { id: "lattice", name: "深空晶", accent: "#6EE7E0", bg: "#112540", sidebar: "#07141F", desc: "深空底座、晶格结构光与澄澈重点" },
   { id: "soft-white", name: "柔光白", accent: "#17675A", bg: "#F5F3EE", sidebar: "#FFFEFB", desc: "温润柔白底色、清晰文字层级与克制状态色" },
-  { id: "crystal-aurora", name: "黑曜霓彩", accent: "#28D5C0", bg: "#05070A", sidebar: "#060A0E", desc: "黑曜底座、青绿与曜蓝双色结构光、霓彩功能图标" },
+  { id: "crystal-aurora", name: "黑曜彩", accent: "#28D5C0", bg: "#05070A", sidebar: "#060A0E", desc: "黑曜底座、青绿与曜蓝双色结构光、霓彩功能图标" },
 ] as const;

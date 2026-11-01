@@ -9,8 +9,22 @@ import ts from "typescript";
 // replaced, so this verification cannot create a task or incur a charge.
 const nativeRequire = createRequire(import.meta.url);
 const calls = [];
+let simulatedRequests = 0, forbiddenRequests = 0;
 let responseFactory = async () => Response.json({});
 const cache = new Map();
+const fixtureOrigins = new Set(["https://relay.example", "https://n.lconai.com", "https://www.autodl.art", "https://api.siliconflow.cn"]);
+const pureModules = new Set([
+  "./video-provider-request-audit", "./video-autodl-comfyui-workflow", "./video-doubao-seedance-relay",
+  "./video-seedance-relay", "./api-endpoints", "./video-prompt-timing", "./video-token-billing",
+  "./video-cancellation", "./video-error-policy", "./video-secure-skill-native", "./video-secure-skill-kling",
+  "./video-public-url", "./video-optional-media-input", "./gaorui-video-contract-admission",
+  "./gaorui-seedance-native-contract", "./gaorui-h3-native-contract", "./gaorui-grok-native-contract",
+  "./gaorui-provider-asset-contract",
+]);
+const blockedProviderModules = new Set([
+  "./volcengine-digital-human", "./digital-human-provider", "./video-lanmao-proxy", "./video-suanlicheng",
+  "./video-autodl-h3-selfhost", "./video-input-contract",
+]);
 const unrelated = new Proxy({}, {
   get: (_target, property) => property === "AUTODL_COMFYUI_WORKFLOW_PROTOCOL"
     ? "unrelated-fixture-protocol"
@@ -30,23 +44,21 @@ function load(file) {
     module: loaded,
     exports: loaded.exports,
     require: name => {
-      if (name.startsWith("node:")) return nativeRequire(name);
-      if ([
-        "./video-provider-request-audit",
-        "./video-autodl-comfyui-workflow",
-        "./video-doubao-seedance-relay",
-        "./video-seedance-relay",
-        "./api-endpoints",
-        "./video-prompt-timing",
-      ].includes(name)) {
+      if (["node:crypto", "node:async_hooks"].includes(name)) return nativeRequire(name);
+      if (pureModules.has(name)) {
         return load(path.join(path.dirname(absolute), `${name}.ts`));
       }
       if (name === "./video-suanlicheng-material") {
         return {
-          readSuanlichengMaterial: async () => ({ buffer: Buffer.from("fixture-image"), contentType: "image/png" }),
+          readSuanlichengMaterial: async (url, category, owner) => {
+            assert.equal(url, "https://image.example/reference.png");
+            assert.equal(category, "image"); assert.equal(owner, "fixture-owner");
+            return { buffer: Buffer.from("fixture-image"), contentType: "image/png" };
+          },
         };
       }
-      return unrelated;
+      if (blockedProviderModules.has(name)) return unrelated;
+      throw new Error(`UNEXPECTED_PROTOCOL_DEPENDENCY:${name}`);
     },
     Request,
     Response,
@@ -64,8 +76,14 @@ function load(file) {
     clearTimeout,
     crypto: nativeRequire("node:crypto").webcrypto,
     console: { log() {}, warn() {}, error() {} },
+    process: { env: {} },
     fetch: async (input, init = {}) => {
       const request = input instanceof Request ? input : new Request(input, init);
+      if (!fixtureOrigins.has(new URL(request.url).origin) || !["GET", "POST"].includes(request.method)) {
+        forbiddenRequests++;
+        throw new Error(`UNEXPECTED_FIXTURE_REQUEST:${request.method}:${request.url}`);
+      }
+      simulatedRequests++;
       const contentType = request.headers.get("content-type") || "";
       const body = request.method === "GET" || request.method === "HEAD"
         ? null
@@ -729,9 +747,22 @@ for (const fixture of siliconFlowFixtures) {
   }
 }
 
+for (const usage of [{ total_tokens: 25, completion_tokens: 25 }, { total_tokens: 25, completion_tokens: 24 }, { total_tokens: "25", completion_tokens: "25" }, undefined]) {
+  await test(`Secure Skill Doubao Seedance uses the real token usage parser for ${JSON.stringify(usage)}`, async () => {
+    responseFactory = json({ id: "seedance-usage-task", status: "queued", usage });
+    const result = await adapter.submitVideoTask(baseConfig("secure_skill_doubao_seedance", { model_name: "doubao-seedance-2-0-fast-260128" }), { prompt: "fixture", duration: 8, resolutionTier: "720p" });
+    assert.equal(result.taskId, "seedance-usage-task"); assert.equal(calls.length, 1); assert.equal(calls[0].method, "POST");
+    if (usage?.total_tokens === 25 && usage?.completion_tokens === 25) {
+      assert.equal(result.usage?.totalTokens, 25); assert.equal(result.usage?.completionTokens, 25);
+    } else assert.equal(result.usage, undefined);
+  });
+}
+assert.equal(forbiddenRequests, 0);
 console.log(JSON.stringify({
   passed,
   failed: 0,
+  simulatedRequests,
+  forbiddenRequests,
   realProviderRequests: 0,
   databaseWrites: 0,
 }));

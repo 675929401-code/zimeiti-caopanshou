@@ -3,6 +3,7 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
 import { invalidateBotsCache } from "@/lib/bots-cache";
 import { invalidateAgentConfigCache } from "@/app/api/llm/llm-state";
+import { visibleAdminAgentRows } from "@/lib/admin-agent-catalog-visibility";
 import {
   agentBatchConflict,
   agentRevisionConflict,
@@ -64,6 +65,23 @@ export async function PUT(request: NextRequest) {
     }
 
     const agentRows = (agents || []) as ReorderAgentRow[];
+    // Use the same visibility contract as the admin list. Hidden, private,
+    // inactive and unknown categories cannot be reordered without internal access.
+    const categoryNames = Array.from(new Set(agentRows.map((agent) => String(agent.category || "通用").trim() || "通用")));
+    const { data: categories, error: categoryError } = await client
+      .from("categories")
+      .select("name,visibility,is_active")
+      .in("name", categoryNames);
+    if (categoryError) {
+      return NextResponse.json({ error: "读取分类权限失败", updated: 0 }, { status: 500 });
+    }
+    if (visibleAdminAgentRows(agentRows, categories || [], false).length !== agentRows.length) {
+      const internalAccess = await authorizeAdminCapability(request, "internal_tools.manage", {
+        operation: "internal_agent_reorder",
+        requireStepUp: true,
+      });
+      if (!internalAccess.ok) return internalAccess.response;
+    }
     const affectedCategories = Array.from(new Set(agentRows.map((agent) => normalizedCategory(agent.category))));
     const { data: completeCategoryRows, error: completeCategoryError } = await client
       .from("agents")
@@ -83,25 +101,6 @@ export async function PUT(request: NextRequest) {
         updated: 0,
       });
     }
-    const privateCategories = new Set<string>();
-    const categoryNames = Array.from(new Set(agentRows.map((agent) => String(agent.category || "")).filter(Boolean)));
-    if (categoryNames.length > 0) {
-      const { data: categories } = await client
-        .from("categories")
-        .select("name,visibility")
-        .in("name", categoryNames);
-      for (const category of categories || []) {
-        if (category.visibility === "private") privateCategories.add(String(category.name));
-      }
-    }
-    if (agentRows.some((agent) => agent.user_access === "hidden" || agent.category === "自用" || privateCategories.has(String(agent.category)))) {
-      const internalAccess = await authorizeAdminCapability(request, "internal_tools.manage", {
-        operation: "internal_agent_reorder",
-        requireStepUp: true,
-      });
-      if (!internalAccess.ok) return internalAccess.response;
-    }
-
     const byId = new Map(agentRows.map((agent) => [String(agent.id), agent]));
     for (const entry of entries) {
       const current = byId.get(entry.id);

@@ -5,11 +5,16 @@ import { Check, Copy, ClipboardCopy, ChevronDown, ChevronUp, Film, RotateCw } fr
 import { toast } from "sonner";
 import { cn, copyToClipboard, extractPureText } from "@/lib/utils";
 import { renderMarkdown, renderStreamingText, clearStreamingCache } from "@/lib/markdown-renderer";
-import { renderTextWithCodeBlocks } from "@/components/chat/render-helpers";
 import morphdom from "morphdom";
-import { hasStoryboardPromptPushCapability } from "@/lib/storyboard-prompt-push-capability";
+import MarkdownIt from "markdown-it";
+import { storyboardPromptVisibleText } from "@/lib/storyboard-prompt-draft";
+import { officialStoryboardDirectorIdentity } from "@/lib/storyboard-director-identity";
+import { configuredAgentPromptPushTarget, hasStoryboardPromptPushCapability, resolveAgentPromptPushTarget } from "@/lib/storyboard-prompt-push-capability";
+import { useCodeBlockControls } from "./use-code-block-controls";
+import promptViewportStyles from "./prompt-viewport.module.css";
 import type { OutputStyle } from "@/types/coze";
-import { dispatchVideoTaskTransfer, makeVideoTaskTransferPayload } from "@/lib/video-task-transfer";
+import { dispatchVideoTaskTransfer } from "@/lib/video-task-transfer";
+import { buildChatVideoPromptTransfer } from "@/lib/chat-video-prompt-transfer";
 import {
   parseStructuredAgentOutput,
   publishStructuredAgentOutputOnce,
@@ -40,6 +45,38 @@ export function hideStoryboardStreamingTransport(text: string): string {
   const tail = visible.slice(start).replace(/^<!--\s*/u, "<!--").toLowerCase();
   const markers = ["<!--storyboard_director_output:v1", "<!--storyboard_director_assets:v1", "<!--storyboard_director_plan:v1"];
   return markers.some(marker => marker.startsWith(tail)) ? visible.slice(0, start).trimEnd() : visible;
+}
+
+// Use Markdown source maps for nested list/blockquote code as well as top-level
+// fences. This parser does not render HTML or duplicate the rendering pipeline.
+const codeBlockSourceMapParser = new MarkdownIt({ html: false });
+
+/** Gallery extraction must never rewrite literal text inside Markdown code. */
+function transformOutsideFencedCode(text: string, transform: (prose: string) => string): string {
+  const lines = text.match(/[^\n]*\n|[^\n]+$/gu) || [];
+  const protectedLines = new Set<number>();
+  try {
+    for (const token of codeBlockSourceMapParser.parse(text, {})) {
+      if ((token.type === "fence" || token.type === "code_block") && token.map) {
+        for (let line = token.map[0]; line < Math.min(token.map[1], lines.length); line++) protectedLines.add(line);
+      }
+    }
+  } catch {
+    // If structural parsing fails, preserving received text is safer than
+    // extracting a supposed image out of a literal prompt or code fragment.
+    return text;
+  }
+  let output = "";
+  let prose = "";
+  for (const [index, line] of lines.entries()) {
+    if (protectedLines.has(index)) {
+      output += (prose ? transform(prose) : "") + line;
+      prose = "";
+    } else {
+      prose += line;
+    }
+  }
+  return output + transform(prose);
 }
 
 /**
@@ -99,7 +136,7 @@ function ObjectStorageImage({ storageKey, index }: { storageKey: string; index: 
   );
 }
 
-function PromptBlock({ text, label, allMessages, agentId, outputStyle }: { text: string; label?: string; allMessages?: Message[]; agentId?: string; outputStyle?: OutputStyle }) {
+function PromptBlock({ text, label, agentId, outputStyle }: { text: string; label?: string; allMessages?: Message[]; agentId?: string; outputStyle?: OutputStyle }) {
   const [collapsed, setCollapsed] = useState(true);
   const [copied, setCopied] = useState(false);
   const hasStoryboardPromptPush = hasStoryboardPromptPushCapability(agentId, outputStyle);
@@ -120,18 +157,9 @@ function PromptBlock({ text, label, allMessages, agentId, outputStyle }: { text:
 
   const handlePushToVideo = () => {
     try {
-      let contentToPush = text.trim();
-      if (allMessages && allMessages.length > 0) {
-        const allPrompts = extractAllStructuredPrompts(allMessages);
-        if (allPrompts.trim()) contentToPush = allPrompts;
-      }
-      const dispatched = dispatchVideoTaskTransfer(makeVideoTaskTransferPayload([{
-        order: 1,
-        prompt: contentToPush,
-        label: "任务1",
-        title: "来自对话提示词",
-        source: "chat-message",
-      }], "batch"));
+      const payload = buildChatVideoPromptTransfer(text);
+      if (!payload) { toast.info("未识别到当前提示词块的视频内容。"); return; }
+      const dispatched = dispatchVideoTaskTransfer(payload);
       if (!dispatched) { toast.error("临时交接失败，请手动复制提示词"); return; }
       toast.success("已推送至视频平台，已自动填入视频任务卡片");
       window.location.assign("/video");
@@ -573,20 +601,19 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
 
   let processedText = text;
   processedText = processedText.replace(/\r\n/g, '\n');
-  processedText = processedText.replace(/\n{3,}/g, '\n\n');
 
-  const isPlainText = responseFormat === 'text';
   const structuredResult = useMemo(() => {
     if (isUser) {
       return { status: "none", visible_text: processedText, errors: [] } as StructuredAgentOutputResult;
     }
-    return parseStructuredAgentOutput(processedText, !isStreaming);
+    return parseStructuredAgentOutput(processedText, !isStreaming, { allowQualityWarnings: true });
   }, [isUser, isStreaming, processedText]);
-  const streamingText = isUser ? processedText : hideStoryboardStreamingTransport(structuredResult.visible_text);
+  const directStoryboard = !isUser && Boolean(officialStoryboardDirectorIdentity(agentId));
+  const streamingText = isUser ? processedText : hideStoryboardStreamingTransport(directStoryboard ? storyboardPromptVisibleText(processedText) : structuredResult.visible_text);
   useEffect(() => {
-    if (!messageId || isUser || isStreaming || structuredResult.status !== "valid") return;
+    if (!messageId || isUser || directStoryboard || isStreaming || structuredResult.status !== "valid") return;
     publishStructuredAgentOutputOnce(messageId, structuredResult);
-  }, [isStreaming, isUser, messageId, structuredResult]);
+  }, [directStoryboard, isStreaming, isUser, messageId, structuredResult]);
   const combinedPattern = /\[img\]([^\[]+)\[\/img\]|!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)|((?:https?:\/\/)[^\s]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp)(?:\?[^\s]*)?)/gi;
 
   let userContent: React.ReactNode = null;
@@ -632,28 +659,26 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   // Non-streaming: extract images and process prompt blocks
   const imageUrls: string[] = [];
   const objKeys: string[] = [];
-  const renderStructuredStoryboardAsMarkdown = structuredResult.status === "valid"
-    && structuredResult.kind === "storyboard_director"
-    && structuredResult.source === "stable_json";
-  let textWithoutImages = structuredResult.status === "valid" ? structuredResult.visible_text : processedText;
+  let textWithoutImages = directStoryboard ? streamingText : structuredResult.status === "valid" ? structuredResult.visible_text : processedText;
 
   if (!isStreaming) {
-    textWithoutImages = textWithoutImages.replace(/\[img\]([^\[]+)\[\/img\]/gi, (_m, key: string) => {
-      objKeys.push(key);
-      return '';
+    textWithoutImages = transformOutsideFencedCode(textWithoutImages, (prose) => {
+      prose = prose.replace(/\[img\]([^\[]+)\[\/img\]/gi, (_m, key: string) => {
+        objKeys.push(key);
+        return '';
+      });
+      prose = prose.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/gi, (_m, _alt: string, url: string) => {
+        imageUrls.push(url);
+        return '';
+      });
+      return prose.replace(/((?:https?:\/\/)[^\s]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp)(?:\?[^\s]*)?)/gi, (_m, url: string) => {
+        imageUrls.push(url);
+        return '';
+      });
     });
-    textWithoutImages = textWithoutImages.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/gi, (_m, _alt: string, url: string) => {
-      imageUrls.push(url);
-      return '';
-    });
-    textWithoutImages = textWithoutImages.replace(/((?:https?:\/\/)[^\s]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp)(?:\?[^\s]*)?)/gi, (_m, url: string) => {
-      imageUrls.push(url);
-      return '';
-    });
-    textWithoutImages = textWithoutImages.replace(/\n{3,}/g, '\n\n').trim();
-
     // 普通“提示词/文案”标题保持正文展示；只有模型明确输出 ``` 才渲染为代码框。
-    textWithoutImages = textWithoutImages.replace(/\n{3,}/g, '\n\n').trim();
+    // Preserve indentation and blank lines inside code so the copy action keeps
+    // the complete received content. Markdown handles prose spacing itself.
   }
 
   // Build dynamic styles from outputStyle + fontSize
@@ -678,15 +703,15 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   const finalHtml = useMemo(() => {
     if (isStreaming) return '';
     try {
-      if (isPlainText && !renderStructuredStoryboardAsMarkdown && textWithoutImages) {
-        return renderTextWithCodeBlocks(textWithoutImages);
-      }
+      // Assistant prose uses the same Markdown contract during and after
+      // streaming. responseFormat=text must not turn headings/bold into literal
+      // markers at completion; user messages retain their separate literal path.
       return renderMarkdown(textWithoutImages);
     } catch {
       // 降级：直接显示原始文本
-      return `<p>${(textWithoutImages || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`;
+      return `<p>${(textWithoutImages || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`;
     }
-  }, [isStreaming, textWithoutImages, isPlainText, renderStructuredStoryboardAsMarkdown]);
+  }, [isStreaming, textWithoutImages]);
 
   const shouldShowCopywritingCopy = !isUser && !isStreaming && isLikelyCopywriting(textWithoutImages, responseFormat);
 
@@ -729,6 +754,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   // 🚀 morphdom-based streaming DOM update — eliminates flicker by morphing DOM in-place
   // instead of full innerHTML replacement. Preserves existing nodes (code blocks, tables, etc.)
   const streamingLayerRef = useRef<HTMLDivElement>(null);
+  const prepareCodeBlockControls = useCodeBlockControls(streamingLayerRef, !isUser, streamingRenderKey);
   const prevMorphHtmlRef = useRef('');
   const pendingMorphHtmlRef = useRef('');
   const morphTimerRef = useRef<number | null>(null);
@@ -736,9 +762,10 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   const firstPaintScheduledRef = useRef(false);
   const firstPaintRafRef = useRef<number | null>(null);
   const renderedHtml = isStreaming ? streamingHtml : finalHtml;
-  const hasStoryboardPromptPush = hasStoryboardPromptPushCapability(agentId, outputStyle);
-  const pendingStoryboardPushRef = useRef(hasStoryboardPromptPush);
-  const previousStoryboardPushRef = useRef(hasStoryboardPromptPush);
+  const promptPushTarget = resolveAgentPromptPushTarget(agentId, outputStyle);
+  const dedicatedVideoTarget = configuredAgentPromptPushTarget(outputStyle) === "video";
+  const pendingPromptPushRef = useRef({ target: promptPushTarget, dedicatedVideoTarget });
+  const previousPromptPushRef = useRef(`${promptPushTarget}:${dedicatedVideoTarget}`);
 
   // Keep one content-layer DOM root for the whole lifecycle. Streaming frames
   // and the final enhanced markdown both morph that root in place, so ending a
@@ -749,9 +776,10 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
   // :last-child 淡入动画每帧重启，这就是文字闪屏的根因。
   useLayoutEffect(() => {
     if (!streamingLayerRef.current) return;
-    pendingStoryboardPushRef.current = hasStoryboardPromptPush;
-    if (previousStoryboardPushRef.current !== hasStoryboardPromptPush) {
-      previousStoryboardPushRef.current = hasStoryboardPromptPush;
+    pendingPromptPushRef.current = { target: promptPushTarget, dedicatedVideoTarget };
+    const policyKey = `${promptPushTarget}:${dedicatedVideoTarget}`;
+    if (previousPromptPushRef.current !== policyKey) {
+      previousPromptPushRef.current = policyKey;
       prevMorphHtmlRef.current = "";
     }
     pendingMorphHtmlRef.current = renderedHtml;
@@ -766,12 +794,24 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
       const target = layer.ownerDocument.createElement("div");
       target.className = "render-layer";
       target.innerHTML = latestHtml;
-      if (pendingStoryboardPushRef.current) {
-        // Remove only the renderer's known toolbar actions; retain copy and code text.
-        target.querySelectorAll(
-          ".code-block-wrapper .code-block-actions > button[data-video-task-send], .code-block-wrapper .code-block-actions > button[data-image-workbench-send]",
-        ).forEach(action => action.remove());
-      }
+      prepareCodeBlockControls(target);
+      target.querySelectorAll<HTMLElement>('.code-block-wrapper').forEach(wrapper => {
+        const video = wrapper.querySelector<HTMLButtonElement>('button[data-video-task-send]');
+        const image = wrapper.querySelector<HTMLButtonElement>('button[data-image-workbench-send]');
+        const policy = pendingPromptPushRef.current;
+        if (policy.target === 'storyboard-workbench') {
+          image?.remove();
+          video?.remove();
+        } else if (policy.target === 'video') {
+          if (wrapper.dataset.codePurpose === 'image-prompt') video?.remove();
+          else if (video) {
+            video.setAttribute('data-agent-video-target', 'true');
+            video.setAttribute('aria-label', '推送当前代码框至视频创作');
+            video.title = '只推送当前代码框至视频创作';
+          }
+          if (policy.dedicatedVideoTarget || wrapper.dataset.codePurpose === 'video-prompt') image?.remove();
+        } else { video?.remove(); image?.remove(); }
+      });
       morphdom(layer, target, {
         childrenOnly: true,
         // 不使用 onBeforeElUpdated + isEqualNode：isEqualNode 会对每个元素做深度递归比较，
@@ -815,7 +855,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
     } else if (morphTimerRef.current === null) {
       morphTimerRef.current = window.setTimeout(applyLatestMorph, remaining);
     }
-  }, [isStreaming, messageId, processedText, renderedHtml, hasStoryboardPromptPush]);
+  }, [isStreaming, messageId, processedText, renderedHtml, promptPushTarget, dedicatedVideoTarget, prepareCodeBlockControls]);
 
   // Timers are component resources; the morphed HTML state intentionally stays
   // intact across the streaming -> final transition.
@@ -839,6 +879,7 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
       ref={containerRef}
       className={cn(
         "markdown-body text-[var(--foreground)]",
+        promptViewportStyles.surface,
         isStreaming && "markdown-body-generate streaming-typewriter-content",
         !isStreaming && os.firstLineIndent && 'output-indent',
       )}
@@ -863,11 +904,11 @@ const MessageContent = React.memo(function MessageContent({ text, messageId, isU
               isStreaming ? "render-layer-streaming render-layer-streaming-typewriter" : "render-layer-final",
             )}
           />
-          {!isStreaming && (
+          {!isStreaming && !directStoryboard && (
             <StructuredOutputInspector
               result={structuredResult}
               onRetry={() => {
-                const retried = parseStructuredAgentOutput(processedText, true);
+                const retried = parseStructuredAgentOutput(processedText, true, { allowQualityWarnings: true });
                 if (retried.status === "valid") toast.success("结构解析成功");
                 else toast.error(retried.status === "invalid" ? retried.errors[0] : "未检测到稳定机器包");
               }}

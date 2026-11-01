@@ -65,7 +65,8 @@
       {
         "id": "platform-wide-shared-surface",
         "patterns": [
-          "^(?:\\.gitignore$|\\.release/|next\\.config\\.[^/]+$|package\\.json$|pnpm-lock\\.yaml$|prompts/|public/|runtime-tools/|scripts/|supabase/|src/(?:app/api/|components/|contexts/|features/|hooks/|lib/|storage/|commerce/|types/|server\\.ts$|proxy\\.ts$|app/(?:layout|globals|dialog-theme|chat-glass-continuity|markdown-body|theme-crystal-aurora|ui-shell-fixes)\\.|app/.+\\.css$))"
+          "^(?:\\.gitignore$|\\.release/|next\\.config\\.[^/]+$|package\\.json$|pnpm-lock\\.yaml$|prompts/|public/|runtime-tools/|scripts/|supabase/|src/(?:app/api/|components/|contexts/|features/|hooks/|lib/|storage/|commerce/|types/|server\\.ts$|proxy\\.ts$|app/(?:layout|globals|dialog-theme|chat-glass-continuity|markdown-body|theme-crystal-aurora|ui-shell-fixes)\\.|app/.+\\.css$))",
+          "^(?:\\.engineering/(?:chat-reliability-lock|extraction-feature-lock)\\.v1\\.json|tsconfig\\.json|src/instrumentation\\.ts)$"
         ],
         "routes": [
           "/",
@@ -80,6 +81,26 @@
           "/video",
           "/voice-studio/workspace"
         ]
+      },
+      {
+        "id": "cover-exact-error-boundary",
+        "patterns": ["^src/app/cover/error\\.tsx$"],
+        "routes": ["/cover"]
+      },
+      {
+        "id": "help-exact-client-surface",
+        "patterns": ["^src/app/help/help-center-client\\.tsx$"],
+        "routes": ["/help"]
+      },
+      {
+        "id": "storyboard-exact-persistent-layout",
+        "patterns": ["^src/app/storyboard-workbench/layout\\.tsx$"],
+        "routes": ["/storyboard-workbench", "/storyboard-workbench/history", "/storyboard-workbench/visual-assets"]
+      },
+      {
+        "id": "youcai-exact-isolated-storyboard-layouts",
+        "patterns": ["^src/app/youcai/(?:layout\\.tsx|storyboard-workbench/layout\\.tsx)$"],
+        "routes": ["/youcai/storyboard-workbench", "/commerce/rebuild"]
       },
       {
         "id": "release-control-plane",
@@ -208,6 +229,8 @@
       "precedence": 300,
       "patterns": [
         "(?:^|/)(?:storage-delete|storage-cleanup|retention-worker|purge-worker|delete-worker)(?:[./_-]|$)",
+        "^src/lib/user-content-retention-worker\\.ts$",
+        "^src/lib/video-history-policy\\.ts$",
         "^scripts/(?:reconcile-user-content-retention|verify-user-content-retention|verify-deploy-storage-guard)(?:[.-]|$)"
       ]
     },

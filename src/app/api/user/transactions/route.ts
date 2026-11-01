@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTokenFromHeaders, verifyToken } from '@/lib/auth';
 import { getSupabaseAdminClient } from '@/storage/database/supabase-client';
+import { buildPublicTransactionBillingExplanation, toPublicTransactionMetadata } from '@/lib/public-billing-explanation';
 
 // GET /api/user/transactions?type=all|credits|cash&page=1&pageSize=20&dateFrom=xxx&dateTo=xxx&transactionType=all|recharge|consume
 export async function GET(request: NextRequest) {
@@ -63,9 +64,12 @@ export async function GET(request: NextRequest) {
           type: t.type,
           transactionType: t.transaction_type,
           amount: Number(t.amount),
-          balanceAfter: t.balance_after ? Number(t.balance_after) : null,
+          balanceAfter: t.balance_after != null ? Number(t.balance_after) : null,
           description: t.description || '',
-          metadata: t.metadata,
+          metadata: toPublicTransactionMetadata(t.metadata),
+          ...(['consume', 'consumption'].includes(t.type) ? {
+            billingExplanation: buildPublicTransactionBillingExplanation(t.metadata, 'credits'),
+          } : {}),
           createdAt: t.created_at,
         }));
         creditTotal = cTotal || 0;
@@ -105,10 +109,13 @@ export async function GET(request: NextRequest) {
           type: t.type,
           transactionType: t.type === 'topup' ? 'recharge' : 'consumption',
           amount: Number(t.amount),
-          balanceAfter: t.balance_after ? Number(t.balance_after) : null,
+          balanceAfter: t.balance_after != null ? Number(t.balance_after) : null,
           description: t.description || '',
           referenceId: t.reference_id || null,
-          metadata: t.metadata || null,
+          metadata: toPublicTransactionMetadata(t.metadata),
+          ...(t.type === 'consume' ? {
+            billingExplanation: buildPublicTransactionBillingExplanation(t.metadata, 'cash'),
+          } : {}),
           createdAt: t.created_at,
         }));
         cashTotal = chTotal || 0;

@@ -370,7 +370,7 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketpl
 
 html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-agent-title {
   color: #f3fffe !important;
-  font-size: 16px !important;
+  font-size: 16px;
   line-height: 1.35 !important;
 }
 

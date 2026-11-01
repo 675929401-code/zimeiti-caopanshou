@@ -8,7 +8,8 @@ import { chromium } from "playwright";
 const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").replace(/\/+$/u, "");
 const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
 const identity = JSON.parse(process.env.LOCAL_NAV_READONLY_IDENTITY || "{}");
-const output = path.resolve(".codex-evidence/text-model-admin-simple-live-20260930");
+const output = path.resolve(process.env.ADMIN_MODEL_UI_EVIDENCE_DIR || ".codex-evidence/admin-full-acceptance-20261030-9592a6d0/models/browser");
+const fixtureReleaseId = "5ea47cca-874a-4c29-80f6-4e569c10cc05";
 
 function sanitize(value) {
   return String(value || "")
@@ -29,6 +30,8 @@ export async function main() {
   const blockedWrites = [];
   const externalRequests = [];
   let capturedPayload = null;
+  let capturedModelSaves = 0;
+  let saveMode = "staged";
 
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
@@ -46,9 +49,24 @@ export async function main() {
         await route.abort("blockedbyclient");
         return;
       }
+      if (request.method() === "GET" && url.pathname === "/api/auth/me") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, user: identity.user }) });
+        return;
+      }
+      if (request.method() === "GET" && url.pathname === "/api/admin/model-pool-releases") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true,
+          current: { id: "63185754-d452-4bb7-9c15-77aa14ba132a", release_version: 104, is_current: true, status: "published" },
+          releases: capturedModelSaves && saveMode === "staged" ? [{ id: fixtureReleaseId, release_version: 105, is_current: false, status: "draft", change_note: "受控候选界面验收", snapshot_sha256: "a".repeat(64) }] : [],
+          runtimeEnforcement: { ready: false, code: "FIXTURE_READONLY", blockers: ["受控夹具不允许发布"] },
+        }) });
+        return;
+      }
       if (request.method() === "POST" && url.pathname === "/api/admin/models") {
         capturedPayload = request.postDataJSON();
-        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, model: { id: "ui-capture-only" } }) });
+        capturedModelSaves++;
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await route.fulfill({ status: saveMode === "staged" ? 202 : 200, contentType: "application/json",
+          body: JSON.stringify(saveMode === "staged" ? { success: true, staged: true, published: false, result: { release: { id: fixtureReleaseId, release_version: 105 } } } : {}) });
         return;
       }
       const diagnosticReadPost = request.method() === "POST" && url.pathname === "/__nextjs_original-stack-frames";
@@ -98,6 +116,7 @@ export async function main() {
     await dialog.getByLabel("缓存成本", { exact: true }).fill("0.06");
     await dialog.getByLabel("利润率", { exact: true }).fill("9.090909");
     await dialog.getByLabel("上下文长度", { exact: true }).fill("64000");
+    await dialog.getByLabel("最大回复 Token", { exact: true }).fill("256");
     await dialog.getByRole("button", { name: "自带思考", exact: true }).click();
 
     await dialog.screenshot({ path: path.join(output, "text-model-simple-form-1440x900.png") });
@@ -109,9 +128,16 @@ export async function main() {
     assert.ok(layout.right <= layout.viewportWidth + 1, "DIALOG_OVERFLOWS_VIEWPORT");
     assert.ok(layout.documentOverflow <= 1, `PAGE_HORIZONTAL_OVERFLOW:${layout.documentOverflow}`);
 
-    await dialog.getByRole("button", { name: "确认新增", exact: true }).click();
+    await dialog.getByRole("button", { name: "保存为候选", exact: true }).evaluate(button => { button.click(); button.click(); });
     await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-labelledby="model-dialog-title"]'), undefined, { timeout: 10_000 });
     assert.ok(capturedPayload, "MODEL_SAVE_PAYLOAD_NOT_CAPTURED");
+    assert.equal(capturedModelSaves, 1, "DOUBLE_CLICK_MUST_CREATE_ONE_CANDIDATE");
+    const result = page.getByTestId("model-candidate-save-result");
+    await result.filter({ hasText: fixtureReleaseId }).waitFor({ state: "visible" });
+    assert.equal(await result.getAttribute("data-result"), "staged");
+    await page.locator(`[data-release-id="${fixtureReleaseId}"]`).waitFor({ state: "visible" });
+    assert.equal(await page.locator(`[data-release-id="${fixtureReleaseId}"]`).getByRole("button", { name: "按预览发布", exact: true }).isDisabled(), true);
+    await page.screenshot({ path: path.join(output, "candidate-saved-not-published.png") });
     assert.equal(capturedPayload.model_type, "text");
     assert.equal(capturedPayload.billing_mode, "token");
     assert.equal(capturedPayload.token_billing_enabled, true);
@@ -131,16 +157,39 @@ export async function main() {
     assert.equal(capturedPayload.file_parsing, "none");
     assert.equal(capturedPayload.max_context_rounds, 0);
 
+    // A malformed successful response must retain the form and block blind retry.
+    saveMode = "missing-receipt";
+    await page.getByRole("button", { name: "添加对话模型", exact: true }).click();
+    await dialog.waitFor({ state: "visible" });
+    await dialog.getByLabel("接入站点 API 地址", { exact: true }).fill("https://fixture.invalid/v1");
+    await dialog.getByLabel("API 密钥", { exact: true }).fill("test-only-not-a-real-secret");
+    await dialog.getByLabel("模型名称", { exact: true }).fill("fixture-result-unknown");
+    await dialog.getByLabel("输入成本", { exact: true }).fill("0.6");
+    await dialog.getByLabel("输出成本", { exact: true }).fill("3");
+    await dialog.getByLabel("缓存成本", { exact: true }).fill("0.06");
+    await dialog.getByLabel("利润率", { exact: true }).fill("9.090909");
+    await dialog.getByLabel("最大回复 Token", { exact: true }).fill("256");
+    await dialog.getByRole("button", { name: "保存为候选", exact: true }).click();
+    await dialog.getByRole("button", { name: "请先核对保存结果", exact: true }).waitFor({ state: "visible" });
+    assert.equal(await dialog.getByRole("button", { name: "请先核对保存结果", exact: true }).isDisabled(), true);
+    assert.equal(capturedModelSaves, 2);
+    await dialog.screenshot({ path: path.join(output, "unknown-result-preserves-form.png") });
+
     const report = {
       passed: true,
       observedAt: new Date().toISOString(),
       route: "/admin?tab=models",
-      requiredFields: 10,
+      requiredFields: 12,
       removedFields: 13,
       presetEndpoint: capturedPayload.api_endpoint,
       tokenBilling: true,
       nativeThinking: true,
       simulatedSaveCaptured: true,
+      candidate202ReceiptValidated: true,
+      publishGatePreserved: true,
+      doubleClickSingleDispatch: true,
+      missingReceiptRetainsFormAndBlocksRetry: true,
+      capturedModelSaves,
       modelWrites: 0,
       providerCalls: 0,
       paidCalls: 0,

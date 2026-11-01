@@ -1,5 +1,6 @@
 import { StoryboardProjectDocument } from "@/lib/storyboard-project-contract";
 import { createStoryboardPersistenceSnapshot } from "@/lib/storyboard-local-persistence";
+import { hasStoryboardImageSubmissionIdentity } from "@/lib/storyboard-annotation-card";
 const PREFIX = "storyboard_workspace_recovery_v1";
 const MAX_BYTES = 4_000_000;
 type RecoveryStorage = Pick<Storage, "getItem" | "setItem">;
@@ -30,8 +31,8 @@ export function writeStoryboardRecovery(storage: RecoveryStorage, key: string, r
   storage.setItem(key, raw);
 }
 
-const runEditFields = ["title", "ratio", "imageRatio", "imageResolution", "videoResolution", "videoDuration", "imageModelId", "videoModelId", "videoContract", "wardrobePlan", "visualAssetPlan", "visualAssetWorkspace", "environmentGroups"];
-const cardEditFields = ["order", "sourceNumber", "label", "narration", "imagePrompt", "imageExactText", "imageTextLayoutEnabled", "videoPrompt", "referenceImageUrls", "visualAssetRefs", "visualAssetRefsMode", "visualAssetSelectionMode", "sceneId", "sceneZone", "styleLock", "sceneLock", "camera", "dynamicState", "capabilityGaps", "bottomPanelRole", "qualityChecks", "wardrobeChangeEvents"];
+const runEditFields = ["executionMode", "chainRevision","title", "ratio", "imageRatio", "imageResolution", "videoResolution", "videoDuration", "imageModelId", "videoModelId", "videoContract", "wardrobePlan", "visualAssetPlan", "visualAssetWorkspace", "environmentGroups"];
+const cardEditFields = ["chainAnchorConfirmation","order", "sourceNumber", "label", "narration", "imagePrompt", "imageExactText", "imageTextLayoutEnabled", "imageAnnotationIssue", "videoPrompt", "videoInputs", "referenceImageUrls", "visualAssetRefs", "visualAssetRefsMode", "visualAssetSelectionMode", "sceneId", "sceneZone", "styleLock", "sceneLock", "camera", "dynamicState", "capabilityGaps", "bottomPanelRole", "qualityChecks", "wardrobeChangeEvents"];
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? value as Record<string, unknown> : {};
 const pick = (object: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.filter(key => object[key] !== undefined).map(key => [key, object[key]]));
 function editableContent(document: unknown, legacy = false) {
@@ -200,7 +201,9 @@ export function inspectStoryboardRecoveryEdits<T extends RecoverableRun>(cloud: 
       if (Object.keys(item).some(key => /^(?:image|video)(?:Client|Task|Record|Asset|Storage|Url|Ref$|RequestSnapshot)/u.test(key) && item[key] !== undefined)
         || item.imageStatus !== "idle" || item.videoStatus !== "idle") return { run: cloud, status: "conflict" };
     }
-    cards.push(overlay(saved ? record(saved) : { id: local.id, imageStatus: "idle", videoStatus: "idle" }, record(local), [...cardEditFields, "directorExecution"]));
+    const frozenAnnotation = saved && hasStoryboardImageSubmissionIdentity({ ...record(saved), imagePrompt: String(record(saved).imagePrompt || "") });
+    const fields = frozenAnnotation ? cardEditFields.filter(field => !["imageAnnotationIssue", "imageExactText", "imageTextLayoutEnabled"].includes(field)) : cardEditFields;
+    cards.push(overlay(saved ? record(saved) : { id: local.id, imageStatus: "idle", videoStatus: "idle" }, record(local), [...fields, "directorExecution"]));
   }
   return { run: { ...overlay(record(cloud), record(recovery.run), [...runEditFields, "directorIntake"]), cards } as T, status: "applied" };
 }

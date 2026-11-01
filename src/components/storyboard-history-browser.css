@@ -37,3 +37,83 @@
 .sbh-storyboard-page .sbh-storyboard-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; min-height: 220px; color: var(--muted-foreground); font-size: 12px; }
 .sbh-storyboard-page .sbh-storyboard-empty strong { color: var(--foreground); font-size: 14px; }
 .sbh-storyboard-page .sbh-storyboard-load-more { display: flex; margin: 18px auto; }
+
+/* 历史页整块铺满：与外层同色、去掉悬浮卡片感的边框与圆角，避免上下拼色。 */
+.sbh-storyboard-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  border: 0;
+  border-radius: 0;
+  background: var(--card);
+}
+.sbh-storyboard-page .sbh-storyboard-content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 空态重设计：图标底座 + 说明 + 明确行动，不再是“图标 + 一行字”。 */
+.sbh-storyboard-page .sbh-storyboard-empty {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 360px;
+  gap: 14px;
+  overflow: hidden;
+  border: 1px dashed color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 14px;
+  background:
+    radial-gradient(62% 54% at 50% 34%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 70%),
+    color-mix(in srgb, var(--card) 96%, var(--muted));
+}
+.sbh-storyboard-page .sbh-storyboard-empty-visual {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--primary) 9%, var(--card));
+  color: var(--primary);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 36%, transparent);
+}
+.sbh-storyboard-page .sbh-storyboard-empty strong {
+  font-size: 16px;
+}
+.sbh-storyboard-page .sbh-storyboard-empty p {
+  margin: 0;
+  max-width: 400px;
+  padding: 0 16px;
+  color: var(--muted-foreground);
+  line-height: 1.75;
+  text-align: center;
+}
+.sbh-storyboard-page .sbh-storyboard-empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.sbh-storyboard-page .sbh-storyboard-empty-actions button {
+  padding: 8px 16px;
+}
+.sbh-storyboard-page .sbh-storyboard-empty-hint {
+  font-size: 11px;
+  opacity: .8;
+}
+/* 兜底居中：无论父级 flex 对齐被谁覆盖，块级子项用 auto 边距吸收剩余空间。 */
+.sbh-storyboard-page .sbh-storyboard-empty {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-inline: auto !important;
+  text-align: center;
+}
+.sbh-storyboard-page .sbh-storyboard-empty > * {
+  margin-inline: auto !important;
+}

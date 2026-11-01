@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fetchWithRetry, isAbortLikeError } from "@/contexts/chat-utils";
 import { checkPromptInjection, isNormalAgentDesignRequest, shouldApplyCustomHighRiskKeyword } from "@/lib/prompt-guard";
+import { createChatStreamWatchdog } from "@/lib/chat-stream-watchdog";
 
 const root = process.cwd();
 const source = (relativePath: string) => readFileSync(resolve(root, relativePath), "utf8");
@@ -48,11 +49,13 @@ function verifyRouteAndClientContracts() {
   assert.match(route, /logGuardBlock\(/u);
 
   const context = source("src/contexts/app-context.tsx");
-  const watchdogStart = context.indexOf("isStreaming stuck for 300s");
-  const watchdogEnd = context.indexOf("}, 300_000);", watchdogStart);
+  const watchdogStart = context.indexOf("streamWatchdogRef.current = createChatStreamWatchdog");
+  const watchdogEnd = context.indexOf("const getOrCreateAbortController", watchdogStart);
+  assert.ok(watchdogStart >= 0 && watchdogEnd > watchdogStart, "actual watchdog integration must be present");
   const watchdogSlice = context.slice(watchdogStart, watchdogEnd);
   assert.match(watchdogSlice, /watchdogAbortedSet\.current\.add/u);
   assert.doesNotMatch(watchdogSlice, /userAbortedSet\.current\.add/u);
+  assert.match(watchdogSlice, /abortControllerMap\.current\.get\(conversationId\) !== controller/u, "old watchdog cannot relabel the replacement stream");
   assert.match(context, /let cozeStreamErrored = false/u);
   assert.match(context, /let codingStreamErrored = false/u);
   assert.doesNotMatch(context, /网络中断，已保留已接收内容/u);
@@ -61,10 +64,31 @@ function verifyRouteAndClientContracts() {
   assert.match(context, /LLM_UPSTREAM_TIMEOUT\|SSE读取超时/u);
 }
 
+function verifyWatchdogCancellation() {
+  const callbacks: Array<() => void> = [];
+  const expired: string[] = [];
+  const watchdog = createChatStreamWatchdog<number>({
+    setTimeout: callback => { callbacks.push(callback); return callbacks.length; },
+    clearTimeout: () => {},
+    onExpire: stream => { expired.push(stream.conversationId); },
+  });
+  const old = new AbortController(); const current = new AbortController();
+  watchdog.register("conversation", old, "ordinary-agent");
+  watchdog.register("conversation", current, "ordinary-agent");
+  callbacks[0]();
+  assert.equal(current.signal.aborted, false, "queued old timeout cannot abort replacement");
+  callbacks[1]();
+  assert.equal(current.signal.aborted, true); assert.deepEqual(expired, ["conversation"]);
+  const userStopped = new AbortController();
+  watchdog.register("user-stop", userStopped, "ordinary-agent"); userStopped.abort(); callbacks[2]();
+  assert.deepEqual(expired, ["conversation"], "user stop must not be reclassified as watchdog timeout");
+}
+
 async function main() {
   verifyGuardIntentBoundary();
   await verifyAbortDoesNotRetry();
   verifyRouteAndClientContracts();
+  verifyWatchdogCancellation();
   console.log(JSON.stringify({
     verifier: "chat-error-taxonomy-zero-cost",
     passed: true,

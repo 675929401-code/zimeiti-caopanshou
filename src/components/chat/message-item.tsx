@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AlertCircle, Check, CheckCircle2, Copy, Film, Loader2, Volume2, VolumeX, Trash2, RotateCw, Palette, Pencil, Save } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, Copy, Loader2, Volume2, VolumeX, Trash2, RotateCw, Palette, Pencil, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -9,17 +9,13 @@ import { copyToClipboard, resolveAgentAvatarUrl } from "@/lib/utils";
 import { reportProblem } from "@/lib/diagnostic-sentry";
 import { ReasoningBlock } from "@/components/chat/reasoning-block";
 import { StructuredStoryboardHandoff } from "@/components/chat/structured-storyboard-handoff";
-import { StoryboardInvalidReplyReview, storyboardReplyReviewCopyText, useVerifiedStoryboardMessage } from "@/components/chat/storyboard-verified-message";
-import { StreamingContentWrapper, extractAllStructuredPrompts } from "@/components/chat/message-content";
+import { storyboardPromptVisibleText } from "@/lib/storyboard-prompt-draft";
+import { officialStoryboardDirectorIdentity } from "@/lib/storyboard-director-identity";
+import { StreamingContentWrapper } from "@/components/chat/message-content";
+import { VideoPromptHandoff, type VideoPromptHandoffHandle } from "@/components/chat/video-prompt-handoff";
 import { ImageGallery, type GeneratedImage } from "@/components/chat/image-gallery";
 import type { OutputStyle } from "@/types/coze";
-import {
-  dispatchVideoTaskTransfer,
-  extractVideoPromptItemsFromMarkdown,
-  makeVideoTaskTransferPayload,
-} from "@/lib/video-task-transfer";
-import { parseStructuredAgentOutput } from "@/lib/structured-agent-output";
-import { hasStoryboardPromptPushCapability } from "@/lib/storyboard-prompt-push-capability";
+import { resolveAgentPromptPushTarget } from "@/lib/storyboard-prompt-push-capability";
 import { bipStep } from "@/lib/business-ip/catalog";
 import { businessIpMemberVisibleText } from "@/lib/business-ip/business-profile";
 
@@ -137,10 +133,12 @@ function MessageImage({ value, index }: { value: string; index: number }) {
 
 // ======================== MessageBubble ========================
 
-const MessageBubble = React.memo(function MessageBubble({ message, allMessages, onRetry, onContinue, onDelete, onEdit, fontSize, outputStyle, onStyleChange, onSaveStyleAsTemplate, responseFormat, primaryAgentId, conversationId, ownerUserId }: { message: ChatMessage; allMessages?: ChatMessage[]; onRetry?: () => void; onContinue?: () => void; onDelete?: () => void; onEdit?: (content: string) => void; fontSize?: number; outputStyle?: OutputStyle; onStyleChange?: (style: OutputStyle) => void; onSaveStyleAsTemplate?: () => void; responseFormat?: string; primaryAgentId?: string; conversationId?: string; ownerUserId?: string }) {
+const MessageBubble = React.memo(function MessageBubble({ message, onRetry, onContinue, onDelete, onEdit, fontSize, outputStyle, onStyleChange, onSaveStyleAsTemplate, responseFormat, primaryAgentId, conversationId, ownerUserId }: { message: ChatMessage; allMessages?: ChatMessage[]; onRetry?: () => void; onContinue?: () => void; onDelete?: () => void; onEdit?: (content: string) => void; fontSize?: number; outputStyle?: OutputStyle; onStyleChange?: (style: OutputStyle) => void; onSaveStyleAsTemplate?: () => void; responseFormat?: string; primaryAgentId?: string; conversationId?: string; ownerUserId?: string }) {
   const isUser = message.role === "user";
   const agentId = message.agentId || primaryAgentId;
-  const hasStoryboardPromptPush = hasStoryboardPromptPushCapability(agentId, outputStyle);
+  const promptPushTarget = resolveAgentPromptPushTarget(agentId, outputStyle);
+  const hasStoryboardPromptPush = promptPushTarget === "storyboard-workbench";
+  const videoHandoffRef = React.useRef<VideoPromptHandoffHandle>(null);
   // Assistant placeholders are mounted before the first delta. Once a row has
   // participated in streaming, never add the generic opacity/translate entry
   // animation later when isStreaming flips to false at completion.
@@ -150,8 +148,7 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const isFailed = (message.content?.startsWith("发送失败：") || !!message.error) ?? false;
   const isLongUserPaste = isUser && (message.content || "").replace(/\s/g, "").length >= 180;
-  const verifiedStoryboard = useVerifiedStoryboardMessage(message, conversationId, ownerUserId);
-  const rawVisibleText = verifiedStoryboard.applies ? verifiedStoryboard.visibleText || "三视图尚未核验完成。" : message.displayContent ?? message.content ?? "";
+  const rawVisibleText = !isUser && officialStoryboardDirectorIdentity(agentId) ? storyboardPromptVisibleText(message.content || "") : message.displayContent ?? message.content ?? "";
   const visibleText = !isUser && bipStep(message.agentId || primaryAgentId)
     ? businessIpMemberVisibleText(rawVisibleText)
     : rawVisibleText;
@@ -173,14 +170,6 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
 
   const handleCopyMarkdown = async () => {
     try {
-      if (verifiedStoryboard.review) {
-        const current = verifiedStoryboard.readCurrentReview();
-        if (!current) { toast.error("账号、会话或回复已变化，请重新打开当前回复。"); return; }
-        const ok = await copyToClipboard(storyboardReplyReviewCopyText(current));
-        if (ok) { setCopied(true); toast.success("已复制原回复（未通过校验，仅供审核）"); setTimeout(() => setCopied(false), 2000); }
-        else toast.error("复制失败，请展开原回复后手动复制。");
-        return;
-      }
       let raw = visibleText;
       raw = raw.replace(/^:::[\w\u4e00-\u9fff]+(?:\s+.*)?\s*$/gm, '');
       raw = raw.replace(/^:::\s*$/gm, '');
@@ -247,6 +236,18 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
 
   return (
     <article
+      onClickCapture={event => {
+        const target = event.target instanceof Element ? event.target : null;
+        const button = target?.closest('[data-video-task-send]');
+        if (!button || !event.currentTarget.contains(button)) return;
+        event.preventDefault(); event.stopPropagation();
+        if (message.isStreaming) { toast.info("请等待当前回复完整输出后推送。"); return; }
+        if (promptPushTarget !== "video") { toast.error("推送目标无效，请管理员重新选择。"); return; }
+        const wrapper = button.closest('.code-block-wrapper');
+        const wrappers = Array.from(event.currentTarget.querySelectorAll('.code-block-wrapper'));
+        const index = wrapper ? wrappers.indexOf(wrapper) : -1;
+        if (index >= 0) videoHandoffRef.current?.send(index, wrapper?.querySelector('code')?.textContent || '');
+      }}
       className={cn(
       "chat-message-row flex w-full flex-col px-1 py-2 group/message",
       !skipEntryAnimation && "msg-animate",
@@ -299,7 +300,7 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
             data-state={message.isStreaming ? "streaming" : isOutcomeUnknown ? "unknown" : isFailed ? "failed" : hasVisibleOutput ? "completed" : "empty"}
           >
             {message.isStreaming ? (
-              <><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{message.streamStatus || "正在生成"}</>
+              <><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{message.streamStatus || "智能体正在准备回复"}</>
             ) : isOutcomeUnknown ? (
               <><AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />结果待确认</>
             ) : isFailed ? (
@@ -311,12 +312,12 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
             )}
           </div>
         )}
-        {message.reasoningContent && (
-          <ReasoningBlock content={message.reasoningContent} isThinking={!!message.isStreaming && !message.content} defaultCollapsed={true} />
+        {message.reasoningContent?.trim() && (
+          <ReasoningBlock content={message.reasoningContent} isThinking={!!message.isStreaming && !hasVisibleText}
+            interrupted={isFailed || isOutcomeUnknown || /\[(?:已终止|已停止接收)/u.test(visibleText)} defaultCollapsed={true} />
         )}
 
-        {verifiedStoryboard.review ? <StoryboardInvalidReplyReview key={`${ownerUserId}:${conversationId}:${message.id}`} review={verifiedStoryboard.review} readCurrentReview={verifiedStoryboard.readCurrentReview} />
-          : <StreamingContentWrapper text={visibleText} messageId={message.id} isUser={isUser} outputStyle={!hasStoryboardPromptPush && showFormatBar ? localStyle : outputStyle} fontSize={fontSize} isStreaming={verifiedStoryboard.applies ? false : message.isStreaming} hasReasoning={!!message.reasoningContent} responseFormat={responseFormat} agentId={agentId} />}
+        {<StreamingContentWrapper text={visibleText} messageId={message.id} isUser={isUser} outputStyle={!hasStoryboardPromptPush && showFormatBar ? localStyle : outputStyle} fontSize={fontSize} isStreaming={message.isStreaming} hasReasoning={!!message.reasoningContent?.trim()} responseFormat={responseFormat} agentId={agentId} />}
 
         {message.images && message.images.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-2">
@@ -350,7 +351,7 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
           </div>
           {isOutcomeUnknown ? (
             <button type="button" className="chat-message-state-action" onClick={() => window.location.reload()}>
-              刷新状态
+              查看聊天记录
             </button>
           ) : canRetrySafely ? (
             <button type="button" className="chat-message-state-action" onClick={onRetry}>
@@ -370,12 +371,12 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
         >
           <AlertCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
           <div className="chat-message-state-copy">
-            <strong>{isOutcomeUnknown ? "结果待确认，请勿重复发送" : "消息未发送"}</strong>
+            <strong>{isOutcomeUnknown ? "结果待确认，请勿重复发送" : "本次请求未完成"}</strong>
             <span>{message.error}</span>
           </div>
           {isOutcomeUnknown ? (
             <button type="button" className="chat-message-state-action" onClick={() => window.location.reload()}>
-              刷新状态
+              查看聊天记录
             </button>
           ) : canRetrySafely ? (
             <button type="button" className="chat-message-state-action" onClick={onRetry}>
@@ -388,7 +389,7 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
       {/* AI message action bar */}
       {!isUser && !message.isStreaming && hasVisibleText && (
         <div className="chat-message-actions chat-message-actions-assistant flex items-center gap-1 mt-2 ml-0.5 flex-wrap">
-          <button onClick={handleCopyMarkdown} className={cn("chat-message-action p-1 rounded-md transition-colors", copied ? "text-green-500 bg-green-500/10" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]")} title={verifiedStoryboard.review ? "复制原回复（未通过校验，仅供审核）" : copied ? "已复制 Markdown 源码" : "复制 Markdown 源码"} aria-label={verifiedStoryboard.review ? "复制原回复（未通过校验，仅供审核）" : copied ? "已复制 Markdown 源码" : "复制 Markdown 源码"}>
+          <button onClick={handleCopyMarkdown} className={cn("chat-message-action p-1 rounded-md transition-colors", copied ? "text-green-500 bg-green-500/10" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]")} title={copied ? "已复制 Markdown 源码" : "复制 Markdown 源码"} aria-label={copied ? "已复制 Markdown 源码" : "复制 Markdown 源码"}>
             {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
           <button onClick={handleReadAloud} className={cn("chat-message-action p-1 rounded-md transition-colors", isSpeaking ? "text-[var(--primary)] bg-[var(--primary)]/10" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]")} title={isSpeaking ? "停止朗读" : "朗读"} aria-label={isSpeaking ? "停止朗读" : "朗读回复"}>
@@ -413,69 +414,9 @@ const MessageBubble = React.memo(function MessageBubble({ message, allMessages, 
           </button>}
           {hasStoryboardPromptPush ? (
             <StructuredStoryboardHandoff message={message} conversationId={conversationId} ownerUserId={ownerUserId} required variant="icon" />
-          ) : <button onClick={() => {
-            try {
-              if (verifiedStoryboard.applies && !verifiedStoryboard.detail) {
-                toast.error("请先完成并采用人物与宠物三视图，核验后再推送正式分镜。");
-                return;
-              }
-              const msgs = allMessages || [message];
-              const structured = parseStructuredAgentOutput(message.content || "", true);
-              if (structured.status === "valid" && structured.segments.length > 0) {
-                const dispatched = dispatchVideoTaskTransfer(makeVideoTaskTransferPayload(
-                  structured.segments.map((segment, index) => ({
-                    order: index + 1,
-                    prompt: segment.video_prompt,
-                    label: segment.segment_id,
-                    title: segment.narration,
-                    source: "chat-message",
-                  })),
-                  "batch",
-                ));
-                if (!dispatched) { toast.error("临时交接失败，请手动复制提示词"); return; }
-                toast.success(`已按稳定协议发送 ${structured.segments.length} 条视频提示词`);
-                window.location.assign("/video");
-                return;
-              }
-              const currentPromptItems = extractVideoPromptItemsFromMarkdown(message.content || "");
-              const promptItems = currentPromptItems.length > 0 ? currentPromptItems : msgs
-                .filter(m => m.role === "assistant" && m.content)
-                .flatMap(m => extractVideoPromptItemsFromMarkdown(m.content));
-              if (promptItems.length > 0) {
-                const dispatched = dispatchVideoTaskTransfer(makeVideoTaskTransferPayload(promptItems, "batch"));
-                if (!dispatched) { toast.error("临时交接失败，请手动复制提示词"); return; }
-                toast.success(`已按顺序发送 ${promptItems.length} 条提示词到视频任务卡片`);
-                window.location.assign("/video");
-                return;
-              }
-
-              const allPrompts = extractAllStructuredPrompts(msgs);
-              let fallbackPrompt = allPrompts.trim();
-              if (!fallbackPrompt) {
-                const fallbackText = msgs.filter(m => m.role === "assistant" && m.content).map(m => {
-                  let c = m.content.trim();
-                  c = c.replace(/<(?:think|thinking)[^>]*>[\s\S]*?<\/(?:think|thinking)>/gi, "");
-                  c = c.replace(/^#{1,4}\s*思考[^\n]*\n(?:[^\n#]*\n)*?(?=^#{1,4}\s|\z|```)/gm, "");
-                  c = c.replace(/^reasoning_content:\s*[\s\S]*?(?=\ncontent:|$)/im, "");
-                  return c.trim();
-                }).filter(c => c.length > 10).join("\n\n");
-                if (!fallbackText.trim()) { toast.error("未检测到视频提示词内容"); return; }
-                fallbackPrompt = fallbackText.trim();
-              }
-              const dispatched = dispatchVideoTaskTransfer(makeVideoTaskTransferPayload([{
-                order: 1,
-                prompt: fallbackPrompt,
-                label: "任务1",
-                title: "来自智能体对话",
-                source: "chat-message",
-              }], "single"));
-              if (!dispatched) { toast.error("临时交接失败，请手动复制提示词"); return; }
-              toast.success("已推送至视频平台，请在智能导入面板中确认");
-              window.location.assign("/video");
-            } catch { toast.error("推送失败，请手动复制提示词"); }
-          }} className="chat-message-action p-1 rounded-md text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors" title="推送至视频" aria-label="推送回复至视频平台">
-            <Film className="w-3.5 h-3.5" />
-          </button>}
+          ) : promptPushTarget === "video" ? (
+            <VideoPromptHandoff ref={videoHandoffRef} message={message} conversationId={conversationId} ownerUserId={ownerUserId} />
+          ) : <span role="status" className="text-[11px] text-[var(--muted-foreground)]">推送目标无效，请管理员重新选择</span>}
           {isFailed && (
             <button onClick={() => { reportProblem((message.content || "").substring(0, 200), { agent_name: message.agentName }); toast.success("已反馈，管理员将尽快处理"); }} className="chat-message-action px-2 text-[11px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors ml-1" aria-label="反馈本次回复问题">
               反馈此问题

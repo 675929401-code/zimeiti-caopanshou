@@ -1,6 +1,17 @@
 import { getAiVideoPageInputCapabilities, normalizeAiVideoWorkflowInputMode } from "./ai-video-page-capabilities";
 import { requiresGaoruiGrok15InputImage } from "./video-model-capabilities";
 
+export function getGaoruiVeoComponentsReferenceLimit(model: {
+  protocol_type?: unknown; model_name?: unknown; api_protocol_config?: unknown;
+}): number | null {
+  if (model.protocol_type !== "gaorui_video" || model.model_name !== "veo_3_1-components") return null;
+  const config = model.api_protocol_config && typeof model.api_protocol_config === "object" && !Array.isArray(model.api_protocol_config)
+    ? model.api_protocol_config as Record<string, unknown> : {};
+  const configured = Number(config.max_reference_images);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.min(3, Math.max(1, Math.floor(configured))) : 3;
+}
+
 /** One interpretation of stored input requirements for the public DTO and submission gate. */
 export function getVideoInputContract(model: Record<string, unknown>) {
   const config = model.api_protocol_config && typeof model.api_protocol_config === "object" && !Array.isArray(model.api_protocol_config)
@@ -18,10 +29,10 @@ export function getVideoInputContract(model: Record<string, unknown>) {
     requiresSourceVideo: config.requires_source_video === true,
     requiresFirstFrame: requiresGrokInputImage || configuredFirstFrame || mode === "first_last_frame",
     requiresLastFrame: configuredLastFrame || mode === "first_last_frame",
-    showFirstFrame: configuredFirstFrame,
+    showFirstFrame: requiresGrokInputImage || configuredFirstFrame,
     showLastFrame: configuredLastFrame,
     minReferenceImages: config.min_reference_images ?? config.required_reference_images,
-    maxReferenceImages: config.max_reference_images,
+    maxReferenceImages: getGaoruiVeoComponentsReferenceLimit(model) ?? config.max_reference_images,
     minReferenceAudios: config.min_reference_audios ?? config.required_reference_audios,
     maxReferenceAudios: config.max_reference_audios,
     supportsAudioInput: config.supports_audio_input === true || maxAudios > 0,

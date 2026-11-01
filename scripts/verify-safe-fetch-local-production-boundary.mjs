@@ -60,15 +60,82 @@ try {
     assert.equal(normalCalls, 1); assert.equal(pinnedCalls, 0);
     await assertCode(() => safeFetch('https://fixture.example.invalid/image', {}, { lookup: async () => [{ address: '10.0.0.1', family: 4 }], fetch: async () => { throw new Error('UNSAFE_FETCH'); } }), 'IP_FORBIDDEN');
   });
-  await test('an explicit buffered-call policy pins production traffic without enabling streaming globally', async () => {
+  await test('an explicit buffered or streaming policy pins production traffic without enabling the environment globally', async () => {
     setEnv({ NODE_ENV: 'production' });
-    let normalCalls = 0, pinnedCalls = 0;
-    await safeFetch('https://fixture.example.invalid/image', { networkPolicy: 'fixed-public-dns-pinned' }, {
-      lookup: async () => [public4],
+    for (const run of [safeFetch, safeFetchStream]) {
+      let normalCalls = 0, pinnedCalls = 0, lookups = 0;
+      const result = await run('https://fixture.example.invalid/image', { networkPolicy: 'fixed-public-dns-pinned', trustedHostnames: ['fixture.example.invalid'] }, {
+        lookup: async () => { lookups++; return [public4]; },
+        fetch: async () => { normalCalls++; throw new Error('UNPINNED_TRANSPORT'); },
+        pinnedFetch: async (_url, address) => { pinnedCalls++; assert.deepEqual(address, public4); return payload(); },
+      });
+      if (result.response) await result.response.body.cancel();
+      assert.equal(lookups, 1); assert.equal(normalCalls, 0); assert.equal(pinnedCalls, 1);
+    }
+    assert.equal(usesDevelopmentPublicDns(), false);
+  });
+  await test('stream explicit system DNS pins and overrides the local fixed DNS default', async () => {
+    let lookups = 0, normalCalls = 0, pinnedCalls = 0;
+    const result = await safeFetchStream('https://fixture.example.invalid/media', { networkPolicy: 'system-dns-pinned', trustedHostnames: ['fixture.example.invalid'] }, {
+      lookup: async () => { lookups++; return [public4]; },
       fetch: async () => { normalCalls++; throw new Error('UNPINNED_TRANSPORT'); },
       pinnedFetch: async (_url, address) => { pinnedCalls++; assert.deepEqual(address, public4); return payload(); },
     });
-    assert.equal(normalCalls, 0); assert.equal(pinnedCalls, 1);
+    await result.response.body.cancel();
+    assert.equal(lookups, 1); assert.equal(normalCalls, 0); assert.equal(pinnedCalls, 1);
+  });
+  await test('stream explicit default keeps the reviewed legacy transport and no-policy production remains unchanged', async () => {
+    for (const policy of ['default', undefined]) {
+      if (policy === undefined) setEnv({ NODE_ENV: 'production' });
+      let normalCalls = 0, pinnedCalls = 0, lookups = 0;
+      const result = await safeFetchStream('https://reviewed.example.invalid/media', { networkPolicy: policy, trustedHostnames: ['reviewed.example.invalid'] }, {
+        lookup: async () => { lookups++; throw new Error('TRUSTED_LEGACY_TARGET'); },
+        fetch: async () => { normalCalls++; return payload(); },
+        pinnedFetch: async () => { pinnedCalls++; throw new Error('UNEXPECTED_PIN'); },
+      });
+      await result.response.body.cancel();
+      assert.equal(normalCalls, 1); assert.equal(pinnedCalls, 0); assert.equal(lookups, 0);
+    }
+  });
+  await test('stream pinned policies reject all mixed DNS answers and resolver failure without a fallback', async () => {
+    setEnv({ NODE_ENV: 'production' });
+    let dispatches = 0;
+    for (const networkPolicy of ['fixed-public-dns-pinned', 'system-dns-pinned']) {
+      for (const bad of [{ address: '198.18.0.1', family: 4 }, { address: '2001:2::1', family: 6 }, { address: '10.0.0.1', family: 4 }]) {
+        await assertCode(() => safeFetchStream('https://fixture.example.invalid/media', { networkPolicy, trustedHostnames: ['fixture.example.invalid'] }, {
+          lookup: async () => [public4, bad],
+          fetch: async () => { dispatches++; throw new Error('UNSAFE_FETCH'); },
+          pinnedFetch: async () => { dispatches++; throw new Error('UNSAFE_PIN'); },
+        }), 'IP_FORBIDDEN');
+      }
+      await assertCode(() => safeFetchStream('https://fixture.example.invalid/media', { networkPolicy }, {
+        lookup: async () => { throw new Error('resolver unavailable'); },
+        fetch: async () => { dispatches++; throw new Error('NO_FALLBACK'); },
+        pinnedFetch: async () => { dispatches++; throw new Error('NO_FALLBACK'); },
+      }), 'DNS_LOOKUP_FAILED');
+    }
+    assert.equal(dispatches, 0);
+  });
+  await test('stream fixed policy scopes authorization to one origin and never follows redirects', async () => {
+    setEnv({ NODE_ENV: 'production' });
+    for (const origin of ['https://fixture.example.invalid', 'https://other.example.invalid', 'not-a-url']) {
+      let calls = 0;
+      const result = await safeFetchStream('https://fixture.example.invalid/models', {
+        networkPolicy: 'fixed-public-dns-pinned',
+        headers: { authorization: 'must-strip', cookie: 'must-strip', 'x-api-key': 'must-strip' },
+        authorization: { origin, value: 'Bearer scoped-synthetic-only' },
+      }, {
+        lookup: async () => [public4],
+        fetch: async () => { throw new Error('UNPINNED_TRANSPORT'); },
+        pinnedFetch: async (_url, _address, init) => {
+          calls++; const headers = new Headers(init.headers);
+          assert.equal(headers.get('authorization'), origin === 'https://fixture.example.invalid' ? 'Bearer scoped-synthetic-only' : null);
+          assert.equal(headers.has('cookie'), false); assert.equal(headers.has('x-api-key'), false); assert.equal(init.redirect, 'manual');
+          return new Response(null, { status: 302, headers: { location: 'https://other.example.invalid/models' } });
+        },
+      });
+      assert.equal(result.response.status, 302); assert.equal(calls, 1);
+    }
   });
   await test('system DNS can be validated once and pinned without depending on the fixed DoH resolver', async () => {
     setEnv({ NODE_ENV: 'production' });
@@ -113,7 +180,10 @@ try {
     const options = { headers: { Host: 'wrong.example.invalid', Authorization: 'fixture-only', Cookie: 'fixture-only' } };
     assert.deepEqual([...(await safeFetch(url, options, deps)).buffer], [1, 2, 3]);
     const stream = await safeFetchStream(url, options, deps); assert.deepEqual([...new Uint8Array(await stream.response.arrayBuffer())], [1, 2, 3]);
-    assert.equal(requests.length, 2);
+    setEnv({ NODE_ENV: 'production' });
+    const explicitStream = await safeFetchStream(url, { ...options, networkPolicy: 'fixed-public-dns-pinned' }, deps);
+    assert.deepEqual([...new Uint8Array(await explicitStream.response.arrayBuffer())], [1, 2, 3]);
+    assert.equal(requests.length, 3);
     for (const request of requests) {
       assert.equal(request.hostname, public4.address); assert.equal(request.family, 4); assert.equal(request.port, 443);
       assert.equal(request.headers.host, url.host); assert.equal(request.servername, url.hostname); assert.equal(request.path, url.pathname + url.search);

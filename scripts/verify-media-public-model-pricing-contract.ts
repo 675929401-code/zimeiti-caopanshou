@@ -8,6 +8,9 @@ import {
   toPublicModelId,
   toPublicModelDto,
 } from "@/lib/public-model-dto";
+import { correctVideoModelBindingDisplayName, stripVideoModelOperationalAnnotation } from "@/lib/video-model-display-name";
+import { compactPublicVideoModelName } from "@/lib/video-history-presentation";
+import { videoModelInputHint, videoModelInputLabel } from "@/lib/video-model-selection-state";
 
 const root = process.cwd();
 const read = (relativePath: string) => readFileSync(resolve(root, relativePath), "utf8");
@@ -134,12 +137,127 @@ for (const [index, fixture] of routingSuffixCases.entries()) {
   assert.equal(containsForbiddenPublicModelKey(dto), false);
 }
 
+const operationalNameCases = [
+  { name: "Seedance 2.0 · 高瑞（能力核对中）", expected: "Seedance 2.0 · 高瑞" },
+  { name: "Seedance 2.5 · 高瑞 (能力待核验)", expected: "Seedance 2.5 · 高瑞" },
+  { name: "Seedance 2.5 · 高瑞 · 能力待核验", expected: "Seedance 2.5 · 高瑞" },
+  { name: "Seedance 2.5 · 高瑞（能力核对中） (配置待验收)", expected: "Seedance 2.5 · 高瑞" },
+  { name: "Seedance 2.0 Fast · 720P（多图参考）", expected: "Seedance 2.0 Fast · 720P（多图参考）" },
+  { name: "Seedance 2.0 Mini (Preview) · 4K", expected: "Seedance 2.0 Mini (Preview) · 4K" },
+  { name: "能力核对中教程 · 公开版", expected: "能力核对中教程 · 公开版" },
+];
+for (const [index, fixture] of operationalNameCases.entries()) {
+  const row = { id: `video-operational-name-${index}`, name: fixture.name,
+    selling_price: 1.1, variant_label: "A", avatar_url: "/model-brands/seedance.svg" };
+  const capabilities = { available: true, generationReady: true, priceReady: true,
+    supportsPrompt: true, supportsImageInput: true, ...perSecond };
+  const dto = toPublicModelDto("video", row, index, capabilities);
+  assert.equal(stripVideoModelOperationalAnnotation(fixture.name), fixture.expected);
+  assert.equal(dto.displayName, fixture.expected);
+  assert.equal(compactPublicVideoModelName(fixture.name), fixture.expected);
+  assert.equal(dto.id, toPublicModelId("video", row.id));
+  assert.equal(dto.publicPrice, 1.1);
+  assert.equal(dto.avatarUrl, row.avatar_url);
+  assert.equal(dto.variantLabel, "A");
+  assert.deepEqual(dto.capabilities, capabilities, "public copy cleanup must not change admission or billing");
+}
+assert.equal(toPublicModelDto("cover", { id: "image-review-name", name: "图像模型（能力核对中）" }, 0).displayName,
+  "图像模型（能力核对中）", "video-only review-note cleanup must not rewrite image names");
+assert.equal(toPublicModelDto("chat", { id: "chat-review-name", name: "聊天模型（能力待核验）" }, 0).displayName,
+  "聊天模型（能力待核验）", "video-only review-note cleanup must not rewrite chat names");
+
+const legacyVeoName = "Veo 3.1 Fast · 8秒 · 图生视频 · 720P/1080P · 渠道C";
+const correctedVeoName = "Veo 3.1 · 8秒 · 图生视频 · 720P/1080P";
+const veoBinding = { id: "veo-3-1-fast-chC", protocol_type: "gaorui_video", model_name: "veo_3_1-fl" };
+const veoBindingCases = [
+  { row: veoBinding, name: legacyVeoName, expected: `${correctedVeoName} · 渠道C` },
+  { row: veoBinding, name: "  vEO\t3.1  FaSt · 8秒 · 图生视频  ", expected: "Veo 3.1 · 8秒 · 图生视频" },
+  { row: veoBinding, name: "Veo 3.1 Fast", expected: "Veo 3.1" },
+  { row: veoBinding, name: "Veo 3.1 · 图生视频", expected: "Veo 3.1 · 图生视频" },
+  { row: veoBinding, name: "Veo 3.1 Fastest · 8秒", expected: "Veo 3.1 Fastest · 8秒" },
+  { row: veoBinding, name: "Veo 3.1 Fast Pro · 8秒", expected: "Veo 3.1 Fast Pro · 8秒" },
+  { row: veoBinding, name: "Veo 3.1 · Fast · 图生视频", expected: "Veo 3.1 · Fast · 图生视频" },
+  { row: { ...veoBinding, id: "other-real-fast" }, name: legacyVeoName, expected: legacyVeoName },
+  { row: { ...veoBinding, model_name: "veo_3_1-fast" }, name: legacyVeoName, expected: legacyVeoName },
+  { row: { ...veoBinding, protocol_type: "openapi_video" }, name: legacyVeoName, expected: legacyVeoName },
+  { row: { ...veoBinding, model_name: undefined }, name: legacyVeoName, expected: legacyVeoName },
+  { row: { ...veoBinding, protocol_type: undefined }, name: legacyVeoName, expected: legacyVeoName },
+  { row: { ...veoBinding, id: undefined }, name: legacyVeoName, expected: legacyVeoName },
+  { row: {}, name: legacyVeoName, expected: legacyVeoName },
+  { row: { ...veoBinding, id: ` ${veoBinding.id} `, protocol_type: " gaorui_video ", model_name: " veo_3_1-fl " }, name: legacyVeoName, expected: `${correctedVeoName} · 渠道C` },
+];
+for (const fixture of veoBindingCases) {
+  assert.equal(correctVideoModelBindingDisplayName(fixture.name, fixture.row), fixture.expected,
+    "only the exact legacy prefix with all three current binding fields may be corrected");
+}
+const veoCapabilities = { available: true, generationReady: true, priceReady: true,
+  supportsImageInput: true, requiresImage: true, minReferenceImages: 1, maxReferenceImages: 1,
+  resolutionOptions: ["720p", "1080p"], ...perUse };
+const veoRow = Object.freeze({ ...veoBinding, name: legacyVeoName, price_per_use: 0.36, variant_label: "C",
+  api_protocol_config: Object.freeze({ inputs: Object.freeze({}) }) });
+const veoBefore = JSON.stringify(veoRow);
+const veoDto = toPublicModelDto("video", veoRow, 26, veoCapabilities);
+assert.equal(publicModelDisplayName(veoRow), correctedVeoName);
+assert.equal(veoDto.displayName, correctedVeoName);
+assert.equal(veoDto.id, toPublicModelId("video", veoRow.id));
+assert.equal(veoDto.publicPrice, 0.36);
+assert.equal(veoDto.variantLabel, "C");
+assert.deepEqual(veoDto.capabilities, veoCapabilities, "display correction must preserve input, admission and billing capabilities");
+assert.equal(containsForbiddenPublicModelKey(veoDto), false, "correction must not expose its internal binding");
+assert.equal(JSON.stringify(veoRow), veoBefore, "raw management data and input configuration must remain unchanged");
+assert.equal(publicModelDisplayName({ ...veoRow, public_name: "专享创作（Preview-v2）" }), "专享创作（Preview-v2）",
+  "an explicit public name must keep priority over the raw management name");
+assert.equal(publicModelDisplayName({ ...veoRow, name: "旧管理名称", public_name: legacyVeoName }), correctedVeoName);
+assert.equal(publicModelDisplayName({ ...veoRow, public_name: "  " }), correctedVeoName);
+assert.equal(publicModelDisplayName({ ...veoRow, id: "veo-3-1-fl-gaorui", name: "Veo 3.1 · 8秒 · 首帧，尾帧可选" }),
+  "Veo 3.1 · 8秒 · 首帧，尾帧可选", "the separately configured optional-tail model must keep its input wording");
+assert.equal(publicModelDisplayName({ id: veoBinding.id, name: "所选视频模型" }), "所选视频模型",
+  "a missing/deleted model join must retain the existing history fallback");
+assert.equal(compactPublicVideoModelName(legacyVeoName), legacyVeoName,
+  "an unbound historical name must not be relabeled by the string-only presentation helper");
+const videoHistoryRoute = read("src/app/api/video/history/route.ts");
+const mediaHistoryRoute = read("src/app/api/media-history/route.ts");
+assert.match(videoHistoryRoute, /publicModelDisplayName\(\{ \.\.\.model, id: t\.model_id,/u);
+assert.match(mediaHistoryRoute, /video_models\(name,model_name,protocol_type\)/u);
+assert.match(mediaHistoryRoute, /correctVideoModelBindingDisplayName\(configuredModelName, \{ \.\.\.configuredModel, id: row\.model_id \}\)/u);
+
+for (const [modelName, price] of [["seedance-2.0", 1.1], ["seedance-2.5", 1.6]] as const) {
+  const row = { id: `plain-gated-${modelName}`, name: `${modelName} · 高瑞（能力核对中）`,
+    protocol_type: "gaorui_video", model_name: modelName, selling_price: price };
+  const dto = toPublicModelDto("video", row, 0, { capabilitiesVerified: true,
+    available: true, generationReady: true, priceReady: true, ...perSecond });
+  assert.equal(dto.displayName, `${modelName} · 高瑞`);
+  assert.equal(dto.publicPrice, price);
+  assert.equal(dto.capabilities.billingUnit, "output_second");
+  assert.equal(dto.capabilities.capabilitiesVerified, true);
+  assert.equal(dto.capabilities.generationReady, false, "missing structured binding must keep creation closed");
+  const bound = toPublicModelDto("video", { ...row, api_endpoint: "https://gaorui.cc/v1", api_protocol_config: { protocol_family: "seedance_native_content", duration_behavior: "requested_target" } }, 0,
+    { capabilitiesVerified: false, available: true, generationReady: true, priceReady: true, maxReferenceImages: 1, supportsImageInput: true,
+      ...(modelName === "seedance-2.5" ? { firstFrameRatioPolicy: "adaptive" } : {}), ...perSecond });
+  assert.equal(bound.capabilities.capabilitiesVerified, false, "acceptance diagnostic must remain honest");
+  assert.equal(bound.capabilities.generationReady, true); assert.equal(bound.capabilities.maxReferenceImages, 1);
+  assert.equal(bound.capabilities.durationBehavior, "requested_target", "acceptance diagnostic must not erase timing semantics");
+  assert.equal(bound.capabilities.firstFrameRatioPolicy, modelName === "seedance-2.5" ? "adaptive" : undefined);
+}
+const unknownInput = { id: "unknown-input", capabilitiesVerified: false, requiresImage: true, supportsPrompt: true };
+assert.equal(videoModelInputLabel(unknownInput), "图生视频");
+assert.equal(videoModelInputHint(unknownInput), "需参考图");
+assert.equal(videoModelInputLabel({ id: "no-contract" }), "");
+assert.equal(videoModelInputHint({ id: "no-contract" }), "");
+assert.equal(videoModelInputLabel({ id: "text", supportsPrompt: true }), "文生视频");
+assert.equal(videoModelInputHint({ id: "text", supportsPrompt: true }), "支持文生视频");
+assert.equal(videoModelInputLabel({ id: "text-image", supportsPrompt: true, supportsImageInput: true }), "文生 / 图生视频");
+assert.equal(videoModelInputHint({ id: "text-image", supportsPrompt: true, supportsImageInput: true }), "支持文生和图生视频");
+assert.equal(videoModelInputLabel({ id: "first-last", requiresFirstFrame: true, requiresLastFrame: true }), "首尾帧");
+assert.equal(videoModelInputLabel({ id: "source", requiresSourceVideo: true }), "视频编辑");
+
 const videoRoute = read("src/app/api/video/models/route.ts");
 const imageRoute = read("src/app/api/cover-models/route.ts");
 const storyboardWorkbench = read("src/components/storyboard-workbench.tsx");
 assert.match(videoRoute, /\.\.\.publicMediaBillingCapabilities\(model\.billingUnit\)/u);
 assert.match(imageRoute, /\.\.\.publicMediaBillingCapabilities\("per_use"\)/u);
-assert.match(imageRoute, /当前未开放/u);
+assert.match(imageRoute, /function disabledImageModelMessage/u);
+assert.match(imageRoute, /model\.is_active !== true\s*\? disabledImageModelMessage\(model\)/u);
 assert.doesNotMatch(imageRoute, /成本价或销售价缺失/u);
 assert.match(storyboardWorkbench, /!model\.available \|\| !model\.priceReady/u);
 
@@ -169,6 +287,10 @@ console.log(JSON.stringify({
   checks: 30,
   publicDisplayCases: displayCases.length + 1,
   routingSuffixCases: routingSuffixCases.length,
+  operationalNameCases: operationalNameCases.length,
+  veoBindingCases: veoBindingCases.length,
+  veoPublicDisplayAndHistoryContract: true,
+  unboundPlainConfigurationsGated: 2,
   surfaces,
   providerSubmissions: 0,
   realNetworkRequests: 0,

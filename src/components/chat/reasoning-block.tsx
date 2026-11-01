@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useId } from "react";
 import { Loader2, Brain, ChevronDown, ChevronRight } from "lucide-react";
 
 /**
@@ -8,16 +8,19 @@ import { Loader2, Brain, ChevronDown, ChevronRight } from "lucide-react";
  * 从 chat-view.tsx 提取，负责展示 LLM 推理过程
  */
 
-export function ReasoningBlock({ content, isThinking, defaultCollapsed }: { content: string; isThinking: boolean; defaultCollapsed?: boolean }) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed !== false);
+export function ReasoningBlock({ content, isThinking, interrupted = false, defaultCollapsed }: { content: string; isThinking: boolean; interrupted?: boolean; defaultCollapsed?: boolean }) {
+  const [collapsed, setCollapsed] = useState(() => isThinking ? false : defaultCollapsed !== false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const userToggledRef = useRef(false);
+  const wasThinkingRef = useRef(isThinking);
+  const contentId = useId();
+  const toggleId = useId();
 
   useEffect(() => {
-    if (!userToggledRef.current) {
-      setCollapsed(defaultCollapsed !== false);
-    }
-  }, [defaultCollapsed]);
+    // Change once per lifecycle transition. New chunks must not undo a user's
+    // choice; the first body text or terminal state collapses the live panel.
+    if (wasThinkingRef.current !== isThinking) setCollapsed(!isThinking);
+    wasThinkingRef.current = isThinking;
+  }, [isThinking]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -26,14 +29,20 @@ export function ReasoningBlock({ content, isThinking, defaultCollapsed }: { cont
     }
   }, [content, collapsed]);
 
+  if (!content.trim()) return null;
+
   return (
-    <div className="mb-2">
+    <div className="mb-2" data-testid="chat-reasoning">
       {/* 标题栏 - 浅灰背景圆角条 */}
-      <div
-        className="flex items-center gap-2 px-3 py-[6px] rounded-lg cursor-pointer select-none transition-colors"
+      <button
+        type="button"
+        id={toggleId}
+        aria-expanded={!collapsed}
+        aria-controls={contentId}
+        data-testid="chat-reasoning-toggle"
+        className="flex w-full items-center gap-2 px-3 py-[6px] rounded-lg cursor-pointer select-none transition-colors text-left"
         style={{ background: 'var(--msg-think-header-bg, #f1f3f4)' }}
         onClick={() => {
-          userToggledRef.current = true;
           setCollapsed((current) => !current);
         }}
       >
@@ -45,9 +54,9 @@ export function ReasoningBlock({ content, isThinking, defaultCollapsed }: { cont
         )}
         {/* 标题文字 */}
         <span className="text-[13px] font-medium" style={{ color: 'var(--foreground)', opacity: 0.55 }}>
-          {isThinking ? '深度思考中' : '已深度思考'}
+          {isThinking ? '智能体正在思考' : interrupted ? '思考内容' : '已完成思考'}
         </span>
-        <div className="flex-1" />
+        <span className="flex-1" />
         {/* 思考中跳动点 */}
         {isThinking && (
           <span className="flex gap-[3px] items-center mr-1">
@@ -62,11 +71,11 @@ export function ReasoningBlock({ content, isThinking, defaultCollapsed }: { cont
         ) : (
           <ChevronDown className="w-3.5 h-3.5" style={{ color: 'var(--foreground)', opacity: 0.35 }} />
         )}
-      </div>
+      </button>
 
       {/* 思考内容 - 左侧竖线引用样式，白色背景 */}
       {!collapsed && (
-        <div className="flex mt-1">
+        <div className="flex mt-1" id={contentId} role="region" aria-labelledby={toggleId} data-testid="chat-reasoning-content">
           {/* 左侧竖线 */}
           <div className="w-[2px] rounded-full ml-3 mr-3 flex-shrink-0" style={{ background: 'var(--msg-think-line, #e0e0e0)' }} />
           {/* 内容区 */}

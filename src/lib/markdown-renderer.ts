@@ -23,27 +23,26 @@
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import { parseThinkTags } from './think-instruction';
+import { getCodeBlockPresentation, isPlaintextCodeLanguage } from './code-block-presentation';
 
 // ========== 常量 ==========
-
-/** 代码块高度等级阈值（按行数划分3级） */
-const HEIGHT_LEVEL_SM = 10;   // ≤10行：紧凑（约2张名片厚度）
-const HEIGHT_LEVEL_MD = 25;   // 11-25行：中等
-// >25行：大尺寸
-
-/** 根据代码内容行数返回高度等级 class */
-function getCodeBlockHeightClass(codeContent: string): string {
-  const lineCount = (codeContent.match(/\n/g) || []).length + 1;
-  if (lineCount <= HEIGHT_LEVEL_SM) return 'code-block-h-sm';
-  if (lineCount <= HEIGHT_LEVEL_MD) return 'code-block-h-md';
-  return 'code-block-h-lg';
-}
 
 /** 代码块折叠行数阈值（已禁用折叠，设为极大值） */
 const FOLD_LINE_THRESHOLD = Infinity;
 
 /** 纯文本代码块语言列表（需要 pre-wrap 自动换行） */
-const PLAINTEXT_LANGS = ['', 'txt', 'text', 'plain', 'plaintext', 'markdown', 'md'];
+function codePresentationAttributes(content: string, language: string, context = ''): string {
+  const presentation = getCodeBlockPresentation(content, language, context);
+  return `data-code-height="${presentation.heightClass}" data-code-purpose="${presentation.purpose}" data-code-label="${md.utils.escapeHtml(presentation.label)}"`;
+}
+
+function codeBlockToolbar(label: string): string {
+  return `<div class="code-block-header"><span class="code-block-lang">${label}</span><div class="code-block-actions">` +
+    `<button type="button" class="code-block-expand-button" aria-expanded="false">展开全文</button>` +
+    `<button type="button" class="send-video-task-button" data-video-task-send title="发送到视频工作台">发送到视频工作台</button>` +
+    `<button type="button" class="send-image-workbench-button" data-image-workbench-send title="推送到生图工作台">推送到生图工作台</button>` +
+    `<button type="button" class="copy-code-button" title="复制完整内容" aria-label="复制完整内容"></button></div></div>`;
+}
 
 // ========== markdown-it 实例 ==========
 
@@ -65,9 +64,24 @@ const md = new MarkdownIt({
       highlighted = md.utils.escapeHtml(str);
     }
     const langClass = lang ? ` language-${lang}` : '';
-    return `<pre class="hljs"><code class="hljs${langClass}">${highlighted}</code></pre>`;
+    return `<pre class="hljs" ${codePresentationAttributes(str, lang)}><code class="hljs${langClass}">${highlighted}</code></pre>`;
   },
 });
+
+// A code token carries the original literal content, before HTML entities or
+// syntax highlighting. The nearest prose label selects compact media prompts.
+const defaultFenceRenderer = md.renderer.rules.fence!;
+md.renderer.rules.fence = (tokens, index, options, env, renderer) => {
+  const token = tokens[index];
+  let context = '';
+  for (let previous = index - 1; previous >= 0; previous--) {
+    if (tokens[previous].type === 'fence' || tokens[previous].type === 'code_block') break;
+    if (tokens[previous].type === 'inline') { context = tokens[previous].content; break; }
+  }
+  const attributes = codePresentationAttributes(token.content, token.info.trim().split(/\s+/u)[0] || '', context);
+  return defaultFenceRenderer(tokens, index, options, env, renderer)
+    .replace(/data-code-height="[^"]*" data-code-purpose="[^"]*" data-code-label="[^"]*"/u, attributes);
+};
 
 // ========== :::keyword 文档容器插件 ==========
 // 解析 :::keyword 标题 ... ::: 语法，渲染为文档输出卡片（滚动框）
@@ -148,7 +162,7 @@ function copyBlockPlugin(md: MarkdownIt) {
     // 标记内部代码块，避免 enhanceCodeBlocks 包装为 code-block-wrapper（防止"框中框"）
     // 文档卡片本身就是外框，内部代码块只需简单渲染，不需要独立的代码框包装
     innerHtml = innerHtml
-      .replace(/<pre class="hljs">/g, '<pre class="copyable-inner-pre">')
+      .replace(/<pre class="hljs"[^>]*>/g, '<pre class="copyable-inner-pre">')
       .replace(/<code class="hljs language-/g, '<code class="copyable-inner-code language-')
       .replace(/<code class="hljs">/g, '<code class="copyable-inner-code">');
 
@@ -203,27 +217,20 @@ md.use(copyBlockPlugin);
 
 function enhanceCodeBlocks(html: string): string {
   // 快速跳过不含代码块的文本段（splitByCodeBlocks 分出的文本段通常不含 <pre>）
-  if (!html.includes('<pre class="hljs"><code')) return html;
+  if (!html.includes('<pre class="hljs"')) return html;
   // 匹配 markdown-it highlight 渲染的代码块
   return html.replace(
-    /<pre class="hljs"><code class="hljs language-([^"]+)">([\s\S]*?)<\/code><\/pre>/g,
-    (_match: string, lang: string, codeContent: string) => {
-      const isPlaintext = PLAINTEXT_LANGS.includes(lang.toLowerCase());
+    /<pre class="hljs" data-code-height="(code-block-h-(?:sm|md|lg))" data-code-purpose="([^"]+)" data-code-label="([^"]*)"><code class="hljs language-([^"]+)">([\s\S]*?)<\/code><\/pre>/g,
+    (_match: string, heightClass: string, purpose: string, label: string, lang: string, codeContent: string) => {
+      const isPlaintext = isPlaintextCodeLanguage(lang);
 
       const wrapperClasses = ['code-block-wrapper'];
       if (isPlaintext) wrapperClasses.push('code-block-plaintext');
-      wrapperClasses.push(getCodeBlockHeightClass(codeContent));
+      wrapperClasses.push(heightClass);
 
       return (
-        `<div class="${wrapperClasses.join(' ')}">` +
-        `<div class="code-block-header">` +
-        `<span class="code-block-lang">${lang}</span>` +
-        `<div class="code-block-actions">` +
-        `<button type="button" class="send-video-task-button" data-video-task-send title="发送到视频任务">发送</button>` +
-        `<button type="button" class="send-image-workbench-button" data-image-workbench-send title="推送到AI生图工作台">推送图片</button>` +
-        `<span class="copy-code-button"></span>` +
-        `</div>` +
-        `</div>` +
+        `<div class="${wrapperClasses.join(' ')}" data-code-purpose="${purpose}">` +
+        codeBlockToolbar(label) +
         `<pre class="hljs code-block-pre">` +
         `<code class="hljs language-${lang}">${codeContent}</code>` +
         `</pre>` +
@@ -238,22 +245,15 @@ function enhancePlainCodeBlocks(html: string): string {
   if (!html.includes('<code class="hljs">')) return html;
   // 无语言标签的代码块
   return html.replace(
-    /<pre class="hljs"><code class="hljs">([\s\S]*?)<\/code><\/pre>/g,
-    (_match: string, codeContent: string) => {
+    /<pre class="hljs" data-code-height="(code-block-h-(?:sm|md|lg))" data-code-purpose="([^"]+)" data-code-label="([^"]*)"><code class="hljs">([\s\S]*?)<\/code><\/pre>/g,
+    (_match: string, heightClass: string, purpose: string, label: string, codeContent: string) => {
       // 无语言代码块默认为 plaintext（pre-wrap）
       const wrapperClasses = ['code-block-wrapper', 'code-block-plaintext'];
-      wrapperClasses.push(getCodeBlockHeightClass(codeContent));
+      wrapperClasses.push(heightClass);
 
       return (
-        `<div class="${wrapperClasses.join(' ')}">` +
-        `<div class="code-block-header">` +
-        `<span class="code-block-lang">txt</span>` +
-        `<div class="code-block-actions">` +
-        `<button type="button" class="send-video-task-button" data-video-task-send title="发送到视频任务">发送</button>` +
-        `<button type="button" class="send-image-workbench-button" data-image-workbench-send title="推送到AI生图工作台">推送图片</button>` +
-        `<span class="copy-code-button"></span>` +
-        `</div>` +
-        `</div>` +
+        `<div class="${wrapperClasses.join(' ')}" data-code-purpose="${purpose}">` +
+        codeBlockToolbar(label) +
         `<pre class="hljs code-block-pre">` +
         `<code class="hljs">${codeContent}</code>` +
         `</pre>` +
@@ -503,8 +503,10 @@ export function renderStreamingText(text: string, streamKey = DEFAULT_STREAM_KEY
   const segments = splitByCodeBlocks(text);
   let result = '';
   let lastType = 'text';
+  let codeContext = '';
   for (const seg of segments) {
-    result += renderSegment(seg);
+    result += renderSegment(seg, codeContext);
+    codeContext = seg.type === 'text' ? seg.content : '';
     lastType = seg.type;
   }
   rememberStreamingState(streamKey, {
@@ -518,7 +520,7 @@ export function renderStreamingText(text: string, streamKey = DEFAULT_STREAM_KEY
 }
 
 /** 渲染单个段（提取自原 renderStreamingText，保持逻辑一致） */
-function renderSegment(seg: { type: string; content: string; lang?: string; codeContent?: string; copyKeyword?: string; copyTitle?: string }): string {
+function renderSegment(seg: { type: string; content: string; lang?: string; codeContent?: string; copyKeyword?: string; copyTitle?: string }, codeContext = ''): string {
   if (seg.type === 'text') {
     const cacheKey = seg.content;
     let rendered = textRenderCache.get(cacheKey);
@@ -532,10 +534,10 @@ function renderSegment(seg: { type: string; content: string; lang?: string; code
     }
     return rendered;
   } else if (seg.type === 'closed-code') {
-    const cacheKey = seg.content;
+    const cacheKey = `${codeContext}\u0000${seg.content}`;
     let rendered = closedCodeCache.get(cacheKey);
     if (!rendered) {
-      rendered = renderStreamingCodeBlock(seg.content);
+      rendered = renderStreamingCodeBlock(seg.content, codeContext);
       if (closedCodeCache.size >= CLOSED_CODE_CACHE_MAX) {
         const firstKey = closedCodeCache.keys().next().value;
         if (firstKey !== undefined) closedCodeCache.delete(firstKey);
@@ -547,20 +549,14 @@ function renderSegment(seg: { type: string; content: string; lang?: string; code
     const lang = seg.lang || 'txt';
     const code = seg.codeContent || '';
     const escapedCode = md.utils.escapeHtml(code);
-    const isPlaintext = PLAINTEXT_LANGS.includes(lang.toLowerCase());
-    const wrapperClasses = ['code-block-wrapper', 'code-block-streaming', 'code-block-h-lg'];
+    const isPlaintext = isPlaintextCodeLanguage(lang);
+    const presentation = getCodeBlockPresentation(code, lang, codeContext);
+    const wrapperClasses = ['code-block-wrapper', 'code-block-streaming', presentation.heightClass];
     if (isPlaintext) wrapperClasses.push('code-block-plaintext');
     // 添加data-streaming-code标识 + data-lang，用于增量更新时定位和复用
     return (
-      `<div class="${wrapperClasses.join(' ')}" data-streaming-code data-lang="${lang}">` +
-      `<div class="code-block-header">` +
-      `<span class="code-block-lang">${lang}</span>` +
-      `<div class="code-block-actions">` +
-      `<button type="button" class="send-video-task-button" data-video-task-send title="发送到视频任务">发送</button>` +
-      `<button type="button" class="send-image-workbench-button" data-image-workbench-send title="推送到AI生图工作台">推送图片</button>` +
-      `<span class="copy-code-button"></span>` +
-      `</div>` +
-      `</div>` +
+      `<div class="${wrapperClasses.join(' ')}" data-code-purpose="${presentation.purpose}" data-streaming-code data-lang="${lang}">` +
+      codeBlockToolbar(md.utils.escapeHtml(presentation.label)) +
       `<pre class="hljs code-block-pre"><code class="hljs language-${lang}">${escapedCode}</code></pre>` +
       `</div>`
     );
@@ -633,26 +629,20 @@ function streamingLightRender(text: string): string {
  * 与 renderMarkdown() 的区别：不做语法高亮，只做转义 + code-block-wrapper 骨架。
  * 高亮推迟到流结束后的 renderMarkdown() 一次性完成。
  */
-function renderStreamingCodeBlock(codeBlockText: string): string {
+function renderStreamingCodeBlock(codeBlockText: string, codeContext = ''): string {
   // 提取语言和代码内容
   const match = codeBlockText.match(/^```([\w+#.-]*)\n?/);
   const lang = match ? (match[1] || 'txt') : 'txt';
   const codeContent = match ? codeBlockText.substring(match[0].length).replace(/\n?```\s*$/, '') : codeBlockText;
   const escapedCode = md.utils.escapeHtml(codeContent);
-  const isPlaintext = PLAINTEXT_LANGS.includes(lang.toLowerCase());
+  const isPlaintext = isPlaintextCodeLanguage(lang);
+  const presentation = getCodeBlockPresentation(codeContent, lang, codeContext);
   const wrapperClasses = ['code-block-wrapper'];
   if (isPlaintext) wrapperClasses.push('code-block-plaintext');
-  wrapperClasses.push('code-block-h-lg');
+  wrapperClasses.push(presentation.heightClass);
   return (
-    `<div class="${wrapperClasses.join(' ')}">` +
-    `<div class="code-block-header">` +
-    `<span class="code-block-lang">${lang}</span>` +
-    `<div class="code-block-actions">` +
-    `<button type="button" class="send-video-task-button" data-video-task-send title="发送到视频任务">发送</button>` +
-    `<button type="button" class="send-image-workbench-button" data-image-workbench-send title="推送到AI生图工作台">推送图片</button>` +
-    `<span class="copy-code-button"></span>` +
-    `</div>` +
-    `</div>` +
+    `<div class="${wrapperClasses.join(' ')}" data-code-purpose="${presentation.purpose}">` +
+    codeBlockToolbar(md.utils.escapeHtml(presentation.label)) +
     `<pre class="hljs code-block-pre">` +
     `<code class="hljs language-${lang}">${escapedCode}</code>` +
     `</pre>` +

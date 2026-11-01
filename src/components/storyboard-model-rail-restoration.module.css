@@ -1,0 +1,30 @@
+/* Keep the recovered stylesheet intact. Resolve its original 32px/card-border
+   rules against the older, more specific badge declarations in this rail. */
+:global(.sbw-root) .rail :global(.sbw-model-list) > button {
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
+}
+
+:global(.sbw-root) .rail :global(.sbw-model-list) > button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+}
+
+:global(.sbw-root) .rail :global(.sbw-model-list) > button:global(.is-active) {
+  border-color: var(--primary);
+}
+
+:global(.sbw-root) .rail :global(.sbw-model-list) > button :global(.sbw-model-icon[data-model-badge]) {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  flex-basis: 32px;
+}
+
+:global(.sbw-root) .rail :global(.sbw-model-list) > button :global(.sbw-model-icon) img,
+:global(.sbw-root) .rail :global(.sbw-model-list) > button :global(.sbw-model-icon) svg {
+  width: 100%;
+  height: 100%;
+  padding: 1px;
+  box-sizing: border-box;
+  object-fit: contain;
+}

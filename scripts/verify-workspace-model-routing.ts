@@ -88,7 +88,7 @@ const sourceVideoFixture = {
   code: "STORYBOARD_SOURCE_VIDEO_REQUIRED",
 } as const;
 
-const incompatibleFixtures = [
+const extendedStoryboardInputFixtures = [
   {
     model: { ...baseVideo, supports_image_input: false, requires_image: false, api_protocol_config: { ...baseVideo.api_protocol_config, min_reference_images: 0, max_reference_images: 0 } },
     code: "STORYBOARD_IMAGE_INPUT_REQUIRED",
@@ -102,6 +102,21 @@ const incompatibleFixtures = [
     model: { ...baseVideo, api_protocol_config: { ...baseVideo.api_protocol_config, min_reference_audios: 1, max_reference_audios: 1, supports_audio_input: true } },
     code: "STORYBOARD_AUDIO_REQUIRED",
   },
+  {
+    model: { ...baseVideo, api_protocol_config: { ...baseVideo.api_protocol_config, min_reference_images: 2, max_reference_images: 3 } },
+    code: "STORYBOARD_TOO_MANY_REQUIRED_IMAGES",
+  },
+] as const;
+
+for (const fixture of extendedStoryboardInputFixtures) {
+  const storyboard = evaluateWorkspaceModelCompatibility("video", fixture.model, "storyboard-video");
+  assert.equal(storyboard.compatible, true, `${fixture.code}: storyboard collects the required inputs before submit`);
+  const film = evaluateWorkspaceModelCompatibility("video", fixture.model, "film-studio-video");
+  assert.equal(film.compatible, false, `${fixture.code}: film must retain its single-keyframe restriction`);
+  assert.ok(film.issues.some((issue) => issue.code === fixture.code));
+}
+
+const incompatibleFixtures = [
   {
     model: { ...baseVideo, name: "照片说话数字人", api_protocol_config: { ...baseVideo.api_protocol_config, workspace_surfaces: ["digital-human"] } },
     code: "DEDICATED_DIGITAL_HUMAN_MODEL",
@@ -120,7 +135,15 @@ const sourceVideoCanvas = evaluateWorkspaceModelCompatibility("video", sourceVid
 assert.equal(sourceVideoCanvas.compatible, false, "source-video-required models must stay out of canvas until it has a source-video input");
 assert.ok(sourceVideoCanvas.issues.some((issue) => issue.code === "CANVAS_SOURCE_VIDEO_REQUIRED"));
 assert.equal(evaluateWorkspaceModelCompatibility("video", baseVideo, "film-studio-video").compatible, true);
-assert.equal(evaluateWorkspaceModelCompatibility("video", incompatibleFixtures[0].model, "film-studio-video").compatible, false);
+assert.equal(evaluateWorkspaceModelCompatibility("video", extendedStoryboardInputFixtures[0].model, "film-studio-video").compatible, false);
+for (const surface of ["storyboard-video", "film-studio-video", "video-page"] as const) {
+  const conflict = evaluateWorkspaceModelCompatibility("video", {
+    ...baseVideo,
+    api_protocol_config: { ...baseVideo.api_protocol_config, min_reference_images: 3, max_reference_images: 1 },
+  }, surface);
+  assert.equal(conflict.compatible, false, "declared input conflicts remain blocked on every surface");
+  assert.ok(conflict.issues.some((issue) => issue.code === "VIDEO_IMAGE_LIMIT_CONFLICT"));
+}
 
 const imageModel = {
   id: "fixture-image",
@@ -181,8 +204,9 @@ assert.match(publicVideoCatalogRoute, /isWorkspaceModelAssigned/u, "video worksp
 assert.match(publicImageCatalogRoute, /isWorkspaceModelAssigned/u, "image workspaces must use their explicit assignment list");
 assert.match(videoGenerateRoute, /isWorkspaceModelAssigned/u, "video submissions must recheck explicit workspace assignment");
 assert.match(imageGenerateRoute, /isWorkspaceModelAssigned/u, "image submissions must recheck explicit workspace assignment");
-assert.match(publicVideoCatalogRoute, /isVisibleInPublicWorkspace/u, "public video workspaces must filter unavailable or incompatible models");
-assert.match(publicVideoCatalogRoute, /model\.maxReferenceImages >= 1/u, "storyboard video catalog must require image input support");
+assert.match(publicVideoCatalogRoute, /isVisibleInPublicWorkspace/u, "public video workspaces must use the catalog display policy");
+assert.match(publicVideoCatalogRoute, /baseAvailable && surfaceCompatibility\?\.compatible !== false/u, "retaining incompatible catalog entries must not relax generation admission");
+assert.match(workspaceMutations, /!compatibility\.compatible && !isVideoCatalogDisplaySurface\(input\.surface\)/u, "only the two video catalogues may assign incompatible display entries");
 assert.match(publicImageCatalogRoute, /publicImageCatalogPriority/u, "image catalog priority must be explicit and regression tested");
 
 // Check the existing shared configuration contract and real public DTO serializer.

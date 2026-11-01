@@ -66,7 +66,7 @@ import { checkCreditsBalance, getSelectedModelBillingSnapshot } from "@/lib/llm-
 import { resolveChatReplyLimit } from "@/lib/llm-reply-limit";
 import { readFileSync as readQuotePinFile } from "node:fs";
 import { join as quotePinPath } from "node:path";
-import { composeLlmRequestMessages, resolveLinkedModelRuntime, shouldAutoEnableRuntimeWebSearch, buildLlmChatRequest, readStandardSnapshot, prepareStandardLlmRequest, assertQuoteExpectation, LlmQuotePreparationError, STANDARD_AGENT_FIELDS, STANDARD_MODEL_FIELDS, STANDARD_SETTING_KEYS } from "@/lib/server/llm-standard-request-preparation";
+import { composeLlmRequestMessages, resolveLinkedModelRuntime, isStoryboardTextOnlyAgent, shouldAutoEnableRuntimeWebSearch, buildLlmChatRequest, readStandardSnapshot, prepareStandardLlmRequest, assertQuoteExpectation, LlmQuotePreparationError, STANDARD_AGENT_FIELDS, STANDARD_MODEL_FIELDS, STANDARD_SETTING_KEYS } from "@/lib/server/llm-standard-request-preparation";
 import { quoteLlmStreamReservation, reserveLlmStreamCredits, releaseLlmStreamCredits, recoverLlmCreditReservations, LlmCreditReservationError, type LlmStreamReservation } from "@/lib/llm-credit-reservation";
 import { getProductionAgentById, getProductionLlmModelById, getProductionLlmModelByName } from "@/lib/production-data-source";
 import { findModelByPublicId, toPublicModelId } from "@/lib/public-model-dto";
@@ -82,7 +82,7 @@ import {
   shouldRejectOrdinaryChatModelOverride,
   shouldRejectOrdinaryUnpublishedChatModel,
 } from "@/lib/chat-model-access-policy";
-import { isPublishedTextBillingModel } from "@/lib/text-model-eligibility";
+import { isPublishedTextBillingModel, isTextModelEligible } from "@/lib/text-model-eligibility";
 import {
   resolveMangaSkillOrchestration,
   type MangaSkillOrchestration,
@@ -115,7 +115,7 @@ import {
   resolveAllowedAgentNavigationKeys,
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
-import { evaluateStoryDirectorOvertimeGate } from "@/lib/story-director-overtime-gate";
+import { canUseOwnerInternalAgent } from "@/lib/server/internal-agent-catalog-access";
 import { isLocalBuildChatDrainActive, localBuildChatDrainResponse } from "@/lib/local-build-chat-drain";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { createOperationPerformanceTrace, type OperationPerformanceTrace } from "@/lib/operation-performance-trace";
@@ -714,10 +714,11 @@ export async function POST(request: Request) {
     let agentQueryPromise: Promise<{ data: Record<string, unknown> | null }>;
     if (agentId && !isVirtualAgent) {
       const cached = agentConfigCache.get(agentId);
-      if (!quoteBound && cached && cached.expiry > Date.now()) {
+      if (!quoteBound && cached && cached.expiry > Date.now()
+        && Object.prototype.hasOwnProperty.call(cached.data, "output_style")) {
         agentQueryPromise = Promise.resolve({ data: cached.data });
       } else {
-        agentQueryPromise = client.from("agents").select("id, name, source, is_active, deleted_at, coze_coding_api_token, proxy_url, model, model_id, frequency_limit, image_parsing, file_parsing, system_prompt, config_revision, deep_thinking_type, deduct_deep_think, max_context_rounds, max_context_tokens, max_reply_tokens, timeout, enable_web_search, temperature, response_format, user_access, category, token_billing_enabled, input_cost_per_million, output_cost_per_million, cached_cost_per_million, profit_margin, token_rounding_unit").eq("id", agentId).maybeSingle().then(async (result: { data: Record<string, unknown> | null; error?: unknown }) => {
+        agentQueryPromise = client.from("agents").select("id, name, source, is_active, deleted_at, coze_coding_api_token, proxy_url, model, model_id, frequency_limit, image_parsing, file_parsing, system_prompt, output_style, config_revision, deep_thinking_type, deduct_deep_think, max_context_rounds, max_context_tokens, max_reply_tokens, timeout, enable_web_search, temperature, response_format, user_access, category, token_billing_enabled, input_cost_per_million, output_cost_per_million, cached_cost_per_million, profit_margin, token_rounding_unit").eq("id", agentId).maybeSingle().then(async (result: { data: Record<string, unknown> | null; error?: unknown }) => {
           const data = quoteBound ? (result.error ? null : result.data) : await resolveAgentLookup(result.data, () => getProductionAgentById(agentId), configurationSourceStatus().configuration !== 'local-acceptance');
           if (data) {
             agentConfigCache.set(agentId, { data: data as Record<string, unknown>, expiry: Date.now() + AGENT_CONFIG_TTL });
@@ -820,6 +821,12 @@ export async function POST(request: Request) {
       return new Response(
         JSON.stringify({ error: "智能体不存在或已被删除", code: "AGENT_NOT_FOUND" }),
         { status: 404, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    if (agentRow?.category === "自用" && !await canUseOwnerInternalAgent(request)) {
+      return new Response(
+        JSON.stringify({ error: "该内部工具仅限超级管理员使用", code: "OWNER_INTERNAL_AGENT_REQUIRED", retryable: false }),
+        { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
       );
     }
     if (agentRow && verifiedUserId) {
@@ -926,15 +933,6 @@ export async function POST(request: Request) {
           { status: 403, headers: { "Content-Type": "application/json" } }
         );
       }
-    }
-
-    // The movie director's narration limit is arithmetic, not a creative
-    // instruction. Enforce it before credentials, reservations and provider
-    // dispatch so an overlong batch cannot consume credits or produce a
-    // contradictory "draft" alongside the rejection.
-    const storyDirectorOvertimeGate = evaluateStoryDirectorOvertimeGate(agentId, lastGuardText);
-    if (storyDirectorOvertimeGate) {
-      return promptGuardAssistantResponse(storyDirectorOvertimeGate.message, stream !== false);
     }
 
     // ── 读取智能体级配置 ──
@@ -1266,6 +1264,13 @@ export async function POST(request: Request) {
       ({ agentDeepThinkingType, agentDeductDeepThink, agentMaxContextRounds, agentMaxContextTokens,
         agentMaxReplyTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat, anthropic_thinking_profile, trustedTextOnly } = resolveLinkedModelRuntime(body,agentRow,linkedRow));
     }
+    // Apply the saved agent capability after every model selection path,
+    // including explicit overrides which bypass resolveLinkedModelRuntime.
+    trustedTextOnly = isStoryboardTextOnlyAgent(agentId, agentRow);
+    if (trustedTextOnly) {
+      agentEnableWebSearch = false;
+      if (agentDeepThinkingType === 1) agentDeepThinkingType = 0;
+    }
 
     const lastUserInput = [...messages]
       .reverse()
@@ -1278,6 +1283,15 @@ export async function POST(request: Request) {
     let billingModelRow = (model_overridden
       ? (llmModelRow || llmModelByNameConfig)
       : (modelPresetConfig || llmModelRow || llmModelByNameConfig || modelIdData)) as Record<string, unknown> | null;
+    if (trustedTextOnly && (!agentRow?.model_id || String(billingModelRow?.id || "") !== String(agentRow.model_id))) {
+      return new Response(JSON.stringify({ error: "本次选择与故事导演当前配置的对话模型不一致，请刷新后重试。", code: "STORY_DIRECTOR_BOUND_MODEL_REQUIRED", retryable: false }),
+        { status: 422, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    if (trustedTextOnly && (!billingModelRow || !isTextModelEligible(billingModelRow)
+      || Boolean(billingModelRow.model_type && !["text", "chat", "llm"].includes(String(billingModelRow.model_type))))) {
+      return new Response(JSON.stringify({ error: "故事导演当前配置的模型不支持文字对话，本次未调用模型。", code: "STORY_DIRECTOR_TEXT_MODEL_REQUIRED", retryable: false }),
+        { status: 422, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
     try {
       billingModelRow = await currentTextModelGenerationAdmission(billingModelRow, id =>
         client.from("llm_models").select("id,is_active,is_hidden,user_access").eq("id", id).maybeSingle());
@@ -1646,6 +1660,7 @@ export async function POST(request: Request) {
       defaultModel: useModel,
       timeout: Math.min(agentTimeout, 300),
       ...llmProxyBindingConfig(llmProviderBinding),
+      retryCount: 0,
     });
     
     // 支持 web_search tools 的模型使用原生联网，不支持的前置搜索已注入
@@ -1655,7 +1670,7 @@ export async function POST(request: Request) {
     const effectiveMaxTokens = agentMaxReplyTokens;
 
     const runtimeParameters = { agentDeepThinkingType, agentDeductDeepThink, agentMaxContextRounds, agentMaxContextTokens,
-      agentMaxReplyTokens: effectiveMaxTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat,
+      agentMaxReplyTokens: effectiveMaxTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat, trustedTextOnly,
       ...(anthropic_thinking_profile ? { anthropic_thinking_profile } : {}) };
     const builtChatRequest = buildLlmChatRequest(useModel, searchInjectedMessages, runtimeParameters, stream,
       [...(effectiveEnableWebSearch ? [{ type: "web_search", web_search: {} }] : []), ...(skillInjection?.tools || [])]);
@@ -1672,9 +1687,10 @@ export async function POST(request: Request) {
     if (preparedQuote && (!streamQuote || streamQuote.amount !== preparedQuote.reservation.amount)) throw new LlmQuotePreparationError("LLM_QUOTE_RESERVATION_DRIFT");
 
     // ── 重新生成 / 改写：按稳定消息 ID 截断旧分支，再决定是否落新用户消息 ──
-    // 旧实现接受客户端时间戳并直接按 created_at 删除，时间相同或跨会话
-    // 时可能删错目标。现在必须先确认目标消息属于当前 owner/conversation；
-    // 目标不存在、归属不符、查询或删除失败都 fail closed，不调用上游。
+    // A branch anchor selects request context, never authorizes deletion.
+    // Verify its owner/conversation before invoking the provider, and append
+    // the new attempt so admission, generation or persistence failures cannot
+    // destroy a previously delivered reply.
     if (truncateFromMessageId) {
       if (!conversationId || !verifiedUserId) {
         throw new LlmTruncateContractError(
@@ -1687,6 +1703,8 @@ export async function POST(request: Request) {
         .from("conversation_messages")
         .select("id, conversation_id, user_id, created_at")
         .eq("id", truncateFromMessageId)
+        .eq("conversation_id", conversationId)
+        .eq("user_id", verifiedUserId)
         .maybeSingle();
       if (targetResult.error) {
         console.error("[LLM] Truncate target lookup failed:", targetResult.error);
@@ -1707,29 +1725,6 @@ export async function POST(request: Request) {
           "LLM_TRUNCATE_TARGET_NOT_FOUND",
           "截断目标消息不存在或无权限",
           404,
-        );
-      }
-      const truncated = await client
-        .from("conversation_messages")
-        .delete()
-        .eq("conversation_id", conversationId)
-        .eq("user_id", verifiedUserId)
-        .gte("created_at", target.created_at)
-        .select("id");
-      if (truncated.error) {
-        console.error("[LLM] Truncate message branch failed:", truncated.error);
-        throw new LlmTruncateContractError(
-          "LLM_TRUNCATE_FAILED",
-          "历史分支截断失败，本次未调用模型",
-          503,
-        );
-      }
-      const deletedTarget = (truncated.data || []).some((row: { id?: unknown }) => String(row.id || "") === truncateFromMessageId);
-      if (!deletedTarget) {
-        throw new LlmTruncateContractError(
-          "LLM_TRUNCATE_FAILED",
-          "历史分支截断未确认目标消息，本次未调用模型",
-          503,
         );
       }
     }

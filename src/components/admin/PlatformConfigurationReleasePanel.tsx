@@ -5,6 +5,7 @@ import type { WorkspaceSurface } from "@/lib/platform-configuration-contract";
 
 type ReleaseKind = "model-pool" | "workspace-models";
 type Row = Record<string, unknown>;
+type CredentialChange = { modelKey: string; expectedExists: boolean; state: "pending" | "applied" };
 
 type RuntimeStatus = {
   ready: boolean;
@@ -25,6 +26,7 @@ type Preview = {
   candidate: { releaseId: string; releaseVersion: number; snapshotSha256: string };
   diff: Row;
   previewSha256: string;
+  credentialChanges?: CredentialChange[];
 };
 
 function messageOf(error: unknown) {
@@ -50,7 +52,8 @@ function diffSummary(preview: Preview) {
   if (preview.kind === "model-pool") {
     const models = (preview.diff.models && typeof preview.diff.models === "object" ? preview.diff.models : {}) as Row;
     const count = (value: unknown) => Array.isArray(value) ? value.length : 0;
-    return `新增 ${count(models.added)} · 移除 ${count(models.removed)} · 修改 ${count(models.changed)}`;
+    const credentials = Array.isArray(preview.credentialChanges) ? preview.credentialChanges.length : 0;
+    return `新增 ${count(models.added)} · 移除 ${count(models.removed)} · 修改 ${count(models.changed)}${credentials ? ` · 凭据新增/替换 ${credentials} 项` : ""}`;
   }
   const surfaces = Array.isArray(preview.diff.surfaces) ? preview.diff.surfaces as Row[] : [];
   const changed = surfaces.filter((surface) => surface.changed === true);
@@ -63,6 +66,30 @@ function diffSummary(preview: Preview) {
     return sum + (Array.isArray(assignments.removed) ? assignments.removed.length : 0);
   }, 0);
   return `变更页面 ${changed.length} · 新增分配 ${additions} · 移除分配 ${removals}`;
+}
+
+function credentialChangeRows(preview: Pick<Preview, "kind" | "credentialChanges">, release: Row, current: Row | null) {
+  if (preview.kind !== "model-pool" || !Array.isArray(preview.credentialChanges)) return [];
+  const models = [release, current].flatMap(row => {
+    const snapshot = row?.snapshot;
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return [];
+    const entries = (snapshot as Row).models;
+    return Array.isArray(entries) ? entries.filter((entry): entry is Row => Boolean(entry && typeof entry === "object" && !Array.isArray(entry))) : [];
+  });
+  return preview.credentialChanges.map(change => {
+    const model = models.find(entry => {
+      const config = entry.configuration;
+      if (!config || typeof config !== "object" || Array.isArray(config)) return false;
+      return `${(config as Row).legacyTable}:${(config as Row).legacyId}` === change.modelKey;
+    });
+    const name = typeof model?.name === "string" && model.name.trim() ? model.name.trim() : "未命名模型";
+    const historical = release.is_current !== true && ["published", "superseded"].includes(String(release.status));
+    const state = change.state === "pending" ? "发布前尚未生效"
+      : change.state === "applied" ? historical ? "已随历史版本生效，当前运行凭据以当前环境为准" : "已随该版本生效"
+        : "状态待核对";
+    // Only display-safe fields leave this projection. Never spread server metadata.
+    return { name, operation: change.expectedExists === true ? "替换凭据" : "新增凭据", state };
+  });
 }
 
 // Basic browser checks only; the server's canonical contract remains authoritative.
@@ -105,6 +132,7 @@ export default function PlatformConfigurationReleasePanel({
   const label = kind === "model-pool" ? "模型资源池" : "工作台模型";
   const [overview, setOverview] = useState<Overview | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [historyCredentials, setHistoryCredentials] = useState<Record<string, CredentialChange[]>>({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -207,6 +235,27 @@ export default function PlatformConfigurationReleasePanel({
     }
   };
 
+  const readHistoricalCredentialState = async (releaseId: string) => {
+    if (kind !== "model-pool") return;
+    setBusy(`credentials:${releaseId}`);
+    setError("");
+    try {
+      const response = await fetch(`${endpoint}?credentialReleaseId=${encodeURIComponent(releaseId)}`, {
+        headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+      });
+      const data = await json<{ releaseId: string; credentialChanges: CredentialChange[] }>(response);
+      if (data.releaseId !== releaseId || !Array.isArray(data.credentialChanges) || data.credentialChanges.some(change =>
+        !change || typeof change.modelKey !== "string" || !change.modelKey || typeof change.expectedExists !== "boolean" || !["pending", "applied"].includes(change.state))) {
+        throw new Error("凭据状态返回格式无效，请刷新后重试。");
+      }
+      setHistoryCredentials(current => ({ ...current, [releaseId]: data.credentialChanges }));
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setBusy("");
+    }
+  };
+
   const bootstrap = async () => {
     setBusy("bootstrap");
     setError("");
@@ -265,6 +314,24 @@ export default function PlatformConfigurationReleasePanel({
   };
 
   const runtime = overview?.runtimeEnforcement;
+  const renderCredentialChanges = (row: Row, changes: CredentialChange[] | undefined, showEmpty = false) => {
+    const credentials = credentialChangeRows({ kind, credentialChanges: changes }, row, overview?.current || null);
+    if (!credentials.length) return showEmpty ? <p className="mt-2 text-xs text-[#667085]" data-testid="release-credential-empty">该版本没有凭据变更记录。</p> : null;
+    return <div className="mt-2 rounded-md border border-[#b2ccff] bg-white px-3 py-2" aria-label="凭据变更摘要" data-testid="release-credential-changes">
+      <p className="font-semibold">凭据新增/替换 {credentials.length} 项</p>
+      <ul className="mt-1 space-y-1">
+        {credentials.map((change, index) => <li key={index} className="break-words">{change.name} · {change.operation} · {change.state}</li>)}
+      </ul>
+    </div>;
+  };
+  const renderPreview = (row: Row) => {
+    if (!preview || preview.candidate.releaseId !== String(row.id || "")) return null;
+    return <div className="mt-3 rounded-md border border-[#b2ccff] bg-[#eff4ff] px-3 py-2 text-xs text-[#1849a9]">
+      <p>v{preview.current?.releaseVersion || "无"} → v{preview.candidate.releaseVersion} · {diffSummary(preview)}</p>
+      {renderCredentialChanges(row, preview.credentialChanges)}
+      <span className="break-all font-mono text-[10px]">预览指纹 {preview.previewSha256}</span>
+    </div>;
+  };
   return (
     <section ref={panelRef} data-testid={`platform-release-panel-${kind}`} className="rounded-xl border border-[#d0d5dd] bg-[#f8fafc] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -335,7 +402,7 @@ export default function PlatformConfigurationReleasePanel({
                 </div>
                 {issues.length > 0 && <p className="mt-2 text-xs text-[#b42318]">阻断：{issues.join("；")}</p>}
                 {warnings.length > 0 && <p className="mt-1 text-xs text-[#93370d]">提醒：{warnings.join("；")}</p>}
-                {isPreviewed && <div className="mt-3 rounded-md border border-[#b2ccff] bg-[#eff4ff] px-3 py-2 text-xs text-[#1849a9]">v{preview.current?.releaseVersion || "无"} → v{preview.candidate.releaseVersion} · {diffSummary(preview)}<br /><span className="break-all font-mono text-[10px]">预览指纹 {preview.previewSha256}</span></div>}
+                {isPreviewed && renderPreview(row)}
               </article>
             );
           })}
@@ -344,7 +411,13 @@ export default function PlatformConfigurationReleasePanel({
             <details>
               <summary className="cursor-pointer text-xs font-semibold text-[#475467]">历史发布与回滚（{history.length}）</summary>
               <div className="mt-2 space-y-2">
-                {history.slice(0, 20).map((row) => <div key={String(row.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#eaecf0] bg-white px-3 py-2 text-xs"><span>v{version(row)} · {String(row.status)} · {String(row.change_note || "无说明")}</span>{row.status === "superseded" && <button type="button" disabled={Boolean(busy)} onClick={() => void mutate("rollback", row)} className="rounded border border-[#d0d5dd] px-2 py-1 font-semibold text-[#344054] disabled:opacity-50">建立回滚候选</button>}</div>)}
+                {history.slice(0, 20).map((row) => <div key={String(row.id)} data-history-release-id={String(row.id)} className="rounded-md border border-[#eaecf0] bg-white px-3 py-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><span>v{version(row)} · {String(row.status)} · {String(row.change_note || "无说明")}</span><div className="flex flex-wrap gap-2">
+                    {kind === "model-pool" && <button type="button" disabled={Boolean(busy)} onClick={() => void readHistoricalCredentialState(String(row.id))} className="rounded border border-[#d0d5dd] px-2 py-1 font-semibold text-[#344054] disabled:opacity-50">查看凭据状态</button>}
+                    {row.status === "superseded" && <button type="button" disabled={Boolean(busy)} onClick={() => void mutate("rollback", row)} className="rounded border border-[#d0d5dd] px-2 py-1 font-semibold text-[#344054] disabled:opacity-50">建立回滚候选</button>}
+                  </div></div>
+                  {kind === "model-pool" && Object.hasOwn(historyCredentials, String(row.id)) && renderCredentialChanges(row, historyCredentials[String(row.id)], true)}
+                </div>)}
               </div>
             </details>
           )}

@@ -474,7 +474,7 @@ html[data-theme] [data-chat-surface="unified-glass"] .chat-composer-rainbow.chat
 [data-chat-surface="unified-glass"] .chat-latest-jump {
   left: 50%;
   right: auto;
-  bottom: 8px;
+  bottom: 26px;
   width: 44px;
   height: 44px;
   padding: 0;
@@ -538,14 +538,14 @@ html[data-theme] [data-chat-surface="unified-glass"] .chat-composer-rainbow.chat
 
 [data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming .chat-latest-dots {
   opacity: 1;
-  left: auto;
-  right: 5px;
-  top: 5px;
-  gap: 1px;
-  padding: 2px;
+  left: 50%;
+  right: auto;
+  top: calc(100% + 6px);
+  gap: 3px;
+  padding: 3px 5px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--chat-sheet-strong) 88%, transparent);
-  transform: none;
+  transform: translateX(-50%);
 }
 
 [data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming .chat-latest-dot {
@@ -561,7 +561,7 @@ html[data-theme] [data-chat-surface="unified-glass"] .chat-composer-rainbow.chat
 [data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming:hover .chat-latest-dots,
 [data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming:focus-visible .chat-latest-dots {
   opacity: 1;
-  transform: none;
+  transform: translateX(-50%);
 }
 
 [data-chat-surface="unified-glass"] .chat-latest-jump.is-streaming:hover .chat-latest-arrow,

@@ -24,6 +24,7 @@ import { Bot, Copy, Check, RotateCw, Sparkles, Search, Maximize2, Minimize2, Che
 import { toast } from "sonner";
 import { cn, extractPureText, copyToClipboard } from "@/lib/utils";
 import { reportProblem } from "@/lib/diagnostic-sentry";
+import scrollBehavior from "./chat/chat-scroll-behavior.module.css";
 
 // Extracted sub-components
 import { MessageContent, StreamingContentWrapper } from "./chat/message-content";
@@ -34,7 +35,7 @@ import { ChatModelSwitcher } from "./chat/chat-model-switcher";
 import { useChatModelSelection } from "@/hooks/use-chat-model-selection";
 import { extractAllStructuredPrompts } from "./chat/message-content";
 import { NavButton } from "@/components/sub-page-header";
-import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import type { Message } from "@/types/coze";
 import { fuzzyMatch } from "@/lib/pinyin";
@@ -51,10 +52,62 @@ import { FREE_CHAT_AGENT_ID } from "@/lib/virtual-agent-policy";
 import { FREE_CHAT_DEEP_THINKING_TYPE, shouldAutoEnableWebSearch } from "@/lib/free-chat-runtime-policy";
 import { bipStep } from "@/lib/business-ip/catalog";
 import { BusinessIpFlow } from "@/components/chat/business-ip-flow";
+import { chatContinuationText } from "@/lib/chat-regeneration-policy";
 
 const VIDEO_TASK_ORDER_CONTEXT_RE = /(?:\u65b9\u6848|\u5206\u6bb5|\u6bb5\u843d|\u56fe\u7247|\u56fe\u50cf|\u4efb\u52a1|\u5361\u7247|\u7b2c|\u955c\u5934|\u5206\u955c|task|part|segment|section|scene|shot)\s*[\[\u3010\uff08(]?\s*(?:\d{1,2}|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341])/i;
 const CHAT_SCROLL_LATEST_THRESHOLD_PX = 80;
 const CHAT_OUTCOME_UNKNOWN_RE = /(?:最终结果|结果|终态).{0,12}(?:暂未确认|不明)|避免重复发送|禁止重复提交|RECONCILIATION_REQUIRED|RESULT_UNKNOWN/iu;
+
+// Scrolling should only update the small latest-message control, not re-render
+// the entire transcript (whose message actions intentionally use live closures).
+function createLatestButtonStore() {
+  let visible = false;
+  const listeners = new Set<() => void>();
+  return {
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    getSnapshot: () => visible,
+    setVisible(next: boolean) {
+      if (visible === next) return;
+      visible = next;
+      listeners.forEach((listener) => listener());
+    },
+  };
+}
+
+type LatestButtonStore = ReturnType<typeof createLatestButtonStore>;
+
+function ScrollToLatestControl({ store, hasMessages, isStreaming, widthClass, onResume }: {
+  store: LatestButtonStore;
+  hasMessages: boolean;
+  isStreaming: boolean;
+  widthClass: string;
+  onResume: () => void;
+}) {
+  const visible = useSyncExternalStore(store.subscribe, store.getSnapshot, () => false);
+  if (!visible || !hasMessages) return null;
+  return (
+    <div className={`chat-latest-rail chat-shared-rail pointer-events-none absolute inset-x-0 bottom-full z-40 ${widthClass} mx-auto`}>
+      <button
+        type="button"
+        onClick={onResume}
+        className={cn("chat-latest-jump pointer-events-auto absolute z-40 inline-flex items-center justify-center", isStreaming && "is-streaming")}
+        aria-label={isStreaming ? "有新内容，回到最新消息" : "回到最新消息"}
+        title={isStreaming ? "正在生成新内容，回到最新消息" : "回到最新消息"}
+        data-testid="chat-scroll-to-latest"
+      >
+        <span className="chat-latest-dots" aria-hidden="true" data-testid="chat-streaming-latest-indicator">
+          <span className="chat-latest-dot" />
+          <span className="chat-latest-dot" />
+          <span className="chat-latest-dot" />
+        </span>
+        <ChevronDown className="chat-latest-arrow" aria-hidden="true" data-testid="chat-latest-arrow" />
+      </button>
+    </div>
+  );
+}
 
 function isChatOutcomeUnknown(message: Pick<Message, "content" | "error">): boolean {
   return CHAT_OUTCOME_UNKNOWN_RE.test(`${message.content || ""}\n${message.error || ""}`);
@@ -192,7 +245,7 @@ export function ChatView() {
         const prompt = sanitizeVideoPrompt(rawCode);
         if (!prompt) continue;
 
-        const language = (block.querySelector('.code-block-lang')?.textContent || '').trim();
+        const language = Array.from(blockCodeEl.classList).find(name => name.startsWith('language-'))?.slice('language-'.length) || '';
         const codeIndex = messageText.indexOf(rawCode, searchCursor);
         const beforeText = (codeIndex >= 0 ? messageText.slice(0, codeIndex) : "").slice(-520);
         if (codeIndex >= 0) searchCursor = codeIndex + rawCode.length;
@@ -461,6 +514,7 @@ export function ChatView() {
 
 
   const activeConv = state.conversations.find((c) => c.id === state.activeConversationId);
+  const hasActiveConversation = Boolean(activeConv);
   const [bipSelection, setBipSelection] = useState<{conversationId:string;agentId:string}|null>(null);
   const isBipProject = Boolean(bipStep(activeConv?.agentId));
   const bipDraftScope=useRef<{id?:string;wasBip:boolean}>({wasBip:false});
@@ -486,7 +540,8 @@ export function ChatView() {
   // never be mistaken for user scrolling, otherwise streaming content oscillates.
   const autoFollowRef = useRef(true);
   const needScrollToBottomRef = useRef(false);
-  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const userPausedFollowRef = useRef(false);
+  const [latestButtonStore] = useState(createLatestButtonStore);
   const autoScrollRafRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
 
@@ -501,8 +556,9 @@ export function ChatView() {
     }
     needScrollToBottomRef.current = false;
     autoFollowRef.current = true;
-    setShowScrollBottom(false);
-  }, []);
+    userPausedFollowRef.current = false;
+    latestButtonStore.setVisible(false);
+  }, [latestButtonStore]);
 
   const scheduleScrollToBottom = useCallback(() => {
     if (autoScrollRafRef.current !== null) return;
@@ -517,18 +573,22 @@ export function ChatView() {
   const resumeAutoFollow = useCallback(() => {
     autoFollowRef.current = true;
     needScrollToBottomRef.current = true;
-    setShowScrollBottom(false);
+    userPausedFollowRef.current = false;
+    latestButtonStore.setVisible(false);
     scheduleScrollToBottom();
-  }, [scheduleScrollToBottom]);
+  }, [latestButtonStore, scheduleScrollToBottom]);
 
   const pauseAutoFollow = useCallback(() => {
+    const wasFollowing = autoFollowRef.current || needScrollToBottomRef.current;
     autoFollowRef.current = false;
     needScrollToBottomRef.current = false;
+    userPausedFollowRef.current = true;
+    if (!wasFollowing) return;
     const el = scrollRef.current;
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight > CHAT_SCROLL_LATEST_THRESHOLD_PX) {
-      setShowScrollBottom(true);
+      latestButtonStore.setVisible(true);
     }
-  }, []);
+  }, [latestButtonStore]);
 
   useEffect(() => {
     return () => {
@@ -543,26 +603,34 @@ export function ChatView() {
   useEffect(() => {
     const currentConvId = state.activeConversationId;
     const prevConvId = prevConvIdRef.current;
+    if (!hasActiveConversation) {
+      prevConvIdRef.current = null;
+      return;
+    }
     if (currentConvId !== prevConvId) {
       autoFollowRef.current = true;
       needScrollToBottomRef.current = true;
-      setShowScrollBottom(false);
+      userPausedFollowRef.current = false;
+      latestButtonStore.setVisible(false);
       prevConvIdRef.current = currentConvId;
       scheduleScrollToBottom();
     }
-  }, [state.activeConversationId, scheduleScrollToBottom]);
+  }, [state.activeConversationId, hasActiveConversation, latestButtonStore, scheduleScrollToBottom]);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     const nearBottom = distanceFromBottom <= CHAT_SCROLL_LATEST_THRESHOLD_PX;
-    const shouldShowButton = !nearBottom;
-    setShowScrollBottom((prev) => prev === shouldShowButton ? prev : shouldShowButton);
-    if (nearBottom) {
+    const atBottom = distanceFromBottom <= 2;
+    const shouldFollow = nearBottom && (!userPausedFollowRef.current || atBottom);
+    const shouldShowButton = !nearBottom || (userPausedFollowRef.current && !atBottom);
+    latestButtonStore.setVisible(shouldShowButton);
+    if (shouldFollow) {
       // Reaching the bottom, by any input method, resumes following.
       needScrollToBottomRef.current = false;
       autoFollowRef.current = true;
+      if (atBottom) userPausedFollowRef.current = false;
     } else {
       // Scrollbar dragging, keyboard scrolling and assistive input do not emit
       // wheel/touch events. Any position away from the latest message pauses
@@ -570,11 +638,19 @@ export function ChatView() {
       needScrollToBottomRef.current = false;
       autoFollowRef.current = false;
     }
-  }, []);
+  }, [latestButtonStore]);
 
-  const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    if (event.deltaY < 0) pauseAutoFollow();
-  }, [pauseAutoFollow]);
+  // This listener never cancels scrolling; explicitly marking it passive keeps
+  // that contract clear while preserving immediate user-intent detection.
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) pauseAutoFollow();
+    };
+    container.addEventListener("wheel", onWheel, { passive: true });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, [state.activeConversationId, hasActiveConversation, pauseAutoFollow]);
 
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     touchStartYRef.current = event.touches[0]?.clientY ?? null;
@@ -613,13 +689,14 @@ export function ChatView() {
         scheduleScrollToBottom();
       } else {
         const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-        const shouldShowButton = distanceFromBottom > CHAT_SCROLL_LATEST_THRESHOLD_PX;
-        setShowScrollBottom((prev) => prev === shouldShowButton ? prev : shouldShowButton);
+        const shouldShowButton = distanceFromBottom > CHAT_SCROLL_LATEST_THRESHOLD_PX
+          || (userPausedFollowRef.current && distanceFromBottom > 2);
+        latestButtonStore.setVisible(shouldShowButton);
       }
     });
     observer.observe(contentEl);
     return () => observer.disconnect();
-  }, [state.activeConversationId, shouldAutoScroll, scheduleScrollToBottom]);
+  }, [state.activeConversationId, hasActiveConversation, latestButtonStore, shouldAutoScroll, scheduleScrollToBottom]);
 
   // Auto-send pending preset message from context
   useEffect(() => {
@@ -840,7 +917,7 @@ export function ChatView() {
       toast.warning("该智能体已下架，暂不可使用");
       return;
     }
-    // 改写模式：发送时从原消息起截断旧分支，后端同步截断历史，避免出现第二个“你好”。
+    // 改写只截取本次请求上下文；保留旧消息与历史，避免新请求失败时丢失原内容。
     const branch = editingMessage ? { truncateFromMessageId: editingMessage.id } : undefined;
     // ★ 先暂存待发送内容，受理成功后才真正清空
     const imagesToRestore = pendingImages;
@@ -856,13 +933,13 @@ export function ChatView() {
     if (editingMessage) setEditingMessageId(null);
     const accepted = await sendMessage(contentToSend, mentionedAgentId || preservedAgentId, imageKeys, targetModelOverride, apiContent, deepThinkingValue, webSearchValue, undefined, undefined, branch);
     if (accepted === false) {
-      // 发送未被受理：把内容还给用户，避免“点了发送什么都没发生”
+      // 确认拒绝或失败时保留输入；结果未知已由发送器处理，不走此分支。
       if (pendingImageScopeRef.current.key === sendScope) {
         if (editingMessage) setEditingMessageId(editingMessage.id);
         setInputValue(current => current || contentToSend);
         if (imagesToRestore.length) setPendingImages(imagesToRestore);
       }
-      toast.warning("消息未发送：当前会话尚未就绪，请稍后重试");
+      toast.warning("本次回复未完成，具体原因请查看聊天记录中的提示。");
     }
   };
 
@@ -1028,7 +1105,6 @@ export function ChatView() {
             <h2 className="text-sm font-medium text-[var(--foreground)]" data-testid="chat-agent-name">{activeAgent?.name || activeConv?.agentName || "智能体"}</h2>
             <div className="flex items-center gap-1.5">
               <span className="relative flex h-2 w-2">
-                <span className="chat-agent-online-ping animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10B981] opacity-40" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-[#10B981]" />
               </span>
               <p className="text-[11px] text-[var(--text-secondary)]">在线</p>
@@ -1097,10 +1173,9 @@ export function ChatView() {
 
       {/* Messages */}
       <div
-        className={`chat-canvas flex-1 overflow-y-auto chat-scroll relative${activeConv && isConvStreaming(activeConv.id) ? ' chat-streaming' : ''}`}
+        className={`${scrollBehavior.transcript} chat-canvas flex-1 overflow-y-auto chat-scroll relative${activeConv && isConvStreaming(activeConv.id) ? ' chat-streaming' : ''}`}
         ref={scrollRef}
         onScroll={handleScroll}
-        onWheel={handleWheel}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onPointerDown={handleScrollPointerDown}
@@ -1188,7 +1263,8 @@ export function ChatView() {
                   const msgIdx = activeConv?.messages?.findIndex(m => m.id === msg.id) ?? -1;
                   const prevUserMsg = msgIdx > 0 ? activeConv?.messages?.slice(0, msgIdx).reverse().find(m => m.role === "user") : undefined;
                   if (prevUserMsg) {
-                    // 重新生成：从这条回复起截断旧分支；不重复添加用户消息，也不重复落库用户消息。
+                    // Keep the original reply and append a new attempt, using
+                    // the context before this reply without duplicating its user.
                     const retryDeepThinking = state.activeAgentId === FREE_CHAT_AGENT_ID
                       ? FREE_CHAT_DEEP_THINKING_TYPE
                       : undefined;
@@ -1208,7 +1284,7 @@ export function ChatView() {
                       undefined,
                       { persistUserMessage: false, truncateFromMessageId: msg.id, appendUserMessage: false },
                     );
-                    if (!accepted) toast.warning("重新生成未受理：当前会话仍在加载或生成中");
+                    if (!accepted) toast.warning("本次重新生成未完成，原回复已保留；请查看消息状态后再决定是否重试。");
                   }
                 } else if (msg.role === "user" && msg.error) {
                   // Preserve the user's original input. Clear the visible error
@@ -1244,7 +1320,7 @@ export function ChatView() {
                   }
                 }
               } : undefined}
-              onContinue={msg.role === "assistant" && !msg.isStreaming && /(?:\[已终止\]|输出中断|网络中断|连接中断)/.test(msg.content || "") ? () => {
+              onContinue={msg.role === "assistant" && !msg.isStreaming && !isChatOutcomeUnknown(msg) && /(?:\[已终止\]|输出中断|网络中断|连接中断)/.test(msg.content || "") ? () => {
                 const retryDeepThinking = state.activeAgentId === FREE_CHAT_AGENT_ID
                   ? FREE_CHAT_DEEP_THINKING_TYPE
                   : undefined;
@@ -1253,10 +1329,9 @@ export function ChatView() {
                   ? activeConv?.messages?.slice(0, msgIdx).reverse().find((item) => item.role === "user")
                   : undefined;
                 const continuationInstruction = [
-                  "请从上一条助手回复的中断位置继续，保留已经完成的正文，不要重复已完整输出的段落。",
-                  "如果上一条正在输出 storyboard_director_output.v1 或 agent_prompt_package.v1，请在本次回复末尾只给出一个完整、可解析的最终机器 JSON 包。",
-                  "不要重新解释任务，也不要把未闭合 JSON 当成完成结果。",
-                ].join("\n");
+                  "请从以下已收到正文的中断位置继续，不要重复已完成的段落，也不要重新解释任务。",
+                  chatContinuationText(msg.content),
+                ].join("\n\n");
                 sendMessage(
                   "继续生成",
                   msg.agentId || previousUserMessage?.agentId || activeConv?.agentId,
@@ -1265,9 +1340,9 @@ export function ChatView() {
                   continuationInstruction,
                   retryDeepThinking,
                   webSearchOverride ? true : undefined,
-                  true,
+                  false,
                   undefined,
-                  { persistUserMessage: false },
+                  { persistUserMessage: true },
                 );
               } : undefined}
               onDelete={() => {
@@ -1297,32 +1372,13 @@ export function ChatView() {
       {/* Input Area — 对标竞品：sticky bottom */}
       <div className="chat-input-dock relative z-20 shrink-0 pt-6 pb-1">
         {/* Anchored above the input dock, outside the transcript scroll container. */}
-        {showScrollBottom && activeConv.messages.length > 0 && (
-          <div className={`chat-latest-rail chat-shared-rail pointer-events-none absolute inset-x-0 bottom-full z-40 ${widthClasses[contentWidthClass]} mx-auto`}>
-            <button
-              type="button"
-              onClick={resumeAutoFollow}
-              className={cn(
-                "chat-latest-jump pointer-events-auto absolute z-40 inline-flex items-center justify-center",
-                isConvStreaming(activeConv.id) && "is-streaming",
-              )}
-              aria-label={isConvStreaming(activeConv.id) ? "有新内容，回到最新消息" : "回到最新消息"}
-              title={isConvStreaming(activeConv.id) ? "正在生成新内容，回到最新消息" : "回到最新消息"}
-              data-testid="chat-scroll-to-latest"
-            >
-              <span
-                className="chat-latest-dots"
-                aria-hidden="true"
-                data-testid="chat-streaming-latest-indicator"
-              >
-                <span className="chat-latest-dot" />
-                <span className="chat-latest-dot" />
-                <span className="chat-latest-dot" />
-              </span>
-              <ChevronDown className="chat-latest-arrow" aria-hidden="true" data-testid="chat-latest-arrow" />
-            </button>
-          </div>
-        )}
+        <ScrollToLatestControl
+          store={latestButtonStore}
+          hasMessages={activeConv.messages.length > 0}
+          isStreaming={isConvStreaming(activeConv.id)}
+          widthClass={widthClasses[contentWidthClass]}
+          onResume={resumeAutoFollow}
+        />
         <div className={`chat-composer-rail chat-shared-rail relative ${widthClasses[contentWidthClass]} mx-auto`}>
           {/* Mention Dropdown */}
           {showMentionDropdown && (

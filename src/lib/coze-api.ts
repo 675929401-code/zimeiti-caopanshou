@@ -20,6 +20,7 @@ export interface CozeConfig {
 
 let cachedConfig: CozeConfig | null = null;
 let configCacheTime = 0;
+let configCacheEpoch = 0;
 const CONFIG_CACHE_TTL = 5 * 60_000;
 
 export async function getCozeConfig(): Promise<CozeConfig> {
@@ -27,6 +28,7 @@ export async function getCozeConfig(): Promise<CozeConfig> {
   if (cachedConfig && Date.now() - configCacheTime < CONFIG_CACHE_TTL) {
     return cachedConfig;
   }
+  const readEpoch = configCacheEpoch;
 
   // Read from database first, fallback to env vars
   let apiBase = process.env.COZE_API_BASE_URL || "https://api.coze.cn";
@@ -57,13 +59,17 @@ export async function getCozeConfig(): Promise<CozeConfig> {
     // Database not available, use env vars
   }
 
-  cachedConfig = { apiBase, apiToken, workspaceId };
-  configCacheTime = Date.now();
-  return cachedConfig;
+  const config = { apiBase, apiToken, workspaceId };
+  if (readEpoch === configCacheEpoch) {
+    cachedConfig = config;
+    configCacheTime = Date.now();
+  }
+  return config;
 }
 
 /** Clear config cache (call after admin saves Coze settings) */
 export function clearCozeConfigCache() {
+  configCacheEpoch++;
   cachedConfig = null;
   configCacheTime = 0;
 }

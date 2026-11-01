@@ -11,6 +11,10 @@ import type {
 
 const SESSION_STORAGE_KEY = "product_usage_session_v1";
 const SEQUENCE_STORAGE_KEY = "product_usage_sequence_v1";
+const COLLECTION_STATUS_TTL_MS = 60_000;
+const COLLECTION_STATUS_TIMEOUT_MS = 5_000;
+const collectionStatuses = new Map<string, { enabled: boolean; expiresAtMs: number }>();
+const collectionStatusRequests = new Map<string, Promise<boolean | null>>();
 
 export interface ProductUsageClientEvent {
   eventType: ProductUsageEventType;
@@ -94,6 +98,43 @@ export function buildProductUsageBrowserEvent(
   };
 }
 
+function collectionEnabled(endpoint: string): Promise<boolean | null> {
+  const cached = collectionStatuses.get(endpoint);
+  if (cached && cached.expiresAtMs > Date.now()) return Promise.resolve(cached.enabled);
+  const pending = collectionStatusRequests.get(endpoint);
+  if (pending) return pending;
+
+  // The shared deadline covers both headers and body parsing. Its controller
+  // is independent of callers, and the race releases even if abort is ignored.
+  const request = (async () => {
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const deadline = new Promise<null>((resolve) => {
+        timeout = setTimeout(() => { controller.abort(); resolve(null); }, COLLECTION_STATUS_TIMEOUT_MS);
+      });
+      const lookup = (async () => {
+        const response = await fetch(endpoint, { method: "GET", cache: "no-store", credentials: "same-origin", signal: controller.signal });
+        if (response.status !== 200) return null;
+        const body: unknown = await response.json();
+        if (!body || typeof body !== "object" || Array.isArray(body)
+          || !("collectionEnabled" in body) || typeof body.collectionEnabled !== "boolean") return null;
+        return body.collectionEnabled;
+      })();
+      return await Promise.race([lookup, deadline]);
+    } catch {
+      return null;
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  })().then((enabled) => {
+    if (enabled !== null) collectionStatuses.set(endpoint, { enabled, expiresAtMs: Date.now() + COLLECTION_STATUS_TTL_MS });
+    return enabled;
+  }).finally(() => { collectionStatusRequests.delete(endpoint); });
+  collectionStatusRequests.set(endpoint, request);
+  return request;
+}
+
 /**
  * Explicit, best-effort product usage recorder.
  *
@@ -109,13 +150,22 @@ export async function recordProductUsageEvents(
   if (!Array.isArray(inputs) || inputs.length === 0) return { status: "skipped", code: "NO_EVENTS", receivedCount: 0 };
   if (document.visibilityState === "hidden") return { status: "skipped", code: "PAGE_HIDDEN", receivedCount: 0 };
   if (navigator.onLine === false) return { status: "skipped", code: "OFFLINE", receivedCount: 0 };
+  if (options.signal?.aborted) return { status: "skipped", code: "ABORTED", receivedCount: 0 };
 
   const token = options.token ?? localStorage.getItem("auth_token");
   if (!token) return { status: "skipped", code: "UNAUTHENTICATED", receivedCount: 0 };
 
+  const endpoint = options.endpoint ?? "/api/product-usage/events";
+  const enabled = await collectionEnabled(endpoint);
+  if (options.signal?.aborted) return { status: "skipped", code: "ABORTED", receivedCount: 0 };
+  if (String(document.visibilityState) === "hidden") return { status: "skipped", code: "PAGE_HIDDEN", receivedCount: 0 };
+  if ((navigator.onLine as boolean) === false) return { status: "skipped", code: "OFFLINE", receivedCount: 0 };
+  if (enabled === false) return { status: "skipped", code: "COLLECTION_DISABLED", receivedCount: 0 };
+  if (enabled !== true) return { status: "unavailable", code: "COLLECTION_STATUS_UNKNOWN", receivedCount: 0 };
+
   const events = inputs.slice(0, 20).map((input) => buildProductUsageBrowserEvent(input));
   try {
-    const response = await fetch(options.endpoint ?? "/api/product-usage/events", {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -127,14 +177,19 @@ export async function recordProductUsageEvents(
       keepalive: true,
       signal: options.signal,
     });
-    const body = await response.json().catch(() => ({})) as { code?: unknown; receivedCount?: unknown };
-    if (response.ok) {
+    const parsedBody: unknown = await response.json().catch(() => null);
+    const body = parsedBody && typeof parsedBody === "object" && !Array.isArray(parsedBody)
+      ? parsedBody as { ok?: unknown; code?: unknown; receivedCount?: unknown } : {};
+    if (response.ok && response.status === 202 && body.ok === true && body.code === "PRODUCT_USAGE_ACCEPTED"
+      && typeof body.receivedCount === "number" && Number.isInteger(body.receivedCount)
+      && body.receivedCount > 0 && body.receivedCount <= events.length) {
       return {
         status: "accepted",
-        code: typeof body.code === "string" ? body.code : "PRODUCT_USAGE_ACCEPTED",
-        receivedCount: typeof body.receivedCount === "number" ? body.receivedCount : events.length,
+        code: "PRODUCT_USAGE_ACCEPTED",
+        receivedCount: body.receivedCount,
       };
     }
+    if (response.ok) return { status: "unavailable", code: "PRODUCT_USAGE_RESPONSE_INVALID", receivedCount: 0 };
     return {
       status: response.status === 429 ? "skipped" : "unavailable",
       code: typeof body.code === "string" ? body.code : `HTTP_${response.status}`,

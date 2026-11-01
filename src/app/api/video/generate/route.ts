@@ -40,6 +40,9 @@ import {
 } from "@/lib/video-model-capabilities";
 import { getVideoInputContract, validateVideoInputContract } from "@/lib/video-input-contract";
 import { isDigitalHumanWorkspaceModel } from "@/lib/video-model-surface";
+import { readGaoruiPersonAssetAdmission } from "@/lib/gaorui-person-asset-admission";
+import { GaoruiProviderAssetError, gaoruiCredentialBindingFingerprint } from "@/lib/server/gaorui-provider-assets";
+import { prepareGaoruiPersonVideoExecution } from "@/lib/server/gaorui-person-video-execution";
 import {
   evaluateWorkspaceModelCompatibility,
   videoWorkspaceSurfaceFromRequest,
@@ -97,7 +100,7 @@ import {
   persistVideoProviderDispatchReceipt,
   persistVideoProviderSubmissionReceipt,
 } from "@/lib/video-routing-snapshot";
-import { videoBillingAdapterAdmission } from "@/lib/video-model-availability";
+import { videoBillingAdapterAdmission, videoOperatorSubmissionAdmission } from "@/lib/video-model-availability";
 import { resumeRequestedVideoCancellation } from "@/lib/video-cancellation-runtime";
 import {
   acquireProviderAdmission,
@@ -591,7 +594,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 校验 aspect_ratio 格式
-    const validRatios = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"];
+    const validRatios = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "adaptive"];
     if (aspect_ratio && !validRatios.includes(aspect_ratio)) {
       return NextResponse.json({ error: `不支持的画面比例: ${aspect_ratio}，当前仅支持: ${validRatios.join("/")}` }, { status: 400 });
     }
@@ -701,7 +704,25 @@ export async function POST(req: NextRequest) {
     const selectedProtocolConfig = selectedModel.api_protocol_config && typeof selectedModel.api_protocol_config === "object"
       ? selectedModel.api_protocol_config as Record<string, unknown>
       : {};
+    const operatorAdmission = videoOperatorSubmissionAdmission(selectedProtocolConfig, selectedModel);
+    if (!operatorAdmission.ready) {
+      return NextResponse.json({
+        error: operatorAdmission.message,
+        error_code: operatorAdmission.code,
+        task_submitted: false,
+        video_task_submitted: false,
+        retryable: false,
+      }, { status: 422 });
+    }
     const protocolParameterIssue = validateVideoParameterContract(selectedModel as VideoModelConfig, {
+      aspectRatio: aspect_ratio,
+      imageUrl: image_url,
+      lastFrameUrl: last_frame_url,
+      referenceImageUrl: reference_image_url,
+      imageUrls: referenceImageUrls,
+      audioUrl: audio_url,
+      audioUrls: referenceAudioUrls,
+      sourceVideoUrl: source_video_url,
       prompt: trimmedPrompt,
       negativePrompt: negative_prompt,
       generateAudio,
@@ -750,7 +771,18 @@ export async function POST(req: NextRequest) {
     // not veto an otherwise valid live configuration.
     // Digital-person pricing is derived from owned media, never a client supplied cheap duration.
     const digitalHumanModel = isDigitalHumanWorkspaceModel(selectedModel);
-    if (!adminValidation && (surface === 'digital-human' || digitalHumanModel)) {
+    let personAssetAdmission = readGaoruiPersonAssetAdmission(selectedModel, { surface: String(surface || "") });
+    if (!personAssetAdmission.ready) {
+      return NextResponse.json({
+        error: personAssetAdmission.message,
+        error_code: personAssetAdmission.code,
+        task_submitted: false,
+        video_task_submitted: false,
+        asset_preparation_attempted: false,
+        retryable: false,
+      }, { status: 422 });
+    }
+    if ((!adminValidation && (surface === 'digital-human' || digitalHumanModel)) || personAssetAdmission.required) {
       try {
         const { ownedDigitalHumanAsset } = await import('@/lib/digital-human-assets');
         const { humanDurationCapabilities, planHumanDuration } = await import('@/features/digital-human/duration-policy');
@@ -833,30 +865,25 @@ export async function POST(req: NextRequest) {
     const configuredAspectRatios = Array.isArray(selectedProtocolConfig.aspect_ratios)
       ? selectedProtocolConfig.aspect_ratios.map(String)
       : [];
-    if (aspect_ratio && configuredAspectRatios.length > 0 && !configuredAspectRatios.includes(aspect_ratio)) {
+    if (aspect_ratio && aspect_ratio !== "adaptive" && configuredAspectRatios.length > 0 && !configuredAspectRatios.includes(aspect_ratio)) {
       return NextResponse.json({
         error: `当前模型不支持 ${aspect_ratio}，可选比例：${configuredAspectRatios.join("/")}`,
       }, { status: 400 });
     }
 
-    // 该路由的任意成功分支都可能直接创建供应商任务，因此不能由缺失或
-    // 伪造 surface 绕过渠道健康门禁。健康查询错误、无记录和熔断均
-    // fail-closed；影视工坊已有的本地 job 仍保留，但绝不会继续提交上游。
+    // Channel health is an operator signal, not a public catalog or ordinary
+    // production gate. A stale APM row, temporary quota issue, or an upstream
+    // outage must reach the provider for this request so the user receives the
+    // current result and the channel can recover without manual reopening.
+    // Only an explicitly requested administrator recovery canary uses the
+    // circuit authorization below.
     if (!adminValidation) {
       const { data: channelHealth, error: healthError } = await db
         .from("video_channel_health")
         .select("channel_id, is_healthy, consecutive_failures, last_success_at, last_fail_at, updated_at, total_requests, success_count, fail_count, timeout_count, last_error")
         .eq("channel_id", selectedModel.id)
         .maybeSingle();
-      if (healthError) {
-        console.warn("[Video/HealthGate] Health lookup unavailable; blocking paid submission:", healthError.code);
-        return NextResponse.json({
-          error: "渠道健康状态暂时无法读取，本次不会提交视频任务",
-          error_code: "CHANNEL_HEALTH_UNAVAILABLE",
-          retryable: true,
-          task_submitted: false,
-        }, { status: 503 });
-      }
+      if (healthError) console.warn("[Video/HealthGate] Health lookup unavailable; ordinary submission continues:", healthError.code);
 
       const circuit = evaluateVideoChannelCircuit(channelHealth);
       if (healthRecoveryCanaryRequested && normalizedSurface !== "video-page") {
@@ -875,7 +902,7 @@ export async function POST(req: NextRequest) {
           task_submitted: false,
         }, { status: 409 });
       }
-      if (circuit.blocksProduction) {
+      if (circuit.blocksProduction && (healthRecoveryCanaryRequested || healthOperatorRetest)) {
         const authorization = authorizeVideoChannelRecoveryCanary({
           decision: circuit,
           userRole,
@@ -887,29 +914,21 @@ export async function POST(req: NextRequest) {
           operatorRetestReason: healthOperatorRetestReason,
         });
         if (!authorization.ok) {
-          const ordinaryBlock = !healthRecoveryCanaryRequested;
-          const recoveryReady = circuit.state === "canary_ready";
-          const error = ordinaryBlock
-            ? recoveryReady
-              ? `该模型渠道连续失败 ${circuit.consecutiveFailures} 次，已过冷却期；普通生产仍暂停，仅管理员可执行受控 canary 验证`
-              : `该模型渠道连续失败 ${circuit.consecutiveFailures} 次，当前生产入口已暂停提交`
-            : authorization.message;
+          const error = authorization.message;
           return NextResponse.json({
             error,
-            error_code: ordinaryBlock ? "CHANNEL_HEALTH_BLOCKED" : authorization.code,
+            error_code: authorization.code,
             circuit_state: circuit.state,
             recovery_eligible_at: circuit.recoveryEligibleAt,
             retryable: false,
             task_submitted: false,
-          }, { status: ordinaryBlock ? 503 : authorization.status });
+          }, { status: authorization.status });
         }
 
         validationClaimKey = buildVideoAdminValidationClaimKey(buildVideoAdminValidationContext({ model: selectedModel, health: channelHealth, userId }));
 
-        // A stale health row remains blocked for all ordinary traffic. Only
-        // this admin-only, epoch-bound key may pass into the existing durable
-        // task reservation. Replays reuse the same business task; terminal
-        // success resets health and terminal failure advances the health epoch.
+        // This admin-only, epoch-bound key is retained for explicit recovery
+        // canaries. Ordinary production never depends on it.
         console.warn("[Video/HealthGate] Explicit recovery canary authorized", {
           modelId: selectedModel.id,
           circuitState: circuit.state,
@@ -920,6 +939,12 @@ export async function POST(req: NextRequest) {
           userId, clientRequestId: client_request_id,
           operatorRetest: healthOperatorRetest,
           reason: healthOperatorRetest ? healthOperatorRetestReason : "管理员单次渠道验证",
+        });
+      } else if (circuit.blocksProduction) {
+        console.warn("[Video/HealthGate] Historical circuit is advisory; ordinary submission continues", {
+          modelId: selectedModel.id,
+          circuitState: circuit.state,
+          consecutiveFailures: circuit.consecutiveFailures,
         });
       }
     }
@@ -979,6 +1004,27 @@ export async function POST(req: NextRequest) {
         error_code: "CHANNEL_CONFIGURATION_INCOMPLETE",
         retryable: false,
       }, { status: 400 });
+    }
+
+    if (personAssetAdmission.required) {
+      personAssetAdmission = readGaoruiPersonAssetAdmission(selectedModel, {
+        surface: String(surface || ""),
+        credentialBindingFingerprint: gaoruiCredentialBindingFingerprint({
+          secret: providerApiKey,
+          modelId: String(selectedModel.id),
+          endpoint: String(selectedModel.api_endpoint),
+        }),
+      });
+      if (!personAssetAdmission.ready) {
+        return NextResponse.json({
+          error: personAssetAdmission.message,
+          error_code: personAssetAdmission.code,
+          task_submitted: false,
+          video_task_submitted: false,
+          asset_preparation_attempted: false,
+          retryable: false,
+        }, { status: 422 });
+      }
     }
 
     const requestedDuration = duration === undefined || duration === null || duration === ""
@@ -1093,7 +1139,10 @@ export async function POST(req: NextRequest) {
             resolved = canonical;
           } else {
             const freshUrl = await resolveGeneratedImageReference({ userId, reference });
-            resolved = useAutodlH3Lifecycle ? canonical : freshUrl;
+            // SUAN's material reader understands owned generated-image refs.
+            // Keep that identity after the existing URL/ownership checks so
+            // reading the image uses the shared safe public-result transport.
+            resolved = useAutodlH3Lifecycle || selectedModel.protocol_type === "suanlicheng_video" ? canonical : freshUrl;
           }
           if (field === "image_url") effectiveImageUrl = resolved;
           else if (field === "last_frame_url") effectiveLastFrameUrl = resolved;
@@ -1742,8 +1791,19 @@ export async function POST(req: NextRequest) {
         channel: String(selectedModel.id || selectedModel.api_endpoint || "unknown"),
         model: String(selectedModel.model_name || selectedModel.name || selectedModel.id || "unknown"),
       });
+      const executionParams = personAssetAdmission.required
+        ? await prepareGaoruiPersonVideoExecution({
+            userId,
+            ownedPersonAssetId: String(body.person_asset_id || ""),
+            ownedAudioAssetId: String(body.audio_asset_id || ""),
+            model: channelConfig,
+            taskInternalId: taskIdInternal,
+            originalParams: adapterParams,
+            authorization: personAssetAdmission.authorization,
+          })
+        : adapterParams;
       result = await submitVideoTask(channelConfig, {
-        ...adapterParams,
+        ...executionParams,
         inputOwnerId: userId,
         onProviderRequest: async (receipt) => {
           // The audited provider fetch is fail-closed: this durable receipt
@@ -1761,6 +1821,34 @@ export async function POST(req: NextRequest) {
         },
       });
     } catch (submitError) {
+      if (submitError instanceof GaoruiProviderAssetError) {
+        // The independent asset journal owns any asset POST. A video failure
+        // must not erase that operation or claim that no external work occurred.
+        const assetState = submitError.state || "failed";
+        const operationId = submitError.operationId;
+        const message = operationId
+          ? "人物素材处理状态需要核对，视频尚未提交；请保留原任务，不要重复生成"
+          : "人物素材校验未通过，视频尚未提交，请检查素材或联系管理员";
+        const failed = await markVideoSubmissionFailed({
+          taskIdInternal,
+          userId,
+          requestFingerprint,
+          errorCode: submitError.code,
+          errorMessage: message,
+        });
+        return NextResponse.json({
+          error: message,
+          error_code: submitError.code,
+          task_id: taskIdInternal,
+          business_task_id: taskIdInternal,
+          status: failed ? "failed" : "pending",
+          video_task_submitted: false,
+          asset_preparation_state: assetState,
+          ...(operationId ? { asset_operation_id: operationId } : {}),
+          asset_submission_outcome: operationId ? assetState : "not_submitted",
+          retryable: false,
+        }, { status: operationId || !failed ? 503 : 422 });
+      }
       if (submitError instanceof ProviderAdmissionBusyError || submitError instanceof ProviderAdmissionUnavailableError) {
         providerAdmissionError = submitError;
       }

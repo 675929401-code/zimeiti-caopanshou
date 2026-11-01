@@ -8,7 +8,7 @@ import {
   getAgentNavigationKey,
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
-import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
+import { canReadOwnerInternalAgentCatalog } from "@/lib/server/internal-agent-catalog-access";
 import { publicStoryboardDirectorOutputStyle } from "@/lib/storyboard-director-public-output-style";
 
 type AgentRecord = Record<string, unknown>;
@@ -96,11 +96,7 @@ export async function GET(request: NextRequest) {
       const payload = await verifyToken(token);
       if (payload?.userId) {
         if (payload.role === "admin") {
-          const authorization = await authorizeAdminCapability(request, "internal_tools.manage", {
-            operation: "hidden_agent_catalog_read",
-            requireStepUp: true,
-          });
-          isAdmin = authorization.ok;
+          isAdmin = await canReadOwnerInternalAgentCatalog(request);
         }
         const permission = await readMemberPermissionSnapshot(payload.userId, { knownRole: payload.role });
         if (permission.authorityStatus !== "ready" || !permission.integrityValid) {

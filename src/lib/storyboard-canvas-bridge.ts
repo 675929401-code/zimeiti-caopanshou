@@ -16,6 +16,7 @@ import {
   validateStoryboardDirectorAssetsPackage,
   storyboardShotCountRule,
   validateStoryboardDirectorPackage,
+  isQualityWarningIssue,
   type StoryboardContinuityLink,
   type StoryboardDirectorMode,
   type StoryboardDirectorPackage,
@@ -40,6 +41,10 @@ import type {
 import { STORYBOARD_PROMPT_DRAFT_SCHEMA, parseLegacyStoryboardDraftImport } from "@/lib/storyboard-legacy-prompt-draft";
 import { StoryboardVisualAssetPlanSchema } from "@/lib/storyboard-workbench";
 import type { StoryboardPerformancePlan } from "./storyboard-director-performance";
+import { parseStoryboardPromptDraftImport } from "./storyboard-prompt-draft";
+import { parseAgentStoryboardPromptDraftImport } from "./agent-storyboard-prompt-draft";
+import type { StoryboardExecutionMode } from "./storyboard-chain-contract";
+import { storyboardExecutionModeFromIntake } from "./storyboard-creation-mode";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -56,6 +61,9 @@ export interface StoryboardCanvasImportSegment {
   sourceIndex: number;
   narration: string;
   imagePrompt: string;
+  imageExactText?: string;
+  imageTextLayoutEnabled?: boolean;
+  imageAnnotationIssue?: string;
   videoPrompt: string;
   panelCount: 4 | 5;
   layout: StoryboardLayout;
@@ -82,6 +90,7 @@ export interface StoryboardCanvasImportSegment {
 }
 
 export interface StoryboardCanvasImportPlan {
+  executionMode?: StoryboardExecutionMode;
   schemaVersion: typeof STORYBOARD_DIRECTOR_OUTPUT_SCHEMA_VERSION | typeof STORYBOARD_DIRECTOR_ASSETS_SCHEMA_VERSION | typeof STORYBOARD_DIRECTOR_PLAN_SCHEMA_VERSION | typeof STORYBOARD_PROMPT_DRAFT_SCHEMA;
   artifactType: typeof STORYBOARD_DIRECTOR_ARTIFACT_TYPE | typeof STORYBOARD_DIRECTOR_ASSETS_ARTIFACT_TYPE | typeof STORYBOARD_DIRECTOR_PLAN_ARTIFACT_TYPE | "storyboard_prompt_draft";
   phase: "assets" | "storyboard" | "planned" | "draft";
@@ -93,6 +102,10 @@ export interface StoryboardCanvasImportPlan {
   referenceProjectId?: string;
   pendingAssetVerification?: boolean;
   legacyDraftWarning?: string;
+  /** Text cards carry no model quality verdict or generated-media approval. */
+  promptDraft?: boolean;
+  /** Visible-text mode declarations are advisory; original submitted choices win. */
+  importWarnings?: string[];
   productionContractVersion?: typeof STORYBOARD_DIRECTOR_PRODUCTION_CONTRACT_VERSION;
   settings: StoryboardCanvasImportSettings;
   wardrobePlan?: StoryboardWardrobePlan;
@@ -167,8 +180,20 @@ export function parseStoryboardCanvasImport(
     assetVerification?: "required" | "preview";
     verifiedAssetBindings?: StoryboardVerifiedAssetBinding[];
     requirePerformancePlan?: boolean;
+    /** Keep a structurally valid package importable while the source agent is repaired. */
+    allowQualityWarnings?: boolean;
   } = {},
 ): StoryboardCanvasImportPlan | null {
+  const manualDraft = parseAgentStoryboardPromptDraftImport(value);
+  if (manualDraft) {
+    if (options.expectedInput || options.requiredContractVersion !== undefined || options.requirePerformancePlan === true) return null;
+    return manualDraft;
+  }
+  const promptDraft = parseStoryboardPromptDraftImport(value);
+  if (promptDraft) {
+    if (options.expectedInput && JSON.stringify(normalizeStoryboardDirectorInput(options.expectedInput)) !== JSON.stringify(normalizeStoryboardDirectorInput(promptDraft.originalInput))) return null;
+    return promptDraft;
+  }
   const draft = parseLegacyStoryboardDraftImport(value);
   if (draft) {
     // Historical drafts cannot satisfy a caller's production contract.
@@ -219,7 +244,8 @@ export function parseStoryboardCanvasImport(
     stage: "planning", allowLegacyMissingChoices: allowLegacyUnverified,
     requirePerformancePlan: options.requirePerformancePlan === true || value.require_performance_plan === true,
   });
-  if (issues.length > 0) return null;
+  const hardIssues = issues.filter(issue => !isQualityWarningIssue(issue));
+  if (hardIssues.length > 0 || (issues.length > 0 && !options.allowQualityWarnings)) return null;
   const referenceProjectId = typeof value.reference_project_id === "string"
     && /^[A-Za-z0-9:_-]{8,160}$/.test(value.reference_project_id) ? value.reference_project_id : undefined;
   const rawBindings = options.verifiedAssetBindings ?? value.verified_asset_bindings;
@@ -265,6 +291,7 @@ export function parseStoryboardCanvasImport(
     messageId: String(value.message_id ?? "").trim(),
     sourceScript: pkg.input.segmented_script,
     originalInput: expectedInput || pkg.input,
+    executionMode: storyboardExecutionModeFromIntake(expectedInput || pkg.input),
     ...(!planPackage && referenceProjectId ? { referenceProjectId } : {}),
     ...(pendingAssetVerification ? { pendingAssetVerification: true } : {}),
     intakeVerified: !!expectedInput && pkg.production_contract_version === STORYBOARD_DIRECTOR_PRODUCTION_CONTRACT_VERSION,

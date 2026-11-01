@@ -81,8 +81,11 @@ export async function purgeExpiredUserContentBatch() {
  * 保护规则由数据库函数维持——进行中、未知计费、数字人任务不会被删。
  */
 export async function purgeExpiredVideoHistoryBatch() {
-  const db = getSupabaseAdminClient();
   const totals = { deletedRows: 0, deletedThumbnails: 0, batches: 0 };
+  // Destructive task-history cleanup is independent of the existing retention worker.
+  // Enabling requires an explicit operator decision; absent/invalid values stay off.
+  if (process.env.VIDEO_HISTORY_HARD_PURGE_ENABLED !== '1') return totals;
+  const db = getSupabaseAdminClient();
   for (let batch = 0; batch < 5; batch += 1) {
     const { data, error } = await db.rpc('purge_expired_video_history', { p_retention_days: 5, p_limit: 500 });
     if (error) {

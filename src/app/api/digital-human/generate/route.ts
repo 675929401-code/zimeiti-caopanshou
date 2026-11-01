@@ -7,6 +7,7 @@ import { humanBillingSeconds } from '@/features/digital-human/client-state';
 import { humanDurationCapabilities, planHumanDuration } from '@/features/digital-human/duration-policy';
 import { getVideoInputContract } from '@/lib/video-input-contract';
 import { isDigitalHumanWorkspaceModel } from '@/lib/video-model-surface';
+import { readGaoruiPersonAssetAdmission } from '@/lib/gaorui-person-asset-admission';
 import { POST as generateVideo } from '@/app/api/video/generate/route';
 
 export const runtime = 'nodejs';
@@ -21,11 +22,26 @@ export async function POST(request: NextRequest) {
     if (!['photo', 'video'].includes(mode) || !/^digital-[a-zA-Z0-9-]{16,90}$/.test(requestId)) return NextResponse.json({ error: '任务参数无效', task_submitted: false }, { status: 400 });
     const db = getSupabaseClient();
     // Recover the original receipt before signing input URLs again. No resubmission on refresh/replay.
-    const prior = await db.from('video_tasks').select('id,task_id_external,model_id,status,billing_price_yuan')
+    const prior = await db.from('video_tasks').select('id,task_id_external,model_id,status,billing_price_yuan,provider_asset_preparation')
       .eq('user_id', auth.user.userId).eq('client_request_id', requestId).maybeSingle();
     if (prior.error) return NextResponse.json({ error: '暂时无法确认原任务，请稍后查询', task_submitted: null }, { status: 503 });
     if (prior.data) {
       if (toPublicModelId('video', prior.data.model_id) !== body.modelId) return NextResponse.json({ error: '该请求已绑定原模型，请查询原任务', task_submitted: null }, { status: 409 });
+      const preparation = prior.data.provider_asset_preparation as Record<string, unknown> | null;
+      if (preparation?.schema === 'gaorui_person_asset_preparation.v1'
+        && typeof preparation.operation_id === 'string'
+        && /^[0-9a-f-]{36}$/iu.test(preparation.operation_id)
+        && ['submitting', 'processing', 'submission_unknown', 'reconciliation_required', 'failed'].includes(String(preparation.state))) {
+        return NextResponse.json({
+          task_id: prior.data.id, business_task_id: prior.data.id, model_id: body.modelId,
+          status: prior.data.status, replayed: true, video_task_submitted: false,
+          asset_operation_id: preparation.operation_id,
+          asset_preparation_state: preparation.state,
+          asset_submission_outcome: preparation.asset_submission_outcome,
+          message: '人物素材状态仍需核对；已保留原任务，没有重复提交素材或视频',
+          retryable: false,
+        });
+      }
       return NextResponse.json({ task_id: prior.data.task_id_external || prior.data.id, business_task_id: prior.data.id, model_id: body.modelId,
         status: prior.data.status, price: Number(prior.data.billing_price_yuan), replayed: true });
     }
@@ -34,6 +50,15 @@ export async function POST(request: NextRequest) {
     const model = findModelByPublicId('video', (models || []) as Array<Record<string, unknown> & { id?: unknown }>, body.modelId);
     const config = model?.api_protocol_config as Record<string, unknown> | undefined;
     if (!model || !isDigitalHumanWorkspaceModel(model)) return NextResponse.json({ error: '请选择当前可用的数字人模型', task_submitted: false }, { status: 422 });
+    const personAssetAdmission = readGaoruiPersonAssetAdmission(model, { surface: 'digital-human' });
+    if (!personAssetAdmission.ready) return NextResponse.json({
+      error: personAssetAdmission.message,
+      error_code: personAssetAdmission.code,
+      task_submitted: false,
+      video_task_submitted: false,
+      asset_preparation_attempted: false,
+      retryable: false,
+    }, { status: 422 });
     const contract = getVideoInputContract(model);
     if ((mode === 'video') !== contract.requiresSourceVideo) return NextResponse.json({ error: '所选模型与当前创作方式不匹配', task_submitted: false }, { status: 422 });
     const [person, audio] = await Promise.all([

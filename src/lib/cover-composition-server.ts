@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import sharp from "sharp";
 import type { CoverCompositionPlan } from "./cover-composition";
+import { parseAcceptedLegacyStoryboardAnnotationPanels, parseStoryboardAnnotationPanels, STORYBOARD_ANNOTATION_TEXT_PREFIX, STORYBOARD_ANNOTATION_TEXT_PREFIX_V2, type StoryboardAnnotationPanel } from "./storyboard-annotation-layout";
 
 export const COVER_COMPOSITION_VERSION = "cover-composition-v2";
 
@@ -15,10 +16,13 @@ interface CoverSharpPipeline {
   toBuffer(): Promise<Buffer>;
   toBuffer(options: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number } }>;
 }
-type CoverSharpInput = Buffer | { text: { text: string; font: string; fontfile: string; width: number; height: number; align: "left" | "center"; rgba: true } };
+type CoverSharpInput = Buffer | { text: { text: string; font: string; fontfile: string; width: number; height: number; align: "left" | "center"; rgba: true; wrap?: "none" } };
 const coverSharp = sharp as unknown as (input: CoverSharpInput, options?: { failOn: "error"; limitInputPixels: number }) => CoverSharpPipeline;
 type RenderCoverCompositionPlan = Omit<CoverCompositionPlan, "aspectRatio"> & {
   aspectRatio: CoverCompositionPlan["aspectRatio"] | "1:1";
+  /** Optional platform-owned per-panel annotation lines for storyboard grids. */
+  annotationLines?: string[];
+  annotationPanels?: StoryboardAnnotationPanel[];
 };
 
 export type CoverCompositionProfile = "story-cartoon" | "funny-cartoon" | "reference-adaptive";
@@ -87,7 +91,79 @@ export function coverTitleLines(title: string, aspectRatio: RenderCoverCompositi
   return splitBalanced(value, value.length <= oneLineLimit ? 1 : value.length <= twoLineLimit ? 2 : 3);
 }
 
-export async function renderCoverComposition(source: Buffer, plan: RenderCoverCompositionPlan, options: { preserveSourceDimensions?: boolean } = {}) {
+async function renderStoryboardAnnotationComposition(source: Buffer, plan: RenderCoverCompositionPlan, options: { preserveSourceDimensions?: boolean; legacyAccepted?: boolean }) {
+  const panels = plan.annotationPanels !== undefined
+    ? parseStoryboardAnnotationPanels(`${STORYBOARD_ANNOTATION_TEXT_PREFIX_V2}\n${JSON.stringify({ panels: plan.annotationPanels })}`)
+    : Array.isArray(plan.annotationLines)
+      ? (options.legacyAccepted ? parseAcceptedLegacyStoryboardAnnotationPanels : parseStoryboardAnnotationPanels)(`${STORYBOARD_ANNOTATION_TEXT_PREFIX}\n${plan.annotationLines.join("\n")}`)
+      : null;
+  if (!panels || (!options.legacyAccepted && panels.length !== 4)) throw new Error("STORYBOARD_ANNOTATION_LAYOUT_INVALID");
+  const font = coverCompositionFont("reference-adaptive");
+  if (!font) throw new Error("COVER_COMPOSITION_FONT_NOT_READY");
+  const metadata = await coverSharp(source, { failOn: "error", limitInputPixels: 40_000_000 }).metadata();
+  const swapAxes = [5, 6, 7, 8].includes(metadata.orientation || 1);
+  const sourceWidth = (swapAxes ? metadata.height : metadata.width) || 0;
+  const sourceHeight = (swapAxes ? metadata.width : metadata.height) || 0;
+  if (sourceWidth < 256 || sourceHeight < 256) throw new Error("COVER_BACKGROUND_TOO_SMALL");
+  const [ratioWidth, ratioHeight] = plan.aspectRatio.split(":").map(Number);
+  const unit = Math.floor(Math.min(sourceWidth / ratioWidth, sourceHeight / ratioHeight, 2560 / ratioWidth, 2560 / ratioHeight));
+  const width = options.preserveSourceDimensions ? sourceWidth : ratioWidth * unit;
+  const height = options.preserveSourceDimensions ? sourceHeight : ratioHeight * unit;
+  const background = await coverSharp(source).rotate().resize(width, height, { fit: "cover", withoutEnlargement: true }).png().toBuffer();
+  const lines: string[] = [];
+  const layers: Array<{ input: Buffer; left?: number; top?: number }> = [];
+  for (let panelIndex = 0; panelIndex < panels.length; panelIndex += 1) {
+    const row = Math.floor(panelIndex / 2);
+    const column = panelIndex % 2;
+    const left = column === 0 ? 0 : Math.floor(width / 2);
+    const cellTop = row === 0 ? 0 : Math.floor(height / 2);
+    const panelWidth = (column === 0 ? Math.floor(width / 2) : width) - left;
+    const panelHeight = (row === 0 ? Math.floor(height / 2) : height) - cellTop;
+    const barHeight = Math.floor(panelHeight * 0.17);
+    const top = cellTop + panelHeight - barHeight;
+    const padding = Math.max(4, Math.floor(panelWidth * 0.025));
+    const panel = panels[panelIndex];
+    const panelLines = options.legacyAccepted && plan.annotationLines
+      ? plan.annotationLines.slice(panelIndex * 2, panelIndex * 2 + 2)
+      : [...(panel.caption === undefined ? [] : [panel.caption]), `SHOT ${String(panel.shot).padStart(2, "0")} | CAMERA: ${panel.camera}`, `ACTION: ${panel.action}`];
+    lines.push(...panelLines);
+    const verticalPadding = Math.max(1, Math.floor(barHeight * 0.08));
+    const gap = Math.max(1, Math.floor(barHeight * 0.025));
+    const lineHeight = Math.floor((barHeight - verticalPadding * 2 - gap * (panelLines.length - 1)) / panelLines.length);
+    const textWidth = panelWidth - padding * 2;
+    const bar = Buffer.from(`<svg width="${panelWidth}" height="${barHeight}"><rect x="0" y="0" width="${panelWidth}" height="${barHeight}" rx="${Math.max(4, Math.floor(barHeight * 0.08))}" fill="#f7f1e8" fill-opacity="0.95"/><path d="M0 1 H${panelWidth} V${barHeight - 1} H0 Z" fill="none" stroke="#273746" stroke-opacity="0.34" stroke-width="2"/></svg>`);
+    layers.push({ input: bar, left, top });
+    for (const [lineIndex, line] of panelLines.entries()) {
+      const textLayer = await coverSharp({ text: {
+        text: `<span foreground="#152332" weight="bold">${escapeMarkup(line)}</span>`,
+        font: font.family,
+        fontfile: font.path,
+        width: textWidth,
+        height: lineHeight,
+        align: "left",
+        rgba: true,
+        wrap: "none",
+      } }).png().toBuffer({ resolveWithObject: true });
+      if (textLayer.info.width > textWidth || textLayer.info.height > lineHeight) throw new Error("STORYBOARD_ANNOTATION_TEXT_OVERFLOW");
+      layers.push({ input: textLayer.data, left: left + padding, top: top + verticalPadding + lineIndex * (lineHeight + gap) });
+    }
+  }
+  const rendered = await coverSharp(background).composite(layers).png().toBuffer({ resolveWithObject: true });
+  return {
+    bytes: rendered.data,
+    width: rendered.info.width,
+    height: rendered.info.height,
+    sourceWidth,
+    sourceHeight,
+    compositionProfile: "reference-adaptive" as const,
+    renderedText: { title: plan.title, subtitle: plan.subtitle, lines },
+  };
+}
+
+export async function renderCoverComposition(source: Buffer, plan: RenderCoverCompositionPlan, options: { preserveSourceDimensions?: boolean; legacyAccepted?: boolean } = {}) {
+  if (plan.layoutTemplateId === "gaoding-storyboard-annotations") {
+    return renderStoryboardAnnotationComposition(source, plan, options);
+  }
   const profile = profileForPlan(plan);
   const font = coverCompositionFont(profile);
   if (!font) throw new Error("COVER_COMPOSITION_FONT_NOT_READY");

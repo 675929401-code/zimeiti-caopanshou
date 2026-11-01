@@ -20,6 +20,7 @@ export function needsStoryboardBoardExport(card: BoardIdentity): boolean {
 const hash = async (bytes: Uint8Array): Promise<string> => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer))].map(value => value.toString(16).padStart(2, "0")).join("");
 export async function saveStoryboardBoardOriginal(input: {
   userId: string; runId: string; cardId: string; recordId: string; url: string; width: number; height: number; token: string;
+  chainOriginal?: { projectId: string; cardId: string; recordId: string };
   cache: Map<string, { assetId: string; storageKey: string }>; stillCurrent: () => boolean;
   readOwned: (reference: { assetId: string; storageKey: string }) => Promise<StoryboardOwnedBoard>;
   readOriginal?: (url: string) => Promise<{ bytes: Uint8Array; mime: string }>;
@@ -34,15 +35,16 @@ export async function saveStoryboardBoardOriginal(input: {
   const byteHash = await hash(original.bytes);
   const trace = "storyboard-board-export-" + await hash(new TextEncoder().encode(JSON.stringify([input.userId,input.runId,input.cardId,input.recordId,byteHash])));
   guard();
-  let receipt = input.cache.get(trace);
+  const cacheKey = input.chainOriginal ? trace + ":chain-original" : trace;
+  let receipt = input.cache.get(cacheKey);
   if (!receipt) {
     let binary = ""; for (let start = 0; start < original.bytes.length; start += 32768) binary += String.fromCharCode(...original.bytes.subarray(start, start + 32768));
     const dataUrl = `data:${original.mime};base64,${btoa(binary)}`;
     const response = await (input.request || fetch)("/api/image-workbench/persist", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${input.token}` },
-      body: JSON.stringify({ url: dataUrl, index: 0, clientTraceId: trace, intent: "user_asset_export" }) });
+      body: JSON.stringify({ url: dataUrl, index: 0, clientTraceId: trace, intent: "user_asset_export", ...(input.chainOriginal ? { chainOriginal: input.chainOriginal } : {}) }) });
     const result = await response.json() as { assetId?: string; key?: string; error?: string };
     if (!response.ok || !result.assetId || !result.key) throw new Error(result.error || "故事板保存未确认，原图仍保留；可重试同一保存操作。");
-    receipt = { assetId: result.assetId, storageKey: result.key }; input.cache.set(trace, receipt);
+    receipt = { assetId: result.assetId, storageKey: result.key }; input.cache.set(cacheKey, receipt);
   }
   guard();
   const owned = await input.readOwned(receipt);

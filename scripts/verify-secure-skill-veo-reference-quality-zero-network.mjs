@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import {createRequire} from 'node:module';
+import {createHash} from 'node:crypto';
+import ts from 'typescript';
+const candidate=process.argv.includes('--candidate');assert.ok(process.argv.slice(2).every(arg=>arg==='--candidate'));
+const old='  const isVeoReference = /^veo_3_1_r2v_/i.test(modelName);',next='  const isVeoReference = /^veo_3_1_r2v(?:_|$)/i.test(modelName);';
+const actual=fs.readFileSync('src/lib/video-adapter.ts','utf8');let source=actual;
+if(candidate){assert.equal(source.split(old).length-1,1,'CANDIDATE_BASE_GUARD_CHANGED');source=source.replace(old,next);}else{assert.ok(source.includes(next),'REVIEWED_REFERENCE_GUARD_NOT_INSTALLED');assert.equal(source.includes(old),false);}
+const nativeRequire=createRequire(import.meta.url),cache=new Map(),calls=[];
+const unrelated=new Proxy({},{get:(_target,name)=>name==='AUTODL_COMFYUI_WORKFLOW_PROTOCOL'?'unrelated-fixture-protocol':()=>{throw Error('UNEXPECTED_PROTOCOL_DEPENDENCY');}});
+function load(file){file=path.resolve(file);if(cache.has(file))return cache.get(file);const module={exports:{}};cache.set(file,module.exports);const raw=file===path.resolve('src/lib/video-adapter.ts')?source:fs.readFileSync(file,'utf8');const code=ts.transpileModule(raw,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},fileName:file}).outputText;
+ vm.runInNewContext(code,{module,exports:module.exports,require:name=>{if(name.startsWith('node:'))return nativeRequire(name);if(['./video-provider-request-audit','./api-endpoints','./video-prompt-timing'].includes(name))return load(path.join(path.dirname(file),name+'.ts'));return unrelated;},Request,Response,Headers,URL,FormData,AbortSignal,DOMException,TextDecoder,TextEncoder,Buffer,crypto:nativeRequire('node:crypto').webcrypto,console:{log(){},warn(){},error(){}},fetch:async(input,init={})=>{const req=input instanceof Request?input:new Request(input,init);assert.equal(req.url,'https://fixture.invalid/v1/jobs','UNEXPECTED_FETCH');assert.equal(req.method,'POST');calls.push({url:req.url,body:await req.clone().json()});return Response.json({id:'job_fixture_reference',status:'queued'});}},{filename:file});return module.exports;}
+const {submitVideoTask}=load('src/lib/video-adapter.ts');const config={id:'fixture-veo-r2v',name:'Synthetic VEO reference',provider:'secure_skill_flow_jobs',protocol_type:'secure_skill_flow_jobs',model_name:'veo_3_1_r2v',api_endpoint:'https://fixture.invalid/v1',api_key:'SYNTHETIC_ZERO_NETWORK_ONLY',price_per_use:1.8,duration_seconds:8,supports_image_input:true,api_protocol_config:{max_reference_images:1}};
+let checks=0;for(const modelName of ['veo_3_1_r2v','veo_3_1_r2v_fast']){
+ calls.length=0;const noImage=await submitVideoTask({...config,model_name:modelName},{prompt:'Synthetic paper boat',duration:8,aspectRatio:'16:9',resolutionTier:'720p'});assert.equal(noImage.status,'failed');assert.equal(calls.length,0,'REFERENCE_REQUIRED_BEFORE_SUBMIT');checks+=2;
+ const result=await submitVideoTask({...config,model_name:modelName},{prompt:'Synthetic paper boat',imageUrl:'https://fixture.invalid/reference.png',duration:8,aspectRatio:'16:9',resolutionTier:'1080p'});assert.equal(result.taskId,'job_fixture_reference');assert.equal(calls.length,1);const body=JSON.parse(JSON.stringify(calls[0].body));assert.equal(body.model,modelName);assert.equal(body.stream,false);assert.equal(body.resolution,'720p');assert.deepEqual(body.messages,[{role:'user',content:[{type:'text',text:'Synthetic paper boat'},{type:'image_url',image_url:{url:'https://fixture.invalid/reference.png'}}]}]);assert.deepEqual(body.generationConfig,{videoConfig:{aspectRatio:'16:9'}});assert.equal(Object.hasOwn(body,'duration'),false);assert.equal(Object.hasOwn(body.generationConfig.videoConfig,'duration'),false);checks+=9;
+}
+assert.equal(fs.readFileSync('src/lib/video-adapter.ts','utf8'),actual,'SOURCE_CHANGED_DURING_CANDIDATE_VERIFICATION');console.log(JSON.stringify({passed:true,candidateInMemory:candidate,checks,sourceSha256:createHash('sha256').update(actual).digest('hex'),realNetworkCalls:0,databaseWrites:0,sourceWrites:0,providerCalls:0}));

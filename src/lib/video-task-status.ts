@@ -7,7 +7,7 @@ import { pollVideoTask } from "@/lib/video-adapter";
 import type { VideoModelConfig, VideoTaskResult } from "@/lib/video-adapter";
 import { getProductionVideoModelById } from "@/lib/production-data-source";
 import { findModelByPublicId } from "@/lib/public-model-dto";
-import { classifyVideoProviderError, localVideoTaskFailureMessage } from "@/lib/video-error-policy";
+import { classifyVideoProviderError, localVideoTaskFailureMessage, sanitizeVideoProviderDiagnostic } from "@/lib/video-error-policy";
 import { recordVideoTerminalOutcome } from "@/lib/video-terminal-accounting";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { createVideoAccessUrl } from "@/lib/video-access-ticket";
@@ -984,13 +984,22 @@ async function resolveOwnedVideoTaskStatus(payload: { userId: string; role: 'adm
         priceCharged: 0,
       }, { status: terminalError.status });
     }
-    const classifiedError = classifyVideoProviderError(err instanceof Error ? err.message : String(err));
+    const rawError = err instanceof Error ? err.message : String(err);
+    const queryHttpStatus = err instanceof Error
+      ? (err as Error & { videoProviderQueryHttpStatus?: number }).videoProviderQueryHttpStatus
+      : undefined;
+    // 已接收任务的查询授权以 HTTP 状态为准，不让供应商错误体中的其他关键词抢分类。
+    const classifiedError = queryHttpStatus === 401 || queryHttpStatus === 403
+      ? { ...classifyVideoProviderError(`HTTP ${queryHttpStatus}`), operatorMessage: sanitizeVideoProviderDiagnostic(rawError) }
+      : classifyVideoProviderError(rawError);
     if (advanceProvider && providerPollFailureContext) {
       const context = providerPollFailureContext;
       await context.supabase.from("video_tasks").update({
         provider_last_polled_at: new Date().toISOString(),
         provider_poll_failures: context.priorFailures + 1,
-        provider_status_message: "上游状态回报暂时中断，系统仍在后台跟踪原任务",
+        provider_status_message: classifiedError.category === "authentication"
+          ? "原任务状态查询权限异常，已保留原任务，请联系管理员；请勿重复生成。"
+          : "上游状态回报暂时中断，系统仍在后台跟踪原任务",
       }).eq("id", context.taskIdInternal).in("status", ["pending", "queued", "processing", "generating"])
         .then(() => undefined, () => undefined);
     }

@@ -1,3 +1,4 @@
+import { resolveStoryboardChainSavedOriginal } from "@/lib/server/storyboard-chain-reference";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { withAuth } from "@/lib/api-middleware";
@@ -108,7 +109,11 @@ async function stabilize(db: Database, owner: string, input: Document): Promise<
   const document = createStoryboardPersistenceSnapshot(structuredClone(input));
   const keys = new Set<string>();
   for (const card of document.cards) {
-    if (card.imageRef) {
+    if (card.imageRequestSnapshot?.chainContext && card.imageAssetId && card.imageStorageKey && card.imageRecordId) {
+      card.imageUrl=await resolveStoryboardChainSavedOriginal({userId:owner,projectId:document.id,card});
+      delete card.imageRef; delete card.imageDeliveryMode; delete card.imageMediaState;
+      card.imageStatus="done"; card.imageRecoveryReady=false;card.imageRetryBlocked=false;
+    } else if (card.imageRef) {
       const receipt = await validateOwnedGeneratedImageReceipt({ userId: owner, reference: card.imageRef });
       if (receipt.sourceExpiredAt) {
         Object.assign(card, storyboardImageUnavailablePatch("expired"));
@@ -211,7 +216,21 @@ function markPlaybackUnavailable(card: Document["cards"][number], message: strin
 
 async function hydrate(db: Database, owner: string, input: Document): Promise<HydratedDocument> {
   let document = createStoryboardPersistenceSnapshot(structuredClone(input));
-  for (const card of document.cards) if (card.imageRef) {
+  const verifiedChainOriginals=new Set<string>();
+  const unavailableChainOriginals=new Set<string>();
+  for (const card of document.cards) if(card.imageRequestSnapshot?.chainContext && card.imageAssetId && card.imageStorageKey && card.imageRecordId) {
+    try {
+      card.imageUrl=await resolveStoryboardChainSavedOriginal({userId:owner,projectId:document.id,card});
+      delete card.imageRef;delete card.imageDeliveryMode;delete card.imageMediaState;delete card.imageError;delete card.imageValidatedAt;
+      card.imageStatus="done";card.imageRecoveryReady=false;card.imageRetryBlocked=false;
+      verifiedChainOriginals.add(card.id);
+    } catch {
+      delete card.imageUrl;delete card.videoSourceImageUrl;delete card.imageValidatedAt;
+      unavailableChainOriginals.add(card.id);
+      card.imageRetryBlocked=true;card.imageError="保存原图的归属或字节暂时无法核验；原记录保留";
+    }
+  }
+  for (const card of document.cards) if (!verifiedChainOriginals.has(card.id) && !unavailableChainOriginals.has(card.id) && card.imageRef) {
     try {
       const receipt = await validateOwnedGeneratedImageReceipt({ userId: owner, reference: card.imageRef });
       card.imageRecordId = card.imageRef.recordId;
@@ -260,6 +279,7 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
   }
   const restore = (url: unknown) => typeof url === "string" && url.startsWith("asset://") ? urls.get(url.slice(8)) || "" : url;
   for (const card of document.cards) {
+    if(unavailableChainOriginals.has(card.id)) { delete card.imageUrl;delete card.videoSourceImageUrl;continue; }
     for (const field of mediaFields) if (card[field]) card[field] = restore(card[field]);
     const referenceUrls = card.referenceImageUrls;
     mapCurrentReferenceMarkers(card, marker => {
@@ -274,7 +294,7 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
     });
     card.referenceImageUrls = card.referenceImageUrls.map((url) => String(restore(url))).filter(Boolean);
   }
-  const imageRequestKeys = document.cards.map(card => String(card.imageClientRequestId || "")).filter(Boolean);
+  const imageRequestKeys = document.cards.filter(card=>!verifiedChainOriginals.has(card.id) && !unavailableChainOriginals.has(card.id)).map(card => String(card.imageClientRequestId || "")).filter(Boolean);
   for (let offset = 0; offset < imageRequestKeys.length; offset += 100) {
     const attempts = await db.from("image_generation_requests").select("record_id,client_idempotency_key,response")
       .eq("user_id", owner).eq("state", "completed").eq("delivery_state", "delivered")
@@ -282,7 +302,7 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
     if (attempts.error) continue; // Unknown read failures must not erase media.
     for (const row of attempts.data || []) {
       const card = document.cards.find(item => item.imageClientRequestId === row.client_idempotency_key);
-      if (!card) continue;
+      if (!card || verifiedChainOriginals.has(card.id)) continue;
       if (row.response?.deliveryMode === "provider_url" && !row.response?.sourceExpiredAt && /^[a-f0-9]{64}$/u.test(String(row.record_id))) {
         card.imageRef = { schema: "generated_image_ref.v1", recordId: String(row.record_id) };
         card.imageRecordId = String(row.record_id);
@@ -309,7 +329,7 @@ async function hydrate(db: Database, owner: string, input: Document): Promise<Hy
     }
     const expiredKeys = new Set((attempts.data || []).filter(row => row.response?.deliveryMode === "provider_url" && row.response?.sourceExpiredAt)
       .map(row => String(row.client_idempotency_key)));
-    for (const card of document.cards) if (expiredKeys.has(String(card.imageClientRequestId || ""))) {
+    for (const card of document.cards) if (!verifiedChainOriginals.has(card.id) && expiredKeys.has(String(card.imageClientRequestId || ""))) {
       Object.assign(card, storyboardImageUnavailablePatch("expired"));
       const row = (attempts.data || []).find(item => item.client_idempotency_key === card.imageClientRequestId);
       if (/^[a-f0-9]{64}$/u.test(String(row?.record_id))) {

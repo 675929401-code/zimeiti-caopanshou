@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { FeatureComingSoonOverlay } from "@/components/feature-coming-soon-gate";
 import { useApp } from "@/contexts/app-context";
@@ -10,7 +10,7 @@ import {
   hasFeaturePermission,
   type MemberPermissionSnapshot,
 } from "@/lib/member-permissions";
-import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { createClientAccountScope } from "@/lib/client-account-scope";
 
 type ClientPermissionState = {
   status: "idle" | "loading" | "ready" | "anonymous" | "error";
@@ -28,51 +28,62 @@ const MemberPermissionContext = createContext<ClientPermissionState>({
 
 export function MemberPermissionProvider({ children }: { children: React.ReactNode }) {
   const { state } = useApp();
-  const [status, setStatus] = useState<ClientPermissionState["status"]>("idle");
-  const [snapshot, setSnapshot] = useState<MemberPermissionSnapshot | null>(null);
-  const [error, setError] = useState("");
+  const scopeOwner = useRef(createClientAccountScope());
+  const scope = scopeOwner.current.prepare(state.auth);
+  useLayoutEffect(() => scopeOwner.current.activate(scope), [scope]);
+  const abortRef = useRef<AbortController | null>(null);
+  const [result, setResult] = useState<{
+    epoch: string;
+    status: ClientPermissionState["status"];
+    snapshot: MemberPermissionSnapshot | null;
+    error: string;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
-    const token = state.auth.token || (() => {
-      try { return window.localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN); } catch { return null; }
-    })();
-    if (!token) {
-      setSnapshot(null);
-      setError("");
-      setStatus("anonymous");
-      return;
-    }
-    setStatus("loading");
-    setError("");
+    if (!scope?.isCurrent()) return;
+    const isCurrent = scope.beginRequest("permissions");
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setResult({ epoch: scope.epoch, status: "loading", snapshot: null, error: "" });
     try {
       const response = await fetch("/api/member-permissions", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${scope.token}` },
         cache: "no-store",
+        signal: controller.signal,
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body.permission) {
-        setSnapshot(null);
-        setError(body.error || "会员权限校验失败");
-        setStatus(response.status === 401 ? "anonymous" : "error");
+      if (!isCurrent()) return;
+      if (!response.ok || !body.permission || body.permission.userId !== scope.userId) {
+        setResult({ epoch: scope.epoch, snapshot: null,
+          error: body.error || "会员权限校验失败",
+          status: response.status === 401 ? "anonymous" : "error" });
         return;
       }
-      setSnapshot(body.permission as MemberPermissionSnapshot);
-      setStatus("ready");
+      setResult({ epoch: scope.epoch, status: "ready", snapshot: body.permission as MemberPermissionSnapshot, error: "" });
     } catch {
-      setSnapshot(null);
-      setError("会员权限校验暂不可用");
-      setStatus("error");
+      if (!isCurrent()) return;
+      setResult({ epoch: scope.epoch, snapshot: null, error: "会员权限校验暂不可用", status: "error" });
     }
-  }, [state.auth.token]);
+  }, [scope]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    return () => abortRef.current?.abort();
+  }, [refresh]);
   useEffect(() => {
     const handleRefresh = () => { void refresh(); };
     window.addEventListener("member-permissions:refresh", handleRefresh);
     return () => window.removeEventListener("member-permissions:refresh", handleRefresh);
   }, [refresh]);
 
-  const value = useMemo(() => ({ status, snapshot, error, refresh }), [error, refresh, snapshot, status]);
+  // Scope changes must hide the old ready snapshot in this render, before effects.
+  const value = useMemo<ClientPermissionState>(() => ({
+    status: scope ? result?.epoch === scope.epoch ? result.status : "loading" : "anonymous",
+    snapshot: scope && result?.epoch === scope.epoch ? result.snapshot : null,
+    error: scope && result?.epoch === scope.epoch ? result.error : "",
+    refresh,
+  }), [refresh, result, scope]);
   return <MemberPermissionContext.Provider value={value}>{children}</MemberPermissionContext.Provider>;
 }
 
@@ -92,7 +103,10 @@ export function MemberFeatureBoundary({ children }: { children: React.ReactNode 
   const requiredFeature = featurePermissionForPath(pathname || "/");
   const allowed = requiredFeature == null || (
     permission.status === "ready"
+    && state.auth.isAuthenticated
+    && Boolean(state.auth.token)
     && permission.snapshot != null
+    && permission.snapshot.userId === state.auth.user?.id
     && permission.snapshot.integrityValid
     && hasFeaturePermission(
       permission.snapshot.role,

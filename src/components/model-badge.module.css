@@ -17,8 +17,15 @@
 }
 
 .badge[data-model-badge-source="brand"] {
-  background: #f5f7f6;
+  background: transparent;
   color: #17201d;
+}
+
+/* 白色/浅灰描边的品牌图标（Vidu、GK）需要深底才可见；其余品牌去掉白底直接铺满。 */
+.badge[data-model-brand="vidu"],
+.badge[data-model-brand="gk"] {
+  border-color: color-mix(in srgb, #0f1729 70%, var(--border));
+  background: #0f1729;
 }
 
 .badge[data-model-badge-source="generic"] {
@@ -27,8 +34,8 @@
 }
 
 .badge[data-model-badge-source="generic"] .image {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 9px;
 }
 
@@ -38,8 +45,8 @@
 
 .image {
   display: block;
-  width: 31px;
-  height: 31px;
+  width: 38px;
+  height: 38px;
   object-fit: contain;
 }
 
@@ -111,9 +118,28 @@
 }
 
 :global(html[data-mode="dark"]) .badge[data-model-badge-source="brand"] {
-  border-color: #51605b;
-  background: #f2f5f3;
-  color: #111815;
+  border-color: color-mix(in srgb, #51605b 72%, transparent);
+  background: transparent;
+  color: #f5f7f6;
+}
+
+/* OpenAI's external SVG uses currentColor, which is not inherited through an
+   <img> element. Recolor the monochrome mark in dark mode while keeping the
+   shared brand asset and the light-theme rendering unchanged. */
+:global(html[data-mode="dark"]) .badge[data-model-badge-source="brand"][data-model-brand="openai"] {
+  border-color: color-mix(in srgb, #7bdcca 62%, var(--border));
+  background: color-mix(in srgb, #0f172a 22%, var(--muted));
+  color: #f5f7f6;
+}
+
+:global(html[data-mode="dark"]) .badge[data-model-badge-source="brand"][data-model-brand="openai"] .image {
+  filter: invert(1) brightness(1.18) drop-shadow(0 0 1px rgba(255, 255, 255, .3));
+}
+
+:global(html[data-mode="dark"]) .badge[data-model-brand="vidu"],
+:global(html[data-mode="dark"]) .badge[data-model-brand="gk"] {
+  border-color: #24324a;
+  background: #0b1220;
 }
 
 :global(html[data-mode="dark"]) .badge[data-selected="true"] {

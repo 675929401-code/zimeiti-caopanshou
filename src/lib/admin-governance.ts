@@ -391,6 +391,9 @@ export function adminRequirementForRequest(
     return { permission: "agents.view", requireStepUp: false, operation: "skill_metadata_view" };
   }
   if (pathname.startsWith("/api/admin/agents") || pathname.startsWith("/api/admin/agent-skills")) return { permission: write ? "agents.manage" : "agents.view", requireStepUp: write, operation: "agents" };
+  if (pathname === "/api/admin/llm-reconciliation" && method === "POST") {
+    return { permission: "models.manage", requireStepUp: true, operation: "llm_request_attempt_reconcile" };
+  }
   if (pathname.startsWith("/api/admin/llm-test")) return { permission: "models.manage", requireStepUp: write, operation: "llm_test" };
   if (/^\/api\/admin\/(chat-models|video-models|cover-models|workspace-model-releases|model-pool-releases|model-health|credential-health|voice-config|voice-list|voice-services|voice-studio|voices)/u.test(pathname)) {
     return { permission: "models.manage", requireStepUp: true, operation: "model_internal_configuration" };

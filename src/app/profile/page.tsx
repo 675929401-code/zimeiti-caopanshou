@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Wallet, Coins, TrendingUp, TrendingDown, ArrowDownUp, Zap, Video, BarChart3, Layers, QrCode, Copy, Check, Gift, Users, UserPlus, Send, Sparkles, Eye, EyeOff, Upload, ShieldCheck, Mail, Smartphone, Camera, ChevronRight, BellRing } from "lucide-react";
 import { RechargeDialog } from "@/components/recharge-dialog";
+import { TransactionBillingExplanation } from "@/components/transaction-billing-explanation";
 import { useApp } from "@/contexts/app-context";
 import { normalizeDisplayText } from "@/lib/display-normalization";
 import { buildInvitationShareText } from "@/lib/invitation-share";
 import { isQqEmail, normalizeQqEmail } from "@/lib/qq-email";
 import { USER_PROFILE_AVATAR_PRESETS } from "@/lib/user-profile-avatar";
+import { createClientAccountScope, type ClientAccountScope } from "@/lib/client-account-scope";
 
 interface UserInfo {
   id: string;
@@ -160,23 +162,37 @@ function AssetAvailabilityBar({
 }
 
 export default function ProfilePage() {
+  const { state } = useApp();
+  const scopeOwner = useRef(createClientAccountScope());
+  const scope = scopeOwner.current.prepare(state.auth);
+  useLayoutEffect(() => scopeOwner.current.activate(scope), [scope]);
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-[var(--foreground)]">加载中...</div>}>
-      <ProfilePageContent />
+      {scope
+        ? <ProfilePageContent key={scope.epoch} scope={scope} />
+        : <div className="min-h-screen flex items-center justify-center text-[var(--foreground)]" role="status">正在核对登录状态…</div>}
     </Suspense>
   );
 }
 
-function ProfilePageContent() {
+function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { dispatch, fetchAgents, checkAuth } = useApp();
+  const mountedRef = useRef(true);
+  const isScopeCurrent = useCallback(() => mountedRef.current && scope.isCurrent(), [scope]);
+  const beginRead = useCallback((lane: string) => {
+    const isLatest = scope.beginRequest(lane);
+    return () => isScopeCurrent() && isLatest();
+  }, [isScopeCurrent, scope]);
   // 组件卸载时清理所有倒计时 timer
   const emailTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const phoneTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const passwordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (emailTimerRef.current) clearInterval(emailTimerRef.current);
       if (phoneTimerRef.current) clearInterval(phoneTimerRef.current);
       if (passwordTimerRef.current) clearInterval(passwordTimerRef.current);
@@ -221,26 +237,29 @@ function ProfilePageContent() {
 
   // 刷新资产数据（充值成功后调用）
   const refreshAssets = useCallback(async () => {
-    const token = localStorage.getItem("auth_token");
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const isCurrent = beginRead("assets");
+    if (!isCurrent()) return;
+    const headers = { Authorization: `Bearer ${scope.token}` };
     try {
-      const userId = user?.id || JSON.parse(localStorage.getItem("auth_user") || "{}").id;
+      const userId = scope.userId;
       const [creditsRes, assetsRes] = await Promise.all([
         userId ? fetch(`/api/credits?user_id=${encodeURIComponent(userId)}&include_transactions=0`, { headers }) : Promise.resolve(null),
         fetch("/api/user/assets", { headers }),
       ]);
+      if (!isCurrent()) return;
       if (creditsRes && creditsRes.ok) {
         const creditsData = await creditsRes.json();
+        if (!isCurrent()) return;
         setCashBalance(creditsData.cashBalance ?? 0);
         setTransactions(creditsData.transactions || []);
       }
       if (assetsRes.ok) {
         const assetsData = await assetsRes.json();
+        if (!isCurrent()) return;
         setAssets(assetsData);
       }
     } catch {}
-  }, [user?.id]);
+  }, [beginRead, scope]);
 
   // 充值记录相关
   const [txData, setTxData] = useState<{
@@ -258,6 +277,8 @@ function ProfilePageContent() {
   const [txLoading, setTxLoading] = useState(false);
   const [txPage, setTxPage] = useState(1);
   const [txType, setTxType] = useState<"all" | "credits" | "cash">("all");
+  const [txDirection, setTxDirection] = useState<"recharge" | "consume">("recharge");
+  const txRequestRef = useRef(0);
 
   // 修改密码
   const [oldPassword, setOldPassword] = useState("");
@@ -314,34 +335,31 @@ function ProfilePageContent() {
     has_cami_code: boolean; is_read: boolean; created_at: string;
   }>>([]);
 
-  const getToken = () => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("auth_token") || "";
-    }
-    return "";
-  };
+  const getToken = () => scope.token;
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      router.push("/");
-      return;
-    }
-    loadData(token);
+    void loadData();
+    // The outer scope key remounts all profile state after any auth change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadData = async (token: string) => {
+  const loadData = async () => {
+    const isCurrent = beginRead("profile-data");
+    if (!isCurrent()) return;
     try {
       setLoading(true);
-      const headers = { Authorization: `Bearer ${token}` };
+      const headers = { Authorization: `Bearer ${scope.token}` };
 
       // 先获取用户信息（包含积分）
       const meRes = await fetch("/api/auth/me", { headers });
+      if (!isCurrent()) return;
 
       let userData: Record<string, unknown> | null = null;
       if (meRes.ok) {
         const meData = await meRes.json();
+        if (!isCurrent()) return;
         userData = meData.user;
+        if (userData?.id !== scope.userId) return;
         if (userData) {
           setUser({
             id: userData.id as string,
@@ -364,15 +382,17 @@ function ProfilePageContent() {
       }
 
       // 并行加载积分流水和公告
-      const userId = userData?.id || JSON.parse(localStorage.getItem("auth_user") || "{}").id;
+      const userId = scope.userId;
       const [creditsRes, announceRes] = await Promise.all([
         userId ? fetch(`/api/credits?user_id=${encodeURIComponent(userId)}&include_transactions=0`, { headers }) : Promise.resolve(null),
         fetch("/api/announcements"),
       ]);
+      if (!isCurrent()) return;
 
       // /api/credits 同时返回 credits + cashBalance + transactions
       if (creditsRes && creditsRes.ok) {
         const creditsData = await creditsRes.json();
+        if (!isCurrent()) return;
         setCashBalance(creditsData.cashBalance ?? 0);
         setTransactions(creditsData.transactions || []);
       }
@@ -380,25 +400,32 @@ function ProfilePageContent() {
       // 获取用户资产概览（充值/消耗/余额统计）
       try {
         const assetsRes = await fetch("/api/user/assets", { headers });
+        if (!isCurrent()) return;
         if (assetsRes.ok) {
           const assetsData = await assetsRes.json();
+          if (!isCurrent()) return;
           setAssets(assetsData);
         }
       } catch {}
 
       if (announceRes.ok) {
         const announceData = await announceRes.json();
+        if (!isCurrent()) return;
         setAnnouncements(announceData.announcements || []);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       console.error("Failed to load profile data:", err);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
-  // 加载充值记录（仅充值记录）
+  // 以真实 API 筛选充值或消费记录。
   const loadTransactions = async (page: number = 1, append: boolean = false) => {
+    const isCurrent = beginRead("transactions");
+    if (!isCurrent()) return;
+    const requestId = ++txRequestRef.current;
     try {
       setTxLoading(true);
       const token = getToken();
@@ -406,13 +433,16 @@ function ProfilePageContent() {
         type: txType,
         page: page.toString(),
         pageSize: "20",
-        transactionType: "recharge",
+        transactionType: txDirection,
       });
       const res = await fetch(`/api/user/transactions?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!isCurrent()) return;
       if (res.ok) {
         const data = await res.json();
+        if (!isCurrent()) return;
+        if (requestId !== txRequestRef.current) return;
         if (data.success) {
           if (append && txData) {
             setTxData({
@@ -426,15 +456,17 @@ function ProfilePageContent() {
         }
       }
     } catch (err) {
-      console.error("加载充值记录失败:", err);
+      if (!isCurrent()) return;
+      console.error("加载交易记录失败:", err);
     } finally {
-      setTxLoading(false);
+      if (isCurrent() && requestId === txRequestRef.current) setTxLoading(false);
     }
   };
 
   // 当筛选条件变化时重新加载
   useEffect(() => {
     if (activeTab === "records") {
+      setTxData(null);
       loadTransactions(1, false);
     }
     if (activeTab === "invitation") {
@@ -444,10 +476,12 @@ function ProfilePageContent() {
       loadUserNotifications();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, txType, txDirection]);
 
   // 加载邀请码数据
   const loadInvitationData = async () => {
+    const isCurrent = beginRead("invitations");
+    if (!isCurrent()) return;
     const token = getToken();
     const headers = { Authorization: `Bearer ${token}` };
     try {
@@ -456,8 +490,10 @@ function ProfilePageContent() {
         fetch("/api/invitation/records", { headers }),
         fetch("/api/invitation/benefits"),
       ]);
+      if (!isCurrent()) return;
       if (codesRes.ok) {
         const codesData = await codesRes.json();
+        if (!isCurrent()) return;
         if (codesData.success) {
           setInviteCodes(codesData.codes);
           if (codesData.quota) setInviteQuota(codesData.quota);
@@ -465,6 +501,7 @@ function ProfilePageContent() {
       }
       if (recordsRes.ok) {
         const recordsData = await recordsRes.json();
+        if (!isCurrent()) return;
         if (recordsData.success) {
           setInviteRecords(recordsData.records);
           setInviteStats(recordsData.stats);
@@ -472,30 +509,39 @@ function ProfilePageContent() {
       }
       if (benefitsRes.ok) {
         const benefitsData = await benefitsRes.json();
+        if (!isCurrent()) return;
         if (benefitsData.success) setInviteBenefits(benefitsData.benefits);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       console.error("加载邀请码数据失败:", err);
     }
   };
 
   // 加载用户通知
   const loadUserNotifications = async () => {
+    const isCurrent = beginRead("notifications");
+    if (!isCurrent()) return;
     const token = getToken();
     const headers = { Authorization: `Bearer ${token}` };
     try {
       const res = await fetch("/api/notifications/user", { headers });
+      if (!isCurrent()) return;
       if (res.ok) {
         const data = await res.json();
+        if (!isCurrent()) return;
         if (data.success) setUserNotifications(data.notifications);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       console.error("加载通知失败:", err);
     }
   };
 
   // 凭通知 ID 兑换已绑定的激活卡；卡密明文永不进入浏览器。
   const handleRedeemCamiFromNotification = async (notificationId: string) => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     try {
       const token = getToken();
       const res = await fetch("/api/cami", {
@@ -507,7 +553,9 @@ function ProfilePageContent() {
         },
         body: JSON.stringify({ notificationId, client_request_id: `cami-notification:${notificationId}` }),
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (data.success) {
         alert("会员激活成功！");
         // 标记通知已读
@@ -516,17 +564,21 @@ function ProfilePageContent() {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ notificationId }),
         });
+        if (!isCurrent()) return;
         loadUserNotifications();
         refreshAssets();
       } else {
         alert(data.error || "卡密兑换失败");
       }
     } catch {
+      if (!isCurrent()) return;
       alert("网络错误，请重试");
     }
   };
 
   const handleMarkUserNotificationRead = async (notificationId: string) => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     const token = getToken();
     try {
       const response = await fetch("/api/notifications/user", {
@@ -534,17 +586,21 @@ function ProfilePageContent() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ notificationId }),
       });
+      if (!isCurrent()) return;
       if (!response.ok) throw new Error("已读状态保存失败");
       setUserNotifications((current) => current.map((notification) => notification.id === notificationId
         ? { ...notification, is_read: true }
         : notification));
       window.dispatchEvent(new Event("refresh-account-notifications"));
     } catch {
+      if (!isCurrent()) return;
       alert("已读状态保存失败，请稍后重试");
     }
   };
 
   const handleGenerateCode = async () => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     if (!inviteOwnerEligible) {
       alert("邀请码仅向有效期内的正式会员开放；体验会员或未激活账号不能生成邀请码。");
       return;
@@ -560,34 +616,43 @@ function ProfilePageContent() {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (data.success) {
         if (data.quota) setInviteQuota(data.quota);
         await loadInvitationData();
+        if (!isCurrent()) return;
       } else {
         if (data.quota) setInviteQuota(data.quota);
         alert(data.error || "生成邀请码失败");
       }
     } catch {
+      if (!isCurrent()) return;
       alert("网络错误，请重试");
     } finally {
-      setGeneratingCode(false);
+      if (isCurrent()) setGeneratingCode(false);
     }
   };
 
   // 复制完整邀请说明，好友打开链接后邀请码会自动填入注册表单。
   const handleCopyCode = (code: string) => {
+    if (!isScopeCurrent()) return;
     const origin = typeof window === "undefined" ? "" : window.location.origin;
     const shareText = buildInvitationShareText({ code, origin });
     navigator.clipboard.writeText(shareText).then(() => {
+      if (!isScopeCurrent()) return;
       setCopiedCode(code);
-      setTimeout(() => setCopiedCode(null), 2000);
+      setTimeout(() => { if (isScopeCurrent()) setCopiedCode(null); }, 2000);
     }).catch(() => {
+      if (!isScopeCurrent()) return;
       alert("复制失败，请检查浏览器剪贴板权限");
     });
   };
 
   const handleSendPasswordCode = async () => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     setPasswordMsg("");
     if (!user?.email || !isQqEmail(user.email)) {
       setPasswordMsg("请先绑定已验证的QQ邮箱");
@@ -602,13 +667,16 @@ function ProfilePageContent() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: "send_code" }),
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (!res.ok) {
         setPasswordMsg(data.error || "验证码发送失败");
         return;
       }
       setPasswordCodeCountdown(60);
       const timer = setInterval(() => {
+        if (!isCurrent()) { clearInterval(timer); return; }
         setPasswordCodeCountdown((previous) => {
           if (previous <= 1) {
             clearInterval(timer);
@@ -621,13 +689,16 @@ function ProfilePageContent() {
       passwordTimerRef.current = timer;
       setPasswordMsg("验证码发送成功，请查收当前QQ邮箱");
     } catch {
+      if (!isCurrent()) return;
       setPasswordMsg("网络错误");
     } finally {
-      setSendingPasswordCode(false);
+      if (isCurrent()) setSendingPasswordCode(false);
     }
   };
 
   const handleChangePassword = async () => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     setPasswordMsg("");
     if (!newPassword || !confirmPassword) {
       setPasswordMsg("请填写所有字段");
@@ -658,7 +729,9 @@ function ProfilePageContent() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: "change", oldPassword, newPassword, emailCode: passwordEmailCode }),
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (data.success) {
         setPasswordMsg("密码修改成功");
         setOldPassword("");
@@ -669,11 +742,14 @@ function ProfilePageContent() {
         setPasswordMsg(data.error || "修改失败");
       }
     } catch {
+      if (!isCurrent()) return;
       setPasswordMsg("网络错误");
     }
   };
 
   const handleSendPhoneCode = async () => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     setPhoneMsg("");
     if (!phoneInput || !/^1[3-9]\d{9}$/.test(phoneInput)) {
       setPhoneMsg("请输入正确的手机号");
@@ -693,7 +769,9 @@ function ProfilePageContent() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: "send_code", phone: phoneInput }),
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (!res.ok) {
         setPhoneMsg(data.error || "验证码发送失败");
         return;
@@ -701,6 +779,7 @@ function ProfilePageContent() {
       setPhoneMsg(data.message || "验证码已发送至当前安全邮箱");
       setPhoneCodeCountdown(60);
       const timer = setInterval(() => {
+        if (!isCurrent()) { clearInterval(timer); return; }
         setPhoneCodeCountdown(previous => {
           if (previous <= 1) {
             clearInterval(timer);
@@ -712,13 +791,16 @@ function ProfilePageContent() {
       }, 1000);
       phoneTimerRef.current = timer;
     } catch {
+      if (!isCurrent()) return;
       setPhoneMsg("网络错误");
     } finally {
-      setSendingPhoneCode(false);
+      if (isCurrent()) setSendingPhoneCode(false);
     }
   };
 
   const handleBindPhone = async () => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     setPhoneMsg("");
     if (!phoneInput || !/^1[3-9]\d{9}$/.test(phoneInput)) {
       setPhoneMsg("请输入正确的手机号");
@@ -736,7 +818,9 @@ function ProfilePageContent() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: "change", phone: phoneInput, emailCode: phoneEmailCode }),
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (!res.ok) {
         setPhoneMsg(data.error || "手机号更新失败");
         return;
@@ -745,13 +829,17 @@ function ProfilePageContent() {
       setPhoneEmailCode("");
       setPhoneMsg("手机号更新成功");
       await checkAuth();
+      if (!isCurrent()) return;
     } catch {
+      if (!isCurrent()) return;
       setPhoneMsg("网络错误");
     }
   };
 
   // 发送邮箱验证码
   const handleSendEmailCode = async () => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     setEmailMsg("");
     if (!emailInput) {
       setEmailMsg("请输入QQ邮箱");
@@ -771,7 +859,9 @@ function ProfilePageContent() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: "send_code", email: normalizeQqEmail(emailInput) }),
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
 
       if (!res.ok) {
         setEmailMsg(data.error || "发送失败");
@@ -780,6 +870,7 @@ function ProfilePageContent() {
 
       setEmailCodeCountdown(60);
       const timer = setInterval(() => {
+        if (!isCurrent()) { clearInterval(timer); return; }
         setEmailCodeCountdown(prev => {
           if (prev <= 1) {
             clearInterval(timer);
@@ -791,14 +882,17 @@ function ProfilePageContent() {
       }, 1000);
       emailTimerRef.current = timer;
     } catch {
+      if (!isCurrent()) return;
       setEmailMsg("网络错误");
     } finally {
-      setSendingEmailCode(false);
+      if (isCurrent()) setSendingEmailCode(false);
     }
   };
 
   // 绑定邮箱
   const handleBindEmail = async () => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     setEmailMsg("");
     if (!emailInput) {
       setEmailMsg("请输入QQ邮箱");
@@ -824,7 +918,9 @@ function ProfilePageContent() {
           code: emailCode,
         }),
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (data.success) {
         setUser(prev => prev ? { ...prev, email: normalizeQqEmail(emailInput) } : prev);
         setEmailMsg("QQ邮箱验证并绑定成功");
@@ -833,11 +929,14 @@ function ProfilePageContent() {
         setEmailMsg(data.error || "绑定失败");
       }
     } catch {
+      if (!isCurrent()) return;
       setEmailMsg("网络错误");
     }
   };
 
   const saveAvatarPreset = async (presetUrl: string) => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     if (avatarBusy) return;
     setAvatarBusy(true);
     setAvatarMsg("");
@@ -848,7 +947,9 @@ function ProfilePageContent() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ presetUrl }),
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (!res.ok) {
         setAvatarMsg(data.error || "头像保存失败");
         setAvatarStatus("error");
@@ -858,15 +959,19 @@ function ProfilePageContent() {
       setAvatarMsg("预设头像已保存");
       setAvatarStatus("success");
       await checkAuth();
+      if (!isCurrent()) return;
     } catch {
+      if (!isCurrent()) return;
       setAvatarMsg("网络错误，请稍后重试");
       setAvatarStatus("error");
     } finally {
-      setAvatarBusy(false);
+      if (isCurrent()) setAvatarBusy(false);
     }
   };
 
   const uploadAvatar = async (file: File | undefined) => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     if (!file || avatarBusy) return;
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
       setAvatarMsg("仅支持 PNG、JPEG 或 WebP 图片");
@@ -889,7 +994,9 @@ function ProfilePageContent() {
         headers: { Authorization: `Bearer ${getToken()}` },
         body: form,
       });
+      if (!isCurrent()) return;
       const data = await res.json();
+      if (!isCurrent()) return;
       if (!res.ok) {
         setAvatarMsg(data.error || "头像上传失败");
         setAvatarStatus("error");
@@ -899,12 +1006,14 @@ function ProfilePageContent() {
       setAvatarMsg("图片已自动裁成 512×512 并保存");
       setAvatarStatus("success");
       await checkAuth();
+      if (!isCurrent()) return;
     } catch {
+      if (!isCurrent()) return;
       setAvatarMsg("网络错误，请稍后重试");
       setAvatarStatus("error");
     } finally {
-      setAvatarBusy(false);
-      if (avatarFileRef.current) avatarFileRef.current.value = "";
+      if (isCurrent()) setAvatarBusy(false);
+      if (isCurrent() && avatarFileRef.current) avatarFileRef.current.value = "";
     }
   };
 
@@ -921,6 +1030,8 @@ function ProfilePageContent() {
 
   // 卡密兑换
   const handleCamiRedeem = async () => {
+    const isCurrent = isScopeCurrent;
+    if (!isCurrent()) return;
     if (!camiCode.trim()) return;
     setCamiRedeeming(true);
     setCamiResult(null);
@@ -936,21 +1047,26 @@ function ProfilePageContent() {
         },
         body: JSON.stringify({ code: camiCode.trim().toUpperCase(), client_request_id: requestId }),
       });
+      if (!isCurrent()) return;
       const data = await resp.json();
+      if (!isCurrent()) return;
       setCamiResult(data);
       if (data.success) {
         setCamiCode("");
         // 刷新用户数据
-        loadData(getToken());
+        void loadData();
         // 刷新全局 auth 状态（会员状态 + 分类权限等）
         await checkAuth();
+        if (!isCurrent()) return;
         // 刷新智能体列表（后端会根据新的 allowed_categories 过滤）
         await fetchAgents();
+        if (!isCurrent()) return;
       }
     } catch {
+      if (!isCurrent()) return;
       setCamiResult({ success: false, message: "网络错误，请重试" });
     } finally {
-      setCamiRedeeming(false);
+      if (isCurrent()) setCamiRedeeming(false);
     }
   };
 
@@ -958,7 +1074,7 @@ function ProfilePageContent() {
     { key: "overview" as const, label: "总览" },
     { key: "invitation" as const, label: "邀请码" },
     { key: "cami" as const, label: "卡密兑换" },
-    { key: "records" as const, label: "充值记录" },
+    { key: "records" as const, label: "充值与消费记录" },
     { key: "password" as const, label: user?.hasPassword === false ? "设置密码" : "修改密码" },
     { key: "phone" as const, label: "安全手机" },
     { key: "email" as const, label: "安全邮箱" },
@@ -979,7 +1095,7 @@ function ProfilePageContent() {
       <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
         <div className="text-center">
           <p className="text-[var(--foreground)] mb-4">请先登录</p>
-          <Button onClick={() => { dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" }); router.push("/"); }} className="bg-[var(--primary)] text-black hover:bg-[var(--primary)]/80">
+          <Button onClick={() => { if (!isScopeCurrent()) return; dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" }); router.push("/"); }} className="bg-[var(--primary)] text-black hover:bg-[var(--primary)]/80">
             去登录
           </Button>
         </div>
@@ -993,11 +1109,11 @@ function ProfilePageContent() {
       <div className="border-b border-[var(--border)] bg-[var(--sidebar)]/95 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
           <div className="min-w-0 flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => { dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" }); router.push("/"); }} className="text-[var(--foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card)]">
+            <Button variant="ghost" size="sm" onClick={() => { if (!isScopeCurrent()) return; dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" }); router.push("/"); }} className="text-[var(--foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card)]">
               ← 返回
             </Button>
             <div>
-              <h1 className="text-lg font-semibold text-[var(--foreground)]">个人中心</h1>
+              <h1 className="text-xl font-semibold leading-snug text-[var(--foreground)]">个人中心</h1>
               <p className="text-xs text-[var(--muted-foreground)]">账户、资产与安全设置</p>
             </div>
           </div>
@@ -1553,6 +1669,18 @@ function ProfilePageContent() {
             <Card className="bg-[var(--card)] border-[var(--border)]">
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex bg-[var(--background)] rounded-lg p-0.5" aria-label="记录类型">
+                    {([
+                      { value: "recharge", label: "充值记录" },
+                      { value: "consume", label: "消费记录" },
+                    ] as const).map(opt => (
+                      <button key={opt.value} onClick={() => { setTxDirection(opt.value); setTxPage(1); }}
+                        aria-pressed={txDirection === opt.value}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${txDirection === opt.value ? "bg-[var(--primary)] text-black" : "text-[var(--text-secondary)] hover:text-[var(--foreground)]"}`}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                   {/* 类型筛选 */}
                   <div className="flex bg-[var(--background)] rounded-lg p-0.5">
                     {[
@@ -1583,7 +1711,7 @@ function ProfilePageContent() {
                 {txLoading && !txData ? (
                   <div className="text-center py-12 text-[var(--foreground)]">加载中...</div>
                 ) : !txData || txData.transactions.length === 0 ? (
-                  <div className="text-center py-12 text-[var(--foreground)]">暂无充值记录</div>
+                  <div className="text-center py-12 text-[var(--foreground)]">暂无{txDirection === "consume" ? "消费" : "充值"}记录</div>
                 ) : (
                   <div className="space-y-2">
                     {txData.transactions.map((t: any) => {
@@ -1668,17 +1796,8 @@ function ProfilePageContent() {
                               )}
                             </div>
                           </div>
-                          {/* 积分消耗详情：展示Token和成本 */}
-                          {!isRecharge && isCredits && t.metadata && (t.metadata.prompt_tokens || t.metadata.completion_tokens) && (
-                            <div className="mt-2 pt-2 border-t border-[var(--border)] flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]">
-                              {t.metadata.agent_name && <span>智能体: {t.metadata.agent_name}</span>}
-                              {t.metadata.model && <span>模型: {t.metadata.model}</span>}
-                              {t.metadata.prompt_tokens ? <span>输入 {t.metadata.prompt_tokens.toLocaleString()} token</span> : null}
-                              {t.metadata.completion_tokens ? <span>输出 {t.metadata.completion_tokens.toLocaleString()} token</span> : null}
-                              {t.metadata.cached_tokens ? <span>缓存 {t.metadata.cached_tokens.toLocaleString()} token</span> : null}
-                              {t.metadata.actual_cost_rmb ? <span>成本 ¥{Number(t.metadata.actual_cost_rmb).toFixed(4)}</span> : null}
-                              {t.metadata.sell_price_rmb ? <span>售价 ¥{Number(t.metadata.sell_price_rmb).toFixed(4)}</span> : null}
-                            </div>
+                          {!isRecharge && (isCredits || t.category === "cash") && (
+                            <TransactionBillingExplanation explanation={t.billingExplanation} metadata={t.metadata} />
                           )}
                           {/* 视频任务详情 */}
                           {isVideo && (
@@ -1694,14 +1813,6 @@ function ProfilePageContent() {
                             <div className="mt-2 pt-2 border-t border-[var(--border)] flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]">
                               {t.tradeOrderId && <span>订单号: {t.tradeOrderId}</span>}
                               {t.paidAt && <span>支付时间: {formatTime(t.paidAt)}</span>}
-                            </div>
-                          )}
-                          {/* 现金消耗详情 */}
-                          {!isRecharge && !isVideo && !isPayment && t.category === "cash" && t.metadata && (
-                            <div className="mt-2 pt-2 border-t border-[var(--border)] flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]">
-                              {t.metadata?.model_name && <span>模型: {t.metadata.model_name}</span>}
-                              {t.metadata?.cost_price != null && <span>成本 ¥{Number(t.metadata.cost_price).toFixed(4)}</span>}
-                              {t.metadata?.selling_price != null && <span>售价 ¥{Number(t.metadata.selling_price).toFixed(4)}</span>}
                             </div>
                           )}
                         </div>
@@ -2345,11 +2456,13 @@ function ProfilePageContent() {
         cashBalance={cashBalance}
         mode="both"
         onCreditsUpdated={(newCredits) => {
+          if (!isScopeCurrent()) return;
           // 同步到 AppContext 全局状态（侧边栏积分显示会实时更新）
           dispatch({ type: "SET_CREDITS", payload: { total: newCredits, used: 0, remaining: newCredits, costPerMessage: 0 } });
           refreshAssets();
         }}
         onCashUpdated={(newCash) => {
+          if (!isScopeCurrent()) return;
           setCashBalance(newCash);
           // 同步到 AppContext 全局状态
           dispatch({ type: "SET_CASH_BALANCE", payload: newCash });

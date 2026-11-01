@@ -191,6 +191,7 @@ export interface Conversation {
 
 export interface Message {
   id: string;
+  serverMessageId?: string; // Confirmed history row ID; local rendering ID stays stable during streaming.
   role: "user" | "assistant";
   content: string;
   displayContent?: string; // 前端展示内容（与 content 不同时，content 用于 API 发送，displayContent 用于界面显示）
@@ -607,6 +608,8 @@ export interface OutputStyle {
    */
   storyboardPromptHandoff?: {
     enabled?: boolean;
+    /** Explicit admin-selected prompt destination; legacy false keeps video. */
+    target?: "storyboard-workbench" | "video";
   };
 }
 

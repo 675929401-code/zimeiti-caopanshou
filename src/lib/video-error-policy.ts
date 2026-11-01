@@ -62,6 +62,18 @@ export function classifyVideoProviderError(
     };
   }
 
+  // 上游任务已过期 / 不存在属终止态。若不单独识别，平台会把它当成可重试的
+  // 未知错误一直轮询，用户端永远“处理中”。这里给出稳定、可操作的产品文案。
+  if (/(?:task|job|任务|作业)[^。]{0,12}(?:not[_\s-]?found|不存在|过期|已失效)|(?:not[_\s-]?found|expired|gone|unknown[_\s-]?task)/iu.test(operatorMessage)) {
+    return {
+      category: "provider_unavailable",
+      code: "VIDEO_TASK_TERMINAL_EXPIRED",
+      publicMessage: `${publicModelName}的上游任务已过期或不存在，请重新提交本段`,
+      operatorMessage,
+      retryable: false,
+    };
+  }
+
   // Media retrieval errors belong to this task's input, not to API credentials.
   if (/需要.{0,20}首帧和尾帧|缺少.*尾帧/iu.test(operatorMessage)) {
     return { category: "asset_input", code: "VIDEO_FRAMES_REQUIRED", publicMessage: `${publicModelName}需要首帧和尾帧，请补齐两张图片`, operatorMessage, retryable: false };

@@ -281,8 +281,9 @@ assert.equal(writeProbe.writes, 1);
 const hostSource = readFileSync("src/components/storyboard-workbench-route-host.tsx", "utf8");
 assert.ok(hostSource.includes("<StoryboardWorkbench historyPage={historyPage}"));
 assert.equal(hostSource.includes("key={pathname}") || hostSource.includes("key={historyPage}"), false, "history navigation retains the same mounted workbench");
-assert.ok(source.includes("<div hidden={historyPage}"), "workbench DOM survives while history is visible");
-assert.match(source, /presentation="inline"/u, "history uses an independent page presentation");
+assert.match(source, /<div\b[^>]*\bhidden=\{historyPage\}/u, "workbench DOM survives while history is visible");
+assert.match(source, /\{historyOpen && <MediaHistoryWorkspace\b/u, "history renders the independent media history workspace");
+assert.match(source, /initialCategory="storyboard-workbench"/u, "history starts in the storyboard category");
 
 }
 
@@ -291,6 +292,12 @@ const hasSubmittedWorkDeclaration = tree.statements
   .filter((node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && node.name?.text === "hasSubmittedWork")
   .map((node) => node.getText(tree)).join("\n");
 assert.ok(hasSubmittedWorkDeclaration, "hasSubmittedWork helper must exist");
+const recoveryNoticeDeclarations = tree.statements.filter(node =>
+  (ts.isFunctionDeclaration(node) && node.name?.text === "clearStoryboardRecoveryNotice") ||
+  (ts.isVariableStatement(node) && node.declarationList.declarations.some(declaration =>
+    ts.isIdentifier(declaration.name) && declaration.name.text === "STORYBOARD_RECOVERY_NOTICE")),
+).map(node => node.getText(tree)).join("\n");
+assert.ok(recoveryNoticeDeclarations, "recovery notice helpers must exist");
 
 type SaveProbe = { timers: Array<() => void>; saves: Array<{ document: unknown; manual: boolean }> };
 function autosaveFixture(run: Record<string, unknown>, submitted = false) {
@@ -382,7 +389,9 @@ const restoreContext = {
   setHistory(update: (current: unknown[]) => unknown[]) { restoreContext.history = update(restoreContext.history); },
   setRun(value: unknown) { restoreContext.run = value; },
   setHistoryOpen(value: boolean) { restoreContext.historyOpen = value; },
-  setNotice(message: string) { restoreContext.notice = message; },
+  setNotice(message: string | ((current: string) => string)) {
+    restoreContext.notice = typeof message === "function" ? message(restoreContext.notice) : message;
+  },
 };
 vm.runInNewContext(
   transpile(`globalThis.restoreAccountProject = ${jsxCallback("await leaveAssetProject('/storyboard-workbench?projectId='")};`),
@@ -390,7 +399,7 @@ vm.runInNewContext(
 );
 await (restoreContext as typeof restoreContext & { restoreAccountProject: () => Promise<void> }).restoreAccountProject();
 assert.equal(restoreContext.navigatedTo, '/storyboard-workbench?projectId=' + restoredRun.id, "历史恢复通过明确项目路由加载");
-vm.runInNewContext(transpile(`${hasSubmittedWorkDeclaration}\nglobalThis.loadAccountProject = ${firstCallback("useEffect", "cloud.restore(projectToRestore)")};`), restoreContext);
+vm.runInNewContext(transpile(`${hasSubmittedWorkDeclaration}\n${recoveryNoticeDeclarations}\nglobalThis.loadAccountProject = ${firstCallback("useEffect", "cloud.restore(projectToRestore)")};`), restoreContext);
 (restoreContext as typeof restoreContext & { loadAccountProject: () => () => void }).loadAccountProject();
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal((restoreContext.run as { id?: string }).id, restoredRun.id);

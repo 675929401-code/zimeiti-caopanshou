@@ -64,14 +64,21 @@ async function main() {
   assert.doesNotMatch(
     modelsRoute,
     /\.from\(["']video_channel_health["']\)/u,
-    "临时渠道健康状态不得从公共目录隐藏已配置模型；健康门禁只在提交时执行",
+    "临时渠道健康状态不得从公共目录隐藏已配置模型",
   );
   assert.doesNotMatch(modelsRoute, /待充值：|成本价或销售价缺失|管理员显式恢复\s*canary|渠道连续失败\s*\$\{/u, "公开模型目录不得泄露内部定价、余额或恢复策略");
-  assert.match(generateRoute, /CHANNEL_HEALTH_BLOCKED/u);
+  assert.doesNotMatch(generateRoute, /CHANNEL_HEALTH_BLOCKED/u,
+    "历史APM熔断不得阻断普通用户的本次供应商请求");
+  const providerAdmissionIndex = generateRoute.indexOf("providerAdmissionLease = await acquireProviderAdmission({");
+  const providerSubmitIndex = generateRoute.indexOf("result = await submitVideoTask");
   assert.ok(
-    generateRoute.indexOf("CHANNEL_HEALTH_BLOCKED") < generateRoute.indexOf("result = await submitVideoTask"),
-    "健康门禁必须在视频提交前执行",
+    providerAdmissionIndex > 0 && providerSubmitIndex > providerAdmissionIndex,
+    "供应商并发准入必须在真实视频提交前执行",
   );
+  assert.match(generateRoute, /submitError instanceof ProviderAdmissionBusyError \|\| submitError instanceof ProviderAdmissionUnavailableError/u,
+    "真实并发准入不可用或繁忙必须进入专用拒绝路径");
+  assert.match(generateRoute, /onProviderRequest:[\s\S]*?await persistVideoProviderDispatchReceipt\([\s\S]*?providerRequestDispatched = true/u,
+    "实际请求必须在供应商派发前持久化回执");
   assert.doesNotMatch(generateRoute, /ImageGenerationClient|needsAutoRef/u, "视频提交不能隐式调用生图绕过登记与费用门禁");
   assert.match(generateRoute, /validateVideoInputContract\(inputContract/u);
   assert.match(uploadRoute, /providerType:\s*"tencent_cos"/u);
@@ -130,6 +137,7 @@ async function main() {
       capabilities?: {
         available?: boolean;
         generationReady?: boolean;
+        readinessMessage?: string;
         availabilityMessage?: string;
       };
     }>;
@@ -139,13 +147,14 @@ async function main() {
   assert.ok(modelsPayload.models.every((model) => model.id && model.displayName), "公共模型项必须有稳定ID和名称");
   assert.ok(
     modelsPayload.models.every((model) => !Object.hasOwn(model.capabilities || {}, "activationReady")
-      && !Object.hasOwn(model.capabilities || {}, "readinessMessage")
+      && (!Object.hasOwn(model.capabilities || {}, "readinessMessage") || model.capabilities?.readinessMessage === "")
+      && (!Object.hasOwn(model.capabilities || {}, "availabilityMessage") || model.capabilities?.availabilityMessage === "")
       && typeof model.capabilities?.generationReady === "boolean"),
     "公共模型目录不得暴露内部验收字段，并应按实时可用性返回生成状态",
   );
   // Do not POST /generate here: a live channel can recover between catalog read
   // and submission. The source assertion above proves the paid route performs
-  // the health gate, while this runtime assertion proves health never hides the
+  // the admission gate, while this runtime assertion proves health never hides the
   // model catalog. Together they remain a zero-cost test.
   console.log(`video-page chain safety verification passed; visibleModels=${modelsPayload.models.length}; paidRequest=0`);
 }

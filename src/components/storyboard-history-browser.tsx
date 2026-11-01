@@ -5,6 +5,7 @@ import { ArrowLeft, Download, Film, Loader2, Play, RefreshCw, Trash2 } from "luc
 import type { VideoHistoryItem } from "./video-history-panel";
 import { groupVideoHistory } from "@/lib/video-history-policy";
 import { storyboardRecordState } from "@/lib/storyboard-history-view";
+import { STORYBOARD_ARCHIVE_RETENTION_MS } from "@/lib/storyboard-video-archive-policy";
 import "./storyboard-history-browser.css";
 
 export interface StoryboardHistoryBrowserProps {
@@ -65,7 +66,7 @@ export function StoryboardHistoryBrowser(props: StoryboardHistoryBrowserProps) {
           <button type="button" className="sbh-storyboard-back" aria-label="返回分镜工作台" onClick={props.onBack}><ArrowLeft size={17} />返回工作台</button>
           <h2>分镜历史</h2>
         </div>
-        <p>视频保留3天，请及时下载。</p>
+        <p>云端视频默认保留{STORYBOARD_ARCHIVE_RETENTION_MS / 86_400_000}天，请及时下载。</p>
       </div>
       <div className="sbh-storyboard-actions">
         <button type="button" onClick={props.onRefresh} disabled={props.loading}><RefreshCw size={14} />刷新</button>
@@ -110,7 +111,18 @@ export function StoryboardHistoryBrowser(props: StoryboardHistoryBrowserProps) {
           </section>;
         })}
       </section>)}
-      {!days.length && <div className="sbh-storyboard-empty">{props.loading ? <><Loader2 size={24} /><span>加载中…</span></> : <><Film size={26} /><strong>{props.error ? "历史暂时无法读取" : unfinished.length ? "暂无已完成的视频" : "暂无历史视频"}</strong>{props.hasMore && <span>可加载更多记录查看此前视频。</span>}</>}</div>}
+      {!days.length && <div className={`sbh-storyboard-empty${props.loading ? " is-loading" : ""}`}>
+        {props.loading ? <><Loader2 size={24} /><span>加载中…</span></> : <>
+          <span className="sbh-storyboard-empty-visual" aria-hidden="true"><Film size={28} /></span>
+          <strong>{props.error ? "历史暂时无法读取" : unfinished.length ? "暂无已完成的视频" : "还没有历史视频"}</strong>
+          <p>{props.error ? "稍后重试即可；已有记录不会因此被清除。" : "完成的视频会按制作批次出现在这里，可在线播放、按批次下载。"}</p>
+          <div className="sbh-storyboard-empty-actions">
+            <button type="button" onClick={props.onBack}>返回工作台</button>
+            <button type="button" onClick={props.onRefresh} disabled={props.loading}>刷新列表</button>
+          </div>
+          {props.hasMore && <span className="sbh-storyboard-empty-hint">可加载更多记录查看此前视频。</span>}
+        </>}
+      </div>}
       {props.hasMore && props.onLoadMore && <button type="button" className="sbh-storyboard-load-more" disabled={props.loading} onClick={props.onLoadMore}>{props.loading ? "加载中…" : "加载更多视频"}</button>}
     </div>
   </section>;

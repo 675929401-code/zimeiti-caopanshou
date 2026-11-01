@@ -79,7 +79,7 @@ interface VideoTaskRow {
 /** 灏?Supabase 琛屾槧灏勪负鍓嶇 VideoTask 鏍煎紡 */
 function mapTaskRow(t: Record<string, unknown>): VideoTaskRow {
   const model = (t.video_models as Record<string, unknown>) || {};
-  const publicModelName = publicModelDisplayName({ ...model, name: model.name || "所选视频模型" });
+  const publicModelName = publicModelDisplayName({ ...model, id: t.model_id, name: model.name || "所选视频模型" });
   const internalPublicModelId = t.model_id ? toPublicModelId("video", String(t.model_id)) : "";
   const rawError = String(t.error_message ?? "");
   const taskId = String(t.id ?? "");

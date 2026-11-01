@@ -85,9 +85,14 @@ import { hasStoryboardNarrativeRuntimeContract, officialStoryboardDirectorIdenti
 import { isAbortLikeError, isLocalConvId, fetchWithRetry } from "./chat-utils";
 import { enrichHistoryMessageIdentity, mapHistoryMessages } from "./history-message-mapper";
 import { releaseConversationSend, tryAcquireConversationSend } from "./pending-send-lock";
+import { chatBranchContext, persistedChatMessageId, projectChatRequestHistory, readPersistedAssistantMessageId, restoreChatHistoryAttemptStatus } from "@/lib/chat-regeneration-policy";
 import { type AppState, type Action as AppAction, reducer, initialState, defaultCredits } from "./chat-reducer";
 
 export type { AppState, AppAction };
+
+function mapHistoryMessagesWithAttemptStatus(input: unknown): Message[] {
+  return restoreChatHistoryAttemptStatus(mapHistoryMessages(input), input);
+}
 
 // ---- Context ----
 interface AppContextValue {
@@ -135,9 +140,9 @@ function hasAssistantHistoryMessage(conv: Conversation) {
 const MAX_INLINE_CHAT_IMAGE_CHARS = 12 * 1024 * 1024;
 const SAFE_INLINE_CHAT_IMAGE = /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\r\n]+$/i;
 
-// Paint the first glyph immediately. Ordinary chunks advance one glyph per
-// paint; only substantial backlogs accelerate, with an explicit upper bound.
-const TYPEWRITER_MIN_STEP = 1;
+// Paint the first glyph immediately, then advance ordinary text by two or
+// three glyphs per frame. Larger backlogs accelerate with a bounded step.
+const TYPEWRITER_MIN_STEP = 2;
 const TYPEWRITER_MAX_STEP = 64;
 const TYPEWRITER_SETTLE_FRAME_BUDGET_MS = 34;
 const TYPEWRITER_SETTLE_SAFETY_FRAMES = 6;
@@ -149,7 +154,7 @@ const typewriterSegmenter = typeof Intl.Segmenter === "function"
 
 function typewriterStep(remaining: number): number {
   if (remaining <= 48) return TYPEWRITER_MIN_STEP;
-  if (remaining <= 160) return 2;
+  if (remaining <= 160) return 3;
   if (remaining <= 480) return 4;
   if (remaining <= 1200) return 8;
   return Math.min(TYPEWRITER_MAX_STEP, Math.ceil(remaining / 40));
@@ -197,7 +202,7 @@ function takeTypewriterSlice(current: string, target: string, firstPaint = false
   if (current === target) return current;
   if (!target.startsWith(current)) return target;
   const remaining = target.length - current.length;
-  const step = firstPaint ? TYPEWRITER_MIN_STEP : typewriterStep(remaining);
+  const step = firstPaint ? 1 : typewriterStep(remaining);
   const requestedEnd = current.length + Math.min(step, remaining);
   return target.slice(0, safeTypewriterBoundary(target, requestedEnd, current.length));
 }
@@ -211,13 +216,11 @@ function undisplayedTypewriterChars(current: string, target: string): number {
 function estimateTypewriterDrainWaitMs(
   displayedContent: string,
   targetContent: string,
-  displayedReasoning: string,
-  targetReasoning: string,
+  _displayedReasoning: string,
+  _targetReasoning: string,
 ): number {
-  const undisplayedChars = Math.max(
-    undisplayedTypewriterChars(displayedContent, targetContent),
-    undisplayedTypewriterChars(displayedReasoning, targetReasoning),
-  );
+  // Received reasoning is painted in full; only body text owns a drain queue.
+  const undisplayedChars = undisplayedTypewriterChars(displayedContent, targetContent);
   if (undisplayedChars === 0) return 0;
 
   // Estimate the actual cadence. Code units overestimate multi-codepoint
@@ -737,7 +740,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             .then(r => r.ok ? r.json() : null)
             .then(msgData => {
               if (!msgData) return;
-              const serverMessages = mapHistoryMessages(msgData.conversation?.messages || msgData.messages || []);
+              const serverMessages = mapHistoryMessagesWithAttemptStatus(msgData.conversation?.messages || msgData.messages || []);
               if (serverMessages.length > 0) {
                 dispatch({ type: "SET_MESSAGES_FOR_CONVERSATION", payload: { conversationId: savedActiveId, messages: serverMessages } });
               }
@@ -748,7 +751,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const msgRes = await fetch(`/api/conversations/history?id=${savedActiveId}`, { headers, signal });
           if (msgRes.ok) {
             const msgData = await msgRes.json();
-            const loadedMessages = mapHistoryMessages(msgData.conversation?.messages || msgData.messages || []);
+            const loadedMessages = mapHistoryMessagesWithAttemptStatus(msgData.conversation?.messages || msgData.messages || []);
             if (loadedMessages.length) {
               dispatch({ type: "SET_MESSAGES_FOR_CONVERSATION", payload: { conversationId: savedActiveId, messages: loadedMessages } });
               dispatch({ type: "MARK_CONVERSATION_LOADED", payload: savedActiveId });
@@ -882,7 +885,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!isCurrentRequest()) return;
         const messagesData = data.conversation?.messages || data.messages || [];
         if (messagesData.length) {
-          const dbMessages = mapHistoryMessages(messagesData);
+          const dbMessages = mapHistoryMessagesWithAttemptStatus(messagesData);
           // 合并：DB消息为主 + 内存中DB没有的消息（正在流式输出的消息）
           const dbMsgIds = new Set(dbMessages.map(m => m.id));
           const extraInMemory = inMemoryMessages.filter(
@@ -1316,19 +1319,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       try {
 
-      // 改写 / 重新生成：从目标消息起截断旧分支，避免同一句用户消息出现第二次。
-      const truncateIndex = branch?.truncateFromMessageId
-        ? conversation.messages.findIndex((m) => m.id === branch.truncateFromMessageId)
-        : -1;
-      const truncatedConversation = truncateIndex >= 0
-        ? { ...conversation, messages: conversation.messages.slice(0, truncateIndex) }
-        : conversation;
-      if (truncateIndex >= 0) {
-        dispatch({
-          type: "TRUNCATE_MESSAGES_FROM",
-          payload: { conversationId: convId, messageId: conversation.messages[truncateIndex].id },
-        });
-      }
+      // Regeneration is another attempt. Limit its request context without
+      // deleting the original reply while admission, generation or saving can fail.
+      const branchMessages = chatBranchContext(conversation.messages, branch?.truncateFromMessageId);
+      const truncatedConversation = branchMessages === conversation.messages
+        ? conversation : { ...conversation, messages: branchMessages };
+      const persistedBranchId = persistedChatMessageId(conversation.messages.find(message => message.id === branch?.truncateFromMessageId));
 
       // 🔒 对话-智能体绑定自愈：对话创建时 agentId 应不可变
       // 如果 conversation.agentId 与 activeAgentId 不一致，以 conversation.agentId 为准
@@ -1498,6 +1494,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         agentIconUrl: targetAgent.iconUrl,
         timestamp: Date.now(),
         isStreaming: true,
+        streamStatus: "智能体正在准备回复",
       };
       dispatch({ type: "ADD_MESSAGE", payload: { conversationId: convId, message: assistantMessage } });
       dispatch({ type: "SET_CONV_STREAMING", payload: { conversationId: convId, isStreaming: true } });
@@ -1505,13 +1502,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Route based on agent source (model override forces LLM route for any agent type)
       const useLLMRoute = targetAgent.source === "llm" || !!modelOverride;
+      const directorTextOnly = targetAgent.source === "llm" && Boolean(officialStoryboardDirectorIdentity(targetAgent.id));
       // 检测是否为生图模型（model name 包含 image/drawing/dall-e 等关键词）
       const effectiveModel = modelOverride || targetAgent.model || "";
-      const isImageModel = isImageGenerationModelName(effectiveModel);
+      const isImageModel = !directorTextOnly && isImageGenerationModelName(effectiveModel);
       const hybridImageConfig = getHybridImageConfig(targetAgent.outputStyle);
       // 协同调度：auto模式根据消息内容自动检测生图意图，always模式无条件路由到生图
       const shouldUseHybridImage =
-        !isImageModel &&
+        !directorTextOnly && !isImageModel &&
         hybridImageConfig?.enabled &&
         (hybridImageConfig.routingMode === "always" ||
          (hybridImageConfig.routingMode === "auto" && shouldTriggerHybridImage(effectiveApiContent, hybridImageConfig)));
@@ -1545,7 +1543,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             hybridImagePrompt
           );
         } else if (useLLMRoute) {
-          await sendLLMMessage(convId, assistantMessage.id, effectiveApiContent, truncatedConversation, targetAgent, images, modelOverride, deepThinkingOverride, webSearchOverride, userMessageId, branch ? { persistUserMessage: branch.persistUserMessage, truncateFromMessageId: branch.truncateFromMessageId, appendUserMessage: branch.appendUserMessage } : undefined);
+          return await sendLLMMessage(convId, assistantMessage.id, effectiveApiContent, truncatedConversation, targetAgent, images, modelOverride, deepThinkingOverride, webSearchOverride, userMessageId, branch ? { persistUserMessage: branch.persistUserMessage, truncateFromMessageId: persistedBranchId, appendUserMessage: branch.appendUserMessage } : undefined);
         } else if (targetAgent.source === "coze_coding") {
           await sendCozeCodingMessage(convId, assistantMessage.id, effectiveApiContent, truncatedConversation, targetAgent, images, userMessageId, branch);
         } else {
@@ -1657,21 +1655,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const customerStreamError = (value: unknown) => {
     const knownFailure = knownChatFailureMessage(value);
     if (knownFailure) return knownFailure;
-    const detail = typeof value === "string" ? value : JSON.stringify(value || "");
+    const detail = value instanceof Error ? value.message : typeof value === "string" ? value : JSON.stringify(value || "");
+    if (value instanceof TypeError || /RESULT_UNKNOWN|RECONCILIATION_REQUIRED|结果暂未确认/i.test(detail)) {
+      return "与模型通道的连接中断，最终结果暂未确认。原请求已保留，请先查看聊天记录，避免重复发送。";
+    }
     if (/PROMPT_INJECTION_BLOCKED|安全防护拦截|内部设定/i.test(detail)) {
       return "这个问题涉及智能体内部设定，已由安全防护正常拦截；你可以继续提出业务问题。";
     }
     if (/LLM_UPSTREAM_CONTENT_REJECTED|content[_\s-]*(?:filter|policy)|moderation|\bsafety\b|内容审核|未通过内容审核/iu.test(detail)) {
       return "这次请求未通过上游内容审核，请调整表述后重试。";
     }
-    if (/RESULT_UNKNOWN|RECONCILIATION_REQUIRED|结果暂未确认/i.test(detail)) {
-      return "这次回复未完成，最终结果暂未确认。请先查看聊天记录，避免重复发送。";
-    }
     if (/LLM_EMPTY_RESPONSE|EMPTY_RESPONSE|无回复内容|未返回有效内容/i.test(detail)) {
       return "上游没有返回有效内容，本次未得到可用回复，请稍后重试。";
     }
-    if (/余额不足|LLM_UPSTREAM_BALANCE|insufficient[_\s-]*(?:balance|credit)|quota/i.test(detail)) {
-      return "当前对话服务额度不足，请稍后重试或切换可用服务。";
+    if (/余额不足|insufficient[_\s-]*(?:balance|credit)|quota/i.test(detail)) {
+      return "账户额度或计费状态暂不可用，请核对站内积分，或联系管理员检查模型中转通道。";
     }
     if (/401|403|LLM_UPSTREAM_AUTH|unauthori[sz]ed|forbidden|鉴权|授权/i.test(detail)) {
       return "当前对话服务授权暂不可用，请稍后重试。";
@@ -1680,7 +1678,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return "这次回复等待超时，系统已停止等待；请稍后重试。";
     }
     if (/LLM_UPSTREAM_CONCURRENCY_LIMIT|通道排队已满|并发已满/iu.test(detail)) {
-      return "该模型通道当前排队已满，系统已自动重试仍未成功，请稍后再发送。";
+      return "该模型通道当前排队已满，本次未自动重试；请稍后手动重试。";
     }
     if (/429|rate[_\s-]*limit|限流|繁忙/i.test(detail)) {
       return "当前对话服务繁忙，请稍后重试。";
@@ -1689,7 +1687,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return "这次回复中断，尚未生成完整文案，请稍后再试。";
     }
     if (/Failed to fetch|NetworkError|network error|网络连接异常/i.test(detail)) {
-      return "网络连接异常，请检查连接后重试。";
+      return "与模型通道的连接中断，最终结果暂未确认。原请求已保留，请先查看聊天记录，避免重复发送。";
     }
     return "当前智能体暂时无法完成回复，请稍后重试。";
   };
@@ -1776,7 +1774,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const previousReasoning = entry.displayedReasoning;
       const nextContent = takeTypewriterSlice(entry.displayedContent, entry.target.content || "", entry.firstPaint);
       const nextReasoning = entry.target.reasoningContent !== undefined
-        ? takeTypewriterSlice(entry.displayedReasoning, targetReasoning, entry.firstPaint)
+        ? targetReasoning
         : undefined;
 
       entry.displayedContent = nextContent;
@@ -1852,17 +1850,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const painted = typewriterDisplayedRef.current.get(key);
     const displayedContent = existing?.displayedContent ?? painted?.content ?? "";
     const displayedReasoning = existing?.displayedReasoning ?? painted?.reasoning ?? "";
+    const firstBodyPaint = !displayedContent.trim() && Boolean(payload.content?.trim());
     typewriterEntriesRef.current.set(key, {
       target: payload,
       // takeTypewriterSlice atomically applies a corrected/non-prefix target.
       // Never blank the already painted response before that correction.
       displayedContent,
       displayedReasoning,
-      firstPaint: !instantlyPaintedStreamKeysRef.current.has(key),
+      firstPaint: !instantlyPaintedStreamKeysRef.current.has(key) || firstBodyPaint,
     });
     // Every message paints its first glyph immediately. Later network targets
     // coalesce into the next animation frame.
-    if (!instantlyPaintedStreamKeysRef.current.has(key)) {
+    if (!instantlyPaintedStreamKeysRef.current.has(key) || firstBodyPaint) {
       instantlyPaintedStreamKeysRef.current.add(key);
       // If another message already owns the scheduled frame, that frame will
       // paint every entry in the map. Calling flush synchronously here would
@@ -2028,6 +2027,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let fullContent = "";
       let continueAfterDisconnect = false;
       let responseErrorMessage: string | null = null;
+      let completedSuccessfully = false;
+      // true return means the submission is handled, including an unknown
+      // outcome. It must not restore an already submitted edit as an unsent draft.
+      let resultUnknown = false;
+      let responseFailed = false;
       let rawContent = ""; // Raw accumulated content for think tag parsing
       let reasoningContent = "";
       let visibleContentStarted = false;
@@ -2055,7 +2059,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // 检测对话中是否有多个智能体参与
         const currentAgentId = agent.id;
         // ★ 补全 agentName：数据库只存 agent_id，前端需要从 agents 列表反查名称
-        const enrichedMessages = conversation.messages.map(msg => {
+        const enrichedMessages = projectChatRequestHistory(conversation.messages, conversation.agentId || currentAgentId).map(msg => {
           if (msg.role === "assistant" && msg.agentId && !msg.agentName) {
             const agentInfo = state.agents.find(a => a.id === msg.agentId);
             if (agentInfo) {
@@ -2084,7 +2088,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           messages.push({ role: "system", content: COLLAB_SYSTEM_PROMPT });
         }
         // Add conversation history — 不限制轮数，由后端 max_context_tokens 控制
-        // 所有历史消息都发给后端，后端按 token 上限裁剪
+        // 每轮每个智能体只发送最后成功候选，保留其他协作者；后端再按 token 上限裁剪。
         // ★ 架构改进：使用 pipeline 模块标注协作消息，替代原始 UUID name 字段
         const annotatedMessages = annotateCollabMessages(isolatedHistory, currentAgentId);
         for (const msg of annotatedMessages) {
@@ -2135,10 +2139,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             modelId: modelOverride || undefined,
             model_overridden: !!modelOverride, // 用户主动切换模型标志，后端据此决定是否覆盖预设
             persist_user_message: branch?.persistUserMessage,
-            // Stable server message identity is the authoritative branch
-            // anchor. Keep the legacy timestamp out of the request: equal
-            // timestamps can delete a sibling message and cannot prove
-            // ownership across a retried conversation.
+            // Confirmed server identity is an ownership-checked context anchor.
+            // Regeneration retains prior attempts; local rendering IDs and
+            // timestamps never request history deletion.
             truncate_from_message_id: branch?.truncateFromMessageId,
             stream: true,
             userId: authRef.current.user?.id,
@@ -2174,10 +2177,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (res.status === 402) {
             const errData = await res.json().catch(() => ({}));
             // 保留当前会话，提供由用户主动打开的充值入口
-            if (typeof window !== "undefined") {
+            if (errData.code === "INSUFFICIENT_CREDITS" && typeof window !== "undefined") {
               window.dispatchEvent(new CustomEvent("insufficient-balance", { detail: { mode: "credits", message: errData.error } }));
             }
-            throw new Error(errData.error || "积分不足，请联系管理员充值");
+            responseErrorMessage = knownChatFailureMessage(errData) || "账户额度或计费状态暂不可用，请核对站内积分，或联系管理员检查模型中转通道。";
+            resultUnknown = /最终结果暂未确认/u.test(responseErrorMessage);
+            throw new Error(responseErrorMessage);
           }
           if (res.status === 403) {
             const errData = await res.json().catch(() => ({}));
@@ -2200,17 +2205,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (errData.code === "MEMBERSHIP_REQUIRED" && typeof window !== "undefined") {
               window.dispatchEvent(new CustomEvent("membership-required"));
             }
-            throw new Error(errData.error || "请求已被安全防护拦截");
+            responseErrorMessage = customerStreamError(errData);
+            resultUnknown = /最终结果暂未确认/u.test(responseErrorMessage);
+            throw new Error(responseErrorMessage);
           }
           if (res.status === 429) {
             const errData = await res.json().catch(() => ({}));
             const retryAfter = errData.retryAfter ? `，请${errData.retryAfter}秒后再试` : "，请稍后再试";
-            throw new Error(errData.error || `请求过于频繁${retryAfter}`);
+            responseErrorMessage = knownChatFailureMessage(errData) || `请求过于频繁${retryAfter}`;
+            throw new Error(responseErrorMessage);
           }
           // 其他错误：尝试读取后端返回的具体错误信息
           const errData = await res.json().catch(() => ({}));
           const detail = errData.error ? errData : res.status;
           responseErrorMessage = customerStreamError(detail);
+          resultUnknown = /最终结果暂未确认/u.test(responseErrorMessage);
           throw new Error(responseErrorMessage);
         }
 
@@ -2275,8 +2284,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
                   // 检测后端 proxy 发送的错误 chunk（如流中断、API 错误等）
                   if (data.error) {
+                    responseFailed = true;
                     const errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
                     const customerMessage = customerStreamError(data);
+                    resultUnknown = /最终结果暂未确认/u.test(customerMessage);
                     dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: assistantMsgId, error: customerMessage } });
                     sseStreamEndReason = "error_break";
                     receivedDoneSignal = true; // 标记为已结束，防止后续追加"输出中断"误报
@@ -2297,26 +2308,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   }
                   if (data.type === "generation_progress") {
                     const receivedChars = advanceChatGenerationProgress(generationProgressChars, data.received_chars);
-                    if (receivedChars > generationProgressChars) dispatch({
+                    if (receivedChars > generationProgressChars && !visibleContentStarted && !reasoningStarted) dispatch({
                       type: "UPDATE_MESSAGE",
                       payload: {
                         conversationId: convId,
                         messageId: assistantMsgId,
-                        streamStatus: "正在生成",
+                        streamStatus: "智能体正在生成回复",
                       },
                     });
                     generationProgressChars = receivedChars;
                     continue;
                   }
+                  if (data.type === "message_persisted") {
+                    const serverMessageId = readPersistedAssistantMessageId(data, convId);
+                    if (serverMessageId) dispatch({ type: "UPDATE_MESSAGE", payload: { conversationId: convId, messageId: assistantMsgId, serverMessageId } });
+                    continue;
+                  }
                   if (data.type === "stream_delivery") {
-                    dispatch({
+                    if (!visibleContentStarted && !reasoningStarted && generationProgressChars === 0) dispatch({
                       type: "UPDATE_MESSAGE",
                       payload: {
                         conversationId: convId,
                         messageId: assistantMsgId,
-                        streamStatus: data.stream_delivery === "live"
-                          ? "已连接，模型思考中"
-                          : "已连接，等待完整回复",
+                        streamStatus: "智能体正在准备回复",
                       },
                     });
                     continue;
@@ -2326,37 +2340,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                     // Handle reasoning content (deep thinking) — support both reasoning_content and reasoning fields
                     // Some APIs (e.g., GLM-5.1) use "reasoning" instead of "reasoning_content"
                     const reasoningChunk = delta.reasoning_content || delta.reasoning;
-                    if (reasoningChunk) {
-                      if (!reasoningStarted && !visibleContentStarted) {
+                    if (typeof reasoningChunk === "string" && reasoningChunk) {
+                      reasoningContent += reasoningChunk;
+                      if (reasoningContent.trim() && !reasoningStarted && !visibleContentStarted) {
                         reasoningStarted = true;
                         dispatch({
                           type: "UPDATE_MESSAGE",
                           payload: {
                             conversationId: convId,
                             messageId: assistantMsgId,
-                            streamStatus: "模型思考中",
+                            streamStatus: "智能体正在思考",
                           },
                         });
                       }
-                      reasoningContent += reasoningChunk;
                       throttledDispatchUpdate({ conversationId: convId, messageId: assistantMsgId, content: fullContent, reasoningContent });
                     }
                     // Handle main content — parse <think compatible> tags when:
                     // 1. Agent explicitly enables think tags, OR
                     // 2. Agent has deep thinking enabled (type 1 or 2) — some APIs embed thinking in <think compatible> tags
-                    if (delta.content) {
-                      markChatStreamLifecycle(assistantMsgId, "firstContentDelta");
-                      if (!visibleContentStarted) {
-                        visibleContentStarted = true;
-                        dispatch({
-                          type: "UPDATE_MESSAGE",
-                          payload: {
-                            conversationId: convId,
-                            messageId: assistantMsgId,
-                            streamStatus: "正在生成",
-                          },
-                        });
-                      }
+                    if (typeof delta.content === "string" && delta.content) {
                       rawContent += delta.content;
                       const shouldParseThinkTags = agent.enableThinkTags || (agent.deepThinkingType ?? agent.deep_thinking_type ?? 0) > 0;
                       if (shouldParseThinkTags) {
@@ -2368,6 +2370,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                         }
                       } else {
                         fullContent = rawContent;
+                      }
+                      if (fullContent.trim() && !visibleContentStarted) {
+                        visibleContentStarted = true;
+                        markChatStreamLifecycle(assistantMsgId, "firstContentDelta");
+                        dispatch({ type: "UPDATE_MESSAGE", payload: { conversationId: convId, messageId: assistantMsgId, streamStatus: "智能体正在回复" } });
+                      } else if (reasoningContent.trim() && !reasoningStarted && !visibleContentStarted) {
+                        reasoningStarted = true;
+                        dispatch({ type: "UPDATE_MESSAGE", payload: { conversationId: convId, messageId: assistantMsgId, streamStatus: "智能体正在思考" } });
                       }
                       throttledDispatchUpdate({ conversationId: convId, messageId: assistantMsgId, content: fullContent, reasoningContent });
                     }
@@ -2421,12 +2431,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         let finalContent = fullContent || reasoningContent || "（无回复内容）";
         // 流异常结束检测：未收到 [DONE] 但流就结束了 → 追加中断提示
         if (expectsSseCompletion && !receivedDoneSignal) {
+          resultUnknown = true;
           console.warn(`[sendLLMMessage] 流异常结束，追加中断提示：receivedDoneSignal=${receivedDoneSignal}, chunks=${sseChunkCount}`);
           const incompleteMessage = CHAT_STREAM_RESULT_UNKNOWN_MESSAGE;
           dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: assistantMsgId, error: incompleteMessage } });
           finalContent = finalContent + `\n\n---\n*${incompleteMessage}*`;
         }
         await settleTypewriterUpdate({ conversationId: convId, messageId: assistantMsgId, content: finalContent, reasoningContent: fullContent ? reasoningContent : "" }, controller.signal);
+        completedSuccessfully = !responseFailed && (!expectsSseCompletion || receivedDoneSignal);
 
         // Sync credits from backend — actual billing already done by /api/llm
         // The backend deducts credits based on real token usage after stream ends
@@ -2468,6 +2480,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const stoppedText = continueAfterDisconnect
             ? "[已停止接收；任务完成后按实际用量结算，可在历史查看结果]"
             : "[已终止]";
+          dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: assistantMsgId, error: stoppedText } });
           if (fullContent) {
             dispatch({
               type: "UPDATE_MESSAGE",
@@ -2480,6 +2493,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             });
           }
         } else if (failureKind === "result_unknown" || failureKind === "aborted") {
+          resultUnknown = true;
           const automaticStopMessage = CHAT_STREAM_RESULT_UNKNOWN_MESSAGE;
           console.error("[sendLLMMessage] 非用户 abort", { convId, isWatchdogAborted });
           dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: assistantMsgId, error: automaticStopMessage } });
@@ -2496,7 +2510,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // 网络或上游失败会通过用户消息状态恢复，不应制造未处理错误噪声。
           console.warn("[sendLLMMessage] request failed:", error);
           const errorInfo = classifyError(error);
-          const failureMessage = responseErrorMessage || customerStreamError(error instanceof Error ? error.message : error);
+          const failureMessage = responseErrorMessage || customerStreamError(error);
+          resultUnknown = resultUnknown || errorInfo.class === "network" || /最终结果暂未确认/u.test(failureMessage);
           
           if (fullContent.trim() || (reasoningContent && reasoningContent.trim())) {
             dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: assistantMsgId, error: failureMessage } });
@@ -2508,10 +2523,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               payload: { conversationId: convId, messageId: assistantMsgId, content: fullContent + suffix, reasoningContent },
             });
           } else {
-            // ★ 修复"消息消失"：完全失败时保留用户消息，只删除空的助手占位消息
-            // 用户消息是用户输入，无论API是否成功都不应被删除（原逻辑DELETE_MESSAGE_PAIR会同时删除用户消息）
-            // 修复后：删除空助手占位 + 标记用户消息失败（前端显示错误提示+重试按钮）
-            dispatch({ type: "DELETE_MESSAGE", payload: { conversationId: convId, messageId: assistantMsgId } });
+            // Keep a visible failure even when regeneration has no new user ID.
+            // Earlier successful replies and their durable history remain intact.
+            dispatch({ type: "UPDATE_MESSAGE", payload: { conversationId: convId, messageId: assistantMsgId, content: failureMessage } });
+            dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: assistantMsgId, error: failureMessage } });
             if (userMsgId) {
               dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: userMsgId, error: responseErrorMessage || errorInfo.userMessage } });
             }
@@ -2538,6 +2553,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // AIWeb-style: sync to server immediately after streaming ends
         setTimeout(() => syncConversationToServer(convId), 500);
       }
+      return completedSuccessfully || resultUnknown;
     },
     []
   );
@@ -2559,6 +2575,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let reasoningContent = "";
       let responseErrorMessage: string | null = null;
       let effectiveConvId = convId; // 跟踪重命名后的会话ID，用于 finally 块
+      let expectsSseCompletion = false;
+      let receivedDoneSignal = false;
+      let completedGuardResponse = false;
+      let sseReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
       // Create new AbortController for this conversation's stream
       const controller = getOrCreateAbortController(convId, agent.id);
@@ -2640,8 +2660,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           throw new Error(responseErrorMessage);
         }
 
+        expectsSseCompletion = true;
         const reader = res.body?.getReader();
         if (!reader) throw new Error("No reader available");
+        sseReader = reader;
+        // Only our finite server guard response may finish without an upstream
+        // turn-completion event. A buffered delivery mode alone proves nothing.
+        const isServerGuardResponse = res.headers.get("X-Stream-Delivery") === "buffered"
+          && res.headers.get("X-Stream-Delivery-Reason") === "server_guard_response";
+        let receivedGuardDeliveryMetadata = false;
 
         const sseDecoder = new SseEventStreamDecoder();
         let cozeConversationId = "";
@@ -2653,13 +2680,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         while (true) {
           if (cozeStreamErrored) break;
-          let cozeReadTimeoutId: ReturnType<typeof setTimeout> | undefined;
-          const readPromise = reader.read();
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            cozeReadTimeoutId = setTimeout(() => reject(new Error(`Coze SSE读取超时(${COZE_SSE_READ_TIMEOUT/1000}秒无数据)`)), COZE_SSE_READ_TIMEOUT);
-          });
-          const { done, value } = await Promise.race([readPromise, timeoutPromise])
-            .finally(() => { if (cozeReadTimeoutId) clearTimeout(cozeReadTimeoutId); });
+          const { done, value } = await readChatStreamChunk(reader, controller.signal, COZE_SSE_READ_TIMEOUT, { setTimeout, clearTimeout });
           if (!done) {
             cozeChunkIdx++;
             const cozeNow = Date.now();
@@ -2672,9 +2693,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           for (const event of done ? sseDecoder.finish() : sseDecoder.push(value)) {
               const currentEvent = event.event;
               const raw = event.data.trim();
-              if (currentEvent === "done" || raw === "[DONE]") continue;
+              // Inspect SSE frame semantics, never completion-looking words in
+              // assistant content, message.completed, billing or heartbeat data.
+              if (currentEvent === "done" || currentEvent === "conversation.chat.completed" || raw === "[DONE]") {
+                receivedDoneSignal = true;
+                break;
+              }
               try {
                 const data = JSON.parse(raw);
+                if (data.type === "stream_delivery" && data.stream_delivery === "buffered"
+                  && data.stream_delivery_reason === "server_guard_response") {
+                  receivedGuardDeliveryMetadata = true;
+                }
                 // 检测后端 proxy 发送的错误 chunk（如流中断、API 错误等）
                 if (data.error && !data.content) {
                   const errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
@@ -2730,12 +2760,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 // Skip
               }
           }
-          if (done || cozeStreamErrored) break;
+          if (done) completedGuardResponse = isServerGuardResponse && receivedGuardDeliveryMetadata;
+          if (done || cozeStreamErrored || receivedDoneSignal) break;
         }
 
         // 最终内容仍走打字机队列。若本地临时会话随后要重命名，先在旧 ID 上追平，
         // 再整体 rename，避免旧 key 的动画队列残留或最终内容整段跳出。
-        const finalContent = fullContent || reasoningContent || "（无回复内容）";
+        let finalContent = fullContent || reasoningContent || "（无回复内容）";
+        if (!receivedDoneSignal && !completedGuardResponse && !cozeStreamErrored) {
+          dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: assistantMsgId, error: CHAT_STREAM_RESULT_UNKNOWN_MESSAGE } });
+          finalContent = fullContent || reasoningContent
+            ? `${fullContent || reasoningContent}\n\n---\n*${CHAT_STREAM_RESULT_UNKNOWN_MESSAGE}*`
+            : CHAT_STREAM_RESULT_UNKNOWN_MESSAGE;
+        }
         await settleTypewriterUpdate({ conversationId: convId, messageId: assistantMsgId, content: finalContent, reasoningContent: fullContent ? reasoningContent : "" }, controller.signal);
 
         if (cozeConversationId && isLocalConvId(convId)) {
@@ -2748,10 +2785,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Sync credits from backend after conversation
         fetchCredits().catch((e: unknown) => { console.error("[app-context] fetchCredits after LLM stream failed:", e instanceof Error ? e.message : e); });
       } catch (error) {
-        const isUserAborted = userAbortedSet.current.has(convId);
-        userAbortedSet.current.delete(convId);
-        const isWatchdogAborted = watchdogAbortedSet.current.has(convId);
-        watchdogAbortedSet.current.delete(convId);
+        const ownsController = abortControllerMap.current.get(convId) === controller;
+        const isUserAborted = ownsController && userAbortedSet.current.has(convId);
+        const isWatchdogAborted = ownsController && watchdogAbortedSet.current.has(convId);
+        if (ownsController) {
+          userAbortedSet.current.delete(convId);
+          watchdogAbortedSet.current.delete(convId);
+        }
         const isAbortError = isAbortLikeError(error);
         const isSignalAborted = controller.signal.aborted;
 
@@ -2774,17 +2814,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               payload: { conversationId: convId, messageId: assistantMsgId, content: "[已终止]" },
             });
           }
-        } else if (isWatchdogAborted || isSignalAborted || isAbortError) {
-          const automaticStopMessage = isWatchdogAborted
-            ? "回复等待超过安全时限，系统已停止等待，请稍后重试。"
-            : "回复连接意外中断，请稍后重试。";
+        } else if (receivedDoneSignal || completedGuardResponse) {
+          // A completed turn stays completed if local typewriter/cleanup fails.
+          dispatch({ type: "UPDATE_MESSAGE", payload: { conversationId: effectiveConvId, messageId: assistantMsgId, content: fullContent || reasoningContent || "（无回复内容）", reasoningContent: fullContent ? reasoningContent : "" } });
+        } else if (expectsSseCompletion || isWatchdogAborted || isSignalAborted || isAbortError) {
+          const automaticStopMessage = CHAT_STREAM_RESULT_UNKNOWN_MESSAGE;
           console.error("[sendCozeMessage] 非用户 abort", { convId, isWatchdogAborted });
+          dispatch({ type: "MARK_MESSAGE_ERROR", payload: { conversationId: convId, messageId: assistantMsgId, error: automaticStopMessage } });
           dispatch({
             type: "UPDATE_MESSAGE",
             payload: {
               conversationId: convId,
               messageId: assistantMsgId,
-              content: fullContent ? `${fullContent}\n\n---\n*${automaticStopMessage}已保留已接收内容。*` : `发送失败：${automaticStopMessage}`,
+              content: fullContent ? `${fullContent}\n\n---\n*${automaticStopMessage}已保留已接收内容。*` : automaticStopMessage,
               reasoningContent,
             },
           });
@@ -2809,17 +2851,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       } finally {
         if (isStreamDebugEnabled()) console.log(`[sendCozeMessage finally] SET_MESSAGE_STREAMING false: convId=${effectiveConvId}, msgId=${assistantMsgId}`);
+        const ownsController = abortControllerMap.current.get(convId) === controller;
+        closeChatStreamReader(sseReader, controller, expectsSseCompletion && !receivedDoneSignal && !completedGuardResponse);
         resetTypewriterState({ conversationId: convId, messageId: assistantMsgId });
         finalizeAbortController(convId, controller);
         dispatch({ type: "SET_MESSAGE_STREAMING", payload: { conversationId: effectiveConvId, messageId: assistantMsgId, isStreaming: false } });
-        dispatch({ type: "SET_CONV_STREAMING", payload: { conversationId: effectiveConvId, isStreaming: false } });
         markChatStreamLifecycle(assistantMsgId, "done");
-        // 立即同步更新 isStreamingRef，避免安全网读到过时值误触发
-        const remainingStreams = new Set(streamingConvIdsRef.current);
-        remainingStreams.delete(effectiveConvId);
-        isStreamingRef.current = remainingStreams.size > 0;
-        // AIWeb-style: sync to server immediately after streaming ends
-        setTimeout(() => syncConversationToServer(effectiveConvId), 500);
+        // An old request may finish after a new controller owns this conversation.
+        if (ownsController) {
+          dispatch({ type: "SET_CONV_STREAMING", payload: { conversationId: effectiveConvId, isStreaming: false } });
+          // 立即同步更新 isStreamingRef，避免安全网读到过时值误触发
+          const remainingStreams = new Set(streamingConvIdsRef.current);
+          remainingStreams.delete(convId);
+          remainingStreams.delete(effectiveConvId);
+          isStreamingRef.current = remainingStreams.size > 0;
+          // AIWeb-style: sync to server immediately after streaming ends
+          setTimeout(() => syncConversationToServer(effectiveConvId), 500);
+        }
       }
     },
     []

@@ -234,7 +234,7 @@ export class LLMProxy {
           const errText = await readErrorBody(response);
           const isQuotaExhausted = /insufficient_user_quota|预扣费额度失败|余额不足/i.test(errText);
           if (isQuotaExhausted) {
-            throw new Error(`UPSTREAM_QUOTA_EXHAUSTED: 该模型渠道账户余额不足，本次未调用成功也未扣费。请切换其他模型，或联系管理员为该渠道充值。`);
+            throw new Error(`UPSTREAM_QUOTA_EXHAUSTED: 模型中转账户余额或额度不足，请管理员补充额度后再发起新请求。`);
           }
           throw new Error(`LLM API 403: ${errText}`);
         }
@@ -340,7 +340,7 @@ export class LLMProxy {
             if (event.event === "error") throw rejectProviderEvent({}, event.data);
             return;
           }
-          if (parsed?.error || event.event === "error") throw rejectProviderEvent(parsed, event.data);
+          if (parsed?.error || parsed?.response?.error || event.event === "error") throw rejectProviderEvent(parsed, event.data);
           if (!parsed || typeof parsed !== "object") return;
           if (useClaudeMessages) {
             if (parsed.type === "message_stop") {

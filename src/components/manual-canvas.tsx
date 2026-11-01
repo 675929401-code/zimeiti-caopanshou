@@ -5377,7 +5377,7 @@ export function ManualCanvas({
       onNotice(parsed.error);
       return;
     }
-    const plan = parseStoryboardCanvasImport(parsed.handoff.payload);
+    const plan = parseStoryboardCanvasImport(parsed.handoff.payload, { allowQualityWarnings: Boolean(parsed.handoff.payload.review_warnings?.length) });
     if (!plan) {
       const error = "Agent 分镜机器包未通过画布校验，未覆盖当前画布。";
       setAgentCanvasHandoff({ status: "error", error });

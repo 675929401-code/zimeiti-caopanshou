@@ -85,18 +85,27 @@ assert.equal(unknown.counts().submissions, 1);
 const routeFile = 'src/app/api/image/generate/route.ts';
 const routeText = readFileSync(routeFile, 'utf8');
 const routeAst = ts.createSourceFile(routeFile, routeText, ts.ScriptTarget.Latest, true);
-let callbackText, inlineCallbackText, prepareBytesText;
+let callbackText, inlineCallbackText, prepareBytesText, legacyAcceptedExpression;
 function visit(node) {
   if (ts.isPropertyAssignment(node) && node.name.getText(routeAst) === 'persistProviderResult') callbackText = node.initializer.getText(routeAst);
   if (ts.isPropertyAssignment(node) && node.name.getText(routeAst) === 'prepareEphemeralResult') inlineCallbackText = node.initializer.getText(routeAst);
   if (ts.isFunctionDeclaration(node) && node.name?.getText(routeAst) === 'prepareGeneratedImageBytes') prepareBytesText = node.getText(routeAst);
+  if (ts.isVariableDeclaration(node) && node.name.getText(routeAst) === 'legacyAcceptedAnnotation') legacyAcceptedExpression = node.initializer.getText(routeAst);
   ts.forEachChild(node, visit);
 }
-visit(routeAst); assert.ok(callbackText && inlineCallbackText && prepareBytesText);
+visit(routeAst); assert.ok(callbackText && inlineCallbackText && prepareBytesText && legacyAcceptedExpression);
+const annotation = load('src/lib/storyboard-annotation-layout.ts');
+const legacyFlagModule = { exports: {} };
+runInNewContext(ts.transpileModule(`module.exports=(resumeSnapshot,exactCoverText)=>(${legacyAcceptedExpression});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText,
+  { module: legacyFlagModule, ...annotation });
+const legacyAcceptedAnnotation = legacyFlagModule.exports(null, '');
+assert.equal(legacyAcceptedAnnotation, false);
+assert.equal(legacyFlagModule.exports(null, 'STORYBOARD_ANNOTATIONS_V1\nbroken-contract'), false);
+assert.equal(legacyFlagModule.exports({}, 'ordinary accepted text'), false);
 let downloads = 0;
 const callbackModule = { exports: {} };
 runInNewContext(ts.transpileModule(`module.exports = (${callbackText});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, {
-  module: callbackModule, providerMediaUrl: delivery.providerMediaUrl, effectiveMode: 'local', resumeSnapshot: null,
+  module: callbackModule, providerMediaUrl: delivery.providerMediaUrl, effectiveMode: 'local', resumeSnapshot: null, legacyAcceptedAnnotation,
   candidates: [{ id: 'fixture-model', provider: 'fixture', api_endpoint: 'https://provider.invalid/v1/images/generations' }],
   workflowConfig: {}, ImageExactlyOnceError: exact.ImageExactlyOnceError, ImageRequestRejectedError: exact.ImageRequestRejectedError,
   AUTODL_H3_SELFHOST_PROVIDER: 'autodl_h3_selfhost', AUTODL_H3_IMAGE_MAX_BYTES: 1024, AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS: 1000,
@@ -126,7 +135,7 @@ function inlineCallback() {
   const code = `${prepareBytesText}\nmodule.exports = (${inlineCallbackText});`;
   runInNewContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, {
     module, Buffer, candidates: [{ id: 'fixture-model', provider: 'fixture', api_endpoint: 'https://provider.invalid/v1/images/generations' }],
-    effectiveMode: 'local', effectiveResolution: '1K', ratio: '1:1', costPrice: 0.1, workflowConfig: {},
+    effectiveMode: 'local', effectiveResolution: '1K', ratio: '1:1', costPrice: 0.1, workflowConfig: {}, legacyAcceptedAnnotation,
     resolveImageResolutionPrice: () => 0.1, ImageExactlyOnceError: exact.ImageExactlyOnceError, ImageRequestRejectedError: exact.ImageRequestRejectedError,
     decodeInlineImage: ephemeral.decodeInlineImage, createImageEphemeralDelivery: ephemeral.createImageEphemeralDelivery,
     validateUploadBuffer: uploadSecurity.validateUploadBuffer, parseImageDimensions: dimensions.parseImageDimensions,
@@ -236,7 +245,7 @@ recoveryFetch=async (url,init)=>{
 };
 const h3CallbackModule={exports:{}};
 runInNewContext(ts.transpileModule(`module.exports=(${callbackText});`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,{
-  module:h3CallbackModule,URL,providerMediaUrl:delivery.providerMediaUrl,effectiveMode:'local',resumeSnapshot:null,
+  module:h3CallbackModule,URL,providerMediaUrl:delivery.providerMediaUrl,effectiveMode:'local',resumeSnapshot:null,legacyAcceptedAnnotation,
   candidates:[{id:'fixture-model',provider:selfhost.AUTODL_H3_SELFHOST_PROVIDER,api_endpoint:imageEndpoint}],workflowConfig:{},
   ImageExactlyOnceError:exact.ImageExactlyOnceError,ImageRequestRejectedError:exact.ImageRequestRejectedError,
   AUTODL_H3_SELFHOST_PROVIDER:selfhost.AUTODL_H3_SELFHOST_PROVIDER,AUTODL_H3_SELFHOST_SECRET_REF:selfhost.AUTODL_H3_SELFHOST_SECRET_REF,

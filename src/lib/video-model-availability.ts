@@ -1,5 +1,6 @@
 import { sanitizeVideoChannelError } from "@/lib/video-channel-health-circuit";
 import { createVideoTokenQuote, getVideoTokenPublicPricing } from "./video-token-billing";
+import { gaoruiVideoCreateContractAdmission, type GaoruiVideoContractIdentity } from "./gaorui-video-contract-admission";
 
 type VideoAvailabilityMessageInput = {
   available: boolean;
@@ -14,6 +15,28 @@ type VideoAvailabilityMessageInput = {
 };
 
 export const VIDEO_TOKEN_BILLING_ADAPTER_REQUIRED = "VIDEO_TOKEN_BILLING_ADAPTER_REQUIRED";
+export const VIDEO_MODEL_SUBMISSION_PAUSED = "VIDEO_MODEL_SUBMISSION_PAUSED";
+export const VIDEO_CAPABILITIES_UNVERIFIED = "VIDEO_CAPABILITIES_UNVERIFIED";
+
+export type VideoOperatorSubmissionAdmission = {
+  ready: boolean;
+  code: "" | typeof VIDEO_MODEL_SUBMISSION_PAUSED | "VIDEO_CONFIGURATION_PENDING";
+  message: string;
+};
+
+/** Explicit operator-owned submission switch; catalog visibility and provider health are independent. */
+export function videoOperatorSubmissionAdmission(
+  protocolConfig: unknown,
+  model?: GaoruiVideoContractIdentity,
+): VideoOperatorSubmissionAdmission {
+  const configuration = protocolConfig !== null && typeof protocolConfig === "object" && !Array.isArray(protocolConfig);
+  const explicitPause = configuration
+    && Object.getOwnPropertyDescriptor(protocolConfig, "generation_paused")?.value === true;
+  if (explicitPause) return { ready: false, code: VIDEO_MODEL_SUBMISSION_PAUSED, message: "该模型已暂停提交，请选择其他模型" };
+  const contract = gaoruiVideoCreateContractAdmission(model ? { ...model, api_protocol_config: protocolConfig } : undefined);
+  return contract.ready ? { ready: true, code: "", message: "" }
+    : { ready: false, code: "VIDEO_CONFIGURATION_PENDING", message: contract.message };
+}
 
 export type VideoBillingAdapterAdmission = {
   ready: boolean;

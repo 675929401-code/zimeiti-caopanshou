@@ -1,3 +1,5 @@
+import { stripVideoModelOperationalAnnotation } from "./video-model-display-name";
+
 type HistoryIdentity = { id: string; createdAt: string; taskLabel?: string; batchTopic?: string; cardIndex?: number };
 
 export function videoTokenBillingMessage(state: unknown): string {
@@ -8,8 +10,7 @@ export function videoTokenBillingMessage(state: unknown): string {
 }
 
 export function compactPublicVideoModelName(value: unknown, fallback = "视频模型") {
-  const publicValue = String(value || "")
-    .replace(/\s*[（(]?\s*(?:配置待验收|待验收|待开放)\s*[）)]?\s*$/gu, "")
+  const publicValue = stripVideoModelOperationalAnnotation(value)
     .replace(/\s+/gu, " ");
   const segments = publicValue.split("·").map((segment) => segment.trim()).filter(Boolean);
   const cleaned = segments.filter((segment, index) => {

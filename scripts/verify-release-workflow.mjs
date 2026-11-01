@@ -821,7 +821,11 @@ for (const requiredTable of [
   "cash_debt_records",
   "password_audit_log",
 ]) assert.ok(databaseContract.tables.some((table) => table.name === requiredTable), `P0 database table is missing: ${requiredTable}`);
-assert.deepEqual(databaseContract.forbiddenRpcs.map((rpc) => rpc.name), ["fulfill_payment_order_atomic"]);
+assert.deepEqual(databaseContract.forbiddenRpcs.map((rpc) => rpc.name), [
+  "fulfill_payment_order_atomic",
+  "publish_platform_configuration_release_before_pending_credentials",
+  "publish_platform_configuration_release_before_pending_credentia",
+]);
 for (const backupPattern of ["**/*.bak", "**/*.backup", "**/*.old", "**/*.orig", "**/*.rej", "**/*~"]) {
   assert.ok(policy.source.excludeGlobs.includes(backupPattern), `clean source must exclude editor/backup artifact: ${backupPattern}`);
 }

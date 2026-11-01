@@ -8,11 +8,16 @@ import {
 } from "./storyboard-workbench";
 
 type StoryboardVisualAssetPlan = ReturnType<typeof StoryboardVisualAssetPlanSchema.parse>;
+import { storyboardExecutionModeFromIntake } from "./storyboard-creation-mode";
+import type { StoryboardExecutionMode } from "./storyboard-chain-contract";
 
 export type StoryboardAgentOutputSegment = {
   sourceNumber: number;
   narration: string;
   imagePrompt: string;
+  imageExactText?: string;
+  imageTextLayoutEnabled?: boolean;
+  imageAnnotationIssue?: string;
   videoPrompt: string;
   targetDurationSeconds?: 8 | 10 | 15;
   styleLock?: string;
@@ -32,6 +37,7 @@ export type StoryboardAgentOutputParseResult =
   | {
       ok: true;
       segments: StoryboardAgentOutputSegment[];
+      executionMode?: StoryboardExecutionMode;
       visualAssetPlan?: StoryboardVisualAssetPlan;
     }
   | { ok: false; error: string };
@@ -162,6 +168,13 @@ export function parseStoryboardAgentOutput(rawOutput: string, maxSegments = 20):
   }
 
   const seenNumbers = new Set<number>();
+  const modeHeaders = [...source.slice(0, headings[0].index).matchAll(/(?:^|\n)\s*(?:\*\*)?模式(?:\*\*)?\s*[:：]\s*(普通模式|角色参考模式|参考图模式|串联模式)\s*(?:\*\*)?\s*$/gmu)]
+    .map(match => storyboardExecutionModeFromIntake({ visual_asset_mode: match[1] }));
+  if (new Set(modeHeaders).size > 1) return { ok: false, error: "输出包含互相冲突的创作模式，请重新核对完整输出" };
+  const executionMode = modeHeaders[0];
+  if (executionMode && assetPackage.present && (executionMode === "reference") !== (assetPackage.plan.mode === "selected")) {
+    return { ok: false, error: "创作模式与角色参考资产计划不一致" };
+  }
   const segments: StoryboardAgentOutputSegment[] = [];
   for (let index = 0; index < headings.length; index += 1) {
     const heading = headings[index];
@@ -231,5 +244,5 @@ export function parseStoryboardAgentOutput(rawOutput: string, maxSegments = 20):
     segments.push(segment);
   }
 
-  return assetPackage.present ? { ok: true, segments, visualAssetPlan: assetPackage.plan } : { ok: true, segments };
+  return assetPackage.present ? { ok: true, segments, visualAssetPlan: assetPackage.plan, ...(executionMode ? { executionMode } : {}) } : { ok: true, segments, ...(executionMode ? { executionMode } : {}) };
 }

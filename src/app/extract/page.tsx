@@ -576,7 +576,7 @@ function ExtractPageForAccount() {
           <VideoExtractTab addHistory={addHistory} retryDraft={retryDraft} runtimeGate={{ quote: runtimeCatalog.items.video, loading: runtimeCatalog.loading, error: runtimeCatalog.error, onRefresh: runtimeCatalog.refresh }} />
         </div>
         <div className="toolbox-extract-panel-host" style={{ display: displayedTab === "text" ? "block" : "none" }}>
-          <TextExtractTab addHistory={addHistory} retryDraft={retryDraft} runtimeGate={{ quote: runtimeCatalog.items.text, loading: runtimeCatalog.loading, error: runtimeCatalog.error, onRefresh: runtimeCatalog.refresh }} />
+          <TextExtractTab addHistory={addHistory} retryDraft={retryDraft} runtimeGate={{ quote: runtimeCatalog.items.text, loading: runtimeCatalog.loading, error: runtimeCatalog.error, onRefresh: runtimeCatalog.refresh }} onOpenHistory={() => { accountHistory.refresh(); if (embedded) setEmbeddedPanel('history'); else selectStandaloneTab('history'); }} />
         </div>
         <div className="toolbox-extract-panel-host" style={{ display: displayedTab === "batch" ? "block" : "none" }}>
           <BatchExtractTab addHistory={addHistory} retryDraft={retryDraft} runtimeCatalog={runtimeCatalog} />
@@ -1165,7 +1165,7 @@ function VideoExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: 
 /* ══════════════════════════════════════════
    Text Extract Tab
    ══════════════════════════════════════════ */
-function TextExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: (item?: ExtractResult) => void; retryDraft: ExtractionRetryDraft | null; runtimeGate: RuntimeGate }) {
+function TextExtractTab({ addHistory, retryDraft, runtimeGate, onOpenHistory }: { addHistory: (item?: ExtractResult) => void; retryDraft: ExtractionRetryDraft | null; runtimeGate: RuntimeGate; onOpenHistory: () => void }) {
   const ownerUserId = useContext(ExtractOwnerContext);
   const { state } = useApp();
   const router = useRouter();
@@ -1254,6 +1254,7 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: (
     const trimmedText = url.trim();
     if (!trimmedText) return;
     if (!confirmLoadedRetry(retryDraft, 'text', runtimeGate)) return;
+    if (result?.pending) return;
     extractInFlightRef.current = true;
     stoppedByUserRef.current = false;
     abortRef.current = new AbortController();
@@ -1447,9 +1448,20 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: (
   const { original, corrected, isTranscript, channelLabel, isPpt6Format } = getTextContent(result);
   const displayText = corrected || original;
   const pendingState = result?.pending ? (pendingAttempt.data?.state || result.attemptState || "running") : "";
-  const pendingMessage = pendingState === "failed_unknown"
-    ? "上游结果或费用仍待核对，请勿重复提交；管理员结案后这里会显示最终状态。"
-    : "原请求正在后台继续处理，页面会自动查询并回填结果；你可以切换标签页。";
+  const pendingTitle = pendingAttempt.trackingState === 'unavailable'
+    ? '原请求需要重新验证登录'
+    : pendingAttempt.trackingState === 'retrying'
+      ? '状态查询暂时中断，正在重试'
+      : pendingState === 'failed_unknown'
+        ? '原请求结果待核对'
+        : '正在跟踪原请求状态';
+  const pendingMessage = pendingAttempt.trackingState === 'unavailable'
+    ? '原请求已保留。请重新登录后刷新状态，不要再次提交。'
+    : pendingAttempt.trackingState === 'retrying'
+      ? '暂时无法读到最新状态，页面会自动重试；原请求的结果和费用尚未确认，请勿重复提交。'
+      : pendingState === 'failed_unknown'
+        ? '上游结果或费用仍待核对，页面会继续查询结案状态，请勿重复提交。'
+        : '页面正在查询已提交的原请求，取得终态后会回填结果。切回本页会立即刷新，也可打开提取历史查看。';
   const handleSendToSegment = () => {
     try {
       prepareExtractSegmentDraft(displayText, ownerUserId);
@@ -1545,7 +1557,7 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: (
           <Button
             type="button"
             onClick={handleExtract}
-            disabled={loading || !url.trim() || runtimeGate.loading || Boolean(runtimeGate.error) || !runtimeGate.quote?.available}
+            disabled={loading || Boolean(result?.pending) || !url.trim() || runtimeGate.loading || Boolean(runtimeGate.error) || !runtimeGate.quote?.available}
             className="h-10 flex-1 font-medium"
             style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
           >
@@ -1597,15 +1609,15 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: (
         >
           <Loader2 className="w-6 h-6 animate-spin text-[var(--primary)]" />
           <span className="text-sm text-[var(--muted-foreground)]">正在提交并等待首个结果...</span>
-          <span className="text-[11px] text-[var(--muted-foreground)] opacity-70">超过 30 秒会自动转为后台跟踪，不会重复提交或重复扣费</span>
+          <span className="text-[11px] text-[var(--muted-foreground)] opacity-70">超过 30 秒会按原请求编号查询状态，不会重新提交提取</span>
           <Button
             variant="outline"
             size="sm"
             className="mt-2 text-[var(--error)] border-red-300 hover:bg-red-50 dark:hover:bg-red-950"
             onClick={() => { stoppedByUserRef.current = true; abortRef.current?.abort(); }}
-            title="只停止当前页面等待，原上游任务仍按同一请求编号继续处理"
+            title="结束前台等待，按原请求编号查询结果，不会重新提交"
           >
-            <XCircle className="w-4 h-4 mr-1" /> 转后台查看
+            <XCircle className="w-4 h-4 mr-1" /> 转为状态跟踪
           </Button>
         </div>
       )}
@@ -1617,12 +1629,14 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: (
           role="status"
           aria-live="polite"
           data-extraction-pending-state={pendingState}
+          data-extraction-tracking-state={pendingAttempt.trackingState}
         >
           <div className="flex items-start gap-3 py-2 text-[var(--primary)]">
             {pendingAttempt.refreshing ? <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" /> : <Clock3 className="mt-0.5 h-5 w-5 shrink-0" />}
             <div className="space-y-1">
-              <strong className="block text-sm">正在后台处理原请求</strong>
+              <strong className="block text-sm">{pendingTitle}</strong>
               <p className="text-xs leading-5 text-[var(--muted-foreground)]">{pendingMessage}</p>
+              {result.clientRequestId && <p className="break-all text-[11px] text-[var(--muted-foreground)]">原请求编号：{result.clientRequestId}</p>}
               {pendingAttempt.data?.billingMessage && <p className="text-xs text-[var(--muted-foreground)]">{pendingAttempt.data.billingMessage}</p>}
               {pendingAttempt.error && <p className="text-xs text-[var(--error)]">{pendingAttempt.error}</p>}
             </div>
@@ -1630,6 +1644,9 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: (
           <Button type="button" variant="outline" size="sm" className="mt-3" onClick={pendingAttempt.refresh} disabled={pendingAttempt.refreshing}>
             <RefreshCw className={`mr-1.5 h-4 w-4 ${pendingAttempt.refreshing ? "animate-spin" : ""}`} />
             刷新原请求状态
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="ml-2 mt-3" onClick={onOpenHistory}>
+            <History className="mr-1.5 h-4 w-4" /> 查看提取历史
           </Button>
         </div>
       )}

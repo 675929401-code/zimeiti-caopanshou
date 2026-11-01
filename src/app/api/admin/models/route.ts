@@ -1,3 +1,5 @@
+import { modelPoolMutationRequest, modelPoolMutationFailure, resumeModelPoolMutationResponse } from "@/lib/server/model-pool-mutation-http";
+import { imageModelAdminMetadata } from "@/lib/image-model-admin-fields";
 import { RETIRED_MODEL_PROVIDER, isPermanentlyRetiredModel, modelRetirementPatch } from "@/lib/model-retirement";
 import { updateVideoModelAtomic } from "@/lib/video-model-atomic-update";
 import { pendingImageConfigurationUpdate } from "@/lib/image-model-availability";
@@ -48,7 +50,7 @@ import {
   normalizeVideoModelOrderSurface,
   parseVideoModelSurfaceOrders,
 } from "@/lib/video-model-surface-order";
-import { videoPriceConfigurationError } from "@/lib/model-price-rounding";
+import { videoPriceConfigurationError, explicitNonNegativePrice, invalidExplicitPriceField } from "@/lib/model-price-rounding";
 import {
   stageLegacyModelPoolCatalogState,
   stageLegacyModelPoolOrder,
@@ -375,7 +377,7 @@ function textTokenConfigurationError(fields: Record<string, unknown>): string | 
     ["cached_cost_per_million", "缓存成本"],
   ] as const) {
     const raw = fields[key];
-    if (raw === null || raw === undefined || String(raw).trim() === "" || !Number.isFinite(Number(raw)) || Number(raw) < 0) {
+    if (explicitNonNegativePrice(raw) === null) {
       return `${label}必须是大于或等于 0 的每百万 Token 成本`;
     }
   }
@@ -565,6 +567,7 @@ export async function GET(req: NextRequest) {
           provider: m.provider || m.protocol_type || "",
           protocol_type: m.protocol_type || "openai_compatible",
           admin_notes: normalizeDisplayText(m.admin_notes || ""),
+          icon_url: String(m.icon_url || ""),
           duration_seconds: m.duration_seconds || 5,
           max_duration: m.max_duration || 10,
           api_protocol_config: m.api_protocol_config || {},
@@ -589,6 +592,8 @@ export async function GET(req: NextRequest) {
       access: { mode: canManageModels ? "manage" : "read" },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[UnifiedModels] GET error:", error);
     return NextResponse.json({ error: "获取模型列表失败" }, { status: 500 });
   }
@@ -602,6 +607,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const mutationRequest = modelPoolMutationRequest(req, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(admin.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const { model_type, ...fields } = body;
 
     if (!model_type || !["drawing", "text", "video"].includes(model_type)) {
@@ -641,7 +649,13 @@ export async function POST(req: NextRequest) {
         throw error;
       }
       const id = newPendingImageModelId();
+      if (explicitNonNegativePrice(drawingFields.cost_price) === null || explicitNonNegativePrice(drawingFields.cost_per_use) === null) {
+        return NextResponse.json({ error: "请填写明确的非负生图成本与售价", code: "IMAGE_PRICE_CONFIGURATION_REQUIRED" }, { status: 400 });
+      }
+      const metadata = imageModelAdminMetadata(drawingFields);
+      if (!metadata.ok) return NextResponse.json({ error: metadata.error, code: metadata.code }, { status: 400 });
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "cover_models",
         id,
@@ -653,12 +667,13 @@ export async function POST(req: NextRequest) {
           provider: drawingFields.provider || "vectorengine",
           api_endpoint: drawingFields.api_endpoint || "https://api.vectorengine.ai/",
           api_key: drawingFields.api_key || "",
-          cost_price: Number(drawingFields.cost_price) || 0,
-          selling_price: Number(drawingFields.cost_per_use) || 0,
+          cost_price: Number(drawingFields.cost_price),
+          selling_price: Number(drawingFields.cost_per_use),
           is_active: true,
           is_hidden: false,
           supports_image_input: drawingFields.supports_image_input !== false,
           api_protocol_config: drawingFields.api_protocol_config || {},
+          ...metadata.fields,
         },
       });
       return NextResponse.json({ success: true, staged: true, published: false, result, model_type }, { status: 202 });
@@ -705,6 +720,7 @@ export async function POST(req: NextRequest) {
       const autoDeductDeepThink = fields.deduct_deep_think != null ? fields.deduct_deep_think : (isReasoningModel ? 2 : 1);
 
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "llm_models",
         changeNote: `新增对话模型 ${fields.model_name || fields.name}`,
@@ -802,6 +818,7 @@ export async function POST(req: NextRequest) {
 
       const pendingVideoRecord = forceNewVideoModelPending({
         id: modelId,
+        icon_url: String(videoFields.icon_url || "").trim(),
         name: videoFields.name,
         model_name: videoFields.model_name || videoFields.name,
         provider: videoFields.provider,
@@ -828,6 +845,7 @@ export async function POST(req: NextRequest) {
         sort_order: Number(videoFields.sort_order) || 100,
       });
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "video_models",
         id: String(modelId),
@@ -846,6 +864,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "未知模型类型" }, { status: 400 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     if (error instanceof ModelActivationGateError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
@@ -865,7 +885,13 @@ export async function PUT(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const mutationRequest = modelPoolMutationRequest(req, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(admin.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const { model_type, id, ...fields } = body;
+    if (invalidExplicitPriceField(fields, model_type === "text" ? ["input_cost_per_million", "output_cost_per_million", "cached_cost_per_million"] : ["cost_price", "cost_per_use", "price_per_use"])) {
+      return NextResponse.json({ error: "填写的成本或售价必须是明确的非负金额", code: "MODEL_PRICE_CONFIGURATION_REQUIRED" }, { status: 400 });
+    }
     delete fields.agent_id;
     delete fields.api_key_configured;
     const nextApiKey = replacementApiKey(fields.api_key);
@@ -919,11 +945,15 @@ export async function PUT(req: NextRequest) {
       // Map unified fields to cover_models fields
       if (drawingFields.cost_per_use !== undefined) updateFields.selling_price = drawingFields.cost_per_use;
       if (!currentDrawingModel) return NextResponse.json({ error: "模型不存在" }, { status: 404 });
+      const metadata = imageModelAdminMetadata(drawingFields, currentDrawingModel.api_protocol_config);
+      if (!metadata.ok) return NextResponse.json({ error: metadata.error, code: metadata.code }, { status: 400 });
+      Object.assign(updateFields, metadata.fields);
       const pendingFields = pendingImageConfigurationUpdate(currentDrawingModel, updateFields);
       pendingFields.is_active = true;
       pendingFields.is_hidden = false;
 
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "cover_models",
         id: String(id),
@@ -1037,6 +1067,7 @@ export async function PUT(req: NextRequest) {
       }
 
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "llm_models",
         id: String(id),
@@ -1076,7 +1107,7 @@ export async function PUT(req: NextRequest) {
       });
       const updateFields: Record<string, unknown> = {};
       const allowed = [
-        "name", "model_name", "provider", "admin_notes", "api_endpoint", "api_key", "protocol_type",
+        "name", "model_name", "provider", "admin_notes", "icon_url", "api_endpoint", "api_key", "protocol_type",
         "price_per_use", "cost_price", "duration_seconds", "max_duration",
         "api_protocol_config", "supports_image_input", "is_active", "is_hidden", "sort_order",
         "requires_image",
@@ -1128,6 +1159,7 @@ export async function PUT(req: NextRequest) {
       Object.assign(updateFields, prepareVideoModelBindingUpdate({ id, ...currentVideoModel }, updateFields));
 
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "video_models",
         id: String(id),
@@ -1139,6 +1171,8 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({ error: "未知模型类型" }, { status: 400 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     if (error instanceof ModelActivationGateError || error instanceof ImageAdminValidationError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
@@ -1177,6 +1211,8 @@ export async function DELETE(req: NextRequest) {
     });
     return NextResponse.json({ success: true, staged: true, published: false, deleted: false, retiredCandidate: true, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[UnifiedModels] DELETE error:", error);
     return NextResponse.json({ error: "删除模型失败" }, { status: 500 });
   }
@@ -1246,6 +1282,8 @@ export async function PATCH(req: NextRequest) {
     });
     return NextResponse.json({ success: true, staged: true, published: false, updated: orders.length, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[UnifiedModels] PATCH error:", error);
     return NextResponse.json({ error: "批量排序失败" }, { status: 500 });
   }

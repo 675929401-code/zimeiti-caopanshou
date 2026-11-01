@@ -111,7 +111,7 @@ export type Action =
   | { type: "SET_VIEW"; payload: "marketplace" | "chat" }
   | { type: "SET_ACTIVE_VIEW"; payload: "marketplace" | "chat" | "format" | "segment" | "cover" | "create" | "extract" }
   | { type: "ADD_MESSAGE"; payload: { conversationId: string; message: Message } }
-  | { type: "UPDATE_MESSAGE"; payload: { conversationId: string; messageId: string; content?: string; reasoningContent?: string; displayContent?: string; streamStatus?: string; generatedImages?: Message["generatedImages"] } }
+  | { type: "UPDATE_MESSAGE"; payload: { conversationId: string; messageId: string; serverMessageId?: string; content?: string; reasoningContent?: string; displayContent?: string; streamStatus?: string; generatedImages?: Message["generatedImages"] } }
   | { type: "SET_MESSAGE_STREAMING"; payload: { conversationId: string; messageId: string; isStreaming: boolean } }
   | { type: "SET_MESSAGES_FOR_CONVERSATION"; payload: { conversationId: string; messages: Message[] } }
   | { type: "MARK_CONVERSATION_LOADED"; payload: string }
@@ -304,7 +304,7 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case "UPDATE_MESSAGE": {
-      const { conversationId, messageId, content, reasoningContent, displayContent, streamStatus, generatedImages } = action.payload;
+      const { conversationId, messageId, serverMessageId, content, reasoningContent, displayContent, streamStatus, generatedImages } = action.payload;
       return {
         ...state,
         conversations: state.conversations.map((c) => {
@@ -315,6 +315,7 @@ export function reducer(state: AppState, action: Action): AppState {
             if (m.id !== messageId) return m;
             const nextMessage = {
               ...m,
+              ...(serverMessageId !== undefined ? { serverMessageId } : {}),
               ...(content !== undefined ? { content } : {}),
               ...(reasoningContent !== undefined ? { reasoningContent } : {}),
               ...(displayContent !== undefined ? { displayContent } : {}),

@@ -15,7 +15,7 @@ assert.equal(policy.isVideoHistoryExpired(settled, now), false);
 assert.equal(policy.isVideoHistoryExpired({ ...settled, completedAt: ago(120) }, now), true);
 assert.equal(policy.isVideoHistoryExpired({ ...settled, taskLabel: '分镜工作台', completedAt: ago(200) }, now), false, 'media expiry must keep storyboard task and fee audit');
 assert.equal(policy.isVideoHistoryExpired({ status: 'completed', billing_state: 'settled', created_at: ago(120) }, now), true);
-for (const billingState of ['', 'unknown', 'usage_pending', 'billing_review', 'quote_exceeded', 'settled_pending_commit']) {
+for (const billingState of ['', 'unknown', 'provider_submitted', 'usage_pending', 'billing_review', 'quote_exceeded', 'settled_pending_commit']) {
   assert.equal(policy.isVideoHistoryProtected({ ...settled, billingState }), true);
   assert.equal(policy.isVideoHistoryExpired({ ...settled, billingState, completedAt: ago(200) }, now), false);
 }
@@ -28,13 +28,13 @@ for (const billingState of [null, undefined]) {
   assert.equal(policy.isVideoHistoryExpired({ ...settled, billingState, completedAt: ago(24) }, now), false);
   assert.equal(policy.isVideoHistoryProtected({ ...settled, billingState, status: 'processing' }), true);
 }
-// A job the provider accepted may still settle, but only inside the window.
+// Provider acceptance is not settled billing, regardless of history age.
 {
   const submitted = { ...settled, billingState: 'provider_submitted' };
   assert.equal(policy.isVideoHistoryProtected({ ...submitted, completedAt: ago(24) }, now), true);
   assert.equal(policy.isVideoHistoryExpired({ ...submitted, completedAt: ago(24) }, now), false);
-  assert.equal(policy.isVideoHistoryProtected({ ...submitted, completedAt: ago(200) }, now), false);
-  assert.equal(policy.isVideoHistoryExpired({ ...submitted, completedAt: ago(200) }, now), true);
+  assert.equal(policy.isVideoHistoryProtected({ ...submitted, completedAt: ago(200) }, now), true);
+  assert.equal(policy.isVideoHistoryExpired({ ...submitted, completedAt: ago(200) }, now), false);
 }
 assert.equal(policy.isVideoHistoryExpired({ ...settled, createdAt: 'invalid', completedAt: 'invalid' }, now), false);
 assert.equal(policy.isVideoHistoryExpired({ ...settled, status: 'unknown', completedAt: ago(200) }, now), false);
@@ -56,6 +56,8 @@ type Row = Record<string, unknown>;
 let rows: Row[] = [];
 const writes: Row[] = [];
 let thumbnailCalls = 0;
+let beforeNextUpdate: (() => void) | undefined;
+let affectedUpdates = 0;
 const filterExpressions: string[] = [];
 const splitFilter = (value: string): string[] => {
   let depth = 0; let start = 0;
@@ -101,7 +103,9 @@ class Query {
   maybeSingle() { this.single = true; return this; }
   update(value: Row) { this.updateValue = value; writes.push(value); return this; }
   then(resolve: (value: unknown) => unknown) {
+    if (this.updateValue && beforeNextUpdate) { const run = beforeNextUpdate; beforeNextUpdate = undefined; run(); }
     const found = rows.filter((row) => this.predicates.every((test) => test(row))).slice(this.start, this.end + 1);
+    if (this.updateValue) affectedUpdates += found.length;
     if (this.updateValue) found.forEach((row) => Object.assign(row, this.updateValue));
     const projected = this.selectFields ? found.map((row) => Object.fromEntries(this.selectFields!.filter((field) => field in row).map((field) => [field, row[field]]))) : found;
     return Promise.resolve({ data: this.single ? projected[0] || null : projected, error: null }).then(resolve);
@@ -185,7 +189,7 @@ async function main() {
   assert.deepEqual(Array.from(clear.body.clearedTaskIds as string[]).sort(), ['a', 'b', 'legacy', 'old']);
   const clearWriteFilter = filterExpressions[filterExpressions.length - 1] || '';
   assert.ok(clearWriteFilter.includes('billing_state.is.null'), 'clear write must still match rows without a billing state');
-  assert.ok(clearWriteFilter.includes('provider_submitted'), 'clear write must reach stale provider_submitted rows the policy already released');
+  assert.equal(clearWriteFilter.includes('provider_submitted'), false, 'clear write must preserve unresolved provider submissions');
   const retry = await exports.DELETE(request(`surface=storyboard-workbench&clearAll=true&cutoff=${cutoff}`));
   assert.equal(retry.status, 200);
   assert.equal(retry.body.cutoff, clock.body.serverTime);
@@ -205,6 +209,21 @@ async function main() {
   assert.equal((await exports.DELETE(request('surface=digital-human&taskId=digital-current'))).status, 200);
   assert.equal((await exports.DELETE(request('surface=digital-human&taskId=digital-validation'))).status, 200);
   assert.equal((await exports.DELETE(request('surface=digital-human&taskId=digital-retired'))).status, 404);
+  // Actual DELETE handler must reject an old unknown-billing row without issuing an update.
+  rows = [row('unknown-submitted', { task_label: '', billing_state: 'provider_submitted', created_at: ago(201), completed_at: ago(200) })];
+  const writesBeforeUnknown = writes.length;
+  assert.equal((await exports.DELETE(request('surface=video-page&taskId=unknown-submitted'))).status, 409);
+  assert.equal(writes.length, writesBeforeUnknown);
+  assert.equal(rows[0].history_hidden_at, null);
+  // If billing becomes unknown after the initial read, the real clear CAS excludes it.
+  rows = [row('clear-race', { task_label: '', created_at: ago(201), completed_at: ago(200) })];
+  const affectedBeforeRace = affectedUpdates;
+  beforeNextUpdate = () => { rows[0].billing_state = 'provider_submitted'; };
+  const raced = await exports.DELETE(request('surface=video-page&taskId=clear-race'));
+  assert.equal(raced.status, 200);
+  assert.equal(raced.body.clearedCount, 0);
+  assert.equal(affectedUpdates, affectedBeforeRace);
+  assert.equal(rows[0].history_hidden_at, null);
   console.log('PASS: separate storyboard media/audit retention, availability, thumbnail tickets, API isolation/pagination/reconcile/soft-clear/idempotency; no DB or network accessed');
 }
 void main().catch((error) => { console.error(error); process.exitCode = 1; });

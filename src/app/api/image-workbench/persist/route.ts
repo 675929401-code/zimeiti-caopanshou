@@ -1,3 +1,4 @@
+import { verifyStoryboardChainOriginalExport, StoryboardChainReferenceError, type StoryboardChainOriginalBinding } from "@/lib/server/storyboard-chain-reference";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
@@ -5,7 +6,8 @@ import { authorizeCurrentApiUser } from "@/lib/current-api-user";
 import { storageManager, type StorageProviderType } from "@/storage/object";
 import { InvalidImageFileError, validateImageFile } from "@/lib/image-file-validation";
 import { parseImageDataUrl } from "@/lib/image-data-url";
-import { SafeFetchError, safeFetch } from "@/lib/safe-fetch";
+import { SafeFetchError } from "@/lib/safe-fetch";
+import { readPublicImageResult } from "@/lib/image-result-network";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import {
   AUTODL_H3_SELFHOST_PROVIDER,
@@ -23,10 +25,6 @@ const VIDEO_READY_IMAGE_URL_TTL = 30 * 24 * 60 * 60;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_JSON_BYTES = Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 16 * 1024;
 const ALLOWED_REMOTE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-const TRUSTED_GENERATED_IMAGE_HOSTS = [
-  "source.openclaw-token.shop",
-  "flow.secure-skill.com",
-];
 
 type PersistStage = "authorize" | "read_request" | "reuse_image" | "import_image" | "transform_image" | "validate_image" | "upload_image" | "sign_image";
 
@@ -172,7 +170,9 @@ export async function POST(request: NextRequest) {
       transform?: "first_storyboard_panel";
       targetAspectRatio?: string;
       intent?: "user_asset_export";
+      chainOriginal?: StoryboardChainOriginalBinding;
     } | null;
+    if(body?.chainOriginal && (body.transform || body.assetId || body.storageKey || body.intent!=="user_asset_export")) return NextResponse.json({code:"STORYBOARD_CHAIN_ORIGINAL_INVALID",error:"串联原图保存不能裁剪或复用其他资产"},{status:422});
     const clientTraceId = body?.clientTraceId?.trim() || "";
     if (clientTraceId && !/^[A-Za-z0-9_-]{8,128}$/u.test(clientTraceId)) {
       return NextResponse.json({ error: "图片追踪键格式无效", code: "IMAGE_TRACE_ID_INVALID" }, { status: 400 });
@@ -361,11 +361,10 @@ export async function POST(request: NextRequest) {
         mimeType = response.contentType;
         bytes = response.buffer;
       } else {
-        const response = await safeFetch(sourceUrl!, {
+        const response = await readPublicImageResult(sourceUrl!, {
           maxBytes: MAX_IMAGE_BYTES,
           timeoutMs: 30_000,
           allowedContentTypes: ALLOWED_REMOTE_IMAGE_TYPES,
-          trustedHostnames: TRUSTED_GENERATED_IMAGE_HOSTS,
         });
         mimeType = response.contentType;
         bytes = response.buffer;
@@ -419,6 +418,11 @@ export async function POST(request: NextRequest) {
       validateImageFile(bytes, mimeType);
     }
 
+    const chainOriginalMeta = body?.chainOriginal ? await verifyStoryboardChainOriginalExport({userId:payload.userId,binding:body.chainOriginal,buffer:bytes}) : undefined;
+    if(chainOriginalMeta) {
+      const expectedTrace="storyboard-board-export-"+createHash("sha256").update(JSON.stringify([payload.userId,body!.chainOriginal!.projectId,body!.chainOriginal!.cardId,body!.chainOriginal!.recordId,chainOriginalMeta.chain_original_sha256])).digest("hex");
+      if(clientTraceId!==expectedTrace || Math.max(1,Number(body?.index || 1))!==1) return NextResponse.json({code:"STORYBOARD_CHAIN_ORIGINAL_INVALID",error:"串联原图保存幂等标识不一致"},{status:422});
+    }
     const outputMetadata = await sharp(bytes, { failOn: "error", limitInputPixels: 80_000_000 }).metadata();
     const outputWidth = Number(outputMetadata.width || 0);
     const outputHeight = Number(outputMetadata.height || 0);
@@ -471,12 +475,16 @@ export async function POST(request: NextRequest) {
         category: "image",
         userId: payload.userId,
         source: "image-workbench",
-        meta: { index: String(sequence), clientTraceId },
+        meta: { index: String(sequence), clientTraceId, ...(chainOriginalMeta || {}) },
         requireOwnershipRecord: true,
       });
     }
     if (stored.provider !== VIDEO_READY_IMAGE_PROVIDER) {
       throw new Error("图片未能保存到视频可访问的对象存储");
+    }
+    if(chainOriginalMeta) {
+      const storedBytes=await storageManager.readBounded(stored.key,MAX_IMAGE_BYTES,20_000,VIDEO_READY_IMAGE_PROVIDER);
+      if(createHash("sha256").update(storedBytes).digest("hex")!==chainOriginalMeta.chain_original_sha256) throw new StoryboardChainReferenceError("STORYBOARD_CHAIN_ORIGINAL_MISMATCH","已保存对象与原图字节不一致，未绑定其他资产");
     }
     stage = "sign_image";
     const signedUrl = await storageManager.getSignedUrl(
@@ -491,6 +499,15 @@ export async function POST(request: NextRequest) {
       index: sequence,
     });
 
+    if(chainOriginalMeta) {
+      const db=getSupabaseClient();
+      const current=await db.from("user_files").select("meta").eq("id",history.assetId).eq("user_id",payload.userId).eq("storage_key",stored.key).maybeSingle();
+      if(current.error || !current.data) throw new Error("STORYBOARD_CHAIN_ORIGINAL_BINDING_UNAVAILABLE");
+      const prior=current.data.meta as Record<string,unknown> | null;
+      if(prior?.chain_original_schema && Object.entries(chainOriginalMeta).some(([key,value])=>prior[key]!==undefined && prior[key]!==value)) throw new StoryboardChainReferenceError("STORYBOARD_CHAIN_ORIGINAL_MISMATCH","原图已有其他绑定，未覆盖历史记录");
+      const bound=await db.from("user_files").update({meta:{...(current.data.meta || {}),...chainOriginalMeta}}).eq("id",history.assetId).eq("user_id",payload.userId).eq("storage_key",stored.key);
+      if(bound.error) throw new Error("STORYBOARD_CHAIN_ORIGINAL_BINDING_UNAVAILABLE");
+    }
     return NextResponse.json({
       success: true,
       status: "completed",
@@ -506,6 +523,7 @@ export async function POST(request: NextRequest) {
       ...(history.historyRecordId ? { historyRecordId: history.historyRecordId } : {}),
     });
   } catch (error) {
+    if (error instanceof StoryboardChainReferenceError) return NextResponse.json({code:error.code,error:error.message},{status:error.status});
     if (error instanceof ImageHistoryProjectionPendingError) {
       return NextResponse.json({
         error: "图片已保存，账号历史正在自动同步",

@@ -1,8 +1,16 @@
 "use client";
+import { resolveAiVideoInputAspectRatio } from "@/lib/ai-video-page-capabilities";
+import { readVideoDurationBehavior, type VideoDurationBehavior } from "@/lib/video-duration-behavior";
+import { VideoDurationBehaviorNotice } from "@/components/video-duration-behavior-notice";
+import { resolveStoryboardExecutionMode, storyboardChainFingerprint, StoryboardChainRequestSchema, storyboardChainInputFingerprint, type StoryboardExecutionMode, type StoryboardChainRequest, type StoryboardChainAnchorConfirmation } from "@/lib/storyboard-chain-contract";
+import { storyboardChainContext, storyboardChainSnapshotMatches, storyboardChainManualReferences, storyboardChainPlanFingerprint, runStoryboardChainQueue } from "@/lib/storyboard-chain-controller";
 
 import { adoptInitialStoryboardReferences } from "@/lib/storyboard-initial-reference-adoption";
 import { adoptFirstStoryboardReference } from "@/lib/storyboard-first-reference-adoption";
 import { storyboardImageFailurePresentation } from "@/lib/storyboard-image-failure-presentation";
+import { videoModelInputHint, videoModelInputLabel } from "@/lib/video-model-selection-state";
+import { updateVideoConfirmationMap } from "@/lib/video-task-progress";
+import { publicVideoModelCompatibilityCode } from "@/lib/video-model-public-status";
 import { buildStoryboardThreeViewPrompt, storyboardFirstThreeViewInput } from "@/lib/storyboard-visual-asset-three-view";
 import { prepareStoryboardVideo } from "@/lib/storyboard-video-preparation";
 import { resolveStoryboardVideoSameKeyRetryAttempt } from "@/lib/storyboard-video-retry";
@@ -11,6 +19,7 @@ import { removeStoryboardReference } from "@/lib/storyboard-reference-removal";
 import { resolveStoryboardReferenceImageSettings } from "@/lib/storyboard-reference-image-settings";
 import { markVisualAssetMediaStale, visualAssetReferenceContentChanged } from "@/lib/storyboard-visual-asset-media-state";
 import { storyboardAgentImportProjectId } from "@/lib/storyboard-agent-import-target";
+import modelRailRestoration from "./storyboard-model-rail-restoration.module.css";
 
 import { describeReferenceUpload, readReferenceUploadPending, resolveReferenceUpload, writeReferenceUploadPending, type ReferenceUploadPending } from "@/lib/storyboard-reference-upload";
 
@@ -32,11 +41,12 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TicketedVideo, MediaLightbox, type PreviewMedia } from "@/components/storyboard-media-preview";
 import { requestVideoAccessUrl } from "@/lib/storyboard-video-access";
 import { fetchStoryboardJson, openStoryboardStream, STORYBOARD_VIDEO_SUBMIT_DEADLINE_MS } from "@/lib/storyboard-request-deadline";
 import { videoDownloadFile } from "@/lib/video-download-file";
+import { VideoLocalAutoCache } from "@/lib/video-local-auto-cache";
 import { useRouter, useSearchParams } from "next/navigation";
 import "@/app/storyboard-workbench/visual-assets/visual-assets-page.css";
 import { GeneratedImageReferenceSchema, generatedImageReferenceUri, generatedImagePreviewUrl, type GeneratedImageReference } from "@/lib/generated-image-reference";
@@ -60,8 +70,8 @@ import { imageDimensionsMatchAspectRatio } from "@/lib/image-output-contract";
 import { readStoryboardProtectedPreview, StoryboardImagePreviewError } from "@/lib/storyboard-image-preview";
 import { isCompletedProviderImageReceipt, isUnavailableCompletedStoryboardImage, storyboardImageUnavailablePatch, storyboardImageUnavailablePresentation, type StoryboardImageMediaState } from "@/lib/storyboard-image-result-state";
 import { parsePublicImageResolutionPrices } from "@/lib/image-resolution-pricing";
-import { getAiVideoPageInputCapabilities } from "@/lib/ai-video-page-capabilities";
-import { validateVideoInputContract } from "@/lib/video-input-contract";
+import { resolveStoryboardVideoInputs, normalizeStoryboardVideoInputs, isStoryboardImageWorkflow, type StoryboardVideoInputs } from "@/lib/storyboard-video-inputs";
+import { StoryboardVideoInputEditor } from "@/components/storyboard-video-input-editor";
 import {
   buildClientRequestFingerprint,
   clearBrowserClientAttempt,
@@ -75,7 +85,6 @@ import { projectGeneratedImageClientReceipt, resolveGeneratedImageClientDelivery
 import { ImageDownloadOperations, readImageDownloadBlob, imageDownloadFilename } from "@/lib/generated-image-download";
 import { MEDIA_CANCEL_DEADLINE_MS, providerMediaUrl, readMediaStreamWithDeadline } from "@/lib/generated-media-delivery";
 import { storyboardRecoveryStorageKey, readStoryboardRecovery, readStoryboardRecoveryConflicts, clearStoryboardWorkspaceRecovery, writeStoryboardRecovery, storyboardRecoveryContentFingerprint, inspectStoryboardRecoveryEdits, preserveStoryboardRecoveryConflict } from "@/lib/storyboard-workspace-recovery";
-import { normalizeStoryboardHistoryCardIndex } from "@/lib/storyboard-history-view";
 import { useStoryboardProjects } from "@/hooks/use-storyboard-projects";
 import type { StoryboardAgentOutputSegment } from "@/lib/storyboard-agent-output";
 import {
@@ -110,7 +119,7 @@ import {
 } from "@/lib/storyboard-canvas-bridge";
 import { buildStoryboardDirectorExecution, compileStoryboardDirectorVideoPrompt, type StoryboardDirectorExecution } from "@/lib/storyboard-director-execution";
 import { collectStoryboardDirectorReferenceBindings } from "@/lib/storyboard-director-reference-verification";
-import { storyboardProductionPlanFingerprint, storyboardProductionAssetFingerprint, storyboardProductionImageFingerprint, storyboardProductionVideoFingerprint, storyboardProductionBlocker, storyboardProductionQuote, runStoryboardProductionQueue } from "@/lib/storyboard-continuous-production";
+import { storyboardProductionPlanFingerprint, storyboardProductionAssetFingerprint, storyboardProductionImageFingerprint, storyboardProductionVideoFingerprint, storyboardProductionImageInputMatch, storyboardProductionBlocker, storyboardProductionQuote, runStoryboardProductionQueue } from "@/lib/storyboard-continuous-production";
 import { buildStoryboardDirectorResumeCard, StoryboardDirectorIntakeStateSchema, type StoryboardDirectorIntakeState } from "@/lib/storyboard-director-resume";
 import { confirmStoryboardDirectorAsset, hasStoryboardDirectorAssetConfirmation, pruneStoryboardDirectorAssetConfirmations, storyboardDirectorCandidateMatchesDraft } from "@/lib/storyboard-director-asset-confirmation";
 import {
@@ -137,7 +146,7 @@ import {
   resolveVideoResolution,
 } from "@/lib/video-model-capabilities";
 import { compactPublicVideoModelName } from "@/lib/video-history-presentation";
-import { StoryboardHistoryPanel, type StoryboardHistoryItem } from "@/components/storyboard-history-panel";
+import { MediaHistoryWorkspace } from "@/components/media-history-workspace";
 import {
   buildStoryboardVideoPrompt,
   inferStoryboardNarration,
@@ -146,6 +155,7 @@ import {
   storyboardVideoRuntimeGuard,
 } from "@/lib/storyboard-single-frame-video-prompt";
 import { validateStoryboardNarrationCapacity } from "@/lib/storyboard-duration-contract";
+import { isRestorableImageExactText } from "@/lib/storyboard-annotation-layout";
 
 type TaskStatus = "idle" | "queued" | "running" | "done" | "failed" | "cancelled";
 type BatchMode = "" | "images" | "videos";
@@ -163,6 +173,7 @@ type OwnedVisualAsset = DrawerVisualAsset;
 type VisualAssetBatchAuthorization = { isCurrent?: () => boolean; runId: string; modelId: string; resolution: string; ratio: WorkbenchRatio; price: number; inputs: Map<string, string>; started: Set<string> };
 
 type StoryboardImageRequestSnapshot = {
+  chainContext?: StoryboardChainRequest;
   runId: string;
   cardId: string;
   cardOrder: number;
@@ -228,6 +239,7 @@ function isWorkbenchRatio(value: unknown): value is WorkbenchRatio {
 }
 
 type WorkbenchCard = {
+  chainAnchorConfirmation?: StoryboardChainAnchorConfirmation;
   continuousImageInputFingerprint?: string;
   continuousVideoInputFingerprint?: string;
   id: string;
@@ -238,7 +250,9 @@ type WorkbenchCard = {
   imagePrompt: string;
   imageExactText?: string;
   imageTextLayoutEnabled?: boolean;
+  imageAnnotationIssue?: string;
   videoPrompt: string;
+  videoInputs?: StoryboardVideoInputs;
   directorExecution?: StoryboardDirectorExecution;
   referenceImageUrls: string[];
   visualAssetRefs?: StoryboardVisualAssetRef[];
@@ -316,6 +330,8 @@ type WorkbenchVideoContract = {
 };
 
 type WorkbenchRun = {
+  executionMode?: StoryboardExecutionMode;
+  chainRevision?: number;
   draftImportNotice?: string;
   directorIntake?: StoryboardDirectorIntakeState;
   id: string;
@@ -362,7 +378,7 @@ type StoryboardImageFailureRecord = {
 };
 
 function resetFailedVideoCardsForModelSwitch(cards: WorkbenchCard[]): WorkbenchCard[] {
-  return cards.map((card) => card.videoStatus === "failed" && card.videoRetryable === true
+  return cards.map((card) => card.videoStatus === "failed" && card.videoRetryable === true && card.videoSameRequestKeyRequired !== true
     ? {
         ...card,
         videoStatus: "idle" as const,
@@ -469,10 +485,12 @@ type ImageModel = ImageModelIdentity & {
   family?: "gpt" | "gemini" | "qwen" | "other";
   available: boolean;
   priceReady: boolean;
+  generationReady: boolean;
   availabilityMessage?: string;
 };
 
 type VideoModel = {
+  durationBehavior?: VideoDurationBehavior;
   id: string;
   name: string;
   displayName?: string;
@@ -488,6 +506,11 @@ type VideoModel = {
   supportsImageInput: boolean;
   requiresImage: boolean;
   requiresSourceVideo: boolean;
+  supportsSourceVideoInput?: boolean;
+  capabilitiesVerified?: boolean;
+  firstFrameRatioPolicy?: "adaptive";
+  showFirstFrame?: boolean; showLastFrame?: boolean; showReferenceImages?: boolean; showAudioInputs?: boolean;
+  compatibilityCode?: string;
   supportsAudioInput: boolean;
   supportsPrompt: boolean;
   workflowInputMode: string;
@@ -503,6 +526,7 @@ type VideoModel = {
   resolutionOptions: string[];
   defaultResolution: string;
   resolutionPrices: Record<string, number>;
+  resolutionLabels?: Record<string, string>;
   aspectRatios: WorkbenchRatio[];
   billingUnit: "per_use" | "output_second" | "token";
   tokenPricing?: VideoTokenPublicPricing;
@@ -612,6 +636,7 @@ function normalizeImageModel(record: ModelApiRecord): ImageModel {
     family: normalizeImageFamily(firstText(capabilities.family), displayName, firstText(record.model_name), firstText(record.provider)),
     available: firstBoolean(true, capabilities.available, record.available),
     priceReady: declaredPriceReady && hasCompletePrice,
+    generationReady: firstBoolean(true, capabilities.generationReady, record.generationReady, record.generation_ready),
     availabilityMessage: firstText(capabilities.availabilityMessage, record.availabilityMessage, record.availability_message),
   };
 }
@@ -634,16 +659,35 @@ export function selectStoryboardImageModels(models: ImageModel[]) {
 }
 
 function storyboardImageModelSelectionIssue(model: ImageModel) {
-  if (!model.available || !model.priceReady) return model.availabilityMessage || "当前未开放";
+  // This message only reaches administrator/selection diagnostics; the public
+  // rail renders a stable product label through publicModelSelectionLabel.
+  if (!model.available || !model.priceReady || !model.generationReady) return model.availabilityMessage || "当前不可提交";
   return "";
 }
 
 function publicModelSelectionLabel(selectionIssue: string) {
-  if (!selectionIssue) return "";
-  if (/Token|精确结算适配|usage\.total_tokens/u.test(selectionIssue)) return "Token结算适配中";
-  if (/账户|余额|欠费|额度|兼容账户/u.test(selectionIssue)) return "上游账户异常";
-  if (/渠道|恢复|维护|故障|模型不存在/u.test(selectionIssue)) return "上游通道异常";
-  return "暂不可用";
+  return selectionIssue ? "当前无法生成" : "";
+}
+
+/**
+ * Keep provider/readiness diagnostics out of the customer workbench.  The
+ * server still returns the detailed reason for admin telemetry, while the
+ * workbench receives one stable status label.  Input-shape guidance remains
+ * specific because it tells the user how to correct the current request.
+ */
+function publicModelSelectionNotice(selectionIssue: string, subject = "模型") {
+  const issue = String(selectionIssue || "").trim();
+  if (!issue) return "";
+  if (/(?:核验|核对|待配置|配置待|适配|上游|通道|渠道|端点|接口|https?:\/\/|\/v\d+\/|usage\.)/iu.test(issue)) {
+    return "当前无法生成，请选择其他模型或稍后重试";
+  }
+  if (/^(?:不支持故事板图片输入|需要源视频，不能用于故事板图片|需要分别提供首帧和尾帧，当前工作台不支持|需要音频输入，请在 AI 视频制作的对应模式使用|至少需要 \d+ 张参考图；分镜每张卡片仅提交一张故事板，请在视频制作页使用|当前模型不接收故事板图片)$/u.test(issue)
+    || /(?:比例|提示词|Prompt|源视频|参考图|首帧|尾帧|音频输入|故事板图片|清晰度|预设|临时图片|已验证分镜图|当前工作台不支持|输入)/iu.test(issue)) {
+    return issue;
+  }
+  if (/图片模型尚未加载/u.test(issue)) return "生图模型尚未加载，请稍后重试";
+  if (/视频模型尚未加载/u.test(issue)) return "视频模型尚未加载，请稍后重试";
+  return `${subject}${publicModelSelectionLabel(issue)}，请选择其他模型或稍后重试`;
 }
 
 function normalizeVideoModel(record: ModelApiRecord): VideoModel {
@@ -679,9 +723,18 @@ function normalizeVideoModel(record: ModelApiRecord): VideoModel {
       ? String(capabilities.durationMode || record.durationMode) as VideoModel["durationMode"]
       : maxDuration > durationSeconds ? "range" : "fixed",
     nativeDurations,
+    durationBehavior: readVideoDurationBehavior(capabilities.durationBehavior),
     supportsImageInput: firstBoolean(false, capabilities.supportsImageInput, record.supportsImageInput, record.supports_image_input),
     requiresImage: firstBoolean(false, capabilities.requiresImage, record.requiresImage, record.requires_image),
     requiresSourceVideo: firstBoolean(false, capabilities.requiresSourceVideo, record.requiresSourceVideo, record.requires_source_video),
+    supportsSourceVideoInput: firstBoolean(false, capabilities.supportsSourceVideoInput, record.supportsSourceVideoInput),
+    capabilitiesVerified: capabilities.capabilitiesVerified !== false,
+    firstFrameRatioPolicy: capabilities.firstFrameRatioPolicy === "adaptive" ? "adaptive" : undefined,
+    showFirstFrame: firstOptionalBoolean(capabilities.showFirstFrame),
+    showLastFrame: firstOptionalBoolean(capabilities.showLastFrame),
+    showReferenceImages: firstOptionalBoolean(capabilities.showReferenceImages),
+    showAudioInputs: firstOptionalBoolean(capabilities.showAudioInputs),
+    compatibilityCode: publicVideoModelCompatibilityCode(capabilities.compatibilityCode),
     supportsAudioInput: firstBoolean(false, capabilities.supportsAudioInput, record.supportsAudioInput, record.supports_audio_input),
     referenceInputMode: firstText(capabilities.workflowInputMode, capabilities.referenceInputMode, record.workflowInputMode, record.referenceInputMode, record.reference_input_mode),
     workflowInputMode: firstText(capabilities.workflowInputMode, capabilities.referenceInputMode, record.workflowInputMode, record.referenceInputMode),
@@ -697,6 +750,7 @@ function normalizeVideoModel(record: ModelApiRecord): VideoModel {
     resolutionOptions,
     defaultResolution: resolutionOptions.includes(defaultResolution) ? defaultResolution : resolutionOptions[0] || defaultResolution,
     resolutionPrices: resolutionCapabilities.publicPrices,
+    resolutionLabels: resolutionCapabilities.labels,
     aspectRatios: ratios.length > 0 ? ratios : ["16:9", "9:16"],
     billingUnit,
     tokenPricing,
@@ -730,7 +784,7 @@ function storyboardImageSubmissionInput(run: WorkbenchRun, card: WorkbenchCard) 
   return JSON.stringify({ runId: run.id, modelId: run.imageModelId, resolution: run.imageResolution,
     ratio: effectiveImageRatio(run), videoDuration: run.videoDuration, plan: run.visualAssetPlan,
     directorIntake: run.directorIntake, cardId: card.id, order: card.order, prompt: card.imagePrompt,
-    exactText: card.imageExactText, textEnabled: card.imageTextLayoutEnabled, narration: card.narration,
+    narration: card.narration,
     references: card.referenceImageUrls, visualAssetRefs: card.visualAssetRefs,
     selectionMode: card.visualAssetSelectionMode, refsMode: card.visualAssetRefsMode,
   }, (_key, value) => {
@@ -752,8 +806,8 @@ function batchSettings(run: WorkbenchRun, kind: "images" | "videos") {
 }
 function batchCardInput(card: WorkbenchCard, kind: "images" | "videos") {
   return JSON.stringify(kind === "images"
-    ? [card.imagePrompt, card.imageTextLayoutEnabled, card.imageExactText, card.referenceImageUrls, card.visualAssetRefs, card.narration]
-    : [card.videoPrompt, card.imageUrl, card.videoSourceImageUrl, card.imageRecordId, card.imageAssetId, card.imageStorageKey, card.imageWidth, card.imageHeight, card.imageRequestSnapshot?.aspectRatio, card.narration]);
+    ? [card.imagePrompt, card.referenceImageUrls, card.visualAssetRefs, card.narration]
+    : [card.videoPrompt, normalizeStoryboardVideoInputs(card.videoInputs), card.imageRef, card.imageUrl, card.videoSourceImageUrl, card.imageRecordId, card.imageAssetId, card.imageStorageKey, card.imageWidth, card.imageHeight, card.imageRequestSnapshot?.aspectRatio, card.narration]);
 }
 function assertBatchSnapshotCurrent(run: WorkbenchRun, cardId: string, kind: "images" | "videos", authorization?: StoryboardBatchAuthorization, expectedInput?: string) {
   if (!authorization) return;
@@ -773,8 +827,8 @@ function assertBatchAuthorization(run: WorkbenchRun, card: WorkbenchCard, kind: 
 const MAX_HISTORY = 20;
 const MAX_CARDS = 20;
 const MAX_REFERENCES = 9;
-const IMAGE_SUBMIT_INTERVAL_MS = 5_000;
-const VIDEO_SUBMIT_INTERVAL_MS = 8_000;
+const IMAGE_SUBMIT_INTERVAL_MS = 10_000;
+const VIDEO_SUBMIT_INTERVAL_MS = 10_000;
 const VIDEO_POLL_INTERVAL_MS = 8_000;
 const H3_LIFECYCLE_POLL_INTERVAL_MS = 2_000;
 const MODEL_CATALOG_REQUEST_TIMEOUT_MS = 12_000;
@@ -816,6 +870,32 @@ function isActiveVideoStatus(status: TaskStatus) {
   return status === "queued" || status === "running";
 }
 
+const STORYBOARD_RECOVERY_NOTICE = "正在核对工作台恢复记录；原生成任务不会重复提交。";
+
+function clearStoryboardRecoveryNotice(current: string) {
+  return current === STORYBOARD_RECOVERY_NOTICE ? "" : current;
+}
+
+/** 批量视频收尾提示：按卡片真实状态分类；排队/渲染中不是失败，且提醒勿重复提交。 */
+function summarizeVideoBatchOutcome(cards: WorkbenchCard[], cardIds: string[]) {
+  let done = 0; let failed = 0; let pending = 0; let cancelled = 0; let notSubmitted = 0;
+  for (const id of cardIds) {
+    const status = cards.find((card) => card.id === id)?.videoStatus;
+    if (status === "done") done += 1;
+    else if (status === "failed") failed += 1;
+    else if (status === "queued" || status === "running") pending += 1;
+    else if (status === "cancelled") cancelled += 1;
+    else notSubmitted += 1;
+  }
+  const parts = [`成功${done}个`];
+  if (pending) parts.push(`${pending}个仍在生成中`);
+  if (failed) parts.push(`失败${failed}个`);
+  if (cancelled) parts.push(`已终止${cancelled}个`);
+  if (notSubmitted) parts.push(`${notSubmitted}个未提交`);
+  const suffix = pending ? "。仍在生成中的任务会在后台继续追踪，请稍后在历史里查看，勿重复提交" : "";
+  return `批量视频${pending ? "已提交" : "结束"}：${parts.join("，")}${suffix}`;
+}
+
 function videoNeedsRequestReconciliation(card: WorkbenchCard) {
   return isActiveVideoStatus(card.videoStatus)
     && !card.videoTaskId
@@ -844,9 +924,13 @@ function formatElapsed(startedAt?: number, now = Date.now()) {
 }
 
 function formatLastChecked(checkedAt?: number, now = Date.now()) {
-  if (!checkedAt) return "等待首次回报";
+  if (!checkedAt) return "等待首次查询";
   const seconds = Math.max(0, Math.floor((now - checkedAt) / 1000));
-  return seconds < 2 ? "刚刚收到进度更新" : `${seconds} 秒前收到进度更新`;
+  return seconds < 2 ? "上次查询：刚刚" : `上次查询：${seconds} 秒前`;
+}
+
+function storyboardVideoConfirmationKey(userId: string, runId: string, card: Pick<WorkbenchCard, "id" | "videoClientRequestId">, taskId: string) {
+  return [userId, runId, card.id, card.videoClientRequestId || "", taskId].join("\0");
 }
 
 const VIDEO_DELIVERY_STAGES = ["已提交", "上游生成", "接收结果", "完成"] as const;
@@ -873,6 +957,7 @@ async function stableImageRequestDigest(payload: Record<string, unknown>) {
 
 function storyboardImageFingerprintPayload(snapshot: StoryboardImageRequestSnapshot) {
   return {
+    ...(snapshot.chainContext ? { chainContext: snapshot.chainContext } : {}),
     runId: snapshot.runId,
     cardId: snapshot.cardId,
     prompt: snapshot.prompt,
@@ -897,9 +982,10 @@ function isStoryboardImageRequestSnapshot(value: unknown): value is StoryboardIm
     && typeof snapshot.modelId === "string" && Boolean(snapshot.modelId)
     && isWorkbenchRatio(snapshot.aspectRatio)
     && typeof snapshot.resolution === "string" && Boolean(snapshot.resolution)
-    && (snapshot.exactText === undefined || typeof snapshot.exactText === "string" && snapshot.exactText.length <= 200)
+    && (snapshot.exactText === undefined || typeof snapshot.exactText === "string" && isRestorableImageExactText(snapshot.exactText))
     && Array.isArray(snapshot.referenceImageUrls)
     && snapshot.referenceImageUrls.every((url) => typeof url === "string" && Boolean(url.trim()))
+    && (snapshot.chainContext === undefined || StoryboardChainRequestSchema.safeParse(snapshot.chainContext).success)
     && typeof snapshot.strictSingleSubmit === "boolean"
     && (snapshot.attemptOrdinal === undefined || Number.isInteger(snapshot.attemptOrdinal) && snapshot.attemptOrdinal > 0);
 }
@@ -1016,6 +1102,13 @@ function visualAssetRoleLabel(role: VisualAssetRole) {
   return role === "character" ? "人物" : role === "pet" ? "宠物" : role === "environment" ? "场景" : "道具";
 }
 
+function storyboardIdentityAssetLabel(plan?: StoryboardVisualAssetPlan) {
+  const roles = [...new Set((plan?.assets || [])
+    .filter(asset => asset.role === "character" || asset.role === "pet")
+    .map(asset => visualAssetRoleLabel(asset.role)))];
+  return roles.length ? `${roles.join("、")}三视图` : "角色三视图";
+}
+
 async function browserImageReady(url: string, timeoutMs = 30_000) {
   const original = await readStoryboardProtectedPreview(url, { timeoutMs: Math.min(timeoutMs, 20_000) });
   const preview = original ? URL.createObjectURL(original) : url;
@@ -1049,6 +1142,31 @@ function hasValidatedImage(card: WorkbenchCard) {
   return !card.imageMediaState && card.imageStatus === "done" && Boolean(card.imageUrl) && Boolean(card.imageValidatedAt);
 }
 
+/** Cloud hydrate can preserve done/receipt IDs while explicitly rejecting media. */
+function isStoryboardChainHydratedReadback(card: WorkbenchCard | undefined, owned: boolean) {
+  if (!card || card.imageError || card.imageRetryBlocked || card.imageMediaState) return false;
+  // An inline original can still live only in this browser before owned export.
+  if (!owned) return true;
+  const url = typeof card.imageUrl === "string" ? card.imageUrl.trim() : "";
+  if (!url || card.imageRecoveryReady || card.imageReferenceState === "stale"
+    || (!/^https?:\/\//iu.test(url) && !(url.startsWith("/") && !url.startsWith("//")))) return false;
+  try { return ["http:", "https:"].includes(new URL(url, "https://storyboard.invalid").protocol); }
+  catch { return false; }
+}
+
+/** A recovered/provider image can be visible before the browser has decoded it.
+ * Keep this state separate from the safety gate: video submission still relies
+ * on hasValidatedImage, while the UI explains why the button is temporarily
+ * locked and automatically becomes actionable when validation patches the card.
+ */
+function isImageValidationPending(card: WorkbenchCard) {
+  return card.imageStatus === "done"
+    && Boolean(card.imageUrl)
+    && !card.imageStorageKey
+    && !card.imageValidatedAt
+    && card.imageDeliveryMode !== "inline_ephemeral";
+}
+
 function isCompletedInlineImageReceipt(card: WorkbenchCard) {
   return card.imageStatus === "done"
     && card.imageDeliveryMode === "inline_ephemeral"
@@ -1069,18 +1187,18 @@ function imageAttemptNeedsResolution(card: WorkbenchCard) {
     || card.imageRetryBlocked === true;
 }
 
-function isPublicHttpMediaUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    if (!/^https?:$/u.test(parsed.protocol)) return false;
-    const hostname = parsed.hostname.toLowerCase();
-    if (hostname === "localhost" || hostname === "::1" || hostname.endsWith(".local")) return false;
-    if (/^(127\.|10\.|0\.)/u.test(hostname) || /^192\.168\./u.test(hostname)) return false;
-    const private172 = hostname.match(/^172\.(\d{1,2})\./u);
-    return !private172 || Number(private172[1]) < 16 || Number(private172[1]) > 31;
-  } catch {
-    return false;
+function storyboardCardVideoInputIssue(model: VideoModel | undefined, card: WorkbenchCard, run: WorkbenchRun) {
+  if (!model) return "视频模型尚未加载";
+  const resolved = resolveStoryboardVideoInputs(model, card);
+  if (resolveStoryboardExecutionMode(run) === "chained" && (!isStoryboardImageWorkflow(model) || !resolved.usesStoryboardImage)) return "当前视频素材与串联模式不一致，请先切换普通模式。";
+  if (resolved.usesStoryboardImage || resolved.requiresStoryboardImage) {
+    if (card.imageReferenceState === "stale") return "参考已更换，请先重新生成分镜；旧图和旧视频仍保留。";
+    if (!hasValidatedImage(card)) return isImageValidationPending(card) ? "正在加载/验证本段分镜图，验证完成后将自动解锁视频。" : imageAttemptNeedsResolution(card) ? "原分镜请求或费用尚未确认，请先查询原任务。" : "请先生成并加载本段分镜图，或改用自定义视频素材。";
+    if (card.imageDeliveryMode === "inline_ephemeral") return "临时图片仅当前页面可预览下载，请先保存或上传可用的视频图片。";
+    const ratioIssue = storyboardImageRatioIssue(card, effectiveImageRatio(run), run.ratio, model);
+    if (ratioIssue) return ratioIssue;
   }
+  return resolved.issue;
 }
 
 async function mediaUrlToDataUrl(url: string) {
@@ -1115,14 +1233,6 @@ function createRun(cardCount = 3): WorkbenchRun {
   };
 }
 
-function normalizeStoryboardVideoImageReference(reference?: GeneratedImageReference) {
-  if (!reference?.transform) return reference;
-  // Older browser snapshots stored a client-only crop on the generated-image
-  // reference. Video submission now follows the storyboard contract and uses
-  // the complete 4/5-panel asset, so keep the record identity and drop only
-  // the obsolete presentation transform.
-  return { schema: "generated_image_ref.v1" as const, recordId: reference.recordId };
-}
 
 function normalizeVideoContract(value: unknown): WorkbenchVideoContract | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -1163,7 +1273,7 @@ function isUnsubmittedReferencePreflightFailure(card: Partial<WorkbenchCard>): b
   // Recover only the proven local preflight label. Any task, media, receipt,
   // billing or unrecognized legacy field keeps its original state, even 0/null.
   const inputFields = new Set([
-    "id", "order", "sourceNumber", "label", "narration", "imagePrompt", "imageExactText", "imageTextLayoutEnabled",
+    "id", "order", "sourceNumber", "label", "narration", "imagePrompt", "imageExactText", "imageTextLayoutEnabled", "imageAnnotationIssue",
     "videoPrompt", "referenceImageUrls", "visualAssetRefs", "visualAssetRefsMode", "visualAssetSelectionMode",
     "sceneId", "sceneZone", "styleLock", "sceneLock", "camera", "dynamicState", "capabilityGaps",
     "bottomPanelRole", "qualityChecks", "wardrobeChangeEvents",
@@ -1229,6 +1339,8 @@ function normalizeRun(value: unknown): WorkbenchRun | null {
   ].filter((value) => Number.isFinite(value) && value > 0);
   return {
     id: record.id,
+    executionMode: resolveStoryboardExecutionMode(record as WorkbenchRun),
+    chainRevision: (record as WorkbenchRun).chainRevision || 1,
     createdAt: Number(record.createdAt || Date.now()),
     updatedAt: Number(record.updatedAt || Date.now()),
     lastSubmittedAt: submissionTimes.length ? Math.max(...submissionTimes) : undefined,
@@ -1260,8 +1372,6 @@ function normalizeRun(value: unknown): WorkbenchRun | null {
       imageStatus: isUnsubmittedReferencePreflightFailure(card) ? "idle" : card.imageStatus,
       order: index + 1,
       narration: String(card.narration || inferStoryboardNarration(card.label)),
-      imageTextLayoutEnabled: (card as Partial<WorkbenchCard>).imageTextLayoutEnabled === true
-        || Boolean(String((card as Partial<WorkbenchCard>).imageExactText || "").trim()),
       imageError: normalizeLegacyImageError(card.imageError, (card as Partial<WorkbenchCard>).imageRecoveryReady === true),
       referenceImageUrls: Array.isArray(card.referenceImageUrls) ? card.referenceImageUrls.slice(0, MAX_REFERENCES) : [],
         visualAssetRefs: Array.isArray((card as Partial<WorkbenchCard>).visualAssetRefs)
@@ -1293,6 +1403,8 @@ function hasSubmittedWork(run: WorkbenchRun) {
 type HistoryVideoTask = {
   id?: string;
   taskIdExternal?: string;
+  clientRequestId?: string;
+  processingStage?: string;
   taskLabel?: string;
   modelId?: string;
   publicModelId?: string;
@@ -1402,12 +1514,48 @@ function modelChannelCode(model: { displayName?: string; name?: string; variantL
   const label = String(model.variantLabel || "").trim().toUpperCase();
   // The public catalog owns variant identity. Provider names cannot override it.
   if (label === "L") return "";
-  if (/^[A-Z]$/u.test(label)) return label;
+  if (/^[A-Z][A-Z0-9]*$/u.test(label)) return label;
   return "";
 }
 
+// Benchmark pattern: the title carries series + version + one differentiator.
+// Resolution is kept only when the model has no mode keyword, otherwise the
+// mode wins and the resolution stays on the meta line.
+const VIDEO_MODEL_TITLE_NOISE = /^(?:\d+\s*秒|\d+\s*[–—-]\s*\d+\s*秒|固定\s*\d+\s*秒|Flow\s*\d+|分组\s*\d+|企业渠道\s*\d+)$/u;
+const VIDEO_MODEL_TITLE_SPEC = /^(?:\d{3,4}\s*[pP](?:\s*\/\s*\d{3,4}\s*[pP])?|[1248]\s*[kK])$/u;
+const VIDEO_MODEL_TITLE_MODE = /多图|参考|首尾帧|文生视频|图生视频|全能|Token|企业|数字人|音频/iu;
+
 function compactVideoModelName(model: VideoModel) {
-  return compactPublicVideoModelName(publicModelName(model));
+  const publicName = publicModelName(model);
+  if (/\bveo\s*3\.1\b/iu.test(publicName)) {
+    const edition = /\bFast\b/iu.test(publicName) ? "Fast"
+      : /\bLite\b/iu.test(publicName) ? "Lite"
+      : /质量/u.test(publicName) ? "质量" : "";
+    // Keep publicly stated optional-frame semantics; requirements alone cannot
+    // distinguish optional tail frames from ordinary multi-image references.
+    const mode = /首帧[，,、\s]*尾帧可选/u.test(publicName) ? "首帧，尾帧可选"
+      : model.requiresFirstFrame && model.requiresLastFrame ? "首尾帧"
+      : model.workflowInputMode === "text" ? "文生视频"
+      : model.requiresFirstFrame ? "图生视频"
+      : model.workflowInputMode === "multi_image" && model.maxReferenceImages > 1 ? "多图参考"
+      : model.requiresImage ? "图生视频"
+      : model.workflowInputMode === "flexible_image" ? "文/图生视频" : "";
+    return ["Veo 3.1", edition, mode].filter(Boolean).join(" · ");
+  }
+  const base = compactPublicVideoModelName(publicName);
+  const segments = base.split("·").map((segment) => segment.trim()).filter(Boolean);
+  const hasMode = segments.slice(1).some((segment) => VIDEO_MODEL_TITLE_MODE.test(segment));
+  const kept = segments.filter((segment, index) => {
+    if (index === 0) return true;
+    if (VIDEO_MODEL_TITLE_NOISE.test(segment)) return false;
+    if (VIDEO_MODEL_TITLE_SPEC.test(segment)) return !hasMode;
+    return true;
+  });
+  return kept.join(" · ")
+    .replace(/Grok\s+Imagine\s+Video/iu, "Grok Video")
+    .replace(/Grok\s+Imagine/iu, "Grok")
+    .replace(/\s{2,}/gu, " ")
+    .trim() || "视频模型";
 }
 
 function videoModelNeedsReference(model: VideoModel) {
@@ -1420,7 +1568,7 @@ function storyboardImageModelName(model: ImageModel) {
     .replace(/\s*[（(][^）)]*[）)]\s*$/u, "")
     .trim() || "通用生图模型";
   const channelCode = modelChannelCode(model);
-  return channelCode ? `${compactName} · ${channelCode}` : compactName;
+  return channelCode ? `${compactName} · 渠道${channelCode}` : compactName;
 }
 
 function storyboardImageRatioIssue(card: WorkbenchCard, imageRatio: WorkbenchRatio, videoRatio: WorkbenchRatio = imageRatio, model?: VideoModel) {
@@ -1429,7 +1577,8 @@ function storyboardImageRatioIssue(card: WorkbenchCard, imageRatio: WorkbenchRat
     && !imageDimensionsMatchAspectRatio(card.imageWidth, card.imageHeight, generatedRatio)) {
     return `实际图片 ${card.imageWidth}×${card.imageHeight} 与生成比例 ${generatedRatio} 不一致；请重新生图后再提交视频`;
   }
-  if (!hasValidatedImage(card) || generatedRatio === videoRatio || allowsIndependentReferenceRatio(model)) return "";
+  if (!hasValidatedImage(card) || generatedRatio === videoRatio || allowsIndependentReferenceRatio(model)
+    || resolveAiVideoInputAspectRatio(model, videoRatio, { imageUrl: card.imageUrl }) === "adaptive") return "";
   return `当前故事板为 ${generatedRatio}，所选视频模型要求参考图与视频 ${videoRatio} 同比例；请选择兼容模型或重新生图`;
 }
 
@@ -1508,6 +1657,11 @@ function videoResolutionPriceLabel(model: VideoModel, resolution: string, durati
   const charge = effectiveVideoCharge(model, resolution, duration);
   if (!model.priceReady || !Number.isFinite(charge)) return "价格待配置";
   return `¥${charge.toFixed(2)}${model.billingUnit === "output_second" ? `/${duration}秒` : "/次"}`;
+}
+
+function videoResolutionDisplayLabel(model: VideoModel | undefined, resolution: string) {
+  if (model?.generationReady === false) return "";
+  return model?.resolutionLabels?.[resolution] || resolution || "模型默认画质";
 }
 
 function submittedVideoPrompt(prompt: string, model?: VideoModel, requestedDuration?: number) {
@@ -1589,7 +1743,7 @@ function UserStoryboardWorkbench({
   const [confirmedProjectSnapshot, setConfirmedProjectSnapshot] = useState("");
   const cloudReady = cloud.ready;
   const [run, setRun] = useState<WorkbenchRun>(() => createRun());
-  const [referenceDisplayMode, setReferenceDisplayMode] = useState<"normal" | "reference">("normal");
+  const [referenceDisplayMode, setReferenceDisplayMode] = useState<"normal" | "reference" | "chained">("normal");
   const referenceDisplayContextRef = useRef("");
   const referenceUploadOperationRef = useRef<string | null>(null);
   const [referenceUploadPending, setReferenceUploadPending] = useState<ReferenceUploadPending[]>([]);
@@ -1601,34 +1755,54 @@ function UserStoryboardWorkbench({
   const [videoModelCatalogState, setVideoModelCatalogState] = useState<"loading" | "ready" | "error">("loading");
   const [modelCatalogReloadKey, setModelCatalogReloadKey] = useState(0);
   const [batchMode, setBatchMode] = useState<BatchMode>("");
+  const [videoBatchOutcome, setVideoBatchOutcome] = useState<{ workspaceGeneration: number; runId: string; owner: string; cardIds: string[] } | null>(null);
   const batchAuthorizationRef = useRef<StoryboardBatchAuthorization | null>(null);
   const continuousAuthorizationRef = useRef<ContinuousProductionAuthorization | null>(null);
   const continuousBusyRef = useRef(false);
+  const chainAuthorizationRef = useRef<{ runId: string; fingerprint: string; owner: string; price: number } | null>(null);
+  const chainBusyRef = useRef(false);
+  const chainStartBusyRef = useRef(false);
+  const chainAnchorSavingRef = useRef(false);
+  const [chainStatus, setChainStatus] = useState<"idle" | "running" | "waiting" | "stopped" | "done">("idle");
   const [continuousStatus, setContinuousStatus] = useState<ContinuousProductionStatus>("idle");
   const [continuousMessage, setContinuousMessage] = useState("");
   const videoBatchPreflightRef = useRef(false);
   const [notice, setNotice] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const [historyNavigationIssue, setHistoryNavigationIssue] = useState<{ open: boolean } | null>(null);
+  const historyNavigationTimerRef = useRef<number | null>(null);
   const historyOpen = historyPage;
+  useEffect(() => {
+    if (historyNavigationTimerRef.current !== null) window.clearTimeout(historyNavigationTimerRef.current);
+    historyNavigationTimerRef.current = null;
+    setHistoryNavigationIssue(null);
+    return () => {
+      if (historyNavigationTimerRef.current !== null) window.clearTimeout(historyNavigationTimerRef.current);
+      historyNavigationTimerRef.current = null;
+    };
+  }, [historyPage]);
   const setHistoryOpen = (open: boolean) => {
     const projectId = requestedProjectId;
-    const destination = `/storyboard-workbench${open ? "/history" : ""}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`;
-    router.push(destination, { scroll: false });
-    // After long-running generation/download work, an App Router transition can
-    // be acknowledged by the click handler while leaving the browser URL on the
-    // current workbench. The history surface is independently recoverable, so
-    // fall back to a full navigation only when the SPA transition did not move.
-    if (open && typeof window !== "undefined") {
-      window.setTimeout(() => {
-        const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-        if (current !== destination) window.location.assign(destination);
-      }, 250);
+    const destinationPath = `/storyboard-workbench${open ? "/history" : ""}`;
+    const destination = `${destinationPath}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`;
+    if (historyNavigationTimerRef.current !== null) window.clearTimeout(historyNavigationTimerRef.current);
+    setHistoryNavigationIssue(null);
+    try {
+      router.push(destination, { scroll: false });
+      // Never hard-navigate: doing so unloads unsaved drafts and running tasks.
+      // If the SPA transition stalls, leave the workspace intact and allow retry.
+      historyNavigationTimerRef.current = window.setTimeout(() => {
+        historyNavigationTimerRef.current = null;
+        if (window.location.pathname !== destinationPath) setHistoryNavigationIssue({ open });
+      }, 3_000);
+    } catch {
+      setHistoryNavigationIssue({ open });
     }
   };
-  const [videoHistoryTasks, setVideoHistoryTasks] = useState<HistoryVideoTask[]>([]);
+  const [, setVideoHistoryTasks] = useState<HistoryVideoTask[]>([]);
   const [videoHistoryLoading, setVideoHistoryLoading] = useState(false);
   const [videoHistoryError, setVideoHistoryError] = useState("");
-  const [videoHistoryNextOffset, setVideoHistoryNextOffset] = useState<number | null>(null);
+  const [, setVideoHistoryNextOffset] = useState<number | null>(null);
   const videoHistoryAbortRef = useRef<AbortController | null>(null);
   const videoHistorySequenceRef = useRef(0);
   const videoHistoryWindowRef = useRef(100);
@@ -1640,6 +1814,8 @@ function UserStoryboardWorkbench({
   const [imageFailureHistoryNextPage, setImageFailureHistoryNextPage] = useState<number | null>(null);
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [uploadingCardId, setUploadingCardId] = useState("");
+  const videoInputUploadLocksRef = useRef(new Set<string>());
+  const [videoInputUploadingIds, setVideoInputUploadingIds] = useState(new Set<string>());
   const visibleReferenceChoicesRef = useRef<{ owner: string; projectId: string; ids: Record<string, string> } | null>(null);
   const rememberVisibleReferenceChoices = useCallback((projectId: string, ids: Record<string, string>) => {
     visibleReferenceChoicesRef.current = { owner: userId + "\0" + token, projectId, ids };
@@ -1704,36 +1880,6 @@ function UserStoryboardWorkbench({
   // Submitted runs stay in history; reopening the editor does not restore a draft.
   const submittedRunIdsRef = useRef(new Set<string>());
   const videoHistoryHydratedRef = useRef(false);
-  const videoHistoryItems = useMemo<StoryboardHistoryItem[]>(() => videoHistoryTasks
-    .filter((task): task is HistoryVideoTask & { id: string } => Boolean(task.id))
-    .map((task) => ({
-      taskId: task.id,
-      batchId: task.batchId,
-      batchTopic: task.batchTopic,
-      cardIndex: normalizeStoryboardHistoryCardIndex(task.cardIndex),
-      status: task.status || "unknown",
-      createdAt: task.createdAt || task.completedAt || "",
-      completedAt: task.completedAt,
-      posterUrl: task.thumbnailUrl || undefined,
-      deliveryState: task.deliveryState,
-      retainedUntil: task.retainedUntil,
-      mediaAvailable: task.mediaAvailable,
-      modelName: task.modelName,
-      duration: task.durationSeconds,
-      videoUrl: task.videoUrl,
-      storageUrl: task.storageUrl,
-      taskLabel: task.taskLabel,
-      prompt: task.prompt,
-      resolution: task.resolution,
-      aspectRatio: task.aspectRatio,
-      durationSeconds: task.durationSeconds,
-      billingState: task.billingState,
-      priceCharged: task.priceCharged,
-      errorMessage: task.errorMessage,
-      canRetry: task.canRetry,
-      progress: task.progress,
-      statusDetail: task.statusDetail,
-    })), [videoHistoryTasks]);
   const uploadInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
   const videoSectionsRef = useRef<Record<string, HTMLElement | null>>({});
   const scopeMountedRef = useRef(true);
@@ -1741,6 +1887,82 @@ function UserStoryboardWorkbench({
   const originalBoardBlobsRef = useRef(new Map<string, StoryboardBoardBlob>());
   const imageDownloadOwnerRef = useRef(userId + "\0" + token);
   imageDownloadOwnerRef.current = userId + "\0" + token;
+  const [videoConfirmationTasks, setVideoConfirmationTasks] = useState(() => new Map<string, boolean>());
+  const rememberVideoConfirmation = useCallback((runId: string, cardId: string, taskId: string, data: Parameters<typeof updateVideoConfirmationMap>[2], clientRequestId: string | undefined) => {
+    const owner = userId + "\0" + token;
+    const card = runRef.current.cards.find(item => item.id === cardId);
+    if (!taskId || !card || runRef.current.id !== runId || imageDownloadOwnerRef.current !== owner || card.videoClientRequestId !== clientRequestId
+      || card.videoTaskId && card.videoTaskId !== taskId) return;
+    const key = storyboardVideoConfirmationKey(userId, runId, card, taskId);
+    setVideoConfirmationTasks(current => {
+      const latest = runRef.current.cards.find(item => item.id === cardId);
+      if (!scopeMountedRef.current || imageDownloadOwnerRef.current !== owner || runRef.current.id !== runId
+        || !latest || latest.videoClientRequestId !== clientRequestId || latest.videoTaskId && latest.videoTaskId !== taskId) return current;
+      return updateVideoConfirmationMap(current, key, data);
+    });
+  }, [token, userId]);
+  useEffect(() => { setVideoConfirmationTasks(new Map()); }, [userId, token, run.id]);
+  const localVideoCacheRef = useRef<VideoLocalAutoCache | null>(null);
+  const localVideoCacheScopeRef = useRef("");
+  const localVideoIdsUserRef = useRef("");
+  // IDs are accepted only from explicit business_task_id/businessTaskId fields.
+  // A restored card or a provider task_id alone is not proof of internal ID.
+  const localVideoInternalIdsRef = useRef(new Set<string>());
+  const localVideoPendingIdsRef = useRef(new Set<string>());
+  const queueLocalStoryboardVideo = useCallback((cache: VideoLocalAutoCache, taskId: string, owner: string) => {
+    localVideoPendingIdsRef.current.add(taskId);
+    void cache.enqueue(taskId).then(result => {
+      if (localVideoCacheRef.current !== cache || !scopeMountedRef.current || imageDownloadOwnerRef.current !== owner) return;
+      localVideoPendingIdsRef.current.delete(taskId);
+      if (result.state === "failed" || result.state === "queue_full" || result.state === "unavailable" || result.state === "invalid" || result.state === "not_ready" || result.state === "expired") {
+        setNotice("视频已完成，但本机副本未保存；请下载视频保存。");
+      }
+    });
+  }, []);
+  useLayoutEffect(() => {
+    // A token refresh retains the same user's authoritative business IDs;
+    // switching users must clear them before any new session can enqueue.
+    if (localVideoIdsUserRef.current !== userId) {
+      localVideoInternalIdsRef.current.clear();
+      localVideoPendingIdsRef.current.clear();
+      localVideoIdsUserRef.current = userId;
+    }
+    if (!userId || !token) return;
+    let cache: VideoLocalAutoCache;
+    try {
+      cache = new VideoLocalAutoCache({ userId, token, surface: "storyboard-workbench",
+        onRemovalSyncFailure: () => { if (scopeMountedRef.current && imageDownloadOwnerRef.current === userId + "\0" + token) setNotice("视频历史已移除，但本机副本清理未完成，请检查浏览器存储。"); },
+      });
+    } catch {
+      localVideoCacheRef.current = null;
+      localVideoCacheScopeRef.current = "";
+      return;
+    }
+    localVideoCacheRef.current = cache;
+    localVideoCacheScopeRef.current = userId + "\0" + token;
+    // If token rotation cancelled a save already in progress, retry only the
+    // previously requested completed IDs, not every running task.
+    for (const taskId of localVideoPendingIdsRef.current) {
+      queueLocalStoryboardVideo(cache, taskId, localVideoCacheScopeRef.current);
+    }
+    return () => {
+      if (localVideoCacheRef.current === cache) {
+        localVideoCacheRef.current = null;
+        localVideoCacheScopeRef.current = "";
+      }
+      cache.dispose();
+    };
+  }, [userId, token, queueLocalStoryboardVideo]);
+  const cacheCompletedStoryboardVideo = useCallback((taskId: string) => {
+    const owner = userId + "\0" + token;
+    if (!taskId || !localVideoInternalIdsRef.current.has(taskId) || imageDownloadOwnerRef.current !== owner) return;
+    const cache = localVideoCacheRef.current;
+    if (!cache || localVideoCacheScopeRef.current !== owner) {
+      if (scopeMountedRef.current && imageDownloadOwnerRef.current === userId + "\0" + token) setNotice("视频已完成，但浏览器本机缓存不可用；请下载保存。");
+      return;
+    }
+    queueLocalStoryboardVideo(cache, taskId, owner);
+  }, [userId, token, queueLocalStoryboardVideo]);
   const saveStoryboardProject = useCallback(async (document: WorkbenchRun, manual = false, forReferenceAdoption = false) => {
     if (!contextReadyRef.current) return false;
     const workspaceGeneration = workspaceGenerationRef.current;
@@ -1859,7 +2081,6 @@ function UserStoryboardWorkbench({
           contextReadyRef.current = true;
           setProjectContext("ready");
         }
-        setNotice("正在核对工作台恢复记录；原生成任务不会重复提交。");
       }
       setRecoveryReadReady(true);
       if (!initialProjectIdRef.current) {
@@ -1877,7 +2098,7 @@ function UserStoryboardWorkbench({
       agentHandoffConsumedRef.current = true;
       const parsedAgentHandoff = readAgentWorkbenchHandoffAcrossTabs("storyboard-workbench", userId, Date.now(), searchParams.get("handoffId") ?? undefined);
       if (parsedAgentHandoff.ok) {
-        const plan = parseStoryboardCanvasImport(parsedAgentHandoff.handoff.payload);
+        const plan = parseStoryboardCanvasImport(parsedAgentHandoff.handoff.payload, { allowQualityWarnings: Boolean(parsedAgentHandoff.handoff.payload.review_warnings?.length) });
         if (plan) {
           setAgentHandoff({ status: "ready", handoff: parsedAgentHandoff.handoff, plan });
           setNotice("已读取创作 Agent 分镜交接预览；确认前不会覆盖工作台，也不会调用模型或扣费");
@@ -2020,6 +2241,14 @@ function UserStoryboardWorkbench({
       setVideoHistoryTasks(current => offset ? [...current.filter(item => !tasks.some(task => task.id === item.id)), ...tasks] : tasks);
       videoHistoryWindowRef.current = Math.max(100, offset + tasks.length);
       setVideoHistoryNextOffset(cursor);
+      for (const card of runRef.current.cards) {
+        const task = card.videoTaskId
+          ? tasks.find(item => item.id === card.videoTaskId || item.taskIdExternal === card.videoTaskId)
+          : card.videoClientRequestId ? tasks.find(item => item.clientRequestId === card.videoClientRequestId) : undefined;
+        if (task && !(task.clientRequestId && card.videoClientRequestId && task.clientRequestId !== card.videoClientRequestId)) {
+          rememberVideoConfirmation(runRef.current.id, card.id, card.videoTaskId || task.taskIdExternal || task.id || "", task, card.videoClientRequestId);
+        }
+      }
       setHistory((current) => current.map((record) => hydrateRunVideoTasks(record, tasks)));
       setRun((current) => {
         const next = hydrateRunVideoTasks(current, tasks);
@@ -2031,7 +2260,7 @@ function UserStoryboardWorkbench({
     } finally {
       if (sequence === videoHistorySequenceRef.current && identity === videoHistoryIdentityRef.current) setVideoHistoryLoading(false);
     }
-  }, [storageReady, token]);
+  }, [rememberVideoConfirmation, storageReady, token]);
 
   useEffect(() => {
     setVideoHistoryTasks([]);
@@ -2120,7 +2349,7 @@ function UserStoryboardWorkbench({
         const selectedContract = videoModelId === current.videoContract?.modelId ? current.videoContract : undefined;
         const requestedVideoResolution = selectedContract?.resolution || current.videoResolution;
         const requestedVideoDuration = selectedContract?.duration || current.videoDuration;
-        const resolvedVideoSelection = selectedVideoModel
+        const resolvedVideoSelection = selectedVideoModel && selectedVideoModel.generationReady !== false
           ? resolveStoryboardVideoSelection(selectedVideoModel, {
               ratio: selectedContract?.ratio || current.ratio,
               duration: requestedVideoDuration,
@@ -2178,9 +2407,7 @@ function UserStoryboardWorkbench({
             // Keep the complete configured catalog visible. Capability and
             // channel restrictions are rendered as disabled-card reasons;
             // they must not make a configured model disappear from the rail.
-            .filter((model) => Boolean(model.id))
-            .sort((left, right) => Number(!storyboardVideoModelSelectionIssue(right, { ratio: "16:9", duration: right.durationSeconds }))
-              - Number(!storyboardVideoModelSelectionIssue(left, { ratio: "16:9", duration: left.durationSeconds })));
+            .filter((model) => Boolean(model.id));
           videoModelsRef.current = nextVideos;
           setVideoModels(nextVideos);
           setVideoModelCatalogState("ready");
@@ -2239,7 +2466,9 @@ function UserStoryboardWorkbench({
   const referenceImageRatioOptions = supportedImageRatios(referenceImageModel);
   const referenceImageSelectionIssue = referenceImageModel ? storyboardImageModelSelectionIssue(referenceImageModel) : "图片模型尚未加载";
   const referenceImageRatioIssue = referenceImageModel && !referenceImageRatioOptions.includes(referenceSettings.ratio) ? "当前参考图模型不支持所选比例，请重新选择参考图比例。" : "";
-  const visualAssetGenerationIssue = referenceImageSelectionIssue || referenceImageRatioIssue || (referenceImageModel?.requiresImage || (referenceImageModel?.minReferenceImages || 0) > 0
+  const visualAssetGenerationIssue = (referenceImageSelectionIssue
+    ? publicModelSelectionNotice(referenceImageSelectionIssue, "参考图模型")
+    : "") || referenceImageRatioIssue || (referenceImageModel?.requiresImage || (referenceImageModel?.minReferenceImages || 0) > 0
     ? "当前模型需要已有参考图，不能直接从文字制作参考图。请选择支持文字生图的模型，或从图库选择、上传已有参考图。"
     : "");
   const activeVideoSelectionIssue = activeVideoModel
@@ -2249,6 +2478,17 @@ function UserStoryboardWorkbench({
         resolution: run.videoResolution,
       })
     : "视频模型尚未加载";
+  const batchVideoMissingImages = run.cards.filter(card => activeVideoModel && resolveStoryboardVideoInputs(activeVideoModel, card).requiresStoryboardImage && !hasValidatedImage(card)).length;
+  const batchVideoInputIssue = run.cards.map(card => storyboardCardVideoInputIssue(activeVideoModel, card, run)).find(Boolean) || "";
+  const batchVideoMissingPrompts = videoPromptRequired ? run.cards.filter(card => !card.videoPrompt.trim()).length : 0;
+  const batchVideoRatioMismatches = run.cards.filter(card => activeVideoModel && resolveStoryboardVideoInputs(activeVideoModel, card).usesStoryboardImage && storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel)).length;
+  const batchVideoBlockedReason = activeVideoSelectionIssue
+    ? publicModelSelectionNotice(activeVideoSelectionIssue, "视频模型")
+    : batchMode ? "当前批量任务正在处理，请等待完成。"
+    : batchVideoMissingImages ? `还有 ${batchVideoMissingImages} 张分镜图尚未生成或验证，请先完成这些图片。`
+    : batchVideoMissingPrompts ? `还有 ${batchVideoMissingPrompts} 段未填写视频提示词。`
+    : batchVideoRatioMismatches ? `还有 ${batchVideoRatioMismatches} 张分镜图与视频画幅不一致，请核对图片与视频比例。`
+    : batchVideoInputIssue;
   const canRemotelyCancelVideoTask = useCallback((card: WorkbenchCard) => {
     return storyboardTaskCanCancel(card, videoModels);
   }, [videoModels]);
@@ -2290,7 +2530,7 @@ function UserStoryboardWorkbench({
 
   const selectReferenceImageModel = useCallback((model: ImageModel) => {
     const issue = storyboardImageModelSelectionIssue(model);
-    if (issue) { setVisualAssetError(issue); return; }
+    if (issue) { setVisualAssetError(publicModelSelectionNotice(issue, "参考图模型")); return; }
     const current = readReferenceImageSettings(runRef.current);
     const ratios = supportedImageRatios(model);
     // Keep the tier the user already picked whenever the new model can render it;
@@ -2880,7 +3120,7 @@ function UserStoryboardWorkbench({
   /** The authenticated original-receipt endpoint verifies the immutable submitted prompt. */
   const verifyPlannedDirectorReferences = useCallback(async (): Promise<() => void> => {
     const before = runRef.current;
-    if (before.directorIntake?.phase !== "planned") return () => undefined;
+    if (resolveStoryboardExecutionMode(before) !== "reference" || before.directorIntake?.phase !== "planned") return () => undefined;
     const owner = imageDownloadOwnerRef.current;
     const planFingerprint = storyboardProductionPlanFingerprint(before);
     const sourceFingerprint = storyboardProductionAssetFingerprint(before);
@@ -3069,6 +3309,7 @@ function UserStoryboardWorkbench({
     const next: WorkbenchRun = {
       ...current,
       updatedAt: Date.now(),
+      executionMode: mode === "selected" ? "reference" : "ordinary",
       visualAssetPlan: mode === "selected"
         ? { ...current.visualAssetPlan, mode: "selected", assets: current.visualAssetPlan?.assets || [] }
         : { ...current.visualAssetPlan, mode: "off", assets: current.visualAssetPlan?.assets || [] },
@@ -3405,7 +3646,7 @@ function UserStoryboardWorkbench({
   const selectImageModel = useCallback((model: ImageModel) => {
     const selectionIssue = storyboardImageModelSelectionIssue(model);
     if (selectionIssue) {
-      setNotice(`${storyboardImageModelName(model)} ${publicModelSelectionLabel(selectionIssue)}：${selectionIssue}`);
+      setNotice(`${storyboardImageModelName(model)} ${publicModelSelectionNotice(selectionIssue, "该生图模型")}`);
       return;
     }
     const nextRatios = supportedImageRatios(model);
@@ -3568,7 +3809,8 @@ function UserStoryboardWorkbench({
           patchCard(card.id, { imageWidth: width, imageHeight: height, imageMediaState: undefined, imageRetryBlocked: false, imageValidatedAt: Date.now(), imageError: undefined }, undefined, stillCurrent);
         })
         .catch((error) => { if (stillCurrent()) patchCard(card.id, isCompletedProviderImageReceipt(card)
-          ? storyboardImageUnavailablePatch(error instanceof StoryboardImagePreviewError ? error.mediaState : "unavailable")
+          ? { ...storyboardImageUnavailablePatch(error instanceof StoryboardImagePreviewError ? error.mediaState : "unavailable"),
+              ...(error instanceof StoryboardImagePreviewError ? { imageError: error.message } : {}) }
           : { imageStatus: "failed", imageValidatedAt: undefined, imageError: error instanceof Error ? error.message : "图片加载失败" }, undefined, stillCurrent); })
         .finally(() => validatingImagesRef.current.delete(validationKey));
     }
@@ -3855,7 +4097,7 @@ function UserStoryboardWorkbench({
       if (!original || !isUnavailableCompletedStoryboardImage(original) || current.cards.length >= MAX_CARDS) return current;
       const copied = { ...createCard(current.cards.length + 1),
         imagePrompt: original.imagePrompt, imageExactText: original.imageExactText,
-        imageTextLayoutEnabled: original.imageTextLayoutEnabled, videoPrompt: original.videoPrompt,
+        imageTextLayoutEnabled: original.imageTextLayoutEnabled, imageAnnotationIssue: original.imageAnnotationIssue, videoPrompt: original.videoPrompt, videoInputs: normalizeStoryboardVideoInputs(original.videoInputs),
         narration: original.narration, referenceImageUrls: [...original.referenceImageUrls],
         visualAssetRefs: original.visualAssetRefs?.map(ref => ({ ...ref })),
         visualAssetRefsMode: original.visualAssetRefsMode, visualAssetSelectionMode: original.visualAssetSelectionMode };
@@ -3924,6 +4166,7 @@ function UserStoryboardWorkbench({
 
   const applyImportedSegments = useCallback(async (input: {
     projectId?: string;
+    executionMode?: StoryboardExecutionMode;
     segments: Array<StoryboardAgentOutputSegment & { visualAssetRefs?: StoryboardVisualAssetRef[]; directorExecution?: StoryboardDirectorExecution }>;
     visualAssetPlan?: StoryboardVisualAssetPlan;
     directorIntake?: StoryboardDirectorIntakeState;
@@ -3955,7 +4198,8 @@ function UserStoryboardWorkbench({
     try {
       const now = Date.now();
       const hasProposedPlan = input.visualAssetPlan !== undefined;
-      const proposedPlan = input.visualAssetPlan;
+      const importedMode = input.executionMode || (input.visualAssetPlan?.mode === "selected" ? "reference" : "ordinary");
+      const proposedPlan = input.visualAssetPlan ? { ...input.visualAssetPlan, mode: importedMode === "reference" ? "selected" as const : "off" as const } : undefined;
       const proposedUrls = await resolveVisualAssetUrls(proposedPlan);
       const proposedPlanResolved = Boolean(proposedPlan?.mode === "selected" && proposedPlan.assets.every((asset) =>
         proposedUrls.some((item) => item.assetId === asset.source?.assetId)));
@@ -3992,6 +4236,8 @@ function UserStoryboardWorkbench({
       const next: WorkbenchRun = {
         ...current,
         id: input.projectId || createId("storyboard-run"),
+        executionMode: importedMode,
+        chainRevision: 1,
         createdAt: now,
         updatedAt: now,
         ratio: input.ratio && isWorkbenchRatio(input.ratio) ? input.ratio : current.ratio,
@@ -4004,7 +4250,7 @@ function UserStoryboardWorkbench({
         draftImportNotice: input.draftImportNotice,
         wardrobePlan: input.wardrobePlan || current.wardrobePlan,
         environmentGroups: input.environmentGroups || current.environmentGroups || [],
-        visualAssetPlan: activeVisualAssetPlan || { mode: "off", assets: [] },
+        visualAssetPlan: { ...activeVisualAssetPlan, mode: importedMode === "reference" ? "selected" : "off", assets: activeVisualAssetPlan?.assets || [] },
         visualAssetWorkspace: importedVisualAssetWorkspace,
         cards: input.segments.map((segment, index) => {
           const binding = index === 0 ? legacyBinding : bindImportedSegment(segment);
@@ -4124,12 +4370,13 @@ function UserStoryboardWorkbench({
     if (lookup.status !== 404 || lookupBody.code !== "PROJECT_NOT_FOUND") throw new Error("交接项目状态暂不可确认，本次未新建项目；请稍后重新读取。");
     const importedRunId = await applyImportedSegments({
       projectId,
+      executionMode: plan.executionMode,
       segments: plan.phase === "assets" ? [{ sourceNumber: 1, narration: plan.sourceScript, imagePrompt: "", videoPrompt: "" }] : plan.segments.map((segment) => ({
         sourceNumber: segment.sourceIndex,
         narration: segment.narration,
         imagePrompt: segment.imagePrompt,
         videoPrompt: segment.videoPrompt,
-        directorExecution: plan.phase === "draft" ? undefined : buildStoryboardDirectorExecution(plan, segment),
+        directorExecution: plan.promptDraft || plan.phase === "draft" ? undefined : buildStoryboardDirectorExecution(plan, segment),
         visualAssetRefs: segment.visualAssetRefs,
         sceneId: segment.sceneId,
         sceneZone: segment.sceneZone,
@@ -4143,14 +4390,14 @@ function UserStoryboardWorkbench({
          wardrobeChangeEvents: segment.wardrobeChangeEvents,
       })),
       wardrobePlan: plan.wardrobePlan,
-      draftImportNotice: plan.phase === "draft" ? `${plan.legacyDraftWarning || "历史提示词草稿，请核对原备注与分段"}\n原特殊备注：${plan.originalInput.special_notes || "无"}` : undefined,
+      draftImportNotice: plan.phase === "draft" && !plan.promptDraft ? `${plan.legacyDraftWarning || "历史提示词草稿，请核对原备注与分段"}\n原特殊备注：${plan.originalInput.special_notes || "无"}` : undefined,
       directorIntake: plan.phase === "assets" || plan.phase === "planned" ? { phase: plan.phase, input: plan.originalInput, sourceMessageId: plan.messageId } : undefined,
       visualAssetPlan: plan.visualAssetPlan,
       environmentGroups: plan.environmentGroups,
-      title: plan.phase === "assets" ? "角色三视图 · 分镜前置" : `Agent 分镜 · ${plan.segments.length} 个生产段`,
+      title: plan.phase === "assets" ? "角色三视图 · 分镜前置" : plan.promptDraft && !plan.intakeVerified ? `提示词草稿（待核对）· ${plan.segments.length} 段` : `Agent 分镜 · ${plan.segments.length} 个生产段`,
       ratio: plan.settings.aspectRatio,
       videoDuration: plan.settings.targetDurationSeconds,
-      successNotice: plan.phase === "draft" ? "历史提示词草稿已导入，未生成、未扣费。请先核对原备注与每段提示词，再逐段操作。" : plan.phase === "planned" ? `完整计划已导入：角色参考和 ${plan.segments.length} 段图、视频提示词均已就绪。可在工作台连续制作，无需返回对话；本次导入未生成、未扣费。` : plan.phase === "assets" ? "已导入人物和宠物三视图提示词。请先生成并采用图片，再复制续写卡回原智能体继续分镜。" : `已导入 ${plan.segments.length} 个 Agent 分镜段；生图和视频 Prompt 已建卡，未调用模型、未扣费`,
+      successNotice: plan.promptDraft ? `已导入 ${plan.segments.length} 段生图和视频提示词${plan.visualAssetPlan?.assets.length ? `及 ${plan.visualAssetPlan.assets.length} 张角色参考卡` : ""}，未生成、未扣费。${plan.importWarnings?.join(" ") || ""}` : plan.phase === "draft" ? "历史提示词草稿已导入，未生成、未扣费。请先核对原备注与每段提示词，再逐段操作。" : plan.phase === "planned" ? `完整计划已导入：角色参考和 ${plan.segments.length} 段图、视频提示词均已就绪。可在工作台连续制作，无需返回对话；本次导入未生成、未扣费。` : plan.phase === "assets" ? `已导入${storyboardIdentityAssetLabel(plan.visualAssetPlan)}提示词。请先生成并采用图片，再复制续写卡回原智能体继续分镜。` : `已导入 ${plan.segments.length} 个 Agent 分镜段；生图和视频 Prompt 已建卡，未调用模型、未扣费`,
     });
     if (!importedRunId) return;
     if (!isCurrentImport() || runRef.current.id !== projectId) return;
@@ -4267,7 +4514,45 @@ function UserStoryboardWorkbench({
     }
   }, [patchCard, readOwnedStoryboardImage, referenceLimit, token]);
 
+  const updateCardVideoInputs = useCallback((cardId: string, value: StoryboardVideoInputs) => {
+    const card = runRef.current.cards.find(item => item.id === cardId);
+    if (!card || !scopeMountedRef.current || !contextReadyRef.current || navigationRef.current || batchAuthorizationRef.current || continuousAuthorizationRef.current
+      || videoSubmissionsRef.current.has(cardId) || boardExportLocksRef.current.has(cardId) || isActiveVideoStatus(card.videoStatus)
+      || videoNeedsRequestReconciliation(card) || (card.videoStatus === "failed" && card.videoRetryable !== true)) throw new Error("当前视频请求仍待处理，请确认原任务后再修改素材。");
+    let normalized: StoryboardVideoInputs | undefined;
+    try { normalized = normalizeStoryboardVideoInputs(value); } catch { throw new Error("视频素材链接或数量无效，请检查后重试。"); }
+    patchCard(cardId, { videoInputs: normalized });
+  }, [patchCard]);
+
+  const uploadCardVideoInput = useCallback(async (cardId: string, file: File, kind: "image" | "audio" | "video") => {
+    const before = runRef.current, card = before.cards.find(item => item.id === cardId);
+    const owner = userId + "\0" + token;
+    if (kind === "video") throw new Error("请填写可直接访问的源视频链接。");
+    if (!card || !token || !contextReadyRef.current || navigationRef.current || videoInputUploadLocksRef.current.has(cardId)
+      || videoSubmissionsRef.current.has(cardId) || batchAuthorizationRef.current || continuousAuthorizationRef.current || isActiveVideoStatus(card.videoStatus)
+      || videoNeedsRequestReconciliation(card) || (card.videoStatus === "failed" && card.videoRetryable !== true)) throw new Error("当前无法上传，请先处理视频任务。");
+    const inputIdentity = JSON.stringify([before.videoModelId, card.videoInputs]);
+    const current = () => scopeMountedRef.current && contextReadyRef.current && !navigationRef.current && imageDownloadOwnerRef.current === owner && runRef.current.id === before.id
+      && JSON.stringify([runRef.current.videoModelId, runRef.current.cards.find(item => item.id === cardId)?.videoInputs]) === inputIdentity;
+    videoInputUploadLocksRef.current.add(cardId);
+    setVideoInputUploadingIds(ids => new Set([...ids, cardId]));
+    try {
+      const form = new FormData(); form.set("file", file); form.set("category", kind); form.set("upload_session", `video_ref_${crypto.randomUUID()}`);
+      const response = await fetch("/api/video/reference-upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form, redirect: "error", signal: AbortSignal.timeout(60000) });
+      const data = await response.json().catch(() => ({})) as { file?: { url?: string; asset_ref?: string }; error?: string };
+      if (!response.ok || !data.file?.url || !data.file.asset_ref) throw new Error(data.error || "上传结果尚未确认，请核对素材后重试。");
+      if (!current()) throw new Error("账号、项目或视频素材已变化，上传结果未绑定；原任务保持不变。");
+      const asset = { url: data.file.url, assetRef: data.file.asset_ref, category: kind };
+      normalizeStoryboardVideoInputs({ uploadedAssets: [asset] });
+      return asset;
+    } finally {
+      videoInputUploadLocksRef.current.delete(cardId);
+      if (scopeMountedRef.current && imageDownloadOwnerRef.current === owner) setVideoInputUploadingIds(ids => { const next = new Set(ids); next.delete(cardId); return next; });
+    }
+  }, [token, userId]);
+
   const ensureInitialReferencesAdopted = useCallback(async (): Promise<boolean> => {
+    if (resolveStoryboardExecutionMode(runRef.current) !== "reference") return true;
     const before = runRef.current;
     const owner = imageDownloadOwnerRef.current;
     if (before.directorIntake?.phase === "planned") {
@@ -4323,29 +4608,33 @@ function UserStoryboardWorkbench({
   const generateImage = useCallback(async (cardId: string, batchAuthorization?: StoryboardBatchAuthorization) => {
     const invocationRunId = runRef.current.id;
     const invocationOwner = userId + "\0" + token;
-    if (runRef.current.directorIntake?.phase === "assets") { setNotice("请先生成人物与宠物三视图、确认采用，再复制续写卡回原智能体生成分镜提示词。"); return null; }
-    if (runRef.current.directorIntake?.phase === "planned") {
+    if (resolveStoryboardExecutionMode(runRef.current) !== "chained" && runRef.current.directorIntake?.phase === "assets") { setNotice("请先生成计划中已声明角色的三视图并确认采用，再复制续写卡回原智能体生成分镜提示词。"); return null; }
+    if (resolveStoryboardExecutionMode(runRef.current) === "reference" && runRef.current.directorIntake?.phase === "planned") {
       try { collectStoryboardDirectorReferenceBindings(runRef.current, runRef.current.directorIntake.input); }
       catch (error) { setNotice(error instanceof Error ? error.message : "请先逐项确认角色三视图。"); return null; }
     }
-    if (!contextReadyRef.current || navigationRef.current || view !== "workbench") return null;
-    if (!scopeMountedRef.current) return null;
+    // A click that silently returns reads as a broken button; tell the user why.
+    if (!contextReadyRef.current) { setNotice("页面数据尚未就绪，请稍候再试或刷新页面"); return null; }
+    if (navigationRef.current || view !== "workbench") return null;
+    if (!scopeMountedRef.current) { setNotice("页面正在切换，请稍后再试"); return null; }
     let assertPlannedDirectorReferencesCurrent: () => void;
-    try { assertPlannedDirectorReferencesCurrent = await verifyPlannedDirectorReferences(); }
+    try { assertPlannedDirectorReferencesCurrent = resolveStoryboardExecutionMode(runRef.current) !== "reference" ? () => undefined : await verifyPlannedDirectorReferences(); }
     catch (error) { setNotice(error instanceof Error ? error.message : "角色原生成回执核验失败，本次未提交。"); return null; }
-    if (!scopeMountedRef.current || imageDownloadOwnerRef.current !== invocationOwner || runRef.current.id !== invocationRunId) return null;
+    if (!scopeMountedRef.current) { setNotice("页面正在切换，请稍后再试"); return null; }
+    if (imageDownloadOwnerRef.current !== invocationOwner || runRef.current.id !== invocationRunId) { setNotice("当前账号或项目已变化，请刷新页面后重试"); return null; }
     if (visualAssetMutationRef.current) { setNotice("参考资产正在保存，请确认完成后再生成分镜图"); return null; }
     let current = runRef.current;
     const imageSubmissionOwner = imageDownloadOwnerRef.current;
     let card = current.cards.find((item) => item.id === cardId);
-    if (boardExportLocksRef.current.has(cardId)) return null;
+    if (resolveStoryboardExecutionMode(current) === "chained" && chainBusyRef.current && !batchAuthorization && !card?.imageRecoveryReady) { setNotice("串联正在等待当前原任务，请暂停后再单独生成。"); return null; }
+    if (boardExportLocksRef.current.has(cardId)) { setNotice("本段正在导出分镜板，请稍后再试"); return null; }
     if (imageSubmissionsRef.current.has(cardId)) {
       setNotice(`分段${card?.order || ""}的生图请求已经提交，请勿重复点击`);
       return null;
     }
     if (!token) { setNotice("请先登录后再生成"); return null; }
     if (!card) { setNotice("分镜卡片不存在，请刷新后重试"); return null; }
-    if (card.imageReferenceState !== "stale" && isOwnedStoryboardBoard(card) && (!hasValidatedImage(card) || card.imageRecoveryReady)) { await restoreOwnedBoard(cardId, card.imageRecordId); return null; }
+    if (card.imageReferenceState !== "stale" && isOwnedStoryboardBoard(card) && (!hasValidatedImage(card) || card.imageRecoveryReady)) { setNotice(`正在恢复分段${card.order}的已有分镜图，请稍候`); await restoreOwnedBoard(cardId, card.imageRecordId); return null; }
     try { assertBatchAuthorization(current, card, "images", batchAuthorizationRef.current, batchAuthorization); }
     catch (error) { setNotice(error instanceof Error ? error.message : "批量参数已改变，本段未提交"); return null; }
     if (card.imageRetryBlocked) {
@@ -4505,24 +4794,30 @@ function UserStoryboardWorkbench({
         modelName = card.imageModelNameUsed || "原生图模型";
       } else {
         if (!card.imagePrompt.trim()) { setNotice("请先粘贴分镜生图 Prompt"); return null; }
-        if (card.imageTextLayoutEnabled && !String(card.imageExactText || "").trim()) {
-          setNotice(`分段${card.order}已开启高级文字排版，请先填写需要精确呈现的文字`);
-          return null;
-        }
         const model = imageModels.find((item) => item.id === current.imageModelId);
         if (!model) { setNotice("图片模型尚未加载"); return null; }
         const selectionIssue = storyboardImageModelSelectionIssue(model);
-        if (selectionIssue) { setNotice(selectionIssue); return null; }
+        if (selectionIssue) { setNotice(publicModelSelectionNotice(selectionIssue, "生图模型")); return null; }
         if (!supportedImageRatios(model).includes(effectiveImageRatio(current))) { setNotice("当前图片模型不支持所选图片比例，请重新选择图片比例。"); return null; }
         const capabilities = getImageModelCapabilities(model);
-        const refreshed = await refreshStoryboardVisualAssetReferences({ card, plan: current.visualAssetPlan, limit: capabilities.maxReferenceImages, resolve: resolveVisualAssetUrls });
+        if (resolveStoryboardExecutionMode(current) === "chained") {
+          const ordered = [...current.cards].sort((a,b) => a.order-b.order), position = ordered.findIndex(item => item.id === cardId);
+          if (position > 0) {
+            await chainSaveAndReadback(ordered[0].id);
+            if (position > 1) await chainSaveAndReadback(ordered[position-1].id);
+            assertImageSubmissionCurrent(); current = runRef.current;
+          }
+        }
+        if (resolveStoryboardExecutionMode(current) === "chained" && storyboardChainManualReferences(card).length) throw new Error("此段保留了手动参考图，请先移除手动参考图再使用串联；原参考图未更改，本次未提交。");
+        const chainContext = resolveStoryboardExecutionMode(current) === "chained" ? storyboardChainContext(current, cardId, capabilities.maxReferenceImages) : undefined;
+        const refreshed = chainContext ? { ...card, referenceImageUrls: [] as string[], visualAssetRefs: [] } : await refreshStoryboardVisualAssetReferences({ card, plan: current.visualAssetPlan, limit: capabilities.maxReferenceImages, resolve: resolveVisualAssetUrls });
         const beforeReferenceCommit = runRef.current;
         const liveCard = beforeReferenceCommit.cards.find(item => item.id === cardId);
         assertImageSubmissionCurrent();
         if (!liveCard) throw new Error("分镜卡片已删除，本次未提交");
         assertBatchSnapshotCurrent(runRef.current, cardId, "images", batchAuthorization);
-        preparedImageBatchInput = batchCardInput(refreshed, "images");
-        if (refreshed !== card) {
+        preparedImageBatchInput = batchCardInput(chainContext ? card : refreshed, "images");
+        if (!chainContext && refreshed !== card) {
           // Commit this verified resolver refresh before async hashing and snapshot checks.
           // A scheduled React updater cannot be the authority for the next request step.
           const next = { ...beforeReferenceCommit, updatedAt: Date.now(), cards: beforeReferenceCommit.cards.map(item => item.id === cardId
@@ -4540,16 +4835,16 @@ function UserStoryboardWorkbench({
         const quote = storyboardImagePrice(model, effectiveImageResolution(model, current.imageResolution));
         if (!Number.isFinite(quote) || quote < 0) throw new Error("生图报价尚未确认，本次未提交");
         if (batchAuthorization && quote !== batchAuthorization.price) throw new Error("批量生图报价已改变，本段未提交");
-        if (!batchAuthorization && !window.confirm("生成段落" + card.order + "分镜图 · " + modelName + "\n参考图 " + refreshed.referenceImageUrls.length + "张，预计 ¥" + quote.toFixed(2) + "。仅提交一次，不自动重试。")) return null;
+        if (!batchAuthorization && !window.confirm("生成段落" + card.order + "分镜图 · " + modelName + "\n参考图 " + (chainContext ? [chainContext.anchor?.imageRef.recordId, chainContext.previous?.imageRef.recordId].filter((id, index, ids) => id && ids.indexOf(id) === index).length : refreshed.referenceImageUrls.length) + "张，预计 ¥" + quote.toFixed(2) + "。仅提交一次，不自动重试。")) return null;
         requestSnapshot = {
           runId: current.id,
           cardId: card.id,
           cardOrder: card.order,
           prompt: card.imagePrompt,
-          exactText: card.imageTextLayoutEnabled ? String(card.imageExactText || "").trim() : undefined,
           modelId: model.id,
           aspectRatio: effectiveImageRatio(current),
           resolution: effectiveImageResolution(model, current.imageResolution),
+          ...(chainContext ? { chainContext } : {}),
           referenceImageUrls: [...refreshed.referenceImageUrls],
           presetReferences: activeStoryboardVisualAssetRefs(refreshed, current.visualAssetPlan).flatMap(ref => {
             const source = current.visualAssetPlan?.assets.find(asset => asset.id === ref.assetId)?.source;
@@ -4570,7 +4865,7 @@ function UserStoryboardWorkbench({
               cardOrder: requestSnapshot.cardOrder,
             })
           : "";
-        assertBatchSnapshotCurrent(runRef.current, cardId, "images", batchAuthorization, batchCardInput(refreshed, "images"));
+        assertBatchSnapshotCurrent(runRef.current, cardId, "images", batchAuthorization, chainContext ? batchCardInput(card, "images") : batchCardInput(refreshed, "images"));
         const imageClientAttempt = requestSnapshot.strictSingleSubmit ? null : resolveBrowserClientAttempt({
           storageKey: imageClientAttemptScope,
           fingerprint: imageClientRequestFingerprint,
@@ -4586,9 +4881,10 @@ function UserStoryboardWorkbench({
 
       const submittedAt = Date.now();
       const imageSubmissionPatch: Partial<WorkbenchCard> = {
-        continuousImageInputFingerprint: recovering ? card.continuousImageInputFingerprint : storyboardProductionImageFingerprint(current, { ...card, referenceImageUrls: requestSnapshot.referenceImageUrls, visualAssetRefs: requestSnapshot.visualAssetRefs }),
+        continuousImageInputFingerprint: recovering ? card.continuousImageInputFingerprint : storyboardProductionImageFingerprint(current, { ...card, referenceImageUrls: requestSnapshot.referenceImageUrls, visualAssetRefs: requestSnapshot.visualAssetRefs }, requestSnapshot),
         continuousVideoInputFingerprint: undefined,
         imageStatus: "running",
+        imageReferenceState: recovering ? card.imageReferenceState : undefined,
         imageUrl: undefined,
         imageAssetId: undefined,
         imageStorageKey: undefined,
@@ -4719,8 +5015,9 @@ function UserStoryboardWorkbench({
               style: "",
               aspectRatio: requestSnapshot.aspectRatio,
               resolution: requestSnapshot.resolution,
-              ...(requestSnapshot.exactText ? { coverText: requestSnapshot.exactText } : {}),
+              ...(recovering && requestSnapshot.exactText ? { coverText: requestSnapshot.exactText } : {}),
               referenceImageUrls: requestSnapshot.referenceImageUrls,
+              ...(requestSnapshot.chainContext ? { chainContext: requestSnapshot.chainContext } : {}),
               ...(requestSnapshot.presetReferences?.length ? { presetReferences: requestSnapshot.presetReferences } : {}),
               referenceUsage: requestSnapshot.visualAssetRefs?.some((ref) => ref.role === "character" || ref.role === "pet")
                 ? "character-identity"
@@ -4834,7 +5131,9 @@ function UserStoryboardWorkbench({
           }
           patchCard(cardId, {
             imageStatus: "done",
-            imageReferenceState: recovering ? card.imageReferenceState : undefined,
+            imageReferenceState: requestSnapshot.chainContext
+              ? storyboardChainSnapshotMatches(runRef.current, cardId, requestSnapshot) ? runRef.current.cards.find(item => item.id === cardId)?.imageReferenceState : "stale"
+              : recovering ? runRef.current.cards.find(item => item.id === cardId)?.imageReferenceState : undefined,
             imageUrl: stored.url,
             imageRecordId: generatedImage?.recordId || data.recordId,
             imageDeliveryMode: generatedImage?.deliveryMode === "inline_ephemeral" ? "inline_ephemeral" : generatedImage?.deliveryMode === "provider_url" ? "provider_url" : undefined,
@@ -5024,6 +5323,8 @@ function UserStoryboardWorkbench({
       error?: string;
       errorMessage?: string;
       processingStage?: string;
+      errorCode?: string;
+      taskIdExternal?: string;
       retryable?: boolean;
       billingState?: string;
       priceCharged?: number;
@@ -5037,12 +5338,14 @@ function UserStoryboardWorkbench({
 
     const pollingOwner = userId + "\0" + token;
     const pollingRunId = runRef.current.id;
+    const pollingClientRequestId = runRef.current.cards.find(card => card.id === cardId)?.videoClientRequestId;
     const isCurrentVideoTask = () => !signal.aborted && scopeMountedRef.current && contextReadyRef.current
       && !navigationRef.current && imageDownloadOwnerRef.current === pollingOwner && runRef.current.id === pollingRunId
       && runRef.current.cards.some(card => card.id === cardId && card.videoTaskId === taskId);
     if (!isCurrentVideoTask()) return null;
     const applyStatus = (data: StatusPayload, source: "stream" | "poll") => {
       if (!isCurrentVideoTask()) return { terminal: true, videoUrl: "" };
+      rememberVideoConfirmation(pollingRunId, cardId, taskId, data, pollingClientRequestId);
       const now = Date.now();
       const status = normalizeRemoteVideoStatus(data.status);
       const videoUrl = data.videoUrl || data.video_url || data.storageUrl || "";
@@ -5078,6 +5381,7 @@ function UserStoryboardWorkbench({
           videoPriceCharged: Number.isFinite(Number(data.priceCharged)) ? Math.max(0, Number(data.priceCharged)) : undefined,
         });
         setNotice(`分段${target?.order || ""}视频生成完成，结果已同步`);
+        cacheCompletedStoryboardVideo(taskId);
         return { terminal: true, videoUrl };
       }
       if (status === "failed") {
@@ -5247,7 +5551,7 @@ function UserStoryboardWorkbench({
       }
     }
     throw new Error("已停止自动查询：长时间未取得任务最终状态，可继续查询或终止任务");
-  }, [patchCard, token, userId]);
+  }, [cacheCompletedStoryboardVideo, patchCard, rememberVideoConfirmation, token, userId]);
 
   const startPolling = useCallback(async (cardId: string, taskId: string, modelId: string, contentUrl = "") => {
     if (pollingTasksRef.current.has(taskId)) return null;
@@ -5367,28 +5671,29 @@ function UserStoryboardWorkbench({
   const generateVideo = useCallback(async (cardId: string, batchAuthorization?: StoryboardBatchAuthorization, ownsVideoPreparation = false) => {
     const invocationRunId = runRef.current.id;
     const invocationOwner = userId + "\0" + token;
-    if (runRef.current.directorIntake?.phase === "assets") { setNotice("当前正在准备角色三视图，请完成资产并续写分镜后再生成视频。"); return null; }
-    if (runRef.current.directorIntake?.phase === "planned") {
+    if (resolveStoryboardExecutionMode(runRef.current) !== "chained" && runRef.current.directorIntake?.phase === "assets") { setNotice("当前正在准备角色三视图，请完成资产并续写分镜后再生成视频。"); return null; }
+    if (resolveStoryboardExecutionMode(runRef.current) === "reference" && runRef.current.directorIntake?.phase === "planned") {
       try { collectStoryboardDirectorReferenceBindings(runRef.current, runRef.current.directorIntake.input); }
       catch (error) { setNotice(error instanceof Error ? error.message : "请先逐项确认角色三视图。"); return null; }
     }
-    if (initialReferenceBlockedRef.current.has(imageDownloadOwnerRef.current + "\0" + runRef.current.id)) { setNotice("参考采用保存结果尚未确认，请刷新读取原项目核对后再生成视频。"); return null; }
+    if (resolveStoryboardExecutionMode(runRef.current) === "reference" && initialReferenceBlockedRef.current.has(imageDownloadOwnerRef.current + "\0" + runRef.current.id)) { setNotice("参考采用保存结果尚未确认，请刷新读取原项目核对后再生成视频。"); return null; }
     if (!contextReadyRef.current || navigationRef.current || view !== "workbench") return null;
     let assertPlannedDirectorReferencesCurrent: () => void;
-    try { assertPlannedDirectorReferencesCurrent = await verifyPlannedDirectorReferences(); }
+    try { assertPlannedDirectorReferencesCurrent = resolveStoryboardExecutionMode(runRef.current) !== "reference" ? () => undefined : await verifyPlannedDirectorReferences(); }
     catch (error) { setNotice(error instanceof Error ? error.message : "角色原生成回执核验失败，本次未提交。"); return null; }
-    if (!scopeMountedRef.current || imageDownloadOwnerRef.current !== invocationOwner || runRef.current.id !== invocationRunId) return null;
+    if (!scopeMountedRef.current) { setNotice("页面正在切换，请稍后再试"); return null; }
+    if (imageDownloadOwnerRef.current !== invocationOwner || runRef.current.id !== invocationRunId) { setNotice("当前账号或项目已变化，请刷新页面后重试"); return null; }
     const current = runRef.current;
     const card = current.cards.find((item) => item.id === cardId);
     const model = videoModels.find((item) => item.id === current.videoModelId);
-    const imageUrl = card?.imageUrl;
-    if (boardExportLocksRef.current.has(cardId) || card && needsStoryboardBoardExport(card)) { setNotice("请先保存分镜图后再生成视频。"); return null; }
-    if (videoSubmissionsRef.current.has(cardId) && !ownsVideoPreparation) {
+    const resolvedVideoInputs = model && card ? resolveStoryboardVideoInputs(model, card) : null;
+    if (boardExportLocksRef.current.has(cardId) || card && resolvedVideoInputs?.usesStoryboardImage && needsStoryboardBoardExport(card)) { setNotice("请先保存分镜图后再生成视频。"); return null; }
+    if (videoInputUploadLocksRef.current.has(cardId) || videoSubmissionsRef.current.has(cardId) && !ownsVideoPreparation) {
       setNotice(`分段${card?.order || ""}的视频请求已经提交，请勿重复点击`);
       return null;
     }
     if (card && isActiveVideoStatus(card.videoStatus)) { setNotice(`分段${card.order}的视频仍在生成，请等待结果`); return null; }
-    if (card?.continuousImageInputFingerprint && card.continuousImageInputFingerprint !== storyboardProductionImageFingerprint(current, card)) {
+    if (resolvedVideoInputs?.usesStoryboardImage && card?.continuousImageInputFingerprint && !storyboardProductionImageInputMatch(current, card).matches) {
       setNotice("分镜图与当前提示词、参考或图片模型参数不一致，请重新生成本段分镜图后再制作视频。"); return null;
     }
     if (card?.videoStatus === "failed" && card.videoRetryable !== true) {
@@ -5396,21 +5701,17 @@ function UserStoryboardWorkbench({
       return null;
     }
     if (!token) { setNotice("请先登录后再生成"); return null; }
-    // 批量和单卡重试统一走同一张“已真实加载”门禁。
-    // 以前批量传入 imageOverride 会绕过这里，失败卡片可能拿着失效地址继续提交。
-    if (!card || !hasValidatedImage(card)) { setNotice("故事板图片尚未真实加载，视频仍处于锁定状态"); return null; }
-    if (card.imageReferenceState === "stale") { setNotice("参考已更换，旧分镜和视频仍保留；请先重新生成本段分镜，再生成视频。本次未提交或扣费。"); return null; }
+    if (!card || !model || !resolvedVideoInputs) return null;
+    const cardInputIssue = storyboardCardVideoInputIssue(model, card, current);
+    if (cardInputIssue) { setNotice(cardInputIssue); return null; }
     try { assertBatchAuthorization(current, card, "videos", batchAuthorizationRef.current, batchAuthorization); }
     catch (error) { setNotice(error instanceof Error ? error.message : "批量参数已改变，本段未提交"); return null; }
     if (!model) { setNotice("原视频模型当前不可选，请手动选择视频模型"); return null; }
-    const imageRatioIssue = storyboardImageRatioIssue(card, effectiveImageRatio(current), current.ratio, model);
+    const imageRatioIssue = resolvedVideoInputs.usesStoryboardImage ? storyboardImageRatioIssue(card, effectiveImageRatio(current), current.ratio, model) : "";
     if (imageRatioIssue) { setNotice(imageRatioIssue); return null; }
     if (model.supportsPrompt && !card.videoPrompt.trim()) { setNotice("请先粘贴图生视频 Prompt"); return null; }
     const selectionIssue = storyboardVideoModelSelectionIssue(model, { ratio: current.ratio, duration: effectiveVideoDuration(model, current.videoDuration), resolution: current.videoResolution });
-    if (selectionIssue) { setNotice(selectionIssue); return null; }
-    if (model.requiresSourceVideo) { setNotice("该模型必须上传源视频，不能用于仅提供故事板图片的分镜工作台；请切换图生视频模型"); return null; }
-    if (!imageUrl) { setNotice("故事板图片地址缺失，请重新生成图片"); return null; }
-    if (card.imageDeliveryMode === "inline_ephemeral") { setNotice("临时图片仅当前页面可预览下载，当前视频通道不支持这类输入；本次未提交或扣费"); return null; }
+    if (selectionIssue) { setNotice(publicModelSelectionNotice(selectionIssue, "视频模型")); return null; }
     const duration = effectiveVideoDuration(model, current.videoDuration);
     if (card.directorExecution && card.videoPrompt === card.directorExecution.sourceVideoPrompt
       && duration !== card.directorExecution.targetDurationSeconds) {
@@ -5436,8 +5737,10 @@ function UserStoryboardWorkbench({
       setNotice(`视频 Prompt 加模型护栏后为${executionPrompt.length}字，超过4000字上限，请精简创作 Prompt`);
       return null;
     }
-    const inputViolation = validateVideoInputContract(getAiVideoPageInputCapabilities(model), { prompt: executionPrompt, imageUrl });
-    if (inputViolation) { setNotice(inputViolation.message); return null; }
+    const submissionVideoInputs = resolveStoryboardVideoInputs(model, { ...card, videoPrompt: executionPrompt });
+    if (submissionVideoInputs.issue) { setNotice(submissionVideoInputs.issue); return null; }
+    const submissionVideoInputIdentity = JSON.stringify(submissionVideoInputs.identity);
+    const submissionAspectRatio = resolveAiVideoInputAspectRatio(model, current.ratio, submissionVideoInputs.input);
     const modelName = compactVideoModelName(model);
     const submissionOwner = userId + "\0" + token;
     const submissionInput = batchCardInput(card, "videos");
@@ -5448,7 +5751,7 @@ function UserStoryboardWorkbench({
     const assertSubmissionCurrent = () => {
       const latest = runRef.current;
       const item = latest.cards.find(candidate => candidate.id === cardId);
-      if (!sameSubmissionScope() || videoSubmissionOperationsRef.current.get(cardId) !== videoOperation || !item || item.imageReferenceState === "stale" || batchCardInput(item, "videos") !== submissionInput
+      if (!sameSubmissionScope() || videoSubmissionOperationsRef.current.get(cardId) !== videoOperation || !item || (submissionVideoInputs.usesStoryboardImage && item.imageReferenceState === "stale") || JSON.stringify(resolveStoryboardVideoInputs(model, { ...item, videoPrompt: executionPrompt }).identity) !== submissionVideoInputIdentity || batchCardInput(item, "videos") !== submissionInput
         || JSON.stringify([latest.videoModelId, latest.ratio, latest.videoDuration, latest.videoResolution, latest.videoContract]) !== submissionSettings
         || JSON.stringify(tokenChargeConsentRef.current) !== submissionConsent) {
         throw new Error("账号、项目、分镜图或视频参数已变化，本次未提交；请重新确认。");
@@ -5461,7 +5764,7 @@ function UserStoryboardWorkbench({
     const quotedPrice = tokenBilling?.maxChargeYuan ?? effectiveVideoCharge(model, resolution, duration);
     if (!Number.isFinite(quotedPrice) || quotedPrice < 0) { setNotice("视频报价尚未确认，本次未提交"); return null; }
     if (batchAuthorization && quotedPrice !== batchAuthorization.price) { setNotice("批量视频报价已改变，本段未提交"); return null; }
-    if (!batchAuthorization && !window.confirm("生成段落" + card.order + "视频 · " + compactVideoModelName(model) + "\n" + duration + "秒 · " + resolution + "，仅使用本段完整分镜图。" + (tokenBilling ? "按实际 Token 用量结算，本次最多自动扣款 ¥" + quotedPrice.toFixed(2) + "；预留不是扣费，超额待确认。" : "预计 ¥" + quotedPrice.toFixed(2) + "。") + "仅提交一次，不自动重试。")) return null;
+    if (!batchAuthorization && !window.confirm("生成段落" + card.order + "视频 · " + compactVideoModelName(model) + "\n" + duration + "秒 · " + videoResolutionDisplayLabel(model, resolution) + (submissionVideoInputs.usesStoryboardImage ? "，使用本段分镜图及已确认的视频素材。" : "，使用已确认的视频提示词与素材，不会自动生成分镜图。") + (tokenBilling ? "按实际 Token 用量结算，本次最多自动扣款 ¥" + quotedPrice.toFixed(2) + "；预留不是扣费，超额待确认。" : "预计 ¥" + quotedPrice.toFixed(2) + "。") + "仅提交一次，不自动重试。")) return null;
     videoSubmissionsRef.current.add(cardId);
     const videoOperation = Symbol(cardId);
     videoSubmissionOperationsRef.current.set(cardId, videoOperation);
@@ -5497,17 +5800,6 @@ function UserStoryboardWorkbench({
     const sameVideoRequestCurrent = () => sameSubmissionScope() && videoSubmissionOperationsRef.current.get(cardId) === videoOperation
       && Boolean(preparedClientRequestId && runRef.current.cards.find(item => item.id === cardId)?.videoClientRequestId === preparedClientRequestId);
     try {
-      const submissionImageUrl = imageUrl;
-      const submissionImageStorageKey = card.imageStorageKey;
-      const submissionImageRef = normalizeStoryboardVideoImageReference(card.imageRef);
-      // A 2×2/4-panel storyboard is one continuous visual reference for this
-      // card. Panels define beats and identity anchors; they are not automatic
-      // edit points. Preserve the complete image for the image-to-video model.
-      // Cropping belongs to an explicit future "split panels" workflow, never
-      // to the default submit path.
-      if (!submissionImageRef && !isPublicHttpMediaUrl(submissionImageUrl)) {
-        throw new Error("上游参考图链接无法被视频模型访问；请主动上传可访问的参考图后继续");
-      }
       submissionController = new AbortController();
       videoSubmissionControllersRef.current.set(cardId, submissionController);
       const videoClientRequestFingerprint = await buildClientRequestFingerprint({
@@ -5517,13 +5809,19 @@ function UserStoryboardWorkbench({
         modelId: model.id,
         prompt: executionPrompt,
         duration,
-        aspectRatio: current.ratio,
-        sourceImageAspectRatio: card.imageRequestSnapshot?.aspectRatio || effectiveImageRatio(current),
-        sourceImageDimensions: [card.imageWidth, card.imageHeight],
+        aspectRatio: submissionAspectRatio,
+        sourceImageAspectRatio: submissionVideoInputs.usesStoryboardImage ? card.imageRequestSnapshot?.aspectRatio || effectiveImageRatio(current) : undefined,
+        sourceImageDimensions: submissionVideoInputs.usesStoryboardImage ? [card.imageWidth, card.imageHeight] : undefined,
         referenceAspectRatioPolicy: allowsIndependentReferenceRatio(model) ? "independent" : "same",
         resolution,
         tokenBilling,
-        sourceImage: submissionImageRef ? generatedImageReferenceUri(submissionImageRef) : submissionImageStorageKey || submissionImageUrl.split("?", 1)[0],
+        // Keep existing same-key retry fingerprints unchanged for untouched legacy
+        // single-image cards. Explicit video inputs always bind the full helper identity.
+        ...(card.videoInputs === undefined && submissionVideoInputs.usesStoryboardImage ? {
+          sourceImage: submissionVideoInputs.requestFields.image_ref
+            ? generatedImageReferenceUri(submissionVideoInputs.requestFields.image_ref)
+            : submissionVideoInputs.requestFields.image_storage_key || (submissionVideoInputs.requestFields.image_url || "").split("?", 1)[0],
+        } : { videoInputs: submissionVideoInputs.identity }),
       });
       assertSubmissionCurrent();
       const videoClientAttemptScope = `storyboard-video:${current.id}:${card.id}`;
@@ -5549,7 +5847,7 @@ function UserStoryboardWorkbench({
       if (card.videoUrl) archiveRunSnapshot(`分段${card.order}重新生成视频前`);
       setNotice(`分段${card.order}正在使用 ${modelName} 提交视频任务`);
       const videoSubmissionPatch: Partial<WorkbenchCard> = {
-        continuousVideoInputFingerprint: storyboardProductionVideoFingerprint(current, card),
+        continuousVideoInputFingerprint: storyboardProductionVideoFingerprint(current, card, card.continuousImageInputFingerprint ? card.imageRequestSnapshot : undefined),
         videoClientRequestId: stableVideoClientRequestId,
         videoClientRequestFingerprint,
       };
@@ -5609,9 +5907,9 @@ function UserStoryboardWorkbench({
           model_id: model.id,
           ...(tokenBilling ? { tokenBilling } : {}),
           prompt: executionPrompt,
-          ...(submissionImageRef ? { image_ref: submissionImageRef } : { image_url: submissionImageUrl, image_storage_key: submissionImageStorageKey }),
+          ...submissionVideoInputs.requestFields,
           duration,
-          aspect_ratio: current.ratio,
+          aspect_ratio: submissionAspectRatio,
           resolution_tier: resolution,
           task_label: `分镜工作台分段${card.order}`,
           batch_id: current.id,
@@ -5639,6 +5937,7 @@ function UserStoryboardWorkbench({
       };
       if (!sameVideoRequestCurrent()) return null;
       videoSubmissionControllersRef.current.delete(cardId);
+      if (typeof data.business_task_id === "string" && data.business_task_id) localVideoInternalIdsRef.current.add(data.business_task_id);
       if (data.status === "failed" && (data.business_task_id || data.task_id)) {
         const message = friendlyVideoError(data.error || data.message || "所选模型生成失败", response.status);
         const retryable = data.retryable === true;
@@ -5656,6 +5955,7 @@ function UserStoryboardWorkbench({
         return null;
       }
       const trackingTaskId = data.business_task_id || data.task_id || "";
+      rememberVideoConfirmation(current.id, cardId, trackingTaskId, data, stableVideoClientRequestId);
       if (!response.ok && data.task_submitted === true && trackingTaskId) {
         patchCard(cardId, {
           videoStatus: "running",
@@ -5690,6 +5990,7 @@ function UserStoryboardWorkbench({
           videoPriceCharged: Number.isFinite(Number(data.price)) ? Math.max(0, Number(data.price)) : undefined,
         });
         setNotice(`分段${card.order}视频生成完成 · ${modelName}`);
+        if (data.business_task_id) cacheCompletedStoryboardVideo(data.business_task_id);
         return data.video_url;
       }
       if (data.status === "cancelled") {
@@ -5772,22 +6073,23 @@ function UserStoryboardWorkbench({
         videoSubmissionsRef.current.delete(cardId);
       }
     }
-  }, [archiveRunSnapshot, patchCard, saveStoryboardProject, startPolling, token, userId, videoModels, verifyPlannedDirectorReferences]);
+  }, [archiveRunSnapshot, cacheCompletedStoryboardVideo, patchCard, rememberVideoConfirmation, saveStoryboardProject, startPolling, token, userId, videoModels, verifyPlannedDirectorReferences]);
 
   const prepareAndGenerateVideo = useCallback(async (cardId: string, batchAuthorization?: StoryboardBatchAuthorization): Promise<string | null> => {
     const current = runRef.current;
     const card = current.cards.find(item => item.id === cardId);
     const model = videoModels.find(item => item.id === current.videoModelId);
     if (!scopeMountedRef.current || !contextReadyRef.current || navigationRef.current || view !== "workbench" || !card || !token || !model) return null;
-    if (videoSubmissionsRef.current.has(cardId) || boardExportLocksRef.current.has(cardId) || imageAttemptNeedsResolution(card) || isActiveVideoStatus(card.videoStatus)) return null;
+    if (videoInputUploadLocksRef.current.has(cardId) || videoSubmissionsRef.current.has(cardId) || boardExportLocksRef.current.has(cardId) || (resolveStoryboardVideoInputs(model, card).usesStoryboardImage && imageAttemptNeedsResolution(card)) || isActiveVideoStatus(card.videoStatus)) return null;
     if (card.videoStatus === "failed" && card.videoRetryable !== true) { setNotice("原视频请求或费用尚未确认，请先查询原任务；本次未提交。"); return null; }
-    if (card.imageReferenceState === "stale" || !hasValidatedImage(card)) { setNotice("请先生成并加载当前参考对应的分镜图；本次未提交。"); return null; }
+    const resolvedVideoInputs = resolveStoryboardVideoInputs(model, card);
+    const cardInputIssue = storyboardCardVideoInputIssue(model, card, current);
+    if (cardInputIssue) { setNotice(cardInputIssue); return null; }
     const issue = storyboardVideoModelSelectionIssue(model, { ratio: current.ratio, duration: effectiveVideoDuration(model, current.videoDuration), resolution: current.videoResolution })
-      || storyboardImageRatioIssue(card, effectiveImageRatio(current), current.ratio, model)
-      || (model.requiresSourceVideo ? "该模型需要源视频，请选择支持分镜图输入的模型。" : "")
+      || (resolvedVideoInputs.usesStoryboardImage ? storyboardImageRatioIssue(card, effectiveImageRatio(current), current.ratio, model) : "")
       || (model.supportsPrompt && !card.videoPrompt.trim() ? "请先填写本段视频提示词。" : "")
       || (model.supportsPrompt ? storyboardVideoPromptViolation(card.videoPrompt) : "");
-    if (issue) { setNotice(issue); return null; }
+    if (issue) { setNotice(publicModelSelectionNotice(issue, "视频模型")); return null; }
     const owner = userId + "\0" + token;
     const identity = () => {
       const latest = runRef.current;
@@ -5795,12 +6097,12 @@ function UserStoryboardWorkbench({
       if (!scopeMountedRef.current || !contextReadyRef.current || navigationRef.current || imageDownloadOwnerRef.current !== owner || latest.id !== current.id || !item) return null;
       return JSON.stringify([owner, latest.id, item.id, item.imageRecordId, item.imageWidth, item.imageHeight, item.imageRequestSnapshot,
         item.imageReferenceState, item.visualAssetRefs, item.referenceImageUrls, item.videoPrompt, item.videoStatus, item.videoTaskId,
-        item.videoClientRequestId, item.videoClientRequestFingerprint, latest.videoModelId, latest.ratio, latest.videoDuration,
+        item.videoClientRequestId, item.videoClientRequestFingerprint, resolveStoryboardVideoInputs(model, item).identity, latest.videoModelId, latest.ratio, latest.videoDuration,
         latest.videoResolution, latest.videoContract, tokenChargeConsentRef.current]);
     };
     try {
       assertBatchSnapshotCurrent(current, cardId, "videos", batchAuthorization);
-      return await prepareStoryboardVideo({ cardId, locks: videoSubmissionsRef.current, identity, needsSave: needsStoryboardBoardExport(card),
+      return await prepareStoryboardVideo({ cardId, locks: videoSubmissionsRef.current, identity, needsSave: resolvedVideoInputs.usesStoryboardImage && needsStoryboardBoardExport(card),
         save: () => saveBoardForVideo(cardId, true), submit: () => {
           if (batchAuthorization) {
             if (runRef.current.id !== batchAuthorization.runId || batchSettings(runRef.current, "videos") !== batchAuthorization.settings) throw new Error("批量视频参数已改变，本段未提交。");
@@ -5856,6 +6158,7 @@ function UserStoryboardWorkbench({
       if (!latest || latest.videoClientRequestId !== clientRequestId || latest.videoTaskId) return null;
       if (data.found) {
         const taskId = String(data.businessTaskId || data.taskId || "");
+        if (typeof data.businessTaskId === "string" && data.businessTaskId) localVideoInternalIdsRef.current.add(data.businessTaskId);
         const modelId = String(data.modelId || latest.videoTaskModelId || "");
         if (!taskId || !modelId) throw new Error("原视频任务存在，但任务编号或模型编号不完整");
         const remoteStatus = normalizeRemoteVideoStatus(data.status);
@@ -6053,7 +6356,7 @@ function UserStoryboardWorkbench({
     };
   }, [activeImageModel, activeImageResolution, activeVideoDuration, activeVideoModel, activeVideoResolution]);
 
-  const batchImages = useCallback(async () => {
+  const ordinaryBatchImages = useCallback(async () => {
     if (batchMode || batchAuthorizationRef.current || initialReferenceAdoptionRef.current) return;
     const workspaceGeneration = workspaceGenerationRef.current;
     if (!await ensureInitialReferencesAdopted()) return;
@@ -6063,7 +6366,9 @@ function UserStoryboardWorkbench({
     const cardsNeedingGeneration = current.cards.filter((card) => !isCompletedInlineImageReceipt(card) && !card.imageRecoveryReady && (card.imageStatus === "idle" || card.imageStatus === "failed"));
     const invalid = cardsNeedingGeneration.filter((card) => !card.imagePrompt.trim());
     if (invalid.length) return setNotice(`还有${invalid.length}张分段卡没有粘贴生图 Prompt`);
-    if (cardsNeedingGeneration.length > 0 && (activeImageSelectionIssue || activeImageRatioIssue)) return setNotice(activeImageSelectionIssue || activeImageRatioIssue);
+    if (cardsNeedingGeneration.length > 0 && (activeImageSelectionIssue || activeImageRatioIssue)) {
+      return setNotice(activeImageRatioIssue || publicModelSelectionNotice(activeImageSelectionIssue, "生图模型"));
+    }
     const incompatibleReferences = cardsNeedingGeneration.filter((card) => card.referenceImageUrls.length > imageCapabilities.maxReferenceImages);
     if (incompatibleReferences.length) return setNotice("还有卡片的参考图超过当前模型上限，请替换或清除后再批量生成");
     const blockedCount = current.cards.filter((card) => card.imageRetryBlocked && imageAttemptNeedsResolution(card)).length;
@@ -6076,7 +6381,7 @@ function UserStoryboardWorkbench({
     if (!authorization) return setNotice("生图报价尚未确认，本次未提交");
     batchAuthorizationRef.current = authorization;
     setBatchMode("images");
-    setNotice(`批量生图已开始，每5秒提交1个，共${cardIds.length}个`);
+    setNotice(`批量生图已开始，每10秒提交1个，共${cardIds.length}个`);
     try {
       const results = await runImageBatch(cardIds, authorization);
       if (workspaceGeneration === workspaceGenerationRef.current) setNotice(`批量生图结束：成功${results.filter(Boolean).length}个，失败${results.filter((item) => !item).length}个`);
@@ -6087,16 +6392,223 @@ function UserStoryboardWorkbench({
     }
   }, [ensureInitialReferencesAdopted, activeImageSelectionIssue, activeImageRatioIssue, batchMode, buildBatchAuthorization, imageCapabilities.maxReferenceImages, runImageBatch]);
 
+  // This authorization exists only in memory: refresh never resumes paid dispatches.
+  const chainDelivered = (card: WorkbenchCard | undefined) => Boolean(card && card.imageStatus === "done" && hasValidatedImage(card)
+    && card.imageReferenceState !== "stale" && card.imageRecordId && !card.imageRecoveryReady && !card.imageRetryBlocked
+    && (resolveStoryboardExecutionMode(runRef.current) !== "chained" || storyboardProductionImageInputMatch(runRef.current, card).matches));
+  const chainSaveAndReadback = async (cardId: string): Promise<boolean> => {
+    const originalRun = runRef.current, original = originalRun.cards.find(item => item.id === cardId);
+    const owner = imageDownloadOwnerRef.current, plan = storyboardChainPlanFingerprint(originalRun);
+    const snapshot = storyboardChainFingerprint(original?.imageRequestSnapshot ?? null), confirmation = storyboardChainFingerprint(original?.chainAnchorConfirmation ?? null);
+    const current = () => scopeMountedRef.current && contextReadyRef.current && !navigationRef.current && imageDownloadOwnerRef.current === owner
+      && runRef.current.id === originalRun.id && storyboardChainPlanFingerprint(runRef.current) === plan
+      && runRef.current.cards.some(item => item.id === cardId && item.imageRecordId === original?.imageRecordId
+        && storyboardChainFingerprint(item.imageRequestSnapshot ?? null) === snapshot && storyboardChainFingerprint(item.chainAnchorConfirmation ?? null) === confirmation && chainDelivered(item));
+    const assertCurrent = () => { if (!current()) throw new Error("账号、项目或原分镜已改变，串联保存已停止。"); };
+    if (!chainDelivered(original)) throw new Error("分镜图尚未真实交付，串联停止；请查询原任务。");
+    assertCurrent();
+    if (original && (!original.imageAssetId || !original.imageStorageKey)) {
+      if (!await saveStoryboardProject(createStoryboardPersistenceSnapshot(runRef.current), true)) throw new Error("分镜记录保存未确认，本次未导出。");
+      assertCurrent();
+      const originalReadback = normalizeRun(await cloud.restore(originalRun.id)); assertCurrent();
+      const savedOriginal = originalReadback?.cards.find(item => item.id === cardId);
+      if (!originalReadback || originalReadback.id !== originalRun.id || storyboardChainPlanFingerprint(originalReadback) !== plan || savedOriginal?.imageRecordId !== original.imageRecordId
+        || !isStoryboardChainHydratedReadback(savedOriginal, false) || storyboardChainFingerprint(savedOriginal?.imageRequestSnapshot ?? null) !== snapshot) throw new Error("原分镜记录回读未确认，本次未导出。");
+      if (boardExportLocksRef.current.has(cardId)) throw new Error("本段原图正在保存，请等待完成。");
+      boardExportLocksRef.current.add(cardId); setExportingBoardIds(new Set(boardExportLocksRef.current));
+      try {
+        const owned = await saveStoryboardBoardOriginal({ userId, runId:originalRun.id, cardId, recordId:original.imageRecordId!,
+          url:original.imageRef ? generatedImagePreviewUrl(original.imageRef) : original.imageUrl!, width:original.imageWidth || 0, height:original.imageHeight || 0, token,
+          chainOriginal:{projectId:originalRun.id,cardId,recordId:original.imageRecordId!},
+          cache:boardExportCacheRef.current, stillCurrent:current,
+          readOriginal:async () => {
+            assertCurrent();
+            if (original.imageUrl?.startsWith("blob:")) return readStoryboardBoardBlob(originalBoardBlobsRef.current, original.imageUrl,
+              {owner,runId:originalRun.id,cardId,recordId:original.imageRecordId!});
+            if (!original.imageRef && original.imageAssetId && original.imageStorageKey) {
+              const savedOwned = await readOwnedStoryboardImage({assetId:original.imageAssetId,storageKey:original.imageStorageKey}, original.imageRequestSnapshot?.aspectRatio || effectiveImageRatio(originalRun)); assertCurrent();
+              const ownedResponse = await fetch(savedOwned.url, {cache:"no-store"}); assertCurrent();
+              if (!ownedResponse.ok) throw new Error("已保存原图暂不可读取。");
+              const ownedBlob = await ownedResponse.blob(); assertCurrent();
+              return {bytes:new Uint8Array(await ownedBlob.arrayBuffer()),mime:ownedBlob.type.split(";",1)[0]};
+            }
+            const recordRef = GeneratedImageReferenceSchema.parse(original.imageRef || { schema:"generated_image_ref.v1", recordId:original.imageRecordId });
+            const response = await fetch(generatedImagePreviewUrl(recordRef), { headers:{ Authorization:`Bearer ${token}` }, cache:"no-store" });
+            assertCurrent();
+            if (!response.ok) throw new Error("原分镜记录的完整图片暂不可读取，串联已停止。");
+            const blob = await response.blob(); assertCurrent();
+            return { bytes:new Uint8Array(await blob.arrayBuffer()), mime:blob.type.split(";",1)[0] };
+          },
+          readOwned:async reference => readOwnedStoryboardImage(reference, original.imageRequestSnapshot?.aspectRatio || effectiveImageRatio(originalRun)) });
+        assertCurrent();
+        const latest = runRef.current;
+        const next = { ...latest, updatedAt:Date.now(), cards:latest.cards.map(item => item.id === cardId ? { ...item,
+          imageAssetId:owned.assetId, imageStorageKey:owned.storageKey, imageUrl:owned.url, imageWidth:owned.width, imageHeight:owned.height,
+          imageRef:undefined, imageDeliveryMode:undefined, imageValidatedAt:Date.now() } : item) };
+        runRef.current = next; setRun(next);
+      } finally { boardExportLocksRef.current.delete(cardId); setExportingBoardIds(new Set(boardExportLocksRef.current)); }
+    }
+    assertCurrent();
+    const card = runRef.current.cards.find(item => item.id === cardId)!;
+    if (!card.imageAssetId || !card.imageStorageKey) throw new Error("分镜图持久保存未确认，串联已停止。");
+    await readOwnedStoryboardImage({ assetId: card.imageAssetId, storageKey: card.imageStorageKey }, card.imageRequestSnapshot?.aspectRatio || effectiveImageRatio(originalRun));
+    assertCurrent();
+    if (!await saveStoryboardProject(createStoryboardPersistenceSnapshot(runRef.current), true)) throw new Error("项目保存失败，串联已停止。");
+    assertCurrent();
+    const restored = normalizeRun(await cloud.restore(originalRun.id));
+    assertCurrent();
+    const saved = restored?.cards.find(item => item.id === cardId);
+    if (!restored || restored.id !== originalRun.id || resolveStoryboardExecutionMode(restored) !== "chained" || storyboardChainPlanFingerprint(restored) !== plan
+      || !saved || saved.imageStatus !== "done" || !isStoryboardChainHydratedReadback(saved, true) || !storyboardProductionImageInputMatch(restored, saved).matches || saved.imageRecordId !== card.imageRecordId || saved.imageAssetId !== card.imageAssetId || saved.imageStorageKey !== card.imageStorageKey
+      || storyboardChainFingerprint(saved.imageRequestSnapshot ?? null) !== snapshot || storyboardChainFingerprint(saved.chainAnchorConfirmation ?? null) !== confirmation) throw new Error("保存回读未确认，串联已停止。");
+    return true;
+  };
+  const processChainedImages = async () => {
+    const session = chainAuthorizationRef.current;
+    if (!session || chainBusyRef.current) return;
+    chainBusyRef.current = true; setChainStatus("running");
+    const current = () => chainAuthorizationRef.current === session && scopeMountedRef.current && contextReadyRef.current && !navigationRef.current
+      && imageDownloadOwnerRef.current === session.owner && storyboardChainPlanFingerprint(runRef.current) === session.fingerprint
+      && storyboardImagePrice(imageModelsRef.current.find(model => model.id === runRef.current.imageModelId), effectiveImageResolution(imageModelsRef.current.find(model => model.id === runRef.current.imageModelId), runRef.current.imageResolution)) === session.price;
+    try {
+      const outcome = await runStoryboardChainQueue({ current, cardIds: [...runRef.current.cards].sort((a,b) => a.order-b.order).map(card => card.id),
+        delivered: id => chainDelivered(runRef.current.cards.find(card => card.id === id)),
+        anchorConfirmed: () => { try { const cards = runRef.current.cards; if (cards.length < 2) return Boolean(cards[0]?.chainAnchorConfirmation); storyboardChainContext(runRef.current, cards[1].id, imageCapabilities.maxReferenceImages); return true; } catch { return false; } },
+        saveAndReadback: chainSaveAndReadback,
+        generate: async id => {
+          const card = runRef.current.cards.find(item => item.id === id);
+          if (!card || card.imageRecoveryReady || card.imageRetryBlocked || ["queued", "running"].includes(card.imageStatus) || card.imageClientRequestId && card.imageStatus !== "done") throw new Error("存在原任务待核验；串联不会重复提交，请先查询原任务。");
+          const authorization = buildBatchAuthorization("images", [id]);
+          if (!authorization || authorization.price !== session.price) throw new Error("报价已改变，串联已停止。");
+          authorization.isCurrent = current; batchAuthorizationRef.current = authorization; setBatchMode("images");
+          try {
+            await generateImage(id, authorization); await delay(0);
+            const original = runRef.current.cards.find(item => item.id === id);
+            const requestId = original?.imageClientRequestId, requestFingerprint = original?.imageClientRequestFingerprint;
+            const frozen = storyboardChainFingerprint(original?.imageRequestSnapshot ?? null);
+            // Infrastructure may finish an already accepted task through status/delivery recovery.
+            // Release dispatch ownership so that recovery can use the exact original key.
+            if (batchAuthorizationRef.current === authorization) batchAuthorizationRef.current = null;
+            while (current()) {
+              const latest = runRef.current.cards.find(item => item.id === id);
+              if (!latest || latest.imageClientRequestId !== requestId || latest.imageClientRequestFingerprint !== requestFingerprint || storyboardChainFingerprint(latest.imageRequestSnapshot ?? null) !== frozen) return false;
+              if (chainDelivered(latest)) return true;
+              if (!latest.imageRecoveryReady && !["running", "queued"].includes(latest.imageStatus)
+                && !(latest.imageStatus === "done" && latest.imageUrl && !latest.imageValidatedAt && !latest.imageError)) return false;
+              await delay(500);
+            }
+            return false;
+          } finally { if (batchAuthorizationRef.current === authorization) batchAuthorizationRef.current = null; setBatchMode(""); }
+        } });
+      if (chainAuthorizationRef.current !== session) return;
+      setChainStatus(outcome === "completed" ? "done" : outcome === "waiting" ? "waiting" : "stopped");
+      setNotice(outcome === "waiting" ? "首段已保存，请查看图片并点击“确认并用于后续分镜”。" : outcome === "completed" ? "串联分镜图已逐段完成并保存。" : "串联已停止，请核对当前原任务；不会自动重试。");
+      if (outcome !== "waiting") chainAuthorizationRef.current = null;
+    } catch (error) {
+      if (chainAuthorizationRef.current === session) {
+        chainAuthorizationRef.current = null;
+        if (imageDownloadOwnerRef.current === session.owner && runRef.current.id === session.runId) { setChainStatus("stopped"); setNotice(error instanceof Error ? error.message : "串联已停止。"); }
+      }
+    }
+    finally { chainBusyRef.current = false; }
+  };
+  const startChainedImagesImpl = async () => {
+    if (chainBusyRef.current || batchAuthorizationRef.current || visualAssetMutationRef.current || navigationRef.current) return;
+    if (imageCapabilities.maxReferenceImages < 1) { setNotice("当前模型不支持参考图，无法开始串联；本次未提交任何生成。"); return; }
+    if (activeImageSelectionIssue || activeImageRatioIssue) { setNotice(activeImageRatioIssue || publicModelSelectionNotice(activeImageSelectionIssue, "生图模型")); return; }
+    if (runRef.current.cards.some(card => storyboardChainManualReferences(card).length)) { setNotice("项目保留了手动参考图，请先在对应分镜处理参考图后再使用串联；现有参考图与角色资产未更改，本次未提交。"); return; }
+    if (runRef.current.cards.some(card => !card.imagePrompt.trim())) { setNotice("请补齐每段生图提示词。"); return; }
+    if (runRef.current.cards.some(card => card.imageRecoveryReady || card.imageRetryBlocked || ["queued", "running"].includes(card.imageStatus))) { setNotice("原任务尚未确认，请先查询原任务；本次未提交。"); return; }
+    const price = storyboardImagePrice(activeImageModel, activeImageResolution);
+    const count = runRef.current.cards.filter(card => !chainDelivered(card)).length;
+    if (!Number.isFinite(price) || price < 0) { setNotice("生图报价尚未确认，本次未提交。"); return; }
+    if (!window.confirm(`串联生成 ${count} 张分镜图 · ${activeImageModel ? storyboardImageModelName(activeImageModel) : ""} · ${activeImageResolution} · ${activeImageRatio}\n每张 ¥${price.toFixed(2)}，预计总费用 ¥${(count*price).toFixed(2)}。\n首段只需确认一次；后续等待前段真实交付并保存后自动继续。失败或结果未知即停止，不自动重试。刷新、暂停或修改输入后需重新确认剩余费用。`)) return;
+    const before = runRef.current, owner = imageDownloadOwnerRef.current;
+    const effective = { ...before, imageResolution: activeImageResolution, imageRatio: activeImageRatio, updatedAt: Date.now() };
+    const expectedPlan = storyboardChainPlanFingerprint(effective);
+    const sameScope = () => scopeMountedRef.current && contextReadyRef.current && !navigationRef.current && imageDownloadOwnerRef.current === owner
+      && runRef.current.id === before.id && storyboardChainPlanFingerprint(runRef.current) === expectedPlan;
+    if (before.imageResolution !== effective.imageResolution || before.imageRatio !== effective.imageRatio) { runRef.current = effective; setRun(effective); await delay(0); }
+    if (!sameScope()) return;
+    if (!await saveStoryboardProject(createStoryboardPersistenceSnapshot(runRef.current), true)) { if (sameScope()) setNotice("串联参数保存失败，本次未提交。"); return; }
+    if (!sameScope()) return;
+    const saved = normalizeRun(await cloud.restore(before.id));
+    if (!sameScope()) return;
+    if (!saved || storyboardChainPlanFingerprint(saved) !== expectedPlan) { setNotice("串联参数回读未确认，本次未提交。"); return; }
+    chainAuthorizationRef.current = { runId: runRef.current.id, fingerprint: storyboardChainPlanFingerprint(runRef.current), owner: userId + "\0" + token, price };
+    await processChainedImages();
+  };
+  const startChainedImages = async () => {
+    if (chainStartBusyRef.current || chainAnchorSavingRef.current) return;
+    chainStartBusyRef.current = true;
+    const owner = imageDownloadOwnerRef.current, runId = runRef.current.id;
+    try { await startChainedImagesImpl(); }
+    catch (error) { if (scopeMountedRef.current && imageDownloadOwnerRef.current === owner && runRef.current.id === runId) { chainAuthorizationRef.current = null; setChainStatus("stopped"); setNotice(error instanceof Error ? error.message : "串联保存未确认，本次未继续。"); } }
+    finally { chainStartBusyRef.current = false; }
+  };
+  const confirmChainAnchor = async () => {
+    if (chainBusyRef.current || chainAnchorSavingRef.current || chainStartBusyRef.current) return;
+    const before = runRef.current, first = [...before.cards].sort((a,b) => a.order-b.order)[0];
+    const owner = imageDownloadOwnerRef.current, plan = storyboardChainPlanFingerprint(before);
+    let writtenConfirmation: StoryboardChainAnchorConfirmation | undefined;
+    const ownsAnchor = () => scopeMountedRef.current && contextReadyRef.current && !navigationRef.current && imageDownloadOwnerRef.current === owner
+      && runRef.current.id === before.id && storyboardChainPlanFingerprint(runRef.current) === plan
+      && runRef.current.cards.some(card => card.id === first?.id && card.imageRecordId === first?.imageRecordId && storyboardChainFingerprint(card.imageRequestSnapshot ?? null) === storyboardChainFingerprint(first?.imageRequestSnapshot ?? null));
+    if (!chainDelivered(first) || !first.imageRecordId) { setNotice("首段尚未真实解码完成，无法确认。"); return; }
+    chainAnchorSavingRef.current = true;
+    try {
+      if (!await chainSaveAndReadback(first.id) || !ownsAnchor()) return;
+      const confirmation: StoryboardChainAnchorConfirmation = { schema: "storyboard_chain_anchor_confirmation.v1", recordId: first.imageRecordId,
+        confirmedAt: Date.now(), inputFingerprint: storyboardChainInputFingerprint(before, first), chainRevision: before.chainRevision || 1 };
+      if (!ownsAnchor()) return;
+      writtenConfirmation = confirmation;
+      const next = { ...runRef.current, updatedAt: Date.now(), cards: runRef.current.cards.map(card => card.id === first.id ? { ...card, chainAnchorConfirmation: confirmation } : card) };
+      runRef.current = next; setRun(next);
+      if (!await chainSaveAndReadback(first.id) || !ownsAnchor()) return;
+      setNotice("首段已确认并保存，可用于后续分镜。");
+      chainAnchorSavingRef.current = false;
+      if (chainAuthorizationRef.current) await processChainedImages();
+      else setChainStatus("idle");
+    } catch (error) {
+      if (ownsAnchor()) {
+        chainAuthorizationRef.current = null;
+        const latest = runRef.current;
+        if (writtenConfirmation && latest.cards.some(card => card.id === first.id && storyboardChainFingerprint(card.chainAnchorConfirmation ?? null) === storyboardChainFingerprint(writtenConfirmation ?? null))) {
+          const next = { ...latest, cards: latest.cards.map(card => card.id === first.id ? { ...card, chainAnchorConfirmation: undefined } : card) }; runRef.current = next; setRun(next);
+        }
+        setChainStatus("stopped"); setNotice(error instanceof Error ? error.message : "首段确认保存失败。");
+      }
+    }
+    finally { chainAnchorSavingRef.current = false; }
+  };
+  const batchImages = () => resolveStoryboardExecutionMode(runRef.current) === "chained" ? startChainedImages() : ordinaryBatchImages();
+  useEffect(() => {
+    chainAuthorizationRef.current = null; setChainStatus("idle");
+    return () => { chainAuthorizationRef.current = null; };
+  }, [userId, token, run.id]);
+  const previousChainRunRef = useRef<WorkbenchRun | null>(null);
+  useEffect(() => {
+    const previous = previousChainRunRef.current; previousChainRunRef.current = run;
+    if (!previous || previous.id !== run.id || resolveStoryboardExecutionMode(run) !== "chained") return;
+    const changedPlan = storyboardChainPlanFingerprint(previous) !== storyboardChainPlanFingerprint(run) || JSON.stringify(previous.cards.map(storyboardChainManualReferences)) !== JSON.stringify(run.cards.map(storyboardChainManualReferences));
+    let index = run.cards.findIndex((card, i) => previous.cards[i]?.id !== card.id || storyboardChainInputFingerprint(previous, previous.cards[i]) !== storyboardChainInputFingerprint(run, card)
+      || Boolean(previous.cards[i]?.imageRecordId && previous.cards[i].imageRecordId !== card.imageRecordId));
+    if (index < 0 && previous.cards.length !== run.cards.length) index = 0;
+    if (index < 0) return;
+    if (changedPlan || index === 0 && previous.cards[0]?.chainAnchorConfirmation) { chainAuthorizationRef.current = null; continuousAuthorizationRef.current = null; batchAuthorizationRef.current = null; setChainStatus("stopped"); }
+    const cards = run.cards.map((card,i) => ({ ...card,
+      ...(i === 0 && index === 0 ? { chainAnchorConfirmation: undefined } : {}),
+      ...(i >= index && (i > index || changedPlan) && (card.imageUrl || card.imageRecordId) ? { imageReferenceState: "stale" as const } : {}) }));
+    if (JSON.stringify(cards) === JSON.stringify(run.cards)) return;
+    const next = { ...run, cards }; previousChainRunRef.current = next; runRef.current = next; setRun(next);
+  }, [run]);
+
   const batchVideos = useCallback(async () => {
     if (batchMode || videoBatchPreflightRef.current) return;
     const workspaceGeneration = workspaceGenerationRef.current;
     videoBatchPreflightRef.current = true;
     try {
-      if (activeVideoSelectionIssue) return setNotice(activeVideoSelectionIssue);
-      const missing = run.cards.filter((card) => !hasValidatedImage(card) || (videoPromptRequired && !card.videoPrompt.trim()));
-      if (missing.length) return setNotice(`还有${missing.length}张卡片没有当前可用的图片或未粘贴视频 Prompt`);
-      const ratioMismatches = run.cards.filter((card) => storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel));
-      if (ratioMismatches.length) return setNotice(`还有${ratioMismatches.length}张故事板的生成画幅与当前设置不一致，请重新生图后再批量生成视频`);
+      if (batchVideoBlockedReason) return setNotice(batchVideoBlockedReason);
       const blockedFailures = run.cards.filter((card) => card.videoStatus === "failed" && card.videoRetryable !== true).length;
       if (blockedFailures) return setNotice(`还有${blockedFailures}条失败视频的原任务或费用尚未确认，请先刷新历史状态`);
       const cardIds = run.cards.filter((card) => card.videoStatus === "idle" || ((card.videoStatus === "failed" || card.videoStatus === "cancelled") && card.videoRetryable === true)).map((card) => card.id);
@@ -6119,10 +6631,14 @@ function UserStoryboardWorkbench({
       }
       batchAuthorizationRef.current = authorization;
       setBatchMode("videos");
-      setNotice(`批量视频已开始，每8秒提交1个，共${cardIds.length}个`);
+      setNotice(`批量视频已开始，每10秒提交1个，共${cardIds.length}个`);
       try {
-        const results = await runVideoBatch(cardIds, authorization);
-        if (workspaceGeneration === workspaceGenerationRef.current) setNotice(`批量视频结束：成功${results.filter(Boolean).length}个，失败${results.filter((item) => !item).length}个`);
+        await runVideoBatch(cardIds, authorization);
+        // A null result is not a failure. Publish a summary request after all card
+        // updates have been queued; the effect reads the committed React snapshot.
+        if (workspaceGeneration === workspaceGenerationRef.current) {
+          setVideoBatchOutcome({ workspaceGeneration, runId: authorization.runId, owner: userId + "\0" + token, cardIds });
+        }
       } catch (error) {
         if (workspaceGeneration === workspaceGenerationRef.current) setNotice(error instanceof Error ? `批量视频异常：${error.message}` : "批量视频异常中断");
       } finally {
@@ -6131,7 +6647,16 @@ function UserStoryboardWorkbench({
     } finally {
       if (workspaceGeneration === workspaceGenerationRef.current) videoBatchPreflightRef.current = false;
     }
-  }, [activeVideoModel, activeVideoSelectionIssue, batchMode, buildBatchAuthorization, run.cards, run.ratio, activeImageRatio, runVideoBatch, token, userId, videoPromptRequired]);
+  }, [activeVideoModel, batchVideoBlockedReason, batchMode, buildBatchAuthorization, run.cards, runVideoBatch, token, userId]);
+
+  useEffect(() => {
+    if (!videoBatchOutcome) return;
+    if (scopeMountedRef.current && videoBatchOutcome.workspaceGeneration === workspaceGenerationRef.current
+      && videoBatchOutcome.owner === imageDownloadOwnerRef.current && videoBatchOutcome.runId === run.id) {
+      setNotice(summarizeVideoBatchOutcome(run.cards, videoBatchOutcome.cardIds));
+    }
+    setVideoBatchOutcome(null);
+  }, [run.id, run.cards, videoBatchOutcome]);
 
   const pauseContinuousProduction = useCallback(() => {
     continuousAuthorizationRef.current = null;
@@ -6155,7 +6680,7 @@ function UserStoryboardWorkbench({
         && storyboardProductionPlanFingerprint(latest) === session.planFingerprint
         && (!session.assetFingerprint || storyboardProductionAssetFingerprint(latest) === session.assetFingerprint)
         && storyboardImagePrice(imageModel, effectiveImageResolution(imageModel, latest.imageResolution)) === session.imagePrice
-        && storyboardImagePrice(referenceModel, effectiveImageResolution(referenceModel, settings.resolution)) === session.referencePrice
+        && (resolveStoryboardExecutionMode(latest) !== "reference" || storyboardImagePrice(referenceModel, effectiveImageResolution(referenceModel, settings.resolution)) === session.referencePrice)
         && (tokenBilling?.maxChargeYuan ?? effectiveVideoCharge(videoModel, effectiveVideoResolution(videoModel, latest.videoResolution), effectiveVideoDuration(videoModel, latest.videoDuration))) === session.videoPrice
         && JSON.stringify(tokenBilling) === JSON.stringify(session.tokenBilling);
     };
@@ -6171,9 +6696,10 @@ function UserStoryboardWorkbench({
           assertCurrent();
           const intake = runRef.current.directorIntake;
           if (intake?.phase === "assets") throw new Error("此为旧版仅角色交接，请使用完整计划后再连续制作。");
+          if (resolveStoryboardExecutionMode(runRef.current) !== "reference") return true;
           if (intake?.phase === "planned") {
             const assets = runRef.current.visualAssetPlan?.assets.filter(asset => asset.role === "character" || asset.role === "pet") || [];
-            if (!assets.some(asset => asset.role === "character") || !assets.some(asset => asset.role === "pet")) throw new Error("完整参考计划需要人物和宠物的角色三视图位置。");
+            if (!assets.length) throw new Error("完整参考计划至少需要一项人物或宠物的角色三视图位置。");
             const settings = readReferenceImageSettings(runRef.current);
             const referenceBatch: VisualAssetBatchAuthorization = { runId: session.runId, modelId: settings.modelId, resolution: referenceImageResolution,
               ratio: settings.ratio, price: session.referencePrice, inputs: session.referenceInputs, started: new Set(), isCurrent: current };
@@ -6185,7 +6711,7 @@ function UserStoryboardWorkbench({
                 const confirmed = pruneStoryboardDirectorAssetConfirmations(latest)?.confirmedAssets?.some(item => item.planId === asset.id);
                 if (confirmed) continue;
                 const draft = latest.visualAssetWorkspace?.drafts.find(item => item.planId === asset.id && item.role === asset.role);
-                if (!draft?.prompt.trim()) throw new Error("请补齐人物与宠物的三视图提示词。");
+                if (!draft?.prompt.trim()) throw new Error(`请补齐${asset.role === "character" ? "人物" : "宠物"}的三视图提示词。`);
                 const candidate = latest.visualAssetWorkspace?.candidates.find(item => item.planId === asset.id && item.role === asset.role
                   && item.projectId === latest.id && item.assetId === `generated_${item.historyRecordId}` && item.storageKey === undefined
                   && storyboardDirectorCandidateMatchesDraft(item, draft, asset));
@@ -6226,7 +6752,7 @@ function UserStoryboardWorkbench({
         video: async cardId => {
           assertCurrent();
           const card = runRef.current.cards.find(item => item.id === cardId);
-          if (!card || !hasValidatedImage(card) || card.continuousImageInputFingerprint !== storyboardProductionImageFingerprint(runRef.current, card)) throw new Error("分镜图与当前输入不一致，请先核对并重新生成对应分镜图。");
+          if (!card || !hasValidatedImage(card) || !storyboardProductionImageInputMatch(runRef.current, card).matches) throw new Error("分镜图与当前输入不一致，请先核对并重新生成对应分镜图。");
           if (needsStoryboardBoardExport(card) && !await saveBoardForVideo(cardId, true)) throw new Error("分镜原图保存未确认，本次未提交视频。");
           assertCurrent();
           const authorization = buildBatchAuthorization("videos", [cardId]);
@@ -6259,17 +6785,22 @@ function UserStoryboardWorkbench({
     readReferenceImageSettings, referenceImageResolution, resolveVisualAssetUrls, saveBoardForVideo, saveStoryboardProject]);
 
   const startContinuousProduction = useCallback(async () => {
+    if (resolveStoryboardExecutionMode(runRef.current) === "chained") { setNotice("串联模式请使用批量生图，确认首段后逐段完成，再制作视频。"); return; }
     if (continuousBusyRef.current || continuousAuthorizationRef.current || batchAuthorizationRef.current || visualAssetGenerationRef.current || visualAssetMutationRef.current
       || navigationRef.current || !contextReadyRef.current || !token || !userId || runRef.current.directorIntake?.phase === "assets" || runRef.current.draftImportNotice) return;
     const current = runRef.current;
+    if (!activeVideoModel || !isStoryboardImageWorkflow(activeVideoModel) || current.cards.some(card => { const input = card.videoInputs; return input?.useStoryboardImage === false || Boolean(input?.firstFrameUrl || input?.lastFrameUrl || input?.audioUrl || input?.sourceVideoUrl || input?.referenceImageUrls?.length || input?.referenceAudioUrls?.length); })) { setContinuousMessage("当前视频模型或素材需单独制作视频，请使用单段生成或批量视频；连续制作不会自动为这类视频生成图片。"); return; }
     const blocker = storyboardProductionBlocker(current);
     if (blocker) { setContinuousStatus("stopped"); setContinuousMessage(blocker); return; }
     if (pendingAssetAttempts.length || referenceUploadPending.length) { setContinuousMessage("角色原请求或上传仍待核验，请先处理原任务。"); return; }
-    if (activeImageSelectionIssue || activeImageRatioIssue || activeVideoSelectionIssue) { setContinuousMessage(activeImageSelectionIssue || activeImageRatioIssue || activeVideoSelectionIssue); return; }
+    if (activeImageSelectionIssue || activeImageRatioIssue || activeVideoSelectionIssue) {
+      setContinuousMessage(activeImageRatioIssue || publicModelSelectionNotice(activeImageSelectionIssue || activeVideoSelectionIssue, activeImageSelectionIssue ? "生图模型" : "视频模型"));
+      return;
+    }
     const referenceInputs = new Map<string, string>();
     let referenceCount = 0;
     try {
-      if (current.directorIntake?.phase === "planned") for (const draft of current.visualAssetWorkspace?.drafts || []) {
+      if (resolveStoryboardExecutionMode(current) === "reference" && current.directorIntake?.phase === "planned") for (const draft of current.visualAssetWorkspace?.drafts || []) {
         if (draft.role !== "character" && draft.role !== "pet") continue;
         const input = storyboardFirstThreeViewInput({ planId: draft.planId, role: draft.role, name: draft.name, prompt: draft.prompt, tags: draft.tagsText.split(/[，,]/u).map(value => value.trim()).filter(Boolean), customCategory: draft.customCategory });
         referenceInputs.set(draft.planId, JSON.stringify(input));
@@ -6281,14 +6812,14 @@ function UserStoryboardWorkbench({
       if (referenceCount && visualAssetGenerationIssue) throw new Error(visualAssetGenerationIssue);
       const tokenBilling = resolveVideoTokenBillingConsent(activeVideoModel, tokenChargeConsentRef.current);
       if (activeVideoModel?.billingUnit === "token" && !tokenBilling) throw new Error("请明确填写每条视频最多自动扣款金额，再确认总费用。");
-      const referencePrice = storyboardImagePrice(referenceImageModel, referenceImageResolution);
+      const referencePrice = resolveStoryboardExecutionMode(current) === "reference" ? storyboardImagePrice(referenceImageModel, referenceImageResolution) : 0;
       const imagePrice = storyboardImagePrice(activeImageModel, activeImageResolution);
       const videoPrice = tokenBilling?.maxChargeYuan ?? effectiveVideoCharge(activeVideoModel, activeVideoResolution, activeVideoDuration);
       const images = current.cards.filter(card => card.imageStatus !== "done").length;
       const videos = current.cards.filter(card => card.videoStatus !== "done").length;
       const total = storyboardProductionQuote({ references: referenceCount, images, videos, referencePrice, imagePrice, videoPrice });
       if (!referenceCount && !images && !videos) { setContinuousStatus("done"); setContinuousMessage("本项目的分镜图与视频已完成。"); return; }
-      if (!window.confirm(`连续制作当前项目：${current.title}\n${referenceCount ? `角色三视图 ${referenceCount} 张 × ¥${referencePrice.toFixed(2)}；` : ""}分镜图 ${images} 张 × ¥${imagePrice.toFixed(2)}；视频 ${videos} 条 × ¥${videoPrice.toFixed(2)}。\n图片：${activeImageModel ? storyboardImageModelName(activeImageModel) : ""} · ${activeImageResolution} · ${effectiveImageRatio(current)}\n视频：${activeVideoModel ? compactVideoModelName(activeVideoModel) : ""} · ${activeVideoDuration}秒 · ${activeVideoResolution} · ${current.ratio}\n${tokenBilling ? "视频按实际 Token 结算，以下为本次最多自动扣款总额" : "本次预计总费用"}：¥${total.toFixed(2)}。\n${current.directorIntake?.phase === "planned" ? "角色图生成后必须逐项点击“使用这张”，全部确认保存后在本页继续分镜图→视频。" : "普通模式直接按全部分镜图→全部视频的顺序制作。"}逐项只提交一次；失败或结果未知即停止。暂停、刷新或修改输入后需重新确认剩余费用。`)) return;
+      if (!window.confirm(`连续制作当前项目：${current.title}\n${referenceCount ? `角色三视图 ${referenceCount} 张 × ¥${referencePrice.toFixed(2)}；` : ""}分镜图 ${images} 张 × ¥${imagePrice.toFixed(2)}；视频 ${videos} 条 × ¥${videoPrice.toFixed(2)}。\n图片：${activeImageModel ? storyboardImageModelName(activeImageModel) : ""} · ${activeImageResolution} · ${effectiveImageRatio(current)}\n视频：${activeVideoModel ? compactVideoModelName(activeVideoModel) : ""} · ${activeVideoDuration}秒 · ${videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)} · ${current.ratio}\n${tokenBilling ? "视频按实际 Token 结算，以下为本次最多自动扣款总额" : "本次预计总费用"}：¥${total.toFixed(2)}。\n${resolveStoryboardExecutionMode(current) === "reference" && current.directorIntake?.phase === "planned" ? "角色图生成后必须逐项点击“使用这张”，全部确认保存后在本页继续分镜图→视频。" : "普通模式直接按全部分镜图→全部视频的顺序制作。"}逐项只提交一次；失败或结果未知即停止。暂停、刷新或修改输入后需重新确认剩余费用。`)) return;
       if (runRef.current !== current) throw new Error("项目已变化，请重新确认本次制作。");
       continuousAuthorizationRef.current = { owner: userId + "\0" + token, runId: current.id, planFingerprint: storyboardProductionPlanFingerprint(current),
         referencePrice, imagePrice, videoPrice, tokenBilling, referenceInputs, stage: "references" };
@@ -6303,8 +6834,10 @@ function UserStoryboardWorkbench({
     if (run.id !== session.runId || imageDownloadOwnerRef.current !== session.owner || storyboardProductionPlanFingerprint(run) !== session.planFingerprint
       || session.assetFingerprint && storyboardProductionAssetFingerprint(run) !== session.assetFingerprint) { pauseContinuousProduction(); return; }
     if (continuousStatus !== "waiting" || visualAssetSaving || visualAssetGenerating || continuousBusyRef.current || !run.directorIntake) return;
-    try { collectStoryboardDirectorReferenceBindings(run, run.directorIntake.input); }
-    catch { return; }
+    if (resolveStoryboardExecutionMode(run) === "reference") {
+      try { collectStoryboardDirectorReferenceBindings(run, run.directorIntake.input); }
+      catch { return; }
+    }
     void processContinuousProduction();
   }, [continuousStatus, pauseContinuousProduction, processContinuousProduction, run, visualAssetGenerating, visualAssetSaving]);
 
@@ -6312,10 +6845,13 @@ function UserStoryboardWorkbench({
     if (!projectToRestore || !recoveryReadReady) return;
     let active = true; contextReadyRef.current = false; setProjectContext("loading");
     const generation = ++projectRestoreGenerationRef.current;
+    setNotice(STORYBOARD_RECOVERY_NOTICE);
+    const clearRecoveryNotice = () => setNotice(current =>
+      active && generation === projectRestoreGenerationRef.current ? clearStoryboardRecoveryNotice(current) : current);
     void cloud.restore(projectToRestore).then(document => {
       if (!active || generation !== projectRestoreGenerationRef.current) return;
       const normalized = normalizeRun(document);
-      if (!normalized || normalized.id !== projectToRestore) { setProjectContext("error"); setProjectContextError("项目不存在、无权访问或读取失败；本地未保存内容仍保留，请重新读取。"); return; }
+      if (!normalized || normalized.id !== projectToRestore) { clearRecoveryNotice(); setProjectContext("error"); setProjectContextError("项目不存在、无权访问或读取失败；本地未保存内容仍保留，请重新读取。"); return; }
       // Reapply local edits only against unchanged saved business content.
       // Monitoring timestamps/statuses can never make a stale draft win a conflict.
       const recovery = initialRecoveryRef.current;
@@ -6335,8 +6871,10 @@ function UserStoryboardWorkbench({
       if (hasSubmittedWork(normalized) || recovery?.baseContentFingerprint) submittedRunIdsRef.current.add(normalized.id);
       confirmedRecoveryBaseRef.current = base;
       runRef.current = restored; setRun(restored); setConfirmedProjectSnapshot(normalized.id + ":" + JSON.stringify(createStoryboardPersistenceSnapshot(normalized))); contextReadyRef.current = true; setProjectContext("ready"); setStorageReady(true);
+      clearRecoveryNotice();
     }).catch(() => {
       if (!active || generation !== projectRestoreGenerationRef.current) return;
+      clearRecoveryNotice();
       contextReadyRef.current = false;
       setProjectContext("error"); setProjectContextError("项目草稿未通过完整性校验，原记录仍保留；请重新读取，不会覆盖为空项目。");
     });
@@ -6437,6 +6975,7 @@ function UserStoryboardWorkbench({
     } catch {
       if (previous) setRecoveryExtraDraft(previous.run);
       projectRestoreGenerationRef.current++;
+      setNotice(clearStoryboardRecoveryNotice);
       contextReadyRef.current = false;
       setProjectContext("error"); setCanDiscardRecovery(true);
       setProjectContextError("浏览器未能另存当前稿，已有稿件均未覆盖。可以下载稿件，或明确放弃当前本地恢复后新建。");
@@ -6451,8 +6990,6 @@ function UserStoryboardWorkbench({
     if (view === "workbench" && !requestedEntryProjectId) startFreshWorkspace(true);
   }, [historyPage, requestedEntryProjectId, startFreshWorkspace, view]);
 
-  const imageDone = run.cards.filter(hasValidatedImage).length;
-  const videoDone = run.cards.filter((card) => card.videoStatus === "done").length;
   const preferredVideoPresetActive = Boolean(run.videoContract && run.videoModelId === run.videoContract.modelId);
   const selectableImageModelCount = imageModels.filter((model) => !storyboardImageModelSelectionIssue(model)).length;
   const selectableVideoModelCount = videoModels.filter((model) => !storyboardVideoModelSelectionIssue(model, {
@@ -6471,10 +7008,23 @@ function UserStoryboardWorkbench({
   useEffect(() => {
     if (!storageReady || !contextReadyRef.current || projectContext !== "ready" || referenceDisplayContextRef.current === run.id) return;
     referenceDisplayContextRef.current = run.id;
-    setReferenceDisplayMode(run.visualAssetPlan?.mode === "selected" ? "reference" : "normal");
+    setReferenceDisplayMode(resolveStoryboardExecutionMode(run) === "chained" ? "chained" : resolveStoryboardExecutionMode(run) === "reference" ? "reference" : "normal");
   }, [projectContext, run.id, run.visualAssetPlan, storageReady]);
-  const changeReferenceDisplayMode = async (mode: "normal" | "reference") => {
+  const changeReferenceDisplayMode = async (mode: "normal" | "reference" | "chained") => {
     if (navigationRef.current || visualAssetMutationRef.current || visualAssetGenerationRef.current || referenceUploadOperationRef.current || boardExportLocksRef.current.size || imageSubmissionsRef.current.size || videoSubmissionsRef.current.size || !contextReadyRef.current) return;
+    chainAuthorizationRef.current = null; continuousAuthorizationRef.current = null; batchAuthorizationRef.current = null;
+    setChainStatus("idle");
+    if (mode === "chained") {
+      if (resolveStoryboardExecutionMode(runRef.current) === "chained") return;
+      const before = runRef.current;
+      const next: WorkbenchRun = { ...before, executionMode: "chained", chainRevision: (before.chainRevision || 1) + 1,
+        visualAssetPlan: { ...before.visualAssetPlan, mode: "off", assets: before.visualAssetPlan?.assets || [] },
+        cards: before.cards.map(card => ({ ...card, chainAnchorConfirmation: undefined, ...((card.imageUrl || card.imageRecordId) ? { imageReferenceState: "stale" as const } : {}) })), updatedAt: Date.now() };
+      if (!await saveStoryboardProject(createStoryboardPersistenceSnapshot(next), true)) { setNotice("串联模式保存未确认，请重试。"); return; }
+      if (runRef.current.id !== before.id) return;
+      runRef.current = next; setRun(next); setReferenceDisplayMode("chained");
+      setNotice("串联模式：先生成并确认首段；后续逐段使用已保存分镜作为参考。现有角色资产与手动参考保留。"); return;
+    }
     if (mode === "reference") {
       if (scopeMountedRef.current) setReferenceDisplayMode("reference");
       if (runRef.current.visualAssetPlan?.mode !== "selected" && !await selectVisualAssetMode("selected")) {
@@ -6483,6 +7033,11 @@ function UserStoryboardWorkbench({
       return;
     }
     if (runRef.current.visualAssetPlan?.mode === "selected" && !await selectVisualAssetMode("off")) return;
+    if (resolveStoryboardExecutionMode(runRef.current) === "chained") {
+      const next = { ...runRef.current, executionMode: "ordinary" as const, updatedAt: Date.now() };
+      if (!await saveStoryboardProject(createStoryboardPersistenceSnapshot(next), true)) return;
+      runRef.current = next; setRun(next);
+    }
     if (scopeMountedRef.current) setReferenceDisplayMode("normal");
   };
   const currentVisualAssetUrls = resolvedVisualAssetPlan?.projectId === run.id && resolvedVisualAssetPlan.plan === run.visualAssetPlan ? resolvedVisualAssetPlan.urls : [];
@@ -6571,7 +7126,30 @@ function UserStoryboardWorkbench({
     setCardMediaViews(views => ({ ...views, [run.id + ":" + card.id]: media }));
     return true;
   };
-  const referenceCreation = (<StoryboardVisualAssetsDrawer open={true} onOpenChange={() => undefined} presentation={view === "visual-assets" ? "page" : "inline"} canGenerate={projectContext === "ready" && !navigating} canApply={projectContext === "ready" && !referenceOnly && !navigating && (!requestedSlotId || Boolean(run.visualAssetWorkspace?.drafts.some(draft => draft.planId === requestedSlotId) || run.visualAssetPlan?.assets.some(asset => asset.id === requestedSlotId)))} targetSlotId={requestedSlotId} onOpenLibrary={openVisualAssetStudio} pendingUploads={referenceUploadPending.filter(item => item.contextId === run.id).map(item => ({ planId: item.draft.planId, canRead: Boolean(item.storageKey), unknown: !item.storageKey }))} onReturn={returnFromAssets} modelControls={view === "visual-assets" ? modelControls : undefined} projectId={projectContext === "ready" && !referenceOnly ? run.id : ""}
+  // Wheel gestures only scroll the rail. Stepping the selection at an edge used
+  // to jump the scrollbar back to the opposite end, so model switching stays a
+  // deliberate click.
+  const imageModelListRef = useRef<HTMLDivElement | null>(null);
+  const videoModelListRef = useRef<HTMLDivElement | null>(null);
+  // A single sliding indicator per rail: the bar glides to the selected row
+  // instead of blinking off one row and on another.
+  const [imageModelIndicator, setImageModelIndicator] = useState<{ top: number; height: number } | null>(null);
+  const [videoModelIndicator, setVideoModelIndicator] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    const measure = (list: HTMLDivElement | null) => {
+      const active = list?.querySelector<HTMLButtonElement>("button.is-active");
+      return active && list ? { top: active.offsetTop, height: active.offsetHeight } : null;
+    };
+    const frame = requestAnimationFrame(() => {
+      setImageModelIndicator(measure(imageModelListRef.current));
+      setVideoModelIndicator(measure(videoModelListRef.current));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [run.imageModelId, run.videoModelId, imageModels.length, videoModels.length]);
+
+  const referenceCreation = (<>
+    {view !== "visual-assets" && modelControls}
+    <StoryboardVisualAssetsDrawer open={true} onOpenChange={() => undefined} presentation={view === "visual-assets" ? "page" : "inline"} canGenerate={projectContext === "ready" && !navigating} canApply={projectContext === "ready" && !referenceOnly && !navigating && (!requestedSlotId || Boolean(run.visualAssetWorkspace?.drafts.some(draft => draft.planId === requestedSlotId) || run.visualAssetPlan?.assets.some(asset => asset.id === requestedSlotId)))} targetSlotId={requestedSlotId} onOpenLibrary={openVisualAssetStudio} pendingUploads={referenceUploadPending.filter(item => item.contextId === run.id).map(item => ({ planId: item.draft.planId, canRead: Boolean(item.storageKey), unknown: !item.storageKey }))} onReturn={returnFromAssets} modelControls={view === "visual-assets" ? modelControls : undefined} projectId={projectContext === "ready" && !referenceOnly ? run.id : ""}
         key={visualAssetRecoveryRevision} onVisibleCandidatesChange={rememberVisibleReferenceChoices} initialDrafts={run.visualAssetWorkspace?.drafts} onDraftsChange={changeVisualAssetDrafts}
         onDeleteDraft={planId => applyVisualAssets({ type: "remove", slotId: planId }, false, true)}
         requiresExplicitAdoption={Boolean(run.directorIntake)} continuesInWorkbench={run.directorIntake?.phase === "planned"} taskCount={run.cards.length} assetUsageCounts={assetUsageCounts} assetUsageSegments={assetUsageSegments} referenceLimit={referenceLimit} modelName={referenceImageModel ? storyboardImageModelName(referenceImageModel) : ""}
@@ -6581,31 +7159,25 @@ function UserStoryboardWorkbench({
         onUploadReference={(file, input) => withFirstReferenceAdoption(input, () => uploadReferenceImage(file, input))} onLoadImportImages={loadImportImages} onImportImage={(image, input) => withFirstReferenceAdoption(input, () => importReferenceImage(image, input))}
         onReload={() => loadVisualAssetCandidates()} onGenerate={input => withFirstReferenceAdoption(input, () => generateVisualAsset(input))} onGenerateBatch={generateVisualAssets} onUpdateAsset={updateVisualAssetMetadata} onSaveSelected={saveVisualAssetSelection} onApply={applyAndReturn}
         presetAssets={presetAssets} presetsLoading={presetsLoading} onReloadPresets={loadPresetAssets}
-        hasMore={visualAssetNextOffset !== null} onLoadMore={() => loadVisualAssetCandidates(visualAssetNextOffset || 0)} />);
+        hasMore={visualAssetNextOffset !== null} onLoadMore={() => loadVisualAssetCandidates(visualAssetNextOffset || 0)} />
+  </>);
   if(view === "visual-assets" && (projectContext === "loading" || projectContext === "error")) return <div className="voice-studio-root vs-workbench sbw-root sbw-assets-page"><SubPageHeader title="角色参考" subtitle="身份参考生成 · 分类角色库" /><p role="status" className="p-6">{projectContext === "loading" ? '正在加载项目…' : projectContextError}</p>{visualAssetError && <p role="alert">{visualAssetError}</p>}<button type="button" disabled={navigating} onClick={returnFromAssets}>返回分镜工作台</button></div>;
   if(view === "visual-assets") return <div className="voice-studio-root vs-workbench sbw-root sbw-assets-page"><SubPageHeader title="角色参考" subtitle="身份参考生成 · 分类角色库" />{notice && <p className="sbw-asset-context" role="status">{notice}</p>}{referenceCreation}</div>;
   if(!historyPage && (projectContext === "loading" || projectContext === "error")) return <div className="voice-studio-root vs-workbench sbw-root"><SubPageHeader title="分镜工作台" /><p role="status" className="p-6">{projectContext === "loading" ? '正在加载项目…' : projectContextError}</p>{projectContext === "error" && <button type="button" onClick={() => setProjectRestoreAttempt(value => value + 1)}>重新读取项目</button>}{recoveryConflictDraft && <button type="button" onClick={() => downloadRecoveryDraft()}>下载本地未保存稿</button>}<button type="button" disabled={!recoveryReadReady} onClick={() => startFreshWorkspace()}>返回新工作台</button>{recoveryExtraDraft && <button type="button" onClick={() => downloadRecoveryDraft(recoveryExtraDraft)}>下载另一份本地稿</button>}{canDiscardRecovery && <button type="button" onClick={() => { if (window.confirm("确认放弃当前本地恢复并新建？云端项目和已有费用记录不会删除。请先下载需要保留的本地稿。")) startFreshWorkspace(true); }}>放弃当前本地恢复并新建</button>}</div>;
   return (
-    <div className="voice-studio-root vs-workbench sbw-root" data-ratio={activeImageRatio}>
-      <div hidden={historyPage} aria-hidden={historyPage || undefined}>
+    <div className="voice-studio-root vs-workbench sbw-root sbw-editor" data-ratio={activeImageRatio}>
+      <div className="sbw-main" hidden={historyPage} aria-hidden={historyPage || undefined}>
       <SubPageHeader
         title="分镜工作台"
-        subtitle="文案分段 · 分镜图片 · 连续视频"
         icon={<Sparkles className="h-5 w-5" />}
         showThemeSwitcher={false}
         rightSlot={null}
       />
 
       <fieldset className="sbw-body" disabled={navigating || visualAssetSaving}><main className="sbw-shell">
-        <aside className="sbw-model-rail" aria-label="生成模型">
-          <div className="sbw-rail-summary">
-            <span>分镜工作台</span>
-            <strong>{run.cards.length} 个分段</strong>
-            <small>图片 {imageDone}/{run.cards.length} · 视频 {videoDone}/{run.cards.length}</small>
-          </div>
-
-          <section className="sbw-model-section">
-            <header><span>生图模型</span><small>{imageModelCatalogState === "loading" && imageModels.length === 0 ? "读取中" : `${selectableImageModelCount} 个可选`}</small></header>
+        <aside className={`${modelRailRestoration.rail} sbw-model-rail`} aria-label="生成模型">
+          <section className="sbw-model-section sbw-image-model-section" aria-label="生图模型">
+            <header><span>生图模型</span><small className="sbw-model-hint">{imageModelCatalogState === "loading" && imageModels.length === 0 ? "读取中" : `${imageModels.length} 个模型 · ${selectableImageModelCount} 个可选`}</small></header>
             {imageModelCatalogState === "loading" && imageModels.length === 0 && (
               <p className="sbw-model-catalog-state" role="status"><Loader2 className="animate-spin" />正在读取可用生图模型…</p>
             )}
@@ -6616,17 +7188,14 @@ function UserStoryboardWorkbench({
               <div className="sbw-model-catalog-state"><span>当前暂无已配置生图模型</span><button type="button" onClick={() => setModelCatalogReloadKey((value) => value + 1)}><RotateCcw />重新加载</button></div>
             )}
             {run.imageModelId && !activeImageModel && <p role="status">原生图模型当前不可选，请手动选择。</p>}
-            {activeImageModel && activeImageSelectionIssue && (
-              <p role="status">{publicModelSelectionLabel(activeImageSelectionIssue)}：{activeImageSelectionIssue}</p>
-            )}
-            <div className="sbw-model-list sbw-image-model-list">
+            <div className="sbw-model-list sbw-image-model-list" ref={imageModelListRef}>
+              {imageModelIndicator && <span className="sbw-model-indicator" aria-hidden="true" style={{ height: imageModelIndicator.height, transform: `translateY(${imageModelIndicator.top}px)` }} />}
               {imageModels.map((model) => {
                 const capabilities = getImageModelCapabilities(model);
                 const displayName = storyboardImageModelName(model);
                 const brand = resolveModelBrand(displayName, model.display_name, model.name, model.model_name, model.provider) || "generic";
                 const preferredResolution = preferredStoryboardImageResolution(model);
                 const selectionIssue = storyboardImageModelSelectionIssue(model);
-                const publicSelectionLabel = publicModelSelectionLabel(selectionIssue);
                 const preferredPrice = storyboardImagePrice(model, preferredResolution);
                 // Show every tier the catalog actually allows, not just the default,
                 // so a model that supports 1K/2K/4K never looks like a 1K-only model.
@@ -6636,10 +7205,14 @@ function UserStoryboardWorkbench({
                 const imagePriceLabel = model.priceReady && Number.isFinite(preferredPrice)
                   ? `${resolutionSummary} ¥${preferredPrice.toFixed(2)}/张`
                   : `${resolutionSummary} · 价格待配置`;
+                const imagePriceChip = model.priceReady && Number.isFinite(preferredPrice)
+                  ? `¥${preferredPrice.toFixed(2)}`
+                  : "待配置";
                 return (
                   <button
                     key={model.id}
                     type="button"
+                    disabled={Boolean(selectionIssue)}
                     data-model-brand={brand}
                     data-model-id={model.id}
                     data-model-selectable={selectionIssue ? "false" : "true"}
@@ -6647,7 +7220,7 @@ function UserStoryboardWorkbench({
                     className={run.imageModelId === model.id ? "is-active" : ""}
                     aria-label={selectionIssue ? `${displayName} 当前未开放` : `选择生图模型：${displayName}`}
                     aria-disabled={Boolean(selectionIssue)}
-                    title={selectionIssue ? `${publicSelectionLabel}：${selectionIssue}` : displayName}
+                    title={displayName}
                     onClick={() => selectImageModel(model)}
                   >
                     <ModelBadge
@@ -6659,8 +7232,17 @@ function UserStoryboardWorkbench({
                       availability={selectionIssue ? "unavailable" : "ready"}
                     />
                     <span className="sbw-model-copy">
-                      <strong title={displayName}><span className="sbw-model-name">{displayName}</span><em className="sbw-model-inline-meta">· {imagePriceLabel}</em></strong>
-                      <small>默认 {capabilities.defaultResolution} · {capabilities.referenceCapabilityLabel}</small>
+                      <strong title={displayName}>
+                        <span className="sbw-model-name">{displayName}</span>
+                        {model.variantLabel && <em className="sbw-model-variant">{model.variantLabel}</em>}
+                      </strong>
+                      <small className="sbw-model-meta" title={`默认 ${capabilities.defaultResolution} · ${capabilities.referenceCapabilityLabel}`}>
+                        <span className="sbw-model-tier">{resolutionSummary}</span>
+                        <span className="sbw-model-cap">{capabilities.referenceCapabilityLabel}</span>
+                        <span className={`sbw-model-price${model.priceReady ? "" : " is-pending"}`} title={imagePriceLabel}>
+                          {imagePriceChip}{model.priceReady && <em>/张</em>}
+                        </span>
+                      </small>
                       {showAdminModelIds && (
                         <span
                           className="sbw-model-id-copy"
@@ -6683,7 +7265,6 @@ function UserStoryboardWorkbench({
                           <code>ID: {model.id}</code><ClipboardCopy aria-hidden="true" />
                         </span>
                       )}
-                      {selectionIssue && <small className="sbw-model-unavailable">{publicSelectionLabel}</small>}
                     </span>
                   </button>
                 );
@@ -6691,8 +7272,8 @@ function UserStoryboardWorkbench({
             </div>
           </section>
 
-          <section className="sbw-model-section sbw-video-model-section">
-            <header><span>图生视频模型</span><small>{videoModelCatalogState === "loading" && videoModels.length === 0 ? "读取中" : `${selectableVideoModelCount} 个可选`}</small></header>
+          <section className="sbw-model-section sbw-video-model-section" aria-label="视频模型">
+            <header><span>视频模型</span><small className="sbw-model-hint">{videoModelCatalogState === "loading" && videoModels.length === 0 ? "读取中" : `${videoModels.length} 个模型 · ${selectableVideoModelCount} 个可选`}</small></header>
             {videoModelCatalogState === "loading" && videoModels.length === 0 && (
               <p className="sbw-model-catalog-state" role="status"><Loader2 className="animate-spin" />正在读取可用视频模型…</p>
             )}
@@ -6700,46 +7281,51 @@ function UserStoryboardWorkbench({
               <div className="sbw-model-catalog-state is-error" role="alert"><span>视频模型暂时无法读取</span><button type="button" onClick={() => setModelCatalogReloadKey((value) => value + 1)}><RotateCcw />重新加载</button></div>
             )}
             {videoModelCatalogState === "ready" && videoModels.length === 0 && (
-              <div className="sbw-model-catalog-state"><span>当前暂无已配置图生视频模型</span><button type="button" onClick={() => setModelCatalogReloadKey((value) => value + 1)}><RotateCcw />重新加载</button></div>
+              <div className="sbw-model-catalog-state"><span>当前暂无已添加的视频模型</span><button type="button" onClick={() => setModelCatalogReloadKey((value) => value + 1)}><RotateCcw />重新加载</button></div>
             )}
             {run.videoModelId && !activeVideoModel && <p role="status">原视频模型当前不可选，请手动选择。</p>}
-            {activeVideoModel && activeVideoSelectionIssue && <p role="status">当前视频模型未开放，请选择列表中的可用模型。</p>}
-            <div className="sbw-model-list sbw-video-model-list">
+            <div className="sbw-model-list sbw-video-model-list" ref={videoModelListRef}>
+              {videoModelIndicator && <span className="sbw-model-indicator" aria-hidden="true" style={{ height: videoModelIndicator.height, transform: `translateY(${videoModelIndicator.top}px)` }} />}
               {videoModels.map((model) => {
                 const displayName = compactVideoModelName(model);
-                const fullDisplayName = displayName;
+                const fullDisplayName = publicModelName(model);
                 const brand = resolveModelBrand(displayName, model.display_name, model.name, model.id) || "generic";
                 const channelCode = modelChannelCode(model);
+                const channelLabel = channelCode ? `渠道${channelCode}` : "";
                 const defaultDuration = effectiveVideoDuration(model);
                 const preferredResolution = effectiveVideoResolution(model);
                 const defaultCharge = effectiveVideoCharge(model, preferredResolution, defaultDuration);
                 const outputSecondPrice = model.billingUnit === "output_second" && defaultDuration > 0
                   ? defaultCharge / defaultDuration
                   : 0;
-                const priceLabel = model.billingUnit === "token" ? videoTokenRateLabel(model, preferredResolution) : model.priceReady && Number.isFinite(defaultCharge) && Number.isFinite(outputSecondPrice)
+                const priceLabel = model.generationReady === false
+                  ? model.billingUnit === "token" ? "Token 计价" : model.priceReady && Number.isFinite(model.pricePerUse)
+                    ? `¥${Number(model.pricePerUse).toFixed(2)}/${model.billingUnit === "output_second" ? "秒" : "次"}` : "—"
+                  : model.billingUnit === "token" ? videoTokenRateLabel(model, preferredResolution) : model.priceReady && Number.isFinite(defaultCharge) && Number.isFinite(outputSecondPrice)
                   ? `¥${model.billingUnit === "output_second" ? outputSecondPrice.toFixed(2) : defaultCharge.toFixed(2)}/${model.billingUnit === "output_second" ? "秒" : "次"}`
-                  : "价格待配置";
+                  : "—";
                 const isPreferredContractModel = run.videoContract?.modelId === model.id;
                 const selectionTarget = {
                   ratio: isPreferredContractModel ? run.videoContract!.ratio : run.ratio,
                   duration: effectiveVideoDuration(model, isPreferredContractModel ? run.videoContract!.duration : run.videoDuration),
                 };
                 const selectionIssue = storyboardVideoModelSelectionIssue(model, selectionTarget);
-                const publicSelectionLabel = publicModelSelectionLabel(selectionIssue);
+                const inputLabel = videoModelInputLabel(model);
                 return (
                   <button
                     key={model.id}
                     type="button"
+                    disabled={Boolean(selectionIssue)}
                     data-model-brand={brand}
                     data-model-id={model.id}
                     data-model-selectable={selectionIssue ? "false" : "true"}
                     className={run.videoModelId === model.id ? "is-active" : ""}
-                    aria-label={selectionIssue ? `${fullDisplayName} ${publicSelectionLabel}` : `选择视频模型：${fullDisplayName}`}
+                    aria-label={`选择视频模型：${fullDisplayName}`}
                     aria-disabled={Boolean(selectionIssue)}
-                    title={publicSelectionLabel || `选择 ${fullDisplayName}`}
+                    title={fullDisplayName}
                     onClick={() => {
                       if (selectionIssue) {
-                        setNotice(`${fullDisplayName} ${publicSelectionLabel}，请先选择可用模型`);
+                        setNotice("请选择其他视频模型");
                         return;
                       }
                       const preferredContract = isPreferredContractModel ? run.videoContract : undefined;
@@ -6756,6 +7342,8 @@ function UserStoryboardWorkbench({
                         ? resolvedSelection.ratio as WorkbenchRatio
                         : supportedRatios[0] || run.ratio;
                       const failedVideoCards = run.cards.filter((card) => card.videoStatus === "failed").length;
+                      const resettableFailedVideoCards = run.cards.filter((card) => card.videoStatus === "failed" && card.videoRetryable === true && card.videoSameRequestKeyRequired !== true).length;
+                      const retainedFailedVideoCards = failedVideoCards - resettableFailedVideoCards;
                       patchRun({
                         videoModelId: model.id,
                         videoResolution: resolvedSelection.resolution,
@@ -6763,9 +7351,11 @@ function UserStoryboardWorkbench({
                         ratio: nextRatio,
                         cards: resetFailedVideoCardsForModelSwitch(run.cards),
                       });
-                      setNotice(failedVideoCards > 0
-                        ? `已选择 ${fullDisplayName}，${failedVideoCards} 个旧模型失败任务现在可以重新提交`
-                        : `已选择 ${fullDisplayName}`);
+                      setNotice([
+                        `已选择 ${fullDisplayName}`,
+                        resettableFailedVideoCards > 0 ? `${resettableFailedVideoCards} 个失败任务可按当前模型重新提交` : "",
+                        retainedFailedVideoCards > 0 ? `${retainedFailedVideoCards} 个原视频任务仍需先查询或按原参数处理` : "",
+                      ].filter(Boolean).join("，"));
                     }}
                   >
                     <ModelBadge
@@ -6777,8 +7367,15 @@ function UserStoryboardWorkbench({
                       availability={selectionIssue ? "unavailable" : "ready"}
                     />
                     <span className="sbw-model-copy">
-                      <strong title={fullDisplayName}><span className="sbw-model-name">{displayName}</span><em className="sbw-model-inline-meta">{channelCode ? ` · ${channelCode}` : ""} · {priceLabel}</em></strong>
-                      <small>{model.durationMode === "fixed" ? `${model.durationSeconds}秒` : `${model.minDuration}-${model.maxDuration}秒`} · {preferredResolution || "清晰度自动"}{videoModelNeedsReference(model) ? " · 需参考图" : ""}</small>
+                      <strong title={fullDisplayName}><span className="sbw-model-name">{displayName}</span></strong>
+                      <small className="sbw-model-meta" title={[channelLabel, priceLabel, videoModelInputHint(model)].filter(Boolean).join(" · ")}>
+                        {channelLabel && <span className="sbw-model-channel">{channelLabel}</span>}
+                        {model.generationReady !== false && <span className="sbw-model-tier">{videoResolutionDisplayLabel(model, preferredResolution)}</span>}
+                        {inputLabel && <span className="sbw-model-need">{inputLabel}</span>}
+                        <span className={`sbw-model-price${model.priceReady ? "" : " is-pending"}`} title={priceLabel} aria-label={priceLabel}>
+                          {model.billingUnit === "token" ? priceLabel.replace(" · 按实际用量结算", "") : priceLabel}
+                        </span>
+                      </small>
                       {showAdminModelIds && (
                         <span
                           className="sbw-model-id-copy"
@@ -6801,7 +7398,6 @@ function UserStoryboardWorkbench({
                           <code>ID: {model.id}</code><ClipboardCopy aria-hidden="true" />
                         </span>
                       )}
-                      {selectionIssue && <small className="sbw-model-unavailable">{publicSelectionLabel}</small>}
                     </span>
                   </button>
                 );
@@ -6823,13 +7419,13 @@ function UserStoryboardWorkbench({
                   <>
                     <div className="sbw-control-group is-image">
                       <span className="sbw-control-tag">创作 Agent 交接</span>
-                      <strong>{agentHandoff.plan.phase === "assets" ? "人物与宠物三视图" : `${agentHandoff.plan.segments.length} 个生产段`}</strong>
+                      <strong>{agentHandoff.plan.phase === "assets" ? storyboardIdentityAssetLabel(agentHandoff.plan.visualAssetPlan) : `${agentHandoff.plan.segments.length} 个生产段`}</strong>
                       <span>{agentHandoff.plan.settings.aspectRatio} · {agentHandoff.plan.settings.animationStyle}</span>
                     </div>
                     <div className="sbw-control-group is-video">
                       <span className="sbw-control-tag">稳定机器包</span>
                       <strong>{agentHandoff.plan.schemaVersion}</strong>
-                      <span>{agentHandoff.plan.phase === "assets" ? "先生成并采用角色三视图，再续写分镜提示词" : "文案、生图 Prompt、视频 Prompt、时长与连续性已校验"}{agentHandoff.plan.visualAssetPlan?.assets.length ? ` · 含 ${agentHandoff.plan.visualAssetPlan.assets.length} 个视觉资产` : ""}</span>
+                      <span>{!agentHandoff.plan.intakeVerified ? "提示词草稿：请核对分段、比例、时长和原提示词；原回复保持完整。" : agentHandoff.plan.phase === "assets" ? "先生成并采用角色三视图，再续写分镜提示词" : agentHandoff.plan.promptDraft ? "已读取原接收卡和成组图、视频提示词；生成前请核对内容。" : "文案、生图 Prompt、视频 Prompt、时长与连续性已校验"}{agentHandoff.plan.visualAssetPlan?.assets.length ? ` · 含 ${agentHandoff.plan.visualAssetPlan.assets.length} 个视觉资产` : ""}</span>
                     </div>
                   </>
                 ) : (
@@ -6840,6 +7436,9 @@ function UserStoryboardWorkbench({
                   </div>
                 )}
               </div>
+              {(agentHandoff.status === "ready" || agentHandoff.status === "imported") && agentHandoff.plan.importWarnings?.length ? (
+                <p role="note" style={{ margin: "12px 0 0", lineHeight: 1.7 }}>{agentHandoff.plan.importWarnings.join(" ")}</p>
+              ) : null}
               <div className="sbw-toolbar-actions">
                 {agentHandoff.status === "ready" && (
                   <button
@@ -6935,7 +7534,7 @@ function UserStoryboardWorkbench({
                 <div className="sbw-ratio-control" aria-label="图片比例">
                   {WORKBENCH_RATIOS.map((value) => {
                     const disabled = Boolean(batchMode) || !activeImageRatioOptions.includes(value);
-                    return <button key={value} type="button" disabled={disabled} title={disabled ? "当前图片模型不支持此比例" : `图片比例 ${value}`} className={activeImageRatio === value ? "is-active" : ""} onClick={() => patchRun({ imageRatio: value })}>{value}</button>;
+                    return <button key={value} type="button" aria-pressed={activeImageRatio === value} disabled={disabled} title={disabled ? "当前图片模型不支持此比例" : `图片比例 ${value}`} className={activeImageRatio === value ? "is-active" : ""} onClick={() => patchRun({ imageRatio: value })}>{value}</button>;
                   })}
                 </div>
                 {activeImageRatioIssue && <p role="status" className="sbw-image-ratio-notice">{activeImageRatioIssue}</p>}
@@ -6947,24 +7546,26 @@ function UserStoryboardWorkbench({
                 </select>
               </div>
               <div className="sbw-control-group is-video">
+                {activeVideoModel?.generationReady !== false && <>
                 <span className="sbw-control-tag">视频比例</span>
                 <div className="sbw-ratio-control" aria-label="视频比例">
-                  {WORKBENCH_RATIOS.map(value => <button key={value} type="button" disabled={Boolean(batchMode) || preferredVideoPresetActive || !activeVideoRatioOptions.includes(value)} title={preferredVideoPresetActive ? `当前预设视频比例 ${run.videoContract!.ratio}` : `视频比例 ${value}`} className={run.ratio === value ? "is-active" : ""} onClick={() => patchRun({ ratio: value })}>{value}</button>)}
+                  {WORKBENCH_RATIOS.map(value => <button key={value} type="button" aria-pressed={run.ratio === value} disabled={Boolean(batchMode) || preferredVideoPresetActive || !activeVideoRatioOptions.includes(value)} title={preferredVideoPresetActive ? `当前预设视频比例 ${run.videoContract!.ratio}` : `视频比例 ${value}`} className={run.ratio === value ? "is-active" : ""} onClick={() => patchRun({ ratio: value })}>{value}</button>)}
                 </div>
                 {activeVideoModel?.resolutionOptions.length ? (
                   activeVideoModel.resolutionOptions.length > 1 ? (
                     <select className="sbw-resolution-select" aria-label="视频分辨率" value={activeVideoResolution} disabled={Boolean(batchMode) || preferredVideoPresetActive} onChange={(event) => patchRun({ videoResolution: event.target.value })}>
                       {activeVideoModel.resolutionOptions.map((value) => (
-                        <option key={value} value={value}>{value} · {videoResolutionPriceLabel(activeVideoModel, value, activeVideoDuration)}</option>
+                        <option key={value} value={value}>{videoResolutionDisplayLabel(activeVideoModel, value)} · {videoResolutionPriceLabel(activeVideoModel, value, activeVideoDuration)}</option>
                       ))}
                     </select>
-                  ) : <span className="sbw-fixed-param">{activeVideoResolution}</span>
+                  ) : <span className="sbw-fixed-param">{videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)}</span>
                 ) : <span className="sbw-fixed-param">清晰度自动</span>}
                 {activeVideoDurationOptions.length > 1 ? (
                   <select className="sbw-resolution-select" aria-label="视频时长" value={activeVideoDuration} disabled={Boolean(batchMode) || preferredVideoPresetActive} onChange={(event) => patchRun({ videoDuration: Number(event.target.value) })}>
                     {activeVideoDurationOptions.map((value) => <option key={value} value={value}>{value} 秒</option>)}
                   </select>
                 ) : <span className="sbw-fixed-param">固定 {activeVideoDuration} 秒</span>}
+                <VideoDurationBehaviorNotice durationBehavior={activeVideoModel?.durationBehavior} />
                 {activeVideoModel?.billingUnit === "token" && <label className="text-xs text-[var(--foreground)]">
                   每条任务本次最多自动扣款 ¥
                   <input aria-label="每条视频本次最多自动扣款金额" type="text" inputMode="decimal" autoComplete="off" placeholder="请填写金额" className="ml-2 w-24 rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-[var(--foreground)]" disabled={Boolean(batchMode)}
@@ -6972,6 +7573,7 @@ function UserStoryboardWorkbench({
                     onChange={event => setTokenChargeConsent({ modelId: activeVideoModel.id, priceVersion: activeVideoModel.tokenPricing?.priceVersion || "", amount: event.target.value })} />
                   <small className="block">按实际 Token 用量结算；预留不是扣费，超额待确认。批量每条使用同一额度。</small>
                 </label>}
+                </>}
               </div>
               <div className="sbw-mode-group" role="group" aria-label="分镜创作模式" data-testid="storyboard-mode-toggle">
                 <span className="sbw-mode-label">创作模式</span>
@@ -6979,7 +7581,7 @@ function UserStoryboardWorkbench({
                   <button
                     type="button"
                     aria-pressed={referenceDisplayMode === "normal"}
-                    disabled={Boolean(run.directorIntake) || Boolean(batchMode) || navigating || visualAssetSaving || visualAssetGenerating || projectContext !== "ready"}
+                    disabled={Boolean(batchMode) || navigating || visualAssetSaving || visualAssetGenerating || projectContext !== "ready"}
                     onClick={() => void changeReferenceDisplayMode("normal")}
                     title="只使用每个分段自己的生图提示词和视频提示词"
                   >普通模式</button>
@@ -6990,22 +7592,28 @@ function UserStoryboardWorkbench({
                     onClick={() => void changeReferenceDisplayMode("reference")}
                     title="先维护角色参考资产，再将已确认的参考绑定到分镜卡"
                   >角色参考</button>
+                  <button type="button" aria-pressed={referenceDisplayMode === "chained"} disabled={Boolean(batchMode) || navigating || visualAssetSaving || visualAssetGenerating || projectContext !== "ready"}
+                    onClick={() => void changeReferenceDisplayMode("chained")} title="首段确认后，逐段使用首段与上一段参考生成">串联模式</button>
                 </div>
               </div>
             </div>
             <div className="sbw-toolbar-actions">
               <button type="button" className="sbw-batch-action is-image-batch" onClick={() => void batchImages()} disabled={Boolean(activeImageSelectionIssue && !run.cards.some((card) => card.imageRecoveryReady)) || Boolean(batchMode) || run.cards.some((card) => card.imageRetryBlocked && imageAttemptNeedsResolution(card))} title="按当前项目与报价顺序生成所有待处理分镜图"><ImageIcon />批量生图</button>
-              <button type="button" className="sbw-batch-action is-video-batch" onClick={() => void batchVideos()} disabled={Boolean(activeVideoSelectionIssue) || Boolean(batchMode) || run.cards.some((card) => !hasValidatedImage(card) || Boolean(storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel)))} title="使用每张已验证分镜图按顺序生成视频"><Film />批量视频</button>
+              <button type="button" className="sbw-batch-action is-video-batch" onClick={() => void batchVideos()} disabled={Boolean(batchVideoBlockedReason)} aria-describedby={batchVideoBlockedReason ? "sbw-batch-video-blocker" : undefined} title={batchVideoBlockedReason || "使用每段已确认的视频素材按顺序生成视频"}><Film />批量视频</button>
               <button type="button" className="sbw-toolbar-add-card" title="新增一个独立分段，填写该段的生图和视频提示词；参考图另行选择" disabled={visualAssetSaving || run.cards.length >= MAX_CARDS} onClick={() => void addCard()}><Plus />添加分镜</button>
               <span className="sbw-history-action"><NavButton icon={History} label="历史" variant="ghost" onClick={() => setHistoryOpen(true)} /></span>
             </div>
           </section>
 
-          {run.draftImportNotice && <section className="sbw-toolbar" role="note" data-testid="storyboard-historical-draft-notice" style={{ whiteSpace: "pre-wrap" }}><strong>历史提示词草稿，请逐段核对</strong><p>{run.draftImportNotice}</p></section>}
-          {run.directorIntake?.phase !== "assets" && !run.draftImportNotice && <section className="sbw-toolbar" data-testid="storyboard-continuous-production" data-production-status={continuousStatus} aria-label="连续制作">
-            <div className="sbw-toolbar-settings"><strong>连续制作</strong><span>{run.directorIntake?.phase === "planned" ? `角色三视图 → 逐项确认（已确认 ${directorConfirmedSlots?.size || 0} 项）→ 全部分镜图 → 全部视频` : "全部分镜图 → 全部视频"}</span><small role="status">{continuousMessage || "开始前确认剩余任务的总费用；已完成且输入一致的任务会跳过。刷新后可继续，新增请求需重新确认。"}</small></div>
-            <div className="sbw-toolbar-actions"><button type="button" className="sbw-batch-action is-primary" onClick={() => void startContinuousProduction()} disabled={continuousStatus === "running" || continuousStatus === "waiting" || Boolean(batchMode) || visualAssetGenerating || visualAssetSaving || navigating || projectContext !== "ready"}>{continuousStatus === "running" ? "正在连续制作…" : continuousStatus === "waiting" ? "等待逐项确认角色" : continuousStatus === "paused" || continuousStatus === "stopped" ? "继续连续制作" : "开始连续制作"}</button>{(continuousStatus === "running" || continuousStatus === "waiting") && <button type="button" onClick={pauseContinuousProduction}>暂停连续制作</button>}</div>
+          {batchVideoBlockedReason && <p id="sbw-batch-video-blocker" role="status" data-testid="storyboard-batch-video-blocker" style={{ margin: "0 0 12px", fontSize: "13px" }}>批量视频暂不可用：{batchVideoBlockedReason}</p>}
+          {referenceDisplayMode === "chained" && <section className="sbw-toolbar" aria-label="串联分镜控制" data-testid="storyboard-chain-control">
+            <div role="status">{chainStatus === "running" ? "逐段生成中；正在等待当前分镜交付与保存。" : chainStatus === "waiting" ? "请查看首段图片，确认后将自动继续后续分镜。" : "首段确认一次；后续逐段使用首段（多图模型另带上一段）。"}</div>
+            <div className="sbw-toolbar-actions">
+              {!run.cards[0]?.chainAnchorConfirmation && chainDelivered(run.cards[0]) && <button type="button" className="is-primary" disabled={chainBusyRef.current} onClick={() => void confirmChainAnchor()}>确认并用于后续分镜</button>}
+              {(chainStatus === "running" || chainStatus === "waiting") && <button type="button" onClick={() => { chainAuthorizationRef.current = null; setChainStatus("stopped"); setNotice("串联已暂停；当前原任务仍保留，继续前请重新确认剩余费用。"); }}>暂停串联</button>}
+            </div>
           </section>}
+          {run.draftImportNotice && <section className="sbw-toolbar" role="note" data-testid="storyboard-historical-draft-notice" style={{ whiteSpace: "pre-wrap" }}><strong>历史提示词草稿，请逐段核对</strong><p>{run.draftImportNotice}</p></section>}
           {referenceDisplayMode === "reference" && <section className="sbw-reference-step" aria-label="第一步 角色参考">{referenceCreation}</section>}
           {run.directorIntake?.phase === "assets" && <section className="sbw-toolbar" data-testid="director-assets-first-stage" aria-label="三视图完成后继续">
             <div className="sbw-toolbar-settings"><strong>先完成人物、宠物三视图</strong><span>请查看图片，分别点击“使用这张”确认外观、服装和三个视角，再复制续写卡到原智能体对话。已确认 {directorConfirmedSlots?.size || 0} 项。</span></div>
@@ -7028,6 +7636,8 @@ function UserStoryboardWorkbench({
 
           <section className="sbw-shot-grid" aria-label="分段任务卡片">
             {run.directorIntake?.phase !== "assets" && run.cards.map((card, cardIndex) => {
+              const confirmingVideoSubmission = isActiveVideoStatus(card.videoStatus) && (videoNeedsRequestReconciliation(card)
+                || videoConfirmationTasks.get(storyboardVideoConfirmationKey(userId, run.id, card, card.videoTaskId || "")) === true);
               const cardMediaBusy = imageAttemptNeedsResolution(card) || isActiveVideoStatus(card.videoStatus)
                 || Boolean(batchMode) || visualAssetSaving || exportingBoardIds.has(card.id) || preparingVideoIds.has(card.id);
               const showVideoMedia = isActiveVideoStatus(card.videoStatus) || (Boolean(card.videoUrl)
@@ -7037,11 +7647,12 @@ function UserStoryboardWorkbench({
               const bindingSummary = assetBindingSummaries[cardIndex];
               const resolvedPreviousReferenceError = bindingSummary?.complete && !card.imageClientRequestId && !card.imageRequestSnapshot
                 && /^参考尚未落实或已失效：/u.test(card.imageError || "");
-              const videoStartIssue = card.imageReferenceState === "stale" ? "参考已更换，请先重新生成分镜；旧图和旧视频仍保留。"
-                : !hasValidatedImage(card) ? imageAttemptNeedsResolution(card) ? "原分镜请求或费用尚未确认，请先查询原任务。" : "请先生成并加载本段分镜图，再生成视频。"
-                  : needsStoryboardBoardExport(card) ? "点击后先保存并确认当前分镜原图，再确认视频费用；保存失败不会提交视频。"
-                    : storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel) || activeVideoSelectionIssue
-                      || (videoPromptRequired && !card.videoPrompt.trim() ? "请先填写本段视频提示词。" : "");
+              const cardVideoInputs = activeVideoModel ? resolveStoryboardVideoInputs(activeVideoModel, card) : null;
+              const videoStartIssue = publicModelSelectionNotice(activeVideoSelectionIssue, "视频模型")
+                || storyboardCardVideoInputIssue(activeVideoModel, card, run)
+                || (cardVideoInputs?.usesStoryboardImage && needsStoryboardBoardExport(card) ? "生成前将保存并确认当前分镜原图；保存失败不会提交视频。" : "");
+              const showVideoStartIssue = Boolean(videoStartIssue) && (!cardVideoInputs?.usesStoryboardImage || card.imageReferenceState === "stale"
+                || isImageValidationPending(card) || imageAttemptNeedsResolution(card) || hasValidatedImage(card));
               return (
               <article
                 key={card.id}
@@ -7054,9 +7665,8 @@ function UserStoryboardWorkbench({
               >
                 <header className="sbw-card-header">
 
-                  <div className="sbw-card-index">{String(card.order).padStart(2, "0")}</div>
-                <div className="sbw-card-title"><strong>分段 {card.order}{card.sourceNumber && card.sourceNumber !== card.order ? ` · 原文段 ${card.sourceNumber}` : ""}</strong><span>{card.videoTaskDuration && (card.videoTaskId || card.videoClientRequestId || card.videoUrl) ? card.videoTaskDuration : activeVideoDuration} 秒</span></div>
-                  {cardStatus(card).status !== "idle" && <div className="sbw-status-pair"><span data-status={cardStatus(card).status}>{cardStatus(card).label}</span></div>}
+                <div className="sbw-card-title"><strong>分段 {card.order}{card.sourceNumber && card.sourceNumber !== card.order ? ` · 原文段 ${card.sourceNumber}` : ""}</strong><span>{card.videoTaskDuration && (card.videoTaskId || card.videoClientRequestId || card.videoUrl) ? `${card.videoTaskDuration} 秒` : activeVideoModel?.generationReady === false ? "" : `${activeVideoDuration} 秒`}</span></div>
+                  {cardStatus(card).status !== "idle" && <div className="sbw-status-pair"><span data-status={cardStatus(card).status}>{confirmingVideoSubmission ? "正在确认结果" : cardStatus(card).label}</span></div>}
                   <button type="button" className="sbw-icon-button sbw-delete-card" aria-label={`删除分段 ${card.order}`} title={imageAttemptNeedsResolution(card) ? "请先完成原生图任务的状态处理" : `删除分段 ${card.order}`} disabled={run.cards.length === 1 || imageAttemptNeedsResolution(card) || isActiveVideoStatus(card.videoStatus)} onClick={() => removeCard(card.id)}><X /></button>
                 </header>
 
@@ -7067,11 +7677,6 @@ function UserStoryboardWorkbench({
                   {card.capabilityGaps?.length ? <em title={card.capabilityGaps.join("；")}>待补覆盖</em> : null}
                 </div>}
                 {run.visualAssetPlan?.mode === "selected" && run.visualAssetPlan.assets.length > 0 && <StoryboardAssetSelection plan={run.visualAssetPlan} assetIds={card.visualAssetSelectionMode === "project" ? (run.visualAssetPlan.defaultAssetIds ?? run.visualAssetPlan.assets.filter(asset => asset.role === "character" || asset.role === "pet").map(asset => asset.id)) : (card.visualAssetRefs || []).map(ref => ref.assetId)} mode={card.visualAssetSelectionMode} segmentNumber={card.order} referenceCount={bindingSummary?.complete ? card.referenceImageUrls.length : bindingSummary?.boundIds.length || 0} disabled={visualAssetSaving || imageAttemptNeedsResolution(card) || isActiveVideoStatus(card.videoStatus) || Boolean(batchMode)} onChange={(ids, mode) => void updateVisualAssetSelection(ids, card.id, mode)} />}
-                {run.visualAssetPlan?.mode === "selected" && <p className="sbw-bound-reference-line" aria-label={`分段${card.order}已采用参考`}>
-                  {bindingSummary?.boundIds.length ? `本段已采用：${run.visualAssetPlan.assets.filter(asset => bindingSummary.boundIds.includes(asset.id)).map(asset => asset.name).join("、")}`
-                    : bindingSummary?.requestedIds.length ? "本段参考待落实，请先选用可读取的图片。" : card.visualAssetSelectionMode === "custom" ? "本段已单独选择不使用角色参考。" : "本段尚无角色参考；上方首张参考确认后会自动关联，也可在本段选择。"}
-                  {card.imageReferenceState === "stale" && <strong>参考已更新，请重新生成分镜；旧结果保留。</strong>}
-                </p>}
                 <div className="sbw-generation-stack">
                   <section className="sbw-flow-section sbw-image-flow">
                     <div className="sbw-stage-label sbw-prompt-stage-label">
@@ -7082,15 +7687,9 @@ function UserStoryboardWorkbench({
                     </div>
                     <div className="sbw-flow-prompt">
                       <textarea aria-label={`分段${card.order}生图提示词`} rows={6} disabled={imageAttemptNeedsResolution(card)} value={card.imagePrompt} onChange={(event) => patchCard(card.id, { imagePrompt: event.target.value })} placeholder="写下这一段的画面…" />
-                      {card.imageTextLayoutEnabled && (
-                        <label className="sbw-exact-text-field">
-                          <span>需要精确呈现的文字</span>
-                          <textarea aria-label={`分段${card.order}画面精确文字`} rows={2} maxLength={200} disabled={imageAttemptNeedsResolution(card)} value={card.imageExactText || ""} onChange={(event) => patchCard(card.id, { imageExactText: event.target.value })} placeholder="第一行标题，第二行副标题" />
-                        </label>
-                      )}
                     </div>
 
-                    <div className="sbw-zone-title"><span className="sbw-stage-index">03</span>{showVideoMedia ? <Film /> : <ImageIcon />}<strong>{showVideoMedia ? "媒体结果" : "分镜图"}</strong><span>{showVideoMedia ? (card.videoStatus === "done" ? `已完成 · ${submittedVideoTaskLabel(card)}` : submittedVideoTaskLabel(card)) : storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel) || (hasValidatedImage(card) ? `已验证 ${card.imageWidth && card.imageHeight ? `${card.imageWidth}×${card.imageHeight}` : ""} ${needsStoryboardBoardExport(card) ? "· 保存后用于视频" : "并自动绑定"}${card.imageModelNameUsed ? ` · ${card.imageModelNameUsed}` : ""}` : "")}</span></div>
+                    <div className="sbw-zone-title"><span className="sbw-stage-index">03</span><strong className="sbw-zone-title-main">{showVideoMedia ? <Film size={15} /> : <ImageIcon size={15} />}{showVideoMedia ? "媒体结果" : "分镜图"}</strong><span title={!showVideoMedia && hasValidatedImage(card) ? `已验证 ${card.imageWidth && card.imageHeight ? `${card.imageWidth}×${card.imageHeight}` : ""} ${needsStoryboardBoardExport(card) ? "· 保存后用于视频" : "并自动绑定"}${card.imageModelNameUsed ? ` · ${card.imageModelNameUsed}` : ""}` : undefined}>{showVideoMedia ? (card.videoStatus === "done" ? `已完成 · ${submittedVideoTaskLabel(card)}` : submittedVideoTaskLabel(card)) : storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel) || (hasValidatedImage(card) ? `${needsStoryboardBoardExport(card) ? "需保存原图" : "已绑定"}${card.imageWidth && card.imageHeight ? ` · ${card.imageWidth}×${card.imageHeight}` : ""}` : isImageValidationPending(card) ? "正在加载/验证" : "")}</span></div>
                     <div
                       className={`sbw-shared-media-frame sbw-ratio-frame ${showVideoMedia ? "is-video" : card.imageUrl ? "has-result" : "is-placeholder"} ${(showVideoMedia ? run.ratio : card.imageRequestSnapshot?.aspectRatio || activeImageRatio) === "9:16" ? "is-portrait" : ""}`}
                       style={{ aspectRatio: (showVideoMedia ? run.ratio : card.imageRequestSnapshot?.aspectRatio || activeImageRatio).replace(":", " / ") }}
@@ -7102,9 +7701,24 @@ function UserStoryboardWorkbench({
                         ) : isActiveVideoStatus(card.videoStatus) ? (
                           <div className="sbw-loading-state sbw-realtime-state">
                             <Loader2 className="animate-spin" />
-                            <strong>{card.videoLifecycle?.headline || statusText(card.videoStatus)}</strong>
+                            <strong>{confirmingVideoSubmission ? "正在确认结果" : card.videoLifecycle?.headline || statusText(card.videoStatus)}</strong>
                             <small>{submittedVideoTaskLabel(card)}</small>
+                            {!confirmingVideoSubmission && <>
                             <span className="sbw-stage-detail">{card.videoLifecycle?.detail || card.videoStatusDetail || "正在等待上游首次状态回报"}</span>
+                            <div
+                              className="sbw-render-progress"
+                              data-indeterminate={typeof card.videoProgress === "number" ? undefined : "true"}
+                              role="progressbar"
+                              aria-label={`${submittedVideoTaskLabel(card)}渲染进度`}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={typeof card.videoProgress === "number" ? Math.round(card.videoProgress) : undefined}
+                            >
+                              <span style={typeof card.videoProgress === "number" ? { width: `${Math.max(3, Math.min(100, card.videoProgress))}%` } : undefined} />
+                            </div>
+                            <small className="sbw-render-progress-label">
+                              {typeof card.videoProgress === "number" ? `渲染进度 ${Math.round(card.videoProgress)}%` : "正在渲染 · 进度待上游回报"}
+                            </small>
                             <ol className="sbw-video-stage-steps" aria-label={`${submittedVideoTaskLabel(card)}处理阶段`}>
                               {VIDEO_DELIVERY_STAGES.map((label, index) => {
                                 const activeStage = cardVideoStageIndex(card);
@@ -7112,6 +7726,7 @@ function UserStoryboardWorkbench({
                               })}
                             </ol>
                             <small>{formatElapsed(card.videoStartedAt, clockNow)} · {formatLastChecked(card.videoLastCheckedAt, clockNow)}</small>
+                            </>}
                           </div>
                         ) : (
                           <div className="sbw-empty-state"><Film /><span>视频结果待确认</span></div>
@@ -7125,6 +7740,7 @@ function UserStoryboardWorkbench({
                       )}
                     </div>
                     {card.imageReferenceState === "stale" && <p className="sbw-error-line" role="status">参考已更新；当前分镜与视频是旧结果，已保留。请明确重新生成分镜后再制作视频。</p>}
+                    {isImageValidationPending(card) && <p className="sbw-billing-line" role="status">正在加载/验证分镜图，完成后会自动解锁视频生成；期间不会提交视频请求。</p>}
                     {card.imageError && <p className="sbw-error-line">{resolvedPreviousReferenceError ? `上次参考检查未通过；当前引用已落实，可以重新提交。原提示：${card.imageError}` : card.imageError}</p>}
                     {card.imageDeliveryExpectedPixelSize && <p className="sbw-billing-line">{card.imageOutputPolicyVersion === "image_output_policy.v2" ? "本次交付目标：至少 " : "原请求参考尺寸："}{card.imageDeliveryExpectedPixelSize.replace("x", "×")} 像素{card.imageWidth && card.imageHeight ? ` · 实际 ${card.imageWidth}×${card.imageHeight}` : ""}</p>}
                     {isUnavailableCompletedStoryboardImage(card) && (
@@ -7158,7 +7774,7 @@ function UserStoryboardWorkbench({
                             : card.imageRecoveryReady
                               ? "图片已生成，系统正在自动保存和展示"
                               : activeImageSelectionIssue
-                                ? activeImageSelectionIssue
+                                ? publicModelSelectionNotice(activeImageSelectionIssue, "生图模型")
                               : batchMode && card.imageStatus !== "done"
                                 ? "当前卡片正在批量流程中"
                                 : card.imageStatus === "done" ? "使用当前所选生图模型重新生成" : "生成故事板图片"}
@@ -7168,7 +7784,7 @@ function UserStoryboardWorkbench({
                           || card.imageStatus === "running"
                           || card.imageStatus === "queued"
                           || Boolean(batchMode && card.imageStatus !== "done")}
-                        onClick={() => { if (isUnavailableCompletedStoryboardImage(card)) { retryCompletedImageRead(card); return; } if (!switchExistingCardMedia(card, "image", showVideoMedia ? "video" : "image")) void generateImage(card.id); }}
+                        onClick={() => { if (isUnavailableCompletedStoryboardImage(card)) { setNotice(`正在重新读取分段${card.order}已生成的分镜图，请稍候`); retryCompletedImageRead(card); return; } if (!switchExistingCardMedia(card, "image", showVideoMedia ? "video" : "image")) void generateImage(card.id); }}
                       >
                         {card.imageStatus === "running" || card.imageStatus === "queued" ? <Loader2 className="animate-spin" /> : card.imageStatus === "done" || card.imageStatus === "failed" ? <RotateCcw /> : <Sparkles />}
                         {isUnavailableCompletedStoryboardImage(card) ? storyboardImageUnavailablePresentation(card)?.actionLabel : imageViewOnly ? "查看图片" : card.imageStatus === "running" || card.imageStatus === "queued"
@@ -7185,27 +7801,31 @@ function UserStoryboardWorkbench({
                         type="button"
                         className={`is-command is-video-command ${isActiveVideoStatus(card.videoStatus) && canRequestVideoTermination(card) ? "is-stop-command" : ""}`}
                          title={videoViewOnly ? "查看已有视频，不会生成或扣费" : videoNeedsRequestReconciliation(card) ? "查询原请求号；只恢复既有任务状态，不会自动重复提交" : isActiveVideoStatus(card.videoStatus) ? `${submittedVideoTaskLabel(card)} · ${canRequestVideoTermination(card) ? "管理视频任务" : "缺少可核验请求编号"}` : card.videoStatus === "failed" && card.videoRetryable !== true ? "原任务或费用尚未确认，请先刷新历史状态" : videoStartIssue || (batchMode && card.videoStatus !== "done" ? "当前卡片正在批量流程中" : card.videoStatus === "done" ? "使用当前所选视频模型重新生成" : "生成视频")}
-                         disabled={preparingVideoIds.has(card.id) || (videoViewOnly ? cardMediaBusy : isActiveVideoStatus(card.videoStatus) ? (videoNeedsRequestReconciliation(card) ? false : !canRequestVideoTermination(card)) : (card.imageReferenceState === "stale" || Boolean(activeVideoSelectionIssue) || (videoPromptRequired && !card.videoPrompt.trim()) || !hasValidatedImage(card) || exportingBoardIds.has(card.id) || Boolean(storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel)) || Boolean(batchMode && card.videoStatus !== "done")))}
+                         disabled={videoInputUploadingIds.has(card.id) || preparingVideoIds.has(card.id) || (videoViewOnly ? cardMediaBusy : isActiveVideoStatus(card.videoStatus) ? (videoNeedsRequestReconciliation(card) ? false : !canRequestVideoTermination(card)) : (Boolean(activeVideoSelectionIssue) || Boolean(storyboardCardVideoInputIssue(activeVideoModel, card, run)) || exportingBoardIds.has(card.id) || Boolean(batchMode && card.videoStatus !== "done")))}
                         onClick={() => { if (switchExistingCardMedia(card, "video", showVideoMedia ? "video" : "image")) return; void (videoNeedsRequestReconciliation(card) ? reconcileVideoRequest(card.id, "manual") : isActiveVideoStatus(card.videoStatus) && card.videoMonitoringPaused === true ? resumeVideoMonitoring(card.id) : isActiveVideoStatus(card.videoStatus) ? (card.videoTaskId && !canRemotelyCancelVideoTask(card) ? pauseVideoMonitoring(card.id) : cancelVideo(card.id)) : prepareAndGenerateVideo(card.id)); }}
                       >
                         {videoNeedsRequestReconciliation(card) || isActiveVideoStatus(card.videoStatus) && card.videoMonitoringPaused === true ? <RefreshCw /> : isActiveVideoStatus(card.videoStatus) ? (canRequestVideoTermination(card) ? <Square /> : <Loader2 className="animate-spin" />) : card.videoStatus === "done" || card.videoStatus === "failed" || card.videoStatus === "cancelled" ? <RotateCcw /> : <Film />}
-                        {preparingVideoIds.has(card.id) ? "正在准备视频…" : videoViewOnly ? "查看视频" : videoNeedsRequestReconciliation(card) ? "刷新视频" : isActiveVideoStatus(card.videoStatus) && card.videoMonitoringPaused === true ? "继续查询" : isActiveVideoStatus(card.videoStatus) ? (canRequestVideoTermination(card) ? (card.videoTaskId && !canRemotelyCancelVideoTask(card) ? "停止等待" : "终止生成") : "生成中") : needsStoryboardBoardExport(card) ? "保存分镜并生成视频" : card.videoStatus === "done" || card.videoStatus === "cancelled" ? "重新生成视频" : card.videoStatus === "failed" ? card.videoRetryable === true ? "重试视频" : "状态待确认" : "生成视频"}
+                        {preparingVideoIds.has(card.id) ? "正在准备视频…" : videoViewOnly ? "查看视频" : videoNeedsRequestReconciliation(card) ? "刷新视频" : isActiveVideoStatus(card.videoStatus) && card.videoMonitoringPaused === true ? "继续查询" : isActiveVideoStatus(card.videoStatus) ? (canRequestVideoTermination(card) ? (card.videoTaskId && !canRemotelyCancelVideoTask(card) ? "停止等待" : "终止生成") : confirmingVideoSubmission ? "确认中" : "生成中") : cardVideoInputs?.usesStoryboardImage && needsStoryboardBoardExport(card) ? "保存分镜并生成视频" : card.videoStatus === "done" || card.videoStatus === "cancelled" ? "重新生成视频" : card.videoStatus === "failed" ? card.videoRetryable === true ? "重试视频" : "状态待确认" : "生成视频"}
                       </button>
                     </div>
                   </section>
 
-                  <section id={`sbw-video-flow-${card.id}`} ref={(element) => { videoSectionsRef.current[card.id] = element; }} className={`sbw-flow-section sbw-video-flow ${!hasValidatedImage(card) || needsStoryboardBoardExport(card) || storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel) ? "is-locked" : ""} ${card.videoUrl ? "has-result" : ""} is-expanded`}>
+                  <section id={`sbw-video-flow-${card.id}`} ref={(element) => { videoSectionsRef.current[card.id] = element; }} className={`sbw-flow-section sbw-video-flow ${storyboardCardVideoInputIssue(activeVideoModel, card, run) ? "is-locked" : ""} ${card.videoUrl ? "has-result" : ""} is-expanded`}>
                     <div className="sbw-stage-label sbw-prompt-stage-label">
                       <span className="sbw-stage-index">02</span>
                       <strong>视频提示词</strong>
-                      <em>{hasValidatedImage(card) ? "可生成" : "等待分镜图"}</em>
+                      <em>{storyboardCardVideoInputIssue(activeVideoModel, card, run) ? cardVideoInputs?.usesStoryboardImage && isImageValidationPending(card) ? "正在验证" : "待补素材" : "可生成"}</em>
                       <button type="button" className="sbw-prompt-paste" title="粘贴视频提示词" aria-label={`粘贴分段${card.order}视频提示词`} disabled={imageAttemptNeedsResolution(card) || isActiveVideoStatus(card.videoStatus) || Boolean(batchMode) || preparingVideoIds.has(card.id)} onClick={() => void pastePrompt(card.id, "videoPrompt", `分段${card.order}视频提示词`)}><ClipboardPaste /></button>
                     </div>
                     <div className="sbw-flow-prompt">
                       <textarea aria-label={`分段${card.order}视频提示词`} rows={6} disabled={card.videoStatus === "running" || card.videoStatus === "queued"} value={card.videoPrompt} onChange={(event) => patchCard(card.id, { videoPrompt: event.target.value })} placeholder="描述动作、镜头运动和节奏…" />
                     </div>
-                    {hasValidatedImage(card) && <div className="sbw-video-reference-summary"><Film aria-hidden="true" /><span>完整故事板 · 单图参考 · 视频结果覆盖上方媒体区</span></div>}
-                    {videoStartIssue && !videoViewOnly && !isActiveVideoStatus(card.videoStatus) && !videoNeedsRequestReconciliation(card) && <p className="sbw-note" role="status">{videoStartIssue}</p>}
+                    {cardVideoInputs && <StoryboardVideoInputEditor cardOrder={card.order} capabilities={cardVideoInputs.capabilities} value={card.videoInputs}
+                      disabled={cardMediaBusy || videoInputUploadingIds.has(card.id) || videoNeedsRequestReconciliation(card) || (card.videoStatus === "failed" && card.videoRetryable !== true)}
+                      issue={storyboardCardVideoInputIssue(activeVideoModel, card, run)} onChange={value => updateCardVideoInputs(card.id, value)} onUpload={(file, kind) => uploadCardVideoInput(card.id, file, kind)} />}
+                    {activeVideoModel?.firstFrameRatioPolicy === "adaptive" && cardVideoInputs?.input.imageUrl && <p className="sbw-note">视频比例：跟随首帧比例</p>}
+                    {cardVideoInputs?.usesStoryboardImage && hasValidatedImage(card) && <div className="sbw-video-reference-summary"><Film aria-hidden="true" /><span>使用当前分镜图</span></div>}
+                    {showVideoStartIssue && !storyboardCardVideoInputIssue(activeVideoModel, card, run) && !videoViewOnly && !isActiveVideoStatus(card.videoStatus) && !videoNeedsRequestReconciliation(card) && <p className="sbw-note" role="status">{videoStartIssue}</p>}
                     {card.videoError && <p className="sbw-error-line">{card.videoError}</p>}
                     {card.videoBillingState && <p className="sbw-billing-line">视频费用：{isActiveVideoStatus(card.videoStatus)
                       ? "任务处理中，成功交付后扣费"
@@ -7240,17 +7860,16 @@ function UserStoryboardWorkbench({
       {(notice || batchMode) && <div className="sbw-notice" role="status">{batchMode && <Loader2 className="animate-spin" />}{notice}</div>}
 
       </div>
-      <StoryboardHistoryPanel
-        presentation="inline"
-        open={historyOpen} onClose={() => setHistoryOpen(false)} userId={userId} token={token}
-        items={videoHistoryItems} loading={videoHistoryLoading} error={videoHistoryError}
-        onRefresh={() => { void loadVideoHistory(); void cloud.refresh(); }}
-        surface="storyboard-workbench"
-        hasMore={videoHistoryNextOffset !== null}
-        onLoadMore={() => { if (videoHistoryNextOffset !== null) void loadVideoHistory(videoHistoryNextOffset); }}
-        onCleared={ids => setVideoHistoryTasks(current => current.filter(task => !ids.includes(task.id || "")))}
-        recoveryContent={(
-          <>
+      {historyNavigationIssue && <div className="sbw-notice" role="alert">
+        <span>页面切换较慢，当前工作内容仍保留。</span>
+        <button type="button" onClick={() => setHistoryOpen(historyNavigationIssue.open)}>重试切换</button>
+      </div>}
+      {historyOpen && <MediaHistoryWorkspace
+        initialCategory="storyboard-workbench"
+        onBack={() => setHistoryOpen(false)}
+        recoveryContent={<>
+            {videoHistoryLoading && <p role="status">正在同步分镜任务状态…</p>}
+            {videoHistoryError && <p role="alert">{videoHistoryError}。<button type="button" onClick={() => void loadVideoHistory()}>重试同步</button></p>}
             <section className="sbw-history-list" aria-label="分镜生图失败记录">
               <div className="flex items-center justify-between gap-2">
                 <div><strong>生图失败记录</strong><p>仅显示明确失败且已保存的原参数；载入不会自动生成</p></div>
@@ -7294,9 +7913,8 @@ function UserStoryboardWorkbench({
                 </article>
               ))}
             </section>
-          </>
-        )}
-      />
+        </>}
+      />}
 
       {previewMedia && <MediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} />}
     </div>

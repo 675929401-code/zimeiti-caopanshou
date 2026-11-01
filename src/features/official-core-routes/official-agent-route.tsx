@@ -52,7 +52,6 @@ import {
 } from "@/lib/manga-creative-agent-prompt";
 import {
   parseStructuredAgentOutput,
-  type StructuredAgentOutputResult,
 } from "@/lib/structured-agent-output";
 import {
   buildHomepageStoryboardDraftDetail,
@@ -1837,10 +1836,9 @@ export function OfficialAgentRoute({
 
   const handleStructuredWorkbenchHandoff = useCallback(async (
     messageId: string,
-    result: StructuredAgentOutputResult,
     target: AgentWorkbenchHandoffTarget,
   ) => {
-    if (structuredHandoffBusyRef.current) { setNotice("正在核对三视图并交接，请稍候。"); return; }
+    if (structuredHandoffBusyRef.current) { setNotice("正在导入提示词，请稍候。"); return; }
     const identity = readBrowserWorkbenchIdentity();
     if (!privateOwnerId || privateOwnerRef.current !== privateOwnerId
       || identity?.userId !== privateOwnerId) {
@@ -1853,12 +1851,11 @@ export function OfficialAgentRoute({
     const agent = state.agents.find(item => item.id === activeConversation?.agentId || item.botId === activeConversation?.agentId);
     const intake = readStoryboardIntakeSnapshotForMessage(messages, messageId, (agent?.outputStyle as Record<string, unknown> | undefined)?.director_mode);
     const contract = resolveStoryboardHandoffContract(messages, messageId, agent?.outputStyle);
-    if (contract.error) { setNotice(contract.error); return; }
     const detail = originalMessage && buildHomepageStoryboardDraftDetail(originalMessage, intake?.input, contract.requiredVersion,
-      { previewAssetVerification: true, referenceProjectId: intake?.referenceProjectId, allowLegacyUnverified: contract.allowLegacyUnverified, requirePerformancePlan: contract.requirePerformancePlan });
+      { previewAssetVerification: true, referenceProjectId: intake?.referenceProjectId, allowLegacyUnverified: contract.allowLegacyUnverified, requirePerformancePlan: contract.requirePerformancePlan, allowQualityWarnings: true });
     const meta = STRUCTURED_HANDOFF_DESTINATIONS[target];
-    if (!detail || result.status !== "valid" || result.kind !== "storyboard_director" || result.source !== "stable_json") {
-      setNotice("当前回复没有通过稳定分镜协议校验，已阻止交接；未创建项目、未调用模型、未扣费。");
+    if (!detail) {
+      setNotice("未识别到与原接收卡逐段对应的完整生图和视频提示词，请核对段落编号与提示词代码框。");
       return;
     }
     if (detail.phase === "assets" && target === "film-studio") {
@@ -2043,7 +2040,7 @@ export function OfficialAgentRoute({
                 const rawText = message.displayContent || message.content;
                 const structuredOutput = isUser
                   ? null
-                  : parseStructuredAgentOutput(rawText, !message.isStreaming);
+                  : parseStructuredAgentOutput(rawText, !message.isStreaming, { allowQualityWarnings: true });
                 const skillOutput = structuredOutput?.status === "valid"
                   && structuredOutput.kind === "manju_skill_output"
                   && structuredOutput.machine_payload
@@ -2099,11 +2096,9 @@ export function OfficialAgentRoute({
                       ) : null}
                       {!isUser
                         && storyboardPromptPushEnabled
-                        && structuredOutput?.status === "valid"
-                        && structuredOutput.kind === "storyboard_director"
-                        && structuredOutput.source === "stable_json" ? (
+                        && !message.isStreaming && Boolean(message.content.trim()) ? (
                           <StructuredStoryboardHandoffCards
-                            onHandoff={(target) => handleStructuredWorkbenchHandoff(message.id, structuredOutput, target)}
+                            onHandoff={(target) => handleStructuredWorkbenchHandoff(message.id, target)}
                           />
                         ) : null}
                       {isUser && message.error ? (

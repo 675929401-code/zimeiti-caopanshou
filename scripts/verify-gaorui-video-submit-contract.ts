@@ -59,8 +59,17 @@ async function main() {
     }
     bodies.length = 0;
     await submitVideoTask({ ...model, model_name: 'seedance-2.0-fast', api_protocol_config: { image_field: 'image_urls', audio_field: 'reference_audios' } }, { prompt: 'Lip sync', imageUrls: ['https://example.com/portrait.png'], audioUrls: ['https://example.com/voice.wav'], duration: 4 });
-    assert.deepEqual(bodies[0].image_urls, ['https://example.com/portrait.png']);
-    assert.deepEqual(bodies[0].reference_audios, ['https://example.com/voice.wav']);
+    assert.deepEqual(bodies[0].content, [
+      { type: 'text', text: 'Lip sync' },
+      { type: 'image_url', image_url: { url: 'https://example.com/portrait.png' }, role: 'reference_image' },
+      { type: 'audio_url', audio_url: { url: 'https://example.com/voice.wav' }, role: 'reference_audio' },
+    ]);
+    assert.equal(bodies[0].duration, 4);
+    assert.equal(bodies[0].ratio, '16:9');
+    assert.equal(bodies[0].prompt, undefined);
+    assert.equal(bodies[0].seconds, undefined);
+    assert.equal(bodies[0].image_urls, undefined);
+    assert.equal(bodies[0].reference_audios, undefined);
     bodies.length = 0;
     const missingImages = await submitVideoTask({ ...model, model_name: "veo_3_1-fl" }, { prompt: "A landscape" });
     assert.equal(missingImages.status, "failed");

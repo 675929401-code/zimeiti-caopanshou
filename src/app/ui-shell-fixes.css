@@ -56,6 +56,8 @@ html[data-theme] .marketplace-shell .primary-nav-rail .nav-bar-container {
 
 .marketplace-shell .primary-nav-rail[data-nav-overflow="false"] .nav-scroll-control {
   width: 0;
+  min-width: 0;
+  padding: 0;
   border-width: 0;
   opacity: 0;
   pointer-events: none;
@@ -936,6 +938,13 @@ html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-car
     0 0 28px rgba(105, 231, 255, 0.07) !important;
 }
 
+/* Desktop title sizes need full line boxes; retain the theme's minimum card height. */
+@media (min-width: 768px) {
+  html[data-theme="lattice"] .marketplace-shell .marketplace-agent-grid .agent-card-hover {
+    height: auto !important;
+  }
+}
+
 html[data-theme="lattice"] .marketplace-shell .marketplace-agent-copy {
   order: 2;
   min-width: 0;
@@ -976,7 +985,7 @@ html[data-theme="lattice"] img[src*="/avatars/cute-semantic/agent-cute-"] {
 }
 
 html[data-theme="lattice"] .marketplace-shell .marketplace-agent-title {
-  font-size: 17px !important;
+  font-size: 17px;
   line-height: 1.35 !important;
   -webkit-line-clamp: 2;
 }
@@ -1069,7 +1078,7 @@ html[data-theme="crystal-aurora"] .sidebar-shell .sidebar-conv-time {
   }
 
   html[data-theme="lattice"] .marketplace-shell .marketplace-agent-title {
-    font-size: 16px !important;
+    font-size: 16px;
   }
 
   html[data-theme="lattice"] .marketplace-shell .marketplace-agent-description {
@@ -1426,7 +1435,7 @@ html:is(
   background: transparent !important;
   box-shadow: none !important;
   font-size: var(--market-nav-font-size) !important;
-  font-weight: 650 !important;
+  font-weight: 600 !important;
 }
 
 html:is(
@@ -1551,8 +1560,8 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketpl
 
 html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-agent-title {
   color: #f2fffd !important;
-  font-size: 15px !important;
-  font-weight: 760 !important;
+  font-size: 15px;
+  font-weight: 650;
   line-height: 1.35 !important;
 }
 
@@ -1923,6 +1932,65 @@ html[data-theme="crystal-aurora"][data-mode="dark"] {
   --unified-workbench-header: linear-gradient(180deg, #171b20, #111419);
 }
 
+/* The marketplace gets a brighter, theme-specific grid without changing the
+   shared background used by other workbenches. */
+html[data-theme][data-mode] .marketplace-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
+  --unified-workbench-grid-image:
+    linear-gradient(var(--marketplace-grid-horizontal, var(--unified-workbench-grid-line)) 1px, transparent 1px),
+    linear-gradient(90deg, var(--marketplace-grid-vertical, var(--unified-workbench-grid-line)) 1px, transparent 1px),
+    radial-gradient(ellipse at 8% 0%, var(--unified-workbench-glow-one), transparent 65%),
+    radial-gradient(ellipse at 94% 0%, var(--unified-workbench-glow-two), transparent 65%);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell {
+  --marketplace-grid-horizontal: rgba(52,170,150,.18);
+  --marketplace-grid-vertical: rgba(64,165,178,.18);
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell {
+  --marketplace-grid-horizontal: rgba(105,226,237,.26);
+  --marketplace-grid-vertical: rgba(135,196,255,.24);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell {
+  --marketplace-grid-horizontal: rgba(65,220,195,.22);
+  --marketplace-grid-vertical: rgba(83,166,235,.22);
+}
+
+/* Only the catalog view paints this palette; keep its fixed grid aligned
+   across the navigation and the scrolling field. */
+html[data-theme][data-mode] .marketplace-shell:has(.marketplace-depth) {
+  --unified-workbench-field: var(--marketplace-field);
+  --marketplace-grid-horizontal: var(--marketplace-field-horizontal);
+  --marketplace-grid-vertical: var(--marketplace-field-vertical);
+  --unified-workbench-glow-one: var(--marketplace-field-glow-one);
+  --unified-workbench-glow-two: var(--marketplace-field-glow-two);
+}
+
+html[data-theme="soft-white"][data-mode="light"] .marketplace-shell:has(.marketplace-depth) {
+  --marketplace-field: #f8f8f1;
+  --marketplace-field-horizontal: rgba(43, 166, 142, .25);
+  --marketplace-field-vertical: rgba(54, 157, 177, .23);
+  --marketplace-field-glow-one: rgba(104, 215, 177, .17);
+  --marketplace-field-glow-two: rgba(103, 190, 220, .13);
+}
+
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell:has(.marketplace-depth) {
+  --marketplace-field: #1b3957;
+  --marketplace-field-horizontal: rgba(105, 226, 237, .35);
+  --marketplace-field-vertical: rgba(135, 196, 255, .32);
+  --marketplace-field-glow-one: rgba(19, 176, 187, .34);
+  --marketplace-field-glow-two: rgba(117, 100, 227, .32);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell:has(.marketplace-depth) {
+  --marketplace-field: #102735;
+  --marketplace-field-horizontal: rgba(56, 226, 196, .33);
+  --marketplace-field-vertical: rgba(78, 163, 249, .32);
+  --marketplace-field-glow-one: rgba(23, 205, 172, .29);
+  --marketplace-field-glow-two: rgba(47, 112, 232, .30);
+}
+
 html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
   color: var(--unified-workbench-text) !important;
   background-color: var(--unified-workbench-field) !important;
@@ -2039,7 +2107,16 @@ html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-work
 }
 
 html[data-theme][data-mode] .marketplace-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .marketplace-depth {
-  background: transparent !important;
+  background-color: var(--marketplace-field, var(--unified-workbench-field)) !important;
+  background-image:
+    linear-gradient(var(--marketplace-field-horizontal, var(--unified-workbench-grid-line)) 1px, transparent 1px),
+    linear-gradient(90deg, var(--marketplace-field-vertical, var(--unified-workbench-grid-line)) 1px, transparent 1px),
+    radial-gradient(ellipse at 8% 0%, var(--marketplace-field-glow-one, var(--unified-workbench-glow-one)), transparent 65%),
+    radial-gradient(ellipse at 94% 0%, var(--marketplace-field-glow-two, var(--unified-workbench-glow-two)), transparent 65%) !important;
+  background-size: 64px 64px, 64px 64px, 100% 100%, 100% 100% !important;
+  background-position: 0 0, 0 0, center, center !important;
+  background-repeat: repeat, repeat, no-repeat, no-repeat !important;
+  background-attachment: fixed !important;
 }
 
 html[data-theme][data-mode] .marketplace-shell:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) .marketplace-depth::before {
@@ -2067,5 +2144,219 @@ html[data-theme][data-mode] [data-official-tool-directory="true"]:not(.commerce-
   color: var(--primary-foreground) !important;
   background: var(--primary) !important;
   border-color: var(--primary) !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 黑曜彩应用广场：让一级导航与助手分类形成清晰的主次层级。
+ * 一级导航承担全局路由，使用更明亮的玻璃面；分类栏承担当前列表筛选，
+ * 使用更轻的内嵌面。只作用于应用广场，不改变路由、数据或交互行为。
+ * -------------------------------------------------------------------------- */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-bar-wrapper {
+  box-sizing: border-box;
+  min-height: 64px !important;
+  height: auto !important;
+  padding: 9px 12px 6px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-nav-rail {
+  width: 100% !important;
+  min-height: 48px;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid rgba(104, 215, 211, .22);
+  border-radius: 15px;
+  background:
+    linear-gradient(180deg, rgba(15, 38, 48, .9), rgba(7, 20, 29, .86)),
+    radial-gradient(circle at 8% 0%, rgba(40, 213, 192, .08), transparent 30%);
+  box-shadow:
+    inset 0 1px rgba(218, 255, 251, .08),
+    0 12px 26px rgba(0, 7, 12, .18);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-bar-container {
+  min-height: 46px !important;
+  gap: var(--market-nav-gap, 4px) !important;
+  padding: 4px 6px !important;
+  border: 0 !important;
+  border-radius: 11px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill {
+  min-height: 38px !important;
+  gap: var(--market-nav-gap, 7px) !important;
+  padding: var(--market-nav-padding-y, 7px) var(--market-nav-padding-x, 11px) !important;
+  border: 1px solid transparent !important;
+  border-radius: var(--market-nav-radius, 9px) !important;
+  color: rgba(214, 232, 237, .78) !important;
+  font-size: var(--market-nav-font-size, 15px) !important;
+  font-weight: 600 !important;
+  letter-spacing: .01em;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill:hover,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill:focus-visible {
+  border-color: rgba(98, 204, 202, .24) !important;
+  background: rgba(40, 213, 192, .08) !important;
+  color: #effffc !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill.nav-pill-active,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill[aria-current="page"] {
+  border-color: rgba(79, 225, 211, .40) !important;
+  background: linear-gradient(135deg, rgba(40, 213, 192, .21), rgba(47, 112, 232, .14)) !important;
+  color: #f0fffd !important;
+  box-shadow:
+    inset 0 1px rgba(239, 255, 252, .12),
+    0 5px 14px rgba(40, 213, 192, .08);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill-indicator {
+  display: none !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-group-divider {
+  height: 22px;
+  margin-inline: 3px;
+  background: linear-gradient(180deg, transparent, rgba(110, 213, 216, .30), transparent);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-bar {
+  box-sizing: border-box;
+  margin: 0 12px 8px !important;
+  padding: 6px !important;
+  border: 1px solid rgba(104, 215, 211, .16) !important;
+  border-radius: 13px !important;
+  background: rgba(7, 22, 30, .68) !important;
+  box-shadow: inset 0 1px rgba(218, 255, 251, .045), 0 8px 22px rgba(0, 7, 12, .12);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-inner {
+  min-height: 40px;
+  gap: 8px !important;
+  padding-inline: 3px !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .category-tab {
+  min-height: 36px !important;
+  gap: var(--market-category-gap, 6px) !important;
+  padding: var(--market-category-padding-y, 6px) var(--market-category-padding-x, 11px) !important;
+  border: 1px solid transparent !important;
+  border-radius: var(--market-category-radius, 9px) !important;
+  background: transparent !important;
+  color: rgba(192, 216, 223, .72) !important;
+  font-size: var(--market-category-font-size, 14px) !important;
+  font-weight: 600 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .category-tab:hover,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .category-tab:focus-visible {
+  border-color: rgba(98, 204, 202, .22) !important;
+  background: rgba(40, 213, 192, .07) !important;
+  color: #e4fdf9 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .category-tab.category-tab-active {
+  border-color: rgba(79, 225, 211, .34) !important;
+  background: rgba(40, 213, 192, .14) !important;
+  color: #e9fffb !important;
+  font-weight: 650 !important;
+  box-shadow: inset 0 1px rgba(240, 255, 253, .10);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-divider {
+  height: 24px !important;
+  background: rgba(111, 201, 206, .20) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-search {
+  width: clamp(180px, 17vw, 228px) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-search input {
+  height: 36px !important;
+  border: 1px solid rgba(104, 215, 211, .22) !important;
+  border-radius: 10px !important;
+  background: rgba(3, 13, 20, .64) !important;
+  color: #e9fffb !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035);
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-search input:focus-visible {
+  border-color: rgba(79, 225, 211, .60) !important;
+  box-shadow: 0 0 0 3px rgba(40, 213, 192, .14) !important;
+}
+
+/* 对称基准线：一级导航框与二级分类框共享同一条左右轨道。
+   一级导航自己的内边距只留给内容，不再把可见外框向内推。 */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell {
+  --marketplace-bar-inset: 14px;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-bar-wrapper {
+  margin: 10px var(--marketplace-bar-inset) 6px !important;
+  padding-inline: 0 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-bar {
+  margin-inline: var(--marketplace-bar-inset) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-nav-rail,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-bar {
+  box-sizing: border-box;
+}
+
+/* 让一级导航的内容起点与分类栏内容起点落在同一条内轨道上。
+   隐藏滚动按钮不应留下空白，外框两侧的呼吸感由两个容器各自的内边距提供。 */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-nav-rail {
+  padding-inline: 0 !important;
+}
+
+/* 导航项未溢出时，左右滚动按钮是隐藏状态，不再为它们保留两列网格空间。
+   这样首个导航项与分类栏首项共用同一条 10px 内轨道，左侧不会出现暗色垫片。 */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-nav-rail[data-nav-overflow="false"] {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0 !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-nav-rail[data-nav-overflow="false"] > .nav-scroll-control {
+  display: none !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-nav-rail[data-nav-overflow="false"] .nav-bar-container {
+  padding-inline: 9px !important;
+}
+
+/* 统一上下节奏：两层外框共享 56px，高度差只体现在内容行的主次密度。 */
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell {
+  --marketplace-bar-height: 56px;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-bar-wrapper,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-bar {
+  height: var(--marketplace-bar-height) !important;
+  min-height: var(--marketplace-bar-height) !important;
+  box-sizing: border-box;
+  border-radius: 14px !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-bar-wrapper {
+  padding-block: 4px !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-bar {
+  padding: 7px 6px !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketplace-category-inner {
+  height: 40px;
+  min-height: 40px;
 }
 

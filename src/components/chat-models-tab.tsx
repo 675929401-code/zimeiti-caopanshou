@@ -1,5 +1,7 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { modelMutationAttempt, type ModelMutationAttempt } from "./admin/model-mutation-request";
+import { readModelCandidateReceipt } from "./admin/model-candidate-receipt";
 
 interface ChatModel {
   id: string;
@@ -21,6 +23,8 @@ interface Props {
 }
 
 export default function ChatModelsTab({ token }: Props) {
+  const saveAttempt = useRef<ModelMutationAttempt | null>(null);
+  const saveLock = useRef(false);
   const [models, setModels] = useState<ChatModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -90,11 +94,13 @@ export default function ChatModelsTab({ token }: Props) {
   };
 
   const handleSave = async () => {
+    if (saveLock.current) return;
     if (!formData.model_name.trim() || !formData.display_name.trim()) {
       alert("模型名称和显示名称不能为空");
       return;
     }
 
+    saveLock.current = true;
     try {
       const isEdit = !!editingModel;
       const url = "/api/admin/chat-models";
@@ -104,11 +110,15 @@ export default function ChatModelsTab({ token }: Props) {
 
       const res = await fetch(url, {
         method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
+        headers: { "Content-Type": "application/json", ...authHeaders,
+          "Idempotency-Key": (saveAttempt.current = modelMutationAttempt(saveAttempt.current, isEdit ? "PUT" : "POST", body)).id },
         body: JSON.stringify(body),
       });
 
       if (res.ok) {
+        const receipt = readModelCandidateReceipt(await res.json());
+        saveAttempt.current = null;
+        alert(`已保存为候选 ${receipt.id}，请在模型资源池管理版本中校验、预览并发布。`);
         resetForm();
         loadModels();
       } else {
@@ -116,7 +126,9 @@ export default function ChatModelsTab({ token }: Props) {
         alert(data.error || "保存失败");
       }
     } catch {
-      alert("网络错误");
+      alert("保存结果待确认，请保留编辑内容并核对候选列表。再次提交相同内容将查询同一操作。");
+    } finally {
+      saveLock.current = false;
     }
   };
 

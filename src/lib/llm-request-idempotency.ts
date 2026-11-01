@@ -464,8 +464,8 @@ function streamTerminalState(frames: ReturnType<typeof inspectLlmSseFrame>[]): {
   }
   if (frames.some((frame) => frame.errorCode === "LLM_EMPTY_RESPONSE")) return { state: "failed", errorCode: "LLM_EMPTY_RESPONSE" };
   const knownFailure = frames.find((frame) => frame.errorCode && [
-    "LLM_UPSTREAM_ERROR", "LLM_UPSTREAM_BALANCE", "LLM_UPSTREAM_AUTH",
-    "LLM_UPSTREAM_BUSY", "LLM_UPSTREAM_TIMEOUT", "LLM_UPSTREAM_CONTENT_REJECTED",
+    "LLM_UPSTREAM_ERROR", "LLM_UPSTREAM_BALANCE", "LLM_UPSTREAM_BILLING", "LLM_UPSTREAM_AUTH",
+    "LLM_UPSTREAM_BUSY", "LLM_UPSTREAM_CONCURRENCY_LIMIT", "LLM_UPSTREAM_TIMEOUT", "LLM_UPSTREAM_CONTENT_REJECTED",
     "LLM_STREAM_INTERRUPTED",
   ].includes(frame.errorCode));
   if (knownFailure) {

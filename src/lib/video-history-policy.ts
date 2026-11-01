@@ -28,13 +28,8 @@ export interface VideoHistoryPolicyItem {
 
 export const VIDEO_HISTORY_TERMINAL_STATUSES = ['completed', 'failed', 'cancelled', 'expired'] as const;
 export const VIDEO_HISTORY_SETTLED_BILLING_STATES = ['settled', 'not_required', 'exempt', 'failed', 'cancelled', 'submission_failed', 'refunded', 'not_charged'] as const;
-/**
- * Billing states the clear write may hide. `provider_submitted` is included
- * because `isVideoHistoryProtected` already time-gates it: only rows past the
- * retention window reach the write, while a concurrent unknown state still
- * cannot be cleared.
- */
-export const VIDEO_HISTORY_CLEARABLE_BILLING_STATES = [...VIDEO_HISTORY_SETTLED_BILLING_STATES, 'provider_submitted'] as const;
+/** Clear writes accept only explicit settled billing states; pending submission is never age-resolved. */
+export const VIDEO_HISTORY_CLEARABLE_BILLING_STATES = [...VIDEO_HISTORY_SETTLED_BILLING_STATES] as const;
 
 function field(item: VideoHistoryPolicyItem, camel: keyof VideoHistoryPolicyItem, snake: keyof VideoHistoryPolicyItem): unknown {
   return item[camel] ?? item[snake];
@@ -44,11 +39,9 @@ function time(value: unknown): number {
   return typeof value === 'string' && value.trim() ? Date.parse(value) : NaN;
 }
 
-/** Billing states that mean "the provider may still settle": protected only while the window is open. */
-const STALE_SUBMITTED_BILLING_STATES = new Set(['provider_submitted']);
-
 /** Unknown status or an explicitly unresolved billing state is protected from every clear. */
 export function isVideoHistoryProtected(item: VideoHistoryPolicyItem, now: number = Date.now()): boolean {
+  void now; // Preserve the public signature; age never resolves pending billing.
   if (!(VIDEO_HISTORY_TERMINAL_STATUSES as readonly string[]).includes(String(item.status ?? ''))) return true;
   const billing = field(item, 'billingState', 'billing_state');
   // Rows written before billing tracking existed have no billing state at all.
@@ -58,13 +51,6 @@ export function isVideoHistoryProtected(item: VideoHistoryPolicyItem, now: numbe
   // an explicit state outside the settled set (empty string, "unknown", …)
   // stays protected.
   if (billing === null || billing === undefined) return false;
-  if (STALE_SUBMITTED_BILLING_STATES.has(String(billing))) {
-    // The provider accepted the job but never reported a terminal state. Keep
-    // it protected while a settlement can still land; after the retention
-    // window it must stop pinning history forever.
-    const terminalAt = videoHistoryTerminalTime(item);
-    return !Number.isFinite(terminalAt) || now - terminalAt < VIDEO_HISTORY_RETENTION_MS;
-  }
   return !(VIDEO_HISTORY_SETTLED_BILLING_STATES as readonly string[]).includes(String(billing));
 }
 

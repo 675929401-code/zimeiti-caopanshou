@@ -18,6 +18,8 @@ import path from "node:path";
 import bcrypt from "bcryptjs";
 import pg from "pg";
 import { chromium } from "playwright";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
 import {
   createLoadedJavaScriptSentinelAudit,
 } from "./lib/admin-loaded-javascript-audit.mjs";
@@ -27,7 +29,7 @@ const superToken = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "");
 const localIdentity = JSON.parse(process.env.LOCAL_NAV_READONLY_IDENTITY || "{}");
 const superUser = localIdentity.user || {};
 const databaseUrl = String(process.env.DATABASE_URL || "");
-const evidenceDir = path.resolve(".codex-evidence", "admin-role-concealment-live");
+const evidenceDir = path.resolve(".codex-evidence", "admin-role-concealment-live", `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`);
 const reportPath = path.join(evidenceDir, "report.json");
 const startedAt = new Date().toISOString();
 const apiUserAgent = "Codex-Admin-Role-Concealment/1.0";
@@ -54,12 +56,14 @@ const expectedOrdinaryTabs = [
   "general",
   "layout",
   "models",
+  "storyboard-presets",
+  "super-admin",
   "theme",
   "users",
   "white-label",
   "workspace-models",
 ];
-const expectedVisiblePrimaryTabs = ["dashboard", "users", "models", "workspace-models", "general", "white-label"];
+const expectedVisiblePrimaryTabs = ["dashboard", "users", "models", "workspace-models", "general", "white-label", "super-admin"];
 const expectedHiddenPrimaryTabs = [
   "benefit-packages",
   "credits",
@@ -68,7 +72,6 @@ const expectedHiddenPrimaryTabs = [
   "agents",
   "security",
   "health",
-  "super-admin",
 ];
 const memberFinancialFields = new Set([
   "credits",
@@ -161,6 +164,11 @@ const sensitiveModelFields = new Set([
   "fail_count",
   "agent_id",
 ]);
+
+if (process.argv.includes("--denial-contract-zero-network")) {
+  await verifyDenialContractZeroNetwork();
+  process.exit(0);
+}
 
 assert.equal(origin, "http://127.0.0.1:5000", "LOCAL_5000_ORIGIN_REQUIRED");
 assert.equal(process.env.LOCAL_ACCEPTANCE_PREVIEW, "true", "LOCAL_ACCEPTANCE_WRAPPER_REQUIRED");
@@ -314,17 +322,141 @@ function collectObjectKeys(value, output = new Set()) {
   return output;
 }
 
+function assertPublicPermissionCatalog(catalog, grantedKeys, allKeys) {
+  assert.ok(Array.isArray(catalog), "PUBLIC_PERMISSION_CATALOG_ARRAY_REQUIRED");
+  assert.equal(catalog.length, 31, "PUBLIC_PERMISSION_CATALOG_31_REQUIRED");
+  assert.equal(new Set(catalog.map((permission) => permission.key)).size, 31, "PUBLIC_PERMISSION_CATALOG_KEYS_MUST_BE_UNIQUE");
+  assert.deepEqual(catalog.map((permission) => permission.key), allKeys, "PUBLIC_COMPLETE_PERMISSION_METADATA_REQUIRED");
+  const fields = ["description", "executorRequirement", "granted", "grantorRequirement", "group", "isDelegable", "key", "label", "risk", "stepUpRequired"];
+  for (const permission of catalog) {
+    assert.deepEqual(Object.keys(permission).sort(), fields, "PUBLIC_PERMISSION_METADATA_ONLY_NO_PRIVATE_FIELDS");
+    for (const key of ["key", "group", "label", "description"]) assert.equal(typeof permission[key], "string", "PUBLIC_PERMISSION_TEXT_METADATA_REQUIRED");
+    assert.ok(["normal", "sensitive", "critical"].includes(permission.risk), "PUBLIC_PERMISSION_RISK_METADATA_REQUIRED");
+    assert.equal(typeof permission.stepUpRequired, "boolean", "PUBLIC_PERMISSION_STEPUP_METADATA_REQUIRED");
+    assert.equal(permission.grantorRequirement, "super_admin", "PERMISSION_GRANTOR_MUST_BE_OWNER_ONLY");
+    assert.equal(permission.executorRequirement, permission.key === "admin.accounts.manage" ? "super_admin" : "explicit_grant", "PERMISSION_EXECUTOR_METADATA_REQUIRED");
+    assert.equal(permission.isDelegable, permission.key !== "admin.accounts.manage", "OWNER_CAPABILITY_MUST_NOT_BE_DELEGABLE");
+    assert.equal(permission.granted, grantedKeys.includes(permission.key), "PUBLIC_CATALOG_GRANTED_MUST_MATCH_EFFECTIVE_AUTHORITY");
+  }
+  assert.deepEqual(catalog.filter((permission) => permission.granted).map((permission) => permission.key).sort(), [...grantedKeys].sort(), "PUBLIC_CATALOG_GRANTED_KEYS_EXACT");
+  assert.equal(catalog.find((permission) => permission.key === "admin.accounts.manage")?.granted, false, "ORDINARY_ADMIN_OWNER_CAPABILITY_MUST_NOT_BE_GRANTED");
+}
+
+function assertOrdinaryBundleConcealment(loaded, publicCatalog) {
+  // These two exact literals belong to the public readonly directory. The
+  // prompt label must match its canonical public permission, without a grant.
+  const publicPromptPermission = publicCatalog.find((permission) => permission.key === "prompts.view");
+  assert.equal(publicPromptPermission?.label, "查看内部提示词", "PUBLIC_PROMPT_PERMISSION_LABEL_REQUIRED");
+  assert.equal(publicPromptPermission.granted, false, "ORDINARY_PROMPT_PERMISSION_MUST_REMAIN_UNGRANTED");
+  const publicMarkers = [
+    { marker: "SUPER ADMIN CONTROL PLANE", source: "src/components/admin/super-admin-governance-panel.tsx", reason: "public readonly permission directory shares governance module; private profiles and mutation controls remain forbidden" },
+    { marker: "查看内部提示词", source: "src/lib/admin-governance.ts", permissionKey: "prompts.view", reason: "canonical public permission metadata label; granted=false, private prompt API and editor controls remain forbidden" },
+  ];
+  assert.deepEqual(loaded.matchedSentinels.filter((marker) => !publicMarkers.some((entry) => entry.marker === marker)), [], "ORDINARY_ADMIN_CONCEALED_CHUNKS_MUST_NOT_LOAD");
+  return publicMarkers.map((entry) => ({
+    ...entry,
+    actualHit: loaded.matchedSentinels.includes(entry.marker),
+    scripts: loaded.scripts.filter((script) => script.matchedSentinels.includes(entry.marker)).map((script) => ({ path: script.path, bytes: script.bytes })),
+  }));
+}
+
+function denialRequirementForProbe(pathname) {
+  // Exact first missing capability, accounting for proxy checks followed by
+  // route-local composite checks (credits and voice nest first pass members.view).
+  const requirements = new Map([
+    ["/api/admin/unmapped-role-concealment-probe", "admin.accounts.manage"],
+    ["/api/admin/access-control", "admin.accounts.manage"],
+    ["/api/admin/revenue", "billing.view"], ["/api/admin/user-chats", "member_content.view"],
+    ["/api/admin/model-health", "models.manage"], ["/api/admin/credential-health", "models.manage"],
+    ["/api/video/channel-health", "models.manage"], ["/api/admin/voice-services", "models.manage"],
+    ["/api/admin/plugins", "integrations.manage"], ["/api/settings/admin", "integrations.manage"],
+    ["/api/health", "logs.view"], ["/api/stats", "billing.view"], ["/api/storage/status", "backups.manage"],
+    ["/api/storyboard/agent", "prompts.view"], ["/api/announcements", "announcements.manage"],
+    ["/api/conversations", "agents.view"], ["/api/voice/nest/authorize", "billing.view"],
+    ["/api/extract/reconciliation", "billing.view"], ["/api/credits", "billing.view"],
+    ["/api/coze/test", "integrations.manage"], ["/api/coze/test-coding", "models.manage"],
+    ["/api/video/detect-protocol", "models.manage"], ["/api/admin/categories", "agents.manage"],
+    ["/api/admin/nav-items", "agents.manage"], ["/api/admin/agents", "agents.manage"],
+  ]);
+  const actualPath = new URL(pathname.replace(/^[A-Z]+\s+/u, ""), origin).pathname;
+  assert.ok(requirements.has(actualPath), `${actualPath}:DENIAL_SOURCE_CONTRACT_REQUIRED`);
+  return requirements.get(actualPath);
+}
+
 function assertGenericDeny(pathname, response, body) {
   assert.equal(response.status, 403, `${pathname}:GENERIC_DENY_STATUS_REQUIRED:${response.status}`);
-  assert.ok(
-    ["ADMIN_PERMISSION_DENIED", "SUPER_ADMIN_REQUIRED"].includes(body.code),
-    `${pathname}:GENERIC_DENY_CODE_REQUIRED`,
-  );
+  const requiredPermission = denialRequirementForProbe(pathname);
+  const expectedCode = requiredPermission === "admin.accounts.manage" ? "SUPER_ADMIN_REQUIRED" : "ADMIN_PERMISSION_DENIED";
+  assert.equal(body.code, expectedCode, `${pathname}:EXACT_DENIAL_CODE_REQUIRED`);
   assert.deepEqual(Object.keys(body).sort(), ["code", "error"], `${pathname}:DENIAL_DETAIL_LEAKED`);
   const serialized = JSON.stringify(body);
   assert.doesNotMatch(serialized, /requiredPermission|permissionKey|operation|resource/iu, `${pathname}:DENIAL_METADATA_LEAKED`);
   assert.doesNotMatch(serialized, /(?:admin|members|member_content|billing|wallet|agents|prompts|models|platform|brand|integrations|payment|white_label|security|logs|backups|deployment)\.[a-z_.]+/iu, `${pathname}:PERMISSION_KEY_LEAKED`);
   return { pathname, status: response.status, code: body.code, responseKeys: Object.keys(body).sort() };
+}
+
+async function verifyDenialContractZeroNetwork() {
+  function evaluate(expression, globals = {}) {
+    const module = { exports: null };
+    runInNewContext(ts.transpileModule("module.exports=" + expression, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, { module, Error, URL, ...globals });
+    return module.exports;
+  }
+  async function actualFunction(file, name) {
+    const text = await fs.readFile(file, "utf8"), tree = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+    const node = tree.statements.find(item => ts.isFunctionDeclaration(item) && item.name?.text === name);
+    assert.ok(node, `${file}:${name}:ACTUAL_FUNCTION_REQUIRED`);
+    return node.getText(tree).replace(/^export\s+/u, "");
+  }
+  async function actualConstant(file, name) {
+    const text = await fs.readFile(file, "utf8"), tree = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+    let initializer;
+    function visit(node) { if (ts.isVariableDeclaration(node) && node.name.getText(tree) === name) initializer = node.initializer; ts.forEachChild(node, visit); }
+    visit(tree); assert.ok(initializer); return evaluate(initializer.getText(tree));
+  }
+  const ownerOnly = await actualConstant("src/lib/admin-permission-design.ts", "ADMIN_OWNER_ONLY_PERMISSION_KEYS");
+  const ownerGranted = await actualConstant("src/lib/admin-permission-design.ts", "ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS");
+  assert.deepEqual([...ownerOnly], ["admin.accounts.manage"]); assert.ok(ownerGranted.includes("internal_tools.manage"));
+  const catalog = await actualConstant("src/lib/admin-governance.ts", "ADMIN_PERMISSION_CATALOG");
+  const authoritySource = await actualFunction("src/lib/server/admin-governance-authority.ts", "authorizeAdminCapability");
+  const detailsSource = await actualFunction("src/lib/server/admin-governance-authority.ts", "privilegedDenialDetails");
+  const cases = [];
+  for (const [permissionKeys, stepUpReady, permission, code, status] of [
+    [["agents.view", "logs.view"], false, "internal_tools.manage", "ADMIN_PERMISSION_DENIED", 403],
+    [["agents.view", "logs.view"], true, "internal_tools.manage", "ADMIN_PERMISSION_DENIED", 403],
+    [["agents.view", "internal_tools.manage"], false, "internal_tools.manage", "ADMIN_STEP_UP_REQUIRED", 428],
+    [["agents.view", "internal_tools.manage"], true, "internal_tools.manage", null, null],
+    [["admin.accounts.manage"], true, "admin.accounts.manage", "SUPER_ADMIN_REQUIRED", 403],
+  ]) {
+    let stepUpReads = 0;
+    const authorize = evaluate(`(()=>{${detailsSource};return ${authoritySource};})()`, {
+      ADMIN_OWNER_GRANTED_BUSINESS_PERMISSION_KEYS: ownerGranted, OWNER_ONLY_PERMISSION_SET: new Set(ownerOnly), ADMIN_PERMISSION_KEYS: catalog.map(item => item.key),
+      getTokenFromHeaders: () => "fixture", authorizeAdminToken: async () => ({ ok: true, actor: { userId: "fixture-admin" }, user: {} }),
+      readAdminAccessSnapshot: async () => ({ authorityStatus: "ready", integrityValid: true, adminLevel: "admin", permissionKeys }),
+      appendAdminGovernanceAudit: async () => true, readAdminMaintenanceLockSnapshot: async () => ({ enabled: false }),
+      readAdminStepUpSnapshot: async () => { stepUpReads++; return { status: stepUpReady ? "ready" : "missing" }; },
+      NextResponse: { json: (body, options) => ({ body, status: options.status }) },
+    });
+    const result = await authorize({ headers: {}, nextUrl: { pathname: "/api/admin/categories" } }, permission, { requireStepUp: true });
+    if (code) { assert.equal(result.ok, false); assert.equal(result.response.status, status); assert.equal(result.response.body.code, code); assert.deepEqual(Object.keys(result.response.body).sort(), ["code", "error"]); }
+    else assert.equal(result.ok, true);
+    if (code === "ADMIN_PERMISSION_DENIED" || code === "SUPER_ADMIN_REQUIRED") assert.equal(stepUpReads, 0, "CAPABILITY_DENIAL_MUST_PRECEDE_STEP_UP");
+    cases.push({ permission, stepUpReady, expectedCode: code, expectedStatus: status });
+  }
+  for (const file of ["src/app/api/admin/categories/route.ts", "src/app/api/admin/nav-items/route.ts", "src/app/api/admin/agents/route.ts"]) {
+    let calls = 0, reads = 0;
+    const handler = evaluate(await actualFunction(file, "GET"), { authorizeAdminCapability: async (_request, permission, options) => {
+      calls++; assert.equal(permission, calls === 1 ? "agents.view" : "internal_tools.manage");
+      assert.equal(options.requireStepUp, calls === 2, "INTERNAL_CATALOG_STEP_UP_CONTRACT_REQUIRED");
+      return calls === 1 ? { ok: true } : { ok: false, response: { status: 403, body: { code: "ADMIN_PERMISSION_DENIED", error: "denied" } } };
+    }, getSupabaseClient: () => { reads++; throw Error("NO_DATA_READ_AFTER_DENIAL"); } });
+    const denied = await handler({ nextUrl: new URL("http://fixture.invalid/?include_internal=1"), url: "http://fixture.invalid/?include_internal=1" });
+    assert.equal(denied.status, 403); assert.equal(denied.body.code, "ADMIN_PERMISSION_DENIED"); assert.equal(calls, 2); assert.equal(reads, 0);
+  }
+  for (const [resource, expectedCode] of [["/api/admin/access-control", "SUPER_ADMIN_REQUIRED"], ["/api/admin/categories?include_internal=1", "ADMIN_PERMISSION_DENIED"], ["/api/credits?user_id=fixture", "ADMIN_PERMISSION_DENIED"]]) {
+    assertGenericDeny(resource, { status: 403 }, { code: expectedCode, error: "denied" });
+    assert.throws(() => assertGenericDeny(resource, { status: 403 }, { code: expectedCode === "SUPER_ADMIN_REQUIRED" ? "ADMIN_PERMISSION_DENIED" : "SUPER_ADMIN_REQUIRED", error: "denied" }));
+  }
+  console.log(JSON.stringify({ passed: true, actualAuthorityCases: cases, actualInternalCatalogHandlers: 3, exactCodeNegativeCases: 3, networkCalls: 0, databaseCalls: 0, browserCalls: 0 }));
 }
 
 function assertMemberFinancialFieldsHidden(payload) {
@@ -851,15 +983,17 @@ try {
   assert.equal(ordinarySelf.access?.adminLevel, "admin", "ORDINARY_ADMIN_LEVEL_REQUIRED");
   assert.equal(ordinarySelf.access?.integrityValid, true, "ORDINARY_ADMIN_INTEGRITY_REQUIRED");
   assert.deepEqual(ordinarySelf.access?.permissionKeys, expectedEffectivePermissions, "ORDINARY_EFFECTIVE_PERMISSIONS_WRONG");
-  assert.deepEqual(ordinarySelf.catalog?.map((permission) => permission.key), expectedEffectivePermissions, "ORDINARY_CATALOG_MUST_ONLY_INCLUDE_GRANTED_PERMISSIONS");
-  assert.deepEqual(Object.keys(ordinarySelf.tabAccess || {}).sort(), expectedOrdinaryTabs, "ORDINARY_TAB_SELF_PROJECTION_MUST_ONLY_INCLUDE_GRANTED_TABS");
+  assertPublicPermissionCatalog(ordinarySelf.catalog, expectedEffectivePermissions, superSelf.catalog.map((permission) => permission.key));
+  assert.deepEqual(Object.keys(ordinarySelf.tabAccess || {}).sort(), expectedOrdinaryTabs, "ORDINARY_TAB_SELF_PROJECTION_GRANTED_AND_PUBLIC_DIRECTORY_ONLY");
   assert.equal(ordinarySelf.stepUp?.status, "ready", "ORDINARY_STEP_UP_STATE_REQUIRED");
   report.api.selfProjection = {
     adminLevel: ordinarySelf.access.adminLevel,
     permissionKeys: ordinarySelf.access.permissionKeys,
     catalogKeys: ordinarySelf.catalog.map((permission) => permission.key),
     allowedTabs: Object.keys(ordinarySelf.tabAccess).sort(),
-    fullCatalogHidden: ordinarySelf.catalog.length === expectedEffectivePermissions.length,
+    publicMetadataCount: ordinarySelf.catalog.length,
+    grantedCatalogKeys: ordinarySelf.catalog.filter((permission) => permission.granted).map((permission) => permission.key),
+    privateCatalogDataHidden: true,
   };
 
   const memberCommandCenterResponse = await api("/api/admin/command-center?hours=24&view=members", { headers: ordinaryHeaders });
@@ -967,6 +1101,7 @@ try {
   }
 
   for (const probe of [
+    { method: "POST", pathname: "/api/admin/access-control", body: { action: "permissions", userId: fixtureUserId, permissionKeys: ["admin.accounts.manage"] } },
     { method: "POST", pathname: "/api/admin/categories", body: { name: "denied-probe" } },
     { method: "PUT", pathname: "/api/admin/categories", body: { categoryId: "00000000-0000-0000-0000-000000000000", name: "denied-probe" } },
     { method: "DELETE", pathname: "/api/admin/categories?id=00000000-0000-0000-0000-000000000000", body: {} },
@@ -1070,15 +1205,10 @@ try {
   attachPageAudit(ordinaryPage, ordinaryAudit);
   ordinaryLoadedJavaScriptAudit = createLoadedJavaScriptSentinelAudit(ordinaryPage, { origin });
 
-  const initialUsersUiResponse = ordinaryPage.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return url.pathname === "/api/admin/users" && response.request().method() === "GET";
-  }, { timeout: 45_000 });
-  activeBrowserPhase = "ordinary-super-admin-fallback";
+  activeBrowserPhase = "ordinary-public-permission-directory";
   await ordinaryPage.goto(`${origin}/admin?tab=super-admin`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await waitForAdminReady(ordinaryPage, "dashboard");
-  await waitForTabInUrl(ordinaryPage, "dashboard");
-  await ordinaryPage.waitForFunction(() => new URL(window.location.href).searchParams.get("view") === "members", undefined, { timeout: 20_000 });
+  await waitForAdminReady(ordinaryPage, "super-admin");
+  await waitForTabInUrl(ordinaryPage, "super-admin");
   for (const tab of expectedVisiblePrimaryTabs) {
     await ordinaryPage.locator(`[data-testid="admin-primary-nav-${tab}"]`).waitFor({ state: "visible", timeout: 20_000 });
   }
@@ -1088,6 +1218,29 @@ try {
   assert.equal(await ordinaryPage.locator('[data-testid="super-admin-locked"]').count(), 0, "LOCKED_SUPER_ADMIN_DISCLOSURE_MUST_BE_ABSENT");
   assert.equal(await ordinaryPage.getByText("当前账号暂无可用后台页面。", { exact: true }).count(), 0, "GRANTED_ADMIN_MUST_HAVE_VISIBLE_SURFACES");
 
+  const publicDirectory = ordinaryPage.getByTestId("admin-permission-directory-readonly");
+  await publicDirectory.waitFor({ state: "visible", timeout: 45_000 });
+  assert.equal(await publicDirectory.locator("[data-permission-key]").count(), 31, "ORDINARY_PUBLIC_DIRECTORY_31_METADATA_CARDS_REQUIRED");
+  const visibleGrants = await publicDirectory.locator('[data-permission-key][data-granted="true"]').evaluateAll((cards) => cards.map((card) => card.getAttribute("data-permission-key")).sort());
+  assert.deepEqual(visibleGrants, [...expectedEffectivePermissions].sort(), "ORDINARY_DIRECTORY_GRANTED_CARDS_EXACTLY_FIVE");
+  const ownerCard = publicDirectory.locator('[data-permission-key="admin.accounts.manage"]');
+  assert.equal(await ownerCard.getAttribute("data-granted"), "false", "ORDINARY_OWNER_CARD_MUST_NOT_BE_GRANTED");
+  await ownerCard.getByText("仅所有者执行", { exact: true }).waitFor({ state: "visible" });
+  assert.equal(await publicDirectory.locator("button,textarea,form,input[type=password]").count(), 0, "READONLY_DIRECTORY_MUST_HAVE_NO_MANAGEMENT_CONTROLS");
+  assert.equal(await publicDirectory.getByText("内部人员", { exact: true }).count(), 0, "PRIVATE_PERSONNEL_DIRECTORY_MUST_BE_ABSENT");
+  for (const testId of ["super-admin-governance", "admin-login-entry-card", "admin-governance-health", "admin-permission-catalog-summary", "admin-permission-effect-preview", "admin-job-template-drafts", "admin-maintenance-lock-card", "add-administrator-dialog", "registered-member-admin-picker"]) {
+    assert.equal(await ordinaryPage.getByTestId(testId).count(), 0, `${testId}:OWNER_PRIVATE_PANEL_MUST_BE_ABSENT`);
+  }
+  for (const name of ["添加管理员", "保存管理员资料", "修改资料/密码", "保存权限", "设置管理密码"]) {
+    assert.equal(await ordinaryPage.getByRole("button", { name, exact: true }).count(), 0, `${name}:OWNER_MUTATION_BUTTON_MUST_BE_ABSENT`);
+  }
+  report.browser.ordinaryPermissionDirectory = { visible: true, metadataCards: 31, grantedKeys: visibleGrants, ownerOnlyGrantDenied: true, privateProfilesVisible: false, managementControls: 0 };
+  await captureScreenshot(ordinaryPage, "ordinary-permission-directory-readonly-1440x900.png");
+
+  const initialUsersUiResponse = ordinaryPage.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/admin/users" && response.request().method() === "GET";
+  }, { timeout: 45_000 });
   await ordinaryPage.goto(`${origin}/admin?tab=users`, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await waitForAdminReady(ordinaryPage, "users");
   await waitForTabInUrl(ordinaryPage, "users");
@@ -1133,7 +1286,7 @@ try {
   }
   await captureScreenshot(ordinaryPage, "ordinary-command-center-bounded-views-1440x900.png");
 
-  for (const deniedTab of ["connection", "health", "super-admin"]) {
+  for (const deniedTab of ["connection", "health"]) {
     activeBrowserPhase = `ordinary-${deniedTab}-fallback`;
     const navigationResponse = await ordinaryPage.goto(`${origin}/admin?tab=${deniedTab}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await waitForAdminReady(ordinaryPage, "dashboard");
@@ -1219,21 +1372,17 @@ try {
       `${forbiddenPath}:UNAUTHORIZED_UI_REQUEST_MUST_BE_ZERO`,
     );
   }
+  assert.equal(ordinaryAudit.localRequests.some((entry) => entry.startsWith("GET ") && new URL(entry.slice(4), origin).pathname === "/api/admin/access-control"), false, "ORDINARY_PUBLIC_DIRECTORY_MUST_NOT_REQUEST_PRIVATE_GOVERNANCE_API");
   const ordinaryLoadedJavaScript = await ordinaryLoadedJavaScriptAudit.finish();
   ordinaryLoadedJavaScriptAudit = null;
   assert.ok(ordinaryLoadedJavaScript.scriptCount > 0, "ORDINARY_ADMIN_JAVASCRIPT_EVIDENCE_REQUIRED");
   assert.deepEqual(ordinaryLoadedJavaScript.failures, [], "ORDINARY_ADMIN_JAVASCRIPT_SOURCE_MUST_BE_READABLE");
-  assert.deepEqual(
-    ordinaryLoadedJavaScript.matchedSentinels,
-    [],
-    "ORDINARY_ADMIN_CONCEALED_CHUNKS_MUST_NOT_LOAD",
-  );
+  const publicDirectoryStaticMarker = assertOrdinaryBundleConcealment(ordinaryLoadedJavaScript, ordinarySelf.catalog);
   report.browser.ordinary = {
     ...summarizeBrowserAudit(ordinaryAudit),
     visiblePrimaryTabs: expectedVisiblePrimaryTabs,
     hiddenPrimaryTabs: expectedHiddenPrimaryTabs,
     deepLinkFallbacks: {
-      "super-admin": "dashboard:members",
       connection: "dashboard:members",
       health: "dashboard:members",
       "voice-studio": "workspace-models:image",
@@ -1242,6 +1391,7 @@ try {
     settingsScopes: [...new Set(settingScopes)].sort(),
     hiddenUiRequests: 0,
     loadedJavaScript: ordinaryLoadedJavaScript,
+    publicDirectoryStaticMarker,
   };
   assertCleanBrowserAudit(ordinaryAudit);
   await ordinaryContext.close();
@@ -1406,9 +1556,9 @@ try {
   for (const pathname of internalCatalogPaths) {
     const lockedResponse = await api(pathname, { headers: capabilityHeaders });
     const lockedBody = await readJson(lockedResponse);
-    assert.equal(lockedResponse.status, 403, `${pathname}:OWNER_PERMISSION_REQUIRED`);
-    assert.equal(lockedBody.code, "SUPER_ADMIN_REQUIRED", `${pathname}:OWNER_LEVEL_CODE_REQUIRED`);
-    assert.deepEqual(Object.keys(lockedBody).sort(), ["code", "error"], `${pathname}:OWNER_DENIAL_DETAILS_MUST_BE_CONCEALED`);
+    assert.equal(lockedResponse.status, 403, `${pathname}:INTERNAL_GRANT_REQUIRED`);
+    assert.equal(lockedBody.code, "ADMIN_PERMISSION_DENIED", `${pathname}:MISSING_INTERNAL_GRANT_CODE_REQUIRED`);
+    assert.deepEqual(Object.keys(lockedBody).sort(), ["code", "error"], `${pathname}:INTERNAL_DENIAL_DETAILS_MUST_BE_CONCEALED`);
   }
 
   const capabilityUnlockResponse = await api("/api/admin/access-control/unlock", {
@@ -1426,14 +1576,14 @@ try {
       headers: { ...capabilityHeaders, "x-admin-step-up": capabilityStepUpToken },
     });
     const unlockedBody = await readJson(unlockedResponse);
-    assert.equal(unlockedResponse.status, 403, `${pathname}:UNLOCK_MUST_NOT_CROSS_OWNER_BOUNDARY`);
-    assert.equal(unlockedBody.code, "SUPER_ADMIN_REQUIRED", `${pathname}:UNLOCKED_OWNER_LEVEL_CODE_REQUIRED`);
-    assert.deepEqual(Object.keys(unlockedBody).sort(), ["code", "error"], `${pathname}:UNLOCKED_OWNER_DENIAL_DETAILS_MUST_BE_CONCEALED`);
+    assert.equal(unlockedResponse.status, 403, `${pathname}:UNLOCK_MUST_NOT_GRANT_INTERNAL_CAPABILITY`);
+    assert.equal(unlockedBody.code, "ADMIN_PERMISSION_DENIED", `${pathname}:UNLOCKED_MISSING_INTERNAL_GRANT_CODE_REQUIRED`);
+    assert.deepEqual(Object.keys(unlockedBody).sort(), ["code", "error"], `${pathname}:UNLOCKED_INTERNAL_DENIAL_DETAILS_MUST_BE_CONCEALED`);
   }
 
   /*
    * Public catalogs remain usable with the delegated read permission. Keep
-   * the evidence below separate from the owner-only internal catalog checks.
+   * the evidence below separate from missing internal-tools grant checks.
    */
   const internalRowEvidence = {
     categories: 0,
@@ -1447,6 +1597,9 @@ try {
     ownerPermissionDelegationRejected: true,
     internalCatalogLockedWithoutStepUp: true,
     internalCatalogStillLockedAfterStepUp: true,
+    internalCatalogRequiredGrant: "internal_tools.manage",
+    internalCatalogDenialCode: "ADMIN_PERMISSION_DENIED",
+    internalCatalogBoundary: "owner-granted business capability missing; password unlock does not create a grant",
     ordinaryUnlockCannotCrossOwnerBoundary: true,
     internalRowEvidence,
   };

@@ -201,9 +201,9 @@ async function main() {
   assert.match(extractionHistoryHook, /15_000/);
   assert.match(extractionHistoryHook, /visibilitychange/);
   assert.match(extractionHistoryHook, /window\.addEventListener\("focus"/);
-  assert.match(extractPage, />\s*转后台查看\s*</);
+  assert.match(extractPage, />\s*转为状态跟踪\s*</);
   assert.match(extractPage, /任务仍会在历史中继续处理/);
-  assert.match(extractPage, /正在后台处理原请求/);
+  assert.match(extractPage, /正在跟踪原请求状态/);
 
   // Persistence failure is bounded, visible to the caller, and reconcilable without replay.
   assert.match(wrapper, /finalizeWithRetry/);

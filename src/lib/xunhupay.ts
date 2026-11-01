@@ -470,10 +470,10 @@ export async function refundPayment(params: XunhuRefundParams): Promise<XunhuRef
 
 /**
  * 查询迅虎订单状态
- * API文档: https://api.xunhupay.com/payment/query.html
+ * API文档: https://www.xunhupay.com/doc/api/search.html
  * 
- * 迅虎回调经常不到达服务器，此接口作为主动查询的兜底机制。
- * 在 status/route.ts 的轮询中，当订单 pending >60秒 且回调未到时调用。
+ * 查询传输遵循官方 POST form 合同。官方公开合同尚未说明嵌套 data 的
+ * 完整响应签名范围，因此成功查询暂不能作为到账依据；已验签回调不受影响。
  */
 export async function queryOrderStatus(tradeOrderId: string): Promise<{
   status: 'OD' | 'WP' | 'CD' | 'NOT_FOUND';  // OD=已支付, WP=待支付, CD=已退款
@@ -499,11 +499,11 @@ export async function queryOrderStatus(tradeOrderId: string): Promise<{
 
     params.hash = generateSign(params, config.secret);
 
-    const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-    const queryUrl = `https://api.xunhupay.com/payment/query.html?${qs}`;
-
-    const response = await fetch(queryUrl, {
-      method: 'GET',
+    const response = await fetch('https://api.xunhupay.com/payment/query.html', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(params).toString(),
+      redirect: 'error',
       signal: AbortSignal.timeout(XUNHU_QUERY_TIMEOUT_MS),
     });
     const text = await readBoundedGatewayResponse(response);
@@ -534,43 +534,10 @@ export async function queryOrderStatus(tradeOrderId: string): Promise<{
       return null;
     }
 
-    const data = (result.data && typeof result.data === 'object'
-      ? result.data
-      : {}) as Record<string, unknown>;
-    const status = String(data.status || 'WP').toUpperCase();
-    if (!['OD', 'WP', 'CD'].includes(status)) {
-      throw new XunhuIntegrityError(`迅虎支付返回未知订单状态: ${status}`);
-    }
-    const totalAmount = status === 'OD'
-      ? normalizePositiveMoney(String(data.total_amount ?? ''), 'totalAmount')
-      : data.total_amount == null
-        ? undefined
-        : normalizePositiveMoney(String(data.total_amount), 'totalAmount');
-    const providerTradeOrderId = String(
-      data.trade_order_id
-      ?? data.out_trade_order
-      ?? data.out_trade_no
-      ?? data.merchant_order_id
-      ?? '',
-    ).trim();
-    const transactionId = String(data.transaction_id ?? '').trim();
-
-    if (status === 'OD') {
-      if (!providerTradeOrderId || providerTradeOrderId !== normalizedTradeOrderId) {
-        throw new XunhuIntegrityError('迅虎支付查询返回的商户订单号缺失或不匹配');
-      }
-      if (!transactionId || transactionId.length > 240 || /[\u0000-\u001f\u007f]/.test(transactionId)) {
-        throw new XunhuIntegrityError('迅虎支付查询返回的平台交易号缺失或无效');
-      }
-    }
-    return {
-      status: status as 'OD' | 'WP' | 'CD',
-      tradeOrderId: providerTradeOrderId || undefined,
-      totalAmount,
-      paidDate: data.paid_date ? String(data.paid_date).slice(0, 80) : null,
-      transactionId: transactionId || null,
-      openOrderId: data.open_order_id ? String(data.open_order_id).slice(0, 240) : null,
-    };
+    // The scalar envelope hash excludes data. Even a valid envelope cannot
+    // authenticate data.status, amount or transaction identity. Do not invent a
+    // nested serialization convention or feed this payload into fulfillment.
+    throw new XunhuIntegrityError('查询成功响应的数据签名范围尚未确认，不能据此确认到账');
   } catch (err) {
     if (err instanceof XunhuConfigError || err instanceof XunhuIntegrityError) throw err;
     console.warn('[迅虎支付] 查询订单异常:', err instanceof Error ? err.message : err);

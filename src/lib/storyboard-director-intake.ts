@@ -14,7 +14,7 @@ export interface StoryboardDirectorIntake {
 
 const CARD_KEYS = [
   "segmented_script", "target_duration_seconds", "video_model_profile", "aspect_ratio",
-  "animation_style", "owner_gender", "dog_breed", "special_notes", "visual_asset_mode",
+  "animation_style", "visual_asset_mode",
 ] as const;
 
 /**
@@ -82,7 +82,10 @@ export function parseStoryboardDirectorIntake(
     source.special_notes = "";
     fieldSources.special_notes = "default";
   }
-  const missingFields: string[] = CARD_KEYS.filter(key => key !== "special_notes" && !String(source[key] ?? "").trim());
+  // Cast choices are optional creative input, not execution prerequisites.
+  // Their absence must not create a female owner or a dog, nor disable the
+  // design method. Keep duration/model/style/mode and duplicate checks strict.
+  const missingFields: string[] = CARD_KEYS.filter(key => !String(source[key] ?? "").trim());
   for (const key of duplicateFields) missingFields.push(`duplicate:${key}`);
   if (invalidAssetReceipt) missingFields.push("invalid:director_assets_receipt");
   if (source.aspect_ratio && !/^(?:16:9|9:16)$/.test(String(source.aspect_ratio).trim())) missingFields.push("invalid:aspect_ratio");

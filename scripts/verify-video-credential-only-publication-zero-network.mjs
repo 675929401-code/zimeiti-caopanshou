@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {createHash} from 'node:crypto';
+import vm from 'node:vm';
+const prior=fs.readFileSync('supabase/migrations/20261030030000_model_pool_credential_removal_combination_guard.sql','utf8');
+const sql=fs.readFileSync('supabase/migrations/20261030050000_video_credential_only_publication.sql','utf8');
+assert.equal(createHash('sha256').update(prior.split('AS $function$')[1].split('$function$;')[0]).digest('hex'),'591f4f81e621b39d2b9c1fd883e3033f3546eac07b370c5d1bb967c6e46deb4c');
+assert.equal((sql.match(/CREATE OR REPLACE FUNCTION/gu)||[]).length,1);
+assert.doesNotMatch(sql,/\b(?:GRANT|REVOKE|ALTER\s+TABLE|ALTER\s+FUNCTION|CREATE\s+(?:TABLE|TRIGGER)|set_config)\b/iu);
+for(const guard of ['proacl','proowner','proconfig','prosecdef','provolatile','proparallel','proisstrict','proleakproof','prokind','prorettype','591f4f81e621b39d2b9c1fd883e3033f3546eac07b370c5d1bb967c6e46deb4c'])assert.ok(sql.includes(guard));
+const cas=sql.indexOf('-- Verify every expected revision first'),scope=sql.indexOf('-- Strict video-credential-only scope'),videoLock=sql.indexOf('ORDER BY t.id FOR UPDATE OF t'),promotion=sql.indexOf('UPDATE public.platform_model_credential_bindings'),videoUpdate=sql.indexOf('UPDATE public.video_models t SET api_key=p.secret_value');
+assert.ok(cas<scope&&scope<videoLock&&videoLock<promotion&&promotion<videoUpdate);
+assert.ok(sql.indexOf('CREDENTIAL_CANDIDATE_BASE_CHANGED')<cas);
+assert.ok(sql.includes("THEN m-'credentialRef' ELSE m END ORDER BY ordinal"));
+assert.ok(sql.includes('v_old_scrubbed IS NOT DISTINCT FROM v_next_scrubbed'));
+assert.ok(sql.includes("IF v_target_count <> v_pending_count THEN RAISE EXCEPTION 'PLATFORM_CONFIGURATION_VIDEO_CREDENTIAL_TARGET_MISSING'"));
+assert.ok(sql.includes('ELSE\n  v_result:=public.publish_platform_configuration_release_before_pending_credentials'));
+assert.equal((sql.match(/UPDATE public.video_models/gu)||[]).length,1);
+assert.doesNotMatch(sql,/INSERT INTO public.video_models|UPDATE public\.(?:llm_models|cover_models|chat_models)/u);
+const preserved=sql.slice(sql.indexOf('BEGIN\n  IF p_kind'),scope);
+const oldPart=prior.slice(prior.indexOf('BEGIN\n  IF p_kind'),prior.indexOf('  FOR v_pending IN SELECT * FROM public.platform_model_pending_credentials WHERE release_id=p_release_id ORDER BY model_key LOOP'));
+assert.equal(preserved,oldPart,'ALL_189_PREPROMOTION_GUARDS_MUST_REMAIN_EXACT');
+function pure(old,next,pending){if(!pending.length||!Array.isArray(old.models)||!Array.isArray(next.models))return false;const ids=new Set();for(const p of pending){if(!/^video_models:[A-Za-z0-9._-]{1,160}$/u.test(p.model_key)||ids.has(p.model_key))return false;ids.add(p.model_key);const id=p.model_key.slice(13);if(p.credential_ref!=='secret://platform-model/video_models/'+id)return false;for(const [snapshot,isNext]of [[old,false],[next,true]])if(snapshot.models.filter(m=>m.id===id&&m.kind==='video'&&m.configuration.legacyTable==='video_models'&&m.configuration.legacyId===id&&(!isNext||m.credentialRef===p.credential_ref)).length!==1)return false;}const scrub=s=>({...s,models:s.models.map(m=>{if(!ids.has('video_models:'+m.configuration.legacyId)||m.configuration.legacyTable!=='video_models')return m;const c={...m};delete c.credentialRef;return c;})});return JSON.stringify(scrub(old))===JSON.stringify(scrub(next));}
+const model=id=>({id,kind:'video',name:id,credentialRef:'secret://platform-model/video_models/'+id,configuration:{legacyTable:'video_models',legacyId:id},pricing:{selling:1},sortOrder:10});
+const old={schema:'model-pool-config/v1',models:[model('fixture-a'),model('fixture-b')]};const pending=[{model_key:'video_models:fixture-a',credential_ref:old.models[0].credentialRef}];assert.ok(pure(old,structuredClone(old),pending));
+for(const mutate of [s=>s.models[0].name='changed',s=>s.models[0].endpoint='https://fixture.invalid',s=>s.models[0].pricing.selling=2,s=>s.models[0].sortOrder=30,s=>s.models.reverse(),s=>s.models.pop(),s=>s.models.push(model('new')),s=>s.extra=true,s=>s.models[1].credentialRef='secret://foreign/ref',s=>s.models.push(s.models[0])]){const next=structuredClone(old);mutate(next);assert.equal(pure(old,next,pending),false);}
+assert.equal(pure(old,old,[...pending,...pending]),false);assert.equal(pure(old,old,[{...pending[0],credential_ref:'secret://wrong/ref'}]),false);assert.equal(pure(old,old,[]),false);
+const pgScript=fs.readFileSync('scripts/verify-video-credential-only-publication-transaction-local.mjs','utf8');
+assert.ok(pgScript.includes('where release_id=$1 and model_key=$2'));
+assert.doesNotMatch(pgScript,/where\s+release_id=\s+and/iu);
+const foreignRealm=vm.runInNewContext('({models:[{id:"synthetic"}]})');
+assert.throws(()=>assert.deepEqual({models:[{id:'synthetic'}]},foreignRealm));
+assert.deepEqual({models:[{id:'synthetic'}]},JSON.parse(JSON.stringify(foreignRealm)));
+assert.ok(pgScript.includes('const snapshot=JSON.parse(JSON.stringify(contract.normalizeModelPoolSnapshot('));
+console.log(JSON.stringify({passed:true,networkCalls:0,databaseConnections:0,tests:['189 exact guards retained','owner ACL metadata precondition','CAS then fixed video locks before promotion','only api_key target update','full JSON ordered shape rejects mixed mutations','ordinary and workspace fallback retained'],postgresRequired:true}));

@@ -17,7 +17,7 @@ export function collectStoryboardDirectorReferenceBindings(
 ): StoryboardVerifiedAssetBinding[] {
   if (!record(document) || !record(document.directorIntake) || !["assets", "planned"].includes(String(document.directorIntake.phase))
     || !record(document.directorIntake.input)) {
-    throw new Error("请先完成本轮人物与宠物三视图资产，再从原项目复制续写卡。");
+    throw new Error("请先完成本轮已声明角色的三视图资产，再从原项目复制续写卡。");
   }
   const intake = document.directorIntake;
   const savedInput = intake.input as Record<string, unknown>;
@@ -33,12 +33,14 @@ export function collectStoryboardDirectorReferenceBindings(
   const workspace = document.visualAssetWorkspace;
   if (!record(plan) || plan.mode !== "selected" || !Array.isArray(plan.assets)
     || !record(workspace) || !Array.isArray(workspace.candidates)) {
-    throw new Error("人物与宠物参考资产尚未采用并保存，请先在原项目完成确认。");
+    throw new Error("角色参考资产尚未采用并保存，请先在原项目完成确认。");
   }
   const assets = plan.assets.filter((asset): asset is Record<string, unknown> => record(asset) && (asset.role === "character" || asset.role === "pet"));
   const candidates: unknown[] = workspace.candidates;
-  if (!assets.some(asset => asset.role === "character") || !assets.some(asset => asset.role === "pet")) {
-    throw new Error("参考模式必须先完成并采用人物和宠物各自的三视图。");
+  // The plan owns the required roles. A story may declare only a character or
+  // only a pet; do not manufacture the other role at the workbench gate.
+  if (!assets.length) {
+    throw new Error("参考模式必须先在计划中声明至少一项人物或宠物资产，并完成对应三视图。");
   }
   if (new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error("三视图资产标识重复，请在原项目重新核对。");
   return assets.map(asset => {
@@ -66,8 +68,8 @@ export function collectStoryboardDirectorReferenceBindings(
     if (!hasStoryboardDirectorAssetConfirmation(confirmations, {
       planId: asset.id, sourceAssetId: source.assetId, historyRecordId: source.historyRecordId, role: asset.role as "character" | "pet",
     })) throw new Error(intake.phase === "planned"
-      ? "人物与宠物三视图生成后仍需分别点击“使用这张”并保存，才能继续制作分镜图与视频。"
-      : "人物与宠物三视图生成后仍需分别明确选择采用并保存，才能继续生成分镜提示词。");
+      ? "已声明的角色三视图生成后仍需逐项点击“使用这张”并保存，才能继续制作分镜图与视频。"
+      : "已声明的角色三视图生成后仍需逐项明确选择采用并保存，才能继续生成分镜提示词。");
     return {
       assetId: asset.id, sourceAssetId: source.assetId, role: asset.role as "character" | "pet", referenceKind: "turnaround",
       historyRecordId: source.historyRecordId,

@@ -2088,17 +2088,14 @@
 }
 
 .messageBubble :global(.code-block-header) {
-  position: absolute !important;
+  position: relative !important;
   z-index: 2;
-  top: 7px;
-  right: 7px;
-  min-height: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  background: transparent !important;
+  min-height: 38px !important;
+  padding: 7px 14px !important;
+  border-bottom: 1px solid #40516d !important;
+  background: #223047 !important;
 }
 
-.messageBubble :global(.code-block-header > span:first-child),
 .messageBubble :global(.send-video-task-button),
 .messageBubble :global(.send-image-workbench-button) {
   display: none !important;
@@ -2118,9 +2115,9 @@
   transition: opacity 120ms ease;
 }
 
-.messageBubble :global(.copy-code-button::before) {
-  content: "复制";
-  font-size: 11px;
+.messageBubble :global(.code-block-lang),
+.messageBubble :global(.code-block-expand-button) {
+  color: #dbe9ff !important;
 }
 
 .messageBubble :global(.code-block-wrapper:hover .copy-code-button),
@@ -2141,18 +2138,11 @@
 
 .messageBubble :global(.code-block-pre) {
   margin: 0 !important;
-  padding: 44px 16px 16px !important;
-  max-height: none !important;
+  padding: 14px 16px !important;
   overflow-x: hidden !important;
+  overflow-y: auto !important;
   line-height: 1.65 !important;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.messageBubble :global(.code-block-pre::-webkit-scrollbar) {
-  width: 0;
-  height: 0;
-  display: none;
+  scrollbar-width: thin;
 }
 
 .messageBubble :global(.copyable-block-copy-btn) {

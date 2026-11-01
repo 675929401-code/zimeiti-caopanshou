@@ -61,6 +61,8 @@ assert.equal(
   'both POST and PUT must apply the member-permission mutation guard',
 );
 assert.match(route, /const billingColumns = canViewBilling \? ', credits, cash_balance' : '';/u);
+assert.match(route, /adminAccess\.adminLevel !== 'super_admin'/u);
+assert.match(route, /query = query\.or\(`role\.neq\.admin,id\.eq\.\$\{clean\(admin\.userId\)\}`\)/u);
 assert.match(route, /const \[creditRechargeData, creditConsumeData, cashRechargeData, cashConsumeData\] = canViewBilling\s*\? await Promise\.all/u);
 assert.match(route, /return exposeAdminMemberBilling\(member,/u);
 assert.doesNotMatch(

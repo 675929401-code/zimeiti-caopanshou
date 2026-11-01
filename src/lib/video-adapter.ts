@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
 import { seedanceRelayBody } from "./video-seedance-relay";
+import { gaoruiSeedanceNativeParameters, gaoruiSeedanceNativeBody, isGaoruiSeedanceNativeModel, isGaoruiSeedanceNativePollModel } from "./gaorui-seedance-native-contract";
+import { gaoruiVideoCreateContractAdmission } from "./gaorui-video-contract-admission";
+import { gaoruiH3NativeBody, isGaoruiH3NativeModel } from "./gaorui-h3-native-contract";
+import { gaoruiGrokNativeBody, isGaoruiGrokNativeModel } from "./gaorui-grok-native-contract";
+import type { GaoruiTrustedPersonAsset } from "./gaorui-provider-asset-contract";
+import { secureSkillKlingBody } from "./video-secure-skill-kling";
+import { isSecureSkillNativeVideoModel, secureSkillNativeVideoBody, secureSkillWan3Media } from "./video-secure-skill-native";
 import { doubaoSeedanceTaskBody, isDoubaoSeedanceModel } from "./video-doubao-seedance-relay";
 import { parseVideoTokenUsage, type VideoTokenUsage } from "./video-token-billing";
 import { submitVolcDigitalHuman, pollVolcDigitalHuman } from './volcengine-digital-human';
 import { submitVideoRetalk } from './digital-human-provider';
 import { videoProviderFetch as fetch, withVideoProviderRequestAudit, type VideoProviderRequestReceipt } from "./video-provider-request-audit";
 import { isProviderCancellationStatus } from "./video-cancellation";
+import { sanitizeVideoProviderDiagnostic } from "./video-error-policy";
 /**
  * 多协议视频API适配器
  * 支持13+种视频生成协议，统一接口调用
@@ -83,6 +91,7 @@ import { generateLanmaoVideo, pollLanmaoVideo } from "./video-lanmao-proxy";
 import { generateSuanlichengVideo, pollSuanlichengVideo } from "./video-suanlicheng";
 import { readSuanlichengMaterial } from "./video-suanlicheng-material";
 import { extractPromptDurationSeconds } from "./video-prompt-timing";
+import { getGaoruiVeoComponentsReferenceLimit } from "./video-input-contract";
 import { generateAutodlH3SelfhostVideo, pollAutodlH3SelfhostVideo } from "./video-autodl-h3-selfhost";
 import {
   AUTODL_COMFYUI_WORKFLOW_PROTOCOL,
@@ -93,6 +102,10 @@ import {
 export interface VideoGenerateParams {
   /** Authenticated server-side owner; never read this value from the request body. */
   inputOwnerId?: string;
+  /** Server-only certificates produced by owned Gaorui person-asset preparation. */
+  gaoruiTrustedPersonAssets?: GaoruiTrustedPersonAsset[];
+  /** Server-only current owned person identity; never copy from an arbitrary body field. */
+  gaoruiOwnedPersonAssetId?: string;
   onProviderRequest?: (receipt: VideoProviderRequestReceipt) => Promise<void>;
   prompt: string;
   /** 首帧图/参考图URL（最通用的图生视频入口） */
@@ -163,6 +176,8 @@ export interface VideoSubmissionReceiptEvidence {
   responseBodyBytes?: number;
   responseBodySha256?: string;
   responseParseState?: "json_object" | "json_non_object" | "empty" | "malformed" | "unreadable";
+  /** Internal response clue only; never establishes task acceptance or a terminal outcome. */
+  diagnosticCategory?: "provider_busy" | "credential_rejected" | "parameter_rejected" | "provider_error" | "unclassified";
   locationPresent?: boolean;
   locationSha256?: string;
   candidateFieldPaths?: string[];
@@ -186,6 +201,10 @@ export interface VideoModelConfig {
 
 /** 通用OpenAPI视频协议配置 — 数据驱动，配置即生效 */
 export interface ApiProtocolConfig {
+  /** Explicit provider wire family; distinct from acceptance/canary diagnostics. */
+  protocol_family?: "seedance_native_content";
+  /** Whether this provider group accepts an optional reference video. */
+  supports_source_video?: boolean;
   token_sale_prices_per_million?: Record<string, number>;
   token_cost_prices_per_million?: Record<string, number>;
   /** 提交路径，如 /v1/videos（默认从 api_endpoint 推导） */
@@ -224,6 +243,10 @@ export interface ApiProtocolConfig {
   aspect_ratios?: string[];
   /** H3 用户展示标签，严格区分原生与后处理增强。 */
   resolution_labels?: Record<string, string>;
+  /** Explicit Muse catalog alias: displayed as model-default quality, no pixel promise. */
+  native_resolution?: string;
+  provider_resolution_policy?: "omit-model-default";
+  public_default_resolution_alias?: "720p";
   /** H3 每档实际提交给基础工作流的像素尺寸。 */
   input_pixel_size_by_resolution?: Record<string, Record<string, string>>;
   /** H3 每档最终验收输出像素尺寸。 */
@@ -271,7 +294,7 @@ export interface ApiProtocolConfig {
   /** 托管工作流 ID（例如 minimax_h3_image_audio_to_video_v2）。 */
   workflow_id?: string;
   /** AutoDL ComfyUI 工作流的精确输入形态。 */
-  workflow_input_mode?: "text" | "multi_image" | "first_last_frame" | "image_audio_lipsync" | "multi_image_audio";
+  workflow_input_mode?: "text" | "flexible_image" | "multi_image" | "first_last_frame" | "image_audio_lipsync" | "multi_image_audio";
   /** 工作流是否接收 prompt；对口型工作流为 false。 */
   supports_prompt?: boolean;
   /** 供应商明确支持时才发送 prompt_optimize；默认省略以兼容严格协议。 */
@@ -333,7 +356,7 @@ const BUILTIN_RESOLUTION_FIELD_PROTOCOLS = new Set([
 export type VideoParameterContractIssue = {
   status: 422;
   code: "VIDEO_PARAMETER_INVALID" | "VIDEO_PARAMETER_CONFLICT" | "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL";
-  parameter: "duration" | "resolution" | "negativePrompt" | "generateAudio" | "fps" | "seed";
+  parameter: "duration" | "resolution" | "negativePrompt" | "generateAudio" | "fps" | "seed" | "aspectRatio" | "mediaInputs";
   message: string;
   acceptedValues?: Array<string | number>;
 };
@@ -360,6 +383,7 @@ function configuredPositiveDurations(config: VideoModelConfig): number[] {
 }
 
 const NATIVE_INTEGER_DURATION_PROTOCOLS = new Set([
+  "secure_skill_kling_video",
   "secure_skill_grok_video", "secure_skill_video", "secure_skill_enterprise_video",
   "secure_skill_wan3_video", "autodl_comfyui_h3",
 ]);
@@ -375,9 +399,9 @@ function nativeIntegerDurationIssue(config: VideoModelConfig, params: VideoGener
     return fail("当前协议仅支持正整数原生秒数，不能取整后提交，本次未提交上游");
   }
   const options = configuredPositiveDurations(config);
-  const defaultMinimum = config.protocol_type === "secure_skill_enterprise_video" ? 5
+  const defaultMinimum = config.protocol_type === "secure_skill_kling_video" ? 3 : config.protocol_type === "secure_skill_enterprise_video" ? 5
     : config.protocol_type === "secure_skill_wan3_video" ? 2 : 1;
-  const defaultMaximum = config.protocol_type === "autodl_comfyui_h3" ? 10
+  const defaultMaximum = config.protocol_type === "secure_skill_kling_video" ? 30 : config.protocol_type === "autodl_comfyui_h3" ? 10
     : config.protocol_type === "secure_skill_wan3_video" ? 30 : options.length ? Math.max(...options) : 15;
   const minimum = Number(protocol.min_duration ?? defaultMinimum);
   const minimumSubmit = Number(protocol.min_submit_duration ?? minimum);
@@ -386,7 +410,7 @@ function nativeIntegerDurationIssue(config: VideoModelConfig, params: VideoGener
     || maximum < Math.max(minimum, minimumSubmit)) {
     return fail("协议时长边界配置无效，本次未提交上游");
   }
-  const protocolMaximum = config.protocol_type === "autodl_comfyui_h3" ? 10
+  const protocolMaximum = config.protocol_type === "secure_skill_kling_video" ? 30 : config.protocol_type === "autodl_comfyui_h3" ? 10
     : config.protocol_type === "secure_skill_wan3_video" ? 30 : Number.POSITIVE_INFINITY;
   if (duration < Math.max(minimum, minimumSubmit) || duration > maximum || duration > protocolMaximum) {
     return fail('当前协议原生时长须在 ' + Math.max(minimum, minimumSubmit) + '–' + maximum + ' 秒之间，本次未提交上游');
@@ -423,6 +447,16 @@ export function validateVideoParameterContract(
   config: VideoModelConfig,
   params: VideoGenerateParams,
 ): VideoParameterContractIssue | null {
+  const plainSeedance = config.protocol_type === "gaorui_video" && ["seedance-2.0", "seedance-2.5"].includes(String(config.model_name));
+  const firstFrame = typeof params.imageUrl === "string" && Boolean(params.imageUrl.trim());
+  const adaptiveFirstFrame = plainSeedance && config.model_name === "seedance-2.5" && firstFrame && gaoruiVideoCreateContractAdmission(config).ready;
+  const acceptsAdaptive = config.protocol_type === "gaorui_video" && isGaoruiSeedanceNativeModel(config.model_name)
+    && (!plainSeedance || (firstFrame && gaoruiVideoCreateContractAdmission(config).ready));
+  if ((adaptiveFirstFrame && params.aspectRatio !== "adaptive") || (params.aspectRatio === "adaptive" && !acceptsAdaptive)) {
+    return { status: 422, code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL", parameter: "aspectRatio",
+      message: adaptiveFirstFrame ? "当前型号带首帧时须选择跟随首帧比例 adaptive，本次未计费、未提交上游" : "当前输入须选择固定合法画幅，本次未计费、未提交上游",
+      acceptedValues: adaptiveFirstFrame ? ["adaptive"] : ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"] };
+  }
   const fpsProvided = params.fps !== undefined
     && params.fps !== null
     && String(params.fps).trim() !== "";
@@ -447,6 +481,13 @@ export function validateVideoParameterContract(
     };
   }
 
+  if (config.protocol_type === "gaorui_video" && isGaoruiSeedanceNativeModel(config.model_name)) {
+    try { gaoruiSeedanceNativeParameters(config, params); } catch (error) {
+      const message = error instanceof Error ? error.message : "Seedance 参数合同无效";
+      const parameter = /INPUT_UNSUPPORTED/u.test(message) ? "mediaInputs" : /RESOLUTION/u.test(message) ? "resolution" : /DURATION/u.test(message) ? "duration" : /RATIO/u.test(message) ? "aspectRatio" : /NEGATIVE/u.test(message) ? "negativePrompt" : /AUDIO/u.test(message) ? "generateAudio" : "resolution";
+      return { status: 422, code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL", parameter, message };
+    }
+  }
   const nativeDurationIssue = nativeIntegerDurationIssue(config, params);
   if (nativeDurationIssue) return nativeDurationIssue;
 
@@ -1982,6 +2023,23 @@ function secureSkillSubmissionReceipt(
   const candidateFieldPaths = secureSkillReceiptRecords(response.data).flatMap(({ path, record }) =>
     SECURE_SKILL_RECEIPT_ID_FIELDS.filter(field => Object.prototype.hasOwnProperty.call(record, field)).map(field => `${path}${field}`),
   );
+  // Keep only a fixed diagnostic label. Do not retain provider messages/codes,
+  // or use this label to decide acceptance, retries, task state or settlement.
+  const errorCodes = secureSkillReceiptRecords(response.data).flatMap(({ record }) => {
+    const error = record.error && typeof record.error === "object" && !Array.isArray(record.error)
+      ? record.error as Record<string, unknown> : {};
+    return [record.code, record.type, error.code, error.type];
+  }).filter((value): value is string => typeof value === "string" && value.length <= 80)
+    .map(value => value.trim().toLowerCase());
+  const diagnosticCategory: NonNullable<VideoSubmissionReceiptEvidence["diagnosticCategory"]> = response.resp.status === 429
+    ? "provider_busy"
+    : response.resp.status === 401 || errorCodes.some(code => ["invalid_api_key", "invalid_token", "authentication_error", "unauthorized"].includes(code))
+      ? "credential_rejected"
+      : [400, 422].includes(response.resp.status) || errorCodes.some(code => ["invalid_request_error", "invalid_request", "invalid_parameter", "invalid_argument", "validation_error"].includes(code))
+        ? "parameter_rejected"
+        : response.resp.status >= 500 && response.resp.status <= 599
+          ? "provider_error"
+          : "unclassified";
   return {
     schemaVersion: 1,
     receiptState: response.responseMetadata.parseState === "unreadable" ? "response_body_unreadable" : "response_received",
@@ -1992,25 +2050,31 @@ function secureSkillSubmissionReceipt(
     responseBodyBytes: response.responseMetadata.bodyBytes,
     responseBodySha256: response.responseMetadata.bodySha256,
     responseParseState: response.responseMetadata.parseState,
+    diagnosticCategory,
     locationPresent: Boolean(location),
     locationSha256: location ? receiptSha256(location) : undefined,
     candidateFieldPaths,
   };
 }
 
-/** 高瑞平台连接预检（快速检测上游可达性） */
+/** 高瑞接口探测；无效任务的 404 只能证明接口可达，不能证明原任务可读。 */
 export async function checkGaoruiHealth(apiEndpoint: string, apiKey: string): Promise<{ ok: boolean; ms: number; error?: string }> {
   const baseUrl = apiEndpoint.replace(/\/v1\/?$/, "");
   const start = Date.now();
   try {
-    // 用一个无效task_id探测，只要服务器响应即可（404也算健康）
+    // 无效任务只用于探测接口，认证失败和限流不能视为可用。
     const resp = await fetch(`${baseUrl}/v1/videos/health_check`, {
       method: "GET",
       headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" },
       signal: AbortSignal.timeout(5_000),
     });
     const ms = Date.now() - start;
-    return { ok: resp.status < 500, ms };
+    if (resp.status === 401 || resp.status === 403) {
+      return { ok: false, ms, error: `状态查询授权失败 HTTP ${resp.status}` };
+    }
+    if (resp.status === 429) return { ok: false, ms, error: "状态查询受到限流 HTTP 429" };
+    if (resp.status === 404) return { ok: true, ms, error: "仅确认接口可达，尚未验证原任务查询权限" };
+    return resp.ok ? { ok: true, ms } : { ok: false, ms, error: `接口探测失败 HTTP ${resp.status}` };
   } catch {
     const ms = Date.now() - start;
     return { ok: false, ms, error: ms >= 9000 ? "连接超时" : "网络不可达" };
@@ -2065,12 +2129,46 @@ function mapToOmniFlashDuration(targetSeconds: number): number {
 }
 
 async function generateGaoruiVideo(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
-  const baseUrl = config.api_endpoint.replace(/\/v1\/?$/, "");
+  const baseUrl = config.api_endpoint.replace(/\/+$/, "").replace(/\/v1$/, "");
   const submitUrl = `${baseUrl}/v1/videos`;
 
   // ① 构建请求参数
   const aspectRatio = params.aspectRatio || "16:9";
   const modelName = config.model_name || "grok-imagine-1.0-video";
+  const createContract = gaoruiVideoCreateContractAdmission({ ...config, model_name: modelName });
+  if (!createContract.ready) throw new Error(`${createContract.code}: ${createContract.message}`);
+  if (isGaoruiH3NativeModel(modelName) || isGaoruiGrokNativeModel(modelName)) {
+    const h3 = isGaoruiH3NativeModel(modelName);
+    const body = h3 ? gaoruiH3NativeBody(config, params) : gaoruiGrokNativeBody({ ...config, model_name: modelName }, params);
+    const acknowledgement = await videoSubmitOnce(submitUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${config.api_key}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(h3 ? 150_000 : 15_000),
+    });
+    if (!acknowledgement) return videoSubmissionUnknown();
+    const { resp, data } = acknowledgement;
+    const locationId = resp.headers.get("Location")?.match(/\/videos\/([^/?#]+)/)?.[1];
+    const taskId = videoSubmissionTaskId(data.task_id, data.id, locationId);
+    if (!taskId) return videoSubmissionWithoutTask(resp, data, h3 ? "高瑞 H3 提交" : "高瑞 Grok 提交");
+    const status = safeStr(data.status, "processing").toLowerCase(), progress = safeNum(data.progress, 0);
+    return { taskId, status: ["queued", "pending", "submitted"].includes(status) && !progress ? "queued" : "processing", progress };
+  }
+  if (isGaoruiSeedanceNativeModel(modelName)) {
+    const body = gaoruiSeedanceNativeBody(config, params);
+    const acknowledgement = await videoSubmitOnce(submitUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${config.api_key}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+    });
+    if (!acknowledgement) return videoSubmissionUnknown();
+    const { resp, data } = acknowledgement;
+    const locationId = resp.headers.get("Location")?.match(/\/videos\/([^/?#]+)/)?.[1];
+    const taskId = videoSubmissionTaskId(data.task_id, data.id, locationId);
+    if (!taskId) return videoSubmissionWithoutTask(resp, data, "高瑞 Seedance 提交");
+    const status = safeStr(data.status, "processing").toLowerCase();
+    const progress = safeNum(data.progress, 0);
+    return { taskId, status: ["queued", "pending", "submitted"].includes(status) && !progress ? "queued" : "processing", progress };
+  }
   const isV15 = modelName.includes("1.5");
   const isV15Preview = isV15 && modelName.includes("preview");
   const isOmni = modelName.startsWith("omni_");
@@ -2167,6 +2265,10 @@ async function generateGaoruiVideo(config: VideoModelConfig, params: VideoGenera
       const refs = [params.imageUrl, params.lastFrameUrl, params.referenceImageUrl, ...(params.imageUrls || [])]
         .filter((value, index, items): value is string => Boolean(value) && items.indexOf(value) === index);
       if (!refs.length) return { taskId: "", status: "failed", error: "Veo 首尾帧或参考图模型必须提供图片" };
+      const componentLimit = getGaoruiVeoComponentsReferenceLimit(config);
+      if (componentLimit !== null && refs.length > componentLimit) {
+        return { taskId: "", status: "failed", error: `Veo 多图参考模型最多支持 ${componentLimit} 张参考图片，本次未提交上游` };
+      }
       body.images = modelName.endsWith("-fl") ? refs.slice(0, 2) : refs;
     }
   } else {
@@ -2224,7 +2326,7 @@ async function generateGaoruiVideo(config: VideoModelConfig, params: VideoGenera
 }
 
 async function pollGaoruiVideo(config: VideoModelConfig, taskId: string): Promise<VideoTaskResult> {
-  const baseUrl = config.api_endpoint.replace(/\/v1\/?$/, "");
+  const baseUrl = config.api_endpoint.replace(/\/+$/, "").replace(/\/v1$/, "");
   const pollUrl = `${baseUrl}/v1/videos/${encodeURIComponent(taskId)}`;
 
   const resp = await fetch(pollUrl, {
@@ -2243,33 +2345,59 @@ async function pollGaoruiVideo(config: VideoModelConfig, taskId: string): Promis
 
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
-    let errMsg = `轮询失败 HTTP ${resp.status}`;
+    let providerMessage = "";
     try {
-      const errJson = JSON.parse(errText);
-      if (errJson.message) errMsg = errJson.message;
+      const errJson = JSON.parse(errText) as Record<string, unknown>;
+      const nestedError = errJson?.error;
+      providerMessage = (nestedError && typeof nestedError === "object" && !Array.isArray(nestedError)
+        ? safeStr((nestedError as Record<string, unknown>).message) : "")
+        || safeStr(errJson?.message)
+        || safeStr(nestedError);
     } catch { /* ignore */ }
+    // 保留 HTTP 状态供认证分类使用，且不向日志/异常泄漏上游凭据或签名参数。
+    const errMsg = sanitizeVideoProviderDiagnostic(`高瑞状态查询 HTTP ${resp.status}${providerMessage ? `: ${providerMessage}` : ""}`);
     // 5xx 不判死，可能是临时故障，让前端继续轮询
     if (resp.status >= 500) {
       console.warn(`${GR_LOG} 轮询5xx(${resp.status})，保持processing: ${errMsg}`);
       return { taskId, status: "processing", progress: null };
     }
-    throw new Error(errMsg);
+    throw Object.assign(new Error(errMsg), { videoProviderQueryHttpStatus: resp.status });
   }
 
   const data = await safeParseJson(resp);
   const status = safeStr(data.status, "processing").toLowerCase();
 
+  const isNativeSeedance = isGaoruiSeedanceNativePollModel(config.model_name);
+  if (isNativeSeedance && ["expired", "cancelled", "canceled"].includes(status)) {
+    const providerError = data.error && typeof data.error === "object" && !Array.isArray(data.error)
+      ? safeStr((data.error as Record<string, unknown>).message) : safeStr(data.error);
+    const cancelled = status !== "expired";
+    return {
+      taskId, status: "failed", progress: safeNum(data.progress, 0),
+      ...(cancelled ? { terminalState: "cancelled" as const } : {}),
+      error: sanitizeVideoProviderDiagnostic(providerError || safeStr(data.message)
+        || (cancelled ? "视频任务已取消" : "视频任务已过期并终止")),
+    };
+  }
+
   // ✅ 上游成功 → 我们成功
   if (status === "completed" || status === "succeeded" || status === "success") {
-    // 提取视频URL（五级降级）：
+    // 提取视频URL（六级降级）：
     //   ① 顶层 video_url
     //   ② 顶层 url（gaorui实际返回格式：{url: "https://media.veo9.uk/.../0.mp4"}）
-    //   ③ metadata.video_url / metadata.url
-    //   ④ output.url（嵌套格式）
-    //   ⑤ /v1/videos/{id}/content 下载接口（需认证，浏览器无法直接播放，最后降级）
+    //   ③ content.video_url
+    //   ④ metadata.video_url / metadata.url
+    //   ⑤ output.url（嵌套格式）
+    //   ⑥ /v1/videos/{id}/content 下载接口（需认证，浏览器无法直接播放，最后降级）
     let videoUrl = safeStr(data.video_url);
     if (!videoUrl) {
       videoUrl = safeStr(data.url);
+    }
+    if (!videoUrl) {
+      const content = data.content;
+      if (content && typeof content === "object" && !Array.isArray(content)) {
+        videoUrl = safeStr((content as Record<string, unknown>).video_url);
+      }
     }
     if (!videoUrl) {
       const metadata = data.metadata;
@@ -2301,6 +2429,7 @@ async function pollGaoruiVideo(config: VideoModelConfig, taskId: string): Promis
       videoUrl,
       needsProxy,
       progress: safeNum(data.progress, 100),
+      ...(isNativeSeedance ? { usage: parseVideoTokenUsage(data) } : {}),
     };
   }
 
@@ -3134,6 +3263,25 @@ async function generateSecureSkillGrokVideo(config: VideoModelConfig, params: Vi
   };
 }
 
+async function generateSecureSkillKlingVideo(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
+  const body = secureSkillKlingBody(config, params);
+  const submitUrl = buildOpenAIEndpoint(config.api_endpoint, "videos");
+  const idempotencyKey = secureSkillProviderRequestKey(params);
+  // The provider warns that replay creates a new task. Submit exactly once.
+  const acknowledgement = await videoSubmitOnce(submitUrl, {
+    method: "POST", headers: { Authorization: `Bearer ${config.api_key}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(180_000),
+  });
+  if (!acknowledgement) return videoSubmissionUnknown(secureSkillSubmissionReceipt(submitUrl, idempotencyKey));
+  const { resp, data } = acknowledgement;
+  const receipt = secureSkillSubmissionReceipt(submitUrl, idempotencyKey, acknowledgement);
+  const taskId = secureSkillTaskIdFromBody(data) || secureSkillTaskIdFromLocation(resp.headers.get("Location"), submitUrl);
+  if (!taskId) return videoSubmissionWithoutTask(resp, data, "Secure Skill Kling", receipt);
+  const videoUrl = secureSkillVideoUrl(data);
+  const status = secureSkillStatus(String(data.status || "queued"));
+  return { taskId, status: status === "success" && !videoUrl ? "processing" : status, videoUrl: videoUrl || undefined, progress: extractVideoTaskProgress(data) };
+}
+
 async function generateSecureSkillEnterpriseVideo(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
   const modelName = config.model_name || config.id || config.name;
   const duration = exactNativeIntegerDuration(config, params);
@@ -3233,6 +3381,28 @@ async function generateSecureSkillSeedance(config: VideoModelConfig, params: Vid
     || secureSkillTaskIdFromLocation(resp.headers.get("Location"), submitUrl, ["videos"]);
   if (!taskId) return videoSubmissionWithoutTask(resp, data, "Seedance relay", submissionReceipt);
   return { taskId, status: secureSkillStatus(String(data.status || "queued")), videoUrl: secureSkillVideoUrl(data) || undefined, progress: extractVideoTaskProgress(data) };
+}
+
+async function generateSecureSkillVideo(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
+  if (!isSecureSkillNativeVideoModel(config.model_name)) return generateSecureSkillGrokVideo(config, params);
+  const body = secureSkillNativeVideoBody(config, params);
+  const providerRequestKey = secureSkillProviderRequestKey(params);
+  const submitUrl = buildOpenAIEndpoint(config.api_endpoint, "videos");
+  const acknowledgement = await videoSubmitOnce(submitUrl, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${config.api_key}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(180_000),
+  });
+  const receipt = secureSkillSubmissionReceipt(submitUrl, providerRequestKey, acknowledgement || undefined);
+  if (!acknowledgement) return videoSubmissionUnknown(receipt);
+  const { resp, data } = acknowledgement;
+  const taskId = secureSkillTaskIdFromBody(data)
+    || secureSkillTaskIdFromLocation(resp.headers.get("Location"), submitUrl, ["videos"]);
+  if (!taskId) return videoSubmissionWithoutTask(resp, data, "Secure Skill native video API", receipt);
+  const videoUrl = secureSkillVideoUrl(data);
+  const status = secureSkillStatus(String(data.status || secureSkillGet(data, "data.status") || "queued"));
+  return { taskId, status: status === "success" && !videoUrl ? "processing" : status, videoUrl: videoUrl || undefined, progress: extractVideoTaskProgress(data) };
 }
 
 async function generateSecureSkillDoubaoSeedance(
@@ -3352,6 +3522,11 @@ async function pollSecureSkillGrokVideo(config: VideoModelConfig, taskId: string
   }
 
   const status = secureSkillStatus(String(data.status || secureSkillGet(data, "data.status") || "processing"));
+  if (config.protocol_type === "secure_skill_kling_video"
+    || (config.protocol_type === "secure_skill_video" && isSecureSkillNativeVideoModel(config.model_name))) {
+    const receiptId = secureSkillTaskIdFromBody(data);
+    if (receiptId && receiptId !== taskId) return { taskId, status: "processing", progress: null, error: "VIDEO_TASK_RECEIPT_ID_MISMATCH" };
+  }
   const videoUrl = secureSkillVideoUrl(data);
   const error = typeof data.error === "string"
     ? data.error
@@ -3400,7 +3575,7 @@ async function generateSecureSkillFlowJob(config: VideoModelConfig, params: Vide
   const isVeoText = /^veo_3_1_t2v_/i.test(modelName);
   const isVeoInterpolation = /^veo_3_1_interpolation_/i.test(modelName);
   const isVeoImage = /^veo_3_1_i2v_/i.test(modelName);
-  const isVeoReference = /^veo_3_1_r2v_/i.test(modelName);
+  const isVeoReference = /^veo_3_1_r2v(?:_|$)/i.test(modelName);
   if (isOmniEdit && !/^https:\/\//i.test(params.sourceVideoUrl || "")) {
     return {
       taskId: "",
@@ -3540,36 +3715,26 @@ async function pollSecureSkillFlowJob(config: VideoModelConfig, taskId: string):
 
 function secureSkillWan3Resolution(value?: string): "480P" | "720P" | "1080P" {
   const normalized = String(value || "720P").trim().toUpperCase();
-  if (normalized.includes("1080")) return "1080P";
-  if (normalized.includes("480")) return "480P";
-  return "720P";
+  if (normalized === "480P" || normalized === "720P" || normalized === "1080P") return normalized;
+  throw new Error("WAN3_RESOLUTION_UNSUPPORTED");
 }
 
 async function generateSecureSkillWan3Video(config: VideoModelConfig, params: VideoGenerateParams): Promise<VideoTaskResult> {
   const modelName = config.model_name || config.id || config.name;
-  const imageUrls = uniquePublicUrls([
-    params.imageUrl,
-    params.referenceImageUrl,
-    params.lastFrameUrl,
-    ...(params.imageUrls || []),
-  ], Math.max(1, Math.min(10, Number(config.api_protocol_config?.max_reference_images) || 10)));
-  const audioUrls = uniquePublicUrls([
-    params.audioUrl,
-    ...(params.audioUrls || []),
-  ], Math.max(0, Math.min(5, Number(config.api_protocol_config?.max_reference_audios) || 5)));
-  const media: Array<Record<string, string>> = [];
-  imageUrls.forEach((url, index) => media.push({ type: index === 0 ? "first_frame" : "reference_image", url }));
-  if (params.sourceVideoUrl && /^https:\/\//iu.test(params.sourceVideoUrl)) {
-    media.push({ type: "reference_video", url: params.sourceVideoUrl });
+  const media = secureSkillWan3Media(config, params);
+  const duration = exactNativeIntegerDuration(config, params);
+  if (duration < 2 || duration > 30) throw new Error("WAN3_NATIVE_DURATION_2_30_REQUIRED");
+  const resolution = secureSkillWan3Resolution(params.resolutionTier || params.resolution);
+  if (params.resolutionTier && params.resolution && secureSkillWan3Resolution(params.resolution) !== resolution) {
+    throw new Error("WAN3_RESOLUTION_CONFLICT");
   }
-  audioUrls.forEach((url) => media.push({ type: "audio", url }));
 
   const body: Record<string, unknown> = {
     model: modelName,
     prompt: params.prompt,
-    resolution: secureSkillWan3Resolution(params.resolutionTier || params.resolution),
+    resolution,
     ratio: params.aspectRatio || "16:9",
-    duration: exactNativeIntegerDuration(config, params),
+    duration,
     prompt_extend: false,
   };
   if (media.length > 0) body.media = media;
@@ -3646,6 +3811,7 @@ export function autoDetectProtocol(apiEndpoint: string, modelName?: string): str
   if (url.includes("pro.nat6.net")) return "suanlicheng_video";
   try { if (new URL(apiEndpoint).hostname === "token.secure-skill.com" && isDoubaoSeedanceModel(model)) return "secure_skill_doubao_seedance"; } catch {}
   try { if (new URL(apiEndpoint).hostname === "token.secure-skill.com" && model === "seedance-2.5") return "secure_skill_seedance_video"; } catch {}
+  try { if (new URL(apiEndpoint).hostname === "token.secure-skill.com" && model === "kling-video-v4") return "secure_skill_kling_video"; } catch {}
 
   if ((url.includes("token.secure-skill.com") || url.includes("secure-skill")) && /^(omni|omni_video_edit|veo_3_1)/i.test(model)) {
     return "secure_skill_flow_jobs";
@@ -4257,9 +4423,10 @@ const VIDEO_PROTOCOL_SUBMITTERS: Record<string, (config: VideoModelConfig, param
   kling_official: generateKlingOfficial,
   yunwu_video: generateYunwuVideo,
   secure_skill_seedance_video: generateSecureSkillSeedance,
+  secure_skill_kling_video: generateSecureSkillKlingVideo,
   secure_skill_doubao_seedance: generateSecureSkillDoubaoSeedance,
   secure_skill_grok_video: generateSecureSkillGrokVideo,
-  secure_skill_video: generateSecureSkillGrokVideo,
+  secure_skill_video: generateSecureSkillVideo,
   secure_skill_enterprise_video: generateSecureSkillEnterpriseVideo,
   secure_skill_flow_jobs: generateSecureSkillFlowJob,
   secure_skill_wan3_video: generateSecureSkillWan3Video,
@@ -4294,6 +4461,7 @@ async function submitVideoTaskWithProtocol(config: VideoModelConfig, params: Vid
   // 当用户只上传“参考图”而没有上传“首帧”时，如果该模型支持图片输入，
   // 则把参考图提升为真正的图片输入，避免部分协议忽略 referenceImageUrl 导致上游实际拿不到图。
   if (config.protocol_type !== "secure_skill_seedance_video"
+    && !(config.protocol_type === "gaorui_video" && (isGaoruiSeedanceNativeModel(config.model_name) || isGaoruiH3NativeModel(config.model_name) || isGaoruiGrokNativeModel(config.model_name)))
     && !normalizedParams.imageUrl && normalizedParams.referenceImageUrl && config.supports_image_input) {
     normalizedParams = {
       ...normalizedParams,
@@ -4307,8 +4475,27 @@ async function submitVideoTaskWithProtocol(config: VideoModelConfig, params: Vid
   return VIDEO_PROTOCOL_SUBMITTERS[config.protocol_type](config, normalizedParams);
 }
 
-/** 轮询视频生成结果 */
+/**
+ * 轮询视频生成结果。
+ *
+ * 协议族各自的轮询实现只负责“取回上游当前状态”。上游把“任务不存在 / 已过期”
+ * 放在错误体里返回时，若原样当作 processing，平台会无限轮询、用户端永远转圈。
+ * 这里在统一出口做一次终止态归一，覆盖全部 29 个协议族：
+ * 命中过期/不存在特征的结果直接落到 failed，交由错误分类输出可操作文案。
+ */
+const TERMINAL_EXPIRED_PROVIDER_PATTERN = /(?:task|job|任务|作业)[^。]{0,12}(?:not[_\s-]?found|不存在|过期|已失效)|(?:not[_\s-]?found|expired|gone|unknown[_\s-]?task)/iu;
+
 export async function pollVideoTask(config: VideoModelConfig, taskId: string, contentUrl?: string): Promise<VideoTaskResult> {
+  const result = await pollVideoTaskWithProtocol(config, taskId, contentUrl);
+  if (result.status !== "processing" && result.status !== "queued") return result;
+  const diagnostic = String(result.error || "");
+  if (diagnostic && TERMINAL_EXPIRED_PROVIDER_PATTERN.test(diagnostic)) {
+    return { ...result, status: "failed", progress: null };
+  }
+  return result;
+}
+
+async function pollVideoTaskWithProtocol(config: VideoModelConfig, taskId: string, contentUrl?: string): Promise<VideoTaskResult> {
   switch (config.protocol_type) {
     case "siliconflow_kling":
       return pollSiliconFlowKling(config, taskId);
@@ -4329,6 +4516,7 @@ export async function pollVideoTask(config: VideoModelConfig, taskId: string, co
     case "yunwu_video":
       return pollYunwuVideo(config, taskId);
     case "secure_skill_seedance_video":
+    case "secure_skill_kling_video":
     case "secure_skill_grok_video":
     case "secure_skill_video":
       return pollSecureSkillGrokVideo(config, taskId);

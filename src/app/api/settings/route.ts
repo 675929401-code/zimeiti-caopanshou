@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { invalidateGlobalSystemPrefixCache } from "@/app/api/llm/llm-state";
+import { invalidatePlatformSettingsRuntimeCaches } from "@/lib/server/platform-settings-runtime-cache";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 import { isReservedPlatformSettingKey } from "@/lib/server/platform-settings-reserved";
-import { clearCozeConfigCache } from "@/lib/coze-api";
 import {
   DEFAULT_MODE_PREFERENCE,
   DEFAULT_THEME,
@@ -249,24 +248,27 @@ export async function PUT(request: NextRequest) {
         { onConflict: "setting_key" },
       );
       if (error) throw error;
+      invalidatePlatformSettingsRuntimeCaches(changedKeys);
     }
-    if (changedKeys.includes("global_system_prefix")) {
-      const { data: persistedGlobalPrefix, error: readbackError } = await client
+    if (keys.length) {
+      const { data: persisted, error: readbackError } = await client
         .from("platform_settings")
-        .select("setting_value")
-        .eq("setting_key", "global_system_prefix")
-        .single();
+        .select("setting_key,setting_value")
+        .in("setting_key", keys);
       if (readbackError) throw readbackError;
-      if ((persistedGlobalPrefix?.setting_value || "") !== values.global_system_prefix) {
+      const persistedValues = new Map(
+        ((persisted || []) as Array<{ setting_key: string; setting_value: string | null }>)
+          .map((row) => [row.setting_key, row.setting_value || ""]),
+      );
+      const mismatchedKey = keys.find((key) => persistedValues.get(key) !== values[key]);
+      if (mismatchedKey) {
         throw new PlatformSettingValidationError(
           "设置已提交但数据库读回不一致，请刷新后重试",
           "PLATFORM_SETTINGS_READBACK_MISMATCH",
-          "global_system_prefix",
+          mismatchedKey,
         );
       }
-      invalidateGlobalSystemPrefixCache();
     }
-    if (changedKeys.some((key) => key.startsWith("coze_"))) clearCozeConfigCache();
     for (const item of authorizations) {
       await appendAdminGovernanceAudit({
         actorId: item.authorization.actor.userId,

@@ -1,10 +1,28 @@
-export type ModelBrand = "google" | "openai" | "bytedance" | "xai" | "generic";
+export const MODEL_BRAND_OPTIONS = [
+  { key: "minimax", label: "MiniMax", asset: "/model-brands/minimax.svg" },
+  { key: "xai", label: "xAI / Grok", asset: "/model-brands/xai.svg" },
+  { key: "google", label: "Google / Veo / Omni", asset: "/model-brands/google.svg" },
+  { key: "bytedance", label: "字节 / Seedance", asset: "/model-brands/bytedance.svg" },
+  { key: "kling", label: "可灵 Kling", asset: "/model-brands/kling.svg" },
+  { key: "openai", label: "OpenAI", asset: "/model-brands/openai.svg" },
+  { key: "vidu", label: "Vidu", asset: "/model-brands/vidu.svg" },
+  { key: "gk", label: "GK", asset: "/model-brands/gk.svg" },
+  { key: "qwen", label: "通义千问", asset: "/model-brands/qwen.svg" },
+  { key: "generic", label: "通用 AI", asset: "/model-brands/generic.svg" },
+] as const;
+
+export type ModelBrand = (typeof MODEL_BRAND_OPTIONS)[number]["key"];
 
 const IMAGE_SOURCE_PATTERN = /^(?:https?:\/\/|\/|\.\/|\.\.\/|data:image\/|blob:)|\.(?:avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/iu;
 
 export function resolveModelBrand(...values: Array<string | null | undefined>): ModelBrand | null {
   const identity = values.filter(Boolean).join(" ").toLowerCase();
-  if (/google|gemini|veo|imagen|nano.?banana/u.test(identity)) return "google";
+  if (/minimax|海螺|hailuo/u.test(identity)) return "minimax";
+  if (/kling|可灵/u.test(identity)) return "kling";
+  if (/vidu/u.test(identity)) return "vidu";
+  if (/gk[-\s]?video|gk[-\s]?3(?:\.5)?/u.test(identity)) return "gk";
+  if (/qwen|通义|千问/u.test(identity)) return "qwen";
+  if (/google|gemini|veo|imagen|nano.?banana|omni/u.test(identity)) return "google";
   if (/openai|chatgpt|gpt(?:-|\s|$)|dall.?e/u.test(identity)) return "openai";
   if (/seedance|doubao|dreamina|即梦|豆包/u.test(identity)) return "bytedance";
   if (/grok|xai|x\.ai/u.test(identity)) return "xai";
@@ -12,7 +30,7 @@ export function resolveModelBrand(...values: Array<string | null | undefined>): 
 }
 
 export function modelBrandAsset(brand: ModelBrand) {
-  return `/model-brands/${brand}.svg`;
+  return MODEL_BRAND_OPTIONS.find(option => option.key === brand)?.asset || "/model-brands/generic.svg";
 }
 
 export function isModelAvatarImage(value: string | null | undefined) {

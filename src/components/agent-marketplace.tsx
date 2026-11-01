@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useApp } from "@/contexts/app-context";
 import { bipStep, BIP_STEPS, BIP_CATEGORY, BIP_CATEGORY_LABEL, TASK_CATEGORIES, displayCategory, matchesDisplayCategory } from "@/lib/business-ip/catalog";
+import { getAuthorizedAgentDisplayKeys, isAgentAuthorizedInSnapshot } from "@/lib/agent-category-access";
 import { Search, Sparkles, X, Layout, Pencil, LayoutGrid, Eraser, Scissors, Palette, FileSearch, Film, PenTool, Mic, Bot, UserRound, Video, Image, Music, BookOpen, Globe, ShoppingBag, Megaphone, MessageSquare, Puzzle, Clapperboard, Wrench, Heart, ChevronLeft, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -882,15 +883,20 @@ export function AgentMarketplace() {
     && learnerPermissionSnapshot.status === "error";
   const visibleCatKeys = useMemo(() => {
     if (!isPermissionControlledIdentity) return allCatKeys;
-    const permittedKeys = learnerPermissionIsCurrent && learnerPermissionSnapshot.status === "ready"
-      ? learnerPermissionSnapshot.navigationKeys
-      : new Set<string>();
+    const permittedKeys = new Set<string>();
+    if (learnerPermissionIsCurrent && learnerPermissionSnapshot.status === "ready") {
+      learnerPermissionSnapshot.navigationKeys.forEach((key) => permittedKeys.add(key));
+      const candidates = agents.filter((agent) => agent.user_access !== "hidden"
+        && dbCategories.find((category) => category.name === agent.category)?.visibility !== "private");
+      getAuthorizedAgentDisplayKeys(candidates, learnerPermissionSnapshot.agentIds, learnerPermissionSnapshot.navigationKeys)
+        .forEach((key) => permittedKeys.add(key));
+    }
     return [
       "all",
       FAVORITES_CATEGORY,
       ...LEARNER_AGENT_NAVIGATION_KEYS.filter((key) => permittedKeys.has(key)),
     ];
-  }, [allCatKeys, isPermissionControlledIdentity, learnerPermissionIsCurrent, learnerPermissionSnapshot.navigationKeys, learnerPermissionSnapshot.status]);
+  }, [allCatKeys, agents, dbCategories, isPermissionControlledIdentity, learnerPermissionIsCurrent, learnerPermissionSnapshot.agentIds, learnerPermissionSnapshot.navigationKeys, learnerPermissionSnapshot.status]);
 
   useEffect(() => {
     if (!visibleCatKeys.includes(activeCategory)) {
@@ -1118,9 +1124,7 @@ export function AgentMarketplace() {
         filtered = [];
       } else {
         filtered = filtered.filter((agent) => {
-          const navigationKey = displayCategory(agent);
-          return learnerPermissionSnapshot.agentIds.has(agent.id)
-            && learnerPermissionSnapshot.navigationKeys.has(navigationKey);
+          return isAgentAuthorizedInSnapshot(agent, learnerPermissionSnapshot.agentIds, learnerPermissionSnapshot.navigationKeys);
         });
       }
     }
@@ -1417,13 +1421,14 @@ export function AgentMarketplace() {
     return () => window.removeEventListener("resize", updateColumns);
   }, [cl.columns]);
 
-  const gridStyle: React.CSSProperties = (() => {
+  const gridStyle: React.CSSProperties & { "--marketplace-grid-template": string } = (() => {
     const cardMinWidth = (cl as any).cardMinWidth;
     const gapX = Math.max(Number(cl.gapX) || 0, 16);
     const gapY = Math.max(Number(cl.gapY) || 0, 16);
     if (cardMinWidth && cardMinWidth > 0) {
       // 使用精确卡片最小宽度
       return {
+        "--marketplace-grid-template": `repeat(auto-fill, minmax(${cardMinWidth}px, 1fr))`,
         gap: `var(--marketplace-grid-gap, ${gapY}px ${gapX}px)`,
         justifyContent: "var(--marketplace-grid-justify, flex-start)",
         gridTemplateColumns: `var(--marketplace-grid-template, repeat(auto-fill, minmax(${cardMinWidth}px, 1fr)))`,
@@ -1431,6 +1436,7 @@ export function AgentMarketplace() {
     }
     // 自动均分模式
     return {
+      "--marketplace-grid-template": `repeat(${responsiveColumns}, minmax(0, 1fr))`,
       gap: `var(--marketplace-grid-gap, ${gapY}px ${gapX}px)`,
       justifyContent: "var(--marketplace-grid-justify, flex-start)",
       gridTemplateColumns: `var(--marketplace-grid-template, repeat(${responsiveColumns}, minmax(0, 1fr)))`,

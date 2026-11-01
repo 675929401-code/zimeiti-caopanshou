@@ -1,3 +1,6 @@
+import { modelPoolMutationRequest, modelPoolMutationFailure, resumeModelPoolMutationResponse } from "@/lib/server/model-pool-mutation-http";
+import { explicitNonNegativePrice } from "@/lib/model-price-rounding";
+import { imageModelAdminMetadata } from "@/lib/image-model-admin-fields";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminToken } from "@/lib/admin-auth";
@@ -35,6 +38,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ models: (data || []).filter((model: Record<string, unknown>) => model.provider !== "retired_configuration").map(publicModel) });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[CoverModels] GET error:", error);
     return NextResponse.json({ error: "获取封面模型失败" }, { status: 500 });
   }
@@ -50,6 +55,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const mutationRequest = modelPoolMutationRequest(request, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(payload.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const { name, model_name, provider, api_endpoint, api_key, cost_price, selling_price, supports_image_input, api_protocol_config } = body as {
       name: string;
       model_name: string;
@@ -84,7 +92,13 @@ export async function POST(request: NextRequest) {
     }
 
     const id = newPendingImageModelId();
+    if (explicitNonNegativePrice(cost_price) === null || explicitNonNegativePrice(selling_price) === null) {
+      return NextResponse.json({ error: "请填写明确的非负生图成本与售价", code: "IMAGE_PRICE_CONFIGURATION_REQUIRED" }, { status: 400 });
+    }
+    const metadata = imageModelAdminMetadata(body);
+    if (!metadata.ok) return NextResponse.json({ error: metadata.error, code: metadata.code }, { status: 400 });
     const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
       actorId: payload.userId,
       table: "cover_models",
       id,
@@ -96,16 +110,19 @@ export async function POST(request: NextRequest) {
         provider: provider || "vectorengine",
         api_endpoint,
         api_key,
-        cost_price: cost_price || 0,
-        selling_price: selling_price || 0,
+        cost_price: Number(cost_price),
+        selling_price: Number(selling_price),
         is_active: true,
         is_hidden: false,
         supports_image_input: supports_image_input || false,
         api_protocol_config,
+        ...metadata.fields,
       },
     });
     return NextResponse.json({ success: true, staged: true, published: false, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[CoverModels] POST error:", error);
     return NextResponse.json({ error: "新增封面模型失败" }, { status: 500 });
   }

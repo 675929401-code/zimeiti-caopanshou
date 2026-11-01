@@ -668,7 +668,7 @@ export const STORYBOARD_DIRECTOR_INPUT_ALIASES = {
   owner_gender: ["owner_gender", "主人性别"],
   dog_breed: ["dog_breed", "狗狗品种", "宠物品种"],
   video_model_profile: ["video_model_profile", "生成模型", "视频模型"],
-  visual_asset_mode: ["visual_asset_mode", "视觉资产模式", "角色参考模式"],
+  visual_asset_mode: ["visual_asset_mode", "视觉资产模式", "创作模式", "角色参考模式"],
   legacy_character: ["storyboard_character_setting", "character_setting", "角色设定"],
 } as const;
 
@@ -951,8 +951,10 @@ export function parseStoryboardDirectorPackage(text: string): StoryboardDirector
   if (strictContract) {
     const strictInput = source.input;
     if (strictInput.schema_version !== STORYBOARD_DIRECTOR_INPUT_SCHEMA_VERSION
-      || ["segmented_script", "animation_style", "owner_gender", "dog_breed", "video_model_profile", "visual_asset_mode"]
+      || ["segmented_script", "animation_style", "video_model_profile", "visual_asset_mode"]
       .some((key) => typeof strictInput[key] !== "string" || !String(strictInput[key]).trim())
+      || ["owner_gender", "dog_breed"].some(key => strictInput[key] !== undefined
+        && (typeof strictInput[key] !== "string" || !String(strictInput[key]).trim()))
       || typeof strictInput.special_notes !== "string"
       || strictInput.director_mode !== source.director_mode
       || !["16:9", "9:16"].includes(String(strictInput.aspect_ratio))
@@ -1192,14 +1194,43 @@ export function renderStoryboardDirectorVisibleOutput(
   pkg: StoryboardDirectorPackage,
   options: { hostVerifiedReferenceAssets?: boolean; assetsOnly?: boolean; expectedInput?: StoryboardDirectorInput } = {},
 ): string {
-  const referenceModes = ["参考图模式", "角色参考模式", "角色参考图模式", "selected", "reference"];
-  if (pkg.production_contract_version === STORYBOARD_DIRECTOR_PRODUCTION_CONTRACT_VERSION
-    && (pkg.visual_asset_plan?.mode === "selected" || referenceModes.includes(pkg.input.visual_asset_mode || "")
-      || referenceModes.includes(options.expectedInput?.visual_asset_mode || ""))
-    && !options.assetsOnly && !options.hostVerifiedReferenceAssets) {
-    return "需要完成计划中所需的角色参考图，并核验已采用的视觉资产后继续。分镜提示词将在核验通过后显示。";
-  }
+  // Prompt text is readable before any image exists. Adopted sources are
+  // independently checked by the workbench immediately before media requests.
+  void options;
   return renderStoryboardDirectorBody(pkg);
+}
+
+/**
+ * Return true only for findings that describe a repairable prompt-quality
+ * defect.  These findings do not change the source card, selected mode,
+ * identity bindings, or media ownership, so a host may keep the package
+ * importable while showing the finding for repair.  Input, segment, mode,
+ * asset, role, timeline, layout, and safety findings intentionally remain
+ * hard gates.
+ */
+const QUALITY_WARNING_ISSUE_CODES = new Set([
+  "performance_plan_required",
+  "performance_peak_shot_unknown",
+  "performance_image_excerpt_missing",
+  "performance_video_excerpt_missing",
+  "invalid_style_lock",
+  "invalid_scene_lock",
+  "style_lock_not_repeated_in_image_prompt",
+  "scene_lock_not_repeated_in_image_prompt",
+  "style_lock_not_repeated_in_video_prompt",
+  "scene_lock_not_repeated_in_video_prompt",
+  "invalid_narration_duration_estimate",
+  "overload_without_split_recommendation",
+  "missing_semantic_visualization",
+  "video_prompt_not_actionable",
+  "missing_audio_boundary",
+]);
+
+export function isQualityWarningIssue(issue: string): boolean {
+  const raw = String(issue || "").trim();
+  if (!raw) return false;
+  const code = raw.includes(":") ? raw.slice(raw.indexOf(":") + 1) : raw;
+  return QUALITY_WARNING_ISSUE_CODES.has(code);
 }
 
 function renderStoryboardDirectorBody(pkg: StoryboardDirectorPackage): string {
@@ -1276,6 +1307,9 @@ export function validateStoryboardDirectorPackage(
       // Older cards did not have the four extended choices. Never manufacture
       // those choices while checking their historic output.
       if (expected === undefined && !strictContract) continue;
+      // Owner/breed are scoped optional choices. Matching omission is valid;
+      // a model-supplied choice that the card never submitted still mismatches.
+      if (expected === undefined && pkg.input[field] === undefined && (field === "owner_gender" || field === "dog_breed")) continue;
       if (!strictContract && options.allowLegacyMissingChoices && pkg.input[field] === undefined
         && ["owner_gender", "dog_breed", "video_model_profile", "visual_asset_mode"].includes(field)) continue;
       if (expected === undefined || pkg.input[field] !== expected) {
@@ -1301,7 +1335,7 @@ export function validateStoryboardDirectorPackage(
     issues.push("visual_asset_plan_off_with_assets");
   }
   const requestsReferenceAssets = ["参考图模式", "角色参考模式", "角色参考图模式", "selected", "reference"].includes(pkg.input.visual_asset_mode || "");
-  const requestsOrdinaryMode = ["普通模式", "off", "ordinary"].includes(pkg.input.visual_asset_mode || "");
+  const requestsOrdinaryMode = ["普通模式", "off", "ordinary", "串联模式", "连续串联模式", "chained"].includes(pkg.input.visual_asset_mode || "");
   const explicitlyRequestsFivePanels = pkg.input.special_notes.split(/[。；;\n]/).some(clause => (
     /(?:5\s*格|五格|5[- ]?panels?|five[- ]?panels?)/i.test(clause)
     && !/(?:不要|不选|不用|不使用|不采用|禁止|不得|避免|拒绝|\bno\b|\bnot\b|\bavoid\b)/i.test(clause)
@@ -1327,6 +1361,7 @@ export function validateStoryboardDirectorPackage(
   const identityLocksById = new Map<string, string>();
   const identityIdsByLabel = new Map<string, string>();
   for (const [index, segment] of pkg.segments.entries()) {
+    let explicitActorlessPerformance = false;
     if (options.requirePerformancePlan && segment.performance_plan === undefined) issues.push(`${segment.segment_id}:performance_plan_required`);
     if (segment.performance_plan !== undefined) {
       const performanceIssues = validateStoryboardPerformancePlan(segment.performance_plan, {
@@ -1335,6 +1370,13 @@ export function validateStoryboardDirectorPackage(
         imagePrompt: segment.storyboard_image_prompt, videoPrompt: segment.image_to_video_prompt,
       });
       issues.push(...performanceIssues.map(issue => `${segment.segment_id}:${issue}`));
+      if (segment.performance_plan.cast_presence === "none") {
+        if (segment.character_assets.length || (segment.visual_asset_refs || []).some(ref => ref.role === "character" || ref.role === "pet")) {
+          issues.push(`${segment.segment_id}:performance_cast_presence_actor_mismatch`);
+        }
+        explicitActorlessPerformance = performanceIssues.length === 0
+          && Array.isArray(segment.character_asset_ids) && segment.character_asset_ids.length === 0;
+      }
     }
     const expected = expectedSegments[index];
     if (expected && (segment.source_index !== expected.source_index || segment.narration !== expected.narration)) {
@@ -1455,7 +1497,7 @@ export function validateStoryboardDirectorPackage(
       && !/(?:建议|需要|应当)?.{0,8}(?:拆分|拆为).{0,12}(?:下一|后续)?(?:生成)?单元/.test(segment.image_to_video_prompt)) {
       issues.push(`${segment.segment_id}:overload_without_split_recommendation`);
     }
-    if (segment.character_assets.length === 0) {
+    if (segment.character_assets.length === 0 && !explicitActorlessPerformance) {
       issues.push(`${segment.segment_id}:missing_character_assets`);
     }
     if (strictContract) {

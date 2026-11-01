@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import ts from "typescript";
 import { SignJWT } from "jose";
 import { createToken, getJwtSecretKey, verifyTokenSignature, type JWTPayload } from "../src/lib/auth";
 import { createAdminTokenAuthorizer, type CurrentAdminUser } from "../src/lib/admin-auth";
@@ -46,7 +47,7 @@ function resolveAliasModule(modulePath: string): string | null {
   return candidates.find((candidate) => existsSync(candidate)) || null;
 }
 
-function delegatedHandlerImports(source: string): Array<{ localName: string; file: string }> {
+function delegatedHandlerImports(source: string, ownerFile: string): Array<{ localName: string; file: string }> {
   const imports: Array<{ localName: string; file: string }> = [];
   const namedAliasImport = /import\s*\{([^}]*)\}\s*from\s*["']@\/([^"']+)["'];?/gu;
   for (const match of source.matchAll(namedAliasImport)) {
@@ -60,6 +61,16 @@ function delegatedHandlerImports(source: string): Array<{ localName: string; fil
       if (!new RegExp(`\\b${localName}\\s*\\(`, "u").test(source)) continue;
       imports.push({ localName, file: moduleFile });
     }
+  }
+  const syntax = ts.createSourceFile(ownerFile, source, ts.ScriptTarget.Latest, true);
+  for (const statement of syntax.statements) {
+    if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier) || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+    const specifiers = statement.exportClause.elements.filter(item => /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/u.test(item.name.text));
+    if (!specifiers.length) continue;
+    const modulePath = statement.moduleSpecifier.text;
+    const base = modulePath.startsWith("@/") ? join("src", modulePath.slice(2)) : modulePath.startsWith(".") ? resolve(dirname(ownerFile), modulePath) : "";
+    const file = base && [base, `${base}.ts`, join(base, "index.ts")].find(candidate => existsSync(candidate));
+    if (file) imports.push({ localName: specifiers.map(item => item.name.text).join(","), file });
   }
   return imports;
 }
@@ -75,7 +86,7 @@ function collectAuthorizationEvidence(routeFile: string): SourceEvidence[] {
     const source = readFileSync(current.file, "utf8");
     collected.push({ file: current.file, source });
     if (current.depth >= 3) continue;
-    for (const delegated of delegatedHandlerImports(source)) {
+    for (const delegated of delegatedHandlerImports(source, current.file)) {
       if (!seen.has(delegated.file)) queued.push({ file: delegated.file, depth: current.depth + 1 });
     }
   }
@@ -143,6 +154,10 @@ async function main() {
   }
   assert.equal(queryCount, queriesBeforeInvalidTokens, "invalid credentials are rejected before database access");
 
+  const fixturePath = "src/app/api/admin/voice-studio/models/[id]/route.ts";
+  assert.equal(delegatedHandlerImports("export { PUT, DELETE } from '../route';", fixturePath).length, 1, "HTTP re-exports must follow the real route module");
+  assert.equal(delegatedHandlerImports("import { PUT } from '../route'; export async function GET() { return null; }", fixturePath).length, 0, "an unused guarded import cannot authorize an unguarded handler");
+  assert.equal(delegatedHandlerImports("export { helper } from '../route';", fixturePath).length, 0, "non-handler re-exports are not authorization evidence");
   const routes = routeFiles("src/app/api/admin");
   const delegatedRouteEvidence: Array<{ route: string; files: string[] }> = [];
   const currentAdminGuard = /\b(?:authorizeAdminToken|authorizeAdminCapability|verifyAdminToken|withAdminAuth|requireCommerceAdmin)\b/u;
