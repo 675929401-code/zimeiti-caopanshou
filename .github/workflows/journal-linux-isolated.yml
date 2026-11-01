@@ -1,0 +1,59 @@
+name: Isolated Linux journal fixture
+on:
+  push:
+    branches:
+      - test/linux-journal-61e9-20261101
+    paths:
+      - .github/workflows/journal-linux-isolated.yml
+      - .codex-journal-fixture/journal/journal-storage-prototype.mjs
+      - .codex-journal-fixture/journal/hook-adoption-prototype.mjs
+      - .codex-journal-fixture/journal/linux-test-journal.mjs
+permissions:
+  contents: read
+jobs:
+  isolated-journal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify repository, push event, branch and commit
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+          TEST_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          DELETED: ${{ github.event.deleted }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$REPOSITORY" == "675929401-code/zimeiti-caopanshou" ]]
+          [[ "$TEST_REF" == "refs/heads/test/linux-journal-61e9-20261101" ]]
+          [[ "$EVENT_NAME" == "push" && "$DELETED" == "false" ]]
+          [[ "$EVENT_SHA" =~ ^[a-f0-9]{40}$ ]]
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify checked-out commit and fixture digests
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EVENT_SHA" ]]
+          cd .codex-journal-fixture/journal
+          for f in journal-storage-prototype.mjs hook-adoption-prototype.mjs linux-test-journal.mjs; do [[ -f "$f" && ! -L "$f" ]]; done
+          printf '%s  %s\n' \
+            91458c1b0c1de52b82126417f5ee4f17efb70caec47824aad75ec613a97cd083 journal-storage-prototype.mjs \
+            0c7ac0a477eb9945511d917950ecde5f3b7e8efe2837711573615200badef9ab hook-adoption-prototype.mjs \
+            7641ed918b980c41443dca4f64d7862912a7862c88253b959823b1712eca4748 linux-test-journal.mjs | sha256sum --check --strict
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Exercise native Linux journal in isolated network namespace
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          node_path="$(command -v node)"
+          sudo /usr/bin/timeout --signal=TERM --kill-after=5s 120s /usr/bin/unshare --net -- /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root "$node_path" .codex-journal-fixture/journal/linux-test-journal.mjs
