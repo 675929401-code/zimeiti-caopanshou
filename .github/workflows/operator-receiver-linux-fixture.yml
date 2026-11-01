@@ -1,0 +1,51 @@
+name: Operator receiver Linux filesystem fixture
+on:
+  push:
+    branches: [test/operator-receiver-linux-61e9-v1]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: operator-receiver-linux-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  receiver:
+    if: github.repository == '675929401-code/zimeiti-caopanshou' && github.ref == 'refs/heads/test/operator-receiver-linux-61e9-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact isolated fixture sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd .codex-operator-receiver-fixture
+          python3 -c 'from pathlib import Path;r=Path(".");expected={"receiver-template.py","linux-receiver-test.py","run-isolated.sh"};assert {p.relative_to(r).as_posix() for p in r.rglob("*")}==expected;assert all(p.is_file() and not p.is_symlink() for p in r.iterdir())'
+          echo '3769789b9e246a57eff479ae87c55552a88411911e34f98400e6d50bd6c69b73  receiver-template.py' | sha256sum -c -
+          echo 'c6336333a8c2670d307e7ebb27a925aef91ce386abf1ddf315194bfcef133cb1  linux-receiver-test.py' | sha256sum -c -
+          echo '404a1620ffc19dc0b93890c0c6332c5dd290015c7550662402fd0c4ac04039d9  run-isolated.sh' | sha256sum -c -
+          python3 -c 'from pathlib import Path; compile(Path("linux-receiver-test.py").read_bytes(),"fixture","exec")'
+          bash -n run-isolated.sh
+      - name: Execute only private namespace filesystem exercise
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$GITHUB_WORKSPACE/.codex-operator-receiver-fixture"
+          evidence="$GITHUB_WORKSPACE/.codex-evidence/operator-receiver-linux"
+          mkdir -p "$evidence"
+          outside_mount="$(readlink /proc/self/ns/mnt)"
+          outside_network="$(readlink /proc/self/ns/net)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=10s 180s /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/unshare --mount --net --pid --fork /bin/bash "$fixture/run-isolated.sh" "$fixture" "$evidence" "$outside_mount" "$outside_network"
+          python3 -c 'import json;from pathlib import Path;r=json.loads(Path(".codex-evidence/operator-receiver-linux/report.json").read_text());assert r["passed"] and r["syntheticMetadata"] and not r["productionAuthenticationProven"] and r["installedFiles"]==23 and r["collisionOverwrites"]==0 and r["repeatOverwrites"]==0 and r["serviceOperations"]==0 and r["databaseWrites"]==0 and r["networkConnections"]==0'
+      - name: Upload synthetic filesystem evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: operator-receiver-linux-${{ github.sha }}
+          path: .codex-evidence/operator-receiver-linux/
+          if-no-files-found: ignore
+          retention-days: 7
