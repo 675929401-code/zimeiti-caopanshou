@@ -1234,7 +1234,7 @@ const browserAcceptanceRunner = read("scripts/run-release-browser-acceptance.mjs
 const diagnosticsStart = browserAcceptanceRunner.indexOf("function cleanUrl(raw) {");
 const diagnosticsEnd = browserAcceptanceRunner.indexOf("function resolveBrowserRouteTarget(", diagnosticsStart);
 assert.ok(diagnosticsStart >= 0 && diagnosticsEnd > diagnosticsStart);
-const diagnostics = runInNewContext(`${browserAcceptanceRunner.slice(diagnosticsStart, diagnosticsEnd)}\n({ cleanUrl, utilityRequestDiagnostics })`, { URL });
+const diagnostics = runInNewContext(`${browserAcceptanceRunner.slice(diagnosticsStart, diagnosticsEnd)}\n({ cleanUrl, utilityRequestDiagnostics, isReviewedUtilityRscRequest, reviewedUtilityRscIdentity, reviewedUtilityAbortSuperseded, reviewedUtilityAbortEvidence })`, { URL });
 for (const tab of ["text", "video", "segment", "format"]) {
   const url = new URL(`http://127.0.0.1/tools/utility?tab=${tab}&_rsc=secret-rsc&token=secret-token&secret=private-key&text=customer-content`);
   const result = diagnostics.utilityRequestDiagnostics(url);
@@ -1258,6 +1258,54 @@ syntheticCredentialUrl.password = "password";
 assert.equal(diagnostics.cleanUrl(syntheticCredentialUrl.toString()), "http://127.0.0.1/tools/utility");
 assert.equal(diagnostics.cleanUrl("not-a-url?token=secret"), "[invalid URL]");
 assert.ok(!browserAcceptanceRunner.includes("pathAndQuery"), "raw utility query must never be logged");
+const utilityRequest = (changes = {}) => ({
+  method: () => changes.method ?? "GET",
+  resourceType: () => changes.resourceType ?? "fetch",
+  headers: () => changes.headers ?? { rsc: "1", "next-router-state-tree": "synthetic-state-a" },
+  url: () => changes.url ?? "http://127.0.0.1:5000/tools/utility?tab=text&_rsc=abc123",
+});
+const utilityBase = "http://127.0.0.1:5000";
+assert.equal(diagnostics.isReviewedUtilityRscRequest(utilityRequest(), utilityBase), true);
+for (const mutation of [
+  { method: "POST" }, { resourceType: "document" }, { headers: {} },
+  { headers: { rsc: "2" } }, { headers: { rsc: "1", "next-router-prefetch": "1" } },
+  { headers: { rsc: "1", "next-router-segment-prefetch": "/" } },
+  { headers: { rsc: "1", purpose: "prefetch" } }, { headers: { rsc: "1", "sec-purpose": "prefetch" } },
+  { url: "http://127.0.0.2:5000/tools/utility?tab=text&_rsc=abc" },
+  { url: "http://127.0.0.1:5000/tools/other?tab=text&_rsc=abc" },
+  { url: "http://127.0.0.1:5000/tools/utility?tab=video&_rsc=abc" },
+  { url: "http://127.0.0.1:5000/tools/utility?tab=text&tab=text&_rsc=abc" },
+  { url: "http://127.0.0.1:5000/tools/utility?tab=text&_rsc=abc&_rsc=def" },
+  { url: "http://127.0.0.1:5000/tools/utility?tab=text&_rsc=bad-value" },
+  { url: "http://127.0.0.1:5000/tools/utility?tab=text&_rsc=abc&token=secret" },
+]) assert.equal(diagnostics.isReviewedUtilityRscRequest(utilityRequest(mutation), utilityBase), false, JSON.stringify(mutation));
+const validIdentity = diagnostics.reviewedUtilityRscIdentity(utilityRequest(), utilityBase);
+assert.ok(validIdentity);
+assert.equal(diagnostics.reviewedUtilityRscIdentity(utilityRequest({ headers: { rsc: "1" } }), utilityBase), null);
+assert.equal(diagnostics.reviewedUtilityRscIdentity(utilityRequest({ headers: { rsc: "1", "next-router-state-tree": "" } }), utilityBase), null);
+const changedRscIdentity = diagnostics.reviewedUtilityRscIdentity(utilityRequest({ url: "http://127.0.0.1:5000/tools/utility?tab=text&_rsc=other" }), utilityBase);
+const changedStateIdentity = diagnostics.reviewedUtilityRscIdentity(utilityRequest({ headers: { rsc: "1", "next-router-state-tree": "synthetic-state-b" } }), utilityBase);
+const changedNextUrlIdentity = diagnostics.reviewedUtilityRscIdentity(utilityRequest({ headers: { rsc: "1", "next-router-state-tree": "synthetic-state-a", "next-url": "/private-customer-route" } }), utilityBase);
+assert.notEqual(validIdentity, changedRscIdentity);
+assert.notEqual(validIdentity, changedStateIdentity);
+assert.notEqual(validIdentity, changedNextUrlIdentity);
+const goodSupersession = { pending: [{ sequence: 1, identity: validIdentity }], completed: [{ sequence: 2, identity: validIdentity, status: 200, contentType: "text/x-component" }], routeFailures: [], finalUrlMatches: true, toolVerified: true };
+assert.equal(diagnostics.reviewedUtilityAbortSuperseded(goodSupersession), true);
+for (const mutation of [
+  { pending: [] }, { pending: [{ sequence: 1, identity: validIdentity }, { sequence: 2, identity: validIdentity }] }, { completed: [] },
+  { pending: [{ sequence: 1 }] }, { pending: [{ sequence: 1, identity: "" }] },
+  { completed: [{ sequence: 2, status: 200, contentType: "text/x-component" }] },
+  { completed: [{ sequence: 2, identity: changedRscIdentity, status: 200, contentType: "text/x-component" }] },
+  { completed: [{ sequence: 2, identity: changedStateIdentity, status: 200, contentType: "text/x-component" }] },
+  { completed: [{ sequence: 2, identity: changedNextUrlIdentity, status: 200, contentType: "text/x-component" }] },
+  { completed: [{ sequence: 1, identity: validIdentity, status: 200, contentType: "text/x-component" }] },
+  { completed: [{ sequence: 2, identity: validIdentity, status: 503, contentType: "text/x-component" }] },
+  { completed: [{ sequence: 2, identity: validIdentity, status: 200, contentType: "text/html" }] },
+  { routeFailures: [{ code: "FAILED" }] }, { finalUrlMatches: false }, { toolVerified: false },
+]) assert.equal(diagnostics.reviewedUtilityAbortSuperseded({ ...goodSupersession, ...mutation }), false, JSON.stringify(mutation));
+const privateEvidence = diagnostics.reviewedUtilityAbortEvidence({ sequence: 1, identity: validIdentity, item: { url: "http://127.0.0.1:5000/tools/utility" } }, { sequence: 2, identity: changedNextUrlIdentity, status: 200, contentType: "text/x-component" });
+assert.doesNotMatch(JSON.stringify(privateEvidence), /abc123|synthetic-state|private-customer-route|identity/u);
+assert.ok(browserAcceptanceRunner.includes("reviewedUtilityNavigationAborts: browserReport.reviewedUtilityNavigationAborts"));
 const fixtureStart = browserAcceptanceRunner.indexOf("// Isolated browser fixture:");
 const fixtureEnd = browserAcceptanceRunner.indexOf("async function startCandidateDatabaseFixture(", fixtureStart);
 assert.ok(fixtureStart >= 0 && fixtureEnd > fixtureStart, "candidate fixture source missing");
@@ -1547,6 +1595,7 @@ const reviewedAbortPairs = [
   ["/voice-studio/imitate", "/voice-studio/voices"],
   ["/voice-studio/imitate", "/voice-studio/workspace"],
   ["/youcai/storyboard-workbench", "/"], ["/youcai/storyboard-workbench", "/youcai/profile"],
+  ["/tools/utility", "/"], ["/youcai/storyboard-workbench", "/youcai"],
 ];
 const abortSetStart = browserAcceptanceRunner.indexOf("const BENIGN_NAVIGATION_ABORT_KEYS = new Set([");
 const abortSetEnd = browserAcceptanceRunner.indexOf("]);", abortSetStart) + 3;
