@@ -4,7 +4,7 @@ import { modelEndpointError, modelStationLabel } from "@/lib/model-endpoint";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { formatModelPrice, modelConnectionSummary } from "@/lib/model-connection-summary";
 import { getVideoBillingUnit } from "@/lib/video-model-capabilities";
-import { MODEL_BRAND_OPTIONS } from "@/lib/model-brand";
+import { displayModelAvatar, MODEL_BRAND_OPTIONS } from "@/lib/model-brand";
 import { LLM_PROVIDER_PRESETS, getLlmProviderPreset } from "@/lib/llm-provider-presets";
 import { imageModelExtraConfiguration, parseImageModelExtraConfiguration } from "@/lib/image-model-extra-configuration";
 
@@ -900,7 +900,7 @@ export default function UnifiedModelDialog({
                 </p>
                 {form.model_type === "video" && (
                   <div className="flex items-center gap-4" data-model-avatar-editor>
-                    {form.icon_url ? <img src={form.icon_url} alt="模型头像预览" className="h-14 w-14 rounded-xl object-cover" /> : <div className="h-14 w-14 rounded-xl border border-[var(--border)]" aria-label="尚未设置模型头像" />}
+                    {form.icon_url ? <img src={displayModelAvatar(form.icon_url)} alt="模型头像预览" className="h-14 w-14 rounded-xl object-cover" /> : <div className="h-14 w-14 rounded-xl border border-[var(--border)]" aria-label="尚未设置模型头像" />}
                     <div className="flex-1 space-y-2">
                       <label className={labelCls}>模型头像</label>
                       <input aria-label="模型头像地址" value={form.icon_url} onChange={event => setForm({ ...form, icon_url: event.target.value })} placeholder="填写头像地址，或上传图片" className={inputCls} />
@@ -909,9 +909,9 @@ export default function UnifiedModelDialog({
                         <div className="grid grid-cols-5 gap-2">
                           {MODEL_BRAND_OPTIONS.map(option => (
                             <button key={option.key} type="button" aria-label={`使用${option.label}头像`}
-                              aria-pressed={form.icon_url === option.asset} data-model-brand-option={option.key}
+                              aria-pressed={displayModelAvatar(form.icon_url) === option.asset} data-model-brand-option={option.key}
                               onClick={() => setForm(current => ({ ...current, icon_url: option.asset }))}
-                              className={`flex min-w-0 flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] disabled:opacity-40 ${form.icon_url === option.asset ? "border-[var(--primary)] bg-[var(--primary)]/10" : "border-[var(--border)] hover:bg-[var(--muted)]/40"}`}>
+                              className={`flex min-w-0 flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] disabled:opacity-40 ${displayModelAvatar(form.icon_url) === option.asset ? "border-[var(--primary)] bg-[var(--primary)]/10" : "border-[var(--border)] hover:bg-[var(--muted)]/40"}`}>
                               <img src={option.asset} alt="" className="h-7 w-7 shrink-0 rounded-md object-contain" />
                               <span className="max-w-full break-words">{option.label}</span>
                             </button>

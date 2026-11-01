@@ -538,7 +538,7 @@ trap final_cleanup EXIT
 exit 7
 `;
   fs.writeFileSync(activationHarnessPath,
-    `${activationHarness}\n${activatePm2}\n${verifyPm2Identity}\n${verifyPm2Dump}\n${verifyPm2Absent}\n${directHook}\n${rollbackFunction}\n${finalCleanup}\n${activationFooter}`);
+    `${activationHarness}\nPRESTOP_ADOPT=0\n${activatePm2}\n${verifyPm2Identity}\n${verifyPm2Dump}\n${verifyPm2Absent}\n${directHook}\n${rollbackFunction}\n${finalCleanup}\n${activationFooter}`);
   for (const service of ["web", "voice"]) {
     for (const scenario of ["native", "legacy", "initially-absent", "jlist-fail", "stop-fail", "delete-fail", "start-fail", "duplicate", "port-held", "delete-retained"]) {
       const caseRoot = path.join(temporaryRoot, `activation-${service}-${scenario}`);
@@ -721,7 +721,7 @@ exit 99
     'exit "$requested_status"',
     "",
   ].join("\n");
-  fs.writeFileSync(exitHarnessPath, `${exitHeader}\nDIRECT_PREPARED=0\nDIRECT_ROLLBACK_COMPLETE=0\n${directHook}\n${finalCleanup}\n${exitFooter}`, { mode: 0o700 });
+  fs.writeFileSync(exitHarnessPath, `${exitHeader}\nPRESTOP_ADOPT=0\nDIRECT_PREPARED=0\nDIRECT_ROLLBACK_COMPLETE=0\n${directHook}\n${finalCleanup}\n${exitFooter}`, { mode: 0o700 });
   for (const secondary of ["0", "1"]) {
     fs.writeFileSync(exitMarkerPath, "");
     const run = runBash(bash, exitHarnessPath, [exitMarkerPath, "7", secondary]);
@@ -827,7 +827,7 @@ exit 99
   ].join("\n");
   fs.writeFileSync(
     candidateCleanupHarnessPath,
-    `${candidateCleanupHeader}\n${harnessCandidateCgroupEmpty}\n${candidateUnitStopped}\n${waitCandidateUnitStopped}\n${cleanupCandidate}\n${finalCleanup}\n${candidateCleanupFooter}`,
+    `${candidateCleanupHeader}\nPRESTOP_ADOPT=0\n${harnessCandidateCgroupEmpty}\n${candidateUnitStopped}\n${waitCandidateUnitStopped}\n${cleanupCandidate}\n${finalCleanup}\n${candidateCleanupFooter}`,
     { mode: 0o700 },
   );
   for (const testCase of [
@@ -933,7 +933,7 @@ exit 99
   ].join("\n");
   fs.writeFileSync(
     firstHarnessPath,
-    `${firstHarnessHeader}\n${directHook}\n${firstComposite}\n${rollbackFunction}\n${firstHarnessFooter}`,
+    `${firstHarnessHeader}\nPRESTOP_ADOPT=0\n${directHook}\n${firstComposite}\n${rollbackFunction}\n${firstHarnessFooter}`,
     { mode: 0o700 },
   );
   for (const testCase of [

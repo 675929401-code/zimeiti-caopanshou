@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { isModelAvatarImage, modelBrandAsset, modelInitial, resolveModelBrand } from "@/lib/model-brand";
+import { displayModelAvatar, isModelAvatarImage, modelBrandAsset, modelInitial, resolveModelBrand } from "@/lib/model-brand";
 import styles from "./model-badge.module.css";
 
 type ModelBadgeProps = {
@@ -25,7 +25,7 @@ export function ModelBadge({
 }: ModelBadgeProps) {
   const avatar = String(avatarUrl || "").trim();
   const brand = resolveModelBrand(name, ...identity);
-  const avatarSource = isModelAvatarImage(avatar) ? avatar : "";
+  const avatarSource = isModelAvatarImage(avatar) ? displayModelAvatar(avatar) : "";
   const brandSource = brand ? modelBrandAsset(brand) : "";
   const genericSource = modelBrandAsset("generic");
   const imageSources = [avatarSource, brandSource, genericSource].filter((source, index, values) => source && values.indexOf(source) === index);

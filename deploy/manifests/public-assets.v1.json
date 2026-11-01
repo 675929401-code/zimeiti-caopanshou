@@ -4,7 +4,7 @@
   "kind": "public-assets",
   "assetPolicySha256": "64793c5fae84c2f93d434f6d0c2409021494315d19f3a1ebd4de1d0abe3f2124",
   "contentAddressing": "sha256-files-and-asset-policy",
-  "assetVersion": "sha256-76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
+  "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "files": [
     {
       "path": "public/avatars/agent-cyber-01.png",
@@ -2667,9 +2667,14 @@
       "sha256": "bc3d9bd7c714d4bd55a3627a03fbc6855e03ef0924a24ad91bfb7fbac5763a8e"
     },
     {
-      "path": "public/model-brands/bytedance.svg",
+      "path": "public/model-brands/bytedance-v2.svg",
       "bytes": 1159,
       "sha256": "613ba577dfc23de42e6f7a01ded20abde213a9370320be44061cda6b0bccf91d"
+    },
+    {
+      "path": "public/model-brands/bytedance.svg",
+      "bytes": 509,
+      "sha256": "ac270ab9b6c9d5b19c18f0111cdc78e656fc9c249fc000c6eab2e446cdad58b3"
     },
     {
       "path": "public/model-brands/doubao.svg",
@@ -2692,9 +2697,14 @@
       "sha256": "b170ca82fbc6060cdf8b2f214e7f92929c6bfad5d19c32de01f0ae2df8762be7"
     },
     {
-      "path": "public/model-brands/google.svg",
+      "path": "public/model-brands/google-v2.svg",
       "bytes": 498,
       "sha256": "b2339de3995d6655242dcd0ebcb75fc8081d2b67b109224472cb525f6ff5eb79"
+    },
+    {
+      "path": "public/model-brands/google.svg",
+      "bytes": 575,
+      "sha256": "06da2eedb2acf931eb19a07e3313917967664e6216f48306a35e0c60457bc69c"
     },
     {
       "path": "public/model-brands/kling.svg",
@@ -2707,9 +2717,14 @@
       "sha256": "970579776aab00b9650ce01172559df2cfd1616372c4e0f2bf4abf317342c4e5"
     },
     {
-      "path": "public/model-brands/openai.svg",
+      "path": "public/model-brands/openai-v2.svg",
       "bytes": 1687,
       "sha256": "a595df6b423920c67a7f8f73c063e4bfb72d415948097b6cac063a2366bb5186"
+    },
+    {
+      "path": "public/model-brands/openai.svg",
+      "bytes": 461,
+      "sha256": "d55e898dea2a12f5aab2f370ea183c5aaff3dc24f485947e1145f2ca9bf923bc"
     },
     {
       "path": "public/model-brands/qwen.svg",
@@ -6157,8 +6172,8 @@
       "sha256": "880a5ff2404449bfef6e02f1d07cd34f6479971a54e344c0df8bb362f905327a"
     }
   ],
-  "fileCount": 1230,
-  "totalBytes": 1305411980,
-  "digest": "76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
+  "fileCount": 1233,
+  "totalBytes": 1305413525,
+  "digest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "mutableUploadsIncluded": false
 }

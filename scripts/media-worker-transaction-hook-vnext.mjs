@@ -320,6 +320,89 @@ function readState(statePath) {
   return state;
 }
 
+// The explicit flag selects this path; it is not an authorization credential.
+// The single trusted root window owner must hold the controller's same lock
+// and issue migration-confirmed.json only after its exact commit receipt.
+function assertInheritedWindowLock(root) {
+  const lockPath = path.join(root, ".deploy.lock");
+  const p = fs.lstatSync(lockPath), d = fs.fstatSync(9);
+  if (!p.isFile() || p.isSymbolicLink() || p.nlink !== 1 || p.uid !== 0 || p.gid !== 0
+      || (p.mode & 0o022) !== 0 || p.dev !== d.dev || p.ino !== d.ino
+      || !d.isFile() || d.uid !== 0 || d.gid !== 0) fail("WINDOW_LOCK_INVALID");
+}
+
+function readWindowFile(filePath, label) {
+  const fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  try {
+    const a = fs.fstatSync(fd), p = fs.lstatSync(filePath);
+    if (!a.isFile() || a.nlink !== 1 || a.uid !== 0 || a.gid !== 0 || (a.mode & 0o777) !== 0o600
+        || !p.isFile() || p.isSymbolicLink() || p.dev !== a.dev || p.ino !== a.ino
+        || a.size > 262144) fail(`${label}_METADATA_UNSAFE`);
+    const bytes = fs.readFileSync(fd);
+    const b = fs.fstatSync(fd), q = fs.lstatSync(filePath);
+    for (const key of ["dev", "ino", "uid", "gid", "mode", "nlink", "size", "mtimeMs", "ctimeMs"]) {
+      if (a[key] !== b[key] || a[key] !== q[key]) fail(`${label}_CHANGED`);
+    }
+    return bytes;
+  } finally { fs.closeSync(fd); }
+}
+
+function decodeWindowJson(bytes, label) {
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { fail(`${label}_INVALID`); }
+}
+
+function readPreparedWindow(root, controlRoot, transactionRoot, statePath, configPath) {
+  assertInheritedWindowLock(root);
+  assertRootControlledParentChain(transactionRoot, controlRoot);
+  const markerPath = path.join(transactionRoot, "migration-confirmed.json");
+  const markerBytes = readWindowFile(markerPath, "WINDOW_MARKER");
+  const marker = decodeWindowJson(markerBytes, "WINDOW_MARKER");
+  if (!markerBytes.equals(Buffer.from(`${JSON.stringify(marker)}\n`, "utf8"))) fail("WINDOW_MARKER_NONCANONICAL");
+  const keys = ["schemaVersion", "transactionId", "artifactSha256", "batchId", "scriptSha256", "wireSha256", "commitReceiptSha256", "stateSha256", "configSha256"];
+  if (!marker || Array.isArray(marker) || Object.keys(marker).length !== keys.length
+      || keys.some((key) => !Object.hasOwn(marker, key)) || marker.schemaVersion !== 1
+      || marker.transactionId !== path.basename(transactionRoot)
+      || !/^[a-f0-9]{64}$/u.test(marker.artifactSha256 || "")
+      || marker.artifactSha256 !== process.env.DIRECT_HOOK_ARTIFACT_SHA256
+      || !marker.transactionId.endsWith(`-${marker.artifactSha256.slice(0, 12)}`)
+      || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(marker.batchId || "")
+      || ["scriptSha256", "wireSha256", "commitReceiptSha256", "stateSha256", "configSha256"]
+        .some((key) => !/^[a-f0-9]{64}$/u.test(marker[key] || ""))) fail("WINDOW_MARKER_INVALID");
+  const stateBytes = readWindowFile(statePath, "TRANSACTION_STATE");
+  const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+  if (hash(stateBytes) !== marker.stateSha256 || sha256File(configPath) !== marker.configSha256) fail("WINDOW_BINDING_CHANGED");
+  const state = decodeWindowJson(stateBytes, "TRANSACTION_STATE");
+  if (state.schemaVersion !== STATE_SCHEMA || state.workerName !== WORKER_NAME || state.status !== "prepared"
+      || state.configPath !== configPath || state.configSha256 !== marker.configSha256 || !state.previous) fail("WINDOW_STATE_INVALID");
+  const current = identityFromCurrent(root), previous = state.previous;
+  for (const key of ["cwd", "releaseId", "commitSha", "buildId", "sourceVersion", "buildOutputDigest", "assetDigest", "assetManifestSha256"]) {
+    if (current[key] !== previous[key]) fail("WINDOW_PREVIOUS_IDENTITY_CHANGED");
+  }
+  if (!Array.isArray(previous.ports) || previous.ports.length !== 2
+      || previous.ports.some((port, i) => port !== WORKER_PORTS[i])) fail("WINDOW_PREVIOUS_PORTS_INVALID");
+  // Check raw ss output, including listeners for which ss did not print a PID.
+  const assertStopped = () => {
+    if (pm2Entries().some((entry) => entry?.name === WORKER_NAME)) fail("MEDIA_WORKER_SLOT_STILL_EXISTS");
+    for (const port of WORKER_PORTS) {
+      if (run("ss", ["-H", "-ltnp", `sport = :${port}`], { label: "SS_LISTENER" }).trim() !== "") fail("MEDIA_WORKER_PORT_STILL_BOUND");
+    }
+  };
+  assertStopped();
+  assertInheritedWindowLock(root);
+  assertRootControlledParentChain(transactionRoot, controlRoot);
+  if (!markerBytes.equals(readWindowFile(markerPath, "WINDOW_MARKER"))
+      || !stateBytes.equals(readWindowFile(statePath, "TRANSACTION_STATE"))
+      || sha256File(configPath) !== marker.configSha256) fail("WINDOW_BINDING_CHANGED");
+  assertTrustedFile(configPath, marker.configSha256, "PM2_CONFIG");
+  const currentAfter = identityFromCurrent(root);
+  for (const key of ["cwd", "releaseId", "commitSha", "buildId", "sourceVersion", "buildOutputDigest", "assetDigest", "assetManifestSha256"]) {
+    if (currentAfter[key] !== previous[key]) fail("WINDOW_PREVIOUS_IDENTITY_CHANGED");
+  }
+  assertStopped();
+  return previous;
+}
+
 async function main() {
   const [phase, transactionRootArg] = process.argv.slice(2);
   if (!new Set(["prepare", "activated", "precommit", "persisted", "rollback-before", "rollback-after", "rollback-persisted"]).has(phase)) {
@@ -340,6 +423,11 @@ async function main() {
   const statePath = path.join(transactionRoot, "media-worker-state.json");
 
   if (phase === "prepare") {
+    if (process.env.DIRECT_HOOK_PRESTOP_ADOPTION === "1") {
+      const previous = readPreparedWindow(root, controlRoot, transactionRoot, statePath, configPath);
+      process.stdout.write(`${JSON.stringify({ ok: true, phase, releaseId: previous.releaseId, ports: WORKER_PORTS })}\n`);
+      return;
+    }
     if (fs.existsSync(transactionRoot)) fail("TRANSACTION_ROOT_ALREADY_EXISTS");
     const previous = snapshotWorkers(pm2Entries());
     await waitForWorkers(previous, true);

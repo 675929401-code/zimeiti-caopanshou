@@ -269,6 +269,16 @@ assert.equal(controlPlaneChecks.status, 0, `control-plane actual interface regre
 const controlPlaneReport = JSON.parse(controlPlaneChecks.stdout);
 assert.equal(controlPlaneReport.ok, true);
 
+const prestopAdoptionChecks = spawnSync(process.execPath, [path.join(root, "scripts/verify-prestop-adoption-zero-network.mjs")], {
+  cwd: root, encoding: "utf8", windowsHide: true, timeout: 120_000,
+});
+assert.equal(prestopAdoptionChecks.status, 0, `pre-stop adoption regression failed: ${prestopAdoptionChecks.stderr || prestopAdoptionChecks.stdout}`);
+const prestopAdoptionReport = JSON.parse(prestopAdoptionChecks.stdout);
+assert.equal(prestopAdoptionReport.ok, true);
+assert.ok(prestopAdoptionReport.checks >= 20);
+assert.equal(prestopAdoptionReport.hookPrepareExecuted, true);
+assert.equal(prestopAdoptionReport.controllerFailureBranchesExecuted, true);
+
 for (const marker of [
   "inspectMigrationWorktree",
   "historical migration changed relative to audit base; restore it and use a new forward-only migration",
@@ -668,7 +678,7 @@ const codeTrackManifest = read("deploy/manifests/public-code-track.v1.txt")
   .split(/\r?\n/u)
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith("#"));
-assert.equal(codeTrackManifest.length, 81, "public code-track manifest count drifted");
+assert.equal(codeTrackManifest.length, 84, "public code-track manifest count drifted");
 assert.equal(new Set(codeTrackManifest).size, codeTrackManifest.length, "public code-track manifest contains duplicates");
 function assertGitPathNotIgnored(relativePath, label) {
   const result = spawnSync("git", ["check-ignore", "--quiet", "--no-index", "--", relativePath], {
@@ -2012,6 +2022,7 @@ for (const script of [
   "scripts/media-worker-transaction-hook-vnext.mjs",
   "scripts/normalize-legacy-runtime-vnext.mjs",
   "scripts/verify-runtime-alignment-tooling.mjs",
+  "scripts/verify-prestop-adoption-zero-network.mjs",
   "scripts/run-release-browser-acceptance.mjs",
 ]) {
   const checked = spawnSync(process.execPath, ["--check", path.join(root, script)], { encoding: "utf8" });
@@ -2034,6 +2045,7 @@ console.log(JSON.stringify({
   ok: true,
   formalSourceMutationChecks,
   controlPlaneChecks: controlPlaneReport.checks,
+  prestopAdoptionChecks: prestopAdoptionReport.checks,
   sourceFiles: auditJson.source.files,
   sourceBytes: auditJson.source.bytes,
   assetFiles: auditJson.externalAssets.files,
