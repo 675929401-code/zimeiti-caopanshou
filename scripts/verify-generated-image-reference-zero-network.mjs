@@ -33,7 +33,19 @@ const chainReference=load('src/lib/server/storyboard-chain-reference.ts',{'node:
   '@/lib/storyboard-image-read':load('src/lib/storyboard-image-read.ts',{'@/storage/object':{storageManager:forbiddenStorage}}),
   '@/lib/storyboard-chain-contract':chain,'@/lib/server/generated-image-reference':server,
   '@/lib/image-failure-history':failureHistory,'@/storage/database/supabase-client':{getSupabaseAdminClient:()=>{throw Error('Real DB forbidden')}}});
+// Exercise the production input schema and normalizer; unused capability paths fail closed.
+const unexpectedVideoCapability=()=>{throw Error('Video capability path not expected in persistence test')};
+const videoInputs=load('src/lib/storyboard-video-inputs.ts',{
+  zod:{z}, './generated-image-reference':refs,
+  './video-public-url':load('src/lib/video-public-url.ts'),
+  './ai-video-page-capabilities':{getAiVideoPageInputCapabilities:unexpectedVideoCapability},
+  './video-input-contract':{validateVideoInputContract:unexpectedVideoCapability},
+});
+assert.deepEqual(JSON.parse(JSON.stringify(videoInputs.normalizeStoryboardVideoInputs({firstFrameUrl:'https://fixture.invalid/frame.png'}))),{firstFrameUrl:'https://fixture.invalid/frame.png'});
+assert.throws(()=>videoInputs.normalizeStoryboardVideoInputs({firstFrameUrl:'blob:fixture'}));
+assert.throws(()=>videoInputs.normalizeStoryboardVideoInputs({unexpected:'injected'}));
 const contract=load('src/lib/storyboard-project-contract.ts',{
+  './storyboard-video-inputs':videoInputs,
   '@/lib/storyboard-chain-contract':chain,
   zod:{z},
   '@/lib/generated-image-reference':refs,
@@ -42,6 +54,7 @@ const contract=load('src/lib/storyboard-project-contract.ts',{
   '@/lib/storyboard-director-execution':execution,
   '@/lib/storyboard-director-resume':resume,
 });const persist=load('src/lib/storyboard-local-persistence.ts',{
+  './storyboard-video-inputs':videoInputs,
   '@/lib/storyboard-chain-contract':chain,
   zod:{z},
   '@/lib/storyboard-project-contract':contract,

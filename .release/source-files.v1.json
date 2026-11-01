@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "b336a22fa780b3a09fa4aaba2a0612b16f6f0904cae57f9c049fff9671ab5f70",
-  "sourceFingerprint": "fc1bed74d114c5d11016c6fc9d52f98b692d93672581e456f8abafb79da50a66",
+  "sourceFingerprint": "461b74a5b4456613cd99fa01770fdff22d0974132204dd2d4e01452acb78f3eb",
   "assetManifestSha256": "af979cc716094c4d85b5f78cc7daa71a109acd0494dbe03c2b7411d48ca369cd",
   "assetDigest": "76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
   "assetVersion": "sha256-76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
   "fileCount": 4828,
-  "totalBytes": 76730438,
+  "totalBytes": 76731454,
   "files": [
     {
       "path": ".cnb.yml",
@@ -7798,8 +7798,8 @@
     },
     {
       "path": "scripts/verify-generated-image-reference-zero-network.mjs",
-      "bytes": 22227,
-      "sha256": "7b28b980a24445560dce8593c12f9571db4e71d3d9274d3e66cabfbe61a73f99"
+      "bytes": 23243,
+      "sha256": "ac58f874fab891ef946cff8afc38e5e6f7a08c801cae19b5de1836df85f9636e"
     },
     {
       "path": "scripts/verify-generated-media-direct-delivery-zero-network.mjs",
