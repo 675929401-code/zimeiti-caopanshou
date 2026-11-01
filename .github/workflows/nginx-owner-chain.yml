@@ -1,0 +1,81 @@
+# Review draft: synthetic fixture only; never a production workflow.
+name: Synthetic Nginx owner full chain
+on:
+  push:
+    branches:
+      - test/nginx-owner-chain-61e9-20261102
+    paths:
+      - .github/workflows/nginx-owner-chain.yml
+      - .codex-nginx-owner-fixture/file_txn.py
+      - .codex-nginx-owner-fixture/journal_owner.py
+      - .codex-nginx-owner-fixture/nginx_lifecycle.py
+      - .codex-nginx-owner-fixture/session_protocol.py
+      - .codex-nginx-owner-fixture/combined_child_fixture.py
+      - .codex-nginx-owner-fixture/combined_test.mjs
+      - .codex-nginx-owner-fixture/ingress-channel.mjs
+      - .codex-nginx-owner-fixture/combined.Dockerfile
+      - .codex-nginx-owner-fixture/mechanical_hold.py
+      - .codex-nginx-owner-fixture/version_acceptance.py
+      - .codex-nginx-owner-fixture/candidate.py
+      - .codex-nginx-owner-fixture/synthetic_detail_parser.py
+permissions:
+  contents: read
+jobs:
+  fixture:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/test/nginx-owner-chain-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify exact fixed fixture input
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          printf '%s\n' \
+            'eeddb2addcec3313630994840e8a0811126782a6d5df2ecaa20e10d5c24f7d45  .codex-nginx-owner-fixture/file_txn.py' \
+            'eabe580bef24f4e95391bf364c9436fd94710996402c6814e5193ebcb83c5bb0  .codex-nginx-owner-fixture/journal_owner.py' \
+            'd3e6bc579e35040df8fd66d09bc6f086d0baee7db04d84e70f3bb9052c3163e3  .codex-nginx-owner-fixture/nginx_lifecycle.py' \
+            '619da2649429c0305f09ba85f9c2d4d26d47da91ebe681e8f5672c18d3a3621f  .codex-nginx-owner-fixture/session_protocol.py' \
+            'e8236215acd0071d1f0810066c576a769c953f9ee7c12346f363cd4bdcec1de6  .codex-nginx-owner-fixture/combined_child_fixture.py' \
+            '85af347911d24c05e76d2c2abf5ca9365dbe4bd6e6e6f8ebeaa783e9aefeb30e  .codex-nginx-owner-fixture/combined_test.mjs' \
+            '1b0eaa38bfb7563b82691e83c4a41cc004da4f4bdc32de600e011f5615348851  .codex-nginx-owner-fixture/ingress-channel.mjs' \
+            '01deaadecaf2af76ca320050c1e8aff24cc344220064907881d7f3c355a081ea  .codex-nginx-owner-fixture/combined.Dockerfile' \
+            '46b66840fc1b27f85d427d4dfbdf406d67bf18ef587d2078cb85127e156c4eda  .codex-nginx-owner-fixture/mechanical_hold.py' \
+            '6b2f34c00489248f7b44fded2f8c2b90bf7820bcb6684f39f9ac0271d3a00b57  .codex-nginx-owner-fixture/version_acceptance.py' \
+            '22829a6bc905840e558e6a17fb0525a87362dc57dc8fd78e2887c34af5d7f71d  .codex-nginx-owner-fixture/candidate.py' \
+            '4e01aed6b790835ba2948bd112ada16ad7982577428ea5ee0ff5d3191e5d83c8  .codex-nginx-owner-fixture/synthetic_detail_parser.py' \
+            | sha256sum --check --strict
+          test ! -L .codex-nginx-owner-fixture
+          for f in .codex-nginx-owner-fixture/*; do test -f "$f" && test ! -L "$f"; done
+          test "$(find -P .codex-nginx-owner-fixture -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)" = "$(printf '%s\n' file_txn.py journal_owner.py nginx_lifecycle.py session_protocol.py combined_child_fixture.py combined_test.mjs ingress-channel.mjs combined.Dockerfile mechanical_hold.py version_acceptance.py candidate.py synthetic_detail_parser.py | LC_ALL=C sort)"
+          test -z "$(git status --porcelain -- .codex-nginx-owner-fixture .github/workflows/nginx-owner-chain.yml)"
+      - name: Pull pinned public images
+        run: |
+          set -eu
+          docker pull --platform linux/amd64 python@sha256:e8e689ab6825e34adf0c1e516d1aded0b8aa9ec16e47441fa998a8d4d48ffacb
+          docker pull --platform linux/amd64 node@sha256:01393fe5a51489b63da0ab51aa8e0a7ff9990132917cf20cfc3d46f5e36c0e48
+          docker pull --platform linux/amd64 nginx@sha256:09ab424a8c788f8d0fe3a64429f6d19dfa526885c8609b748d0943a75dcb9f8c
+      - name: Build and exercise only the isolated synthetic chain
+        run: |
+          set -eu
+          docker build --network none --platform linux/amd64 -f .codex-nginx-owner-fixture/combined.Dockerfile -t nginx-owner-chain-fixture .codex-nginx-owner-fixture
+          run_fixture() {
+            timeout --signal=TERM --kill-after=5s 120s docker run --rm --platform linux/amd64 --network none --read-only \
+              --cap-drop ALL --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges \
+              --tmpfs /root:rw,nosuid,nodev,mode=0700,size=32m --tmpfs /synthetic-control:rw,nosuid,nodev,mode=0755,size=8m \
+              --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=16m \
+              --mount "type=bind,src=$GITHUB_WORKSPACE/.codex-nginx-owner-fixture,dst=/fixture,readonly" \
+              --entrypoint /usr/local/bin/node nginx-owner-chain-fixture /fixture/combined_test.mjs "$1"
+          }
+          run_fixture --fixture
+          run_fixture --fixture-loss
