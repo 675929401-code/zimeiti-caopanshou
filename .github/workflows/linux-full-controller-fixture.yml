@@ -1,0 +1,51 @@
+name: Isolated Linux full controller session fixture
+on:
+  push:
+    branches: [test/linux-full-controller-61e9-20261102]
+    paths: [.github/workflows/linux-full-controller-fixture.yml, .codex-full-controller-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-full-controller-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify pinned inputs and run isolated end-to-end session
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-full-controller-fixture
+          test "$(find "$root" -type f | wc -l)" = 10
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 4
+          printf '%s\n' \
+            '9a2031807656979c93115eee0044abe3788f512aed73291ca7b0761e08149f72  .codex-full-controller-fixture/linux-owner-implementation-61e9/controller-fixture.sh' \
+            'e21e986806dd4cf657c2eb98377db34ba5573cc155ae9b4892d114e7aaabacb4  .codex-full-controller-fixture/linux-owner-implementation-61e9/controller-session-channel.mjs' \
+            '2e5cdc44f3c2f81699a22bf77eea49e8293bfa038d40f3bab5027b53aa929631  .codex-full-controller-fixture/linux-owner-implementation-61e9/controller-stage-facade.mjs' \
+            '01dde6ffee224da17b1a172a550ccbf0cf84ac757fa3fb73e555db9f5e7bc8c2  .codex-full-controller-fixture/linux-owner-implementation-61e9/linux-journal-owned.mjs' \
+            'd1098b9de1f4b029a2e82f498d423dd8ef8f39d3ef9ca0da83d591b1e0b17525  .codex-full-controller-fixture/linux-owner-implementation-61e9/linux-stage-engine.mjs' \
+            '3570dda08cf8fc9de488c33fd785043ae696cd95e2424bba5244ec183e2e7bc7  .codex-full-controller-fixture/linux-owner-implementation-61e9/persistent-ssh-with-descriptor.mjs' \
+            'f19674aeb9abf3020541f44bb4c68ec77298462dc3d2bfcc97cce08fef6308ac  .codex-full-controller-fixture/linux-owner-implementation-61e9/remote-fixture.mjs' \
+            'b6f31580704f95000bb359606f9ebbe1e368670ea5eaba3f19c4a06d69634f1b  .codex-full-controller-fixture/linux-owner-implementation-61e9/supervisor-channel.mjs' \
+            '06db42f174ecd643a31e403c9f939bd7a97e3b61fb829e1960dbd449a57cdee5  .codex-full-controller-fixture/linux-owner-implementation-61e9/test-full-linux.mjs' \
+            '06a7aadaf52bc5c9ab1123172ad759d22a1233fd58ba1c36e7dc77574edf0cd9  .codex-full-controller-fixture/worker-quiescence-plan-61e9/activation-integration/hook-adoption-prototype.mjs' \
+            | sha256sum --check --strict
+          node_bin="$(command -v node)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 50s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 40s "$node_bin" "$root/linux-owner-implementation-61e9/test-full-linux.mjs"
