@@ -1,0 +1,4 @@
+a918f4fc68ad0eb8d630e5f45e660cab3e666074c2801fcea91e83deb29fa019  .codex-linux-sqlite-extracted-fixture/sqlite-reader.py
+02cf3dfa361791410df91fdd6245c04b5b28723277990b87f0f8f02b7c00ea75  .codex-linux-sqlite-extracted-fixture/sqlite-window-provider.py
+ea25682c066ffde8beab0e35a8eb0b9a7489359447a0f50b04e8dd1e8af2b0a3  .codex-linux-sqlite-extracted-fixture/bootstrap.sh
+c577c494e6d819cee90f5af7bb8dfbcc87ef23ee93619715de02ae7c0a35cc28  .codex-linux-sqlite-extracted-fixture/test_kernel.py

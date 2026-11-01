@@ -1,0 +1,42 @@
+name: Isolated Linux SQLite extracted reader fixture
+on:
+  push:
+    branches: [test/linux-sqlite-extracted-61e9-20261102]
+    paths: [.github/workflows/linux-sqlite-extracted-fixture.yml, .codex-linux-sqlite-extracted-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-sqlite-extracted-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify frozen inputs and exercise isolated kernel fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-linux-sqlite-extracted-fixture
+          test "$(find "$root" -type f | wc -l)" = 5
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 1
+          printf '%s\n' \
+            'a918f4fc68ad0eb8d630e5f45e660cab3e666074c2801fcea91e83deb29fa019  .codex-linux-sqlite-extracted-fixture/sqlite-reader.py' \
+            '02cf3dfa361791410df91fdd6245c04b5b28723277990b87f0f8f02b7c00ea75  .codex-linux-sqlite-extracted-fixture/sqlite-window-provider.py' \
+            'ea25682c066ffde8beab0e35a8eb0b9a7489359447a0f50b04e8dd1e8af2b0a3  .codex-linux-sqlite-extracted-fixture/bootstrap.sh' \
+            'c577c494e6d819cee90f5af7bb8dfbcc87ef23ee93619715de02ae7c0a35cc28  .codex-linux-sqlite-extracted-fixture/test_kernel.py' \
+            'b32c77c3bfdf85b8c275e645518552cb77c9d12f5e8714852e2eb1be8f7c064e  .codex-linux-sqlite-extracted-fixture/pins.sha256' \
+            | sha256sum --check --strict
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 50s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C SQLITE_FIXTURE_ONLY=github-isolated-v1 \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 40s /usr/bin/bash "$root/bootstrap.sh"
