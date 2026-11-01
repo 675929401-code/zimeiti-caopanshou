@@ -1,10 +1,10 @@
 export const MODEL_BRAND_OPTIONS = [
   { key: "minimax", label: "MiniMax", asset: "/model-brands/minimax.svg" },
   { key: "xai", label: "xAI / Grok", asset: "/model-brands/xai.svg" },
-  { key: "google", label: "Google / Veo / Omni", asset: "/model-brands/google.svg" },
-  { key: "bytedance", label: "字节 / Seedance", asset: "/model-brands/bytedance.svg" },
+  { key: "google", label: "Google / Veo / Omni", asset: "/model-brands/google-v2.svg" },
+  { key: "bytedance", label: "字节 / Seedance", asset: "/model-brands/bytedance-v2.svg" },
   { key: "kling", label: "可灵 Kling", asset: "/model-brands/kling.svg" },
-  { key: "openai", label: "OpenAI", asset: "/model-brands/openai.svg" },
+  { key: "openai", label: "OpenAI", asset: "/model-brands/openai-v2.svg" },
   { key: "vidu", label: "Vidu", asset: "/model-brands/vidu.svg" },
   { key: "gk", label: "GK", asset: "/model-brands/gk.svg" },
   { key: "qwen", label: "通义千问", asset: "/model-brands/qwen.svg" },
@@ -31,6 +31,15 @@ export function resolveModelBrand(...values: Array<string | null | undefined>): 
 
 export function modelBrandAsset(brand: ModelBrand) {
   return MODEL_BRAND_OPTIONS.find(option => option.key === brand)?.asset || "/model-brands/generic.svg";
+}
+
+export function displayModelAvatar(value: string) {
+  switch (value) {
+    case "/model-brands/bytedance.svg": return modelBrandAsset("bytedance");
+    case "/model-brands/google.svg": return modelBrandAsset("google");
+    case "/model-brands/openai.svg": return modelBrandAsset("openai");
+    default: return value;
+  }
 }
 
 export function isModelAvatarImage(value: string | null | undefined) {

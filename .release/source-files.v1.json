@@ -3,13 +3,13 @@
   "projectId": "zimeiti-caopanshou",
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
-  "policySha256": "b336a22fa780b3a09fa4aaba2a0612b16f6f0904cae57f9c049fff9671ab5f70",
-  "sourceFingerprint": "9b87426a5100bae87accb6995c71ad02f65e153db056fcbd989716a6c96e4291",
-  "assetManifestSha256": "af979cc716094c4d85b5f78cc7daa71a109acd0494dbe03c2b7411d48ca369cd",
-  "assetDigest": "76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
-  "assetVersion": "sha256-76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
-  "fileCount": 4833,
-  "totalBytes": 77225939,
+  "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
+  "sourceFingerprint": "f71ed1fef2c5601d5301e565c9922732630c3632f4a8c1d9792d85011bdaedec",
+  "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
+  "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
+  "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
+  "fileCount": 4837,
+  "totalBytes": 77249210,
   "files": [
     {
       "path": ".cnb.yml",
@@ -143,13 +143,13 @@
     },
     {
       "path": "deploy/manifests/public-assets.v1.json",
-      "bytes": 233443,
-      "sha256": "af979cc716094c4d85b5f78cc7daa71a109acd0494dbe03c2b7411d48ca369cd"
+      "bytes": 233947,
+      "sha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb"
     },
     {
       "path": "deploy/manifests/public-code-track.v1.txt",
-      "bytes": 3478,
-      "sha256": "e325724f040693221277a09f754cc253c97bd0a47da1bc22ac348d1b556cff49"
+      "bytes": 3562,
+      "sha256": "ecdae32ef07c1dea30ca4c2aab9ad2d5fd08393bec18952350659786ad429c42"
     },
     {
       "path": "deploy/manifests/release-candidate-plan.v1.json",
@@ -213,8 +213,8 @@
     },
     {
       "path": "deploy/policies/release-policy.json",
-      "bytes": 35183,
-      "sha256": "b336a22fa780b3a09fa4aaba2a0612b16f6f0904cae57f9c049fff9671ab5f70"
+      "bytes": 35447,
+      "sha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd"
     },
     {
       "path": "deploy/systemd/pm2-root.service.d/20-zimeiti-data-mount.conf.example",
@@ -1822,9 +1822,14 @@
       "sha256": "c1f1f59b2071644df2c3d1595b430f1cbe3d2d6f982dcfe26992596206acfce7"
     },
     {
-      "path": "public/model-brands/bytedance.svg",
+      "path": "public/model-brands/bytedance-v2.svg",
       "bytes": 1159,
       "sha256": "613ba577dfc23de42e6f7a01ded20abde213a9370320be44061cda6b0bccf91d"
+    },
+    {
+      "path": "public/model-brands/bytedance.svg",
+      "bytes": 509,
+      "sha256": "ac270ab9b6c9d5b19c18f0111cdc78e656fc9c249fc000c6eab2e446cdad58b3"
     },
     {
       "path": "public/model-brands/generic.svg",
@@ -1832,14 +1837,24 @@
       "sha256": "319605f9f0b542feadcfd16fcc59c51285fa230d50fb2f0488a40e1d15cf67f1"
     },
     {
-      "path": "public/model-brands/google.svg",
+      "path": "public/model-brands/google-v2.svg",
       "bytes": 498,
       "sha256": "b2339de3995d6655242dcd0ebcb75fc8081d2b67b109224472cb525f6ff5eb79"
     },
     {
-      "path": "public/model-brands/openai.svg",
+      "path": "public/model-brands/google.svg",
+      "bytes": 575,
+      "sha256": "06da2eedb2acf931eb19a07e3313917967664e6216f48306a35e0c60457bc69c"
+    },
+    {
+      "path": "public/model-brands/openai-v2.svg",
       "bytes": 1687,
       "sha256": "a595df6b423920c67a7f8f73c063e4bfb72d415948097b6cac063a2366bb5186"
+    },
+    {
+      "path": "public/model-brands/openai.svg",
+      "bytes": 461,
+      "sha256": "d55e898dea2a12f5aab2f370ea183c5aaff3dc24f485947e1145f2ca9bf923bc"
     },
     {
       "path": "public/model-brands/xai.svg",
@@ -1904,7 +1919,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "c36266abb1ccf775b48c0386ef12ad8a3ecd994c841d3327ce18b59d93e8e690"
+      "sha256": "048cd17666bae5ca744e52f14fc6d1a7846f9f454809b6fa7cbd433b13837f7f"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -3103,8 +3118,8 @@
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
-      "bytes": 198459,
-      "sha256": "4c919d5bc26762c73eb6c3cbef1d09ab657a5230b4a4c4030d53b560d9d2dd3c"
+      "bytes": 200503,
+      "sha256": "a649d4ac5277aa05f28026ab7026fbe21d64e742da5d2d4c6c2283d05a900c6e"
     },
     {
       "path": "scripts/deploy-direct.js",
@@ -3848,8 +3863,8 @@
     },
     {
       "path": "scripts/media-worker-transaction-hook-vnext.mjs",
-      "bytes": 19413,
-      "sha256": "5568300945997dc6814c72710f1616b7a0dd730e8f4103abc528546363ee12d8"
+      "bytes": 24951,
+      "sha256": "1d309a6c490d5ee800580f091f3d157a750f162a2c467a256a99e826cf6bb5ed"
     },
     {
       "path": "scripts/migrate-agent-navigation-permissions.ts",
@@ -7373,8 +7388,8 @@
     },
     {
       "path": "scripts/verify-deploy-state-machine.mjs",
-      "bytes": 52401,
-      "sha256": "676ac0cae1112d3cd530099b2101854397772d99c95912cacc541fbffc1d022a"
+      "bytes": 52469,
+      "sha256": "761cd6880e38d257be48ea94e9adae721ff1f6fff7a046861923b4143634eb78"
     },
     {
       "path": "scripts/verify-deploy-storage-guard-zero-network.sh",
@@ -9267,6 +9282,11 @@
       "sha256": "7651c77dfd41e82de51431b58dcd07a1fb5efd556acd8af74bbf1d97c1727dce"
     },
     {
+      "path": "scripts/verify-prestop-adoption-zero-network.mjs",
+      "bytes": 12002,
+      "sha256": "ed15d57529a24596dfd011d0cd9468999eca9027bc7b37a3387702f6f56a9d5d"
+    },
+    {
       "path": "scripts/verify-primary-navigation-zero-cost.mjs",
       "bytes": 20186,
       "sha256": "10d45c06f101a32b2d42be8d0b1d34c238bf09f5dff6e6c498899ff27a99ee37"
@@ -9498,8 +9518,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 131645,
-      "sha256": "f029b84e58244940f3d5d1278af70d1845cfc0cdf7bdf955c06310a93af8ec44"
+      "bytes": 132414,
+      "sha256": "120e428c8c40cab5255baa5a2d6bcbc4503a93935b236fe576ea48af72b03049"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",
@@ -17163,8 +17183,8 @@
     },
     {
       "path": "src/components/model-badge.tsx",
-      "bytes": 2261,
-      "sha256": "e77af62cff75de6ca72e00a0a7d7b1c1b58272b3f4711e4e25b4d87c2979d802"
+      "bytes": 2301,
+      "sha256": "29b6fa3aa316672bd529adc4eea969cbf1082fee2d4785b819fae999d09b3a02"
     },
     {
       "path": "src/components/preset-dialog.tsx",
@@ -17583,8 +17603,8 @@
     },
     {
       "path": "src/components/unified-model-dialog.tsx",
-      "bytes": 102004,
-      "sha256": "9b580c8456f083ce9ac4dc9219fdf56eb0a4286b4c898cc0346dbb839a723d17"
+      "bytes": 102084,
+      "sha256": "b50f48c6b9e4459eb2e29416c458da0b90a5b054f5428c7ee3afb030a561bdbd"
     },
     {
       "path": "src/components/unified-models-tab.tsx",
@@ -19768,8 +19788,8 @@
     },
     {
       "path": "src/lib/model-brand.ts",
-      "bytes": 2520,
-      "sha256": "c50129eaa4a9ddd1efe0c804875336dd86356bf0de40666fd01d077321fcc9e1"
+      "bytes": 2853,
+      "sha256": "25aa1216999b5684c32dd73ac7ca0aacbf8925b31d71043150830b4325010ca3"
     },
     {
       "path": "src/lib/model-connection-summary.ts",

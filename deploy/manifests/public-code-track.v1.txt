@@ -1,4 +1,4 @@
-# 代码轨 public 清单（tar 内随代码制品走的运行必需静态资源，共 81 文件）
+# 代码轨 public 清单（tar 内随代码制品走的运行必需静态资源，共 84 文件）
 # 大体积素材走 B 轨（PUBLIC_ASSET_ROOT），不进入本清单，避免每次重复上传。
 # 维护规则：本清单必须与 release-policy.source.publicSourcePaths 精确对应；路径不含 public/ 前缀。
 # version.json 由打包脚本每次从项目根 public/version.json 强制刷新，因此不在本清单重复登记。
@@ -66,9 +66,12 @@ commerce/reference/f5f454a30ad7cc68.png
 commerce/reference/f7c97a6046a11b55.png
 commerce/replicate.jpg
 commerce/video-icon.png
+model-brands/bytedance-v2.svg
 model-brands/bytedance.svg
 model-brands/generic.svg
+model-brands/google-v2.svg
 model-brands/google.svg
+model-brands/openai-v2.svg
 model-brands/openai.svg
 model-brands/xai.svg
 product-assets/youcai-demo-v1/clean-v21/previews/03-shot-02.webp

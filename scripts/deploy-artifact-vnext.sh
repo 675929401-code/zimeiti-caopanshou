@@ -34,6 +34,11 @@ artifact. It never pulls Git, installs dependencies, builds on the server,
 creates/seeds mutable business data, migrates a database, or deletes an old
 release.
 
+For a trusted Web migration window, --prestop-adopt requires the caller to
+hold and inherit the existing deployment lock on FD 9. The same transaction's
+confirmed migration record and pre-stopped workers are checked by the hook.
+After a confirmed migration, automatic rollback to old code is disabled.
+
 The standalone sensitive-path verifier is read-only and exists for focused,
 zero-network release-gate regression tests.
 
@@ -232,6 +237,7 @@ EXPECTED_SHA256=""
 RELEASE_ID=""
 RELEASE_ROOT=""
 SENSITIVE_VERIFY_ROOT=""
+PRESTOP_ADOPT=0
 ASSET_DELIVERY_MODE="${ASSET_DELIVERY_MODE:-auto}"
 ASSET_POLICY_TRANSITION_RECEIPT=""
 ASSET_POLICY_TRANSITION_SHA256=""
@@ -256,6 +262,7 @@ while [[ $# -gt 0 ]]; do
     --root) RELEASE_ROOT="${2:-}"; shift 2 ;;
     --asset-policy-transition-receipt) ASSET_POLICY_TRANSITION_RECEIPT="${2:-}"; shift 2 ;;
     --asset-policy-transition-sha256) ASSET_POLICY_TRANSITION_SHA256="${2:-}"; shift 2 ;;
+    --prestop-adopt) PRESTOP_ADOPT=1; shift ;;
     --verify-sensitive-root) SENSITIVE_VERIFY_ROOT="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -263,6 +270,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$SENSITIVE_VERIFY_ROOT" ]]; then
+  [[ "$PRESTOP_ADOPT" == 0 ]] || die "--prestop-adopt is not valid with sensitive-root verification"
   [[ -z "$MODE$RELEASE_MODE$SERVICE$ARTIFACT$EXPECTED_SHA256$RELEASE_ID$RELEASE_ROOT$ASSET_POLICY_TRANSITION_RECEIPT$ASSET_POLICY_TRANSITION_SHA256" ]] || \
     die "--verify-sensitive-root is a standalone read-only verification mode"
   require_command node
@@ -280,6 +288,9 @@ fi
 [[ "$RELEASE_MODE" == "WEB" || "$RELEASE_MODE" == "VOICE" ]] || die "--release-mode must be WEB or VOICE"
 [[ "$SERVICE" == "web" || "$SERVICE" == "voice" ]] || die "--service must be web or voice"
 [[ "$RELEASE_MODE" == "${SERVICE^^}" ]] || die "--release-mode $RELEASE_MODE does not match --service $SERVICE"
+if [[ "$PRESTOP_ADOPT" == 1 ]]; then
+  [[ "$SERVICE" == web && "$MODE" == execute ]] || die "--prestop-adopt requires Web execute mode"
+fi
 [[ "$RELEASE_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$ ]] || die "--release-id must contain 8-80 safe characters"
 [[ "$EXPECTED_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || die "--sha256 must be a 64-character SHA-256"
 [[ "$ASSET_DELIVERY_MODE" == "auto" || "$ASSET_DELIVERY_MODE" == "disk" || "$ASSET_DELIVERY_MODE" == "cos" ]] || \
@@ -871,6 +882,7 @@ NODE
   DIRECT_HOOK_SERVICE="$SERVICE" DIRECT_HOOK_RELEASE_ROOT="$RELEASE_ROOT" \
     DIRECT_HOOK_PM2_CONFIG_PATH="$DIRECT_HOOK_PM2_CONFIG_PATH" \
     DIRECT_HOOK_PM2_CONFIG_SHA256="$DIRECT_HOOK_PM2_CONFIG_SHA256" \
+    DIRECT_HOOK_PRESTOP_ADOPTION="$PRESTOP_ADOPT" DIRECT_HOOK_ARTIFACT_SHA256="${ACTUAL_SHA256,,}" \
     node "$DIRECT_HOOK_PATH" "$1" "${DIRECT_TRANSACTION_ROOT:?}"
 }
 
@@ -1171,7 +1183,12 @@ final_cleanup() {
     exit_status=1
     echo "CLEANUP BLOCKED: candidate unit remains controlled; staging is retained for safe recovery: $candidate_unit" >&2
   fi
-  if [[ "$DIRECT_PREPARED" == "1" && "$DEPLOY_COMPLETE" != "1" && "$DIRECT_ROLLBACK_COMPLETE" != "1" ]]; then
+  if [[ "$DIRECT_PREPARED" == "1" && "$DEPLOY_COMPLETE" != "1" && "$DIRECT_ROLLBACK_COMPLETE" != "1" && "$PRESTOP_ADOPT" == "1" ]]; then
+    # The database commit is already confirmed: do not start old workers from
+    # the EXIT fallback. The trusted window keeps maintenance until review.
+    FAILURE_CONTEXT="${FAILURE_CONTEXT};direct-rollback=disabled-after-migration"
+    exit_status=1
+  elif [[ "$DIRECT_PREPARED" == "1" && "$DEPLOY_COMPLETE" != "1" && "$DIRECT_ROLLBACK_COMPLETE" != "1" ]]; then
     if [[ ! -f "${DIRECT_TRANSACTION_ROOT:-}/media-worker-state.json" ]]; then
       # prepare validates the current workers before it creates the state file.
       # No state file therefore means it failed before any worker mutation.
@@ -2350,9 +2367,27 @@ LOCK_FILE="$RELEASE_ROOT/.deploy.lock"
 if [[ -e "$LOCK_FILE" || -L "$LOCK_FILE" ]]; then
   [[ -f "$LOCK_FILE" && ! -L "$LOCK_FILE" ]] || die "deploy lock is not a regular file: $LOCK_FILE"
 fi
-exec 9>>"$LOCK_FILE"
+if [[ "$PRESTOP_ADOPT" == 1 ]]; then
+  [[ -e "/proc/$$/fd/9" ]] || die "pre-stop adoption requires inherited deployment lock FD 9"
+else
+  exec 9>>"$LOCK_FILE"
+fi
 [[ -f "$LOCK_FILE" && ! -L "$LOCK_FILE" ]] || die "deploy lock path changed while it was opened"
 [[ "$(readlink -f -- "/proc/$$/fd/9")" == "$(readlink -f -- "$LOCK_FILE")" ]] || die "deploy lock file descriptor escaped its expected path"
+if [[ "$PRESTOP_ADOPT" == 1 ]]; then
+  # Independent open-file description must conflict with the inherited lock.
+  # If it succeeds, FD 9 did not continuously retain the release lock.
+  exec {PRESTOP_LOCK_PROBE_FD}>>"$LOCK_FILE"
+  if flock -n "$PRESTOP_LOCK_PROBE_FD"; then
+    flock -u "$PRESTOP_LOCK_PROBE_FD" || true
+    exec {PRESTOP_LOCK_PROBE_FD}>&-
+    die "pre-stop adoption requires an already held deployment lock"
+  else
+    PRESTOP_LOCK_PROBE_STATUS="$?"
+    exec {PRESTOP_LOCK_PROBE_FD}>&-
+    [[ "$PRESTOP_LOCK_PROBE_STATUS" == 1 ]] || die "unable to verify deployment lock contention"
+  fi
+fi
 flock -n 9 || die "another release transaction already holds $LOCK_FILE"
 
 DEPLOY_HISTORY_PATH="$LOG_ROOT/deploy-history.tsv"
@@ -3206,6 +3241,11 @@ rollback_release() {
   fi
   ROLLBACK_ATTEMPTED="1"
   IN_ROLLBACK="1"
+  if [[ "$PRESTOP_ADOPT" == 1 ]]; then
+    echo "ROLLBACK DISABLED: database migration was already confirmed; keep maintenance and reconcile manually." >&2
+    IN_ROLLBACK="0"
+    return 1
+  fi
   echo "ROLLBACK: $reason" >&2
   if ! cleanup_candidate; then
     echo "ROLLBACK FAILED: candidate sandbox could not be proven inactive; pointers were not changed." >&2
