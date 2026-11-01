@@ -1,0 +1,44 @@
+name: Isolated Linux owner channel fixture
+on:
+  push:
+    branches: [test/linux-owner-channel-61e9-20261102]
+    paths: [.github/workflows/linux-owner-channel-fixture.yml, .codex-linux-owner-channel-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-owner-channel-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify bytes and exercise real private owner channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-linux-owner-channel-fixture
+          test "$(find "$root" -type f | wc -l)" = 4
+          test "$(find "$root" -type l | wc -l)" = 0
+          printf '%s\n' \
+            '97554c0e37194a6781c844f935868dce2c2604c17aa28d30fc43d8d6c38ec0c8  .codex-linux-owner-channel-fixture/owner-node.mjs' \
+            'ee79ca0584b50883fa9273b195b5e7bb1385fc6e198def9eb4fcb5f08330fb4a  .codex-linux-owner-channel-fixture/owner-child.py' \
+            '8518a6b420a5c3fdb866e6b51f0d54260b8df0a3680f55006d4b23b845854b42  .codex-linux-owner-channel-fixture/child.py' \
+            'dddfcb5a87cb59047bf04efdafe757d648b8bb6736f2efb6024a795ebcf24880  .codex-linux-owner-channel-fixture/test.mjs' \
+            | sha256sum --check --strict
+          node_bin="$(command -v node)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 40s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 30s "$node_bin" "$root/test.mjs"
