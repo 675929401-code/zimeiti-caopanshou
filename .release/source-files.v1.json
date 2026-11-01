@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "b336a22fa780b3a09fa4aaba2a0612b16f6f0904cae57f9c049fff9671ab5f70",
-  "sourceFingerprint": "e7c81ea1680b84ae599b91b78016315a4e66b14eabd53cb50e182df93bb14bbb",
+  "sourceFingerprint": "68b8cd897346c1ce01a8dd82709bb3734b92f4c78f15515e243d41544c5fee1e",
   "assetManifestSha256": "af979cc716094c4d85b5f78cc7daa71a109acd0494dbe03c2b7411d48ca369cd",
   "assetDigest": "76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
   "assetVersion": "sha256-76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
   "fileCount": 4833,
-  "totalBytes": 77220209,
+  "totalBytes": 77222343,
   "files": [
     {
       "path": ".cnb.yml",
@@ -9498,8 +9498,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 129756,
-      "sha256": "e0673ca8cedeca2f09eb8c6b8b9efb8f50c00fe6697f3243ab89a8dfea6af53a"
+      "bytes": 131645,
+      "sha256": "f029b84e58244940f3d5d1278af70d1845cfc0cdf7bdf955c06310a93af8ec44"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",
@@ -14978,8 +14978,8 @@
     },
     {
       "path": "src/app/tools/utility/page.tsx",
-      "bytes": 5446,
-      "sha256": "d141bacc6a9a33464d0fd6af020b80800fb4d921b9237f73cf98e80cbc80edb9"
+      "bytes": 5691,
+      "sha256": "0446c5bc35d45a69ababf4d75cd5779e61118ca7a981d24787f8603a8a02e7fa"
     },
     {
       "path": "src/app/tools/video/aliyun-erase-subtitles/page.tsx",

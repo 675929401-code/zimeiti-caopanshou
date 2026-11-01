@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { FileText, Home, Scissors, Text, Video, Wrench } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import ExtractPage from "@/app/extract/page";
 import FormatterPage from "@/app/formatter/page";
 import SegmenterPage from "@/app/segmenter/page";
@@ -26,14 +26,17 @@ function normalizeTab(value: string | null): ToolTab {
 
 function ToolboxWorkspace() {
   const router = useAppScopedRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeTab = normalizeTab(searchParams.get("tab"));
 
   useEffect(() => {
     const requested = searchParams.get("tab");
-    if (requested === activeTab) return;
-    router.replace(`/tools/utility?tab=${activeTab}`, { scroll: false });
-  }, [activeTab, router, searchParams]);
+    if (requested === activeTab || window.location.pathname !== pathname
+      || new URLSearchParams(window.location.search).get("tab") !== requested) return;
+    // This only normalizes the current URL; avoid a second RSC navigation.
+    window.history.replaceState(null, "", `${pathname}?tab=${activeTab}`);
+  }, [activeTab, pathname, searchParams]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

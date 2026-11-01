@@ -1415,7 +1415,35 @@ assert.equal(reviewedRouteHelpers.resolveBrowserRouteTarget("/unreviewed", origi
 const nextConfiguration = read("next.config.ts");
 assert.match(nextConfiguration, /source:\s*['"]\/segmenter['"][\s\S]{0,100}destination:\s*['"]\/tools\?tab=segment['"]/u);
 const utilityPageSource = read("src/app/tools/utility/page.tsx");
-assert.match(utilityPageSource, /router\.replace\(`\/tools\/utility\?tab=\$\{activeTab\}`/u);
+assert.match(utilityPageSource, /window\.history\.replaceState\(null,\s*"",\s*`\$\{pathname\}\?tab=\$\{activeTab\}`\)/u);
+assert.match(utilityPageSource, /window\.location\.pathname !== pathname/u);
+assert.match(utilityPageSource, /new URLSearchParams\(window\.location\.search\)\.get\("tab"\) !== requested/u);
+assert.doesNotMatch(utilityPageSource, /router\.replace\(`\/tools\/utility\?tab=/u);
+const utilityNormalization = utilityPageSource.match(/useEffect\(\(\) => \{([\s\S]*?)\}, \[activeTab, pathname, searchParams\]\)/u);
+assert.ok(utilityNormalization, "utility URL normalization effect missing");
+const runUtilityNormalization = runInNewContext(`(window, activeTab, pathname, searchParams) => { ${utilityNormalization[1]} }`, { URLSearchParams });
+for (const scopedPath of ["/tools/utility", "/youcai/tools/utility"]) {
+  const calls = [];
+  const fakeWindow = { location: { pathname: scopedPath, search: "" }, history: { replaceState: (...args) => calls.push(args) } };
+  const params = { get: () => null };
+  runUtilityNormalization(fakeWindow, "text", scopedPath, params);
+  assert.deepEqual(calls, [[null, "", `${scopedPath}?tab=text`]]);
+  // A later effect with stale router state must not rewrite a newer URL.
+  fakeWindow.location.search = "?tab=segment";
+  runUtilityNormalization(fakeWindow, "text", scopedPath, params);
+  assert.equal(calls.length, 1);
+  fakeWindow.location.pathname = "/another-page";
+  fakeWindow.location.search = "";
+  runUtilityNormalization(fakeWindow, "text", scopedPath, params);
+  assert.equal(calls.length, 1);
+  fakeWindow.location.pathname = scopedPath;
+  fakeWindow.location.search = "?tab=format";
+  runUtilityNormalization(fakeWindow, "format", scopedPath, { get: () => "format" });
+  assert.equal(calls.length, 1);
+  fakeWindow.location.search = "?tab=invalid&extra=value";
+  runUtilityNormalization(fakeWindow, "text", scopedPath, { get: () => "invalid" });
+  assert.deepEqual(calls[1], [null, "", `${scopedPath}?tab=text`]);
+}
 assert.match(utilityPageSource, /id:\s*"text"[\s\S]{0,160}label:\s*"文案提取"/u);
 function reviewedToolPage(tool, options = {}) {
   let value = "";
