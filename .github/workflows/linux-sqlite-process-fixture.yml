@@ -1,0 +1,40 @@
+name: Isolated Linux SQLite process fixture
+on:
+  push:
+    branches: [test/linux-sqlite-process-61e9-20261102]
+    paths: [.github/workflows/linux-sqlite-process-fixture.yml, .codex-linux-sqlite-process-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-sqlite-process-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify frozen inputs and exercise isolated kernel fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-linux-sqlite-process-fixture
+          test "$(find "$root" -type f | wc -l)" = 3
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 1
+          printf '%s\n' \
+            'e58139923dbb41a19b5782a922dbaac638e23384e5f20c9cb7fabf6a6ede3103  .codex-linux-sqlite-process-fixture/process.py' \
+            '8af1aa1cd6208e65568716215348af93fcf9bf13039fdb0aa6fb411b40ce4f5e  .codex-linux-sqlite-process-fixture/test_kernel.py' \
+            '1f022e875db5ef04f74b3d5621245228cf7f799abf3ef051cb2443501647eed9  .codex-linux-sqlite-process-fixture/pins.sha256' \
+            | sha256sum --check --strict
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 40s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 30s /usr/bin/python3 -B "$root/test_kernel.py"
