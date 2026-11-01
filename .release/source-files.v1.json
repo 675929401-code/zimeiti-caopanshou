@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "b336a22fa780b3a09fa4aaba2a0612b16f6f0904cae57f9c049fff9671ab5f70",
-  "sourceFingerprint": "81e6013d528079d598eb1f6d33343d699dbc10778c31dcce28379b3b14217a4f",
+  "sourceFingerprint": "fc1bed74d114c5d11016c6fc9d52f98b692d93672581e456f8abafb79da50a66",
   "assetManifestSha256": "af979cc716094c4d85b5f78cc7daa71a109acd0494dbe03c2b7411d48ca369cd",
   "assetDigest": "76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
   "assetVersion": "sha256-76af77527c7d0ccc0cc596ec4809df770c8cde2d7f37ace3ab3bf99064792297",
-  "fileCount": 4827,
-  "totalBytes": 76724082,
+  "fileCount": 4828,
+  "totalBytes": 76730438,
   "files": [
     {
       "path": ".cnb.yml",
@@ -53,8 +53,8 @@
     },
     {
       "path": ".gitattributes",
-      "bytes": 454,
-      "sha256": "5f057ec4ca0ff48c94c372b5e4613981ec7029883009bcfab79facffe9508fc5"
+      "bytes": 583,
+      "sha256": "b6c3bac2f36709a1a9cd40b8b323e49c5a7e08ea6b46a1e34106f6849eeddc55"
     },
     {
       "path": ".github/workflows/deploy.yml",
@@ -4673,8 +4673,8 @@
     },
     {
       "path": "scripts/release-workflow.mjs",
-      "bytes": 76289,
-      "sha256": "0bc40cdd1cae90019b9ef38e0bd36815e5dfd3f813fc2734168538ea809df74e"
+      "bytes": 76541,
+      "sha256": "28ede6b21be07d80bbf2dccbfb90eec3a4338499499ea380c3afa3b33b49f2c3"
     },
     {
       "path": "scripts/remove-stale-inline-video-prices-local-20261006.mjs",
@@ -9467,9 +9467,14 @@
       "sha256": "4523109973ef9bf8b5ea38e4dbacfaa4e2ea24366083cdd4057144ab5d817ff0"
     },
     {
+      "path": "scripts/verify-release-source-bytes-zero-network.mjs",
+      "bytes": 5032,
+      "sha256": "189c5c21f2458805d0a56c6c89a7dec4784801663c29ad7fc9dda8c680d9ad9c"
+    },
+    {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 110826,
-      "sha256": "6b328b2ae7f68e985958833dc6c5c85428a89f4fa13f561ea2ca62d50ba5559c"
+      "bytes": 111171,
+      "sha256": "c18670d00f1dc3c07ef0033adb4094cb686b86ef979dd35c1d24015d4bbd85a6"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",
@@ -22953,18 +22958,18 @@
     },
     {
       "path": "supabase/migrations/20261030010000_platform_configuration_pending_credentials.sql",
-      "bytes": 18410,
-      "sha256": "f3b5f25452cbdb241079fd1178a7304f3040119098b9f992b94f906a6e36601f"
+      "bytes": 18639,
+      "sha256": "2823d96c17df7126859ae1f2f626007a62838f8d8802fcadcbb3844d98e593c3"
     },
     {
       "path": "supabase/migrations/20261030020000_platform_pending_credentials_base_and_llm_removal.sql",
-      "bytes": 16935,
-      "sha256": "893aa39b55f00b2c6934c27a41f0120c34028fec1f982e38bf6d115b0c997d1c"
+      "bytes": 16982,
+      "sha256": "2b0de90f3a940d855f9be68232433bb7d67321e2ca87f9a1ad3ad1efbd1c8532"
     },
     {
       "path": "supabase/migrations/20261030030000_model_pool_credential_removal_combination_guard.sql",
-      "bytes": 7466,
-      "sha256": "35b527a3c781f28468d27363f451aa809e12194132f2c8cd8ad9dafb57497e3b"
+      "bytes": 7549,
+      "sha256": "8a54330daa13d671a3662d8ebfbb2c565ab3143f4129b6389ac55b9f97b0184e"
     },
     {
       "path": "supabase/migrations/20261030040000_video_history_unsettled_billing_protection.sql",
@@ -22973,13 +22978,13 @@
     },
     {
       "path": "supabase/migrations/20261030050000_video_credential_only_publication.sql",
-      "bytes": 11803,
-      "sha256": "084712d5e33371c33cc707e15e163280febd24a7d674fc387b3aa614efc05ec2"
+      "bytes": 11887,
+      "sha256": "6ea6cea3b9b03ba1688e75ac344cda4425cb8cd967330ef3d666998a4accc069"
     },
     {
       "path": "supabase/migrations/20261030060000_video_pricing_only_publication.sql",
-      "bytes": 17761,
-      "sha256": "3ad2dd764718254bd5b19f3f5e08f609a3497b3327eb9b7c5915faf8abbab33a"
+      "bytes": 17916,
+      "sha256": "53ae17629297d1dab7d8c049143774358c56bdd5082796ce331ab123f1fd11f1"
     },
     {
       "path": "supabase/migrations/20261030070000_video_upsert_publication.sql",

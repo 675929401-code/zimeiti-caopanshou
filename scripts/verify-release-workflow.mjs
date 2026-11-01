@@ -1152,6 +1152,10 @@ for (const marker of [
 ]) assert.ok(capacityVerifier.includes(marker), `operational capacity gate missing: ${marker}`);
 
 const releaseWorkflow = read("scripts/release-workflow.mjs");
+const sourceBytesRegression = spawnSync(process.execPath, [path.join(root, "scripts", "verify-release-source-bytes-zero-network.mjs")], {
+  cwd: root, encoding: "utf8", windowsHide: true,
+});
+assert.equal(sourceBytesRegression.status, 0, `release source byte regression failed: ${sourceBytesRegression.stderr || sourceBytesRegression.stdout}`);
 for (const marker of ["assetPolicySha256", "sha256-files-and-asset-policy", "canonicalSourceBuffer", "canonicalTextEol", "isExternalAsset", "attr\\/-text", "ls-files", "--eol", "w\\/(?:crlf|mixed)", "forbiddenPublicRoots", "requiredRemotes", "isSafelyIgnoredLegacyManagedFile", "check-ignore", "stats.nlink !== 1"]) {
   assert.ok(releaseWorkflow.includes(marker), `release workflow policy gate missing: ${marker}`);
 }
