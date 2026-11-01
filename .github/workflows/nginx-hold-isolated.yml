@@ -1,0 +1,68 @@
+# Draft only: copy reviewed files to the exact paths below on the dedicated branch.
+name: Synthetic Nginx hold verification
+on:
+  push:
+    branches:
+      - test/nginx-hold-61e9-20261102
+    paths:
+      - .github/workflows/nginx-hold-isolated.yml
+      - .codex-nginx-hold-fixture/mechanical_hold.py
+      - .codex-nginx-hold-fixture/candidate.py
+      - .codex-nginx-hold-fixture/detail_body.py
+      - .codex-nginx-hold-fixture/linux_fixture_prepare.py
+      - .codex-nginx-hold-fixture/linux_fixture_run.sh
+permissions:
+  contents: read
+jobs:
+  isolated-fixture:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/test/nginx-hold-61e9-20261102' &&
+      github.event.deleted == false &&
+      github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify checkout and all fixture inputs
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          printf '%s\n' \
+            'cf3203f7ba800ecaede4f86da0f7676495a670f35d80edd63931e03d2fe80db5  .codex-nginx-hold-fixture/mechanical_hold.py' \
+            '64e407d4afc893d5aa531cc23b6985deddc881883f81ad821b9b6be3cfc68a33  .codex-nginx-hold-fixture/candidate.py' \
+            'ce01f0dceaadf6a9afe0d90df949ad868214c9bf6c249e455c800276be1d40d3  .codex-nginx-hold-fixture/detail_body.py' \
+            'e8a76a938ec0cb6844421fe93c81f6fbe68473c9195cdafe8f94fb75532bea45  .codex-nginx-hold-fixture/linux_fixture_prepare.py' \
+            '8417af62030dd33627e03b3ffcc64930139d03439a92fd9203ff0e53024f2920  .codex-nginx-hold-fixture/linux_fixture_run.sh' \
+            | sha256sum --check --strict
+          test -z "$(git status --porcelain -- .codex-nginx-hold-fixture .github/workflows/nginx-hold-isolated.yml)"
+      - name: Prepare synthetic configuration only
+        env:
+          FIXTURE_DIR: ${{ runner.temp }}/synthetic-nginx-hold
+        run: |
+          set -eu
+          env -i PATH=/usr/bin:/bin HOME=/nonexistent python3 -I -S -B -c \
+            'import runpy,sys; sys.path.insert(0,".codex-nginx-hold-fixture"); sys.argv=["linux_fixture_prepare.py",sys.argv[1]]; runpy.run_path(".codex-nginx-hold-fixture/linux_fixture_prepare.py",run_name="__main__")' "$FIXTURE_DIR"
+          cp .codex-nginx-hold-fixture/linux_fixture_run.sh "$FIXTURE_DIR/fixture-run.sh"
+          chmod 644 "$FIXTURE_DIR/fixture-run.sh"
+      - name: Pull exact public Nginx image
+        run: docker pull --platform linux/amd64 nginx@sha256:09ab424a8c788f8d0fe3a64429f6d19dfa526885c8609b748d0943a75dcb9f8c
+      - name: Run Nginx syntax and routing tests in isolated network
+        env:
+          FIXTURE_DIR: ${{ runner.temp }}/synthetic-nginx-hold
+        run: |
+          set -eu
+          timeout --signal=TERM --kill-after=5s 60s docker run --rm --platform linux/amd64 --network none --read-only \
+            --user 65534:65534 --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,mode=1777,size=16m \
+            --mount "type=bind,src=$FIXTURE_DIR,dst=/fixture,readonly" \
+            --entrypoint /bin/sh \
+            nginx@sha256:09ab424a8c788f8d0fe3a64429f6d19dfa526885c8609b748d0943a75dcb9f8c \
+            /fixture/fixture-run.sh
