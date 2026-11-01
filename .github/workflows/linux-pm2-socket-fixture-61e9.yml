@@ -1,0 +1,44 @@
+name: Isolated PM2 Unix socket kernel fixture 61e9
+
+on:
+  push:
+    branches:
+      - test/linux-commerce-readonly-61e9-20261101
+    paths:
+      - .github/workflows/linux-pm2-socket-fixture-61e9.yml
+      - scripts/fixtures/linux-pm2-socket-61e9/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-pm2-socket-fixture-61e9-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-socket-fixture:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/test/linux-commerce-readonly-61e9-20261101'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout exact synthetic test commit without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify fixture pins and run with external network isolated
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            '0e50cc2914ed2f15e03bf10684d07045c380089438e91eab208c0c3576218dc7  scripts/fixtures/linux-pm2-socket-61e9/bus_probe.py' \
+            '0c7f719fad067e4780c56a7d9e3286028f230890f85851549c7c03e922fcee59  scripts/fixtures/linux-pm2-socket-61e9/test_socket_linux.py' \
+            | sha256sum --check --strict
+          sudo -n /usr/bin/unshare --net -- /usr/bin/env -i \
+            PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 45s \
+            /usr/bin/python3 -I -S -B \
+            scripts/fixtures/linux-pm2-socket-61e9/test_socket_linux.py
