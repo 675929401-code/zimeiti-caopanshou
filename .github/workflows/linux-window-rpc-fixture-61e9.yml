@@ -1,0 +1,52 @@
+name: Isolated PM2 RPC socket fixture 61e9
+
+on:
+  push:
+    branches: [test/linux-window-rpc-61e9-20261102]
+    paths:
+      - .github/workflows/linux-window-rpc-fixture-61e9.yml
+      - scripts/fixtures/linux-window-rpc-61e9/**
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-rpc:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-window-rpc-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify fixed files and run synthetic Unix socket fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=scripts/fixtures/linux-window-rpc-61e9
+          test "$(find "$root" -maxdepth 1 -type f | wc -l)" = 5
+          test "$(find "$root" -mindepth 1 -maxdepth 1 | wc -l)" = 5
+          for f in live_drain.py rpc_stop.py test_rpc_linux_fixture.py socket_scope.py test_socket_scope_linux_fixture.py; do
+            test -f "$root/$f" && test ! -L "$root/$f"
+          done
+          printf '%s\n' \
+            '7ed48e6ca34e1ce12b90ae930c2d8436704059932fd75f348970e1c2d8ae5814  scripts/fixtures/linux-window-rpc-61e9/live_drain.py' \
+            '74a0541b29f9fa0ea08ce8e04cba9042e15bd03e90a85355106744ec47186128  scripts/fixtures/linux-window-rpc-61e9/rpc_stop.py' \
+            'd120bd3fdcca6e42302288a4fb8203892979c5a785939fa7f2e1cc24a95bd261  scripts/fixtures/linux-window-rpc-61e9/test_rpc_linux_fixture.py' \
+            '0d8e1a29319e89d109a4599bc59972db592dcd53674da1453dedf12959c11ab8  scripts/fixtures/linux-window-rpc-61e9/socket_scope.py' \
+            'f29a439df815bc57e594dd1e03797315cfdda0fe13477ade604697a3f8f18b09  scripts/fixtures/linux-window-rpc-61e9/test_socket_scope_linux_fixture.py' \
+            | sha256sum --check --strict
+          sudo -n /usr/bin/unshare --net -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 30s \
+            /usr/bin/python3 -I -S -B "$root/test_rpc_linux_fixture.py"
+          sudo -n /usr/bin/unshare --net -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 30s \
+            /usr/bin/python3 -I -S -B "$root/test_socket_scope_linux_fixture.py"
