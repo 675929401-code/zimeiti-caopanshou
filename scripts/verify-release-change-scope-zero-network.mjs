@@ -535,6 +535,52 @@ try {
   // engineering identities on the existing shared desktop routes; individual
   // error/client/layout inputs name their actual route owners explicitly.
   const sharedDesktopRoutes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
+  // Root build attributes and the retired legacy startup entry affect the
+  // deployed surface. Exact mappings keep them FULL without guessing routes
+  // for adjacent unknown files or accepting a partial caller route list.
+  const releaseRootInputs = [".gitattributes", "direct-start.mjs"];
+  for (const inputPath of releaseRootInputs) {
+    for (const status of ["A", "M", "D"]) {
+      const scoped = runScenario(`root-release-${status}-${sha256(inputPath).slice(0, 12)}`,
+        [{ status, path: inputPath, content: "fixture release input" }],
+        { acceptanceRoutes: sharedDesktopRoutes });
+      assert.equal(scoped.classification, "FULL");
+      assert.ok(scoped.changedFiles[0].pathRuleIds.includes("full-deployment-script-policy-or-manifest"));
+      assert.deepEqual(scoped.browserAcceptance.requiredRoutes, sharedDesktopRoutes);
+      assert.deepEqual(scoped.browserAcceptance.unresolvedPaths, []);
+      assert.equal(scoped.browserAcceptance.explicitRoutesProvided, true);
+      assert.ok(scoped.requiredValidations.includes("full-zero-network-regression"));
+      assert.equal(scoped.gate.releaseReady, false);
+    }
+  }
+  for (const inputPath of [".gitattributes.extra", "nested/.gitattributes", "direct-start-other.mjs", "nested/direct-start.mjs"]) {
+    const unmapped = runScenario(`root-release-neighbor-${sha256(inputPath).slice(0, 12)}`,
+      [{ status: "M", path: inputPath, content: "fixture" }], { acceptanceRoutes: sharedDesktopRoutes });
+    assert.equal(unmapped.classification, "FULL");
+    assert.ok(unmapped.browserAcceptance.unresolvedPaths.includes(inputPath));
+    assert.equal(unmapped.gate.releaseReady, false);
+  }
+  const releaseExtraPageRoutes = ["/commerce", "/digital-human", "/extract", "/help", "/profile", "/segmenter",
+    "/storyboard-workbench/history", "/storyboard-workbench/visual-assets", "/tools/utility", "/voice-studio/imitate", "/youcai/storyboard-workbench"];
+  const releaseRouteChanges = [
+    { status: "M", path: ".gitattributes", content: "* text=auto" },
+    { status: "D", path: "direct-start.mjs", content: "" },
+    ...releaseExtraPageRoutes.map(route => ({ status: "M", path: `src/app${route}/page.tsx`, content: "fixture page" })),
+  ];
+  const expandedReleaseRoutes = [...new Set([...sharedDesktopRoutes, ...releaseExtraPageRoutes])].sort(compareProtocolStrings);
+  assert.equal(expandedReleaseRoutes.length, 22);
+  const partialReleaseRoutes = runScenario("release-root-partial-eleven-routes", releaseRouteChanges, { acceptanceRoutes: sharedDesktopRoutes });
+  assert.deepEqual(partialReleaseRoutes.browserAcceptance.unresolvedPaths, ["<caller-routes-not-policy-approved>"]);
+  assert.equal(partialReleaseRoutes.browserAcceptance.explicitRoutesProvided, false);
+  const completeReleaseRoutes = runScenario("release-root-exact-twenty-two-routes", releaseRouteChanges, { acceptanceRoutes: expandedReleaseRoutes });
+  assert.deepEqual(completeReleaseRoutes.browserAcceptance.requiredRoutes, expandedReleaseRoutes);
+  assert.deepEqual(completeReleaseRoutes.browserAcceptance.unresolvedPaths, []);
+  assert.equal(completeReleaseRoutes.browserAcceptance.explicitRoutesProvided, true);
+  assert.equal(completeReleaseRoutes.gate.releaseReady, false);
+  const extraReleaseRoutes = runScenario("release-root-extra-caller-route", releaseRouteChanges,
+    { acceptanceRoutes: [...expandedReleaseRoutes, "/unreviewed-extra"] });
+  assert.deepEqual(extraReleaseRoutes.browserAcceptance.unresolvedPaths, ["<caller-routes-not-policy-approved>"]);
+
   const knownRouteInputs = [
     [".engineering/chat-reliability-lock.v1.json", sharedDesktopRoutes],
     [".engineering/extraction-feature-lock.v1.json", sharedDesktopRoutes],

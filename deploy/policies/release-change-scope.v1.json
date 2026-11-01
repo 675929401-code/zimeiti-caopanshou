@@ -66,7 +66,7 @@
         "id": "platform-wide-shared-surface",
         "patterns": [
           "^(?:\\.gitignore$|\\.release/|next\\.config\\.[^/]+$|package\\.json$|pnpm-lock\\.yaml$|prompts/|public/|runtime-tools/|scripts/|supabase/|src/(?:app/api/|components/|contexts/|features/|hooks/|lib/|storage/|commerce/|types/|server\\.ts$|proxy\\.ts$|app/(?:layout|globals|dialog-theme|chat-glass-continuity|markdown-body|theme-crystal-aurora|ui-shell-fixes)\\.|app/.+\\.css$))",
-          "^(?:\\.engineering/(?:chat-reliability-lock|extraction-feature-lock)\\.v1\\.json|tsconfig\\.json|src/instrumentation\\.ts)$"
+          "^(?:\\.engineering/(?:chat-reliability-lock|extraction-feature-lock)\\.v1\\.json|tsconfig\\.json|src/instrumentation\\.ts|\\.gitattributes|direct-start\\.mjs)$"
         ],
         "routes": [
           "/",
@@ -253,6 +253,7 @@
         "^deploy/(?:policies|manifests)/",
         "^scripts/(?:deploy-|package-standalone-artifact|build-release-vnext|release-workflow|release-preflight|materialize-public-asset-release|install-public-asset-release|provision-release-root)(?:[.-]|$)",
         "^\\.releaseignore$",
+        "^(?:\\.gitattributes|direct-start\\.mjs)$",
         "(?:^|/)(?:source-manifest|code-track|artifact-manifest)(?:\\.[^/]+)?$"
       ]
     },
