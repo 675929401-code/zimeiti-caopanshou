@@ -1,0 +1,62 @@
+name: Isolated Linux release owner fixture 61e9
+
+on:
+  push:
+    branches: [test/linux-release-owner-61e9-20261102]
+    paths:
+      - .github/workflows/linux-release-owner-fixture.yml
+      - .codex-linux-release-owner-fixture/**
+
+permissions:
+  contents: read
+
+jobs:
+  linux-owner:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-release-owner-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify fixed files and run isolated Linux journal/protocol tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-linux-release-owner-fixture
+          test "$(find "$root" -type f | wc -l)" = 11
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 4
+          printf '%s\n' \
+            '0d3fdaf7bbf95170ae318dd68439a2cdaaebcc2e6763c8e1b1ae1afd31b8cf6d  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/linux-stage-engine.mjs' \
+            '913fb32e92fab1027761488e240ad3c12d7661d13047ce24d76328bfa26809f3  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/supervisor-channel.mjs' \
+            '94c61556332c35c7b740ac97c8314795e91f769097ce0a5cc883966cbeed5204  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/supervisor-channel.test.mjs' \
+            'ffd7edf53c20c1e63ea87080570a10b9a52fa29654933d706cac22be251a80c1  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/dispatch-deadline-with-receipt.mjs' \
+            'f8d65f075e76baaa624155157ceb06fca51dc6913e7adc14a8b8f65038ff8382  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/persistent-ssh-with-receipt.mjs' \
+            '719c3dfa7992451e7cb95f4e18ccdeaf2ff8913a1d9b5e454824e424b93b3536  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/fixture-supervisor-child.mjs' \
+            '107f047573375d4ae26123d6ea042ff30718dc5c760ca3f73875145075c0af0a  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/test-dispatch-receipt.mjs' \
+            '7a67dadfee86c74ee558757eb608cc2a8f9573bc5791e54c8820d2ccdfc0a3aa  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/test-linux-stage-engine.mjs' \
+            'd20ce90a29d5070f33b39d6ff4e4022f6b45bcc11b656ee9bfdd293be5f34874  .codex-linux-release-owner-fixture/linux-owner-implementation-61e9/test-persistent-connection.mjs' \
+            '91458c1b0c1de52b82126417f5ee4f17efb70caec47824aad75ec613a97cd083  .codex-linux-release-owner-fixture/worker-quiescence-plan-61e9/activation-integration/journal-storage-prototype.mjs' \
+            '0c7ac0a477eb9945511d917950ecde5f3b7e8efe2837711573615200badef9ab  .codex-linux-release-owner-fixture/worker-quiescence-plan-61e9/activation-integration/hook-adoption-prototype.mjs' \
+            | sha256sum --check --strict
+          for f in $(find "$root" -type f); do test -f "$f" && test ! -L "$f"; done
+          node_bin="$(command -v node)"
+          sudo -n /usr/bin/unshare --net -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 40s "$node_bin" "$root/linux-owner-implementation-61e9/test-linux-stage-engine.mjs"
+          sudo -n /usr/bin/unshare --net -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 40s "$node_bin" --test \
+            "$root/linux-owner-implementation-61e9/supervisor-channel.test.mjs" \
+            "$root/linux-owner-implementation-61e9/test-persistent-connection.mjs" \
+            "$root/linux-owner-implementation-61e9/test-dispatch-receipt.mjs"
