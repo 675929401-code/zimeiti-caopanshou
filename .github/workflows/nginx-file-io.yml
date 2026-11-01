@@ -1,0 +1,50 @@
+# Draft only: reviewed fixture branch, never a production runner.
+name: Synthetic Nginx file transaction
+on:
+  push:
+    branches:
+      - test/nginx-file-io-61e9-20261102
+    paths:
+      - .github/workflows/nginx-file-io.yml
+      - .codex-nginx-file-fixture/file_txn.py
+      - .codex-nginx-file-fixture/linux_test.py
+permissions:
+  contents: read
+jobs:
+  isolated-fixture:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/test/nginx-file-io-61e9-20261102' &&
+      github.event.deleted == false &&
+      github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify fixed fixture inputs
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          printf '%s\n' \
+            '7fcc8c3e3de936936446f6df7190cc2ed025c6e465b3ee091db22e8107a176e5  .codex-nginx-file-fixture/file_txn.py' \
+            '8950b7e405e5e1a7c01f1deb59314260e01727767557005c19f91cf25cfc0cf9  .codex-nginx-file-fixture/linux_test.py' \
+            | sha256sum --check --strict
+          test -z "$(git status --porcelain -- .codex-nginx-file-fixture .github/workflows/nginx-file-io.yml)"
+          test ! -L .codex-nginx-file-fixture
+          test -f .codex-nginx-file-fixture/file_txn.py && test ! -L .codex-nginx-file-fixture/file_txn.py
+          test -f .codex-nginx-file-fixture/linux_test.py && test ! -L .codex-nginx-file-fixture/linux_test.py
+          test "$(find -P .codex-nginx-file-fixture -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)" = "$(printf '%s\n' file_txn.py linux_test.py | LC_ALL=C sort)"
+          test "$(git ls-files .codex-nginx-file-fixture | LC_ALL=C sort)" = "$(printf '%s\n' .codex-nginx-file-fixture/file_txn.py .codex-nginx-file-fixture/linux_test.py | LC_ALL=C sort)"
+      - name: Test only synthetic fixture files in isolated network namespace
+        run: |
+          set -eu
+          sudo unshare --net --fork -- timeout --signal=TERM --kill-after=5s 45s \
+            env -i PATH=/usr/bin:/bin HOME=/nonexistent python3 -I -S -B -c \
+            'import runpy,sys; sys.path.insert(0,".codex-nginx-file-fixture"); sys.argv=["linux_test.py"]; runpy.run_path(".codex-nginx-file-fixture/linux_test.py",run_name="__main__")'
