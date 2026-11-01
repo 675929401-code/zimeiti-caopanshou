@@ -1,0 +1,47 @@
+name: Isolated Linux controller session fixture
+on:
+  push:
+    branches: [test/linux-controller-session-61e9-20261102]
+    paths: [.github/workflows/linux-controller-session-fixture.yml, .codex-controller-session-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-controller-session-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify pinned inputs and run isolated session
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-controller-session-fixture
+          test "$(find "$root" -type f | wc -l)" = 6
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 4
+          printf '%s\n' \
+            '9a2031807656979c93115eee0044abe3788f512aed73291ca7b0761e08149f72  .codex-controller-session-fixture/linux-owner-implementation-61e9/controller-fixture.sh' \
+            'c94d82f48bf15c57dc7131c79756031cc8a5daef54d307c4afb91f1fe93908ba  .codex-controller-session-fixture/linux-owner-implementation-61e9/controller-session-channel.mjs' \
+            '01dde6ffee224da17b1a172a550ccbf0cf84ac757fa3fb73e555db9f5e7bc8c2  .codex-controller-session-fixture/linux-owner-implementation-61e9/linux-journal-owned.mjs' \
+            '736557e65e4da7df1d8b9a539e68b521f5b1dd1fbefe80ba76d6b943e4749df9  .codex-controller-session-fixture/linux-owner-implementation-61e9/linux-stage-engine.mjs' \
+            '8fac2364fbb1a0039d6440d039598d73d2b069d59743674f1976bcfc6270114f  .codex-controller-session-fixture/linux-owner-implementation-61e9/test-controller-linux.mjs' \
+            '06a7aadaf52bc5c9ab1123172ad759d22a1233fd58ba1c36e7dc77574edf0cd9  .codex-controller-session-fixture/worker-quiescence-plan-61e9/activation-integration/hook-adoption-prototype.mjs' \
+            | sha256sum --check --strict
+          node_bin="$(command -v node)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 40s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 30s "$node_bin" "$root/linux-owner-implementation-61e9/test-controller-linux.mjs"
