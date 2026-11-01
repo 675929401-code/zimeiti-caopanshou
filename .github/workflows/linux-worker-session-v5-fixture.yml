@@ -1,0 +1,50 @@
+name: Isolated Linux worker session v5 fixture
+on:
+  push:
+    branches: [test/linux-worker-session-v5-61e9-20261102]
+    paths: [.github/workflows/linux-worker-session-v5-fixture.yml, .codex-linux-worker-session-v5/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-worker-session-v5-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify frozen inputs and exercise isolated worker session
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-linux-worker-session-v5
+          test "$(find "$root" -type f | wc -l)" = 10
+          test "$(find "$root" -type l | wc -l)" = 0
+          printf '%s\n' \
+            '3d57a641f374d77f6b7a76f5b1d07b2db15afa634edabcfa4b2b9f6b3fa74b32  .codex-linux-worker-session-v5/scripts/linux-stage-engine-vnext.mjs' \
+            'cd45f666c5c780c77271bad297deeba3b3ae461eaec9ea7b56d30a1ef349926d  .codex-linux-worker-session-v5/scripts/linux-journal-owned-vnext.mjs' \
+            '06a7aadaf52bc5c9ab1123172ad759d22a1233fd58ba1c36e7dc77574edf0cd9  .codex-linux-worker-session-v5/scripts/hook-adoption-vnext.mjs' \
+            '8c13d412826ffbef96f11f46a0eb4b8fad8375d923628f6a3e922266ceca0060  .codex-linux-worker-session-v5/scripts/worker-closure/linux-owner-implementation-61e9/private-worker-owner-node.mjs' \
+            'f7e909a8b65133e23f0f27329b5c7b965276345c7522b971030bf511947b0552  .codex-linux-worker-session-v5/scripts/worker-closure/linux-owner-implementation-61e9/journal-owner-child.py' \
+            '5c81401ddfc1fbcfa0ed2a220c098c2cd6eb2fde69d15d0632a5d8a34c9b61ac  .codex-linux-worker-session-v5/scripts/worker-closure/linux-owner-implementation-61e9/worker-provider/continuous_watch.py' \
+            'd31b44d06672976aa9b6eb1e5041ddb90b0445af9b3346dddd0b2b6e90c17048  .codex-linux-worker-session-v5/scripts/worker-closure/linux-owner-implementation-61e9/worker-provider/current_identity.py' \
+            '9d92a009dd7e776893d228034d26313760a13f5a500ae1674379f880731f3751  .codex-linux-worker-session-v5/scripts/worker-closure/linux-owner-implementation-61e9/worker-provider/worker-session.py' \
+            'f93c1b9ff19dc58796308debe75fd4af563ec77849c63cbda8ca4a291c40dbb9  .codex-linux-worker-session-v5/scripts/worker-closure/linux-owner-implementation-61e9/worker-provider/fixture-launcher.py' \
+            '51a5ddd1a3bc42d3c5649f55f0c4675a01c075321be59e2d480a35a93d0c9a51  .codex-linux-worker-session-v5/fixture-test.mjs' \
+            | sha256sum --check --strict
+          node_bin="$(command -v node)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 70s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C WORKER_FIXTURE_ONLY=github-isolated-v1 \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 55s "$node_bin" "$root/fixture-test.mjs"
