@@ -1,0 +1,56 @@
+name: Isolated minimal window integration fixture
+on:
+  push:
+    branches: [test/linux-minimal-full-61e9-20261102]
+    paths: [.github/workflows/linux-minimal-full-fixture.yml, .codex-minimal-full-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-minimal-full-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify fixed fixture and run private Linux namespaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-minimal-full-fixture
+          test "$(find "$root" -type f | wc -l)" = 9
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 1
+          printf '%s\n' \
+            '1f08a2abb22e3685f39704733cf9677bf5a36a97a4f00954b3a48530f2ba50dc  .codex-minimal-full-fixture/controller.py' \
+            '03404525bc6c0fb9253742d8dffca264be3796b73bed32fbd1d6b75f2a5305bd  .codex-minimal-full-fixture/controller.sh' \
+            '350e9762e853dbea2f920877a861c24a0032b7d6ab4d416a6f6346c13fc067d1  .codex-minimal-full-fixture/db.mjs' \
+            '33607c5047d5a24c52e3755649f66b4d914eabf105a09435dc69cb64d830f4f4  .codex-minimal-full-fixture/dispatch-deadline.mjs' \
+            'df8826240d06e4fd88e4926eb38e9fd5f80eda1a85adc32f2f85c5ad216e2c87  .codex-minimal-full-fixture/entry.mjs' \
+            '4e32c79581a4d10e0b69bf53ae61d9bdb23b9bfb4e33d981c4dd4961caef7d1d  .codex-minimal-full-fixture/maintenance.py' \
+            '2244aa8305fcbbff74f56f6c5340891a52907f3da62c50cf0abd0f4d067cf730  .codex-minimal-full-fixture/prestop.py' \
+            '7fa98937e635e73453a265454409255d82dc75c67bde093ec98368ffa2e74561  .codex-minimal-full-fixture/test-linux.mjs' \
+            'f6df55549d3173e7ca0086eb3c8882b462a8782f8c8437a9d8e716657d409d99  .codex-minimal-full-fixture/window-main-fixture.mjs' \
+            | sha256sum --check --strict
+          node_bin="$(command -v node)"
+          host_net="$(readlink /proc/self/ns/net)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 70s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /bin/bash -c '
+              set -euo pipefail
+              umask 077
+              /usr/bin/mount -t tmpfs -o mode=0700,nosuid,nodev,size=128m tmpfs /tmp
+              exec /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C FIXTURE_ISOLATED=1 FIXTURE_HOST_NET="$3" \
+                /usr/bin/timeout --signal=TERM --kill-after=5s 60s "$1" "$2"
+            ' fixture "$node_bin" "$PWD/$root/test-linux.mjs" "$host_net"
