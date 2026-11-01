@@ -1,0 +1,66 @@
+name: Isolated real PM2 exact stop fixture
+on:
+  push:
+    branches: [test/pm2-real-exact-stop-61e9-20261102]
+    paths: [.github/workflows/pm2-real-exact-stop-fixture.yml, .codex-pm2-exact-stop-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/pm2-real-exact-stop-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.19.0
+      - name: Verify pinned fixture and acquire integrity-locked test PM2
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-pm2-exact-stop-fixture
+          test "$(find "$root" -type f | wc -l)" = 13
+          test "$(find "$root" -type l | wc -l)" = 0
+          printf '%s\n' \
+            'cf2246ace14989c6212b5d63f10c23acc2459928989b9346633de38223f3d32e  .codex-pm2-exact-stop-fixture/bus_probe.py' \
+            '767b82c7d40adbe8047ce6cfb4f968cdeae73420d47e8c481b10eae861324c8f  .codex-pm2-exact-stop-fixture/continuous_watch.py' \
+            '06f4c971d7a149638ff59f6225a375faf3cc7ca93dfcb7d06a8f1eccc4a5d45d  .codex-pm2-exact-stop-fixture/current_identity.py' \
+            'a5336fef249c99cf9741cd48efb278c1d61a414836779f6c4d89347ab856464b  .codex-pm2-exact-stop-fixture/ecosystem.cjs' \
+            'a779b8a8a81421ba066d2b85f9c4b1fe0ddd119124a3b641bfa89c6fd9f4f0cd  .codex-pm2-exact-stop-fixture/exact_stop.py' \
+            'b30697ce6f3f998003413917717be42df60bf337f5c714e3536091a5c6bc58e0  .codex-pm2-exact-stop-fixture/fake-worker.cjs' \
+            '7196856082edce034bb3cbe41e18a187068b645a6cb2d7a4450ac818477ea306  .codex-pm2-exact-stop-fixture/live_drain.py' \
+            'c2c49d9d73a527c99cae9a6f9c84899c2dc0809f7fca4e487ee7f4790071298e  .codex-pm2-exact-stop-fixture/package-lock.json' \
+            'dbf05214f4b1db510a6e19625c35fb543a3726a072437fcd5155f7277b25cc45  .codex-pm2-exact-stop-fixture/package.json' \
+            '64c3270ce40ce94c22d8cc432edbbe86afb6a4a05eaf264be36b16900a1e3010  .codex-pm2-exact-stop-fixture/rpc_stop.py' \
+            '59f667bea13e3bd2480ab1d5134cdbd2beb9129eccbc898a872e30a26e2bca31  .codex-pm2-exact-stop-fixture/runner.sh' \
+            '3e16ede893c94ad523fcf3413d6605db4ff8115fa02533c7fd8d4642c92b40e9  .codex-pm2-exact-stop-fixture/slot_monitor.py' \
+            '2e91c1295d67d009ec6b8933b180cc52d4bcd4ab487ecf05b841643f18c2df19  .codex-pm2-exact-stop-fixture/test_fixture.py' \
+            | sha256sum --check --strict
+          npm ci --prefix "$root" --ignore-scripts --no-audit --no-fund
+          test "$(node -p "require('./$root/node_modules/pm2/package.json').version")" = 7.0.1
+      - name: Real PM2 runtime in private network, mount and PID namespaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_bin="$(command -v node)"
+          host_net="$(readlink /proc/self/ns/net)"
+          fixture="$PWD/.codex-pm2-exact-stop-fixture"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=10s 240s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /bin/bash -c '
+              set -euo pipefail
+              umask 077
+              /usr/bin/mount -t tmpfs -o mode=0700,nosuid,nodev,size=512m tmpfs /tmp
+              exec /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C FIXTURE_ISOLATED=1 FIXTURE_HOST_NET="$3" \
+                /usr/bin/timeout --signal=TERM --kill-after=8s 220s /bin/bash "$2/runner.sh" "$1" "$2"
+            ' fixture "$node_bin" "$fixture" "$host_net"
