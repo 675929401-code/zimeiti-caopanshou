@@ -1,0 +1,44 @@
+name: Isolated Linux controller success fixture
+on:
+  push:
+    branches: [test/linux-controller-success-v4-61e9-20261102]
+    paths: [.github/workflows/linux-controller-success-v4-fixture.yml, .codex-controller-success-v4-fixture/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/linux-controller-success-v4-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify pinned inputs and run isolated fsync fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-controller-success-v4-fixture
+          test "$(find "$root" -type f | wc -l)" = 3
+          test "$(find "$root" -type l | wc -l)" = 0
+          test "$(find "$root" -type d | wc -l)" = 1
+          printf '%s\n' \
+            '39d16e53b07075da9b1068321eaebdefc5e37622cda0797882b1ac4e97080d92  .codex-controller-success-v4-fixture/fixture-brand.mjs' \
+            'de596971e4365c0ec90b11f2efeef72e052856303934101b0b14fd0bcc87cc38  .codex-controller-success-v4-fixture/success.mjs' \
+            '8c3512d69744cdf04600b50a8c4c7f2787b838ef529b5f4320cf9492c1e6564f  .codex-controller-success-v4-fixture/test-linux.mjs' \
+            | sha256sum --check --strict
+          node_bin="$(command -v node)"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=5s 40s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+            /usr/bin/timeout --signal=TERM --kill-after=5s 30s "$node_bin" "$root/test-linux.mjs"
