@@ -74,7 +74,8 @@ export default function VideoModelDialog({ model, onSave, onClose, onTest, testi
     features: string[];
     error?: string;
     suggestion?: string;
-    keyValid?: boolean;
+    keyValid?: boolean | null;
+    modelExists?: boolean | null;
     candidateModels?: string[];
     liveTest?: {
       tested: boolean;
@@ -135,8 +136,8 @@ export default function VideoModelDialog({ model, onSave, onClose, onTest, testi
       const data = await res.json();
       setDetectResult(data);
 
-      // 无论验证是否通过，都回填检测到的协议、端点和模型名修正
-      if (data.protocolType) {
+      // Only a confirmed directory match may replace the current draft.
+      if (data.success === true && data.keyValid === true && data.modelExists === true && data.protocolType) {
         setForm(prev => ({
           ...prev,
           protocol_type: data.protocolType,
@@ -184,10 +185,9 @@ export default function VideoModelDialog({ model, onSave, onClose, onTest, testi
   // 真实验证状态
   const liveTest = detectResult?.liveTest;
   const liveTestPassed = liveTest?.tested && liveTest.passed;
-  // 检测结果状态（放宽判断：密钥有效+协议可检测=部分成功）
   const isUpstreamBusy = liveTest?.tested && liveTest.passed && liveTest.detail?.includes("上游暂时繁忙");
-  const detectPartialSuccess = detectResult && detectResult.keyValid && detectResult.protocolType && !liveTestPassed && !isUpstreamBusy;
-  const liveTestFailed = liveTest?.tested && !liveTest.passed;
+  const detectConfirmed = detectResult?.success === true && detectResult.keyValid === true && detectResult.modelExists === true;
+  const detectRejected = detectResult?.keyValid === false || detectResult?.modelExists === false;
 
   return (
     <div ref={dialogRef} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -319,54 +319,27 @@ export default function VideoModelDialog({ model, onSave, onClose, onTest, testi
                 )}
               </button>
               <span className="text-xs text-[var(--muted-foreground)]">
-                自动检测协议 + 真实调用验证（可能需1-3分钟）
+                读取模型目录，不生成、不保存
               </span>
             </div>
 
             {/* ── 检测结果：醒目展示 ── */}
             {detectResult && (
               <div className={`rounded-xl border-2 overflow-hidden ${
-                liveTestPassed || isUpstreamBusy
-                  ? "border-green-500"
-                  : liveTestFailed
-                    ? detectPartialSuccess
-                      ? "border-yellow-500"  // 有协议但验证失败 = 黄色（部分成功）
-                      : "border-red-500 animate-pulse"
-                    : detectResult.success
-                      ? "border-yellow-500"
-                      : "border-red-500 animate-pulse"
+                detectConfirmed ? "border-yellow-500" : detectRejected ? "border-red-500" : "border-[var(--border)]"
               }`}>
                 {/* 顶部状态栏 */}
                 <div className={`px-4 py-3 flex items-center gap-3 ${
-                  isUpstreamBusy
-                    ? "bg-green-600 text-white"  // 上游繁忙也算通过，用绿色
-                    : liveTestPassed
-                      ? "bg-green-500 text-white"
-                      : liveTestFailed
-                        ? detectPartialSuccess
-                          ? "bg-yellow-500 text-white"  // 部分成功 = 黄色
-                          : "bg-red-500 text-white"
-                        : detectResult.success
-                          ? "bg-yellow-500 text-white"
-                          : "bg-red-500 text-white"
+                  detectConfirmed ? "bg-yellow-500 text-white" : detectRejected ? "bg-red-500 text-white" : "bg-[var(--muted)] text-[var(--foreground)]"
                 }`}>
                   <span className="text-2xl">
-                    {isUpstreamBusy ? "⚡" : liveTestPassed ? "✓" : liveTestFailed ? (detectPartialSuccess ? "⚠" : "✗") : detectResult.success ? "⚠" : "✗"}
+                    {detectConfirmed ? "⚠" : detectRejected ? "✗" : "?"}
                   </span>
                   <div className="flex-1">
                     <p className="font-black text-base">
-                      {isUpstreamBusy
-                        ? "API连通确认 — 上游暂时繁忙，可直接保存"
-                        : liveTestPassed
-                          ? "验证通过 — 全部达标"
-                          : liveTestFailed
-                            ? detectPartialSuccess
-                              ? `协议已检测 — 需修正模型名`
-                              : "验证未通过 — 需要排查"
-                            : detectResult.success
-                              ? `协议匹配：${detectResult.protocolName}`
-                              : `适配失败：${detectResult.error || "未知错误"}`
-                      }
+                      {detectConfirmed ? `配置检查通过：${detectResult.protocolName}`
+                        : detectRejected ? `配置检查未通过：${detectResult.error || "目录或认证已明确拒绝"}`
+                          : `配置未确认：${detectResult.error || "暂时无法核实"}`}
                     </p>
                     {liveTest && (
                       <p className="text-sm opacity-90 mt-0.5">

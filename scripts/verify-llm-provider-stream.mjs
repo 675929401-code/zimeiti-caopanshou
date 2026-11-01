@@ -18,6 +18,10 @@ const frame = value => `data: ${JSON.stringify(value)}\n\n`;
 const content = text => ({ choices: [{ delta: { content: text }, finish_reason: null }] });
 const stop = { choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 7, completion_tokens: 3 } };
 const originalError = 'event: error\ndata: {"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable"}}\n\n';
+const sensitiveStreamDetailPattern = /SECRET_FIXTURE|private-provider-detail|fixture\.invalid|fixture-key|"authorization"\s*:|"cookie"\s*:|"(?:api|access|refresh)[_-]?token"\s*:|"(?:request[_-]?body|(?:system[_-]?)?prompt(?:[_-]?text)?)"\s*:|secret/iu;
+function assertNoSensitiveStreamDetails(value) {
+  assert.doesNotMatch(String(value), sensitiveStreamDetailPattern);
+}
 
 function rig({ before = false, beforeRepair = false, upstream, fastTimers = false, requestError, pendingRequest = false, responseStatus = 200, settlementError } = {}) {
   const state = { posts: 0, methods: [], aborts: 0, settlements: 0, releases: 0, saves: 0, failures: [], successes: 0, logs: [], clockOffsetMs: 0, longTimers: { scheduled: [], fired: [], cleared: [] } };
@@ -107,13 +111,13 @@ function chunks(text, size) {
   } });
 }
 
-async function within(promise) {
+async function within(promise, ms = 4000) {
   let timer;
-  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Fixture timeout')), 4000); })]); }
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Fixture timeout')), ms); })]); }
   finally { clearTimeout(timer); }
 }
 
-async function run({ upstream, provider = 'openai', live = true, before = false, beforeRepair = false, fastTimers = false, requestError, pendingRequest, responseStatus, settlementError, responseStartErrorArgs }) {
+async function run({ upstream, provider = 'openai', live = true, before = false, beforeRepair = false, fastTimers = false, requestError, pendingRequest, responseStatus, settlementError, responseStartErrorArgs, guarded = false, withinMs = 4000 }) {
   const env = rig({ upstream, before, beforeRepair, fastTimers, requestError, pendingRequest, responseStatus, settlementError });
   const proxy = new (env.load('src/lib/llm-proxy/proxy.ts').LLMProxy)({ apiBase: 'https://fixture.invalid/v1', apiKey: 'fixture-key', retryCount: 0 });
   if (responseStartErrorArgs) {
@@ -122,14 +126,14 @@ async function run({ upstream, provider = 'openai', live = true, before = false,
     proxy.chatStream = async () => { throw error; };
   }
   const ctx = {
-    verifiedUserId: 'fixture-user', userRole: 'user', agentId: 'fixture-agent', agentName: 'fixture', conversationId: 'fixture-history',
+    verifiedUserId: 'fixture-user', userRole: 'user', agentId: guarded ? 'agent-bip-script-2' : 'fixture-agent', agentName: 'fixture', conversationId: 'fixture-history',
     useModel: 'fixture-model', apiBase: 'https://fixture.invalid/v1', useApiKey: 'fixture-key', isZhipuAI: provider === 'zhipu',
     agentTimeout: 120, agentDeepThinkingType: 0, agentDeductDeepThink: 1, agentMaxReplyTokens: 100,
     clientRequestId: 'fixture-request', selectedModelBillingSnapshot: {}, allowLiveStreamDelivery: live,
     reservation: { requestId: 'fixture-request' }, messages: [], userMessageSaved: { value: true },
   };
   const response = env.load('src/app/api/llm/handle-stream.ts').handleStreamResponse(ctx, { model: ctx.useModel, messages: [{ role: 'user', content: 'test' }] }, proxy);
-  const text = await within(response.text());
+  const text = await within(response.text(), withinMs);
   await new Promise(resolve => setTimeout(resolve, 0));
   return { ...env, text };
 }
@@ -155,12 +159,12 @@ function assertSafeResponseStartLog(result, outcome, timeoutMs = 120_000) {
   for (const value of [payload.diagnostics.elapsedMs, payload.diagnostics.timeoutMs]) {
     assert.ok(Number.isFinite(value) && Number.isInteger(value) && value >= 0);
   }
-  assert.doesNotMatch(JSON.stringify(result.state.logs), /SECRET_FIXTURE|private-provider-detail|fixture\.invalid|fixture-key/);
-  assert.doesNotMatch(result.text, /diagnostics|response_headers|deadline_exceeded|transport_error|elapsedMs|timeoutMs|SECRET_FIXTURE/);
+  assertNoSensitiveStreamDetails(JSON.stringify(result.state.logs));
+  assertNoSensitiveStreamDetails(result.text);
   return payload;
 }
 
-async function assertUnknownAttempt(result) {
+async function assertUnknownAttempt(result, expectedReleases = 1) {
   let receipt;
   const wrap = result.load('src/lib/llm-request-idempotency.ts').completeLlmAttemptResponse;
   const response = await wrap({ async finalize(value) { receipt = value; return {}; } }, { record: { recordId: 'fixture', attemptNo: 1 }, leaseOwner: 'fixture', leaseToken: 1 }, new Response(result.text, { headers: { 'content-type': 'text/event-stream' } }));
@@ -169,12 +173,13 @@ async function assertUnknownAttempt(result) {
   assert.deepEqual(result.state.methods, ['POST']);
   assert.equal(result.state.settlements, 0);
   assert.equal(result.state.saves, 0);
-  assert.equal(result.state.releases, 1);
+  assert.equal(result.state.releases, expectedReleases);
   assert.equal(receipt.state, 'failed_unknown');
   assert.equal(receipt.errorCode, 'LLM_UPSTREAM_RESULT_UNKNOWN');
   assert.equal(receipt.responseBody, undefined, 'unknown response must not be replayable');
   assert.match(delivered, /"retry_safe":false/);
-  assert.doesNotMatch(delivered, /billing_complete|data: \[DONE\]|diagnostics|SECRET_FIXTURE/);
+  assert.doesNotMatch(delivered, /billing_complete|data: \[DONE\]/);
+  assertNoSensitiveStreamDetails(delivered);
   return { state: receipt.state, errorCode: receipt.errorCode, responseBodyAbsent: receipt.responseBody === undefined, retrySafe: false };
 }
 
@@ -324,27 +329,110 @@ for (const provider of ['openai', 'zhipu']) {
   assert.equal(result.state.releases, 1);
   cases.push(`${provider}: byte-split UTF8, CRLF, optional data space, literal DONE and EOF tail all preserved`);
   const interrupted = await run({ provider, upstream: chunks(frame(content('只有半句话'))) });
-  assert.match(interrupted.text, /LLM_STREAM_INTERRUPTED/);
+  assert.match(interrupted.text, /LLM_UPSTREAM_RESULT_UNKNOWN/);
   assert.equal(interrupted.state.settlements, 0);
   cases.push(`${provider}: EOF without terminal cannot settle partial text`);
   const stalled = await run({ provider, fastTimers: true, upstream: () => new ReadableStream({ start(c) { c.enqueue(encoder.encode(frame(content('中断前')))); } }) });
-  assert.match(stalled.text, /LLM_UPSTREAM_TIMEOUT/);
+  assert.match(stalled.text, /LLM_UPSTREAM_RESULT_UNKNOWN/);
   assert.equal(stalled.state.settlements, 0);
-  assert.equal(stalled.state.releases, 1);
+  assert.equal(stalled.state.releases, 0);
   if (provider === 'openai') {
     await new Promise(resolve => setTimeout(resolve, 60));
     assert.equal(stalled.state.aborts, 0, 'successful response headers must clear the fetch deadline');
     assert.deepEqual(stalled.state.longTimers.fired, [60_000], 'only the existing stream-read inactivity deadline may fire');
     assert.ok(stalled.state.longTimers.cleared.includes(120_000));
     assert.equal(responseStartLogs(stalled.state).length, 0, 'a post-header read timeout is not a response-start failure');
-    responseStartEvidence.push({ scenario: 'headers succeeded then stream stalled', code: 'LLM_UPSTREAM_TIMEOUT', aborts: stalled.state.aborts, longTimers: stalled.state.longTimers, logs: stalled.state.logs });
-    cases.push('successful headers clear response-start deadline while the existing 60-second stream stall error stays unchanged');
+    responseStartEvidence.push({ scenario: 'headers succeeded then stream stalled', code: 'LLM_UPSTREAM_RESULT_UNKNOWN', aborts: stalled.state.aborts, longTimers: stalled.state.longTimers, logs: stalled.state.logs });
+    cases.push('successful headers clear response-start deadline while the unchanged 60-second local read deadline preserves UNKNOWN');
   }
-  cases.push(`${provider}: inactivity timeout fails and releases hold`);
+  cases.push(`${provider}: inactivity timeout after delivered content retains hold for reconciliation`);
   const keptOpen = await run({ provider, upstream: () => new ReadableStream({ start(c) { c.enqueue(encoder.encode(frame(content('已完成')) + frame(stop) + 'data: [DONE]\n\n')); } }) });
   assert.equal(keptOpen.state.settlements, 1);
   assert.match(keptOpen.text, /billing_complete/);
   cases.push(`${provider}: DONE finishes promptly even if the provider keeps its socket open`);
+}
+
+// Exercise the actual adapters, delivery handler and durable attempt boundary.
+// The only accelerated values are fixture clocks; production deadlines stay intact.
+for (const provider of ['openai', 'zhipu']) for (const live of [false, true]) {
+  for (const partial of ['none', 'content', 'reasoning']) for (const failure of ['idle', 'eof', 'read_error']) {
+    const partialFrame = partial === 'content' ? frame(content('未完成正文'))
+      : partial === 'reasoning' ? frame({ choices: [{ delta: { reasoning_content: '未完成推理' }, finish_reason: null }] }) : '';
+    const result = await run({ provider, live, fastTimers: true, upstream: () => new ReadableStream({ start(controller) {
+      if (partialFrame) controller.enqueue(encoder.encode(partialFrame));
+      if (failure === 'eof') controller.close();
+      if (failure === 'read_error') setTimeout(() => controller.error(new Error('ECONNRESET private-provider-detail SECRET_FIXTURE_MUST_NOT_LEAK')), 5);
+    } }) });
+    const deliveredPartial = live && partial !== 'none';
+    await assertUnknownAttempt(result, deliveredPartial ? 0 : 1);
+    assert.match(result.text, new RegExp(`"reconciliation_required":${deliveredPartial}`));
+    assert.doesNotMatch(result.text, /请稍后重试|未完成本次回复，请|SECRET_FIXTURE|private-provider-detail/);
+    assert.doesNotMatch(JSON.stringify(result.state.logs), /SECRET_FIXTURE|private-provider-detail/);
+    if (!live) assert.doesNotMatch(result.text, /未完成正文|未完成推理/);
+    const diagnostics = result.state.logs.flatMap(log => log.args).filter(value => value.includes('LLM_STREAM_READ_FAILURE')).map(value => JSON.parse(value));
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].code, 'LLM_UPSTREAM_RESULT_UNKNOWN');
+    assert.equal(diagnostics[0].diagnostics.phase, 'response_body');
+    assert.equal(diagnostics[0].diagnostics.outcome, { idle: 'idle_deadline_exceeded', eof: 'incomplete_eof', read_error: 'transport_error' }[failure]);
+    assertNoSensitiveStreamDetails(result.text);
+    cases.push(`${provider}: ${failure}, live=${live}, partial=${partial}: UNKNOWN, one POST, no settlement/history, hold ${deliveredPartial ? 'retained' : 'released'}`);
+  }
+}
+
+for (const provider of ['openai', 'zhipu']) {
+  for (const releasedPrefix of [false, true]) {
+    const body = releasedPrefix ? '已经通过检查的完整行。\n' + '暂时保留的后缀'.repeat(20) : '尚未通过守卫交付的短句';
+    const result = await run({ provider, live: true, guarded: true, upstream: chunks(frame(content(body))) });
+    await assertUnknownAttempt(result, releasedPrefix ? 0 : 1);
+    assert.match(result.text, new RegExp(`"reconciliation_required":${releasedPrefix}`));
+    if (!releasedPrefix) assert.doesNotMatch(result.text, /尚未通过守卫交付的短句/);
+    else assert.match(result.text, /已经通过检查的完整行/);
+    cases.push(`${provider}: guarded output ${releasedPrefix ? 'actually delivered prefix retains' : 'entirely withheld suffix releases'} reservation on unknown EOF`);
+  }
+  for (const [status, code] of [[401, 'LLM_UPSTREAM_AUTH'], [403, 'LLM_UPSTREAM_AUTH'], [429, 'LLM_UPSTREAM_BUSY']]) {
+    const result = await run({ provider, responseStatus: status, upstream: chunks('{}') });
+    let receipt;
+    const wrap = result.load('src/lib/llm-request-idempotency.ts').completeLlmAttemptResponse;
+    const output = await wrap({ async finalize(value) { receipt = value; return {}; } }, { record: { recordId: 'fixture', attemptNo: 1 } }, new Response(result.text, { headers: { 'content-type': 'text/event-stream' } }));
+    await within(output.text());
+    assert.equal(receipt.state, 'failed');
+    assert.equal(receipt.errorCode, code);
+    assert.ok(receipt.responseBody, 'confirmed rejection remains replayable');
+    assert.equal(result.state.posts, 1);
+    assert.equal(result.state.releases, 1);
+    assert.equal(result.state.settlements, 0);
+    cases.push(`${provider}: confirmed HTTP ${status} remains a replayable known failure without re-dispatch`);
+    if (provider === 'zhipu') {
+      const stalled = await run({ provider, responseStatus: status, fastTimers: true, upstream: () => new ReadableStream({}) });
+      let stalledReceipt;
+      const stalledWrap = stalled.load('src/lib/llm-request-idempotency.ts').completeLlmAttemptResponse;
+      const stalledOutput = await stalledWrap({ async finalize(value) { stalledReceipt = value; return {}; } }, { record: { recordId: 'fixture', attemptNo: 1 } }, new Response(stalled.text, { headers: { 'content-type': 'text/event-stream' } }));
+      await within(stalledOutput.text());
+      assert.equal(stalledReceipt.state, 'failed');
+      assert.equal(stalledReceipt.errorCode, code);
+      assert.equal(stalled.state.posts, 1);
+      assert.equal(stalled.state.releases, 1);
+      assert.equal(stalled.state.settlements, 0);
+      assert.doesNotMatch(stalled.text, /LLM_UPSTREAM_RESULT_UNKNOWN/);
+      cases.push(`zhipu: confirmed HTTP ${status} with a stalled error body retains known rejection`);
+    }
+  }
+  const result = await run({ provider, upstream: chunks(frame({ error: { type: 'timeout', message: 'provider explicitly rejected the request' } })) });
+  assert.match(result.text, /LLM_UPSTREAM_TIMEOUT/);
+  assert.doesNotMatch(result.text, /LLM_UPSTREAM_RESULT_UNKNOWN/);
+  assert.equal(result.state.releases, 1);
+  cases.push(`${provider}: explicit provider timeout error remains distinct from a local read timeout`);
+}
+
+{
+  const result = await run({ provider: 'zhipu', requestError: new Error('ECONNRESET SECRET_FIXTURE_MUST_NOT_LEAK') });
+  await assertUnknownAttempt(result);
+  const diagnostics = responseStartLogs(result.state);
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].payload.diagnostics.phase, 'response_headers');
+  assert.equal(diagnostics[0].payload.diagnostics.outcome, 'transport_error');
+  assert.doesNotMatch(JSON.stringify(result.state.logs), /SECRET_FIXTURE/);
+  cases.push('zhipu: transport failure before headers remains UNKNOWN and does not claim a body read failure');
 }
 
 for (const [type, code] of [['authentication_error', 'LLM_UPSTREAM_AUTH'], ['rate_limit', 'LLM_UPSTREAM_BUSY'], ['insufficient_quota', 'LLM_UPSTREAM_BALANCE']]) {
@@ -352,6 +440,96 @@ for (const [type, code] of [['authentication_error', 'LLM_UPSTREAM_AUTH'], ['rat
   assert.match(result.text, new RegExp(code));
   assert.doesNotMatch(result.text, /SECRET_FIXTURE|private-provider-detail/);
   cases.push(`safe specific ${code} without leaking provider diagnostic payload`);
+}
+
+// An explicit gateway queue rejection is surfaced once. The shared route must
+// not turn a logical send into extra provider calls.
+{
+  const queueRejection = frame({ error: { type: 'rate_limit_error', code: 'gateway_concurrency_limit', message: 'Concurrency limit exceeded for account, please retry later' } });
+  let attempts = 0;
+  const result = await run({
+    withinMs: 15_000,
+    upstream: () => {
+      attempts += 1;
+      return attempts === 1
+        ? chunks(queueRejection)()
+        : chunks(frame(content('重试成功')) + frame(stop) + 'data: [DONE]\n\n')();
+    },
+  });
+  assert.equal(attempts, 1, 'queue rejection must not trigger another provider call');
+  assert.equal(result.state.posts, 1);
+  assert.match(result.text, /LLM_UPSTREAM_CONCURRENCY_LIMIT/);
+  assert.doesNotMatch(result.text, /重试成功|data: \[DONE\]/);
+  assert.equal(result.state.settlements, 0);
+  assert.equal(result.state.saves, 0);
+  cases.push('gateway concurrency rejection is surfaced after one provider call without settlement');
+}
+
+{
+  const queueRejection = frame({ error: { type: 'rate_limit_error', code: 'gateway_concurrency_limit', message: 'Concurrency limit exceeded for account, please retry later' } });
+  const result = await run({ withinMs: 15_000, upstream: () => chunks(queueRejection)() });
+  assert.equal(result.state.posts, 1, 'explicit queue rejection has no automatic retry');
+  assert.match(result.text, /LLM_UPSTREAM_CONCURRENCY_LIMIT/);
+  assert.equal(result.state.settlements, 0);
+  assert.equal(result.state.saves, 0);
+  assert.deepEqual(result.state.failures, ['LLM_UPSTREAM_CONCURRENCY_LIMIT']);
+  assert.doesNotMatch(result.text, /SECRET_FIXTURE|Concurrency limit exceeded/);
+  cases.push('persistent concurrency rejection surfaces a safe code after one call without settlement');
+}
+
+for (const scenario of [
+  { status: 402, body: JSON.stringify({ error: { code: 'insufficient_quota', message: 'private-provider-detail SECRET_FIXTURE_MUST_NOT_LEAK' } }), code: 'LLM_UPSTREAM_BALANCE' },
+  { status: 402, body: 'Payment Required', code: 'LLM_UPSTREAM_BILLING' },
+  { status: 402, body: '', code: 'LLM_UPSTREAM_BILLING' },
+  { status: 403, body: JSON.stringify({ error: { code: 'insufficient_user_quota' } }), code: 'LLM_UPSTREAM_BALANCE' },
+  { status: 429, body: JSON.stringify({ error: { code: 'insufficient_quota' } }), code: 'LLM_UPSTREAM_BALANCE' },
+]) {
+  const result = await run({ responseStatus: scenario.status, upstream: chunks(scenario.body) });
+  assert.match(result.text, new RegExp(scenario.code));
+  assert.match(result.text, /模型中转账户/);
+  assert.doesNotMatch(result.text, /积分不足|未扣费|SECRET_FIXTURE|private-provider-detail/);
+  assert.equal(result.state.posts, 1);
+  assert.equal(result.state.settlements, 0);
+  let receipt;
+  const wrap = result.load('src/lib/llm-request-idempotency.ts').completeLlmAttemptResponse;
+  const output = await wrap({ async finalize(value) { receipt = value; return {}; } }, { record: { recordId: 'fixture', attemptNo: 1 } }, new Response(result.text, { headers: { 'content-type': 'text/event-stream' } }));
+  await within(output.text());
+  assert.equal(receipt.state, 'failed');
+  assert.equal(receipt.errorCode, scenario.code);
+  cases.push(`HTTP ${scenario.status} maps ${scenario.code} to a specific safe known failure after one provider call`);
+}
+
+for (const payload of [
+  { error: { error: { code: 'insufficient_user_quota', message: 'private-provider-detail SECRET_FIXTURE_MUST_NOT_LEAK' } } },
+  { response: { error: { message: '预扣费额度失败 private-provider-detail SECRET_FIXTURE_MUST_NOT_LEAK' } } },
+  { error: { code: 'insufficient_quota', error: { request_id: 'fixture' } } },
+  { error: { code: 'insufficient_quota' }, response: { error: { request_id: 'fixture' } } },
+]) {
+  const result = await run({ upstream: chunks(frame(payload)) });
+  assert.match(result.text, /LLM_UPSTREAM_BALANCE/);
+  assert.match(result.text, /模型中转账户余额或额度不足/);
+  assertNoSensitiveStreamDetails(result.text);
+  assert.equal(result.state.posts, 1);
+  assert.equal(result.state.settlements, 0);
+  cases.push('bounded relay error envelope retains explicit balance rejection without leaking raw details');
+}
+
+{
+  const env = rig();
+  const { upstreamStreamError, responseStartError } = env.load('src/lib/llm-proxy/stream-error.ts');
+  for (const payload of [
+    { code: 'LLM_UPSTREAM_RESULT_UNKNOWN', error: { code: 'insufficient_quota' } },
+    { error: { code: 'LLM_UPSTREAM_RESULT_UNKNOWN', error: { code: 'insufficient_balance' } } },
+    { response: { error: { code: 'LLM_UPSTREAM_RESULT_UNKNOWN', message: 'balance insufficient' } } },
+  ]) {
+    assert.equal(upstreamStreamError(payload, { phase: 'response_headers', transportStatus: 402 }).code, 'LLM_UPSTREAM_RESULT_UNKNOWN');
+  }
+  const error = new Error('billing status unavailable');
+  error.diagnostics = { phase: 'response_headers', transportStatus: 402 };
+  assert.equal(responseStartError(error).code, 'LLM_UPSTREAM_BILLING', 'actual HTTP status is sufficient even when the diagnostic string has no numeric status');
+  assert.equal(responseStartError(new Error('LLM API 402: Payment Required')).code, 'LLM_UPSTREAM_BILLING', 'legacy explicit HTTP 402 rejection preserves the already parsed status');
+  assert.equal(responseStartError(new Error('quota unknown connection')).code, 'LLM_UPSTREAM_RESULT_UNKNOWN', 'a transport failure with billing words is not an explicit rejection');
+  cases.push('UNKNOWN outranks nested balance and actual measured 402 is distinguished from an unconfirmed transport failure');
 }
 
 {
@@ -393,6 +571,23 @@ for (const withBilling of [false, true]) {
   assert.equal(receipt.state, withBilling ? 'reconciliation_required' : 'failed');
   if (!withBilling) assert.match(receipt.responseBody, /LLM_UPSTREAM_ERROR/);
   cases.push(withBilling ? 'contradictory billing and failure cannot be called a known unpaid failure' : 'explicit upstream failure persists a replayable failed receipt without manual-reconciliation state');
+}
+
+for (const withBilling of [false, true]) {
+  const env = rig();
+  let receipt;
+  const wrap = env.load('src/lib/llm-request-idempotency.ts').completeLlmAttemptResponse;
+  const raw = frame({ error: 'result unknown', code: 'LLM_UPSTREAM_RESULT_UNKNOWN' })
+    + frame({ error: 'generic later error', code: 'LLM_UPSTREAM_ERROR' })
+    + (withBilling ? frame({ billing_complete: true }) : '');
+  const response = await wrap({ async finalize(value) { receipt = value; return {}; } }, { record: { recordId: 'fixture', attemptNo: 1 } }, new Response(raw, { headers: { 'content-type': 'text/event-stream' } }));
+  const delivered = await within(response.text());
+  assert.equal(receipt.state, withBilling ? 'reconciliation_required' : 'failed_unknown');
+  assert.equal(receipt.errorCode, withBilling ? 'LLM_STREAM_BILLING_CONFLICT' : 'LLM_UPSTREAM_RESULT_UNKNOWN');
+  assert.equal(receipt.responseBody, undefined);
+  assert.match(delivered, /"retry_safe":false/);
+  assert.doesNotMatch(delivered, /billing_complete|data: \[DONE\]/);
+  cases.push(`unknown plus generic failure, billing=${withBilling}: remains non-replayable and ${withBilling ? 'requires settlement reconciliation' : 'cannot be downgraded to known failure'}`);
 }
 
 // Reproduce and cover errors thrown before the proxy can return its stream.

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "description": "A/B 共用的合成接收卡输入；不含真实用户数据。输出质量需要人工审阅，静态格式通过不表示质量胜出。",
+  "cases": [
+    {
+      "id": "eight-second-human-pet",
+      "purpose": "8 秒普通人物与宠物，原文和动作因果保真",
+      "durationSeconds": 8,
+      "maxOutputTokens": 10000,
+      "expectedBehavior": "storyboard",
+      "fields": {
+        "segmented_copy": "1.【小雨刚拿出牵引绳，柯基就兴奋地冲向门口。她先让它坐稳，再扣好项圈，一人一狗轻快地出门。】",
+        "segment_duration": "8秒版：每段3个镜头",
+        "video_model_profile": "自动通用（分镜工作台再选择模型）",
+        "video_ratio": "16:9",
+        "animation_style": "对标皮克斯式高能3D宠物科普动画",
+        "owner_gender": "文案优先，未指定默认女主人",
+        "dog_breed": "柯基",
+        "special_notes": "小雨和柯基均不说话；动作和环境声音承担表演。服装初次确定后全片保持一致。"
+      }
+    },
+    {
+      "id": "ten-second-causality-time-jump",
+      "purpose": "10 秒多段因果与明确时间跳跃，禁止交换原文或合并段落",
+      "durationSeconds": 10,
+      "maxOutputTokens": 16000,
+      "expectedBehavior": "storyboard",
+      "fields": {
+        "segmented_copy": "1.【昨晚小林把狗粮倒得太满，金毛吃得飞快，饭后不舒服地趴在地上。她发现问题，收起大碗，决定第二天换一种喂法。】\n2.【第二天早晨，小林把同样的狗粮分进慢食碗。金毛放慢速度，小林耐心观察，等它吃完再一起散步，阳光照在门前。】",
+        "segment_duration": "10秒版：每段3-4个镜头",
+        "video_model_profile": "Omni Flash（官方时序与音轨适配）",
+        "video_ratio": "16:9",
+        "animation_style": "皮克斯式温暖家庭3D动画",
+        "owner_gender": "女主人",
+        "dog_breed": "金毛",
+        "special_notes": "昨晚与第二天早晨必须明确区分；人物、金毛与同一住宅结构跨段一致。不要将两段压成一段，不添加金毛说话。"
+      }
+    },
+    {
+      "id": "ten-second-multiple-identities",
+      "purpose": "多人、多宠、明确服装与身份区分，资产数量按实际需要",
+      "durationSeconds": 10,
+      "maxOutputTokens": 10000,
+      "expectedBehavior": "storyboard",
+      "fields": {
+        "segmented_copy": "1.【红外套的小安牵着白色比熊，蓝衬衫的阿哲牵着黑白边牧。两只狗追球时牵引绳交叉，两位主人停步解开，再各自牵好伙伴。】",
+        "segment_duration": "10秒版：每段3-4个镜头",
+        "video_model_profile": "自动通用（分镜工作台再选择模型）",
+        "video_ratio": "9:16",
+        "animation_style": "迪士尼式夸张冒险3D动画",
+        "owner_gender": "文案优先，未指定默认女主人",
+        "dog_breed": "文案优先，未指定默认柯基",
+        "special_notes": "小安是黑色短发女性，红外套、米色长裤、白鞋；阿哲是棕色短发男性，蓝衬衫、深灰长裤、黑鞋。比熊红项圈，边牧蓝项圈。两个人、两只宠物分别锁定身份，禁止换衣或串色。"
+      }
+    },
+    {
+      "id": "ten-second-environment-only",
+      "purpose": "纯环境文案不强行补人物宠物或凑三类资产",
+      "durationSeconds": 10,
+      "maxOutputTokens": 10000,
+      "expectedBehavior": "storyboard",
+      "fields": {
+        "segmented_copy": "1.【清晨的温室里没有人和动物。雨滴沿玻璃滑落，风吹动一排绿叶，第一束阳光穿过屋顶，照亮木桌上盛着清水的透明杯。】",
+        "segment_duration": "10秒版：每段3-4个镜头",
+        "video_model_profile": "自动通用（分镜工作台再选择模型）",
+        "video_ratio": "16:9",
+        "animation_style": "黏土定格质感3D动画",
+        "owner_gender": "文案优先，未指定默认女主人",
+        "dog_breed": "文案优先，未指定默认柯基",
+        "special_notes": "此文案明确没有人物与宠物，禁止补入默认女主人或柯基；只按需要建立温室场景和重要道具资产。"
+      }
+    },
+    {
+      "id": "fifteen-second-overlong-gate",
+      "purpose": "15 秒超长输入需要明确反馈，保留原文且禁止静默删字、重分段或伪装能播完",
+      "durationSeconds": 15,
+      "maxOutputTokens": 1200,
+      "expectedBehavior": "length-gate",
+      "fields": {
+        "segmented_copy": "1.【周末早晨，小雨带柯基经过公园入口，先在树下整理背包，又绕到湖边观察水鸟，接着走过木桥来到草坪。她拿出水杯让柯基休息，再把散落的玩具逐个放回袋子，随后沿着石板路回到广场。广场上有人骑车经过，她让柯基靠近自己，等车辆离开才继续前进。最后她们停在长椅旁，小雨检查项圈是否松动，收好牵引绳，打开地图核对回家的路线，又看了一眼即将落下的太阳，决定先去附近的小店取回昨天寄存的雨伞，然后慢慢走回家。】",
+        "segment_duration": "15秒版：每段4-6个镜头",
+        "video_model_profile": "自动通用（分镜工作台再选择模型）",
+        "video_ratio": "16:9",
+        "animation_style": "对标皮克斯式高能3D宠物科普动画",
+        "owner_gender": "女主人",
+        "dog_breed": "柯基",
+        "special_notes": "这是一个完整原文段落。不得删字、改写、截断或自动拆段。若超出15秒可承载容量，请先明确反馈并保留原文，等待用户选择处理方式；不要输出假装15秒能播完的故事板和视频提示词。"
+      }
+    }
+  ]
+}

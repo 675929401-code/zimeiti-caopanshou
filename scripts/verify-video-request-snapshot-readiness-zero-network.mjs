@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
+import ts from "typescript";
 
 const root = process.cwd();
 const checkerPath = path.join(root, "scripts", "verify-video-request-snapshot-readiness-local.mjs");
@@ -48,12 +50,59 @@ assert.match(checker, /billingOperations: 0/u);
 assert.match(checker, /credentialsPrinted: false/u);
 assert.match(checker, /passed: ready/u);
 
-const checkerRunIndex = canary.indexOf("report.databaseReadiness = localVideoDatabaseReadiness()");
+const checkerRunIndex = canary.indexOf("report.databaseReadiness = await readPaidDatabaseReadiness(paidOptions,report.runtime)");
 const runtimeIndex = canary.indexOf("report.runtime = await runtimeIdentity");
 const uiIndex = canary.indexOf("const uiResult = await submitVideoThroughUi");
-assert.ok(checkerRunIndex > 0 && checkerRunIndex < runtimeIndex, "DATABASE_CHECKER_MUST_PRECEDE_RUNTIME_GATE");
-assert.ok(runtimeIndex < uiIndex, "DATABASE_AND_RUNTIME_GATES_MUST_PRECEDE_UI_SUBMISSION");
-assert.match(canary, /result\.status === 0[\s\S]+fresh[\s\S]+body\?\.target === LOCAL_DATABASE_TARGET[\s\S]+body\?\.ready === true/u);
+assert.ok(runtimeIndex > 0 && runtimeIndex < checkerRunIndex, "DATABASE_READINESS_MUST_BIND_CURRENT_RUNTIME");
+assert.ok(checkerRunIndex < uiIndex, "DATABASE_AND_RUNTIME_GATES_MUST_PRECEDE_UI_SUBMISSION");
+assert.match(canary, /import[^\n]+readPaidDatabaseReadiness[^\n]+from ['"]\.\/verify-image-workbench-live-e2e\.mjs['"]/u);
+
+// Execute the actual main() guard. Only its external readiness and runtime
+// readers are fixtures; a rejection must prevent reaching the submission edge.
+const tree = ts.createSourceFile(canaryPath, canary, ts.ScriptTarget.Latest, true);
+const guards = [];
+function visit(node) {
+  if (ts.isIfStatement(node) && node.expression.getText(tree) === "execute"
+    && node.thenStatement.getText(tree).includes("report.databaseReadiness = await readPaidDatabaseReadiness")) guards.push(node);
+  ts.forEachChild(node, visit);
+}
+visit(tree);
+assert.equal(guards.length, 1, "EXACT_ACTIVE_EXECUTE_READINESS_GUARD_REQUIRED");
+const guardSource = guards[0].getText(tree);
+const cases = [];
+for (const failure of ["runtime", "readiness", "none"]) {
+  const calls = [];
+  const report = {};
+  const context = {
+    assert, execute: true, report, client: {}, expectedSourceVersion: "R-fixture", expectedBuildId: "fixture-build",
+    SAFE_RUNTIME_ID: /^[A-Za-z0-9._-]+$/u, paidOptions: { mode: "offline-fixture" }, outputDir: "fixture-no-write",
+    runtimeIdentity: async () => {
+      calls.push("runtime");
+      if (failure === "runtime") throw new Error("FIXTURE_RUNTIME_REJECTED");
+      return { sourceVersion: "R-fixture", buildId: "fixture-build" };
+    },
+    readPaidDatabaseReadiness: async (options, runtime) => {
+      calls.push("readiness");
+      assert.equal(options.mode, "offline-fixture"); assert.equal(runtime, report.runtime);
+      if (failure === "readiness") throw new Error("FIXTURE_DATABASE_REJECTED");
+      return { verified: true };
+    },
+    ordinaryStudentBillingPolicy: async () => { calls.push("billing-policy"); return { enabled: true }; },
+    saveReport: async () => { calls.push("ram-report"); },
+    reachedSubmissionEdge: () => { calls.push("submission-edge"); },
+    exports: {},
+  };
+  vm.runInNewContext(`exports.run = async () => { ${guardSource}; reachedSubmissionEdge(); };`, context);
+  if (failure === "none") {
+    await context.exports.run();
+    assert.deepEqual(calls, ["runtime", "readiness", "billing-policy", "ram-report", "submission-edge"]);
+  } else {
+    await assert.rejects(() => context.exports.run(), new RegExp(failure === "runtime" ? "FIXTURE_RUNTIME_REJECTED" : "FIXTURE_DATABASE_REJECTED", "u"));
+    assert.deepEqual(calls, failure === "runtime" ? ["runtime"] : ["runtime", "readiness"]);
+    assert.equal(calls.includes("submission-edge"), false);
+  }
+  cases.push({ failure, calls });
+}
 
 console.log(JSON.stringify({
   passed: true,
@@ -66,6 +115,10 @@ console.log(JSON.stringify({
     migrationLedgerAndCurrentSqlHashRequired: true,
     liveConstraintAndThreeFunctionSemanticsRequired: true,
     strictOwnerSecurityDefinerSearchPathAndAclRequired: true,
-    checkerIsReadOnlyAndRunsBeforeBrowserSubmission: true,
+    legacySnapshotInspectorRemainsReadOnly: true,
+    activeCanonicalReadinessBindsRuntimeBeforeBrowserSubmission: true,
+    rejectedReadinessCannotReachSubmission: true,
   },
+  cases,
+  externalReadinessReaderIsFixture: true,
 }, null, 2));

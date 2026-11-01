@@ -21,22 +21,22 @@ const AUTH_COPY: Record<PublicAuthKind, {
   login: {
     eyebrow: "账号登录",
     title: "继续使用自媒体操盘手",
-    description: "登录后继续访问主站创作工具、项目、素材、会员与积分数据。",
-    note: "账号密码、邮箱验证码和异地安全验证均沿用主站现有认证接口。",
+    description: "继续你的创作项目，查看素材与作品。",
+    note: "可使用账号密码或邮箱验证码登录。",
     initialMode: "account",
   },
   register: {
     eyebrow: "注册账号",
     title: "创建你的创作账号",
-    description: "注册使用主站现有QQ邮箱验证码、手机号、密码和邀请码链路。",
-    note: "注册必须通过真实验证码和有效邀请码校验；本页不会模拟注册成功。",
+    description: "准备QQ邮箱、手机号和邀请码，即可注册。",
+    note: "请先获取邮箱验证码，再填写注册信息。",
     initialMode: "register",
   },
   recover: {
     eyebrow: "找回访问权限",
     title: "先验证邮箱，再设置新密码",
-    description: "主站当前没有独立的免登录重置密码接口。请先使用注册邮箱验证码登录，随后进入个人中心修改密码。",
-    note: "邮箱验证码由主站真实接口发送；密码修改由登录后的个人中心处理。",
+    description: "使用注册邮箱的验证码登录，再到个人中心修改密码。",
+    note: "请使用注册时填写的邮箱。",
     initialMode: "email",
   },
 };

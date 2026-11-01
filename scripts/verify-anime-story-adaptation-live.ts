@@ -42,7 +42,6 @@ async function main() {
       effectsLevel: "rich",
       productionMode: "anime-story",
       assistantInstruction: `口播转无对白微故事验收-${Date.now()}`,
-      allowDurationTrim: true,
       videoModelDurationMode: "fixed",
       videoModelDurationSeconds: 8,
     },

@@ -1,4 +1,5 @@
 import 'server-only';
+import { startStoryboardVideoArchiveWorker, stopStoryboardVideoArchiveWorker, storyboardVideoArchiveWorkerStatus } from '@/lib/storyboard-video-archive-worker';
 import { startVideoHistoryWorker, stopVideoHistoryWorker, videoHistoryWorkerStatus } from '@/lib/video-history-worker';
 import {
   startUserContentRetentionWorker,
@@ -55,6 +56,7 @@ export async function stopMediaQueueWorkerRuntime(reason = 'shutdown') {
   runtime.stopping = true;
   runtime.shutdown = Promise.all([
     stopVideoHistoryWorker(drainTimeoutMs()),
+    stopStoryboardVideoArchiveWorker(drainTimeoutMs()),
     stopUserContentRetentionWorker(drainTimeoutMs()),
     stopDigitalVideoQueueWorker(drainTimeoutMs()),
     stopDigitalHumanLongWorker(drainTimeoutMs()),
@@ -95,17 +97,19 @@ export function startMediaQueueWorkerRuntime() {
   process.env.DIGITAL_HUMAN_LONG_WORKER = '1';
   const ordinary = startDigitalVideoQueueWorker();
   const videoHistory = startVideoHistoryWorker();
+  const storyboardArchive = startStoryboardVideoArchiveWorker();
   const userContentRetention = startUserContentRetentionWorker();
   const long = startDigitalHumanLongWorker();
   const commerceRolling = startCommerceRollingWorker();
   const commerceOrdinary = startCommerceOrdinaryWorker();
-  runtime.started = Boolean(ordinary || long || videoHistory || userContentRetention || commerceRolling || commerceOrdinary);
+  runtime.started = Boolean(ordinary || long || videoHistory || storyboardArchive || userContentRetention || commerceRolling || commerceOrdinary);
   installSignalHandlers();
   console.info('[MediaQueueWorker] started', {
     pid: process.pid,
     instance: process.env.NODE_APP_INSTANCE || process.env.pm_id || '0',
     ordinary: Boolean(ordinary),
     videoHistory: Boolean(videoHistory),
+    storyboardArchive: Boolean(storyboardArchive),
     userContentRetention: Boolean(userContentRetention),
     long: Boolean(long),
     commerceRolling: Boolean(commerceRolling),
@@ -121,6 +125,7 @@ export function mediaQueueWorkerRuntimeStatus() {
     stopping: runtime.stopping,
     ordinary: digitalVideoQueueWorkerStatus(),
     videoHistory: videoHistoryWorkerStatus(),
+    storyboardArchive: storyboardVideoArchiveWorkerStatus(),
     userContentRetention: userContentRetentionWorkerStatus(),
     long: digitalHumanLongWorkerStatus(),
     commerceRolling: commerceRollingWorkerStatus(),

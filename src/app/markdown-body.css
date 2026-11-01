@@ -710,10 +710,10 @@ html[data-mode="dark"] .markdown-body {
 /* ===== Code block wrapper — 1:1 NextChat: pre作为主容器, position:relative ===== */
 .markdown-body .code-block-wrapper {
   margin: 8px 0 16px 0;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  overflow: visible;
-  background: var(--muted);
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  overflow: hidden;
+  background: var(--color-canvas-default);
   position: relative;
 }
 
@@ -723,10 +723,13 @@ html[data-mode="dark"] .markdown-body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
+  min-height: 38px;
+  padding: 7px 14px;
+  gap: 8px;
+  flex-wrap: wrap;
   background: color-mix(in srgb, var(--muted) 80%, transparent);
   border-bottom: 1px solid var(--border);
-  border-radius: 8px 8px 0 0;
+  border-radius: 11px 11px 0 0;
   pointer-events: auto;
   transition: opacity 0.2s;
 }
@@ -734,7 +737,7 @@ html[data-mode="dark"] .markdown-body {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary, var(--muted-foreground));
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.05em;
   font-family: ui-monospace, SFMono-Regular, monospace;
   pointer-events: none;
@@ -746,6 +749,7 @@ html[data-mode="dark"] .markdown-body {
   gap: 6px;
   margin-left: auto;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 /* pre 不再需要为浮层预留 padding */
@@ -807,13 +811,13 @@ html[data-mode="dark"] .markdown-body {
   white-space: nowrap;
 }
 .markdown-body .send-video-task-button::after {
-  content: "发送";
+  content: "发送到视频工作台";
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
 }
 .markdown-body .send-image-workbench-button::after {
-  content: "推送图片";
+  content: "推送到生图工作台";
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -881,28 +885,7 @@ html[data-mode="dark"] .markdown-body {
   word-break: break-word;
 }
 
-/* ===== Code block max-height — 3级高度等级 ===== */
-/* 短代码(≤10行)：紧凑 ~200px | 中代码(11-25行)：~380px | 长代码(>25行)：~500px */
-/* 流式代码块：不限高，内容自然增长，配合聊天气泡自动滚动到最新内容 */
-.markdown-body .code-block-wrapper:not(.code-block-streaming).code-block-h-sm .code-block-pre {
-  max-height: 200px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-.markdown-body .code-block-wrapper:not(.code-block-streaming).code-block-h-md .code-block-pre {
-  max-height: 380px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-.markdown-body .code-block-wrapper:not(.code-block-streaming).code-block-h-lg .code-block-pre {
-  max-height: 500px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-.markdown-body .code-block-wrapper.code-block-streaming .code-block-pre {
-  max-height: none;
-  overflow-y: visible;
-}
+/* Height tiers are defined once in the shared viewport rules below. */
 /* 代码块内滚动条样式 — 清晰可见 */
 .markdown-body .code-block-pre::-webkit-scrollbar {
   width: 10px;
@@ -1221,8 +1204,7 @@ html[data-mode="dark"] .markdown-body {
   font-size: 85%;
   font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
 }
-/* Code block content area — auto-expanding height (like NextChat: grows with content) */
-/* NextChat exact params: padding 16px 16px 8px 16px, line-height 1.45, no max-height */
+/* Code content presentation; height and scrolling belong to the shared viewport. */
 .markdown-body .code-block-wrapper pre {
   padding: 10px 12px 5px 12px;
   background: transparent;
@@ -1230,8 +1212,6 @@ html[data-mode="dark"] .markdown-body {
   margin: 0;
   font-size: 85%;
   overflow-x: auto;
-  overflow-y: visible;
-  max-height: none;
 }
 .markdown-body .code-block-wrapper code {
   font-size: inherit;
@@ -1554,53 +1534,69 @@ html[data-mode="dark"] .markdown-body {
   padding-right: 92px;
 }
 
-/* Compact code viewport: fit content first, scroll only when the block is genuinely long. */
+/* Shared three-tier viewport, identical during streaming and after completion.
+   These are ceilings: short blocks always shrink to their actual content. */
 .markdown-body .code-block-wrapper .code-block-pre {
+  --code-block-viewport: 240px;
+  box-sizing: border-box;
   height: auto !important;
-  max-height: min(420px, 52vh) !important;
+  min-height: 0 !important;
+  max-height: min(var(--code-block-viewport), 68vh) !important;
   overflow-x: auto !important;
   overflow-y: auto !important;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 
 .markdown-body .code-block-wrapper.code-block-h-sm .code-block-pre {
-  height: auto !important;
-  max-height: min(220px, 52vh) !important;
+  --code-block-viewport: 240px;
 }
 
 .markdown-body .code-block-wrapper.code-block-h-md .code-block-pre {
-  height: auto !important;
-  max-height: min(340px, 52vh) !important;
+  --code-block-viewport: 400px;
 }
 
 .markdown-body .code-block-wrapper.code-block-h-lg .code-block-pre {
-  height: auto !important;
-  max-height: min(420px, 52vh) !important;
+  --code-block-viewport: 560px;
 }
 
-.markdown-body .code-block-wrapper.code-block-h-stream .code-block-pre {
-  height: auto !important;
-  max-height: min(420px, 52vh) !important;
+.markdown-body .code-block-expand-button {
+  display: none;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, var(--muted-foreground));
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.markdown-body .code-block-wrapper.code-block-streaming .code-block-pre {
-  overflow-y: auto !important;
+.markdown-body .code-block-wrapper.is-overflowing .code-block-expand-button {
+  display: inline-flex;
+}
+
+.markdown-body .code-block-expand-button:hover,
+.markdown-body .code-block-expand-button:focus-visible {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
+.markdown-body .code-block-wrapper.is-expanded .code-block-pre {
+  max-height: none !important;
+}
+
+/* Keep media sections predictable across every agent's response. */
+.markdown-body .code-block-wrapper[data-code-purpose$="-prompt"] {
+  margin-block: 10px 22px;
 }
 
 .markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre {
   overflow-x: hidden !important;
-}
-
-@media (max-width: 680px) {
-  .markdown-body .code-block-wrapper .code-block-pre,
-  .markdown-body .code-block-wrapper.code-block-h-sm .code-block-pre,
-  .markdown-body .code-block-wrapper.code-block-h-md .code-block-pre,
-  .markdown-body .code-block-wrapper.code-block-h-lg .code-block-pre,
-  .markdown-body .code-block-wrapper.code-block-h-stream .code-block-pre {
-    height: auto !important;
-    max-height: min(360px, 50vh) !important;
-  }
 }
 
 /* 纯文本提示词只负责阅读/复制，不需要横向滚动；长行自动换行，避免滚动条突兀地贴在卡片底部。 */
@@ -1614,12 +1610,39 @@ html[data-mode="dark"] .markdown-body {
 }
 
 .markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre {
+  display: block;
+  box-sizing: border-box;
+  padding: 14px 16px !important;
+  line-height: 1.7;
   overflow-x: hidden !important;
-  scrollbar-width: none;
+  overflow-y: auto !important;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, rgba(100, 116, 139, 0.55)) var(--scrollbar-track, rgba(148, 163, 184, 0.12));
+}
+
+.markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre code {
+  line-height: inherit;
 }
 
 .markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre::-webkit-scrollbar {
-  width: 0;
+  width: 8px;
   height: 0;
-  display: none;
+  display: block;
+}
+
+.markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre::-webkit-scrollbar-track {
+  background: var(--scrollbar-track, rgba(148, 163, 184, 0.12));
+  border-radius: 4px;
+}
+
+.markdown-body .code-block-wrapper.code-block-plaintext .code-block-pre::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, rgba(100, 116, 139, 0.55));
+  border: 2px solid var(--scrollbar-track, rgba(148, 163, 184, 0.12));
+  border-radius: 4px;
+}
+
+/* Emphasis belongs to explicit assistant Markdown, not the entire response. */
+.markdown-body :is(.render-layer-final, .render-layer-streaming) :is(strong, b) {
+  font-weight: 700;
 }

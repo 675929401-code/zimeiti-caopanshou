@@ -112,7 +112,7 @@ export function LandingPage({ onEnterApp }: LandingPageProps) {
   /* ESC 关闭登录面板 */
   useEffect(() => {
     if (!showLogin) return;
-    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") setShowLogin(false); };
+    const fn = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) setShowLogin(false); };
     document.addEventListener("keydown", fn);
     return () => document.removeEventListener("keydown", fn);
   }, [showLogin]);

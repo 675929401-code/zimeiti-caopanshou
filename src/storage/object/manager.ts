@@ -294,6 +294,18 @@ class StorageManager {
     return result;
   }
 
+  async deleteStoryboardArchiveObjectOnly(key: string) {
+    const provider = await this.getProvider('tencent_cos');
+    if (!(provider instanceof TencentCOSProvider)) throw new Error('STORYBOARD_ARCHIVE_COS_REQUIRED');
+    return provider.deleteStoryboardArchiveObjectOnly(key);
+  }
+
+  async headStoryboardArchiveObjectOnly(key: string) {
+    const provider = await this.getProvider('tencent_cos');
+    if (!(provider instanceof TencentCOSProvider)) throw new Error('STORYBOARD_ARCHIVE_COS_REQUIRED');
+    return provider.headStoryboardArchiveObjectOnly(key);
+  }
+
   async headPublicationObjectOnly(key:string){
     const provider=await this.getProvider('tencent_cos');
     if(!(provider instanceof TencentCOSProvider))throw new Error('IMAGE_PUBLICATION_COS_REQUIRED');

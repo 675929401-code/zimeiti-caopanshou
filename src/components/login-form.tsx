@@ -5,6 +5,7 @@ import { useApp } from "@/contexts/app-context";
 import { reportAuthLoginFailed } from "@/lib/diagnostic-sentry";
 import { Eye, EyeOff } from "lucide-react";
 import { UserThemeSwitcher } from "@/components/user-theme-switcher";
+import { BrandContactButton } from "@/components/brand-contact-panel";
 import { isQqEmail, normalizeQqEmail } from "@/lib/qq-email";
 import {
   handlePlatformBrandLogoError,
@@ -40,6 +41,7 @@ export function LoginForm({
   subtitle,
   footerNote,
   footerTextColor,
+  embedded = false,
 }: {
   initialMode?: LoginMode;
   initialInvitationCode?: string;
@@ -48,6 +50,7 @@ export function LoginForm({
   subtitle?: string;
   footerNote?: string;
   footerTextColor?: string;
+  embedded?: boolean;
 } = {}) {
   const { login, register } = useApp();
   const publicBranding = usePlatformBranding();
@@ -55,13 +58,6 @@ export function LoginForm({
     || (publicBranding.displayScope === "white_label" ? "品牌服务" : "自媒体操盘手");
   const platformLogo = platformBrandLogoUrl(publicBranding, "square");
   const loginBackground = platformBrandAssetUrl(publicBranding, "login_background");
-  const publishedContact = publicBranding.brand.contact.wechat.trim()
-    ? `微信：${publicBranding.brand.contact.wechat.trim()}`
-    : publicBranding.brand.contact.phone.trim()
-      ? `电话：${publicBranding.brand.contact.phone.trim()}`
-      : publicBranding.brand.contact.email.trim()
-        ? `邮箱：${publicBranding.brand.contact.email.trim()}`
-        : "";
   const enabledModes: readonly LoginMode[] = allowedModes?.length ? allowedModes : ALL_LOGIN_MODES;
   const modeEnabled = useCallback((value: LoginMode) => enabledModes.includes(value), [enabledModes]);
   const [mode, setMode] = useState<LoginMode>(() => initialMode && enabledModes.includes(initialMode) ? initialMode : enabledModes[0]);
@@ -85,6 +81,8 @@ export function LoginForm({
   // 账号登录 — 从 localStorage 恢复上次输入
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
+  /** 勾选后服务端签发 30 天会话，到期前访问站点无需再次输入密码。 */
+  const [rememberLogin, setRememberLogin] = useState(true);
 
   // 邮箱登录
   const [email, setEmail] = useState("");
@@ -132,6 +130,8 @@ export function LoginForm({
       const savedAccount = localStorage.getItem("last_login_account") || localStorage.getItem("last_login_phone");
       const savedEmail = localStorage.getItem("last_login_email");
       const savedMode = localStorage.getItem("last_login_mode") as LoginMode | "phone" | null;
+      // 默认记住登录；用户上次手动取消则保持取消。
+      setRememberLogin(localStorage.getItem("remember_login") !== "0");
       if (savedAccount) setAccount(savedAccount);
       if (savedEmail) setEmail(savedEmail);
       // 兼容旧模式: "phone" → "account"
@@ -252,7 +252,7 @@ export function LoginForm({
     if (passwordInput) setPassword(passwordInput.value);
     // 使用setTimeout确保setState生效后再执行登录
     setTimeout(() => {
-      login(accountInput?.value || account, passwordInput?.value || password).then(result => {
+      login(accountInput?.value || account, passwordInput?.value || password, undefined, rememberLogin).then(result => {
         if (result.success) {
           localStorage.setItem("last_login_account", accountInput?.value || account);
           localStorage.setItem("last_login_mode", "account");
@@ -322,7 +322,7 @@ export function LoginForm({
     const answerInput = form.querySelector<HTMLInputElement>('input[name="securityAnswer"]');
     if (answerInput) setSecurityAnswer(answerInput.value);
     setTimeout(() => {
-      login(account, password, answerInput?.value || securityAnswer).then(result => {
+      login(account, password, answerInput?.value || securityAnswer, rememberLogin).then(result => {
         if (result.success) {
           localStorage.setItem("last_login_account", account);
           localStorage.setItem("last_login_mode", "account");
@@ -363,7 +363,7 @@ export function LoginForm({
     setError("");
 
     try {
-      const result = await login(account, password, needSecurityVerify ? securityAnswer : undefined);
+      const result = await login(account, password, needSecurityVerify ? securityAnswer : undefined, rememberLogin);
       if (result.success) {
         // 记住账号（不记住密码）
         localStorage.setItem("last_login_account", account);
@@ -400,7 +400,7 @@ export function LoginForm({
     setError("");
     setLoading(true);
     try {
-      const result = await login(account, password, securityAnswer);
+      const result = await login(account, password, securityAnswer, rememberLogin);
       if (result.success) {
         localStorage.setItem("last_login_account", account);
         localStorage.setItem("last_login_mode", "account");
@@ -565,13 +565,13 @@ export function LoginForm({
         ) : null}
         {/* Subtle inner glow */}
         <div className="login-panel-sheen absolute inset-0 rounded-3xl bg-gradient-to-br from-white/6 via-transparent to-white/2 pointer-events-none" />
-        <div className="absolute right-3 top-3 z-20">
+        {!embedded && <div className="absolute right-3 top-3 z-20">
           <UserThemeSwitcher />
-        </div>
+        </div>}
         
         <div className="relative z-10">
           {/* Logo & Title */}
-          <div className="mb-8 text-center">
+          {!embedded && <div className="mb-8 text-center">
             {platformLogo ? (
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl overflow-hidden bg-[var(--primary)]/20 backdrop-blur-sm shadow-lg shadow-[var(--primary)]/20">
                 <img
@@ -594,7 +594,7 @@ export function LoginForm({
             <p className="login-form-subtitle mt-2 text-xs text-white/60 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
               {subtitle || (mode === "register" ? "创建新账号" : "请登录您的账号")}
             </p>
-          </div>
+          </div>}
 
           {/* ── 安全问题验证弹层 ── */}
           {needSecurityVerify ? (
@@ -756,6 +756,21 @@ export function LoginForm({
                       </button>
                     </div>
                   </div>
+
+                  <label className="login-remember-row flex cursor-pointer select-none items-center gap-2 text-xs text-white/70">
+                    <input
+                      type="checkbox"
+                      checked={rememberLogin}
+                      onChange={(event) => {
+                        const next = event.target.checked;
+                        setRememberLogin(next);
+                        try { localStorage.setItem("remember_login", next ? "1" : "0"); } catch {}
+                      }}
+                      className="h-4 w-4 rounded border-white/30 bg-white/10 accent-[var(--primary)]"
+                      aria-label="记住登录，30 天内免密"
+                    />
+                    <span>记住登录（30 天内免密）</span>
+                  </label>
 
                   {error && (
                     <div className="login-form-error rounded-lg bg-red-500/15 backdrop-blur-sm px-4 py-3 text-sm text-red-200 border border-red-400/20">
@@ -996,13 +1011,14 @@ export function LoginForm({
 
                   {!footerNote && (
                     <p className="login-form-footer px-2 text-center text-xs leading-5 text-white/50">
-                      {`注册即表示同意平台使用条款${publishedContact ? ` · ${publishedContact}` : ""}`}
+                      注册即表示同意平台使用条款
                     </p>
                   )}
                 </form>
               )}
             </>
           )}
+          <div className="login-contact-row mt-5 flex justify-center"><BrandContactButton>联系支持</BrandContactButton></div>
         </div>
       </div>
 

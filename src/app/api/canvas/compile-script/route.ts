@@ -36,11 +36,11 @@ const RequestSchema = z.object({
   productionMode: z.enum(["anime-story", "real-story", "ten-second", "product-video"]).optional(),
   storyDirectorMode: z.enum(["high_energy", "cinematic", "lyrical"]).default("high_energy"),
   targetDurationSeconds: z.union([z.literal(8), z.literal(10), z.literal(15)]).default(10),
+  storyboardPanelMode: z.enum(["fixed-4", "auto", "fixed-5"]).default("fixed-4"),
   imageModelName: z.string().trim().max(200).default(""),
   videoModelName: z.string().trim().max(200).default(""),
   videoModelDurationMode: z.enum(["fixed", "discrete", "range"]).optional(),
   videoModelDurationSeconds: z.number().positive().max(60).optional(),
-  allowDurationTrim: z.boolean().default(true),
   consistencyMode: z.enum(["text-lock", "reference"]).default("text-lock"),
   assistantInstruction: z.string().trim().max(1000).default(""),
 });
@@ -504,7 +504,7 @@ async function requestAiSegments(
     request,
     model,
     systemPrompt,
-    `制作方向：${input.productionMode || "自动"}\n故事版导演：${input.storyDirectorMode}\n目标视频时长：${input.targetDurationSeconds}秒\n风格：${input.style || "未指定"}\n比例：${input.ratio}\n补充要求：${input.assistantInstruction || "无"}\n固定口播分段：${JSON.stringify(semanticSegments)}\n原始文案：\n${input.script}`,
+    `制作方向：${input.productionMode || "自动"}\n故事版导演：${input.storyDirectorMode}\n目标视频时长：${input.targetDurationSeconds}秒\n故事板格数模式：${input.storyboardPanelMode}\n风格：${input.style || "未指定"}\n比例：${input.ratio}\n补充要求：${input.assistantInstruction || "无"}\n固定口播分段：${JSON.stringify(semanticSegments)}\n原始文案：\n${input.script}`,
     Math.min(6400, Math.max(3200, 2400 + semanticSegments.length * 120)),
     CANVAS_PROJECT_TIMEOUT_MS,
   );
@@ -548,7 +548,7 @@ async function requestAiShotDirectives(
   ].join("\n");
   const payload = await callCanvasLlm(
     request,
-    model || "gpt-5.4",
+    model || "gpt-5.6-sol",
     input.productionMode === "anime-story" ? conciseAnimeSystemPrompt : [
       "你是影视项目的全片语义连续性导演，只做逐段语义消解和主体、场景、道具状态规划，不写生图或视频提示词。",
       "用户输入默认是短视频口播文案，不是要求原样演出的文学剧本。每段画面必须服务对应口播信息：把句中的具体动作、对象、风险、情绪或处理方法变成一个可见事件，不能擅自续写人物剧情，也不能用人物走路、停步、回头、弯腰等通用动作替代本段事实。",
@@ -594,8 +594,8 @@ async function requestAiVisualBatch(
   const pacingRule = input.productionMode === "anime-story"
     ? `故事版成片单元固定为${input.targetDurationSeconds}秒：导演必须在该时长内设计连续故事节拍；8秒使用3个实际视频镜头，10秒使用3至4个实际视频镜头，15秒使用4至6个实际视频镜头。意图多格面板只负责锁定关键视觉状态，不等于切镜点，禁止按格机械强切。`
     : fastPacing
-      ? "快节奏信息型：每个分镜仍只使用一个3到5秒连续视频；节奏变化由相邻分镜的景别、机位、动作落点与硬切完成，绝不在同一口播段下新增第二个视频。"
-      : "剧情叙事型：每个分镜只使用一个3到5秒连续视频，在一个时空内完成起势、核心动作、情绪落点和可剪辑收尾。";
+      ? "快节奏信息型：每个分镜仍只使用一个按模型原生时长生成的连续视频；节奏变化由相邻分镜的景别、机位、动作落点与硬切完成，绝不在同一口播段下新增第二个视频。"
+      : "剧情叙事型：每个分镜只使用一个按模型原生时长生成的连续视频，在一个时空内完成起势、核心动作、情绪落点和可剪辑收尾。";
   const performanceMode = projectBible.performanceMode;
   const batchDirectives = projectBible.shotDirectives.filter((directive) => (
     directive.order >= batchStart + 1 && directive.order <= batchStart + segments.length
@@ -614,12 +614,11 @@ async function requestAiVisualBatch(
       : highDynamicPacing
         ? "本片采用轻快高动态演绎：提高动作幅度、响应速度和镜头跟随效率，保持预备、主动作、反应和落幅连贯清楚；高动态不等于喜剧，不做无因果鬼脸或反转，装饰只强化速度、力量、感知或信息重点。"
         : "按全片叙事基调自然演绎：动作幅度、响应速度和镜头节奏随各段语义调整，保持连续表演和可读反应；不强套喜剧或抒情，也不退化为静态摆拍。";
-  const usesFixedDurationTrim = input.allowDurationTrim && input.videoModelDurationMode !== "range";
   const videoModelTimingRule = input.productionMode === "anime-story"
     ? `目标视频模型：${input.videoModelName || "平台默认"}。按${input.targetDurationSeconds}秒成片单元统筹动作、运镜和剪辑节奏，并为每个实际视频镜头给出明确时间范围；面板数量与切镜数量解耦。`
-    : usesFixedDurationTrim
-      ? `目标视频模型：${input.videoModelName || "平台默认"}，原生生成时长约 ${input.videoModelDurationSeconds || "固定"} 秒。系统会在生成后自动裁到每个镜头给定的目标秒数；motionPrompt仍必须让关键动作、情绪变化和镜头落点在目标时长内完成，裁剪点之后只能自然延续，不能放置必要剧情。`
-      : `目标视频模型：${input.videoModelName || "平台默认"}。按每个分镜给定的3到5秒整数目标时长直接设计动作，动作密度必须适合给定秒数。`;
+    : input.videoModelDurationMode === "fixed"
+      ? `目标视频模型：${input.videoModelName || "平台默认"}，原生固定时长为 ${input.videoModelDurationSeconds || input.targetDurationSeconds} 秒。motionPrompt必须按该原生时长统筹完整动作、情绪变化和镜头落点，生成时长保持模型登记值。`
+      : `目标视频模型：${input.videoModelName || "平台默认"}。按每个分镜已选择的原生时长设计动作，动作密度必须适合给定秒数。`;
   const verboseSystemPrompt = [
     input.productionMode === "anime-story"
       ? buildPresetAnimeDirectorCanvasPrompt(preset, [
@@ -631,7 +630,7 @@ async function requestAiVisualBatch(
     "JSON格式：{\"segments\":[{\"narration\":\"原样\",\"durationSeconds\":3,\"visualShots\":[{\"visualMode\":\"narrative/hybrid-packaging/semantic-cutaway之一\",\"durationSeconds\":3,\"shotRole\":\"hook/setup/action/reaction/evidence/metaphor/payoff/transition之一\",\"transition\":\"cut/dissolve/match-cut/graphic/hold之一\",\"castIds\":[\"本镜出场角色id\"],\"visualBeat\":\"10至40字的唯一可见任务\",\"visibleProposition\":\"观众必须亲眼看懂的可见命题\",\"evidenceLevel\":\"physical_action/body_state/environment_feedback/semantic_cutaway之一\",\"directorDecision\":\"为什么这样演和这样包装\",\"cameraPlan\":\"机位、景别、唯一主运镜与落幅\",\"motionPrompt\":\"内部动作计划：【入镜】...【预备】...【主动作】...【反应】...【落幅】...\",\"soundPrompt\":\"现场环境音与动作音\",\"keyframeMoment\":\"60至160字的单一静态瞬间\",\"scenePrompt\":\"40至120字的唯一场景与叙事道具\",\"imagePrompt\":\"80至420字、可直接提交图片模型的最终自然语言提示词\",\"videoPrompt\":\"50至400字、可直接提交图生视频模型的最终自然语言提示词\",\"effectsPrompt\":\"【语义重点】...【剧情表演】...【叙事道具】...【环境反馈】...【图形特效】...\",\"editPrompt\":\"成片保留区间、切点、字幕标题与声音落点\",\"qualityCriteria\":\"本镜图视频一致性和失败重生成标准\"}]}]}。",
     "visibleProposition必须能被画面直接证明；evidenceLevel按行为实物、身体状态、环境反馈、完整语义切片四级选择能讲清信息的最低级别。directorDecision只解释本镜的导演取舍，不得复制提示词；cameraPlan只保留一种主运镜，最多两个摄影机运动轴。editPrompt和qualityCriteria必须可供后期与质检节点直接执行。",
     "这是口播文案的视觉导演任务，不是续写文学剧本。每镜必须优先落实当前口播段里的具体名词、动作、风险或处理方法；全局导演表只负责约束，若其中出现‘前景道具、人物反应、改变眼神’等空泛说法，必须回到当前narration用具体对象纠正。禁止连续镜头复用人物走路、停步、回头、弯腰或看向道具的通用模板。",
-    "执行顺序：先根据本段语义和全局导演表确定唯一画面任务；再写3至5秒的【入镜→预备→主动作→反应→落幅】连续动作；最后从【入镜】反推一张动作将发未发、张力最大且仍可继续运动的独立关键帧。一个镜头只含一个时空、一个核心动作和一种主要运镜。",
+    "执行顺序：先根据本段语义和全局导演表确定唯一画面任务；再按模型时长规则写【入镜→预备→主动作→反应→落幅】连续动作；最后从【入镜】反推一张动作将发未发、张力最大且仍可继续运动的独立关键帧。一个镜头只含一个时空、一个核心动作和一种主要运镜。",
     "全局导演表的semanticTask、visualMode、packagingIntent是硬约束。narrative用表演、叙事道具和环境反馈讲清语义，【图形特效】写无及理由；hybrid-packaging保留完整物理场景，并把packagingIntent变成一组与主体绑定的非文字语义图形；semantic-cutaway把packagingIntent做成完整语义可视化。不得自行换模式或套用通用爱心、问号、光弧、辉点。",
     "本段若包含无法直接看见但必须传达的明确内在状态、感知、拟声、速度力量比喻或认知变化，必须落实全局导演表给出的非文字可见证据，不能只画同段中的可见动作。包装形式服从本段含义；不得为了方便改成通用符号，也不得遗漏。",
     "imagePrompt是最终生图指令，不是创作说明：直接写主体固定身份、一个姿态、可读表情、身体重心、清楚可见的剧情证据和道具、环境反馈、前中后景、唯一机位景别、构图、光线、材质和色彩。若有语义包装，必须写清绑定对象、画面位置、当前静态形态和方向，让它真实出现在画面中。禁止‘表达、体现、根据文案、选择一种、让模型决定、用于后续视频、作为视频初始形态、视频运动和消退、画入关键帧’等解释语。",
@@ -659,8 +658,8 @@ async function requestAiVisualBatch(
   const conciseAnimeSystemPrompt = [
     buildPresetAnimeDirectorCanvasPrompt(preset),
     `当前批次有${segments.length}个固定口播段，每段只写一个镜头，narration和durationSeconds原样返回。只返回JSON。`,
-    `当前自由画布故事版目标时长为${input.targetDurationSeconds}秒：8秒必须3个真实镜头，10秒必须3至4个真实镜头，15秒必须4至6个真实镜头；面板数和实际切镜数解耦。`,
-    "格式：{\"segments\":[{\"narration\":\"原样\",\"durationSeconds\":3,\"castIds\":[\"character-1\"],\"visualMode\":\"narrative/hybrid-packaging/semantic-cutaway之一\",\"directorDecision\":\"【可见命题】...【角色目标】...【阻碍或异常】...【核心动作】...【可见结果】...【镜头抓手】...\",\"motionPrompt\":\"【入镜】...【预备】...【主动作】...【反应】...【落幅】...\",\"imagePrompt\":\"画面提示词\",\"videoPrompt\":\"动态运镜提示词\",\"scenePrompt\":\"场景提示词\",\"packagingPrompt\":\"【语义缺口】...【包装决策】需要/不需要【包装类型】physical-prop/body-bound/environment-feedback/local-inset/semantic-space/none之一【包装锚点】4至24字唯一名或无【绑定与位置】...【静态初态】...【动态延续】...\",\"qualityCriteria\":\"本镜必须通过和必须重生成的条件\"}]}。",
+    `当前自由画布故事版目标时长为${input.targetDurationSeconds}秒：8秒必须3个真实镜头，10秒必须3至4个真实镜头，15秒必须4至6个真实镜头；面板数和实际切镜数解耦。当前故事板格数模式为${input.storyboardPanelMode}：fixed-4 必须 bottomPanelRole=none；fixed-5 必须从 panorama/reveal/evidence/conclusion 中选择一个；auto 默认 none，只有导演明确给出结构化角色时才使用5格。`,
+    "格式：{\"segments\":[{\"narration\":\"原样\",\"durationSeconds\":3,\"castIds\":[\"character-1\"],\"visualMode\":\"narrative/hybrid-packaging/semantic-cutaway之一\",\"bottomPanelRole\":\"none/panorama/reveal/evidence/conclusion之一\",\"directorDecision\":\"【可见命题】...【角色目标】...【阻碍或异常】...【核心动作】...【可见结果】...【镜头抓手】...\",\"motionPrompt\":\"【入镜】...【预备】...【主动作】...【反应】...【落幅】...\",\"imagePrompt\":\"画面提示词\",\"videoPrompt\":\"动态运镜提示词\",\"scenePrompt\":\"场景提示词\",\"packagingPrompt\":\"【语义缺口】...【包装决策】需要/不需要【包装类型】physical-prop/body-bound/environment-feedback/local-inset/semantic-space/none之一【包装锚点】4至24字唯一名或无【绑定与位置】...【静态初态】...【动态延续】...\",\"qualityCriteria\":\"本镜必须通过和必须重生成的条件\"}]}。",
     "先完成导演决策卡，再写提示词。角色目标、阻碍或异常、核心动作和可见结果必须形成一个微剧情；不能用走路、看向、停住等通用动作糊弄。动作采用经典卡通表演节拍：预备段必须改变重心、身体压缩或蓄势轮廓；主动作必须写清方向、速度和幅度，并按剧情至少出现一次顿挫、过冲、回弹或道具连锁；反应段至少联动两处身体部位、道具或环境；落幅轮廓必须与入镜明显不同。夸张服务因果，不随机做鬼脸。",
     "本镜不是独立插画：必须直接执行下方storyPlan中同order的beat。directorDecision写清该beat如何把entryState演成resultState；imagePrompt取action即将发生的张力瞬间；videoPrompt完成action并停在resultState；handoffToNext必须落实到落幅的视线、方向、道具或空间状态。",
     "逐镜先问：物理表演、道具和环境能否让观众一眼看懂全部语义。能则包装决策写不需要；不能则只选一种载体。视觉语法分两级：先识别语义类别，再设计材质、数量、位置、绑定与运动。观众已有稳定共识的母符号必须保留：心动、恋爱、相爱使用桃心/爱心/心形；发懵、疑惑、不明白使用问号；肠道、消化、器官机理使用完整正常角色旁的安全local-inset局部教学窗。母符号之外的具体样式必须根据当前剧情重新设计；其他语义不得随机套用桃心、问号或心跳线。",
@@ -1120,7 +1119,7 @@ async function requestAiStoryboardPlan(
 ) {
   const semanticSegments = normalizeStoryboardSegments(input.script);
   let narrationPlan: Awaited<ReturnType<typeof requestAiSegments>> = null;
-  const availableSegmentationModels = models.length > 0 ? models.slice(0, 2) : ["gpt-5.4"];
+  const availableSegmentationModels = models.length > 0 ? models.slice(0, 2) : ["gpt-5.6-sol"];
   const segmentationModels = [...new Set([
     ...availableSegmentationModels.filter((model) => /gpt-5\.6/i.test(model)),
     ...availableSegmentationModels,
@@ -1235,7 +1234,7 @@ async function requestAiStoryboardPlan(
   const visualModels = [...new Set([
     ...models.filter((model) => /gpt-5\.6/i.test(model)),
     ...models,
-    "gpt-5.4",
+    "gpt-5.6-sol",
   ])];
   const primaryVisualModels = visualModels.slice(0, 1);
   // A failed batch deserves one strict per-shot retry on the best model too.

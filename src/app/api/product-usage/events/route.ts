@@ -140,13 +140,24 @@ function keyedHash(secret: string, scope: string, userId: string, value: string)
   return createHmac("sha256", secret).update(`${scope}:v1|${userId}|${value}`).digest("hex");
 }
 
-function persistenceRows(events: ProductUsageBrowserEvent[], userId: string, nowMs: number): Record<string, unknown>[] {
-  const secret = getJwtSecretString();
+function configuredCollectionPolicy(): { policyBasisCode: string; noticeVersion: string } | null {
   const policyBasisCode = process.env.PRODUCT_USAGE_POLICY_BASIS_CODE?.trim() || "";
   const noticeVersion = process.env.PRODUCT_USAGE_NOTICE_VERSION?.trim() || "";
   if (!/^[A-Za-z0-9._:-]{3,80}$/u.test(policyBasisCode) || !/^[A-Za-z0-9._:-]{3,64}$/u.test(noticeVersion)) {
-    throw new Error("PRODUCT_USAGE_POLICY_NOT_CONFIGURED");
+    return null;
   }
+  return { policyBasisCode, noticeVersion };
+}
+
+export async function GET() {
+  return noStore(NextResponse.json({ collectionEnabled: configuredCollectionPolicy() !== null }));
+}
+
+function persistenceRows(events: ProductUsageBrowserEvent[], userId: string, nowMs: number): Record<string, unknown>[] {
+  const secret = getJwtSecretString();
+  const policy = configuredCollectionPolicy();
+  if (!policy) throw new Error("PRODUCT_USAGE_POLICY_NOT_CONFIGURED");
+  const { policyBasisCode, noticeVersion } = policy;
   const runtimeIdentity = readFlightRuntimeIdentity();
   const retainedUntil = new Date(nowMs + EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1_000).toISOString();
   const receivedAt = new Date(nowMs).toISOString();

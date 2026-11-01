@@ -45,7 +45,7 @@ function load(file) {
 const metadata = load('src/lib/plugin-metadata.ts');
 const formHelpers = load('src/lib/admin-plugin-form.ts');
 const route = load('src/app/api/admin/plugins/route.ts');
-const stored = () => ({ id: 'fixture-original', name: '原插件', type: 'coze', subtype: 'workflow', role: 'extract_workflow', description: '原说明', is_active: true, price_per_use: 0, cost_price: 0, price_unit: '次', sort_order: 3, config: { api_base_url: 'https://provider.example/run', api_token: 'FIXTURE_PRIVATE_TOKEN', api_key: 'FIXTURE_PRIVATE_KEY', workflow_id: 'workflow-fixture', nested: { authorization: 'FIXTURE_NESTED_SECRET', keep: 42 }, extra: true } });
+const stored = () => ({ id: 'fixture-original', name: '原插件', type: 'coze', subtype: 'workflow', role: 'cover_workflow', description: '原说明', is_active: true, price_per_use: 0, cost_price: 0, price_unit: '次', sort_order: 3, config: { api_base_url: 'https://provider.example/run', api_token: 'FIXTURE_PRIVATE_TOKEN', api_key: 'FIXTURE_PRIVATE_KEY', workflow_id: 'workflow-fixture', nested: { authorization: 'FIXTURE_NESTED_SECRET', keep: 42 }, extra: true } });
 const request = (body, method = 'PUT') => new Request('http://127.0.0.1:5000/api/admin/plugins', { method, headers: { Authorization: 'Bearer fixture-test-session', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 let passed = 0;
 async function test(name, run) { state.admin = true; state.plugins = [stored()]; state.writes = []; await run(); passed++; console.log('PASS ' + name); }

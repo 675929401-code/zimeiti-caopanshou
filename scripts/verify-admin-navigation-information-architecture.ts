@@ -30,7 +30,7 @@ const expectedModules = [
   { root: "announcements", title: "公告与通知", tabs: ["announcements"] },
   { root: "agents", title: "智能体管理", tabs: ["agents", "aiweb-import", "trash"] },
   { root: "models", title: "模型与服务", tabs: ["models", "connection"] },
-  { root: "workspace-models", title: "工作台配置", tabs: ["workspace-models"] },
+  { root: "workspace-models", title: "工作台配置", tabs: ["workspace-models", "storyboard-presets"] },
   { root: "general", title: "品牌与界面", tabs: ["general", "theme", "layout"] },
   { root: "white-label", title: "域名与贴牌", tabs: ["white-label"] },
   { root: "security", title: "安全审计", tabs: ["security", "guard-logs", "login-logs"] },
@@ -60,8 +60,10 @@ for (const navModule of expectedModules) {
 }
 
 const mappedTabs = expectedModules.flatMap((navModule) => [...navModule.tabs]);
+const actualValidTabs = [...validTabsBlock.matchAll(/"([a-z][a-z-]+)"/gu)].map(match => match[1]);
+requireMatch(JSON.stringify([...actualValidTabs].sort()) === JSON.stringify([...mappedTabs].sort()), "正式 tab 必须全部且仅映射一次到导航，禁止漏页或额外隐藏页");
 requireMatch(expectedModules.length === 14, `一级导航模块数量不正确：${expectedModules.length}`);
-requireMatch(mappedTabs.length === 27, `后台 tab 数量不正确：${mappedTabs.length}`);
+requireMatch(mappedTabs.length === 28, `后台 tab 数量不正确：${mappedTabs.length}`);
 requireMatch(new Set(expectedModules.map((navModule) => navModule.root)).size === expectedModules.length, "一级导航 root 重复");
 requireMatch(new Set(mappedTabs).size === mappedTabs.length, "同一个正式 tab 被放进多个一级导航");
 requireMatch(expectedModules.some((navModule) => navModule.root === "payment" && navModule.tabs.length === 1), "支付系统必须是可直达的独立一级入口");

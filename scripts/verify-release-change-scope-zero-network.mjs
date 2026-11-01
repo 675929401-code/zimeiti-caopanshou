@@ -531,6 +531,53 @@ try {
     assert.equal(engineeringUnknown.gate.releaseReady, false);
   }
 
+  // Exact known inputs from the current reviewed source closure. Keep build /
+  // engineering identities on the existing shared desktop routes; individual
+  // error/client/layout inputs name their actual route owners explicitly.
+  const sharedDesktopRoutes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
+  const knownRouteInputs = [
+    [".engineering/chat-reliability-lock.v1.json", sharedDesktopRoutes],
+    [".engineering/extraction-feature-lock.v1.json", sharedDesktopRoutes],
+    ["tsconfig.json", sharedDesktopRoutes],
+    ["src/instrumentation.ts", sharedDesktopRoutes],
+    ["src/app/cover/error.tsx", ["/", "/cover", "/tools"]],
+    ["src/app/help/help-center-client.tsx", ["/", "/help", "/tools"]],
+    ["src/app/storyboard-workbench/layout.tsx", ["/storyboard-workbench", "/storyboard-workbench/history", "/storyboard-workbench/visual-assets"]],
+    ["src/app/youcai/layout.tsx", ["/", "/commerce/rebuild", "/youcai/storyboard-workbench"]],
+    ["src/app/youcai/storyboard-workbench/layout.tsx", ["/", "/commerce/rebuild", "/youcai/storyboard-workbench"]],
+  ];
+  for (const [inputPath, routes] of knownRouteInputs) {
+    const change = { status: "M", path: inputPath, content: "export const fixture = true;" };
+    const automatic = runScenario(`known-exact-route-${sha256(inputPath).slice(0,16)}`, [change]);
+    assert.deepEqual(automatic.browserAcceptance.requiredRoutes, routes, inputPath);
+    assert.deepEqual(automatic.browserAcceptance.unresolvedPaths, [], inputPath);
+    assert.equal(automatic.gate.releaseReady, false);
+    const exact = runScenario(`known-exact-caller-${sha256(inputPath).slice(0,16)}`, [change], { acceptanceRoutes: routes });
+    assert.deepEqual(exact.browserAcceptance.unresolvedPaths, []);
+    assert.equal(exact.browserAcceptance.explicitRoutesProvided, true);
+    const extra = runScenario(`known-route-extra-caller-${sha256(inputPath).slice(0,16)}`, [change], { acceptanceRoutes: [...routes, "/unreviewed-extra"] });
+    assert.ok(extra.browserAcceptance.unresolvedPaths.includes("<caller-routes-not-policy-approved>"));
+  }
+  const allKnownRoutes = [...new Set(knownRouteInputs.flatMap(([, routes]) => routes))].sort(compareProtocolStrings);
+  const allKnown = runScenario("nine-known-inputs-exact-union", knownRouteInputs.map(([inputPath]) => ({ status: "M", path: inputPath, content: "export const fixture = true;" })), { acceptanceRoutes: allKnownRoutes });
+  assert.deepEqual(allKnown.browserAcceptance.unresolvedPaths, []);
+  assert.ok(allKnown.browserAcceptance.requiredRoutes.includes("/help"));
+  assert.ok(allKnown.browserAcceptance.requiredRoutes.includes("/commerce/rebuild"), "shared shell smoke must remain mandatory without exercising commerce business");
+  const nearUnknownInputs = [
+    ".engineering/chat-reliability-lock.v2.json", ".engineering/extraction-feature-lock.v1.json.extra",
+    "tsconfig.unknown.json", "src/instrumentation.client.ts",
+    "src/app/cover/error.jsx", "src/app/help/unknown-client.tsx",
+    "src/app/storyboard-workbench/unknown/layout.tsx", "src/app/youcai/unknown/layout.tsx",
+    "src/app/youcai/storyboard-workbench/nested/layout.tsx",
+  ];
+  for (const unknownPath of nearUnknownInputs) {
+    const unknown = runScenario(`nearby-unknown-route-${sha256(unknownPath).slice(0,16)}`, [{ status: "M", path: unknownPath, content: "export const fixture = true;" }], { acceptanceRoutes: allKnownRoutes });
+    assert.equal(unknown.failClosed, true);
+    assert.equal(unknown.classification, "FULL");
+    assert.ok(unknown.browserAcceptance.unresolvedPaths.includes(unknownPath));
+    assert.equal(unknown.gate.releaseReady, false);
+  }
+
   const profileReviewedRoutes = runScenario("project-profile-exact-reviewed-routes", [projectProfileChange],
     { acceptanceRoutes: ["/", "/tools", "/video"] });
   assert.deepEqual(profileReviewedRoutes.browserAcceptance.unresolvedPaths, []);
@@ -568,6 +615,8 @@ try {
     ["database", "A", "supabase/migrations/20990101000000_example.sql", "CREATE TABLE example(id bigint);"],
     ["auth", "M", "src/lib/auth.ts", "export const requireUser = () => true;"],
     ["billing", "M", "src/lib/wallet-ledger.ts", "export const settle = () => true;"],
+    ["user-content-retention-worker", "M", "src/lib/user-content-retention-worker.ts", "export const fixture = true;"],
+    ["video-history-policy", "M", "src/lib/video-history-policy.ts", "export const fixture = true;"],
     ["model-adapter", "M", "src/lib/video-provider-adapter.ts", "export const adapter = {};"],
     ["deployment", "M", "deploy/manifests/example.json", "{}"],
     ["secret", "A", "config/client-secret.template", "placeholder only"],
@@ -575,7 +624,14 @@ try {
   for (const [name, status, filePath, content] of fullCases) {
     const receipt = runScenario(`full-${name}`, [{ status, path: filePath, content }]);
     assert.equal(receipt.classification, "FULL", `${name} must be FULL`);
+    if (["user-content-retention-worker", "video-history-policy"].includes(name)) {
+      assert.ok(receipt.changedFiles[0].pathRuleIds.includes("full-storage-deletion-or-retention"));
+    }
     assertCommonValidations(receipt);
+  }
+  const retentionPathRule = JSON.parse(fs.readFileSync(policyPath, "utf8")).pathRules.find(rule => rule.id === "full-storage-deletion-or-retention");
+  for (const nearby of ["src/lib/user-content-retention-worker.ts.extra", "src/lib/user-content-retention-workers.ts", "src/lib/video-history-policy.ts.extra", "src/lib/video-history-policies.ts", "src/other/video-history-policy.ts"]) {
+    assert.equal(retentionPathRule.patterns.some(pattern => new RegExp(pattern, "u").test(nearby)), false, `exact retention paths must not expand to ${nearby}`);
   }
 
   const storageDelete = runScenario("full-storage-delete-content", [
@@ -1738,6 +1794,19 @@ try {
     "--root", root,
     "--bundle", unresolvedPromotionBundlePath,
   ]).stderr, /RELEASE_BROWSER_ROUTES_UNRESOLVED/u);
+
+  // Caller-supplied exact known routes cannot authorize a neighboring unknown
+  // engineering/build/layout input at the real promotion boundary either.
+  for (const unknownPath of nearUnknownInputs) {
+    const rejected = structuredClone(unresolvedPromotionBundle);
+    rejected.scope.browserAcceptance.explicitRoutesProvided = true;
+    rejected.scope.browserAcceptance.requiredRoutes = allKnownRoutes;
+    rejected.scope.browserAcceptance.unresolvedPaths = [unknownPath];
+    rejected.bundleId = recomputeBundleId(rejected);
+    const file = path.join(temporaryRoot, `nearby-unresolved-${sha256(unknownPath).slice(0,16)}.bundle.json`);
+    fs.writeFileSync(file, JSON.stringify(rejected, null, 2) + "\n");
+    assert.match(runFailure(process.execPath, [validationGatePath, "promote-release-ready", "--root", root, "--bundle", file]).stderr, /RELEASE_BROWSER_ROUTES_UNRESOLVED/u);
+  }
 
   const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
   assert.equal(policy.unknownBehavior, "FULL");

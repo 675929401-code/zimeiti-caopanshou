@@ -6,6 +6,7 @@ import { FileText, Home, Scissors, Text, Video, Wrench } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { NavButton, SubPageHeader } from "@/components/sub-page-header";
 import { ToolboxProvider, type ToolboxTabId } from "@/components/toolbox-context";
+import { BrandFooter } from "@/components/brand-footer";
 import styles from "./tools.module.css";
 
 const ExtractPage = dynamic(() => import("@/app/extract/page"), {
@@ -28,6 +29,8 @@ const TOOL_TABS = [
 type ToolTab = ToolboxTabId;
 type ToolPanel = "extract" | "format" | "segment";
 const DEFAULT_TOOL_TAB: ToolTab = "text";
+const TOOLBOX_ACTIVE_TAB_KEY = "toolbox_active_tab";
+const TOOLBOX_ACTIVE_TAB_READY_KEY = "toolbox_active_tab_ready";
 
 function panelForTab(tab: ToolTab): ToolPanel {
   if (tab === "text" || tab === "video") return "extract";
@@ -36,6 +39,25 @@ function panelForTab(tab: ToolTab): ToolPanel {
 
 function normalizeTab(value: string | null): ToolTab {
   return TOOL_TABS.some((tab) => tab.id === value) ? value as ToolTab : DEFAULT_TOOL_TAB;
+}
+
+function readStoredToolTab(): ToolTab {
+  if (typeof window === "undefined") return DEFAULT_TOOL_TAB;
+  try {
+    if (window.localStorage.getItem(TOOLBOX_ACTIVE_TAB_READY_KEY) !== "1") return DEFAULT_TOOL_TAB;
+    return normalizeTab(window.localStorage.getItem(TOOLBOX_ACTIVE_TAB_KEY));
+  } catch {
+    return DEFAULT_TOOL_TAB;
+  }
+}
+
+function persistToolTab(tab: ToolTab) {
+  try {
+    window.localStorage.setItem(TOOLBOX_ACTIVE_TAB_KEY, tab);
+    window.localStorage.setItem(TOOLBOX_ACTIVE_TAB_READY_KEY, "1");
+  } catch {
+    // A blocked storage backend must not prevent navigation or tool use.
+  }
 }
 
 function toolHref(tab: ToolTab) {
@@ -48,13 +70,13 @@ function ToolboxWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<ToolTab>(() => normalizeTab(requestedTab));
+  const [activeTab, setActiveTab] = useState<ToolTab>(() => requestedTab ? normalizeTab(requestedTab) : readStoredToolTab());
   const [mountedPanels, setMountedPanels] = useState<Set<ToolPanel>>(
     () => new Set([panelForTab(normalizeTab(requestedTab))]),
   );
 
   useEffect(() => {
-    const normalized = normalizeTab(requestedTab);
+    const normalized = requestedTab ? normalizeTab(requestedTab) : readStoredToolTab();
     setActiveTab((current) => current === normalized ? current : normalized);
     if (requestedTab !== normalized) {
       window.history.replaceState(window.history.state, "", toolHref(normalized));
@@ -77,7 +99,7 @@ function ToolboxWorkspace() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
       router.push("/");
@@ -87,6 +109,7 @@ function ToolboxWorkspace() {
   }, [router]);
 
   const selectTab = useCallback((tab: ToolTab) => {
+    persistToolTab(tab);
     if (tab === activeTab) return;
     setActiveTab(tab);
     window.history.pushState(window.history.state, "", toolHref(tab));
@@ -101,7 +124,6 @@ function ToolboxWorkspace() {
   };
 
   const activeTool = TOOL_TABS.find((tab) => tab.id === activeTab) || TOOL_TABS[0];
-  const ActiveIcon = activeTool.Icon;
   const activePanel = panelForTab(activeTab);
 
   return (
@@ -117,9 +139,8 @@ function ToolboxWorkspace() {
         <section className={styles.workbenchFrame} aria-label="短视频效率工具工作区">
           <aside className={styles.toolRail} aria-label="工具功能">
             <header className={styles.railHeader}>
-              <span>效率工具</span>
-              <strong>内容处理</strong>
-              <small>4 项常用能力</small>
+              <strong>效率工具</strong>
+              <span>提取、整理与分段</span>
             </header>
 
             <div className={styles.tabs} role="tablist" aria-label="工具箱功能" aria-orientation="vertical">
@@ -154,17 +175,16 @@ function ToolboxWorkspace() {
                 </button>
               ))}
             </div>
+            <div className={styles.railSummary}>
+              <span>当前工具</span>
+              <strong>{activeTool.label}</strong>
+              <small>{activeTool.processing}</small>
+              <p>切换工具时，已输入的内容会保留</p>
+            </div>
           </aside>
 
           <section className={styles.stage}>
-            <header className={styles.stageHeader}>
-              <span className={styles.stageIcon}><ActiveIcon aria-hidden="true" /></span>
-              <div>
-                <h1>{activeTool.label}</h1>
-                <p>{activeTool.description}</p>
-              </div>
-              <span className={styles.processingState}>{activeTool.processing}</span>
-            </header>
+            <h1 className={styles.srOnly}>{activeTool.label}</h1>
 
             <div className={styles.workspace}>
               <ToolboxProvider activeTab={activeTab} onTabChange={selectTab}>
@@ -194,6 +214,7 @@ function ToolboxWorkspace() {
           </section>
         </section>
       </main>
+      <BrandFooter />
     </div>
   );
 }

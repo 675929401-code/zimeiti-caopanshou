@@ -2,6 +2,7 @@
 import { SafeFetchError } from "./safe-fetch";
 import { readVideoModelCatalog } from "./video-model-catalog";
 import { modelEndpointError } from "./model-endpoint";
+import { isSecureSkillNativeVideoModel } from "./video-secure-skill-native";
 export interface DetectRequest {
   apiEndpoint: string;
   apiKey: string;
@@ -14,8 +15,8 @@ export interface DetectResult {
   protocolName: string;
   modelName: string;       // 保留用户填写的精确模型 ID
   apiEndpoint: string;     // 保留用户填写的 API 端点
-  keyValid: boolean;       // 密钥是否有效
-  modelExists: boolean;    // 模型是否存在于平台
+  keyValid: boolean | null;       // null 表示尚无可信认证结论
+  modelExists: boolean | null;    // null 表示尚未取得有效目录
   features: string[];      // 检测到的特性
   error?: string;          // 错误信息
   suggestion?: string;     // 给用户的建议
@@ -42,6 +43,7 @@ interface ProtocolDef {
 }
 
 const PROTOCOL_REGISTRY: ProtocolDef[] = [
+  { id: "secure_skill_kling_video", name: "Secure Skill · Kling", description: "POST /v1/videos → 同密钥 GET /v1/videos/{id}；参考图及混合参考", keywords: ["kling-video-v4"], domains: ["token.secure-skill.com"], mode: "async", endpoint: "/v1/videos" },
   { id: "secure_skill_doubao_seedance", name: "渠道 A · Seedance 官方 Token", description: "POST /api/v3/contents/generations/tasks → 同密钥 GET /api/v3/contents/generations/tasks/{task_id}", keywords: ["doubao-seedance-2-0", "doubao-seedance-2-5"], domains: ["token.secure-skill.com"], mode: "async", endpoint: "/api/v3/contents/generations/tasks" },
   { id: "secure_skill_enterprise_video", name: "Secure Skill · video-企业 · 分组16", description: "POST /v1/videos → 同密钥 GET /v1/videos/{task_id}；固定720p，支持图片和音频参考", keywords: ["video-2.0-fast", "video-2.0-pro"], domains: ["token.secure-skill.com"], mode: "async", endpoint: "/v1/videos" },
   { id: "secure_skill_seedance_video", name: "Secure Skill · Seedance 2.5", description: "POST /v1/videos → 同密钥 GET /v1/videos/{task_id}；混合参考", keywords: ["seedance-2.5"], domains: ["token.secure-skill.com"], mode: "async", endpoint: "/v1/videos" },
@@ -93,7 +95,7 @@ const PROTOCOL_REGISTRY: ProtocolDef[] = [
   },
   {
     id: "secure_skill_video",
-    name: "渠道A MiniMax H3",
+    name: "渠道A · 原生视频",
     description: "POST /v1/videos 提交并通过 GET /v1/videos/{id} 轮询",
     keywords: ["minimax-h3"],
     domains: ["token.secure-skill.com", "secure-skill"],
@@ -190,7 +192,7 @@ const readCatalog: ModelCatalogReader = readVideoModelCatalog;
 export async function autoDetectVideoProtocol(req: DetectRequest, reader: ModelCatalogReader = readCatalog): Promise<DetectResult> {
   const error = modelEndpointError(req.apiEndpoint);
   const base: DetectResult = { success: false, protocolType: "", protocolName: "", modelName: req.modelName,
-    apiEndpoint: req.apiEndpoint, keyValid: false, modelExists: false, features: [], candidateModels: [],
+    apiEndpoint: req.apiEndpoint, keyValid: null, modelExists: null, features: [], candidateModels: [],
     liveTest: { tested: false, passed: false, mode: "unknown", detail: "仅检查配置，未提交生成任务" } };
   if (error) return { ...base, error };
   if (!req.apiKey || !req.modelName.trim()) return { ...base, error: "请填写密钥和模型 ID" };
@@ -198,7 +200,9 @@ export async function autoDetectVideoProtocol(req: DetectRequest, reader: ModelC
   const host = url.hostname.toLowerCase();
   const model = req.modelName.toLowerCase();
   const domainMatches = (domain: string) => domain.includes(".") && (host === domain || host.endsWith(`.${domain}`));
-  const protocol = PROTOCOL_REGISTRY.find(p => p.domains.some(domainMatches) && p.keywords.some(k => model.includes(k)))
+  const protocol = (host === "token.secure-skill.com" && isSecureSkillNativeVideoModel(req.modelName)
+    ? PROTOCOL_REGISTRY.find(p => p.id === "secure_skill_video") : undefined)
+    || PROTOCOL_REGISTRY.find(p => p.domains.some(domainMatches) && p.keywords.some(k => model.includes(k)))
     || PROTOCOL_REGISTRY.find(p => p.domains.some(domainMatches) && p.keywords.length === 0);
   if (protocol) {
     base.protocolType = protocol.id; base.protocolName = protocol.name;
@@ -217,7 +221,12 @@ export async function autoDetectVideoProtocol(req: DetectRequest, reader: ModelC
     if (!data || typeof data !== "object" || !Array.isArray((data as {data?: unknown}).data)) {
       return { ...base, error: "渠道未返回有效模型列表", suggestion: "可能需要专用列表接口；请核对该渠道的 API 文档。" };
     }
-    const ids = ((data as {data: unknown[]}).data).flatMap(item => item && typeof item === "object" && typeof (item as {id?: unknown}).id === "string" ? [(item as {id: string}).id] : []);
+    const entries = (data as { data: unknown[] }).data;
+    if (entries.some(item => !item || typeof item !== "object" || Array.isArray(item)
+      || typeof (item as { id?: unknown }).id !== "string" || !(item as { id: string }).id.trim())) {
+      return { ...base, error: "渠道返回的模型列表格式无效", suggestion: "保留当前配置；待取得完整有效的模型目录后再检查。" };
+    }
+    const ids = entries.map(item => (item as { id: string }).id);
     if (host === "token.secure-skill.com" && ids.includes("video-2.0-fast") && ids.includes("video-2.0-pro")) {
       const enterprise = PROTOCOL_REGISTRY.find(item => item.id === "secure_skill_enterprise_video");
       if (enterprise) {
@@ -233,11 +242,12 @@ export async function autoDetectVideoProtocol(req: DetectRequest, reader: ModelC
     return { ...base, success: true, features: [...base.features, "当前密钥可读取目录，模型 ID 精确匹配", "未生成、未扣费、未保存；生成能力仍需独立验收"] };
   } catch (failure) {
     const status = failure instanceof SafeFetchError ? failure.upstreamStatus : undefined;
-    const message = status === 401 || status === 403 ? "密钥或渠道分组无访问权限"
+    const message = status === 401 ? "渠道拒绝了当前密钥认证"
+      : status === 403 ? "该目录请求无访问权限，尚不能确认密钥是否有效"
       : status === 429 ? "渠道请求频率受限，请稍后检查"
       : status === 404 ? "该渠道没有此模型列表接口，请查阅 API 文档"
       : "模型目录读取失败，请检查 API 地址、网络或渠道服务状态";
-    return { ...base, error: message };
+    return { ...base, keyValid: status === 401 ? false : null, error: message };
   }
 }
 

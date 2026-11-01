@@ -4,16 +4,25 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import {
   getVideoDurationCapabilities,
   getVideoResolutionCapabilities,
+  getVideoBillingUnit,
 } from "@/lib/video-model-capabilities";
+import { getVideoTokenPublicPricing } from "@/lib/video-token-billing";
 import { getVideoInputContract } from "@/lib/video-input-contract";
+import { isRegisteredVideoProtocol } from "@/lib/video-adapter";
+import { gaoruiVideoCreateContractAdmission } from "@/lib/gaorui-video-contract-admission";
 import { isDigitalHumanWorkspaceModel } from "@/lib/video-model-surface";
+import { readGaoruiPersonAssetAdmission } from "@/lib/gaorui-person-asset-admission";
 import { supportsConfirmedVideoCancellation } from "@/lib/video-cancellation";
 import { publicMediaBillingCapabilities, toPublicModelDto } from "@/lib/public-model-dto";
+import { publicVideoModelCompatibilityMessage, publicVideoModelInputCompatibilityCode } from "@/lib/video-model-public-status";
+import { isVisibleInPublicWorkspace } from "@/lib/video-workspace-catalog";
+import { RETIRED_MODEL_PROVIDER } from "@/lib/model-retirement";
 import { AUTODL_H3_SELFHOST_PROTOCOL } from "@/lib/autodl-h3-selfhost";
 import { requireVideoPriceSnapshot } from "@/lib/video-terminal-finalizer";
 import {
   videoBillingAdapterAdmission,
   videoModelAvailabilityMessage,
+  videoOperatorSubmissionAdmission,
 } from "@/lib/video-model-availability";
 import {
   VIDEO_MODEL_SURFACE_ORDER_SETTING_KEY,
@@ -57,6 +66,7 @@ interface RankedVideoModel {
   supportsImageInput: boolean;
   requiresImage: boolean;
   workflowInputMode: string;
+  referenceAspectRatioPolicy: "same" | "independent";
   supportsPrompt: boolean;
   requiresFirstFrame: boolean;
   requiresLastFrame: boolean;
@@ -64,7 +74,8 @@ interface RankedVideoModel {
   showLastFrame: boolean;
   showReferenceImages: boolean;
   showAudioInputs: boolean;
-  billingUnit: "per_use" | "output_second";
+  billingUnit: "per_use" | "output_second" | "token";
+  tokenPricing: ReturnType<typeof getVideoTokenPublicPricing>;
   workspaceSurfaces: string[];
   supportsRemoteCancel: boolean;
   supportsGenerateAudioToggle: boolean;
@@ -79,32 +90,26 @@ interface RankedVideoModel {
   available: boolean;
   priceReady: boolean;
   generationReady: boolean;
+  readinessMessage: string;
   availabilityMessage: string;
   surfaceCompatible: boolean;
-}
-
-function isVisibleInPublicWorkspace(
-  model: RankedVideoModel,
-  surface: ReturnType<typeof videoWorkspaceSurfaceFromRequest>,
-) {
-  if (surface && !model.surfaceCompatible) return false;
-  if (surface === "storyboard-video") {
-    return model.maxReferenceImages >= 1
-      && model.minReferenceImages <= 1
-      && !model.requiresLastFrame
-      && !model.requiresSourceVideo
-      && model.minReferenceAudios === 0;
-  }
-  if (surface === "video-page") {
-    return model.supportsPrompt || model.maxReferenceImages >= 1;
-  }
-  if (surface === "commerce-video") {
-    return model.maxReferenceImages >= 5;
-  }
-  return true;
+  compatibilityCode: string;
+  capabilitiesVerified: boolean;
 }
 
 const VIDEO_ASPECT_RATIOS = new Set(["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"]);
+
+function hasLocallyValidVideoEndpoint(value: unknown): boolean {
+  try {
+    const endpoint = new URL(String(value || "").trim());
+    if (!["http:", "https:"].includes(endpoint.protocol) || !endpoint.hostname || endpoint.username || endpoint.password || endpoint.hash) return false;
+    return ![...endpoint.searchParams.keys()].some(key =>
+      /^(?:xapikey|apikey|key|token|accesstoken|authtoken|refreshtoken|idtoken|secret|clientsecret|auth|authorization|credentials?|password|signature|sig)$/iu.test(key.replace(/[-_.]/gu, "")),
+    );
+  } catch {
+    return false;
+  }
+}
 
 function workspaceSurfaceList(row: Record<string, unknown>, config: Record<string, unknown>): string[] {
   const configured = Array.isArray(config.workspace_surfaces)
@@ -149,14 +154,16 @@ function videoChannelKey(row: Record<string, unknown>): string {
 }
 
 function modelMatchesSurface(row: Record<string, unknown>, requestedSurface: string): boolean {
-  if (!requestedSurface) return row.protocol_type !== AUTODL_H3_SELFHOST_PROTOCOL;
+  if (row.provider === RETIRED_MODEL_PROVIDER) return false;
+  // AutoDL 托管工作流（autodl.art）已废弃：既不在目录展示，也不进入任何工作区。
+  const protocol = String(row.protocol_type || "");
+  if (protocol === AUTODL_H3_SELFHOST_PROTOCOL || protocol === "autodl_comfyui_workflow") return false;
+  if (!requestedSurface) return true;
   const isDigitalHuman = isDigitalHumanWorkspaceModel(row);
   if (requestedSurface === "digital-human") return isDigitalHuman;
-  const surface = videoWorkspaceSurfaceFromRequest(requestedSurface);
   // Workspace assignment and the capability policy are evaluated separately
   // below. A mismatch never changes the resource-pool record.
-  if (surface) return row.protocol_type !== AUTODL_H3_SELFHOST_PROTOCOL;
-  return row.protocol_type !== AUTODL_H3_SELFHOST_PROTOCOL;
+  return true;
 }
 
 function videoOutputCapabilities(row: Record<string, unknown>, config: Record<string, unknown>) {
@@ -232,7 +239,7 @@ export async function GET(request: Request) {
     const assignmentOverrides = parseWorkspaceModelAssignmentOverrides(assignmentSettingResult.data?.setting_value);
     const { data, error } = await supabase
       .from("video_models")
-      .select("id, name, model_name, provider, protocol_type, api_endpoint, api_key, price_per_use, cost_price, duration_seconds, max_duration, supports_image_input, requires_image, is_active, is_hidden, sort_order, total_requests, success_count, last_success_at, api_protocol_config")
+      .select("id, name, model_name, icon_url, provider, protocol_type, api_endpoint, api_key, price_per_use, cost_price, duration_seconds, max_duration, supports_image_input, requires_image, is_active, is_hidden, sort_order, total_requests, success_count, last_success_at, api_protocol_config")
       .eq("is_hidden", false)
       .order("sort_order", { ascending: true });
 
@@ -262,12 +269,16 @@ export async function GET(request: Request) {
       // Keep the machine-submitted default empty when the provider owns the
       // output size, but make the catalog label explicit for users.
       const resolutionTier = outputCapabilities.defaultResolution || "自动选择";
-      const inputContract = getVideoInputContract(m);
+      const plainNativeSeedance = m.protocol_type === "gaorui_video" && ["seedance-2.0", "seedance-2.5"].includes(String(m.model_name)) && gaoruiVideoCreateContractAdmission(m).ready;
+      const inputContract = { ...getVideoInputContract(m), ...(plainNativeSeedance ? { showFirstFrame: true, showReferenceImages: false } : {}) };
       const { supportsSourceVideoInput, requiresSourceVideo, maxReferenceImages, minReferenceImages, maxReferenceAudios, minReferenceAudios, supportsPrompt, requiresFirstFrame, requiresLastFrame,
         showFirstFrame, showLastFrame, showReferenceImages, showAudioInputs } = inputContract;
       const supportsAudioInput = inputContract.showAudioInputs;
       const workflowInputMode = inputContract.mode;
-      const billingUnit = protocolConfig.billing_unit === "output_second" ? "output_second" as const : "per_use" as const;
+      const referenceAspectRatioPolicy = protocolConfig.reference_aspect_ratio_policy === "independent"
+        && workflowInputMode === "flexible_image" && !requiresFirstFrame && !requiresLastFrame ? "independent" : "same";
+      const billingUnit = protocolConfig.provider_billing_unit === "token" ? "token" : getVideoBillingUnit(m);
+      const tokenPricing = billingUnit === "token" || protocolConfig.provider_billing_unit === "token" ? getVideoTokenPublicPricing(m) : null;
       const workspaceSurfaces = workspaceSurfaceList(m, protocolConfig);
       const supportsRemoteCancel = supportsConfirmedVideoCancellation(m.protocol_type, protocolConfig);
       const supportsGenerateAudioToggle = protocolConfig.supports_generate_audio_toggle === true;
@@ -280,23 +291,45 @@ export async function GET(request: Request) {
         : null;
       let priceSnapshotReady = true;
       try {
-        requireVideoPriceSnapshot(m, resolutionTier, durationCapabilities.defaultDuration);
+        if (billingUnit === "token" || protocolConfig.provider_billing_unit === "token") {
+          priceSnapshotReady = tokenPricing !== null;
+        } else requireVideoPriceSnapshot(m, resolutionTier, durationCapabilities.defaultDuration);
       } catch {
         priceSnapshotReady = false;
       }
       const billingAdmission = videoBillingAdapterAdmission(protocolConfig);
-      const priceReady = priceSnapshotReady && billingAdmission.ready;
-      // Publication evidence and circuit history stay as internal diagnostics.
-      // They must not silently remove or disable an administrator-enabled row.
+      const priceReady = priceSnapshotReady;
+      // Publication evidence, canary receipts and channel history are
+      // administrator diagnostics. They must never make a configured model
+      // disappear from the public catalog or turn a transient APM/provider
+      // observation into a permanent submission gate. The submit route still
+      // validates the current protocol, credential, price and delivery
+      // contract immediately before it calls the upstream provider.
+      // Credential references are declarations here. Resolving them belongs to
+      // submission; a catalog GET must never read secret files or invoke DPAPI.
       const configuredForSubmission = String(m.api_key || "").trim().length > 0
-        && String(m.protocol_type || "").trim().length > 0
-        && /^https?:\/\//iu.test(String(m.api_endpoint || "").trim());
-      const baseAvailable = m.is_active === true && configuredForSubmission && priceReady;
-      const available = baseAvailable && surfaceCompatibility?.compatible !== false;
-      const availabilityMessage = surfaceCompatibility?.compatible === false
-        ? surfaceCompatibility.issues[0]?.message || "当前页面不支持该模型所需的输入方式"
+        && isRegisteredVideoProtocol(m.protocol_type)
+        && hasLocallyValidVideoEndpoint(m.api_endpoint);
+      const baseAvailable = m.is_active === true && configuredForSubmission && priceReady && billingAdmission.ready;
+      const personAssetAdmission = readGaoruiPersonAssetAdmission(m, { surface: requestedSurface });
+      const operatorAdmission = videoOperatorSubmissionAdmission(m.api_protocol_config, m);
+      const capabilitiesVerified = protocolConfig.capability_contract_verified !== false;
+      const compatibilityCode = surfaceCompatibility?.compatible === false ? publicVideoModelInputCompatibilityCode(surfaceCompatibility.issues) || "VIDEO_CONFIGURATION_PENDING"
+        : !operatorAdmission.ready ? operatorAdmission.code
+        : !billingAdmission.ready ? billingAdmission.code
+        : !personAssetAdmission.ready ? "VIDEO_PERSON_REFERENCE_PENDING"
+        : !priceReady ? "VIDEO_PRICE_UNCONFIGURED"
+        : m.is_active !== true ? "VIDEO_MODEL_INACTIVE"
+        : !configuredForSubmission ? "VIDEO_CONFIGURATION_PENDING" : "";
+      const available = baseAvailable && surfaceCompatibility?.compatible !== false && personAssetAdmission.ready && operatorAdmission.ready;
+      const availabilityMessage = publicVideoModelCompatibilityMessage(compatibilityCode) || (surfaceCompatibility?.compatible === false
+        ? "当前页面不支持该模型所需的输入方式"
+        : !operatorAdmission.ready
+          ? operatorAdmission.message
         : !billingAdmission.ready
           ? billingAdmission.message
+        : !personAssetAdmission.ready
+          ? personAssetAdmission.message || "当前人物参考接入尚未完成配置"
         : videoModelAvailabilityMessage({
         available: baseAvailable,
         active: m.is_active === true,
@@ -306,11 +339,10 @@ export async function GET(request: Request) {
         healthRecorded: true,
         circuitState: "closed",
         lastError: "",
-        });
-      // The public workspace follows the live submission contract. Internal
-      // acceptance evidence remains available to administrators, but it must
-      // not create a second customer-facing gate after an enabled row has a
-      // resolvable credential, protocol, endpoint and price.
+        }));
+      // A configured model is selectable. Real credential/protocol failures
+      // are reported by the submit contract for this request; stale canary or
+      // APM health rows do not down-list the model.
       const generationReady = available;
 
       return {
@@ -334,6 +366,7 @@ export async function GET(request: Request) {
         supportsImageInput: inputContract.maxReferenceImages > 0,
         requiresImage: inputContract.minReferenceImages > 0,
         workflowInputMode,
+        referenceAspectRatioPolicy,
         supportsPrompt,
         requiresFirstFrame,
         requiresLastFrame,
@@ -342,6 +375,7 @@ export async function GET(request: Request) {
         showReferenceImages,
         showAudioInputs,
         billingUnit,
+        tokenPricing,
         workspaceSurfaces,
         supportsRemoteCancel,
         supportsGenerateAudioToggle,
@@ -356,8 +390,11 @@ export async function GET(request: Request) {
         available,
         priceReady,
         generationReady,
+        readinessMessage: "",
         availabilityMessage,
         surfaceCompatible: surfaceCompatibility?.compatible !== false,
+        compatibilityCode,
+        capabilitiesVerified,
       };
     });
 
@@ -425,6 +462,8 @@ export async function GET(request: Request) {
       minReferenceAudios: model.minReferenceAudios,
       supportsAudioInput: model.supportsAudioInput,
       workflowInputMode: model.workflowInputMode,
+      ...(model.row.protocol_type === "gaorui_video" && model.row.model_name === "seedance-2.5" && gaoruiVideoCreateContractAdmission(model.row).ready ? { firstFrameRatioPolicy: "adaptive" } : {}),
+      referenceAspectRatioPolicy: model.referenceAspectRatioPolicy,
       supportsPrompt: model.supportsPrompt,
       requiresFirstFrame: model.requiresFirstFrame,
       requiresLastFrame: model.requiresLastFrame,
@@ -453,8 +492,11 @@ export async function GET(request: Request) {
       available: model.available,
       priceReady: model.priceReady,
       generationReady: model.generationReady,
+      readinessMessage: model.readinessMessage,
       availabilityMessage: model.availabilityMessage,
-    }));
+      compatibilityCode: model.compatibilityCode,
+      capabilitiesVerified: model.capabilitiesVerified,
+    }, model.tokenPricing));
 
     return NextResponse.json({ models }, { headers: { "Cache-Control": "no-store" } });
   } catch {

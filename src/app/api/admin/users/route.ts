@@ -96,9 +96,11 @@ export async function GET(request: NextRequest) {
         query = query.eq('role', role);
       }
       // Administrator identities belong to the super-admin control plane.
-      // Ordinary member operators never receive those account rows.
+      // Ordinary member operators never receive other administrator rows, but
+      // each administrator must be able to see their own account for the
+      // internal wallet recharge flow.
       if (adminAccess.adminLevel !== 'super_admin') {
-        query = query.neq('role', 'admin');
+        query = query.or(`role.neq.admin,id.eq.${clean(admin.userId)}`);
       }
 
       // Direct user_id lookup (for student profile enrichment)

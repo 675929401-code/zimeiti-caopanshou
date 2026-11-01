@@ -7,7 +7,7 @@ import pg from "pg";
 
 const MODEL_ID = "76b48548-6542-4908-a9f7-10835d2528bb";
 const MODEL_NAME = "gpt-6.1-sol";
-const DISPLAY_NAME = "GPT-6.1 Sol · LConAI G2";
+const DISPLAY_NAME = "GPT-6.1 Sol";
 const PRIMARY_ORIGIN = "https://n.lconai.com";
 const EVIDENCE_PATH = path.resolve(
   ".codex-evidence/lconai-workbook-onboarding-20261005/gpt61-live-canary-primary-and-activation.json",
@@ -76,11 +76,10 @@ async function main(args = process.argv.slice(2)) {
   }
   assert.equal(stored.name, DISPLAY_NAME, "GPT61_DISPLAY_NAME_MISMATCH");
   assert.equal(stored.model_name, MODEL_NAME, "GPT61_PROVIDER_MODEL_MISMATCH");
-  assert.equal(String(stored.api_endpoint || "").replace(/\/+$/u, ""), PRIMARY_ORIGIN, "GPT61_PRIMARY_ENDPOINT_REQUIRED");
-  assert.equal(String(stored.proxy_url || "").replace(/\/+$/u, ""), PRIMARY_ORIGIN, "GPT61_PRIMARY_PROXY_REQUIRED");
+  assert.equal(String(stored.api_endpoint || "").replace(/\/+$/u, "").replace(/\/v1$/u, ""), PRIMARY_ORIGIN, "GPT61_PRIMARY_ENDPOINT_REQUIRED");
+  assert.equal(String(stored.proxy_url || "").replace(/\/+$/u, "").replace(/\/v1$/u, ""), PRIMARY_ORIGIN, "GPT61_PRIMARY_PROXY_REQUIRED");
   assert.equal(stored.api_key, "secret://lconai-gpt-6-1-sol", "GPT61_CREDENTIAL_REFERENCE_MISMATCH");
-  assert.equal(stored.api_protocol_config?.protocol, "openai_chat_completions", "GPT61_PROTOCOL_REQUIRED");
-  assert.equal(stored.api_protocol_config?.endpoint_path, "/v1/chat/completions", "GPT61_ENDPOINT_PATH_REQUIRED");
+  assert.equal(stored.api_protocol_config?.protocol, "openai_chat", "GPT61_PROTOCOL_REQUIRED");
   assert.equal(stored.api_protocol_config?.output_token_field, "max_completion_tokens", "GPT61_OUTPUT_TOKEN_FIELD_REQUIRED");
 
   const inventory = await requestJson(origin, headers, "/api/admin/models");
@@ -148,7 +147,7 @@ async function main(args = process.argv.slice(2)) {
     origin,
     modelId: MODEL_ID,
     modelName: MODEL_NAME,
-    protocol: "openai_chat_completions",
+    protocol: "openai_chat",
     endpoint: `${PRIMARY_ORIGIN}/v1/chat/completions`,
     outputTokenField: "max_completion_tokens",
     requestCount: 1,

@@ -14,6 +14,8 @@ import styles from './workspace.module.css';
 import { ImitationComposer } from '@/features/digital-human/ImitationComposer';
 import { SpeechComposer } from '@/features/digital-human/SpeechComposer';
 import { CommerceAudioAssetPicker } from '@/features/digital-human/CommerceAudioAssetPicker';
+import { PersonAssetPreflightPicker } from '@/features/digital-human/PersonAssetPreflight';
+import { hasPersonAssetPreflightCandidate } from '@/features/digital-human/asset-preflight-contract';
 import { ImagePlus, AudioLines, Clapperboard, WalletCards, History, Sparkles } from 'lucide-react';
 
 type Model = { id: string; displayName: string; publicPrice: number; capabilities: Record<string, unknown> & { available?: boolean; availabilityMessage?: string; generationReady?: boolean; readinessMessage?: string; requiresSourceVideo?: boolean } };
@@ -253,6 +255,10 @@ function Workspace({ userId, token, backHref }: { userId: string; token: string;
       setDraft(current => ({ ...current, modelId: first.id, resolution: String(first.capabilities.defaultResolution || '') }));
       return;
     }
+    if (hasPersonAssetPreflightCandidate(modelsForMode(draft.mode))) {
+      if (draft.modelId) setDraft(current => ({ ...current, modelId: '', resolution: '' }));
+      return;
+    }
     const fallbackMode: HumanMode = draft.mode === 'video' ? 'photo' : 'video';
     const fallback = availableModelsForMode(fallbackMode)[0];
     if (fallback) {
@@ -261,7 +267,7 @@ function Workspace({ userId, token, backHref }: { userId: string; token: string;
       return;
     }
     if (draft.modelId) setDraft(current => ({ ...current, modelId: '', resolution: '' }));
-  }, [ready, modelsLoading, draft.mode, draft.modelId, availableModelsForMode]);
+  }, [ready, modelsLoading, draft.mode, draft.modelId, availableModelsForMode, modelsForMode]);
 
   const poll = useCallback(async (original: HumanJob) => {
     let job = original;
@@ -533,8 +539,10 @@ function Workspace({ userId, token, backHref }: { userId: string; token: string;
       <section ref={editorRef} className={styles.editor} aria-label="数字人创作">
         <div className={styles.modes} role="tablist" aria-label="创作方式">{(['video', 'photo'] as HumanMode[]).map(mode => {
           const availableCount = availableModelsForMode(mode).length;
-          return <button role="tab" aria-selected={draft.mode === mode} aria-disabled={!modelsLoading && availableCount === 0} disabled={pending || !!uploading || modelsLoading || availableCount === 0} key={mode} onClick={() => { setDraft(current => ({ ...current, mode, modelId: '', resolution: '', personId: '' })); setPerson(null); setDurationChoice(''); setRestoreNotice(''); setError(''); }}><strong>{mode === 'photo' ? '照片说话' : '视频改口型'}</strong><span>{modelsLoading ? '正在读取可用模型…' : modelsError ? '模型列表读取失败' : availableCount === 0 ? '当前没有可提交的模型' : mode === 'photo' ? '一张人物照片 + 配音' : '人物视频 + 新配音'}</span></button>;
+          const canInspect = hasPersonAssetPreflightCandidate(modelsForMode(mode));
+          return <button role="tab" aria-selected={draft.mode === mode} aria-disabled={!modelsLoading && availableCount === 0 && !canInspect} disabled={pending || !!uploading || modelsLoading || (availableCount === 0 && !canInspect)} key={mode} onClick={() => { setDraft(current => ({ ...current, mode, modelId: '', resolution: '', personId: '' })); setPerson(null); setDurationChoice(''); setRestoreNotice(''); setError(''); }}><strong>{mode === 'photo' ? '照片说话' : '视频改口型'}</strong><span>{modelsLoading ? '正在读取可用模型…' : modelsError ? '模型列表读取失败' : availableCount === 0 ? canInspect ? '可查看素材登记状态，生成暂未开放' : '当前没有可提交的模型' : mode === 'photo' ? '一张人物照片 + 配音' : '人物视频 + 新配音'}</span></button>;
         })}</div>
+        {person?.category === 'image' && <PersonAssetPreflightPicker models={modeModels} assetId={person.id} token={token} />}
         <div className={styles.assets}>
           <section className={styles.asset}><h2><b>1</b>{draft.mode === 'photo' ? '人物照片' : '人物视频'}</h2><div className={styles.preview}>{person ? draft.mode === 'photo' ? <img src={person.url} alt="已上传的人物照片" /> : <video src={person.url} controls preload="metadata" /> : <div className={styles.uploadEmpty}><ImagePlus size={46} strokeWidth={1.2} /><strong>{draft.mode === 'photo' ? '让照片中的人物开口说话' : '让视频中的人物说出新台词'}</strong><span>选择清晰、正面、无遮挡的人物素材</span></div>}</div>{uploadControl('person')}<p>{person ? `${person.width} × ${person.height}${person.duration ? ` · ${person.duration.toFixed(1)} 秒` : ''}` : draft.mode === 'photo' ? 'JPG / PNG / WebP · 最大 10 MB' : 'MP4 / MOV / AVI · 最大 100 MB · 时长见所选模型'}</p></section>
           <section className={styles.asset}><h2><b>2</b>台词与声音</h2>

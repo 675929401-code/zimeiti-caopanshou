@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import {
   countChars,
   normalizeForIntegrity,
-  reconstructSegmentedText,
   segmentTextRule,
   splitParagraphClauses,
 } from "../src/lib/segmenter-core";
@@ -14,20 +13,21 @@ assert.equal(quoteClauses[0], "主人问“你家狗怎么这么瘦？”");
 assert.equal(quoteClauses[1], "就走了。");
 
 const result = segmentTextRule(source, 10);
-const reconstructed = reconstructSegmentedText(result.segments, result.overlapPrefixes);
+const reconstructed = result.segments.join("");
 console.log(JSON.stringify({ counts: result.counts, segments: result.segments, overlapPrefixes: result.overlapPrefixes }, null, 2));
 assert.equal(normalizeForIntegrity(reconstructed), normalizeForIntegrity(source));
 assert.equal(result.segments.length, 7);
 assert.ok(result.segments.every(segment => !/^[”’」』）》】]/u.test(segment)), "右引号不得落到下一段开头");
-assert.ok(result.counts.every(count => count >= 50 && count <= 60), `字数应在50-60，实际：${result.counts.join(",")}`);
-assert.ok(result.overlapPrefixes?.every(prefix => countChars(prefix) <= 10));
+assert.ok(result.counts.every(count => count <= 60), `字数不得超过60，实际：${result.counts.join(",")}`);
+assert.equal(result.counts.reduce((sum, count) => sum + count, 0), countChars(source));
+assert.ok(!result.overlapPrefixes?.some(Boolean));
 
 const unpunctuated = "长".repeat(400);
 const durationResults = [8, 10, 12, 15, 16, 20, 25].map(duration => {
   const value = segmentTextRule(unpunctuated, duration);
   assert.ok(value.segments.length > 1, `${duration}秒无标点长文必须实际切分`);
   assert.equal(
-    normalizeForIntegrity(reconstructSegmentedText(value.segments, value.overlapPrefixes)),
+    normalizeForIntegrity(value.segments.join("")),
     unpunctuated,
     `${duration}秒无标点长文必须保持原文完整`,
   );

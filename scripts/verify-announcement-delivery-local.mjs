@@ -31,6 +31,12 @@ const fixtures = {
   userB: crypto.randomUUID(),
   announcement: crypto.randomUUID(),
 };
+const evidenceDir = path.resolve('.codex-evidence', 'announcement-account-delivery', suffix);
+await fs.mkdir(evidenceDir, { recursive: true });
+await fs.writeFile(path.join(evidenceDir, 'fixture-journal.json'), JSON.stringify({
+  kind: 'owned-announcement-delivery-fixture.v1', createdAt: new Date().toISOString(),
+  target: '127.0.0.1:54322/zimeiti_local', fixtures, migrationHash,
+}, null, 2) + '\n', { flag: 'wx' });
 const clients = [0, 1, 2].map((index) => new pg.Client({
   ...runtime.ownerConnection,
   application_name: `codex-local-announcement-verification-${index}`,
@@ -51,10 +57,27 @@ async function assertLocalIdentity(client) {
 }
 
 async function cleanup(client) {
-  await client.query("DELETE FROM public.announcements WHERE id=$1", [fixtures.announcement]);
-  await client.query("DELETE FROM public.users WHERE id=ANY($1::varchar[])", [
-    [fixtures.actor, fixtures.userA, fixtures.userB],
-  ]);
+  const userIds = [fixtures.actor, fixtures.userA, fixtures.userB];
+  await client.query('BEGIN');
+  try {
+    await client.query("SELECT set_config('app.admin_governance_write','on',true)");
+    await client.query("DELETE FROM public.announcements WHERE id=$1", [fixtures.announcement]);
+    // Administrator profiles are created by the current account trigger. Their
+    // non-cascading owner FK must be removed only for this run's fixture IDs.
+    await client.query('DELETE FROM public.admin_access_profiles WHERE user_id=ANY($1::text[])', [userIds]);
+    await client.query("DELETE FROM public.users WHERE id=ANY($1::varchar[])", [userIds]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  }
+  const residual = (await client.query(`SELECT
+    (SELECT count(*)::integer FROM public.announcements WHERE id=$1) AS announcements,
+    (SELECT count(*)::integer FROM public.users WHERE id=ANY($2::text[])) AS users,
+    (SELECT count(*)::integer FROM public.admin_access_profiles WHERE user_id=ANY($2::text[])) AS profiles`,
+  [fixtures.announcement, userIds])).rows[0];
+  assert.deepEqual(residual, { announcements: 0, users: 0, profiles: 0 }, 'OWNED_FIXTURE_CLEANUP_REQUIRED');
+  await fs.writeFile(path.join(evidenceDir, 'cleanup.json'), JSON.stringify({ verified: true, residual }, null, 2) + '\n');
 }
 
 for (const client of clients) {
@@ -241,11 +264,9 @@ try {
   };
   await cleanup(control);
   setupCommitted = false;
-  const evidenceDir = path.resolve(".codex-evidence", "announcement-account-delivery");
-  await fs.mkdir(evidenceDir, { recursive: true });
   await fs.writeFile(path.join(evidenceDir, "database-verification.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   console.log(JSON.stringify(report, null, 2));
 } finally {
-  if (setupCommitted) await cleanup(control).catch(() => undefined);
+  if (setupCommitted) await cleanup(control);
   await Promise.all(clients.map((client) => client.end().catch(() => undefined)));
 }

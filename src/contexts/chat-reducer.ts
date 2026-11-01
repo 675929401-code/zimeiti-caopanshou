@@ -111,7 +111,7 @@ export type Action =
   | { type: "SET_VIEW"; payload: "marketplace" | "chat" }
   | { type: "SET_ACTIVE_VIEW"; payload: "marketplace" | "chat" | "format" | "segment" | "cover" | "create" | "extract" }
   | { type: "ADD_MESSAGE"; payload: { conversationId: string; message: Message } }
-  | { type: "UPDATE_MESSAGE"; payload: { conversationId: string; messageId: string; content?: string; reasoningContent?: string; displayContent?: string; streamStatus?: string; generatedImages?: Message["generatedImages"] } }
+  | { type: "UPDATE_MESSAGE"; payload: { conversationId: string; messageId: string; serverMessageId?: string; content?: string; reasoningContent?: string; displayContent?: string; streamStatus?: string; generatedImages?: Message["generatedImages"] } }
   | { type: "SET_MESSAGE_STREAMING"; payload: { conversationId: string; messageId: string; isStreaming: boolean } }
   | { type: "SET_MESSAGES_FOR_CONVERSATION"; payload: { conversationId: string; messages: Message[] } }
   | { type: "MARK_CONVERSATION_LOADED"; payload: string }
@@ -134,6 +134,7 @@ export type Action =
   | { type: "SET_PENDING_PRESET_MESSAGE"; payload: { convId: string; content: string; autoSend?: boolean } | null }
   | { type: "DELETE_LAST_MESSAGE"; payload: { conversationId: string } }
   | { type: "DELETE_MESSAGE"; payload: { conversationId: string; messageId: string } }
+  | { type: "TRUNCATE_MESSAGES_FROM"; payload: { conversationId: string; messageId: string } }
   | { type: "DELETE_MESSAGE_PAIR"; payload: { conversationId: string; userMessageId: string; assistantMessageId: string } }
   | { type: "MARK_MESSAGE_ERROR"; payload: { conversationId: string; messageId: string; error: string } }
   | { type: "CLEAR_MESSAGE_ERROR"; payload: { conversationId: string; messageId: string } }
@@ -303,7 +304,7 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case "UPDATE_MESSAGE": {
-      const { conversationId, messageId, content, reasoningContent, displayContent, streamStatus, generatedImages } = action.payload;
+      const { conversationId, messageId, serverMessageId, content, reasoningContent, displayContent, streamStatus, generatedImages } = action.payload;
       return {
         ...state,
         conversations: state.conversations.map((c) => {
@@ -314,6 +315,7 @@ export function reducer(state: AppState, action: Action): AppState {
             if (m.id !== messageId) return m;
             const nextMessage = {
               ...m,
+              ...(serverMessageId !== undefined ? { serverMessageId } : {}),
               ...(content !== undefined ? { content } : {}),
               ...(reasoningContent !== undefined ? { reasoningContent } : {}),
               ...(displayContent !== undefined ? { displayContent } : {}),
@@ -522,13 +524,26 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
+    case "TRUNCATE_MESSAGES_FROM": {
+      const { conversationId, messageId } = action.payload;
+      return {
+        ...state,
+        conversations: state.conversations.map((c) => {
+          if (c.id !== conversationId) return c;
+          const index = c.messages.findIndex((m) => m.id === messageId);
+          if (index < 0) return c;
+          return { ...c, messages: c.messages.slice(0, index), dirty: true };
+        }),
+      };
+    }
+
     case "DELETE_MESSAGE": {
       const { conversationId, messageId } = action.payload;
       return {
         ...state,
         conversations: state.conversations.map((c) =>
           c.id === conversationId
-            ? { ...c, messages: c.messages.filter((m) => m.id !== messageId) }
+            ? { ...c, messages: c.messages.filter((m) => m.id !== messageId), dirty: true }
             : c
         ),
       };
@@ -541,19 +556,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         conversations: state.conversations.map((c) =>
           c.id === conversationId
-            ? { ...c, messages: c.messages.filter((m) => !idsToRemove.has(m.id)) }
-            : c
-        ),
-      };
-    }
-
-    case "DELETE_MESSAGE": {
-      const { conversationId: delConvId, messageId } = action.payload;
-      return {
-        ...state,
-        conversations: state.conversations.map((c) =>
-          c.id === delConvId
-            ? { ...c, messages: c.messages.filter((m) => m.id !== messageId) }
+            ? { ...c, messages: c.messages.filter((m) => !idsToRemove.has(m.id)), dirty: true }
             : c
         ),
       };

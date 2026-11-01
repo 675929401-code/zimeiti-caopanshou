@@ -45,9 +45,11 @@ async function main() {
   const results: Array<Record<string, unknown>> = [];
 
   try {
+    // The current product contract is desktop-only. Keep this legacy visual
+    // replay on the supported 1440px acceptance width so a mobile fixture
+    // cannot reintroduce an out-of-scope gate.
     for (const viewport of [
       { label: "desktop", width: 1440, height: 900 },
-      { label: "mobile", width: 390, height: 844 },
     ]) {
       const context = await browser.newContext({
         viewport: { width: viewport.width, height: viewport.height },

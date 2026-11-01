@@ -33,6 +33,7 @@ export function createVirtualChatAgent(agentId: string): Agent | null {
       source: "llm",
       model: undefined,
       is_active: true,
+      outputStyle: { storyboardPromptHandoff: { enabled: true } },
       // The authoritative prompt is server-only and is assembled by the LLM route.
       systemPrompt: "",
     };

@@ -32,6 +32,7 @@ const report = {
   video: [],
   toolboxLazyMount: null,
   protectedAliases: [],
+  telemetryWrites: [],
   blockedWrites: [],
   pageErrors: [],
   httpErrors: [],
@@ -261,11 +262,17 @@ async function auditStoryboard(context, session, viewport, theme) {
         model: font(".sbw-model-name"),
         title: font(".sbw-card-title strong"),
         body: font(".sbw-flow-prompt textarea"),
-        auxiliary: Math.min(
-          font(".sbw-model-inline-meta"),
-          font(".sbw-status-pair span"),
-          font(".sbw-reference-toggle span"),
-        ),
+        auxiliary: (() => {
+          const values = [
+            ".sbw-model-inline-meta",
+            ".sbw-status-pair span",
+            ".sbw-reference-toggle span",
+            ".sbw-project-heading > small",
+            ".sbw-zone-title > span:not(.sbw-stage-index)",
+            ".sbw-bound-reference-line",
+          ].map(font).filter((value) => value > 0);
+          return values.length ? Math.min(...values) : 0;
+        })(),
       },
       toolbarItems,
       toolbarContained: Boolean(workspace) && toolbarItems.every((item) => item.left >= workspace.left - 1 && item.right <= workspace.right + 1),
@@ -334,8 +341,8 @@ async function auditTools(context, session, viewport, theme) {
     const rail = document.querySelector("aside[aria-label='工具功能']")?.getBoundingClientRect();
     const frame = document.querySelector("main section[aria-label='短视频效率工具工作区']");
     const stage = document.querySelector("section[aria-label='短视频效率工具工作区'] > section");
-    const headerTitle = stage?.querySelector("h1");
-    const state = stage?.querySelector("header > span:last-child");
+    const headerTitle = document.querySelector(".sub-page-title") || stage?.querySelector(".toolbox-extract-heading h3");
+    const state = document.querySelector(".toolbox-embedded-toolbar p + p") || document.querySelector("[role='status']");
     return {
       theme: document.documentElement.dataset.theme,
       mode: document.documentElement.dataset.mode,
@@ -580,9 +587,17 @@ async function auditVideo(context, session, viewport, theme) {
 async function auditToolboxLazyMount(context) {
   const page = await context.newPage();
   attachPageDiagnostics(page, "tools-lazy-mount");
+  const extractReads = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.origin === origin && url.pathname.startsWith("/api/extract")) {
+      extractReads.push(url.pathname);
+    }
+  });
   await page.addInitScript(() => {
     localStorage.setItem("user_theme_preference", "lattice");
     localStorage.setItem("toolbox_active_tab", "format");
+    localStorage.removeItem("toolbox_active_tab_ready");
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${origin}/tools`, { waitUntil: "domcontentloaded", timeout: 45_000 });
@@ -682,6 +697,17 @@ await context.route("**/*", async (route) => {
   if (url.origin === origin && request.method() === "GET" && url.pathname === "/api/video/active-tasks") {
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ activeTasks: [] }) });
   }
+  const passiveTelemetryPath = url.origin === origin
+    && request.method() === "POST"
+    && ["/api/product-usage/events", "/api/operation-events", "/api/diagnostic-logs"].includes(url.pathname);
+  if (passiveTelemetryPath) {
+    report.telemetryWrites.push({ method: request.method(), path: url.pathname });
+    return route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "LOCAL_ACCEPTANCE_TELEMETRY", receivedCount: 0, path: url.pathname }),
+    });
+  }
   if (["GET", "HEAD", "OPTIONS"].includes(request.method())) return route.continue();
   report.blockedWrites.push({ method: request.method(), path: url.pathname });
   return route.abort("blockedbyclient");
@@ -716,6 +742,7 @@ console.log(JSON.stringify({
   storyboardViewports: report.storyboard.map((item) => `${item.expectedTheme.id}:${item.viewport.width}`),
   toolsViewports: report.tools.map((item) => `${item.expectedTheme.id}:${item.viewport.width}`),
   videoViewports: report.video.map((item) => `${item.expectedTheme.id}:${item.viewport.width}`),
+  telemetryWrites: report.telemetryWrites.length,
   blockedWrites: report.blockedWrites.length,
   evidence: output,
 }, null, 2));

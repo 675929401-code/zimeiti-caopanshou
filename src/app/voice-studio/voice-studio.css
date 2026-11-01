@@ -795,7 +795,8 @@
   line-height: 1.7;
 }
 
-.voice-studio-root :where(input, textarea, select) {
+/* Text fields need a readable height; sliders and toggles keep their own geometry. */
+.voice-studio-root :where(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select) {
   min-height: 38px;
   font-size: 14px;
   line-height: 1.55;

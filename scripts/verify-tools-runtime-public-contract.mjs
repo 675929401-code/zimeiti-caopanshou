@@ -39,6 +39,7 @@ const route = load('src/app/api/tools/runtime-catalog/route.ts', {
   } },
   '@/lib/display-normalization': display,
   '@/lib/extract-pricing': pricing,
+  '@/lib/server/admin-governance-authority': { authorizeAdminCapability: async () => ({ ok: true }) },
 });
 const call = role => route.GET(new Request('http://fixture.invalid/api/tools/runtime-catalog', { headers: role ? { 'x-fixture-role': role } : {} }));
 const textFixture = { role: 'coze_multifunction_extract', is_active: true, name: 'Private text provider label', price_per_use: '0.02', cost_price: '0.01', config: { api_base_url: 'https://text-provider.invalid', api_token: 'fixture-text-secret', workflow_id: 'private-workflow' } };

@@ -167,7 +167,11 @@ try {
     const registrationPage = page.locator('[data-page="public-auth-register"]');
     await registrationPage.waitFor({ state: 'visible', timeout: 30_000 });
     await registrationPage.getByRole('heading', { name: '创建你的创作账号', exact: true }).waitFor({ state: 'visible' });
-    assert.match(await registrationPage.innerText(), /真实验证码和有效邀请码校验/u);
+    const registrationText = await registrationPage.innerText();
+    // Keep this contract semantic rather than tied to a retired sentence. The
+    // current register copy explains the same two gates in two short lines.
+    assert.match(registrationText, /邮箱验证码/u);
+    assert.match(registrationText, /邀请码/u);
     assert.equal(await registrationPage.locator('#register-password').getAttribute('type'), 'password');
     const registrationMetrics = await registrationPage.evaluate(node => ({
       width: node.getBoundingClientRect().width,

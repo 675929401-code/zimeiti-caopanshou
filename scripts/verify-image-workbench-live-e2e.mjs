@@ -243,7 +243,13 @@ const PAID_AUTHORITY_FUNCTIONS = [
     }
   }
 ];
-const PAID_SEMANTIC_SHA = '227558bab22aa71f31baa736d46e15223138ac40a1290c3bc6bb3d19ea57c5f3';
+// Root-reviewed 193-migration LOCAL application baseline: trusted provider
+// asset operations, two bounded RPCs and video-task preparation metadata.
+// Backup/restore, 24 PostgreSQL rollback checks and final semantic readback:
+// admin-full-acceptance-20261030-9592a6d0/resume-ab2de6f7/completion-c9dd/
+// migration193-post-apply-readback.json. This does not approve production SQL.
+// Keep all seven canonical body/ACL checks and fresh runtime evidence gates.
+const PAID_SEMANTIC_SHA = 'f0a13364b6e141163a335a32465e2bc869738c7f1533636a42a75333f40e96e6';
 const HASH64 = /^[a-f0-9]{64}$/u;
 
 export function assertPaidDatabaseReadiness(index, evidence, sourcePlan, options, runtime, now=Date.now(), expectedSemanticSha=PAID_SEMANTIC_SHA) {
@@ -728,9 +734,11 @@ export function runPaidReadinessSelfTest() {
   const fingerprint='b'.repeat(64), manifest='c'.repeat(64), now=Date.now();
   const databaseContract=JSON.parse(readFileSync(path.join(PROJECT_ROOT,'deploy/policies/database-contract.v1.json'),'utf8'));
   const requiredMigrations=databaseContract.liveCatalogChecks.migrationLedger.requiredMigrations;
+  const requiredVersion='20261031010000';
+  assert.ok(requiredMigrations.some(row=>row.version===requiredVersion),'READINESS_FIXTURE_REQUIRES_MIGRATION_194');
   const runtime={sourceVersion:'R001006',buildId:'fixture-build'};
   const identity={configuredHost:'127.0.0.1',serverPort:'54322',databaseName:'zimeiti_local',fingerprint};
-  const migrations=[...requiredMigrations.map(({version,sha256})=>({version,sha256})),...Array.from({length:174-requiredMigrations.length},(_,i)=>({version:String(i).padStart(14,'0'),sha256:sha256(String(i))}))];
+  const migrations=[...requiredMigrations.map(({version,sha256})=>({version,sha256})),...Array.from({length:194-requiredMigrations.length},(_,i)=>({version:String(i).padStart(14,'0'),sha256:sha256(String(i))}))];
   const sourcePlan={ok:true,mode:'plan',readinessScope:'source-only',manifestSha256:manifest,invalid:[],migrations};
   const expectedCount=migrations.length;
   const status={ok:true,mode:'status',manifestSha256:manifest,migrationCount:expectedCount,invalid:[],hashDrifts:[],database:{targetIdentityVerified:true,targetIdentity:identity,appliedCount:expectedCount,pendingCount:0},migrations:sourcePlan.migrations.map(m=>({...m,valid:true,applied:true}))};
@@ -745,7 +753,7 @@ export function runPaidReadinessSelfTest() {
   const authority={targetFingerprint:fingerprint,targetDatabaseName:identity.databaseName,systemIdentifier:'cluster',manifestSha256:manifest,applied:expectedCount,pending:0,databaseWrites:0,providerCalls:0,rollbackAcknowledged:true,serviceSchemaUsage:true,roleUniverse,roleUniverseSha256:sha256(JSON.stringify(roleUniverse)),totalRoleCount:5,nonSuperuserRoleCount:4,selectedSignatureCount:7,functions};
   const index={kind:'application-paid-canary-database-readiness.v1',schemaVersion:1,createdAt:new Date(now).toISOString(),identity,cluster:'cluster',runtime:{...runtime,applicationDatabaseFingerprint:fingerprint,configurationFileSha256:'d'.repeat(64)},manifestSha256:manifest,expectedSemanticSha256:snapshot.sha256,databaseWrites:0,providerCalls:0,liveCatalogEvidence:{path:'live-catalog.json',sha256:'e'.repeat(64)},applicationProbe:{ok:true,state:'ready',contractVersion:databaseContract.contractVersion,missingTables:[],missingColumns:[],missingRpcs:[],missingRpcArguments:[],forbiddenRpcsPresent:[]}};
   const options={values:{'expected-database-target':'127.0.0.1:54322/zimeiti_local','expected-database-identity':fingerprint,'expected-source-version':runtime.sourceVersion,'expected-build-id':runtime.buildId}};
-  const liveCatalog={kind:'application-paid-canary-live-catalog.v1',createdAt:index.createdAt,identity:{...identity},cluster:index.cluster,manifestSha256:manifest,runtime:{...runtime},databaseWrites:0,providerCalls:0,output:{ok:true,liveCatalogChecked:true,contractVersion:databaseContract.contractVersion,forwardMigrationCount:178,databaseWrites:0,paidModelCalls:0,liveCatalog:{identity:{database:identity.databaseName,serverPort:identity.serverPort},ledger:requiredMigrations.map(row=>({version:row.version,hash:row.sha256})),functionDependencyEdges:databaseContract.liveCatalogChecks.functionDependencyEdges.map(edge=>({...edge,callerExists:true,calleeExists:true,callerOwner:'owner',relationOwner:'owner',callerSecurityDefiner:true,calleeSecurityDefiner:true,calleeSearchPath:['search_path=public, pg_temp'],callerExecute:true,callerSchemaUsage:true,serviceExecute:true}))}}};
+  const liveCatalog={kind:'application-paid-canary-live-catalog.v1',createdAt:index.createdAt,identity:{...identity},cluster:index.cluster,manifestSha256:manifest,runtime:{...runtime},databaseWrites:0,providerCalls:0,output:{ok:true,liveCatalogChecked:true,contractVersion:databaseContract.contractVersion,forwardMigrationCount:expectedCount,databaseWrites:0,paidModelCalls:0,liveCatalog:{identity:{database:identity.databaseName,serverPort:identity.serverPort},ledger:requiredMigrations.map(row=>({version:row.version,hash:row.sha256})),functionDependencyEdges:databaseContract.liveCatalogChecks.functionDependencyEdges.map(edge=>({...edge,callerExists:true,calleeExists:true,callerOwner:'owner',relationOwner:'owner',callerSecurityDefiner:true,calleeSecurityDefiner:true,calleeSearchPath:['search_path=public, pg_temp'],callerExecute:true,callerSchemaUsage:true,serviceExecute:true}))}}};
   const evidence={status,semantic,authority,liveCatalog,databaseContract,contractVersion:databaseContract.contractVersion};
   const verify=(i=index,e=evidence,plan=sourcePlan)=>assertPaidDatabaseReadiness(i,e,plan,options,runtime,now,snapshot.sha256);
   let checks=0;assert.equal(verify().verified,true);checks++;
@@ -757,14 +765,14 @@ export function runPaidReadinessSelfTest() {
   for(const mutate of [x=>x.pop(),x=>x[1]=clone(x[0]),x=>x[0].hash='f'.repeat(64)]) rejectsEvidence(x=>mutate(x.liveCatalog.output.liveCatalog.ledger),'LIVE_CATALOG_LEDGER');
   for(const mutate of [x=>x.pop(),x=>x.push(clone(x[0])),x=>x[1]=clone(x[0])]) rejectsEvidence(x=>mutate(x.liveCatalog.output.liveCatalog.functionDependencyEdges),'LIVE_CATALOG_EDGES');
   for(const mutate of [x=>x.caller='other',x=>x.callee='other',x=>x.ownerRelation='other',x=>x.callerExists=false,x=>x.calleeExists=false,x=>x.callerOwner='',x=>x.callerOwner='other',x=>x.callerSecurityDefiner=false,x=>x.calleeSecurityDefiner=false,x=>x.calleeSearchPath=[],x=>x.calleeSearchPath.push('search_path=public, pg_temp'),x=>x.callerExecute=false,x=>x.callerSchemaUsage=false,x=>x.serviceExecute=false]) rejectsEvidence(x=>mutate(x.liveCatalog.output.liveCatalog.functionDependencyEdges[0]),'LIVE_CATALOG_EDGE_');
-  for(const mutate of [x=>x.migrations=[],x=>x.migrations[1]=clone(x.migrations[0]),x=>x.migrations.find(row=>row.version===databaseContract.contractVersion).sha256='f'.repeat(64)]) {const x=clone(sourcePlan);mutate(x);assert.throws(()=>verify(index,evidence,x),/PAID_DATABASE_SOURCE_PLAN|PAID_DATABASE_REQUIRED_MIGRATION_SOURCE_HASH/u);checks++;}
-  // A fully consistent old 173 bundle still lacks a current required migration.
+  for(const mutate of [x=>x.migrations=[],x=>x.migrations[1]=clone(x.migrations[0]),x=>x.migrations.find(row=>row.version===requiredVersion).sha256='f'.repeat(64)]) {const x=clone(sourcePlan);mutate(x);assert.throws(()=>verify(index,evidence,x),/PAID_DATABASE_SOURCE_PLAN|PAID_DATABASE_REQUIRED_MIGRATION_SOURCE_HASH/u);checks++;}
+  // A self-consistent old bundle still lacks one current required migration.
   const oldPlan=clone(sourcePlan), oldEvidence=clone(evidence);
-  oldPlan.migrations=oldPlan.migrations.filter(row=>row.version!==databaseContract.contractVersion);
+  oldPlan.migrations=oldPlan.migrations.filter(row=>row.version!==requiredVersion);
   oldEvidence.status.migrationCount=oldEvidence.status.database.appliedCount=oldEvidence.authority.applied=oldEvidence.liveCatalog.output.forwardMigrationCount=oldPlan.migrations.length;
-  oldEvidence.status.migrations=oldEvidence.status.migrations.filter(row=>row.version!==databaseContract.contractVersion);
-  oldEvidence.liveCatalog.output.liveCatalog.ledger=oldEvidence.liveCatalog.output.liveCatalog.ledger.filter(row=>row.version!==databaseContract.contractVersion);
-  assert.equal(oldPlan.migrations.length,173);checks++;
+  oldEvidence.status.migrations=oldEvidence.status.migrations.filter(row=>row.version!==requiredVersion);
+  oldEvidence.liveCatalog.output.liveCatalog.ledger=oldEvidence.liveCatalog.output.liveCatalog.ledger.filter(row=>row.version!==requiredVersion);
+  assert.equal(oldPlan.migrations.length,expectedCount-1);checks++;
   assert.throws(()=>verify(index,oldEvidence,oldPlan),/PAID_DATABASE_REQUIRED_MIGRATION_SOURCE_HASH/u);checks++;
   for(const mutate of [x=>x.kind='original-local-A-upgrade-readiness-readonly.v2',x=>x.schemaVersion=2,x=>x.createdAt=new Date(now-1800001).toISOString(),x=>x.createdAt=new Date(now+60001).toISOString(),x=>x.identity.fingerprint='e'.repeat(64),x=>x.identity.databaseName='zimeiti_restore_fixture',x=>x.runtime.buildId='old',x=>x.runtime.applicationDatabaseFingerprint='e'.repeat(64),x=>x.manifestSha256='e'.repeat(64),x=>x.applicationProbe.state='unknown',x=>x.applicationProbe.missingRpcs=['missing'],x=>x.applicationProbe.forbiddenRpcsPresent=['old'],x=>x.applicationProbe.contractVersion='old',x=>x.providerCalls=1]) {const x=clone(index);mutate(x);assert.throws(()=>verify(x));checks++;}
   for(const mutate of [x=>x.status.database.appliedCount=169,x=>x.status.database.pendingCount=4,x=>x.status.database.targetIdentityVerified=false,x=>x.status.database.targetIdentity.fingerprint='e'.repeat(64),x=>x.status.migrations[0].sha256='e'.repeat(64),x=>x.status.migrations[1]=x.status.migrations[0],x=>x.status.migrations[0].applied=false,x=>x.status.hashDrifts=['drift'],x=>x.semantic.contractSha256='e'.repeat(64),x=>x.semantic.snapshot.sections.tables.sha256='e'.repeat(64),x=>x.authority.systemIdentifier='other',x=>x.authority.functions.pop(),x=>x.authority.functions[1]=x.authority.functions[0],x=>x.authority.functions[0].bodyLfSha256='e'.repeat(64),x=>x.authority.functions[0].owner_oid='2',x=>x.authority.functions[0].prosecdef=false,x=>x.authority.functions[0].directAcl.push({grantee_oid:'3',grantee_name:'anon',privilege_type:'EXECUTE'}),x=>x.authority.functions[0].effective[2].execute=true,x=>x.authority.functions[0].effective.pop(),x=>x.authority.serviceSchemaUsage=false,x=>x.authority.functions[0].effective[1].public_schema_usage=false,x=>x.authority.roleUniverseSha256='e'.repeat(64)]) {const x=clone(evidence);mutate(x);assert.throws(()=>verify(index,x));checks++;}

@@ -25,7 +25,7 @@ const checks: Array<[string, boolean]> = [
   ["routes contain no direct cash deduction", ![generate, status, stream].some((source) => /\bdeductCash\b/u.test(source))],
   ["routes contain no debt fallback", ![generate, status, stream].some((source) => /\b(recordDebt|checkAndCollectDebt)\b/u.test(source))],
   ["stream has no temporary playback fallback", !/downloadAndFaststart|persistVideoFromUrl|createVideoAccessUrl/u.test(stream)],
-  ["provider result is recorded before wallet deduction", finalizer.indexOf("provider_result_url: providerResultUrl || null") < finalizer.indexOf("const billing = await executeCashDeduction")],
+  ["provider result is recorded before wallet deduction", finalizer.indexOf("provider_result_url: providerResultUrl || null") < finalizer.indexOf("executeCashDeduction({")],
   ["provider result is not synchronously copied", !finalizer.includes("persistStableVideoFromUrl")],
   ["billing failure never completes", finalizer.includes("BILLING_DEDUCTION_FAILED") && finalizer.includes('state: "billing_pending"')],
   ["playback ticket follows atomic finalization", finalizer.indexOf('db.rpc("finalize_video_generation_task_atomic"') < finalizer.indexOf("const playbackUrl = await createVideoAccessUrl")],

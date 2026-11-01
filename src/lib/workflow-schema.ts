@@ -107,6 +107,7 @@ export const WorkflowNodeDataSchema = z.object({
   visualOrder: z.number().int().positive().optional(),
   timelineDurationSeconds: z.number().positive().optional(),
   requiresExactDuration: z.boolean().optional(),
+  // @deprecated Decode legacy documents only. New tasks never emit or execute this flag.
   allowDurationTrim: z.boolean().optional(),
   ambientSoundOnly: z.boolean().optional(),
   playbackStatus: z.enum(["unchecked", "validating", "ready", "failed"]).optional(),

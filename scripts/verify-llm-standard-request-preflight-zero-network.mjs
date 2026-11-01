@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url), ts=require('typescript'), root=path.resolve('');
+const sha256=value=>createHash('sha256').update(value).digest('hex');
 const checks=[]; const effects={database:0,provider:0,reserve:0,search:0,secret:0};
 const forbidden=()=>{effects.database++;throw new Error('OFFLINE_EFFECT_FORBIDDEN');};
 let rpcAdapter, readonlyAdapter;
@@ -23,6 +25,7 @@ function load(relative) {
     if(specifier==='@/storage/database/supabase-client')return {getSupabaseAdminClient:()=>rpcAdapter||readonlyAdapter?{rpc:rpcAdapter,from:readonlyAdapter}:forbidden(),getSupabaseClient:forbidden};
     if(specifier==='./db' && path.basename(absolute)==='billing.ts')return {getDb:forbidden};
     if(specifier.startsWith('node:'))return require(specifier);
+    if(!specifier.startsWith('@/') && !specifier.startsWith('.'))return require(specifier);
     let target=specifier.startsWith('@/')?path.join(root,'src',specifier.slice(2)):path.resolve(path.dirname(absolute),specifier);
     if(!path.extname(target))target+='.ts';
     return load(path.relative(root,target));
@@ -34,13 +37,92 @@ const core=load('src/lib/server/llm-standard-request-preparation.ts'), cli=load(
 const plain=value=>JSON.parse(JSON.stringify(value));
 function check(name,actual,expected=true){assert.deepEqual(plain(actual),plain(expected),name);checks.push(name);}
 async function rejects(name,callback){await assert.rejects(callback);checks.push(name);}
-const actor='ordinary-fixture',agentId='agent-1786843330392-emdjv2';
+const actor='ordinary-fixture',agentId='ordinary-marketplace-fixture';
 const base={actor:{id:actor,is_active:true,status:'active',role:'student'},agent:{id:agentId,name:'Fixture director',source:'llm',is_active:true,model_id:'linked',model:'unrelated-legacy',system_prompt:'Controlled RAM authority fixture. 输出规范: plain.',config_revision:2,temperature:0,max_reply_tokens:1200,max_context_rounds:0,max_context_tokens:0},
   model:{id:'linked',name:'Fixture',model_name:'linked-provider-model',is_active:true,is_hidden:false,token_billing_enabled:true,input_cost_per_million:2,output_cost_per_million:8,cached_cost_per_million:4,profit_margin:20,token_rounding_unit:100,temperature:0.8,max_reply_tokens:4000,max_context_rounds:6,max_context_tokens:8000,deep_thinking_type:0,enable_web_search:false},
   settings:[{setting_key:'credits_per_yuan',setting_value:'50'},{setting_key:'global_system_prefix',setting_value:'Controlled RAM presentation.'}],skills:[],readsVerified:true};
 const body={agentId,agentName:base.agent.name,messages:[{role:'system',content:'Untrusted client system'},{role:'user',content:'A bounded test sample.'}],stream:true,maxReplyTokens:10000,conversationId:'conversation_fixture',client_request_id:'llm_fixture_123'};
 const pins={sourceVersion:'R_FIXTURE',buildId:'BUILD_FIXTURE'},publicId='pm_fixture';
 const prepared=await core.prepareStandardLlmRequest(body,base,actor,publicId,pins);
+// Execute the actual shared composer; these assertions concern submitted
+// system-policy composition, not paid-model semantic compliance or outputs.
+async function composeIdentityFixture(overrides={}) {
+  const row=overrides.agentRow===undefined?structuredClone(base.agent):overrides.agentRow;
+  return core.composeLlmRequestMessages({...core.resolveLinkedModelRuntime(body,base.agent,base.model),
+    agentId,agentName:'伪造客户端名称',agentRow:row,mangaSkillOrchestration:null,
+    isCanvasInternalWorkflow:false,verifiedUserId:actor,body,globalPrefix:'你是通用助手。仅作呈现规则。',
+    messages:[{role:'user',content:'你是谁？'}],useModel:base.model.model_name,
+    loadProfileContext:async()=>'',loadSkills:async()=>null,...overrides});
+}
+const identityComposed=await composeIdentityFixture();
+check('actual composer uses current persisted name for platform introduction',identityComposed.effectiveSystemPrompt.includes('回答第一句必须逐字为：我是安哥训练的Fixture director智能体。'));
+check('actual branded composer uses a conditional business introduction without technical identity replacement',identityComposed.effectiveSystemPrompt.includes('按下方平台业务介绍规则回答，再介绍') && identityComposed.effectiveSystemPrompt.includes('普通业务任务时，直接完成任务及其必要步骤，不先讨论身份') && !identityComposed.effectiveSystemPrompt.includes('你当前且唯一的身份'));
+check('actual composer cannot brand with forged request name',identityComposed.effectiveSystemPrompt.includes('伪造客户端名称'),false);
+check('actual composer wraps exactly one final system prompt',identityComposed.finalMessages.filter(message=>message.role==='system').length,1);
+for(const [name,overrides] of [
+  ['renamed persisted row',{agentRow:{...base.agent,name:'新版创作智能体'}}],
+  ['manga persisted row name',{agentRow:{...base.agent,name:'持久化漫剧导演'},mangaSkillOrchestration:{systemPrompt:'漫剧已发布专属工作流。'}}],
+]) {
+  const result=await composeIdentityFixture(overrides),expected=name.startsWith('renamed')?'我是安哥训练的新版创作智能体。':'我是安哥训练的持久化漫剧导演智能体。';
+  check(name+' uses authoritative introduction',result.effectiveSystemPrompt.includes(expected));
+  check(name+' no repeated 智能体 suffix',result.effectiveSystemPrompt.includes('智能体智能体'),false);
+}
+for(const [name,overrides] of [
+  ['free chat',{agentId:'__free_chat__',agentRow:null}],
+  ['mismatched row',{agentRow:{...base.agent,id:'different-saved-agent'}}],
+  ['external Coze row',{agentRow:{...base.agent,source:'coze'}}],
+  ['canvas internal workflow',{isCanvasInternalWorkflow:true}],
+  ['missing persisted name',{agentRow:{...base.agent,name:''}}],
+]) {
+  const result=await composeIdentityFixture(overrides);
+  check(name+' has no platform brand grant',result.effectiveSystemPrompt.includes('安哥训练的'),false);
+  check(name+' preserves unbranded business responsibility',result.effectiveSystemPrompt.includes('当用户询问当前业务智能体的名称、用途、能力或如何开始时，介绍') && result.effectiveSystemPrompt.includes('正常任务不重复职责说明'));
+}
+const longSavedWorkflow='专属职责。'.repeat(10000);
+const longIdentity=await composeIdentityFixture({agentRow:{...base.agent,name:'长提示词导演',system_prompt:longSavedWorkflow}});
+check('long prompt has business responsibilities at head and a task delivery reminder at tail',longIdentity.effectiveSystemPrompt.startsWith('【当前业务职责】\n本次任务对应的智能体名称是「长提示词导演」。') && longIdentity.effectiveSystemPrompt.endsWith('【任务交付提醒】\n按「长提示词导演」的专业领域与既定流程完成本轮请求，保留所需选择步骤和输出协议；普通任务直接交付，不重复职责或身份说明。'));
+check('long prompt keeps one conditional branded introduction before the saved workflow',longIdentity.effectiveSystemPrompt.indexOf('回答第一句必须逐字为：我是安哥训练的长提示词导演智能体。')<longIdentity.effectiveSystemPrompt.indexOf(longSavedWorkflow) && longIdentity.effectiveSystemPrompt.indexOf(longSavedWorkflow)>0 && longIdentity.effectiveSystemPrompt.split('我是安哥训练的长提示词导演智能体。').length-1===1);
+check('long prompt cannot repeat a competing branded receipt tail',longIdentity.effectiveSystemPrompt.includes('固定第一句仍为：'),false);
+for(const userText of ['A','写一条宠物口播稿。','对话引用：“你是谁？”请继续写故事。','帮我写自我介绍。','你是谁？再写一条口播稿。','你是谁，我需要提供什么信息给你？','原文已经给你，下一步怎么开始？','你使用的底层模型由谁开发？']) {
+  const result=await composeIdentityFixture({messages:[{role:'user',content:userText}]});
+  check('actual composer preserves user task '+userText,result.finalMessages.filter(message=>message.role!=='system'),[{role:'user',content:userText}]);
+  check('actual composer identity policy distinguishes creation and mixed tasks '+userText,result.effectiveSystemPrompt.includes('都不因此插入品牌介绍') && result.effectiveSystemPrompt.includes('先给这一句，再继续完成任务'));
+}
+check('product introduction is brief and asks only the first missing input',identityComposed.effectiveSystemPrompt.includes('首句后用一两句按专属设定说明能做什么、如何开始，只索取当前第一步尚缺的最少资料'));
+check('existing material and workflow are reused rather than requested again',identityComposed.effectiveSystemPrompt.includes('用户已提供的原文或资料直接使用，不再索取') && identityComposed.effectiveSystemPrompt.includes('不新增必填项或选择步骤，不重复整套问卷'));
+check('ordinary who-and-how questions default to product use',identityComposed.effectiveSystemPrompt.includes('这类日常问句默认介绍当前智能体的产品用途'));
+check('technical facts have a single explicit-question exception scoped to identity questions',identityComposed.effectiveSystemPrompt.includes('回答身份或来源问题时，只有用户明确询问底层模型或开发方，才简短说明可核实的技术事实，不编造来源') && (identityComposed.effectiveSystemPrompt.match(/底层模型/g)||[]).length===1 && !identityComposed.effectiveSystemPrompt.includes('其他时候只介绍当前产品用途'));
+check('existing source is acknowledged before asking for the pending workflow choice',identityComposed.effectiveSystemPrompt.includes('已收到原稿时明确告诉用户原稿已收到，再说明既有流程当前尚需的选择'));
+for(const responseFormat of ['markdown','text','json_object']) {
+  const result=await composeIdentityFixture({agentResponseFormat:responseFormat,agentRow:{...base.agent,system_prompt:'专属工作流。输出格式：必须保留 A、B、C 的三个选择步骤。'}});
+  check(responseFormat+' retains custom workflow',result.effectiveSystemPrompt.includes('必须保留 A、B、C 的三个选择步骤。'));
+  check(responseFormat+' menu presentation exception contract',result.effectiveSystemPrompt.includes('【自然语言交互菜单呈现规则】'),responseFormat!=='json_object');
+  if(responseFormat==='text')check('text no longer blanket bans all menu markup',result.effectiveSystemPrompt.includes('不要使用 Markdown 排版语法'),false);
+  if(responseFormat==='json_object')check('JSON identity cannot prepend prose or change machine schema',result.effectiveSystemPrompt.includes('不得在协议外追加身份句、擅自新增字段或破坏结构'));
+}
+const defaultTextMenu=await composeIdentityFixture({agentResponseFormat:'text',agentRow:{...base.agent,system_prompt:'先给选择菜单，再等用户选择。'}});
+check('default text constrains ordinary body while allowing menu emphasis',defaultTextMenu.effectiveSystemPrompt.includes('普通正文使用纯文本格式输出；仅自然语言交互菜单可按平台菜单呈现规则适度强调重点'));
+const strictText=await composeIdentityFixture({agentResponseFormat:'text',agentRow:{...base.agent,system_prompt:'输出格式：严格纯文本，禁止 Markdown。'},messages:[{role:'user',content:'请用纯文本，不要加粗。'}]});
+check('explicit private strict format and user pure text retained',strictText.effectiveSystemPrompt.includes('输出格式：严格纯文本，禁止 Markdown。') && strictText.effectiveSystemPrompt.includes('用户明确要求本轮纯文本、不加格式时优先') && strictText.effectiveSystemPrompt.includes('专属设定明确要求严格纯文本、禁止 Markdown 或固定机器格式时优先'));
+for (const directorId of ['agent-1786843330392-emdjv2','agent-1786633444187-594spj']) {
+  const director=structuredClone(base);director.agent.id=directorId;director.agent.config_revision=200;
+  director.model.deep_thinking_type=1;director.model.enable_web_search=true;
+  director.skills=[{id:'unused-media-tool',tool_definition:{type:'function',function:{name:'generate_image'}}}];
+  const sample={...body,agentId:directorId,messages:[{role:'user',content:'请搜索这个故事作为画面，不要改写文案。'}],enable_web_search:true,enable_web_search_overridden:true,deep_thinking_type:1,deep_thinking_overridden:true};
+  const result=await core.prepareStandardLlmRequest(sample,director,actor,publicId,pins);
+  check(directorId+' selected dialogue model retained',result.chatRequest.model,director.model.model_name);
+  check(directorId+' search disabled',result.parameters.agentEnableWebSearch,false);
+  check(directorId+' no multistage model calls',result.parameters.agentDeepThinkingType,0);
+  check(directorId+' tools excluded',Boolean(result.chatRequest.tools),false);
+  check(directorId+' prompt stays in saved authority',result.chatRequest.messages[0].content.includes(director.agent.system_prompt));
+  check(directorId+' no director HOST injected',/HOST_(?:TEXT_CASTING|ASSETS|DIRECTOR|NARRATION)/u.test(result.chatRequest.messages[0].content),false);
+  check(directorId+' explicit tools cannot enter request',Boolean(core.buildLlmChatRequest('model',[],result.parameters,true,[{type:'function'}]).tools),false);
+}
+for (const role of ['student','admin']) {
+  const pending=structuredClone(base);pending.actor.role=role;pending.model.user_access='pending_model_activation';
+  assert.throws(()=>core.assertStandardQuoteEligibility(body,pending,actor));
+  checks.push('pending model quote rejected for '+role);
+}
 check('agent zero temperature preserved',prepared.chatRequest.temperature,0);
 check('agent positive reply limit preserved',prepared.chatRequest.max_tokens,1200);
 check('context zero survives linked preset',prepared.parameters.agentMaxContextTokens,0);
@@ -184,15 +266,15 @@ const dispatchStart=routeSource.indexOf('    const effectiveMaxTokens = agentMax
 const dispatchEnd=routeSource.indexOf('    // ── 提前保存用户消息',dispatchStart);assert.ok(dispatchStart>0&&dispatchEnd>dispatchStart);
 const dispatchBlock=routeSource.slice(dispatchStart,dispatchEnd);
 function dispatchFixture(overrides={}) {const executable={exports:{}};let providerRequest,reservedAmount;
-  vm.runInNewContext(ts.transpileModule(`module.exports=function(){${dispatchBlock};reserve(streamQuote.amount);provider(chatRequest);return chatRequest;}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,
-    {module:executable,...prepared.parameters,...core,quoteLlmStreamReservation:load('src/lib/llm-credit-reservation.ts').quoteLlmStreamReservation,preparedQuote:prepared,selectedModelBillingSnapshot:prepared.billing,
+  vm.runInNewContext(ts.transpileModule(`module.exports=async function(){${dispatchBlock};reserve(streamQuote.amount);provider(chatRequest);return chatRequest;}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,
+    {module:executable,anthropic_thinking_profile:undefined,truncateFromMessageId:undefined,trustedTextOnly:core.isStoryboardTextOnlyAgent(base.agent.id,base.agent),...prepared.parameters,...core,quoteLlmStreamReservation:load('src/lib/llm-credit-reservation.ts').quoteLlmStreamReservation,preparedQuote:prepared,selectedModelBillingSnapshot:prepared.billing,
       useModel:prepared.billing.modelName,searchInjectedMessages:prepared.chatRequest.messages,stream:true,effectiveEnableWebSearch:false,skillInjection:null,
       reserve:amount=>{reservedAmount=amount;},provider:request=>{providerRequest=request;},...overrides});
   return {run:executable.exports,observed:()=>({providerRequest,reservedAmount})};}
-const dispatch=dispatchFixture();check('actual dispatch returns single shared object',dispatch.run()===prepared.chatRequest);
+const dispatch=dispatchFixture();check('actual dispatch returns single shared object',await dispatch.run(),prepared.chatRequest);
 check('actual provider stub receives shared object unchanged',dispatch.observed().providerRequest===prepared.chatRequest);
 check('actual reserve stub receives shared quote',dispatch.observed().reservedAmount,prepared.reservation.amount);
-const driftedDispatch=dispatchFixture({agentTemperature:0.5});assert.throws(driftedDispatch.run);checks.push('actual late request drift refuses before reserve/provider');
+const driftedDispatch=dispatchFixture({agentTemperature:0.5});await assert.rejects(() => driftedDispatch.run());checks.push('actual late request drift refuses before reserve/provider');
 check('late drift reserve/provider remain untouched',driftedDispatch.observed(),{});
 for(const [name,mutate] of [['skills',s=>s.skills=[{id:'active'}]],['linked identity',s=>s.model.id='wrong'],['revision',s=>s.agent.config_revision=0],['search',s=>s.model.enable_web_search=true]]) {
   const fixture=structuredClone(base);mutate(fixture);const isolated={exports:{}};
@@ -211,7 +293,7 @@ rpcAdapter=async(name,args)=>{assert.equal(name,'claim_llm_request_attempt_atomi
 };
 const store=new idempotency.DatabaseLlmRequestAttemptStore();const claimInput={userId:actor,clientRequestId:body.client_request_id,payloadFingerprint:initialFingerprint,leaseOwner:'lease_fixture'};
 check('actual store initial claim', (await store.claim(claimInput)).action,'execute');
-claimed={...claimed,state:'succeeded',response_body:'controlled original receipt',http_status:200};
+claimed={...claimed,state:'succeeded',response_body:'controlled original receipt',response_fingerprint:sha256('controlled original receipt'),http_status:200};
 const replay=await store.claim(claimInput);check('actual store completed replay',replay.action,'replay');check('actual replay original receipt',replay.record.responseBody,'controlled original receipt');
 const changedFingerprint=fingerprint({...finalBody,quote_expectation:{...prepared.expectation,platformReservationCredits:prepared.reservation.amount+1}});
 check('server fingerprint includes expectation drift',changedFingerprint!==initialFingerprint);

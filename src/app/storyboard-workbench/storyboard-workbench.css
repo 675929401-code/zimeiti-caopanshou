@@ -1,7 +1,6 @@
 .sbw-root {
   min-height: 100vh;
   overflow-x: clip;
-  background: color-mix(in srgb, var(--background) 96%, #061018);
   color: var(--foreground);
 }
 
@@ -38,17 +37,6 @@ body:has(.sbw-root) {
   background: color-mix(in srgb, var(--card) 76%, var(--background));
   padding: 14px 12px 16px;
 }
-
-.sbw-rail-summary {
-  display: grid;
-  gap: 3px;
-  margin: 0 4px 12px;
-  border-bottom: 1px solid var(--border);
-  padding: 0 2px 12px;
-}
-.sbw-rail-summary > span { color: #67e8f9; font-size: 11px; font-weight: 800; }
-.sbw-rail-summary strong { font-size: 15px; }
-.sbw-rail-summary small { color: var(--muted-foreground); font-size: 11px; }
 
 .sbw-model-section { display: flex; min-height: 0; flex-direction: column; }
 .sbw-model-section > header {
@@ -460,7 +448,6 @@ body:has(.sbw-root) {
 @media (max-width: 900px) {
   .sbw-shell { display: block; }
   .sbw-model-rail { position: static; display: grid; height: auto; grid-template-columns: 1fr 1fr; gap: 8px; overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); }
-  .sbw-rail-summary { grid-column: 1 / -1; }
   .sbw-video-model-section > header { margin-top: 0; border-top: 0; padding-top: 0; }
   .sbw-model-list { min-height: 0; max-height: none; flex-direction: row; overflow-x: auto; overflow-y: hidden; }
   .sbw-model-list > button { min-width: 200px; }
@@ -475,6 +462,91 @@ body:has(.sbw-root) {
   min-height: 44px;
   gap: 8px;
   padding: 5px 9px;
+}
+
+/* 2026-10-17 structure-first baseline: benchmark the card hierarchy,
+   grid, spacing, and input treatment before choosing a brand palette. */
+.sbw-root {
+  --sbw-grid-line: rgba(255, 255, 255, 0.055);
+  --sbw-grid-line-strong: rgba(255, 255, 255, 0.12);
+  --sbw-surface: rgba(14, 16, 20, 0.96);
+  --sbw-surface-raised: rgba(22, 24, 29, 0.98);
+  --sbw-outline: rgba(255, 255, 255, 0.16);
+  --sbw-focus: rgba(255, 255, 255, 0.72);
+}
+
+.sbw-root .sbw-shell {
+  border-top: 2px solid var(--sbw-grid-line-strong);
+}
+
+.sbw-root .sbw-model-rail,
+.sbw-root .sbw-toolbar,
+.sbw-root .sbw-shot-card,
+.sbw-root .sbw-flow-section,
+.sbw-root .sbw-control-group {
+  border-width: 2px;
+  border-color: var(--sbw-outline);
+  background: linear-gradient(145deg, var(--sbw-surface-raised), var(--sbw-surface));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 42px -30px rgba(0, 0, 0, 0.86);
+}
+
+.sbw-root .sbw-toolbar {
+  background: rgba(12, 14, 18, 0.96);
+  box-shadow: 0 16px 38px -26px rgba(0, 0, 0, 0.9);
+}
+
+.sbw-root .sbw-shot-card:hover,
+.sbw-root .sbw-shot-card:focus-within {
+  border-color: var(--sbw-focus);
+  box-shadow: 0 20px 46px -28px rgba(0, 0, 0, 0.92), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.sbw-root .sbw-flow-section {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(160deg, rgba(24, 26, 31, 0.98), rgba(12, 14, 18, 0.96));
+}
+
+.sbw-root .sbw-flow-prompt textarea,
+.sbw-root .sbw-reference-url-row input,
+.sbw-root .sbw-resolution-select,
+.sbw-root .sbw-ratio-control button {
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(8, 9, 12, 0.9);
+}
+
+.sbw-root .sbw-flow-prompt textarea:focus,
+.sbw-root .sbw-reference-url-row input:focus,
+.sbw-root .sbw-resolution-select:focus {
+  border-color: var(--sbw-focus);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+.sbw-root .sbw-prompt-heading > span,
+.sbw-root .sbw-stage-label strong,
+.sbw-root .sbw-section-line strong {
+  color: #f0f1f2;
+}
+
+.sbw-root .sbw-stage-index,
+.sbw-root .sbw-card-index {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e1e3e6;
+}
+
+.sbw-root .sbw-control-tag,
+.sbw-root .sbw-control-group.is-video .sbw-control-tag,
+.sbw-root .sbw-reference-drop,
+.sbw-root .sbw-media-actions button.is-video-command {
+  border-color: rgba(255, 255, 255, 0.26);
+  background: linear-gradient(135deg, #34373d, #555a62);
+  color: #ffffff;
+}
+
+.sbw-root .sbw-media-actions button.is-image-command {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: linear-gradient(135deg, #4a4e55, #676d75);
 }
 
 .sbw-root .sbw-control-tag {
@@ -655,7 +727,6 @@ body:has(.sbw-root) {
 
 @media (max-width: 560px) {
   .sbw-model-rail { grid-template-columns: 1fr; }
-  .sbw-rail-summary { grid-column: auto; }
   .sbw-toolbar-settings { display: grid; width: 100%; }
   .sbw-control-group { overflow-x: auto; }
   .sbw-toolbar-actions { display: grid; width: 100%; grid-template-columns: 1fr 1fr; }
@@ -689,8 +760,6 @@ body:has(.sbw-root) {
   background: color-mix(in srgb, var(--card) 72%, transparent);
   backdrop-filter: blur(18px);
 }
-
-.sbw-rail-summary { margin: 0 3px 8px; padding: 0 2px 9px; }
 .sbw-model-section > header { min-height: 26px; padding-inline: 4px; }
 .sbw-video-model-section > header { margin-top: 7px; padding-top: 7px; }
 .sbw-model-list { gap: 5px; padding: 1px 2px 2px; }
@@ -1349,8 +1418,8 @@ body:has(.sbw-root) {
 
 .sbw-root .sbw-model-icon {
   grid-area: icon;
-  align-self: start;
-  margin-top: 2px;
+  align-self: center;
+  margin-top: 0;
 }
 
 .sbw-root .sbw-model-copy {
@@ -1944,17 +2013,21 @@ body:has(.sbw-root) {
   color: #eee8ff;
 }
 
-.sbw-root .sbw-toolbar-actions button.is-full-batch,
-.sbw-root .sbw-toolbar-actions button.is-full-batch.is-primary {
-  border-color: transparent;
-  background: linear-gradient(135deg, #7c5cff 0%, #5f8dff 48%, #22d3ee 100%);
-  color: #fff;
-  box-shadow: 0 12px 28px color-mix(in srgb, #7c5cff 25%, transparent), inset 0 1px 0 rgba(255, 255, 255, .18);
-}
-
 .sbw-root .sbw-toolbar-actions .sbw-batch-action:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.06);
+}
+
+/* Keep the workbench title anchored while giving the subtitle its own
+   breathing room, as in the compact desktop header reference. */
+.sbw-root .sub-page-subtitle {
+  transform: translateY(3px);
+}
+
+.sbw-root .sbw-toolbar-actions .sbw-batch-action:focus-visible,
+.sbw-root .sbw-toolbar-add-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
 
 .sbw-card-footer-actions {
@@ -2164,16 +2237,6 @@ body:has(.sbw-root) {
   padding: 14px 12px 16px;
 }
 
-.sbw-root .sbw-rail-summary {
-  gap: 4px;
-  margin-bottom: 10px;
-  padding-bottom: 12px;
-}
-
-.sbw-root .sbw-rail-summary > span { font-size: 12px; }
-.sbw-root .sbw-rail-summary strong { font-size: 18px; line-height: 1.25; }
-.sbw-root .sbw-rail-summary small { font-size: 12px; line-height: 1.4; }
-
 .sbw-root .sbw-model-section > header {
   min-height: 34px;
   padding-inline: 5px;
@@ -2248,10 +2311,10 @@ body:has(.sbw-root) {
 }
 
 .sbw-root .sbw-visual-assets {
-  margin: 14px 0 16px;
+  margin: 8px 0 10px;
   border: 1px solid color-mix(in srgb, var(--border) 88%, var(--primary));
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--card) 94%, var(--primary));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 98%, var(--primary));
   overflow: hidden;
 }
 
@@ -2265,11 +2328,11 @@ body:has(.sbw-root) {
 
 .sbw-root .sbw-visual-assets-header {
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 14px;
+  gap: 10px;
+  padding: 8px 10px;
 }
 
-.sbw-root .sbw-visual-assets-header > div,
+.sbw-root .sbw-visual-assets-header > div:first-child,
 .sbw-root .sbw-visual-asset-card > div {
   display: grid;
   gap: 3px;
@@ -2278,7 +2341,7 @@ body:has(.sbw-root) {
 
 .sbw-root .sbw-visual-assets-header strong {
   color: var(--foreground);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .sbw-root .sbw-visual-assets-header small,
@@ -2288,18 +2351,45 @@ body:has(.sbw-root) {
   font-size: 12px;
 }
 
+.sbw-root .sbw-visual-assets-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--background);
+}
+
+.sbw-root .sbw-visual-assets-mode button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 7px;
+}
+
+.sbw-root .sbw-visual-assets-mode button.is-active {
+  background: color-mix(in srgb, var(--primary) 14%, var(--card));
+  color: var(--primary);
+}
+
 .sbw-root .sbw-visual-assets-toggle,
 .sbw-root .sbw-visual-assets-load,
 .sbw-root .sbw-visual-assets-save,
-.sbw-root .sbw-visual-asset-card > button {
+.sbw-root .sbw-visual-asset-card > button,
+.sbw-root .sbw-visual-asset-card-actions button {
   border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
-  border-radius: 9px;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--primary) 8%, var(--card));
   color: var(--primary);
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
-  padding: 7px 10px;
+  padding: 5px 8px;
   white-space: nowrap;
 }
 
@@ -2307,22 +2397,24 @@ body:has(.sbw-root) {
 .sbw-root .sbw-visual-assets-load:hover,
 .sbw-root .sbw-visual-assets-save:hover,
 .sbw-root .sbw-visual-asset-card > button:hover,
+.sbw-root .sbw-visual-asset-card-actions button:hover,
 .sbw-root .sbw-visual-assets-toggle:focus-visible,
 .sbw-root .sbw-visual-assets-load:focus-visible,
 .sbw-root .sbw-visual-assets-save:focus-visible,
-.sbw-root .sbw-visual-asset-card > button:focus-visible {
+.sbw-root .sbw-visual-asset-card > button:focus-visible,
+.sbw-root .sbw-visual-asset-card-actions button:focus-visible {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
 .sbw-root .sbw-visual-assets-body {
   border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  padding: 12px 14px 14px;
+  padding: 8px 10px 10px;
 }
 
 .sbw-root .sbw-visual-assets-toolbar {
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 7px;
 }
 
 .sbw-root .sbw-visual-assets-toolbar label {
@@ -2334,6 +2426,14 @@ body:has(.sbw-root) {
 .sbw-root .sbw-visual-assets-toolbar label > span {
   color: var(--muted-foreground);
   font-size: 11px;
+}
+
+.sbw-root .sbw-visual-assets-auto-bind {
+  align-self: end;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 0;
 }
 
 .sbw-root .sbw-visual-assets-toolbar select {
@@ -2349,7 +2449,7 @@ body:has(.sbw-root) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 16px;
+  margin-top: 13px;
 }
 
 .sbw-root .sbw-visual-assets-load svg {
@@ -2358,7 +2458,105 @@ body:has(.sbw-root) {
 }
 
 .sbw-root .sbw-visual-assets-hint {
-  margin: 10px 0;
+  margin: 6px 0;
+  line-height: 1.45;
+}
+
+.sbw-root .sbw-visual-asset-generator {
+  display: grid;
+  gap: 7px;
+  margin: 7px 0 8px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--background) 96%, var(--primary));
+}
+
+.sbw-root .sbw-visual-asset-generator-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sbw-root .sbw-visual-asset-generator-heading strong {
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.sbw-root .sbw-visual-asset-generator-heading small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.sbw-root .sbw-visual-asset-generator label:not(.sbw-visual-asset-bind-all) {
+  display: grid;
+  gap: 5px;
+}
+
+.sbw-root .sbw-visual-asset-generator label > span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.sbw-root .sbw-visual-asset-generator input:not([type="checkbox"]),
+.sbw-root .sbw-visual-asset-generator textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.sbw-root .sbw-visual-asset-generator textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.sbw-root .sbw-visual-asset-bind-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.sbw-root .sbw-visual-asset-generator-actions,
+.sbw-root .sbw-visual-asset-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.sbw-root .sbw-visual-assets-generate,
+.sbw-root .sbw-visual-assets-storyboard-batch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
+  border-radius: 7px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 9px;
+}
+
+.sbw-root .sbw-visual-assets-storyboard-batch {
+  background: color-mix(in srgb, var(--primary) 9%, var(--card));
+  color: var(--primary);
+}
+
+.sbw-root .sbw-visual-assets-generate:disabled,
+.sbw-root .sbw-visual-assets-storyboard-batch:disabled {
+  cursor: not-allowed;
+  opacity: .55;
 }
 
 .sbw-root .sbw-visual-assets-error {
@@ -2374,18 +2572,18 @@ body:has(.sbw-root) {
 .sbw-root .sbw-visual-asset-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 7px;
 }
 
 .sbw-root .sbw-visual-asset-card {
   min-width: 0;
   align-items: stretch;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--background);
-  padding: 8px;
+  padding: 6px;
 }
 
 .sbw-root .sbw-visual-asset-card.is-selected {
@@ -2417,7 +2615,9 @@ body:has(.sbw-root) {
 .sbw-root .sbw-visual-asset-bindings {
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
 
 .sbw-root .sbw-visual-asset-chip {
@@ -2900,6 +3100,26 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button:focus-visible {
   }
 }
 
+/* Keep image and video submission actions on the page's semantic primary
+   token. Theme bridge colors may style surfaces, but must not fork commands
+   away from the shared primary/primary-foreground contract. */
+.sbw-root .sbw-media-actions button.is-image-command,
+.sbw-root .sbw-media-actions button.is-video-command {
+  border-color: var(--primary) !important;
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+}
+
+/* 命令按钮必须继承页面主题的语义前景色。
+   工作台的视觉表皮可以覆盖 surface、border 和 primary，但不能再复制一套
+   primary-foreground，否则按钮在主题切换后会偏离全局可读性与验收 token。 */
+.sbw-root,
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root,
+html[data-mode="light"] .sbw-root {
+  --primary: inherit !important;
+  --primary-foreground: inherit !important;
+}
+
 .sbw-root .sbw-model-icon[data-model-badge] {
   width: 44px;
   height: 44px;
@@ -2981,7 +3201,6 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button:focus-visible {
   box-shadow: inset 3px 0 var(--primary);
 }
 
-.sbw-root .sbw-rail-summary > span,
 .sbw-root .sbw-guardrail-chip,
 .sbw-root .sbw-model-id-copy:hover,
 .sbw-root .sbw-model-id-copy:focus-visible {
@@ -3036,8 +3255,6 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button.is-active {
 }
 
 .sbw-root .sbw-toolbar-actions button.is-primary,
-.sbw-root .sbw-toolbar-actions button.is-full-batch,
-.sbw-root .sbw-toolbar-actions button.is-full-batch.is-primary,
 .sbw-root .sbw-video-compact button.is-command,
 .sbw-root .sbw-media-actions button.is-image-command,
 .sbw-root .sbw-media-actions button.is-video-command {
@@ -3172,4 +3389,3131 @@ html:not([data-mode="dark"]) .sbw-root .sbw-ratio-control button.is-active {
 .sbw-root .sbw-history-actions button {
   font-size: 12px;
   line-height: 1.4;
+}
+
+/* Route-owned mode control; preserve the existing desktop canvas layout. */
+.sbw-root .sbw-mode-toggle{display:inline-flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--sbw-stroke-soft);border-radius:11px;background:var(--sbw-field)}
+.sbw-root .sbw-mode-toggle button{min-height:34px;padding:6px 12px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--sbw-subtle);font-size:13px;font-weight:600;line-height:1.35;white-space:nowrap;transition:background-color 120ms ease,color 120ms ease,box-shadow 120ms ease}
+.sbw-root .sbw-mode-toggle button[aria-pressed=true]{border-color:color-mix(in srgb,var(--primary) 78%,var(--foreground));background:var(--primary);color:var(--primary-foreground);box-shadow:0 1px 3px rgb(0 0 0 / 10%)}
+.sbw-root .sbw-mode-toggle button:not(:disabled):not([aria-pressed=true]):hover{background:var(--card);color:var(--foreground)}
+.sbw-root .sbw-mode-toggle button:disabled{cursor:wait;opacity:.55}
+.sbw-root .sbw-mode-toggle button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.sbw-root .sbw-mode-toggle button{transition:none}}
+.sbw-root .sbw-current-model{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 7px;min-width:0;max-width:190px;padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--foreground)}
+.sbw-root .sbw-current-model>span{grid-row:1/3;align-self:center;font-size:12px;color:var(--muted-foreground)}.sbw-root .sbw-current-model strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.sbw-root .sbw-current-model small{grid-column:2;font-size:12px;color:var(--muted-foreground)}
+.sbw-root .sbw-save-project{padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--foreground);font-size:12px}
+.sbw-root .sbw-project-heading{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px 4px}.sbw-root .sbw-project-heading input{min-width:140px;width:220px;max-width:40%;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--foreground);font-size:15px;font-weight:600;padding:4px}.sbw-root .sbw-project-heading input:hover{border-color:var(--border)}.sbw-root .sbw-project-heading>span,.sbw-root .sbw-project-heading>small{font-size:11px;color:var(--muted-foreground)}.sbw-root .sbw-project-heading>small{margin-left:auto}
+.sbw-root .sbw-project-references{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:5px 14px;color:var(--muted-foreground);font-size:11px}.sbw-root .sbw-project-references>button{border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--foreground);padding:3px 8px;font-size:11px}
+.sbw-root .sbw-video-reference-summary{font-size:12px;color:var(--muted-foreground);display:flex;align-items:center;gap:5px}.sbw-root .sbw-video-reference-summary svg{width:12px;height:12px}.sbw-root .sbw-card-title>span{display:block;font-size:12px;color:var(--muted-foreground)}
+.sbw-root .sbw-save-project:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+/* Route-owned production surfaces; keep the existing desktop height/scroll chain. */
+.sbw-root {
+  --sbw-stroke:color-mix(in srgb,var(--foreground) 16%,var(--card));
+  --sbw-stroke-soft:color-mix(in srgb,var(--foreground) 10%,var(--card));
+  --sbw-field:color-mix(in srgb,var(--card) 76%,var(--background));
+  --sbw-subtle:color-mix(in srgb,var(--foreground) 70%,var(--card));
+  --sbw-shadow:0 2px 8px rgb(0 0 0 / 4%),0 1px 2px rgb(0 0 0 / 2%);
+  font-family:var(--font-sans-theme,ui-sans-serif,system-ui,sans-serif);
+  -webkit-font-smoothing:antialiased;
+}
+.sbw-root :is(h1,h2,h3,input,textarea,select,button) { font-family:inherit; }
+.sbw-root:not(.sbw-assets-page) {
+ height:100dvh; min-height:0; overflow:hidden; }
+.sbw-root .sbw-body { display:flex; flex:1; min-width:0; min-height:0; margin:0; padding:0; border:0; overflow:hidden; }
+.sbw-root .sbw-body > .sbw-shell { flex:1; height:100%; min-width:0; min-height:0; overflow:hidden; grid-template-columns:312px minmax(0,1fr); }
+.sbw-root .sbw-body .sbw-workspace { height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior-y:contain; padding-bottom:36px; background:var(--background); container:storyboard-workspace / inline-size; }
+.sbw-root .sbw-body .sbw-model-rail { height:100%; min-height:0; overflow:hidden; padding:14px 12px; background:var(--card); }
+.sbw-root .sbw-model-section { min-height:0; }
+.sbw-root .sbw-video-model-section { flex:1; }
+.sbw-root .sbw-model-list { overflow-y:auto; overflow-x:hidden; overscroll-behavior-y:contain; }
+.sbw-root .sbw-model-list > button { flex:none; padding:10px 12px; border-radius:10px; }
+.sbw-root .sbw-model-copy strong { font-size:13px; font-weight:600; }
+.sbw-root .sbw-toolbar { position:sticky; top:0; z-index:20; display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:10px 14px; border-bottom:1px solid var(--sbw-stroke-soft); background:var(--card); box-shadow:0 2px 8px #10291e06; backdrop-filter:none; }
+.sbw-root .sbw-toolbar-settings { display:flex; flex:1; flex-wrap:wrap; gap:6px; }
+.sbw-root .sbw-toolbar-actions { flex:none; flex-wrap:nowrap; margin-left:auto; gap:8px; }
+.sbw-root .sbw-toolbar-add-card { background:var(--primary); color:var(--primary-foreground); border-color:var(--primary); white-space:nowrap; padding:8px 14px; font-weight:600; }
+.sbw-root .sbw-toolbar-add-card:hover:not(:disabled) { background:color-mix(in srgb,var(--primary) 88%,var(--foreground)); color:var(--primary-foreground); }
+.sbw-root .sbw-project-heading { min-height:52px; padding:4px 14px; gap:12px; flex-wrap:wrap; }
+.sbw-root .sbw-project-heading .sbw-task-step-heading { flex:none; margin:0; font-size:18px; line-height:28px; font-weight:600; }
+.sbw-root .sbw-project-heading input { width:200px; min-width:100px; max-width:26%; padding:6px 8px; border:1px solid transparent; border-radius:7px; color:var(--sbw-subtle); font-size:13px; font-weight:400; }
+.sbw-root .sbw-project-heading input:hover { border-color:var(--sbw-stroke-soft); }
+.sbw-root .sbw-project-heading > small { margin-left:auto; font-size:12px; color:var(--sbw-subtle); }
+.sbw-root .sbw-reference-count { color:var(--sbw-subtle); font-size:12px; }
+.sbw-root .sbw-project-heading .sbw-clear-empty-cards { display:inline-flex; align-items:center; gap:5px; min-height:32px; padding:5px 8px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--sbw-subtle); font-size:12px; }
+.sbw-root .sbw-project-heading .sbw-clear-empty-cards:hover:not(:disabled) { border-color:var(--sbw-stroke-soft); background:var(--card); color:var(--foreground); }
+.sbw-root .sbw-clear-empty-cards svg { width:14px; height:14px; }
+.sbw-root .sbw-shot-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; padding:4px 14px 20px; }
+.sbw-root .sbw-shot-card { padding:14px; gap:10px; grid-template-rows:auto auto; border:1px solid var(--sbw-stroke); border-radius:12px; background:var(--card); box-shadow:var(--sbw-shadow); transition:border-color .16s,box-shadow .16s; }
+.sbw-root .sbw-shot-card:hover { border-color:color-mix(in srgb,var(--primary) 24%,var(--sbw-stroke)); box-shadow:0 4px 14px rgb(0 0 0 / 5%); transform:none; }
+.sbw-root .sbw-shot-card:focus-within { border-color:color-mix(in srgb,var(--primary) 48%,var(--sbw-stroke)); }
+.sbw-root .sbw-card-header { min-height:40px; gap:8px; margin:-14px -14px 0; padding:10px 12px; border-bottom:1px solid var(--sbw-stroke-soft); border-radius:11px 11px 0 0; background:color-mix(in srgb,var(--sbw-field) 64%,var(--card)); }
+.sbw-root .sbw-card-index { width:28px; height:28px; min-width:28px; border:1px solid color-mix(in srgb,var(--primary) 16%,var(--card)); border-radius:7px; background:color-mix(in srgb,var(--primary) 8%,var(--card)); color:var(--primary); font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+.sbw-root .sbw-card-title { display:flex; flex-direction:row; align-items:baseline; gap:7px; min-width:0; flex:1; }
+.sbw-root .sbw-card-title strong { font-size:16px; font-weight:600; color:var(--foreground); }
+.sbw-root .sbw-card-title > span { white-space:nowrap; font-size:12px; color:var(--sbw-subtle); }
+.sbw-root .sbw-status-pair span { font-size:12px; padding:3px 6px; }
+.sbw-root .sbw-card-header .sbw-delete-card { display:grid; place-items:center; flex:0 0 36px; width:36px; height:36px; min-height:36px; padding:0; border:1px solid var(--sbw-stroke-soft); border-radius:8px; background:var(--card); color:var(--sbw-subtle); }
+.sbw-root .sbw-card-header .sbw-delete-card svg { width:18px; height:18px; stroke-width:1.8; }
+.sbw-root .sbw-card-header .sbw-delete-card:hover:not(:disabled) { border-color:color-mix(in srgb,var(--destructive) 48%,var(--card)); background:color-mix(in srgb,var(--destructive) 8%,var(--card)); color:var(--destructive); }
+.sbw-root .sbw-card-header .sbw-delete-card:disabled { opacity:.45; }
+.sbw-root :is(button,input,textarea,select):focus-visible { outline:2px solid var(--primary); outline-offset:3px; }
+.sbw-root .sbw-generation-stack { gap:12px; }
+.sbw-root .sbw-flow-section { padding:0; border:0; border-radius:0; background:transparent; gap:8px; box-shadow:none; }
+.sbw-root .sbw-video-flow { border-top:1px solid var(--sbw-stroke-soft); padding-top:12px; }
+.sbw-root .sbw-prompt-heading { height:36px; margin-bottom:4px; }
+.sbw-root .sbw-prompt-heading > span { font-size:13px; font-weight:600; color:var(--foreground); }
+.sbw-root .sbw-prompt-heading > button { flex:0 0 36px; width:36px; height:36px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--sbw-subtle); }
+.sbw-root .sbw-prompt-heading > button:hover:not(:disabled) { border-color:var(--sbw-stroke-soft); background:var(--sbw-field); }
+.sbw-root .sbw-flow-prompt textarea { height:96px; min-height:96px; max-height:280px; padding:10px 12px; border:1px solid var(--sbw-stroke-soft); border-radius:8px; background:var(--sbw-field); color:var(--foreground); box-shadow:none; font-family:inherit; font-size:14px; line-height:1.65; }
+.sbw-root .sbw-flow-prompt textarea::placeholder { color:var(--sbw-subtle); opacity:.9; }
+.sbw-root .sbw-flow-prompt textarea:focus { border-color:var(--primary); box-shadow:none; }
+.sbw-root .sbw-reference-toggle { height:34px; padding:5px 8px; border:1px dashed var(--sbw-stroke); border-radius:7px; background:transparent; }
+.sbw-root .sbw-reference-section { height:34px; min-height:34px; }
+.sbw-root .sbw-reference-toggle strong { font-size:12px; font-weight:500; }
+.sbw-root .sbw-reference-toggle span { font-size:12px; color:var(--sbw-subtle); }
+.sbw-root .sbw-zone-title { min-height:24px; }
+.sbw-root .sbw-zone-title strong { font-size:12px; font-weight:500; color:var(--sbw-subtle); }
+.sbw-root .sbw-zone-title span { font-size:12px; color:var(--sbw-subtle); }
+.sbw-root .sbw-image-frame.is-placeholder { height:112px; border:1px solid var(--sbw-stroke-soft); border-radius:8px; background:linear-gradient(150deg,color-mix(in srgb,var(--primary) 4%,var(--card)),var(--muted)); }
+.sbw-root .sbw-empty-state { color:var(--sbw-subtle); font-size:12px; }
+.sbw-root .sbw-empty-state > svg { width:24px; height:24px; color:var(--primary); opacity:.65; }
+.sbw-root .sbw-video-reference-summary { min-height:24px; font-size:12px; color:var(--sbw-subtle); }
+.sbw-root .sbw-video-compact { gap:8px; padding:8px; align-items:center; flex-wrap:wrap; border-color:var(--sbw-stroke-soft); border-radius:8px; background:var(--sbw-field); }
+.sbw-root .sbw-video-compact > span { min-width:0; flex:1 1 110px; color:var(--sbw-subtle); }
+.sbw-root .sbw-video-compact > span strong { font-size:12px; font-weight:500; }
+.sbw-root .sbw-media-actions button, .sbw-root .sbw-video-compact button { min-height:36px; font-size:12px; font-weight:500; border-radius:7px; }
+.sbw-root .sbw-flow-section .sbw-media-actions { height:auto; min-height:36px; }
+.sbw-root .sbw-media-actions > button:not(.is-command) { flex-basis:36px; width:36px; border-color:var(--sbw-stroke-soft); background:var(--card); color:var(--sbw-subtle); }
+.sbw-root .sbw-media-actions > button.sbw-board-export { flex:0 0 auto; width:auto; padding:0 10px; border-color:color-mix(in srgb,var(--primary) 35%,var(--card)); background:color-mix(in srgb,var(--primary) 8%,var(--card)); color:var(--foreground); font-weight:600; white-space:nowrap; }
+.sbw-root .sbw-video-compact > div { gap:6px; align-items:center; }
+.sbw-root .sbw-video-compact button:not(.is-command) { width:36px; min-height:36px; padding:0; border-color:var(--sbw-stroke-soft); background:var(--card); color:var(--sbw-subtle); }
+.sbw-root .sbw-video-compact button.is-command { min-height:36px; padding:0 9px; }
+.sbw-root .sbw-media-actions button.is-command { font-size:13px; font-weight:600; }
+.sbw-root .sbw-media-actions button.is-command:disabled,
+.sbw-root .sbw-video-compact button.is-command:disabled { opacity:1; border-color:var(--sbw-stroke-soft); background:var(--muted); color:var(--sbw-subtle); box-shadow:none; }
+@container storyboard-workspace (min-width:968px) { .sbw-root .sbw-shot-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@container storyboard-workspace (min-width:1280px) { .sbw-root .sbw-shot-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+
+/* 2026-10-17 desktop refinement: keep the production controls on one visual
+   baseline, leave the fixed video duration beside the mode switch, and keep
+   three spacious storyboard cards across the workbench. */
+.sbw-root .sbw-toolbar-settings {
+  align-items: center;
+  gap: 8px;
+}
+
+.sbw-root .sbw-control-group {
+  min-height: 42px;
+  gap: 8px;
+  border-color: var(--sbw-stroke);
+  border-radius: 10px;
+  background: var(--sbw-field);
+  padding: 5px 9px;
+}
+
+.sbw-root .sbw-control-group.is-image,
+.sbw-root .sbw-control-group.is-video {
+  border-color: var(--sbw-stroke);
+}
+
+.sbw-root .sbw-control-tag {
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--sbw-stroke));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+  color: var(--foreground);
+  padding: 4px 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sbw-root .sbw-control-group > strong,
+.sbw-root .sbw-control-group > span:not(.sbw-control-tag) {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.sbw-root .sbw-control-group > span:not(.sbw-control-tag) {
+  color: var(--sbw-subtle);
+}
+
+.sbw-root .sbw-ratio-control {
+  min-width: 150px;
+  height: 32px;
+  gap: 4px;
+}
+
+.sbw-root .sbw-ratio-control button,
+.sbw-root .sbw-resolution-select {
+  height: 32px;
+  border-color: var(--sbw-stroke);
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 12px;
+}
+
+.sbw-root .sbw-ratio-control button.is-active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+.sbw-root .sbw-fixed-param {
+  color: var(--sbw-subtle);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sbw-root .sbw-mode-toggle {
+  flex: 0 0 auto;
+  gap: 3px;
+  min-height: 40px;
+  padding: 3px;
+  border: 1px solid var(--sbw-stroke);
+  border-radius: 10px;
+  background: var(--sbw-field);
+}
+
+.sbw-root .sbw-mode-toggle button {
+  min-height: 32px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  color: var(--sbw-subtle);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.sbw-root .sbw-mode-toggle button[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+.sbw-root .sbw-toolbar-actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.sbw-root .sbw-toolbar-add-card,
+.sbw-root .sbw-history-action .sub-page-nav-button {
+  min-height: 40px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.sbw-root .sbw-toolbar-add-card {
+  padding-inline: 13px;
+}
+
+.sbw-root .sbw-history-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.sbw-root .sbw-history-action .sub-page-nav-button {
+  border: 1px solid var(--sbw-stroke);
+  background: var(--sbw-field);
+  color: var(--foreground);
+  padding: 0 12px;
+}
+
+.sbw-root .sbw-history-action .sub-page-nav-button:hover {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--sbw-stroke));
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+}
+
+.sbw-root .sbw-generation-stack {
+  gap: 14px;
+}
+
+.sbw-root .sbw-flow-section {
+  display: grid;
+  grid-template-rows: none;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sbw-root .sbw-flow-prompt {
+  display: flex;
+  height: auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sbw-root .sbw-prompt-heading {
+  min-height: 32px;
+  height: 32px;
+  margin: 0;
+}
+
+.sbw-root .sbw-prompt-heading > span {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.sbw-root .sbw-flow-prompt textarea {
+  height: 88px;
+  min-height: 88px;
+  padding: 10px 11px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.sbw-root .sbw-reference-section {
+  height: auto;
+  min-height: 38px;
+  margin-top: 0;
+}
+
+.sbw-root .sbw-reference-toggle {
+  min-height: 38px;
+  border-color: var(--sbw-stroke);
+  border-radius: 9px;
+  background: var(--sbw-field);
+  padding: 7px 10px;
+}
+
+.sbw-root .sbw-reference-toggle strong,
+.sbw-root .sbw-reference-toggle span {
+  font-size: 12px;
+}
+
+.sbw-root .sbw-zone-title {
+  min-height: 26px;
+  margin: 0;
+}
+
+.sbw-root .sbw-zone-title strong,
+.sbw-root .sbw-zone-title span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.sbw-root .sbw-image-frame.is-placeholder {
+  height: 132px;
+  border-color: var(--sbw-stroke-soft);
+  border-radius: 9px;
+}
+
+.sbw-root .sbw-empty-state > svg,
+.sbw-root .sbw-loading-state > svg {
+  width: 22px;
+  height: 22px;
+}
+
+.sbw-root .sbw-media-actions {
+  min-height: 38px;
+  align-items: stretch;
+  gap: 7px;
+  margin-top: 0;
+}
+
+.sbw-root .sbw-media-actions > button:not(.is-command) {
+  width: 38px;
+  flex-basis: 38px;
+  min-height: 38px;
+  border-radius: 8px;
+}
+
+.sbw-root .sbw-media-actions button.is-command {
+  min-height: 38px;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.sbw-root .sbw-video-compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 48px;
+  gap: 8px;
+  border-color: var(--sbw-stroke-soft);
+  border-radius: 9px;
+  background: var(--sbw-field);
+  padding: 7px;
+}
+
+.sbw-root .sbw-video-compact > span {
+  align-items: center;
+  font-size: 12px;
+}
+
+.sbw-root .sbw-video-compact > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sbw-root .sbw-video-compact button:not(.is-command) {
+  width: 36px;
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+.sbw-root .sbw-card-header {
+  min-height: 44px;
+  margin: -16px -16px 0;
+  padding: 11px 14px;
+  border-radius: 11px 11px 0 0;
+}
+
+.sbw-root .sbw-card-index {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.sbw-root .sbw-card-title {
+  align-items: baseline;
+  flex-direction: row;
+  gap: 7px;
+}
+
+.sbw-root .sbw-card-title strong {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.sbw-root .sbw-card-title > span {
+  color: var(--sbw-subtle);
+  font-size: 12px;
+}
+
+.sbw-root .sbw-shot-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.sbw-root .sbw-card-header {
+  margin: -14px -14px 0;
+}
+
+@media (max-width: 900px) {
+  .sbw-root .sbw-shot-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 2026-10-17 information architecture refinement: make the workbench read as
+   a short, numbered production flow instead of a stack of equal-weight fields. */
+.sbw-root .sbw-mode-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 4px 5px 4px 10px;
+  border: 1px solid var(--sbw-stroke);
+  border-radius: 10px;
+  background: var(--sbw-field);
+}
+
+.sbw-root .sbw-mode-label {
+  color: var(--sbw-subtle);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-mode-group .sbw-mode-toggle {
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  padding: 2px;
+}
+
+.sbw-root .sbw-stage-label {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 7px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.sbw-root .sbw-stage-label.is-secondary {
+  color: var(--sbw-subtle);
+  font-weight: 600;
+}
+
+.sbw-root .sbw-stage-label .sbw-stage-index,
+.sbw-root .sbw-zone-title .sbw-stage-index {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--sbw-stroke));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  color: var(--primary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.sbw-root .sbw-stage-label em {
+  margin-left: auto;
+  color: var(--sbw-subtle);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-reference-section {
+  display: flex;
+  height: auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sbw-root .sbw-reference-controls {
+  top: 67px;
+}
+
+.sbw-root .sbw-zone-title .sbw-stage-index {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
+}
+
+.sbw-root .sbw-zone-title .sbw-stage-index + svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sbw-root .sbw-zone-title > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-image-flow > .sbw-stage-label,
+.sbw-root .sbw-video-flow > .sbw-stage-label {
+  margin-bottom: -2px;
+}
+
+.sbw-root .sbw-video-flow {
+  padding-top: 14px;
+}
+
+.sbw-root .sbw-video-flow.is-locked > .sbw-stage-label {
+  color: var(--sbw-subtle);
+}
+
+.sbw-root .sbw-scene-context {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  margin: 0 14px 10px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--sbw-stroke));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--card));
+  color: var(--sbw-subtle);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.sbw-root .sbw-scene-context strong {
+  max-width: 13em;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-scene-context em {
+  margin-left: auto;
+  color: var(--warning, #d99b44);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+@media (max-width: 1180px) {
+  .sbw-root .sbw-toolbar {
+    align-items: stretch;
+  }
+
+  .sbw-root .sbw-toolbar-settings {
+    flex-wrap: wrap;
+  }
+
+  .sbw-root .sbw-mode-group {
+    margin-left: 0;
+  }
+}
+
+/* C210-44：工作台最后一层视觉收口。业务结构和提交行为保持不变。 */
+.sbw-root {
+  --sbw-surface-0: color-mix(in srgb, var(--background) 88%, #061419);
+  --sbw-surface-1: color-mix(in srgb, var(--card) 94%, #0b252b);
+  --sbw-surface-2: color-mix(in srgb, var(--card) 82%, #12333a);
+  --sbw-edge-visible: color-mix(in srgb, var(--primary) 26%, var(--border));
+  --sbw-edge-soft: color-mix(in srgb, var(--primary) 14%, var(--border));
+}
+
+.sbw-root .sbw-shot-card {
+  overflow: hidden;
+  border: 1px solid var(--sbw-edge-visible);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--sbw-surface-2) 74%, transparent), var(--sbw-surface-1) 23%, var(--sbw-surface-0) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .055),
+    0 18px 42px rgba(0, 7, 12, .20);
+}
+
+.sbw-root .sbw-shot-card:hover,
+.sbw-root .sbw-shot-card:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--border));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .075),
+    0 24px 50px rgba(0, 7, 12, .28),
+    0 0 24px color-mix(in srgb, var(--primary) 9%, transparent);
+}
+
+.sbw-root .sbw-card-header {
+  min-height: 48px;
+  align-items: center;
+  border-bottom-color: var(--sbw-edge-soft);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--sbw-surface-2) 94%, transparent), color-mix(in srgb, var(--sbw-surface-1) 96%, transparent));
+}
+
+.sbw-root .sbw-card-index,
+.sbw-root .sbw-stage-label .sbw-stage-index,
+.sbw-root .sbw-zone-title .sbw-stage-index {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+
+.sbw-root .sbw-flow-prompt {
+  padding: 10px;
+  border: 1px solid var(--sbw-edge-soft);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--sbw-surface-0) 78%, transparent);
+}
+
+.sbw-root .sbw-flow-prompt textarea,
+.sbw-root .sbw-reference-toggle,
+.sbw-root .sbw-video-compact {
+  border-color: var(--sbw-edge-soft);
+  background: color-mix(in srgb, var(--sbw-surface-1) 88%, transparent);
+}
+
+.sbw-root .sbw-flow-prompt textarea:focus,
+.sbw-root .sbw-reference-toggle:focus-visible,
+.sbw-root .sbw-video-compact:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--border));
+}
+
+.sbw-root .sbw-image-frame,
+.sbw-root .sbw-video-frame {
+  width: 100%;
+  height: auto;
+  min-height: 132px;
+  max-height: 210px;
+  aspect-ratio: 16 / 9;
+  border-color: var(--sbw-edge-soft);
+  border-radius: 10px;
+  background: #061216;
+}
+
+.sbw-root .sbw-image-frame.is-placeholder {
+  height: auto;
+  min-height: 132px;
+}
+
+.sbw-root .sbw-image-frame.has-result:has(img),
+.sbw-root .sbw-video-frame:has(video) {
+  min-height: 0;
+}
+
+.sbw-root .sbw-image-frame img,
+.sbw-root .sbw-video-frame video {
+  border-radius: 9px;
+}
+
+.sbw-root .sbw-video-frame video {
+  max-height: 210px;
+}
+
+.sbw-root .sbw-media-actions {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  min-height: 40px;
+  gap: 7px;
+}
+
+.sbw-root .sbw-media-actions > button:not(.is-command) {
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.sbw-root .sbw-media-actions button.is-command {
+  min-width: 0;
+  min-height: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-media-actions button.is-image-command {
+  background: linear-gradient(135deg, color-mix(in srgb, #8b5cf6 88%, var(--card)), #5d48b4);
+}
+
+.sbw-root .sbw-media-actions button.is-video-command {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 84%, #157c92), #126d78);
+}
+
+.sbw-root .sbw-video-compact {
+  min-height: 52px;
+  align-items: center;
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+@media (min-width: 1440px) {
+  .sbw-root .sbw-shot-grid {
+    gap: 18px;
+  }
+}
+
+@media (max-width: 900px) {
+  .sbw-root .sbw-flow-prompt {
+    padding: 9px;
+  }
+
+  .sbw-root .sbw-media-actions {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .sbw-root .sbw-media-actions > button:not(.is-command):first-child {
+    grid-column: auto;
+  }
+}
+
+/* 生成类页面共用青绿/曜蓝重点色，避免黑曜霓彩下出现孤立紫色按钮。 */
+.sbw-root .sbw-media-actions button.is-image-command {
+  background: linear-gradient(135deg, #168f9e, #2f70e8);
+  border-color: color-mix(in srgb, #35d8cd 54%, var(--border));
+}
+
+.sbw-root .sbw-media-actions button.is-video-command {
+  background: linear-gradient(135deg, #20cdb8, #168fa6);
+  border-color: color-mix(in srgb, #35d8cd 58%, var(--border));
+}
+
+/* C210-48：蓝黑格栅工作台视觉收口。
+   只作用于分镜工作台，保持生成接口、任务状态和主题外页面不变。 */
+.sbw-root {
+  --background: #070d1b;
+  --card: #0c1526;
+  --muted: #111d33;
+  --border: #243652;
+  --foreground: #e6eefb;
+  --muted-foreground: #91a4bf;
+  --primary: #60a5fa;
+  --primary-foreground: #041226;
+  --info: #60a5fa;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --error: #fb7185;
+  --sbw-surface-0: #070d1b;
+  --sbw-surface-1: #0b1426;
+  --sbw-surface-2: #101d34;
+  --sbw-edge-visible: rgba(96, 165, 250, .38);
+  --sbw-edge-soft: rgba(148, 163, 184, .24);
+  color: var(--foreground);
+}
+
+.sbw-root > .sub-page-header {
+  border-bottom-color: rgba(96, 165, 250, .28);
+  background: rgba(8, 17, 34, .94);
+  box-shadow: 0 8px 28px rgba(2, 6, 23, .26);
+}
+
+.sbw-root .sbw-body .sbw-model-rail {
+  border-right-color: rgba(96, 165, 250, .2);
+  background: rgba(7, 14, 29, .94);
+  box-shadow: 8px 0 30px rgba(2, 6, 23, .16);
+}
+
+.sbw-root .sbw-workspace {
+  background-color: var(--background);
+  background-image:
+    linear-gradient(rgba(96, 165, 250, .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96, 165, 250, .06) 1px, transparent 1px),
+    radial-gradient(circle at 82% 4%, rgba(99, 102, 241, .12), transparent 30%);
+  background-size: 32px 32px, 32px 32px, auto;
+}
+
+.sbw-root .sbw-toolbar {
+  border-bottom-color: rgba(96, 165, 250, .28);
+  background: rgba(8, 17, 34, .9);
+  box-shadow: 0 10px 28px rgba(2, 6, 23, .32);
+  backdrop-filter: blur(16px);
+}
+
+.sbw-root .sbw-control-group,
+.sbw-root .sbw-mode-group {
+  border-color: rgba(96, 165, 250, .3);
+  background: rgba(13, 26, 48, .88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045);
+}
+
+.sbw-root .sbw-control-tag {
+  border-color: rgba(96, 165, 250, .5);
+  background: rgba(37, 99, 235, .18);
+  color: #bfdbfe;
+}
+
+.sbw-root .sbw-ratio-control button,
+.sbw-root .sbw-resolution-select {
+  border-color: rgba(148, 163, 184, .28);
+  background: #0a1427;
+}
+
+.sbw-root .sbw-ratio-control button.is-active,
+.sbw-root .sbw-mode-toggle button[aria-pressed="true"] {
+  border-color: #60a5fa;
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  color: #f8fbff;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, .28), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
+.sbw-root .sbw-toolbar-add-card,
+.sbw-root .sbw-history-action .sub-page-nav-button {
+  border-color: rgba(96, 165, 250, .42);
+  background: rgba(18, 35, 62, .9);
+  color: #dbeafe;
+}
+
+.sbw-root .sbw-toolbar-add-card:hover:not(:disabled),
+.sbw-root .sbw-history-action .sub-page-nav-button:hover {
+  border-color: #60a5fa;
+  background: rgba(37, 99, 235, .24);
+}
+
+.sbw-root .sbw-shot-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.sbw-root .sbw-shot-card {
+  border-color: rgba(96, 165, 250, .34);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(16, 29, 52, .96), rgba(8, 17, 33, .98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 22px 48px rgba(2, 6, 23, .28);
+}
+
+.sbw-root .sbw-shot-card:hover,
+.sbw-root .sbw-shot-card:focus-within {
+  border-color: rgba(96, 165, 250, .72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 24px 54px rgba(2, 6, 23, .34), 0 0 30px rgba(59, 130, 246, .1);
+}
+
+.sbw-root .sbw-card-header {
+  border-bottom-color: rgba(96, 165, 250, .22);
+  background: linear-gradient(180deg, rgba(20, 39, 68, .96), rgba(14, 27, 49, .96));
+}
+
+.sbw-root .sbw-card-index,
+.sbw-root .sbw-stage-label .sbw-stage-index,
+.sbw-root .sbw-zone-title .sbw-stage-index {
+  border-color: rgba(96, 165, 250, .58);
+  background: rgba(37, 99, 235, .2);
+  color: #bfdbfe;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1);
+}
+
+.sbw-root .sbw-flow-section {
+  border-color: rgba(96, 165, 250, .24);
+  border-radius: 12px;
+  background: rgba(6, 14, 29, .32);
+  padding: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+}
+
+.sbw-root .sbw-stage-label,
+.sbw-root .sbw-zone-title {
+  color: #dbeafe;
+}
+
+.sbw-root .sbw-stage-label.is-secondary,
+.sbw-root .sbw-stage-label em,
+.sbw-root .sbw-zone-title strong,
+.sbw-root .sbw-zone-title span {
+  color: #9fb3cf;
+}
+
+.sbw-root .sbw-prompt-heading > span {
+  color: #cfe1f8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sbw-root .sbw-prompt-heading > button {
+  border-color: rgba(96, 165, 250, .32);
+  background: rgba(18, 35, 62, .72);
+  color: #a8c7ee;
+}
+
+.sbw-root .sbw-flow-prompt textarea {
+  border: 2px solid rgba(96, 165, 250, .3);
+  border-radius: 10px;
+  background: rgba(5, 13, 27, .88);
+  color: #e6eefb;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.sbw-root .sbw-flow-prompt textarea:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, .14), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+
+/* Keep the field semantics available to assistive technology while giving the
+   prompt itself the visual priority. The first pass uses a slightly taller
+   editor; palette decisions remain in the shared workbench theme. */
+.sbw-root .sbw-prompt-heading {
+  justify-content: flex-end;
+}
+
+.sbw-root .sbw-prompt-heading > span.sr-only {
+  position: absolute;
+}
+
+.sbw-root .sbw-flow-prompt textarea {
+  height: 132px;
+  min-height: 132px;
+  max-height: 320px;
+}
+
+.sbw-root .sbw-reference-toggle {
+  border: 2px solid rgba(96, 165, 250, .22);
+  border-radius: 10px;
+  background: rgba(12, 25, 46, .82);
+}
+
+.sbw-root .sbw-reference-toggle:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, .56);
+  background: rgba(25, 51, 91, .84);
+}
+
+.sbw-root .sbw-image-frame,
+.sbw-root .sbw-video-frame {
+  border-color: rgba(96, 165, 250, .3);
+  border-radius: 11px;
+  background: #050b17;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025);
+}
+
+.sbw-root .sbw-image-frame.is-placeholder {
+  background: linear-gradient(145deg, rgba(17, 37, 67, .7), rgba(6, 14, 28, .9));
+}
+
+.sbw-root .sbw-media-actions button.is-image-command,
+.sbw-root .sbw-media-actions button.is-video-command {
+  border-color: rgba(96, 165, 250, .66);
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  color: #f8fbff;
+}
+
+/* Wide desktop remains three cards across so each prompt and preview keeps a
+   readable width. The fourth card starts the next row instead of shrinking. */
+@container storyboard-workspace (min-width: 1280px) {
+  .sbw-root .sbw-shot-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* At desktop widths where the full control set no longer fits, keep the
+   parameters readable and give production actions their own complete row.
+   The previous nowrap + horizontal-scroll treatment clipped the first image
+   group and the last action at ordinary 1344px desktop viewports. */
+@media (min-width: 1301px) and (max-width: 1600px) {
+  .sbw-root .sbw-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .sbw-root .sbw-toolbar-settings {
+    min-width: 0;
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    overflow: visible;
+    row-gap: 8px;
+  }
+
+  .sbw-root .sbw-control-group {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .sbw-root .sbw-toolbar-actions {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+
+/* The storyboard workspace is narrower than the browser viewport when it is
+   embedded beside a model rail. Use its own container width as the second
+   guard so the same controls never become a clipped horizontal strip. */
+@container storyboard-workspace (max-width: 1180px) {
+  .sbw-root .sbw-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .sbw-root .sbw-toolbar-settings {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    overflow: visible;
+    row-gap: 8px;
+  }
+
+  .sbw-root .sbw-control-group {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .sbw-root .sbw-toolbar-actions {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+/* Keep the title, icon and subtitle as one centered visual group. The
+   subtitle previously received a vertical transform that made the icon/title
+   baseline look detached in the light storyboard screenshot. */
+.sbw-root > .sub-page-header .sub-page-heading {
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.sbw-root > .sub-page-header .sub-page-heading > div {
+  min-width: 0;
+  align-items: center;
+  text-align: center;
+}
+
+.sbw-root > .sub-page-header .sub-page-title {
+  line-height: 1.12;
+}
+
+.sbw-root > .sub-page-header .sub-page-subtitle {
+  transform: none;
+  line-height: 1.25;
+  text-align: center;
+}
+
+/* 2026-10-17：分镜卡片与 AI 视频创作台共用同一媒体槽位。
+   生图是默认结果，视频进入排队/生成/完成后原位覆盖；这样卡片不再为两块预览重复留高。 */
+.sbw-root {
+  --sbw-video-bg: #0b0c0f;
+  --sbw-video-card: rgba(24, 26, 31, .98);
+  --sbw-video-field: rgba(8, 9, 12, .9);
+  --sbw-video-line: rgba(255, 255, 255, .18);
+  --sbw-video-primary: #54e3d2;
+  --sbw-video-primary-strong: #1b9b91;
+  --sbw-video-text: #f2fbfa;
+  --sbw-video-muted: #9baead;
+  --background: var(--sbw-video-bg);
+  --card: var(--sbw-video-card);
+  --muted: #17191e;
+  --border: var(--sbw-video-line);
+  --foreground: var(--sbw-video-text);
+  --muted-foreground: var(--sbw-video-muted);
+  --primary: var(--sbw-video-primary);
+  --primary-foreground: #031311;
+}
+
+.sbw-root .sbw-workspace {
+  background-color: transparent;
+  background-image: none;
+}
+
+.sbw-root .sbw-shot-card {
+  border-width: 2px;
+  border-color: var(--sbw-video-line);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 42px -30px rgba(0, 0, 0, .9);
+}
+
+.sbw-root .sbw-card-header {
+  border-bottom-color: rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .06);
+}
+
+.sbw-root .sbw-flow-section {
+  gap: 7px;
+  padding: 8px;
+  border-color: rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  background: rgba(8, 9, 12, .28);
+}
+
+.sbw-root .sbw-generation-stack { gap: 8px; }
+.sbw-root .sbw-video-flow { padding-top: 8px; }
+
+.sbw-root .sbw-flow-prompt {
+  gap: 6px;
+  padding: 8px;
+  border-color: rgba(255, 255, 255, .14);
+  border-radius: 10px;
+  background: rgba(8, 9, 12, .65);
+}
+
+.sbw-root .sbw-flow-prompt textarea {
+  height: 86px;
+  min-height: 86px;
+  max-height: 220px;
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, .18);
+  border-radius: 9px;
+  background: var(--sbw-video-field);
+  color: var(--sbw-video-text);
+}
+
+.sbw-root .sbw-flow-prompt textarea:focus {
+  border-color: rgba(255, 255, 255, .72);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .1);
+}
+
+.sbw-root .sbw-prompt-heading > button {
+  border-color: rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .04);
+  color: var(--sbw-video-muted);
+}
+
+.sbw-root .sbw-reference-toggle,
+.sbw-root .sbw-video-reference-summary {
+  border-color: rgba(255, 255, 255, .14);
+  background: rgba(255, 255, 255, .04);
+}
+
+.sbw-root .sbw-shared-media-frame {
+  position: relative;
+  width: 100%;
+  min-height: 118px;
+  max-height: 190px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, .16);
+  border-radius: 10px;
+  background: #050608;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025);
+}
+
+.sbw-root .sbw-shared-media-frame[data-media-mode="video"] {
+  border-color: rgba(84, 227, 210, .42);
+  box-shadow: inset 0 0 0 1px rgba(84, 227, 210, .08), 0 0 24px rgba(84, 227, 210, .08);
+}
+
+.sbw-root .sbw-shared-media-frame > button,
+.sbw-root .sbw-shared-media-frame > video,
+.sbw-root .sbw-shared-media-frame > .sbw-loading-state,
+.sbw-root .sbw-shared-media-frame > .sbw-empty-state {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.sbw-root .sbw-shared-media-frame > button {
+  position: relative;
+  display: block;
+  border: 0;
+  background: #050608;
+  padding: 0;
+}
+
+.sbw-root .sbw-shared-media-frame img,
+.sbw-root .sbw-shared-media-frame video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #050608;
+}
+
+.sbw-root .sbw-shared-media-frame .sbw-realtime-state {
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  text-align: center;
+}
+
+.sbw-root .sbw-shared-media-frame .sbw-video-stage-steps {
+  width: min(96%, 300px);
+  margin: 3px auto 0;
+}
+
+.sbw-root .sbw-media-actions {
+  display: flex;
+  min-height: 36px;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+
+.sbw-root .sbw-media-actions > button:not(.is-command) {
+  width: 34px;
+  min-width: 34px;
+  flex: 0 0 34px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.sbw-root .sbw-media-actions button.is-command {
+  min-width: 0;
+  min-height: 36px;
+  flex: 1 1 0;
+  justify-content: center;
+  overflow: hidden;
+  padding-inline: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-media-actions button.is-image-command,
+.sbw-root .sbw-media-actions button.is-video-command {
+  border-color: rgba(84, 227, 210, .48);
+  background: linear-gradient(135deg, #1b9b91, #16849a);
+  color: #f2fbfa;
+}
+
+.sbw-root .sbw-video-reference-summary {
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 8px;
+}
+
+.sbw-root .sbw-video-flow .sbw-error-line,
+.sbw-root .sbw-video-flow .sbw-billing-line {
+  margin-top: 0;
+}
+
+/* 2026-10-17：把分镜卡片重组为 AI 视频创作台的单卡节奏。
+   两个 Prompt 仍然独立可编辑，但共用“输入 → 素材 → 单一媒体结果 → 动作”结构。 */
+.sbw-root .sbw-shell {
+  width: min(100%, 1760px);
+  margin: 0 auto;
+  grid-template-columns: 312px minmax(0, 1fr);
+  gap: 16px;
+  border-top: 0;
+  padding: 8px 12px 24px;
+}
+
+.sbw-root .sbw-model-rail {
+  top: 8px;
+  height: calc(100vh - 86px);
+  border: 2px solid rgba(255, 255, 255, .18);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 42px -30px rgba(0, 0, 0, .9);
+  padding: 12px 10px 14px;
+}
+
+.sbw-root .sbw-model-section > header span {
+  color: var(--sbw-video-primary);
+}
+
+.sbw-root .sbw-model-section > header {
+  min-height: 28px;
+}
+
+.sbw-root .sbw-model-list > button {
+  min-height: 68px;
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, .14);
+  border-radius: 9px;
+  background: rgba(8, 9, 12, .66);
+}
+
+.sbw-root .sbw-model-list > button.is-active {
+  border-color: rgba(84, 227, 210, .74);
+  background: rgba(24, 89, 86, .42);
+  box-shadow: inset 3px 0 var(--sbw-video-primary), 0 0 22px rgba(84, 227, 210, .08);
+}
+
+.sbw-root .sbw-workspace {
+  min-width: 0;
+  padding-bottom: 28px;
+}
+
+.sbw-root .sbw-toolbar {
+  position: relative;
+  top: auto;
+  z-index: 2;
+  min-height: 0;
+  margin-bottom: 12px;
+  border: 2px solid rgba(255, 255, 255, .18);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 42px -30px rgba(0, 0, 0, .9);
+  padding: 10px 12px;
+}
+
+.sbw-root .sbw-toolbar-settings,
+.sbw-root .sbw-toolbar-actions {
+  gap: 7px;
+}
+
+.sbw-root .sbw-control-group {
+  min-height: 36px;
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, .14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .035);
+  padding: 4px 7px;
+}
+
+.sbw-root .sbw-control-tag {
+  background: rgba(84, 227, 210, .12);
+  color: var(--sbw-video-primary);
+}
+
+.sbw-root .sbw-ratio-control button,
+.sbw-root .sbw-resolution-select,
+.sbw-root .sbw-mode-toggle button {
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, .16);
+  border-radius: 7px;
+  background: rgba(8, 9, 12, .9);
+}
+
+.sbw-root .sbw-ratio-control button.is-active,
+.sbw-root .sbw-mode-toggle button[aria-pressed="true"] {
+  border-color: rgba(84, 227, 210, .64);
+  background: rgba(84, 227, 210, .14);
+  color: var(--sbw-video-primary);
+}
+
+.sbw-root .sbw-toolbar-actions button,
+.sbw-root .sbw-toolbar-add-card,
+.sbw-root .sbw-history-action button {
+  min-height: 32px;
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, .14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.sbw-root .sbw-toolbar-actions .is-primary,
+.sbw-root .sbw-toolbar-actions .is-video-batch,
+.sbw-root .sbw-toolbar-actions .is-image-batch {
+  border-color: rgba(84, 227, 210, .46);
+  background: linear-gradient(135deg, #1b9b91, #16849a);
+  color: #f2fbfa;
+}
+
+.sbw-root .sbw-project-heading {
+  gap: 8px;
+  margin: 0 0 8px;
+  border: 0;
+  padding: 0 2px;
+}
+
+.sbw-root .sbw-project-heading h2 {
+  color: var(--sbw-video-text);
+}
+
+.sbw-root .sbw-shot-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 0;
+}
+
+.sbw-root .sbw-shot-card {
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, .18);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 42px -30px rgba(0, 0, 0, .9);
+  padding: 0;
+}
+
+.sbw-root .sbw-card-header {
+  min-height: 47px;
+  margin-bottom: 0;
+  border-bottom: 2px solid rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .06);
+  padding: 9px 12px;
+}
+
+.sbw-root .sbw-card-index {
+  width: 28px;
+  height: 28px;
+  border-color: rgba(84, 227, 210, .48);
+  background: rgba(84, 227, 210, .12);
+  color: var(--sbw-video-primary);
+}
+
+.sbw-root .sbw-card-title strong {
+  font-size: 14px;
+  color: var(--sbw-video-primary);
+}
+
+.sbw-root .sbw-card-title span {
+  color: var(--sbw-video-muted);
+}
+
+.sbw-root .sbw-generation-stack {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-flow-section {
+  display: contents;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-image-flow > .sbw-stage-label,
+.sbw-root .sbw-generation-stack > .sbw-video-flow > .sbw-stage-label {
+  min-height: 19px;
+  order: 0;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-video-flow > .sbw-stage-label,
+.sbw-root .sbw-generation-stack > .sbw-video-flow > .sbw-flow-prompt {
+  order: 2;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-image-flow > .sbw-flow-prompt {
+  order: 1;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-image-flow > .sbw-reference-section {
+  order: 3;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-image-flow > .sbw-zone-title,
+.sbw-root .sbw-generation-stack > .sbw-image-flow > .sbw-shared-media-frame {
+  order: 3;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-video-flow > .sbw-video-reference-summary {
+  order: 4;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-image-flow > .sbw-error-line,
+.sbw-root .sbw-generation-stack > .sbw-image-flow > .sbw-billing-line,
+.sbw-root .sbw-generation-stack > .sbw-video-flow > .sbw-error-line,
+.sbw-root .sbw-generation-stack > .sbw-video-flow > .sbw-billing-line,
+.sbw-root .sbw-generation-stack > .sbw-video-flow > .sbw-h3-lifecycle {
+  order: 5;
+}
+
+.sbw-root .sbw-generation-stack > .sbw-image-flow > .sbw-media-actions {
+  order: 6;
+}
+
+.sbw-root .sbw-stage-label .sbw-stage-index {
+  width: 22px;
+  height: 22px;
+  border-color: rgba(84, 227, 210, .46);
+  background: rgba(84, 227, 210, .1);
+  color: var(--sbw-video-primary);
+}
+
+.sbw-root .sbw-stage-label strong {
+  color: var(--sbw-video-text);
+  font-size: 12px;
+}
+
+.sbw-root .sbw-stage-label em {
+  margin-left: auto;
+  color: var(--sbw-video-muted);
+}
+
+.sbw-root .sbw-flow-prompt {
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.sbw-root .sbw-flow-prompt textarea {
+  height: 80px;
+  min-height: 60px;
+  max-height: 160px;
+  border-width: 2px;
+  border-radius: 10px;
+  background: rgba(8, 9, 12, .9);
+}
+
+.sbw-root .sbw-reference-section {
+  gap: 5px;
+}
+
+.sbw-root .sbw-reference-toggle {
+  min-height: 38px;
+  border-width: 2px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.sbw-root .sbw-zone-title {
+  min-height: 19px;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+}
+
+.sbw-root .sbw-zone-title strong {
+  color: var(--sbw-video-text);
+  font-size: 12px;
+}
+
+/* 分镜图/媒体结果标题：图标与标题文字同一个节点，直接继承标题色。
+   普通模式与角色参考模式共用，避免浅色主题下图标发灰看不清。 */
+.sbw-root .sbw-zone-title strong.sbw-zone-title-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sbw-root .sbw-zone-title-main svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: currentColor;
+  stroke: currentColor;
+  opacity: 1;
+}
+
+.sbw-root .sbw-media-actions {
+  margin-top: 0;
+}
+
+.sbw-root .sbw-video-reference-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .sbw-root .sbw-shell { grid-template-columns: 1fr; padding-inline: 8px; }
+  .sbw-root .sbw-model-rail { position: relative; top: auto; height: auto; max-height: none; }
+  .sbw-root .sbw-video-model-section { flex: none; }
+  .sbw-root .sbw-video-model-list { max-height: 280px; }
+}
+
+/* 主题边界：黑曜霓彩严格复用 /video 的黑色网格；其他主题只复用
+   布局与密度，并继续读取各自的 vs-workbench 颜色 token。 */
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root {
+  --background: #0b0c0f !important;
+  --card: rgba(24, 26, 31, .98) !important;
+  --muted: #17191e !important;
+  --border: rgba(255, 255, 255, .18) !important;
+  --foreground: #f2fbfa !important;
+  --muted-foreground: #9baead !important;
+  --primary: #54e3d2 !important;
+  --primary-foreground: #031311 !important;
+  color: #f2fbfa !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root .sbw-shot-card,
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root .sbw-model-rail,
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root .sbw-toolbar {
+  border: 2px solid rgba(255, 255, 255, .18) !important;
+  border-color: rgba(255, 255, 255, .18) !important;
+  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 42px -30px rgba(0, 0, 0, .9) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root .sbw-card-header {
+  border-bottom-color: rgba(255, 255, 255, .18) !important;
+  background: rgba(255, 255, 255, .06) !important;
+}
+
+/* storyboard-director-layout.css also carries a high-specificity director
+   border. Match that scope so the crystal-aurora card keeps the /video edge. */
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root[data-workbench-layout="director"] .sbw-shot-card {
+  border: 2px solid rgba(255, 255, 255, .18) !important;
+  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98)) !important;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root[data-workbench-layout="director"] .sbw-card-header {
+  border-bottom: 2px solid rgba(255, 255, 255, .18) !important;
+  background: rgba(255, 255, 255, .06) !important;
+}
+
+/* soft-white 等主题的全局亮色壳层同样保留；这里只把本页之前为 Plus
+   版写死的深色表面还原到 /video 的主题变量，避免主题切换后半页变黑。 */
+html:not([data-theme="crystal-aurora"]) .sbw-root {
+  --sbw-video-bg: var(--vs-bg, #f4f5f6);
+  --sbw-video-card: var(--vs-card, #ffffff);
+  --sbw-video-field: var(--vs-control-bg, var(--vs-surface, #ffffff));
+  --sbw-video-line: var(--vs-border, #d8e3e6);
+  --sbw-video-primary: var(--vs-primary, #17675a);
+  --sbw-video-primary-strong: var(--vs-primary-hover, var(--vs-primary, #17675a));
+  --sbw-video-text: var(--vs-text, #17201d);
+  --sbw-video-muted: var(--vs-text-muted, #66716d);
+  color: var(--vs-text, inherit) !important;
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-shot-card,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-model-rail,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-toolbar {
+  border-color: var(--vs-border, var(--border));
+  background: var(--vs-card, var(--card));
+  box-shadow: 0 4px 14px rgb(0 0 0 / 5%);
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-card-header {
+  border-bottom-color: var(--vs-border, var(--border));
+  background: color-mix(in srgb, var(--vs-surface, var(--card)) 72%, transparent);
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-flow-prompt textarea,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-ratio-control button,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-resolution-select,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-mode-toggle button {
+  border-color: var(--vs-border, var(--border));
+  background: var(--vs-control-bg, var(--vs-surface, var(--card)));
+  color: var(--vs-text, var(--foreground));
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-shared-media-frame {
+  border-color: var(--vs-border, var(--border));
+  background: var(--vs-bg-secondary, var(--background));
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-media-actions button.is-image-command,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-media-actions button.is-video-command,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-toolbar-actions .is-primary,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-toolbar-actions .is-video-batch,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-toolbar-actions .is-image-batch {
+  border-color: var(--vs-primary, var(--primary));
+  background: var(--vs-primary, var(--primary));
+  color: var(--vs-on-accent, var(--primary-foreground));
+}
+
+/* Plus 版提示词栏：标题、状态和粘贴动作保持同一行，textarea 紧接其下。 */
+.sbw-root .sbw-prompt-stage-label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.sbw-root .sbw-prompt-stage-label strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-prompt-stage-label em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbw-root .sbw-prompt-paste {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  border: 1px solid var(--sbw-video-line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sbw-video-muted);
+  transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+
+.sbw-root .sbw-prompt-paste:hover:not(:disabled),
+.sbw-root .sbw-prompt-paste:focus-visible {
+  border-color: var(--sbw-video-primary);
+  background: color-mix(in srgb, var(--sbw-video-primary) 10%, transparent);
+  color: var(--sbw-video-primary);
+  outline: none;
+}
+
+.sbw-root .sbw-prompt-paste svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 视频提示词保留在固定卡片骨架中：默认压缩为一行可编辑区，提交或
+   用户展开后恢复完整状态与结果信息；这样不会让未开始的视频区吞掉
+   卡片高度，也不会把输入框藏起来。 */
+.sbw-root .sbw-video-expand {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  border: 1px solid var(--sbw-video-line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sbw-video-muted);
+  transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+
+.sbw-root .sbw-video-expand:hover,
+.sbw-root .sbw-video-expand:focus-visible {
+  border-color: var(--sbw-video-primary);
+  background: color-mix(in srgb, var(--sbw-video-primary) 10%, transparent);
+  color: var(--sbw-video-primary);
+  outline: none;
+}
+
+.sbw-root .sbw-video-expand svg { width: 15px; height: 15px; }
+
+.sbw-root .sbw-video-flow.is-collapsed .sbw-flow-prompt textarea {
+  height: 58px;
+  min-height: 58px;
+  max-height: 58px;
+}
+
+.sbw-root .sbw-video-flow.is-collapsed .sbw-video-reference-summary,
+.sbw-root .sbw-video-flow.is-collapsed .sbw-h3-lifecycle {
+  max-height: 0;
+  margin-block: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sbw-root .sbw-video-flow.is-expanded .sbw-flow-prompt textarea {
+  height: 96px;
+  min-height: 72px;
+}
+
+/* 普通分镜卡片的 01/02 编辑区使用同一尺寸；展开仅影响视频详情。
+   收紧卡头下的留白，增加的编辑空间由卡片自然向下延伸承担。
+   漫剧、带货独立工作区继续保留原布局，所有主题颜色仍由原 token 提供。 */
+.sbw-root:not(:where([data-testid="manju-content"], [data-testid="manju-content"] *, .commerce-root, .commerce-root *)) .sbw-shot-card {
+  row-gap: 0;
+}
+
+.sbw-root:not(:where([data-testid="manju-content"], [data-testid="manju-content"] *, .commerce-root, .commerce-root *)) .sbw-shot-card > .sbw-generation-stack {
+  padding-top: 6px;
+}
+
+.sbw-root:not(:where([data-testid="manju-content"], [data-testid="manju-content"] *, .commerce-root, .commerce-root *)) .sbw-shot-card :is(.sbw-image-flow, .sbw-video-flow) .sbw-flow-prompt textarea {
+  height: 120px;
+  min-height: 120px;
+  max-height: 320px;
+}
+
+/* 非黑曜主题继续读取主题 token，但增加工作台自己的中间灰阶，避免
+   soft-white 变成一整片无层次的白色；输入区与媒体占位区同步变柔和。 */
+html:not([data-theme="crystal-aurora"]) .sbw-root {
+  --sbw-video-bg: var(--vs-bg, #f2f4f3);
+  --sbw-video-card: color-mix(in srgb, var(--vs-card, #ffffff) 94%, var(--vs-bg-secondary, #e7ecea));
+  --sbw-video-field: var(--vs-input-bg, var(--vs-surface, #f8faf9));
+  --sbw-video-line: var(--vs-border, #d8d3c9);
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-shot-card,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-model-rail,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-toolbar {
+  border-color: var(--vs-border, #d8d3c9) !important;
+  background: linear-gradient(145deg, var(--vs-card, #fffefb), color-mix(in srgb, var(--vs-card, #fffefb) 90%, var(--vs-bg-secondary, #e7ecea))) !important;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--vs-text, #17201d) 9%, transparent) !important;
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-card-header {
+  border-bottom-color: var(--vs-border, #d8d3c9) !important;
+  background: color-mix(in srgb, var(--vs-bg-secondary, #e7ecea) 70%, var(--vs-card, #fffefb)) !important;
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-flow-prompt textarea,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-ratio-control button,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-resolution-select,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-mode-toggle button {
+  border-color: var(--vs-border, #d8d3c9) !important;
+  background: var(--vs-input-bg, var(--vs-surface, #f8faf9)) !important;
+  color: var(--vs-text, #17201d) !important;
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-shared-media-frame,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-shared-media-frame > button,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-shared-media-frame > img,
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-shared-media-frame > video {
+  border-color: var(--vs-border, #d8d3c9) !important;
+  background: var(--vs-bg-secondary, #e7ecea) !important;
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-prompt-paste {
+  border-color: var(--vs-border, #d8d3c9);
+  background: color-mix(in srgb, var(--vs-bg-secondary, #e7ecea) 72%, transparent);
+  color: var(--vs-text-muted, #66716d);
+}
+
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-prompt-paste:hover:not(:disabled),
+html:not([data-theme="crystal-aurora"]) .sbw-root .sbw-prompt-paste:focus-visible {
+  border-color: var(--vs-primary, #17675a);
+  background: color-mix(in srgb, var(--vs-primary, #17675a) 10%, transparent);
+  color: var(--vs-primary, #17675a);
+}
+
+/* 2026-10-17：主题隔离收口。
+   C210 的 Plus 版密度与边框仍保留在本页，但其黑曜表皮只能属于
+   crystal-aurora/dark。珠光白及其它浅色主题必须完整回到各自的
+   vs-workbench token，尤其是 workspace、控制组和工具栏动作。 */
+html[data-mode="light"] .sbw-root {
+  --background: var(--vs-bg, #f5f3ee) !important;
+  --card: var(--vs-card, #fffefa) !important;
+  --muted: var(--vs-surface, #ece9e1) !important;
+  --border: var(--vs-border, #d0d8d2) !important;
+  --foreground: var(--vs-text, #17201d) !important;
+  --muted-foreground: var(--vs-text-muted, #66716d) !important;
+  --primary: var(--vs-primary, #0b7466) !important;
+  --primary-foreground: var(--vs-primary-foreground, #ffffff) !important;
+  --sbw-video-bg: var(--vs-bg, #f5f3ee) !important;
+  --sbw-video-card: var(--vs-card, #fffefa) !important;
+  --sbw-video-field: var(--vs-input-bg, #ffffff) !important;
+  --sbw-video-line: var(--vs-border, #d0d8d2) !important;
+  --sbw-video-primary: var(--vs-primary, #0b7466) !important;
+  --sbw-video-primary-strong: var(--vs-primary, #0b7466) !important;
+  --sbw-video-text: var(--vs-text, #17201d) !important;
+  --sbw-video-muted: var(--vs-text-muted, #66716d) !important;
+  color: var(--vs-text, #17201d) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-workspace,
+html[data-mode="light"] .sbw-root .sbw-body {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-model-rail,
+html[data-mode="light"] .sbw-root .sbw-toolbar,
+html[data-mode="light"] .sbw-root .sbw-control-group,
+html[data-mode="light"] .sbw-root .sbw-mode-group {
+  border-color: var(--vs-border, #d0d8d2) !important;
+  background: var(--vs-card, #fffefa) !important;
+  color: var(--vs-text, #17201d) !important;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--vs-text, #17201d) 8%, transparent) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-control-tag {
+  border-color: color-mix(in srgb, var(--vs-primary, #0b7466) 42%, var(--vs-border, #d0d8d2)) !important;
+  background: color-mix(in srgb, var(--vs-primary, #0b7466) 11%, var(--vs-card, #fffefa)) !important;
+  color: var(--vs-primary, #0b7466) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-ratio-control button,
+html[data-mode="light"] .sbw-root .sbw-resolution-select,
+html[data-mode="light"] .sbw-root .sbw-mode-toggle button {
+  border-color: var(--vs-border, #d0d8d2) !important;
+  background: var(--vs-input-bg, #ffffff) !important;
+  color: var(--vs-text, #17201d) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-ratio-control button.is-active,
+html[data-mode="light"] .sbw-root .sbw-mode-toggle button[aria-pressed="true"] {
+  border-color: var(--vs-primary, #0b7466) !important;
+  background: var(--vs-primary, #0b7466) !important;
+  color: var(--vs-on-accent, #ffffff) !important;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--vs-primary, #0b7466) 18%, transparent) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-toolbar-actions .sbw-batch-action,
+html[data-mode="light"] .sbw-root .sbw-toolbar-add-card {
+  border-color: var(--vs-primary, #0b7466) !important;
+  background: var(--vs-primary, #0b7466) !important;
+  color: var(--vs-on-accent, #ffffff) !important;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--vs-primary, #0b7466) 18%, transparent) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-toolbar-actions .sbw-batch-action:not(:disabled),
+html[data-mode="light"] .sbw-root .sbw-toolbar-add-card:not(:disabled) {
+  opacity: 1 !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-toolbar-actions .sbw-batch-action:hover:not(:disabled),
+html[data-mode="light"] .sbw-root .sbw-toolbar-add-card:hover:not(:disabled) {
+  border-color: var(--vs-primary-hover, var(--vs-primary, #0b7466)) !important;
+  background: var(--vs-primary-hover, var(--vs-primary, #0b7466)) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-toolbar-actions .sbw-batch-action:disabled,
+html[data-mode="light"] .sbw-root .sbw-toolbar-add-card:disabled {
+  opacity: .58 !important;
+  filter: saturate(.62);
+  cursor: not-allowed;
+  box-shadow: none !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-history-action .sub-page-nav-button {
+  border-color: var(--vs-primary, #0b7466) !important;
+  background: var(--vs-primary, #0b7466) !important;
+  color: var(--vs-on-accent, #ffffff) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-shot-card {
+  border-color: var(--vs-border, #d0d8d2) !important;
+  background: linear-gradient(145deg, var(--vs-card, #fffefa), color-mix(in srgb, var(--vs-card, #fffefa) 90%, var(--vs-bg-secondary, #ece9e1))) !important;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--vs-text, #17201d) 9%, transparent) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-card-header {
+  border-bottom-color: var(--vs-border, #d0d8d2) !important;
+  background: color-mix(in srgb, var(--vs-bg-secondary, #ece9e1) 70%, var(--vs-card, #fffefa)) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-flow-section,
+html[data-mode="light"] .sbw-root .sbw-flow-prompt {
+  border-color: var(--vs-border, #d0d8d2) !important;
+  background: color-mix(in srgb, var(--vs-card, #fffefa) 94%, var(--vs-bg-secondary, #ece9e1)) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-flow-prompt textarea {
+  border-color: var(--vs-input-border, var(--vs-border, #d0d8d2)) !important;
+  background: var(--vs-input-bg, #ffffff) !important;
+  color: var(--vs-text, #17201d) !important;
+}
+
+html[data-mode="light"] .sbw-root .sbw-shared-media-frame,
+html[data-mode="light"] .sbw-root .sbw-shared-media-frame > button,
+html[data-mode="light"] .sbw-root .sbw-shared-media-frame img,
+html[data-mode="light"] .sbw-root .sbw-shared-media-frame video {
+  border-color: var(--vs-border, #d0d8d2) !important;
+  background: var(--vs-bg-secondary, #ece9e1) !important;
+}
+
+/* Keep the dark storyboard field continuous below the cards.  The workspace
+ * shell owns a solid `var(--background)` fill for light-theme isolation; in
+ * the dark route that fill was covering the grid painted by `.sbw-root`,
+ * leaving the lower work area as a flat black block. */
+html[data-theme][data-mode="dark"] .sbw-root .sbw-body .sbw-workspace {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* The selected theme owns the shared stationary secondary-page field. */
+html[data-theme][data-mode] .sbw-root:not(.sbw-model-dialog):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)),
+html[data-theme][data-mode] .voice-studio-root.vs-workbench.sbw-root[data-workbench-layout="director"]:not(.sbw-model-dialog):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) {
+  background-color: var(--unified-workbench-field, var(--background)) !important;
+  background-image: var(--unified-workbench-grid-image, none) !important;
+  background-size: var(--unified-workbench-grid-size, 64px) var(--unified-workbench-grid-size, 64px), var(--unified-workbench-grid-size, 64px) var(--unified-workbench-grid-size, 64px), 100% 100%, 100% 100% !important;
+  background-position: 0 0, 0 0, center, center !important;
+  background-repeat: repeat, repeat, no-repeat, no-repeat !important;
+  background-attachment: fixed !important;
+}
+
+/* Dual ratio controls keep three buttons in the existing three-column grid.
+   Wrap whole setting groups instead of shrinking or clipping their labels. */
+.sbw-root .sbw-toolbar .sbw-toolbar-settings {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+.sbw-root .sbw-toolbar .sbw-control-group {
+  flex: 0 0 auto;
+}
+.sbw-root .sbw-toolbar .sbw-control-tag {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.sbw-root .sbw-toolbar .sbw-control-group.is-image {
+  flex-wrap: wrap;
+  max-width: 380px;
+}
+.sbw-root .sbw-toolbar .sbw-image-ratio-notice {
+  flex: 0 0 100%;
+  max-width: 340px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.sbw-root .sbw-project-heading .sbw-segment-purpose {
+  flex: 1 1 260px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sbw-root .sbw-bound-reference-line {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--text-secondary, #9ab2b3);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.sbw-root .sbw-bound-reference-line strong {
+  display: block;
+  color: var(--accent, #45e5d5);
+  font-weight: 500;
+}
+
+.sbw-abandon-attempt{display:inline-flex;align-items:center;gap:6px;margin:6px 0 2px;padding:6px 10px;border-radius:8px;border:1px solid color-mix(in srgb, var(--primary) 35%, transparent);background:color-mix(in srgb, var(--primary) 8%, transparent);color:var(--primary);font-size:12px;line-height:1.2;cursor:pointer}
+.sbw-abandon-attempt:hover{background:color-mix(in srgb, var(--primary) 14%, transparent)}
+
+/* The Manju shell adds a second application rail. Keep the nested storyboard
+   usable at desktop widths after the later standalone density rules. */
+@media (min-width: 1200px) and (max-width: 1399px) {
+  [data-testid="manju-content"] .sbw-root .sbw-body > .sbw-shell {
+    grid-template-columns: 248px minmax(0, 1fr) !important;
+  }
+
+  [data-testid="manju-content"] .sbw-root .sbw-shot-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Final semantic token boundary: later theme bridge rules may expose
+   --vs-primary for decorative surfaces, but image/video commands must use the
+   page-level primary pair exactly so every theme remains auditable. */
+html[data-theme][data-mode] .sbw-root {
+  --primary: inherit !important;
+  --primary-foreground: inherit !important;
+}
+
+html[data-theme][data-mode] .sbw-root .sbw-media-actions button.is-image-command,
+html[data-theme][data-mode] .sbw-root .sbw-media-actions button.is-video-command {
+  border-color: var(--primary) !important;
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+}
+
+/* Compact, shared model cards: image and video use the same three-line rhythm. */
+.sbw-root .sbw-model-list > button {
+  min-height: 60px;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 0 9px;
+  padding: 7px 8px;
+  border-radius: 9px;
+}
+
+.sbw-root .sbw-model-icon {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+  border-radius: 10px;
+}
+
+.sbw-root .sbw-model-icon img,
+.sbw-root .sbw-model-icon svg {
+  width: 38px;
+  height: 38px;
+}
+
+.sbw-root .sbw-model-copy {
+  gap: 1px;
+  padding-top: 0;
+}
+
+.sbw-root .sbw-model-copy strong {
+  min-height: 0;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.sbw-root .sbw-model-name {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.sbw-root .sbw-model-inline-meta,
+.sbw-root .sbw-model-copy small {
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+.sbw-root .sbw-model-copy small {
+  max-width: 100%;
+}
+
+/* ==========================================================================
+   分镜工作台 · 模型轨道与工作区视觉升级（2026-10-25）
+   仅作用于 .sbw-* 命名空间；不改动公共主题、其他页面或任何全局选择器。
+   ========================================================================== */
+
+.sbw-model-rail {
+  gap: 6px;
+  background:
+    radial-gradient(130% 46% at 0% 0%, color-mix(in srgb, #22d3ee 11%, transparent), transparent 62%),
+    radial-gradient(85% 42% at 100% 100%, color-mix(in srgb, #7c3aed 12%, transparent), transparent 66%),
+    color-mix(in srgb, var(--card) 84%, var(--background));
+}
+
+.sbw-model-section > header {
+  min-height: 28px;
+  padding-inline: 2px;
+}
+.sbw-model-section > header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+.sbw-model-section > header span::before {
+  content: "";
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  background: linear-gradient(#22d3ee, #a855f7);
+}
+.sbw-model-section > header small.sbw-model-hint {
+  border: 1px solid color-mix(in srgb, #22d3ee 22%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, #0e7490 14%, transparent);
+  color: #9fb0c4;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sbw-model-list {
+  gap: 6px;
+  padding: 2px 3px 6px;
+  /* No smooth scrolling: the wheel must move the list by exactly one notch so
+     that reaching an edge is deterministic before the selection steps. */
+  scroll-behavior: auto;
+  overscroll-behavior: contain;
+}
+.sbw-image-model-list { max-height: 232px; }
+.sbw-model-list::-webkit-scrollbar { width: 6px; }
+.sbw-model-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, #64748b 46%, transparent);
+}
+.sbw-model-list::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, #67e8f9 55%, transparent); }
+.sbw-model-list::-webkit-scrollbar-track { background: transparent; }
+
+.sbw-model-list > button {
+  position: relative;
+  min-height: 52px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: 9px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 72%, transparent), color-mix(in srgb, var(--background) 90%, transparent));
+  padding: 7px 8px 7px 11px;
+  transition: transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+}
+.sbw-model-list > button::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--sbw-brand, linear-gradient(#22d3ee, #0e7490));
+  opacity: .5;
+  transition: opacity .14s ease;
+}
+.sbw-model-list > button:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, #67e8f9 46%, var(--border));
+  box-shadow: 0 8px 18px -12px color-mix(in srgb, #22d3ee 65%, transparent);
+}
+.sbw-model-list > button:hover::before { opacity: 1; }
+.sbw-model-list > button.is-active {
+  border-color: color-mix(in srgb, #a855f7 64%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #6d28d9 30%, var(--card)), color-mix(in srgb, #4c1d95 16%, var(--background)));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #a855f7 36%, transparent),
+    0 12px 24px -18px #a855f7;
+}
+.sbw-model-list > button.is-active::before { opacity: 1; }
+.sbw-model-list > button[data-model-selectable="false"]::before { filter: grayscale(1); opacity: .24; }
+.sbw-model-list > button[data-model-selectable="false"]:hover { transform: none; box-shadow: none; }
+
+.sbw-model-list > button[data-model-brand="openai"] { --sbw-brand: linear-gradient(#10b981, #047857); }
+.sbw-model-list > button[data-model-brand="google"] { --sbw-brand: linear-gradient(#60a5fa, #1d4ed8); }
+.sbw-model-list > button[data-model-brand="bytedance"] { --sbw-brand: linear-gradient(#f472b6, #be185d); }
+.sbw-model-list > button[data-model-brand="xai"] { --sbw-brand: linear-gradient(#e2e8f0, #94a3b8); }
+.sbw-model-list > button[data-model-brand="generic"] { --sbw-brand: linear-gradient(#22d3ee, #0e7490); }
+
+.sbw-model-list > button .sbw-model-icon {
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #0f172a 22%, var(--muted));
+}
+.sbw-model-list > button.is-active .sbw-model-icon {
+  border-color: color-mix(in srgb, #a855f7 52%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #a855f7 14%, transparent);
+}
+
+.sbw-model-copy { gap: 2px; }
+.sbw-model-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.sbw-model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbw-model-variant {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, #a855f7 36%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, #7c3aed 30%, transparent);
+  color: #ddd6fe;
+  padding: 0 4px;
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.5;
+}
+.sbw-model-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: #93a3b8;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.sbw-model-tier { flex: 0 0 auto; color: #7dd3fc; font-weight: 800; }
+.sbw-model-cap { overflow: hidden; text-overflow: ellipsis; }
+.sbw-model-channel {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: color-mix(in srgb, #0e7490 28%, transparent);
+  color: #67e8f9;
+  padding: 0 4px;
+  font-weight: 800;
+}
+.sbw-model-need { flex: 0 0 auto; color: #fbbf24; font-weight: 800; }
+
+.sbw-model-list > button .sbw-model-price {
+  align-self: center;
+  max-width: 96px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #f59e0b 28%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  color: #f4c862;
+  padding: 2px 6px;
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1.35;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sbw-model-list > button .sbw-model-price em {
+  font-style: normal;
+  font-weight: 700;
+  opacity: .72;
+}
+.sbw-model-list > button .sbw-model-price.is-pending {
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  color: #94a3b8;
+}
+
+.sbw-workspace {
+  background:
+    radial-gradient(88% 38% at 10% 0%, color-mix(in srgb, #0e7490 12%, transparent), transparent 64%),
+    radial-gradient(64% 34% at 100% 24%, color-mix(in srgb, #6d28d9 10%, transparent), transparent 68%);
+}
+
+.sbw-overview {
+  display: grid;
+  grid-template-columns: minmax(64px, .55fr) minmax(64px, .7fr) minmax(64px, .7fr) minmax(0, 1.6fr) minmax(0, 1.6fr);
+  gap: 8px;
+  margin: 16px 18px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 74%, transparent), color-mix(in srgb, var(--background) 92%, transparent));
+  padding: 9px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 5%, transparent);
+}
+.sbw-overview-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, #0b1220 26%, transparent);
+  padding: 6px 10px;
+}
+.sbw-overview-item > span {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+.sbw-overview-item > strong {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  color: #e6edf6;
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.sbw-overview-item > strong em {
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+.sbw-overview-item > em {
+  overflow: hidden;
+  color: #7c8ba1;
+  font-size: 10px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbw-overview-item.is-model { border-color: color-mix(in srgb, #22d3ee 20%, var(--border)); }
+.sbw-overview-item.is-model > span { color: #7dd3fc; }
+.sbw-overview-item.is-model > strong {
+  display: block;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 浅色主题下的可读性覆盖：深色轨道配色只服务 dark；light 走品牌主色 + 前景色。 */
+html[data-mode="light"] .sbw-model-rail {
+  background:
+    radial-gradient(130% 46% at 0% 0%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 62%),
+    radial-gradient(85% 42% at 100% 100%, color-mix(in srgb, var(--accent, var(--primary)) 8%, transparent), transparent 66%),
+    color-mix(in srgb, var(--card) 92%, var(--background));
+}
+
+html[data-mode="light"] .sbw-model-section > header span { color: var(--foreground); }
+html[data-mode="light"] .sbw-model-section > header span::before {
+  background: linear-gradient(color-mix(in srgb, var(--primary) 88%, #0f172a), color-mix(in srgb, var(--primary) 40%, #0f172a));
+}
+html[data-mode="light"] .sbw-model-section > header small.sbw-model-hint {
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--muted-foreground);
+}
+html[data-mode="light"] .sbw-model-list > button {
+  background: linear-gradient(180deg, var(--card), color-mix(in srgb, var(--card) 88%, var(--background)));
+}
+html[data-mode="light"] .sbw-model-list > button.is-active {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 12%, var(--card)), color-mix(in srgb, var(--primary) 5%, var(--card)));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 26%, transparent),
+    0 12px 24px -18px color-mix(in srgb, var(--primary) 70%, transparent);
+}
+html[data-mode="light"] .sbw-model-list > button .sbw-model-icon {
+  background: color-mix(in srgb, var(--primary) 8%, var(--muted));
+  color: color-mix(in srgb, var(--primary) 82%, #0f172a);
+}
+html[data-mode="light"] .sbw-model-meta { color: var(--muted-foreground); }
+html[data-mode="light"] .sbw-model-tier { color: color-mix(in srgb, var(--primary) 90%, #0f172a); }
+html[data-mode="light"] .sbw-model-channel {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: color-mix(in srgb, var(--primary) 88%, #0f172a);
+}
+html[data-mode="light"] .sbw-model-variant {
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: color-mix(in srgb, var(--primary) 86%, #0f172a);
+}
+html[data-mode="light"] .sbw-model-list > button .sbw-model-price {
+  border-color: color-mix(in srgb, #b7791f 26%, transparent);
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  color: #8a5a12;
+}
+
+html[data-mode="light"] .sbw-workspace {
+  background:
+    radial-gradient(88% 38% at 10% 0%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 64%),
+    radial-gradient(64% 34% at 100% 24%, color-mix(in srgb, var(--accent, var(--primary)) 6%, transparent), transparent 68%);
+}
+html[data-mode="light"] .sbw-overview {
+  background: linear-gradient(180deg, var(--card), color-mix(in srgb, var(--card) 88%, var(--background)));
+}
+html[data-mode="light"] .sbw-overview-item {
+  background: color-mix(in srgb, var(--card) 70%, var(--background));
+  border-color: color-mix(in srgb, var(--border) 86%, transparent);
+}
+html[data-mode="light"] .sbw-overview-item > span,
+html[data-mode="light"] .sbw-overview-item > em { color: var(--muted-foreground); }
+html[data-mode="light"] .sbw-overview-item > strong { color: var(--foreground); }
+html[data-mode="light"] .sbw-overview-item.is-model { border-color: color-mix(in srgb, var(--primary) 26%, var(--border)); }
+html[data-mode="light"] .sbw-overview-item.is-model > span { color: color-mix(in srgb, var(--primary) 88%, #0f172a); }
+
+/* === 2026-10-25 修正：价格并入元信息行，卡片保持两列命名区域布局 === */
+.sbw-root .sbw-model-list > button {
+  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-areas: "icon copy";
+}
+.sbw-root .sbw-model-copy strong {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.sbw-root .sbw-model-copy .sbw-model-name {
+  flex: 1 1 auto;
+  flex-basis: auto;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbw-root .sbw-model-copy .sbw-model-meta {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+}
+.sbw-root .sbw-model-copy .sbw-model-cap { flex: 1 1 auto; min-width: 0; }
+.sbw-root .sbw-model-copy .sbw-model-price {
+  flex: 0 0 auto;
+  margin-left: auto;
+  align-self: center;
+  max-width: 108px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, #f59e0b 13%, transparent);
+  color: #f4c862;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.5;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sbw-root .sbw-model-copy .sbw-model-price em {
+  font-style: normal;
+  font-weight: 700;
+  opacity: .72;
+}
+.sbw-root .sbw-model-copy .sbw-model-price.is-pending {
+  border-color: color-mix(in srgb, var(--border) 84%, transparent);
+  background: color-mix(in srgb, var(--muted) 46%, transparent);
+  color: var(--muted-foreground);
+}
+html[data-mode="light"] .sbw-root .sbw-model-copy .sbw-model-price {
+  border-color: color-mix(in srgb, #b7791f 24%, transparent);
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
+  color: #8a5a12;
+}
+.sbw-root .sbw-model-variant {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 0 3px;
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   2026-10-25 P0 修复：分镜工作台“页面/模型列无法滚动”
+   根节点 .sbw-root 是 flex column + height:100dvh + overflow:hidden；
+   但工作区前有一层包裹 div（.sbw-main）不是弹性子项，flex:1 失效，
+   工作区被内容撑到 2400px 后被根节点裁掉，页面与列表都滚不动。
+   这里把高度链重新接通：.sbw-root → .sbw-main → .sbw-body → .sbw-shell → 工作区。
+   ========================================================================== */
+.sbw-root > .sbw-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.sbw-root .sbw-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.sbw-root .sbw-body > .sbw-shell {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.sbw-root .sbw-body .sbw-workspace {
+  height: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+}
+.sbw-root .sbw-body .sbw-model-rail {
+  height: auto;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 参考图提示词在分镜内联使用时保持与普通模式一致的紧凑高度。
+   visual-assets-page.css 用 `.svad-surface .svad-reference-slot textarea`
+   + `min-height: max(var(--svad-prompt-height),128px)` + `field-sizing:content`
+   把空框撑到 128px，这里用更高优先级的选择器收回到 84px。 */
+.sbw-root .sbw-reference-step .svad-surface .svad-reference-slot textarea,
+.sbw-root .sbw-reference-step .svad-surface .svad-slot-prompt textarea,
+.sbw-root .sbw-reference-step .svad-prompt-label textarea {
+  height: auto;
+  min-height: 136px;
+  max-height: 240px;
+  padding: 8px 10px;
+  line-height: 1.6;
+  field-sizing: content;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-drafts {
+  gap: 10px;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-reference-slot {
+  padding: 8px 10px;
+}
+/* 第一步角色参考卡片：收紧标题区与内边距，把高度让给提示词框。 */
+.sbw-root .sbw-reference-step .svad-inline .svad-header {
+  padding: 0 2px 6px;
+}
+.sbw-root .sbw-reference-step .svad-header .svad-context-line {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-draft-heading {
+  margin-bottom: 6px;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-prompt-label {
+  margin: 4px 0 6px;
+}
+.sbw-root .sbw-reference-step .svad-surface .svad-reference-slot > small[role="status"] {
+  margin-top: 4px;
+}
+
+/* 模型列与卡片的分隔：用虚线把相邻模型和两个分区切开，减少“空洞感”。 */
+.sbw-root .sbw-model-list > button + button {
+  border-top-style: dashed;
+  border-top-color: color-mix(in srgb, var(--sbw-stroke, var(--border)) 88%, transparent);
+  margin-top: 2px;
+}
+.sbw-root .sbw-model-section + .sbw-model-section > header {
+  margin-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--sbw-stroke, var(--border)) 92%, transparent);
+  padding-top: 10px;
+}
+.sbw-root .sbw-model-list > button {
+  border-style: solid;
+  border-width: 1px 1px 1px 1px;
+  border-left-width: 3px;
+}
+.sbw-root .sbw-model-list > button.is-active {
+  border-top-style: solid;
+}
+
+/* 工作区与卡片更像一个整体：收窄外边距，弱化“漂浮的白块”。 */
+.sbw-root .sbw-body .sbw-workspace {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--primary) 3%, var(--background)), var(--background) 220px);
+}
+.sbw-root .sbw-shot-grid {
+  padding: 4px 14px 24px;
+  align-content: start;
+}
+.sbw-root .sbw-overview {
+  margin: 10px 14px 12px;
+}
+
+/* 模型列表排版：图标严格收在 32px 图标格内，不再压住右侧文字；
+   名称维持单行省略、字号略收，卡片高度保持 60px 档位。 */
+.sbw-root .sbw-model-list > button .sbw-model-icon img,
+.sbw-root .sbw-model-list > button .sbw-model-icon svg {
+  width: 100%;
+  height: 100%;
+  padding: 1px;
+  box-sizing: border-box;
+  object-fit: contain;
+}
+
+/* Keep the OpenAI brand mark readable in the dark model rail. The SVG is
+   rendered through <img>, so its currentColor cannot inherit the page text;
+   recolor the monochrome asset only for dark mode. */
+html[data-mode="dark"] .sbw-root .sbw-model-list > button .sbw-model-icon[data-model-badge-source="brand"][data-model-brand="openai"] {
+  border-color: color-mix(in srgb, #7bdcca 62%, var(--border));
+  background: color-mix(in srgb, #0f172a 22%, var(--muted));
+  color: #f5f7f6;
+}
+
+html[data-mode="dark"] .sbw-root .sbw-model-list > button .sbw-model-icon[data-model-badge-source="brand"][data-model-brand="openai"] img {
+  filter: invert(1) brightness(1.18) drop-shadow(0 0 1px rgba(255, 255, 255, .3));
+}
+
+/* 模型栏滚动条：细、圆角、悬停加深，避免原生滚动条的廉价感。 */
+.sbw-root .sbw-model-list {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--primary) 38%, transparent) transparent;
+}
+.sbw-root .sbw-model-list::-webkit-scrollbar {
+  width: 8px;
+}
+.sbw-root .sbw-model-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sbw-root .sbw-model-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 34%, transparent);
+  background-clip: content-box;
+}
+.sbw-root .sbw-model-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--primary) 58%, transparent);
+  background-clip: content-box;
+}
+.sbw-root .sbw-model-list > button .sbw-model-name {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbw-root .sbw-model-list > button .sbw-model-meta {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.sbw-root .sbw-model-list > button .sbw-model-price {
+  flex: 0 0 auto;
+}
+
+/* 视频能力另行显示，渠道、清晰度和完整计价不再被长标签裁切。 */
+.sbw-root .sbw-video-model-list > button .sbw-model-meta {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  row-gap: 3px;
+  overflow: visible;
+  white-space: normal;
+}
+.sbw-root .sbw-video-model-list > button .sbw-model-need {
+  order: 2;
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.sbw-root .sbw-video-model-list > button .sbw-model-price {
+  order: 1;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+/* 03「分镜图」序号与 01/02 使用同一套青绿样式，避免同一张卡里出现两种序号颜色。 */
+.sbw-root .sbw-zone-title .sbw-stage-index {
+  width: 22px;
+  height: 22px;
+  border-color: rgba(84, 227, 210, .46);
+  background: rgba(84, 227, 210, .1);
+  color: var(--sbw-video-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1);
+}
+
+/* 生成中卡片：框内进度条 + 流光。普通模式与角色参考模式共用同一张卡片结构。 */
+.sbw-root .sbw-shared-media-frame .sbw-realtime-state {
+  position: relative;
+  overflow: hidden;
+}
+.sbw-root .sbw-shared-media-frame .sbw-realtime-state::after {
+  content: "";
+  position: absolute;
+  inset: -30% -60%;
+  background: linear-gradient(110deg, transparent 38%, color-mix(in srgb, var(--primary) 16%, transparent) 50%, transparent 62%);
+  animation: sbw-render-sheen 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes sbw-render-sheen {
+  0% { transform: translateX(-45%); }
+  100% { transform: translateX(45%); }
+}
+.sbw-root .sbw-render-progress {
+  width: 100%;
+  height: 4px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.sbw-root .sbw-render-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 45%, transparent), var(--primary));
+  transition: width .6s ease;
+}
+.sbw-root .sbw-render-progress[data-indeterminate="true"] > span {
+  width: 34%;
+  animation: sbw-render-slide 1.5s ease-in-out infinite;
+}
+@keyframes sbw-render-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(310%); }
+}
+.sbw-root .sbw-render-progress-label {
+  color: color-mix(in srgb, var(--primary) 78%, var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbw-root .sbw-shared-media-frame .sbw-realtime-state::after,
+  .sbw-root .sbw-render-progress[data-indeterminate="true"] > span {
+    animation: none;
+  }
+}
+
+/* 模型条目：图标与右侧文字整块垂直居中（此前 copy 被 grid 拉伸到顶端）。 */
+.sbw-root .sbw-model-list > button {
+  align-items: center;
+}
+.sbw-root .sbw-model-list > button .sbw-model-copy {
+  align-self: center;
+  justify-content: center;
+}
+
+/* 空态：呼吸光晕 + 图标浮动，颜色全部取自主题主色，三套主题自动跟随。 */
+.sbw-root .sbw-empty-state {
+  position: relative;
+  isolation: isolate;
+}
+.sbw-root .sbw-empty-state::before {
+  content: "";
+  position: absolute;
+  inset: 12% 18%;
+  z-index: -1;
+  border-radius: 999px;
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 72%);
+  animation: sbw-empty-breathe 4.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.sbw-root .sbw-empty-state > svg {
+  animation: sbw-empty-float 3.4s ease-in-out infinite;
+}
+@keyframes sbw-empty-breathe {
+  0%, 100% { transform: scale(.94); opacity: .55; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes sbw-empty-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+/* 柔光白：底色本来就亮，光晕压低一档，避免发脏。 */
+html[data-theme="soft-white"][data-mode="light"] .sbw-root .sbw-empty-state::before {
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 72%);
+}
+html[data-theme="soft-white"][data-mode="light"] .sbw-root .sbw-empty-state > svg {
+  opacity: .82;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbw-root .sbw-empty-state::before,
+  .sbw-root .sbw-empty-state > svg {
+    animation: none;
+  }
+}
+
+/* 卡片精致度：更大的圆角、内高光、hover 轻微上浮与主色描边。 */
+.sbw-root .sbw-shot-card {
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 38%, transparent),
+    var(--sbw-shadow);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.sbw-root .sbw-shot-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--sbw-stroke));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
+    0 12px 26px -20px color-mix(in srgb, var(--primary) 70%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbw-root .sbw-shot-card,
+  .sbw-root .sbw-shot-card:hover {
+    transform: none;
+  }
+}
+
+/* 选中指示条：单个滑块在行间平滑滑动，替代原先“消失再出现”的静态条。 */
+.sbw-root .sbw-model-list {
+  position: relative;
+}
+.sbw-root .sbw-model-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 92%, #ffffff), color-mix(in srgb, var(--primary) 62%, transparent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+  pointer-events: none;
+  transition: transform .24s cubic-bezier(.22, .61, .36, 1), height .24s cubic-bezier(.22, .61, .36, 1);
+  z-index: 1;
+}
+.sbw-root .sbw-model-list > button.is-active::before {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbw-root .sbw-model-indicator {
+    transition: none;
+  }
+}
+
+
+/* Editor-only visual cleanup: solid theme surfaces and independent model panels.
+   This scope excludes the reference-assets page, history and modal content. */
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main {
+  --sbw-editor-card: #fffdf8;
+  --sbw-editor-field: #ffffff;
+  --sbw-editor-media: #f3f1ea;
+  --sbw-editor-line: #d7d2c5;
+  --sbw-editor-text: #242b29;
+  --sbw-editor-muted: #65716c;
+  --sbw-editor-image: #fffdf8;
+  --sbw-editor-image-line: #d7d2c5;
+  --sbw-editor-image-accent: #176b57;
+  --sbw-editor-video: #fffdf8;
+  --sbw-editor-video-line: #d7d2c5;
+  --sbw-editor-video-accent: #176b57;
+  /* Local surface/text aliases affect this editor subtree only. The theme's
+     primary action colors, brand assets and outer stationary grid stay owned
+     by the existing theme. */
+  --card: #fffdf8;
+  --background: #f3f1ea;
+  --foreground: #242b29;
+  --muted: #f3f1ea;
+  --muted-foreground: #65716c;
+  --border: #d7d2c5;
+  --input: #d7d2c5;
+  --sbw-stroke: #d7d2c5;
+  --sbw-stroke-soft: #e4dfd5;
+  --sbw-field: #ffffff;
+  --sbw-subtle: #65716c;
+  --sbw-video-primary: #176b57;
+  --sbw-video-card: #fffdf8;
+  --sbw-video-field: #ffffff;
+  --sbw-video-text: #242b29;
+  --sbw-video-line: #d7d2c5;
+  --sbw-video-muted: #65716c;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root.sbw-editor .sbw-main {
+  --sbw-editor-card: #191c22;
+  --sbw-editor-field: #101319;
+  --sbw-editor-media: #0b0e14;
+  --sbw-editor-line: #393f49;
+  --sbw-editor-text: #f0f6f6;
+  --sbw-editor-muted: #a4b3b8;
+  --sbw-editor-image: #183431;
+  --sbw-editor-image-line: #37675e;
+  --sbw-editor-image-accent: #77dfc7;
+  --sbw-editor-video: #272c45;
+  --sbw-editor-video-line: #505c88;
+  --sbw-editor-video-accent: #b2beff;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-rail {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 24px;
+  padding: 12px;
+  background: var(--sbw-editor-card, var(--card)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--sbw-editor-panel-line);
+  border-radius: 10px;
+  padding: 12px 10px;
+  background: var(--sbw-editor-panel);
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-image-model-section {
+  --sbw-editor-panel: var(--sbw-editor-image, var(--card));
+  --sbw-editor-panel-line: var(--sbw-editor-image-line, var(--border));
+  --sbw-editor-panel-accent: var(--sbw-editor-image-accent, var(--primary));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-video-model-section {
+  --sbw-editor-panel: var(--sbw-editor-video, var(--card));
+  --sbw-editor-panel-line: var(--sbw-editor-video-line, var(--border));
+  --sbw-editor-panel-accent: var(--sbw-editor-video-accent, var(--primary));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section > header {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 30px;
+  margin: 0 0 10px;
+  border: 0;
+  padding: 0;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section > header span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--sbw-editor-panel-accent) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section > header span::before {
+  background: var(--sbw-editor-panel-accent);
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-section > header small.sbw-model-hint {
+  border-color: var(--sbw-editor-panel-line);
+  background: var(--sbw-editor-panel);
+  color: var(--sbw-editor-muted, var(--muted-foreground));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--sbw-editor-panel-accent) transparent;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-indicator {
+  background: var(--sbw-editor-panel-accent);
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shot-card {
+  background: var(--sbw-editor-card, var(--card)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+  box-shadow: none !important;
+  color: var(--sbw-editor-text, var(--foreground));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shot-card:hover {
+  box-shadow: none !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-card-header {
+  background: var(--sbw-editor-card, var(--card)) !important;
+  border-bottom-color: var(--sbw-editor-line, var(--border)) !important;
+  padding: 12px 14px;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-generation-stack {
+  gap: 10px;
+  padding: 14px;
+  background: var(--sbw-editor-card, var(--card));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-generation-stack > .sbw-flow-section {
+  display: contents;
+  background: var(--sbw-editor-card, var(--card)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-flow-prompt {
+  background: var(--sbw-editor-card, var(--card)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-flow-prompt textarea {
+  background: var(--sbw-editor-field, var(--card)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+  color: var(--sbw-editor-text, var(--foreground)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame {
+  background: var(--sbw-editor-media, var(--muted)) !important;
+  border-color: var(--sbw-editor-line, var(--border)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame > button,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame img,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame video {
+  background: var(--sbw-editor-media, var(--muted)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame .sbw-empty-state {
+  width: 100%;
+  height: 100%;
+  align-self: stretch;
+  background: var(--sbw-editor-media, var(--muted));
+  color: var(--sbw-editor-muted, var(--muted-foreground));
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-empty-state::before {
+  display: none;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-empty-state > svg {
+  border-color: var(--sbw-editor-line, var(--border));
+  background: var(--sbw-editor-card, var(--card));
+  box-shadow: none;
+}
+
+/* Model rows use the complete panel surface; selection follows its own accent. */
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button {
+  border-color: var(--sbw-editor-panel-line) !important;
+  background: color-mix(in srgb, var(--sbw-editor-panel-accent) 6%, var(--sbw-editor-panel)) !important;
+  color: var(--sbw-editor-text, var(--foreground)) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
+  border-color: var(--sbw-editor-panel-accent) !important;
+  background: color-mix(in srgb, var(--sbw-editor-panel-accent) 18%, var(--sbw-editor-panel)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active {
+  border-color: var(--sbw-editor-panel-accent) !important;
+  background: color-mix(in srgb, var(--sbw-editor-panel-accent) 24%, var(--sbw-editor-panel)) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
+  outline: 2px solid var(--sbw-editor-panel-accent);
+  outline-offset: -4px;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:disabled {
+  opacity: .76;
+  color: var(--sbw-editor-text, var(--foreground)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-name {
+  color: var(--sbw-editor-text, var(--foreground)) !important;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-meta,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-price,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-need,
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button .sbw-model-inline-meta {
+  color: var(--sbw-editor-muted, var(--muted-foreground)) !important;
+}
+
+/* Fixed-ratio previews keep task details at their natural line height. */
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame > .sbw-realtime-state {
+  overflow-x: hidden;
+  overflow-y: auto;
+  justify-content: flex-start;
+}
+
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame > .sbw-realtime-state > * {
+  flex-shrink: 0;
+}
+
+/* The oversized decorative sheen must not create extra scrollable space. */
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-frame > .sbw-realtime-state::after {
+  display: none;
+}
+
+/* Keep the original prompt sequence contiguous. Supplementary video material
+   follows the 02 prompt and precedes the 03 media result in the flattened grid. */
+.sbw-root.sbw-editor .sbw-main .sbw-generation-stack > .sbw-video-flow > .sbw-note {
+  order: 2;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar {
+  background: var(--sbw-editor-card) !important;
+  border-color: var(--sbw-editor-line) !important;
+  color: var(--sbw-editor-text);
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-group,
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-group,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group {
+  background: var(--sbw-editor-card) !important;
+  border-color: var(--sbw-editor-line) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active),
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active) {
+  background: var(--sbw-editor-card) !important;
+  color: var(--sbw-editor-muted) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag {
+  background: #f6f4ed !important;
+  border-color: var(--sbw-editor-line) !important;
+  color: var(--sbw-editor-image-accent) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-stage-label strong,
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-stage-label strong,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main {
+  color: var(--sbw-editor-text) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button {
+  background: var(--sbw-editor-card) !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
+  background: #f6f4ed !important;
+}
+
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active,
+html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active {
+  background: #f1f1e8 !important;
 }

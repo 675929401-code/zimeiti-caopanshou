@@ -259,9 +259,9 @@ const report = {
   buildRuns: 0,
   runtimeStarts: 0,
 };
-const evidenceDir = path.join(root, ".codex-evidence/payment-reconciliation-hardening-20261003");
+const evidenceDir = path.join(root, ".codex-evidence/payment-reconciliation-hardening-20261003", new Date().toISOString().replace(/[:.]/gu, "-"));
 await mkdir(evidenceDir, { recursive: true });
-await writeFile(path.join(evidenceDir, "report.json"), JSON.stringify(report, null, 2), "utf8");
+await writeFile(path.join(evidenceDir, "report.json"), JSON.stringify(report, null, 2), { encoding: "utf8", flag: "wx" });
 console.log(JSON.stringify({ ...report, passedChecks: checks.length }, null, 2));
 }
 

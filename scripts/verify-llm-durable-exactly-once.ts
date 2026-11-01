@@ -181,6 +181,27 @@ async function testUnknownAndSafeFailureClassification() {
   assert.equal(rejectedStore.record.httpStatus, 429);
 }
 
+async function testExplicitRelayFailureAndUnknownPrecedence() {
+  for (const code of ["LLM_UPSTREAM_BALANCE", "LLM_UPSTREAM_BILLING", "LLM_UPSTREAM_CONCURRENCY_LIMIT"]) {
+    for (const unknownFirst of [false, true]) {
+      for (const billed of [false, true]) {
+        const store = new CaptureStore();
+        const frame = (value: unknown) => `data: ${JSON.stringify(value)}\n\n`;
+        const unknown = unknownFirst ? frame({ error: "result not confirmed", code: "LLM_UPSTREAM_RESULT_UNKNOWN" }) : "";
+        const billing = billed ? frame({ billing_complete: true }) : "";
+        const body = unknown + frame({ error: "explicit relay rejection", code }) + billing;
+        const delivered = await completeLlmAttemptResponse(store, execution(store), new Response(body, { headers: { "Content-Type": "text/event-stream" } }));
+        await delivered.text();
+        assert.equal(store.finalizations.length, 1);
+        assert.equal(store.record.state, billed ? "reconciliation_required" : unknownFirst ? "failed_unknown" : "failed");
+        assert.equal(store.record.errorCode, billed ? "LLM_STREAM_BILLING_CONFLICT" : unknownFirst ? "LLM_UPSTREAM_RESULT_UNKNOWN" : code);
+        if (unknownFirst || billed) assert.equal(store.record.responseBody, null);
+        else assert.match(store.record.responseBody || "", new RegExp(code));
+      }
+    }
+  }
+}
+
 async function testStaticRouteAndMigrationContract() {
   const root = process.cwd();
   const [route, cozeRoute, idempotencySource, migration, rollback] = await Promise.all([
@@ -229,6 +250,7 @@ async function main() {
   await testSseSuccessReplay();
   await testCozeEventCompletionReplay();
   await testUnknownAndSafeFailureClassification();
+  await testExplicitRelayFailureAndUnknownPrecedence();
   await testStaticRouteAndMigrationContract();
   assert.equal(networkCalls, 0);
   console.log("LLM durable exactly-once verifier: PASS (network=0, paid_calls=0)");

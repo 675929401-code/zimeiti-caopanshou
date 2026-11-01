@@ -23,7 +23,13 @@ function load(file) {
     module: loadedModule, exports: loadedModule.exports,
     require: name => {
       if (name.startsWith('node:')) return nativeRequire(name);
-      if (['./video-provider-request-audit', './api-endpoints', './video-prompt-timing'].includes(name)) return load(path.join(path.dirname(file), name + '.ts'));
+      if ([
+        './video-provider-request-audit', './api-endpoints', './video-prompt-timing',
+        './gaorui-video-contract-admission', './gaorui-seedance-native-contract',
+        './gaorui-h3-native-contract', './gaorui-grok-native-contract',
+        './gaorui-provider-asset-contract', './video-public-url', './video-optional-media-input',
+        './video-secure-skill-native', './video-error-policy', './video-cancellation',
+      ].includes(name)) return load(path.join(path.dirname(file), name + '.ts'));
       return unrelated;
     },
     Request, Response, Headers, URL, FormData, AbortSignal, DOMException, TextDecoder, TextEncoder, Buffer,
@@ -158,6 +164,7 @@ await test('Secure Skill Grok unknown receipt evidence is structural and redacte
   assert.equal(result.submissionReceipt.endpointHost, 'provider.example');
   assert.equal(result.submissionReceipt.httpStatus, 503);
   assert.equal(result.submissionReceipt.responseParseState, 'json_object');
+  assert.equal(result.submissionReceipt.diagnosticCategory, 'provider_error');
   assert.equal(result.submissionReceipt.responseBodySha256.length, 64);
   assert.equal(result.submissionReceipt.providerRequestKeySha256.length, 64);
   assert.deepEqual(Array.from(result.submissionReceipt.candidateFieldPaths), ['data.task_id']);
@@ -167,6 +174,50 @@ await test('Secure Skill Grok unknown receipt evidence is structural and redacte
   assert.equal(persisted.includes('authorization'), false);
   assert.equal(persisted.includes('prompt'), false);
   assert.equal(persisted.includes('token='), false);
+});
+for (const [name, payload, status, category, outcome] of [
+  ['429 is a response busy clue', {}, 429, 'provider_busy', undefined],
+  ['401 is a credential rejection clue', {}, 401, 'credential_rejected', undefined],
+  ['403 alone does not diagnose an invalid credential', {}, 403, 'unclassified', undefined],
+  ['400 is a parameter rejection clue', {}, 400, 'parameter_rejected', undefined],
+  ['422 is a parameter rejection clue', {}, 422, 'parameter_rejected', undefined],
+  ['502 without structured rejection stays unknown', { error: { message: 'Internal service error' } }, 502, 'provider_error', 'unknown'],
+  ['503 without structured rejection stays unknown', {}, 503, 'provider_error', 'unknown'],
+  ['200 unknown stays unclassified', {}, 200, 'unclassified', 'unknown'],
+  ['nested exact auth code is only a clue', { data: { error: { code: 'authentication_error' } } }, 502, 'credential_rejected', undefined],
+  ['auth clue does not override existing outcome rules', { error: { code: 'invalid_token' } }, 200, 'credential_rejected', 'unknown'],
+  ['nested exact parameter type is only a clue', { data: { error: { type: 'invalid_request_error' } } }, 503, 'parameter_rejected', undefined],
+  ['arbitrary code is not persisted or treated as a clue', { error: { code: 'credential-SENSITIVE-fixture' } }, 502, 'provider_error', 'unknown'],
+  ['oversized code is not copied', { error: { code: 'x'.repeat(81) } }, 200, 'unclassified', 'unknown'],
+]) {
+  await test('Secure Skill receipt diagnostic ' + name, async () => {
+    const result = await invoke('secure_skill_grok_video', json(payload, status));
+    assert.equal(result.submissionReceipt.diagnosticCategory, category);
+    assert.equal(result.submissionOutcome, outcome);
+    assert.equal(result.taskId, '');
+    assert.equal(result.status, outcome === 'unknown' ? 'processing' : 'failed');
+    assert.equal(calls.length, 1);
+  });
+}
+await test('Secure Skill receipt clues survive actual safe persistence without provider text', async () => {
+  const marker = 'SENSITIVE-fixture-provider-message';
+  const result = await invoke('secure_skill_grok_video', json({
+    error: { message: marker, code: marker, token: marker },
+    api_key: marker, prompt: marker, password: marker,
+  }, 502));
+  const actualRouting = load('src/lib/video-routing-snapshot.ts');
+  let persisted;
+  await actualRouting.persistVideoProviderSubmissionReceipt({
+    db: { rpc: async (name, args) => { assert.equal(name, 'record_video_provider_submission_receipt_atomic'); persisted = args; return { data: {} }; } },
+    taskIdInternal: 'fixture-business-task', userId: 'fixture-user',
+    requestFingerprint: 'a'.repeat(64), outcome: 'unknown', receipt: result.submissionReceipt,
+  });
+  assert.equal(persisted.p_outcome, 'unknown');
+  assert.equal(persisted.p_provider_task_id, null);
+  assert.equal(persisted.p_receipt.diagnosticCategory, 'provider_error');
+  assert.equal(persisted.p_receipt.responseBodySha256, result.submissionReceipt.responseBodySha256);
+  const receiptJson = JSON.stringify(persisted.p_receipt);
+  for (const forbidden of [marker, 'api_key', 'password', 'prompt', 'authorization', 'message', 'error.code']) assert.equal(receiptJson.includes(forbidden), false);
 });
 await test('MiniMax uses its original endpoint and a single unknown POST', async () => {
   const result = await invoke('secure_skill_grok_video', () => new Response('<!doctype html>'), { model_name: 'minimax-h3' });
@@ -188,6 +239,13 @@ if (process.argv[2]) {
     const parse = source => {
       const tree = ts.createSourceFile('adapter.ts', source, ts.ScriptTarget.Latest, true);
       return tree.statements.filter(node => ts.isFunctionDeclaration(node) && /^poll/u.test(node.name?.text || '')).map(node => node.getText(tree));
+    };
+    assert.deepEqual(parse(fs.readFileSync('src/lib/video-adapter.ts', 'utf8')), parse(fs.readFileSync(process.argv[2], 'utf8')));
+  });
+  await test('all other adapter functions match the pre-edit snapshot exactly', async () => {
+    const parse = source => {
+      const tree = ts.createSourceFile('adapter.ts', source, ts.ScriptTarget.Latest, true);
+      return tree.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text !== 'secureSkillSubmissionReceipt').map(node => node.getText(tree));
     };
     assert.deepEqual(parse(fs.readFileSync('src/lib/video-adapter.ts', 'utf8')), parse(fs.readFileSync(process.argv[2], 'utf8')));
   });

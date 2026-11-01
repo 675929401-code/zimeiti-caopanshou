@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {sha,selfTest} from './lib/video-pricing-publication-contract.mjs';
+const before=fs.readFileSync('supabase/migrations/20261030050000_video_credential_only_publication.sql','utf8');
+assert.equal(sha(before.split('AS $function$')[1].split('$function$;')[0]),'681979117d4c70d12ab5f3fd5408e9970e9dc8c6da3e4f80e667f13dc51a69c5');
+const next=fs.readFileSync('supabase/migrations/20261030060000_video_pricing_only_publication.sql','utf8');
+assert.equal((next.match(/CREATE OR REPLACE FUNCTION/gu)||[]).length,1);
+assert.doesNotMatch(next,/\b(?:GRANT|REVOKE|ALTER\s+TABLE|ALTER\s+FUNCTION|CREATE\s+(?:TABLE|TRIGGER)|set_config)\b/iu);
+for(const value of ['proowner','proacl','proconfig','prosecdef','provolatile','proparallel','proisstrict','proleakproof','prokind','prorettype','681979117d4c70d12ab5f3fd5408e9970e9dc8c6da3e4f80e667f13dc51a69c5','v_pending_count=0','WITH ORDINALITY','USING(ordinal)','v_current.snapshot-\'models\'','cardinality(v_price_ids)>0','ORDER BY id FOR UPDATE','PLATFORM_CONFIGURATION_VIDEO_PRICING_TARGET_MISSING','PLATFORM_CONFIGURATION_VIDEO_PRICING_UPDATE_INCOMPLETE'])assert.ok(next.includes(value),value);
+const start=next.indexOf('  -- Pricing has no pending credentials.');const oldEnd=before.indexOf('  FOR v_pending IN SELECT * FROM public.platform_model_pending_credentials WHERE release_id=p_release_id ORDER BY model_key LOOP');
+assert.equal(next.slice(next.indexOf('BEGIN\n  IF p_kind'),start),before.slice(before.indexOf('BEGIN\n  IF p_kind'),oldEnd),'ALL_190_PREPROMOTION_GUARDS_UNCHANGED');
+assert.ok(next.indexOf('ORDER BY id FOR UPDATE')<next.indexOf('UPDATE public.platform_model_credential_bindings'));
+assert.ok(next.includes('IF v_video_only OR v_pricing_only THEN'));
+assert.ok(next.includes('api_protocol_config=coalesce(t.api_protocol_config,\'{}\'::jsonb)||jsonb_build_object('));
+assert.doesNotMatch(next,/INSERT INTO public.video_models|UPDATE public\.(?:llm_models|cover_models|chat_models)/u);
+const result=await selfTest();console.log(JSON.stringify({...result,sqlChecks:['exact 190 precondition and unchanged guards','no pending for pricing','ordered full JSON whitelist','existing targets locked before write','merge only price maps preserves physical gate','ordinary workspace credential branches preserved'],postgresRequired:true}));

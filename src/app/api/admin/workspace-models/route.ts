@@ -12,6 +12,7 @@ import { RETIRED_MODEL_PROVIDER } from "@/lib/model-retirement";
 import { inspectVideoModelActivationReadiness, type VideoActivationBinding } from "@/lib/model-activation-gate";
 import { getVideoBillingUnit, getVideoDurationCapabilities, getVideoResolutionCapabilities } from "@/lib/video-model-capabilities";
 import { requireVideoPriceSnapshot } from "@/lib/video-terminal-finalizer";
+import { getVideoTokenPublicPricing } from "@/lib/video-token-billing";
 import {
   VIDEO_MODEL_SURFACE_ORDER_SETTING_KEY,
   parseVideoModelSurfaceOrders,
@@ -39,6 +40,11 @@ import {
   parseWorkspaceModelAssignmentOverrides,
 } from "@/lib/workspace-model-assignment-settings";
 import { stageLegacyWorkspaceMutation } from "@/lib/server/platform-configuration-compatibility";
+import { isVideoCatalogDisplaySurface } from "@/lib/video-workspace-catalog";
+import { publicVideoModelCompatibilityMessage, publicVideoModelInputCompatibilityCode } from "@/lib/video-model-public-status";
+import { videoModelInputLabel } from "@/lib/video-model-selection-state";
+import { getVideoInputContract } from "@/lib/video-input-contract";
+import { videoBillingAdapterAdmission, videoOperatorSubmissionAdmission } from "@/lib/video-model-availability";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -78,6 +84,15 @@ function imagePriceReady(model: Record<string, unknown>) {
 }
 
 function videoPriceReady(model: Record<string, unknown>) {
+  const config = model.api_protocol_config as Record<string, unknown> | undefined;
+  if (config?.provider_billing_unit === "token") {
+    const publicPricing = getVideoTokenPublicPricing(model);
+    const costs = config.token_cost_prices_per_million as Record<string, unknown> | undefined;
+    return publicPricing !== null && Object.keys(publicPricing.salePricesPerMillion).every(key => {
+      const cost = costs?.[key];
+      return typeof cost === "number" && Number.isFinite(cost) && cost > 0 && cost <= Number.MAX_SAFE_INTEGER;
+    });
+  }
   const resolution = getVideoResolutionCapabilities(model);
   const duration = getVideoDurationCapabilities(model);
   try {
@@ -204,7 +219,7 @@ async function readCatalog() {
   const [imageRows, imagePublicationStates, videoResult, imageOrderResult, videoOrderResult, assignmentResult, candidateBlockResult] = await Promise.all([
     readImageResourcePool(db),
     readImagePublicationStates(db),
-    db.from("video_models").select("id,name,model_name,provider,protocol_type,api_endpoint,api_key,price_per_use,cost_price,duration_seconds,max_duration,supports_image_input,requires_image,is_active,is_hidden,sort_order,api_protocol_config").order("sort_order", { ascending: true }).order("id", { ascending: true }),
+    db.from("video_models").select("id,name,model_name,provider,protocol_type,api_endpoint,api_key,price_per_use,cost_price,duration_seconds,max_duration,supports_image_input,requires_image,is_active,is_hidden,sort_order,api_protocol_config,icon_url").order("sort_order", { ascending: true }).order("id", { ascending: true }),
     db.from("platform_settings").select("setting_value").eq("setting_key", IMAGE_MODEL_SURFACE_ORDER_SETTING_KEY).maybeSingle(),
     db.from("platform_settings").select("setting_value").eq("setting_key", VIDEO_MODEL_SURFACE_ORDER_SETTING_KEY).maybeSingle(),
     db.from("platform_settings").select("setting_value").eq("setting_key", WORKSPACE_MODEL_ASSIGNMENT_SETTING_KEY).maybeSingle(),
@@ -266,7 +281,13 @@ async function readCatalog() {
       const activation = activationBinding
         ? inspectVideoModelActivationReadiness(activationBinding)
         : { ready: true, reason: "not_applicable" };
-      const publishable = compatibility.compatible && active && !hidden && configured && priceReady;
+      const operatorAdmission = surface.kind === "video" ? videoOperatorSubmissionAdmission(protocol, model) : { ready: true, code: "" };
+      const capabilitiesVerified = protocol.capability_contract_verified !== false;
+      const billingAdmission = surface.kind === "video" ? videoBillingAdapterAdmission(protocol) : { ready: true, code: "" };
+      const compatibilityCode = publicVideoModelInputCompatibilityCode(compatibility.issues) || operatorAdmission.code || billingAdmission.code;
+      const compatibilityMessage = surface.kind === "video" ? publicVideoModelCompatibilityMessage(compatibilityCode) : "";
+      const publishable = compatibility.compatible && active && !hidden && configured && priceReady
+        && (surface.kind !== "video" || (operatorAdmission.ready && billingAdmission.ready));
       const assigned = isWorkspaceModelAssigned(assignmentOverrides, surface.kind, model, surface.id);
       const catalogDisplayable = !hidden;
       const visibleNow = assigned && catalogDisplayable;
@@ -276,6 +297,7 @@ async function readCatalog() {
       return {
         id,
         name: String(model.name || model.model_name || id),
+        icon_url: String(model.icon_url || ""),
         modelName: String(model.model_name || ""),
         kind: surface.kind,
         assigned,
@@ -288,15 +310,21 @@ async function readCatalog() {
         priceReady,
         activationReady: activation.ready,
         activationReason: activation.reason,
-        availabilityMessage: availabilityMessage({ active, hidden, priceReady, configured, inactiveReason }),
-        capabilityLabels: compatibility.capabilityLabels,
+        compatibilityCode,
+        capabilitiesVerified,
+        availabilityMessage: compatibilityMessage || availabilityMessage({ active, hidden, priceReady, configured, inactiveReason }),
+        capabilityLabels: surface.kind === "video"
+          ? [videoModelInputLabel({ id, ...getVideoInputContract(model), capabilitiesVerified }), ...compatibility.capabilityLabels]
+          : compatibility.capabilityLabels,
         issues: compatibility.issues,
         warnings: compatibility.warnings,
         order,
         fallbackOrder: Number(model.sort_order) || 0,
         ...modelPresentation(surface.kind, model),
       };
-    }).filter((model) => (model.publishable || model.assigned) && !isWorkspaceModelCandidateBlocked(candidateBlocks, model.id)).sort((left, right) => {
+    }).filter((model) => (model.publishable || model.assigned
+      || (isVideoCatalogDisplaySurface(surface.id) && model.catalogDisplayable))
+      && !isWorkspaceModelCandidateBlocked(candidateBlocks, model.id)).sort((left, right) => {
       if (left.assigned !== right.assigned) return left.assigned ? -1 : 1;
       const leftConfigured = left.order !== null;
       const rightConfigured = right.order !== null;
@@ -321,6 +349,7 @@ function readOnlyCatalog(catalog: Awaited<ReturnType<typeof readCatalog>>) {
         .map((model) => ({
           id: model.id,
           name: model.name,
+          icon_url: model.icon_url,
           modelName: "",
           kind: model.kind,
           assigned: true,
@@ -332,7 +361,10 @@ function readOnlyCatalog(catalog: Awaited<ReturnType<typeof readCatalog>>) {
           hidden: model.hidden,
           priceReady: model.priceReady,
           activationReady: model.activationReady,
-          availabilityMessage: model.publishable ? "当前可供用户使用" : "当前模型暂不可提交",
+          compatibilityCode: model.compatibilityCode,
+          capabilitiesVerified: model.capabilitiesVerified,
+          availabilityMessage: model.publishable ? "当前可供用户使用"
+            : publicVideoModelCompatibilityMessage(model.compatibilityCode) || "当前模型暂不可提交",
           capabilityLabels: model.capabilityLabels,
           issues: [],
           warnings: [],
@@ -390,7 +422,7 @@ async function updateAssignment(input: {
       throw new Error("该模型接口通信异常，修复后才能添加到业务页面");
     }
     const compatibility = evaluateWorkspaceModelCompatibility(input.kind, model, input.surface);
-    if (!compatibility.compatible) {
+    if (!compatibility.compatible && !isVideoCatalogDisplaySurface(input.surface)) {
       throw new Error(compatibility.issues[0]?.message || "该模型与当前工作台能力不匹配");
     }
   }

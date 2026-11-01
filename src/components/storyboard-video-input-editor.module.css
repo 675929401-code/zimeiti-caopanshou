@@ -1,0 +1,12 @@
+.editor { order: 2; min-width: 0; border: 1px solid var(--sbw-editor-line, var(--border)); border-radius: 8px; color: var(--sbw-editor-text, var(--foreground)); background: var(--sbw-editor-card, var(--card)); font-size: 11px; }
+.editor summary { cursor: pointer; padding: 8px 10px; font-weight: 600; }
+.body { display: grid; gap: 10px; padding: 0 10px 10px; }
+.body p { margin: 0; line-height: 1.5; color: var(--sbw-editor-muted, var(--muted-foreground)); }
+.toggle, .existing, .controls { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.slot { display: grid; gap: 5px; min-width: 0; }
+.slot strong { font-size: inherit; }
+.controls input { width: 0; flex: 1 1 0; min-width: 0; padding: 5px; border: 1px solid var(--sbw-editor-line, var(--border)); border-radius: 5px; background: var(--sbw-editor-field, var(--background)); color: inherit; }
+.controls button, .controls label, .existing button { flex: none; padding: 4px 6px; border: 1px solid var(--sbw-editor-line, var(--border)); border-radius: 5px; background: var(--sbw-editor-field, var(--background)); color: inherit; cursor: pointer; }
+.existing span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disabled { opacity: .5; cursor: not-allowed !important; }
+.editor :focus-visible { outline: 2px solid var(--sbw-editor-video-accent, var(--primary)); outline-offset: 2px; }

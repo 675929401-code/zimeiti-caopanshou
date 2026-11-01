@@ -1,10 +1,11 @@
+import { StoryboardChainRequestSchema, type StoryboardChainRequest } from "@/lib/storyboard-chain-contract";
 const MAX_IMAGE_REQUEST_BYTES = 32 * 1024 * 1024;
 const MAX_IMAGE_REFERENCES = 9;
 const MAX_PROMPT_CHARACTERS = 12_000;
 const MAX_STYLE_CHARACTERS = 256;
 const MAX_HTTP_REFERENCE_CHARACTERS = 4_096;
 const MAX_DATA_REFERENCE_CHARACTERS = 28 * 1024 * 1024;
-
+import { isRestorableImageExactText, isValidImageExactText, STORYBOARD_ANNOTATION_TEXT_MAX_LENGTH } from "@/lib/storyboard-annotation-layout";
 const CONTROL_CHARACTERS = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/u;
 const STABLE_KEY = /^[A-Za-z0-9_-]{8,128}$/u;
 const ASPECT_RATIOS = new Set(["3:4", "9:16", "4:3", "16:9", "1:1"]);
@@ -20,7 +21,7 @@ const IMAGE_PUBLIC_REQUEST_FIELDS = new Set([
   "prompt", "modelId", "style", "mode", "aspectRatio", "resolution", "coverText",
   "referenceImageUrls", "referenceUsage", "imageUrl", "clientTraceId", "clientIdempotencyKey",
   "clientNodeId", "clientNodeTitle", "historySurface", "noRetry", "strictSingleSubmit",
-  "resumeDeliveryOnly", "adminValidation", "deliveryRequirement",
+  "resumeDeliveryOnly", "adminValidation", "deliveryRequirement", "presetReferences", "chainContext",
 ]);
 
 export class ImageGenerationInputError extends Error {
@@ -130,6 +131,7 @@ async function readRequestBytes(request: Request) {
 }
 
 export type NormalizedImageGenerationInput = {
+  chainContext?: StoryboardChainRequest;
   prompt: string;
   modelId?: string;
   style?: string;
@@ -138,6 +140,7 @@ export type NormalizedImageGenerationInput = {
   resolution?: string;
   coverText?: string;
   referenceImageUrls: string[];
+  presetReferences?: ImagePresetReference[];
   referenceUsage?: "general" | "character-identity";
   imageUrl?: string;
   clientTraceId?: string;
@@ -152,6 +155,8 @@ export type NormalizedImageGenerationInput = {
   adminValidation?: Record<string, unknown>;
 };
 
+export type ImagePresetReference = { presetId: string; revision: number; referenceIndex: number };
+
 export function normalizeImageGenerationInput(value: unknown): NormalizedImageGenerationInput {
   if (!plainObject(value)) {
     throw new ImageGenerationInputError("IMAGE_REQUEST_BODY_INVALID", "生图请求体必须是 JSON 对象");
@@ -164,11 +169,21 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
       422,
     );
   }
+  const chain = value.chainContext === undefined ? undefined : StoryboardChainRequestSchema.safeParse(value.chainContext);
+  if (chain && (!chain.success || value.historySurface !== "storyboard-workbench")) throw new ImageGenerationInputError("STORYBOARD_CHAIN_CONTEXT_INVALID", "串联请求合同无效", 422);
+  const chainContext = chain?.success ? chain.data : undefined;
   const prompt = optionalString(value.prompt, "提示词", MAX_PROMPT_CHARACTERS);
   if (!prompt) throw new ImageGenerationInputError("IMAGE_PROMPT_REQUIRED", "提示词不能为空", 422);
   const modelId = optionalString(value.modelId, "模型标识", 240);
   const style = optionalString(value.style, "风格", MAX_STYLE_CHARACTERS, { allowEmpty: true });
-  const coverText = optionalString(value.coverText, "精确画面文字", 200, { allowEmpty: true });
+  // Storyboards use the complete authored prompt. Ignore retired layout fields
+  // from saved cards/older clients; accepted delivery recovery keeps its snapshot.
+  const promptOnlyStoryboard = value.historySurface === "storyboard-workbench" && value.resumeDeliveryOnly !== true;
+  const coverText = promptOnlyStoryboard ? undefined
+    : optionalString(value.coverText, "精确画面文字", STORYBOARD_ANNOTATION_TEXT_MAX_LENGTH, { allowEmpty: true });
+  if (coverText !== undefined && !(value.resumeDeliveryOnly === true ? isRestorableImageExactText(coverText) : isValidImageExactText(coverText))) {
+    throw new ImageGenerationInputError("IMAGE_EXACT_TEXT_INVALID", "精确文案最多200字；故事板注释必须是2048字以内的完整四格协议", 422);
+  }
   const mode = optionalString(value.mode, "生成模式", 16) as "local" | "workflow" | undefined;
   if (mode && mode !== "local" && mode !== "workflow") {
     throw new ImageGenerationInputError("IMAGE_MODE_UNSUPPORTED", "图片生成模式不受支持", 422);
@@ -202,6 +217,20 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
     normalizeReference(reference, `第 ${index + 1} 张参考图`));
   const imageUrl = hasInputImage ? normalizeReference(value.imageUrl, "输入图片") : undefined;
   const referenceImageUrls = [...new Set([...normalizedReferences, ...(imageUrl ? [imageUrl] : [])])];
+  const presetReferences: ImagePresetReference[] = [];
+  if (value.presetReferences !== undefined) {
+    if (!Array.isArray(value.presetReferences) || value.presetReferences.length > MAX_IMAGE_REFERENCES) throw new ImageGenerationInputError("IMAGE_PRESET_REFERENCE_INVALID", "预设参考列表无效", 422);
+    const indices = new Set<number>();
+    for (const ref of value.presetReferences) {
+      if (!plainObject(ref) || Object.keys(ref).some(key => !["presetId", "revision", "referenceIndex"].includes(key))
+        || typeof ref.presetId !== "string" || !/^preset-[a-z0-9][a-z0-9_-]{2,63}$/u.test(ref.presetId)
+        || !Number.isSafeInteger(ref.revision) || Number(ref.revision) < 1 || !Number.isSafeInteger(ref.referenceIndex)
+        || Number(ref.referenceIndex) < 0 || Number(ref.referenceIndex) >= referenceImageUrls.length || indices.has(Number(ref.referenceIndex))) {
+        throw new ImageGenerationInputError("IMAGE_PRESET_REFERENCE_INVALID", "预设标识、版本或图片位置无效", 422);
+      }
+      indices.add(Number(ref.referenceIndex)); presetReferences.push({ presetId: ref.presetId, revision: Number(ref.revision), referenceIndex: Number(ref.referenceIndex) });
+    }
+  }
 
   const clientTraceId = optionalString(value.clientTraceId, "图片生成追踪键", 128, { allowEmpty: true, controls: false });
   if (clientTraceId && !STABLE_KEY.test(clientTraceId)) {
@@ -228,6 +257,7 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
   }
 
   return {
+    ...(chainContext ? { chainContext } : {}),
     prompt,
     ...(modelId ? { modelId } : {}),
     ...(style !== undefined ? { style } : {}),
@@ -236,6 +266,7 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
     ...(resolution ? { resolution } : {}),
     ...(coverText !== undefined ? { coverText } : {}),
     referenceImageUrls,
+    ...(presetReferences.length ? { presetReferences } : {}),
     ...(referenceUsage ? { referenceUsage } : {}),
     ...(imageUrl ? { imageUrl } : {}),
     ...(clientTraceId ? { clientTraceId } : {}),

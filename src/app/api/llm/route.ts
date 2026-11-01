@@ -66,7 +66,7 @@ import { checkCreditsBalance, getSelectedModelBillingSnapshot } from "@/lib/llm-
 import { resolveChatReplyLimit } from "@/lib/llm-reply-limit";
 import { readFileSync as readQuotePinFile } from "node:fs";
 import { join as quotePinPath } from "node:path";
-import { composeLlmRequestMessages, resolveLinkedModelRuntime, buildLlmChatRequest, readStandardSnapshot, prepareStandardLlmRequest, assertQuoteExpectation, LlmQuotePreparationError, STANDARD_AGENT_FIELDS, STANDARD_MODEL_FIELDS, STANDARD_SETTING_KEYS } from "@/lib/server/llm-standard-request-preparation";
+import { composeLlmRequestMessages, resolveLinkedModelRuntime, isStoryboardTextOnlyAgent, shouldAutoEnableRuntimeWebSearch, buildLlmChatRequest, readStandardSnapshot, prepareStandardLlmRequest, assertQuoteExpectation, LlmQuotePreparationError, STANDARD_AGENT_FIELDS, STANDARD_MODEL_FIELDS, STANDARD_SETTING_KEYS } from "@/lib/server/llm-standard-request-preparation";
 import { quoteLlmStreamReservation, reserveLlmStreamCredits, releaseLlmStreamCredits, recoverLlmCreditReservations, LlmCreditReservationError, type LlmStreamReservation } from "@/lib/llm-credit-reservation";
 import { getProductionAgentById, getProductionLlmModelById, getProductionLlmModelByName } from "@/lib/production-data-source";
 import { findModelByPublicId, toPublicModelId } from "@/lib/public-model-dto";
@@ -77,13 +77,12 @@ import {
   FREE_CHAT_DEFAULT_MODEL_KEY,
   resolveWebSearchTransport,
   selectFreeChatDefaultModel,
-  shouldAutoEnableWebSearch,
 } from "@/lib/free-chat-runtime-policy";
 import {
   shouldRejectOrdinaryChatModelOverride,
   shouldRejectOrdinaryUnpublishedChatModel,
 } from "@/lib/chat-model-access-policy";
-import { isPublishedTextBillingModel } from "@/lib/text-model-eligibility";
+import { isPublishedTextBillingModel, isTextModelEligible } from "@/lib/text-model-eligibility";
 import {
   resolveMangaSkillOrchestration,
   type MangaSkillOrchestration,
@@ -105,6 +104,7 @@ import {
   fingerprintLlmRequest,
   LlmRequestIdempotencyError,
   responseForLlmAttemptClaim,
+  resolveLlmRequestLeaseSeconds,
   type LlmRequestAttemptExecution,
   validateLlmClientRequestId,
 } from "@/lib/llm-request-idempotency";
@@ -115,10 +115,11 @@ import {
   resolveAllowedAgentNavigationKeys,
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
-import { evaluateStoryDirectorOvertimeGate } from "@/lib/story-director-overtime-gate";
+import { canUseOwnerInternalAgent } from "@/lib/server/internal-agent-catalog-access";
 import { isLocalBuildChatDrainActive, localBuildChatDrainResponse } from "@/lib/local-build-chat-drain";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { createOperationPerformanceTrace, type OperationPerformanceTrace } from "@/lib/operation-performance-trace";
+import { observeLlmPerformanceResponse } from "@/lib/llm-response-performance";
 import { recordServerOperationPerformanceEventBestEffort } from "@/lib/operation-flight-recorder";
 import { AgentPromptUnavailableError, resolveAuthoritativeAgentPrompt, agentPromptAuditIdentity, clientChatHistory } from "@/lib/server/agent-chat-prompt-authority";
 import {
@@ -129,6 +130,7 @@ import {
   type ProviderAdmissionLease,
 } from "@/lib/provider-admission-control";
 import { NextRequest } from "next/server";
+import { currentTextModelGenerationAdmission, TextModelGenerationAdmissionError } from "@/lib/server/text-model-generation-admission";
 
 // ⚡ 流式路由强制动态渲染 — 防止 Next.js 静态优化缓冲 SSE
 export const dynamic = 'force-dynamic';
@@ -145,78 +147,21 @@ class LlmModelFrequencyLimitError extends Error {
   }
 }
 
-function observeLlmPerformanceResponse(
-  response: Response,
-  trace: OperationPerformanceTrace | null,
-): Response {
-  if (!trace) return response;
-  if (!response.body) {
-    trace.checkpoint("upstream.wait");
-    trace.checkpoint("response.first_byte", { httpStatus: response.status });
-    trace.checkpoint("result.persistence");
-    trace.checkpoint("response.terminal", {
-      outcome: response.ok ? "success" : "error",
-      httpStatus: response.status,
-      errorCode: response.ok ? null : "LLM_RESPONSE_ERROR",
-    });
-    return response;
-  }
+/**
+ * A branch rewrite must name the exact persisted message row.  Keeping this
+ * as a typed route error lets the outer cleanup release any attempt/lease
+ * before returning a fail-closed response to the browser.
+ */
+class LlmTruncateContractError extends Error {
+  readonly name = "LlmTruncateContractError";
 
-  const reader = response.body.getReader();
-  let firstChunkObserved = false;
-  let terminalObserved = false;
-  const observedBody = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            trace.checkpoint("result.persistence");
-            trace.checkpoint("response.terminal", {
-              outcome: response.ok ? "success" : "error",
-              httpStatus: response.status,
-              errorCode: response.ok ? null : "LLM_RESPONSE_ERROR",
-            });
-            terminalObserved = true;
-            controller.close();
-            return;
-          }
-          if (!firstChunkObserved) {
-            trace.checkpoint("upstream.wait");
-            trace.checkpoint("response.first_byte", { httpStatus: response.status });
-            firstChunkObserved = true;
-          }
-          controller.enqueue(value);
-        }
-      } catch (error) {
-        if (!terminalObserved) {
-          trace.checkpoint("response.terminal", {
-            outcome: "error",
-            httpStatus: response.status,
-            errorCode: "LLM_STREAM_OBSERVE_FAILED",
-          });
-          terminalObserved = true;
-        }
-        controller.error(error);
-      }
-    },
-    async cancel(reason) {
-      if (!terminalObserved) {
-        trace.checkpoint("response.terminal", {
-          outcome: "cancelled",
-          httpStatus: response.status,
-          errorCode: "LLM_STREAM_CANCELLED",
-        });
-        terminalObserved = true;
-      }
-      await reader.cancel(reason).catch(() => undefined);
-    },
-  });
-  return new Response(observedBody, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: new Headers(response.headers),
-  });
+  constructor(
+    readonly code: "LLM_TRUNCATE_MESSAGE_ID_REQUIRED" | "LLM_TRUNCATE_TARGET_NOT_FOUND" | "LLM_TRUNCATE_TARGET_UNAVAILABLE" | "LLM_TRUNCATE_FAILED",
+    message: string,
+    readonly status: 400 | 404 | 503 = 400,
+  ) {
+    super(message);
+  }
 }
 
 function promptGuardAssistantResponse(message: string, stream: boolean): Response {
@@ -276,7 +221,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const quoteBound = Object.prototype.hasOwnProperty.call(body, "quote_expectation");
     let preparedQuote: Awaited<ReturnType<typeof prepareStandardLlmRequest>> | undefined;
-    const { messages, model: requestedModel, modelId: requestedModelId, model_overridden: requestedModelOverridden, stream = true, userId, agentName: requestAgentName, agent_name: requestAgentName2, agentId, conversationId, proxyUrl, proxy_url, deepThinkingType, deep_thinking_type, deepThinkingOverridden, deep_thinking_overridden, deductDeepThink, deduct_deep_think, maxContextRounds, max_context_rounds, maxContextTokens, max_context_tokens, maxReplyTokens, max_reply_tokens, timeout: reqTimeout, enableWebSearch, enable_web_search, enableWebSearchOverridden, enable_web_search_overridden, temperature: reqTemperature, responseFormat, response_format, internal_workflow, adminSecurityBypass, admin_security_bypass } = body;
+    const { messages, model: requestedModel, modelId: requestedModelId, model_overridden: requestedModelOverridden, persist_user_message: persistUserMessageRequested, truncate_from_message_id: truncateFromMessageIdRequested, truncate_from: legacyTruncateFromRequested, stream = true, userId, agentName: requestAgentName, agent_name: requestAgentName2, agentId, conversationId, proxyUrl, proxy_url, deepThinkingType, deep_thinking_type, deepThinkingOverridden, deep_thinking_overridden, deductDeepThink, deduct_deep_think, maxContextRounds, max_context_rounds, maxContextTokens, max_context_tokens, maxReplyTokens, max_reply_tokens, timeout: reqTimeout, enableWebSearch, enable_web_search, enableWebSearchOverridden, enable_web_search_overridden, temperature: reqTemperature, responseFormat, response_format, internal_workflow, adminSecurityBypass, admin_security_bypass } = body;
     performanceTrace = createOperationPerformanceTrace({
       domain: "chat",
       operation: "llm.chat_request",
@@ -332,17 +277,52 @@ export async function POST(request: Request) {
     }
     const isCanvasInternalWorkflow = internal_workflow === "canvas-compiler"
       && agentId === "__canvas_storyboard_compiler__";
-    const runtimeTimeoutCap = isCanvasInternalWorkflow ? 300 : 120;
-    const clampRuntimeTimeout = (value: unknown, fallback: number) => {
+    // Client supplied timeout remains bounded at 120s for ordinary requests;
+    // only a trusted, active server agent/model configuration may opt into the
+    // catalog's 300s contract. A single blanket cap previously made the
+    // configured GPT-6.1 story-director timeout unreachable and produced a
+    // failed_unknown at exactly 120s.
+    const requestRuntimeTimeoutCap = isCanvasInternalWorkflow ? 300 : 120;
+    const configuredRuntimeTimeoutCap = 300;
+    const clampRequestRuntimeTimeout = (value: unknown, fallback: number) => {
       const numeric = Number(value);
       return Number.isFinite(numeric) && numeric > 0
-        ? Math.min(numeric, runtimeTimeoutCap)
+        ? Math.min(numeric, requestRuntimeTimeoutCap)
+        : fallback;
+    };
+    const clampConfiguredRuntimeTimeout = (value: unknown, fallback: number) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric > 0
+        ? Math.min(numeric, configuredRuntimeTimeoutCap)
         : fallback;
     };
     const clientProxyUrl = typeof proxy_url === "string" ? proxy_url : typeof proxyUrl === "string" ? proxyUrl : "";
     const adminSecurityBypassRequested = admin_security_bypass === true || adminSecurityBypass === true;
     let model = typeof requestedModel === "string" ? requestedModel : undefined;
     let model_overridden = requestedModelOverridden === true;
+    // 重新生成/改写：客户端可要求不重复落用户消息，并按目标消息时间截断旧分支。
+    const persistUserMessage = persistUserMessageRequested !== false;
+    if (legacyTruncateFromRequested !== undefined) {
+      throw new LlmTruncateContractError(
+        "LLM_TRUNCATE_MESSAGE_ID_REQUIRED",
+        "重新生成或改写必须传递 truncate_from_message_id，不能使用时间戳",
+      );
+    }
+    if (truncateFromMessageIdRequested !== undefined && typeof truncateFromMessageIdRequested !== "string") {
+      throw new LlmTruncateContractError(
+        "LLM_TRUNCATE_MESSAGE_ID_REQUIRED",
+        "truncate_from_message_id 必须是消息标识",
+      );
+    }
+    const truncateFromMessageId = typeof truncateFromMessageIdRequested === "string"
+      ? truncateFromMessageIdRequested.trim()
+      : "";
+    if (truncateFromMessageId.length > 200 || /[\u0000-\u001f]/u.test(truncateFromMessageId)) {
+      throw new LlmTruncateContractError(
+        "LLM_TRUNCATE_MESSAGE_ID_REQUIRED",
+        "truncate_from_message_id 无效",
+      );
+    }
     let publicModelId = "";
     let agentProxyUrl = "";
     let effectiveApiKey = "";
@@ -360,7 +340,7 @@ export async function POST(request: Request) {
     let agentMaxContextRounds = max_context_rounds ?? maxContextRounds ?? 0;
     let agentMaxContextTokens = max_context_tokens ?? maxContextTokens ?? 0;
     let agentMaxReplyTokens = max_reply_tokens ?? maxReplyTokens ?? 65536;
-    let agentTimeout = clampRuntimeTimeout(reqTimeout, 120);
+    let agentTimeout = clampRequestRuntimeTimeout(reqTimeout, 120);
     let agentEnableWebSearch = enable_web_search ?? enableWebSearch ?? false;
     let agentTemperature = reqTemperature ?? undefined;
     let agentResponseFormat = response_format ?? responseFormat ?? undefined;
@@ -734,10 +714,11 @@ export async function POST(request: Request) {
     let agentQueryPromise: Promise<{ data: Record<string, unknown> | null }>;
     if (agentId && !isVirtualAgent) {
       const cached = agentConfigCache.get(agentId);
-      if (!quoteBound && cached && cached.expiry > Date.now()) {
+      if (!quoteBound && cached && cached.expiry > Date.now()
+        && Object.prototype.hasOwnProperty.call(cached.data, "output_style")) {
         agentQueryPromise = Promise.resolve({ data: cached.data });
       } else {
-        agentQueryPromise = client.from("agents").select("name, source, is_active, deleted_at, coze_coding_api_token, proxy_url, model, model_id, frequency_limit, image_parsing, file_parsing, system_prompt, config_revision, deep_thinking_type, deduct_deep_think, max_context_rounds, max_context_tokens, max_reply_tokens, timeout, enable_web_search, temperature, response_format, user_access, category, token_billing_enabled, input_cost_per_million, output_cost_per_million, cached_cost_per_million, profit_margin, token_rounding_unit").eq("id", agentId).maybeSingle().then(async (result: { data: Record<string, unknown> | null; error?: unknown }) => {
+        agentQueryPromise = client.from("agents").select("id, name, source, is_active, deleted_at, coze_coding_api_token, proxy_url, model, model_id, frequency_limit, image_parsing, file_parsing, system_prompt, output_style, config_revision, deep_thinking_type, deduct_deep_think, max_context_rounds, max_context_tokens, max_reply_tokens, timeout, enable_web_search, temperature, response_format, user_access, category, token_billing_enabled, input_cost_per_million, output_cost_per_million, cached_cost_per_million, profit_margin, token_rounding_unit").eq("id", agentId).maybeSingle().then(async (result: { data: Record<string, unknown> | null; error?: unknown }) => {
           const data = quoteBound ? (result.error ? null : result.data) : await resolveAgentLookup(result.data, () => getProductionAgentById(agentId), configurationSourceStatus().configuration !== 'local-acceptance');
           if (data) {
             agentConfigCache.set(agentId, { data: data as Record<string, unknown>, expiry: Date.now() + AGENT_CONFIG_TTL });
@@ -766,6 +747,28 @@ export async function POST(request: Request) {
             const rows = result.data || [];
             const selected = findModelByPublicId("chat", rows, publicModelId)
               || findModelByPublicId("llm", rows, publicModelId);
+            llmModelCache.set(cacheKey, { data: selected, expiry: Date.now() + LLM_MODEL_CACHE_TTL });
+            return { data: selected } as { data: Record<string, unknown> | null };
+          });
+      }
+    } else if (_preModelControlsAuthorized && typeof requestedModelId === "string" && requestedModelId.trim() && !requestedModelId.startsWith("pm_")) {
+      // Administrators and controlled canaries may provide the internal model
+      // id. Prefer that exact row over a name lookup: duplicate model_name
+      // rows can legitimately contain an older pending activation record and
+      // must never shadow the explicitly selected available model.
+      const internalModelId = requestedModelId.trim();
+      const cacheKey = `id:${internalModelId}`;
+      const cached = llmModelCache.get(cacheKey);
+      if (!quoteBound && cached && cached.expiry > Date.now()) {
+        llmModelQueryPromise = Promise.resolve({ data: cached.data });
+      } else {
+        llmModelQueryPromise = client.from("llm_models")
+          .select("*")
+          .eq("id", internalModelId)
+          .eq("is_active", true)
+          .limit(1)
+          .then((result: { data: Record<string, unknown>[] | null }) => {
+            const selected = result.data?.[0] || null;
             llmModelCache.set(cacheKey, { data: selected, expiry: Date.now() + LLM_MODEL_CACHE_TTL });
             return { data: selected } as { data: Record<string, unknown> | null };
           });
@@ -818,6 +821,12 @@ export async function POST(request: Request) {
       return new Response(
         JSON.stringify({ error: "智能体不存在或已被删除", code: "AGENT_NOT_FOUND" }),
         { status: 404, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    if (agentRow?.category === "自用" && !await canUseOwnerInternalAgent(request)) {
+      return new Response(
+        JSON.stringify({ error: "该内部工具仅限超级管理员使用", code: "OWNER_INTERNAL_AGENT_REQUIRED", retryable: false }),
+        { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
       );
     }
     if (agentRow && verifiedUserId) {
@@ -926,15 +935,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // The movie director's narration limit is arithmetic, not a creative
-    // instruction. Enforce it before credentials, reservations and provider
-    // dispatch so an overlong batch cannot consume credits or produce a
-    // contradictory "draft" alongside the rejection.
-    const storyDirectorOvertimeGate = evaluateStoryDirectorOvertimeGate(agentId, lastGuardText);
-    if (storyDirectorOvertimeGate) {
-      return promptGuardAssistantResponse(storyDirectorOvertimeGate.message, stream !== false);
-    }
-
     // ── 读取智能体级配置 ──
     let agentApiKey = "";
     let modelPresetConfig: Record<string, unknown> | null = null;
@@ -950,7 +950,7 @@ export async function POST(request: Request) {
       if (agentRow.max_context_tokens != null) agentMaxContextTokens = agentRow.max_context_tokens as number;
       // 0 = 不单独设限（后台"0=不限"语义），保留请求预算 16384/65536
       if (agentRow.max_reply_tokens != null && (agentRow.max_reply_tokens as number) > 0) agentMaxReplyTokens = agentRow.max_reply_tokens as number;
-      if (agentRow.timeout != null && (agentRow.timeout as number) > 0) agentTimeout = clampRuntimeTimeout(agentRow.timeout, agentTimeout);
+      if (agentRow.timeout != null && (agentRow.timeout as number) > 0) agentTimeout = clampConfiguredRuntimeTimeout(agentRow.timeout, agentTimeout);
       if (!isWebSearchOverridden && agentRow.enable_web_search != null) agentEnableWebSearch = agentRow.enable_web_search as boolean;
       if (agentRow.temperature != null) agentTemperature = agentRow.temperature as number;
       if (agentRow.response_format != null) agentResponseFormat = agentRow.response_format as string;
@@ -1084,7 +1084,7 @@ export async function POST(request: Request) {
       if (modelPresetConfig.max_context_rounds != null && agentMaxContextRounds !== 0) agentMaxContextRounds = modelPresetConfig.max_context_rounds as number;
       if (modelPresetConfig.max_context_tokens != null && agentMaxContextTokens !== 0) agentMaxContextTokens = modelPresetConfig.max_context_tokens as number;
       if (!hasAgentMaxReplyOverride && (modelPresetConfig.max_reply_tokens as number) > 0) agentMaxReplyTokens = modelPresetConfig.max_reply_tokens as number;
-      if (modelPresetConfig.timeout != null && (modelPresetConfig.timeout as number) > 0) agentTimeout = clampRuntimeTimeout(modelPresetConfig.timeout, agentTimeout);
+      if (modelPresetConfig.timeout != null && (modelPresetConfig.timeout as number) > 0) agentTimeout = clampConfiguredRuntimeTimeout(modelPresetConfig.timeout, agentTimeout);
       if (!isWebSearchOverridden && modelPresetConfig.enable_web_search != null) agentEnableWebSearch = modelPresetConfig.enable_web_search as boolean;
       if (!hasAgentTemperatureOverride && modelPresetConfig.temperature != null) agentTemperature = modelPresetConfig.temperature as number;
       if (modelPresetConfig.response_format != null) agentResponseFormat = modelPresetConfig.response_format as string;
@@ -1102,7 +1102,7 @@ export async function POST(request: Request) {
       if ((shouldForceOverride || llmModelByNameConfig.max_context_tokens != null) && (shouldForceOverride || agentMaxContextTokens !== 0)) agentMaxContextTokens = llmModelByNameConfig.max_context_tokens as number;
       // 仅当模型行配置了正数回复上限时才收窄预算；0/空 = 跟随请求预算，防止 4096 兜底造成长输出截断
       if ((llmModelByNameConfig.max_reply_tokens as number) > 0) agentMaxReplyTokens = llmModelByNameConfig.max_reply_tokens as number;
-      if (shouldForceOverride || (llmModelByNameConfig.timeout != null && (llmModelByNameConfig.timeout as number) > 0)) agentTimeout = clampRuntimeTimeout(llmModelByNameConfig.timeout, agentTimeout);
+      if (shouldForceOverride || (llmModelByNameConfig.timeout != null && (llmModelByNameConfig.timeout as number) > 0)) agentTimeout = clampConfiguredRuntimeTimeout(llmModelByNameConfig.timeout, agentTimeout);
       if (!isWebSearchOverridden && (shouldForceOverride || llmModelByNameConfig.enable_web_search != null)) agentEnableWebSearch = llmModelByNameConfig.enable_web_search as boolean;
       if (shouldForceOverride || llmModelByNameConfig.temperature != null) agentTemperature = llmModelByNameConfig.temperature as number;
       if (shouldForceOverride || llmModelByNameConfig.response_format != null) agentResponseFormat = llmModelByNameConfig.response_format as string;
@@ -1160,7 +1160,7 @@ export async function POST(request: Request) {
       if (modelIdData.max_context_rounds != null && agentMaxContextRounds !== 0) agentMaxContextRounds = modelIdData.max_context_rounds as number;
       if (modelIdData.max_context_tokens != null && agentMaxContextTokens !== 0) agentMaxContextTokens = modelIdData.max_context_tokens as number;
       if (!hasAgentMaxReplyOverride && (modelIdData.max_reply_tokens as number) > 0) agentMaxReplyTokens = modelIdData.max_reply_tokens as number;
-      if (modelIdData.timeout != null && (modelIdData.timeout as number) > 0) agentTimeout = clampRuntimeTimeout(modelIdData.timeout, agentTimeout);
+      if (modelIdData.timeout != null && (modelIdData.timeout as number) > 0) agentTimeout = clampConfiguredRuntimeTimeout(modelIdData.timeout, agentTimeout);
       if (!isWebSearchOverridden && modelIdData.enable_web_search != null) agentEnableWebSearch = modelIdData.enable_web_search as boolean;
       if (!hasAgentTemperatureOverride && modelIdData.temperature != null) agentTemperature = modelIdData.temperature as number;
       if (modelIdData.response_format != null) agentResponseFormat = modelIdData.response_format as string;
@@ -1256,24 +1256,60 @@ export async function POST(request: Request) {
       agentDeepThinkingType = FREE_CHAT_DEEP_THINKING_TYPE;
     }
 
+    let anthropic_thinking_profile: import("@/lib/llm-proxy/types").AnthropicThinkingProfile | undefined;
+    let trustedTextOnly: boolean | undefined;
     if (agentRow?.model_id && !model_overridden && !isVirtualAgent) {
       const linkedRow = modelPresetConfig || modelIdData;
       if (!linkedRow || String(linkedRow.id) !== String(agentRow.model_id)) throw new LlmQuotePreparationError("LLM_LINKED_MODEL_UNAVAILABLE");
       ({ agentDeepThinkingType, agentDeductDeepThink, agentMaxContextRounds, agentMaxContextTokens,
-        agentMaxReplyTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat } = resolveLinkedModelRuntime(body,agentRow,linkedRow));
+        agentMaxReplyTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat, anthropic_thinking_profile, trustedTextOnly } = resolveLinkedModelRuntime(body,agentRow,linkedRow));
+    }
+    // Apply the saved agent capability after every model selection path,
+    // including explicit overrides which bypass resolveLinkedModelRuntime.
+    trustedTextOnly = isStoryboardTextOnlyAgent(agentId, agentRow);
+    if (trustedTextOnly) {
+      agentEnableWebSearch = false;
+      if (agentDeepThinkingType === 1) agentDeepThinkingType = 0;
     }
 
     const lastUserInput = [...messages]
       .reverse()
       .find((entry: { role?: string }) => entry.role === "user");
-    const semanticWebSearchRequested = shouldAutoEnableWebSearch(messageText(lastUserInput?.content));
+    const semanticWebSearchRequested = shouldAutoEnableRuntimeWebSearch(messageText(lastUserInput?.content), anthropic_thinking_profile, trustedTextOnly);
     if (semanticWebSearchRequested) {
       agentEnableWebSearch = true;
     }
 
-    const billingModelRow = (model_overridden
+    let billingModelRow = (model_overridden
       ? (llmModelRow || llmModelByNameConfig)
       : (modelPresetConfig || llmModelRow || llmModelByNameConfig || modelIdData)) as Record<string, unknown> | null;
+    if (trustedTextOnly && (!agentRow?.model_id || String(billingModelRow?.id || "") !== String(agentRow.model_id))) {
+      return new Response(JSON.stringify({ error: "本次选择与故事导演当前配置的对话模型不一致，请刷新后重试。", code: "STORY_DIRECTOR_BOUND_MODEL_REQUIRED", retryable: false }),
+        { status: 422, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    if (trustedTextOnly && (!billingModelRow || !isTextModelEligible(billingModelRow)
+      || Boolean(billingModelRow.model_type && !["text", "chat", "llm"].includes(String(billingModelRow.model_type))))) {
+      return new Response(JSON.stringify({ error: "故事导演当前配置的模型不支持文字对话，本次未调用模型。", code: "STORY_DIRECTOR_TEXT_MODEL_REQUIRED", retryable: false }),
+        { status: 422, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    try {
+      billingModelRow = await currentTextModelGenerationAdmission(billingModelRow, id =>
+        client.from("llm_models").select("id,is_active,is_hidden,user_access").eq("id", id).maybeSingle());
+    } catch (error) {
+      if (!(error instanceof TextModelGenerationAdmissionError)) throw error;
+      console.warn("[LLM] text-model generation admission blocked", {
+        code: error.code,
+        requestedModel: model || null,
+        requestedModelId: requestedModelId || null,
+        modelOverridden: model_overridden,
+        selectedModelId: billingModelRow?.id ? String(billingModelRow.id) : null,
+        selectedModelName: billingModelRow?.model_name ? String(billingModelRow.model_name) : null,
+        selectedUserAccess: billingModelRow?.user_access ? String(billingModelRow.user_access) : null,
+        selectedActive: billingModelRow?.is_active === true,
+      });
+      return new Response(JSON.stringify({ error: error.message, code: error.code, retryable: false }),
+        { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
     let llmProviderBinding;
     try {
       llmProviderBinding = resolveLlmProviderBinding(billingModelRow || {});
@@ -1407,6 +1443,7 @@ export async function POST(request: Request) {
         clientRequestId,
         payloadFingerprint: fingerprintLlmRequest(requestFingerprintPayload),
         leaseOwner: createLlmAttemptLeaseOwner(),
+        leaseSeconds: resolveLlmRequestLeaseSeconds(agentRow),
       });
       if (claim.action !== "execute") return responseForLlmAttemptClaim(claim);
       activeLlmAttempt = claim.execution;
@@ -1607,7 +1644,7 @@ export async function POST(request: Request) {
       await markLlmProviderStarted();
       const thinkResult = await handleDeepThinkingType1(thinkCtx);
       if (thinkResult) {
-        const completedThinkResponse = await completeLlmAttemptResponse(llmRequestAttemptStore, activeLlmAttempt, thinkResult);
+        const completedThinkResponse = await completeLlmAttemptResponse(llmRequestAttemptStore, activeLlmAttempt, thinkResult, agentRow);
         return await handoffLlmProviderAdmission(observeLlmPerformanceResponse(completedThinkResponse, performanceTrace));
       }
       // 非 type=1 才会返回 null；初始化失败会返回明确错误，禁止自动付费降级。
@@ -1623,6 +1660,7 @@ export async function POST(request: Request) {
       defaultModel: useModel,
       timeout: Math.min(agentTimeout, 300),
       ...llmProxyBindingConfig(llmProviderBinding),
+      retryCount: 0,
     });
     
     // 支持 web_search tools 的模型使用原生联网，不支持的前置搜索已注入
@@ -1632,7 +1670,8 @@ export async function POST(request: Request) {
     const effectiveMaxTokens = agentMaxReplyTokens;
 
     const runtimeParameters = { agentDeepThinkingType, agentDeductDeepThink, agentMaxContextRounds, agentMaxContextTokens,
-      agentMaxReplyTokens: effectiveMaxTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat };
+      agentMaxReplyTokens: effectiveMaxTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat, trustedTextOnly,
+      ...(anthropic_thinking_profile ? { anthropic_thinking_profile } : {}) };
     const builtChatRequest = buildLlmChatRequest(useModel, searchInjectedMessages, runtimeParameters, stream,
       [...(effectiveEnableWebSearch ? [{ type: "web_search", web_search: {} }] : []), ...(skillInjection?.tools || [])]);
     if (preparedQuote) {
@@ -1647,11 +1686,54 @@ export async function POST(request: Request) {
 
     if (preparedQuote && (!streamQuote || streamQuote.amount !== preparedQuote.reservation.amount)) throw new LlmQuotePreparationError("LLM_QUOTE_RESERVATION_DRIFT");
 
+    // ── 重新生成 / 改写：按稳定消息 ID 截断旧分支，再决定是否落新用户消息 ──
+    // A branch anchor selects request context, never authorizes deletion.
+    // Verify its owner/conversation before invoking the provider, and append
+    // the new attempt so admission, generation or persistence failures cannot
+    // destroy a previously delivered reply.
+    if (truncateFromMessageId) {
+      if (!conversationId || !verifiedUserId) {
+        throw new LlmTruncateContractError(
+          "LLM_TRUNCATE_TARGET_NOT_FOUND",
+          "截断目标消息不存在或无权限",
+          404,
+        );
+      }
+      const targetResult = await client
+        .from("conversation_messages")
+        .select("id, conversation_id, user_id, created_at")
+        .eq("id", truncateFromMessageId)
+        .eq("conversation_id", conversationId)
+        .eq("user_id", verifiedUserId)
+        .maybeSingle();
+      if (targetResult.error) {
+        console.error("[LLM] Truncate target lookup failed:", targetResult.error);
+        throw new LlmTruncateContractError(
+          "LLM_TRUNCATE_TARGET_UNAVAILABLE",
+          "截断目标消息暂时无法确认，本次未调用模型",
+          503,
+        );
+      }
+      const target = targetResult.data as { id?: unknown; conversation_id?: unknown; user_id?: unknown; created_at?: unknown } | null;
+      if (!target
+        || String(target.id || "") !== truncateFromMessageId
+        || String(target.conversation_id || "") !== String(conversationId)
+        || String(target.user_id || "") !== String(verifiedUserId)
+        || typeof target.created_at !== "string"
+        || !target.created_at) {
+        throw new LlmTruncateContractError(
+          "LLM_TRUNCATE_TARGET_NOT_FOUND",
+          "截断目标消息不存在或无权限",
+          404,
+        );
+      }
+    }
+
     // ── 提前保存用户消息 + 创建会话记录（流开始前，fire-and-forget） ──
     // 对标 AIWeb：用户消息立即持久化，不等流结束
     // 这样即使流中断，用户消息也不会丢失
     // userMessageSaved 已在上方声明（对象引用，跨函数共享）
-    if (conversationId && verifiedUserId) {
+    if (conversationId && verifiedUserId && persistUserMessage) {
       const lastUserMsg = [...messages].reverse().find((m: { role: string }) => m.role === "user");
       if (lastUserMsg) {
         const saveClient = getSupabaseClient();
@@ -1701,7 +1783,7 @@ export async function POST(request: Request) {
           await acquireLlmProviderAdmission();
           await markLlmProviderStarted();
           const skillResponse = await handleSkillChat(skillCtx, chatRequest);
-          const completedSkillResponse = await completeLlmAttemptResponse(llmRequestAttemptStore, activeLlmAttempt, skillResponse);
+          const completedSkillResponse = await completeLlmAttemptResponse(llmRequestAttemptStore, activeLlmAttempt, skillResponse, agentRow);
           return await handoffLlmProviderAdmission(observeLlmPerformanceResponse(completedSkillResponse, performanceTrace));
         } catch (err) {
           if (!llmProviderCallStarted) throw err;
@@ -1722,7 +1804,7 @@ export async function POST(request: Request) {
               "X-Stream-Delivery-Reason": "skill_multi_stage_atomic_budget_unavailable",
             },
           });
-          const completedSkillFailure = await completeLlmAttemptResponse(llmRequestAttemptStore, activeLlmAttempt, skillFailure);
+          const completedSkillFailure = await completeLlmAttemptResponse(llmRequestAttemptStore, activeLlmAttempt, skillFailure, agentRow);
           return await handoffLlmProviderAdmission(observeLlmPerformanceResponse(completedSkillFailure, performanceTrace));
         }
       }
@@ -1755,6 +1837,7 @@ export async function POST(request: Request) {
         llmRequestAttemptStore,
         activeLlmAttempt,
         handleStreamResponse(streamCtx, chatRequest, proxy),
+        agentRow,
       );
       return await handoffLlmProviderAdmission(observeLlmPerformanceResponse(completedStreamResponse, performanceTrace));
     } else {
@@ -1771,7 +1854,7 @@ export async function POST(request: Request) {
       await acquireLlmProviderAdmission();
       await markLlmProviderStarted();
       const nonStreamResponse = await handleNonStreamResponse(streamCtx, chatRequest, proxy);
-      const completedNonStreamResponse = await completeLlmAttemptResponse(llmRequestAttemptStore, activeLlmAttempt, nonStreamResponse);
+      const completedNonStreamResponse = await completeLlmAttemptResponse(llmRequestAttemptStore, activeLlmAttempt, nonStreamResponse, agentRow);
       return await handoffLlmProviderAdmission(observeLlmPerformanceResponse(completedNonStreamResponse, performanceTrace));
     }
   } catch (error: unknown) {
@@ -1805,6 +1888,19 @@ export async function POST(request: Request) {
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         });
       }
+    }
+    if (error instanceof LlmTruncateContractError) {
+      return new Response(JSON.stringify({
+        error: error.message,
+        code: error.code,
+        retryable: false,
+        retry_safe: true,
+        provider_call_started: false,
+        charged: false,
+      }), {
+        status: error.status,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
     }
     if (error instanceof LlmModelFrequencyLimitError) {
       return new Response(JSON.stringify({

@@ -45,11 +45,18 @@ import type { OutputStyle } from "@/types/coze";
 import type { PresetTemplateField } from "@/components/preset-template-editor";
 import type { PromptVersionHistoryHandle } from "@/components/prompt-version-history";
 import { Switch } from "@/components/ui/switch";
+import StoryboardDirectorContractEditor from "@/components/admin/StoryboardDirectorContractEditor";
+import StoryboardPromptPushCapabilityToggle from "@/components/admin/StoryboardPromptPushCapabilityToggle";
+import AgentSearchToolbar from "@/components/admin/agent-search-toolbar";
+import { filterAdminAgents, normalizeAdminAgentSearchQuery } from "@/lib/admin-agent-search";
+import { BIP_CATEGORY, BIP_CATEGORY_LABEL, displayCategory, TASK_CATEGORIES } from "@/lib/business-ip/catalog";
+import { hasActivatedStoryboardDirectorContract, STORYBOARD_DIRECTOR_CONTRACT_FIELDS } from "@/lib/storyboard-director-contract-activation";
 import { normalizeAgentPresetFields, type AgentPresetField } from "@/lib/agent-preset-schema";
 import { readPendingAdminWalletAttempts, submitAdminWalletRequest, type AdminWalletKind, type AdminWalletPayload, type PendingAdminWalletAttempt } from "@/lib/admin-wallet-client";
 import { isQqEmail, normalizeQqEmail } from "@/lib/qq-email";
 import {
   AGENT_NAVIGATION_OPTIONS,
+  getAgentCategoryDisplayName,
   normalizeAllowedAgentNavigationKeys,
 } from "@/lib/agent-category-access";
 import {
@@ -77,6 +84,10 @@ const CommandCenterPanel = dynamic(
 const WorkspaceModelsAdminTab = dynamic(
   () => import("@/components/admin/WorkspaceModelsAdminTab").then((module) => module.WorkspaceModelsAdminTab),
   { ssr: false, loading: () => <div className="rounded-2xl border border-[#d0d5dd] bg-white p-8 text-sm text-[#667085]">正在加载授权模块…</div> },
+);
+const StoryboardPresetsAdminTab = dynamic(
+  () => import("@/components/admin/StoryboardPresetsAdminTab").then((module) => module.StoryboardPresetsAdminTab),
+  { ssr: false, loading: () => <div className="p-6 text-sm text-[var(--muted-foreground)]">正在加载角色预设…</div> },
 );
 const CommerceAgentAdminTab = dynamic(
   () => import("@/components/admin/CommerceAgentAdminTab").then((module) => module.CommerceAgentAdminTab),
@@ -320,6 +331,11 @@ function comparableAgentValue(value: unknown): string {
   return JSON.stringify(value === undefined ? null : value);
 }
 
+function adminDisplayCategoryLabel(key: string): string {
+  if (key === BIP_CATEGORY) return BIP_CATEGORY_LABEL;
+  return TASK_CATEGORIES.find((category) => category.key === key)?.label || getAgentCategoryDisplayName(key);
+}
+
 function normalizedAgentPresetFields(value: AgentInfo["preset_fields"]): PresetFieldConfig[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   return value.map((field, index) => ({ ...field, order: index, sendLabel: field.sendLabel ?? true }));
@@ -327,8 +343,9 @@ function normalizedAgentPresetFields(value: AgentInfo["preset_fields"]): PresetF
 
 function buildAgentUpdatePayload(current: AgentInfo, original: AgentInfo, canEditPrompts: boolean): Record<string, unknown> {
   const payload: Record<string, unknown> = { agentId: current.id };
-  if (Number.isSafeInteger(original.config_revision) && Number(original.config_revision) >= 1) {
-    payload.expected_revision = Number(original.config_revision);
+  const revision = Number(original.config_revision);
+  if (Number.isSafeInteger(revision) && revision >= 1) {
+    payload.expected_revision = revision;
   }
   for (const field of AGENT_EDITABLE_FIELDS) {
     if (field === "system_prompt" && !canEditPrompts) continue;
@@ -495,7 +512,7 @@ function normalizePlatformThemeMode(themeValue: string, _themeModeValue: string)
   return modeForTheme(normalizeTheme(themeValue));
 }
 
-type Tab = "super-admin" | "workspace-models" | "dashboard" | "agents" | "trash" | "users" | "invitations" | "credits" | "offline-payments" | "general" | "theme" | "connection" | "layout" | "models" | "announcements" | "health" | "security" | "guard-logs" | "login-logs" | "sync" | "backup" | "benefit-packages" | "cami" | "aiweb-import" | "payment" | "billing-audit" | "white-label";
+type Tab = "super-admin" | "workspace-models" | "storyboard-presets" | "dashboard" | "agents" | "trash" | "users" | "invitations" | "credits" | "offline-payments" | "general" | "theme" | "connection" | "layout" | "models" | "announcements" | "health" | "security" | "guard-logs" | "login-logs" | "sync" | "backup" | "benefit-packages" | "cami" | "aiweb-import" | "payment" | "billing-audit" | "white-label";
 type UserSubTab = "members" | "recharge" | "consumption" | "chats";
 type MemberFilter = "all" | "inactive" | "trial" | "active" | "expired" | "test";
 
@@ -545,7 +562,7 @@ function getUserAllowedNavigationKeys(user: UserInfo): string[] {
 }
 
 /** 有效 Tab 列表 — 与 Tab 类型保持同步，用于运行时校验 sessionStorage 脏数据 */
-const VALID_TABS: Tab[] = ["super-admin", "workspace-models", "dashboard", "agents", "trash", "users", "invitations", "credits", "offline-payments", "general", "theme", "connection", "layout", "models", "announcements", "health", "security", "guard-logs", "login-logs", "sync", "backup", "benefit-packages", "cami", "aiweb-import", "payment", "billing-audit", "white-label"];
+const VALID_TABS: Tab[] = ["super-admin", "workspace-models", "storyboard-presets", "dashboard", "agents", "trash", "users", "invitations", "credits", "offline-payments", "general", "theme", "connection", "layout", "models", "announcements", "health", "security", "guard-logs", "login-logs", "sync", "backup", "benefit-packages", "cami", "aiweb-import", "payment", "billing-audit", "white-label"];
 
 /** 校验 sessionStorage 恢复的 activeTab 是否为合法值 */
 function isValidTab(v: unknown): v is Tab {
@@ -561,12 +578,13 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "invitations", label: "邀请关系", icon: "M18 7.5v3m0 0v3m0-3h3m-3 0h-3M9 6.75a3.75 3.75 0 110 7.5 3.75 3.75 0 010-7.5zM3.75 21a5.25 5.25 0 0110.5 0v.75H3.75V21z" },
   { key: "credits", label: "资金与计费", icon: "M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
   { key: "offline-payments", label: "线下收款", icon: "M3.75 6A2.25 2.25 0 016 3.75h12A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6zm3 3.75h10.5M6.75 14.25h4.5" },
-  { key: "general", label: "基本设置", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
+  { key: "general", label: "品牌与联系", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
   { key: "theme", label: "界面设置", icon: "M4.098 19.902a3.75 3.75 0 005.304 0l6.401-6.402M6.75 21A3.75 3.75 0 013 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 003.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008z" },
   { key: "connection", label: "模型与外部服务", icon: "M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" },
   { key: "layout", label: "卡片布局", icon: "M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" },
   { key: "models", label: "模型资源池", icon: "M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.5 6.75l.75-.75M19.5 6.75H16.5M19.5 6.75V3.75M6.75 21h10.5a2.25 2.25 0 002.25-2.25V15a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 15v3.75A2.25 2.25 0 006.75 21z" },
   { key: "workspace-models", label: "工作台配置", icon: "M4.5 6.75h15M4.5 12h15m-15 5.25h15M8.25 4.5v4.5m7.5-4.5v4.5m-4.5.75v4.5m-3 0v4.5m7.5-4.5v4.5" },
+  { key: "storyboard-presets", label: "角色预设", icon: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m11-3v6m-3-3h6" },
   { key: "announcements", label: "公告管理", icon: "M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46" },
   { key: "health", label: "系统运维", icon: "M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" },
   { key: "security", label: "安全中心", icon: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" },
@@ -591,7 +609,7 @@ const ADMIN_PRIMARY_NAVIGATION: Array<{ root: Tab; title: string; tabs: Tab[] }>
   { root: "announcements", title: "公告与通知", tabs: ["announcements"] },
   { root: "agents", title: "智能体管理", tabs: ["agents", "aiweb-import", "trash"] },
   { root: "models", title: "模型与服务", tabs: ["models", "connection"] },
-  { root: "workspace-models", title: "工作台配置", tabs: ["workspace-models"] },
+  { root: "workspace-models", title: "工作台配置", tabs: ["workspace-models", "storyboard-presets"] },
   { root: "general", title: "品牌与界面", tabs: ["general", "theme", "layout"] },
   { root: "white-label", title: "域名与贴牌", tabs: ["white-label"] },
   { root: "security", title: "安全审计", tabs: ["security", "guard-logs", "login-logs"] },
@@ -617,7 +635,8 @@ function adminModuleForTab(tab: Tab) {
 
 function canExposeAdminTab(state: AdminAccessClientState | null, tab: Tab): boolean {
   if (!state) return false;
-  if (tab === "super-admin") return state.access.adminLevel === "super_admin";
+  if (tab === "super-admin") return state.access.authorityStatus === "ready"
+    && state.access.integrityValid && state.tabAccess[tab] === true;
   if (tab === "aiweb-import" && !state.access.permissionKeys.includes("prompts.edit")) return false;
   return state.tabAccess[tab] === true;
 }
@@ -2120,8 +2139,8 @@ function CamiTab({ token, users, focusUserId = "", focusUserLabel = "", onClearF
   };
 
   const handleCopyCodes = (codesList: string[]) => {
-    copyToClipboard(codesList.join('\n')).then(() => {
-      alert('已复制到剪贴板');
+    copyToClipboard(codesList.join('\n')).then((ok) => {
+      alert(ok ? '已复制到剪贴板' : '复制失败，请选中文本后手动复制');
     });
   };
 
@@ -2132,6 +2151,8 @@ function CamiTab({ token, users, focusUserId = "", focusUserLabel = "", onClearF
       if (ok) {
         setCopiedId(id);
         setTimeout(() => setCopiedId(null), 1500);
+      } else {
+        alert('复制失败，请选中文本后手动复制');
       }
     });
   };
@@ -2140,14 +2161,14 @@ function CamiTab({ token, users, focusUserId = "", focusUserLabel = "", onClearF
   const handleCopyBatchUnused = (batchId: string) => {
     const batchCodes = codes.filter(c => c.batch_id === batchId && !c.is_used && !c.assigned_to).map(c => c.code);
     if (batchCodes.length === 0) { alert('该批次没有未使用的卡密'); return; }
-    copyToClipboard(batchCodes.join('\n')).then(() => alert(`已复制 ${batchCodes.length} 条未使用卡密`));
+    copyToClipboard(batchCodes.join('\n')).then((ok) => alert(ok ? `已复制 ${batchCodes.length} 条未使用卡密` : '复制失败，请选中文本后手动复制'));
   };
 
   // 复制所有未使用的卡密
   const handleCopyAllUnused = () => {
     const unusedCodes = codes.filter(c => !c.is_used && !c.assigned_to).map(c => c.code);
     if (unusedCodes.length === 0) { alert('没有未使用的卡密'); return; }
-    copyToClipboard(unusedCodes.join('\n')).then(() => alert(`已复制 ${unusedCodes.length} 条未使用卡密`));
+    copyToClipboard(unusedCodes.join('\n')).then((ok) => alert(ok ? `已复制 ${unusedCodes.length} 条未使用卡密` : '复制失败，请选中文本后手动复制'));
   };
 
   return (
@@ -2696,6 +2717,9 @@ function TrialPlansTab({ token, agents }: { token: string | null; agents: AgentI
 }
 
 export default function AdminPage() {
+  const token = safeLocalStorageGet(STORAGE_KEYS.AUTH_TOKEN);
+  const currentUserId = safeJsonParse<{id?: string}>(safeLocalStorageGet(STORAGE_KEYS.AUTH_USER), {})?.id ?? "";
+  const authHeaders: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${token || ""}` };
   const router = useRouter();
   const platformBranding = usePlatformBranding();
   const platformLogoUrl = platformBrandLogoUrl(platformBranding, "square");
@@ -3106,6 +3130,12 @@ export default function AdminPage() {
   const [pendingEditCoverKey, setPendingEditCoverKey] = useState("");
   const editOriginalImagesRef = useRef({ avatar: "", cover: "" });
   const editOriginalAgentRef = useRef<AgentInfo | null>(null);
+  const directorContractActionRef = useRef<"rollback" | null>(null);
+  const agentEditSessionRef = useRef(0);
+  const agentPromptReadRef = useRef(0);
+  const agentSaveInFlightRef = useRef(false);
+  const [agentEditSession, setAgentEditSession] = useState(0);
+  const [editPromptReading, setEditPromptReading] = useState(false);
   const [agentSaveBusy, setAgentSaveBusy] = useState(false);
   // 候选头像列表：生成的头像供选择，持久化到 localStorage
   const [avatarCandidates, setAvatarCandidates] = useState<string[]>(() => {
@@ -3117,7 +3147,39 @@ export default function AdminPage() {
   const [singleAvatarStatus, setSingleAvatarStatus] = useState("");
   const [singleAvatarStyle, setSingleAvatarStyle] = useState("主站3D卡通");
   const [singleAvatarCustomPrompt, setSingleAvatarCustomPrompt] = useState("");
-  const [editingAgent, setEditingAgent] = useState<AgentInfo | null>(null);
+  const [editingAgent, setEditingAgentState] = useState<AgentInfo | null>(null);
+  const agentEditorAccessRef = useRef({ configuration: canManageAgentConfiguration, prompts: canEditPrompts });
+  // A callback from an earlier render must never resurrect a closed edit session.
+  const setEditingAgent = (update: React.SetStateAction<AgentInfo | null>) => {
+    setEditingAgentState((current) => {
+      if (!agentEditorAccessRef.current.configuration || agentEditSessionRef.current !== agentEditSession || !current
+        || current.id !== editOriginalAgentRef.current?.id) return current;
+      const next = typeof update === "function" ? update(current) : update;
+      return next && next.id === current.id ? next : current;
+    });
+  };
+  const closeAgentEditor = (expectedSession?: number) => {
+    if (expectedSession !== undefined && agentEditSessionRef.current !== expectedSession) return false;
+    agentEditSessionRef.current += 1;
+    agentPromptReadRef.current += 1;
+    editOriginalAgentRef.current = null;
+    directorContractActionRef.current = null;
+    setEditPromptReading(false);
+    setEditingAgentState(null);
+    setPendingEditAvatarKey("");
+    setPendingEditCoverKey("");
+    setEditAvatarPreview("");
+    setEditAgentCoverPreview("");
+    setEditAvatarUploading(false);
+    setEditAgentCoverUploading(false);
+    return true;
+  };
+  useEffect(() => {
+    agentEditorAccessRef.current = { configuration: canManageAgentConfiguration, prompts: canEditPrompts };
+    if (!canManageAgentConfiguration) closeAgentEditor();
+    if (!canEditPrompts) { agentPromptReadRef.current += 1; setEditPromptReading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManageAgentConfiguration, canEditPrompts]);
   const resolveAvatarPreviewSrc = (value?: string | null) => {
     if (!value) return "";
     return value.startsWith("http") || value.startsWith("/") || value.startsWith("data:")
@@ -3140,6 +3202,7 @@ export default function AdminPage() {
   const [healthActionError, setHealthActionError] = useState("");
   const [codingTestResult, setCodingTestResult] = useState<{ok: boolean; msg: string} | null>(null);
   const [codingTestLoading, setCodingTestLoading] = useState(false);
+  const codingTestInFlightRef = useRef(false);
   const [systemLogs, setSystemLogs] = useState<any[]>([]);
   const [logFilter, setLogFilter] = useState("all");
   // ── 使用诊断状态 ──
@@ -3154,6 +3217,8 @@ export default function AdminPage() {
   const [diagDetailId, setDiagDetailId] = useState<string | null>(null);
   const [diagDetail, setDiagDetail] = useState<any>(null);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [diagError, setDiagError] = useState("");
+  const [diagUpdatingId, setDiagUpdatingId] = useState<string | null>(null);
   const [rechargeUserId, setRechargeUserId] = useState("");
   const [rechargeYuan, setRechargeYuan] = useState(100);
   const [bonusCredits, setBonusCredits] = useState(0);
@@ -3203,8 +3268,7 @@ export default function AdminPage() {
     setTrashedAgents((current) => current.map(stripAgentSensitiveClientFields));
     setAgentDataSource(null);
     setViewingPromptAgentId("");
-    setEditingAgent(null);
-    editOriginalAgentRef.current = null;
+    closeAgentEditor();
     setShowAddAgent(false);
     setShowImportCoze(false);
     setShowImportByIds(false);
@@ -3266,6 +3330,13 @@ export default function AdminPage() {
   const [editingCategoryIcon, setEditingCategoryIcon] = useState("");
   const [deleteCategoryId, setDeleteCategoryId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null); // null=全部
+  const [selectedDisplayCategory, setSelectedDisplayCategory] = useState<string | null>(null);
+  const [agentSearchQuery, setAgentSearchQuery] = useState("");
+  const hasAgentSearchQuery = normalizeAdminAgentSearchQuery(agentSearchQuery).length > 0;
+  const [agentSortSaving, setAgentSortSaving] = useState(false);
+  const agentSortSavingRef = useRef(false);
+  const pendingAgentRevisionsRef = useRef<Record<string, { revision: number; category: string }>>({});
+  const canDragAgentRows = canManageAgents && !hasAgentSearchQuery && !selectedDisplayCategory && !agentSortSaving;
   const [pendingSortOrders, setPendingSortOrders] = useState<Record<string, number>>({});
   const [pendingAgentSortOrders, setPendingAgentSortOrders] = useState<Record<string, number>>({});
   const [showImportCoding, setShowImportCoding] = useState(false);
@@ -3278,6 +3349,13 @@ export default function AdminPage() {
   const [dragOverPosition, setDragOverPosition] = useState<"before" | "after">("before");
   // 列表行拖拽状态
   const [listDragOverIdx, setListDragOverIdx] = useState<number | null>(null);
+  const handleAgentSearchChange = (query: string) => {
+    setAgentSearchQuery(query);
+    setDraggedAgentId(null);
+    setDragOverCategoryId(null);
+    setDragOverAgentId(null);
+    setListDragOverIdx(null);
+  };
   // 操作密码确认
   const [pendingAction, setPendingAction] = useState<((verification?: AdminUserDeleteVerification) => void | Promise<void>) | null>(null);
   const [actionPassword, setActionPassword] = useState("");
@@ -3484,6 +3562,7 @@ export default function AdminPage() {
   // ── 使用诊断数据加载 ──
   const loadDiagLogs = useCallback(async (page = 1, signal?: AbortSignal) => {
     setDiagLoading(true);
+    setDiagError("");
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: "20" });
       if (diagFilterType) params.set("problemType", diagFilterType);
@@ -3491,6 +3570,7 @@ export default function AdminPage() {
       if (diagFilterStatus) params.set("status", diagFilterStatus);
       const res = await fetch(`/api/admin/diagnostic-logs?${params}`, { headers: authHeaders, signal });
       const data = await res.json();
+      if (!res.ok || !Array.isArray(data.data)) throw new Error(data.error || "诊断记录读取失败");
       if (data.data) {
         setDiagLogs(data.data);
         setDiagTotal(data.total);
@@ -3500,40 +3580,51 @@ export default function AdminPage() {
     } catch (e) {
       if (!signal?.aborted && (!(e instanceof DOMException) || e.name !== "AbortError")) {
         console.error("[diagnostic] 加载失败:", e);
+        setDiagError(e instanceof Error ? e.message : "诊断记录读取失败，请稍后刷新");
       }
     } finally {
       if (!signal?.aborted) setDiagLoading(false);
     }
-  }, [diagFilterType, diagFilterSeverity, diagFilterStatus]);
+  }, [diagFilterType, diagFilterSeverity, diagFilterStatus, token]);
 
   const loadDiagDetail = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/admin/diagnostic-logs/${id}`, { headers: authHeaders });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "诊断详情读取失败");
       setDiagDetail(data);
       setDiagDetailId(id);
     } catch (e) {
       console.error("[diagnostic] 详情加载失败:", e);
+      setDiagError(e instanceof Error ? e.message : "诊断详情读取失败");
     }
-  }, []);
+  }, [token]);
 
   const updateDiagStatus = useCallback(async (id: string, status: string, notes?: string) => {
+    if (diagUpdatingId) return;
+    setDiagUpdatingId(id);
+    setDiagError("");
     try {
       const body: Record<string, string> = { status };
       if (notes !== undefined) body.admin_notes = notes;
-      await fetch(`/api/admin/diagnostic-logs/${id}`, {
+      const response = await fetch(`/api/admin/diagnostic-logs/${id}`, {
         method: "PUT",
         headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      loadDiagLogs(diagPage);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "诊断状态保存失败");
+      await loadDiagLogs(diagPage);
       if (diagDetailId === id) {
-        loadDiagDetail(id);
+        await loadDiagDetail(id);
       }
     } catch (e) {
       console.error("[diagnostic] 更新状态失败:", e);
+      setDiagError(e instanceof Error ? e.message : "诊断状态保存失败，请稍后重试");
+    } finally {
+      setDiagUpdatingId(null);
     }
-  }, [diagPage, diagDetailId, loadDiagLogs, loadDiagDetail]);
+  }, [diagPage, diagDetailId, diagUpdatingId, loadDiagLogs, loadDiagDetail, token]);
 
   const downloadDiagLog = useCallback((log: any) => {
     const blob = new Blob([JSON.stringify(log, null, 2)], { type: "application/json" });
@@ -3544,6 +3635,19 @@ export default function AdminPage() {
     a.click();
     URL.revokeObjectURL(url);
   }, []);
+
+  const handleDownloadDiagLog = useCallback(async (id: string) => {
+    setDiagError("");
+    try {
+      const response = await fetch(`/api/admin/diagnostic-logs/${id}`, { headers: { Authorization: `Bearer ${token || ""}` } });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "诊断日志下载失败");
+      if (!data || typeof data !== "object" || Array.isArray(data) || data.id !== id) throw new Error("诊断日志格式不完整，请刷新后重试");
+      downloadDiagLog(data);
+    } catch (error) {
+      setDiagError(error instanceof Error ? error.message : "诊断日志下载失败，请稍后重试");
+    }
+  }, [downloadDiagLog, token]);
 
   const deleteDiagLogs = useCallback(async (days: number) => {
     if (!confirm(`确定清理 ${days} 天前的诊断日志？`)) return;
@@ -3584,10 +3688,6 @@ export default function AdminPage() {
       setImportCozeLoading(false);
     }
   };
-
-  const token = safeLocalStorageGet(STORAGE_KEYS.AUTH_TOKEN);
-  const currentUserId = safeJsonParse<{id?: string}>(safeLocalStorageGet(STORAGE_KEYS.AUTH_USER), {})?.id ?? "";
-  const authHeaders: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${token || ""}` };
 
   const loadAdminAccess = useCallback(async (): Promise<AdminAccessClientState | null> => {
     if (!token) return null;
@@ -3735,9 +3835,12 @@ export default function AdminPage() {
           system_prompt: agent.prompt_access === "visible" ? (agent.system_prompt || "") : undefined,
         })));
         setAgentDataSource(data.configurationAccess === "visible" ? (data.dataSource || null) : null);
+        return true;
       }
+      return false;
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) console.error("智能体列表加载失败:", error);
+      return false;
     } finally {
       if (requestSequence === agentsRequestSequenceRef.current) agentsAbortControllerRef.current = null;
     }
@@ -4784,28 +4887,36 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/users", { method: "PUT", headers: authHeaders, body: JSON.stringify({ userId: user.id, status: targetStatus }) });
       if (res.ok) { showSuccessAndSync(`已${statusLabel}`); loadUsers(); }
-    } catch {/* */}
+      else { const data = await res.json().catch(() => ({})); showMessage("error", data.error || `${statusLabel}失败，请刷新后核对账号状态`); }
+    } catch { showMessage("error", "请求未完成，请刷新后核对账号状态"); }
   };
 
   // 测试扣子编程智能体连接
-  const testCodingConnection = async (apiUrl: string, token: string) => {
-    if (!apiUrl || !token) {
+  const testCodingConnection = async (apiUrl: string, providerToken: string) => {
+    if (codingTestInFlightRef.current) return;
+    if (!apiUrl || !providerToken) {
       setCodingTestResult({ ok: false, msg: '请先填写 API 地址和 Token' });
       return;
     }
+    codingTestInFlightRef.current = true;
     setCodingTestLoading(true);
     setCodingTestResult(null);
     try {
       const res = await fetch('/api/coze/test-coding', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ api_url: apiUrl, api_token: token }),
+        headers: authHeaders,
+        body: JSON.stringify({ url: apiUrl, token: providerToken, projectId: newAgent.botId }),
       });
       const data = await res.json();
-      setCodingTestResult({ ok: data.success, msg: data.message || (data.success ? '连接成功' : '连接失败') });
-    } catch {
-      setCodingTestResult({ ok: false, msg: '网络请求失败' });
+      if (!res.ok || !data.success) throw new Error(data.error || data.message || '测试请求失败');
+      setCodingTestResult({ ok: true, msg: '接口已响应；工作流运行结果需在实际调用中核对' });
+      showMessage("success", "接口已响应；工作流运行结果需在实际调用中核对");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '测试请求未完成，请先核对上一次请求';
+      setCodingTestResult({ ok: false, msg: message });
+      showMessage("error", message);
     } finally {
+      codingTestInFlightRef.current = false;
       setCodingTestLoading(false);
     }
   };
@@ -5265,9 +5376,12 @@ export default function AdminPage() {
   const handleEditAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const uploadSession = agentEditSession;
+    const isCurrentUpload = () => agentEditSessionRef.current === uploadSession && agentEditorAccessRef.current.configuration;
     setEditAvatarUploading(true);
     try {
       const asset = await uploadAgentImage(file, "avatar");
+      if (!isCurrentUpload()) { void discardPendingAgentImage(asset.key); return; }
       const previousPending = pendingEditAvatarKey;
       setEditingAgent((current) => current ? ({ ...current, avatar: asset.key }) : current);
       setEditAvatarPreview(asset.url);
@@ -5275,9 +5389,9 @@ export default function AdminPage() {
       if (previousPending && previousPending !== asset.key) void discardPendingAgentImage(previousPending);
       showMessage("success", `头像上传成功（${asset.width}×${asset.height}）`);
     } catch (error) {
-      showMessage("error", error instanceof Error ? error.message : "头像上传失败");
+      if (isCurrentUpload()) showMessage("error", error instanceof Error ? error.message : "头像上传失败");
     } finally {
-      setEditAvatarUploading(false);
+      if (isCurrentUpload()) setEditAvatarUploading(false);
       e.target.value = "";
     }
   };
@@ -5285,9 +5399,12 @@ export default function AdminPage() {
   const handleEditCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const uploadSession = agentEditSession;
+    const isCurrentUpload = () => agentEditSessionRef.current === uploadSession && agentEditorAccessRef.current.configuration;
     setEditAgentCoverUploading(true);
     try {
       const asset = await uploadAgentImage(file, "cover");
+      if (!isCurrentUpload()) { void discardPendingAgentImage(asset.key); return; }
       const previousPending = pendingEditCoverKey;
       setEditingAgent((current) => current ? ({ ...current, cover_url: asset.key }) : current);
       setEditAgentCoverPreview(asset.url);
@@ -5295,15 +5412,17 @@ export default function AdminPage() {
       if (previousPending && previousPending !== asset.key) void discardPendingAgentImage(previousPending);
       showMessage("success", `背景图上传成功（${asset.width}×${asset.height}）`);
     } catch (error) {
-      showMessage("error", error instanceof Error ? error.message : "背景图上传失败");
+      if (isCurrentUpload()) showMessage("error", error instanceof Error ? error.message : "背景图上传失败");
     } finally {
-      setEditAgentCoverUploading(false);
+      if (isCurrentUpload()) setEditAgentCoverUploading(false);
       e.target.value = "";
     }
   };
 
   // 一键生成单个智能体头像
   const generateSingleAvatar = async (mode: "add" | "edit") => {
+    const generationSession = agentEditSession;
+    const isCurrentGeneration = () => mode === "add" || (agentEditSessionRef.current === generationSession && agentEditorAccessRef.current.configuration);
     const agentName = mode === "add" ? newAgent.name : editingAgent?.name;
     const agentDesc = mode === "add" ? newAgent.description : editingAgent?.description;
     const agentId = mode === "edit" ? editingAgent?.id : undefined;
@@ -5346,6 +5465,7 @@ export default function AdminPage() {
       const newCandidates = [result.avatarUrl, ...avatarCandidates.filter((url) => url !== result.avatarUrl)].slice(0, 20);
       setAvatarCandidates(newCandidates);
       try { safeLocalStorageSet("avatar_candidates", JSON.stringify(newCandidates)); } catch {}
+      if (!isCurrentGeneration()) { void loadAgents(); return; }
 
       if (mode === "add") {
         setNewAgent(prev => ({ ...prev, avatar: result.avatarUrl }));
@@ -5359,27 +5479,51 @@ export default function AdminPage() {
       showMessage("success", mode === "edit" ? "头像生成成功，已自动保存到数据库" : "头像生成成功，已填入新增表单");
     } catch (error) {
       const msg = error instanceof Error ? error.message : "头像生成请求失败";
-      setSingleAvatarStatus(msg);
-      showMessage("error", msg);
+      if (isCurrentGeneration()) { setSingleAvatarStatus(msg); showMessage("error", msg); }
     } finally {
       setSingleAvatarGenerating(false);
       }
   };
 
   const handleUpdateAgent = async () => {
-    if (!canManageAgentConfiguration || agentSaveBusy) return;
+    if (!canManageAgentConfiguration || agentSaveBusy || agentSaveInFlightRef.current) return;
+    if (editPromptReading) { showMessage("error", "提示词文件正在读取，请稍后保存"); return; }
     if (!editingAgent || !editingAgent.name) { showMessage("error", "请填写智能体名称"); return; }
+    const saveSession = agentEditSession;
     const originalAgent = editOriginalAgentRef.current;
-    if (!originalAgent || originalAgent.id !== editingAgent.id) {
+    if (agentEditSessionRef.current !== saveSession || !originalAgent || originalAgent.id !== editingAgent.id) {
       showMessage("error", "编辑基线已过期，请关闭后重新打开智能体");
       return;
     }
     const updatePayload = buildAgentUpdatePayload(editingAgent, originalAgent, canEditPrompts);
+    const originalImages = { ...editOriginalImagesRef.current };
+    const pendingContractAction = directorContractActionRef.current;
+    const isCurrentSession = () => agentEditSessionRef.current === saveSession && editOriginalAgentRef.current === originalAgent;
+    const restoreFailedContractDraft = () => {
+      if (pendingContractAction !== "rollback" || !isCurrentSession()) return;
+      setEditingAgent((current) => {
+        if (!current || current.id !== originalAgent.id) return current;
+        const restoredStyle: Record<string, unknown> = { ...(current.output_style || {}) };
+        const originalStyle = (originalAgent.output_style || {}) as Record<string, unknown>;
+        for (const key of STORYBOARD_DIRECTOR_CONTRACT_FIELDS) {
+          if (Object.prototype.hasOwnProperty.call(originalStyle, key)) {
+            restoredStyle[key] = originalStyle[key];
+          } else delete restoredStyle[key];
+        }
+        return { ...current, output_style: restoredStyle as OutputStyle };
+      });
+    };
+    if (pendingContractAction) {
+      if (!canEditPrompts) { restoreFailedContractDraft(); directorContractActionRef.current = null; showMessage("error", "请重新验证提示词编辑权限后再操作制作合同"); return; }
+      updatePayload.directorContractAction = pendingContractAction;
+    }
     if (Object.keys(updatePayload).every((key) => key === "agentId" || key === "expected_revision")) {
       showMessage("success", "没有需要保存的修改");
       return;
     }
+    agentSaveInFlightRef.current = true;
     setAgentSaveBusy(true);
+    let saved = false;
     try {
       const res = await fetch("/api/admin/agents", {
         method: "PUT",
@@ -5387,16 +5531,17 @@ export default function AdminPage() {
         body: JSON.stringify(updatePayload),
       });
       const data = await res.json();
+      if (!isCurrentSession()) { void loadAgents(); return; }
       if (res.ok && data.success) {
+        saved = true;
         const obsoleteKeys = [
-          editOriginalImagesRef.current.avatar !== editingAgent.avatar ? editOriginalImagesRef.current.avatar : "",
-          editOriginalImagesRef.current.cover !== (editingAgent.cover_url || "") ? editOriginalImagesRef.current.cover : "",
+          originalImages.avatar !== editingAgent.avatar ? originalImages.avatar : "",
+          originalImages.cover !== (editingAgent.cover_url || "") ? originalImages.cover : "",
         ].filter(Boolean);
         showSuccessAndSync("智能体更新成功");
         setPendingEditAvatarKey("");
         setPendingEditCoverKey("");
-        editOriginalAgentRef.current = null;
-        setEditingAgent(null);
+        closeAgentEditor(saveSession);
         setEditAvatarPreview("");
         setEditAgentCoverPreview("");
         setEditShowAdvanced(false);
@@ -5408,8 +5553,13 @@ export default function AdminPage() {
         loadAgents();
       }
       else { showMessage("error", data.error || "更新失败"); }
-    } catch { showMessage("error", "更新失败"); }
-    finally { setAgentSaveBusy(false); }
+    } catch { if (isCurrentSession()) showMessage("error", "更新失败"); }
+    finally {
+      if (!saved) restoreFailedContractDraft();
+      if (isCurrentSession()) directorContractActionRef.current = null;
+      agentSaveInFlightRef.current = false;
+      setAgentSaveBusy(false);
+    }
   };
 
   const handleDeleteAgent = (agent: AgentInfo) => {
@@ -5484,13 +5634,33 @@ export default function AdminPage() {
     } catch { showMessage("error", "网络错误"); }
   };
 
+  const handleEditAgent = (agent: AgentInfo) => {
+    const session = ++agentEditSessionRef.current;
+    agentPromptReadRef.current += 1;
+    setAgentEditSession(session);
+    editOriginalAgentRef.current = structuredClone(agent);
+    directorContractActionRef.current = null;
+    setEditPromptReading(false);
+    setEditingAgentState(structuredClone(agent));
+    setEditAvatarUploading(false);
+    setEditAgentCoverUploading(false);
+    editOriginalImagesRef.current = { avatar: agent.avatar || "", cover: agent.cover_url || "" };
+    setPendingEditAvatarKey("");
+    setPendingEditCoverKey("");
+    setEditAvatarPreview(resolveTrashAvatarSrc(agent));
+    setEditAgentCoverPreview(resolveAvatarPreviewSrc(agent.cover_url));
+    setEditShowAdvanced(false);
+    void loadLlmModels();
+    void loadDrawingModels();
+  };
+
   const handleCancelEdit = () => {
+    if (agentEditSessionRef.current !== agentEditSession) return;
     if (pendingEditAvatarKey) void discardPendingAgentImage(pendingEditAvatarKey);
     if (pendingEditCoverKey) void discardPendingAgentImage(pendingEditCoverKey);
     setPendingEditAvatarKey("");
     setPendingEditCoverKey("");
-    editOriginalAgentRef.current = null;
-    setEditingAgent(null);
+    closeAgentEditor(agentEditSession);
     setEditAvatarPreview("");
     setEditAgentCoverPreview("");
     setEditShowAdvanced(false);
@@ -5573,27 +5743,51 @@ export default function AdminPage() {
 
   // 保存智能体排序号
   const handleSaveAgentSortOrders = async () => {
-    const entries = Object.entries(pendingAgentSortOrders);
-    if (entries.length === 0) return;
-    let allOk = true;
-    for (const [agentId, sortOrder] of entries) {
-      try {
-        const agent = agents.find((item) => item.id === agentId);
-        if (!agent) throw new Error("AGENT_NOT_FOUND");
-        const res = await fetch("/api/admin/agents", {
-          method: "PUT", headers: { ...authHeaders, "Content-Type": "application/json" },
-          body: JSON.stringify(buildAgentMutationPayload(agent, { sortOrder })),
-        });
-        const data = await res.json();
-        if (!data.success) { allOk = false; console.error("[saveSortOrder] failed:", agentId, data.error); }
-      } catch (e) { allOk = false; console.error("[saveSortOrder] exception:", agentId, e); }
+    if (hasAgentSearchQuery || agentSortSavingRef.current) return;
+    const ids = Object.keys(pendingAgentSortOrders);
+    if (ids.length === 0) return;
+    const byId = new Map(agents.map((agent) => [agent.id, agent]));
+    const snapshots = pendingAgentRevisionsRef.current;
+    if (ids.some((id) => !byId.has(id) || !snapshots[id] || byId.get(id)?.category !== snapshots[id].category)) {
+      showMessage("error", "分类或列表已变化，请放弃草稿并刷新后重新排序。");
+      return;
     }
-    if (allOk) { showSuccessAndSync("智能体排序已保存"); setPendingAgentSortOrders({}); loadAgents(); }
-    else { showMessage("error", "部分智能体排序保存失败"); loadAgents(); }
+    // Each affected storage category is submitted in full; the server verifies
+    // completeness and revisions atomically, including rows not visible here.
+    const entries = ids.sort((a, b) => pendingAgentSortOrders[a] - pendingAgentSortOrders[b])
+      .map((id) => ({ id, expected_revision: snapshots[id].revision }));
+    agentSortSavingRef.current = true;
+    setAgentSortSaving(true);
+    try {
+      const res = await fetch("/api/admin/agents/reorder", {
+        method: "PUT", headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: entries }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        const fallback = res.status === 409 ? "排序或分类已被其他操作更改，请放弃草稿、刷新后重排。" : "排序保存失败，请稍后重试。";
+        showMessage("error", `${data.error || fallback}${res.status === 409 ? " 请放弃草稿并刷新后重新排序。" : ""}`);
+        return;
+      }
+      pendingAgentRevisionsRef.current = {};
+      setPendingAgentSortOrders({});
+      const refreshed = await loadAgents();
+      if (refreshed) showSuccessAndSync("智能体排序已保存");
+      else showMessage("error", "排序已保存，但列表刷新失败，请手动刷新。");
+    } catch {
+      showMessage("error", "排序结果未确认，请刷新核对后再重新排序。");
+    } finally {
+      agentSortSavingRef.current = false;
+      setAgentSortSaving(false);
+    }
   };
 
   // 移动单个智能体到指定分类
   const handleMoveAgentToCategory = async (agentId: string, targetCategory: string) => {
+    if (Object.keys(pendingAgentSortOrders).length > 0 || agentSortSavingRef.current) {
+      showMessage("error", "请先保存或放弃当前排序，再迁移智能体。");
+      return;
+    }
     try {
       const agent = agents.find((item) => item.id === agentId);
       if (!agent) throw new Error("AGENT_NOT_FOUND");
@@ -5610,15 +5804,19 @@ export default function AdminPage() {
 
   // 拖拽排序：在智能体列表中拖拽调整顺序
   // 获取过滤并排序后的智能体列表
-  const getFilteredAndSortedAgents = () => {
-    // 先过滤
+  const getCategoryFilteredAgents = () => {
     let filtered = agents;
+    if (selectedDisplayCategory) return agents.filter((agent) => displayCategory(agent) === selectedDisplayCategory);
     if (selectedCategoryId) {
       const cat = categories.find((c) => c.id === selectedCategoryId);
       if (cat) {
         filtered = agents.filter((a) => a.category === cat.name);
       }
     }
+    return filtered;
+  };
+  const getFilteredAndSortedAgents = () => {
+    const filtered = filterAdminAgents(getCategoryFilteredAgents(), agentSearchQuery, llmModels);
     // 按分类排序顺序 + 智能体排序号排序
     const catOrderMap = new Map(categories.map((c, i) => [c.name, i]));
     return [...filtered].sort((a, b) => {
@@ -5631,17 +5829,21 @@ export default function AdminPage() {
     });
   };
   const handleDragReorderAgent = async (draggedId: string, targetId: string, position: "before" | "after") => {
-    // 获取当前过滤后的智能体列表
-    const filteredAgents = getFilteredAndSortedAgents();
-    // 从列表中移除被拖拽项
-    const draggedIdx = filteredAgents.findIndex((a) => a.id === draggedId);
-    if (draggedIdx === -1) return;
-    const targetIdx = filteredAgents.findIndex((a) => a.id === targetId);
-    if (targetIdx === -1) return;
-    // 重新排列
-    const reordered = filteredAgents.filter((a) => a.id !== draggedId);
-    const insertIdx = position === "before" ? targetIdx : targetIdx + (draggedIdx < targetIdx ? 0 : 1);
-    reordered.splice(insertIdx, 0, filteredAgents[draggedIdx]);
+    if (!canDragAgentRows || draggedId === targetId) return;
+    const dragged = agents.find((agent) => agent.id === draggedId);
+    const target = agents.find((agent) => agent.id === targetId);
+    if (!dragged || !target || dragged.category !== target.category) return;
+    const reordered = agents.filter((agent) => agent.category === dragged.category)
+      .sort((a, b) => (pendingAgentSortOrders[a.id] ?? a.sort_order ?? 0) - (pendingAgentSortOrders[b.id] ?? b.sort_order ?? 0));
+    if (reordered.some((agent) => !Number.isSafeInteger(Number(agent.config_revision)) || Number(agent.config_revision) < 1)) {
+      showMessage("error", "缺少有效配置版本，请刷新后重试。");
+      return;
+    }
+    const snapshot = pendingAgentRevisionsRef.current;
+    reordered.forEach((agent) => { if (!snapshot[agent.id]) snapshot[agent.id] = { revision: Number(agent.config_revision), category: agent.category }; });
+    reordered.splice(reordered.findIndex((agent) => agent.id === draggedId), 1);
+    const targetIdx = reordered.findIndex((agent) => agent.id === targetId);
+    reordered.splice(targetIdx + (position === "after" ? 1 : 0), 0, dragged);
     // 按10递增分配sort_order
     const updates: Record<string, number> = {};
     reordered.forEach((a, i) => { updates[a.id] = (i + 1) * 10; });
@@ -6236,9 +6438,21 @@ const handleDeleteCategory = async () => {
               </div>
             ) : null}
             {/* Category Management */}
+            <div className="mb-5">
+              <h2 className="mb-1 text-lg font-semibold text-[var(--foreground)]">前台展示分类</h2>
+              <p className="mb-3 text-xs text-[var(--muted-foreground)]">与应用广场使用同一分类；这里只筛选展示，原始分类和权限不随之改变。前台分类筛选期间暂停排序。</p>
+              <div className="flex flex-wrap gap-2">
+                {[BIP_CATEGORY, ...TASK_CATEGORIES.map((category) => category.key), ...new Set(agents.map((agent) => displayCategory(agent)).filter((key) => key !== BIP_CATEGORY && !TASK_CATEGORIES.some((category) => category.key === key)))].map((key) => (
+                  <button key={key} type="button" onClick={() => { setSelectedCategoryId(null); setSelectedDisplayCategory((current) => current === key ? null : key); }}
+                    className={`rounded-lg border px-3 py-2 text-sm ${selectedDisplayCategory === key ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]"}`}>
+                    {adminDisplayCategoryLabel(key)} <span className="text-xs text-[var(--muted-foreground)]">{agents.filter((agent) => displayCategory(agent) === key).length}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-[var(--foreground)]">分类管理 ({categories.length})</h2>
+                <h2 className="text-lg font-semibold text-[var(--foreground)]">原始分类管理 ({categories.length})</h2>
                 {canManageInternalTools && <div className="flex items-center gap-2">
                   {Object.keys(pendingSortOrders).length > 0 && (
                     <button onClick={handleSaveSortOrders} className="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm font-medium transition-colors shadow-sm">
@@ -6255,11 +6469,11 @@ const handleDeleteCategory = async () => {
                 {/* "全部"卡片 */}
                 <div
                   className={`bg-[var(--card)] border rounded-xl p-3 transition-all cursor-pointer select-none ${
-                    selectedCategoryId === null
+                    selectedCategoryId === null && selectedDisplayCategory === null
                       ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/20 shadow-md shadow-[var(--primary)]/10"
                       : "border-[var(--border)] hover:border-[var(--primary)]/50 hover:shadow-sm"
                   }`}
-                  onClick={() => setSelectedCategoryId(null)}
+                  onClick={() => { setSelectedCategoryId(null); setSelectedDisplayCategory(null); }}
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-base">📋</span>
@@ -6283,11 +6497,11 @@ const handleDeleteCategory = async () => {
                             ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/40 bg-[var(--primary)]/5 shadow-lg shadow-[var(--primary)]/20 scale-[1.02]"
                             : "border-[var(--border)] hover:border-[var(--primary)]/50 hover:shadow-sm"
                       }`}
-                      onClick={() => setSelectedCategoryId(isSelected ? null : cat.id)}
-                      onDragOver={(e) => { if (!canManageAgents) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverCategoryId(cat.id); }}
+                      onClick={() => { setSelectedDisplayCategory(null); setSelectedCategoryId(isSelected ? null : cat.id); }}
+                      onDragOver={(e) => { if (!canDragAgentRows) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverCategoryId(cat.id); }}
                       onDragLeave={() => setDragOverCategoryId(null)}
                       onDrop={async (e) => {
-                        if (!canManageAgents) return;
+                        if (!canDragAgentRows) return;
                         e.preventDefault();
                         setDragOverCategoryId(null);
                         const agentId = e.dataTransfer.getData("agent-id");
@@ -6412,7 +6626,7 @@ const handleDeleteCategory = async () => {
 
             {/* Agent List */}
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-semibold text-[var(--foreground)]">智能体列表 ({getFilteredAndSortedAgents().length}{selectedCategoryId ? ` / ${agents.length}` : ""})</h2>
+              <h2 className="text-lg font-semibold text-[var(--foreground)]">智能体列表 ({getFilteredAndSortedAgents().length}{selectedCategoryId || selectedDisplayCategory || hasAgentSearchQuery ? ` / ${agents.length}` : ""})</h2>
               {canManageAgentConfiguration && <div className="flex items-center gap-2">
                 <button
                   onClick={handleImportCoze}
@@ -6455,10 +6669,10 @@ const handleDeleteCategory = async () => {
               </div>}
             </div>
             <div className="mb-4 flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
-              {selectedCategoryId ? (
+              {selectedCategoryId || selectedDisplayCategory ? (
                 <span className="text-[var(--primary)] font-medium">
-                  {(() => { const cat = categories.find(c => c.id === selectedCategoryId); return cat ? `筛选: ${cat.name}` : ''; })()}
-                  <button onClick={() => setSelectedCategoryId(null)} className="ml-2 underline text-[var(--muted-foreground)] hover:text-[var(--foreground)]">查看全部</button>
+                  {selectedDisplayCategory ? `前台分类: ${adminDisplayCategoryLabel(selectedDisplayCategory)}` : `原始分类: ${categories.find(c => c.id === selectedCategoryId)?.name || ''}`}
+                  <button onClick={() => { setSelectedCategoryId(null); setSelectedDisplayCategory(null); }} className="ml-2 underline text-[var(--muted-foreground)] hover:text-[var(--foreground)]">查看全部</button>
                 </span>
               ) : null}
               <span>编程智能体: {getFilteredAndSortedAgents().filter(a => a.source === 'coze_coding').length} 个</span>
@@ -6471,6 +6685,20 @@ const handleDeleteCategory = async () => {
               <span className="ml-3">{agentDataSource.configuration === 'local-acceptance' ? '配置与账号数据均隔离在本机验收库，刷新页面会读取最新配置。' : agentDataSource.configuration === 'shared-cloud' ? '模型绑定与分类配置保存到云端，重新打开卡片读取最新配置。' : '保存修改无需重新部署代码。'}</span>
               <p className="mt-1">账号、聊天与账单：{agentDataSource.businessData === 'local' ? '本地测试库；未与线上用户数据合并' : '云端数据库'}。</p>
             </div>}
+            <AgentSearchToolbar
+              value={agentSearchQuery}
+              onChange={handleAgentSearchChange}
+              matchedCount={getFilteredAndSortedAgents().length}
+              scopeCount={getCategoryFilteredAgents().length}
+              totalCount={agents.length}
+              categoryName={selectedDisplayCategory ? adminDisplayCategoryLabel(selectedDisplayCategory) : categories.find((category) => category.id === selectedCategoryId)?.name}
+              isSearching={hasAgentSearchQuery}
+              showAvatarScopeHint={canManageAgentConfiguration}
+              onRefresh={async () => {
+                if (Object.keys(pendingAgentSortOrders).length > 0) { showMessage("error", "请先保存或放弃排序草稿再刷新。"); return; }
+                if (!await loadAgents()) showMessage("error", "智能体列表刷新失败，请检查连接或权限后重试。");
+              }}
+            />
             {canReadPrompts && viewingPromptAgentId && (() => {
               const promptAgent = agents.find((agent) => agent.id === viewingPromptAgentId);
               if (!promptAgent) return null;
@@ -6705,29 +6933,13 @@ const handleDeleteCategory = async () => {
                     {newAgent.cozeCodingApiUrl && newAgent.cozeCodingApiToken && (
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={async () => {
-                            try {
-                              const res = await fetch("/api/coze/test-coding", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json", ...authHeaders },
-                                body: JSON.stringify({
-                                  url: newAgent.cozeCodingApiUrl,
-                                  token: newAgent.cozeCodingApiToken,
-                                  projectId: newAgent.botId,
-                                }),
-                              });
-                              const data = await res.json();
-                              if (data.success) showMessage("success", "连接成功！API 可正常访问");
-                              else showMessage("error", `连接失败：${data.error}`);
-                            } catch (err) {
-                              showMessage("error", "测试请求失败");
-                            }
-                          }}
-                          className="text-xs px-3 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/20 transition-colors"
+                          disabled={codingTestLoading}
+                          onClick={() => void testCodingConnection(newAgent.cozeCodingApiUrl || "", newAgent.cozeCodingApiToken || "")}
+                          className="text-xs px-3 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
                         >
-                          测试连接
+                          {codingTestLoading ? "测试中…" : "发送测试请求"}
                         </button>
-                        <span className="text-[10px] text-[var(--muted-foreground)]">保存前先验证 API 是否可达</span>
+                        <span className="text-xs text-[var(--muted-foreground)]">将调用已配置的工作流，可能产生供应商费用</span>
                       </div>
                     )}
                   </>
@@ -6804,6 +7016,11 @@ const handleDeleteCategory = async () => {
                         }}
                         className="w-full min-h-[500px] max-h-[700px] p-3 rounded-lg border border-[var(--border)] bg-[var(--background)] font-mono text-xs leading-relaxed resize-y focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]/30 outline-none"
                         placeholder={"在此粘贴提示词，或点击上方「上传 .md 文件」按钮\n\n支持 Markdown 格式，所有格式标记会完整保留并发送给模型。\n\n示例：\n# 角色设定\n你是一位短视频文案专家\n\n## 输出规范\n1. **标题**：不超过20字\n2. **正文**：分3段\n\n## 示例输出\n**标题**：3天涨粉10万的秘密"}
+                      />
+                      <StoryboardPromptPushCapabilityToggle
+                        agentId="new_agent"
+                        value={newAgent.output_style || {}}
+                        onChange={(value) => setNewAgent((current) => ({ ...current, output_style: value }))}
                       />
                       {/* 提示词版本历史 */}
                       <div className="p-4 rounded-lg bg-[var(--card)] border border-[var(--border)] space-y-3">
@@ -7149,7 +7366,7 @@ const handleDeleteCategory = async () => {
                     </button>
                   </div>
                   {/* 内容区 - 可滚动 */}
-                  <div className="flex-1 overflow-y-auto px-6 py-4" style={{ scrollbarWidth: 'thin' }}>
+                  <div className="flex-1 overflow-y-auto px-6 py-4" style={{ scrollbarWidth: 'thin' }} inert={agentSaveBusy}>
                   <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                   {/* Edit Avatar Upload */}
@@ -7316,14 +7533,26 @@ const handleDeleteCategory = async () => {
                       <label className={labelCls}>提示词</label>
                       {canEditPrompts && <div className="flex items-center gap-2">
                         <label className="cursor-pointer px-2 py-0.5 rounded text-[10px] bg-[var(--primary)]/10 text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-colors">
-                          上传 .md
+                          {editPromptReading ? "读取中…" : "上传 .md"}
                           <input type="file" accept=".md,.markdown,.txt" className="hidden" onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (!file) return;
+                            if (!file || agentEditSessionRef.current !== agentEditSession || !agentEditorAccessRef.current.prompts) return;
+                            const fileSession = agentEditSession;
+                            const readRequest = ++agentPromptReadRef.current;
+                            setEditPromptReading(true);
                             const reader = new FileReader();
                             reader.onload = (ev) => {
+                              if (agentEditSessionRef.current !== fileSession || agentPromptReadRef.current !== readRequest) return;
+                              setEditPromptReading(false);
+                              if (!agentEditorAccessRef.current.prompts) return;
                               const text = ev.target?.result as string;
-                              setEditingAgent({ ...editingAgent, system_prompt: text });
+                              setEditingAgent((current) => current ? { ...current, system_prompt: text } : current);
+                            };
+                            reader.onerror = () => {
+                              if (agentEditSessionRef.current !== fileSession || agentPromptReadRef.current !== readRequest) return;
+                              setEditPromptReading(false);
+                              if (!agentEditorAccessRef.current.prompts) return;
+                              showMessage("error", "提示词文件读取失败，请重试");
                             };
                             reader.readAsText(file);
                             e.target.value = "";
@@ -7349,6 +7578,30 @@ const handleDeleteCategory = async () => {
                       className="w-full min-h-[500px] max-h-[700px] p-3 rounded-lg border border-[var(--border)] bg-[var(--background)] font-mono text-xs leading-relaxed resize-y focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]/30 outline-none"
                       placeholder="在此输入提示词，或上传 .md 文件..."
                     />
+                    {canEditPrompts && <StoryboardDirectorContractEditor
+                      key={editingAgent.id}
+                      agentId={editingAgent.id}
+                      prompt={editingAgent.system_prompt || ""}
+                      value={editingAgent.output_style || {}}
+                      disabled={agentSaveBusy}
+                      onChange={(value) => {
+                        if (agentEditSessionRef.current !== agentEditSession || !agentEditorAccessRef.current.prompts) return;
+                        directorContractActionRef.current = null;
+                        setEditingAgent((current) => current ? { ...current, output_style: value } : current);
+                      }}
+                      onRollback={hasActivatedStoryboardDirectorContract(editOriginalAgentRef.current?.output_style)
+                        ? () => { if (agentEditSessionRef.current === agentEditSession && agentEditorAccessRef.current.prompts) directorContractActionRef.current = "rollback"; }
+                        : undefined}
+                    />}
+                    {canEditPrompts && <StoryboardPromptPushCapabilityToggle
+                      agentId={editingAgent.id}
+                      value={editingAgent.output_style || {}}
+                      disabled={agentSaveBusy}
+                      onChange={(value) => {
+                        if (agentEditSessionRef.current !== agentEditSession || !agentEditorAccessRef.current.prompts) return;
+                        setEditingAgent((current) => current ? { ...current, output_style: value } : current);
+                      }}
+                    />}
                     {/* 提示词版本历史 */}
                     <div className="mt-3 p-3 rounded-lg bg-[var(--card)] border border-[var(--border)] space-y-3">
                       <div className="flex items-center justify-between gap-3">
@@ -7609,7 +7862,7 @@ const handleDeleteCategory = async () => {
                 </div>
                 {/* 底部按钮 - 固定不滚动 */}
                 <div className="flex gap-3 px-6 py-4 border-t border-[var(--border)] shrink-0">
-                  <button onClick={handleUpdateAgent} disabled={agentSaveBusy} className={`${btnPrimary} disabled:cursor-not-allowed disabled:opacity-50`}>{agentSaveBusy ? "保存中…" : "保存修改"}</button>
+                  <button onClick={handleUpdateAgent} disabled={agentSaveBusy || editPromptReading} className={`${btnPrimary} disabled:cursor-not-allowed disabled:opacity-50`}>{agentSaveBusy ? "保存中…" : editPromptReading ? "读取文件中…" : "保存修改"}</button>
                   <button onClick={handleCancelEdit} className={btnGhost}>取消</button>
                 </div>
               </div>
@@ -7619,17 +7872,20 @@ const handleDeleteCategory = async () => {
               {/* 拖拽排序保存提示 */}
               {canManageAgents && Object.keys(pendingAgentSortOrders).length > 0 && (
                 <div className="flex items-center justify-between px-4 py-2 bg-blue-500/10 border-b border-blue-500/20">
-                  <span className="text-xs text-blue-600 font-medium">排序已修改，请点击保存</span>
-                  <button onClick={handleSaveAgentSortOrders} className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-xs font-medium transition-colors shadow-sm">
-                    保存排序
-                  </button>
+                  <span className="text-xs text-blue-600 font-medium">排序已修改，请保存或放弃草稿</span>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={agentSortSaving} onClick={() => { pendingAgentRevisionsRef.current = {}; setPendingAgentSortOrders({}); }} className="px-3 py-1 text-xs text-blue-600 disabled:opacity-50">放弃排序</button>
+                    <button onClick={handleSaveAgentSortOrders} disabled={hasAgentSearchQuery || agentSortSaving} title={hasAgentSearchQuery ? "请先清空搜索再保存排序" : undefined} className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-xs font-medium transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                      {agentSortSaving ? "保存中…" : "保存排序"}
+                    </button>
+                  </div>
                 </div>
               )}
               <table className="w-full">
                 <thead className="bg-[var(--card)] border-b border-[var(--border)]">
                   <tr>
                     <th className="text-left px-2 py-3 text-xs font-medium text-[var(--muted-foreground)] w-8"></th>
-                    {["头像", "名称", "分类", "来源", "模型", "计费模式", "状态", "操作"].map((h) => (
+                    {["头像", "名称", "前台分类 / 原始分类", "来源", "模型", "计费模式", "状态", "操作"].map((h) => (
                       <th key={h} className={`text-left px-4 py-3 text-xs font-medium text-[var(--muted-foreground)] uppercase ${h === "操作" ? "text-right" : ""}`}>{h}</th>
                     ))}
                   </tr>
@@ -7641,9 +7897,9 @@ const handleDeleteCategory = async () => {
                     return (
                       <tr key={agent.id}
                         className={`transition-colors ${isDragged ? "opacity-40 bg-[var(--border)]" : isDragTarget ? "bg-[var(--primary)]/[0.06]" : "hover:bg-[var(--border)]"}`}
-                        draggable={canManageAgents}
+                        draggable={canDragAgentRows}
                         onDragStart={(e) => {
-                          if (!canManageAgents) return;
+                          if (!canDragAgentRows) return;
                           e.dataTransfer.setData("agent-id", agent.id);
                           e.dataTransfer.setData("agent-category", agent.category);
                           e.dataTransfer.effectAllowed = "move";
@@ -7651,10 +7907,10 @@ const handleDeleteCategory = async () => {
                           setDragOverAgentId(null);
                         }}
                         onDragOver={(e) => {
-                          if (!canManageAgents) return;
+                          if (!canDragAgentRows) return;
                           e.preventDefault();
                           e.dataTransfer.dropEffect = "move";
-                          if (draggedAgentId && draggedAgentId !== agent.id) {
+                          if (draggedAgentId && draggedAgentId !== agent.id && agents.find((item) => item.id === draggedAgentId)?.category === agent.category) {
                             const rect = e.currentTarget.getBoundingClientRect();
                             const midY = rect.top + rect.height / 2;
                             setDragOverAgentId(agent.id);
@@ -7668,7 +7924,7 @@ const handleDeleteCategory = async () => {
                           }
                         }}
                         onDrop={(e) => {
-                          if (!canManageAgents) return;
+                          if (!canDragAgentRows) return;
                           e.preventDefault();
                           const draggedId = e.dataTransfer.getData("agent-id");
                           const draggedCat = e.dataTransfer.getData("agent-category");
@@ -7678,16 +7934,13 @@ const handleDeleteCategory = async () => {
                           if (draggedCat === agent.category && draggedId !== agent.id) {
                             // 同分类内排序
                             handleDragReorderAgent(draggedId, agent.id, dragOverPosition);
-                          } else if (draggedCat !== agent.category) {
-                            // 跨分类迁移
-                            handleMoveAgentToCategory(draggedId, agent.category);
-                          }
+                          } else if (draggedCat !== agent.category) showMessage("error", "排序只能在同一原始分类内进行；迁移请使用分类操作。");
                         }}
                         onDragEnd={() => { setDraggedAgentId(null); setDragOverAgentId(null); }}
                       >
                         {/* 拖拽手柄列 + 插入指示线 */}
                         <td className="px-1 py-3 relative">
-                          {canManageAgents && <span className="cursor-grab active:cursor-grabbing text-[var(--muted-foreground)]/40 hover:text-[var(--muted-foreground)] select-none" title="拖拽排序">⠿</span>}
+                          {canDragAgentRows && <span className="cursor-grab active:cursor-grabbing text-[var(--muted-foreground)]/40 hover:text-[var(--muted-foreground)] select-none" title="拖拽排序">⠿</span>}
                           {isDragTarget && dragOverPosition === "before" && !isDragged && (
                             <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--primary)] rounded-full z-20 shadow-[0_0_6px_var(--primary)]" />
                           )}
@@ -7703,13 +7956,13 @@ const handleDeleteCategory = async () => {
                         <td className="px-4 py-3"><div className="font-medium text-[var(--foreground)] text-sm">{agent.name}</div><div className="text-xs text-[var(--muted-foreground)] mt-0.5">{(agent.description as string)?.slice(0, 40)}</div></td>
                         <td className="px-4 py-3">
                           <div className="group relative">
-                            <span className="text-sm text-[var(--secondary-foreground)] cursor-pointer hover:text-[var(--primary)]">{agent.category}</span>
+                            <span className="block text-sm text-[var(--secondary-foreground)]">{adminDisplayCategoryLabel(displayCategory(agent))}</span>
+                            <span className="text-xs text-[var(--muted-foreground)] cursor-pointer hover:text-[var(--primary)]">原始：{agent.category || "未分类"}</span>
                             {canManageAgents && <div className="absolute left-0 top-full mt-1 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-xl py-1 z-10 hidden group-hover:block min-w-[120px]">
                               <div className="text-[10px] text-[var(--muted-foreground)] px-3 py-1">迁移到：</div>
                               {categoryOptions.filter((c) => c !== agent.category).map((c) => (
                                 <button key={c} onClick={async () => {
-                                  const res = await fetch("/api/admin/agents", { method: "PUT", headers: authHeaders, body: JSON.stringify(buildAgentMutationPayload(agent, { category: c })) });
-                                  if (res.ok) { showSuccessAndSync(`已迁移至"${c}"`); loadAgents(); loadCategories(); }
+                                  await handleMoveAgentToCategory(agent.id, c);
                                 }} className="block w-full text-left px-3 py-1.5 text-xs text-[var(--secondary-foreground)] hover:bg-[var(--border)] hover:text-[var(--foreground)] transition-colors">{c}</button>
                               ))}
                             </div>}
@@ -7745,14 +7998,14 @@ const handleDeleteCategory = async () => {
                         </td>
                         <td className="px-4 py-3 text-right space-x-2">
                           {canReadPrompts && <button type="button" onClick={() => setViewingPromptAgentId((current) => current === agent.id ? "" : agent.id)} className="text-xs text-[#175cd3] hover:underline">{viewingPromptAgentId === agent.id ? "收起提示词" : "查看提示词"}</button>}
-                          {canManageAgentConfiguration && <button onClick={() => { loadLlmModels(); loadDrawingModels(); editOriginalAgentRef.current = agent; setEditingAgent(agent); editOriginalImagesRef.current = { avatar: agent.avatar || "", cover: agent.cover_url || "" }; setPendingEditAvatarKey(""); setPendingEditCoverKey(""); setEditAvatarPreview(resolveTrashAvatarSrc(agent)); setEditAgentCoverPreview(resolveAvatarPreviewSrc(agent.cover_url)); setEditShowAdvanced(false); }} className="text-xs text-[var(--primary)] hover:underline cursor-pointer">编辑</button>}
+                          {canManageAgentConfiguration && <button onClick={() => handleEditAgent(agent)} className="text-xs text-[var(--primary)] hover:underline cursor-pointer">编辑</button>}
                           {canManageAgentConfiguration && <button onClick={() => handleDuplicateAgent(agent)} className="text-xs text-emerald-500 hover:text-emerald-400 cursor-pointer">创建副本</button>}
                           {canManageAgents && <button type="button" onClick={() => handleDeleteAgent(agent)} className="text-xs text-[var(--destructive)] hover:text-[#FF6B6B] cursor-pointer">删除</button>}
                         </td>
                       </tr>
                     );
                   })}
-                  {getFilteredAndSortedAgents().length === 0 && (<tr><td colSpan={9} className="text-center py-8 text-[var(--muted-foreground)] text-sm">暂无智能体，点击上方按钮添加</td></tr>)}
+                  {getFilteredAndSortedAgents().length === 0 && (<tr><td colSpan={9} className="text-center py-8 text-[var(--muted-foreground)] text-sm">{hasAgentSearchQuery ? "没有找到匹配的智能体，请调整关键词或清空搜索。" : "暂无智能体，点击上方按钮添加"}</td></tr>)}
                 </tbody>
               </table>
             </div>
@@ -8248,8 +8501,8 @@ const handleDeleteCategory = async () => {
                   <label className={labelCls}>选择学员</label>
                   <select value={rechargeUserId} onChange={(e) => setRechargeUserId(e.target.value)} className={inputCls}>
                     <option value="">请选择</option>
-                    {users.filter((u) => u.role !== "admin" && !isFixtureUser(u)).map((u) => (
-                      <option key={u.id} value={u.id}>{u.name || u.phone || u.username} ({u.phone || '-'}) - {u.credits}积分</option>
+                    {users.filter((u) => !isFixtureUser(u)).map((u) => (
+                      <option key={u.id} value={u.id}>{u.name || u.phone || u.username}{u.role === "admin" ? "（管理员）" : ""} ({u.phone || '-'}) - {u.credits}积分</option>
                     ))}
                   </select>
                 </div>
@@ -8437,8 +8690,8 @@ const handleDeleteCategory = async () => {
         {/* ========= General Settings Tab ========= */}
         {activeTab === "general" && hasBrandSettingsPermission && (
           <div>
-            <h2 className="text-lg font-semibold text-[var(--foreground)] mb-1">品牌与基本设置</h2>
-            <p className="mb-4 text-xs leading-5 text-[var(--muted-foreground)]">品牌名称、欢迎语和图片采用独立草稿、发布与回滚链路；运行规则继续单独保存，避免一次改动同时影响品牌和智能体行为。</p>
+            <h2 className="text-lg font-semibold text-[var(--foreground)] mb-1">品牌与联系设置</h2>
+            <p className="mb-4 text-xs leading-5 text-[var(--muted-foreground)]">管理平台名称、Logo、联系方式和客服二维码。保存草稿并发布后对访客生效。</p>
             {hasBrandSettingsPermission && (
               <PlatformBrandSettingsPanel
                 token={token}
@@ -8852,6 +9105,7 @@ const handleDeleteCategory = async () => {
               </div>
 
               {/* 诊断子Tab */}
+              {diagError && <p role="alert" className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800">{diagError}</p>}
               <div className="flex gap-1 mb-3 p-0.5 bg-[var(--muted)]/30 rounded-lg w-fit">
                 <button onClick={() => setDiagTab("auto")} className={`px-3 py-1 text-xs rounded-md transition-colors ${diagTab === "auto" ? "bg-[var(--primary)] text-white" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}>
                   自动检测
@@ -8950,39 +9204,23 @@ const handleDeleteCategory = async () => {
                       </div>
                       {/* 操作按钮 */}
                       <div className="flex items-center gap-2 pl-6">
-                        <button onClick={async () => {
-                          try {
-                            const r = await fetch(`/api/admin/diagnostic-logs/${diag.id}`, { headers: authHeaders });
-                            const d = await r.json();
-                            if (d.context) {
-                              const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a'); a.href = url; a.download = `diagnostic-${diag.id}.json`; a.click();
-                              URL.revokeObjectURL(url);
-                            }
-                          } catch(e) { console.error('下载失败', e); }
-                        }} className="text-[10px] px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
+                        <button onClick={() => void handleDownloadDiagLog(diag.id)} className="text-[10px] px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
                           下载日志
                         </button>
                         <button onClick={async () => {
                           const prompt = `【诊断问题】类型: ${diag.problem_type}\n严重级别: ${diag.severity}\n用户: ${diag.display_name || diag.username}\n描述: ${diag.description || '无'}\n智能体: ${diag.agent_name || '无'}\n时间: ${diag.created_at}\n上下文: ${JSON.stringify(diag.context).substring(0, 500)}\n\n请分析这个问题的根因并给出修复建议。`;
-                          await copyToClipboard(prompt);
+                          const copied = await copyToClipboard(prompt);
+                          if (!copied) { showMessage("error", "复制失败，请手动复制诊断内容"); return; }
                           window.open('/', '_blank');
                         }} className="text-[10px] px-2 py-0.5 rounded bg-[var(--primary)]/10 text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-colors">
                           AI诊断
                         </button>
                         {diag.status === 'pending' && (
                           <>
-                            <button onClick={async () => {
-                              await fetch(`/api/admin/diagnostic-logs/${diag.id}`, { method: 'PUT', headers: { ...authHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'resolved' }) });
-                              loadDiagLogs();
-                            }} className="text-[10px] px-2 py-0.5 rounded border border-green-500/30 text-green-600 hover:bg-green-500/10 transition-colors">
+                            <button disabled={Boolean(diagUpdatingId)} onClick={() => void updateDiagStatus(diag.id, 'resolved')} className="text-[10px] px-2 py-0.5 rounded border border-green-500/30 text-green-600 hover:bg-green-500/10 transition-colors disabled:opacity-50">
                               已解决
                             </button>
-                            <button onClick={async () => {
-                              await fetch(`/api/admin/diagnostic-logs/${diag.id}`, { method: 'PUT', headers: { ...authHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ignored' }) });
-                              loadDiagLogs();
-                            }} className="text-[10px] px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
+                            <button disabled={Boolean(diagUpdatingId)} onClick={() => void updateDiagStatus(diag.id, 'ignored')} className="text-[10px] px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors disabled:opacity-50">
                               忽略
                             </button>
                           </>
@@ -8993,7 +9231,7 @@ const handleDeleteCategory = async () => {
                 </div>
               ) : (
                 <div className="text-center py-8 text-[var(--muted-foreground)] text-xs">
-                  {diagLoading ? '加载中...' : '暂无诊断记录，系统运行正常'}
+                  {diagLoading ? '加载中...' : diagError ? '诊断记录暂不可用' : '暂无诊断记录'}
                 </div>
               )}
             </div>
@@ -9043,6 +9281,13 @@ const handleDeleteCategory = async () => {
             saveModelSettings={() => void saveSettings("models", true, COVER_WORKFLOW_SETTING_FIELDS)}
             onModelsChange={loadLlmModels}
           />
+        )}
+
+        {activeTab === "storyboard-presets" && token && grantedPermissionKeys.has("platform.settings.manage") && (
+          <StoryboardPresetsAdminTab token={token} actorId={String(userInfo?.id || "")}
+            accessEpoch={String(adminAccess?.stepUp.expiresAt || "")}
+            ready={Boolean(userInfo?.id && adminAccess?.access.authorityStatus === "ready" && adminAccess.access.integrityValid && sensitiveUnlocked)}
+            onRequestUnlock={() => setUnlockDialogRequested(true)} />
         )}
 
         {activeTab === "workspace-models" && token && (

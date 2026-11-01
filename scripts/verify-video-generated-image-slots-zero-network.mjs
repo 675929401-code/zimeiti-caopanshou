@@ -6,9 +6,11 @@ import ts from 'typescript';
 import { z } from 'zod';
 assert.equal(process.version, 'v24.19.0');
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+let forbiddenNetworkCalls = 0;
+const isolatedGlobals = () => ({ process: { env: {} }, fetch: () => { forbiddenNetworkCalls++; throw Error('Unmocked network forbidden'); } });
 function load(file, deps = {}, globals = {}) {
   const module = { exports: {} };
-  runInNewContext(compile(readFileSync(file, 'utf8')), { module, exports: module.exports, URL, Buffer, console, Date, require: name => { if (name in deps) return deps[name]; throw Error('Unmocked dependency ' + name); }, ...globals });
+  runInNewContext(compile(readFileSync(file, 'utf8')), { ...isolatedGlobals(), module, exports: module.exports, URL, Buffer, console, Date, require: name => { if (name in deps) return deps[name]; throw Error('Unmocked dependency ' + name); }, ...globals });
   return module.exports;
 }
 const refs = load('src/lib/generated-image-reference.ts', { zod: { z } });
@@ -73,16 +75,17 @@ await assert.rejects(preview.generatedVideoPreviewBlob(new Blob(['fixture'], { t
 const source = readFileSync('src/app/api/video/generate/route.ts', 'utf8');
 const gate = source.slice(source.indexOf('    let effectiveImageUrl = image_url;'), source.indexOf('    // 新版 AutoDL ComfyUI workflow'));
 const server = load('src/lib/server/generated-image-reference.ts', { '@/lib/generated-image-reference': refs, '@/storage/database/supabase-client': {}, '@/lib/video-public-url': {}, '@/lib/safe-fetch': {} });
-let version = 1, reserves = 0, providerPosts = 0, bridges = 0, ownerChecks = 0;
+let version = 1, reserves = 0, providerPosts = 0, bridges = 0, ownerChecks = 0, generatedBridges = 0;
 async function execute(body, options = {}) {
   const inputs = refs.parseGeneratedVideoImageInputs(body); const module = { exports: {} };
-  const context = { module, image_url: inputs.imageUrl, last_frame_url: inputs.lastFrameUrl, reference_image_url: inputs.referenceImageUrl,
+  const context = { ...isolatedGlobals(), module, image_url: inputs.imageUrl, last_frame_url: inputs.lastFrameUrl, reference_image_url: inputs.referenceImageUrl,
     referenceImageUrls: inputs.referenceImageUrls || [], generatedInputs: inputs, userId: 'owner', useAutodlH3Lifecycle: options.queue || false,
     selectedModel: { protocol_type: options.protocol || 'secure_skill_video', supports_image_input: true }, selectedProtocolConfig: { request_format: options.multipart ? 'multipart' : 'json' },
     generatedImageReferenceUri: refs.generatedImageReferenceUri, GeneratedImageReferenceError: server.GeneratedImageReferenceError,
     isAutodlComfyuiHostedProtocol: value => value === 'hosted',
     resolveGeneratedImageReference: async ({ userId, reference }) => { ownerChecks++; assert.equal(userId, 'owner'); if (reference.recordId === options.forbidden) throw new server.GeneratedImageReferenceError('GENERATED_IMAGE_NOT_OWNED', 'not owned', 403); return `https://fixture.cos.ap-test.myqcloud.com/${reference.recordId}?sig=${version}`; },
     readGeneratedImageMaterial: async () => { ownerChecks++; return {}; },
+    bridgeGeneratedImageForVideoProvider: async ({ userId, reference }) => { ownerChecks++; assert.equal(userId, "owner"); if (reference.recordId === options.forbidden) throw new server.GeneratedImageReferenceError("GENERATED_IMAGE_NOT_OWNED", "not owned", 403); generatedBridges++; return `https://fixture.cos.ap-test.myqcloud.com/video-inputs/generated-provider-bridge/${reference.recordId}.png`; },
     NextResponse: { json: (body, init) => ({ body, status: init.status }) },
     audio_url: '', source_video_url: '', referenceAudioUrls: [], image_storage_key: '',
     hasAnyVideoReference: values => Object.values(values).some(value => Array.isArray(value) ? value.length : Boolean(value)),
@@ -92,13 +95,14 @@ async function execute(body, options = {}) {
   runInNewContext(compile(`module.exports=async()=>{${gate};reserve();submit();return {imageUrl:effectiveImageUrl,lastFrameUrl:effectiveLastFrameUrl,referenceImageUrl:effectiveReferenceImageUrl,imageUrls:effectiveReferenceImageUrls};}`), context);
   return module.exports();
 }
-let result = await execute(body);
+const result = await execute(body);
 assert.equal(result.imageUrls[0], legacy); assert.ok(result.imageUrls[1].includes(a.recordId)); assert.ok(result.lastFrameUrl.includes(b.recordId));
 assert.equal(bridges, 0); assert.equal(reserves, 1); assert.equal(providerPosts, 1);
 for (const forbidden of [a.recordId, b.recordId, c.recordId]) { const before = reserves; const failed = await execute(body, { forbidden }); assert.equal(failed.status, 403); assert.equal(reserves, before); assert.equal(providerPosts, before); }
 const listOnly = { reference_image_inputs: [legacy, a] };
 assert.equal((await execute(listOnly, { forbidden: a.recordId })).status, 403);
-const beforeHosted = reserves; assert.equal((await execute({ last_frame_ref: b }, { protocol: 'hosted' })).status, 422); assert.equal(reserves, beforeHosted); assert.equal(bridges, 0);
+const beforeHosted = reserves; assert.ok((await execute({ last_frame_ref: b }, { protocol: 'hosted' })).lastFrameUrl.includes('video-inputs/generated-provider-bridge/')); assert.equal(reserves, beforeHosted + 1); assert.equal(generatedBridges, 1); assert.equal(bridges, 0);
+assert.equal((await execute({ last_frame_ref: b }, { protocol: 'hosted', forbidden: b.recordId })).status, 403); assert.equal(reserves, beforeHosted + 1); assert.equal(generatedBridges, 1); assert.equal(bridges, 0);
 for (const mixed of [{ image_ref: a, last_frame_url: legacy }, { image_url: legacy, reference_image_ref: b }, { image_ref: a, reference_image_inputs: [legacy] }, { last_frame_ref: b }]) {
   const before = reserves, checks = ownerChecks; assert.equal((await execute(mixed, { protocol: 'newapi_video', multipart: true })).status, 422); assert.equal(reserves, before); assert.equal(ownerChecks, checks);
 }
@@ -106,8 +110,8 @@ assert.equal((await execute({ image_ref: a }, { protocol: 'newapi_video', multip
 const adapterSource = readFileSync('src/lib/video-adapter.ts', 'utf8');
 const adapterText = adapterSource.slice(adapterSource.indexOf('async function generateNewApiVideo('), adapterSource.indexOf('/** New API (openclaw) 轮询'));
 const adapterModule = { exports: {} }; let adapterPosts = 0;
-runInNewContext(compile(adapterText + '\nmodule.exports=generateNewApiVideo;'), { module: adapterModule, FormData, Blob, AbortSignal, safeStr: value => String(value || ''), videoSubmissionUnknown: () => ({ status: 'unknown' }), fetch: async (_url, init) => {
-  adapterPosts++; assert.equal(init.method, 'POST'); const payload = JSON.parse(init.body);
+runInNewContext(compile(adapterText + '\nmodule.exports=generateNewApiVideo;'), { ...isolatedGlobals(), module: adapterModule, FormData, Blob, AbortSignal, safeStr: value => String(value || ''), videoSubmissionUnknown: () => ({ status: 'unknown' }), fetch: async (url, init) => {
+  assert.equal(url, 'https://adapter.invalid/v1/videos'); adapterPosts++; assert.equal(init.method, 'POST'); const payload = JSON.parse(init.body);
   assert.equal(payload.images[0], result.imageUrl); assert.equal(payload.images[1], result.lastFrameUrl); assert.equal(payload.images[2], result.referenceImageUrl); assert.equal(payload.images[3], legacy);
   return Response.json({ id: 'mock-provider-task' });
 } });
@@ -118,9 +122,9 @@ const fingerprintCode = source.slice(source.indexOf('    const requestFingerprin
 const snapshotCode = source.slice(source.indexOf('    const requestSnapshot = buildVideoGenerationRequestSnapshot(', source.indexOf('    const adapterParams:')), source.indexOf('    const reservation = await reserveVideoGenerationTask(', source.indexOf('    const adapterParams:')));
 function persisted(fresh) {
   const module = { exports: {} }, fields = refs.parseGeneratedVideoImageInputs(body);
-  const globals = { module, generatedInputs: fields, generatedImageUri: uri(a), image_url: fields.imageUrl, last_frame_url: fields.lastFrameUrl, reference_image_url: fields.referenceImageUrl, referenceImageUrls: fields.referenceImageUrls,
+  const globals = { ...isolatedGlobals(), module, generatedInputs: fields, generatedImageUri: uri(a), image_url: fields.imageUrl, last_frame_url: fields.lastFrameUrl, reference_image_url: fields.referenceImageUrl, referenceImageUrls: fields.referenceImageUrls,
     effectiveImageUrl: fresh.imageUrl, effectiveLastFrameUrl: fresh.lastFrameUrl, effectiveReferenceImageUrl: fresh.referenceImageUrl, effectiveReferenceImageUrls: fresh.imageUrls,
-    channelConfig: { id: 'model', protocol_type: 'fixture' }, executionPrompt: prompt, prompt, promptNormalizations: [], negative_prompt: '', effectiveAudioUrl: '', effectiveReferenceAudioUrls: [], effectiveSourceVideoUrl: '', body,
+    channelConfig: { id: 'model', protocol_type: 'fixture' }, billing: {}, executionPrompt: prompt, prompt, promptNormalizations: [], negative_prompt: '', effectiveAudioUrl: '', effectiveReferenceAudioUrls: [], effectiveSourceVideoUrl: '', body,
     generateAudio: undefined, videoTiming: { target: 5, submit: 5 }, aspect_ratio: '16:9', selectedResolution: '720p', dispatch: undefined, adapterParams: fresh, image_storage_key: '', audio_url: '', referenceAudioUrls: [], source_video_url: '', ownedPageAssetRefs: new Map(),
     snapshotFps: null, snapshotSeed: null, snapshotGenerateAudio: null, publicRequestedModelId: 'public-model', routingSnapshot: { configVersion: 'a'.repeat(64) },
     buildVideoRequestFingerprint: input => crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex'), buildVideoGenerationRequestSnapshot: input => input, buildVideoRequestAssetRefs: input => input };
@@ -151,16 +155,59 @@ const previewCode = page.slice(page.indexOf('    const controller = new AbortCon
 const cache = { current: new Map([[uri(a), 'blob:old-owner']]) }, cacheOwner = { current: 'old-user:old-token' }, revoked = [], pending = [];
 const previewModule = { exports: {} }; let previewFetches = 0;
 runInNewContext(compile(`module.exports=()=>{${previewCode}};`), {
-  module: previewModule, AbortController, generatedPreviewKey: JSON.stringify([uri(a)]), identity: { userId: 'new-owner' }, auth: { token: 'fixture' }, generatedPreviewCache: cache, generatedPreviewOwner: cacheOwner,
+  ...isolatedGlobals(), module: previewModule, AbortController, generatedPreviewKey: JSON.stringify([uri(a)]), identity: { userId: 'new-owner' }, auth: { token: 'fixture' }, generatedPreviewCache: cache, generatedPreviewOwner: cacheOwner,
   URL: { revokeObjectURL: value => revoked.push(value), createObjectURL: () => 'blob:new-owner' }, setInputImagePreview() {}, setGeneratedPreviews() {},
   parseGeneratedImageReferenceUri: refs.parseGeneratedImageReferenceUri, generatedImagePreviewUrl: refs.generatedImagePreviewUrl, generatedVideoPreviewBlob: async blob => blob,
   fetch: (url, init) => { previewFetches++; assert.equal(url, refs.generatedImagePreviewUrl(a)); assert.equal(init.redirect, 'error'); assert.equal(init.cache, 'no-store'); assert.equal(init.headers.Authorization, 'Bearer fixture'); const promise = Promise.resolve({ ok: true, blob: async () => new Blob(['synthetic'], { type: 'image/png' }) }); pending.push(promise); return promise; },
 });
 previewModule.exports(); await Promise.all(pending); await new Promise(resolve => setImmediate(resolve));
 assert.deepEqual(revoked, ['blob:old-owner']); assert.equal(previewFetches, 1); assert.equal(cache.current.get(uri(a)), 'blob:new-owner');
-const retry = page.slice(page.indexOf('  const prepareHistoryRetry ='), page.indexOf('    setSelectedModelId', page.indexOf('  const prepareHistoryRetry =')));
-const retryModule = { exports: {} };
-runInNewContext(compile(`module.exports=(saved)=>{${retry.slice(retry.indexOf('    if (saved.canRetry'))};return card;}`), { module: retryModule, toast: { error: () => assert.fail('retry rejected') }, models: [{ id: 'model' }], nextLocalId: { current: 1 }, emptyCard: () => ({}), restoreVideoGenerateAudio: value => value });
-const retryCard = retryModule.exports({ canRetry: true, modelId: 'model', retryInputs: { firstFrameUrl: uri(a), lastFrameUrl: uri(b), referenceImageUrl: uri(c), referenceImageUrls: [legacy, uri(b)] }, requestSnapshot: { userPrompt: prompt } });
+// Compile the entire real callback and its pure page helpers. The VM provides
+// only React state cells, the user's confirmation and inert notification sinks.
+function declaration(ast, name) {
+  const matches = [];
+  const visit = node => {
+    if ((ts.isFunctionDeclaration(node) || ts.isVariableDeclaration(node)) && node.name?.getText(ast) === name) matches.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast); assert.equal(matches.length, 1, `Expected exactly one real declaration for ${name}`);
+  return matches[0];
+}
+const pageAst = ts.createSourceFile('page.tsx', page, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const retryCall = declaration(pageAst, 'prepareHistoryRetry').initializer;
+assert.ok(ts.isCallExpression(retryCall) && ts.isArrowFunction(retryCall.arguments[0]));
+const ratiosSource = readFileSync('src/lib/ai-video-page-capabilities.ts', 'utf8');
+const ratiosAst = ts.createSourceFile('capabilities.ts', ratiosSource, ts.ScriptTarget.Latest, true);
+const actualAudioState = load('src/lib/video-generate-audio-state.ts');
+const retryProgram = compile(`${declaration(pageAst, 'hasExistingVideoWork').getText(pageAst)}\nconst ${declaration(pageAst, 'emptyCard').getText(pageAst)};\nconst AI_VIDEO_PAGE_ASPECT_RATIOS = ${declaration(ratiosAst, 'AI_VIDEO_PAGE_ASPECT_RATIOS').initializer.getText(ratiosAst)};\nmodule.exports=${retryCall.arguments[0].getText(pageAst)};`);
+function retryFixture(current = [], confirmation = true) {
+  const module = { exports: {} }, tasksRef = { current }, nextLocalId = { current: 10 }, state = { confirmations: 0, closed: 0, errors: [], notices: [] };
+  runInNewContext(retryProgram, {
+    ...isolatedGlobals(), module, tasksRef, nextLocalId, models: [{ id: 'model', name: 'Fixture model' }], restoreVideoGenerateAudio: actualAudioState.restoreVideoGenerateAudio,
+    window: { confirm: message => { assert.match(message, /已有任务卡片会保留/u); state.confirmations++; return confirmation; } },
+    toast: { error: message => state.errors.push(message), info: message => state.notices.push(message) },
+    setSelectedModelId: value => { state.selectedModelId = value; }, setTasks: update => { tasksRef.current = update(tasksRef.current); },
+    setDuration: value => { state.duration = value; }, setResolution: value => { state.resolution = value; }, setAspectRatio: value => { state.aspectRatio = value; },
+    closeUnifiedHistory: () => { state.closed++; }, setHistoryRetryNotice: value => { state.historyNotice = value; },
+  });
+  return { run: module.exports, tasksRef, nextLocalId, state };
+}
+const savedRetry = { canRetry: true, modelId: 'model', retryInputs: { firstFrameUrl: uri(a), lastFrameUrl: uri(b), referenceImageUrl: uri(c), referenceImageUrls: [legacy, uri(b)] }, requestSnapshot: { userPrompt: prompt, targetDurationSeconds: 5, aspectRatio: '16:9', resolution: '720p', generateAudio: false } };
+const cleanRetry = retryFixture(); cleanRetry.run(savedRetry);
+const retryCard = cleanRetry.tasksRef.current[0];
 assert.equal(retryCard.prompt, prompt); assert.equal(draft.videoWorkflowImageRequestFields({ imageUrl: retryCard.firstFrameUrl, lastFrameUrl: retryCard.lastFrameUrl, referenceImageUrl: retryCard.referenceImageUrl, referenceImageUrls: retryCard.referenceImageUrls }).last_frame_ref.recordId, b.recordId);
-console.log(JSON.stringify({ pass: true, scope: 'actual pure draft/parser + route gate/fingerprint/snapshot statements + H3 queue hydration + page retry statements; mocked dependencies, zero network, no real provider/DB/UI acceptance', roles: ['first', 'last', 'reference', 'ordered-list'], implicitUploads: bridges }));
+assert.equal(cleanRetry.state.confirmations, 0); assert.equal(cleanRetry.state.closed, 1); assert.equal(cleanRetry.state.selectedModelId, 'model');
+assert.equal(retryCard.generateAudio, false); assert.equal(cleanRetry.state.duration, 5); assert.equal(cleanRetry.state.resolution, '720p'); assert.equal(cleanRetry.state.aspectRatio.value, '16:9');
+assert.deepEqual(cleanRetry.state.errors, []); assert.deepEqual(Array.from(retryCard.referenceImageUrls), [legacy, uri(b)]);
+const existingCard = { localId: 2, status: 'processing', taskId: 'original-provider-task', prompt: 'Keep current work', firstFrameUrl: uri(c) };
+const declined = retryFixture([existingCard], false); declined.run(savedRetry);
+assert.equal(declined.state.confirmations, 1); assert.equal(declined.tasksRef.current.length, 1); assert.equal(declined.tasksRef.current[0], existingCard);
+assert.equal(declined.nextLocalId.current, 10); assert.equal(declined.state.closed, 0); assert.equal(declined.state.selectedModelId, undefined);
+const accepted = retryFixture([existingCard], true); accepted.run(savedRetry);
+assert.equal(accepted.state.confirmations, 1); assert.equal(accepted.tasksRef.current.length, 2); assert.equal(accepted.tasksRef.current[0], existingCard);
+assert.equal(accepted.tasksRef.current[1].prompt, prompt); assert.equal(accepted.tasksRef.current[1].firstFrameUrl, uri(a)); assert.equal(accepted.nextLocalId.current, 11);
+const unconfirmed = retryFixture([existingCard], true); unconfirmed.run({ ...savedRetry, canRetry: false });
+assert.equal(unconfirmed.state.confirmations, 0); assert.equal(unconfirmed.tasksRef.current[0], existingCard); assert.equal(unconfirmed.nextLocalId.current, 10);
+assert.match(unconfirmed.state.errors[0], /原任务结果或费用尚未确认/u);
+assert.equal(forbiddenNetworkCalls, 0);
+console.log(JSON.stringify({ pass: true, scope: 'actual pure draft/parser + route gate/fingerprint/snapshot statements + H3 queue hydration + full page retry callback and pure helpers; mocked dependencies, zero network, no real provider/DB/UI acceptance', roles: ['first', 'last', 'reference', 'ordered-list'], retryCases: ['empty-work-restoration', 'cancel-preserves-current-work', 'confirm-retains-current-work', 'unconfirmed-result-blocked'], implicitUploads: bridges, forbiddenNetworkCalls, realProviderRequests: 0, databaseWrites: 0, billingWrites: 0 }));

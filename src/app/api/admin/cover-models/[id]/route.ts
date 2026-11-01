@@ -1,3 +1,6 @@
+import { modelPoolMutationRequest, modelPoolMutationFailure, resumeModelPoolMutationResponse } from "@/lib/server/model-pool-mutation-http";
+import { invalidExplicitPriceField } from "@/lib/model-price-rounding";
+import { imageModelAdminMetadata } from "@/lib/image-model-admin-fields";
 import { pendingImageConfigurationUpdate } from "@/lib/image-model-availability";
 import { ImageAdminValidationError } from "@/lib/image-admin-validation";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
@@ -43,6 +46,12 @@ export async function PUT(
     }
 
     const body = await request.json();
+    const mutationRequest = modelPoolMutationRequest(request, body, id);
+    const resumedMutation = await resumeModelPoolMutationResponse(payload.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
+    if (invalidExplicitPriceField(body, ["cost_price", "selling_price"])) {
+      return NextResponse.json({ error: "填写的成本或售价必须是明确的非负金额", code: "IMAGE_PRICE_CONFIGURATION_REQUIRED" }, { status: 400 });
+    }
     const updateFields: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
     // 只更新传来的字段
@@ -74,6 +83,9 @@ export async function PUT(
     if (current.data.provider === "retired_configuration" || body.provider === "retired_configuration") {
       return NextResponse.json({ error: "模型退役只能使用删除操作", code: "MODEL_RETIREMENT_DELETE_ONLY" }, { status: 409 });
     }
+    const metadata = imageModelAdminMetadata(body, current.data.api_protocol_config);
+    if (!metadata.ok) return NextResponse.json({ error: metadata.error, code: metadata.code }, { status: 400 });
+    Object.assign(updateFields, metadata.fields);
     try {
       resolveImageProviderContract({
         ...current.data,
@@ -90,6 +102,7 @@ export async function PUT(
     pendingFields.is_active = true;
     pendingFields.is_hidden = false;
     const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
       actorId: payload.userId,
       table: "cover_models",
       id,
@@ -98,6 +111,8 @@ export async function PUT(
     });
     return NextResponse.json({ success: true, staged: true, published: false, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     if (error instanceof ModelActivationGateError || error instanceof ImageAdminValidationError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
@@ -128,6 +143,8 @@ export async function DELETE(
     });
     return NextResponse.json({ success: true, staged: true, published: false, action: "retirement_candidate", result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[CoverModels] DELETE error:", error);
     return NextResponse.json({ error: "删除封面模型失败" }, { status: 500 });
   }

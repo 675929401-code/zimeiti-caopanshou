@@ -1,5 +1,5 @@
 const baseUrl = process.env.CANVAS_TEST_BASE_URL || "http://127.0.0.1:5000";
-const models = ["gpt-5.4", "gpt-5.6-sol", "deepseek-v4-flash"];
+const models = ["gpt-5.6-terra", "gpt-5.6-sol", "deepseek-v4-flash"];
 
 async function main() {
   const sessionResponse = await fetch(`${baseUrl}/api/auth/dev-session`, {

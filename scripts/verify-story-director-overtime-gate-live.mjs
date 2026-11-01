@@ -95,9 +95,9 @@ export async function main() {
   assert.equal(response.status, 200, `真实门禁HTTP异常:${response.status}`);
   assert.equal(response.headers.get("x-llm-guarded"), "true", "真实路由没有返回服务端门禁标记");
   assert.equal(payload?.usage?.total_tokens, 0, "门禁响应不应产生Token用量");
-  assert.equal(content.split(/\r?\n/u)[0], "生成门禁：口播超时，请先压缩或重新分段");
-  assert.match(content, /第1段：61个有效字 \/ 上限60字 \/ 建议压缩到60字以内/u);
-  assert.doesNotMatch(content, /```|故事板|生图\s*Prompt|视频\s*Prompt|导演草案/iu);
+  assert.equal(content.split(/\r?\n/u)[0], "生成门禁：口播超时，请保持原文逐字不变后重新分段，不得删字、改写或截断");
+  assert.match(content, /第1段：61个有效字 \/ 上限60字 \/ 请返回效率工具选择10秒，保持原文逐字不变，重新分段至每段不超过60个有效字/u);
+  assert.doesNotMatch(content, /压缩|```|故事板|生图\s*Prompt|视频\s*Prompt|导演草案/iu);
 
   const after = await snapshot(db, userId, clientRequestId, recordId);
   assert.deepEqual(after, before, "真实门禁请求改变了余额或任何相关账本");

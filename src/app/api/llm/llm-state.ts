@@ -36,6 +36,7 @@ export const frequencyLimitStore = new Map<string, { count: number; windowStart:
 
 // ── 全局系统前缀缓存（5分钟TTL；管理端写入后即时失效） ──
 let globalSystemPrefixCache = { value: "", expiry: 0 };
+let globalSystemPrefixEpoch = 0;
 const GLOBAL_PREFIX_CACHE_TTL = 5 * 60 * 1000; // 5分钟
 
 /**
@@ -43,6 +44,7 @@ const GLOBAL_PREFIX_CACHE_TTL = 5 * 60 * 1000; // 5分钟
  * 不返回或记录缓存内容，避免系统提示词外泄。
  */
 export function invalidateGlobalSystemPrefixCache(): void {
+  globalSystemPrefixEpoch++;
   globalSystemPrefixCache = { value: "", expiry: 0 };
 }
 
@@ -52,6 +54,7 @@ export async function getGlobalSystemPrefix(client: ReturnType<typeof getSupabas
   if (globalSystemPrefixCache.expiry > Date.now()) {
     return globalSystemPrefixCache.value;
   }
+  const readEpoch = globalSystemPrefixEpoch;
   try {
     const { data } = await client
       .from("platform_settings")
@@ -59,10 +62,14 @@ export async function getGlobalSystemPrefix(client: ReturnType<typeof getSupabas
       .eq("setting_key", "global_system_prefix")
       .single();
     const value = (data?.setting_value as string) || "";
-    globalSystemPrefixCache = { value, expiry: Date.now() + GLOBAL_PREFIX_CACHE_TTL };
+    if (readEpoch === globalSystemPrefixEpoch) {
+      globalSystemPrefixCache = { value, expiry: Date.now() + GLOBAL_PREFIX_CACHE_TTL };
+    }
     return value;
   } catch {
-    globalSystemPrefixCache = { value: "", expiry: Date.now() + GLOBAL_PREFIX_CACHE_TTL };
+    if (readEpoch === globalSystemPrefixEpoch) {
+      globalSystemPrefixCache = { value: "", expiry: Date.now() + GLOBAL_PREFIX_CACHE_TTL };
+    }
     return "";
   }
 }

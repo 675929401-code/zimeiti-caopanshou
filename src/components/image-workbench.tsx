@@ -29,6 +29,7 @@ import { NavButton, SubPageHeader } from "@/components/sub-page-header";
 import { useImageAccountHistory } from "@/hooks/use-image-account-history";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useApp } from "@/contexts/app-context";
+import { copyToClipboard } from "@/lib/utils";
 import {
   mergeVideoWorkflowDraft,
   type VideoWorkflowImageMode,
@@ -411,7 +412,7 @@ function WorkbenchImageThumb({
           loading="lazy"
           decoding="async"
           onError={() => setFailed(true)}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          className="h-full w-full object-contain"
         />
         <span className="pointer-events-none absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100">
           <ZoomIn className="h-4 w-4" />
@@ -466,7 +467,7 @@ function HistoryImageThumb({
             loading="lazy"
             decoding="async"
             onError={() => setFailed(true)}
-            className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.04]"
+            className="h-full w-full object-contain"
           />
         </button>
       ) : (
@@ -610,6 +611,9 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
   useEffect(()=>{deliveryMounted.current=true;return ()=>{deliveryMounted.current=false;downloadOperations.current.cancelAll();for(const release of transientImageReleases.current.values())release();transientImageReleases.current.clear();transientImageBlobs.current.clear();};},[]);
   useEffect(()=>{for(const [id,release] of transientImageReleases.current){if(!jobs.some(job=>job.id===id && job.imageUrl)){release();transientImageReleases.current.delete(id);}}},[jobs]);
   const [models, setModels] = useState<CoverModel[]>([]);
+  const [modelCatalogState, setModelCatalogState] = useState<"loading" | "ready" | "empty" | "error">("loading");
+  const [modelCatalogError, setModelCatalogError] = useState("");
+  const [modelCatalogReload, setModelCatalogReload] = useState(0);
   const [notice, setNotice] = useState("");
   const [cashBalance, setCashBalance] = useState(0);
   const [cashRechargeOpen, setCashRechargeOpen] = useState(false);
@@ -631,7 +635,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
     job.status === "done" && job.imageUrl && (job.deliveryReceipt || (job.assetId && job.storageKey))
   ));
   const activeModel = useMemo(() => models.find((model) => model.id === modelId), [modelId, models]);
-  const modelSupportsMode = Boolean(activeModel?.available && activeModel.price_ready
+  const modelSupportsMode = Boolean(modelCatalogState === "ready" && activeModel?.available && activeModel.price_ready
     && (mode === "text-to-image" || activeModel.supports_image_input !== false));
   const supportedRatios = useMemo(() => {
     const configured = activeModel?.aspect_ratios?.filter(isRatio) || [];
@@ -655,6 +659,13 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
   const referenceLimitExceeded = mode === "image-to-image" && references.length > activeReferenceLimit;
   const imageToImageModels = models.filter((model) => model.supports_image_input !== false);
   const visibleModels = mode === "image-to-image" ? imageToImageModels : models;
+  const selectedModelRemoved = (modelCatalogState === "ready" || modelCatalogState === "empty")
+    && Boolean(modelId) && !models.some(model => model.id === modelId);
+  const modelCatalogMessage = modelCatalogState === "loading" ? "正在读取生图模型目录，请稍候…"
+    : modelCatalogState === "error" ? modelCatalogError
+      : selectedModelRemoved ? "原模型已从当前目录移除，请重新选择；已填写的提示词保留。"
+        : modelCatalogState === "empty" ? "当前生图模型目录为空，请联系管理员配置或重新读取。"
+          : activeModel && !activeModel.available ? activeModel.availability_message || "当前所选模型未开放，请选择其他模型。" : "";
   const recoverableJobCount = jobs.filter((job) => job.status === "recoverable").length;
   const newGenerationJobCount = jobs.filter((job) => (
     job.prompt.trim() && ["idle", "failed"].includes(job.status)
@@ -892,9 +903,16 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    setModelCatalogState("loading");
+    setModelCatalogError("");
     async function loadModels() {
       try {
-        const response = await fetch("/api/cover-models?surface=image-workbench", token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+        const response = await fetch("/api/cover-models?surface=image-workbench", {
+          ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+          cache: "no-store", signal: controller.signal,
+        });
         if (!response.ok) throw new Error("MODEL_CATALOG_UNAVAILABLE");
         const data = await response.json() as { models?: PublicCoverModelDto[] };
         if (!active) return;
@@ -924,22 +942,29 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
         }));
         setModels(nextModels);
         setModelId((currentModelId) => {
-          const current = nextModels.find((model) => model.id === currentModelId);
-          if (current?.available) return currentModelId;
-          return nextModels.find((model) => model.available)?.id || "";
+          // A directory reread never silently changes a user's selected ID.
+          // Missing selections stay explicit until the user picks a replacement.
+          if (currentModelId) return currentModelId;
+          return nextModels.find((model) => model.available)?.id || nextModels[0]?.id || "";
         });
-        if (!nextModels.length) {
-          setNotice("当前没有可用的生图服务，请稍后刷新或更换创作方式。");
-        }
+        setModelCatalogState(nextModels.length ? "ready" : "empty");
       } catch {
-        setNotice("模型列表暂时不可用，请稍后刷新。");
+        if (!active) return;
+        setModelCatalogState("error");
+        setModelCatalogError(controller.signal.aborted
+          ? "模型目录读取超时，尚未提交生图；请重新读取。"
+          : "模型目录暂时无法读取，尚未提交生图；请重新读取。");
+      } finally {
+        window.clearTimeout(timeout);
       }
     }
     void loadModels();
     return () => {
       active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
-  }, [setModelId, token]);
+  }, [setModelId, token, modelCatalogReload]);
 
   useEffect(() => {
     async function loadBalance() {
@@ -1799,7 +1824,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
   }, [setJobs]);
 
   return (
-    <div className="voice-studio-root h-full min-h-screen flex flex-col bg-[var(--background)]">
+    <div className="voice-studio-root vs-workbench image-workbench-root h-full min-h-screen flex flex-col bg-[var(--background)]">
       <SubPageHeader
         title="AI生图工作台"
         subtitle="文生图 / 图生图 / 生图卡片 / 顺序命名下载"
@@ -1813,7 +1838,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
               <button
                 type="button"
                 onClick={() => setCashRechargeOpen(true)}
-                className="sub-page-mini-action bg-[var(--primary)] text-white hover:opacity-90 transition-opacity"
+                className="sub-page-mini-action bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
               >
                 充值
               </button>
@@ -1835,14 +1860,14 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
               <button
                 type="button"
                 onClick={() => setMode("text-to-image")}
-                className={`h-10 text-sm font-bold transition-colors ${mode === "text-to-image" ? "bg-[var(--primary)] text-white" : "bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)]"}`}
+                className={`h-10 text-sm font-bold transition-colors ${mode === "text-to-image" ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)]"}`}
               >
                 文生图
               </button>
               <button
                 type="button"
                 onClick={() => setMode("image-to-image")}
-                className={`h-10 text-sm font-bold transition-colors ${mode === "image-to-image" ? "bg-[var(--primary)] text-white" : "bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)]"}`}
+                className={`h-10 text-sm font-bold transition-colors ${mode === "image-to-image" ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)]"}`}
               >
                 图生图
               </button>
@@ -1854,11 +1879,20 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
             <div className="relative">
               <select
                 id="image-workbench-model"
+                aria-describedby="image-workbench-model-status"
+                aria-busy={modelCatalogState === "loading"}
                 value={modelId}
+                disabled={modelCatalogState !== "ready" || visibleModels.length === 0}
                 onChange={(event) => setModelId(event.target.value)}
                 className="w-full h-11 appearance-none rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 pr-9 text-sm text-[var(--foreground)] outline-none"
               >
-                {!visibleModels.some(model => model.id === modelId) && <option value={modelId} disabled>{activeModel ? `${activeModel.name}（不支持图生图）` : "原模型暂不可用，请重新选择"}</option>}
+                {!visibleModels.some(model => model.id === modelId) && <option value={modelId} disabled>{
+                  modelCatalogState === "loading" ? "正在读取模型…"
+                    : modelCatalogState === "error" ? "模型目录读取失败"
+                      : selectedModelRemoved ? "原模型已移除，请重新选择"
+                        : modelCatalogState === "empty" ? "当前模型目录为空"
+                          : activeModel ? `${activeModel.name}（不支持图生图）` : "请选择生图模型"
+                }</option>}
                   {visibleModels.map((model) => (
                     <option key={model.id} value={model.id} disabled={!model.available}>
                       {model.name}{model.available ? "" : `（${model.availability_message || "暂不可用"}）`}
@@ -1867,8 +1901,15 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
               </select>
               <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] pointer-events-none" />
             </div>
+            <p id="image-workbench-model-status" role={modelCatalogState === "error" || selectedModelRemoved ? "alert" : "status"} aria-live="polite" className="text-xs text-[var(--muted-foreground)]">
+              {modelCatalogMessage}
+            </p>
+            <button type="button" disabled={modelCatalogState === "loading"} onClick={() => setModelCatalogReload(value => value + 1)}
+              className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs text-[var(--foreground)] hover:border-[var(--primary)] disabled:opacity-45">
+              {modelCatalogState === "loading" ? "正在读取模型…" : "重新读取模型"}
+            </button>
             <p className="text-xs text-[var(--muted-foreground)]">
-              {activeModel?.supports_image_input ? "当前模型支持参考图输入" : "当前模型仅用于文生图"}
+              {!activeModel ? "模型能力待目录确认" : activeModel.supports_image_input ? "当前模型支持参考图输入" : "当前模型仅用于文生图"}
             </p>
             <p className="text-xs text-[var(--muted-foreground)]">
                   {selectedResolution} 公开价：<span className="font-semibold text-[var(--foreground)]">{selectedResolutionPrice == null ? "价格待确认" : `¥${selectedResolutionPrice.toFixed(2)}/张`}</span>
@@ -2002,7 +2043,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
             type="button"
             disabled={!canGenerate}
             onClick={() => void generateAll()}
-            className="w-full h-12 rounded-lg bg-[var(--primary)] text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 hover:opacity-95 transition-opacity"
+            className="w-full h-12 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] font-bold flex items-center justify-center gap-2 disabled:opacity-50 hover:opacity-95 transition-opacity"
           >
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             生成图片（{newGenerationJobCount}）
@@ -2036,7 +2077,7 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
                       <header className="flex items-center gap-2">
                         <span className="w-7 h-7 rounded-md bg-[var(--muted)] flex items-center justify-center text-xs font-bold">{index + 1}</span>
                         <strong className="text-xs flex-1">{index + 1}.png</strong>
-                        <button type="button" onClick={() => navigator.clipboard.writeText(job.prompt)} disabled={!job.prompt.trim()} className="w-7 h-7 rounded-md hover:bg-[var(--muted)] disabled:opacity-35 flex items-center justify-center" aria-label="复制提示词">
+                        <button type="button" onClick={async () => { const copied = await copyToClipboard(job.prompt); setNotice(copied ? "提示词已复制" : "复制失败，请选中提示词后手动复制"); }} disabled={!job.prompt.trim()} className="w-7 h-7 rounded-md hover:bg-[var(--muted)] disabled:opacity-35 flex items-center justify-center" aria-label="复制提示词">
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                         {job.status === "done" && job.imageUrl && (job.deliveryReceipt || (job.assetId && job.storageKey)) && <button type="button" onClick={() => downloadImageWithNotice(job, `${index + 1}.png`)} className="w-7 h-7 rounded-md hover:bg-[var(--muted)] flex items-center justify-center" aria-label="下载图片">

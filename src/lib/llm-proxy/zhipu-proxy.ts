@@ -12,7 +12,7 @@
 
 import type { ChatRequest, ProxyResult, StreamCallbacks } from "./types";
 import { SseEventStreamDecoder, type DecodedSseEvent } from "../sse-stream-decoder";
-import { LlmStreamError, upstreamContentRejection, upstreamStreamError } from "./stream-error";
+import { LlmResponseStartError, LlmStreamError, LlmStreamReadError, upstreamContentRejection, upstreamStreamError } from "./stream-error";
 import { nativeFetch } from "./native-fetch";
 
 // GLM 4.5+ uses thinking.type; omitting false leaves provider thinking enabled.
@@ -112,6 +112,7 @@ export async function zhipuChatStream(
       let upstreamCompleted = false;
       let finalEventReceived = false;
       let upstreamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+      let knownHttpRejection: LlmStreamError | null = null;
       const deliver = (event: DecodedSseEvent) => {
         if (event.data.trim() === "[DONE]") { upstreamCompleted = true; finalEventReceived = true; return; }
         let parsed;
@@ -143,10 +144,18 @@ export async function zhipuChatStream(
         if (streamReadTimer) clearTimeout(streamReadTimer);
         streamReadTimer = setTimeout(() => {
           if (streamClosed) return;
+          // A stalled error body cannot undo an already observed HTTP rejection.
+          if (knownHttpRejection) {
+            gracefulClose(knownHttpRejection.message, knownHttpRejection.code);
+            return;
+          }
           console.warn(
             `[ZhipuProxy] 流读取超时 (${STREAM_READ_TIMEOUT / 1000}s)，优雅关闭`,
           );
-          gracefulClose("上游响应超时，请重试");
+          const error = upstreamReader ? new LlmStreamReadError("idle_deadline_exceeded")
+            : new LlmResponseStartError("deadline_exceeded", Date.now() - requestStart, STREAM_READ_TIMEOUT);
+          console.error(JSON.stringify({ kind: upstreamReader ? "LLM_STREAM_READ_FAILURE" : "LLM_RESPONSE_START_FAILURE", code: error.code, diagnostics: error.diagnostics }));
+          gracefulClose(error.message, error.code);
         }, STREAM_READ_TIMEOUT);
       }
 
@@ -184,10 +193,14 @@ export async function zhipuChatStream(
 
         // ── 处理非 200 响应 ──
         if (!nativeRes.ok) {
+          if (nativeRes.status >= 400 && nativeRes.status < 500 && nativeRes.status !== 408) {
+            knownHttpRejection = upstreamStreamError({ error: { code: String(nativeRes.status) } });
+          }
           let errMsg = `智谱AI API 错误 (${nativeRes.status})`;
           try {
             const errChunks: Uint8Array[] = [];
             const errReader = nativeRes.body.getReader();
+            upstreamReader = errReader;
             while (true) {
               const { done, value } = await errReader.read();
               if (done) break;
@@ -260,7 +273,7 @@ export async function zhipuChatStream(
         }
         if (streamClosed) return;
         for (const event of events.finish()) deliver(event);
-        if (!upstreamCompleted) throw new LlmStreamError("该模型回复中断，未收到完整结果，请稍后重试", "LLM_STREAM_INTERRUPTED");
+        if (!upstreamCompleted) throw new LlmStreamReadError("incomplete_eof");
 
         // ── 正常流结束 ──
         console.log(
@@ -268,27 +281,11 @@ export async function zhipuChatStream(
         );
         gracefulClose();
       } catch (err) {
-        if (err instanceof LlmStreamError) { gracefulClose(err.message, err.code); return; }
-        // ── 异常处理：优雅关闭，发送错误 chunk ──
-        const errMsg =
-          err instanceof Error ? err.message : String(err);
-
-        // 区分超时、网络错误和其他异常
-        let userMsg = `流式传输异常: ${errMsg}`;
-        if (errMsg.includes("timeout") || errMsg.includes("Timeout")) {
-          userMsg = "上游响应超时，请重试";
-        } else if (
-          errMsg.includes("ECONNREFUSED") ||
-          errMsg.includes("ENOTFOUND") ||
-          errMsg.includes("ECONNRESET")
-        ) {
-          userMsg = "上游连接失败，请稍后重试";
+        const upstreamError = err instanceof LlmStreamError ? err : upstreamReader ? new LlmStreamReadError("transport_error")
+          : new LlmResponseStartError("transport_error", Date.now() - requestStart, timeout * 1000);
+        if (upstreamError instanceof LlmStreamReadError || upstreamError instanceof LlmResponseStartError) {
+          console.error(JSON.stringify({ kind: upstreamError instanceof LlmStreamReadError ? "LLM_STREAM_READ_FAILURE" : "LLM_RESPONSE_START_FAILURE", code: upstreamError.code, diagnostics: upstreamError.diagnostics }));
         }
-
-        console.error(
-          `[ZhipuProxy] 流异常: model=${request.model}, 错误=${errMsg}`,
-        );
-        const upstreamError = upstreamStreamError({ error: userMsg });
         gracefulClose(upstreamError.message, upstreamError.code);
       }
     },

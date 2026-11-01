@@ -1,5 +1,6 @@
 import { generatedImageReferenceUri, parseGeneratedImageReferenceUri, parseGeneratedVideoImageInputs } from "@/lib/generated-image-reference";
 import { GeneratedImageReferenceError, resolveGeneratedImageReference, readGeneratedImageMaterial } from "@/lib/server/generated-image-reference";
+import { bridgeGeneratedImageForVideoProvider } from "@/lib/server/generated-image-video-bridge";
 import { probeAutodlH3ProviderDeliveryReadiness } from "@/lib/autodl-h3-provider-delivery-readiness";
 /**
  * 视频生成 API
@@ -34,12 +35,14 @@ import { authorizeAdminCapability } from "@/lib/server/admin-governance-authorit
 import { authorizeVideoAdminValidation, loadVideoAdminValidationContext, buildVideoAdminValidationContext, buildVideoAdminValidationClaimKey, VideoAdminValidationError } from "@/lib/video-admin-validation";
 import { detectSuspiciousBody, trackIPSecurityEvent, logSecurityEvent, getClientIP as getSecIP, getUserAgent as getSecUA } from "@/lib/security";
 import {
-  coerceVideoTargetDuration,
   resolveVideoDuration,
   resolveVideoResolution,
 } from "@/lib/video-model-capabilities";
 import { getVideoInputContract, validateVideoInputContract } from "@/lib/video-input-contract";
 import { isDigitalHumanWorkspaceModel } from "@/lib/video-model-surface";
+import { readGaoruiPersonAssetAdmission } from "@/lib/gaorui-person-asset-admission";
+import { GaoruiProviderAssetError, gaoruiCredentialBindingFingerprint } from "@/lib/server/gaorui-provider-assets";
+import { prepareGaoruiPersonVideoExecution } from "@/lib/server/gaorui-person-video-execution";
 import {
   evaluateWorkspaceModelCompatibility,
   videoWorkspaceSurfaceFromRequest,
@@ -51,6 +54,7 @@ import {
 } from "@/lib/workspace-model-assignment-settings";
 import { findModelByPublicId, publicModelDisplayName, toPublicModelId } from "@/lib/public-model-dto";
 import { classifyVideoProviderError, sanitizeVideoProviderDiagnostic } from "@/lib/video-error-policy";
+import { canManuallyRetryUnsubmittedVideoTask } from "@/lib/video-manual-retry-eligibility";
 import { recordVideoSubmission, recordVideoTerminalOutcome } from "@/lib/video-terminal-accounting";
 import {
   authorizeVideoChannelRecoveryCanary,
@@ -96,7 +100,7 @@ import {
   persistVideoProviderDispatchReceipt,
   persistVideoProviderSubmissionReceipt,
 } from "@/lib/video-routing-snapshot";
-import { videoBillingAdapterAdmission } from "@/lib/video-model-availability";
+import { videoBillingAdapterAdmission, videoOperatorSubmissionAdmission } from "@/lib/video-model-availability";
 import { resumeRequestedVideoCancellation } from "@/lib/video-cancellation-runtime";
 import {
   acquireProviderAdmission,
@@ -418,6 +422,7 @@ export async function POST(req: NextRequest) {
   let traceTaskLabel = "";
   let tracePromptHash = "";
   let acceptedReceipt: { taskId: string; businessTaskId: string; modelId: unknown } | null = null;
+  let tokenPendingFinancials: { price: number; reserved_amount: number; billing_unit: "token" } | undefined;
   try {
     // 验证用户身份
     const token = getTokenFromHeaders(req.headers);
@@ -492,6 +497,34 @@ export async function POST(req: NextRequest) {
       }
     }
     const image_storage_key = typeof body.image_storage_key === "string" ? body.image_storage_key.trim() : "";
+    // An accepted Token request replays its frozen authorization, even after
+    // prices or wallet availability change. Only an identical original body
+    // may reuse the client request key; no provider submission occurs here.
+    const tokenRequestPayloadHash = buildVideoRequestFingerprint({ tokenRequestBody: body });
+    if (typeof client_request_id === "string" && client_request_id.trim()) {
+      const { data: prior, error: priorError } = await getSupabaseAdminClient().from("video_tasks")
+        .select("id,model_id,task_id_external,status,billing_state,billing_unit,billing_token_quote,billing_reserved_yuan,price_charged,resolution,duration_seconds")
+        .eq("user_id", userId).eq("client_request_id", client_request_id.trim()).maybeSingle();
+      if (priorError) return NextResponse.json({ error: "原请求状态暂时无法确认，请保留原任务", task_submitted: false }, { status: 503 });
+      if (prior?.billing_unit === "token") {
+        const quote = prior.billing_token_quote as Record<string, unknown> | null;
+        if (!quote?.requestPayloadHash || quote.requestPayloadHash !== tokenRequestPayloadHash) {
+          return NextResponse.json({ error: "该请求编号已绑定不同参数，请查询原任务", error_code: "VIDEO_REQUEST_IDEMPOTENCY_CONFLICT", task_submitted: false }, { status: 409 });
+        }
+        const completed = prior.status === "completed" ? await finalizeVideoGenerationSuccess({
+          taskIdInternal: String(prior.id), userId, userRole, providerTaskId: String(prior.task_id_external || ""),
+        }) : null;
+        return NextResponse.json({ task_id: prior.task_id_external || prior.id, business_task_id: prior.id,
+          model_id, status: completed?.state === "completed" ? "completed" : prior.status,
+          billing_state: completed?.billingState || prior.billing_state, replayed: true,
+          ...(completed?.state === "completed" ? { video_url: completed.playbackUrl, price: completed.priceCharged }
+            : { price: 0, reserved_amount: ["failed", "cancelled", "expired"].includes(String(prior.status))
+              || ["settled", "settled_pending_commit", "not_required"].includes(String(prior.billing_state))
+              ? 0 : Number(prior.billing_reserved_yuan || 0), billing_unit: "token" }),
+          resolution: prior.resolution, target_duration: prior.duration_seconds,
+          message: "已返回原视频任务，没有重复提交或扣费" });
+      }
+    }
     const rawReferenceImageUrls = generatedInputs.referenceImageUrls;
     const rawReferenceAudioUrls = body.reference_audio_urls;
     if (rawReferenceImageUrls !== undefined && !Array.isArray(rawReferenceImageUrls)
@@ -561,7 +594,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 校验 aspect_ratio 格式
-    const validRatios = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"];
+    const validRatios = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "adaptive"];
     if (aspect_ratio && !validRatios.includes(aspect_ratio)) {
       return NextResponse.json({ error: `不支持的画面比例: ${aspect_ratio}，当前仅支持: ${validRatios.join("/")}` }, { status: 400 });
     }
@@ -671,7 +704,25 @@ export async function POST(req: NextRequest) {
     const selectedProtocolConfig = selectedModel.api_protocol_config && typeof selectedModel.api_protocol_config === "object"
       ? selectedModel.api_protocol_config as Record<string, unknown>
       : {};
+    const operatorAdmission = videoOperatorSubmissionAdmission(selectedProtocolConfig, selectedModel);
+    if (!operatorAdmission.ready) {
+      return NextResponse.json({
+        error: operatorAdmission.message,
+        error_code: operatorAdmission.code,
+        task_submitted: false,
+        video_task_submitted: false,
+        retryable: false,
+      }, { status: 422 });
+    }
     const protocolParameterIssue = validateVideoParameterContract(selectedModel as VideoModelConfig, {
+      aspectRatio: aspect_ratio,
+      imageUrl: image_url,
+      lastFrameUrl: last_frame_url,
+      referenceImageUrl: reference_image_url,
+      imageUrls: referenceImageUrls,
+      audioUrl: audio_url,
+      audioUrls: referenceAudioUrls,
+      sourceVideoUrl: source_video_url,
       prompt: trimmedPrompt,
       negativePrompt: negative_prompt,
       generateAudio,
@@ -720,7 +771,18 @@ export async function POST(req: NextRequest) {
     // not veto an otherwise valid live configuration.
     // Digital-person pricing is derived from owned media, never a client supplied cheap duration.
     const digitalHumanModel = isDigitalHumanWorkspaceModel(selectedModel);
-    if (!adminValidation && (surface === 'digital-human' || digitalHumanModel)) {
+    let personAssetAdmission = readGaoruiPersonAssetAdmission(selectedModel, { surface: String(surface || "") });
+    if (!personAssetAdmission.ready) {
+      return NextResponse.json({
+        error: personAssetAdmission.message,
+        error_code: personAssetAdmission.code,
+        task_submitted: false,
+        video_task_submitted: false,
+        asset_preparation_attempted: false,
+        retryable: false,
+      }, { status: 422 });
+    }
+    if ((!adminValidation && (surface === 'digital-human' || digitalHumanModel)) || personAssetAdmission.required) {
       try {
         const { ownedDigitalHumanAsset } = await import('@/lib/digital-human-assets');
         const { humanDurationCapabilities, planHumanDuration } = await import('@/features/digital-human/duration-policy');
@@ -803,30 +865,25 @@ export async function POST(req: NextRequest) {
     const configuredAspectRatios = Array.isArray(selectedProtocolConfig.aspect_ratios)
       ? selectedProtocolConfig.aspect_ratios.map(String)
       : [];
-    if (aspect_ratio && configuredAspectRatios.length > 0 && !configuredAspectRatios.includes(aspect_ratio)) {
+    if (aspect_ratio && aspect_ratio !== "adaptive" && configuredAspectRatios.length > 0 && !configuredAspectRatios.includes(aspect_ratio)) {
       return NextResponse.json({
         error: `当前模型不支持 ${aspect_ratio}，可选比例：${configuredAspectRatios.join("/")}`,
       }, { status: 400 });
     }
 
-    // 该路由的任意成功分支都可能直接创建供应商任务，因此不能由缺失或
-    // 伪造 surface 绕过渠道健康门禁。健康查询错误、无记录和熔断均
-    // fail-closed；影视工坊已有的本地 job 仍保留，但绝不会继续提交上游。
+    // Channel health is an operator signal, not a public catalog or ordinary
+    // production gate. A stale APM row, temporary quota issue, or an upstream
+    // outage must reach the provider for this request so the user receives the
+    // current result and the channel can recover without manual reopening.
+    // Only an explicitly requested administrator recovery canary uses the
+    // circuit authorization below.
     if (!adminValidation) {
       const { data: channelHealth, error: healthError } = await db
         .from("video_channel_health")
         .select("channel_id, is_healthy, consecutive_failures, last_success_at, last_fail_at, updated_at, total_requests, success_count, fail_count, timeout_count, last_error")
         .eq("channel_id", selectedModel.id)
         .maybeSingle();
-      if (healthError) {
-        console.warn("[Video/HealthGate] Health lookup unavailable; blocking paid submission:", healthError.code);
-        return NextResponse.json({
-          error: "渠道健康状态暂时无法读取，本次不会提交视频任务",
-          error_code: "CHANNEL_HEALTH_UNAVAILABLE",
-          retryable: true,
-          task_submitted: false,
-        }, { status: 503 });
-      }
+      if (healthError) console.warn("[Video/HealthGate] Health lookup unavailable; ordinary submission continues:", healthError.code);
 
       const circuit = evaluateVideoChannelCircuit(channelHealth);
       if (healthRecoveryCanaryRequested && normalizedSurface !== "video-page") {
@@ -845,7 +902,7 @@ export async function POST(req: NextRequest) {
           task_submitted: false,
         }, { status: 409 });
       }
-      if (circuit.blocksProduction) {
+      if (circuit.blocksProduction && (healthRecoveryCanaryRequested || healthOperatorRetest)) {
         const authorization = authorizeVideoChannelRecoveryCanary({
           decision: circuit,
           userRole,
@@ -857,29 +914,21 @@ export async function POST(req: NextRequest) {
           operatorRetestReason: healthOperatorRetestReason,
         });
         if (!authorization.ok) {
-          const ordinaryBlock = !healthRecoveryCanaryRequested;
-          const recoveryReady = circuit.state === "canary_ready";
-          const error = ordinaryBlock
-            ? recoveryReady
-              ? `该模型渠道连续失败 ${circuit.consecutiveFailures} 次，已过冷却期；普通生产仍暂停，仅管理员可执行受控 canary 验证`
-              : `该模型渠道连续失败 ${circuit.consecutiveFailures} 次，当前生产入口已暂停提交`
-            : authorization.message;
+          const error = authorization.message;
           return NextResponse.json({
             error,
-            error_code: ordinaryBlock ? "CHANNEL_HEALTH_BLOCKED" : authorization.code,
+            error_code: authorization.code,
             circuit_state: circuit.state,
             recovery_eligible_at: circuit.recoveryEligibleAt,
             retryable: false,
             task_submitted: false,
-          }, { status: ordinaryBlock ? 503 : authorization.status });
+          }, { status: authorization.status });
         }
 
         validationClaimKey = buildVideoAdminValidationClaimKey(buildVideoAdminValidationContext({ model: selectedModel, health: channelHealth, userId }));
 
-        // A stale health row remains blocked for all ordinary traffic. Only
-        // this admin-only, epoch-bound key may pass into the existing durable
-        // task reservation. Replays reuse the same business task; terminal
-        // success resets health and terminal failure advances the health epoch.
+        // This admin-only, epoch-bound key is retained for explicit recovery
+        // canaries. Ordinary production never depends on it.
         console.warn("[Video/HealthGate] Explicit recovery canary authorized", {
           modelId: selectedModel.id,
           circuitState: circuit.state,
@@ -890,6 +939,12 @@ export async function POST(req: NextRequest) {
           userId, clientRequestId: client_request_id,
           operatorRetest: healthOperatorRetest,
           reason: healthOperatorRetest ? healthOperatorRetestReason : "管理员单次渠道验证",
+        });
+      } else if (circuit.blocksProduction) {
+        console.warn("[Video/HealthGate] Historical circuit is advisory; ordinary submission continues", {
+          modelId: selectedModel.id,
+          circuitState: circuit.state,
+          consecutiveFailures: circuit.consecutiveFailures,
         });
       }
     }
@@ -951,13 +1006,44 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const requestedDuration = Number(duration) || Number(selectedModel.duration_seconds) || 5;
+    if (personAssetAdmission.required) {
+      personAssetAdmission = readGaoruiPersonAssetAdmission(selectedModel, {
+        surface: String(surface || ""),
+        credentialBindingFingerprint: gaoruiCredentialBindingFingerprint({
+          secret: providerApiKey,
+          modelId: String(selectedModel.id),
+          endpoint: String(selectedModel.api_endpoint),
+        }),
+      });
+      if (!personAssetAdmission.ready) {
+        return NextResponse.json({
+          error: personAssetAdmission.message,
+          error_code: personAssetAdmission.code,
+          task_submitted: false,
+          video_task_submitted: false,
+          asset_preparation_attempted: false,
+          retryable: false,
+        }, { status: 422 });
+      }
+    }
+
+    const requestedDuration = duration === undefined || duration === null || duration === ""
+      ? Number(selectedModel.duration_seconds) || 5
+      : Number(duration);
     const requestedTiming = resolveVideoDuration(selectedModel, requestedDuration);
     if (!requestedTiming.supported) {
       return NextResponse.json({
-        error: requestedDuration < requestedTiming.minDuration
+        error: !Number.isFinite(requestedDuration) || requestedDuration <= 0
+          ? "视频时长必须是大于 0 的有限数值"
+          : requestedTiming.mode === "fixed"
+          ? `当前模型固定生成 ${requestedTiming.defaultDuration} 秒，请使用模型登记时长`
+          : requestedTiming.mode === "discrete"
+            ? `当前模型支持的原生时长为 ${requestedTiming.nativeDurations.join("/")} 秒，请选择其中一项`
+          : requestedDuration < requestedTiming.minDuration
           ? `当前模型最短支持 ${requestedTiming.minDuration} 秒，请调整时长或切换模型`
-          : `当前模型最长支持 ${requestedTiming.maxDuration} 秒，请缩短镜头或切换模型`,
+          : requestedDuration > requestedTiming.maxDuration
+            ? `当前模型最长支持 ${requestedTiming.maxDuration} 秒，请缩短镜头或切换模型`
+            : `请选择当前模型原生支持的时长（${requestedTiming.minDuration}–${requestedTiming.maxDuration} 秒）`,
         duration_capabilities: requestedTiming,
         ...(parameterGuardedProtocol ? {
           error_code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
@@ -967,29 +1053,8 @@ export async function POST(req: NextRequest) {
         task_submitted: false,
       }, { status: parameterGuardedProtocol ? 422 : 400 });
     }
-    const targetDuration = parameterGuardedProtocol
-      ? requestedDuration
-      : coerceVideoTargetDuration(selectedModel, requestedDuration);
-    const videoTiming = resolveVideoDuration(selectedModel, targetDuration);
-    if (!videoTiming.supported) {
-      return NextResponse.json({
-        error: videoTiming.target < videoTiming.minDuration
-          ? `当前模型最短支持 ${videoTiming.minDuration} 秒，请调整时长或切换模型`
-          : `当前模型最长支持 ${videoTiming.maxDuration} 秒，请缩短镜头或切换模型`,
-        duration_capabilities: videoTiming,
-      }, { status: parameterGuardedProtocol ? 422 : 400 });
-    }
-    if (parameterGuardedProtocol
-      && (videoTiming.target !== requestedDuration || videoTiming.submit !== requestedDuration)) {
-      return NextResponse.json({
-        error: `当前协议无法原样提交 ${requestedDuration} 秒，本次未提交上游`,
-        error_code: "VIDEO_PARAMETER_UNSUPPORTED_BY_PROTOCOL",
-        parameter: "duration",
-        retryable: false,
-        task_submitted: false,
-        price: 0,
-      }, { status: 422 });
-    }
+    const targetDuration = requestedDuration;
+    const videoTiming = requestedTiming;
     const configuredDurations = Array.isArray(selectedProtocolConfig.duration_options)
       ? selectedProtocolConfig.duration_options.map(Number).filter((value) => Number.isFinite(value) && value > 0)
       : [];
@@ -1056,21 +1121,28 @@ export async function POST(req: NextRequest) {
     let effectiveLastFrameUrl = last_frame_url;
     let effectiveReferenceImageUrl = reference_image_url;
     let effectiveReferenceImageUrls = [...referenceImageUrls];
+    const hostedBridgedImageSlots = new Set<string>();
     if (generatedInputs.typed.size > 0) {
       try {
-        if (isAutodlComfyuiHostedProtocol(selectedModel.protocol_type)) throw new GeneratedImageReferenceError("GENERATED_IMAGE_HOSTED_INPUT_UNSUPPORTED", "当前托管视频通道要求已上传素材，暂不支持直接复用生成结果；本次未提交或扣费");
+        const hosted = isAutodlComfyuiHostedProtocol(selectedModel.protocol_type);
         const bytesCapable = selectedModel.protocol_type === "newapi_video" && selectedProtocolConfig.request_format === "multipart" && selectedModel.supports_image_input === true;
         if (bytesCapable && [image_url, last_frame_url, reference_image_url, ...referenceImageUrls].filter(Boolean).length !== 1) throw new GeneratedImageReferenceError("GENERATED_IMAGE_SLOT_UNSUPPORTED", "当前图片字节通道仅支持一张主参考图，不能同时发送其他首尾帧或附参考；本次未提交或扣费");
         for (const [field, reference] of generatedInputs.typed) {
           const canonical = generatedImageReferenceUri(reference);
           let resolved: string;
-          if (bytesCapable) {
+          if (hosted) {
+            resolved = await bridgeGeneratedImageForVideoProvider({ userId, reference });
+            hostedBridgedImageSlots.add(field);
+          } else if (bytesCapable) {
             if (field === "last_frame_url" || field.startsWith("reference_image_urls[")) throw new GeneratedImageReferenceError("GENERATED_IMAGE_SLOT_UNSUPPORTED", "当前图片字节通道仅支持单张主参考图，尚不支持此尾帧或附参考槽位；本次未提交或扣费");
             await readGeneratedImageMaterial({ userId, reference });
             resolved = canonical;
           } else {
             const freshUrl = await resolveGeneratedImageReference({ userId, reference });
-            resolved = useAutodlH3Lifecycle ? canonical : freshUrl;
+            // SUAN's material reader understands owned generated-image refs.
+            // Keep that identity after the existing URL/ownership checks so
+            // reading the image uses the shared safe public-result transport.
+            resolved = useAutodlH3Lifecycle || selectedModel.protocol_type === "suanlicheng_video" ? canonical : freshUrl;
           }
           if (field === "image_url") effectiveImageUrl = resolved;
           else if (field === "last_frame_url") effectiveLastFrameUrl = resolved;
@@ -1093,10 +1165,10 @@ export async function POST(req: NextRequest) {
     }) || Boolean(effectiveAudioUrl || effectiveReferenceAudioUrls.length > 0);
     if (isAutodlComfyuiHostedProtocol(selectedModel.protocol_type) && hasHostedReferenceInput) {
       try {
-        if (effectiveImageUrl) effectiveImageUrl = await bridgeVideoProviderAsset(effectiveImageUrl, userId, "image", image_storage_key);
-        if (effectiveLastFrameUrl) effectiveLastFrameUrl = await bridgeVideoProviderAsset(effectiveLastFrameUrl, userId, "image");
-        if (effectiveReferenceImageUrl) effectiveReferenceImageUrl = await bridgeVideoProviderAsset(effectiveReferenceImageUrl, userId, "image");
-        effectiveReferenceImageUrls = await Promise.all(effectiveReferenceImageUrls.map((url) => bridgeVideoProviderAsset(url, userId, "image")));
+        if (effectiveImageUrl && !hostedBridgedImageSlots.has("image_url")) effectiveImageUrl = await bridgeVideoProviderAsset(effectiveImageUrl, userId, "image", image_storage_key);
+        if (effectiveLastFrameUrl && !hostedBridgedImageSlots.has("last_frame_url")) effectiveLastFrameUrl = await bridgeVideoProviderAsset(effectiveLastFrameUrl, userId, "image");
+        if (effectiveReferenceImageUrl && !hostedBridgedImageSlots.has("reference_image_url")) effectiveReferenceImageUrl = await bridgeVideoProviderAsset(effectiveReferenceImageUrl, userId, "image");
+        effectiveReferenceImageUrls = await Promise.all(effectiveReferenceImageUrls.map((url, index) => hostedBridgedImageSlots.has(`reference_image_urls[${index}]`) ? url : bridgeVideoProviderAsset(url, userId, "image")));
         if (effectiveAudioUrl) effectiveAudioUrl = await bridgeVideoProviderAsset(effectiveAudioUrl, userId, "audio");
         effectiveReferenceAudioUrls = await Promise.all(effectiveReferenceAudioUrls.map((url) => bridgeVideoProviderAsset(url, userId, "audio")));
       } catch (bridgeError) {
@@ -1184,8 +1256,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const billing = requireVideoPriceSnapshot(selectedModel, selectedResolution, videoTiming.target);
+    const billing = requireVideoPriceSnapshot(selectedModel, selectedResolution, videoTiming.target, {
+      hasReferenceVideo: Boolean(effectiveSourceVideoUrl),
+      maxChargeYuan: body.tokenBilling?.maxChargeYuan,
+      priceVersion: body.tokenBilling?.priceVersion,
+    });
     const price = billing.priceYuan;
+    if (billing.tokenQuote) Object.assign(billing.tokenQuote, { requestPayloadHash: tokenRequestPayloadHash });
+    if (billing.tokenQuote) tokenPendingFinancials = { price: 0, reserved_amount: billing.tokenQuote.maxChargeYuan, billing_unit: "token" };
     const selectedCostPrice = billing.costPriceYuan;
     const billingExempt = false;
     const rawClientRequestId = String(client_request_id || "").trim();
@@ -1227,14 +1305,16 @@ export async function POST(req: NextRequest) {
       // 🔒 20260914 审计#P1加固：计入未结算任务的总价，防止并发提交透支余额
       const { data: unsettled, error: unsettledError } = await getSupabaseAdminClient()
         .from("video_tasks")
-        .select("billing_price_yuan")
+        .select("billing_price_yuan,billing_reserved_yuan,billing_state")
         .eq("user_id", userId)
         .in("status", ["pending", "queued", "processing", "generating", "finalizing", "billing_pending"]);
       if (unsettledError) {
         return NextResponse.json({ error: "在途任务费用暂时无法核对，本次不会提交视频任务", error_code: "PENDING_BALANCE_UNAVAILABLE", task_submitted: false }, { status: 503 });
       }
       const pendingSum = (unsettled || []).reduce(
-        (sum: number, row: { billing_price_yuan?: unknown }) => sum + Number(row.billing_price_yuan || 0),
+        (sum: number, row: { billing_price_yuan?: unknown; billing_reserved_yuan?: unknown; billing_state?: unknown }) =>
+          sum + (["settled_pending_commit", "settled", "not_required"].includes(String(row.billing_state))
+            ? 0 : Number(row.billing_reserved_yuan ?? row.billing_price_yuan ?? 0)),
         0,
       );
       const { data: walletRow, error: walletError } = await getSupabaseAdminClient()
@@ -1470,7 +1550,6 @@ export async function POST(req: NextRequest) {
           submit_ms: totalMs,
           target_duration: videoTiming.target,
           submit_duration: videoTiming.submit,
-          auto_trim_required: videoTiming.needsTrim,
           prompt_timeline_normalized: normalizedTiming.timelineNormalized,
           resolution: selectedResolution,
           message: "任务已安全登记，系统将自动启动 GPU 并在 H3 就绪后派发",
@@ -1516,7 +1595,6 @@ export async function POST(req: NextRequest) {
             submit_ms: totalMs,
             target_duration: videoTiming.target,
             submit_duration: videoTiming.submit,
-            auto_trim_required: videoTiming.needsTrim,
             prompt_timeline_normalized: normalizedTiming.timelineNormalized,
             resolution: selectedResolution,
             message: "任务已在调度队列中，继续使用同一业务任务",
@@ -1575,6 +1653,7 @@ export async function POST(req: NextRequest) {
     };
     const requestFingerprint = buildVideoRequestFingerprint({
       modelId: channelConfig.id,
+      tokenBilling: billing.tokenQuote || null,
       prompt: executionPrompt,
       imageUrl: generatedImageUri || effectiveImageUrl || null,
       lastFrameUrl: generatedInputs.typed.has("last_frame_url") ? last_frame_url : effectiveLastFrameUrl || null,
@@ -1684,7 +1763,8 @@ export async function POST(req: NextRequest) {
         status: reservation.status,
         billing_state: reservation.billingState,
         replayed: true,
-        price,
+        price: billing.tokenQuote ? 0 : price,
+        ...(billing.tokenQuote ? { reserved_amount: price, billing_unit: "token" } : {}),
         target_duration: videoTiming.target,
         resolution: selectedResolution,
         message: "已找到同一视频任务，本次没有重复提交供应商",
@@ -1711,8 +1791,19 @@ export async function POST(req: NextRequest) {
         channel: String(selectedModel.id || selectedModel.api_endpoint || "unknown"),
         model: String(selectedModel.model_name || selectedModel.name || selectedModel.id || "unknown"),
       });
+      const executionParams = personAssetAdmission.required
+        ? await prepareGaoruiPersonVideoExecution({
+            userId,
+            ownedPersonAssetId: String(body.person_asset_id || ""),
+            ownedAudioAssetId: String(body.audio_asset_id || ""),
+            model: channelConfig,
+            taskInternalId: taskIdInternal,
+            originalParams: adapterParams,
+            authorization: personAssetAdmission.authorization,
+          })
+        : adapterParams;
       result = await submitVideoTask(channelConfig, {
-        ...adapterParams,
+        ...executionParams,
         inputOwnerId: userId,
         onProviderRequest: async (receipt) => {
           // The audited provider fetch is fail-closed: this durable receipt
@@ -1730,6 +1821,34 @@ export async function POST(req: NextRequest) {
         },
       });
     } catch (submitError) {
+      if (submitError instanceof GaoruiProviderAssetError) {
+        // The independent asset journal owns any asset POST. A video failure
+        // must not erase that operation or claim that no external work occurred.
+        const assetState = submitError.state || "failed";
+        const operationId = submitError.operationId;
+        const message = operationId
+          ? "人物素材处理状态需要核对，视频尚未提交；请保留原任务，不要重复生成"
+          : "人物素材校验未通过，视频尚未提交，请检查素材或联系管理员";
+        const failed = await markVideoSubmissionFailed({
+          taskIdInternal,
+          userId,
+          requestFingerprint,
+          errorCode: submitError.code,
+          errorMessage: message,
+        });
+        return NextResponse.json({
+          error: message,
+          error_code: submitError.code,
+          task_id: taskIdInternal,
+          business_task_id: taskIdInternal,
+          status: failed ? "failed" : "pending",
+          video_task_submitted: false,
+          asset_preparation_state: assetState,
+          ...(operationId ? { asset_operation_id: operationId } : {}),
+          asset_submission_outcome: operationId ? assetState : "not_submitted",
+          retryable: false,
+        }, { status: operationId || !failed ? 503 : 422 });
+      }
       if (submitError instanceof ProviderAdmissionBusyError || submitError instanceof ProviderAdmissionUnavailableError) {
         providerAdmissionError = submitError;
       }
@@ -1781,7 +1900,7 @@ export async function POST(req: NextRequest) {
         preservationConfirmed = true;
       } catch { /* The durable reservation still owns this unknown submission. */ }
       if (!preservationConfirmed) {
-        return NextResponse.json({ task_id: taskIdInternal, business_task_id: taskIdInternal, model_id, status: "pending", submission_outcome: "unknown", error_code: "VIDEO_SUBMISSION_RECONCILIATION_STATE_UNAVAILABLE", message, task_submitted: null, retryable: false }, { status: 503 });
+        return NextResponse.json({ task_id: taskIdInternal, business_task_id: taskIdInternal, model_id, status: "pending", submission_outcome: "unknown", error_code: "VIDEO_SUBMISSION_RECONCILIATION_STATE_UNAVAILABLE", message, task_submitted: null, retryable: false, ...tokenPendingFinancials }, { status: 503 });
       }
       await writeVideoTrace({
         phase: "submission_unknown",
@@ -1797,6 +1916,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ task_id: taskIdInternal, business_task_id: taskIdInternal, model_id,
         status: "pending", submission_outcome: "unknown", error_code: "VIDEO_SUBMIT_OUTCOME_UNKNOWN",
         message, task_submitted: null, retryable: false,
+        ...tokenPendingFinancials,
       }, { status: 202 });
     }
     if (result.status === "failed") {
@@ -1808,6 +1928,7 @@ export async function POST(req: NextRequest) {
           errorCode: providerAdmissionError.code,
           errorMessage: providerAdmissionError.message,
         });
+        const manuallyRetryable = !tokenPendingFinancials && failurePersisted && await canManuallyRetryUnsubmittedVideoTask({ taskId: taskIdInternal, userId, db });
         await writeVideoTrace({
           phase: "blocked",
           traceId,
@@ -1815,26 +1936,29 @@ export async function POST(req: NextRequest) {
           taskLabel: traceTaskLabel,
           promptHash: tracePromptHash,
           durationMs: Date.now() - submitStart,
-          errorCode: failurePersisted ? providerAdmissionError.code : "VIDEO_ADMISSION_RELEASE_UNCONFIRMED",
+          errorCode: manuallyRetryable ? providerAdmissionError.code : "VIDEO_ADMISSION_RELEASE_UNCONFIRMED",
         });
-        if (!failurePersisted) {
+        if (!manuallyRetryable) {
           return NextResponse.json({
-            error: "视频任务未调用供应商，但预算释放状态正在核对；请保留原请求号，暂勿重复提交",
+            error: providerAdmissionError.message,
+            message: "原任务费用与手动重试资格正在核对；请保留原请求号，暂勿重复提交",
             error_code: "VIDEO_ADMISSION_RELEASE_UNCONFIRMED",
+            ...tokenPendingFinancials,
             task_id: taskIdInternal,
             business_task_id: taskIdInternal,
-            status: "billing_pending",
-            submission_outcome: "not_submitted",
-            task_submitted: false,
+            status: tokenPendingFinancials ? "billing_pending" : "pending",
             retryable: false,
           }, { status: 503 });
         }
         return NextResponse.json({
           error: providerAdmissionError.message,
           error_code: providerAdmissionError.code,
+          ...(tokenPendingFinancials ? { ...tokenPendingFinancials, reserved_amount: 0 } : {}),
           task_id: taskIdInternal,
           business_task_id: taskIdInternal,
           status: "failed",
+          billing_state: "submission_failed",
+          price: 0,
           submission_outcome: "not_submitted",
           task_submitted: false,
           retryable: true,
@@ -1870,6 +1994,7 @@ export async function POST(req: NextRequest) {
         code: classifiedError.code,
         rawError: classifiedError.operatorMessage,
       });
+      let manuallyRetryable = false;
       if (result.taskId) {
         await bindVideoProviderTask({ taskIdInternal, userId, requestFingerprint, providerTaskId: result.taskId, contentUrl: result.contentUrl || undefined });
         await persistVideoProviderSubmissionReceipt({
@@ -1883,13 +2008,28 @@ export async function POST(req: NextRequest) {
         });
         const { data: failedTask, error: failureSaveError } = await db.from("video_tasks").update({ status: "failed", error_message: classifiedError.publicMessage, submission_error_code: classifiedError.code, billing_state: "submission_failed", price_charged: 0, completed_at: new Date().toISOString() }).eq("id", taskIdInternal).eq("user_id", userId).in("status", ["pending", "queued", "processing"]).select("id").maybeSingle();
         if (failureSaveError || !failedTask) return NextResponse.json({ task_id: result.taskId, business_task_id: taskIdInternal, status: "processing", message: "任务结果正在保存，请继续追踪原任务", retryable: false }, { status: 503 });
-      } else await markVideoSubmissionFailed({
-        taskIdInternal,
-        userId,
-        requestFingerprint,
-        errorCode: classifiedError.code,
-        errorMessage: classifiedError.publicMessage,
-      });
+      } else {
+        if (result.videoUrl || result.contentUrl) return NextResponse.json({
+          task_id: taskIdInternal, business_task_id: taskIdInternal, model_id, status: "pending",
+          submission_outcome: "unknown", task_submitted: null, retryable: false,
+          error_code: "VIDEO_SUBMISSION_PAYLOAD_UNCONFIRMED", message: "上游已返回结果信息但任务绑定尚未确认，请继续查询原任务，暂勿重复提交",
+          ...tokenPendingFinancials,
+        }, { status: 503 });
+        const failurePersisted = await markVideoSubmissionFailed({
+          taskIdInternal,
+          userId,
+          requestFingerprint,
+          errorCode: classifiedError.code,
+          errorMessage: classifiedError.publicMessage,
+        });
+        manuallyRetryable = !tokenPendingFinancials && failurePersisted && await canManuallyRetryUnsubmittedVideoTask({ taskId: taskIdInternal, userId, db });
+        if (!manuallyRetryable) return NextResponse.json({
+          task_id: taskIdInternal, business_task_id: taskIdInternal, model_id, status: tokenPendingFinancials ? "billing_pending" : "pending",
+          retryable: false, error: classifiedError.publicMessage,
+          error_code: "VIDEO_SUBMISSION_FAILURE_UNCONFIRMED", message: "原任务费用与手动重试资格尚未确认，请继续查询原任务，暂勿重复提交",
+          ...tokenPendingFinancials,
+        }, { status: 503 });
+      }
       if (!submitFailedBeforeProviderDispatch) {
         await recordVideoTerminalOutcome({ modelId: selectedModel.id, outcome: "fail", responseMs: totalMs, errorMessage: result.error, countSubmission: true }).catch((error) => console.warn("[Video/Accounting] Failed to record submit failure", sanitizeVideoProviderDiagnostic(error)));
       }
@@ -1898,7 +2038,10 @@ export async function POST(req: NextRequest) {
         {
           error: classifiedError.publicMessage,
           error_code: classifiedError.code,
-          retryable: classifiedError.retryable,
+          // Error classification describes the channel; manual retry requires
+          // a fresh owned-task/ledger proof and a new user confirmation.
+          retryable: result.taskId ? classifiedError.retryable : manuallyRetryable,
+          ...(manuallyRetryable ? { submission_outcome: "not_submitted", task_submitted: false, billing_state: "submission_failed", price: 0 } : {}),
           submit_ms: totalMs,
           task_id: result.taskId || undefined,
           status: "failed",
@@ -1972,6 +2115,7 @@ export async function POST(req: NextRequest) {
         userId,
         userRole,
         providerTaskId,
+        usage: result.usage,
         providerVideoUrl: result.videoUrl,
         responseMs: totalMs,
       });
@@ -1979,12 +2123,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           error: finalized.message || "视频终态结算尚未完成，结果暂不交付",
           error_code: finalized.code || "VIDEO_FINALIZATION_PENDING",
-          retryable: true,
+          retryable: finalized.code !== "VIDEO_TOKEN_BILLING_REVIEW",
           task_id: providerTaskId,
           business_task_id: taskIdInternal,
           status: finalized.state,
           billing_state: finalized.billingState,
           price: 0,
+          ...tokenPendingFinancials,
           video_url: "",
         }, { status: 503 });
       }
@@ -2012,8 +2157,6 @@ export async function POST(req: NextRequest) {
         needsProxy: result.needsProxy || false,
         target_duration: videoTiming.target,
         submit_duration: videoTiming.submit,
-        auto_trim_required: videoTiming.needsTrim,
-        auto_trimmed: videoTiming.needsTrim,
         processing_stage: "ready",
         prompt_timeline_normalized: normalizedTiming.timelineNormalized,
         resolution: selectedResolution,
@@ -2050,20 +2193,22 @@ export async function POST(req: NextRequest) {
       model_id,
       model_name: channelConfig.name || selectedModel.name,
       status: "pending",
-      price: price,
+      price: billing.tokenQuote ? 0 : price,
+      ...(billing.tokenQuote ? { reserved_amount: price, billing_unit: "token" } : {}),
       submit_ms: totalMs,
       target_duration: videoTiming.target,
       submit_duration: videoTiming.submit,
-      auto_trim_required: videoTiming.needsTrim,
       prompt_timeline_normalized: normalizedTiming.timelineNormalized,
       resolution: selectedResolution,
-      message: price > 0
+      message: billing.tokenQuote
+        ? `任务已提交，本次最多自动扣款 ¥${price.toFixed(2)}；成功后按实际 Token 用量结算`
+        : price > 0
         ? `任务已提交，预估费用 ¥${price.toFixed(2)}，生成成功后扣费`
         : "任务已提交（明确免费模型）",
     });
   } catch (error: unknown) {
     if (acceptedReceipt) {
-      return NextResponse.json({ task_id: acceptedReceipt.taskId, business_task_id: acceptedReceipt.businessTaskId, model_id: acceptedReceipt.modelId, status: "processing", error_code: "VIDEO_ACCEPTED_RESULT_PENDING", message: "上游已受理，任务结果正在保存，请继续追踪原任务", task_submitted: true, retryable: false }, { status: 503 });
+      return NextResponse.json({ task_id: acceptedReceipt.taskId, business_task_id: acceptedReceipt.businessTaskId, model_id: acceptedReceipt.modelId, status: "processing", error_code: "VIDEO_ACCEPTED_RESULT_PENDING", message: "上游已受理，任务结果正在保存，请继续追踪原任务", task_submitted: true, retryable: false, ...tokenPendingFinancials }, { status: 503 });
     }
     const terminalError = videoTerminalErrorResponse(error);
     if (terminalError) {

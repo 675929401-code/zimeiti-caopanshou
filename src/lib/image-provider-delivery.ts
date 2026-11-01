@@ -1,15 +1,15 @@
-import { safeFetch, SafeFetchError, validateSafeUrl } from "@/lib/safe-fetch";
+import { SafeFetchError } from "@/lib/safe-fetch";
+import { readPublicImageResult, validatePublicImageResultUrl } from "@/lib/image-result-network";
 import { AUTODL_H3_SELFHOST_PROVIDER, AUTODL_H3_SELFHOST_SECRET_REF, resolveAutodlH3SelfhostResultUrl, fetchAutodlH3SelfhostResult, readAutodlH3SelfhostResult } from "@/lib/autodl-h3-selfhost";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { providerMediaUrl } from "@/lib/generated-media-delivery";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 
-const TRUSTED_HOSTS = ["source.openclaw-token.shop", "flow.secure-skill.com", "cdn.openaicn.com", "ark-acg-cn-beijing.tos-cn-beijing.volces.com"];
 type Delivery = { providerUrl?: unknown; provider?: unknown; apiEndpoint?: unknown; sourceExpiredAt?: unknown };
 
-/** Use the same exact HTTPS provider-host policy for reading and forwarding owned results. */
+/** Use the same public-address policy for reading and forwarding owned results. */
 export function validateProviderImageUrl(url: string) {
-  return validateSafeUrl(url, { trustedHostnames: TRUSTED_HOSTS });
+  return validatePublicImageResultUrl(url);
 }
 
 /** Only exact provider 404/410 is positive expiry evidence. */
@@ -43,9 +43,9 @@ export async function readProviderImage(response: Delivery, probeOnly = false, o
     if (probeOnly) return null;
     return readAutodlH3SelfhostResult(result.finalUrl, endpoint, { maxBytes: 30 * 1024 * 1024, allowedContentTypes: ["image/png", "image/jpeg", "image/webp"], timeoutMs: 30_000 });
   }
-  const result = await safeFetch(url, {
+  const result = await readPublicImageResult(url, {
     timeoutMs: 20_000, maxBytes: probeOnly ? 1 : 30 * 1024 * 1024, maxRedirects: 3,
-    allowedContentTypes: ["image/png", "image/jpeg", "image/webp"], trustedHostnames: TRUSTED_HOSTS,
+    allowedContentTypes: ["image/png", "image/jpeg", "image/webp"],
     ...(probeOnly ? { headers: { Range: "bytes=0-0" } } : {}),
   });
   return probeOnly ? null : result;

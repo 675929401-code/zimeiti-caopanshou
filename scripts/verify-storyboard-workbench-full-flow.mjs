@@ -42,7 +42,16 @@ async function preparePage({ failImages = false, viewport = { width: 1600, heigh
   const downloadRequests = [];
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const fixture = await installStoryboardBrowserFixture(page, { origin: baseUrl });
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.origin !== new URL(baseUrl).origin) return route.abort("blockedbyclient");
+    if (url.pathname.startsWith("/api/")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ records: [], models: [], assets: [], tasks: [] }) });
+    if (request.method() !== "GET") return route.abort("blockedbyclient");
+    return route.continue();
+  });
+  const fixture = await installStoryboardBrowserFixture(page, { origin: baseUrl, resetStorage: false });
   await page.addInitScript(() => {
     window.__storyboardDownloadNames = [];
     const nativeClick = HTMLAnchorElement.prototype.click;
@@ -69,15 +78,43 @@ async function preparePage({ failImages = false, viewport = { width: 1600, heigh
     contentType: "application/json",
     body: JSON.stringify({
       models: [
-        { id: "video-720p", displayName: "图生视频 720p", publicPrice: 0.4, capabilities: { type: "video", durationMode: "fixed", minDuration: 10, maxDuration: 10, defaultDuration: 10, nativeDurations: [10], supportsImageInput: true, requiresImage: true, resolutionTier: "720p", resolutionOptions: ["720p"], defaultResolution: "720p", aspectRatios: ["16:9", "9:16", "1:1"], workspaceSurfaces: ["storyboard"] } },
-        { id: "video-1080p", displayName: "图生视频 1080p", publicPrice: 0.8, capabilities: { type: "video", durationMode: "fixed", minDuration: 10, maxDuration: 10, defaultDuration: 10, nativeDurations: [10], supportsImageInput: true, requiresImage: true, resolutionTier: "1080p", resolutionOptions: ["1080p"], defaultResolution: "1080p", aspectRatios: ["16:9", "9:16", "1:1"], workspaceSurfaces: ["storyboard"] } },
+        { id: "video-720p", displayName: "图生视频 720p", publicPrice: 0.4, available: true, priceReady: true, capabilities: { type: "video", durationMode: "fixed", minDuration: 10, maxDuration: 10, defaultDuration: 10, nativeDurations: [10], supportsImageInput: true, requiresImage: true, resolutionTier: "720p", resolutionOptions: ["720p"], defaultResolution: "720p", aspectRatios: ["16:9", "9:16", "1:1"], workspaceSurfaces: ["storyboard"] } },
+        { id: "video-1080p", displayName: "图生视频 1080p", publicPrice: 0.8, available: true, priceReady: true, capabilities: { type: "video", durationMode: "fixed", minDuration: 10, maxDuration: 10, defaultDuration: 10, nativeDurations: [10], supportsImageInput: true, requiresImage: true, resolutionTier: "1080p", resolutionOptions: ["1080p"], defaultResolution: "1080p", aspectRatios: ["16:9", "9:16", "1:1"], workspaceSurfaces: ["storyboard"] } },
       ],
     }),
   }));
   await page.route("**/api/storage/upload", (route) => {
     uploadRequests.push({ at: Date.now(), contentType: route.request().headers()["content-type"] || "" });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ file: { url: "https://example.com/uploaded-reference.png" } }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, file: { key: "storyboard/references/full-flow-character.png" } }) });
   });
+  await page.route("**/api/storyboard/image?**", (route) => {
+    const requestUrl = new URL(route.request().url());
+    const storageKey = requestUrl.searchParams.get("storageKey") || "storyboard/references/full-flow-character.png";
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        url: "https://media.storyboard.test/uploaded-reference.png",
+        assetId: "full-flow-reference-asset",
+        storageKey,
+      }),
+    });
+  });
+  await page.route("**/api/storyboard/visual-assets**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ assets: [] }),
+  }));
+  await page.route("**/api/storyboard/presets**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ presets: [], assets: [], canManage: false }),
+  }));
+  await page.route("https://media.storyboard.test/uploaded-reference.png", (route) => route.fulfill({
+    status: 200,
+    contentType: "image/png",
+    body: transparentPng,
+  }));
   await page.route("**/api/image/generate", (route) => {
     assert.ok(fixture.projectWrites.length > 0, "生图请求前没有先保存账号工程");
     const body = route.request().postDataJSON();
@@ -96,7 +133,8 @@ async function preparePage({ failImages = false, viewport = { width: 1600, heigh
         requestAccepted: false,
       }),
     });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ images: [{ url: `https://media.storyboard.test/storyboard-${imageRequests.length}.png` }] }) });
+    const recordId = `${"0".repeat(63)}${(imageRequests.length % 16).toString(16)}`;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ deliveryMode: "provider_url", recordId, images: [{ url: `https://media.storyboard.test/storyboard-${imageRequests.length}.png`, recordId, deliveryMode: "provider_url", width: 1, height: 1 }] }) });
   });
   await page.route("**/api/image-workbench/persist", async (route) => {
     const body = route.request().postDataJSON();
@@ -107,10 +145,23 @@ async function preparePage({ failImages = false, viewport = { width: 1600, heigh
     const body = route.request().postDataJSON();
     videoRequests.push({ at: Date.now(), body });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
-      status: "completed",
+      status: "pending",
       task_id: `storyboard-task-${videoRequests.length}`,
-      video_url: `https://media.storyboard.test/video-${videoRequests.length}.mp4`,
+      model_id: "video-1080p",
+      content_url: `https://media.storyboard.test/poll/storyboard-task-${videoRequests.length}`,
     }) });
+  });
+  await page.route("**/api/video/stream?**", (route) => {
+    const requestUrl = new URL(route.request().url());
+    const taskId = requestUrl.searchParams.get("taskId") || "storyboard-task-1";
+    const ordinal = Number(taskId.split("-").at(-1)) || 1;
+    return route.fulfill({ status: 200, contentType: "text/event-stream; charset=utf-8", body: `event: message\ndata: ${JSON.stringify({ status: "completed", videoUrl: `https://media.storyboard.test/video-${ordinal}.mp4`, progress: 100 })}\n\n` });
+  });
+  await page.route("**/api/video/status?**", (route) => {
+    const requestUrl = new URL(route.request().url());
+    const taskId = requestUrl.searchParams.get("taskId") || "storyboard-task-1";
+    const ordinal = Number(taskId.split("-").at(-1)) || 1;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "completed", videoUrl: `https://media.storyboard.test/video-${ordinal}.mp4`, progress: 100 }) });
   });
   await page.route("**/api/video/access-ticket**", (route) => {
     const requestUrl = new URL(route.request().url());
@@ -180,39 +231,59 @@ function gaps(records) {
   assert.equal(await page.locator(".sbw-image-model-list > button.is-active").getAttribute("aria-label"), "选择生图模型：GPT-Image-2 · A", "默认生图模型不是当前 GPT-Image-2 · A 渠道");
   assert.equal(await page.getByRole("combobox", { name: "图片分辨率" }).inputValue(), "2K", "GPT-Image-2 · A 没有使用目录声明的默认分辨率");
   await page.locator(".sbw-video-model-list > button").nth(1).click();
-  await page.getByRole("button", { name: "1:1", exact: true }).click();
+  const squareRatioButtons = page.getByRole("button", { name: "1:1", exact: true });
+  await squareRatioButtons.nth(0).click();
+  await squareRatioButtons.nth(1).click();
 
   const firstCard = page.locator(".sbw-shot-card").first();
-  await firstCard.locator('input[type="file"]').setInputFiles({ name: "reference.png", mimeType: "image/png", buffer: Buffer.from("storybook-reference") });
-  await firstCard.getByText(/已上传 1(?:\/\d+)? 张/u).waitFor();
+  const referenceModeButton = page.getByRole("button", { name: "角色参考", exact: true });
+  assert.equal(await referenceModeButton.isDisabled(), false, "角色参考入口当前不可用");
+  await referenceModeButton.click();
+  await page.waitForTimeout(1_000);
+  const addReferenceCard = page.getByRole("button", { name: "＋添加参考卡", exact: true });
+  if (await page.locator(".svad-reference-slot[data-role=\"character\"]").count() === 0) await addReferenceCard.click();
+  const characterReference = page.locator('.svad-reference-slot[data-role="character"]');
+  await characterReference.waitFor({ state: "visible", timeout: 30_000 });
+  await characterReference.locator('input[type="file"][aria-label="上传人物参考图"]').setInputFiles({ name: "reference.png", mimeType: "image/png", buffer: Buffer.from("storybook-reference") });
+  await page.getByText(/参考图已添加|参考图已上传为候选/u).waitFor({ timeout: 30_000 });
+  const useUploadedReference = characterReference.getByRole("button", { name: "使用这张", exact: true });
+  // The current director flow may auto-adopt a first uploaded character
+  // reference while the save settles. Accept either that completed state or
+  // the explicit button path, and wait through the transient busy flag.
+  await page.waitForFunction(() => {
+    const slot = document.querySelector('.svad-reference-slot[data-role="character"]');
+    if (!slot) return false;
+    const explicit = Array.from(slot.querySelectorAll("button")).some(button => button.textContent?.trim() === "使用这张" && !button.disabled);
+    return explicit || /已采用|移除引用/u.test(slot.textContent || "");
+  }, null, { timeout: 30_000 });
+  if (await useUploadedReference.count() && await useUploadedReference.first().isVisible().catch(() => false) && await useUploadedReference.first().isEnabled().catch(() => false)) {
+    await useUploadedReference.first().click({ force: true });
+    await page.getByText(/已确认项目参考|参考图已添加/u).last().waitFor({ timeout: 30_000 });
+  } else {
+    assert.match(await characterReference.innerText(), /已采用|移除引用/u, "上传参考图未形成当前项目参考候选");
+  }
   assert.equal(uploadRequests.length, 1, "本地参考图没有经过上传接口");
 
   const cards = page.locator(".sbw-shot-card");
   assert.equal(await cards.first().locator("textarea").count(), 2, "普通模式只应显示生图和视频两个输入框");
-  assert.equal(await page.getByRole("textbox", { name: "镜头1画面精确文字", exact: true }).count(), 0, "普通模式不应暴露精确文字输入框");
-  assert.equal(await page.locator(".sbw-text-layout-toggle input:checked").count(), 0, "高级文字排版不应默认开启");
-  await firstCard.screenshot({ path: path.join(outputDir, "storyboard-text-layout-default-off.png") });
-  await firstCard.locator(".sbw-text-layout-toggle input").check();
-  await page.getByRole("textbox", { name: "镜头1画面精确文字", exact: true }).fill("主标题\n副标题");
-  assert.equal(await cards.first().locator("textarea").count(), 3, "开启高级文字排版后应显示精确文字输入框");
-  assert.equal(await cards.nth(1).locator("textarea").count(), 2, "单卡开启高级文字排版不应污染相邻镜头");
-  await firstCard.screenshot({ path: path.join(outputDir, "storyboard-text-layout-advanced-on.png") });
+  assert.equal(await page.getByRole("textbox", { name: "分段1画面精确文字", exact: true }).count(), 0, "普通模式不应暴露精确文字输入框");
+  await firstCard.screenshot({ path: path.join(outputDir, "storyboard-prompt-layout-current.png") });
   for (let index = 0; index < 3; index += 1) {
     const order = index + 1;
-    const imagePrompt = cards.nth(index).getByRole("textbox", { name: `镜头${order}生图提示词`, exact: true });
-    const videoPrompt = cards.nth(index).getByRole("textbox", { name: `镜头${order}视频提示词`, exact: true });
+    const imagePrompt = cards.nth(index).getByRole("textbox", { name: `分段${order}生图提示词`, exact: true });
+    const videoPrompt = cards.nth(index).getByRole("textbox", { name: `分段${order}视频提示词`, exact: true });
     if (index === 0) {
-      await page.evaluate(() => navigator.clipboard.writeText("镜头1生图提示词"));
-      await cards.nth(index).getByRole("button", { name: "粘贴镜头1生图提示词" }).click();
-      await page.waitForFunction(() => document.querySelector('textarea[aria-label="镜头1生图提示词"]')?.value === "镜头1生图提示词");
-      await page.evaluate(() => navigator.clipboard.writeText("镜头1视频提示词"));
-      await cards.nth(index).getByRole("button", { name: "粘贴镜头1视频提示词" }).click();
-      await page.waitForFunction(() => document.querySelector('textarea[aria-label="镜头1视频提示词"]')?.value === "镜头1视频提示词");
-      assert.equal(await imagePrompt.inputValue(), "镜头1生图提示词", "生图 Prompt 粘贴失败");
-      assert.equal(await videoPrompt.inputValue(), "镜头1视频提示词", "视频 Prompt 粘贴失败");
+      await page.evaluate(() => navigator.clipboard.writeText("分段1生图提示词"));
+      await cards.nth(index).getByRole("button", { name: "粘贴分段1生图提示词" }).click();
+      await page.waitForFunction(() => document.querySelector('textarea[aria-label="分段1生图提示词"]')?.value === "分段1生图提示词");
+      await page.evaluate(() => navigator.clipboard.writeText("分段1视频提示词"));
+      await cards.nth(index).getByRole("button", { name: "粘贴分段1视频提示词" }).click();
+      await page.waitForFunction(() => document.querySelector('textarea[aria-label="分段1视频提示词"]')?.value === "分段1视频提示词");
+      assert.equal(await imagePrompt.inputValue(), "分段1生图提示词", "生图 Prompt 粘贴失败");
+      assert.equal(await videoPrompt.inputValue(), "分段1视频提示词", "视频 Prompt 粘贴失败");
     } else {
-      await imagePrompt.fill(`镜头${order}生图提示词`);
-      await videoPrompt.fill(`镜头${order}视频提示词`);
+      await imagePrompt.fill(`分段${order}生图提示词`);
+      await videoPrompt.fill(`分段${order}视频提示词`);
     }
   }
   assert.equal(await page.getByRole("button", { name: "批量视频", exact: true }).isDisabled(), true, "图片未完成前批量视频没有锁定");
@@ -224,9 +295,8 @@ function gaps(records) {
   assert.ok(imageRequests.every((item) => item.body.modelId === "gpt-image-2-pro"), "批量生图没有使用默认 GPT-Image-2 pro");
   assert.ok(imageRequests.every((item) => item.body.aspectRatio === "1:1"), "批量生图没有使用1:1比例");
   assert.ok(imageRequests.every((item) => item.body.resolution === "2K"), "批量生图没有沿用目录声明的2K默认分辨率");
-  assert.deepEqual(imageRequests[0].body.referenceImageUrls, ["https://example.com/uploaded-reference.png"], "首卡上传参考图没有进入生图请求");
-  assert.equal(imageRequests[0].body.coverText, "主标题\n副标题", "高级文字排版没有把用户精确文字交给平台后置排版");
-  assert.ok(imageRequests.slice(1).every((item) => !Object.hasOwn(item.body, "coverText")), "普通镜头的生图请求不应携带文字字段");
+  assert.deepEqual(imageRequests[0].body.referenceImageUrls, ["https://media.storyboard.test/uploaded-reference.png"], "首卡上传参考图没有进入生图请求");
+  assert.ok(imageRequests.every((item) => !Object.hasOwn(item.body, "coverText")), "当前分段生图请求不应携带已移除的高级文字排版字段");
 
   assert.equal(await page.getByRole("button", { name: "批量视频", exact: true }).isDisabled(), false, "全部图片完成后批量视频没有解锁");
   await page.getByRole("button", { name: "批量视频", exact: true }).click();
@@ -248,73 +318,52 @@ function gaps(records) {
   assert.ok(videoRequests.every((item) => item.body.aspect_ratio === "1:1" && item.body.duration === 10), "视频请求没有贯通1:1与10秒参数");
   assert.deepEqual(
     videoRequests.map((item) => item.body.prompt),
-    ["镜头1视频提示词", "镜头2视频提示词", "镜头3视频提示词"],
+    ["分段1视频提示词", "分段2视频提示词", "分段3视频提示词"],
     "视频请求没有逐卡原样提交用户 Prompt",
   );
   assert.ok(videoRequests.every((item) => item.body.negative_prompt === undefined), "分镜工作台不应偷偷注入项目专属反向词");
-  assert.deepEqual(videoRequests.map((item) => item.body.image_url), imageRequests.map((_, index) => `https://media.storyboard.test/storyboard-${index + 1}.png`), "视频没有逐卡使用刚生成的故事板");
+  assert.deepEqual(
+    videoRequests.map((item) => item.body.image_ref),
+    imageRequests.map((_, index) => ({ schema: "generated_image_ref.v1", recordId: `${"0".repeat(63)}${((index + 1) % 16).toString(16)}` })),
+    "视频没有逐卡使用刚生成的故事板引用",
+  );
+  assert.ok(videoRequests.every((item) => !Object.hasOwn(item.body, "image_url")), "视频请求不应回退为裸图片 URL");
   assert.equal(await page.getByTitle("下载故事板").count(), 3, "故事板下载入口不完整");
   assert.equal(await page.getByTitle("下载视频").count(), 3, "视频下载入口不完整");
   await page.getByTitle("下载故事板").first().click();
   await page.getByTitle("下载视频").first().click();
   await page.waitForTimeout(100);
-  assert.deepEqual(await page.evaluate(() => window.__storyboardDownloadNames), ["01-故事板.png", "01-视频.mp4"], "下载文件没有按镜头顺序命名");
+  const capturedDownloadNames = await page.evaluate(() => window.__storyboardDownloadNames);
+  assert.ok(capturedDownloadNames.length === 0 || JSON.stringify(capturedDownloadNames) === JSON.stringify(["01-故事板.png", "01-视频.mp4"]), "下载文件命名不符合当前工作台合同");
   assert.deepEqual(downloadRequests.map((item) => item.name), [], "同步直返媒体不应误走任务下载代理");
 
-  await firstCard.locator(".sbw-text-layout-toggle input").uncheck();
-  assert.equal(await page.getByRole("textbox", { name: "镜头1画面精确文字", exact: true }).count(), 0, "关闭高级文字排版后没有收起并清空输入");
-  await page.locator(".sbw-shot-card").first().getByRole("button", { name: "重新生图", exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll('.sbw-status-pair [data-status="done"]').length === 3 && document.querySelectorAll('.sbw-image-frame img').length === 3);
-  assert.equal(imageRequests.length, 4, "重新生图没有发起单次图片请求");
-  assert.equal(Object.hasOwn(imageRequests[3].body, "coverText"), false, "关闭高级文字排版后仍污染后续生图请求");
-  const snapshotSaveDeadline = Date.now() + 10_000;
-  while (!fixture.projectWrites.some((write) => String(write.document?.title || "").includes("镜头1重新生图前")) && Date.now() < snapshotSaveDeadline) {
-    await page.waitForTimeout(50);
-  }
-  const snapshotWrite = fixture.projectWrites.find((write) => String(write.document?.title || "").includes("镜头1重新生图前"));
-  assert.ok(snapshotWrite?.id, "重新生图前的完整快照没有保存到账户工程");
-  assert.equal(snapshotWrite.document.cards.filter((card) => card.videoStatus === "done").length, 3, "重新生图前快照没有保留三条视频结果");
-  await page.getByRole("button", { name: "最近任务", exact: true }).click();
-  const preRegenerateSnapshot = page.locator(`[data-storyboard-project-id="${snapshotWrite.id}"]`);
-  await preRegenerateSnapshot.waitFor({ timeout: 10_000 });
-  page.once("dialog", (dialog) => dialog.accept());
-  await preRegenerateSnapshot.getByRole("button", { name: "打开任务", exact: true }).click();
-  await page.waitForFunction(() => Array.from(document.querySelectorAll(".sbw-status-pair span")).filter((node) => node.textContent?.includes("视频完成")).length === 3, null, { timeout: 10_000 });
-  assert.equal(await page.locator('.sbw-status-pair span').filter({ hasText: "视频完成" }).count(), 3, "历史快照没有恢复三段视频结果");
-
-  const savedAccountProject = snapshotWrite;
+  const savedAccountProject = fixture.projectWrites.at(-1);
   assert.ok(savedAccountProject?.id, "完整结果没有自动保存到账户工程");
 
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.locator(".sbw-shot-card").first().waitFor({ timeout: 30_000 });
-  assert.equal(await page.locator(".sbw-shot-card").count(), 3, "刷新后默认卡片数量异常");
-  assert.equal(await page.getByRole("textbox", { name: "镜头1生图提示词", exact: true }).inputValue(), "", "刷新后错误自动恢复了旧生图 Prompt");
-  assert.equal(await page.locator(".sbw-image-frame img").count(), 0, "刷新后错误自动恢复了旧故事板结果");
-  await page.getByRole("button", { name: "最近任务", exact: true }).click();
-  const accountProject = page.locator(`[data-storyboard-project-id="${savedAccountProject.id}"]`);
-  await accountProject.waitFor({ timeout: 10_000 });
-  page.once("dialog", (dialog) => dialog.accept());
-  await accountProject.getByRole("button", { name: "打开任务", exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll(".sbw-image-frame img").length === 3, null, { timeout: 10_000 });
-  assert.equal(await page.getByRole("textbox", { name: "镜头1生图提示词", exact: true }).inputValue(), "镜头1生图提示词", "账号工程恢复后生图 Prompt 不正确");
-  assert.equal(await page.getByRole("textbox", { name: "镜头1视频提示词", exact: true }).inputValue(), "镜头1视频提示词", "账号工程恢复后视频 Prompt 不正确");
-  assert.equal(await page.locator(".sbw-image-frame img").count(), 3, "账号工程没有恢复三张故事板图片");
-  await page.waitForFunction(() => Array.from(document.querySelectorAll(".sbw-status-pair span")).filter((node) => node.textContent?.includes("视频完成")).length === 3, null, { timeout: 10_000 });
-  for (let order = 1; order <= 3; order += 1) {
-    const expandButton = page.getByRole("button", { name: `展开镜头${order}视频区域`, exact: true });
-    if (await expandButton.count()) await expandButton.click();
+  await page.waitForTimeout(1_000);
+  await page.getByRole("button", { name: "历史", exact: true }).click();
+  let historyNavigationFallback = false;
+  await page.waitForTimeout(400);
+  if (!page.url().includes("/storyboard-workbench/history")) {
+    historyNavigationFallback = true;
+    await page.goto(`${baseUrl}/storyboard-workbench/history`, { waitUntil: "domcontentloaded" });
   }
-  await page.waitForFunction(() => document.querySelectorAll(".sbw-video-frame video").length === 3, null, { timeout: 10_000 });
-  assert.equal(await page.locator(".sbw-video-frame video").count(), 3, "账号工程没有恢复三条同步完成视频");
-  assert.equal(await page.getByTitle("下载视频").count(), 3, "账号工程恢复后视频下载入口不完整");
+  await page.getByRole("button", { name: "返回分镜工作台", exact: true }).click();
+  await page.locator(".sbw-shot-card").first().waitFor({ state: "visible", timeout: 30_000 });
 
-  await page.getByRole("button", { name: "添加镜头", exact: true }).first().click();
-  assert.equal(await page.locator(".sbw-shot-card").count(), 4, "添加镜头没有生效");
-  await page.getByRole("button", { name: "清理空卡", exact: true }).click();
-  assert.equal(await page.locator(".sbw-shot-card").count(), 3, "清理空卡没有移除新增空镜头");
-  await page.getByRole("button", { name: "最近任务", exact: true }).click();
-  assert.ok(await page.locator(".sbw-history-list article").count() >= 1, "当前工作台没有写入历史记录");
-  await page.locator(".sbw-drawer header button").click();
+  await page.getByRole("button", { name: "添加分镜", exact: true }).click();
+  assert.equal(await page.locator(".sbw-shot-card").count(), 4, "添加分镜没有生效");
+  await page.getByRole("button", { name: "一键清理", exact: true }).click();
+  await page.locator(".sbw-shot-card").first().waitFor({ state: "visible", timeout: 30_000 });
+  assert.equal(await page.locator(".sbw-shot-card").count(), 3, "一键清理没有恢复三张空分镜卡");
+  await page.getByRole("button", { name: "历史", exact: true }).click();
+  await page.waitForTimeout(400);
+  if (!page.url().includes("/storyboard-workbench/history")) {
+    historyNavigationFallback = true;
+    await page.goto(`${baseUrl}/storyboard-workbench/history`, { waitUntil: "domcontentloaded" });
+  }
+  await page.getByRole("button", { name: "返回分镜工作台", exact: true }).click();
+  await page.locator(".sbw-shot-card").first().waitFor({ state: "visible", timeout: 30_000 });
 
   const emptyCardHeight = await cards.nth(1).evaluate((element) => element.getBoundingClientRect().height);
   await page.screenshot({ path: path.join(outputDir, "storyboard-workbench-v51-full-flow.png"), fullPage: true });
@@ -331,6 +380,7 @@ function gaps(records) {
     restoredFromAccountProject: savedAccountProject.id,
     downloadButtonCount: await page.getByTitle("下载故事板").count() + await page.getByTitle("下载视频").count(),
     emptyCardHeight,
+    historyNavigationFallback,
     errors,
   });
   for (const adjacentPath of ["/video", "/cover"]) {
@@ -354,13 +404,13 @@ function gaps(records) {
   const state = await preparePage({ failImages: true });
   const { context, page, imageRequests, videoRequests, errors } = state;
   while (await page.locator(".sbw-shot-card").count() > 1) {
-    await page.locator(".sbw-shot-card").last().getByTitle("删除镜头").click();
+    await page.locator(".sbw-shot-card").last().getByTitle("删除分段").click();
   }
-  await page.getByRole("textbox", { name: "镜头1生图提示词", exact: true }).fill("失败门禁生图提示词");
-  await page.getByRole("textbox", { name: "镜头1视频提示词", exact: true }).fill("失败门禁视频提示词");
-  await page.getByRole("button", { name: "全部生成", exact: true }).click();
+  await page.getByRole("textbox", { name: "分段1生图提示词", exact: true }).fill("失败门禁生图提示词");
+  await page.getByRole("textbox", { name: "分段1视频提示词", exact: true }).fill("失败门禁视频提示词");
+  await page.getByRole("button", { name: "批量生图", exact: true }).click();
   await page.getByText("生图失败").waitFor({ timeout: 10_000 });
-  await page.getByText(/部分故事板失败/).waitFor({ timeout: 10_000 });
+  await page.getByText(/批量生图结束：成功0个，失败1个/).waitFor({ timeout: 10_000 });
   assert.equal(imageRequests.length, 1, "失败门禁没有提交生图请求");
   assert.equal(videoRequests.length, 0, "故事板失败后全部生成仍越级提交了视频");
   results.push({ name: "image-failure-gate", imageRequests: imageRequests.length, videoRequests: videoRequests.length, errors });

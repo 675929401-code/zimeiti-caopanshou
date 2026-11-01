@@ -4,6 +4,19 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { ensureServerRuntimeEnvLoaded } = await import("@/lib/server-runtime-env");
   ensureServerRuntimeEnvLoaded();
+  // Covers are derived files. Prune them at boot so covers of records that were
+  // cleared or expired in an earlier process do not linger as orphans.
+  try {
+    const path = await import("node:path");
+    const { resolveAppRuntimeDir } = await import("@/lib/runtime-paths");
+    const { scheduleVideoThumbnailCachePrune } = await import("@/lib/video-thumbnail-cache");
+    scheduleVideoThumbnailCachePrune({
+      cacheRoot: path.join(resolveAppRuntimeDir(), "video-thumbnails"),
+      force: true,
+    });
+  } catch {
+    // Cache cleanup is best effort and must never block boot.
+  }
   // Production queue work runs in a dedicated PM2 process built from the same
   // immutable standalone artifact. It starts at process boot and never depends
   // on a browser generation/status/history request to wake it.

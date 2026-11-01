@@ -18,7 +18,23 @@ function run(executable: string, args: string[]) {
 }
 
 async function main() {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "verify-local-video-"));
+  // Windows Codex runners can deny writes under the system temp directory even
+  // though the ffmpeg binary itself is usable. Keep Linux/CI on the normal
+  // system temp path, while allowing the runner to provide a writable project
+  // temp root explicitly or use the ignored project-local fallback.
+  const configuredRoot = process.env.CODEX_VIDEO_VERIFY_TMP?.trim();
+  const tempRoot = configuredRoot
+    ? path.resolve(configuredRoot)
+    : process.platform === "win32"
+      ? path.join(process.cwd(), ".codex-temp", "video-verify")
+      : os.tmpdir();
+  await fs.mkdir(tempRoot, { recursive: true });
+  const directory = await fs.mkdtemp(path.join(tempRoot, "verify-local-video-"));
+  const tempEnvironment = ["TMPDIR", "TMP", "TEMP", "VIDEO_TEMP_DIR"] as const;
+  const previousEnvironment = new Map(tempEnvironment.map((name) => [name, process.env[name]]));
+  if (configuredRoot || process.platform === "win32") {
+    for (const name of tempEnvironment) process.env[name] = tempRoot;
+  }
   const source = path.join(directory, "source.mp4");
   const ffprobe = path.join(process.cwd(), "node_modules", "ffprobe-static", "bin", process.platform, process.arch, process.platform === "win32" ? "ffprobe.exe" : "ffprobe");
   try {
@@ -37,7 +53,14 @@ async function main() {
     const gif = await processLocalMedia({ action: "gif", inputs: [input], startSeconds: 0, endSeconds: 1.5 }); assert.equal(gif.contentType, "image/gif"); assert.equal(gif.bytes.subarray(0, 3).toString("ascii"), "GIF");
     const concat = await processLocalMedia({ action: "concat", inputs: [input, input] }); assert.ok(concat.bytes.length > input.bytes.length);
     console.log(JSON.stringify({ ok: true, duration, outputs: { trim: trimmed.bytes.length, mute: muted.bytes.length, audio: audio.bytes.length, subtitle: subtitle.bytes.length, gif: gif.bytes.length, concat: concat.bytes.length } }, null, 2));
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+  } finally {
+    for (const name of tempEnvironment) {
+      const previous = previousEnvironment.get(name);
+      if (previous === undefined) delete process.env[name];
+      else process.env[name] = previous;
+    }
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 }
 
 main().catch((error) => { console.error(error); process.exit(1); });

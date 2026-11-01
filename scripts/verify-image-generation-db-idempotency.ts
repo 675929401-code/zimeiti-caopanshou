@@ -69,16 +69,17 @@ async function verifySourceAndMigrationContract() {
   assert.match(route, /IMAGE_IDEMPOTENCY_KEY_REQUIRED/u);
   assert.match(route, /IMAGE_TRACE_ID_REQUIRED/u);
   assert.match(route, /IMAGE_PRICE_NOT_CONFIGURED/u);
-  assert.match(route, /persistGeneratedImage\(/u);
-  assert.match(route, /persistAutodlH3SelfhostImageWithRecovery\(/u);
-  assert.match(route, /imageStorageUri: persisted\.storageUri/u);
-  assert.match(route, /assetId: delivery\.assetId/u);
+  assert.match(route, /runImageExactlyOnce\(/u);
+  assert.match(route, /finalizeImageExactlyOnceDelivery\(/u);
+  assert.match(route, /readAutodlH3SelfhostResult\(/u);
+  assert.match(route, /const imageStorageUri = String\(exactResult\.response\.imageStorageUri \|\| ""\)/u);
+  assert.match(route, /delivery\.assetId/u);
   assert.match(route, /idempotencyReplayed/u);
   assert.match(statusRoute, /provider_completed_pending_delivery/u);
 
   const reservation = route.indexOf("const reserveImageBudgetOnce");
   const deduction = route.indexOf("executeCashDeduction({", reservation);
-  const providerCallback = route.indexOf("submitOnce: async () =>", deduction);
+  const providerCallback = route.indexOf("submitOnce: async", deduction);
   const delivery = route.indexOf("finalizeImageExactlyOnceDelivery({");
   assert.ok(reservation >= 0 && deduction > reservation && providerCallback > deduction,
     "the durable-intent winner must reserve budget before its only provider callback");

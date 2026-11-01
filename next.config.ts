@@ -273,6 +273,7 @@ const nextConfig: NextConfig = {
         fs: false,
         http: false,
         https: false,
+        module: false,
         net: false,
         os: false,
         path: false,

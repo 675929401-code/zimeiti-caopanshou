@@ -116,6 +116,7 @@ export interface BillingResult {
 
 // ─── 读取配置（带60秒内存缓存） ───────────────────────────────────────
 let billingConfigCache: { data: BillingConfig; ts: number } | null = null;
+let billingConfigEpoch = 0;
 const BILLING_CONFIG_TTL = 60_000; // 60秒缓存
 
 // ─── 智能体计费配置缓存（60秒TTL，避免扣费时重复查 agents + llm_models） ──
@@ -153,16 +154,17 @@ export async function getBillingConfig(): Promise<BillingConfig> {
   if (billingConfigCache && Date.now() - billingConfigCache.ts < BILLING_CONFIG_TTL) {
     return billingConfigCache.data;
   }
+  const readEpoch = billingConfigEpoch;
   const db = await getDb();
   const { data } = await db.from("platform_settings").select("setting_key, setting_value");
 
   const config = billingConfigFromSettingsRows(data || []);
-  billingConfigCache = { data: config, ts: Date.now() };
+  if (readEpoch === billingConfigEpoch) billingConfigCache = { data: config, ts: Date.now() };
   return config;
 }
 
 /** 强制清除缓存（管理后台修改设置时调用） */
-export function invalidateBillingConfigCache() { billingConfigCache = null; agentBillingCache.clear(); }
+export function invalidateBillingConfigCache() { billingConfigEpoch++; billingConfigCache = null; agentBillingCache.clear(); }
 
 // ─── 核心计算 ───────────────────────────────────────
 
@@ -334,6 +336,7 @@ export async function getAgentBillingConfig(agentId: string): Promise<BillingCon
     return cached.data;
   }
 
+  const readEpoch = billingConfigEpoch;
   const db = await getDb();
   const { data: agent } = await db
     .from("agents")
@@ -342,7 +345,7 @@ export async function getAgentBillingConfig(agentId: string): Promise<BillingCon
     .single();
 
   if (!agent) {
-    agentBillingCache.set(agentId, { data: null, ts: Date.now() });
+    if (readEpoch === billingConfigEpoch) agentBillingCache.set(agentId, { data: null, ts: Date.now() });
     return null;
   }
 
@@ -366,13 +369,13 @@ export async function getAgentBillingConfig(agentId: string): Promise<BillingCon
         tokenRoundingMin: globalConfig.tokenRoundingMin,
         tokenRoundingMax: globalConfig.tokenRoundingMax,
       };
-      agentBillingCache.set(agentId, { data: result, ts: Date.now() });
+      if (readEpoch === billingConfigEpoch) agentBillingCache.set(agentId, { data: result, ts: Date.now() });
       return result;
     }
   }
 
   if (!agent.token_billing_enabled) {
-    agentBillingCache.set(agentId, { data: null, ts: Date.now() });
+    if (readEpoch === billingConfigEpoch) agentBillingCache.set(agentId, { data: null, ts: Date.now() });
     return null;
   }
 
@@ -389,7 +392,7 @@ export async function getAgentBillingConfig(agentId: string): Promise<BillingCon
     tokenRoundingMin: globalConfig.tokenRoundingMin,
     tokenRoundingMax: globalConfig.tokenRoundingMax,
   };
-  agentBillingCache.set(agentId, { data: result, ts: Date.now() });
+  if (readEpoch === billingConfigEpoch) agentBillingCache.set(agentId, { data: result, ts: Date.now() });
   return result;
 }
 
@@ -611,6 +614,8 @@ export async function applyAtomicWalletOperation(input: {
         balanceAfter: 0,
         error: migrationMissing
           ? '原子钱包迁移尚未部署，已拒绝非原子余额操作'
+          : String(error.message || '').includes('VIDEO_BUDGET_CASH_RESERVED')
+            ? '部分现金余额已被在途视频任务预留，请等待原任务结算或补充可用余额'
           : '原子钱包操作失败',
       };
     }

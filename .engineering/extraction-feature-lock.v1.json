@@ -1,0 +1,158 @@
+{
+  "schema": "extraction-feature-lock.v1",
+  "locked": true,
+  "createdAt": "2026-10-29T03:39:55.162Z",
+  "feature": "extraction",
+  "approval": {
+    "reference": "2026-10-29 current Codex user request: repair copy extraction blocking/status and add a safety lock; future changes require explicit user permission",
+    "scope": "Initial status/history recovery repair and source/API protection; no provider configuration change, paid resubmission, migration or deployment"
+  },
+  "changePolicy": "No automatic rebaseline. Future protected edits require specific user authorization, review, validation and resealing.",
+  "basis": {
+    "preChangeLocalSource": "R001528-20261029-f734b0a3",
+    "successfulOriginalRecords": [
+      "b4a80c01975a0c86d1f09bb602ed6061ba2592b18e34ac775b3052e632a935c3",
+      "6f6d08b738bfb65340f65cfd7d656e7dba6623ecb8449db7e0acbbd54d858556"
+    ],
+    "sourceRecoveryEvidence": ".codex-evidence/extraction-incident-20261029-9ea52c8d/status-browser-1793245050985/report.json",
+    "verificationBoundary": "Source and isolated browser recovery verified before initial sealing; full current-build acceptance is recorded separately in the immutable handoff, not inferred from these hashes.",
+    "sourceLockEvidence": ".codex-evidence/extraction-incident-20261029-9ea52c8d/source-lock-tests-unique/run-0BvvYi/report.json"
+  },
+  "configurationBaseline": {
+    "scope": "read-only local metadata snapshot; no secrets",
+    "pluginId": "7d4a7de7-0318-4f37-ad9f-62f4516979b3",
+    "role": "coze_multifunction_extract",
+    "type": "coze",
+    "isActive": true,
+    "pricePerUse": 0.02,
+    "costPrice": 0.01,
+    "endpointSha256": "3fa8875593ef5b8b03b350abfa0cd339cc7fd9a1f061907596a0616213b48d82",
+    "credentialPresenceOnly": true
+  },
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "650aa3f4c567f2333954358e07051761818d40363950e078ac6ea816c72376bc"
+    },
+    {
+      "path": "docs/文案提取保护合同.md",
+      "sha256": "3c160f5e90a6448e96aa4237e0d2b544e4b3379acc4694932cf03bcc16a43ae3"
+    },
+    {
+      "path": "scripts/build-release-vnext.mjs",
+      "sha256": "c467430ca47e1d043091fb074eaff6d1c46170333b1b425678c8e6151d275277"
+    },
+    {
+      "path": "scripts/release-preflight.mjs",
+      "sha256": "e0a8e0da37fa9b23bd8f657f7972714864ac06db603a4135747facb3b13f0c91"
+    },
+    {
+      "path": "scripts/run-build.mjs",
+      "sha256": "a9c8b5134ec4c35ec3306bd3eb9c5901d495912087eef95c6c5d1a2952181c67"
+    },
+    {
+      "path": "scripts/verify-extraction-feature-config-lock-zero-network.mjs",
+      "sha256": "8119a3f5cb68c4996e69e1d94f5488a008f50781b65f1c730fdc0c02fe988413"
+    },
+    {
+      "path": "scripts/verify-extraction-feature-lock.mjs",
+      "sha256": "fbe10c293f6db4f587a129d4e009a9b96181750e1b325f47d31601112c7a4a02"
+    },
+    {
+      "path": "scripts/verify-extraction-source-lock-zero-network.mjs",
+      "sha256": "ed7326b38a854ab4763b6b54eb97fbcc4617ca2f2f0f73d2ec50abe704ad1b76"
+    },
+    {
+      "path": "scripts/verify-extraction-status-recovery-browser.mjs",
+      "sha256": "b8a48ba530d7eb0522b352d4e6655405b1f2ed01b1c2fd7d4abe2ca29d5d787e"
+    },
+    {
+      "path": "src/app/api/admin/plugins/route.ts",
+      "sha256": "c1c68c28adf6a00412fa906bc953b6bdcf1255cbdd4c28e9ef9346887778d42f"
+    },
+    {
+      "path": "src/app/api/extract/batch/route.ts",
+      "sha256": "b858c67f41f9d01e6a19ffb1ba2e50c2bc9a58dcae6445256ffce5ade62c63f9"
+    },
+    {
+      "path": "src/app/api/extract/coze/route.ts",
+      "sha256": "2819eeabd43094c371881eb197c154e45be715365278ace3f298b8c5e3e1dffc"
+    },
+    {
+      "path": "src/app/api/extract/history/route.ts",
+      "sha256": "db6aa53daa0a872e6c5e5f2555e2a16eb4c9471703a603276048174f66d6312a"
+    },
+    {
+      "path": "src/app/api/extract/route.ts",
+      "sha256": "20f8b48eeaaf3fbe3589f3262a32cd0e2aea405bffcb9b2f3eb3d0f201419d49"
+    },
+    {
+      "path": "src/app/api/extract/search/route.ts",
+      "sha256": "4d034c6ccc8d5d188c6bce3018ab2a66ab13690f2f72e3b6041ea1a525e9d76c"
+    },
+    {
+      "path": "src/app/api/extract/status/route.ts",
+      "sha256": "2862820cf4af39238091d68b7daa4dd131511301a1988ef5f7497418d20e032f"
+    },
+    {
+      "path": "src/app/api/tools/runtime-catalog/route.ts",
+      "sha256": "36310aa7e3c7d2d8cf38339fd39d343c905a990e5d0434dc7e715b32d750805d"
+    },
+    {
+      "path": "src/app/extract/page.tsx",
+      "sha256": "9fa32d5ad142deea2585b53922ffd84deebf2ea5fb63746b69fc7c92e37d9f9f"
+    },
+    {
+      "path": "src/hooks/use-extraction-attempt-status.ts",
+      "sha256": "5f8bc9a082b6f078fe59b2a10617dad0cba741f3bab15cc6e0a6f6570c850076"
+    },
+    {
+      "path": "src/hooks/use-extraction-history.ts",
+      "sha256": "9e25ea8f9b965c914e63b0c2b8f729e63fe4bd26d036c3530ac25ed3cd4073b9"
+    },
+    {
+      "path": "src/lib/coze-extraction-handler.ts",
+      "sha256": "a9a5451991c601b6fba177abef0e1e875b35bf7c2f823e61991be48a291c0d10"
+    },
+    {
+      "path": "src/lib/coze-extraction-result.ts",
+      "sha256": "de4a31ff3b9e9822d66e899ad51d71659cc55dfca2a25605a60aa898f1787804"
+    },
+    {
+      "path": "src/lib/coze-source-identity.ts",
+      "sha256": "9eea876fdc9bc7081994ee13644fa5c4b9bbc1c27536fe8f33e9372db12272e6"
+    },
+    {
+      "path": "src/lib/coze-workflow-client.ts",
+      "sha256": "eadfd026b1a66d9d8aa25de9a43cd64c23ded37d2351ccd91e8716c59e27b165"
+    },
+    {
+      "path": "src/lib/extract-client-attempt.ts",
+      "sha256": "2920891470c088cb855949d838d910ef1b5a782284eecf49f583196c9fa06181"
+    },
+    {
+      "path": "src/lib/extract-pricing.ts",
+      "sha256": "355a4364faa1f53398f8e0f53cfb5e6a6fb6b7541e70996d68ce74ac7a90066f"
+    },
+    {
+      "path": "src/lib/extraction-auth.ts",
+      "sha256": "242413c7b93d024e2f39d8fc2909b8de75f8d7d339a52313f064ed06370cce27"
+    },
+    {
+      "path": "src/lib/extraction-exactly-once.ts",
+      "sha256": "f247e9b9e55444912df90dd79f946c8f957dfd82a7312f44c4ab62678ba53789"
+    },
+    {
+      "path": "src/lib/extraction-feature-lock.ts",
+      "sha256": "05f5243a7755f22f49bfe5c99137d51824b04451906dd60f69e1ab0f4f944a5b"
+    },
+    {
+      "path": "src/lib/extraction-history.ts",
+      "sha256": "8ce8a16caa41c3deba396cb62ba5c01e0d754a90184ff3d18078307fd73affc1"
+    },
+    {
+      "path": "src/lib/extraction-provider-error.ts",
+      "sha256": "d60e3e2aee088ece352fb19ea644b5c3516b89febed74cae0734e6c52974609b"
+    }
+  ]
+}

@@ -4,7 +4,6 @@ import {
   configurationSha256,
   normalizeModelPoolSnapshot,
   normalizePlatformConfigurationSnapshot,
-  normalizeWorkspaceModelSnapshot,
   validateModelPoolSnapshot,
   validateWorkspaceModelSnapshot,
   type ConfigurationValidation,
@@ -15,6 +14,8 @@ import {
   type PlatformConfigurationSnapshot,
   type WorkspaceModelSnapshot,
 } from "@/lib/platform-configuration-contract";
+
+import { MODEL_MUTATION_REQUEST_UUID, normalizeCredentialMetadata, type PlatformCredentialChange, type PlatformCredentialMetadata } from "@/lib/server/platform-configuration-pending-credentials";
 
 type Row = Record<string, unknown>;
 type EvaluatedValidation = ConfigurationValidation & {
@@ -72,6 +73,8 @@ export const PLATFORM_CONFIGURATION_RUNTIME_ENFORCEMENT = {
     "workspace_model_config_releases",
     "platform_model_credential_bindings",
     "platform_configuration_order_map",
+    "read_platform_model_pending_credential_metadata",
+    "read_platform_model_mutation_receipt",
   ] as const,
 } as const;
 
@@ -90,6 +93,38 @@ export class PlatformConfigurationError extends Error {
   }
 }
 
+export class PlatformConfigurationMutationOutcomeUnknown extends PlatformConfigurationError {
+  readonly outcome = "outcome_unknown";
+  readonly receiptPath: string;
+  constructor(readonly requestId: string, readonly candidateId: string | null, readonly phase: "stage" | "readback" | "preview") {
+    super("PLATFORM_CONFIGURATION_MUTATION_OUTCOME_UNKNOWN", "模型变更结果需要核验，请用同一请求标识读取回执后重试");
+    this.name = "PlatformConfigurationMutationOutcomeUnknown";
+    this.receiptPath = `/api/admin/model-pool-releases?requestId=${encodeURIComponent(requestId)}`;
+  }
+}
+
+export async function readPlatformModelMutationReceipt(actorId: string, requestId: string, requestPayload?: Row) {
+  requireUuid(actorId, "管理员 ID");
+  if (!MODEL_MUTATION_REQUEST_UUID.test(requestId)) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_REQUEST_ID_REQUIRED", "模型变更请求标识无效");
+  let result;
+  try { result = await getSupabaseAdminClient().rpc("read_platform_model_mutation_receipt", { p_actor_id: actorId, p_request_id: requestId, p_request_payload: requestPayload || null }); }
+  catch { throw new PlatformConfigurationMutationOutcomeUnknown(requestId, null, "stage"); }
+  if (result.error) {
+    if (String(result.error.message || "").includes("PLATFORM_CONFIGURATION_REQUEST_ID_CONFLICT")) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_REQUEST_ID_CONFLICT", "该请求标识已用于不同的模型变更");
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_MUTATION_RECEIPT_UNAVAILABLE", "无法读取模型变更回执，请保持原请求标识后重试");
+  }
+  if (!result.data) return null;
+  const row = record(result.data);
+  return { candidateId: requireUuid(row.candidateId, "配置候选 ID"), state: row.state === "applied" ? "applied" : "staged", hasStagedCredentials: row.hasStagedCredentials === true };
+}
+
+export async function resumePlatformModelMutation(actorId: string, requestId: string, requestPayload: Row) {
+  const receipt = await readPlatformModelMutationReceipt(actorId, requestId, requestPayload);
+  if (!receipt) return null;
+  try { const row = await release("model-pool", receipt.candidateId); snapshotFromRow("model-pool", row); return row; }
+  catch { throw new PlatformConfigurationMutationOutcomeUnknown(requestId, receipt.candidateId, "readback"); }
+}
+
 /**
  * Read the actual database before every publication. This is deliberately not
  * a build-time boolean: a build may be moved between databases, while schema
@@ -100,8 +135,10 @@ export async function readPlatformConfigurationRuntimeStatus(): Promise<Platform
   const probes = [
     { artifact: "model_pool_config_releases", run: () => db.from("model_pool_config_releases").select("id", { head: true, count: "exact" }) },
     { artifact: "workspace_model_config_releases", run: () => db.from("workspace_model_config_releases").select("id", { head: true, count: "exact" }) },
-    { artifact: "platform_model_credential_bindings", run: () => db.from("platform_model_credential_bindings").select("credential_ref", { head: true, count: "exact" }) },
+    { artifact: "platform_model_credential_bindings", run: () => db.from("platform_model_credential_bindings").select("credential_ref,revision", { head: true, count: "exact" }) },
     { artifact: "platform_configuration_order_map", run: () => db.rpc("platform_configuration_order_map", { p_ids: [] }) },
+    { artifact: "read_platform_model_pending_credential_metadata", run: () => db.rpc("read_platform_model_pending_credential_metadata", { p_release_id: "00000000-0000-0000-0000-000000000000" }) },
+    { artifact: "read_platform_model_mutation_receipt", run: () => db.rpc("read_platform_model_mutation_receipt", { p_actor_id: "00000000-0000-0000-0000-000000000000", p_request_id: "00000000-0000-0000-0000-000000000000", p_request_payload: null }) },
   ];
   const checks = await Promise.all(probes.map(async ({ artifact, run }) => [artifact, await run()] as const));
   const blockers = checks.flatMap(([artifact, result]) => result.error ? [`${artifact}: ${result.error.message}`] : []);
@@ -287,6 +324,52 @@ export async function createPlatformConfigurationCandidate(
   });
 }
 
+/** Candidate plus pending credentials are written by one database transaction only. */
+export async function stagePlatformModelCandidateWithCredentials(input: {
+  actorId: string; requestId: string; requestPayload: Row; snapshot: ModelPoolSnapshot;
+  credentialChanges: PlatformCredentialChange[]; changeNote: string;
+  expectedBase?: { releaseId: string; snapshotSha256: string };
+}) {
+  const actorId = requireUuid(input.actorId, "管理员 ID");
+  if (!MODEL_MUTATION_REQUEST_UUID.test(String(input.requestId || ""))) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_REQUEST_ID_REQUIRED", "请提供有效的模型变更请求标识后重试");
+  const snapshot = normalizeModelPoolSnapshot(input.snapshot);
+  const validation = await validateSnapshot("model-pool", snapshot);
+  const current = await currentRelease("model-pool");
+  if (input.expectedBase && (!current || String(current.id) !== input.expectedBase.releaseId || String(current.snapshot_sha256) !== input.expectedBase.snapshotSha256)) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_CURRENT_CHANGED", "模型池基础版本已变化，请重新创建候选");
+  }
+  let staged;
+  try { staged = await getSupabaseAdminClient().rpc("stage_model_pool_candidate_with_credentials_atomic", {
+    p_actor_id: actorId, p_request_id: input.requestId, p_request_payload: input.requestPayload,
+    p_snapshot: snapshot, p_snapshot_sha256: configurationSha256(snapshot),
+    p_validation_result: { ...validationRecord(validation, actorId), ...(input.expectedBase ? { operation: "video-upsert-only", baseSnapshotSha256: input.expectedBase.snapshotSha256 } : {}) }, p_status: validation.ok ? "validated" : "draft",
+    p_change_note: changeNote(input.changeNote, "创建模型池候选"), p_parent_release_id: input.expectedBase?.releaseId || (current ? String(current.id) : null),
+    p_credential_changes: input.credentialChanges,
+  }); } catch { throw new PlatformConfigurationMutationOutcomeUnknown(input.requestId, null, "stage"); }
+  if (staged.error) {
+    const sqlState = String(staged.error.code || "");
+    const knownRollback = /^(22|23)/u.test(sqlState) || ["40001", "40P01", "P0001"].includes(sqlState);
+    if (!knownRollback) throw new PlatformConfigurationMutationOutcomeUnknown(input.requestId, null, "stage");
+    const message = String(staged.error.message || "");
+    const code = message.includes("PLATFORM_CONFIGURATION_REQUEST_ID_CONFLICT") ? "PLATFORM_CONFIGURATION_REQUEST_ID_CONFLICT"
+      : message.includes("PLATFORM_CONFIGURATION_CURRENT_CHANGED") ? "PLATFORM_CONFIGURATION_CURRENT_CHANGED" : "PLATFORM_CONFIGURATION_CREDENTIAL_STAGE_FAILED";
+    // Never echo a database detail which might contain an invalid secret-bearing row.
+    throw new PlatformConfigurationError(code, code === "PLATFORM_CONFIGURATION_REQUEST_ID_CONFLICT" ? "该请求标识已用于不同的模型变更，请重新发起" : code === "PLATFORM_CONFIGURATION_CURRENT_CHANGED" ? "模型池基础版本已变化，请重新创建候选" : "模型候选与凭据暂存未完成，本次未修改运行凭据");
+  }
+  const row = record(staged.data);
+  const id = MODEL_MUTATION_REQUEST_UUID.test(String(row.id || "")) ? String(row.id) : null;
+  if (!id) throw new PlatformConfigurationMutationOutcomeUnknown(input.requestId, null, "readback");
+  try { const readback = await release("model-pool", id); snapshotFromRow("model-pool", readback); return readback; }
+  catch { throw new PlatformConfigurationMutationOutcomeUnknown(input.requestId, id, "readback"); }
+}
+
+async function credentialMetadata(releaseId: string) {
+  const result = await getSupabaseAdminClient().rpc("read_platform_model_pending_credential_metadata", { p_release_id: releaseId });
+  if (result.error) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_CREDENTIAL_METADATA_UNAVAILABLE", "无法核验候选凭据暂存状态，请先确认配置迁移已就绪");
+  try { return normalizeCredentialMetadata(result.data); }
+  catch { throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_CREDENTIAL_METADATA_INVALID", "候选凭据暂存状态无效"); }
+}
+
 export async function validatePlatformConfigurationCandidate(actorIdValue: string, kind: PlatformConfigurationKind, releaseIdValue: string) {
   const actorId = requireUuid(actorIdValue, "管理员 ID");
   const releaseId = requireUuid(releaseIdValue, "配置版本 ID");
@@ -301,7 +384,7 @@ export async function validatePlatformConfigurationCandidate(actorIdValue: strin
   const status = validation.ok ? "validated" : "draft";
   const updated = await getSupabaseAdminClient().from(table(kind)).update({
     status,
-    validation_result: validationRecord(validation, actorId),
+    validation_result: { ...validationRecord(validation, actorId), ...(kind === "model-pool" && record(existing.validation_result).operation === "video-upsert-only" ? { operation: "video-upsert-only" } : {}) },
     validated_at: validation.ok ? new Date().toISOString() : null,
   }).eq("id", releaseId).eq("snapshot_sha256", String(existing.snapshot_sha256))
     .eq("is_current", false).in("status", ["draft", "validated"]).select("*").maybeSingle();
@@ -311,18 +394,20 @@ export async function validatePlatformConfigurationCandidate(actorIdValue: strin
   return updated.data as Row;
 }
 
-export async function previewPlatformConfigurationRelease(kind: PlatformConfigurationKind, releaseIdValue: string): Promise<PlatformConfigurationReleasePreview> {
+export async function previewPlatformConfigurationRelease(kind: PlatformConfigurationKind, releaseIdValue: string): Promise<PlatformConfigurationReleasePreview & { credentialChanges?: PlatformCredentialMetadata[] }> {
   const releaseId = requireUuid(releaseIdValue, "配置版本 ID");
   const [candidate, current] = await Promise.all([release(kind, releaseId), currentRelease(kind)]);
   if (candidate.is_current === true || !["draft", "validated"].includes(String(candidate.status))) {
     throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_RELEASE_NOT_CANDIDATE", "只能预览未发布候选");
   }
   if (kind === "model-pool") {
-    return buildPlatformConfigurationPreview({
+    const base = buildPlatformConfigurationPreview({
       kind,
       current: current ? { identity: identity(current), snapshot: snapshotFromRow("model-pool", current) } : null,
       candidate: { identity: identity(candidate), snapshot: snapshotFromRow("model-pool", candidate) },
     });
+    const credentialChanges = await credentialMetadata(releaseId);
+    return credentialChanges.length ? { ...base, credentialChanges, previewSha256: configurationSha256({ basePreviewSha256: base.previewSha256, credentialChanges }) } : base;
   }
   return buildPlatformConfigurationPreview({
     kind,
@@ -348,6 +433,9 @@ export async function publishPlatformConfigurationRelease(
 ) {
   const actorId = requireUuid(actorIdValue, "管理员 ID");
   const releaseId = requireUuid(releaseIdValue, "配置版本 ID");
+  const existing = await release(kind, releaseId);
+  if (existing.is_current === true && existing.status === "published") return existing;
+  if (existing.status === "superseded") throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_ALREADY_PUBLISHED_NOT_CURRENT", "该候选已发布且已被更新版本替代，请读取当前版本");
   const preview = await previewPlatformConfigurationRelease(kind, releaseId);
   if (!expectedPreviewSha256 || preview.previewSha256 !== expectedPreviewSha256) {
     throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_PREVIEW_STALE", "发布差异预览已缺失或过期，请重新预览");
@@ -373,7 +461,14 @@ export async function publishPlatformConfigurationRelease(
     p_expected_current_id: freshPreview.current?.releaseId || null,
     p_expected_current_sha256: freshPreview.current?.snapshotSha256 || null,
   });
-  if (published.error) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_PUBLISH_FAILED", `原子发布失败：${published.error.message}`);
+  if (published.error) {
+    const message = String(published.error.message || "");
+    const code = message.trim() === "PLATFORM_CONFIGURATION_CREDENTIAL_REMOVAL_COMBINATION_REJECTED" ? "PLATFORM_CONFIGURATION_CREDENTIAL_REMOVAL_COMBINATION_REJECTED"
+      : message.includes("PLATFORM_CONFIGURATION_CREDENTIAL_CANDIDATE_BASE_CHANGED") ? "PLATFORM_CONFIGURATION_CREDENTIAL_CANDIDATE_BASE_CHANGED"
+      : message.includes("PLATFORM_CONFIGURATION_CREDENTIAL_CONFLICT") ? "PLATFORM_CONFIGURATION_CREDENTIAL_CONFLICT"
+      : message.includes("PLATFORM_CONFIGURATION_ALREADY_PUBLISHED_NOT_CURRENT") ? "PLATFORM_CONFIGURATION_ALREADY_PUBLISHED_NOT_CURRENT" : "PLATFORM_CONFIGURATION_PUBLISH_FAILED";
+    throw new PlatformConfigurationError(code, code === "PLATFORM_CONFIGURATION_CREDENTIAL_REMOVAL_COMBINATION_REJECTED" ? "此候选同时包含密钥变更和模型下架，请先单独发布密钥变更，再创建下架候选。" : code === "PLATFORM_CONFIGURATION_CREDENTIAL_CANDIDATE_BASE_CHANGED" ? "模型池已更新，本候选暂存凭据尚未应用；请基于当前版本重新创建候选" : code === "PLATFORM_CONFIGURATION_CREDENTIAL_CONFLICT" ? "候选创建后运行凭据已变化，请重新创建候选并预览；本次未发布" : "配置原子发布未完成，请读取当前版本后重试");
+  }
   const readback = await currentRelease(kind);
   if (!readback
       || String(readback.id) !== releaseId

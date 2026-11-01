@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { VOICE_PRICING_SERVICES, voicePricingService, voicePricingSupport, voicePricingUnitMultiplier } from '@/lib/vs/model-config';
 import {
   Select,
   SelectContent,
@@ -51,6 +52,8 @@ interface ModelConfig {
   profitMargin: number;
   isActive: boolean;
   sort: number;
+  runtimeSupported?: boolean;
+  serviceDescription?: string;
 }
 
 
@@ -93,8 +96,9 @@ export function VoiceStudioAdminTab() {
   const [editingModel, setEditingModel] = useState<ModelConfig | null>(null);
   const [modelForm, setModelForm] = useState({
     name: '', modelId: '', resourceId: '',
-    totalPrice: '28', totalChars: '100000', unit: '千字符', profitMargin: '100', isActive: false,
+    totalPrice: '', totalChars: '', unit: '千字符', profitMargin: '100', isActive: false,
   });
+  const availableServices = VOICE_PRICING_SERVICES.filter(service => !models.some(model => model.modelId === service.modelId));
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -178,7 +182,7 @@ export function VoiceStudioAdminTab() {
   const openAddModel = () => {
     setActionError('');
     setEditingModel(null);
-    setModelForm({ name: '', modelId: '', resourceId: '', totalPrice: '28', totalChars: '100000', unit: '千字符', profitMargin: '100', isActive: true });
+    setModelForm({ name: '', modelId: '', resourceId: '', totalPrice: '', totalChars: '', unit: '千字符', profitMargin: '100', isActive: false });
     setModelDialogOpen(true);
   };
 
@@ -244,19 +248,19 @@ export function VoiceStudioAdminTab() {
       <Card className="border-border/50 bg-card/50">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <div>
-            <CardTitle className="text-base">模型配置</CardTitle>
+            <CardTitle className="text-base">语音服务计价</CardTitle>
             <CardDescription className="text-xs mt-1">
-              模型与计费元数据 · 供应商密钥由主站统一配置中心管理，后台只显示配置状态
+              为已接入的语音服务配置价格；添加计价项不会接入新的供应商或模型版本。供应商密钥由主站统一配置中心管理。
             </CardDescription>
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={fetchAll}>刷新</Button>
-            <Button size="sm" onClick={openAddModel}>添加模型</Button>
+            <Button size="sm" onClick={openAddModel} disabled={availableServices.length === 0} title={availableServices.length === 0 ? '已支持的计价服务均已配置，请编辑现有项' : undefined}>添加计价服务</Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {models.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">暂无模型配置，请点击"添加模型"</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">暂无计价服务，请先选择已接入服务并填写确认后的价格</p>
           ) : models.map(m => {
             const costPrice = m.costPrice;
             const sellPrice = costPrice * (1 + m.profitMargin / 100);
@@ -268,24 +272,26 @@ export function VoiceStudioAdminTab() {
                 <div className="flex items-center gap-2 min-w-[160px]">
                   <span className="font-mono text-sm font-semibold">{m.modelId}</span>
                   <Badge variant={m.isActive ? 'default' : 'secondary'} className="text-[10px] px-1.5">
-                    {m.isActive ? '启用' : '禁用'}
+                    {m.isActive ? '计价已启用' : '计价已停用'}
                   </Badge>
+                  {!voicePricingService(m.modelId) && <Badge variant="outline" className="text-[10px] px-1.5">{voicePricingSupport(m.modelId).status === 'retired' ? '历史服务已退役' : '服务未接入'}</Badge>}
                 </div>
                 {/* 定价信息 */}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground flex-1">
                   <span>官价: <b className="text-foreground">{twStr}</b></span>
                   <span>成本: <b className="text-foreground">¥{costPrice.toFixed(4)}/{m.unit}</b></span>
-                  <span>利润: <b className="text-foreground">{m.profitMargin}%</b></span>
+                  <span>加价率: <b className="text-foreground">{m.profitMargin}%</b></span>
                   <span>售价: <b className="text-emerald-400">¥{sellPrice.toFixed(2)}/{m.unit}</b></span>
                 </div>
                 {/* 操作 */}
                 <div className="flex gap-1.5">
-                  <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => toggleModelActive(m)}>
+                  <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => toggleModelActive(m)} disabled={!m.isActive && !voicePricingService(m.modelId)}>
                     {m.isActive ? '禁用' : '启用'}
                   </Button>
                   <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => openEditModel(m)}>编辑</Button>
                   <Button size="sm" variant="ghost" className="text-xs h-7 text-destructive hover:text-destructive" onClick={() => deleteModel(m.id)}>删除</Button>
                 </div>
+                <p className="w-full text-xs text-muted-foreground">{m.serviceDescription || voicePricingSupport(m.modelId).description}</p>
               </div>
             );
           })}
@@ -299,7 +305,7 @@ export function VoiceStudioAdminTab() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>• 扣费逻辑跟随主站余额体系，子站不单独充值。</p>
-          <p>• 各模型售价 = 成本价 × (1 + 利润率%)，在"模型配置"卡片中自动计算展示。</p>
+          <p>• 各服务售价 = 成本价 × (1 + 加价率%)，在“语音服务计价”卡片中自动计算展示。</p>
           <p>• 如需调整扣费策略或对接自有余额系统，请在主站后台管理。</p>
           <a href="/admin" className="inline-block mt-2 text-primary hover:underline text-sm">→ 前往主站后台</a>
         </CardContent>
@@ -430,24 +436,35 @@ export function VoiceStudioAdminTab() {
       <Dialog open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>{editingModel ? '编辑模型' : '添加模型'}</DialogTitle>
-            <DialogDescription>配置模型和定价参数。供应商密钥由主站统一配置中心管理，不在此页面回显或保存。</DialogDescription>
+            <DialogTitle>{editingModel ? '编辑计价服务' : '添加计价服务'}</DialogTitle>
+            <DialogDescription>此处配置已接入服务的计价，不新增供应商。标准版、表现力增强版等具体合成版本在前台选择；供应商密钥由主站统一配置中心管理，不在此页面回显或保存。</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>模型名称</Label>
+                <Label>显示名称</Label>
                 <Input placeholder="如: 语音合成 2.0" value={modelForm.name} onChange={e => setModelForm(f => ({ ...f, name: e.target.value }))} />
               </div>
               <div className="space-y-2">
-                <Label>模型 ID</Label>
-                <Input placeholder="如: seed-tts-2.0" value={modelForm.modelId} onChange={e => setModelForm(f => ({ ...f, modelId: e.target.value }))} disabled={!!editingModel} />
+                <Label htmlFor="voice-pricing-service">计价服务</Label>
+                <Select value={modelForm.modelId} onValueChange={value => {
+                  const service = voicePricingService(value);
+                  if (service) setModelForm(form => ({ ...form, modelId: value, name: service.name, resourceId: service.resourceId, unit: service.unit }));
+                }} disabled={!!editingModel}>
+                  <SelectTrigger id="voice-pricing-service"><SelectValue placeholder="选择已接入服务" /></SelectTrigger>
+                  <SelectContent>
+                    {editingModel && !voicePricingService(editingModel.modelId) && <SelectItem value={editingModel.modelId}>历史未接入项：{editingModel.modelId}</SelectItem>}
+                    {VOICE_PRICING_SERVICES.map(service => <SelectItem key={service.modelId} value={service.modelId} disabled={!editingModel && models.some(model => model.modelId === service.modelId)}>{service.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {modelForm.modelId && <p className="text-[11px] text-muted-foreground">计价标识：{modelForm.modelId}</p>}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Resource ID</Label>
-                <Input placeholder="火山引擎资源ID" value={modelForm.resourceId} onChange={e => setModelForm(f => ({ ...f, resourceId: e.target.value }))} />
+                <Label>资源标识</Label>
+                <Input placeholder="所选服务的资源标识" value={modelForm.resourceId} onChange={e => setModelForm(f => ({ ...f, resourceId: e.target.value }))} />
+                <p className="text-[11px] text-muted-foreground">用于计价配置说明，不改变供应商连接或前台模型版本。</p>
               </div>
               <div className="space-y-2">
                 <Label>计费单位</Label>
@@ -456,26 +473,27 @@ export function VoiceStudioAdminTab() {
                   <SelectContent>
                     <SelectItem value="千字符">千字符</SelectItem>
                     <SelectItem value="分钟">分钟</SelectItem>
+                    <SelectItem value="次">次</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="rounded-lg border border-border/50 bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
               供应商配置：{dashboard?.providerConfig?.configured
-                ? `已连接（${dashboard.providerConfig.source === 'plugins' ? '主站配置中心' : '服务器环境'}）`
+                ? `已配置（${dashboard.providerConfig.source === 'plugins' ? '主站配置中心' : '服务器环境'}）；实际可用性仍需生成验证`
                 : '未连接；请在主站统一配置中心完成供应商密钥配置'}
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>官价 (¥)</Label>
+                <Label>确认后的套餐成本 (¥)</Label>
                 <Input type="number" value={modelForm.totalPrice} onChange={e => setModelForm(f => ({ ...f, totalPrice: e.target.value }))} />
               </div>
               <div className="space-y-2">
-                <Label>总字数/总时长</Label>
+                <Label>套餐计费数量</Label>
                 <Input type="number" value={modelForm.totalChars} onChange={e => setModelForm(f => ({ ...f, totalChars: e.target.value }))} />
               </div>
               <div className="space-y-2">
-                <Label>利润率 (%)</Label>
+                <Label>加价率 (%)</Label>
                 <Input type="number" value={modelForm.profitMargin} onChange={e => setModelForm(f => ({ ...f, profitMargin: e.target.value }))} />
               </div>
             </div>
@@ -483,24 +501,25 @@ export function VoiceStudioAdminTab() {
             {(() => {
               const tw = Number(modelForm.totalPrice) || 0;
               const tc = Number(modelForm.totalChars) || 1;
-              const cp = tw / tc * (modelForm.unit === '分钟' ? 1 : 1000);
+              if (!modelForm.totalPrice.trim() || !modelForm.totalChars.trim() || tw <= 0 || tc <= 0) return <p className="text-xs text-muted-foreground">填写确认后的套餐成本和计费数量后显示预览。</p>;
+              const cp = tw / tc * voicePricingUnitMultiplier(modelForm.unit);
               const sp = cp * (1 + (Number(modelForm.profitMargin) || 0) / 100);
               return (
                 <div className="rounded-lg bg-muted/50 px-4 py-3 text-xs text-muted-foreground space-y-1">
-                  <p>成本价 = {tw} ÷ {tc} × {modelForm.unit === '分钟' ? '1' : '1000'} = <b className="text-foreground">¥{cp.toFixed(4)}/{modelForm.unit}</b></p>
+                  <p>成本价 = {tw} ÷ {tc} × {voicePricingUnitMultiplier(modelForm.unit)} = <b className="text-foreground">¥{cp.toFixed(4)}/{modelForm.unit}</b></p>
                   <p>售价 = {cp.toFixed(4)} × (1 + {modelForm.profitMargin}%) = <b className="text-emerald-400">¥{sp.toFixed(2)}/{modelForm.unit}</b></p>
                 </div>
               );
             })()}
             <div className="flex items-center gap-2">
-              <Switch checked={modelForm.isActive} onCheckedChange={v => setModelForm(f => ({ ...f, isActive: v }))} />
-              <Label>启用此模型</Label>
+              <Switch checked={modelForm.isActive} onCheckedChange={v => setModelForm(f => ({ ...f, isActive: v }))} disabled={!voicePricingService(modelForm.modelId) && !modelForm.isActive} />
+              <Label>启用此计价服务</Label>
             </div>
           </div>
           {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setModelDialogOpen(false)}>取消</Button>
-            <Button onClick={saveModel} disabled={modelSaving || !modelForm.name || !modelForm.modelId}>{modelSaving ? '保存中…' : '保存'}</Button>
+            <Button onClick={saveModel} disabled={modelSaving || !modelForm.name || !modelForm.modelId || !modelForm.totalPrice.trim() || !modelForm.totalChars.trim()}>{modelSaving ? '保存中…' : '保存'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

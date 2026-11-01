@@ -8,6 +8,7 @@ export type ImageValidationProof = {
 export type ImageValidationDto = {
   modelId: string; publicModelId: string; name: string; modelName: string;
   active: boolean; hidden: boolean; credentialReady: boolean; priceReady: boolean;
+  requiresReferenceInput: boolean; minReferenceImages: number;
   capabilities: ImageModelCapabilities; requiresComputeReadiness: boolean;
   acceptance: "pending" | "published"; quotedPriceYuan: number | null;
   confirmation: string; configurationHash: string; epoch: number;
@@ -29,7 +30,8 @@ export type ImageValidationBody = {
 export type ImageValidationAttempt = {
   version: 1; userId: string; model: { id: string; publicId: string; name: string; upstream: string };
   proof: ImageValidationProof; createdAt: string; body?: ImageValidationBody;
-  status: "submitting" | "processing" | "finalizing" | "unknown" | "rejected" | "completed" | "published";
+  status: "not_submitted" | "submitting" | "processing" | "finalizing" | "unknown" | "rejected" | "completed" | "published";
+  notSubmittedEvidence?: { code: "IMAGE_REFERENCE_REQUIRED"; taskSubmitted: false; upstreamCalled: false; billed: false };
   generationCompleted?:boolean; mediaAvailable?:boolean; deliveryReceipt?:GeneratedImageClientReceipt;
   imageRecordId: string; assetId: string; canRecover: boolean; error: string; errorCode: string;
 };
@@ -37,7 +39,7 @@ type AttemptStorage = Pick<Storage, "getItem" | "setItem">;
 type AttemptIo = { storage: AttemptStorage; token: string; fetcher: typeof fetch; onChange?: (attempt: ImageValidationAttempt) => void; onDelivery?: (delivery:GeneratedImageClientDelivery)=>void };
 const KEY = /^iav_[a-f0-9]{64}$/u;
 const ASSET_ID = /^[A-Za-z0-9_-]{1,160}$/u;
-const TERMINAL = new Set(["rejected", "completed", "published"]);
+const TERMINAL = new Set(["not_submitted", "rejected", "completed", "published"]);
 export const imageValidationIsTerminal = (attempt: ImageValidationAttempt) => TERMINAL.has(attempt.status);
 export const imageValidationStorageKey = (userId: string, modelId: string) => `admin-image-validation:v1:${encodeURIComponent(userId)}:${encodeURIComponent(modelId)}`;
 
@@ -59,7 +61,7 @@ export function sameImageValidationProof(left: ImageValidationProof, right: Imag
     && left.clientIdempotencyKey === right.clientIdempotencyKey && left.clientTraceId === right.clientTraceId;
 }
 export function imageValidationInputsForDto(dto: ImageValidationDto): ImageValidationInputs {
-  return { prompt: "", resolution: dto.capabilities.defaultResolution, aspectRatio: "1:1", referenceMode: false, referenceImageUrls: [] };
+  return { prompt: "", resolution: dto.capabilities.defaultResolution, aspectRatio: "1:1", referenceMode: dto.requiresReferenceInput === true, referenceImageUrls: dto.requiresReferenceInput ? [""] : [] };
 }
 export function readImageValidationAttempt(storage: AttemptStorage, userId: string, modelId: string): ImageValidationAttempt | null {
   const raw = storage.getItem(imageValidationStorageKey(userId, modelId));
@@ -67,7 +69,7 @@ export function readImageValidationAttempt(storage: AttemptStorage, userId: stri
   try {
     const value = JSON.parse(raw) as ImageValidationAttempt;
     if (value.version !== 1 || value.userId !== userId || value.model.id !== modelId
-      || !["submitting", "processing", "finalizing", "unknown", "rejected", "completed", "published"].includes(value.status)) throw new Error();
+      || !["not_submitted", "submitting", "processing", "finalizing", "unknown", "rejected", "completed", "published"].includes(value.status)) throw new Error();
     imageValidationProof(value.proof);
     if (value.body && (value.body.modelId !== modelId || value.body.clientIdempotencyKey !== value.proof.validationKey
       || value.body.clientTraceId !== value.proof.validationKey || !sameImageValidationProof(value.proof, value.body.adminValidation))) throw new Error();
@@ -77,7 +79,7 @@ export function readImageValidationAttempt(storage: AttemptStorage, userId: stri
 export function saveImageValidationAttempt(storage: AttemptStorage, attempt: ImageValidationAttempt) {
   // Store the user's original request (including supplied reference URLs) and proof.
   // Never store authorization, generated-result URLs or access tickets, or log this body.
-  const durable={version:attempt.version,userId:attempt.userId,model:attempt.model,proof:attempt.proof,createdAt:attempt.createdAt,body:attempt.body,status:attempt.status,imageRecordId:attempt.imageRecordId,assetId:attempt.assetId,canRecover:attempt.canRecover,error:attempt.error,errorCode:attempt.errorCode,generationCompleted:attempt.generationCompleted,mediaAvailable:attempt.deliveryReceipt?.deliveryMode==="inline_ephemeral"?false:attempt.mediaAvailable,deliveryReceipt:projectGeneratedImageClientReceipt(attempt.deliveryReceipt)||undefined};
+  const durable={version:attempt.version,userId:attempt.userId,model:attempt.model,proof:attempt.proof,createdAt:attempt.createdAt,body:attempt.body,status:attempt.status,imageRecordId:attempt.imageRecordId,assetId:attempt.assetId,canRecover:attempt.canRecover,error:attempt.error,errorCode:attempt.errorCode,notSubmittedEvidence:attempt.notSubmittedEvidence,generationCompleted:attempt.generationCompleted,mediaAvailable:attempt.deliveryReceipt?.deliveryMode==="inline_ephemeral"?false:attempt.mediaAvailable,deliveryReceipt:projectGeneratedImageClientReceipt(attempt.deliveryReceipt)||undefined};
   const serialized = JSON.stringify(durable), key = imageValidationStorageKey(attempt.userId, attempt.model.id);
   storage.setItem(key, serialized);
   if (storage.getItem(key) !== serialized) throw new Error("无法保存原验证编号，请允许本站本地存储后再试");
@@ -88,8 +90,9 @@ export function buildImageValidationRequest(dto: ImageValidationDto, inputs: Ima
   if (!prompt || prompt.length > 10000) throw new Error("请填写 1 至 10000 字的验证图片描述");
   if (!["1:1", "3:4", "4:3", "9:16", "16:9"].includes(inputs.aspectRatio)
     || !dto.capabilities.resolutionOptions.includes(inputs.resolution)) throw new Error("请选择此模型支持的比例和清晰度");
-  const references = inputs.referenceMode ? inputs.referenceImageUrls.map(value => value.trim()).filter(Boolean) : [];
-  if (inputs.referenceMode && (!dto.capabilities.supportsReferenceInput || references.length < 1 || references.length > Math.min(8, dto.capabilities.maxReferenceImages))) {
+  const references = (dto.requiresReferenceInput || inputs.referenceMode) ? inputs.referenceImageUrls.map(value => value.trim()).filter(Boolean) : [];
+  if (dto.requiresReferenceInput && references.length < Math.max(1, dto.minReferenceImages || 1)) throw new Error("此模型必须提供参考图，请先上传参考图片");
+  if ((dto.requiresReferenceInput || inputs.referenceMode) && (!dto.capabilities.supportsReferenceInput || references.length < 1 || references.length > Math.min(8, dto.capabilities.maxReferenceImages))) {
     throw new Error("请按当前模型的参考图能力选择图片");
   }
   for (const value of references) {
@@ -106,6 +109,12 @@ export function updateImageValidationReceipt(attempt: ImageValidationAttempt, da
   const model = String(data.modelId || data.modelIdUsed || ""), returnedKey = String(data.traceId || data.clientTraceId || "");
   if ((model && ![attempt.model.id, attempt.model.publicId].includes(model)) || (returnedKey && returnedKey !== attempt.proof.validationKey)) {
     return { ...attempt, status: "unknown", error: "返回记录与原验证模型或请求号不一致，已保留原任务", errorCode: "IMAGE_VALIDATION_RECEIPT_MISMATCH" };
+  }
+  if (!responseOk && data.code === "IMAGE_REFERENCE_REQUIRED" && data.taskSubmitted === false && data.upstreamCalled === false && data.billed === false
+    && !attempt.generationCompleted && !attempt.imageRecordId && !attempt.assetId && !attempt.deliveryReceipt
+    && data.generationCompleted !== true && !data.recordId && !data.assetId && !data.images && !data.deliveryReceipt && !data.deliveryMode && !projectGeneratedImageClientReceipt(data) && data.hasProviderCheckpoint !== true) {
+    return { ...attempt, status: "not_submitted", canRecover: false, error: imageValidationSafeError(data.error, "缺少必填参考图，本次未提交生成"), errorCode: "IMAGE_REFERENCE_REQUIRED",
+      notSubmittedEvidence: { code: "IMAGE_REFERENCE_REQUIRED", taskSubmitted: false, upstreamCalled: false, billed: false } };
   }
   const state = String(data.state || data.status || "");
   const first=Array.isArray(data.images)?data.images[0] as Record<string,unknown>|undefined:undefined;
@@ -144,12 +153,20 @@ export function adoptImageValidationAttempt(dto: ImageValidationDto, userId: str
   });
   return receipt.state === "published" && next.status === "completed" ? { ...next, status: "published" } : next;
 }
-export async function submitImageValidation(dto: ImageValidationDto, fields: ImageValidationInputs, userId: string, io: AttemptIo, retestReason = "") {
+export function canCorrectNotSubmittedImageValidation(attempt: ImageValidationAttempt, dto: ImageValidationDto, userId: string) {
+  const evidence = attempt.notSubmittedEvidence;
+  return attempt.userId === userId && attempt.model.id === dto.modelId && attempt.status === "not_submitted"
+    && evidence?.code === "IMAGE_REFERENCE_REQUIRED" && evidence.taskSubmitted === false && evidence.upstreamCalled === false && evidence.billed === false
+    && !attempt.imageRecordId && !attempt.assetId && !attempt.deliveryReceipt && !attempt.generationCompleted
+    && !dto.busy && !dto.existingAttempt && sameImageValidationProof(attempt.proof, dto);
+}
+export async function submitImageValidation(dto: ImageValidationDto, fields: ImageValidationInputs, userId: string, io: AttemptIo, retestReason = "", confirmedCorrection = false) {
   const fetcher = io.fetcher;
   if (!userId || !io.token) throw new Error("请先登录当前管理员账号");
   const previous = readImageValidationAttempt(io.storage, userId, dto.modelId);
-  if (previous && (previous.status !== "rejected" || previous.proof.validationKey === dto.validationKey)) return previous;
-  if (previous && (dto.epoch <= previous.proof.epoch || retestReason.trim().length < 8)) throw new Error("请先明确原拒绝原因并读取复测证明");
+  const correcting = Boolean(previous && confirmedCorrection && canCorrectNotSubmittedImageValidation(previous, dto, userId));
+  if (previous && !correcting && (previous.status !== "rejected" || previous.proof.validationKey === dto.validationKey)) return previous;
+  if (previous && !correcting && (dto.epoch <= previous.proof.epoch || retestReason.trim().length < 8)) throw new Error("请先明确原拒绝原因并读取复测证明");
   if (dto.busy || !dto.credentialReady || !dto.priceReady) throw new Error(dto.busy ? "此配置已有验证，请先检查原任务" : "请先补齐当前模型密钥和价格配置");
   const body = buildImageValidationRequest(dto, fields, retestReason);
   const attempt: ImageValidationAttempt = { version: 1, userId, model: { id: dto.modelId, publicId: dto.publicModelId, name: dto.name, upstream: dto.modelName },
@@ -173,6 +190,7 @@ export function buildImageValidationPublishRequest(attempt: ImageValidationAttem
 /** Explicit recovery only after a fresh read confirms an original provider checkpoint. */
 export async function recoverImageValidation(attempt: ImageValidationAttempt, io: AttemptIo) {
   const fetcher = io.fetcher;
+  if (attempt.status === "not_submitted") throw new Error("本次未受理，不能恢复生成；请显式补充参考图后重新确认");
   const saved = readImageValidationAttempt(io.storage, attempt.userId, attempt.model.id);
   if (!io.token || !saved?.body || !sameImageValidationProof(saved.proof, attempt.proof)
     || JSON.stringify(saved.body) !== JSON.stringify(attempt.body)) throw new Error("缺少完整原请求，不能恢复保存");

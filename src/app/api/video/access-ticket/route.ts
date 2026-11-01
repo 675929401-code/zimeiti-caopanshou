@@ -6,12 +6,14 @@ import {
   authorizeMemberContentDiscovery,
 } from "@/lib/server/member-content-authority";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { isVideoHistoryExpired, isVideoHistoryExplicitlyHidden } from "@/lib/video-history-policy";
+import { isStoryboardArchiveExpired, isStoryboardVideoTask, usableStoryboardArchive } from "@/lib/storyboard-video-archive-policy";
 
 export const dynamic = "force-dynamic";
 
 async function findTask(taskId: string, userId: string, isAdmin: boolean) {
   const supabase = getSupabaseClient();
-  const fields = "id, user_id, status";
+  const fields = "id, user_id, status, history_hidden_at, source_expired_at, storage_url, storyboard_archive_expires_at, task_label, billing_state, created_at, completed_at";
   let localQuery = supabase
     .from("video_tasks")
     .select(fields)
@@ -19,7 +21,7 @@ async function findTask(taskId: string, userId: string, isAdmin: boolean) {
   if (!isAdmin) localQuery = localQuery.eq("user_id", userId);
   const { data: byLocal, error: localError } = await localQuery.maybeSingle();
   if (localError) throw localError;
-  if (byLocal) return byLocal as { id: string; user_id: string; status: string };
+  if (byLocal) return byLocal as TicketTask;
 
   let externalQuery = supabase
     .from("video_tasks")
@@ -30,8 +32,10 @@ async function findTask(taskId: string, userId: string, isAdmin: boolean) {
     .order("completed_at", { ascending: false, nullsFirst: false })
     .limit(1);
   if (externalError) throw externalError;
-  return (byExternal?.[0] as { id: string; user_id: string; status: string } | undefined) || null;
+  return (byExternal?.[0] as TicketTask | undefined) || null;
 }
+
+type TicketTask = { id: string; user_id: string; status: string; history_hidden_at?: string | null; source_expired_at?: string | null; storage_url?: string | null; storyboard_archive_expires_at?: string | null; task_label?: string | null; billing_state?: string | null; created_at?: string; completed_at?: string | null };
 
 export async function GET(request: NextRequest) {
   const authorization = await authorizeCurrentApiUser(request);
@@ -40,7 +44,10 @@ export async function GET(request: NextRequest) {
 
   const taskId = request.nextUrl.searchParams.get("taskId") || "";
   const requestedScope = request.nextUrl.searchParams.get("scope");
-  const scope: VideoAccessScope = requestedScope === "download" ? "download" : "playback";
+  const scope: VideoAccessScope =
+    requestedScope === "download" ? "download"
+    : requestedScope === "thumbnail" ? "thumbnail"
+    : "playback";
   const filename = request.nextUrl.searchParams.get("name") || undefined;
   const source = request.nextUrl.searchParams.get("source") === "origin" ? "origin" : undefined;
   const forCapture = request.nextUrl.searchParams.get("forCapture") === "1";
@@ -77,6 +84,13 @@ export async function GET(request: NextRequest) {
     },
   );
   if (!contentAccess.ok) return contentAccess.response;
+  if (isVideoHistoryExplicitlyHidden(task)) return NextResponse.json({ error: "该视频已从历史移除" }, { status: 404 });
+  if (isStoryboardArchiveExpired(task)) {
+    return NextResponse.json({ error: "视频的3天保留期已结束，任务和费用记录仍保留" }, { status: 410 });
+  }
+  if ((task.source_expired_at && (!usableStoryboardArchive(task) || source === "origin")) || (!isStoryboardVideoTask(task) && !String(task.task_label || "").startsWith("digital-human:") && isVideoHistoryExpired(task))) {
+    return NextResponse.json({ error: "视频来源或历史保留期已结束；如已缓存，可使用本机副本" }, { status: 410 });
+  }
   if (task.status !== "completed") {
     return NextResponse.json({ error: "任务尚未完成" }, { status: 409 });
   }

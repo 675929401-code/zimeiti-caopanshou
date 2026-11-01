@@ -67,6 +67,9 @@ function sha256File(filePath) {
 
 function canonicalSourceBuffer(filePath, relativePath = "") {
   const original = fs.readFileSync(filePath);
+  // Applied migrations are identified by the SHA-256 of their original bytes.
+  // The canonical LF rule applies to ordinary text, not these immutable inputs.
+  if (/^supabase\/migrations\/[^/]+\.sql$/u.test(normalize(relativePath))) return original;
   if (relativePath && isExternalAsset(relativePath)) return original;
   if (original.includes(0)) return original;
   const text = original.toString("utf8");

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import ts from "typescript";
 import path from "node:path";
 import {
   ADMIN_PERMISSION_CATALOG,
@@ -40,7 +41,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   ownerOnlyAdminPermissionKeys(["prompts.view", "prompts.edit", "internal_tools.manage", "members.view"]),
-  ["prompts.view", "prompts.edit", "internal_tools.manage"],
+  [],
 );
 assert.ok(
   !normalizeDelegableAdminPermissionKeys(ADMIN_PERMISSION_KEYS).includes("admin.accounts.manage"),
@@ -48,8 +49,8 @@ assert.ok(
 );
 assert.deepEqual(
   normalizeDelegableAdminPermissionKeys(["prompts.edit"]),
-  [],
-  "prompt editing must remain inside the platform-owner boundary",
+  ["agents.view", "prompts.view", "prompts.edit"],
+  "owner-granted prompt editing must retain both read dependencies",
 );
 assert.deepEqual(
   normalizeDelegableAdminPermissionKeys(["models.manage"]),
@@ -122,13 +123,36 @@ const policyExemptions = new Set([
   "/api/admin/security-events/internal",
   "/api/admin/manju-config",
 ]);
+function exportedHttpMethods(file: string, seen = new Set<string>()): string[] {
+  if (seen.has(file)) return [];
+  seen.add(file);
+  const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+  const methods = new Set<string>();
+  for (const statement of source.statements) {
+    const exported = ts.canHaveModifiers(statement) && ts.getModifiers(statement)?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword);
+    if (exported && ts.isFunctionDeclaration(statement) && statement.name) methods.add(statement.name.text);
+    if (exported && ts.isVariableStatement(statement)) for (const declaration of statement.declarationList.declarations) if (ts.isIdentifier(declaration.name)) methods.add(declaration.name.text);
+    if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const modulePath = statement.moduleSpecifier.text;
+    const base = modulePath.startsWith("@/") ? path.join(root, "src", modulePath.slice(2)) : modulePath.startsWith(".") ? path.resolve(path.dirname(file), modulePath) : "";
+    const target = base && [base, `${base}.ts`, path.join(base, "index.ts")].find(candidate => existsSync(candidate));
+    assert.ok(target, `${file}: unresolved exported module ${modulePath}`);
+    const actual = exportedHttpMethods(target, new Set(seen));
+    if (!statement.exportClause) for (const method of actual) methods.add(method);
+    else if (ts.isNamedExports(statement.exportClause)) for (const item of statement.exportClause.elements) {
+      const original = item.propertyName?.text || item.name.text;
+      assert.ok(actual.includes(original), `${file}: exported handler ${original} does not resolve to a real handler`);
+      methods.add(item.name.text);
+    }
+  }
+  return [...methods].filter(method => /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/u.test(method));
+}
+assert.deepEqual(exportedHttpMethods(path.join(root, "src/app/api/admin/voice-studio/models/[id]/route.ts")).sort(), ["DELETE", "PUT"], "re-exported handlers must resolve to actual implementations");
 const unmapped: Array<{ pathname: string; method: string }> = [];
 const routes = walk(path.join(root, "src/app/api/admin")).filter((file) => file.endsWith("route.ts"));
 for (const file of routes) {
-  const source = readFileSync(file, "utf8");
   const pathname = routePath(file);
-  const methods = [...source.matchAll(/export (?:async function|const) (GET|POST|PUT|PATCH|DELETE)\b/gu)]
-    .map((match) => match[1]);
+  const methods = exportedHttpMethods(file);
   assert.ok(methods.length > 0, `${pathname}:no exported HTTP method found`);
   for (const method of methods) {
     const requirement = adminRequirementForRequest(pathname, method, new URLSearchParams());
@@ -262,7 +286,7 @@ assert.match(memberContentMigration, /admin_member_content_permission_v4_migrati
 const authoritySource = read("src/lib/server/admin-governance-authority.ts");
 assert.match(authoritySource, /privilegedDenialDetails/u);
 const selfSource = read("src/app/api/admin/access-control/self/route.ts");
-assert.match(selfSource, /isSuperAdmin \? ADMIN_PERMISSION_CATALOG : grantedCatalog/u);
+assert.match(selfSource, /catalog: adminPermissionCatalogForSelf\(access.permissionKeys\)/u);
 assert.match(selfSource, /filter\(\(\[, allowed\]\) => allowed === true\)/u);
 assert.match(selfSource, /: isSuperAdmin\s*\? true/u, "super administrators must retain every tab even if a stored permission row drifts");
 

@@ -85,23 +85,34 @@ assert.equal(unknown.counts().submissions, 1);
 const routeFile = 'src/app/api/image/generate/route.ts';
 const routeText = readFileSync(routeFile, 'utf8');
 const routeAst = ts.createSourceFile(routeFile, routeText, ts.ScriptTarget.Latest, true);
-let callbackText, inlineCallbackText, prepareBytesText;
+let callbackText, inlineCallbackText, prepareBytesText, legacyAcceptedExpression;
 function visit(node) {
   if (ts.isPropertyAssignment(node) && node.name.getText(routeAst) === 'persistProviderResult') callbackText = node.initializer.getText(routeAst);
   if (ts.isPropertyAssignment(node) && node.name.getText(routeAst) === 'prepareEphemeralResult') inlineCallbackText = node.initializer.getText(routeAst);
   if (ts.isFunctionDeclaration(node) && node.name?.getText(routeAst) === 'prepareGeneratedImageBytes') prepareBytesText = node.getText(routeAst);
+  if (ts.isVariableDeclaration(node) && node.name.getText(routeAst) === 'legacyAcceptedAnnotation') legacyAcceptedExpression = node.initializer.getText(routeAst);
   ts.forEachChild(node, visit);
 }
-visit(routeAst); assert.ok(callbackText && inlineCallbackText && prepareBytesText);
+visit(routeAst); assert.ok(callbackText && inlineCallbackText && prepareBytesText && legacyAcceptedExpression);
+const annotation = load('src/lib/storyboard-annotation-layout.ts');
+const legacyFlagModule = { exports: {} };
+runInNewContext(ts.transpileModule(`module.exports=(resumeSnapshot,exactCoverText)=>(${legacyAcceptedExpression});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText,
+  { module: legacyFlagModule, ...annotation });
+const legacyAcceptedAnnotation = legacyFlagModule.exports(null, '');
+assert.equal(legacyAcceptedAnnotation, false);
+assert.equal(legacyFlagModule.exports(null, 'STORYBOARD_ANNOTATIONS_V1\nbroken-contract'), false);
+assert.equal(legacyFlagModule.exports({}, 'ordinary accepted text'), false);
 let downloads = 0;
 const callbackModule = { exports: {} };
 runInNewContext(ts.transpileModule(`module.exports = (${callbackText});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, {
-  module: callbackModule, providerMediaUrl: delivery.providerMediaUrl, effectiveMode: 'local', resumeSnapshot: null,
+  module: callbackModule, providerMediaUrl: delivery.providerMediaUrl, effectiveMode: 'local', resumeSnapshot: null, legacyAcceptedAnnotation,
   candidates: [{ id: 'fixture-model', provider: 'fixture', api_endpoint: 'https://provider.invalid/v1/images/generations' }],
   workflowConfig: {}, ImageExactlyOnceError: exact.ImageExactlyOnceError, ImageRequestRejectedError: exact.ImageRequestRejectedError,
   AUTODL_H3_SELFHOST_PROVIDER: 'autodl_h3_selfhost', AUTODL_H3_IMAGE_MAX_BYTES: 1024, AUTODL_H3_IMAGE_RESULT_TIMEOUT_MS: 1000,
   AUTODL_H3_IMAGE_CONTENT_TYPES: ['image/png'], TRUSTED_GENERATED_IMAGE_HOSTS: [], ratio: '1:1', effectiveResolution: '1K',
-  safeFetch: async () => { downloads++; return { buffer: Buffer.from('fixture-png'), contentType: 'image/png' }; },
+  deliveryOutputContract: () => ({ expectedPixelSize: '1024x1024', minimumDimensionScale: 1, aspectRatioTolerance: 0.025 }), exactCoverText: '',
+  safeFetch: async () => { throw Error('Direct safeFetch forbidden; use the bounded media-result mock'); },
+  readPublicImageResult: async () => { downloads++; return { buffer: Buffer.from('fixture-png'), contentType: 'image/png' }; },
   validateUploadBuffer: () => ({ contentType: 'image/png' }), expectedImagePixelSize: () => '1024x1024',
   prepareGeneratedImageBytes: async () => ({ dimensions: { width: 1024, height: 1024 } }),
   storageManager: { upload() { throw Error('Generated media upload forbidden'); } },
@@ -124,11 +135,12 @@ function inlineCallback() {
   const code = `${prepareBytesText}\nmodule.exports = (${inlineCallbackText});`;
   runInNewContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, {
     module, Buffer, candidates: [{ id: 'fixture-model', provider: 'fixture', api_endpoint: 'https://provider.invalid/v1/images/generations' }],
-    effectiveMode: 'local', effectiveResolution: '1K', ratio: '1:1', costPrice: 0.1, workflowConfig: {},
+    effectiveMode: 'local', effectiveResolution: '1K', ratio: '1:1', costPrice: 0.1, workflowConfig: {}, legacyAcceptedAnnotation,
     resolveImageResolutionPrice: () => 0.1, ImageExactlyOnceError: exact.ImageExactlyOnceError, ImageRequestRejectedError: exact.ImageRequestRejectedError,
     decodeInlineImage: ephemeral.decodeInlineImage, createImageEphemeralDelivery: ephemeral.createImageEphemeralDelivery,
     validateUploadBuffer: uploadSecurity.validateUploadBuffer, parseImageDimensions: dimensions.parseImageDimensions,
     validateImageOutputContract: outputContract.validateImageOutputContract, AUTODL_H3_IMAGE_CONTENT_TYPES: ['image/png','image/jpeg','image/webp'],
+    deliveryOutputContract: () => ({ expectedPixelSize: '1024x1024', minimumDimensionScale: 1, aspectRatioTolerance: 0.025 }), exactCoverText: '',
     expectedImagePixelSize: () => '1024x1024', storageManager: { upload() { throw Error('Media upload forbidden'); } },
   });
   return module.exports;
@@ -179,7 +191,7 @@ runInNewContext(ts.transpileModule(responseBlock, { compilerOptions: { target: t
   NextResponse: { json: (body, init) => Response.json(body, init) }, recordRevenue: async () => { revenueCalls++; },
   userId: embedded.input.userId, effectiveMode: 'local', billingReferenceId: embedded.input.billingReferenceId, sellingPrice: 0.2,
   userRole: 'student', traceId: embedded.input.clientTraceId, h3OperationId: 'fixture-op', userVisibleModelLabel: 'Fixture', modelId: 'pm_fixture',
-  effectiveResolution: '1K', outputPixelSize: '1024x1024', IMAGE_FIXED_OUTPUT_COUNT: 1, providerProtocol: 'images_generations', generationFingerprint: 'a'.repeat(64),
+  effectiveResolution: '1K', outputPixelSize: '1024x1024', deliveryOutputMetadata: () => ({ deliveryExpectedPixelSize: '1024x1024', minimumOutputWidth: 1024, minimumOutputHeight: 1024, outputPolicyVersion: 'image-output-policy-v2' }), IMAGE_FIXED_OUTPUT_COUNT: 1, providerProtocol: 'images_generations', generationFingerprint: 'a'.repeat(64),
 });
 const originalHttp = await httpModule.exports(inlineFirst);
 assert.match(originalHttp.headers.get('cache-control'), /no-store/u);
@@ -233,7 +245,7 @@ recoveryFetch=async (url,init)=>{
 };
 const h3CallbackModule={exports:{}};
 runInNewContext(ts.transpileModule(`module.exports=(${callbackText});`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,{
-  module:h3CallbackModule,URL,providerMediaUrl:delivery.providerMediaUrl,effectiveMode:'local',resumeSnapshot:null,
+  module:h3CallbackModule,URL,providerMediaUrl:delivery.providerMediaUrl,effectiveMode:'local',resumeSnapshot:null,legacyAcceptedAnnotation,
   candidates:[{id:'fixture-model',provider:selfhost.AUTODL_H3_SELFHOST_PROVIDER,api_endpoint:imageEndpoint}],workflowConfig:{},
   ImageExactlyOnceError:exact.ImageExactlyOnceError,ImageRequestRejectedError:exact.ImageRequestRejectedError,
   AUTODL_H3_SELFHOST_PROVIDER:selfhost.AUTODL_H3_SELFHOST_PROVIDER,AUTODL_H3_SELFHOST_SECRET_REF:selfhost.AUTODL_H3_SELFHOST_SECRET_REF,
@@ -241,7 +253,7 @@ runInNewContext(ts.transpileModule(`module.exports=(${callbackText});`,{compiler
   imageExactlyOnceStore:new exact.DatabaseImageExactlyOnceStore(),userId:held.input.userId,
   resolveAutodlH3SelfhostResultUrl:selfhost.resolveAutodlH3SelfhostResultUrl,readAutodlH3SelfhostResult:selfhost.readAutodlH3SelfhostResult,
   resolveProviderSecret:ref=>{assert.equal(ref,selfhost.AUTODL_H3_SELFHOST_SECRET_REF);secretReads++;return 'fixture-gateway-key';},
-  validateUploadBuffer:uploadSecurity.validateUploadBuffer,expectedImagePixelSize:()=> '1024x1024',ratio:'1:1',effectiveResolution:'1K',
+  validateUploadBuffer:uploadSecurity.validateUploadBuffer,expectedImagePixelSize:()=> '1024x1024',deliveryOutputContract:()=>({expectedPixelSize:'1024x1024',minimumDimensionScale:1,aspectRatioTolerance:0.025}),exactCoverText:'',ratio:'1:1',effectiveResolution:'1K',
   prepareGeneratedImageBytes:async ({buffer})=>{assert.equal(buffer.equals(png),true);return {buffer,dimensions:{width:1024,height:1024}};},
 });
 const heldContext={recordId:acquiredHeld.recordId,payloadFingerprint:acquiredHeld.payloadFingerprint,persistenceAttemptId:lease};

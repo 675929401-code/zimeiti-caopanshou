@@ -5,6 +5,16 @@ import { resolve } from "node:path";
 const root = process.cwd();
 const read = (path: string) => readFile(resolve(root, path), "utf8");
 
+function assertImportantScope(css: string) {
+  for (const rule of css.replace(/\/\*[\s\S]*?\*\//gu, "").matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+    if (!/!important/iu.test(rule[2])) continue;
+    for (const selector of rule[1].split(",")) {
+      assert.match(selector.trim(), /^(?::global\(html\[data-theme\]\[data-mode\]\) )?\.page\[data-page="tools"\] \.workspace\s+:global\(\.toolbox-/u,
+        `important override must require tools page and workspace, protecting adjacent pages: ${selector.trim()}`);
+    }
+  }
+}
+
 type Fixture = {
   tab: "segment" | "text" | "video" | "format";
   state: "ready" | "result" | "error-or-empty";
@@ -144,7 +154,9 @@ async function verifySourceContracts() {
   assert.match(styles, /white-space:\s*nowrap/);
   assert.match(styles, /flex-direction:\s*column/);
   assert.doesNotMatch(styles, /linear-gradient|radial-gradient|backdrop-filter/iu, "toolbox must use solid semantic surfaces rather than neon glass layers");
-  assert.doesNotMatch(styles, /!important/, "toolbox styles must stay page-scoped without global overrides");
+  assertImportantScope(styles);
+  assert.throws(() => assertImportantScope(".adjacent-page textarea { color:red !important; }"));
+  assert.throws(() => assertImportantScope('.workspace :global(.toolbox-field) { color:red !important; }'));
 }
 
 async function verifyRoutes() {

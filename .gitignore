@@ -297,3 +297,5 @@ Desktop.ini
 .next-validation/
 .next-local-acceptance-next/
 .next*/
+# Timestamped or named source backups are local evidence, not release inputs.
+*.bak-*

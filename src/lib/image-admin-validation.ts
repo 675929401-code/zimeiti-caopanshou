@@ -1,3 +1,4 @@
+import { resolveImageProviderContract } from "@/lib/image-provider-contract";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { getJwtSecretString } from "@/lib/auth";
 import type { AdminAuthorizationResult } from "@/lib/admin-auth";
@@ -211,9 +212,10 @@ export function publicImageModelCapabilities(model: ImageValidationRow) {
 export function toImageAdminValidationDto(context: ImageAdminValidationContext) {
   const clean = (value: unknown) => cleanImageModelText(context.model, value);
   const capabilities = publicImageModelCapabilities(context.model);
+  const requiresReferenceInput = resolveImageProviderContract(context.model).requestProtocol === "images_edits";
   return { modelId: context.model.id, publicModelId: toPublicModelId("cover", context.model.id), name: clean(context.model.name), modelName: clean(context.model.model_name),
     active: context.model.is_active === true, hidden: context.model.is_hidden === true, credentialReady: context.credentialReady, priceReady: context.priceReady,
-    capabilities, currentRetirementRule: isRetiredCoverModel(context.model),
+    capabilities, requiresReferenceInput, minReferenceImages: requiresReferenceInput ? 1 : 0, currentRetirementRule: isRetiredCoverModel(context.model),
     requiresComputeReadiness: context.model.provider === "autodl_h3_selfhost", acceptance: context.existing?.state === "published" ? "published" : "pending",
     quotedPriceYuan: configuredMoney(context.model.selling_price), costPriceYuan: configuredMoney(context.model.cost_price),
     confirmation: IMAGE_ADMIN_VALIDATION_CONFIRMATION, epoch: context.epoch, configurationHash: context.configurationHash,

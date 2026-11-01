@@ -191,6 +191,7 @@ export interface Conversation {
 
 export interface Message {
   id: string;
+  serverMessageId?: string; // Confirmed history row ID; local rendering ID stays stable during streaming.
   role: "user" | "assistant";
   content: string;
   displayContent?: string; // 前端展示内容（与 content 不同时，content 用于 API 发送，displayContent 用于界面显示）
@@ -494,7 +495,8 @@ export interface VideoModel {
   maxReferenceAudios?: number;
   minReferenceAudios?: number;
   /** per_use=按次，output_second=按输出视频秒数。 */
-  billingUnit?: "per_use" | "output_second";
+  billingUnit?: "per_use" | "output_second" | "token";
+  tokenPricing?: { salePricesPerMillion: Record<string, number>; priceVersion: string };
   /** 模型可出现的工作台；video-edit 表示可用于重生成编辑素材。 */
   workspaceSurfaces?: string[];
   /** 上游是否提供真正的远程取消，false 时不能把“停止等待”伪装成取消计费。 */
@@ -597,6 +599,17 @@ export interface OutputStyle {
     modelId?: string;
     routingMode?: "auto" | "manual" | "always";
     defaultCount?: number;
+  };
+
+  /**
+   * Controls whether structured storyboard prompt replies expose the
+   * one-click handoff icon in chat. The two official storyboard directors
+   * default to enabled when this field is absent for backwards compatibility.
+   */
+  storyboardPromptHandoff?: {
+    enabled?: boolean;
+    /** Explicit admin-selected prompt destination; legacy false keeps video. */
+    target?: "storyboard-workbench" | "video";
   };
 }
 

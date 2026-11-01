@@ -5,19 +5,16 @@
  * 锁定规则：DOM 结构必须与 markdown-renderer.ts 的 enhanceCodeBlocks 输出一致（#18 DOM 一致性保护）
  */
 
-/** 纯文本+代码块混合渲染：response_format=text 时使用 */
-const CODE_HEIGHT_LEVEL_SM = 10;
-const CODE_HEIGHT_LEVEL_MD = 25;
+import { getCodeBlockPresentation, isPlaintextCodeLanguage } from '../../lib/code-block-presentation';
 
-function getCodeBlockHeightClass(codeContent: string): string {
-  const lineCount = (codeContent.match(/\n/g) || []).length + 1;
-  if (lineCount <= CODE_HEIGHT_LEVEL_SM) return "code-block-h-sm";
-  if (lineCount <= CODE_HEIGHT_LEVEL_MD) return "code-block-h-md";
-  return "code-block-h-lg";
+function renderLiteralCode(code: string, lang: string, context: string, streaming = false): string {
+  const presentation = getCodeBlockPresentation(code, lang, context);
+  const classes = ['code-block-wrapper', presentation.heightClass, isPlaintextCodeLanguage(lang) ? 'code-block-plaintext' : '', streaming ? 'code-block-streaming' : ''].filter(Boolean).join(' ');
+  return `<div class="${classes}" data-code-purpose="${presentation.purpose}"><div class="code-block-header"><span class="code-block-lang">${escapeHtml(presentation.label)}</span><div class="code-block-actions"><button type="button" class="code-block-expand-button" aria-expanded="false">展开全文</button><button type="button" class="copy-code-button" title="复制完整内容" aria-label="复制完整内容"></button></div></div><pre class="hljs code-block-pre"><code class="hljs language-${escapeHtml(lang)}">${escapeHtml(code)}</code></pre></div>`;
 }
 
 export function renderTextWithCodeBlocks(text: string): string {
-  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```([\w+#.-]*)\n([\s\S]*?)```/g;
   let result = "";
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -29,8 +26,7 @@ export function renderTextWithCodeBlocks(text: string): string {
     }
     const lang = match[1] || "text";
     const code = match[2].replace(/\n$/, "");
-    const heightClass = getCodeBlockHeightClass(code);
-    result += `<div class="code-block-wrapper ${heightClass}"><div class="code-block-header"><span class="code-block-lang">${lang}</span><span class="copy-code-button"></span></div><pre class="hljs code-block-pre"><code class="hljs language-${lang}">${escapeHtml(code)}</code></pre></div>`;
+    result += renderLiteralCode(code, lang, text.slice(lastIndex, match.index));
     lastIndex = match.index + match[0].length;
   }
 
@@ -43,7 +39,7 @@ export function renderTextWithCodeBlocks(text: string): string {
 
 /** 流式纯文本+代码块混合渲染（未闭合代码块用骨架占位） */
 export function renderStreamingTextWithCodeBlocks(text: string): string {
-  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```([\w+#.-]*)\n([\s\S]*?)```/g;
   let result = "";
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -54,19 +50,18 @@ export function renderStreamingTextWithCodeBlocks(text: string): string {
     }
     const lang = match[1] || "text";
     const code = match[2].replace(/\n$/, "");
-    const heightClass = "code-block-h-lg";
-    result += `<div class="code-block-wrapper ${heightClass}"><div class="code-block-header"><span class="code-block-lang">${lang}</span><span class="copy-code-button"></span></div><pre class="hljs code-block-pre"><code class="hljs language-${lang}">${escapeHtml(code)}</code></pre></div>`;
+    result += renderLiteralCode(code, lang, text.slice(lastIndex, match.index));
     lastIndex = match.index + match[0].length;
   }
 
   // 处理剩余内容（可能包含未闭合代码块）
   if (lastIndex < text.length) {
     const remaining = text.slice(lastIndex);
-    const openFence = remaining.match(/```(\w*)(?:\n([\s\S]*))?$/);
+    const openFence = remaining.match(/```([\w+#.-]*)(?:\n([\s\S]*))?$/);
     if (openFence) {
       const lang = openFence[1] || "text";
       const code = openFence[2] || "";
-      result += `<div class="code-block-wrapper code-block-streaming code-block-h-lg"><div class="code-block-header"><span class="code-block-lang">${lang}</span><span class="copy-code-button"></span></div><pre class="hljs code-block-pre"><code class="hljs language-${lang}">${escapeHtml(code)}</code></pre></div>`;
+      result += renderLiteralCode(code, lang, remaining.slice(0, openFence.index), true);
     } else {
       result += `<p>${escapeHtml(remaining).replace(/\n/g, "<br/>")}</p>`;
     }

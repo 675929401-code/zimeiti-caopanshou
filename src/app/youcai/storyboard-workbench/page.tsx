@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import StoryboardWorkbenchPage from "@/app/storyboard-workbench/page";
 import { AppRouteShell } from "@/components/app-route-shell";
+import { StoryboardWorkbench } from "@/components/storyboard-workbench";
 
 export const metadata: Metadata = {
   title: "分镜工作台",
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function YoucaiStoryboardWorkbenchPage() {
   return (
     <AppRouteShell>
-      <StoryboardWorkbenchPage />
+      <StoryboardWorkbench />
     </AppRouteShell>
   );
 }

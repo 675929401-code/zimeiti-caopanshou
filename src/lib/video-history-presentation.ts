@@ -1,8 +1,16 @@
+import { stripVideoModelOperationalAnnotation } from "./video-model-display-name";
+
 type HistoryIdentity = { id: string; createdAt: string; taskLabel?: string; batchTopic?: string; cardIndex?: number };
 
+export function videoTokenBillingMessage(state: unknown): string {
+  if (state === 'usage_pending') return '视频已生成，正在查询原任务的实际 Token 用量，尚未扣费，请勿重复生成';
+  if (state === 'quote_exceeded') return '视频已生成，实际费用超过本次扣款上限，账单待确认；未自动扣款，请保留原任务';
+  if (state === 'billing_review') return '视频已生成，实际 Token 用量需要核对；未追加扣费，请保留原任务';
+  return '';
+}
+
 export function compactPublicVideoModelName(value: unknown, fallback = "视频模型") {
-  const publicValue = String(value || "")
-    .replace(/\s*[（(]?\s*(?:配置待验收|待验收|待开放)\s*[）)]?\s*$/gu, "")
+  const publicValue = stripVideoModelOperationalAnnotation(value)
     .replace(/\s+/gu, " ");
   const segments = publicValue.split("·").map((segment) => segment.trim()).filter(Boolean);
   const cleaned = segments.filter((segment, index) => {

@@ -31,6 +31,9 @@ import { SafeFetchError, validateSafeUrl } from "@/lib/safe-fetch";
 import { safeMediaFetch, trustedRelayHostnamesFromEnv, type SafeMediaAuthorization } from "@/lib/safe-media-fetch";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { markVideoUpstreamSourceExpired } from "@/lib/video-source-expiry";
+import { scheduleVideoDeliveryPersistence } from "@/lib/video-delivery-persistence";
+import { isStoryboardArchiveExpired, usableStoryboardArchive } from "@/lib/storyboard-video-archive-policy";
+import { isVideoHistoryExplicitlyHidden } from "@/lib/video-history-policy";
 import { resolveVideoStreamContentType } from "@/lib/video-stream-prefix";
 import {
   AUTODL_H3_SELFHOST_PROTOCOL,
@@ -134,12 +137,14 @@ function buildVideoProxyResponseHeaders(input: {
     };
   }
 
-  if (input.upstreamStatus !== 200 || input.requestRange) {
-    return { ok: false, error: input.requestRange ? "视频源忽略了 Range 请求" : "视频源响应状态无效" };
+  // Sources may legally ignore Range and send the complete representation.
+  // Preserve 200 and full length; never invent partial-response headers.
+  if (input.upstreamStatus !== 200) {
+    return { ok: false, error: "视频源响应状态无效" };
   }
   if (!input.contentType) return { ok: false, error: "视频源容器类型无法确认" };
   baseHeaders["Content-Type"] = input.contentType;
-  if (/\bbytes\b/iu.test(input.upstreamAcceptRanges || "")) baseHeaders["Accept-Ranges"] = "bytes";
+  if (!input.requestRange && /\bbytes\b/iu.test(input.upstreamAcceptRanges || "")) baseHeaders["Accept-Ranges"] = "bytes";
   if (/^\d+$/u.test(input.upstreamContentLength || "")) {
     baseHeaders["Content-Length"] = String(Number(input.upstreamContentLength));
   }
@@ -152,7 +157,7 @@ async function getCompletedVideoTask(taskId: string, userId: string, isAdmin: bo
   // Re-read the task on every delivery rather than trusting a cached snapshot.
 
   const supabase = getSupabaseClient();
-  const fields = "id, video_url, storage_url, provider_result_url, model_id, status, user_id, task_id_external, source_expired_at, history_hidden_at";
+  const fields = "id, video_url, storage_url, provider_result_url, model_id, status, user_id, task_id_external, source_expired_at, history_hidden_at, task_label, completed_at, storyboard_archive_expires_at";
   let localQuery = supabase
     .from("video_tasks")
     .select(fields)
@@ -227,8 +232,9 @@ export async function GET(request: NextRequest) {
     if (task.status !== "completed") {
       return NextResponse.json({ error: "任务未完成" }, { status: 400 });
     }
-    if (task.history_hidden_at || task.source_expired_at) {
-      return NextResponse.json({ error: task.history_hidden_at
+    if (isVideoHistoryExplicitlyHidden(task) || isStoryboardArchiveExpired(task)
+      || (task.source_expired_at && (forceOrigin || !usableStoryboardArchive(task)))) {
+      return NextResponse.json({ error: isVideoHistoryExplicitlyHidden(task)
         ? "视频记录已从历史中移除，当前不可播放"
         : "视频源已到期，请使用此前下载的文件" }, { status: 410 });
     }
@@ -368,6 +374,22 @@ export async function GET(request: NextRequest) {
     const providerAuthorization: SafeMediaAuthorization | null = !isAutodlH3Selfhost && providerKey && model?.api_endpoint
       ? { origin: String(model.api_endpoint), value: isAutoDLComfy ? providerKey : `Bearer ${providerKey}` }
       : null;
+
+    // 第二道耐久性保护：终态落盘是异步的，若当时失败或进程重启，用户第一次
+    // 成功播放时再补存一次平台副本。只在该任务尚无 source_expired_at 且没有
+    // 持久副本时触发；重复播放由 in-flight 去重与 storage_url 复查兜住。
+    if (!selectedFromStorage && providerResultUrl && !task.storage_url) {
+      scheduleVideoDeliveryPersistence({
+        taskId: String(task.id || taskId),
+        userId: String(task.user_id || ""),
+        providerResultUrl,
+        providerTaskId: String(task.task_id_external || ""),
+        providerProtocol: String(model?.protocol_type || ""),
+        providerEndpoint: String(model?.api_endpoint || ""),
+        providerApiKey: providerKey,
+        trustedProviderResultHostname: trustedProviderResultHostname,
+      });
+    }
 
     // 5. 请求上游视频（转发 Range 请求）
     // 支持 CDN 不可达时自动 fallback 到 API /content 端点

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "contractId": "zimeiti-caopanshou-production-database-v1",
-  "contractVersion": "20261013011500",
+  "contractVersion": "20261031010000",
   "openApiProfile": "public",
   "probeMode": "read-only-postgrest-openapi",
   "requiredProbeRole": "service_role",
@@ -78,6 +78,51 @@
           "version": "20261012014000",
           "file": "supabase/migrations/20261012014000_video_snapshot_dependency_execute.sql",
           "sha256": "37ba6c09212d00649aa627426f66bdbda6fb9e3b1b0f9ed3c775d2c4304561b8"
+        },
+        {
+          "version": "20261030010000",
+          "file": "supabase/migrations/20261030010000_platform_configuration_pending_credentials.sql",
+          "sha256": "2823d96c17df7126859ae1f2f626007a62838f8d8802fcadcbb3844d98e593c3"
+        },
+        {
+          "version": "20261030020000",
+          "file": "supabase/migrations/20261030020000_platform_pending_credentials_base_and_llm_removal.sql",
+          "sha256": "2b0de90f3a940d855f9be68232433bb7d67321e2ca87f9a1ad3ad1efbd1c8532"
+        },
+        {
+          "version": "20261030030000",
+          "file": "supabase/migrations/20261030030000_model_pool_credential_removal_combination_guard.sql",
+          "sha256": "8a54330daa13d671a3662d8ebfbb2c565ab3143f4129b6389ac55b9f97b0184e"
+        },
+        {
+          "version": "20261030040000",
+          "file": "supabase/migrations/20261030040000_video_history_unsettled_billing_protection.sql",
+          "sha256": "104beaa60970d24f3f776dde831d88da4ba49d28d7b161f7406e0b03ed390ec4"
+        },
+        {
+          "version": "20261030050000",
+          "file": "supabase/migrations/20261030050000_video_credential_only_publication.sql",
+          "sha256": "6ea6cea3b9b03ba1688e75ac344cda4425cb8cd967330ef3d666998a4accc069"
+        },
+        {
+          "version": "20261030060000",
+          "file": "supabase/migrations/20261030060000_video_pricing_only_publication.sql",
+          "sha256": "53ae17629297d1dab7d8c049143774358c56bdd5082796ce331ab123f1fd11f1"
+        },
+        {
+          "version": "20261030070000",
+          "file": "supabase/migrations/20261030070000_video_upsert_publication.sql",
+          "sha256": "6bf7670160b5d7291da3a18d52561714c17964126dcb4edda232f57f262eb438"
+        },
+        {
+          "version": "20261030080000",
+          "file": "supabase/migrations/20261030080000_gaorui_provider_asset_operations.sql",
+          "sha256": "0c0dc5115f083ee3d260f895307b7912b26789c3d64e5854391151874bd1a007"
+        },
+        {
+          "version": "20261031010000",
+          "file": "supabase/migrations/20261031010000_digital_human_asset_preflight.sql",
+          "sha256": "35d412828f7128797f01f6387ccd7281c474126159d4f069a38de6c4f40a6a1e"
         }
       ]
     },
@@ -214,6 +259,84 @@
             ]
           }
         ]
+      },
+      {
+        "relation": "public.video_tasks",
+        "requiredColumns": [
+          {
+            "name": "provider_asset_preparation",
+            "type": "jsonb"
+          }
+        ],
+        "requiredConstraints": [
+          {
+            "name": "video_tasks_provider_asset_preparation_object",
+            "validated": true,
+            "definitionTokens": [
+              "provider_asset_preparation",
+              "jsonb_typeof",
+              "object"
+            ]
+          }
+        ]
+      },
+      {
+        "relation": "public.gaorui_provider_asset_operations",
+        "requiredOwnerRelation": "public.user_files",
+        "rlsRequired": true,
+        "forbiddenPrivilegePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated",
+          "service_role"
+        ],
+        "requiredColumns": [
+          {
+            "name": "scope_key",
+            "type": "text"
+          },
+          {
+            "name": "operation_id",
+            "type": "uuid"
+          },
+          {
+            "name": "scope",
+            "type": "jsonb"
+          },
+          {
+            "name": "claim_token",
+            "type": "uuid"
+          },
+          {
+            "name": "state",
+            "type": "text"
+          },
+          {
+            "name": "result",
+            "type": "jsonb"
+          },
+          {
+            "name": "error_code",
+            "type": "text"
+          },
+          {
+            "name": "budget_authorization_id",
+            "type": "text"
+          },
+          {
+            "name": "maximum_charge_cny",
+            "type": "numeric"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "updated_at",
+            "type": "timestamp with time zone"
+          }
+        ],
+        "requiredConstraints": []
       }
     ],
     "functionSecurityGroups": [
@@ -573,6 +696,122 @@
         "functions": [
           "public.publish_image_model_validation_receipt(text,text,text,text,boolean,boolean,text,bigint,text,jsonb)"
         ]
+      },
+      {
+        "id": "video-history-purge-billing-protection",
+        "ownerRelation": "public.video_tasks",
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "postgres",
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "public",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "function_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.purge_expired_video_history(integer,integer)"
+        ],
+        "requiredSourceSha256": {
+          "public.purge_expired_video_history(integer,integer)": "b9258ff96251b71b8f441a7cb8afb910c53f9422207d353269f18360ff0f7cec"
+        }
+      },
+      {
+        "id": "gaorui-person-reference-assets",
+        "ownerRelation": "public.user_files",
+        "ownerMustMatchRelationOwner": true,
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "pg_catalog",
+          "public"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "relation_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.claim_gaorui_provider_person_asset_v1(text,jsonb,uuid,text,numeric)",
+          "public.settle_gaorui_provider_person_asset_v1(text,uuid,text,jsonb,text)"
+        ],
+        "requiredSourceSha256": {
+          "public.claim_gaorui_provider_person_asset_v1(text,jsonb,uuid,text,numeric)": "d5c4ac422afa02ed51862f633218487f48087836f57d4f1ad65825578d6d997b",
+          "public.settle_gaorui_provider_person_asset_v1(text,uuid,text,jsonb,text)": "9a1cab4fbf54c9b5291d575ed92ae525be307b5be700fe586d3757d9cbd60c3a"
+        }
+      },
+      {
+        "id": "digital-human-asset-preflight",
+        "ownerRelation": "public.user_files",
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "zimeiti_owner",
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "pg_catalog",
+          "pg_temp"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "function_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.read_gaorui_person_asset_preflight_v1(text,text,text,text,text)"
+        ],
+        "requiredSourceSha256": {
+          "public.read_gaorui_person_asset_preflight_v1(text,text,text,text,text)": "3501638a81e522af349b44c053b9c859ac6626da40c9d365abdae4db48d6d411"
+        },
+        "requiredDefinitionTokens": {
+          "public.read_gaorui_person_asset_preflight_v1(text,text,text,text,text)": [
+            "STABLE",
+            "SECURITY DEFINER",
+            "operation.scope->>'user_id' = p_user_id",
+            "operation.scope->>'owned_asset_id' = p_owned_asset_id",
+            "operation.scope->>'model_id' = p_model_id",
+            "operation.scope->>'provider_origin' = p_provider_origin",
+            "operation.scope->>'credential_binding_fingerprint' = p_credential_binding_fingerprint",
+            "EXISTS",
+            "public.user_files",
+            "asset.id::text = p_owned_asset_id",
+            "asset.user_id::text = p_user_id",
+            "asset.storage_key = operation.scope->>'storage_key'",
+            "asset.file_category = 'image'",
+            "asset.source = 'digital-human-input'",
+            "asset.storage_provider = 'tencent_cos'",
+            "nullif(to_jsonb(asset)->>'deleted_at', '') IS NULL",
+            "coalesce(to_jsonb(asset)->>'is_deleted', 'false') <> 'true'",
+            "nullif(asset.meta->>'deleted_at', '') IS NULL",
+            "nullif(asset.meta->>'deletedAt', '') IS NULL",
+            "coalesce(asset.meta->>'deleted', 'false') <> 'true'",
+            "LIMIT 101"
+          ]
+        }
       }
     ],
     "functionDependencyEdges": [
@@ -1350,7 +1589,8 @@
         "name",
         "protocol_type",
         "is_active",
-        "is_hidden"
+        "is_hidden",
+        "icon_url"
       ]
     },
     {
@@ -1421,7 +1661,8 @@
         "provider_acknowledged_at",
         "provider_reconciliation_state",
         "history_hidden_at",
-        "source_expired_at"
+        "source_expired_at",
+        "provider_asset_preparation"
       ]
     },
     {
@@ -3440,12 +3681,85 @@
         "p_verified_type",
         "p_evidence"
       ]
+    },
+    {
+      "name": "stage_model_pool_candidate_with_credentials_atomic",
+      "feature": "atomic-model-configuration",
+      "arguments": [
+        "p_actor_id",
+        "p_request_id",
+        "p_request_payload",
+        "p_snapshot",
+        "p_snapshot_sha256",
+        "p_validation_result",
+        "p_status",
+        "p_change_note",
+        "p_parent_release_id",
+        "p_credential_changes"
+      ]
+    },
+    {
+      "name": "read_platform_model_pending_credential_metadata",
+      "feature": "atomic-model-configuration",
+      "arguments": [
+        "p_release_id"
+      ]
+    },
+    {
+      "name": "read_platform_model_mutation_receipt",
+      "feature": "atomic-model-configuration",
+      "arguments": [
+        "p_actor_id",
+        "p_request_id",
+        "p_request_payload"
+      ]
+    },
+    {
+      "name": "claim_gaorui_provider_person_asset_v1",
+      "feature": "gaorui-person-reference-assets",
+      "arguments": [
+        "p_scope_key",
+        "p_scope",
+        "p_claim_token",
+        "p_budget_authorization_id",
+        "p_maximum_charge_cny"
+      ]
+    },
+    {
+      "name": "settle_gaorui_provider_person_asset_v1",
+      "feature": "gaorui-person-reference-assets",
+      "arguments": [
+        "p_scope_key",
+        "p_claim_token",
+        "p_state",
+        "p_result",
+        "p_error_code"
+      ]
+    },
+    {
+      "name": "read_gaorui_person_asset_preflight_v1",
+      "feature": "digital-human-asset-preflight",
+      "arguments": [
+        "p_user_id",
+        "p_owned_asset_id",
+        "p_model_id",
+        "p_provider_origin",
+        "p_credential_binding_fingerprint"
+      ]
     }
   ],
   "forbiddenRpcs": [
     {
       "name": "fulfill_payment_order_atomic",
       "reason": "legacy payment fulfillment does not require provider transaction evidence"
+    },
+    {
+      "name": "publish_platform_configuration_release_before_pending_credentials",
+      "reason": "internal publisher must only be called through credential CAS wrapper"
+    },
+    {
+      "name": "publish_platform_configuration_release_before_pending_credentia",
+      "reason": "actual PostgreSQL identifier for the internal publisher; only credential CAS wrapper may invoke it"
     }
   ],
   "rollbackArtifacts": [
@@ -3611,6 +3925,20 @@
       "blocksWhen": [
         "original generation receipt, publication or financial evidence would be removed",
         "publication owner, ACL or CAS semantics differ from the release contract"
+      ]
+    },
+    {
+      "forwardMigration": "supabase/migrations/20261030080000_gaorui_provider_asset_operations.sql",
+      "mode": "forward-repair-only-after-activation",
+      "preserves": [
+        "gaorui_provider_asset_operations unique scope and original operation receipts",
+        "video_tasks.provider_asset_preparation owner-linked asset state",
+        "video generation snapshots and provider receipts",
+        "wallet and cash transaction records"
+      ],
+      "blocksWhen": [
+        "asset operation history or unknown submission evidence would be removed",
+        "RLS owner or service-only RPC permissions differ from reviewed contract"
       ]
     }
   ],

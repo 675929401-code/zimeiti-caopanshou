@@ -18,6 +18,7 @@ import {
   BILLING_SOURCE_CATEGORIES,
   normalizeBillingSource,
 } from "@/lib/billing-source-catalog";
+import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -41,6 +42,10 @@ function walletOperationId(sourceId: unknown): string | null {
 }
 
 export async function GET(request: NextRequest) {
+  const authorization = await authorizeAdminCapability(request, "billing.view", {
+    operation: "balance_audit_view",
+  });
+  if (!authorization.ok) return authorization.response;
   const token = getTokenFromHeaders(request.headers);
   if (!token) return NextResponse.json({ error: "未登录" }, { status: 401 });
   const payload = await verifyAdminToken(token);

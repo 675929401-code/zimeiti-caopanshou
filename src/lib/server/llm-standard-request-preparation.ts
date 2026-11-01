@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
+import { PENDING_TEXT_USER_ACCESS } from "@/lib/model-activation-gate";
 import { prepareContext, type ChatMessage } from "@/lib/llm-context";
 import { resolveChatReplyLimit } from "@/lib/llm-reply-limit";
 import { resolveAuthoritativeAgentPrompt, clientChatHistory } from "@/lib/server/agent-chat-prompt-authority";
-import { wrapGlobalPresentationRules, applyAgentIdentityEnvelope } from "@/lib/agent-identity-envelope";
+import { wrapGlobalPresentationRules, wrapNaturalLanguageMenuPresentationRules, applyAgentIdentityEnvelope } from "@/lib/agent-identity-envelope";
 import { bipStep, bipAllowsSkills } from "@/lib/business-ip/catalog";
 import { buildWebsitePromoterKnowledgeContext } from "@/lib/website-promoter-context";
 import { shouldAutoEnableWebSearch } from "@/lib/free-chat-runtime-policy";
@@ -10,8 +11,37 @@ import { billingConfigFromSettingsRows, type BillingConfig } from "@/lib/billing
 import { buildSelectedModelBillingSnapshot } from "@/lib/llm-billing";
 import { quoteLlmStreamReservation } from "@/lib/llm-credit-reservation";
 import type { ChatRequest } from "@/lib/llm-proxy";
+import type { AnthropicThinkingProfile } from "@/lib/llm-proxy/types";
+import { STORY_DIRECTOR_MOVIE_AGENT_ID, STORY_DIRECTOR_HIGH_ENERGY_AGENT_ID, parseStoryDirectorTimingInput, countNarrationEffectiveCharacters } from "@/lib/story-director-overtime-gate";
+import { estimateNarrationDuration } from "@/lib/storyboard-director-protocol";
 
 type Row = Record<string, any>;
+
+/** A text-writing capability of the saved official agents, independent of prompt wording. */
+export function isStoryboardTextOnlyAgent(agentId: unknown, agentRow: { id?: unknown; source?: unknown } | null | undefined): boolean {
+  return agentRow?.id === agentId && agentRow?.source === "llm"
+    && (agentId === STORY_DIRECTOR_HIGH_ENERGY_AGENT_ID || agentId === STORY_DIRECTOR_MOVIE_AGENT_ID);
+}
+
+/** Only the exact server-loaded official identity may publish host timing facts. */
+export function buildStoryDirectorTimingContext(agentId: unknown, agentRow: { id?: unknown } | null | undefined, messages: Array<{ role: string; content: unknown }>): string {
+  if (agentRow?.id !== agentId || (agentId !== STORY_DIRECTOR_MOVIE_AGENT_ID && agentId !== STORY_DIRECTOR_HIGH_ENERGY_AGENT_ID)) return "";
+  const user = [...messages].reverse().find(message => message.role === "user");
+  const parsed = typeof user?.content === "string" ? parseStoryDirectorTimingInput(agentId, user.content) : null;
+  const heading = "[HOST_NARRATION_TIMING_FACTS_V1]";
+  const boundary = "这是宿主口播估算，仅用于口播时长核验，不证明动作容量、画质或其他质量检查通过；不得用模型自行估时覆盖宿主数字。";
+  if (!parsed?.complete) return `${heading}\nstatus=unknown\n${boundary}\n[/HOST_NARRATION_TIMING_FACTS_V1]`;
+  const facts = parsed.segments.map(segment => ({ segment: segment.number, effective_characters: countNarrationEffectiveCharacters(segment.text), target_seconds: parsed.durationSeconds, estimated_narration_seconds: estimateNarrationDuration(segment.text) }));
+  return [heading, "status=parsed", JSON.stringify({ segments: facts }), boundary, "[/HOST_NARRATION_TIMING_FACTS_V1]"].join("\n");
+}
+// This profile is granted only from the exact server-owned storyboard binding.
+// Source text can mention searching as a story event; this text-only compiler
+// must not turn that narrative into a host tool request.
+export function shouldAutoEnableRuntimeWebSearch(text: string, profile?: AnthropicThinkingProfile, trustedTextOnly = false): boolean {
+  if (trustedTextOnly) return false;
+  if (profile?.id === "storyboard-high-energy-b-v6-adaptive-low-v1" || profile?.id === "storyboard-high-energy-b-v8-adaptive-low-v1") return false;
+  return shouldAutoEnableWebSearch(text);
+}
 export class LlmQuotePreparationError extends Error {
   constructor(readonly code: string) { super(code); this.name = "LlmQuotePreparationError"; }
 }
@@ -23,7 +53,7 @@ export function quoteCanonical(value: unknown): unknown {
 }
 export const quoteDigest = (value: unknown) => createHash("sha256").update(JSON.stringify(quoteCanonical(value))).digest("hex");
 export const quoteTextDigest = (value: string) => createHash("sha256").update(value).digest("hex");
-export type RuntimeParameters = { agentDeepThinkingType: number; agentDeductDeepThink: number; agentMaxContextRounds: number; agentMaxContextTokens: number; agentMaxReplyTokens: number; agentTimeout: number; agentEnableWebSearch: boolean; agentTemperature: number | undefined; agentResponseFormat: string | undefined };
+export type RuntimeParameters = { agentDeepThinkingType: number; agentDeductDeepThink: number; agentMaxContextRounds: number; agentMaxContextTokens: number; agentMaxReplyTokens: number; agentTimeout: number; agentEnableWebSearch: boolean; agentTemperature: number | undefined; agentResponseFormat: string | undefined; anthropic_thinking_profile?: AnthropicThinkingProfile; trustedTextOnly?: boolean };
 export async function composeLlmRequestMessages(input: Row & RuntimeParameters) {
   let { agentDeepThinkingType, agentDeductDeepThink, agentMaxContextRounds, agentMaxContextTokens, agentMaxReplyTokens, agentTimeout, agentEnableWebSearch, agentTemperature, agentResponseFormat } = input;
   const { agentId, agentName, agentRow, mangaSkillOrchestration, isCanvasInternalWorkflow, verifiedUserId, body, globalPrefix, messages, useModel, loadProfileContext, loadSkills } = input;
@@ -63,9 +93,11 @@ export async function composeLlmRequestMessages(input: Row & RuntimeParameters) 
     // 平台通用前缀只负责呈现规则；专属智能体提示词才是角色与工作流权威。
     // 身份边界在所有动态知识和技能注入完成后统一包裹首尾，防止长提示词、
     // 历史消息或模型默认身份稀释当前智能体角色。
-    const effectiveAgentName = mangaSkillOrchestration
-      ? "漫剧工作台创作 Agent"
-      : (typeof agentRow?.name === "string" ? agentRow.name : agentName);
+    const persistedAgentName = typeof agentRow?.name === "string" ? agentRow.name : "";
+    const effectiveAgentName = persistedAgentName.trim() ? persistedAgentName
+      : mangaSkillOrchestration ? "漫剧工作台创作 Agent" : agentName;
+    const trustedPersistedLlmIdentity = agentRow?.id === agentId && agentRow?.source === "llm"
+      && !isCanvasInternalWorkflow && Boolean(persistedAgentName.trim());
 
     if (agentResponseFormat === "markdown" && effectiveSystemPrompt) {
       // 仅当智能体没有自定义格式时，补上商业产品通用的可读性底线；
@@ -81,7 +113,7 @@ export async function composeLlmRequestMessages(input: Row & RuntimeParameters) 
     } else if (agentResponseFormat === "text" && effectiveSystemPrompt) {
       const hasOwnFormat = effectiveSystemPrompt.includes("输出规范") || effectiveSystemPrompt.includes("输出格式") || effectiveSystemPrompt.includes("格式要求");
       if (!hasOwnFormat && !effectiveSystemPrompt.includes("纯文本格式输出")) {
-        effectiveSystemPrompt += `\n\n请使用纯文本格式输出，不要使用 Markdown 排版语法（代码块除外）。`;
+        effectiveSystemPrompt += `\n\n普通正文使用纯文本格式输出；仅自然语言交互菜单可按平台菜单呈现规则适度强调重点。代码、机器格式、正式口播稿和纯正文稿保持专属协议；用户明确要求纯文本或专属设定禁止 Markdown 时，不插入排版标记。`;
       }
     }
 
@@ -90,7 +122,7 @@ export async function composeLlmRequestMessages(input: Row & RuntimeParameters) 
     let skillInjection: { skillPromptSuffix: string; tools: unknown[] } | null = null;
     const finishSkillStage = beginPreparationStage("skills");
     let skillStageOutcome: "success" | "warning" = "success";
-    if (agentId && agentRow?.source === "llm" && (!bipStep(agentId) || bipAllowsSkills(agentId))) {
+    if (agentId && agentRow?.source === "llm" && !isStoryboardTextOnlyAgent(agentId, agentRow) && (!bipStep(agentId) || bipAllowsSkills(agentId))) {
       try {
         skillInjection = await loadSkills();
       } catch (err) {
@@ -118,7 +150,15 @@ export async function composeLlmRequestMessages(input: Row & RuntimeParameters) 
       );
     }
 
-    effectiveSystemPrompt = applyAgentIdentityEnvelope(effectiveSystemPrompt, effectiveAgentName);
+    // Director writing uses the saved agent prompt, like other marketplace
+    // agents. Asset verification belongs to media actions, not chat preparation.
+    if (!isCanvasInternalWorkflow) {
+      const menuPresentation = wrapNaturalLanguageMenuPresentationRules(agentResponseFormat);
+      if (menuPresentation) effectiveSystemPrompt += `\n\n${menuPresentation}`;
+    }
+    effectiveSystemPrompt = applyAgentIdentityEnvelope(effectiveSystemPrompt, effectiveAgentName, {
+      platformBranding: trustedPersistedLlmIdentity,
+    });
 
     // ── 上下文管理（不设上限，模型自身上下文窗口为天然限制） ──
 
@@ -162,8 +202,8 @@ export async function composeLlmRequestMessages(input: Row & RuntimeParameters) 
 }
 
 // Transport adapters must supply these exact public-to-server facts without secret fields.
-export const STANDARD_AGENT_FIELDS = ["id","name","source","is_active","deleted_at","model_id","model","system_prompt","config_revision","deep_thinking_type","deduct_deep_think","max_context_rounds","max_context_tokens","max_reply_tokens","timeout","enable_web_search","temperature","response_format","user_access","category"] as const;
-export const STANDARD_MODEL_FIELDS = ["id","name","model_name","is_active","is_hidden","user_access","deep_thinking_type","deduct_deep_think","max_context_rounds","max_context_tokens","max_reply_tokens","timeout","enable_web_search","temperature","response_format","token_billing_enabled","input_cost_per_million","output_cost_per_million","cached_cost_per_million","profit_margin","token_rounding_unit"] as const;
+export const STANDARD_AGENT_FIELDS = ["id","name","source","is_active","deleted_at","model_id","model","system_prompt","output_style","config_revision","deep_thinking_type","deduct_deep_think","max_context_rounds","max_context_tokens","max_reply_tokens","timeout","enable_web_search","temperature","response_format","user_access","category"] as const;
+export const STANDARD_MODEL_FIELDS = ["id","name","model_name","is_active","is_hidden","user_access","deep_thinking_type","deduct_deep_think","max_context_rounds","max_context_tokens","max_reply_tokens","timeout","enable_web_search","temperature","response_format","token_billing_enabled","input_cost_per_million","output_cost_per_million","cached_cost_per_million","profit_margin","token_rounding_unit","api_endpoint","provider","api_protocol_config"] as const;
 export const STANDARD_SETTING_KEYS = ["global_system_prefix","input_cost_per_million","output_cost_per_million","cached_cost_per_million","profit_margin","credits_per_yuan","token_rounding_enabled","token_rounding_unit","token_rounding_min","token_rounding_max"] as const;
 export interface StandardSnapshot { agent: Row; model: Row; settings: Array<{setting_key:string;setting_value:string}>; actor: Row; skills: Row[]; readsVerified: true }
 export interface StrictPreparationReader { readAgent(id:string):Promise<Row[]>; readModel(id:string):Promise<Row[]>; readSettings():Promise<Array<{setting_key:string;setting_value:string}>>; readActor(id:string):Promise<Row[]>; readSkills(id:string):Promise<Row[]> }
@@ -180,13 +220,17 @@ export async function readStandardSnapshot(reader: StrictPreparationReader, acto
 export function resolveLinkedModelRuntime(body: Row, agent: Row, model: Row): RuntimeParameters {
   const isDeepThinkingOverridden = body.deep_thinking_overridden ?? body.deepThinkingOverridden ?? false;
   const isWebSearchOverridden = body.enable_web_search_overridden ?? body.enableWebSearchOverridden ?? false;
-  const clamp = (value: unknown, fallback:number) => Number.isFinite(Number(value)) && Number(value)>0 ? Math.min(Number(value),120) : fallback;
+  // Client supplied timeout remains bounded at 120s; only trusted server
+  // agent/model rows may use the catalog's explicit 300s contract. This must
+  // match /api/llm so prepared and executed requests cannot drift.
+  const clampRequest = (value: unknown, fallback:number) => Number.isFinite(Number(value)) && Number(value)>0 ? Math.min(Number(value),120) : fallback;
+  const clampConfigured = (value: unknown, fallback:number) => Number.isFinite(Number(value)) && Number(value)>0 ? Math.min(Number(value),300) : fallback;
   let agentDeepThinkingType = body.deep_thinking_type ?? body.deepThinkingType ?? 0;
   let agentDeductDeepThink = body.deduct_deep_think ?? body.deductDeepThink ?? 1;
   let agentMaxContextRounds = body.max_context_rounds ?? body.maxContextRounds ?? 0;
   let agentMaxContextTokens = body.max_context_tokens ?? body.maxContextTokens ?? 0;
   let agentMaxReplyTokens = body.max_reply_tokens ?? body.maxReplyTokens ?? 65536;
-  let agentTimeout = clamp(body.timeout,120);
+  let agentTimeout = clampRequest(body.timeout,120);
   let agentEnableWebSearch = body.enable_web_search ?? body.enableWebSearch ?? false;
   let agentTemperature = body.temperature ?? undefined;
   let agentResponseFormat = body.response_format ?? body.responseFormat ?? undefined;
@@ -195,7 +239,7 @@ export function resolveLinkedModelRuntime(body: Row, agent: Row, model: Row): Ru
   if (agent.max_context_rounds != null) agentMaxContextRounds=agent.max_context_rounds;
   if (agent.max_context_tokens != null) agentMaxContextTokens=agent.max_context_tokens;
   if (agent.max_reply_tokens != null && agent.max_reply_tokens>0) agentMaxReplyTokens=agent.max_reply_tokens;
-  if (agent.timeout != null && agent.timeout>0) agentTimeout=clamp(agent.timeout,agentTimeout);
+  if (agent.timeout != null && agent.timeout>0) agentTimeout=clampConfigured(agent.timeout,agentTimeout);
   if (!isWebSearchOverridden && agent.enable_web_search != null) agentEnableWebSearch=agent.enable_web_search;
   if (agent.temperature != null) agentTemperature=agent.temperature;
   if (agent.response_format != null) agentResponseFormat=agent.response_format;
@@ -204,12 +248,17 @@ export function resolveLinkedModelRuntime(body: Row, agent: Row, model: Row): Ru
   if (model.max_context_rounds != null && agentMaxContextRounds!==0) agentMaxContextRounds=model.max_context_rounds;
   if (model.max_context_tokens != null && agentMaxContextTokens!==0) agentMaxContextTokens=model.max_context_tokens;
   if (agent.max_reply_tokens==null && model.max_reply_tokens>0) agentMaxReplyTokens=model.max_reply_tokens;
-  if (model.timeout!=null && model.timeout>0) agentTimeout=clamp(model.timeout,agentTimeout);
+  if (model.timeout!=null && model.timeout>0) agentTimeout=clampConfigured(model.timeout,agentTimeout);
   if (!isWebSearchOverridden && model.enable_web_search!=null) agentEnableWebSearch=model.enable_web_search;
   if (agent.temperature==null && model.temperature!=null) agentTemperature=model.temperature;
   if (model.response_format!=null) agentResponseFormat=model.response_format;
   agentMaxReplyTokens=resolveChatReplyLimit(agent.max_reply_tokens,agentMaxReplyTokens);
-  return {agentDeepThinkingType,agentDeductDeepThink,agentMaxContextRounds,agentMaxContextTokens,agentMaxReplyTokens,agentTimeout,agentEnableWebSearch,agentTemperature,agentResponseFormat};
+  const trustedTextOnly=isStoryboardTextOnlyAgent(agent.id,agent);
+  if (trustedTextOnly) {
+    agentEnableWebSearch=false;
+    if (agentDeepThinkingType===1) agentDeepThinkingType=0;
+  }
+  return {agentDeepThinkingType,agentDeductDeepThink,agentMaxContextRounds,agentMaxContextTokens,agentMaxReplyTokens,agentTimeout,agentEnableWebSearch,agentTemperature,agentResponseFormat,...(trustedTextOnly?{trustedTextOnly:true}:{})};
 }
 const REQUEST_KEYS = new Set(["messages","modelId","model","model_overridden","stream","userId","agentName","agent_name","agentId","conversationId","client_request_id","deepThinkingType","deep_thinking_type","deepThinkingOverridden","deep_thinking_overridden","deductDeepThink","deduct_deep_think","maxContextRounds","max_context_rounds","maxContextTokens","max_context_tokens","maxReplyTokens","max_reply_tokens","timeout","enableWebSearch","enable_web_search","enableWebSearchOverridden","enable_web_search_overridden","temperature","responseFormat","response_format","quote_expectation"]);
 export function assertStandardQuoteEligibility(body: Row, snapshot: StandardSnapshot, actorId: string) {
@@ -217,23 +266,24 @@ export function assertStandardQuoteEligibility(body: Row, snapshot: StandardSnap
   if (!snapshot.readsVerified || actor.id!==actorId || actor.is_active!==true || (actor.status!=null && actor.status!=="active") || !["student","admin"].includes(actor.role)) refuse("LLM_QUOTE_ACTOR_UNSUPPORTED");
   if (Object.keys(body).some(key=>!REQUEST_KEYS.has(key))) refuse("LLM_QUOTE_REQUEST_UNSUPPORTED");
   if (body.model_overridden===true || body.modelId || body.model || body.stream===false) refuse("LLM_QUOTE_SELECTION_UNSUPPORTED");
-  if (!agent.id || body.agentId!==agent.id || agent.source!=="llm" || agent.is_active!==true || agent.deleted_at || agent.model_id!==model.id || model.is_active!==true || model.is_hidden===true || model.user_access==="hidden" || agent.user_access==="hidden") refuse("LLM_QUOTE_SELECTION_UNSUPPORTED");
+  if (!agent.id || body.agentId!==agent.id || agent.source!=="llm" || agent.is_active!==true || agent.deleted_at || agent.model_id!==model.id || model.is_active!==true || model.is_hidden===true || model.user_access==="hidden" || model.user_access===PENDING_TEXT_USER_ACCESS || agent.user_access==="hidden") refuse("LLM_QUOTE_SELECTION_UNSUPPORTED");
   if (!Number.isSafeInteger(Number(agent.config_revision)) || Number(agent.config_revision)<=0 || typeof agent.system_prompt!=="string" || !agent.system_prompt.trim()) refuse("LLM_QUOTE_PROMPT_UNKNOWN");
   if (!Array.isArray(body.messages) || !body.messages.length || body.messages.some((m:Row)=>!m || !["system","user","assistant"].includes(m.role) || typeof m.content!=="string" || Object.keys(m).some(key=>!["role","content","name"].includes(key)))) refuse("LLM_QUOTE_MULTIMODAL_UNSUPPORTED");
-  if (snapshot.skills.length) refuse("LLM_QUOTE_ACTIVE_SKILLS_UNSUPPORTED");
+  if (snapshot.skills.length && !isStoryboardTextOnlyAgent(agent.id,agent)) refuse("LLM_QUOTE_ACTIVE_SKILLS_UNSUPPORTED");
   // Dynamic member context is only loaded for this BIP consultation identity; quote does not guess it empty.
   if (bipStep(agent.id)) refuse("LLM_QUOTE_DYNAMIC_CONTEXT_UNSUPPORTED");
   const parameters=resolveLinkedModelRuntime(body,agent,model);
   if (![0,2].includes(parameters.agentDeepThinkingType)) refuse("LLM_QUOTE_MULTISTAGE_UNSUPPORTED");
   const user=[...body.messages].reverse().find((m:Row)=>m.role==="user");
-  if (parameters.agentEnableWebSearch || shouldAutoEnableWebSearch(user?.content || "")) refuse("LLM_QUOTE_SEARCH_UNSUPPORTED");
+  if (parameters.agentEnableWebSearch || shouldAutoEnableRuntimeWebSearch(user?.content || "", parameters.anthropic_thinking_profile, parameters.trustedTextOnly)) refuse("LLM_QUOTE_SEARCH_UNSUPPORTED");
   return parameters;
 }
 export function buildLlmChatRequest(model: string, messages: ChatRequest["messages"], parameters: RuntimeParameters, stream:boolean, tools: any[] = []): ChatRequest {
   return { model, messages, max_tokens:parameters.agentMaxReplyTokens, temperature:parameters.agentTemperature,
     enable_thinking:parameters.agentDeepThinkingType===2,
+    ...(parameters.anthropic_thinking_profile?{anthropic_thinking_profile:parameters.anthropic_thinking_profile}:{}),
     response_format:parameters.agentResponseFormat==="json_object"?{type:"json_object"}:undefined,
-    stream_options:stream?{include_usage:true}:undefined, ...(tools.length?{tools}:{}) };
+    stream_options:stream?{include_usage:true}:undefined, ...(tools.length && !parameters.trustedTextOnly?{tools}:{}) };
 }
 export type QuoteExecutionPins={sourceVersion:string;buildId:string};
 export async function prepareStandardLlmRequest(body:Row,snapshot:StandardSnapshot,actorId:string,publicModelId:string,pins:QuoteExecutionPins) {

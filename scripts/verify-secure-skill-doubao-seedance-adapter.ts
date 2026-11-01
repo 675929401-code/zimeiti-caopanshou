@@ -69,6 +69,8 @@ async function main() {
   }), /当前仅开放 720p/u);
 
   const originalFetch = globalThis.fetch;
+  let responseUsage: Record<string, unknown> | undefined = { total_tokens: 1234, completion_tokens: 1234 };
+  let responseId = "seedance-fixture-task";
   const requests: Array<{ url: string; method: string; body?: Json }> = [];
   type Json = Record<string, unknown>;
   globalThis.fetch = async (input, init) => {
@@ -76,17 +78,17 @@ async function main() {
     const body = init?.body ? JSON.parse(String(init.body)) as Json : undefined;
     requests.push({ url: String(input), method, body });
     if (method === "POST") {
-      return new Response(JSON.stringify({ id: "seedance-fixture-task", status: "queued", progress: 0 }), {
+      return new Response(JSON.stringify({ id: "seedance-fixture-task", status: "queued", progress: 0, usage: responseUsage }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
     }
     return new Response(JSON.stringify({
-      id: "seedance-fixture-task",
+      id: responseId,
       status: "succeeded",
       progress: 100,
       content: { video_url: "https://example.com/result.mp4" },
-      usage: { total_tokens: 1234, completion_tokens: 1200 },
+      usage: responseUsage,
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
 
@@ -99,13 +101,28 @@ async function main() {
     });
     assert.equal(submitted.taskId, "seedance-fixture-task");
     assert.equal(submitted.status, "queued");
+    assert.deepEqual(submitted.usage, { totalTokens: 1234, completionTokens: 1234 });
     assert.equal(requests[0].url, "https://token.secure-skill.com/api/v3/contents/generations/tasks");
     assert.equal(requests[0].body?.model, "doubao-seedance-2-5-260628");
 
     const polled = await pollVideoTask(base, submitted.taskId);
     assert.equal(polled.status, "success");
     assert.equal(polled.videoUrl, "https://example.com/result.mp4");
+    assert.deepEqual(polled.usage, { totalTokens: 1234, completionTokens: 1234 });
     assert.equal(requests[1].url, "https://token.secure-skill.com/api/v3/contents/generations/tasks/seedance-fixture-task");
+    responseUsage = undefined;
+    const withoutUsage = await pollVideoTask(base, submitted.taskId);
+    assert.equal(withoutUsage.status, "success", "result persistence must proceed while billing waits for usage");
+    assert.equal(withoutUsage.usage, undefined);
+    responseUsage = { total_tokens: 1234, completion_tokens: 1200 };
+    const conflictingUsage = await pollVideoTask(base, submitted.taskId);
+    assert.equal(conflictingUsage.status, "success");
+    assert.equal(conflictingUsage.usage, undefined, "conflicting counters must never become a zero bill");
+    responseId = "different-task";
+    const mismatched = await pollVideoTask(base, submitted.taskId);
+    assert.notEqual(mismatched.status, "success");
+    assert.equal(mismatched.videoUrl, undefined);
+    assert.equal(mismatched.usage, undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }

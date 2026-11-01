@@ -15,12 +15,7 @@ import {
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ManualCanvas, type ManualCanvasDraftSnapshot } from "@/components/manual-canvas";
 import { useApp } from "@/contexts/app-context";
-import {
-  FALLBACK_CANVAS_IMAGE_MODEL,
-  FALLBACK_CANVAS_VIDEO_MODEL,
-  selectCanvasImageModel,
-  selectCanvasVideoModel,
-} from "@/lib/canvas-model-defaults";
+import { canvasPublicAdmissionCapabilities, readCanvasPublicCatalog } from "@/lib/canvas-public-catalog-loader";
 import { parseStoredWorkspace, STUDIO_STORAGE_KEY } from "@/lib/studio-storage";
 import type {
   AspectRatio,
@@ -117,7 +112,7 @@ function normalizePublicCanvasImageModel(value: unknown): CoverModel | null {
     max_reference_images: maxReferenceImages,
     max_character_references: maxCharacterReferences,
     reference_capability_label: String(capabilities.referenceCapabilityLabel ?? record.reference_capability_label ?? ""),
-    capabilities,
+    capabilities: canvasPublicAdmissionCapabilities(record),
     resolution_options: resolutionOptions,
     default_resolution: resolutionOptions.includes(defaultResolution) ? defaultResolution : resolutionOptions[0],
   };
@@ -168,7 +163,7 @@ function normalizePublicCanvasVideoModel(value: unknown): VideoModel | null {
     supportsRemoteCancel: capabilities.supportsRemoteCancel !== false,
     aspectRatios: Array.isArray(capabilities.aspectRatios) ? capabilities.aspectRatios.map(String) : [],
     successRate: -1,
-    capabilities,
+    capabilities: canvasPublicAdmissionCapabilities(record),
     api_protocol_config: {
       duration_step: Number.isFinite(durationStep) && durationStep > 0 ? durationStep : 0.5,
     },
@@ -222,8 +217,8 @@ export function FreeCanvasShell({ expectedShowcaseId }: { expectedShowcaseId?: s
   const [videoModels, setVideoModels] = useState<VideoModel[]>([]);
   const [voiceOptions, setVoiceOptions] = useState<CanvasVoiceOption[]>([]);
   const [voicePricing, setVoicePricing] = useState<CanvasVoicePricing[]>([]);
-  const [defaultImageModelId, setDefaultImageModelId] = useState(FALLBACK_CANVAS_IMAGE_MODEL);
-  const [defaultVideoModelId, setDefaultVideoModelId] = useState(FALLBACK_CANVAS_VIDEO_MODEL);
+  const [defaultImageModelId, setDefaultImageModelId] = useState("");
+  const [defaultVideoModelId, setDefaultVideoModelId] = useState("");
   const [balance, setBalance] = useState<number | null>(null);
   const [connectedUser, setConnectedUser] = useState("");
   const [connectedUserId, setConnectedUserId] = useState("");
@@ -356,37 +351,33 @@ export function FreeCanvasShell({ expectedShowcaseId }: { expectedShowcaseId?: s
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      fetch("/api/cover-models?surface=free-canvas").then((response) => response.json() as Promise<{ models?: unknown[] }>),
-      fetch("/api/video/models?surface=free-canvas").then((response) => response.json() as Promise<{ models?: unknown[] }>),
-      fetch("/api/bridge/runtime-config").then((response) => response.json() as Promise<{ config?: PublicRuntimeConfig }>),
-      fetch("/api/voice/list?limit=500&page=1").then((response) => response.json() as Promise<{ data?: { voices?: unknown[] } }>),
-      fetch("/api/voice/pricing").then((response) => response.json() as Promise<{ data?: unknown[] }>),
-    ]).then(([imageData, videoData, runtimeData, voiceData, voicePricingData]) => {
+    const controller = new AbortController();
+    const failures = new Set<string>();
+    let runtime: PublicRuntimeConfig | null = null;
+    let images: CoverModel[] | null = null;
+    let videos: VideoModel[] | null = null;
+    const updateDefaults = () => {
       if (!active) return;
-      const disabled = new Set(runtimeData.config?.health?.disabledImageModelIds ?? []);
-      const nextImageModels = (imageData.models ?? [])
-        .map(normalizePublicCanvasImageModel)
-        .filter((model): model is CoverModel => model !== null && model.selling_price > 0 && !disabled.has(model.id));
-      const nextVideoModels = (videoData.models ?? [])
-        .map(normalizePublicCanvasVideoModel)
-        .filter((model): model is VideoModel => model !== null && model.pricePerUse > 0 && model.capabilities?.available !== false);
-      const nextVoiceOptions = (voiceData.data?.voices ?? [])
-        .map(normalizeCanvasVoiceOption)
-        .filter((voice): voice is CanvasVoiceOption => voice !== null);
-      const nextVoicePricing = (voicePricingData.data ?? [])
-        .map(normalizeCanvasVoicePricing)
-        .filter((pricing): pricing is CanvasVoicePricing => pricing !== null);
-      setImageModels(nextImageModels);
-      setVideoModels(nextVideoModels);
-      setVoiceOptions(nextVoiceOptions);
-      setVoicePricing(nextVoicePricing);
-      const configuredImage = runtimeData.config?.defaults?.imageModelId;
-      const configuredVideo = runtimeData.config?.defaults?.videoModelId;
-      setDefaultImageModelId(selectCanvasImageModel(nextImageModels, configuredImage));
-      setDefaultVideoModelId(selectCanvasVideoModel(nextVideoModels, configuredVideo));
-    }).catch(() => setNotice("主平台模型列表暂时不可用"));
-    return () => { active = false; };
+      if (images) {
+        const disabled = new Set(runtime?.health?.disabledImageModelIds || []);
+        setImageModels(images.map(model => ({ ...model, capabilities: { ...model.capabilities,
+          catalogHealthReady: runtime !== null, ...(disabled.has(model.id) ? { available: false, availabilityMessage: "当前生图通道暂停，请手动选择其他模型" } : {}) } })));
+        if (runtime) setDefaultImageModelId(runtime.defaults?.imageModelId || "");
+      }
+      if (videos) { setVideoModels(videos); if (runtime) setDefaultVideoModelId(runtime.defaults?.videoModelId || ""); }
+    };
+    const read = async (label: string, url: string, shape: "models" | "runtime" | "voices" | "pricing", apply: (value: Record<string, unknown>) => void) => {
+      try { const value = await readCanvasPublicCatalog(url, shape, controller.signal); if (active) apply(value); }
+      catch { if (active) { failures.add(label); setNotice(`目录读取失败：${[...failures].join("、")}；其他已读取内容保留。`); } }
+    };
+    void Promise.allSettled([
+      read("图片模型", "/api/cover-models?surface=free-canvas", "models", value => { images = (value.models as unknown[]).map(normalizePublicCanvasImageModel).filter((model): model is CoverModel => model !== null); updateDefaults(); }),
+      read("视频模型", "/api/video/models?surface=free-canvas", "models", value => { videos = (value.models as unknown[]).map(normalizePublicCanvasVideoModel).filter((model): model is VideoModel => model !== null); updateDefaults(); }),
+      read("通道状态", "/api/bridge/runtime-config", "runtime", value => { runtime = value.config as PublicRuntimeConfig; updateDefaults(); }),
+      read("音色", "/api/voice/list?limit=500&page=1", "voices", value => setVoiceOptions(((value.data as { voices: unknown[] }).voices).map(normalizeCanvasVoiceOption).filter((voice): voice is CanvasVoiceOption => voice !== null))),
+      read("语音价格", "/api/voice/pricing", "pricing", value => setVoicePricing((value.data as unknown[]).map(normalizeCanvasVoicePricing).filter((pricing): pricing is CanvasVoicePricing => pricing !== null))),
+    ]);
+    return () => { active = false; controller.abort(); };
   }, []);
 
   const accountConnected = useMemo(

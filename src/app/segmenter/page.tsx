@@ -12,8 +12,8 @@ import { clearRetiredSegmenterDraft, consumeExtractSegmentDraft } from "@/lib/ex
 import {
   countChars,
   DURATION_MODES,
-  normalizeForIntegrity,
-  reconstructSegmentedText,
+  formatSegmentedCopy,
+  restoreSegmentResult,
   segmentTextRule,
   type SegmentResult,
 } from "@/lib/segmenter-core";
@@ -29,9 +29,9 @@ const DURATION_HINTS: Record<number, string> = {
   25: "长段配音",
 };
 
-function getSegmentCountLabel(count: number, min: number, max: number, accepted: boolean, last: boolean) {
+function getSegmentCountLabel(count: number, min: number, max: number, accepted: boolean) {
   if (count >= min && count <= max) return { label: '✓ 目标范围内', kind: 'target' as const };
-  if (accepted && last && count < min) return { label: '尾段偏短，保留完整句子', kind: 'tail' as const };
+  if (accepted && count < min) return { label: '短段，保留原文', kind: 'tail' as const };
   return { label: count < min ? '偏短' : '偏长', kind: 'outside' as const };
 }
 
@@ -163,46 +163,11 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
         if (!originalText.trim()) throw new Error("分段历史原文不完整");
         try {
           const parsed = data.record.result_text ? JSON.parse(data.record.result_text) : null;
-          if (!parsed || !Array.isArray(parsed.segments) || parsed.segments.length === 0
-            || parsed.segments.some((segment: unknown) => typeof segment !== "string" || !segment.trim())) {
-            throw new Error("分段历史结果不完整");
-          }
           const restoredModeEntry = Object.entries(DURATION_MODES).find(([, value]) => value.label === data.record.mode);
           const restoredDuration = restoredModeEntry ? Number(restoredModeEntry[0]) : duration;
-          const restoredMode = DURATION_MODES[restoredDuration] || mode;
-          if (parsed.paragraphBreakBefore === undefined) {
-            parsed.paragraphBreakBefore = parsed.segments.map(() => false);
-          } else if (!Array.isArray(parsed.paragraphBreakBefore)
-            || parsed.paragraphBreakBefore.length !== parsed.segments.length
-            || parsed.paragraphBreakBefore.some((value: unknown) => typeof value !== "boolean")) {
-            throw new Error("分段历史段落边界不完整");
-          }
-          const derivedCounts = parsed.segments.map((segment: string) => countChars(segment));
-          if (!Array.isArray(parsed.counts) || parsed.counts.length !== parsed.segments.length
-            || parsed.counts.some((value: unknown, index: number) => !Number.isFinite(value) || value !== derivedCounts[index])) {
-            parsed.counts = derivedCounts;
-          }
-          if (!Array.isArray(parsed.compliant) || parsed.compliant.length !== parsed.segments.length
-            || parsed.compliant.some((value: unknown) => typeof value !== "boolean")) {
-            parsed.compliant = derivedCounts.map((value: number, index: number) => (
-              index === derivedCounts.length - 1 && value < restoredMode.min
-                ? true
-                : value >= restoredMode.min && value <= restoredMode.max
-            ));
-          }
-          if (parsed.overlapPrefixes !== undefined && (
-            !Array.isArray(parsed.overlapPrefixes)
-            || parsed.overlapPrefixes.length !== parsed.segments.length
-            || parsed.overlapPrefixes.some((value: unknown) => typeof value !== "string")
-          )) {
-            parsed.overlapPrefixes = parsed.segments.map(() => "");
-          }
-          if (normalizeForIntegrity(reconstructSegmentedText(parsed.segments, parsed.overlapPrefixes))
-            !== normalizeForIntegrity(originalText)) {
-            throw new Error("分段历史结果与原文不一致");
-          }
+          const restored = restoreSegmentResult(parsed, originalText, restoredDuration);
           setInputText(originalText);
-          setResult(parsed);
+          setResult(restored);
         } catch (error) {
           throw error instanceof Error ? error : new Error("分段历史结果无法读取");
         }
@@ -216,7 +181,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
     } catch (error) {
       setHistoryError(error instanceof Error ? error.message : '分段历史详情暂时无法读取');
     }
-  }, [auth.user, auth.token, duration, mode]);
+  }, [auth.user, auth.token, duration]);
 
   /* 删除历史记录 */
   const deleteHistory = useCallback(async (id: string, e: React.MouseEvent) => {
@@ -324,9 +289,9 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
 
   const handleCopy = useCallback(() => {
     if (!result) return;
-    const text = result.segments
-      .map((seg, i) => `${i + 1}.【${seg}】`)
-      .join('\n');
+    let text: string;
+    try { text = formatSegmentedCopy(result, inputText); }
+    catch (error) { setSegmentNotice(error instanceof Error ? error.message : '请重新分段后复制。'); return; }
     copyToClipboard(text).then((ok) => {
       if (ok) {
         setCopied(true);
@@ -335,7 +300,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
         setSegmentNotice('复制失败，请选中结果后手动复制。');
       }
     });
-  }, [result]);
+  }, [result, inputText]);
 
   const handlePaste = useCallback(async () => {
     try {
@@ -356,7 +321,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
     ? Math.round(totalChars / totalSegments)
     : 0;
   const segmentCountLabels = result?.counts.map((count, index) => getSegmentCountLabel(
-    count, mode.min, mode.max, Boolean(result.compliant[index]), index === result.counts.length - 1,
+    count, mode.min, mode.max, Boolean(result.compliant[index]),
   )) || [];
   const targetRangeCount = segmentCountLabels.filter((item) => item.kind === 'target').length;
 
@@ -723,7 +688,6 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                     const charCount = result.counts[i];
                     const countLabel = segmentCountLabels[i];
                     const hasBreak = result.paragraphBreakBefore?.[i];
-                    const overlapPrefix = result.overlapPrefixes?.[i];
                     return (
                       <div key={i} data-segment-index={i}>
                         {/* 段落分隔：原文空行处插入视觉间隔 */}
@@ -760,11 +724,6 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                           >
                             {charCount}字 {countLabel.label}
                           </span>
-                          {overlapPrefix && (
-                            <span className="ml-1 inline-flex items-center rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-[var(--info)] dark:text-[var(--info)]" title={`承接上一段原文：${overlapPrefix}`}>
-                              含{countChars(overlapPrefix)}字衔接复述
-                            </span>
-                          )}
                         </div>
                       </div>
                     );

@@ -49,11 +49,14 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return false;
 }
 
-export async function createToken(payload: JWTPayload & { ipHash?: string; sessionId?: string }): Promise<string> {
+export async function createToken(
+  payload: JWTPayload & { ipHash?: string; sessionId?: string },
+  options: { expiresIn?: string } = {},
+): Promise<string> {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('3d')
+    .setExpirationTime(options.expiresIn ?? '3d')
     .sign(getJwtSecretKey());
 }
 

@@ -401,7 +401,7 @@ export function HelpCenterClient({ initialSlug = "", basePath = "/help" }: HelpC
   }), [catalog?.articles, category, categoryMap, mediaMap, normalized]);
 
   return (
-    <div className={styles.helpRoot}>
+    <div className={`${styles.helpRoot} help-page`}>
       <a className={styles.skipLink} href="#help-main">跳到正文</a>
       <Header detail={Boolean(initialSlug)} admin={admin} basePath={basePath} />
       <main id="help-main" className={styles.page} tabIndex={-1}>

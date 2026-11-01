@@ -44,6 +44,7 @@ export function ModelBadge({
       className={`${styles.badge} ${className}`.trim()}
       aria-hidden="true"
       data-model-badge
+      data-model-brand={brand || undefined}
       data-model-badge-source={renderedKind}
       data-selected={selected ? "true" : "false"}
       data-availability={availability}

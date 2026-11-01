@@ -4,7 +4,8 @@ import { authorizeCurrentApiUser } from "@/lib/current-api-user";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { publicVariantLabel } from "@/lib/public-model-dto";
 import { classifyVideoProviderError } from "@/lib/video-error-policy";
-import { canRetryVideoHistoryTask } from "@/lib/video-history-presentation";
+import { canRetryVideoHistoryTask, videoTokenBillingMessage } from "@/lib/video-history-presentation";
+import { correctVideoModelBindingDisplayName, stripVideoModelOperationalAnnotation } from "@/lib/video-model-display-name";
 
 import {
   loadCommerceMediaHistory,
@@ -12,6 +13,7 @@ import {
   type MediaHistoryCommercePreview,
 } from "@/lib/media-history-commerce";
 import { hideMediaHistoryItem, visibleGalleryIndex } from "@/lib/media-history-visibility";
+import { parseMediaHistoryGallery } from "@/lib/media-history-gallery";
 import { loadMediaImageProvenance } from "@/lib/media-image-provenance";
 import { parseImageFailureRequestSnapshot } from "@/lib/image-failure-history";
 import {
@@ -67,10 +69,9 @@ function safeStatus(value: unknown): MediaStatus {
   return "failed";
 }
 
-function relationName(value: unknown): string {
-  if (Array.isArray(value)) return String((value[0] as Record<string, unknown> | undefined)?.name || "");
-  if (value && typeof value === "object") return String((value as Record<string, unknown>).name || "");
-  return "";
+function relationModel(value: unknown): Record<string, unknown> {
+  const model = Array.isArray(value) ? value[0] : value;
+  return model && typeof model === "object" && !Array.isArray(model) ? model as Record<string, unknown> : {};
 }
 
 function publicModelBaseName(value: string, fallback: string): string {
@@ -90,42 +91,10 @@ function publicSourceName(value: string): string {
   return value.trim() || "智能体应用";
 }
 
-function parseImageGallery(content: unknown): {
-  images: Array<{
-    url: string;
-    title?: string;
-    label?: string;
-    width?: number;
-    height?: number;
-    assetId?: string;
-    storageKey?: string;
-  }>;
-} | null {
-  if (typeof content !== "string" || !content.includes("image_gallery")) return null;
-  try {
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    if (parsed.type !== "image_gallery" || !Array.isArray(parsed.images)) return null;
-    const images = parsed.images.filter((image): image is {
-      url: string;
-      title?: string;
-      label?: string;
-      width?: number;
-      height?: number;
-      assetId?: string;
-      storageKey?: string;
-    } => (
-      Boolean(image) && typeof image === "object" && typeof (image as Record<string, unknown>).url === "string"
-    ));
-    return images.length ? { images } : null;
-  } catch {
-    return null;
-  }
-}
-
 type MediaDb = ReturnType<typeof getSupabaseClient>;
 type ImageMessageEntry = {
   message: Record<string, unknown>;
-  gallery: NonNullable<ReturnType<typeof parseImageGallery>>;
+  gallery: NonNullable<ReturnType<typeof parseMediaHistoryGallery>>;
 };
 
 type DeliveredImageEntry = {
@@ -152,7 +121,7 @@ async function loadVideoRows(db: MediaDb, userId: string) {
   while (true) {
     const result = await db
       .from("video_tasks")
-      .select("id, client_request_id, model_id, task_label, aspect_ratio, duration_seconds, status, video_url, error_message, submission_error_code, billing_state, provider_result_url, provider_dispatch_receipt, provider_submission_receipt, source_expired_at, price_charged, created_at, completed_at, storage_url, batch_id, batch_topic, card_index, video_models(name)")
+      .select("id, client_request_id, model_id, task_label, aspect_ratio, duration_seconds, status, video_url, error_message, submission_error_code, billing_state, provider_result_url, provider_dispatch_receipt, provider_submission_receipt, source_expired_at, price_charged, created_at, completed_at, storage_url, batch_id, batch_topic, card_index, video_models(name,model_name,protocol_type)")
       .eq("user_id", userId)
       .is("history_hidden_at", null)
       .is("source_expired_at", null)
@@ -205,7 +174,7 @@ async function loadImageMessages(db: MediaDb, userId: string) {
     }
     const batch = (result.data || []) as Record<string, unknown>[];
     for (const message of batch) {
-      const gallery = parseImageGallery(message.content);
+      const gallery = parseMediaHistoryGallery(message.content);
       if (!gallery) continue;
       entries.push({ message, gallery });
     }
@@ -545,6 +514,16 @@ function unavailableFacets() {
   };
 }
 
+// Keep the snapshot-build permit until every started lookup has settled. If
+// one provider rejects, its siblings may still be performing database reads;
+// releasing early lets retries multiply those reads without the concurrency cap.
+async function settleHistoryLookups<const T extends readonly unknown[]>(lookups: { [K in keyof T]: Promise<T[K]> }): Promise<{ -readonly [K in keyof T]: T[K] }> {
+  const settled = await Promise.allSettled(lookups);
+  const failure = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failure) throw failure.reason;
+  return settled.map(result => (result as PromiseFulfilledResult<unknown>).value) as unknown as { -readonly [K in keyof T]: T[K] };
+}
+
 async function buildMediaHistoryAccountSnapshot(
   db: MediaDb,
   userId: string,
@@ -556,7 +535,7 @@ async function buildMediaHistoryAccountSnapshot(
     SourcePages["imagePage"],
     SourcePages["deliveredImagePage"],
     SourcePages["commercePage"],
-  ] = await Promise.all([
+  ] = await settleHistoryLookups([
     loadVideoRows(db, userId),
     loadExpiredVideoCount(db, userId),
     loadImageMessages(db, userId),
@@ -579,18 +558,6 @@ async function buildMediaHistoryAccountSnapshot(
 
   const imageMessages = imagePage.entries;
   const conversationIds = Array.from(new Set(imageMessages.map((entry) => String(entry.message.conversation_id || "")).filter(Boolean)));
-  const conversationMap = new Map<string, { title: string; source: string }>();
-  if (conversationIds.length) {
-    const conversations = await db
-      .from("conversations")
-      .select("id, title, source")
-      .eq("user_id", userId)
-      .in("id", conversationIds);
-    for (const row of conversations.data || []) {
-      conversationMap.set(String(row.id), { title: String(row.title || "图片生成"), source: String(row.source || "智能体对话") });
-    }
-  }
-
   const galleryAssetIds = new Set(imageMessages.flatMap(({ gallery }) => (
     gallery.images.map((image) => String(image.assetId || "").trim()).filter(Boolean)
   )));
@@ -598,56 +565,61 @@ async function buildMediaHistoryAccountSnapshot(
     .map(row => String(row.delivery_asset_id || "").trim())
     .filter(Boolean);
   const referencedAssetIds = Array.from(new Set([...galleryAssetIds, ...deliveredImageAssetIds]));
-  const ownedImageAssetMap = new Map<string, { storageKey: string; contentType: string; meta: unknown }>();
-  let imageAssetLookupFailed = false;
-  for (let offset = 0; offset < referencedAssetIds.length; offset += 100) {
-    const ownedAssets = await db
-      .from("user_files")
-      .select("id, storage_key, content_type, meta")
-      .eq("user_id", userId)
-      .in("id", referencedAssetIds.slice(offset, offset + 100));
-    if (ownedAssets.error) {
-      imageAssetLookupFailed = true;
-      break;
-    } else {
-      for (const asset of ownedAssets.data || []) {
-        ownedImageAssetMap.set(String(asset.id), {
-          storageKey: String(asset.storage_key || ""),
-          contentType: String(asset.content_type || ""),
-          meta: asset.meta,
-        });
-      }
-    }
-  }
-
-  const imageProvenance = await loadMediaImageProvenance(userId, [...ownedImageAssetMap.keys()]);
-
-  const ownedImageStorageKeys = Array.from(new Set([...ownedImageAssetMap.values()]
-    .map(asset => asset.storageKey)
-    .filter(Boolean)));
-  const shortDramaImageLookup = await loadShortDramaImageStorageKeys(db, userId, ownedImageStorageKeys);
-  const shortDramaImageStorageKeys = shortDramaImageLookup.keys;
-  const shortDramaImageLookupFailed = shortDramaImageLookup.failed;
-
   const shortDramaBatchIds = Array.from(new Set(videoPage.rows
     .map(row => mediaHistoryProjectUuid(row.batch_id))
     .filter((batchId): batchId is string => Boolean(batchId))));
-  const shortDramaProjects = new Map<string, string>();
-  let shortDramaLookupFailed = false;
-  for (let offset = 0; offset < shortDramaBatchIds.length; offset += 100) {
-    const result = await db
-      .from("short_drama_projects")
-      .select("id,title")
-      .eq("user_id", userId)
-      .in("id", shortDramaBatchIds.slice(offset, offset + 100));
-    if (result.error) {
-      shortDramaLookupFailed = true;
-      break;
-    }
-    for (const row of result.data || []) {
-      shortDramaProjects.set(String(row.id), String(row.title || "影视工坊"));
-    }
-  }
+  // These three lookups depend only on the initial source pages. Keep the
+  // sequential batch/failure semantics within each lookup, but do not make an
+  // unrelated conversation or project query wait for the asset scan.
+  const [conversationMap, ownedImages, shortDramaVideoLookup] = await settleHistoryLookups([
+    (async () => {
+      const conversationsById = new Map<string, { title: string; source: string }>();
+      if (conversationIds.length) {
+        const conversations = await db.from("conversations").select("id, title, source")
+          .eq("user_id", userId).in("id", conversationIds);
+        for (const row of conversations.data || []) {
+          conversationsById.set(String(row.id), { title: String(row.title || "图片生成"), source: String(row.source || "智能体对话") });
+        }
+      }
+      return conversationsById;
+    })(),
+    (async () => {
+      const assets = new Map<string, { storageKey: string; contentType: string; meta: unknown }>();
+      let failed = false;
+      for (let offset = 0; offset < referencedAssetIds.length; offset += 100) {
+        const ownedAssets = await db.from("user_files").select("id, storage_key, content_type, meta")
+          .eq("user_id", userId).in("id", referencedAssetIds.slice(offset, offset + 100));
+        if (ownedAssets.error) { failed = true; break; }
+        for (const asset of ownedAssets.data || []) {
+          assets.set(String(asset.id), { storageKey: String(asset.storage_key || ""), contentType: String(asset.content_type || ""), meta: asset.meta });
+        }
+      }
+      return { assets, failed };
+    })(),
+    (async () => {
+      const projects = new Map<string, string>();
+      let failed = false;
+      for (let offset = 0; offset < shortDramaBatchIds.length; offset += 100) {
+        const result = await db.from("short_drama_projects").select("id,title")
+          .eq("user_id", userId).in("id", shortDramaBatchIds.slice(offset, offset + 100));
+        if (result.error) { failed = true; break; }
+        for (const row of result.data || []) projects.set(String(row.id), String(row.title || "影视工坊"));
+      }
+      return { projects, failed };
+    })(),
+  ]);
+  const ownedImageAssetMap = ownedImages.assets;
+  const imageAssetLookupFailed = ownedImages.failed;
+  const shortDramaProjects = shortDramaVideoLookup.projects;
+  const shortDramaLookupFailed = shortDramaVideoLookup.failed;
+  const ownedImageStorageKeys = Array.from(new Set([...ownedImageAssetMap.values()]
+    .map(asset => asset.storageKey).filter(Boolean)));
+  const [imageProvenance, shortDramaImageLookup] = await settleHistoryLookups([
+    loadMediaImageProvenance(userId, [...ownedImageAssetMap.keys()]),
+    loadShortDramaImageStorageKeys(db, userId, ownedImageStorageKeys),
+  ]);
+  const shortDramaImageStorageKeys = shortDramaImageLookup.keys;
+  const shortDramaImageLookupFailed = shortDramaImageLookup.failed;
 
   // 已下线功能的历史任务不再暴露到媒体库，避免出现失效入口。
   const videoRows = videoPage.rows;
@@ -666,9 +638,12 @@ async function buildMediaHistoryAccountSnapshot(
     });
     const humanTitle = row.task_label === "digital-human:video" ? "视频改口型" : "照片说话";
     const cardIndex = Number(row.card_index || 0);
-    const configuredModelName = relationName(row.video_models);
+    const configuredModel = relationModel(row.video_models);
+    const configuredModelName = String(configuredModel.name || "");
     const sourceExpiredAt = String(row.source_expired_at || "");
-    const modelName = publicModelBaseName(configuredModelName, "视频模型");
+    const modelName = stripVideoModelOperationalAnnotation(publicModelBaseName(
+      correctVideoModelBindingDisplayName(configuredModelName, { ...configuredModel, id: row.model_id }), "视频模型",
+    )) || "视频模型";
     const variant = publicVariantLabel({ name: configuredModelName }, 0);
     const rawError = String(row.error_message || "");
     const chargedRaw = row.price_charged;
@@ -708,7 +683,7 @@ async function buildMediaHistoryAccountSnapshot(
       preview: previewContract("video", previewPath, thumbnailPath),
       errorMessage: rawStatus === "completed" && !hasAuthenticatedDeliverySource
         ? "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。"
-        : rawStatus === "failed" && rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : "",
+        : rawStatus === "failed" && rawError ? classifyVideoProviderError(rawError, modelName).publicMessage : videoTokenBillingMessage(row.billing_state),
       aspectRatio: String(row.aspect_ratio || ""),
       durationSeconds: Number.isFinite(Number(row.duration_seconds)) ? Number(row.duration_seconds) : null,
     }, sourceExpiredAt || upstreamMediaExpiry(row.provider_submission_receipt) || upstreamMediaExpiry(row.provider_dispatch_receipt));

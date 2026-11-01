@@ -131,12 +131,12 @@ assert.throws(() => pure.snapshotApplyDecision({
   snapshotReady: true,
 }), /MIGRATION_LEDGER_HASH_CONFLICT/u);
 
-const gateIndex = workbench.indexOf("report.localDatabaseReadiness = localDatabaseReadiness()");
+const gateIndex = workbench.indexOf("report.databaseReadiness = await readPaidDatabaseReadiness(options.paid,report.runtime)");
 const runtimeNetworkIndex = workbench.indexOf("report.runtime = await runtimeIdentity(options)");
 const browserIndex = workbench.indexOf("browser = await chromium.launch");
-const clickIndex = workbench.indexOf("await generateButton.click()");
+const clickIndex = workbench.indexOf("generateButton.click()");
 assert.ok(gateIndex > 0, "EXECUTE_DATABASE_READINESS_GATE_REQUIRED");
-assert.ok(gateIndex < runtimeNetworkIndex, "DATABASE_GATE_MUST_PRECEDE_RUNTIME_NETWORK_PREFLIGHT");
+assert.ok(runtimeNetworkIndex > 0 && runtimeNetworkIndex < gateIndex, "RUNTIME_IDENTITY_MUST_PRECEDE_DATABASE_GATE");
 assert.ok(gateIndex < browserIndex, "DATABASE_GATE_MUST_PRECEDE_BROWSER_CREATION");
 assert.ok(gateIndex < clickIndex, "DATABASE_GATE_MUST_PRECEDE_GENERATION_CLICK");
 assert.match(workbench, /READINESS_CHECKERS = \[[\s\S]+apply-image-request-snapshot-v2-local\.mjs[\s\S]+apply-image-rpc-owner-alignment-local\.mjs/u);
@@ -159,7 +159,7 @@ assert.equal(report.generationPosts, 0);
 assert.equal(report.providerCalls, 0);
 assert.equal(report.paidCalls, 0);
 assert.equal(report.filesystemWrites, 0);
-assert.match(report.executePreflight, /1300\+1310/u);
+assert.match(report.executePreflight, /173-ledger[\\/]+full semantic[\\/]+function authority[\\/]+REST readiness evidence/u);
 assert.equal(fs.existsSync(evidencePath), false, "PLAN_MODE_MUST_NOT_WRITE_EVIDENCE");
 
 console.log(JSON.stringify({

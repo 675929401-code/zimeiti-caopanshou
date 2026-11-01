@@ -45,6 +45,8 @@ assert.match(source, /canViewBilling && \(transactionTab === "all" \|\| transact
 assert.match(source, /data-testid="member-dossier-minimal-view"/u);
 assert.match(source, /canViewBilling && transactionTab === "lifecycle"/u);
 assert.match(source, /canViewMemberSecurity && transactionTab === "login"/u);
+assert.match(source, /users\.filter\(\(u\) => !isFixtureUser\(u\)\)/u);
+assert.match(source, /u\.role === "admin" \? "（管理员）"/u);
 assert.doesNotMatch(source, /adminLevel === "super_admin" && <button[^\n]+openUserAccessEditor/u);
 
-console.log(JSON.stringify({ status: "PASS", gates: 20, unauthorizedPrefetchBlocked: true }, null, 2));
+console.log(JSON.stringify({ status: "PASS", gates: 22, unauthorizedPrefetchBlocked: true, adminRechargeVisible: true }, null, 2));

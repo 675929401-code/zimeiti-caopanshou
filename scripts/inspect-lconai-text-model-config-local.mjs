@@ -5,7 +5,9 @@ import fs from "node:fs/promises";
 import pg from "pg";
 
 const RUNTIME_PATH = "F:/总项目文件/Skill存储系统/运行数据/自媒体操盘手/local-data-20260902/config/runtime.json";
-const PRIMARY_ORIGIN = "https://n.lconai.com";
+// The stored endpoint is the provider's OpenAI/Anthropic API root.  `/v1`
+// is part of the configured binding and must not be stripped by this audit.
+const PRIMARY_ORIGIN = "https://n.lconai.com/v1";
 const COST_MARKUP_PERCENT = 20;
 const EXPECTED_PROFIT_MARGIN_PERCENT = (COST_MARKUP_PERCENT / (100 + COST_MARKUP_PERCENT)) * 100;
 const TARGETS = [

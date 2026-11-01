@@ -17,7 +17,7 @@ class FixtureSafeError extends Error {
 }
 const defaultText = '清晨我打开窗户深深呼吸新鲜空气然后给阳台上的花草浇水整理好桌上的书本准备认真开始今天的工作。傍晚我沿着河边慢慢散步看看落日与晚霞听听风吹过树叶的声音让疲惫的心情在这段安静的时间里放松。';
 
-async function run({ endpoint = 'https://fixture.invalid/v1/chat/completions', error, student = false, invalidKey = false, truncated = false, text = defaultText, duration = 8 } = {}) {
+async function run({ endpoint = 'https://fixture.invalid/v1/chat/completions', error, student = false, invalidKey = false, truncated = false, text = defaultText, duration = 8, groups = [[0], [1]] } = {}) {
   const calls = [], wallet = [];
   const imports = {
     '@/lib/billing': { calculateCredits: () => ({ creditsCharged: 1, actualCostRmb: 0.01, sellPriceRmb: 0.02 }), applyAtomicWalletOperation: async input => { wallet.push(input); return { success: true, operationId: input.idempotencyKey, balanceAfter: 10 }; } },
@@ -41,7 +41,7 @@ async function run({ endpoint = 'https://fixture.invalid/v1/chat/completions', e
       assert.equal(JSON.parse(body).stream, false);
       assert.equal(JSON.parse(body).thinking?.type, new URL(endpoint).hostname === 'api.deepseek.com' ? 'disabled' : undefined);
       if (error) throw error;
-      return { json: { id: 'fixture-response', choices: [{ finish_reason: truncated ? 'length' : 'stop', message: { content: truncated ? '' : JSON.stringify({ groups: [[0], [1]] }) } }], usage: { prompt_tokens: 90, completion_tokens: 12 } } };
+      return { json: { id: 'fixture-response', choices: [{ finish_reason: truncated ? 'length' : 'stop', message: { content: truncated ? '' : JSON.stringify({ groups }) } }], usage: { prompt_tokens: 90, completion_tokens: 12 } } };
     } },
   };
   const actual = load('src/lib/semantic-segmentation-service.ts', imports);
@@ -106,4 +106,17 @@ assert.equal(realMultiSegment.calls.length, 1);
 assert.equal(realMultiSegment.result.body.semantic_status, 'succeeded');
 assert.equal(realMultiSegment.result.body.success, true);
 
-console.log(JSON.stringify({ passed: true, cases: count + 4, providerCalls: 0, realWalletWrites: 0 }));
+const shortOriginal = '甲'.repeat(50) + '没错，' + '乙'.repeat(49) + '。';
+const shortSemantic = await run({ text: shortOriginal, duration: 10 });
+assert.equal(shortSemantic.result.body.semantic_status, 'succeeded');
+assert.equal(shortSemantic.result.body.result.segments.join(''), shortOriginal);
+assert.equal(shortSemantic.result.body.result.counts[1], 49);
+assert.ok(!shortSemantic.result.body.result.overlapPrefixes?.some(Boolean));
+const overlongOriginal = '甲'.repeat(61) + '，' + '乙'.repeat(49) + '。';
+const overlongSemantic = await run({ text: overlongOriginal, duration: 10 });
+assert.equal(overlongSemantic.result.body.semantic_status, 'invalid_result_refunded');
+assert.equal(overlongSemantic.result.body.result.segments.join(''), overlongOriginal);
+assert.ok(overlongSemantic.result.body.result.counts.every(value => value <= 60));
+assert.equal(overlongSemantic.result.body.charged, false);
+
+console.log(JSON.stringify({ passed: true, cases: count + 6, providerCalls: 0, realWalletWrites: 0 }));

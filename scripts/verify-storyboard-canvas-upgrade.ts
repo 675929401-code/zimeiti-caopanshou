@@ -43,8 +43,9 @@ for (const mode of STORYBOARD_DIRECTOR_MODES) {
 assert.equal(normalizeStoryboardDirectorInput({ 导演版本: "抒情情感" }).director_mode, "lyrical");
 assert.equal(normalizeStoryboardDirectorInput({ target_duration_seconds: 8 }).target_duration_seconds, 8);
 assert.equal(shouldUseStoryboardPanoramicAnchor("角色紧张后退，主人伸手安抚", "hybrid-packaging", 15), false);
-assert.equal(shouldUseStoryboardPanoramicAnchor("底部全景承担关系落点，完整展示两人和解后的客厅全貌", "hybrid-packaging", 15), true);
-assert.equal(shouldUseStoryboardPanoramicAnchor("最终结论锚点汇总风险与解决动作", "hybrid-packaging", 10), true);
+assert.equal(shouldUseStoryboardPanoramicAnchor("底部全景承担关系落点，完整展示两人和解后的客厅全貌", "hybrid-packaging", 15), false);
+assert.equal(shouldUseStoryboardPanoramicAnchor("bottomPanelRole=panorama；完整展示两人和解后的客厅全貌", "hybrid-packaging", 15, "auto"), true);
+assert.equal(shouldUseStoryboardPanoramicAnchor("panelMode=fixed-5；结论锚点汇总风险与解决动作", "hybrid-packaging", 10, "auto"), true);
 
 function fixture(mode: StoryboardDirectorMode, duration: 8 | 10 | 15): StoryboardDirectorPackage {
   const actualShotCount = duration === 15 ? 4 : 3;
@@ -91,6 +92,21 @@ function fixture(mode: StoryboardDirectorMode, duration: 8 | 10 | 15): Storyboar
       segmented_script: "1.【狗狗听见钥匙声后退，主人伸手让它安心。】",
       schema_version: STORYBOARD_DIRECTOR_INPUT_SCHEMA_VERSION,
     },
+    visual_asset_plan: {
+      mode: "selected",
+      assets: [{
+        id: "character_main",
+        role: "character",
+        name: "主角女孩",
+        identity_lock: "短黑发、米色针织衫、圆框眼镜，服装颜色和脸型保持一致。",
+        allowed_changes: ["表情", "姿态"],
+        reference_prompts: [{
+          kind: "turnaround",
+          purpose: "锁定人物身份和服装",
+          prompt: "中性站姿、正面侧面背面角色参考板，短黑发、米色针织衫、圆框眼镜，浅色背景。",
+        }],
+      }],
+    },
     director_mode: mode,
     schema_version: STORYBOARD_DIRECTOR_OUTPUT_SCHEMA_VERSION,
   };
@@ -112,6 +128,9 @@ assert.equal(importPlan.settings.targetDurationSeconds, 15);
 assert.equal(importPlan.segments[0].panelCount, 5);
 assert.equal(importPlan.segments[0].actualShotCount, 4);
 assert.equal(importPlan.segments[0].shotTimeRanges.length, 4);
+assert.equal(importPlan.visualAssetPlan?.mode, "selected");
+assert.equal(importPlan.visualAssetPlan?.assets[0]?.id, "character_main");
+assert.equal(importPlan.visualAssetPlan?.assets[0]?.referencePrompts[0]?.kind, "turnaround");
 assert.equal(parseStoryboardCanvasImport({ ...detailWithArbitraryPropertyOrder, source: "legacy_text_blocks" }), null);
 
 const eightSecondPackage = fixture("cinematic", 8);

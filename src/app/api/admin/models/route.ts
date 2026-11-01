@@ -1,3 +1,5 @@
+import { modelPoolMutationRequest, modelPoolMutationFailure, resumeModelPoolMutationResponse } from "@/lib/server/model-pool-mutation-http";
+import { imageModelAdminMetadata } from "@/lib/image-model-admin-fields";
 import { RETIRED_MODEL_PROVIDER, isPermanentlyRetiredModel, modelRetirementPatch } from "@/lib/model-retirement";
 import { updateVideoModelAtomic } from "@/lib/video-model-atomic-update";
 import { pendingImageConfigurationUpdate } from "@/lib/image-model-availability";
@@ -8,6 +10,8 @@ import {
   LlmProviderBindingError,
 } from "@/lib/llm-provider-contract";
 import { normalizeDisplayText } from "@/lib/display-normalization";
+import { resolveProviderSecret } from "@/lib/provider-secret";
+import { assertFreshLlmModelValidationEvidence, assertLlmEndpointCredentialReplacement, LlmModelValidationError, llmModelValidationConfigurationHash, pendingLlmConfigurationUpdate } from "@/lib/llm-model-validation-gate";
 /**
  * 缁熶竴妯″瀷绠＄悊 API
  * GET  - 鑱氬悎鍒楀嚭鎵€鏈夌被鍨嬫ā鍨嬶紙缁樺浘/鏂囨/瑙嗛锛?
@@ -34,7 +38,6 @@ import {
 import {
   ModelActivationGateError,
   PENDING_TEXT_USER_ACCESS,
-  assertOrdinaryAdminUpdateDoesNotActivate,
   prepareVideoModelBindingUpdate,
   forceNewVideoModelPending,
   newPendingImageModelId,
@@ -47,7 +50,7 @@ import {
   normalizeVideoModelOrderSurface,
   parseVideoModelSurfaceOrders,
 } from "@/lib/video-model-surface-order";
-import { videoPriceConfigurationError } from "@/lib/model-price-rounding";
+import { videoPriceConfigurationError, explicitNonNegativePrice, invalidExplicitPriceField } from "@/lib/model-price-rounding";
 import {
   stageLegacyModelPoolCatalogState,
   stageLegacyModelPoolOrder,
@@ -311,6 +314,7 @@ export interface UnifiedModel {
   updated_at?: string;
   // 鍏宠仈
   agent_id?: string;         // 鏂囨妯″瀷鍏宠仈鐨?agents 琛?ID
+  validation?: { passed: boolean; validated_at: string | null; latency_ms: number | null; input_tokens: number | null; output_tokens: number | null; fingerprint_current: boolean; reason: string };
 }
 
 function unifiedStats(models: Array<{ model_type?: string; is_active?: boolean }>) {
@@ -373,7 +377,7 @@ function textTokenConfigurationError(fields: Record<string, unknown>): string | 
     ["cached_cost_per_million", "缓存成本"],
   ] as const) {
     const raw = fields[key];
-    if (raw === null || raw === undefined || String(raw).trim() === "" || !Number.isFinite(Number(raw)) || Number(raw) < 0) {
+    if (explicitNonNegativePrice(raw) === null) {
       return `${label}必须是大于或等于 0 的每百万 Token 成本`;
     }
   }
@@ -453,15 +457,43 @@ export async function GET(req: NextRequest) {
       .order("id", { ascending: true });
 
     if (!llmError && llmModels) {
+      // Only stepped-up model managers receive operational verification state.
+      // The private configuration hash includes a secret digest and is never
+      // returned in this catalogue response.
+      const evidenceRows = canManageModels && llmModels.length
+        ? await dbClient.from("llm_model_validation_evidence").select("model_id,configuration_hash,checked_at,latency_ms,prompt_tokens,completion_tokens").in("model_id", llmModels.map((model: { id: string }) => model.id)).order("checked_at", { ascending: false })
+        : null;
       for (const m of llmModels) {
         const hasTokenBilling = m.token_billing_enabled === true;
         const protocolConfig = m.api_protocol_config && typeof m.api_protocol_config === "object"
           ? m.api_protocol_config as Record<string, unknown>
           : {};
+        let validation: UnifiedModel["validation"];
+        if (canManageModels) {
+          validation = { passed: false, validated_at: null, latency_ms: null, input_tokens: null, output_tokens: null, fingerprint_current: false, reason: evidenceRows?.error ? "验证记录读取失败" : "尚无当前配置的有效验证" };
+          try {
+            const secret = resolveProviderSecret(m.api_key);
+            const hash = llmModelValidationConfigurationHash(m, secret);
+            const evidence = evidenceRows?.data?.find((item: { model_id: string; configuration_hash: string; checked_at: string; latency_ms: number | null; prompt_tokens: number | null; completion_tokens: number | null }) => item.model_id === m.id && item.configuration_hash === hash);
+            if (evidence) {
+              validation.fingerprint_current = true;
+              validation.validated_at = evidence.checked_at;
+              validation.latency_ms = evidence.latency_ms;
+              validation.input_tokens = evidence.prompt_tokens;
+              validation.output_tokens = evidence.completion_tokens;
+              assertFreshLlmModelValidationEvidence(m, secret, evidence);
+              validation.passed = true;
+              validation.reason = "当前配置真实通路验证有效";
+            }
+          } catch (error) {
+            validation.reason = error instanceof LlmModelValidationError ? error.message : "服务端凭据不可用或配置需重新验证";
+          }
+        }
         models.push({
           id: m.id,
           name: normalizeDisplayText(m.name, "未命名模型"),
           model_type: "text",
+          ...(validation ? { validation } : {}),
           model_name: m.model_name || "",
           api_endpoint: m.api_endpoint || m.proxy_url || "",
           api_key_configured: Boolean(String(m.api_key || "").trim()),
@@ -535,6 +567,7 @@ export async function GET(req: NextRequest) {
           provider: m.provider || m.protocol_type || "",
           protocol_type: m.protocol_type || "openai_compatible",
           admin_notes: normalizeDisplayText(m.admin_notes || ""),
+          icon_url: String(m.icon_url || ""),
           duration_seconds: m.duration_seconds || 5,
           max_duration: m.max_duration || 10,
           api_protocol_config: m.api_protocol_config || {},
@@ -559,6 +592,8 @@ export async function GET(req: NextRequest) {
       access: { mode: canManageModels ? "manage" : "read" },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[UnifiedModels] GET error:", error);
     return NextResponse.json({ error: "获取模型列表失败" }, { status: 500 });
   }
@@ -572,6 +607,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const mutationRequest = modelPoolMutationRequest(req, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(admin.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const { model_type, ...fields } = body;
 
     if (!model_type || !["drawing", "text", "video"].includes(model_type)) {
@@ -611,7 +649,13 @@ export async function POST(req: NextRequest) {
         throw error;
       }
       const id = newPendingImageModelId();
+      if (explicitNonNegativePrice(drawingFields.cost_price) === null || explicitNonNegativePrice(drawingFields.cost_per_use) === null) {
+        return NextResponse.json({ error: "请填写明确的非负生图成本与售价", code: "IMAGE_PRICE_CONFIGURATION_REQUIRED" }, { status: 400 });
+      }
+      const metadata = imageModelAdminMetadata(drawingFields);
+      if (!metadata.ok) return NextResponse.json({ error: metadata.error, code: metadata.code }, { status: 400 });
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "cover_models",
         id,
@@ -623,12 +667,13 @@ export async function POST(req: NextRequest) {
           provider: drawingFields.provider || "vectorengine",
           api_endpoint: drawingFields.api_endpoint || "https://api.vectorengine.ai/",
           api_key: drawingFields.api_key || "",
-          cost_price: Number(drawingFields.cost_price) || 0,
-          selling_price: Number(drawingFields.cost_per_use) || 0,
+          cost_price: Number(drawingFields.cost_price),
+          selling_price: Number(drawingFields.cost_per_use),
           is_active: true,
           is_hidden: false,
           supports_image_input: drawingFields.supports_image_input !== false,
           api_protocol_config: drawingFields.api_protocol_config || {},
+          ...metadata.fields,
         },
       });
       return NextResponse.json({ success: true, staged: true, published: false, result, model_type }, { status: 202 });
@@ -675,6 +720,7 @@ export async function POST(req: NextRequest) {
       const autoDeductDeepThink = fields.deduct_deep_think != null ? fields.deduct_deep_think : (isReasoningModel ? 2 : 1);
 
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "llm_models",
         changeNote: `新增对话模型 ${fields.model_name || fields.name}`,
@@ -772,6 +818,7 @@ export async function POST(req: NextRequest) {
 
       const pendingVideoRecord = forceNewVideoModelPending({
         id: modelId,
+        icon_url: String(videoFields.icon_url || "").trim(),
         name: videoFields.name,
         model_name: videoFields.model_name || videoFields.name,
         provider: videoFields.provider,
@@ -798,6 +845,7 @@ export async function POST(req: NextRequest) {
         sort_order: Number(videoFields.sort_order) || 100,
       });
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "video_models",
         id: String(modelId),
@@ -816,6 +864,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "未知模型类型" }, { status: 400 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     if (error instanceof ModelActivationGateError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
@@ -835,7 +885,13 @@ export async function PUT(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const mutationRequest = modelPoolMutationRequest(req, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(admin.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const { model_type, id, ...fields } = body;
+    if (invalidExplicitPriceField(fields, model_type === "text" ? ["input_cost_per_million", "output_cost_per_million", "cached_cost_per_million"] : ["cost_price", "cost_per_use", "price_per_use"])) {
+      return NextResponse.json({ error: "填写的成本或售价必须是明确的非负金额", code: "MODEL_PRICE_CONFIGURATION_REQUIRED" }, { status: 400 });
+    }
     delete fields.agent_id;
     delete fields.api_key_configured;
     const nextApiKey = replacementApiKey(fields.api_key);
@@ -889,11 +945,15 @@ export async function PUT(req: NextRequest) {
       // Map unified fields to cover_models fields
       if (drawingFields.cost_per_use !== undefined) updateFields.selling_price = drawingFields.cost_per_use;
       if (!currentDrawingModel) return NextResponse.json({ error: "模型不存在" }, { status: 404 });
+      const metadata = imageModelAdminMetadata(drawingFields, currentDrawingModel.api_protocol_config);
+      if (!metadata.ok) return NextResponse.json({ error: metadata.error, code: metadata.code }, { status: 400 });
+      Object.assign(updateFields, metadata.fields);
       const pendingFields = pendingImageConfigurationUpdate(currentDrawingModel, updateFields);
       pendingFields.is_active = true;
       pendingFields.is_hidden = false;
 
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "cover_models",
         id: String(id),
@@ -905,18 +965,19 @@ export async function PUT(req: NextRequest) {
     } else if (model_type === "text") {
       const { data: currentTextModel, error: currentTextError } = await dbClient
         .from("llm_models")
-        .select("user_access,is_active,is_hidden,token_billing_enabled,input_cost_per_million,output_cost_per_million,cached_cost_per_million,profit_margin,max_context_tokens,api_protocol_config")
+        .select("*")
         .eq("id", id)
         .maybeSingle();
       if (currentTextError) {
         return NextResponse.json({ error: currentTextError.message }, { status: 500 });
       }
-      assertOrdinaryAdminUpdateDoesNotActivate(
-        "text",
-        id,
-        currentTextModel?.user_access,
-        fields,
-      );
+      if (!currentTextModel) return NextResponse.json({ error: "模型不存在" }, { status: 404 });
+      try {
+        assertLlmEndpointCredentialReplacement(currentTextModel, fields, nextApiKey);
+      } catch (error) {
+        if (error instanceof LlmModelValidationError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        throw error;
+      }
       assertAdminAutodlH3SelfhostBinding("text", fields);
       const tokenConfigurationError = textTokenConfigurationError({ ...currentTextModel, ...fields });
       if (tokenConfigurationError) {
@@ -925,7 +986,7 @@ export async function PUT(req: NextRequest) {
       let textProtocolConfig: Record<string, unknown>;
       try {
         textProtocolConfig = canonicalLlmProtocolConfig({
-          ...fields,
+          ...currentTextModel, ...fields,
           api_protocol_config: fields.api_protocol_config ?? currentTextModel?.api_protocol_config,
         });
       } catch (error) {
@@ -948,16 +1009,17 @@ export async function PUT(req: NextRequest) {
       const isReasoningModel = REASONING_PATTERNS.some(p => p.test(modelName));
 
       // 濡傛灉model_name鍙樻洿浜嗕笖鐢ㄦ埛鏈墜鍔ㄦ寚瀹歞eep_thinking_type锛岃嚜鍔ㄦ帹鏂?
-      if (fields.model_name !== undefined && fields.deep_thinking_type === undefined) {
+      const modelIdentityChanged = fields.model_name !== undefined && fields.model_name !== currentTextModel.model_name;
+      if (modelIdentityChanged && fields.deep_thinking_type === undefined) {
         fields.deep_thinking_type = isReasoningModel ? 2 : 0;
       }
-      if (fields.model_name !== undefined && fields.timeout === undefined) {
+      if (modelIdentityChanged && fields.timeout === undefined) {
         fields.timeout = isReasoningModel ? 300 : 120;
       }
-      if (fields.model_name !== undefined && fields.max_reply_tokens === undefined) {
+      if (modelIdentityChanged && fields.max_reply_tokens === undefined) {
         fields.max_reply_tokens = isReasoningModel ? 65536 : 4096;
       }
-      if (fields.model_name !== undefined && fields.deduct_deep_think === undefined) {
+      if (modelIdentityChanged && fields.deduct_deep_think === undefined) {
         fields.deduct_deep_think = isReasoningModel ? 2 : 1;
       }
 
@@ -990,22 +1052,26 @@ export async function PUT(req: NextRequest) {
       for (const f of allowed) {
         if (fields[f] !== undefined) updateFields[f] = fields[f];
       }
-      if (currentTextModel?.user_access === PENDING_TEXT_USER_ACCESS) updateFields.user_access = "available";
       updateFields.billing_mode = "token";
       updateFields.token_billing_enabled = true;
       updateFields.cost_per_use = 0;
       updateFields.cost_price = 0;
       updateFields.token_rounding_unit = 0;
-      updateFields.is_active = true;
-      updateFields.is_hidden = false;
-      updateFields.user_access = "available";
       updateFields.api_protocol_config = textProtocolConfig;
+      let pendingFields: Record<string, unknown>;
+      try {
+        pendingFields = pendingLlmConfigurationUpdate(currentTextModel, updateFields);
+      } catch (error) {
+        if (error instanceof LlmModelValidationError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        throw error;
+      }
 
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "llm_models",
         id: String(id),
-        values: updateFields,
+        values: pendingFields,
         changeNote: `修改对话模型 ${id}`,
       });
       return NextResponse.json({ success: true, staged: true, published: false, result }, { status: 202 });
@@ -1041,7 +1107,7 @@ export async function PUT(req: NextRequest) {
       });
       const updateFields: Record<string, unknown> = {};
       const allowed = [
-        "name", "model_name", "provider", "admin_notes", "api_endpoint", "api_key", "protocol_type",
+        "name", "model_name", "provider", "admin_notes", "icon_url", "api_endpoint", "api_key", "protocol_type",
         "price_per_use", "cost_price", "duration_seconds", "max_duration",
         "api_protocol_config", "supports_image_input", "is_active", "is_hidden", "sort_order",
         "requires_image",
@@ -1093,6 +1159,7 @@ export async function PUT(req: NextRequest) {
       Object.assign(updateFields, prepareVideoModelBindingUpdate({ id, ...currentVideoModel }, updateFields));
 
       const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
         actorId: admin.userId,
         table: "video_models",
         id: String(id),
@@ -1104,6 +1171,8 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({ error: "未知模型类型" }, { status: 400 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     if (error instanceof ModelActivationGateError || error instanceof ImageAdminValidationError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
@@ -1142,6 +1211,8 @@ export async function DELETE(req: NextRequest) {
     });
     return NextResponse.json({ success: true, staged: true, published: false, deleted: false, retiredCandidate: true, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[UnifiedModels] DELETE error:", error);
     return NextResponse.json({ error: "删除模型失败" }, { status: 500 });
   }
@@ -1211,6 +1282,8 @@ export async function PATCH(req: NextRequest) {
     });
     return NextResponse.json({ success: true, staged: true, published: false, updated: orders.length, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("[UnifiedModels] PATCH error:", error);
     return NextResponse.json({ error: "批量排序失败" }, { status: 500 });
   }

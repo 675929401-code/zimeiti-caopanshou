@@ -59,7 +59,7 @@ for (const [status, detail] of [
 }
 
 const route = readFileSync(resolve(process.cwd(), "src/app/api/llm/route.ts"), "utf8");
-const finalModelIndex = route.indexOf("const billingModelRow =");
+const finalModelIndex = route.search(/\b(?:const|let) billingModelRow =/u);
 const publicationGateIndex = route.indexOf("shouldRejectOrdinaryUnpublishedChatModel({");
 const billingSnapshotIndex = route.indexOf("const selectedModelBillingSnapshot = await getSelectedModelBillingSnapshot");
 const walletRecoveryIndex = route.indexOf("await recoverLlmCreditReservations");
@@ -80,6 +80,8 @@ for (const [label, sideEffectIndex] of [
   assert.ok(sideEffectIndex > publicationGateIndex, `the publication gate must precede ${label}`);
 }
 assert.match(route.slice(publicationGateIndex, billingSnapshotIndex), /isAdmin: userRole === "admin"/u);
+assert.match(route.slice(publicationGateIndex, billingSnapshotIndex), /modelRow: billingModelRow/u,
+  "the gate must inspect the actual final admitted billing row");
 assert.match(route.slice(publicationGateIndex, billingSnapshotIndex), /code: "MODEL_NOT_PUBLISHED"/u);
 assert.match(route.slice(publicationGateIndex, billingSnapshotIndex), /status: 503/u);
 

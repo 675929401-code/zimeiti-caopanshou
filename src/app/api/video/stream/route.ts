@@ -9,11 +9,13 @@ const HEARTBEAT_EVERY = 5;
 function sleep(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
     if (signal.aborted) return resolve();
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => {
+    const finish = () => {
       clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
       resolve();
-    }, { once: true });
+    };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
   });
 }
 
@@ -43,19 +45,25 @@ export async function GET(request: NextRequest) {
 
   const encoder = new TextEncoder();
   let cancelled = false;
+  const observer = new AbortController();
+  const stopObserver = () => observer.abort();
+  request.signal.addEventListener("abort", stopObserver, { once: true });
+  if (request.signal.aborted) stopObserver();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: string, data: Record<string, unknown>) => {
-        if (cancelled || request.signal.aborted) return;
+        if (cancelled || observer.signal.aborted) return;
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
       try {
         let iteration = 0;
-        while (!cancelled && !request.signal.aborted) {
+        while (!cancelled && !observer.signal.aborted) {
           const response = await readOwnedVideoTaskStatus(authorization.user, searchParams);
+          if (cancelled || observer.signal.aborted) break;
           const payload = await response.json().catch(() => ({
             error: "任务状态暂时无法读取，请稍后重试",
           })) as Record<string, unknown>;
+          if (cancelled || observer.signal.aborted) break;
           const status = String(payload.status || "");
           if (!response.ok) {
             if (response.status === 404 || response.status === 410) {
@@ -80,7 +88,7 @@ export async function GET(request: NextRequest) {
           }
           iteration += 1;
           if (iteration % HEARTBEAT_EVERY === 0) send("heartbeat", { ts: Date.now() });
-          await sleep(SNAPSHOT_INTERVAL_MS, request.signal);
+          await sleep(SNAPSHOT_INTERVAL_MS, observer.signal);
         }
       } catch {
         send("error", {
@@ -89,6 +97,8 @@ export async function GET(request: NextRequest) {
           errorCode: "VIDEO_STATUS_STREAM_INTERRUPTED",
         });
       } finally {
+        request.signal.removeEventListener("abort", stopObserver);
+        stopObserver();
         if (!cancelled) {
           cancelled = true;
           try { controller.close(); } catch { /* already closed by the client */ }
@@ -97,6 +107,8 @@ export async function GET(request: NextRequest) {
     },
     cancel() {
       cancelled = true;
+      request.signal.removeEventListener("abort", stopObserver);
+      stopObserver();
     },
   });
 

@@ -821,7 +821,11 @@ for (const requiredTable of [
   "cash_debt_records",
   "password_audit_log",
 ]) assert.ok(databaseContract.tables.some((table) => table.name === requiredTable), `P0 database table is missing: ${requiredTable}`);
-assert.deepEqual(databaseContract.forbiddenRpcs.map((rpc) => rpc.name), ["fulfill_payment_order_atomic"]);
+assert.deepEqual(databaseContract.forbiddenRpcs.map((rpc) => rpc.name), [
+  "fulfill_payment_order_atomic",
+  "publish_platform_configuration_release_before_pending_credentials",
+  "publish_platform_configuration_release_before_pending_credentia",
+]);
 for (const backupPattern of ["**/*.bak", "**/*.backup", "**/*.old", "**/*.orig", "**/*.rej", "**/*~"]) {
   assert.ok(policy.source.excludeGlobs.includes(backupPattern), `clean source must exclude editor/backup artifact: ${backupPattern}`);
 }
@@ -1148,6 +1152,10 @@ for (const marker of [
 ]) assert.ok(capacityVerifier.includes(marker), `operational capacity gate missing: ${marker}`);
 
 const releaseWorkflow = read("scripts/release-workflow.mjs");
+const sourceBytesRegression = spawnSync(process.execPath, [path.join(root, "scripts", "verify-release-source-bytes-zero-network.mjs")], {
+  cwd: root, encoding: "utf8", windowsHide: true,
+});
+assert.equal(sourceBytesRegression.status, 0, `release source byte regression failed: ${sourceBytesRegression.stderr || sourceBytesRegression.stdout}`);
 for (const marker of ["assetPolicySha256", "sha256-files-and-asset-policy", "canonicalSourceBuffer", "canonicalTextEol", "isExternalAsset", "attr\\/-text", "ls-files", "--eol", "w\\/(?:crlf|mixed)", "forbiddenPublicRoots", "requiredRemotes", "isSafelyIgnoredLegacyManagedFile", "check-ignore", "stats.nlink !== 1"]) {
   assert.ok(releaseWorkflow.includes(marker), `release workflow policy gate missing: ${marker}`);
 }

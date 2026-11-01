@@ -71,10 +71,10 @@ validateForwardMigrationSource();
 if (command !== "plan") dotenv.config({ path: path.join(root, ".env.local"), quiet: true });
 
 const FORBIDDEN_FORWARD_PATTERNS = [
-  { code: "DROP_DATABASE_FORBIDDEN", expression: /^\s*DROP\s+DATABASE\b/imu },
-  { code: "DROP_SCHEMA_FORBIDDEN", expression: /^\s*DROP\s+SCHEMA\b/imu },
-  { code: "DROP_TABLE_FORBIDDEN", expression: /^\s*DROP\s+TABLE\b/imu },
-  { code: "TRUNCATE_FORBIDDEN", expression: /^\s*TRUNCATE\b/imu },
+  // Intentionally conservative: also reject occurrences in comments, strings
+  // and GRANT/REVOKE rather than missing same-line or procedural SQL. This is
+  // a static gate, not a parser or a proof that dynamically built SQL is safe.
+  { code: "TRUNCATE_FORBIDDEN", expression: /\bTRUNCATE\b/iu },
 ];
 const ADVISORY_LOCK_ID = "260830500011";
 const SEMANTIC_CHECK_VERSION = "catalog-and-transaction-noop.v2";
@@ -129,6 +129,57 @@ function migrationTransactionMode(sql) {
   return "invalid-boundary";
 }
 
+// Conservative static gate, not a PostgreSQL parser. Examine every DROP token
+// in the original bytes, even inside comments and strings. Starting at DROP
+// avoids treating an earlier quoted '--' or '/*' as a comment that hides SQL.
+// Only literal single-relation pg_temp cleanup is exempt; the exception is
+// checked against original text, never against comment-normalized text.
+function forbiddenDropCodes(sql) {
+  const errors = new Set();
+  const drops = /\bDROP\b/giu;
+  for (const match of sql.matchAll(drops)) {
+    let index = match.index + match[0].length;
+    let separated = false;
+    while (index < sql.length) {
+      if (/\s/u.test(sql[index])) { separated = true; index++; continue; }
+      if (sql.startsWith("--", index)) {
+        separated = true;
+        index += 2;
+        while (index < sql.length && sql[index] !== "\n" && sql[index] !== "\r") index++;
+        continue;
+      }
+      if (sql.startsWith("/*", index)) {
+        separated = true;
+        let depth = 1;
+        index += 2;
+        while (index < sql.length && depth > 0) {
+          if (sql.startsWith("/*", index)) { depth++; index += 2; }
+          else if (sql.startsWith("*/", index)) { depth--; index += 2; }
+          else index++;
+        }
+        continue;
+      }
+      break;
+    }
+    if (!separated) continue;
+    const type = /^(TABLE|SCHEMA|DATABASE)\b/iu.exec(sql.slice(index));
+    if (!type) continue;
+    const kind = type[1].toUpperCase();
+    if (kind === "TABLE" && /^DROP\s+TABLE\s+pg_temp\.[a-z_][a-z0-9_]*\s*;/iu.test(sql.slice(match.index))) continue;
+    errors.add(`DROP_${kind}_FORBIDDEN`);
+  }
+  return [...errors];
+}
+
+function forbiddenForwardSql(sql) {
+  const errors = [];
+  for (const pattern of FORBIDDEN_FORWARD_PATTERNS) {
+    if (pattern.expression.test(sql)) errors.push(pattern.code);
+  }
+  errors.push(...forbiddenDropCodes(sql));
+  return errors;
+}
+
 function inspectMigration(filePath) {
   const sql = fs.readFileSync(filePath, "utf8");
   const name = path.basename(filePath);
@@ -147,11 +198,8 @@ function inspectMigration(filePath) {
       transactionMode: "invalid-boundary",
     };
   }
-  const errors = [];
+  const errors = forbiddenForwardSql(sql);
   const warnings = [];
-  for (const pattern of FORBIDDEN_FORWARD_PATTERNS) {
-    if (pattern.expression.test(sql)) errors.push(pattern.code);
-  }
   if (/\bDELETE\s+FROM\b/iu.test(sql)) {
     warnings.push("DELETE_FROM_PRESENT_REVIEWED_AS_RUNTIME_RPC_BODY_OR_TARGETED_DATA_CHANGE");
   }

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useApp } from "@/contexts/app-context";
 import { bipStep, BIP_STEPS, BIP_CATEGORY, BIP_CATEGORY_LABEL, TASK_CATEGORIES, displayCategory, matchesDisplayCategory } from "@/lib/business-ip/catalog";
+import { getAuthorizedAgentDisplayKeys, isAgentAuthorizedInSnapshot } from "@/lib/agent-category-access";
 import { Search, Sparkles, X, Layout, Pencil, LayoutGrid, Eraser, Scissors, Palette, FileSearch, Film, PenTool, Mic, Bot, UserRound, Video, Image, Music, BookOpen, Globe, ShoppingBag, Megaphone, MessageSquare, Puzzle, Clapperboard, Wrench, Heart, ChevronLeft, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -36,6 +37,7 @@ import { getClientBootstrapAgentCatalog } from "@/lib/client-bootstrap-cache";
 const CARD_TITLE_FONT_FAMILY = "'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 const MARKETPLACE_EAGER_AVATAR_COUNT = 8;
 const FAVORITES_CATEGORY = "favorites";
+const FAVORITE_HEART_CLEARANCE_PX = 40;
 const GOOGLE_TITLE_FONT_QUERIES: Record<string, string> = {
   "noto-serif-sc": "family=Noto+Serif+SC:wght@400;600;700;900",
   "noto-sans-sc": "family=Noto+Sans+SC:wght@400;500;600;700",
@@ -222,8 +224,11 @@ export function AgentMarketplace() {
   const {
     favorites: favoriteAgentIds,
     loaded: favoritesLoaded,
+    status: favoritesStatus,
     error: favoritesError,
+    pendingAgentIds: favoritePendingAgentIds,
     toggleFavorite: toggleAgentFavorite,
+    refresh: refreshAgentFavorites,
   } = useAgentFavorites(auth.user?.id || "", auth.token);
   const [activeCategory, setActiveCategory] = useState("all");
   const [bipIntakeAgentId, setBipIntakeAgentId] = useState<string | null>(null);
@@ -878,15 +883,20 @@ export function AgentMarketplace() {
     && learnerPermissionSnapshot.status === "error";
   const visibleCatKeys = useMemo(() => {
     if (!isPermissionControlledIdentity) return allCatKeys;
-    const permittedKeys = learnerPermissionIsCurrent && learnerPermissionSnapshot.status === "ready"
-      ? learnerPermissionSnapshot.navigationKeys
-      : new Set<string>();
+    const permittedKeys = new Set<string>();
+    if (learnerPermissionIsCurrent && learnerPermissionSnapshot.status === "ready") {
+      learnerPermissionSnapshot.navigationKeys.forEach((key) => permittedKeys.add(key));
+      const candidates = agents.filter((agent) => agent.user_access !== "hidden"
+        && dbCategories.find((category) => category.name === agent.category)?.visibility !== "private");
+      getAuthorizedAgentDisplayKeys(candidates, learnerPermissionSnapshot.agentIds, learnerPermissionSnapshot.navigationKeys)
+        .forEach((key) => permittedKeys.add(key));
+    }
     return [
       "all",
       FAVORITES_CATEGORY,
       ...LEARNER_AGENT_NAVIGATION_KEYS.filter((key) => permittedKeys.has(key)),
     ];
-  }, [allCatKeys, isPermissionControlledIdentity, learnerPermissionIsCurrent, learnerPermissionSnapshot.navigationKeys, learnerPermissionSnapshot.status]);
+  }, [allCatKeys, agents, dbCategories, isPermissionControlledIdentity, learnerPermissionIsCurrent, learnerPermissionSnapshot.agentIds, learnerPermissionSnapshot.navigationKeys, learnerPermissionSnapshot.status]);
 
   useEffect(() => {
     if (!visibleCatKeys.includes(activeCategory)) {
@@ -979,26 +989,36 @@ export function AgentMarketplace() {
     if (!dragAgentKey || catKey === "all") { setDragAgentToCatOver(null); return; }
     const agent = agents.find(a => a.id === dragAgentKey);
     if (!agent) { setDragAgentToCatOver(null); return; }
-    // 获取分类名称（catKey可能是分类名或id）
+    // Display facets such as task:* and bip:loop are derived views, not stable
+    // database categories. Never persist their translated label as category.
     const catItem = categories.find(c => c.key === catKey);
-    const categoryName = catItem?.label || catKey;
-    if (agent.category === categoryName) { setDragAgentToCatOver(null); setDragAgentKey(null); return; }
+    const persistedCategory = catKey === "自用"
+      ? "自用"
+      : dbCategories.find(category => category.name === catKey || category.id === catKey)?.name || null;
+    if (!persistedCategory) {
+      setMoveSuccessMsg(`「${catItem?.label || catKey}」是展示分组，暂无稳定分类值，未移动`);
+      setTimeout(() => setMoveSuccessMsg(null), 3500);
+      setDragAgentToCatOver(null);
+      setDragAgentKey(null);
+      return;
+    }
+    if (agent.category === persistedCategory) { setDragAgentToCatOver(null); setDragAgentKey(null); return; }
     try {
       if (!auth.token) throw new Error("AUTH_TOKEN_REQUIRED");
       const revisions = await loadAdminAgentRevisions(auth.token, [agent.id]);
       const res = await fetch("/api/admin/agents", {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
-        body: JSON.stringify({ agentId: agent.id, expected_revision: revisions.get(agent.id), category: categoryName }),
+        body: JSON.stringify({ agentId: agent.id, expected_revision: revisions.get(agent.id), category: persistedCategory }),
       });
       if (res.ok) {
         // 计算新分类末尾的 sort_order
-        const sameCategoryAgents = agents.filter(a => a.category === categoryName && a.id !== agent.id);
+        const sameCategoryAgents = agents.filter(a => a.category === persistedCategory && a.id !== agent.id);
         const maxSort = Math.max(0, ...sameCategoryAgents.map(a => a.sort_order ?? 0));
         const newSortOrder = maxSort + 10;
         // 更新本地agents列表中的分类和排序
-        dispatch({ type: "UPDATE_AGENT_CATEGORY", payload: { agentId: agent.id, category: categoryName, sort_order: newSortOrder } });
-        setMoveSuccessMsg(`已将「${agent.name}」移至「${categoryName}」`);
+        dispatch({ type: "UPDATE_AGENT_CATEGORY", payload: { agentId: agent.id, category: persistedCategory, sort_order: newSortOrder } });
+        setMoveSuccessMsg(`已将「${agent.name}」移至「${catItem?.label || persistedCategory}」`);
         setTimeout(() => setMoveSuccessMsg(null), 2500);
       } else {
         const err = await res.json().catch(() => ({}));
@@ -1060,6 +1080,17 @@ export function AgentMarketplace() {
     return [...base, ...customCategories.filter(category => !base.some(item => item.key === category.key))];
   }, [customCategories]);
 
+  // Search must use the same effective values that cards render. Admin display
+  // overrides are presentation data and never change the persisted agent row.
+  const getAgentName = useCallback((id: string, defaultName: string) => {
+    const override = agentOverrides[id]?.name?.trim();
+    return override || defaultName;
+  }, [agentOverrides]);
+  const getAgentDesc = useCallback((id: string, defaultDesc: string) => {
+    const override = agentOverrides[id]?.description?.trim();
+    return override || defaultDesc;
+  }, [agentOverrides]);
+
   const removeCustomCategory = (key: string) => {
     const updated = customCategories.filter((c) => c.key !== key);
     setCustomCategories(updated);
@@ -1093,9 +1124,7 @@ export function AgentMarketplace() {
         filtered = [];
       } else {
         filtered = filtered.filter((agent) => {
-          const navigationKey = displayCategory(agent);
-          return learnerPermissionSnapshot.agentIds.has(agent.id)
-            && learnerPermissionSnapshot.navigationKeys.has(navigationKey);
+          return isAgentAuthorizedInSnapshot(agent, learnerPermissionSnapshot.agentIds, learnerPermissionSnapshot.navigationKeys);
         });
       }
     }
@@ -1116,6 +1145,11 @@ export function AgentMarketplace() {
     // 收藏是附加归属，不会改变智能体原分类；仅“我的收藏”视图按收藏关系收窄。
     if (favoritesLoaded && activeCategory === FAVORITES_CATEGORY) {
       filtered = filtered.filter((agent) => favoriteAgentIds.has(agent.id));
+    } else if (activeCategory === FAVORITES_CATEGORY) {
+      // An unread/failed first snapshot is not an empty collection. Keep the
+      // view empty until the user retries so unknown state cannot expose every
+      // agent or submit the inverse favorite operation.
+      filtered = [];
     }
     if (activeCategory !== "all" && activeCategory !== FAVORITES_CATEGORY) {
       filtered = filtered.filter((a) => matchesDisplayCategory(a, activeCategory));
@@ -1123,14 +1157,15 @@ export function AgentMarketplace() {
     if (viewFilter === "view_only") {
       filtered = filtered.filter((a) => isAgentViewOnlyForUser(a));
     }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (a) => a.name.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q)
-      );
+    const q = searchQuery.trim().toLocaleLowerCase();
+    if (q) {
+      filtered = filtered.filter((agent) => (
+        getAgentName(agent.id, agent.name).toLocaleLowerCase().includes(q)
+        || getAgentDesc(agent.id, agent.description || "暂无描述").toLocaleLowerCase().includes(q)
+      ));
     }
     return filtered;
-  }, [agents, activeCategory, viewFilter, searchQuery, isAdmin, isPermissionControlledIdentity, learnerPermissionIsCurrent, learnerPermissionSnapshot.agentIds, learnerPermissionSnapshot.navigationKeys, learnerPermissionSnapshot.status, dbCategories, viewOnlyCategoryNames, favoriteAgentIds, favoritesLoaded]);
+  }, [agents, activeCategory, viewFilter, searchQuery, isAdmin, isPermissionControlledIdentity, learnerPermissionIsCurrent, learnerPermissionSnapshot.agentIds, learnerPermissionSnapshot.navigationKeys, learnerPermissionSnapshot.status, dbCategories, viewOnlyCategoryNames, favoriteAgentIds, favoritesLoaded, getAgentName, getAgentDesc]);
 
   // 智能体排序：分类级排序 + 分类内sort_order排序
   // 规则：1) "全部"视图下，按侧边栏分类顺序排列，越靠左的分类其智能体越靠前
@@ -1386,13 +1421,14 @@ export function AgentMarketplace() {
     return () => window.removeEventListener("resize", updateColumns);
   }, [cl.columns]);
 
-  const gridStyle: React.CSSProperties = (() => {
+  const gridStyle: React.CSSProperties & { "--marketplace-grid-template": string } = (() => {
     const cardMinWidth = (cl as any).cardMinWidth;
     const gapX = Math.max(Number(cl.gapX) || 0, 16);
     const gapY = Math.max(Number(cl.gapY) || 0, 16);
     if (cardMinWidth && cardMinWidth > 0) {
       // 使用精确卡片最小宽度
       return {
+        "--marketplace-grid-template": `repeat(auto-fill, minmax(${cardMinWidth}px, 1fr))`,
         gap: `var(--marketplace-grid-gap, ${gapY}px ${gapX}px)`,
         justifyContent: "var(--marketplace-grid-justify, flex-start)",
         gridTemplateColumns: `var(--marketplace-grid-template, repeat(auto-fill, minmax(${cardMinWidth}px, 1fr)))`,
@@ -1400,6 +1436,7 @@ export function AgentMarketplace() {
     }
     // 自动均分模式
     return {
+      "--marketplace-grid-template": `repeat(${responsiveColumns}, minmax(0, 1fr))`,
       gap: `var(--marketplace-grid-gap, ${gapY}px ${gapX}px)`,
       justifyContent: "var(--marketplace-grid-justify, flex-start)",
       gridTemplateColumns: `var(--marketplace-grid-template, repeat(${responsiveColumns}, minmax(0, 1fr)))`,
@@ -1418,8 +1455,6 @@ export function AgentMarketplace() {
     return !override || override === LEGACY_CATEGORY_LABELS[key] ? defaultLabel : override;
   };
   const getCatIcon = (key: string, defaultIcon: string) => catOverrides[key]?.icon || defaultIcon;
-  const getAgentName = (id: string, defaultName: string) => agentOverrides[id]?.name || defaultName;
-  const getAgentDesc = (id: string, defaultDesc: string) => agentOverrides[id]?.description || defaultDesc;
   const getAgentIcon = (id: string, defaultIcon: string, agentName = "") =>
     resolveAgentAvatarUrl(id, agentName, agentOverrides[id]?.iconUrl || defaultIcon);
 
@@ -2172,7 +2207,7 @@ export function AgentMarketplace() {
       {/* 智能体卡片网格（仅应用广场） */}
       {view === "marketplace" && <div className="marketplace-scroll marketplace-depth flex-1 min-h-0 px-5 overflow-y-auto overflow-x-hidden sm:px-10">
         <div>
-        {isLoadingAgents || isLearnerPermissionLoading || (activeCategory === FAVORITES_CATEGORY && !favoritesLoaded) ? (
+        {isLoadingAgents || isLearnerPermissionLoading || (activeCategory === FAVORITES_CATEGORY && !favoritesLoaded && !favoritesError) ? (
           <div className="marketplace-agent-grid grid mx-auto w-full max-w-[1624px]" style={{ ...gridStyle }}>
             {Array.from({ length: responsiveColumns * 2 }).map((_, i) => (
               <div
@@ -2208,23 +2243,43 @@ export function AgentMarketplace() {
         ) : sortedAgents.length === 0 ? (
           <div className="text-center py-20">
             <Sparkles className="w-12 h-12 mx-auto mb-3 text-[var(--muted-foreground)] opacity-30" />
-            <p className="text-[var(--text-secondary)]">
-              {learnerPermissionUnavailable
+              <p className="text-[var(--text-secondary)]">
+               {activeCategory === FAVORITES_CATEGORY && favoritesError && !favoritesLoaded
+                 ? "收藏暂时无法读取"
+                 : learnerPermissionUnavailable
                 ? "智能体权限暂时无法读取"
                 : learnerHasNoAgentGrant
                   ? "暂无智能体权限"
-                  : activeCategory === FAVORITES_CATEGORY
-                    ? "还没有收藏智能体"
+                  : activeCategory === FAVORITES_CATEGORY && searchQuery.trim() && favoriteAgentIds.size > 0
+                    ? "没有匹配的收藏智能体"
+                    : activeCategory === FAVORITES_CATEGORY
+                      ? "还没有收藏智能体"
                     : agents.length > 0
                       ? "没有符合当前筛选的智能体"
                       : "暂无智能体"}
             </p>
             {learnerPermissionUnavailable && <p className="mt-2 text-sm text-[var(--muted-foreground)]">请刷新页面重试，权限恢复前不会展示任何智能体。</p>}
             {learnerHasNoAgentGrant && <p className="mt-2 text-sm text-[var(--muted-foreground)]">请联系管理员在“智能体导航栏”中开通可用分类。</p>}
-            {!learnerPermissionUnavailable && !learnerHasNoAgentGrant && activeCategory === FAVORITES_CATEGORY && <p className="mt-2 text-sm text-[var(--muted-foreground)]">返回全部助手，点击卡片右上角的爱心即可收藏。</p>}
-            {!learnerPermissionUnavailable && !learnerHasNoAgentGrant && agents.length > 0
+            {activeCategory === FAVORITES_CATEGORY && favoritesError && !favoritesLoaded && (
+              <>
+                <p className="mt-2 text-sm text-[var(--muted-foreground)]">{favoritesError}。收藏状态确认前不会发送收藏操作。</p>
+                <button
+                  type="button"
+                  className="mt-3 text-sm text-[var(--primary)] underline"
+                  onClick={() => void refreshAgentFavorites()}
+                  disabled={favoritesStatus === "loading"}
+                >
+                  {favoritesStatus === "loading" ? "正在重试…" : "重试读取收藏"}
+                </button>
+              </>
+            )}
+            {!learnerPermissionUnavailable && !learnerHasNoAgentGrant && activeCategory === FAVORITES_CATEGORY && searchQuery.trim() && favoriteAgentIds.size > 0 && (
+              <button className="mt-2 text-sm text-[var(--primary)] underline" onClick={() => setSearchQuery("")}>清除收藏搜索</button>
+            )}
+            {!learnerPermissionUnavailable && !learnerHasNoAgentGrant && activeCategory === FAVORITES_CATEGORY && !searchQuery.trim() && !favoritesError && <p className="mt-2 text-sm text-[var(--muted-foreground)]">返回全部助手，点击卡片右上角的爱心即可收藏。</p>}
+            {!favoritesError && !learnerPermissionUnavailable && !learnerHasNoAgentGrant && agents.length > 0
               ? <button className="mt-2 text-sm text-[var(--primary)] underline" onClick={() => { setActiveCategory('all'); setSearchQuery(''); setViewFilter('all'); }}>重置筛选</button>
-              : !learnerPermissionUnavailable && !learnerHasNoAgentGrant && <p className="text-sm text-[var(--text-secondary)] mt-2">暂无可用智能体，请稍后再来</p>}
+              : !favoritesError && !learnerPermissionUnavailable && !learnerHasNoAgentGrant && <p className="text-sm text-[var(--text-secondary)] mt-2">暂无可用智能体，请稍后再来</p>}
           </div>
         ) : (
           <div className="marketplace-agent-grid grid mx-auto w-full max-w-[1624px]" style={{ ...gridStyle }}>
@@ -2329,12 +2384,13 @@ export function AgentMarketplace() {
               const textEl = (
                 <div className={`marketplace-agent-copy relative z-[1] ${isAvatarTop ? "w-full text-center" : "flex-1 overflow-hidden"}`} style={{
                   transform: `translate(${cl.textOffsetX || 0}px, ${cl.textOffsetY || 0}px)`,
-                  ...(isAvatarCorner ? {
-                    paddingTop: cl.avatarPosition.includes("top") ? (avatarH + 8) : 0,
-                    paddingBottom: cl.avatarPosition.includes("bottom") ? (avatarH + 8) : 0,
-                    paddingLeft: cl.avatarPosition.includes("left") ? (avatarW + 8) : 0,
-                    paddingRight: cl.avatarPosition.includes("right") ? (avatarW + 8) : 0,
-                  } : undefined),
+                  paddingTop: isAvatarCorner && cl.avatarPosition.includes("top") ? (avatarH + 8) : undefined,
+                  paddingBottom: isAvatarCorner && cl.avatarPosition.includes("bottom") ? (avatarH + 8) : undefined,
+                  paddingLeft: isAvatarCorner && cl.avatarPosition.includes("left") ? (avatarW + 8) : undefined,
+                  paddingRight: Math.max(
+                    isAvatarCorner && cl.avatarPosition.includes("right") ? (avatarW + 8) : 0,
+                    FAVORITE_HEART_CLEARANCE_PX,
+                  ),
                 }}>
                   <h3
                     className="marketplace-agent-title truncate leading-snug"
@@ -2422,10 +2478,16 @@ export function AgentMarketplace() {
                     type="button"
                     data-agent-favorite-toggle={agent.id}
                     aria-pressed={favoriteAgentIds.has(agent.id)}
+                    aria-busy={favoritePendingAgentIds.has(agent.id) || undefined}
+                    disabled={!favoritesLoaded || favoritePendingAgentIds.has(agent.id)}
                     aria-label={`${favoriteAgentIds.has(agent.id) ? "取消收藏" : "收藏"}${displayName}`}
                     title={favoriteAgentIds.has(agent.id) ? "取消收藏" : "收藏到我的收藏"}
                     onClick={(event) => {
                       event.stopPropagation();
+                      if (!favoritesLoaded) {
+                        void refreshAgentFavorites();
+                        return;
+                      }
                       void toggleAgentFavorite(agent.id).catch(() => undefined);
                     }}
                     className={`absolute right-2 top-2 z-30 inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm backdrop-blur-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${favoriteAgentIds.has(agent.id)

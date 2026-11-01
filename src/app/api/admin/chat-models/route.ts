@@ -1,3 +1,4 @@
+import { modelPoolMutationRequest, modelPoolMutationFailure, resumeModelPoolMutationResponse } from "@/lib/server/model-pool-mutation-http";
 /**
  * 管理员对话模型管理 API
  * GET  - 列出所有对话模型（含未激活）
@@ -54,6 +55,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ models: (models || []).map(publicModel) });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("Error fetching chat models:", error);
     return NextResponse.json({ error: "获取模型列表失败" }, { status: 500 });
   }
@@ -66,6 +69,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const mutationRequest = modelPoolMutationRequest(req, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(admin.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const { model_name, display_name, icon_url, description, proxy_url, api_key, sort_order } = body;
 
     if (!model_name || !display_name) {
@@ -85,6 +91,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
       actorId: admin.userId,
       table: "chat_models",
       changeNote: `新增旧版对话模型 ${model_name}`,
@@ -101,6 +108,8 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ success: true, staged: true, published: false, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("Error creating chat model:", error);
     return NextResponse.json({ error: "创建模型失败" }, { status: 500 });
   }
@@ -113,6 +122,9 @@ export async function PUT(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const mutationRequest = modelPoolMutationRequest(req, body);
+    const resumedMutation = await resumeModelPoolMutationResponse(admin.userId, mutationRequest);
+    if (resumedMutation) return resumedMutation;
     const { id, model_name, display_name, icon_url, description, proxy_url, api_key, sort_order } = body;
 
     if (!id) {
@@ -131,6 +143,7 @@ export async function PUT(req: NextRequest) {
     if (sort_order !== undefined) updateData.sort_order = sort_order;
 
     const result = await stageLegacyModelPoolUpsert({
+        ...mutationRequest,
       actorId: admin.userId,
       table: "chat_models",
       id: String(id),
@@ -139,6 +152,8 @@ export async function PUT(req: NextRequest) {
     });
     return NextResponse.json({ success: true, staged: true, published: false, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("Error updating chat model:", error);
     return NextResponse.json({ error: "更新模型失败" }, { status: 500 });
   }
@@ -166,6 +181,8 @@ export async function DELETE(req: NextRequest) {
     });
     return NextResponse.json({ success: true, staged: true, published: false, result }, { status: 202 });
   } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
     console.error("Error deleting chat model:", error);
     return NextResponse.json({ error: "删除模型失败" }, { status: 500 });
   }

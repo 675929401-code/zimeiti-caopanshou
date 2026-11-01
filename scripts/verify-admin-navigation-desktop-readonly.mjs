@@ -10,6 +10,14 @@ import { computeLocalBuildFingerprint } from "./local-build-fingerprint.mjs";
 const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").replace(/\/+$/u, "");
 const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
 const identityText = String(process.env.LOCAL_NAV_READONLY_IDENTITY || "").trim();
+const unlocked = process.argv.includes("--unlocked");
+const clientNavigation = process.argv.includes("--client-navigation");
+const deepLinkMinIntervalMs = Number(argumentValue("--deep-link-min-interval-ms=") || 0);
+assert.ok(Number.isInteger(deepLinkMinIntervalMs) && deepLinkMinIntervalMs >= 0 && deepLinkMinIntervalMs <= 30_000,
+  "INVALID_DEEP_LINK_INTERVAL");
+const stepUpToken = unlocked ? String(process.env.LOCAL_ADMIN_STEP_UP_TOKEN || "").trim() : "";
+const workspaceProjects = process.argv.includes("--workspace-projects")
+  ? ["image", "cover", "storyboard", "video", "film", "voice", "tools"] : [];
 
 const primaryNavigation = [
   { root: "dashboard", title: "平台指挥中心", tabs: [["指挥中心", "dashboard"]] },
@@ -20,8 +28,8 @@ const primaryNavigation = [
   { root: "announcements", title: "公告与通知", tabs: [["公告管理", "announcements"]] },
   { root: "agents", title: "智能体管理", tabs: [["智能体管理", "agents"], ["智能体导入", "aiweb-import"], ["回收站", "trash"]] },
   { root: "models", title: "模型与服务", tabs: [["模型资源池", "models"], ["外部服务", "connection"]] },
-  { root: "workspace-models", title: "工作台配置", tabs: [["工作台配置", "workspace-models"]] },
-  { root: "general", title: "品牌与界面", tabs: [["基本设置", "general"], ["界面设置", "theme"], ["卡片布局", "layout"]] },
+  { root: "workspace-models", title: "工作台配置", tabs: [["工作台配置", "workspace-models"], ["角色预设", "storyboard-presets"]] },
+  { root: "general", title: "品牌与界面", tabs: [["品牌与联系", "general"], ["界面设置", "theme"], ["卡片布局", "layout"]] },
   { root: "white-label", title: "域名与贴牌", tabs: [["域名与贴牌", "white-label"]] },
   { root: "security", title: "安全审计", tabs: [["安全总览", "security"], ["提示词拦截", "guard-logs"], ["登录日志", "login-logs"]] },
   { root: "health", title: "系统运维", tabs: [["系统健康", "health"], ["数据同步", "sync"], ["灾备证据", "backup"]] },
@@ -104,6 +112,87 @@ function safeNetworkUrl(value) {
   } catch {
     return redact(value);
   }
+}
+
+// Only these source effects explicitly cancel their own list GETs on cleanup.
+const clientAbortOwners = Object.freeze({
+  "/api/admin/security-events": { root: "security", source: "src/components/admin/security-center-admin-tab.tsx:143" },
+  "/api/admin/diagnostic-logs": { root: "health", source: "src/app/admin/page.tsx:4421" },
+});
+
+function clientAbortEvidence(entry, records, commits) {
+  if (!entry.sameOrigin || entry.method !== "GET" || entry.resourceType !== "fetch"
+    || entry.error !== "net::ERR_ABORTED" || entry.blockedByPolicy) return null;
+  const owner = clientAbortOwners[new URL(entry.url, origin).pathname];
+  if (!owner) return null;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(entry.fetchRequestId || "")
+    || entry.fetchRequestCount !== 1) return null;
+  const matches = records.filter((record) => record.id === entry.fetchRequestId && record.url === entry.url);
+  // The native request header must identify exactly one instrumented fetch.
+  if (matches.length !== 1) return null;
+  const record = matches[0];
+  if (record.scope.root !== owner.root || !record.hasSignal || !record.abortedAt
+    || !["AbortError", "fulfilled"].includes(record.outcome) || !record.signalAborted
+    || record.abortedAt < record.startedAt || record.abortedAt > entry.failedAt + 250) return null;
+  const successor = records.find((next) => next.id !== record.id && next.url === record.url
+    && next.scope.root === owner.root && next.startedAt >= record.abortedAt
+    && next.outcome === "fulfilled" && next.status >= 200 && next.status < 300);
+  const departure = commits.find((commit) => commit.at >= record.abortedAt
+    && commit.documentId === record.documentId && commit.root && commit.root !== owner.root);
+  if (!successor && !departure) return null;
+  return { requestId: record.id, url: record.url, source: owner.source,
+    scope: record.scope, startedAt: record.startedAt, abortedAt: record.abortedAt,
+    settledAt: record.settledAt, settlement: record.outcome, successorRequestId: successor?.id || null,
+    departedComponent: departure || null };
+}
+
+function instrumentClientFetchAborts() {
+  const owners = new Set(["/api/admin/security-events", "/api/admin/diagnostic-logs"]);
+  const originalFetch = window.fetch;
+  const documentId = crypto.randomUUID();
+  const pending = new Set();
+  const safeUrl = (value) => {
+    const url = new URL(value, location.href), query = new URLSearchParams();
+    for (const key of ["tab", "view", "hours", "refresh", "limit", "offset", "page", "pageSize", "category", "kind", "includeTotal"]) {
+      if (url.searchParams.has(key)) query.set(key, url.searchParams.get(key));
+    }
+    return url.pathname + (query.size ? "?" + query : "");
+  };
+  const scope = () => ({ root: document.querySelector('nav[aria-label="管理后台一级导航"] [aria-current="page"]')?.getAttribute("data-testid")?.replace("admin-primary-nav-", "") || "", url: safeUrl(location.href) });
+  const emit = (event) => {
+    const task = window.__recordReadonlyClientAbort(event).catch(() => {});
+    pending.add(task); void task.finally(() => pending.delete(task));
+  };
+  window.__drainReadonlyClientAbortAudit = () => Promise.allSettled([...pending]);
+  let lastRoot = "";
+  const observeScope = () => { const current = scope(); if (current.root && current.root !== lastRoot) {
+    lastRoot = current.root; emit({ type: "scope", documentId, at: Date.now(), ...current });
+  } };
+  new MutationObserver(observeScope).observe(document, { subtree: true, attributes: true, attributeFilter: ["aria-current"], childList: true });
+  window.fetch = function(input, init) {
+    const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, location.href);
+    const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+    if (url.origin !== location.origin || method !== "GET" || !owners.has(url.pathname)) return originalFetch.call(this, input, init);
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : null);
+    const record = { type: "request", id: crypto.randomUUID(), documentId, url: safeUrl(url),
+      scope: scope(), startedAt: Date.now(), hasSignal: Boolean(signal), abortedAt: null };
+    const onAbort = () => { record.abortedAt = Date.now(); emit({ ...record, signalAborted: true }); };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    emit({ ...record });
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    headers.set("x-codex-readonly-fetch-id", record.id);
+    return originalFetch.call(this, input, { ...init, headers }).then(response => {
+      Object.assign(record, { settledAt: Date.now(), outcome: "fulfilled", status: response.status, signalAborted: Boolean(signal?.aborted) });
+      emit({ ...record });
+      return response;
+    }, error => {
+      Object.assign(record, { settledAt: Date.now(), outcome: error?.name === "AbortError" ? "AbortError" : "other-error", signalAborted: Boolean(signal?.aborted) });
+      emit({ ...record });
+      signal?.removeEventListener("abort", onAbort);
+      throw error;
+    });
+  };
 }
 
 function isBenignNavigationAbort(entry) {
@@ -297,12 +386,13 @@ function metricIssues(metrics) {
 async function main() {
   assert.equal(origin, "http://127.0.0.1:5000", "FIXED_LOCAL_ORIGIN_REQUIRED");
   assert.ok(token, "WITH_LOCAL_ADMIN_SESSION_TOKEN_REQUIRED");
+  if (unlocked) assert.ok(stepUpToken, "CONTROLLED_STEPUP_SESSION_REQUIRED");
   assert.ok(identityText, "WITH_LOCAL_ADMIN_SESSION_IDENTITY_REQUIRED");
   const identity = JSON.parse(identityText);
   assert.equal(identity?.user?.role, "admin", "ADMIN_ROLE_REQUIRED");
   assert.equal(primaryNavigation.length, 14, "ADMIN_PRIMARY_NAVIGATION_EXPECTED_14_MODULES");
-  assert.equal(mappedTabs.length, 27, "ADMIN_NAVIGATION_EXPECTED_27_TABS");
-  assert.equal(new Set(mappedTabs.map((entry) => entry.tab)).size, 27, "ADMIN_NAVIGATION_DUPLICATE_TAB_MAPPING");
+  assert.equal(mappedTabs.length, 28, "ADMIN_NAVIGATION_EXPECTED_28_TABS");
+  assert.equal(new Set(mappedTabs.map((entry) => entry.tab)).size, 28, "ADMIN_NAVIGATION_DUPLICATE_TAB_MAPPING");
   assert.equal(commandCenterViews.length, 7, "COMMAND_CENTER_EXPECTED_7_VIEWS");
 
   const runId = sanitizeRunId(argumentValue("--run="));
@@ -325,7 +415,12 @@ async function main() {
       role: identity.user.role,
       expectedUsernameMatchedByLauncher: Boolean(process.env.READONLY_UI_EXPECTED_USERNAME),
     },
-    expected: { primaryModules: 14, adminTabs: 27, commandCenterViews: 7, adminHelpPages: 1 },
+    expected: { primaryModules: 14, adminTabs: mappedTabs.length, commandCenterViews: 7, adminHelpPages: 1,
+      workspaceProjects: workspaceProjects.length, securityMode: unlocked ? "unlocked-readonly" : "locked-readonly",
+      navigationMode: clientNavigation ? "actual-client-controls" : "independent-deep-links",
+      deepLinkMinIntervalMs },
+    documentRequests: [],
+    settingsReads: [],
     runtimeVersion: null,
     runtimeIdentity: {
       before: null,
@@ -334,6 +429,7 @@ async function main() {
     },
     navigationContract: null,
     adminTabs: [],
+    workspaceProjects: [],
     commandCenterViews: [],
     adminHelp: null,
     screenshots: [],
@@ -351,6 +447,8 @@ async function main() {
     consoleErrors: [],
     networkErrors: [],
     benignNavigationAborts: [],
+    benignClientAborts: [],
+    clientAbortAudit: { requests: [], scopeCommits: [] },
     issues: [],
     safety: {
       allowedMethods: ["GET", "HEAD"],
@@ -411,6 +509,14 @@ async function main() {
         return;
       }
       const event = { method, url: safeNetworkUrl(url.href), resourceType: request.resourceType() };
+      if (url.origin === origin && request.resourceType() === "document") {
+        report.documentRequests.push({ ...event, at: new Date().toISOString() });
+      }
+      if (url.origin === origin && method === "GET" && url.pathname.startsWith("/api/settings")) {
+        const scope = url.searchParams.get("scope");
+        report.settingsReads.push({ ...event, at: new Date().toISOString(),
+          scope: ["brand", "integrations", "models", "payment", "prompts"].includes(scope) ? scope : null });
+      }
       if (url.origin !== origin) {
         intentionallyBlocked.add(request);
         report.blockedExternalRequests.push({ ...event, origin: url.origin });
@@ -450,13 +556,22 @@ async function main() {
         await route.abort("blockedbyclient");
         return;
       }
-      if (method === "GET" && lockedSensitiveReadPaths.has(url.pathname)) {
+      if (!unlocked && method === "GET" && lockedSensitiveReadPaths.has(url.pathname)) {
         report.lockedSensitiveReadAttempts.push(event);
       }
       authorizationInjectionCount += 1;
-      await route.continue({ headers: { ...request.headers(), authorization: `Bearer ${token}` } });
+      await route.continue({ headers: { ...request.headers(), authorization: `Bearer ${token}`,
+        ...(stepUpToken ? { "x-admin-step-up": stepUpToken } : {}) } });
     });
+    const clientAbortRecords = new Map();
+    const clientScopeCommits = [];
+    await context.exposeBinding("__recordReadonlyClientAbort", (_source, event) => {
+      if (event.type === "scope") clientScopeCommits.push(event);
+      else if (event.type === "request") clientAbortRecords.set(event.id, { ...clientAbortRecords.get(event.id), ...event });
+    });
+    await context.addInitScript(instrumentClientFetchAborts);
     await context.addInitScript(({ sessionToken, user }) => {
+      window.__readonlyAdminSweepDocument = crypto.randomUUID();
       localStorage.setItem("auth_token", sessionToken);
       localStorage.setItem("auth_user", JSON.stringify(user));
       sessionStorage.setItem("entered_app", "1");
@@ -464,6 +579,32 @@ async function main() {
 
     const page = await context.newPage();
     page.setDefaultTimeout(20_000);
+    const pendingApiReads = new Map();
+    const requestStarts = new WeakMap();
+    const fetchRequestCounts = new Map();
+    page.on("request", request => {
+      requestStarts.set(request, Date.now());
+      const fetchId = request.headers()["x-codex-readonly-fetch-id"];
+      if (fetchId) fetchRequestCounts.set(fetchId, (fetchRequestCounts.get(fetchId) || 0) + 1);
+      const url = new URL(request.url());
+      if (url.origin === origin && url.pathname.startsWith("/api/") && ["GET", "HEAD"].includes(request.method())) {
+        pendingApiReads.set(request, safeNetworkUrl(request.url()));
+      }
+    });
+    page.on("requestfinished", request => pendingApiReads.delete(request));
+    page.on("requestfailed", request => pendingApiReads.delete(request));
+    const settleApiReads = async () => {
+      const deadline = Date.now() + 30_000;
+      let idleSince = null;
+      while (Date.now() < deadline) {
+        if (pendingApiReads.size === 0) {
+          idleSince ??= Date.now();
+          if (Date.now() - idleSince >= 250) return;
+        } else idleSince = null;
+        await page.waitForTimeout(50);
+      }
+      throw new Error(`ADMIN_READS_DID_NOT_SETTLE:${JSON.stringify([...pendingApiReads.values()])}`);
+    };
     page.on("pageerror", (error) => {
       report.pageErrors.push({ at: new Date().toISOString(), url: safeNetworkUrl(page.url()), message: redact(error?.message || error) });
     });
@@ -492,6 +633,8 @@ async function main() {
         sameOrigin = false;
       }
       report.networkErrors.push({
+        startedAt: requestStarts.get(request), failedAt: Date.now(),
+        fetchRequestId: /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(request.headers()["x-codex-readonly-fetch-id"] || "") ? request.headers()["x-codex-readonly-fetch-id"] : null,
         method: request.method(),
         url: safeNetworkUrl(request.url()),
         resourceType: request.resourceType(),
@@ -520,9 +663,35 @@ async function main() {
       report.screenshots.push(path.relative(process.cwd(), file).replace(/\\/gu, "/"));
     };
 
+    let sweepDocument = null;
+    let lastDeepLinkAt = 0;
+    const openDeepLink = async (url) => {
+      const remaining = deepLinkMinIntervalMs - (Date.now() - lastDeepLinkAt);
+      if (remaining > 0) await page.waitForTimeout(remaining);
+      lastDeepLinkAt = Date.now();
+      return page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    };
+    const openClientTab = async (definition) => {
+      const primary = page.getByRole("navigation", { name: "管理后台一级导航" })
+        .getByTestId(`admin-primary-nav-${definition.moduleRoot}`);
+      await primary.click();
+      if (definition.tab !== definition.moduleRoot) {
+        await page.getByTestId(`admin-module-${definition.moduleRoot}`)
+          .getByRole("button", { name: new RegExp(`^${definition.label}(?: · 锁定)?$`, "u") }).click();
+      }
+      await page.waitForURL(url => url.pathname === "/admin" && url.searchParams.get("tab") === definition.tab);
+      // history.pushState can update the address before React commits the next
+      // panel. Wait for the actual selected control before measuring the DOM.
+      await page.waitForFunction(root => document.querySelector(
+        `nav[aria-label="管理后台一级导航"] [data-testid="admin-primary-nav-${root}"]`,
+      )?.getAttribute("aria-current") === "page", definition.moduleRoot);
+      assert.equal(await page.evaluate(() => window.__readonlyAdminSweepDocument), sweepDocument,
+        "CLIENT_NAVIGATION_MUST_PRESERVE_DOCUMENT");
+    };
+
     const bootstrapOffsets = eventOffsets();
     try {
-      const response = await page.goto(`${origin}/admin?tab=users`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      const response = await openDeepLink(`${origin}/admin?tab=users`);
       const bootstrapNavigation = page.getByRole("navigation", { name: "管理后台一级导航" });
       try {
         await bootstrapNavigation.waitFor({ state: "visible", timeout: 15_000 });
@@ -560,6 +729,10 @@ async function main() {
         addIssue("ADMIN_PRIMARY_NAV_LABEL_MISMATCH", "navigation", JSON.stringify({ expectedLabels, actual: labels }));
       }
       if (forbiddenVisible.length) addIssue("EXCLUDED_NAV_VISIBLE", "navigation", forbiddenVisible.join(","));
+      sweepDocument = await page.evaluate(() => window.__readonlyAdminSweepDocument);
+      assert.match(sweepDocument, /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
+        "SWEEP_DOCUMENT_ID_REQUIRED");
+      report.navigationContract.documentId = sweepDocument;
     } catch (error) {
       report.navigationContract = { requestedUrl: `${origin}/admin?tab=users`, error: redact(error?.message || error), events: eventSlice(bootstrapOffsets) };
       addIssue("ADMIN_NAVIGATION_BOOTSTRAP_FAILED", "navigation", error?.message || error);
@@ -581,13 +754,17 @@ async function main() {
         error: null,
       };
       try {
-        const response = await page.goto(requestedUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
-        result.httpStatus = response?.status() || null;
+        if (clientNavigation) await openClientTab(definition);
+        else {
+          const response = await openDeepLink(requestedUrl);
+          result.httpStatus = response?.status() || null;
+        }
         await page.waitForURL((url) => url.pathname === "/admin" && url.searchParams.get("tab") === definition.tab, { timeout: 20_000 });
         const nav = page.getByRole("navigation", { name: "管理后台一级导航" });
         await nav.waitFor({ state: "visible", timeout: 20_000 });
         await page.locator("main").waitFor({ state: "visible", timeout: 20_000 });
         await page.waitForLoadState("networkidle", { timeout: 2_000 }).catch(() => undefined);
+        await settleApiReads();
         await page.waitForTimeout(350);
         result.finalUrl = page.url();
         result.metrics = await pageMetrics(page);
@@ -602,7 +779,7 @@ async function main() {
           secondaryCount: secondary ? await secondary.count() : 0,
           secondaryAriaCurrent: secondary ? await secondary.getAttribute("aria-current").catch(() => null) : null,
         };
-        if (result.httpStatus !== 200) addIssue("ADMIN_TAB_HTTP_STATUS", definition.tab, String(result.httpStatus));
+        if (!clientNavigation && result.httpStatus !== 200) addIssue("ADMIN_TAB_HTTP_STATUS", definition.tab, String(result.httpStatus));
         if (!result.domReady) addIssue("ADMIN_TAB_DOM_NOT_READY", definition.tab, result.metrics.mainTextSample);
         for (const issue of metricIssues(result.metrics)) addIssue(issue, definition.tab);
         if (result.selectedState.primaryCount !== 1 || result.selectedState.primaryAriaCurrent !== "page") {
@@ -623,6 +800,34 @@ async function main() {
       }
     }
 
+    for (const project of workspaceProjects) {
+      const offsets = eventOffsets();
+      const result = { project, ready: false, selected: false, error: null, metrics: null, events: null };
+      try {
+        if (clientNavigation) {
+          if (new URL(page.url()).searchParams.get("tab") !== "workspace-models") {
+            await openClientTab(mappedTabs.find(row => row.tab === "workspace-models"));
+          }
+          await page.locator(`[data-workspace-project-button="${project}"]`).click();
+          assert.equal(await page.evaluate(() => window.__readonlyAdminSweepDocument), sweepDocument,
+            "CLIENT_PROJECT_MUST_PRESERVE_DOCUMENT");
+        } else await openDeepLink(`${origin}/admin?tab=workspace-models&project=${project}`);
+        const panel = page.locator(`[data-workspace-project="${project}"]`);
+        await panel.waitFor({ state: "visible", timeout: 20_000 });
+        await page.waitForLoadState("networkidle", { timeout: 2_000 }).catch(() => undefined);
+        await settleApiReads();
+        result.selected = await page.locator(`[data-workspace-project-button="${project}"]`).getAttribute("aria-current") === "page";
+        result.metrics = await pageMetrics(page);
+        result.ready = result.selected && (await panel.innerText()).trim().length > 20;
+        if (!result.ready) addIssue("WORKSPACE_PROJECT_NOT_READY", project);
+        for (const issue of metricIssues(result.metrics)) addIssue(issue, `workspace:${project}`);
+        await captureScreenshot(`admin-workspace-${project}-1440x900`);
+      } catch (error) {
+        result.error = redact(error?.message || error);
+        addIssue("WORKSPACE_PROJECT_FAILED", project, result.error);
+      } finally { result.events = eventSlice(offsets); report.workspaceProjects.push(result); }
+    }
+
     for (const [label, view] of commandCenterViews) {
       const requestedUrl = `${origin}/admin?tab=dashboard&view=${encodeURIComponent(view)}`;
       const offsets = eventOffsets();
@@ -640,8 +845,17 @@ async function main() {
         error: null,
       };
       try {
-        const response = await page.goto(requestedUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
-        result.httpStatus = response?.status() || null;
+        if (clientNavigation) {
+          if (new URL(page.url()).searchParams.get("tab") !== "dashboard") {
+            await openClientTab(mappedTabs.find(row => row.tab === "dashboard"));
+          }
+          await page.getByTestId(`command-center-view-${view}`).click();
+          assert.equal(await page.evaluate(() => window.__readonlyAdminSweepDocument), sweepDocument,
+            "CLIENT_VIEW_MUST_PRESERVE_DOCUMENT");
+        } else {
+          const response = await openDeepLink(requestedUrl);
+          result.httpStatus = response?.status() || null;
+        }
         await page.waitForURL((url) => url.pathname === "/admin" && url.searchParams.get("tab") === "dashboard" && url.searchParams.get("view") === view, { timeout: 20_000 });
         const surface = page.getByTestId("admin-command-center");
         await surface.waitFor({ state: "visible", timeout: 30_000 });
@@ -649,6 +863,7 @@ async function main() {
           const node = document.querySelector('[data-testid="admin-command-center"]');
           return node?.getAttribute("data-view") === expectedView && node?.getAttribute("aria-busy") === "false";
         }, view, { timeout: 45_000 }).catch(() => undefined);
+        await settleApiReads();
         await page.waitForTimeout(250);
         result.finalUrl = page.url();
         result.metrics = await pageMetrics(page);
@@ -664,7 +879,7 @@ async function main() {
           loadErrorCount: await page.getByTestId("command-center-load-error").count(),
           sectionIds: await page.locator('[data-testid="command-center-sections"] > section[data-section]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-section"))),
         };
-        if (result.httpStatus !== 200) addIssue("COMMAND_CENTER_HTTP_STATUS", view, String(result.httpStatus));
+        if (!clientNavigation && result.httpStatus !== 200) addIssue("COMMAND_CENTER_HTTP_STATUS", view, String(result.httpStatus));
         if (!result.domReady) addIssue("COMMAND_CENTER_DOM_NOT_READY", view, result.metrics.mainTextSample);
         for (const issue of metricIssues(result.metrics)) addIssue(issue, `dashboard:${view}`);
         if (result.viewState.navigationCount !== 1 || result.viewState.visibleViewCount !== 7) {
@@ -701,7 +916,7 @@ async function main() {
       error: null,
     };
     try {
-      const response = await page.goto(helpResult.requestedUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      const response = await openDeepLink(helpResult.requestedUrl);
       helpResult.httpStatus = response?.status() || null;
       await page.waitForURL((url) => url.pathname === "/admin/help", { timeout: 20_000 });
       await page.getByText("学习中心管理", { exact: true }).waitFor({ state: "visible", timeout: 30_000 });
@@ -745,14 +960,22 @@ async function main() {
     report.failedResponses = uniqueEntries(report.failedResponses, (entry) => `${entry.status} ${entry.method} ${entry.url}`);
     report.pageErrors = uniqueEntries(report.pageErrors, (entry) => `${entry.url} ${entry.message}`);
     report.consoleErrors = uniqueEntries(report.consoleErrors, (entry) => `${entry.url} ${entry.message}`);
-    report.networkErrors = uniqueEntries(report.networkErrors, (entry) => `${entry.method} ${entry.url} ${entry.resourceType} ${entry.error} ${entry.blockedByPolicy} ${entry.sameOrigin}`);
+    await page.evaluate(() => window.__drainReadonlyClientAbortAudit?.());
+    report.clientAbortAudit = { requests: [...clientAbortRecords.values()], scopeCommits: clientScopeCommits };
+    for (const entry of report.networkErrors) {
+      entry.fetchRequestCount = fetchRequestCounts.get(entry.fetchRequestId) || 0;
+      const evidence = clientAbortEvidence(entry, report.clientAbortAudit.requests, clientScopeCommits);
+      if (evidence) { entry.benignClientAbort = true; report.benignClientAborts.push(evidence); }
+    }
+    report.networkErrors = uniqueEntries(report.networkErrors, (entry) => `${entry.method} ${entry.url} ${entry.resourceType} ${entry.error} ${entry.blockedByPolicy} ${entry.sameOrigin} ${entry.fetchRequestId}`);
     report.benignNavigationAborts = report.networkErrors.filter(isBenignNavigationAbort);
 
-    const unexpectedNetworkErrors = report.networkErrors.filter((entry) => !entry.blockedByPolicy && !isBenignNavigationAbort(entry));
+    const unexpectedNetworkErrors = report.networkErrors.filter((entry) => !entry.blockedByPolicy && !isBenignNavigationAbort(entry) && !entry.benignClientAbort);
     const unexpectedConsoleErrors = report.consoleErrors.filter((entry) => !/ERR_BLOCKED_BY_CLIENT|Failed to load resource: net::ERR_FAILED/iu.test(entry.message));
     const businessWrites = report.blockedWrites;
-    if (report.adminTabs.length !== 27) addIssue("ADMIN_TAB_SWEEP_INCOMPLETE", "summary", `${report.adminTabs.length}/27`);
+    if (report.adminTabs.length !== mappedTabs.length) addIssue("ADMIN_TAB_SWEEP_INCOMPLETE", "summary", `${report.adminTabs.length}/${mappedTabs.length}`);
     if (report.commandCenterViews.length !== 7) addIssue("COMMAND_CENTER_SWEEP_INCOMPLETE", "summary", `${report.commandCenterViews.length}/7`);
+    if (report.workspaceProjects.length !== workspaceProjects.length) addIssue("WORKSPACE_PROJECT_SWEEP_INCOMPLETE", "summary");
     if (!report.adminHelp) addIssue("ADMIN_HELP_SWEEP_INCOMPLETE", "summary");
     if (report.excludedRequests.length) addIssue("EXCLUDED_COMMERCE_OR_MANJU_REQUEST_DETECTED", "network", JSON.stringify(report.excludedRequests));
     if (report.lockedSensitiveReadAttempts.length) addIssue("LOCKED_SENSITIVE_READ_ATTEMPTED", "network", JSON.stringify(report.lockedSensitiveReadAttempts));
@@ -790,6 +1013,8 @@ async function main() {
   report.summary = {
     adminTabsVisited: report.adminTabs.length,
     adminTabsReady: report.adminTabs.filter((entry) => entry.domReady && !entry.error).length,
+    workspaceProjectsVisited: report.workspaceProjects.length,
+    workspaceProjectsReady: report.workspaceProjects.filter(entry => entry.ready && !entry.error).length,
     commandCenterViewsVisited: report.commandCenterViews.length,
     commandCenterViewsReady: report.commandCenterViews.filter((entry) => entry.domReady && !entry.error && entry.viewState?.ariaBusy === "false").length,
     adminHelpReady: Boolean(report.adminHelp?.domReady && !report.adminHelp?.error),
@@ -808,7 +1033,8 @@ async function main() {
     consoleErrors: report.consoleErrors.length,
     networkErrors: report.networkErrors.length,
     benignNavigationAborts: report.benignNavigationAborts.length,
-    unexpectedNetworkErrors: report.networkErrors.filter((entry) => !entry.blockedByPolicy && !isBenignNavigationAbort(entry)).length,
+    benignClientAborts: report.benignClientAborts.length,
+    unexpectedNetworkErrors: report.networkErrors.filter((entry) => !entry.blockedByPolicy && !isBenignNavigationAbort(entry) && !entry.benignClientAbort).length,
     runningLatestBefore: report.runtimeIdentity.before?.runningLatest === true,
     runningLatestAfter: report.runtimeIdentity.after?.runningLatest === true,
     runtimeIdentityUnchanged: report.runtimeIdentity.unchanged,

@@ -110,8 +110,8 @@ const sample = length => {
   return { frames, durationMs: Math.round(frames * 1000 / 60), deadline };
 };
 const samples = Object.fromEntries([12, 40, 240, 960, 12000].map(length => [length, sample(length)]));
-assert.equal(samples[40].frames, 39, 'ORDINARY_CJK_CHUNK_MUST_ADVANCE_ONE_GLYPH_PER_FRAME');
-assert.ok(samples[240].durationMs >= 1000, 'COARSE_CHUNK_MUST_BE_PERCEPTIBLY_PROGRESSIVE');
+assert.ok(samples[40].frames >= 13 && samples[40].frames <= 21, 'ORDINARY_CJK_MUST_ADVANCE_TWO_TO_THREE_GLYPHS_PER_FRAME');
+assert.ok(samples[240].durationMs > 100 && samples[240].durationMs <= 1500, 'COARSE_CHUNK_MUST_STAY_PROGRESSIVE_WITHOUT_A_SLOW_TAIL');
 assert.ok(samples[12000].durationMs < 12000, 'LARGE_BACKLOG_MUST_HAVE_BOUNDED_TAIL');
 const h = harness();
 for (const text of ['中文🇨🇳👍🏽👩‍👩‍👧‍👦e\u0301क्ष', '😀中文']) {
@@ -122,12 +122,21 @@ for (const text of ['中文🇨🇳👍🏽👩‍👩‍👧‍👦e\u0301क�
 assert.equal(h.api.takeTypewriterSlice('旧稿', '更正'), '更正', 'NON_PREFIX_CORRECTION_ATOMIC');
 const reasoning = harness();
 reasoning.api.throttledDispatchUpdate({ ...payload('正文'.repeat(30)), reasoningContent: '推理'.repeat(50) });
-assert.equal(reasoning.paints[0].content, '正'); assert.equal(reasoning.paints[0].reasoningContent, '推');
+assert.equal(reasoning.paints[0].content, '正'); assert.equal(reasoning.paints[0].reasoningContent, '推理'.repeat(50), 'RECEIVED_REASONING_MUST_NOT_DRAIN_ONE_GLYPH_AT_A_TIME');
 reasoning.drain(); assert.equal(reasoning.paints.at(-1).reasoningContent, '推理'.repeat(50));
+const reasoningOnly = harness();
+reasoningOnly.api.throttledDispatchUpdate({ ...payload(''), reasoningContent: '收到的思考'.repeat(1000) });
+assert.equal(reasoningOnly.paints[0].reasoningContent, '收到的思考'.repeat(1000));
+assert.equal(reasoningOnly.raf.size, 0, 'REASONING_ONLY_MUST_NOT_LEAVE_AN_ANIMATION_BACKLOG');
+assert.equal(reasoningOnly.api.estimateTypewriterDrainWaitMs('', '', '', '思考'.repeat(1000)), 0, 'REASONING_MUST_NOT_EXTEND_BODY_DRAIN_BUDGET');
+reasoningOnly.api.throttledDispatchUpdate({ ...payload('正文开始'), reasoningContent: '收到的思考'.repeat(1000) });
+assert.equal(reasoningOnly.paints.at(-1).content, '正', 'FIRST_BODY_GLYPH_AFTER_REASONING_MUST_PAINT_IMMEDIATELY');
+assert.equal(reasoningOnly.raf.size, 1, 'FIRST_BODY_AFTER_REASONING_MUST_KEEP_ONE_RAF');
+reasoningOnly.drain();
 // Slow chunks keep their prefix and never restart a painted answer.
 h.api.throttledDispatchUpdate(payload('中文')); h.drain();
 h.api.throttledDispatchUpdate(payload('中文逐字')); h.frame();
-assert.equal(h.paints.at(-1).content, '中文逐'); h.drain();
+assert.equal(h.paints.at(-1).content, '中文逐字'); h.drain();
 // Concurrent streams own distinct queues; resetting one cannot cancel another.
 h.api.throttledDispatchUpdate(payload('甲'.repeat(100), 'a'));
 h.api.throttledDispatchUpdate(payload('乙'.repeat(100), 'b')); h.frame();
@@ -190,4 +199,4 @@ assert.equal(alreadyStopped.paints.at(-1).content.length, 240);
 assert.equal(alreadyStopped.raf.size, 0); assert.equal(alreadyStopped.timers.size, 0); assert.equal(already.listeners.size, 0);
 assert.deepEqual(Array.from(alreadyStopped.api.queueSizes()), [0, 0, 0]);
 console.log(JSON.stringify({ status: 'PASS', contract: 'chat-typewriter-premium-lock', cadence: { minStep, maxStep, morphInterval }, samples, stopCases,
-  guards: ['actual-source-raf-scheduler', 'immediate-first-glyph', 'ordinary-cjk-single-glyph', 'coarse-chunk-perceptible', 'unicode-graphemes', 'slow-prefix', 'concurrent-reset', 'terminal-drain', 'background-fallback', 'cancel-cleanup', 'actual-stop-one', 'actual-stop-all', 'already-aborted-settle', 'abort-listener-cleanup', 'all-three-caller-signals'], paidCalls: 0, productionWrites: 0 }, null, 2));
+  guards: ['actual-source-raf-scheduler', 'immediate-first-glyph', 'ordinary-cjk-two-to-three-glyphs', 'coarse-chunk-perceptible', 'reasoning-without-animation-backlog', 'unicode-graphemes', 'slow-prefix', 'concurrent-reset', 'terminal-drain', 'background-fallback', 'cancel-cleanup', 'actual-stop-one', 'actual-stop-all', 'already-aborted-settle', 'abort-listener-cleanup', 'all-three-caller-signals'], paidCalls: 0, productionWrites: 0 }, null, 2));

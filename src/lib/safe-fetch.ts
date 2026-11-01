@@ -410,7 +410,7 @@ export async function safeFetchJsonPost<T = unknown>(
   }
 }
 
-export interface SafeFetchStreamOptions extends Pick<SafeFetchOptions, "timeoutMs" | "allowedPorts" | "trustedHostnames" | "headers" | "signal"> {
+export interface SafeFetchStreamOptions extends Pick<SafeFetchOptions, "timeoutMs" | "allowedPorts" | "trustedHostnames" | "headers" | "signal" | "networkPolicy"> {
   authorization?: { origin: string; value: string } | null;
 }
 
@@ -462,9 +462,12 @@ export async function safeFetchStream(
   options: SafeFetchStreamOptions = {},
   dependencies: SafeFetchDependencies = {},
 ): Promise<{ response: Response; finalUrl: string }> {
-  const publicDns = usesDevelopmentPublicDns();
+  const fixedPublicDns = options.networkPolicy === "fixed-public-dns-pinned"
+    || (options.networkPolicy === undefined && usesDevelopmentPublicDns());
+  const pinnedTransport = fixedPublicDns || options.networkPolicy === "system-dns-pinned";
+  const targetOptions = pinnedTransport ? { ...options, trustedHostnames: [] } : options;
   if (options.signal?.aborted) throw new SafeFetchError("远程请求超时或已取消", "FETCH_ABORTED", 504);
-  const target = await resolveSafeTarget(input, options, dependencies, publicDns);
+  const target = await resolveSafeTarget(input, targetOptions, dependencies, fixedPublicDns);
   const timeoutMs = Math.max(1_000, Math.min(options.timeoutMs ?? 30_000, 300_000));
   const timeout = AbortSignal.timeout(timeoutMs);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
@@ -476,7 +479,7 @@ export async function safeFetchStream(
   }
   const init: RequestInit = { method: "GET", headers, redirect: "manual", signal };
   try {
-    const response = publicDns
+    const response = pinnedTransport
       ? await fetchPinnedGet(target.url, target.addresses, init, dependencies.pinnedFetch || fetchPinnedPublicAddress)
       : await (dependencies.fetch || fetch)(target.url, init);
     return { response, finalUrl: target.url.toString() };

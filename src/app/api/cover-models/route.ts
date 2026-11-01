@@ -4,6 +4,8 @@ import { cleanImageModelText, publicImageModelCapabilities } from "@/lib/image-a
 import { NextResponse } from "next/server";
 import { publicMediaBillingCapabilities, toPublicModelDto } from "@/lib/public-model-dto";
 import { publicImageResolutionPrices, resolveImageResolutionPrice } from "@/lib/image-resolution-pricing";
+import { ImageProviderBindingError, resolveImageProviderContract } from "@/lib/image-provider-contract";
+import { inspectImageModelReadiness } from "@/lib/image-model-readiness";
 import {
   AUTODL_H3_SELFHOST_IMAGE_VERIFIED_ASPECT_RATIOS,
   AUTODL_H3_SELFHOST_IMAGE_VERIFIED_OUTPUT_PIXEL_SIZES,
@@ -32,6 +34,18 @@ export const revalidate = 0;
 
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
+function publicImageReferenceRequirement(model: Record<string, unknown>) {
+  try {
+    const requiresImage = resolveImageProviderContract(model).requestProtocol === "images_edits";
+    return { requiresImage, minReferenceImages: requiresImage ? 1 : 0 };
+  } catch (error) {
+    // An unbound catalog entry remains visible; its existing admission state
+    // still controls generation. Do not infer an input contract from its name.
+    if (error instanceof ImageProviderBindingError) return { requiresImage: false, minReferenceImages: 0 };
+    throw error;
+  }
+}
+
 function imageProtocolConfig(model: Record<string, unknown>): Record<string, unknown> {
   return model.api_protocol_config && typeof model.api_protocol_config === "object" && !Array.isArray(model.api_protocol_config)
     ? model.api_protocol_config as Record<string, unknown>
@@ -49,11 +63,11 @@ function disabledImageModelMessage(model: Record<string, unknown>): string {
     return publicReason;
   }
   const code = String(config.public_availability_code || "").toLowerCase();
-  if (code === "upstream_account_unavailable") return "上游账户异常";
-  if (code === "upstream_channel_unavailable") return "上游通道异常";
+  if (code === "upstream_account_unavailable") return "该模型正在维护";
+  if (code === "upstream_channel_unavailable") return "该模型正在维护";
   // Provider and validation diagnostics belong to the administrator catalog.
   // The public workbench only needs a stable, non-technical availability label.
-  return "当前未开放";
+  return "该模型正在维护";
 }
 
 function publicImageFamily(model: Record<string, unknown>): "gpt" | "gemini" | "qwen" | "other" {
@@ -135,11 +149,14 @@ export async function GET(request: Request) {
       .map((model): Record<string, unknown> => ({ ...model, name: cleanImageModelText(model, model.name), model_name: cleanImageModelText(model, model.model_name), ...publicImageModelCapabilities(model) }))
       .sort((left, right) => {
         const priorityDifference = publicImageCatalogPriority(left) - publicImageCatalogPriority(right);
-        if (priorityDifference !== 0) return priorityDifference;
+        // Cover's dropdown follows the administrator's workspace order. Other
+        // image workbenches keep their existing family-grouped presentation.
+        if (orderSurface !== "cover-studio" && priorityDifference !== 0) return priorityDifference;
         const leftSurfaceOrder = requestedWorkspaceSurface ? imageModelSurfaceSortOrder(surfaceOrders, orderSurface, left.id) : null;
         const rightSurfaceOrder = requestedWorkspaceSurface ? imageModelSurfaceSortOrder(surfaceOrders, orderSurface, right.id) : null;
         if ((leftSurfaceOrder !== null) !== (rightSurfaceOrder !== null)) return leftSurfaceOrder !== null ? -1 : 1;
         if (leftSurfaceOrder !== null && rightSurfaceOrder !== null && leftSurfaceOrder !== rightSurfaceOrder) return leftSurfaceOrder - rightSurfaceOrder;
+        if (priorityDifference !== 0) return priorityDifference;
         return Number((left as { sort_order?: unknown }).sort_order || 0) - Number((right as { sort_order?: unknown }).sort_order || 0)
           || String(left.id || '').localeCompare(String(right.id || ''));
       });
@@ -153,6 +170,16 @@ export async function GET(request: Request) {
         const sellingPrice = resolveImageResolutionPrice(model, defaultResolution, "selling");
         const priceReady = Number.isFinite(costPrice) && costPrice >= 0
           && Number.isFinite(sellingPrice) && sellingPrice >= 0;
+        const readiness = inspectImageModelReadiness(model, {
+          published: publicationState?.published === true,
+          legacyBaseline: publicationState?.legacyBaseline === true,
+        });
+        // `available` is based on the live configuration/price state. Canary
+        // and publication evidence are diagnostic and must not take a model
+        // off the public catalog merely because an APM or upstream probe
+        // failed. The submit route validates the current provider contract.
+        const legacyGenerationReady = priceReady && publicationState?.available === true;
+        const generationReady = legacyGenerationReady && readiness.protocolBindingReady;
         return toPublicModelDto("cover", {
           ...model,
           // The cover UI charges the default resolution. Project that exact
@@ -163,16 +190,23 @@ export async function GET(request: Request) {
         ...publicMediaBillingCapabilities("per_use"),
         family: publicImageFamily(model),
         admission: publicationState?.admission || 'pending',
-        available: priceReady && publicationState?.available === true,
+        catalogVisible: true,
+        available: generationReady,
         priceReady,
+        protocolBindingReady: readiness.protocolBindingReady,
+        canaryVerified: readiness.canaryVerified,
+        generationReady,
+        readinessMessage: readiness.protocolBindingReady ? "" : readiness.readinessMessage,
+        verificationNotice: readiness.verificationNotice,
         availabilityMessage: !priceReady
-          ? "当前未开放"
+          ? "该模型正在维护"
             : model.is_active !== true
               ? disabledImageModelMessage(model)
               : publicationState?.configured !== true
-                ? "当前未开放"
-              : "",
+                ? "该模型正在维护"
+              : readiness.readinessMessage,
         supportsImageInput: Boolean(model.supports_image_input),
+        ...publicImageReferenceRequirement(model),
         resolutionOptions: model.provider === AUTODL_H3_SELFHOST_PROVIDER
           ? [AUTODL_H3_SELFHOST_IMAGE_VERIFIED_RESOLUTION]
           : (Array.isArray(model.resolutionOptions) ? model.resolutionOptions as string[] : []),

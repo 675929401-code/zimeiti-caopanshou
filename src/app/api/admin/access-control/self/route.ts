@@ -4,6 +4,7 @@ import { getTokenFromHeaders } from "@/lib/auth";
 import {
   ADMIN_PERMISSION_CATALOG,
   ADMIN_TAB_PERMISSIONS,
+  adminPermissionCatalogForSelf,
   hasAdminPermissionRequirement,
 } from "@/lib/admin-governance";
 import {
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
     Object.entries(ADMIN_TAB_PERMISSIONS).map(([tab, requirement]) => [
       tab,
       tab === "super-admin"
-        ? isSuperAdmin
+        ? true // Authenticated administrators may inspect the public directory only.
         : isSuperAdmin
           ? true
           : tab === "aiweb-import"
@@ -98,6 +99,6 @@ export async function GET(request: NextRequest) {
     },
     tabAccess,
     managementPasswordSet,
-    catalog: isSuperAdmin ? ADMIN_PERMISSION_CATALOG : grantedCatalog,
+    catalog: adminPermissionCatalogForSelf(access.permissionKeys),
   }, { headers: { "Cache-Control": "no-store" } });
 }

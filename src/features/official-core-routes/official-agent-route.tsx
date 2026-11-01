@@ -1,4 +1,5 @@
 "use client";
+import { readOfficialPrivateCache, writeOfficialPrivateCache } from "@/lib/official-agent-private-cache";
 
 import {
   ArrowLeft,
@@ -32,11 +33,12 @@ import {
   type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { MessageContent } from "@/components/chat/message-content";
+import { VerifiedStoryboardMessageContent, verifyStoryboardMessageReferenceAssets } from "@/components/chat/storyboard-verified-message";
 import { useApp } from "@/contexts/app-context";
 import { useAppScopedRouter } from "@/hooks/use-app-scoped-router";
 import { appendImageWorkbenchPromptTransfer } from "@/lib/image-workbench-transfer";
@@ -49,14 +51,17 @@ import {
   detectMangaCreativeAgentSkill,
 } from "@/lib/manga-creative-agent-prompt";
 import {
-  buildStructuredAgentOutputReadyDetail,
   parseStructuredAgentOutput,
-  type StructuredAgentOutputResult,
 } from "@/lib/structured-agent-output";
 import {
+  buildHomepageStoryboardDraftDetail,
+  readStoryboardIntakeSnapshotForMessage,
+  resolveStoryboardHandoffContract,
   saveAgentWorkbenchHandoff,
   type AgentWorkbenchHandoffTarget,
 } from "@/lib/agent-workbench-handoff";
+import { readBrowserWorkbenchIdentity } from "@/lib/workbench-user-storage";
+import { hasStoryboardPromptPushCapability } from "@/lib/storyboard-prompt-push-capability";
 import {
   findYoucaiSkillByCommand,
   inferYoucaiSkill,
@@ -77,9 +82,6 @@ import type { Message } from "@/types/coze";
 import styles from "./official-agent-route.module.css";
 
 const MODEL_STORAGE_KEY = "youcai_agent_model_id";
-const PROMPT_LIBRARY_STORAGE_KEY = "xuefeng-user-shortcuts";
-const INSTALLED_SKILLS_STORAGE_KEY = "youcai_installed_community_skills_v1";
-const ASSET_FAVORITES_STORAGE_KEY = "youcai_agent_asset_favorites_v1";
 const MANGA_CONVERSATION_NAME = "创作 Agent";
 const ALLOWED_INLINE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -440,18 +442,12 @@ function StructuredStoryboardHandoffCards({
   );
 }
 
-function readStringArray(storageKey: string): string[] {
-  try {
-    const value = JSON.parse(localStorage.getItem(storageKey) || "[]") as unknown;
-    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-  } catch {
-    return [];
-  }
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function readPromptLibrary(): QuickPrompt[] {
+function readPromptLibrary(value: unknown): QuickPrompt[] {
   try {
-    const value = JSON.parse(localStorage.getItem(PROMPT_LIBRARY_STORAGE_KEY) || "[]") as unknown;
     if (!Array.isArray(value)) return [];
     return value.flatMap((item, index) => {
       if (!item || typeof item !== "object") return [];
@@ -481,10 +477,9 @@ function readPromptLibrary(): QuickPrompt[] {
   }
 }
 
-function persistPromptLibrary(prompts: QuickPrompt[]): boolean {
+function persistPromptLibrary(prompts: QuickPrompt[], ownerId: string, currentOwner: () => string): boolean {
   try {
-    localStorage.setItem(PROMPT_LIBRARY_STORAGE_KEY, JSON.stringify(prompts));
-    return true;
+    return writeOfficialPrivateCache(localStorage, ownerId, "prompts", prompts, currentOwner);
   } catch {
     return false;
   }
@@ -637,6 +632,8 @@ export function OfficialAgentRoute({
 }: OfficialAgentRouteProps = {}) {
   const router = useAppScopedRouter();
   const { state, dispatch, startFreeChat, selectConversation, sendMessage } = useApp();
+  const handoffStateRef = useRef(state); handoffStateRef.current = state;
+  const structuredHandoffBusyRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLFormElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -660,8 +657,8 @@ export function OfficialAgentRoute({
   const [notice, setNotice] = useState("");
   const [composerPanel, setComposerPanel] = useState<ComposerPanel>(null);
   const [commandIndex, setCommandIndex] = useState(0);
-  const [installedCommunityIds, setInstalledCommunityIds] = useState<string[]>([]);
-  const [quickPrompts, setQuickPrompts] = useState<QuickPrompt[]>([]);
+  const [privateInstalledCommunityIds, setInstalledCommunityIds] = useState<string[]>([]);
+  const [privateQuickPrompts, setQuickPrompts] = useState<QuickPrompt[]>([]);
   const [showAllPrompts, setShowAllPrompts] = useState(false);
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   const [editingPromptId, setEditingPromptId] = useState("");
@@ -678,7 +675,7 @@ export function OfficialAgentRoute({
   const [assetSort, setAssetSort] = useState("newest");
   const [previewAssetId, setPreviewAssetId] = useState("");
   const [selectedAssets, setSelectedAssets] = useState<AgentAsset[]>([]);
-  const [favoriteAssetIds, setFavoriteAssetIds] = useState<string[]>([]);
+  const [privateFavoriteAssetIds, setFavoriteAssetIds] = useState<string[]>([]);
   const [controlPanel, setControlPanel] = useState<AgentControlPanel>(null);
   const [controlLoading, setControlLoading] = useState(false);
   const [controlSaving, setControlSaving] = useState(false);
@@ -689,6 +686,18 @@ export function OfficialAgentRoute({
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
   const authenticated = state.auth.isAuthenticated;
+  const privateOwnerId = authenticated ? String(state.auth.user?.id || "").trim() : "";
+  const privateOwnerRef = useRef(privateOwnerId);
+  useLayoutEffect(() => {
+    privateOwnerRef.current = privateOwnerId;
+    setAssetPickerKind(null); setSelectedAssets([]); setAssetRecords([]); setPreviewAssetId("");
+    setInput(""); setQueuedPrompt(null); setComposerPanel(null);
+  }, [privateOwnerId]);
+  const [privateCacheOwner, setPrivateCacheOwner] = useState("");
+  const privateCacheReady = Boolean(privateOwnerId && privateCacheOwner === privateOwnerId);
+  const quickPrompts = useMemo(() => privateCacheReady ? privateQuickPrompts : [], [privateCacheReady, privateQuickPrompts]);
+  const favoriteAssetIds = useMemo(() => privateCacheReady ? privateFavoriteAssetIds : [], [privateCacheReady, privateFavoriteAssetIds]);
+  const installedCommunityIds = useMemo(() => privateCacheReady ? privateInstalledCommunityIds : [], [privateCacheReady, privateInstalledCommunityIds]);
   const canSelectModel = state.auth.user?.role === "admin";
   const conversations = useMemo(
     () => state.conversations
@@ -703,6 +712,8 @@ export function OfficialAgentRoute({
   const activeConversation = conversations.find(
     (conversation) => conversation.id === state.activeConversationId,
   );
+  const activeAgent = state.agents.find((agent) => agent.id === activeConversation?.agentId || agent.botId === activeConversation?.agentId);
+  const storyboardPromptPushEnabled = hasStoryboardPromptPushCapability(activeConversation?.agentId, activeAgent?.outputStyle);
   const selectedModelOption = models.find((model) => model.id === selectedModelId);
   const modelCapabilitySummary = modelsLoading
     ? "正在读取模型 · 发送已阻止"
@@ -897,10 +908,21 @@ export function OfficialAgentRoute({
   }, [dispatch]);
 
   useEffect(() => {
-    setInstalledCommunityIds(readStringArray(INSTALLED_SKILLS_STORAGE_KEY));
-    setQuickPrompts(readPromptLibrary());
-    setFavoriteAssetIds(readStringArray(ASSET_FAVORITES_STORAGE_KEY));
-  }, []);
+    setPrivateCacheOwner(""); setQuickPrompts([]); setFavoriteAssetIds([]); setInstalledCommunityIds([]);
+    setPromptEditorOpen(false); setEditingPromptId(""); setPromptDraftName(""); setPromptDraftContent("");
+    if (!privateOwnerId) return;
+    try {
+      const prompts = readOfficialPrivateCache<unknown>(localStorage, privateOwnerId, "prompts");
+      const favorites = readOfficialPrivateCache<unknown>(localStorage, privateOwnerId, "favorites");
+      const skills = readOfficialPrivateCache<unknown>(localStorage, privateOwnerId, "skills");
+      if (!prompts.ok || !favorites.ok || !skills.ok) { setNotice("个人浏览器资料暂不可读取，已阻止覆盖；请检查存储权限。"); return; }
+      if (privateOwnerRef.current !== privateOwnerId) return;
+      setQuickPrompts(readPromptLibrary(prompts.value));
+      setFavoriteAssetIds(readStringArray(favorites.value));
+      setInstalledCommunityIds(readStringArray(skills.value));
+      setPrivateCacheOwner(privateOwnerId);
+    } catch { setNotice("个人浏览器资料暂不可读取，已阻止覆盖；请检查存储权限。"); }
+  }, [privateOwnerId]);
 
   useEffect(() => {
     setCommandIndex(0);
@@ -938,6 +960,7 @@ export function OfficialAgentRoute({
 
   useEffect(() => {
     if (!assetPickerKind) return;
+    const assetOwnerId = privateOwnerId;
     const controller = new AbortController();
     setAssetError("");
     setAssetQuery("");
@@ -989,10 +1012,10 @@ export function OfficialAgentRoute({
           requiresAuth: true,
         } satisfies AgentAsset];
       });
-      setAssetRecords(assets);
+      if (!controller.signal.aborted && privateOwnerRef.current === assetOwnerId) setAssetRecords(assets);
     })()
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && privateOwnerRef.current === assetOwnerId) {
           setAssetRecords([]);
           setAssetError(error instanceof Error ? error.message : "个人素材读取失败");
         }
@@ -1001,7 +1024,7 @@ export function OfficialAgentRoute({
         if (!controller.signal.aborted) setAssetLoading(false);
       });
     return () => controller.abort();
-  }, [assetPickerKind, state.auth.token]);
+  }, [assetPickerKind, privateOwnerId, state.auth.token]);
 
   useEffect(() => {
     try {
@@ -1747,6 +1770,7 @@ export function OfficialAgentRoute({
   }
 
   function openPromptEditor(prompt?: QuickPrompt) {
+    if (!privateCacheReady) { setNotice("请登录并确认个人资料已读取后再编辑提示词。"); return; }
     setComposerPanel(null);
     setEditingPromptId(prompt?.id || "");
     setPromptDraftName(prompt?.name || "");
@@ -1757,6 +1781,7 @@ export function OfficialAgentRoute({
   }
 
   function savePrompt() {
+    if (!privateCacheReady || privateOwnerRef.current !== privateOwnerId) { setNotice("账户已变化，请重新打开提示词编辑器。"); return; }
     const name = promptDraftName.trim();
     const content = promptDraftContent.trim();
     if (!name || !content) {
@@ -1773,7 +1798,7 @@ export function OfficialAgentRoute({
     const next: QuickPrompt[] = editingPromptId
       ? quickPrompts.map((prompt) => prompt.id === editingPromptId ? record : prompt)
       : [...quickPrompts, record];
-    if (!persistPromptLibrary(next)) {
+    if (!persistPromptLibrary(next, privateOwnerId, () => privateOwnerRef.current)) {
       setNotice("浏览器未能保存提示词，请检查存储权限后重试。");
       return;
     }
@@ -1783,8 +1808,9 @@ export function OfficialAgentRoute({
   }
 
   function deletePrompt(promptId: string) {
+    if (!privateCacheReady || privateOwnerRef.current !== privateOwnerId) { setNotice("账户已变化，请刷新个人提示词。"); return; }
     const next = quickPrompts.filter((prompt) => prompt.id !== promptId);
-    if (!persistPromptLibrary(next)) {
+    if (!persistPromptLibrary(next, privateOwnerId, () => privateOwnerRef.current)) {
       setNotice("提示词删除失败，请检查浏览器存储权限。");
       return;
     }
@@ -1800,38 +1826,58 @@ export function OfficialAgentRoute({
   }
 
   function toggleAssetFavorite(assetId: string) {
-    setFavoriteAssetIds((current) => {
-      const next = current.includes(assetId)
-        ? current.filter((id) => id !== assetId)
-        : [...current, assetId];
-      try {
-        localStorage.setItem(ASSET_FAVORITES_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        setNotice("收藏状态未能保存，请检查浏览器存储权限。");
-      }
-      return next;
-    });
+    if (!privateCacheReady || privateOwnerRef.current !== privateOwnerId) { setNotice("请登录并读取个人收藏后再操作。"); return; }
+    const next = favoriteAssetIds.includes(assetId) ? favoriteAssetIds.filter(id => id !== assetId) : [...favoriteAssetIds, assetId];
+    try {
+      if (!writeOfficialPrivateCache(localStorage, privateOwnerId, "favorites", next, () => privateOwnerRef.current)) throw new Error("PRIVATE_CACHE_WRITE_FAILED");
+      setFavoriteAssetIds(next);
+    } catch { setNotice("收藏状态未能保存，请检查浏览器存储权限。"); }
   }
 
-  const handleStructuredWorkbenchHandoff = useCallback((
+  const handleStructuredWorkbenchHandoff = useCallback(async (
     messageId: string,
-    result: StructuredAgentOutputResult,
     target: AgentWorkbenchHandoffTarget,
   ) => {
-    const detail = buildStructuredAgentOutputReadyDetail(messageId, result);
+    if (structuredHandoffBusyRef.current) { setNotice("正在导入提示词，请稍候。"); return; }
+    const identity = readBrowserWorkbenchIdentity();
+    if (!privateOwnerId || privateOwnerRef.current !== privateOwnerId
+      || identity?.userId !== privateOwnerId) {
+      setNotice("账号已变化，请重新打开当前账号的回复后操作。");
+      return;
+    }
+    const messages = activeConversation?.messages;
+    const messageIndex = messages?.findIndex(message => message.id === messageId) ?? -1;
+    const originalMessage = messages && messageIndex >= 0 ? messages[messageIndex] : undefined;
+    const agent = state.agents.find(item => item.id === activeConversation?.agentId || item.botId === activeConversation?.agentId);
+    const intake = readStoryboardIntakeSnapshotForMessage(messages, messageId, (agent?.outputStyle as Record<string, unknown> | undefined)?.director_mode);
+    const contract = resolveStoryboardHandoffContract(messages, messageId, agent?.outputStyle);
+    const detail = originalMessage && buildHomepageStoryboardDraftDetail(originalMessage, intake?.input, contract.requiredVersion,
+      { previewAssetVerification: true, referenceProjectId: intake?.referenceProjectId, allowLegacyUnverified: contract.allowLegacyUnverified, requirePerformancePlan: contract.requirePerformancePlan, allowQualityWarnings: true });
     const meta = STRUCTURED_HANDOFF_DESTINATIONS[target];
-    if (!detail || result.status !== "valid" || result.kind !== "storyboard_director" || result.source !== "stable_json") {
-      setNotice("当前回复没有通过稳定分镜协议校验，已阻止交接；未创建项目、未调用模型、未扣费。");
+    if (!detail) {
+      setNotice("未识别到与原接收卡逐段对应的完整生图和视频提示词，请核对段落编号与提示词代码框。");
       return;
     }
-    const handoff = saveAgentWorkbenchHandoff(detail, target);
-    if (!handoff) {
-      setNotice(`${meta.label}交接包未能写入浏览器会话，已停止跳转；未创建项目、未调用模型、未扣费。`);
+    if (detail.phase === "assets" && target === "film-studio") {
+      setNotice("三视图资产阶段请先推送到分镜工作台，完成生成并采用后再续写正式分镜。");
       return;
     }
-    setNotice(`已准备 ${meta.label} 交接包；目标页仍需确认导入，当前未调用模型、未扣费。`);
-    router.push(meta.route);
-  }, [router]);
+    structuredHandoffBusyRef.current = true;
+    try {
+      const ready = await verifyStoryboardMessageReferenceAssets(detail, identity);
+      const latest = handoffStateRef.current;
+      const latestMessage = latest.conversations.find(item => item.id === activeConversation?.id)?.messages.find(item => item.id === messageId);
+      if (latest.activeConversationId !== activeConversation?.id || latest.auth.user?.id !== privateOwnerId
+        || latestMessage?.content !== originalMessage.content || readBrowserWorkbenchIdentity()?.token !== identity.token) {
+        throw new Error("账号、会话或回复已变化，请重新确认后操作。");
+      }
+      const handoff = saveAgentWorkbenchHandoff(ready, target === "canvas" ? "storyboard-workbench" : target);
+      if (!handoff) throw new Error(`${meta.label}交接包未能写入浏览器会话，已停止跳转；未创建项目、未调用模型、未扣费。`);
+      setNotice(`已准备 ${meta.label} 交接包；目标页仍需确认导入，当前未调用模型、未扣费。`);
+      router.push(`${meta.route}&handoffId=${encodeURIComponent(handoff.handoff_id)}`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "三视图核验或交接失败，请稍后重试。"); }
+    finally { structuredHandoffBusyRef.current = false; }
+  }, [activeConversation, privateOwnerId, router, state.agents]);
 
   const handleToolProposalHandoff = useCallback((proposal: ManjuSkillToolProposal) => {
     const destination = resolveProposalDestination(proposal);
@@ -1994,7 +2040,7 @@ export function OfficialAgentRoute({
                 const rawText = message.displayContent || message.content;
                 const structuredOutput = isUser
                   ? null
-                  : parseStructuredAgentOutput(rawText, !message.isStreaming);
+                  : parseStructuredAgentOutput(rawText, !message.isStreaming, { allowQualityWarnings: true });
                 const skillOutput = structuredOutput?.status === "valid"
                   && structuredOutput.kind === "manju_skill_output"
                   && structuredOutput.machine_payload
@@ -2017,11 +2063,13 @@ export function OfficialAgentRoute({
                     <div className={styles.messageColumn}>
                       {!isUser ? <strong>创作 Agent</strong> : null}
                       <div className={styles.messageBubble}>
-                        <MessageContent
+                        <VerifiedStoryboardMessageContent
+                          message={message}
+                          conversationId={activeConversation.id}
+                          ownerUserId={privateOwnerId}
                           text={visibleText}
-                          messageId={message.id}
-                          isUser={isUser}
-                          isStreaming={message.isStreaming}
+                          outputStyle={activeAgent?.outputStyle}
+                          agentId={activeConversation.agentId}
                           responseFormat={isUser ? "text" : "markdown"}
                         />
                         {isUser && message.images?.length ? (
@@ -2047,11 +2095,10 @@ export function OfficialAgentRoute({
                         />
                       ) : null}
                       {!isUser
-                        && structuredOutput?.status === "valid"
-                        && structuredOutput.kind === "storyboard_director"
-                        && structuredOutput.source === "stable_json" ? (
+                        && storyboardPromptPushEnabled
+                        && !message.isStreaming && Boolean(message.content.trim()) ? (
                           <StructuredStoryboardHandoffCards
-                            onHandoff={(target) => handleStructuredWorkbenchHandoff(message.id, structuredOutput, target)}
+                            onHandoff={(target) => handleStructuredWorkbenchHandoff(message.id, target)}
                           />
                         ) : null}
                       {isUser && message.error ? (
@@ -2497,7 +2544,7 @@ export function OfficialAgentRoute({
           </section>
         </div>
       ) : null}
-      {promptEditorOpen ? (
+      {promptEditorOpen && privateCacheReady ? (
         <div
           className={styles.modalOverlay}
           onMouseDown={(event) => {

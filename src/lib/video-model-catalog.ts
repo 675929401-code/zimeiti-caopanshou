@@ -3,6 +3,7 @@ import { safeFetchStream, SafeFetchError, type SafeFetchDependencies } from "./s
 /** Read an authenticated directory without redirects or unbounded response bodies. */
 export async function readVideoModelCatalog(url: string, apiKey: string, dependencies: SafeFetchDependencies = {}): Promise<unknown> {
   const { response } = await safeFetchStream(url, {
+    networkPolicy: "fixed-public-dns-pinned",
     timeoutMs: 10000,
     headers: { Accept: "application/json" },
     authorization: { origin: new URL(url).origin, value: `Bearer ${apiKey}` },

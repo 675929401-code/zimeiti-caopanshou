@@ -1,5 +1,8 @@
+import { StoryboardChainRequestSchema, type StoryboardChainRequest } from "@/lib/storyboard-chain-contract";
 import { createHash } from "node:crypto";
+import { imageOutputPolicyVersion, type ImageOutputPolicySnapshot } from "@/lib/image-output-contract";
 import { parseImageRequestRejectionReceipt, type ImageRequestRejection } from "@/lib/image-request-rejection";
+import { isRestorableImageExactText, isValidImageExactText } from "@/lib/storyboard-annotation-layout";
 
 export const IMAGE_FAILURE_HISTORY_SURFACE = "image-workbench" as const;
 export const COVER_FAILURE_HISTORY_SURFACE = "cover-studio" as const;
@@ -48,10 +51,12 @@ export type ImageFailureRequestSnapshot = {
   effectivePrompt?: string;
   providerProtocol?: "google_generate_content" | "chat_completions" | "images_generations" | "images_generations_async" | "images_edits" | "cover_workflow";
   outputPixelSize?: string;
+  outputPolicy?: ImageOutputPolicySnapshot;
   imageCount?: 1;
   referenceUsage?: "general" | "character-identity";
   payloadFingerprint?: string;
   deliveryRequirement?: "recoverable_reference";
+  chainContext?: StoryboardChainRequest;
 };
 
 function isImageFailureHistorySurface(value: unknown): value is ImageFailureRequestSnapshot["surface"] {
@@ -103,12 +108,15 @@ export function createImageFailureRequestSnapshot(input: {
   effectivePrompt?: string;
   providerProtocol?: ImageFailureRequestSnapshot["providerProtocol"];
   outputPixelSize?: string;
+  outputPolicy?: ImageOutputPolicySnapshot;
   imageCount?: 1;
   referenceUsage?: ImageFailureRequestSnapshot["referenceUsage"];
   payloadFingerprint?: string;
   deliveryRequirement?: "recoverable_reference";
+  chainContext?: StoryboardChainRequest;
 }): ImageFailureRequestSnapshot | null {
   const prompt = input.prompt.trim();
+  if (input.exactCoverText !== undefined && !isValidImageExactText(input.exactCoverText)) return null;
   const publicModelId = input.publicModelId.trim();
   const modelName = input.modelName.trim();
   const aspectRatio = input.aspectRatio.trim();
@@ -129,6 +137,7 @@ export function createImageFailureRequestSnapshot(input: {
     referenceAssetRefs,
     quotedPriceYuan: input.quotedPriceYuan,
     billingExempt: input.billingExempt,
+    ...(input.chainContext ? { chainContext: input.chainContext } : {}),
     ...(input.deliveryRequirement ? { deliveryRequirement: input.deliveryRequirement } : {}),
     ...(input.exactCoverText?.trim() ? { exactCoverText: input.exactCoverText.trim() } : {}),
     ...(hasV2Integrity ? {
@@ -136,6 +145,7 @@ export function createImageFailureRequestSnapshot(input: {
       effectivePrompt: input.effectivePrompt?.trim() || "",
       providerProtocol: input.providerProtocol,
       outputPixelSize: input.outputPixelSize?.trim().toLowerCase() || "",
+      ...(input.outputPolicy ? { outputPolicy: input.outputPolicy } : {}),
       imageCount: input.imageCount || 1,
       referenceUsage: input.referenceUsage || "general",
       payloadFingerprint: input.payloadFingerprint,
@@ -147,6 +157,8 @@ export function createImageFailureRequestSnapshot(input: {
 export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRequestSnapshot | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Partial<ImageFailureRequestSnapshot>;
+  const chain = row.chainContext === undefined ? undefined : StoryboardChainRequestSchema.safeParse(row.chainContext);
+  if (chain && (!chain.success || row.surface !== "storyboard-workbench")) return null;
   if (row.deliveryRequirement !== undefined && row.deliveryRequirement !== "recoverable_reference") return null;
   if ((row.schema !== "image_generation_request_snapshot.v1" && row.schema !== "image_generation_request_snapshot.v2")
     || !isImageFailureHistorySurface(row.surface)
@@ -161,9 +173,19 @@ export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRe
     || new Set(row.referenceAssetRefs).size !== row.referenceAssetRefs.length
     || !Number.isFinite(row.quotedPriceYuan) || Number(row.quotedPriceYuan) < 0 || Number(row.quotedPriceYuan) > 1_000_000
     || typeof row.billingExempt !== "boolean"
-    || (row.exactCoverText !== undefined && (typeof row.exactCoverText !== "string" || row.exactCoverText.length > 200))) return null;
+    || (row.exactCoverText !== undefined && !isRestorableImageExactText(row.exactCoverText))) return null;
   if ((row.mode === "text-to-image") !== (row.referenceAssetRefs.length === 0)) return null;
   const v2 = row.schema === "image_generation_request_snapshot.v2";
+  const policy = row.outputPolicy;
+  const policyVersion = imageOutputPolicyVersion(policy?.version);
+  if (policy !== undefined && (!v2 || !policy || typeof policy !== "object" || Array.isArray(policy)
+    || !policyVersion
+    || policy.minimumDimensionScale !== policyVersion.minimumDimensionScale
+    || policy.aspectRatioTolerance !== policyVersion.aspectRatioTolerance
+    || !policy.candidatePixelSizes || typeof policy.candidatePixelSizes !== "object" || Array.isArray(policy.candidatePixelSizes)
+    || Object.keys(policy.candidatePixelSizes).length > 100
+    || Object.entries(policy.candidatePixelSizes).some(([key, pixels]) => !key || key.length > 300
+      || typeof pixels !== "string" || !PIXEL_SIZE.test(pixels)))) return null;
   if (v2 && (
     typeof row.style !== "string" || row.style.length > 256
     || typeof row.effectivePrompt !== "string" || !row.effectivePrompt.trim() || row.effectivePrompt.length > 50_000
@@ -174,6 +196,7 @@ export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRe
     || typeof row.payloadFingerprint !== "string" || !PAYLOAD_FINGERPRINT.test(row.payloadFingerprint)
   )) return null;
   return {
+    ...(chain?.success ? { chainContext: chain.data } : {}),
     schema: row.schema,
     surface: row.surface,
     prompt: row.prompt,
@@ -192,6 +215,7 @@ export function parseImageFailureRequestSnapshot(value: unknown): ImageFailureRe
       effectivePrompt: row.effectivePrompt!,
       providerProtocol: row.providerProtocol!,
       outputPixelSize: row.outputPixelSize!,
+      ...(policy ? { outputPolicy: { ...policy, candidatePixelSizes: { ...policy.candidatePixelSizes } } } : {}),
       imageCount: 1,
       referenceUsage: row.referenceUsage!,
       payloadFingerprint: row.payloadFingerprint!,

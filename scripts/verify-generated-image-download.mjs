@@ -8,7 +8,8 @@ assert.equal(process.version, 'v24.19.0');
 const compile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const png = await sharp({ create: { width: 8, height: 8, channels: 4, background: '#8057c8' } }).png().toBuffer();
 const blob = new Blob([png], { type: 'image/png' }), recordId = 'a'.repeat(64);
-let fetched = [], responseFactory = () => new Response(png, { headers: { 'content-type': 'image/png' } }), checks = 0;
+const fetched = [];
+let responseFactory = () => new Response(png, { headers: { 'content-type': 'image/png' } }), checks = 0;
 const module = { exports: {} };
 runInNewContext(compile(readFileSync('src/lib/generated-image-download.ts', 'utf8')), { module, exports: module.exports,
   Blob, Uint8Array, AbortSignal, AbortController, Set, Error, fetch: async (url, options) => { fetched.push({ url, options }); return responseFactory(options); } });
@@ -55,7 +56,8 @@ function harness(jobs, held) {
 const inline = { id: 'inline', status: 'done', imageUrl: 'blob:current', deliveryReceipt: { recordId, deliveryMode: 'inline_ephemeral', cashCharged: 0.01 } };
 const provider = { id: 'provider', status: 'done', imageUrl: '/api/media-history/content?recordId=' + recordId, deliveryReceipt: { recordId, deliveryMode: 'provider_url', cashCharged: 0.02 } };
 const held = () => new Map([['blob:current', { jobId: 'inline', recordId, blob }]]);
-let h = harness([inline], held()), calls = fetched.length;
+let h = harness([inline], held());
+const calls = fetched.length;
 await h.downloadImage(inline, '1.png'); check(h.downloads.length === 1 && fetched.length === calls);
 await h.downloadAll(); check(h.downloads.length === 2 && h.zipEntries[0][0].name === '1.png' && fetched.length === calls);
 check(inline.deliveryReceipt.cashCharged === 0.01); // Downloads never alter billing/receipt state.
@@ -88,20 +90,39 @@ runInNewContext(compile(readFileSync('src/lib/generated-image-reference.ts', 'ut
   require: name => { assert.equal(name, 'zod'); return zod; },
 });
 const storyboardSource = readFileSync('src/components/storyboard-workbench.tsx', 'utf8');
+const progressModule = { exports: {} };
+runInNewContext(compile(readFileSync('src/lib/video-task-progress.ts', 'utf8')), {
+  module: progressModule, exports: progressModule.exports,
+});
+const confirmationKeySource = storyboardSource.match(/function storyboardVideoConfirmationKey\([\s\S]*?\r?\n\}/u)?.[0];
 const storyboardStart = storyboardSource.indexOf('  const imageDownloadOwnerRef = useRef(');
 const storyboardEnd = storyboardSource.indexOf('  }, [userId, token]);', storyboardStart) + '  }, [userId, token]);'.length;
 const anchorSource = storyboardSource.match(/function triggerDownload\([\s\S]*?\r?\n\}/u)?.[0];
-assert.ok(storyboardStart > 0 && storyboardEnd > storyboardStart && anchorSource);
+assert.ok(storyboardStart > 0 && storyboardEnd > storyboardStart && anchorSource && confirmationKeySource);
 assert.match(storyboardSource, /title="下载故事板" onClick=\{\(\) => void downloadStoryboardImage\(card\)\}/u);
 assert.match(storyboardSource, /scopeMountedRef\.current = false;\s*imageDownloadOperationsRef\.current\.cancelAll\(\)/u);
-const storyboardActual = compile(anchorSource + '\nmodule.exports=function(){' + storyboardSource.slice(storyboardStart, storyboardEnd) + 'return downloadStoryboardImage;}');
+const storyboardActual = compile(anchorSource + '\n' + confirmationKeySource + '\nmodule.exports=function(){' + storyboardSource.slice(storyboardStart, storyboardEnd) + 'return downloadStoryboardImage;}');
 function storyboardHarness() {
-  const module = { exports: {} }, refs = [], notices = [], downloads = [], created = [], revoked = [];
-  const mounted = { current: true }; let refIndex = 0, cleanups = [];
+  const module = { exports: {} }, refs = [], states = [], notices = [], downloads = [], created = [], revoked = [];
+  const mounted = { current: true }, run = { id: 'download-fixture', cards: [] };
+  let refIndex = 0, stateIndex = 0, cleanups = [];
+  const effect = callback => { const cleanup = callback(); if (typeof cleanup === 'function') cleanups.push(cleanup); };
   const sandbox = {
-    module, userId: 'owner', token: 'synthetic', scopeMountedRef: mounted,
+    module, userId: 'owner', token: 'synthetic', scopeMountedRef: mounted, run, runRef: { current: run },
+    cloud: { save: async () => { throw new Error('CLOUD_WRITE_FORBIDDEN'); }, saveRetryAt: 0 },
     useRef: initial => { const index = refIndex++; return refs[index] ||= { current: initial }; },
-    useCallback: callback => callback, useEffect: effect => cleanups.push(effect()),
+    // Preserve lazy initialization and functional state updates across renders.
+    useState: initial => {
+      const index = stateIndex++;
+      if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial;
+      return [states[index], next => { states[index] = typeof next === 'function' ? next(states[index]) : next; }];
+    },
+    useCallback: callback => callback, useEffect: effect,
+    updateVideoConfirmationMap: progressModule.exports.updateVideoConfirmationMap,
+    // The real captured block now also initializes the optional local video
+    // cache. This RAM-only download fixture has no IndexedDB runtime.
+    useLayoutEffect: effect,
+    VideoLocalAutoCache: class { constructor() { throw new Error('LOCAL_VIDEO_CACHE_UNAVAILABLE_IN_RAM_FIXTURE'); } },
     ImageDownloadOperations: helper.ImageDownloadOperations,
     GeneratedImageReferenceSchema: referenceModule.exports.GeneratedImageReferenceSchema,
     readImageDownloadBlob: helper.readImageDownloadBlob, imageDownloadFilename: helper.imageDownloadFilename,
@@ -113,7 +134,7 @@ function storyboardHarness() {
     } },
   };
   runInNewContext(storyboardActual, sandbox);
-  const render = () => { refIndex = 0; return module.exports(); };
+  const render = () => { refIndex = 0; stateIndex = 0; return module.exports(); };
   const result = { download: render(), notices, downloads, created, revoked,
     setIdentity: (userId, token, cancel = true) => {
       if (cancel) { for (const cleanup of cleanups) cleanup(); cleanups = []; }

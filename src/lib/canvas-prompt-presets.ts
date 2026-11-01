@@ -132,6 +132,7 @@ export const AiStoryboardPlanSchema = z.object({
     durationSeconds: z.number().int().min(3).max(5),
     visualShots: z.array(z.object({
       visualMode: VisualShotModeSchema.optional(),
+      bottomPanelRole: z.enum(["none", "panorama", "reveal", "evidence", "conclusion"]).optional(),
       durationSeconds: z.number().int().min(3).max(5),
       shotRole: VisualShotRoleSchema,
       transition: ShotTransitionSchema,
@@ -872,7 +873,7 @@ const presetContents: Record<string, PromptPresetContent> = {
   pet_knowledge: {
     directorPrompt: "",
     segmentationRules: "宠物故事板按用户固定分段执行，不重分段、不改写原文。支持8秒每段3镜头、10秒每段3至4镜头、15秒每段4至6镜头；8秒保留钩子、冲突和结论，10秒增加机制或判断揭示，15秒增加升级爆点、二次反转或情绪停留。每个分镜只对应一段口播、一张故事板参考图、一条视频提示词和一个视频。",
-    characterRules: "默认年轻亚洲女主人，黄色时尚短款连帽卫衣或轻运动休闲上衣、蓝色牛仔裤或休闲裤、白色运动鞋，商业3D动画角色气质；同一条视频内服装稳定，可按主人性别或场景只做克制微调。原文只写狗狗、小狗或狗时，默认三色柯基犬；只有原文、用户选择或特殊备注明确犬种时才改为金毛、哈士奇、泰迪、比熊、中华田园犬等其他品种。狗狗保持自然四足犬类结构，可拟人化情绪但不过度拟人化：允许瞪眼、耳朵变化、尾巴反馈、后缩、靠近主人、惊恐、委屈、好奇表情；禁止狗狗长手、站着走路、招手、拿工具、穿成人服装或变成人形。",
+    characterRules: "默认年轻亚洲女主人与宠物身份保持商业3D动画气质；人物/宠物身份参考只锁脸型、体型、发型、毛色花纹和关键配件，服装由文案语境、场景、季节、职业和情绪单独生成 wardrobePlan，选择一套时尚、可复用的造型并在同一项目内连续，只有显式 wardrobeChangeEvents 才换装。不要把黄色卫衣、蓝色牛仔裤、白色运动鞋等历史模板当作默认。原文只写狗狗、小狗或狗时，默认三色柯基犬；只有原文、用户选择或特殊备注明确犬种时才改为金毛、哈士奇、泰迪、比熊、中华田园犬等其他品种。狗狗保持自然四足犬类结构，可拟人化情绪但不过度拟人化：允许瞪眼、耳朵变化、尾巴反馈、后缩、靠近主人、惊恐、委屈、好奇表情；禁止狗狗长手、站着走路、招手、拿工具、穿成人服装或变成人形。",
     sceneRules: "场景必须根据文案语义推断，不默认室外大马路；可在家里、客厅、小区、公园、宠物店、室内护理、宠物健康中心等空间之间合理变化。每镜只演当前口播的一件事，环境要帮助观众识别触发、误解、危险、检查、护理、保护或结论；涉及健康、医院、伤口、私密部位时使用外部中景、图标、贴纸、示意面板和抽象符号安全表达。",
     imageRules: "自由画布输出必须区分生图提示词和视频提示词。生图提示词只写画面中能看见的角色、姿态、道具、场景、构图、光影、材质和语义包装。图文注释版用于校准，一图多格可带很短中文镜头说明；纯画面参考版用于图生视频，必须把说明条、小字、字幕和导演注释改成图标、无字牌面、箭头、颜色区或空间锚点。高能包装按语义触发：疑问用问号/放大镜，误解用错接线/错位标签，危险用警示牌/警戒线，结论用金色结论牌/绿色勾选章，反转用红黑爆裂牌/裂片翻转，情绪压力用光晕/压迫阴影/震动线，知识重点用安全示意面板/图标/箭头；包装必须绑定角色动作、道具接触、视线、脚步、牵引绳、食盆、放大镜、称重盘或环境反馈。",
     motionRules: "运镜以观察感、亲近感和高能因果为主。每段按目标时长组织真实镜头：8秒钩子建立、冲突爆点、结论落幅；10秒钩子、冲突升级、机制/判断揭示、结论落幅；15秒钩子、冲突、升级爆点或二次反转、机制/正确动作、关系/结论落幅。动作从触发到反应要完整，道具按来源可见、取出或拾起、持有移动、接触或接触前停住、释放或放回的路径调度，包装按出现、增强、接触或改变、收束的生命周期运动。",
@@ -924,8 +925,8 @@ function createBuiltInCanvasPromptPreset(
     accent,
     enabled: true,
     version: 1,
-    primaryModel: id === "anime_story" ? "gpt-5.6-sol" : "gpt-5.4",
-    fallbackModel: id === "anime_story" ? "gpt-5.4" : "gpt-5.6-sol",
+    primaryModel: id === "anime_story" ? "gpt-5.6-sol" : "gpt-5.6-terra",
+    fallbackModel: id === "anime_story" ? "gpt-5.6-terra" : "gpt-5.6-sol",
     promptContractVersion: id === "anime_story" ? "anime-director-v1" : "legacy",
     directorTemplateVersion: id === "anime_story" ? ANIME_DIRECTOR_TEMPLATE_VERSION : "legacy",
     draft: presetContents[id],
@@ -963,16 +964,26 @@ export function parseCanvasPromptPresetStore(value: unknown): CanvasPromptPreset
       }
       if (
         !preset.primaryModel
-        || (preset.primaryModel === "gpt-5.6-terra" && preset.fallbackModel === "gpt-5.4")
-        || (preset.primaryModel === "gpt-5.6-sol" && preset.fallbackModel === "gpt-5.6-terra")
-        || (preset.primaryModel === "gpt-5.6-sol" && preset.fallbackModel === "gpt-5.4")
+        || preset.primaryModel === "gpt-5.4"
+        || preset.primaryModel === "gpt-5.5"
       ) {
-        preset.primaryModel = "gpt-5.4";
+        preset.primaryModel = "gpt-5.6-terra";
+      }
+      if (
+        !preset.fallbackModel
+        || preset.fallbackModel === "gpt-5.4"
+        || preset.fallbackModel === "gpt-5.5"
+      ) {
         preset.fallbackModel = "gpt-5.6-sol";
+      }
+      if (preset.primaryModel === preset.fallbackModel) {
+        preset.fallbackModel = preset.primaryModel === "gpt-5.6-sol" ? "gpt-5.6-terra" : "gpt-5.6-sol";
       }
       if (preset.id === "anime_story") {
         preset.primaryModel = "gpt-5.6-sol";
-        preset.fallbackModel = "gpt-5.4";
+        if (!preset.fallbackModel || preset.fallbackModel === "gpt-5.6-sol") {
+          preset.fallbackModel = "gpt-5.6-terra";
+        }
       }
       if (preset.id === "cinematic_realism") {
         if (preset.name === "电影写实分镜" || preset.name === "电影镜头分镜" || preset.name === "剧情品牌分镜") preset.name = "人物剧情";
@@ -1024,7 +1035,7 @@ export function parseCanvasPromptPresetStore(value: unknown): CanvasPromptPreset
         if (preset.id === "pet_knowledge" && builtIn && (
           !content.segmentationRules.includes("8秒每段3镜头")
           || !content.videoRules.includes("执行口令")
-          || !content.characterRules.includes("黄色时尚短款连帽卫衣")
+          || !content.characterRules.includes("wardrobePlan")
           || !content.imageRules.includes("图文注释版")
         )) {
           content.segmentationRules = builtIn.segmentationRules;
@@ -2034,6 +2045,7 @@ export function createFallbackVisualShots(
 
 type CanvasStoryTargetDuration = Extract<StoryboardTargetDurationSeconds, 8 | 10 | 15>;
 type CanvasActualShotCount = StoryboardActualShotCount | 6;
+export type CanvasStoryboardPanelMode = "fixed-4" | "auto" | "fixed-5";
 
 function normalizeCanvasStoryDirectorMode(value: unknown): StoryboardDirectorMode {
   return value === "cinematic" || value === "lyrical" ? value : "high_energy";
@@ -2048,12 +2060,15 @@ export function shouldUseStoryboardPanoramicAnchor(
   value: string,
   visualMode: VisualShotMode,
   targetDurationSeconds: CanvasStoryTargetDuration,
+  panelMode: CanvasStoryboardPanelMode = "fixed-4",
 ) {
-  const explicitAnchor = /(?:远景|全景|全貌|总览|高潮|结论|最终结果|揭示全貌|情绪收束|关系落点|反转落点|证据汇总)/u.test(value);
+  if (panelMode === "fixed-4") return false;
+  if (panelMode === "fixed-5") return true;
+  // `auto` accepts only a structured producer decision.  Natural-language
+  // words such as “全景/高潮/结论” are semantic content, not a layout API.
+  const explicitAnchor = /(?:panelMode|panel_mode|bottomPanelRole|bottom_panel_role)\s*[:=]\s*(?:fixed-5|panorama|reveal|evidence|conclusion)/iu.test(value);
   if (!explicitAnchor) return false;
-  const independentValue = /(?:承担|落点|锚点|完整展示|一眼看清|汇总|揭示|收束|定论|前后对比|空间关系)/u.test(value);
-  if (targetDurationSeconds !== 15) return independentValue && visualMode !== "narrative";
-  return independentValue || visualMode !== "narrative";
+  return targetDurationSeconds === 15 || visualMode !== "narrative";
 }
 
 function buildStoryboardShotTimeRanges(
@@ -2079,6 +2094,7 @@ function buildStoryboardShotTimeRanges(
 function resolveCanvasStoryUnitPlan(input: {
   targetDurationSeconds: CanvasStoryTargetDuration;
   directorMode: StoryboardDirectorMode;
+  panelMode: CanvasStoryboardPanelMode;
   narration: string;
   visualBeat: string;
   visualMode: VisualShotMode;
@@ -2093,7 +2109,7 @@ function resolveCanvasStoryUnitPlan(input: {
   videoRhythmInstruction: string;
 } {
   const anchorText = `${input.narration} ${input.visualBeat} ${input.effectsPrompt}`;
-  const usePanorama = shouldUseStoryboardPanoramicAnchor(anchorText, input.visualMode, input.targetDurationSeconds);
+  const usePanorama = shouldUseStoryboardPanoramicAnchor(anchorText, input.visualMode, input.targetDurationSeconds, input.panelMode);
   const actualShotCount = (
     input.targetDurationSeconds === 15
       ? input.directorMode === "high_energy" ? 6 : input.directorMode === "cinematic" ? 5 : 4
@@ -2139,6 +2155,7 @@ export function compileStoryboard(input: {
   productionMode?: "anime-story" | "real-story" | "ten-second" | "product-video";
   storyDirectorMode?: StoryboardDirectorMode;
   targetDurationSeconds?: StoryboardTargetDurationSeconds;
+  storyboardPanelMode?: CanvasStoryboardPanelMode;
   referenceMode?: "single" | "first-last";
   keyframeStrategy?: KeyframeStrategy;
   effectsLevel?: VisualEffectsLevel;
@@ -2156,6 +2173,7 @@ export function compileStoryboard(input: {
   const storyTargetDurationSeconds = isAnimeProduction
     ? normalizeCanvasStoryTargetDuration(input.targetDurationSeconds)
     : undefined;
+  const storyboardPanelMode = input.storyboardPanelMode || "fixed-4";
   const normalizedInputPlan = input.plan ? normalizeStoryboardPlanCharacterIdentities(input.plan, input.script) : null;
   const requiresDirectPrompts = normalizedInputPlan?.promptContractVersion === "anime-director-v1";
   const aiPlan = normalizedInputPlan
@@ -2306,10 +2324,16 @@ export function compileStoryboard(input: {
       const usesGraphicDecoration = effectsLevel !== "none"
         && visualMode !== "narrative"
         && hasGraphicDecoration;
+      const requestedBottomPanelRole = "bottomPanelRole" in visualShot
+        ? visualShot.bottomPanelRole
+        : undefined;
       const storyUnitPlan = storyTargetDurationSeconds
         ? resolveCanvasStoryUnitPlan({
             targetDurationSeconds: storyTargetDurationSeconds,
             directorMode: storyDirectorMode,
+            panelMode: requestedBottomPanelRole && requestedBottomPanelRole !== "none"
+              ? "fixed-5"
+              : storyboardPanelMode,
             narration: segment.narration,
             visualBeat: visualShot.visualBeat,
             visualMode,

@@ -1,0 +1,770 @@
+﻿/* Project asset presentation. Document-flow variants never inherit dialog sizing. */
+
+.sbw-root.sbw-assets-page {
+  display: block;
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans-theme, sans-serif);
+}
+
+.sbw-assets-page .sbw-asset-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px 32px 16px;
+}
+
+.sbw-assets-page .sbw-asset-context h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+}
+
+.sbw-assets-page .sbw-asset-context p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.sbw-assets-page .sbw-asset-model-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.sbw-assets-page .svad-page > .sbw-asset-model-controls {
+  padding: 8px 20px 14px;
+}
+
+.sbw-assets-page .sbw-asset-model-controls label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.sbw-assets-page .sbw-asset-model-controls select {
+  max-width: 340px;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.sbw-assets-page .sbw-asset-context button {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 13px;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.sbw-assets-page .sbw-asset-context button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.sbw-assets-page :is(button, input, select):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.sbw-root .svad-inline,
+.sbw-assets-page .svad-page {
+  --svad-surface-pad: 16px;
+  --svad-receiver-pad: 12px;
+  --svad-prompt-height: 76px;
+  position: static;
+  inset: auto;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 1px solid var(--svad-line);
+  border-radius: 14px;
+  background: var(--svad-bg);
+  color: var(--svad-fg);
+  box-shadow: none;
+}
+
+.sbw-root .svad-inline {
+  margin: 16px 0 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.sbw-root .sbw-task-step-heading {
+  margin: 0 14px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.sbw-assets-page .svad-page {
+  --svad-surface-pad: 20px;
+  --svad-receiver-pad: 14px;
+  --svad-prompt-height: 88px;
+  width: calc(100% - 48px);
+  max-width: 1376px;
+  margin: 24px auto 32px;
+}
+
+:is(.svad-inline, .svad-page) .svad-header {
+  display: block;
+  padding: 12px var(--svad-surface-pad) 8px;
+}
+
+:is(.svad-inline, .svad-page) .svad-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+:is(.svad-inline, .svad-page) .svad-header h2 {
+  flex: none;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+:is(.svad-inline, .svad-page) .svad-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+:is(.svad-inline, .svad-page) .svad-header-actions > button {
+  min-height: 36px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+:is(.svad-inline, .svad-page) .svad-context-line {
+  margin: 5px 0 0;
+  font-size: 12px;
+}
+
+:is(.svad-inline, .svad-page) .svad-content {
+  overflow: visible;
+  padding: 10px var(--svad-surface-pad);
+  scrollbar-gutter: auto;
+}
+
+/* Neutral receiver cards; category colour is confined to the icon badge. */
+
+:is(.svad-inline, .svad-page) .svad-drafts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px 8px;
+  margin-bottom: 8px;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-heading > strong {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+:is(.svad-inline, .svad-page) .svad-role-icon {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  flex: none;
+  border-radius: 8px;
+  color: var(--svad-role-tone);
+  background: color-mix(in srgb, var(--svad-role-tone) 10%, var(--svad-bg));
+  margin-right: 8px;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-heading small {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 7px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--svad-soft);
+  color: var(--svad-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-heading .svad-name-input {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 36px;
+  height: 36px;
+  padding: 6px 10px;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-actions .svad-secondary {
+  min-height: 36px;
+  color: var(--svad-accent);
+  border-color: var(--svad-line);
+  background: var(--svad-bg);
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-actions .svad-secondary:hover:not(:disabled) {
+  background: var(--svad-soft);
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-actions .svad-text-button {
+  font-size: 12px !important;
+}
+
+/* Menus remain outside card flow, without hiding long metadata or focus rings. */
+
+:is(.svad-inline, .svad-page) summary::-webkit-details-marker {
+  display: none;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-options {
+  grid-column: 2;
+  grid-row: 1;
+  position: relative;
+  margin: 0;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-options > summary {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  min-height: 34px;
+  padding: 4px 0 4px 8px;
+  font-size: 12px;
+  color: var(--svad-muted);
+  cursor: pointer;
+}
+
+:is(.svad-inline, .svad-page) .svad-draft-options > .svad-metadata-fields {
+  position: absolute;
+  z-index: 25;
+  top: 100%;
+  right: 0;
+  width: 280px;
+  max-width: calc(100vw - 64px);
+  max-height: min(480px, 60dvh);
+  overflow-y: auto;
+  padding: 14px;
+  margin: 0;
+  gap: 10px;
+  grid-template-columns: 1fr;
+  border: 1px solid var(--svad-line);
+  border-radius: 12px;
+  background: var(--svad-bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 9%);
+}
+
+:is(.svad-inline, .svad-page) .svad-fields {
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+}
+
+:is(.svad-inline, .svad-page) .svad-assets {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+:is(.svad-inline, .svad-page) .svad-image-button {
+  height: auto;
+  min-height: 145px;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+}
+
+:is(.svad-inline, .svad-page) .svad-image-button img {
+  position: absolute;
+  inset: 0;
+}
+
+:is(.svad-inline, .svad-page) .svad-add {
+  margin: 12px 0 0;
+}
+
+:is(.svad-inline, .svad-page) .svad-add > span {
+  width: auto;
+  margin-right: 6px;
+}
+
+:is(.svad-inline, .svad-page) .svad-library-save {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+:is(.svad-inline, .svad-page) .svad-library-save > span {
+  color: var(--svad-muted);
+  font-size: 12px;
+}
+
+:is(.svad-inline, .svad-page) .svad-library-save > button {
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+:is(.svad-inline, .svad-page) .svad-primary {
+  padding: 7px 12px;
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.svad-inline .svad-batch-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  margin-bottom: 12px;
+  background: transparent;
+}
+
+.svad-inline .svad-batch-panel p {
+  margin: 0;
+}
+
+.svad-inline .svad-intro {
+  margin: 8px 0 14px;
+}
+
+.svad-inline .svad-model {
+  display: none;
+}
+
+.svad-inline .svad-existing {
+  margin-top: 16px;
+}
+
+.svad-bound-assets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 var(--svad-surface-pad, 20px) 16px;
+}
+
+.svad-inline .svad-bound-assets:empty {
+  display: none;
+}
+
+.svad-bound-assets .svad-bound-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--svad-line);
+  border-radius: 12px;
+  background: var(--svad-bg);
+}
+
+.svad-bound-assets .svad-bound-item img {
+  width: 100px;
+  height: 58px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: var(--svad-field-bg);
+}
+
+.svad-bound-assets .svad-bound-item strong {
+  font-size: 13px;
+}
+
+@media (min-width: 1600px) {
+  .sbw-assets-page .svad-assets {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Two reference cards fill the same outer width as the segment-card row. */
+.sbw-root .sbw-reference-step .svad-inline .svad-drafts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Inline reference settings live outside the library-page surface. */
+.sbw-root .sbw-reference-step > .sbw-asset-model-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans-theme, sans-serif);
+}
+
+.sbw-root .sbw-reference-step > .sbw-asset-model-controls label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.sbw-root .sbw-reference-step > .sbw-asset-model-controls label:first-child {
+  flex: 1 1 220px;
+  max-width: 420px;
+}
+
+.sbw-root .sbw-reference-step > .sbw-asset-model-controls select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sbw-root .sbw-reference-step > .sbw-asset-model-controls select:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.sbw-root .sbw-reference-step > .sbw-asset-model-controls select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.sbw-root .sbw-reference-step > .sbw-asset-model-controls > span {
+  align-self: center;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.svad-inline .svad-header {
+  padding: 0 2px 12px;
+}
+
+.svad-inline .svad-content {
+  padding: 0;
+}
+
+/* Keep the inline reference row on the same content edges as the segment
+   cards below it.  The workbench grid uses 14px horizontal gutters; the
+   shared asset surface defaults to 16px, which made the two rows visibly
+   drift apart and broke the alignment contract at desktop widths. */
+.sbw-root .sbw-reference-step .svad-inline .svad-drafts {
+  box-sizing: border-box;
+  padding-inline: 14px;
+}
+
+.svad-inline .svad-drafts > .svad-reference-slot {
+  --svad-role-tone: var(--svad-accent);
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--svad-fg) 12%, var(--svad-bg));
+  border-radius: 12px;
+  background: var(--svad-bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 3%);
+  display: flex;
+  flex-direction: column;
+}
+
+.svad-surface .svad-reference-slot {
+  min-width: 0;
+}
+
+.svad-surface .svad-reference-slot[data-role="character"] {
+  --svad-role-tone: var(--svad-accent);
+}
+
+.svad-surface .svad-reference-slot[data-role="pet"] {
+  --svad-role-tone: #a57a32;
+}
+
+.svad-surface .svad-reference-slot:is([data-role="environment"], [data-role="prop"]) {
+  --svad-role-tone: #7972a4;
+}
+
+.svad-inline .svad-delete-draft {
+  color: var(--svad-muted);
+}
+
+.svad-inline .svad-delete-draft:hover:not(:disabled) {
+  color: var(--destructive, #c74646);
+}
+
+.svad-surface .svad-custom-label {
+  display: grid;
+  gap: 6px;
+  margin: 2px 0 12px;
+  color: var(--svad-muted);
+  font-size: 12px;
+}
+
+.svad-inline .svad-slot-actions {
+  margin-top: auto;
+}
+
+.svad-inline .svad-add-reference {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.svad-inline .svad-add-reference > label {
+  display: grid;
+  gap: 4px;
+  min-width: 130px;
+  color: var(--svad-muted);
+  font-size: 12px;
+}
+
+.svad-inline .svad-add-reference > button {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px dashed var(--svad-line);
+  border-radius: 8px;
+}
+
+.svad-surface .svad-slot-result {
+  display: grid;
+  gap: 10px;
+}
+
+.svad-surface .svad-slot-result > small {
+  color: var(--svad-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.svad-page .svad-asset > strong {
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.svad-inline .svad-slot-result .svad-assets {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.svad-surface .svad-slot-result .svad-image-button {
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  border: 1px solid color-mix(in srgb, var(--svad-fg) 10%, var(--svad-bg));
+  border-radius: 9px;
+  background: var(--svad-field-bg);
+  overflow: hidden;
+}
+
+.svad-surface .svad-slot-result img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.svad-surface .svad-slot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.svad-surface .svad-slot-actions button {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.svad-surface .svad-slot-prompt {
+  margin-top: 8px;
+}
+
+.svad-surface .svad-slot-prompt > summary {
+  width: fit-content;
+  padding: 6px 0;
+  color: var(--svad-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.svad-page .svad-library-tools {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(120px, 150px) minmax(140px, 170px) auto auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.svad-page > :is(.svad-library-tools, .svad-assets, .svad-existing, .svad-import, .svad-empty) {
+  margin-left: var(--svad-surface-pad, 20px);
+  margin-right: var(--svad-surface-pad, 20px);
+}
+
+.svad-page > .svad-assets,
+.svad-page > .svad-existing {
+  margin-bottom: 20px;
+}
+
+.svad-page .svad-single-creator {
+  max-width: 760px;
+  margin: 6px auto 14px;
+  padding: 20px;
+  border: 1px solid var(--svad-line);
+  border-radius: 12px;
+  background: var(--svad-bg);
+}
+
+.svad-page .svad-single-creator .svad-drafts {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.svad-page .svad-single-creator textarea {
+  min-height: 120px;
+  font-size: 14px;
+}
+
+.svad-page .svad-create-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.svad-surface .svad-reference-slot > .svad-prompt-label,
+.svad-surface .svad-slot-prompt > .svad-prompt-label {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+  color: var(--svad-muted);
+  font-size: 12px;
+}
+
+.svad-surface .svad-reference-slot textarea {
+  height: auto;
+  min-height: max(var(--svad-prompt-height), 128px);
+  max-height: 320px;
+  field-sizing: content;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.svad-page .svad-single-creator .sbw-asset-model-controls {
+  margin: 12px 0 18px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--svad-line);
+}
+
+.svad-page .svad-single-creator .svad-reference-slot textarea {
+  height: 132px;
+  min-height: 132px;
+}
+
+.svad-page .svad-import {
+  display: grid;
+  gap: 14px;
+  padding: 20px 0 4px;
+  margin-top: 20px;
+  border-top: 1px solid var(--svad-line);
+}
+
+.svad-page .svad-import > label,
+.svad-page .svad-creator-category {
+  display: grid;
+  gap: 6px;
+  color: var(--svad-muted);
+  font-size: 13px;
+}
+
+.svad-page .svad-creator-category {
+  margin: 12px 0;
+}
+
+.svad-page .svad-import > button {
+  justify-self: start;
+}
+
+.svad-page .svad-import > .svad-primary {
+  justify-self: end;
+}
+
+.svad-page .svad-import .svad-asset > label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.svad-surface input[type=radio] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  accent-color: var(--svad-accent);
+}
+
+@media (max-width: 900px) {
+  .sbw-root .sbw-reference-step .svad-inline .svad-drafts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sbw-root .sbw-reference-step > .sbw-asset-model-controls label:first-child {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+.sbw-root .sbw-reference-step > .sbw-asset-model-controls .sbw-reference-settings-hint {
+  flex-basis: 100%;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+}

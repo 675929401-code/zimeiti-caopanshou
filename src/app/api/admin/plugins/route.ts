@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminToken } from "@/lib/admin-auth";
 import { normalizeDisplayText } from "@/lib/display-normalization";
 import {
+  EXTRACTION_FEATURE_LOCK,
+  extractionConfigurationIsLocked,
+  extractionFeatureLockedBody,
+} from "@/lib/extraction-feature-lock";
+import {
   clearPluginConfigSecrets,
   mergePluginConfigSecrets,
   sanitizePluginForAdmin,
@@ -112,7 +117,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "插件不存在" }, { status: 404 });
       }
 
-      return NextResponse.json({ plugin: sanitizePluginForAdmin(data) });
+      return NextResponse.json({ plugin: sanitizePluginForAdmin(data), featureLock: EXTRACTION_FEATURE_LOCK });
     }
 
     // 列表模式：脱敏返回
@@ -145,7 +150,7 @@ export async function GET(request: NextRequest) {
     const sanitized = (data || []).map((p: PluginRecord) => sanitizePluginForAdmin(p));
 
     // 同时返回系统角色定义，供前端使用
-    return NextResponse.json({ plugins: sanitized, systemRoles: SYSTEM_ROLES });
+    return NextResponse.json({ plugins: sanitized, systemRoles: SYSTEM_ROLES, featureLock: EXTRACTION_FEATURE_LOCK });
   } catch (err) {
     console.error("[Plugins] GET error:", err);
     return NextResponse.json({ error: "服务器错误" }, { status: 500 });
@@ -167,6 +172,10 @@ export async function POST(request: NextRequest) {
     }
     const { name, type, subtype, role, description, icon, config, is_active, sort_order, price_per_use, cost_price, price_unit } = body;
 
+    // Guard before sibling deactivation, credential merging, or any DB write.
+    if (extractionConfigurationIsLocked(role)) {
+      return NextResponse.json(extractionFeatureLockedBody(), { status: 423 });
+    }
     const metadataError = validatePluginMetadataInput(body, true);
     if (metadataError) {
       return NextResponse.json({ error: metadataError }, { status: 400 });
@@ -248,11 +257,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "插件ID为必填项" }, { status: 400 });
     }
 
-    const metadataError = validatePluginMetadataInput(body);
-    if (metadataError) {
-      return NextResponse.json({ error: metadataError }, { status: 400 });
-    }
-
     const client = getSupabaseClient();
     const { data: existing, error: existingError } = await client
       .from("plugins")
@@ -264,6 +268,15 @@ export async function PUT(request: NextRequest) {
     }
     if (!existing) {
       return NextResponse.json({ error: "插件不存在" }, { status: 404 });
+    }
+    // Both identities matter: changing into or out of a protected role is a
+    // protected mutation, even when the request omits role or only clears a key.
+    if (extractionConfigurationIsLocked(existing.role, role)) {
+      return NextResponse.json(extractionFeatureLockedBody(), { status: 423 });
+    }
+    const metadataError = validatePluginMetadataInput(body);
+    if (metadataError) {
+      return NextResponse.json({ error: metadataError }, { status: 400 });
     }
     const targetsLegacyVideoRole = role === "extract_video"
       || (role === undefined && existing.role === "extract_video");
@@ -364,6 +377,20 @@ export async function DELETE(request: NextRequest) {
     }
 
     const client = getSupabaseClient();
+    const { data: existing, error: existingError } = await client
+      .from("plugins")
+      .select("id, role")
+      .eq("id", id)
+      .maybeSingle();
+    if (existingError) {
+      return NextResponse.json({ error: "读取原插件配置失败，未删除任何配置" }, { status: 500 });
+    }
+    if (!existing) {
+      return NextResponse.json({ error: "插件不存在" }, { status: 404 });
+    }
+    if (extractionConfigurationIsLocked(existing.role)) {
+      return NextResponse.json(extractionFeatureLockedBody(), { status: 423 });
+    }
     const { error } = await client.from("plugins").delete().eq("id", id);
 
     if (error) {

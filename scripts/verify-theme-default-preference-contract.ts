@@ -35,7 +35,7 @@ assert.deepEqual(
   "用户主题与后台主题必须共享同一 key/名称合同",
 );
 for (const [, displayName] of expectedThemes) {
-  assert.equal([...displayName].length, 3, `${displayName} 必须恰好三个汉字`);
+  assert.match(displayName, /^\p{Script=Han}{3,4}$/u, `${displayName} 必须是稳定的中文产品名称`);
 }
 
 assert.equal(DEFAULT_THEME, "soft-white", "未配置平台主题时必须回退到柔光白");

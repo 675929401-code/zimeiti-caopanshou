@@ -17,7 +17,9 @@ const authSessionClientIp = read("src/lib/auth-session-client-ip.ts");
 
 // Manually audited against TypeScript-printer-normalized full-file ASTs. These
 // pins are intentionally constants: updating either requires an explicit audit.
-const EXPECTED_LOGIN_FULL_FILE_AST_SHA256 = "ce5e4c854033a1d7310cbc34ec5a31c1797c3b308a172892c76ef2ee49ee4095";
+// Reviewed remember-me change: DB session, JWT and cookie share a 3/30-day TTL.
+// This remains a fixed pin; executable drift still requires explicit review.
+const EXPECTED_LOGIN_FULL_FILE_AST_SHA256 = "16aa97d5e5200f959938dcd25460d1b1b68220cc8ed711b2436501433b2e95bd";
 const EXPECTED_AUTH_SESSION_CLIENT_IP_FULL_FILE_AST_SHA256 = "b82c161cb59c6c6b36685d34640833519f8cceeacf3504a99ae2e6186918299f";
 
 function parseTypeScript(source: string, fileName: string): ts.SourceFile {

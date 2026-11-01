@@ -1,0 +1,237 @@
+{
+  "schema": "chat-reliability-lock.v1",
+  "locked": true,
+  "createdAt": "2026-10-29T10:43:38.934Z",
+  "approval": {
+    "reference": "User correction 2026-10-30: only the existing reply-footer icon pushes into corresponding storyboard cards; remove code-header whole-reply actions. Fix the actual original chained intake versus visible ordinary-mode reply without generating again.",
+    "scope": "Reviewed text-draft mode declaration is advisory, original submitted input remains authority. Preserve full original reply/input and all pairs; computed mismatch warning is rebuilt and displayed, not a new generation gate. Machine input conflicts, asset ownership, interrupted/unknown states, and async latest-source checks remain strict. Source-only manual baseline: 52 paths; actual new-build history-to-project acceptance still pending. Prior equal-height and real-wheel fixes retained; extraction 31 unchanged.",
+    "reviewedUpdate20261031": "User authorized global bug repairs including agents. Manual single-file update for sendCozeMessage terminal handling only; partial EOF remains unknown, no automatic replay. Independent Astra review matched exact callback-only diff and reran 37/37 zero-network cases. Evidence: .codex-evidence/global-release-20261031-a417dfa5/audit-review/scoped-final-review.json; prior baseline preserved in homepage-theme-restore/chat-lock.before.json. Other 51 file hashes unchanged."
+  },
+  "basis": {
+    "channelProbeReceipt": ".codex-evidence/chat-reliability-20261029/channel-once.json",
+    "channelProbeCompleted": true,
+    "fullAgentWorkflowTested": false,
+    "roleRefusalProbeDirectory": ".codex-evidence/agent-role-refusal-20261029",
+    "productIntroductionProbe": ".codex-evidence/agent-role-refusal-20261029/release-current-product-intro-once.json"
+  },
+  "files": [
+    {
+      "path": "package.json",
+      "sha256": "53e5d201a505d7d7a165c3f319983e1a245cd38c50744189a4da1d7c46419e64"
+    },
+    {
+      "path": "docs/公共聊天链路保护合同.md",
+      "sha256": "fb36e6d2deebe47b1f1a937fa5d60425b5f615b4a359eb5389fb9e5a561ce7b9"
+    },
+    {
+      "path": "scripts/verify-chat-reliability-lock.mjs",
+      "sha256": "67309928144de44e4edb70b438306c346643e15f0619679c440453e080b80ba7"
+    },
+    {
+      "path": "scripts/verify-chat-reliability-lock-zero-network.mjs",
+      "sha256": "773e997bee0dfa0b5faa1f29b29cb19ee000ae8d40fc07359e503ad54131d31a"
+    },
+    {
+      "path": "scripts/verify-chat-reliability-browser.mjs",
+      "sha256": "ecc8e6aa475b36bf1a3c98b7f6254fc0bea7c062973ed308f3ba8b7b3939a742"
+    },
+    {
+      "path": "src/lib/llm-proxy/stream-error.ts",
+      "sha256": "a98af7f8ede27478b58580defde17a4da6908a14442453f34df2a855ba55921e"
+    },
+    {
+      "path": "src/lib/llm-proxy/proxy.ts",
+      "sha256": "69145d69a86c983145d3673eadf4d5b5a53bce999e5027a864f9aa36d1a5faf2"
+    },
+    {
+      "path": "src/lib/llm-request-idempotency.ts",
+      "sha256": "b5d6770bebc506867a15f81f966759f4326f99f6ded8ad9fa37474162fcbcdc3"
+    },
+    {
+      "path": "src/app/api/llm/handle-stream.ts",
+      "sha256": "34c6a693576b920d98db09bed49111ef09092e7e2dcf306b9eea91375933ade4"
+    },
+    {
+      "path": "src/lib/chat-pipeline.ts",
+      "sha256": "efadb6134fcba04d4ac5333b887ef00c344c17ebdde961fbbac1be509a9a28ff"
+    },
+    {
+      "path": "src/lib/chat-customer-failure.ts",
+      "sha256": "02319c35b9b90b98113c63aa0f4f93f70c5348b214ca2a10662aaf3b8eb4d738"
+    },
+    {
+      "path": "src/contexts/chat-recovery-policy.ts",
+      "sha256": "1a0b0ad8ce647df55cd59861bf71663b3aa49f88552c903d43337ef361b965d1"
+    },
+    {
+      "path": "src/contexts/app-context.tsx",
+      "sha256": "dcc9e810f48b7f09f76c9ef015ec648881f8abe50dcc705ff9e5f0599c0a58e8"
+    },
+    {
+      "path": "src/contexts/chat-utils.ts",
+      "sha256": "07ee6f18d4477f371558c1b2c2ebb892c74ed0a3a39976fcf019beee5a7124d2"
+    },
+    {
+      "path": "src/contexts/chat-reducer.ts",
+      "sha256": "92e2ebc7326640801a3ac3841a93bfcd1d568a0320b2a778b3a0d52a2ec6aed0"
+    },
+    {
+      "path": "scripts/verify-chat-submitted-outcome-zero-network.ts",
+      "sha256": "b7b55e34780756ddedc16e2b752557b342c32033c24341c787c93434885ccae0"
+    },
+    {
+      "path": "scripts/verify-llm-provider-stream.mjs",
+      "sha256": "34593801ff8131248e452a1f1035b0d44e4d2836e7969f60071614197ba9b2cf"
+    },
+    {
+      "path": "scripts/verify-llm-durable-exactly-once.ts",
+      "sha256": "0a85d065d8653490b46fd6306ad1755bd43c6bebce3178b2507c4a951e500fb4"
+    },
+    {
+      "path": "src/components/chat-view.tsx",
+      "sha256": "bd88e17f03946050870a46fce6788d0eaa6c1d8bd2b175f5644c32e3e6227a08"
+    },
+    {
+      "path": "src/components/chat/message-item.tsx",
+      "sha256": "107f690d8fbc1e3ae6565d8bdd645e276c58ca6d94db500b2da624d99a879d6e"
+    },
+    {
+      "path": "scripts/run-build.mjs",
+      "sha256": "a9c8b5134ec4c35ec3306bd3eb9c5901d495912087eef95c6c5d1a2952181c67"
+    },
+    {
+      "path": "scripts/verify-chat-thinking-experience-browser.mjs",
+      "sha256": "b75ad291d94484d6c7f158bc321b643793d3ee941223437bd909d3fd81ab5cd6"
+    },
+    {
+      "path": "scripts/verify-chat-thinking-lifecycle-zero-network.ts",
+      "sha256": "7e06381a9019db62aa684e74c129ab29e810b4ef4cb39b0542ec0d1409b2299c"
+    },
+    {
+      "path": "scripts/verify-chat-typewriter-premium-lock.mjs",
+      "sha256": "45bf15fe4172601484e94dd0167b40969bcd26c89167466cd77e5fa9805f4d8a"
+    },
+    {
+      "path": "src/components/chat/reasoning-block.tsx",
+      "sha256": "ac0f2c0e19a054fa915463b961d22c57ef2004f793282f93892fb8ef9cdf2f2a"
+    },
+    {
+      "path": "scripts/verify-chat-output-presentation-zero-network.ts",
+      "sha256": "9bb64f2ecb4f790eaea4963554154575f77fb5fbf4e46c7241b996062b620c12"
+    },
+    {
+      "path": "scripts/verify-chat-output-presentation-browser.mjs",
+      "sha256": "874aa87dc5db3abe2a8ae34f11e7804abe09cca106a70dbdf619570c4ade794f"
+    },
+    {
+      "path": "scripts/verify-agent-identity-runtime-contract.ts",
+      "sha256": "8e8d864b44c1924893dc49c51ff1219833fb1c31b9c368c42f9405d0e9aec81c"
+    },
+    {
+      "path": "scripts/verify-llm-standard-request-preflight-zero-network.mjs",
+      "sha256": "ba8b7c3d1ec5661bbaf9a3d8f0d76da79af96133feb612536d88775363165529"
+    },
+    {
+      "path": "src/components/chat/message-content.tsx",
+      "sha256": "adf483a87394ca5ed42aba594916417649e45aa557c23a3c0ac996a2f473d34e"
+    },
+    {
+      "path": "src/app/markdown-body.css",
+      "sha256": "3f31976b1e041e55a978cb2104d76a73867418eee1a112755bb44fbb6e1b07c5"
+    },
+    {
+      "path": "src/lib/agent-identity-envelope.ts",
+      "sha256": "259c3a8e90c4a3ade4b12209696f076acdd361bee617b888ace973257dd59e0a"
+    },
+    {
+      "path": "src/lib/server/llm-standard-request-preparation.ts",
+      "sha256": "a10624e14ce139b293cf648b11711b96b1a252da70dc60bf1f2cab9e98c7a723"
+    },
+    {
+      "path": "src/lib/chat-prompt-delivery-state.ts",
+      "sha256": "1a3ac62fb095e077000ccdcdcc18d66868d2281c043659395fad803835de18fa"
+    },
+    {
+      "path": "src/lib/storyboard-prompt-push-capability.ts",
+      "sha256": "c9312533a767b98842097a4aa83f40204c5614c364c401a2091e175651a35e28"
+    },
+    {
+      "path": "src/lib/chat-video-prompt-transfer.ts",
+      "sha256": "4845ea307e3f3e80753ebcc6899725de1dd533d782f6b42dc642fb5652ac673a"
+    },
+    {
+      "path": "src/lib/chat-storyboard-prompt-draft.ts",
+      "sha256": "c4204d865671f3be6193f9eab63b85506d755b20c56f72695b53701417d84fc1"
+    },
+    {
+      "path": "src/lib/agent-storyboard-prompt-draft.ts",
+      "sha256": "52277d330ae705646abbf2e465da6bf7e1abd64bfea308a3034a7287e0f6b4bf"
+    },
+    {
+      "path": "src/lib/code-block-presentation.ts",
+      "sha256": "473ec7fea26b7b24e0252c519065c87bd345f40ce8b634b08b2e30cebe41e236"
+    },
+    {
+      "path": "src/components/chat/video-prompt-handoff.tsx",
+      "sha256": "174ab2bd37b9b4a81adcabb03fc14b7df373b6aa4be9bdabf57e9a67a078f44c"
+    },
+    {
+      "path": "src/components/chat/structured-storyboard-handoff.tsx",
+      "sha256": "7078aa44780356429cfeffa9611c246163a34d19287df4cf0668c0fdd2c582db"
+    },
+    {
+      "path": "src/components/chat/storyboard-verified-message.tsx",
+      "sha256": "eae54d89901c0fec8df374722a9cf4890a55f8709ec92d0eb88336267c3b6df2"
+    },
+    {
+      "path": "src/components/chat/use-code-block-controls.ts",
+      "sha256": "72dec92bd256928d8193e4124b074386ba312efa479fce06c4f4d02eddf14f5f"
+    },
+    {
+      "path": "src/components/chat/prompt-viewport.module.css",
+      "sha256": "dce3a0c5757a580f3b13fb2fe7c6bacda82e8810317b1afb81bd1df0fe1aba4b"
+    },
+    {
+      "path": "src/components/chat/chat-scroll-behavior.module.css",
+      "sha256": "1b0e4c8220cbec0d57bf6dad3259cd111acf875fbb2f7342909079baccf6c965"
+    },
+    {
+      "path": "scripts/verify-chat-prompt-destination.ts",
+      "sha256": "e4d6a478cd58261654cbe56cad385b9f7da95c74c94bf6427de8995011f652f0"
+    },
+    {
+      "path": "scripts/verify-agent-storyboard-prompt-draft.ts",
+      "sha256": "14899222a734bee3874f8dda530572c4830a7e306e7d75ce068fd58ff6b194bf"
+    },
+    {
+      "path": "scripts/verify-agent-prompt-destination-browser.mjs",
+      "sha256": "9a78111e08ee1acb30f32d284c28f84922d317d3402fe41ebd37bd7aaa36f1b1"
+    },
+    {
+      "path": "scripts/verify-chat-wheel-scroll-browser.mjs",
+      "sha256": "d6768debacb6802dd815dbdcca1c52949b72a959dc83f0558c5d0e486454897b"
+    },
+    {
+      "path": "scripts/lib/chat-prompt-destination-fixtures.mjs",
+      "sha256": "38760ce53c882e8f1e1225be5e621eba5ac072502e47ae7ac046c403c79b29cf"
+    },
+    {
+      "path": "src/lib/storyboard-prompt-draft.ts",
+      "sha256": "b624fb1013f056693be931f600001760b7564a841f4842bfe6661a90ec88f32a"
+    },
+    {
+      "path": "scripts/verify-storyboard-visible-mode-draft.ts",
+      "sha256": "82ef272634df94291e49a58e033bb6b45e600162605c595e60c81889b0144480"
+    }
+  ],
+  "previousApproval": {
+    "reference": "Current user request 2026-10-30: beautify all agent output blocks with three height tiers and centered locator dots; user subsequently approved semantic labels, expand/collapse, clear action labels and stable reading",
+    "scope": "Reviewed presentation-only changes: shared height ceilings, complete literal copy, purpose labels and local expand state across streaming/final; internal code language is read from language class independently of display labels. Preserve provider requests, error and unknown-result behavior, prompts, models, billing, history and extraction. Five authorized file digests manually sealed after Astra review and zero-network regression"
+  },
+  "approvalHistory": [
+    {
+      "reference": "User requests 2026-10-30: configurable video/storyboard prompt destinations, same-tier equal prompt heights, mouse-wheel edge scrolling, and flush code-card scrollbars; this specific chat scope explicitly authorized.",
+      "scope": "Manually reviewed source baseline only, before new-build browser acceptance. Preserve original 33 paths and add 17 direct prompt/scroll dependencies and their contracts (50 total). Current reply only; storyboard sends clearly labelled whole reply, video sends selected literal source; interruption/unknown/owner/current-config guards retained. Existing stable prompts/models/categories, provider, billing and all 31 extraction-lock paths unchanged."
+    }
+  ]
+}

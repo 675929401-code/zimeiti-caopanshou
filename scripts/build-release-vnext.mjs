@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { verifyExtractionFeatureLock } from "./verify-extraction-feature-lock.mjs";
 
 const options = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
@@ -109,6 +110,7 @@ if (options.get("--verify-pnpm-invocation") === "1") {
   process.exit(0);
 }
 if (!service || !["web", "voice"].includes(service)) stop("--service must be web or voice", 2);
+verifyExtractionFeatureLock(root);
 
 const policyPath = path.join(root, "deploy", "policies", "release-policy.json");
 if (!fs.existsSync(policyPath)) stop("missing deploy/policies/release-policy.json", 2);

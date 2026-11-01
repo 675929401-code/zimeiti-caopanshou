@@ -120,7 +120,11 @@ check("工作台排序必须精确覆盖分配且不能携带全局启停", () =
 
 check("兼容层将明文密钥与逻辑快照分槽", () => {
   const source = read("src/lib/server/platform-configuration-compatibility.ts");
-  assert.match(source, /persistCredentialBinding[\s\S]*platform_model_credential_bindings/u);
+  assert.match(source, /stagePlatformModelCandidateWithCredentials\(/u);
+  assert.doesNotMatch(source, /(?:persistCredentialBinding|\.from\(["']platform_model_credential_bindings["']\)\.upsert)/u, "drafts must never write the active credential table");
+  const upsert = source.slice(source.indexOf("export async function stageLegacyModelPoolUpsert"), source.indexOf("export async function stageLegacyModelPoolCatalogState"));
+  assert.ok(upsert.indexOf("resumePlatformModelMutation(") < upsert.indexOf("currentLegacyRow("), "receipt retry must precede any current/physical model read");
+  assert.match(upsert, /PLATFORM_CONFIGURATION_REQUEST_ID_REQUIRED/u, "missing idempotency key must fail before any write");
   assert.match(source, /credentialRef:\s*credentialRef/u);
   const entryMapper = source.slice(source.indexOf("function entryFromLegacyRow"), source.indexOf("async function legacyRows"));
   assert.doesNotMatch(entryMapper, /configuration[\s\S]*\["api_key"/u);

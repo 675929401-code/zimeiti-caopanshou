@@ -15,6 +15,8 @@ interface ReadOnlyModelRow {
   category?: string;
 }
 
+const ADMIN_MODEL_CATALOG_TIMEOUT_MS = 20_000;
+
 export function UnifiedModelsReadOnlyAdminTab({ token }: { token: string | null }) {
   const [models, setModels] = useState<ReadOnlyModelRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,18 +41,24 @@ export function UnifiedModelsReadOnlyAdminTab({ token }: { token: string | null 
       if (!response.ok) throw new Error(payload?.error || "模型目录读取失败");
       setModels(Array.isArray(payload?.models) ? payload.models : []);
     } catch (loadError) {
-      if (signal?.aborted) return;
+      if (signal?.aborted && signal.reason !== "timeout") return;
       setModels([]);
-      setError(loadError instanceof Error ? loadError.message : "模型目录读取失败");
+      setError(signal?.reason === "timeout"
+        ? "模型目录响应超时，请刷新目录重试"
+        : loadError instanceof Error ? loadError.message : "模型目录读取失败");
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted || signal.reason === "timeout") setLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
     const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort("timeout"), ADMIN_MODEL_CATALOG_TIMEOUT_MS);
     void loadModels(controller.signal);
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [loadModels]);
 
   return (

@@ -16,3 +16,5 @@ deploy-manifest.json text eol=lf
 release-security-report.json text eol=lf
 scripts/release-preflight.mjs text eol=lf
 public/youcai-media/v1/source-manifest.json -text -diff
+# Preserve migration ledger SHA-256 bytes; still check whitespace in diffs.
+supabase/migrations/*.sql -text whitespace=cr-at-eol

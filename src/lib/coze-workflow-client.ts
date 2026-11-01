@@ -1,5 +1,6 @@
 import { CozeWorkflowExecutionError, parseCozeWorkflowResult, type CozeWorkflowOutput } from '@/lib/coze-extraction-result';
 import { checkpointExtractionProviderTask } from '@/lib/extraction-exactly-once';
+import { inspectCozeSourceIdentity } from '@/lib/coze-source-identity';
 
 export type CozeExtractMode = "single_video" | "creator_page" | "search";
 
@@ -47,8 +48,13 @@ export async function runCozeCaptionWorkflow(
       if (task.task_id && task.task_id !== taskId) throw new CozeWorkflowExecutionError('工作流返回的任务编号不一致', false, taskId);
       if (task.status === 'completed') {
         if (task.error || !task.result) throw new CozeWorkflowExecutionError('工作流未成功返回文案', true, taskId);
-        try { return { ...parseCozeWorkflowResult(task.result), provider_task_id: taskId }; }
+        let output: CozeWorkflowOutput;
+        try { output = parseCozeWorkflowResult(task.result); }
         catch { throw new CozeWorkflowExecutionError('工作流已结束，但结果格式无效', true, taskId); }
+        if (inspectCozeSourceIdentity(shareText, requestBody.mode, output).status === 'mismatch') {
+          throw new CozeWorkflowExecutionError('提取结果来自其他视频，已停止交付，本次未扣费。', true, taskId, 'COZE_SOURCE_IDENTITY_MISMATCH');
+        }
+        return { ...output, provider_task_id: taskId };
       }
       if (['failed', 'cancelled', 'canceled'].includes(task.status || '')) throw new CozeWorkflowExecutionError('工作流未成功完成识别', true, taskId);
     }

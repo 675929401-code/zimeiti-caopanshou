@@ -54,7 +54,7 @@ async function verifyFrontendContracts() {
   assert.doesNotMatch(page, /模型\/工作流：/u, "customer tools must not expose the internal workflow binding");
   assert.match(page, /mode === "video" \? 210_000 : 30_000/);
   assert.match(page, /PendingExtractionRequestError/);
-  assert.match(page, /正在后台处理原请求/u);
+  assert.match(page, /正在跟踪原请求状态/u);
   assert.match(page, /result\.pending[\s\S]*?pendingAttempt\.refresh/u);
   assert.match(page, /attempt\.state === "succeeded"[\s\S]*?setResult\(next\)/u);
   assert.match(page, /if \(embedded\) toolboxHost\?\.onTabChange\?\.\("segment"\)/);

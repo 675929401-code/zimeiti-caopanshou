@@ -239,7 +239,7 @@ function ProjectLibraryState({
         <FolderOpen size={30} aria-hidden="true" />
         <div>
           <h3>还没有短剧项目</h3>
-          <p>从上方任一可用入口开始。创建行为和数据写入由目标工作台负责。</p>
+          <p>选择上方可用入口，整理剧本和镜头，开始你的第一个项目。</p>
         </div>
         <Link className={styles.primaryButton} href={SHORT_DRAMA_ENTRY_CARDS[0].href}>
           创建第一个项目
@@ -353,7 +353,7 @@ export function ShortDramaPortal() {
     if (!authResolved) return "正在读取登录状态";
     if (!token || !state.auth.user) return "未登录";
     const memberStatus = state.auth.user.memberStatus;
-    const statusLabel = memberStatus ? MEMBER_STATUS_LABEL[memberStatus] : "状态待服务端确认";
+    const statusLabel = memberStatus ? MEMBER_STATUS_LABEL[memberStatus] : "会员状态待确认";
     return `${state.auth.user.displayName || state.auth.user.username} · ${statusLabel}`;
   }, [authResolved, state.auth.user, token]);
 
@@ -385,6 +385,7 @@ export function ShortDramaPortal() {
             className={styles.heroImage}
             src="/short-drama/previews/hero-pipeline-v1.webp"
             alt="影视创作工坊全流程横幅"
+            unoptimized
             fill
             priority
             sizes="(max-width: 900px) 100vw, 1240px"
@@ -408,10 +409,10 @@ export function ShortDramaPortal() {
           )}
           <div className={styles.heroOverlay} aria-hidden="true" />
           <div className={styles.heroContent}>
-            <p className={styles.heroKicker}><Film size={16} />自媒体操盘手原创 AI 影视制作流程横幅</p>
+            <p className={styles.heroKicker}><Film size={16} />AI 影视创作 · 从故事开始</p>
             <h1 id="short-drama-title">从故事到成片，<br /><span>每一步都能回改。</span></h1>
             <p className={styles.heroDescription}>
-              影视工坊负责组织剧本、角色、场景、道具、分镜和视频入口；实际生成继续复用主站现有工作台与服务端能力。
+              先整理剧本，再设定角色、场景和道具；进入分镜工作台规划镜头，最后生成视频片段。
             </p>
             <div className={styles.heroActions}>
               <Link className={styles.primaryButton} href="/storyboard-workbench?entry=short-drama&stage=script">
@@ -423,9 +424,9 @@ export function ShortDramaPortal() {
               </Link>
             </div>
             <div className={styles.heroMetrics} aria-label="影视工坊能力概览">
-              <span><b>6</b><small>制作阶段</small></span>
-              <span><b>5</b><small>主站工作台</small></span>
-              <span><b>0</b><small>入口自动生成</small></span>
+              <span><b>故事策划</b><small>整理剧本与节奏</small></span>
+              <span><b>镜头规划</b><small>编辑分镜提示词</small></span>
+              <span><b>视频制作</b><small>生成片段与回看</small></span>
             </div>
           </div>
         </section>
@@ -445,7 +446,7 @@ export function ShortDramaPortal() {
               <p className={styles.eyebrow}>START</p>
               <h2 id="start-title">选择创作入口</h2>
             </div>
-            <p>选择入口后再确认内容、模型和价格；当前页面不会自动生成。</p>
+            <p>选择适合故事的入口，再确认内容、模型和价格。</p>
           </div>
           <div className={styles.entryGrid}>
             {SHORT_DRAMA_ENTRY_CARDS.map((entry) => {
@@ -533,7 +534,7 @@ export function ShortDramaPortal() {
               <p className={styles.eyebrow}>WORKFLOW</p>
               <h2 id="workflow-title">六步制作链路</h2>
             </div>
-            <p>每一步都落到现有主站工具；不复制重复的生成能力。</p>
+            <p>按故事需要逐步准备素材，再进入分镜和视频制作。</p>
           </div>
           <ol className={styles.workflowList}>
             {SHORT_DRAMA_WORKFLOW_STEPS.map((workflow) => {
@@ -560,7 +561,7 @@ export function ShortDramaPortal() {
           <div className={styles.sectionHeading}>
             <div>
               <p className={styles.eyebrow}>CONNECTED TOOLS</p>
-              <h2 id="tools-title">继续使用主站能力</h2>
+              <h2 id="tools-title">准备素材与配音</h2>
             </div>
           </div>
           <div className={styles.utilityGrid}>
@@ -576,7 +577,7 @@ export function ShortDramaPortal() {
         </section>
 
         <footer className={styles.footer}>
-          <p><CheckCircle2 size={16} />门户页仅组织创作链路，不调用模型、不扣积分、不替代服务端鉴权。</p>
+          <p><CheckCircle2 size={16} />先确认内容和价格，再提交生成；完成后到对应工作台查看结果。</p>
           <Link href="/">返回自媒体操盘手</Link>
         </footer>
       </div>

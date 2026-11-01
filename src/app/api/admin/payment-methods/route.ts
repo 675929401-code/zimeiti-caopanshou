@@ -5,8 +5,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
-import { getTokenFromHeaders } from "@/lib/auth";
-import { verifyAdminToken } from "@/lib/admin-auth";
 import {
   appendAdminGovernanceAudit,
   authorizeAdminCapability,
@@ -80,15 +78,11 @@ function noStore(response: NextResponse): NextResponse {
 
 // GET /api/admin/payment-methods - 管理员获取所有支付方式
 export async function GET(request: NextRequest) {
+  const authorization = await authorizeAdminCapability(request, "payment.settings.manage", {
+    operation: "payment_methods_view",
+  });
+  if (!authorization.ok) return noStore(authorization.response);
   try {
-    const token = getTokenFromHeaders(request.headers);
-    if (!token) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
-    const payload = await verifyAdminToken(token);
-    if (!payload?.userId || payload.role !== "admin") {
-      return NextResponse.json({ error: "无权访问" }, { status: 403 });
-    }
 
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase
@@ -133,10 +127,10 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    return NextResponse.json({
+    return noStore(NextResponse.json({
       methods: data || [],
       stats: methodStats,
-    });
+    }));
   } catch (error) {
     console.error("管理支付方式API异常:", error);
     return NextResponse.json({ error: "服务器异常" }, { status: 500 });

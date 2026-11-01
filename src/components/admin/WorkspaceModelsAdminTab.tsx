@@ -26,6 +26,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import PlatformConfigurationReleasePanel from "./PlatformConfigurationReleasePanel";
+import { ModelBadge } from "@/components/model-badge";
+import { isVideoCatalogDisplaySurface } from "@/lib/video-workspace-catalog";
+import { publicVideoModelCompatibilityMessage } from "@/lib/video-model-public-status";
 
 type ModelKind = "image" | "video";
 type SurfaceId =
@@ -64,6 +67,7 @@ type WorkspaceModel = {
   id: string;
   name: string;
   modelName: string;
+  icon_url?: string | null;
   kind: ModelKind;
   assigned: boolean;
   compatible: boolean;
@@ -75,6 +79,8 @@ type WorkspaceModel = {
   priceReady: boolean;
   activationReady: boolean;
   availabilityMessage: string;
+  compatibilityCode?: string;
+  capabilitiesVerified?: boolean;
   capabilityLabels: string[];
   issues: ModelIssue[];
   warnings: ModelIssue[];
@@ -159,7 +165,8 @@ function toReadOnlyCatalog(catalog: Catalog): Catalog {
         costLabels: [],
         issues: [],
         warnings: [],
-        availabilityMessage: model.publishable ? model.availabilityMessage : "当前模型暂不可提交",
+        availabilityMessage: model.publishable ? model.availabilityMessage
+          : publicVideoModelCompatibilityMessage(model.compatibilityCode) || "当前模型暂不可提交",
       })),
     })),
   };
@@ -698,6 +705,14 @@ export function WorkspaceModelsAdminTab({
                                 </button> : <span className="rounded-md bg-[#f2f4f7] px-3 py-2 text-xs font-semibold text-[#667085]">仅查看</span>}
                               </td>
                               <td className="px-4 py-3">
+                                <div className="flex items-start gap-3">
+                                  <ModelBadge
+                                    name={model.name}
+                                    avatarUrl={model.icon_url}
+                                    identity={[model.modelName, model.provider]}
+                                    availability={model.publishable ? "ready" : "unavailable"}
+                                  />
+                                  <div className="min-w-0 flex-1">
                                 <p className="line-clamp-2 font-semibold leading-5 text-[#172033]">{model.name}</p>
                                 {canManage && <p className="mt-1 line-clamp-2 break-all text-xs leading-5 text-[#667085]">{model.modelName}</p>}
                                 {canManage && <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-[#475467]">
@@ -710,6 +725,8 @@ export function WorkspaceModelsAdminTab({
                                 </div>}
                                 <p className="mt-1 text-xs leading-5 text-[#067647]">{model.priceLabels.join(" · ") || "售价待配置"}</p>
                                 {canManage && <p className="text-xs leading-5 text-[#667085]">{model.costLabels.join(" · ") || "成本待配置"}</p>}
+                                  </div>
+                                </div>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex max-w-xl flex-wrap gap-1.5">
@@ -722,7 +739,7 @@ export function WorkspaceModelsAdminTab({
                                 ) : (
                                   <div className="rounded-md border border-[#fedf89] bg-[#fffaeb] px-3 py-2 text-xs leading-5 text-[#93370d]">
                                     <p className="font-semibold">已添加，但当前不可提交</p>
-                                    <p>{model.availabilityMessage || "当前配置不可用"}</p>
+                                    <p>{publicVideoModelCompatibilityMessage(model.compatibilityCode) || model.availabilityMessage || "当前配置不可用"}</p>
                                   </div>
                                 )}
                               </td>
@@ -786,7 +803,9 @@ export function WorkspaceModelsAdminTab({
             <div className="flex items-start justify-between gap-4 border-b border-[#eaecf0] px-5 py-4">
               <div>
                 <h3 className="text-lg font-bold text-[#172033]">从模型池添加</h3>
-                <p className="mt-1 text-sm leading-6 text-[#667085]">这里只显示适合“{currentSurface.label}”且尚未添加的模型；其他模型仍保留在资源池和适合它们的页面。</p>
+                <p className="mt-1 text-sm leading-6 text-[#667085]">{isVideoCatalogDisplaySurface(currentSurface.id)
+                  ? `可将尚未添加的视频模型加入“${currentSurface.label}”目录；输入不兼容或能力待核验的模型会显示原因并禁用生成。`
+                  : `这里只显示适合“${currentSurface.label}”且尚未添加的模型；其他模型仍保留在资源池和适合它们的页面。`}</p>
               </div>
               <button type="button" onClick={() => setPickerOpen(false)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[#667085] hover:bg-[#f2f4f7]" aria-label="关闭模型选择器"><X className="h-5 w-5" /></button>
             </div>
@@ -800,9 +819,15 @@ export function WorkspaceModelsAdminTab({
               {candidateModels.length > 0 ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   {candidateModels.map((model) => (
-                    <article key={model.id} className="flex min-h-40 flex-col rounded-lg border border-[#d0d5dd] bg-white p-4 hover:border-[#84adff] hover:shadow-sm">
+                    <article key={model.id} data-model-candidate={model.id} className="flex min-h-40 flex-col rounded-lg border border-[#d0d5dd] bg-white p-4 hover:border-[#84adff] hover:shadow-sm">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
+                        <ModelBadge
+                          name={model.name}
+                          avatarUrl={model.icon_url}
+                          identity={[model.modelName, model.provider]}
+                          availability={model.publishable ? "ready" : "unavailable"}
+                        />
+                        <div className="min-w-0 flex-1">
                           <h4 className="line-clamp-2 text-sm font-bold leading-5 text-[#172033]">{model.name}</h4>
                           <p className="mt-1 truncate text-xs text-[#667085]">{model.channelLabel || model.provider || model.modelName}</p>
                         </div>
@@ -811,6 +836,7 @@ export function WorkspaceModelsAdminTab({
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {model.capabilityLabels.map((label) => <span key={label} className="rounded border border-[#d0d5dd] bg-[#f9fafb] px-2 py-1 text-xs text-[#475467]">{label}</span>)}
                       </div>
+                      {!model.publishable && <p className="mt-2 text-xs leading-5 text-[#93370d]">加入后展示，当前不可提交：{publicVideoModelCompatibilityMessage(model.compatibilityCode) || model.availabilityMessage || "当前配置不可用"}</p>}
                       <p className="mt-auto pt-3 text-xs leading-5 text-[#067647]">{model.priceLabels.join(" · ") || "价格已在资源池配置"}</p>
                     </article>
                   ))}
@@ -818,8 +844,10 @@ export function WorkspaceModelsAdminTab({
               ) : (
                 <div className="flex min-h-52 flex-col items-center justify-center text-center">
                   <PackageSearch className="h-8 w-8 text-[#98a2b3]" />
-                  <p className="mt-3 text-sm font-semibold text-[#344054]">没有其他可添加模型</p>
-                  <p className="mt-1 text-xs leading-5 text-[#667085]">不兼容当前页面的模型不会出现在这里，也不会被停用。</p>
+                  <p className="mt-3 text-sm font-semibold text-[#344054]">{pickerQuery.trim() ? "没有匹配的未添加模型" : "没有其他可添加模型"}</p>
+                  <p className="mt-1 text-xs leading-5 text-[#667085]">{pickerQuery.trim() ? "请调整搜索词或清空搜索。"
+                    : isVideoCatalogDisplaySurface(currentSurface.id) ? "当前符合目录展示条件的模型均已添加；隐藏、退役或被限制的模型仍受资源池规则保护。"
+                    : "不兼容当前页面的模型不会出现在这里，也不会被停用。"}</p>
                 </div>
               )}
             </div>

@@ -157,6 +157,7 @@ function ShowcaseCard({ item, priority = false }: { item: CreationShowcase; prio
           <Image
             src={item.source}
             alt=""
+            unoptimized
             fill
             priority={priority}
             sizes="(max-width: 760px) 100vw, (max-width: 1200px) 50vw, 33vw"

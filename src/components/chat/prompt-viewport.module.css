@@ -1,0 +1,50 @@
+/* Scoped to the shared assistant message renderer, including future agents. */
+.surface :global(.code-block-wrapper .code-block-pre),
+.surface:global(.markdown-body) :global(.code-block-wrapper.code-block-plaintext .code-block-pre) {
+  padding: 0 !important;
+  border-radius: 0;
+}
+
+/* The pre owns scrolling. A nested scrolling code element creates the inset
+   horizontal strip that used to float above the card's bottom edge. */
+.surface :global(.code-block-wrapper .code-block-pre > code) {
+  display: block;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  padding: 12px 16px !important;
+  overflow: visible !important;
+}
+
+.surface :global(.code-block-wrapper.code-block-plaintext .code-block-pre > code) {
+  width: 100%;
+  max-width: 100%;
+  padding: 14px 16px !important;
+}
+
+/* A tier is a real viewport for prompts: different prompt lengths in the
+   same tier must produce equal cards during streaming and after completion. */
+.surface :global(.code-block-wrapper[data-code-purpose$="-prompt"] .code-block-pre) {
+  height: min(var(--code-block-viewport), 68vh) !important;
+}
+
+.surface :global(.code-block-wrapper.is-expanded .code-block-pre) {
+  height: auto !important;
+  max-height: none !important;
+}
+
+.surface :global(.code-block-pre::-webkit-scrollbar) {
+  width: 8px;
+  height: 8px;
+}
+
+.surface :global(.code-block-pre::-webkit-scrollbar-button) {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.surface :global(.send-video-task-button[data-agent-video-target]::after) {
+  content: "推送到视频创作";
+}

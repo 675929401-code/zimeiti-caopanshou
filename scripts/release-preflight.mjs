@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { verifyExtractionFeatureLock } from "./verify-extraction-feature-lock.mjs";
 
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -14,6 +15,7 @@ for (let i = 2; i < process.argv.length; i += 1) {
 }
 
 const root = path.resolve(args.get("--root") || process.cwd());
+verifyExtractionFeatureLock(root);
 const strictLegacy = args.get("--strict-legacy") !== "0";
 const mode = args.get("--mode") || "prepare";
 const supportedModes = new Set(["prepare", "publish", "deploy"]);

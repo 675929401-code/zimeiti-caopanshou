@@ -16,17 +16,32 @@ type HistoricalAudit = {
 };
 
 async function main(): Promise<void> {
-  const audit = JSON.parse(await readFile(
-    resolve(".codex-evidence/story-director-intake-template-20260928/latest-output-quality-audit.json"),
-    "utf8",
-  )) as HistoricalAudit;
-  const movie = audit.agents.find((agent) => agent.mode === "movie");
-  const input = movie?.latestConversation.messages.findLast((message) => message.role === "user")?.content;
-  assert.ok(input, "电影版真实历史输入缺失");
+  let historicalInput: string | undefined;
+  try {
+    const audit = JSON.parse(await readFile(
+      resolve(".codex-evidence/story-director-intake-template-20260928/latest-output-quality-audit.json"),
+      "utf8",
+    )) as HistoricalAudit;
+    const movie = audit.agents.find((agent) => agent.mode === "movie");
+    historicalInput = movie?.latestConversation.messages.findLast((message) => message.role === "user")?.content;
+    assert.ok(historicalInput, "已存在的历史证据缺少电影版输入");
+    assert.equal(
+      evaluateStoryDirectorOvertimeGate(STORY_DIRECTOR_MOVIE_AGENT_ID, historicalInput),
+      null,
+      "真实历史输入按汉字和数字计数并未超时，不得把标点误算为有效字",
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const input = [
+    "segmented_script：",
+    ...Array.from({ length: 8 }, (_, index) => `${index + 1}.【主人靠近狗狗观察它的反应，再把水碗轻轻放在一旁，留出足够空间等待它自己调整姿势。】`),
+    "target_duration_seconds：10",
+  ].join("\n");
   assert.equal(
     evaluateStoryDirectorOvertimeGate(STORY_DIRECTOR_MOVIE_AGENT_ID, input),
     null,
-    "真实历史输入按汉字和数字计数并未超时，不得把标点误算为有效字",
+    "固定回归样例未超时，不得把标点误算为有效字",
   );
   const overtimeInput = input.split(/\r?\n/u).map((line) =>
     /^\s*\d{1,3}\s*[.、].*】\s*$/u.test(line)
@@ -34,10 +49,11 @@ async function main(): Promise<void> {
       : line,
   ).join("\n");
   const gate = evaluateStoryDirectorOvertimeGate(STORY_DIRECTOR_MOVIE_AGENT_ID, overtimeInput);
-  assert.ok(gate, "真实超时输入没有触发确定性门禁");
-  assert.equal(gate.segments.length, 8, "真实超时输入没有列全8段");
-  assert.equal(gate.message.split(/\r?\n/u)[0], "生成门禁：口播超时，请先压缩或重新分段");
-  assert.doesNotMatch(gate.message, /```|故事板|生图\s*Prompt|视频\s*Prompt|导演草案/iu);
+  assert.ok(gate, "超时回归样例没有触发确定性门禁");
+  assert.equal(gate.segments.length, 8, "超时回归样例没有列全8段");
+  assert.equal(gate.message.split(/\r?\n/u)[0], "生成门禁：口播超时，请保持原文逐字不变后重新分段，不得删字、改写或截断");
+  assert.match(gate.message, new RegExp(`请返回效率工具选择${gate.durationSeconds}秒，保持原文逐字不变`, "u"));
+  assert.doesNotMatch(gate.message, /压缩|```|故事板|生图\s*Prompt|视频\s*Prompt|导演草案/iu);
   for (let number = 1; number <= 8; number += 1) assert.match(gate.message, new RegExp(`第${number}段`, "u"));
 
   const valid = [
@@ -47,6 +63,12 @@ async function main(): Promise<void> {
     "target_duration_seconds：10",
   ].join("\n");
   assert.equal(evaluateStoryDirectorOvertimeGate(STORY_DIRECTOR_MOVIE_AGENT_ID, valid), null);
+  const boundaryInput = `1.【${"字".repeat(60)}】\ntarget_duration_seconds：10`;
+  assert.equal(evaluateStoryDirectorOvertimeGate(STORY_DIRECTOR_MOVIE_AGENT_ID, boundaryInput), null, "10秒60个有效字仍应通过");
+  const overBoundary = evaluateStoryDirectorOvertimeGate(STORY_DIRECTOR_MOVIE_AGENT_ID, boundaryInput.replace("】", "字】"));
+  assert.ok(overBoundary, "10秒61个有效字仍应拦截");
+  assert.deepEqual(overBoundary.segments, [{ number: 1, effectiveCharacters: 61, limit: 60 }]);
+  assert.match(overBoundary.message, /返回效率工具选择10秒.*保持原文逐字不变/u);
   assert.equal(evaluateStoryDirectorOvertimeGate("another-agent", input), null);
   assert.equal(evaluateStoryDirectorOvertimeGate(STORY_DIRECTOR_MOVIE_AGENT_ID, "1.【超时但没有时长字段。】"), null);
   assert.equal(countNarrationEffectiveCharacters("狗狗 A-1，向前2步。"), 7);
@@ -61,8 +83,11 @@ async function main(): Promise<void> {
   console.log(JSON.stringify({
     passed: true,
     agentId: STORY_DIRECTOR_MOVIE_AGENT_ID,
-    historicalOvertimeSegments: gate.segments.length,
-    historicalInputCorrectlyAccepted: true,
+    overtimeFixtureSegments: gate.segments.length,
+    historicalAuditStatus: historicalInput ? "verified" : "not_available",
+    historicalInputCorrectlyAccepted: historicalInput ? true : null,
+    preservesOriginalNarration: true,
+    tenSecondBoundary: { accepted: 60, rejected: 61 },
     responseFirstLine: gate.message.split(/\r?\n/u)[0],
     modelRequests: 0,
     billingWrites: 0,

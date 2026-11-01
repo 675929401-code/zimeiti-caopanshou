@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   buildStoryboardUserPrompt,
+  formatStoryboardTxt,
   STORYBOARD_AGENT_PROMPT,
   STORYBOARD_AGENT_VERSION,
   storyboardTextLayoutInstruction,
@@ -60,6 +61,32 @@ assert.ok(defaultUserPrompt.includes("画面文字模式：visual-only"));
 assert.ok(defaultUserPrompt.includes(visualOnlyInstruction));
 assert.ok(defaultUserPrompt.includes("视觉资产模式：off"));
 assert.ok(defaultUserPrompt.includes("口播容量基准：每秒约6个有效汉字"));
+const renderedOrder = formatStoryboardTxt({
+  version: STORYBOARD_AGENT_VERSION,
+  title: "顺序回归",
+  styleBible: "统一商业级3D动画风格、材质和光影",
+  characterBible: "同一人物、宠物、服装和识别特征保持一致",
+  environmentBible: "同一场景空间、时间和连续性保持一致",
+  visualAssetPlan: { mode: "off", assets: [] },
+  segments: [{
+    order: 1,
+    narration: "测试原文",
+    durationSeconds: 10,
+    storyGoal: "测试故事目标",
+    continuityIn: "开场",
+    continuityOut: "自然落幅",
+    analysisBrief: "",
+    visualAssetRefs: [],
+    beats: [],
+    storyboardImagePrompt: "完整四格故事板生图提示词，人物和场景保持一致。",
+    videoPrompt: "从完整四格故事板开始，按秒完成连续动作并稳定落幅。",
+    qualityChecklist: ["原文保真", "图视频绑定", "角色连续"],
+  }],
+});
+const renderedImageIndex = renderedOrder.indexOf("### 故事板生图提示词");
+const renderedVideoIndex = renderedOrder.indexOf("### 图生视频提示词");
+const renderedNarrationIndex = renderedOrder.indexOf("口播原文：");
+assert.ok(renderedImageIndex >= 0 && renderedVideoIndex > renderedImageIndex && renderedNarrationIndex > renderedVideoIndex, "展示层没有保持生图→视频→补充信息顺序");
 assert.equal(storyboardNarrationCharBudget(8).target, 48);
 assert.equal(storyboardNarrationCharBudget(10).target, 60);
 assert.equal(storyboardNarrationCharBudget(15).target, 90);
@@ -107,7 +134,7 @@ for (const required of [
   "时长保鲜",
   "注释校准",
   "安全构图",
-  "首格必须能完整识别女主人和狗狗",
+  "首格必须能完整识别主人和狗狗",
   "不能用只拍手、只拍躯干或狗身体局部的开场",
   "每段开头先用0.4至0.8秒建立完整角色身份镜头",
   "完整可见",
@@ -129,8 +156,8 @@ for (const required of [
   "清晰干净",
   "柔和次表面散射",
   "气质干净亲和",
-  "黄色主要作为上衣或小面积配件识别色",
-  "蓝色直筒牛仔裤",
+  "时尚、可复用、偏学院风",
+  "禁止把黄上衣、牛仔裤、白鞋作为默认模板",
   "中度动画化犬类表演",
   "语义镜头编舞器",
   "场景语义路由",
@@ -175,6 +202,14 @@ for (const required of [
   "至少16%画面宽",
   "不贴边、不半出画、不压住角色脸",
   "每段开头先用0.4至0.8秒建立完整角色身份镜头",
+  "generationPolicy",
+  "maxInitialImages",
+  "initialRequiredAssetIds",
+  "initialDeferredAssetIds",
+  "styleLock",
+  "sceneLock",
+  "qualityScore",
+  "qualityVerdict",
   "无字舒适区刻度",
   "背景医院、商店、路牌、量表和信息窗使用图标或无字造型",
 ]) {

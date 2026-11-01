@@ -17,6 +17,7 @@ import {
   persistVideoModelAcceptanceEvidence,
   preserveVideoAcceptanceForWorkspaceSurfaceUpdate,
   preservePersistedVideoActivationGate,
+  resolveVideoModelGenerationReadiness,
   textActivationStorageUnavailable,
   type VideoActivationBinding,
 } from "../src/lib/model-activation-gate";
@@ -55,6 +56,21 @@ function fixtureBinding(): VideoActivationBinding {
 
 function verifyPureGate(): void {
   const pending = fixtureBinding();
+  const legacy = {
+    ...pending,
+    id: "legacy-video-fixture",
+    api_protocol_config: { resolution_options: ["720p"] },
+  };
+  const legacyReadiness = resolveVideoModelGenerationReadiness(legacy);
+  assert.deepEqual(
+    { gated: legacyReadiness.gated, ready: legacyReadiness.ready, generationReady: legacyReadiness.generationReady },
+    { gated: false, ready: true, generationReady: true },
+    "legacy models remain eligible until migrated into the explicit activation channel",
+  );
+  assert.equal(resolveVideoModelGenerationReadiness(legacy, { verificationNotice: "输出清晰度由当前服务自动选择" }).generationReady, true);
+  const noticeBlocked = resolveVideoModelGenerationReadiness(legacy, { verificationNotice: "真实付费生成结果持久化尚未完成" });
+  assert.equal(noticeBlocked.generationReady, false);
+  assert.equal(noticeBlocked.reason, "acceptance_verification_notice_incomplete");
   assert.doesNotThrow(
     () => assertOrdinaryAdminUpdateDoesNotActivate(
       "video",
@@ -91,6 +107,9 @@ function verifyPureGate(): void {
     ready: false,
     reason: "acceptance_evidence_not_persisted",
   });
+  const pendingReadiness = resolveVideoModelGenerationReadiness(pending);
+  assert.equal(pendingReadiness.generationReady, false, "pending activation evidence must block paid submit");
+  assert.match(pendingReadiness.acceptanceIssue, /尚未完成协议/u);
   const checkedAt = new Date(Date.now() - 1_000).toISOString();
   const evidence = issueVideoModelAcceptanceEvidence(pending, {
     secretResolution: { evidenceRef: "secret:fixture-01", checkedAt },
@@ -128,6 +147,7 @@ function verifyPureGate(): void {
 
   const staleBinding = { ...evidenceReady, api_endpoint: "https://changed.invalid/v1/video/generations" };
   assert.equal(inspectVideoModelActivationReadiness(staleBinding).reason, "acceptance_evidence_binding_stale");
+  assert.equal(resolveVideoModelGenerationReadiness(staleBinding).generationReady, false, "stale evidence must not activate a changed binding");
 
   const waivedCanary = structuredClone(evidenceReady);
   const waivedGate = waivedCanary.api_protocol_config[MODEL_ACTIVATION_GATE_KEY] as Record<string, unknown>;
@@ -135,6 +155,7 @@ function verifyPureGate(): void {
   const waivedChecks = waivedEvidence.checks as Record<string, Record<string, unknown>>;
   waivedChecks.canary.status = "waived";
   assert.equal(inspectVideoModelActivationReadiness(waivedCanary).ready, false, "canary waiver must never activate");
+  assert.equal(resolveVideoModelGenerationReadiness(waivedCanary).generationReady, false);
 
   const missingPersistence = structuredClone(evidenceReady);
   const persistenceGate = missingPersistence.api_protocol_config[MODEL_ACTIVATION_GATE_KEY] as Record<string, unknown>;
@@ -189,7 +210,14 @@ function verifyRouteWiring(): void {
   assert.match(unified, /const pendingVideoRecord = forceNewVideoModelPending/u);
   assert.match(unified, /user_access: PENDING_TEXT_USER_ACCESS[\s\S]*is_active: false[\s\S]*is_hidden: false/u);
   assert.doesNotMatch(unified, /activation_required: true/u);
-  assert.ok((unified.match(/assertOrdinaryAdminUpdateDoesNotActivate/gu) || []).length >= 1);
+  // The unified admin route now delegates binding preservation to
+  // prepareVideoModelBindingUpdate; older revisions called the pure helper
+  // directly. Either shape is valid as long as the binding update contract is
+  // present and the following assertions remain true.
+  assert.ok(
+    (unified.match(/assertOrdinaryAdminUpdateDoesNotActivate/gu) || []).length >= 1
+      || unified.includes("prepareVideoModelBindingUpdate"),
+  );
   assert.match(unified, /pendingImageConfigurationUpdate\(currentDrawingModel, updateFields\)/u);
   assert.match(unified, /prepareVideoModelBindingUpdate\(\{ id, \.\.\.currentVideoModel \}, updateFields\)/u);
   assert.ok((videos.match(/prepareVideoModelBindingUpdate\(/gu) || []).length >= 2);
@@ -226,8 +254,10 @@ function verifyRouteWiring(): void {
   assert.match(publicImages, /readImagePublicationStates\(dbClient\)/u);
   assert.match(publicImages, /\.eq\("is_hidden", false\)/u,
     "public image catalog must read the visible resource pool");
-  assert.match(publicImages, /available: priceReady && publicationState\?\.available === true/u,
-    "public image DTO must still expose the independent submission gate");
+  assert.doesNotMatch(publicImages, /strictStoryboardAdmission = surface === "storyboard-workbench"/u,
+    "public image catalog must not turn storyboard acceptance evidence into a user gate");
+  assert.match(publicImages, /generationReady = legacyGenerationReady && readiness\.protocolBindingReady/u,
+    "public image DTO must use live configuration/protocol binding, not historical acceptance evidence");
   assert.match(publicImages, /model\.is_active !== true[\s\S]*disabledImageModelMessage\(model\)/u,
     "disabled image models must expose a precise public reason");
   assert.match(visibilityInvariantMigration, /provider IS DISTINCT FROM 'retired_configuration'/u);

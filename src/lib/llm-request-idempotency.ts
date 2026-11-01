@@ -1,10 +1,24 @@
 import { createHash, randomUUID } from "node:crypto";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
+import { STORY_DIRECTOR_MOVIE_AGENT_ID, STORY_DIRECTOR_HIGH_ENERGY_AGENT_ID } from "./story-director-overtime-gate";
 
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const DEFAULT_LEASE_SECONDS = 900;
 const MAX_PERSISTED_RESPONSE_BYTES = 8 * 1024 * 1024;
+const MAX_STORY_DIRECTOR_RESPONSE_BYTES = 32 * 1024 * 1024;
+
+/** Select only from the persisted server-loaded row, never request-body metadata. */
+export function resolveLlmResponsePersistenceLimit(serverAgentRow?: { id?: unknown } | null): number {
+  return serverAgentRow?.id === STORY_DIRECTOR_MOVIE_AGENT_ID || serverAgentRow?.id === STORY_DIRECTOR_HIGH_ENERGY_AGENT_ID
+    ? MAX_STORY_DIRECTOR_RESPONSE_BYTES : MAX_PERSISTED_RESPONSE_BYTES;
+}
+
+/** Only a persisted server-loaded agent row may select the longer lease. */
+export function resolveLlmRequestLeaseSeconds(serverAgentRow: { id?: unknown } | null | undefined): number {
+  return serverAgentRow?.id === STORY_DIRECTOR_MOVIE_AGENT_ID || serverAgentRow?.id === STORY_DIRECTOR_HIGH_ENERGY_AGENT_ID
+    ? 2400 : DEFAULT_LEASE_SECONDS;
+}
 
 type JsonObject = Record<string, unknown>;
 
@@ -254,7 +268,7 @@ export class DatabaseLlmRequestAttemptStore implements LlmRequestAttemptStore {
         p_client_request_id: input.clientRequestId,
         p_payload_fingerprint: input.payloadFingerprint,
         p_lease_owner: input.leaseOwner,
-        p_lease_seconds: Math.max(30, Math.min(input.leaseSeconds || DEFAULT_LEASE_SECONDS, 900)),
+        p_lease_seconds: Math.max(30, Math.min(input.leaseSeconds || DEFAULT_LEASE_SECONDS, 2400)),
       });
       if (error) normalizeStoreError(error);
       const result = data as { action?: string; record?: DatabaseLlmAttemptRow } | null;
@@ -333,7 +347,9 @@ function replayHeaders(record: LlmRequestAttemptRecord): Headers {
 
 export function responseForLlmAttemptClaim(claim: Exclude<LlmRequestAttemptClaim, { action: "execute" }>): Response {
   if (claim.action === "replay") {
-    if (claim.record.state !== "succeeded" || claim.record.httpStatus === null || claim.record.responseBody === null) {
+    if (claim.record.state !== "succeeded" || claim.record.httpStatus === null || claim.record.responseBody === null
+      || Buffer.byteLength(claim.record.responseBody, "utf8") > MAX_STORY_DIRECTOR_RESPONSE_BYTES
+      || claim.record.responseFingerprint !== sha256(claim.record.responseBody)) {
       throw new LlmRequestIdempotencyError("LLM_ATTEMPT_REPLAY_INVALID", "已完成对话缺少可回放结果", 503);
     }
     return new Response(claim.record.responseBody, { status: claim.record.httpStatus, headers: replayHeaders(claim.record) });
@@ -439,10 +455,17 @@ function streamTerminalState(frames: ReturnType<typeof inspectLlmSseFrame>[]): {
   errorCode?: string;
 } {
   if (frames.some((frame) => frame.errorCode === "LLM_BILLING_FAILED")) return { state: "reconciliation_required", errorCode: "LLM_BILLING_FAILED" };
+  // Once execution is uncertain, another generic failure frame must not make
+  // the attempt replayable. A settlement receipt requires explicit reconciliation.
+  if (frames.some((frame) => frame.errorCode === "LLM_UPSTREAM_RESULT_UNKNOWN")) {
+    return frames.some((frame) => frame.billingComplete)
+      ? { state: "reconciliation_required", errorCode: "LLM_STREAM_BILLING_CONFLICT" }
+      : { state: "failed_unknown", errorCode: "LLM_UPSTREAM_RESULT_UNKNOWN" };
+  }
   if (frames.some((frame) => frame.errorCode === "LLM_EMPTY_RESPONSE")) return { state: "failed", errorCode: "LLM_EMPTY_RESPONSE" };
   const knownFailure = frames.find((frame) => frame.errorCode && [
-    "LLM_UPSTREAM_ERROR", "LLM_UPSTREAM_BALANCE", "LLM_UPSTREAM_AUTH",
-    "LLM_UPSTREAM_BUSY", "LLM_UPSTREAM_TIMEOUT", "LLM_UPSTREAM_CONTENT_REJECTED",
+    "LLM_UPSTREAM_ERROR", "LLM_UPSTREAM_BALANCE", "LLM_UPSTREAM_BILLING", "LLM_UPSTREAM_AUTH",
+    "LLM_UPSTREAM_BUSY", "LLM_UPSTREAM_CONCURRENCY_LIMIT", "LLM_UPSTREAM_TIMEOUT", "LLM_UPSTREAM_CONTENT_REJECTED",
     "LLM_STREAM_INTERRUPTED",
   ].includes(frame.errorCode));
   if (knownFailure) {
@@ -451,9 +474,6 @@ function streamTerminalState(frames: ReturnType<typeof inspectLlmSseFrame>[]): {
     return frames.some((frame) => frame.billingComplete)
       ? { state: "reconciliation_required", errorCode: "LLM_STREAM_BILLING_CONFLICT" }
       : { state: "failed", errorCode: knownFailure.errorCode };
-  }
-  if (frames.some((frame) => frame.errorCode === "LLM_UPSTREAM_RESULT_UNKNOWN")) {
-    return { state: "failed_unknown", errorCode: "LLM_UPSTREAM_RESULT_UNKNOWN" };
   }
   const hasCompletionFrame = frames.some((frame) => frame.doneSignal || frame.completionEvent);
   if (hasCompletionFrame && frames.some((frame) => frame.billingComplete)) return { state: "succeeded" };
@@ -464,11 +484,13 @@ export async function completeLlmAttemptResponse(
   store: LlmRequestAttemptStore,
   execution: LlmRequestAttemptExecution,
   response: Response,
+  serverAgentRow?: { id?: unknown } | null,
 ): Promise<Response> {
+  const maxPersistedResponseBytes = resolveLlmResponsePersistenceLimit(serverAgentRow);
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("text/event-stream") || !response.body) {
     const raw = await response.text();
-    if (Buffer.byteLength(raw, "utf8") > MAX_PERSISTED_RESPONSE_BYTES) {
+    if (Buffer.byteLength(raw, "utf8") > maxPersistedResponseBytes) {
       await finalizeWithRetry(store, { execution, state: "reconciliation_required", errorCode: "LLM_RESPONSE_TOO_LARGE", errorMessage: "response exceeded durable replay limit" }).catch(() => undefined);
       return frozenResponse(execution, "回复内容过大，暂未完成保存。原请求已保留。");
     }
@@ -552,10 +574,18 @@ export async function completeLlmAttemptResponse(
           if (done) break;
           totalBytes += value.byteLength;
           const decoded = decoder.decode(value, { stream: true });
-          if (totalBytes <= MAX_PERSISTED_RESPONSE_BYTES) rawParts.push(decoded);
-          else exceeded = true;
-          pendingFrameText += decoded;
-          releaseCompleteFrames();
+          if (totalBytes <= maxPersistedResponseBytes) {
+            rawParts.push(decoded);
+            pendingFrameText += decoded;
+            releaseCompleteFrames();
+          } else {
+            // Drain the upstream for its existing billing/finalization path, but
+            // retain and deliver no more data after the durable byte budget.
+            exceeded = true;
+            rawParts.length = 0;
+            withheldTerminalFrames.length = 0;
+            pendingFrameText = "";
+          }
         }
         const decoderTail = decoder.decode();
         if (!exceeded) rawParts.push(decoderTail);
@@ -574,6 +604,13 @@ export async function completeLlmAttemptResponse(
           const persistedRaw = frames.some((frame) => frame.doneSignal)
             ? raw
             : `${raw}${raw.endsWith("\n") ? "" : "\n"}data: [DONE]\n\n`;
+          // Completion synthesis is part of the stored bytes and must fit too.
+          if (Buffer.byteLength(persistedRaw, "utf8") > maxPersistedResponseBytes) {
+            await finalizeWithRetry(store, { execution, state: "reconciliation_required", errorCode: "LLM_STREAM_RESPONSE_TOO_LARGE", errorMessage: "stream completion exceeded durable replay limit" });
+            enqueue(encoder.encode(`data: ${JSON.stringify({ error: "回复内容过大，暂未完成保存。原请求已保留。", code: "LLM_ATTEMPT_RECONCILIATION_REQUIRED", done: false })}\n\n`));
+            close();
+            return;
+          }
           const responseFingerprint = sha256(persistedRaw);
           await finalizeWithRetry(store, {
             execution,

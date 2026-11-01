@@ -25,8 +25,9 @@ const originalFetch = globalThis.fetch;
 async function main() {
   const fourSecondTiming = resolveVideoDuration(config, 4);
   assert.equal(fourSecondTiming.target, 4);
-  assert.equal(fourSecondTiming.submit, 5);
-  assert.equal(fourSecondTiming.needsTrim, true);
+  assert.equal(fourSecondTiming.submit, 4);
+  assert.equal(fourSecondTiming.supported, false);
+  assert.equal("needsTrim" in fourSecondTiming, false);
 
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -56,7 +57,7 @@ async function main() {
   try {
     const missingImage = await submitVideoTask(config, {
       prompt: "A dog turns toward the camera.",
-      duration: 4,
+      duration: 15,
     });
     assert.equal(missingImage.status, "failed");
     assert.match(missingImage.error || "", /参考图/);
@@ -83,7 +84,7 @@ async function main() {
       prompt: "The golden retriever takes two cautious steps, then looks up with a relieved expression.",
       duration: 15,
       resolution: "2k",
-      aspect_ratio: "21:9",
+      ratio: "21:9",
       image_urls: ["https://cdn.example.com/reference.png"],
     });
     assert.equal("seconds" in (requests[0]?.body || {}), false);

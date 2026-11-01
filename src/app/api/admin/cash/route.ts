@@ -4,9 +4,16 @@ import { withAdminAuth } from "@/lib/api-middleware";
 import { getAccountGovernanceInfo } from "@/lib/account-governance";
 import { enqueueUserNotificationOnce, walletNotificationCopy } from "@/lib/user-notification-server";
 import { getAuditRequestIp } from "@/lib/billing-audit";
+import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
 
 /* POST /api/admin/cash - admin cash balance top-up */
 export async function POST(req: NextRequest) {
+  const authorization = await authorizeAdminCapability(req, "wallet.adjust", {
+    requireStepUp: true,
+    operation: "admin_cash_topup",
+    auditAllowed: true,
+  });
+  if (!authorization.ok) return authorization.response;
   return withAdminAuth(req, async (admin, client) => {
     try {
       const body = await req.json();

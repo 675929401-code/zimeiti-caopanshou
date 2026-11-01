@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { UserThemeSwitcher } from "@/components/user-theme-switcher";
+import { BrandContactButton } from "@/components/brand-contact-panel";
 import { handlePlatformBrandLogoError, platformBrandAssetUrl, platformBrandLogoUrl, usePlatformBranding } from "@/hooks/use-platform-branding";
 import "./soft-white-landing.css";
 import "./operating-home-v2.css";
@@ -155,7 +156,6 @@ const navItems = [
   ["生产路线", "swh-production"],
   ["能力全景", "swh-capabilities"],
   ["适合谁", "swh-business"],
-  ["联系我们", "swh-contact"],
 ] as const;
 
 const heroPhrases = ["推进到完整成片", "沉淀为可用资产", "让内容持续生长"] as const;
@@ -236,6 +236,8 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
   const wheelUnlockRef = useRef<number | null>(null);
   const copyResetRef = useRef<number | null>(null);
   const [wechatCopied, setWechatCopied] = useState(false);
+  const [wechatCopyError, setWechatCopyError] = useState(false);
+  const [contactQrFailures, setContactQrFailures] = useState<string[]>([]);
 
   useEffect(() => {
     if (!showLogin) return;
@@ -257,6 +259,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
     )).filter((element) => element.tabIndex >= 0 && getComputedStyle(element).visibility !== "hidden");
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof Element && event.target.closest('.public-contact-dialog')) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onCloseLogin();
@@ -392,8 +395,10 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
   const copyWechat = async () => {
     const value = platformBranding.brand.contact?.wechat?.trim();
     if (!value) return;
+    let copied = false;
     try {
       await navigator.clipboard.writeText(value);
+      copied = true;
     } catch {
       const field = document.createElement("textarea");
       field.value = value;
@@ -401,10 +406,11 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
       field.style.opacity = "0";
       document.body.appendChild(field);
       field.select();
-      document.execCommand("copy");
-      field.remove();
+      try { copied = document.execCommand("copy"); } catch { copied = false; }
+      finally { field.remove(); }
     }
-    setWechatCopied(true);
+    setWechatCopied(copied);
+    setWechatCopyError(!copied);
     if (copyResetRef.current != null) window.clearTimeout(copyResetRef.current);
     copyResetRef.current = window.setTimeout(() => setWechatCopied(false), 1_600);
   };
@@ -436,6 +442,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
         </nav>
         <div className="swh-header-actions">
           <UserThemeSwitcher />
+          <BrandContactButton className="swh-contact-entry">联系我们</BrandContactButton>
           <button className="swh-login-button" onClick={onLoginClick}>登录平台 <ArrowRight size={15} /></button>
         </div>
       </header>
@@ -448,10 +455,9 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
               <span className="swh-title-line">把一个内容想法</span>
               <TypewriterHeadline />
             </h1>
-            <p className="swh-lead">围绕账号目标，把对标研究、内容策划与视听制作组织在同一个项目里。人负责判断，智能体接力执行，让每次创作都留下可复用的结果。</p>
+            <p className="swh-lead">从账号定位、选题文案到分镜、配音与视频，在一个平台完成策划与制作。</p>
             <div className="swh-hero-status" aria-label="平台工作方式">
-              <span><i /> 从策略到成片，同一项目推进</span>
-              <span><i /> 素材、任务与结果有迹可循</span>
+              <span><i /> 策划 · 制作 · 作品历史</span>
             </div>
             <div className="swh-hero-actions">
               <button className="swh-primary-action" onClick={onLoginClick}>启动内容项目 <ArrowRight size={17} /></button>
@@ -509,7 +515,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
           <div className="swh-section-heading">
             <p>WHY ONE SYSTEM · 为什么需要一套系统</p>
             <h2>少一点重复开工，多一点持续产出</h2>
-            <span>方向、脚本、素材与任务相互承接，创作不再反复归零，团队也能清楚掌握每一步进度。</span>
+            <span>让方向、脚本与素材接得上，让下一次创作更省力。</span>
           </div>
           <div className="swh-value-grid">
             {valueRows.map(({ icon: Icon, problem, solution, result }, index) => <article key={problem}>
@@ -544,7 +550,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
           <div className="swh-section-heading">
             <p>CAPABILITY SYSTEM · 内容生产能力</p>
             <h2>真正有用的 AI，不只回答，还要接住下一步</h2>
-            <span>研究、脚本、视觉、声音与作品记录共享项目上下文；关键环节保留输入、任务状态和可继续使用的结果。</span>
+            <span>按创作需要选择工具，查看任务进度与作品结果。</span>
           </div>
           <div className="swh-capability-layout">
             <div className="swh-available" aria-label="当前可用能力">
@@ -558,7 +564,6 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
             <aside className="swh-planned" aria-label="规划开放能力">
               <div className="swh-capability-title"><span>继续扩展</span><strong>围绕真实生产场景逐步接入</strong></div>
               <ul>{plannedCapabilities.map(item => <li key={item}><span />{item}</li>)}</ul>
-               <p>新能力只在达到可用、可追踪、可交付后开放。</p>
             </aside>
           </div>
         </section>
@@ -593,7 +598,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
           <div className="swh-contact-copy">
             <p className="swh-kicker"><span /> CONTACT · 联系我们</p>
             <h2>需要帮助时，直接找到对的人</h2>
-            <p>平台联系方式由管理员统一维护并随品牌版本发布。联系人、微信号、电话、邮箱与二维码保持同一份公开资料，避免页面信息不一致。</p>
+            <p>{primaryContactQr || secondaryContactQr || platformBranding.brand.contact?.wechat || platformBranding.brand.contact?.phone || platformBranding.brand.contact?.email ? '使用遇到问题，选择方便的方式联系我们。' : '暂未提供公开联系方式，请稍后再试。'}</p>
             <div className="swh-contact-list">
               {platformBranding.brand.contact?.name && <span><MessageCircle size={17} /><small>联系人</small><strong>{platformBranding.brand.contact.name}</strong></span>}
               {platformBranding.brand.contact?.wechat && <span><QrCode size={17} /><small>微信</small><strong>{platformBranding.brand.contact.wechat}</strong></span>}
@@ -601,22 +606,16 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
               {platformBranding.brand.contact?.email && <span><Mail size={17} /><small>邮箱</small><strong>{platformBranding.brand.contact.email}</strong></span>}
             </div>
             {platformBranding.brand.contact?.wechat && <button type="button" className="swh-contact-copy-button" onClick={() => void copyWechat()}><Copy size={15} />{wechatCopied ? "已复制微信号" : "复制微信号"}</button>}
+            {wechatCopyError && <p role="status">未能复制，请选中微信号手动复制。</p>}
           </div>
           <div className="swh-contact-visual" aria-label="联系二维码">
             {primaryContactQr || secondaryContactQr ? <div className="swh-contact-qr-grid">
-              {primaryContactQr && <figure><img src={primaryContactQr} alt="微信联系二维码 1" /><figcaption>{platformBranding.brand.contact?.name || "平台客服"}</figcaption></figure>}
-              {secondaryContactQr && <figure><img src={secondaryContactQr} alt="微信联系二维码 2" /><figcaption>备用联系方式</figcaption></figure>}
-            </div> : <div className="swh-contact-placeholder"><QrCode size={48} /><strong>联系方式</strong><span>管理员发布联系信息后，将在这里展示。</span></div>}
+              {primaryContactQr && <figure>{contactQrFailures.includes(primaryContactQr) ? <p role="status">二维码暂时无法加载</p> : <BrandContactButton className="swh-contact-qr-open"><img src={primaryContactQr} alt="微信联系二维码 1" onError={() => setContactQrFailures(items => [...items, primaryContactQr])} /></BrandContactButton>}<figcaption>{platformBranding.brand.contact?.name || "平台客服"}</figcaption></figure>}
+              {secondaryContactQr && <figure>{contactQrFailures.includes(secondaryContactQr) ? <p role="status">二维码暂时无法加载</p> : <BrandContactButton className="swh-contact-qr-open"><img src={secondaryContactQr} alt="微信联系二维码 2" onError={() => setContactQrFailures(items => [...items, secondaryContactQr])} /></BrandContactButton>}<figcaption>备用联系方式</figcaption></figure>}
+            </div> : <div className="swh-contact-placeholder"><QrCode size={48} /><strong>联系支持</strong><span>暂无可用二维码</span></div>}
           </div>
           <footer className="swh-footer" id="swh-footer" data-swh-reveal>
             <div><strong>{platformName}</strong><span>{platformBranding.brand.description || "把策略、创作、生产与归档，变成一套持续运转的内容系统。"}</span></div>
-            <p>{platformBranding.brand.contact?.wechat
-              ? `微信：${platformBranding.brand.contact.wechat}`
-              : platformBranding.brand.contact?.phone
-                ? `电话：${platformBranding.brand.contact.phone}`
-                : platformBranding.brand.contact?.email
-                  ? `邮箱：${platformBranding.brand.contact.email}`
-                  : "联系信息请在后台品牌中心设置"}</p>
           </footer>
         </section>
       </main>
@@ -626,7 +625,7 @@ export function SoftWhiteLanding({ showLogin, onLoginClick, onCloseLogin }: Soft
         <aside ref={dialogRef} className="swh-login-drawer" role="dialog" aria-modal="true" aria-labelledby="swh-login-title" tabIndex={-1}>
           <button className="swh-login-close" aria-label="关闭登录面板" onClick={onCloseLogin}><X size={19} /></button>
           <div className="swh-login-intro"><span>WELCOME BACK</span><h2 id="swh-login-title">回到{platformBranding.brand.shortName || platformName}</h2><p>{platformBranding.brand.welcomeMessage || "继续你的项目、任务与作品记录。"}</p></div>
-          <LoginForm />
+          <LoginForm embedded />
         </aside>
       </>}
     </div>

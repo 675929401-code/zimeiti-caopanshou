@@ -4,6 +4,7 @@ import { getTokenFromHeaders, verifyToken } from "@/lib/auth";
 import { normalizeDisplayText } from "@/lib/display-normalization";
 import { recoverLlmCreditReservations } from "@/lib/llm-credit-reservation";
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
+import { buildPublicTransactionBillingExplanation, toPublicTransactionMetadata } from "@/lib/public-billing-explanation";
 
 export async function GET(request: NextRequest) {
   const token = getTokenFromHeaders(request.headers);
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
       includeTransactions
         ? client
           .from("credit_transactions")
-          .select("*")
+          .select("id, type, transaction_type, amount, balance_after, description, metadata, created_at")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(100)
@@ -67,9 +68,18 @@ export async function GET(request: NextRequest) {
       reservedCredits: Number(user.credits_reserved ?? 0),
       cashBalance: Number(user.cash_balance ?? 0),
       memberStatus: user.member_status || "inactive",
-      transactions: (transactions || []).map((transaction: any) => ({
-        ...transaction,
+      transactions: (transactions || []).map((transaction: Record<string, unknown>) => ({
+        id: transaction.id,
+        type: transaction.type,
+        transaction_type: transaction.transaction_type,
+        amount: transaction.amount,
+        balance_after: transaction.balance_after,
+        created_at: transaction.created_at,
         description: normalizeDisplayText(transaction.description, transaction.type === "recharge" ? "积分充值" : "积分消耗"),
+        metadata: toPublicTransactionMetadata(transaction.metadata),
+        ...(["consume", "consumption", "deduction"].includes(String(transaction.type)) ? {
+          billingExplanation: buildPublicTransactionBillingExplanation(transaction.metadata, "credits"),
+        } : {}),
       })),
     });
   } catch (error) {

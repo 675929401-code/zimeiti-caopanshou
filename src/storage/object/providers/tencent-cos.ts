@@ -85,6 +85,15 @@ export class TencentCOSProvider implements IStorageProvider {
 
   /** 生成存储 key */
   private buildKey(fileName: string, category: FileCategory, options?: StorageUploadOptions): string {
+    if (options?.storyboardArchiveKey) {
+      const key=options.storyboardArchiveKey;
+      const ownerHash=createHash('sha256').update(String(options.userId || '')).digest('hex');
+      const taskHash=createHash('sha256').update(String(options.meta?.taskId || '')).digest('hex');
+      if (!new RegExp('^videos/scoped/storyboard-delivery/'+ownerHash+'/'+taskHash+'/[a-f0-9-]{36}[.]mp4$').test(key)
+        || !options.userId || !options.meta?.taskId || options.meta?.archivePolicy!=='storyboard-video-72h-v1'
+        || category!=='video' || options.publicRead || !options.strictProvider || !options.requireOwnershipRecord) throw new Error('STORYBOARD_ARCHIVE_UPLOAD_INVALID');
+      return key;
+    }
     const prefix = options?.prefix || CATEGORY_PREFIX[category];
     const name = options?.fileName || fileName;
     // 加日期子目录便于管理
@@ -108,8 +117,16 @@ export class TencentCOSProvider implements IStorageProvider {
   ): Promise<StorageUploadResult> {
     const category: FileCategory = options?.category || "other";
     const key = this.buildKey(fileName, category, options);
+    if (options?.storyboardArchiveKey && (contentType !== 'video/mp4' || !fileContent.length || fileContent.length > 512 * 1024 * 1024)) throw new Error('STORYBOARD_ARCHIVE_MEDIA_INVALID');
 
     return new Promise<StorageUploadResult>((resolve, reject) => {
+      let archiveTaskId = '';
+      let archiveTimedOut = false;
+      const archiveTimer = options?.storyboardArchiveKey ? setTimeout(() => {
+        archiveTimedOut = true;
+        if (archiveTaskId) this.cos.cancelTask(archiveTaskId);
+        reject(new Error('STORYBOARD_ARCHIVE_UPLOAD_TIMEOUT'));
+      }, 120_000) : null;
       this.cos.putObject(
         {
           Bucket: this.bucket,
@@ -118,6 +135,8 @@ export class TencentCOSProvider implements IStorageProvider {
           Body: fileContent,
           ContentType: contentType,
           ContentLength: fileContent.length,
+          ...(options?.storyboardArchiveKey ? { Headers: { 'x-cos-forbid-overwrite': 'true' },
+            onTaskReady: (taskId: string) => { archiveTaskId = taskId; if (archiveTimedOut) this.cos.cancelTask(taskId); } } : {}),
           // `publicRead` is an explicit call-site opt-in used for assets that
           // third-party inference services must fetch without query-string
           // credentials. Returning a bare URL without setting the object ACL
@@ -126,6 +145,8 @@ export class TencentCOSProvider implements IStorageProvider {
           ...(options?.publicRead ? { ACL: "public-read" } : {}),
         },
         (err: Error | null, data: any) => {
+          if (archiveTimer) clearTimeout(archiveTimer);
+          if (archiveTimedOut) return;
           if (err) {
             reject(new Error(`[TencentCOS] 上传失败: ${err.message}`));
             return;
@@ -460,6 +481,61 @@ export class TencentCOSProvider implements IStorageProvider {
     });
   }
 
+  async deleteStoryboardArchiveObjectOnly(key: string): Promise<boolean> {
+    if (!/^videos\/scoped\/storyboard-delivery\/[a-f0-9]{64}\/[a-f0-9]{64}\/[a-f0-9-]{36}[.]mp4$/.test(key)) throw new Error('STORYBOARD_ARCHIVE_KEY_INVALID');
+    // A separate client bounds the underlying HTTP transport, including retries.
+    // Do not alter the ordinary/publication client's Timeout=0 behavior.
+    const COS = (await import('cos-nodejs-sdk-v5')).default;
+    const bounded = new COS({ SecretId: this.config.secretId, SecretKey: this.config.secretKey, Timeout: 10_000 });
+    return new Promise((resolve, reject) => bounded.deleteObject({ Bucket: this.bucket, Region: this.region, Key: key },
+      (error) => {
+        if (!error || error.statusCode === 404) resolve(true);
+        else reject(new Error('STORYBOARD_ARCHIVE_DELETE_UNKNOWN'));
+      }));
+  }
+
+  async headStoryboardArchiveObjectOnly(key: string): Promise<{ size: number; contentType: string; lastModified: Date } | null> {
+    if(!new RegExp("^videos/scoped/storyboard-delivery/[a-f0-9]{64}/[a-f0-9]{64}/[a-f0-9-]{36}[.]mp4$").test(key))throw new Error("STORYBOARD_ARCHIVE_KEY_INVALID");
+    return new Promise((resolve,reject) => {
+      const timer=setTimeout(()=>reject(new Error("STORYBOARD_ARCHIVE_HEAD_UNKNOWN")),10000);
+      this.cos.headObject(
+        {
+          Bucket: this.bucket,
+          Region: this.region,
+          Key: key,
+        },
+        (err: (Error & {statusCode?:number}) | null, data: any) => {
+          clearTimeout(timer);
+          if (err) {
+            if(err.statusCode===404)resolve(null);else reject(new Error("STORYBOARD_ARCHIVE_HEAD_UNKNOWN"));
+            return;
+          }
+          // COS SDK exposes HTTP metadata under `headers`, not ContentLength.
+          const headers = data?.headers && typeof data.headers === "object" ? data.headers : {};
+          const header = (name: string, legacy: unknown): unknown => {
+            const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name);
+            return entry?.[1] ?? legacy;
+          };
+          const rawSize = header("content-length", data?.ContentLength);
+          const size = typeof rawSize === "number" ? rawSize
+            : typeof rawSize === "string" && /^\d+$/u.test(rawSize.trim()) ? Number(rawSize.trim()) : NaN;
+          if (!Number.isSafeInteger(size) || size < 0) {
+            reject(new Error("STORYBOARD_ARCHIVE_HEAD_UNKNOWN"));
+            return;
+          }
+          const rawType = header("content-type", data?.ContentType);
+          const rawModified = header("last-modified", data?.LastModified);
+          const modifiedTime = rawModified instanceof Date ? rawModified.getTime()
+            : typeof rawModified === "string" ? Date.parse(rawModified) : NaN;
+          resolve({
+            size,
+            contentType: typeof rawType === "string" && rawType.trim() ? rawType.trim() : "application/octet-stream",
+            lastModified: new Date(Number.isFinite(modifiedTime) ? modifiedTime : 0),
+          });
+        }
+      );
+    });
+  }
   async headPublicationObjectOnly(key: string): Promise<{ size: number; contentType: string; lastModified: Date } | null> {
     if(!new RegExp("^admin-image-publication/[a-f0-9]{64}/ivc_[a-f0-9]{64}/[a-f0-9]{64}/[a-f0-9]{64}$").test(key))throw new Error("IMAGE_PUBLICATION_KEY_INVALID");
     return new Promise((resolve,reject) => {

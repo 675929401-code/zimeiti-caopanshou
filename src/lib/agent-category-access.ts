@@ -2,6 +2,7 @@ import {
   BIP_CATEGORY,
   BIP_CATEGORY_LABEL,
   TASK_CATEGORIES,
+  authorizationCategory,
   displayCategory,
 } from "@/lib/business-ip/catalog";
 
@@ -49,12 +50,37 @@ export function isAgentNavigationKey(value: unknown): value is string {
 }
 
 export function getAgentNavigationKey(agent: NavigationAgent): string | null {
-  const key = displayCategory({
+  const key = authorizationCategory({
     id: String(agent.id || ""),
     name: String(agent.name || ""),
     category: agent.category ? String(agent.category) : undefined,
   });
   return AGENT_NAVIGATION_KEYS.has(key) ? key : null;
+}
+
+/** Both the server's current agent ID and the existing authorization grant are required. */
+export function isAgentAuthorizedInSnapshot(
+  agent: NavigationAgent,
+  agentIds: ReadonlySet<string>,
+  navigationKeys: ReadonlySet<string>,
+): boolean {
+  const key = getAgentNavigationKey(agent);
+  return Boolean(key && agentIds.has(agent.id) && navigationKeys.has(key));
+}
+
+/** A display tab can be added only for an already authorized agent. */
+export function getAuthorizedAgentDisplayKeys(
+  agents: ReadonlyArray<NavigationAgent>,
+  agentIds: ReadonlySet<string>,
+  navigationKeys: ReadonlySet<string>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const agent of agents) {
+    if (!isAgentAuthorizedInSnapshot(agent, agentIds, navigationKeys)) continue;
+    const key = displayCategory({ ...agent, category: agent.category || undefined });
+    if (AGENT_NAVIGATION_KEYS.has(key)) keys.add(key);
+  }
+  return keys;
 }
 
 /**

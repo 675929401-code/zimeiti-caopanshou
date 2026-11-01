@@ -47,6 +47,33 @@ export type ImageOutputContractIssue = {
   expectedDimensions: string;
 };
 
+/** The existing delivery policy, frozen with each new request, not a new quality tier. */
+export const IMAGE_OUTPUT_POLICY_V1 = {
+  version: "image_output_policy.v1",
+  minimumDimensionScale: 0.8,
+  aspectRatioTolerance: 0.025,
+} as const;
+
+/** New requests must deliver at least every pixel of their declared target. */
+export const IMAGE_OUTPUT_POLICY_V2 = {
+  version: "image_output_policy.v2",
+  minimumDimensionScale: 1,
+  aspectRatioTolerance: 0.025,
+} as const;
+
+export type ImageOutputPolicySnapshot = {
+  version: typeof IMAGE_OUTPUT_POLICY_V1.version | typeof IMAGE_OUTPUT_POLICY_V2.version;
+  minimumDimensionScale: number;
+  aspectRatioTolerance: number;
+  candidatePixelSizes: Record<string, string>;
+};
+
+export function imageOutputPolicyVersion(value: unknown) {
+  if (value === IMAGE_OUTPUT_POLICY_V1.version) return IMAGE_OUTPUT_POLICY_V1;
+  if (value === IMAGE_OUTPUT_POLICY_V2.version) return IMAGE_OUTPUT_POLICY_V2;
+  return null;
+}
+
 export function imagePixelSizeFor(resolution: ImageResolution, aspectRatio: string): string {
   return IMAGE_PIXEL_SIZES[resolution]?.[aspectRatio] || IMAGE_PIXEL_SIZES[resolution]["1:1"];
 }
@@ -98,6 +125,24 @@ export function configuredImagePixelSizeFor(
   return imagePixelSizeFor(resolution, aspectRatio);
 }
 
+/** Provider input/request dimensions are never evidence of its output target. */
+export function configuredImageDeliveryPixelSizeFor(
+  protocolConfig: unknown,
+  resolution: ImageResolution,
+  aspectRatio: string,
+): string | null {
+  const map = configuredResolutionMap(objectValue(protocolConfig), "output_pixel_size_by_resolution", resolution);
+  const baseline = imagePixelSizeFor(resolution, aspectRatio);
+  if (!Object.hasOwn(map, aspectRatio)) return baseline;
+  const candidate = typeof map[aspectRatio] === "string" ? map[aspectRatio].trim().toLowerCase() : "";
+  const parsed = parsePixelSize(candidate);
+  const minimum = parsePixelSize(baseline)!;
+  // A lower native tier needs an explicit public product contract before it
+  // can replace the displayed K tier. Do not silently weaken that promise.
+  return parsed && imageDimensionsMatchAspectRatio(parsed.width, parsed.height, aspectRatio, 0.001)
+    && parsed.width >= minimum.width && parsed.height >= minimum.height ? candidate : null;
+}
+
 export function parsePixelSize(value: string): { width: number; height: number } | null {
   const match = String(value || "").trim().match(/^(\d{2,5})x(\d{2,5})$/iu);
   if (!match) return null;
@@ -132,10 +177,11 @@ export function validateImageOutputContract(input: {
   resolution: ImageResolution;
   expectedPixelSize?: string;
   minimumDimensionScale?: number;
+  aspectRatioTolerance?: number;
 }): ImageOutputContractIssue | null {
   const actualDimensions = `${input.width}x${input.height}`;
   const expectedDimensions = input.expectedPixelSize || imagePixelSizeFor(input.resolution, input.aspectRatio);
-  if (!imageDimensionsMatchAspectRatio(input.width, input.height, input.aspectRatio)) {
+  if (!imageDimensionsMatchAspectRatio(input.width, input.height, input.aspectRatio, input.aspectRatioTolerance)) {
     return {
       code: "IMAGE_OUTPUT_ASPECT_RATIO_MISMATCH",
       message: `上游返回 ${actualDimensions}，与所选 ${input.aspectRatio} 画幅不一致，结果未发放且未扣费`,

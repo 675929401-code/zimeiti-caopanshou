@@ -1,7 +1,12 @@
+import { normalizeStoryboardVideoInputs } from "./storyboard-video-inputs";
+import { StoryboardChainAnchorConfirmationSchema, StoryboardChainRequestSchema, resolveStoryboardExecutionMode } from "@/lib/storyboard-chain-contract";
 import { z } from "zod";
 import { WorkbenchCardPersistenceFields, WorkbenchRunPersistenceFields, StoryboardImageRequestSnapshotPersistenceFields, WorkbenchVideoContractPersistenceFields } from "@/lib/storyboard-project-contract";
 import { GeneratedImageReferenceSchema } from "@/lib/generated-image-reference";
-import { StoryboardVisualAssetPlanSchema, StoryboardVisualAssetRefSchema } from "@/lib/storyboard-workbench";
+import { StoryboardEnvironmentGroupSchema, StoryboardQualityCheckSchema, StoryboardSegmentSchema, StoryboardVisualAssetPlanSchema, StoryboardVisualAssetRefSchema, StoryboardWardrobePlanSchema } from "@/lib/storyboard-workbench";
+import { normalizeStoryboardVisualAssetWorkspace } from "@/lib/storyboard-visual-asset-workspace";
+import { StoryboardDirectorExecutionSchema } from "@/lib/storyboard-director-execution";
+import { StoryboardDirectorIntakeStateSchema } from "@/lib/storyboard-director-resume";
 
 function scalar(value: unknown): unknown {
   if (typeof value === "string") return /^(?:data:[^,]+;base64,|blob:)/iu.test(value) ? undefined : value;
@@ -16,12 +21,27 @@ function urls(value: unknown) { return Array.isArray(value) ? value.filter(item 
 export function sanitizeStoryboardPersistenceValue(value: unknown): unknown {
   const object = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const run = pickScalars(object, WorkbenchRunPersistenceFields);
+  run.executionMode = resolveStoryboardExecutionMode(object);
+  run.chainRevision = Number.isSafeInteger(object.chainRevision) && Number(object.chainRevision) > 0 ? object.chainRevision : 1;
+  if (object.directorIntake !== undefined) run.directorIntake = StoryboardDirectorIntakeStateSchema.parse(object.directorIntake);
   if (object.videoContract) run.videoContract = pickScalars(object.videoContract, WorkbenchVideoContractPersistenceFields);
-  const visualAssetPlan = StoryboardVisualAssetPlanSchema.safeParse(object.visualAssetPlan);
-  if (visualAssetPlan.success) run.visualAssetPlan = visualAssetPlan.data;
+  if (object.visualAssetPlan !== undefined) run.visualAssetPlan = StoryboardVisualAssetPlanSchema.parse(object.visualAssetPlan);
+  if (object.wardrobePlan !== undefined) run.wardrobePlan = StoryboardWardrobePlanSchema.parse(object.wardrobePlan);
+  const visualAssetWorkspace = normalizeStoryboardVisualAssetWorkspace(object.visualAssetWorkspace);
+  if (visualAssetWorkspace) run.visualAssetWorkspace = visualAssetWorkspace;
+  const environmentGroups = z.array(StoryboardEnvironmentGroupSchema).max(24).safeParse(object.environmentGroups);
+  if (environmentGroups.success) run.environmentGroups = environmentGroups.data;
   run.cards = Array.isArray(object.cards) ? object.cards.map(value => {
     const card = value && typeof value === "object" ? value as Record<string, unknown> : {};
     const output = pickScalars(card, WorkbenchCardPersistenceFields);
+    if (card.chainAnchorConfirmation !== undefined) output.chainAnchorConfirmation = StoryboardChainAnchorConfirmationSchema.parse(card.chainAnchorConfirmation);
+    if (card.directorExecution !== undefined) output.directorExecution = StoryboardDirectorExecutionSchema.parse(card.directorExecution);
+    if (card.capabilityGaps !== undefined) output.capabilityGaps = StoryboardSegmentSchema.shape.capabilityGaps.parse(card.capabilityGaps);
+    if (card.dynamicState !== undefined) output.dynamicState = StoryboardSegmentSchema.shape.dynamicState.parse(card.dynamicState);
+    if (card.wardrobeChangeEvents !== undefined) output.wardrobeChangeEvents = StoryboardSegmentSchema.shape.wardrobeChangeEvents.parse(card.wardrobeChangeEvents);
+    if (card.qualityChecks !== undefined) output.qualityChecks = z.array(StoryboardQualityCheckSchema).max(12).parse(card.qualityChecks);
+    if (card.visualAssetSelectionMode !== undefined) output.visualAssetSelectionMode = z.enum(["project", "custom"]).parse(card.visualAssetSelectionMode);
+    if (card.videoInputs !== undefined) output.videoInputs = normalizeStoryboardVideoInputs(card.videoInputs);
     output.referenceImageUrls = urls(card.referenceImageUrls);
     const visualAssetRefs = z.array(StoryboardVisualAssetRefSchema).max(16).safeParse(card.visualAssetRefs);
     if (visualAssetRefs.success) output.visualAssetRefs = visualAssetRefs.data;
@@ -35,6 +55,7 @@ export function sanitizeStoryboardPersistenceValue(value: unknown): unknown {
       };
       const snapshotVisualAssetRefs = z.array(StoryboardVisualAssetRefSchema).max(16).safeParse(snapshot.visualAssetRefs);
       if (snapshotVisualAssetRefs.success) persistedImageRequestSnapshot.visualAssetRefs = snapshotVisualAssetRefs.data;
+      if (snapshot.chainContext !== undefined) persistedImageRequestSnapshot.chainContext = StoryboardChainRequestSchema.parse(snapshot.chainContext);
       output.imageRequestSnapshot = persistedImageRequestSnapshot;
     }
     if (card.videoLifecycle) output.videoLifecycle = pickScalars(card.videoLifecycle, ["taskId","taskState","taskLabel","instanceState","instanceLabel","headline","detail","tone","progress","idleGraceSeconds","idleRemainingSeconds","taskTerminal","monitorComplete","observedAt"]);

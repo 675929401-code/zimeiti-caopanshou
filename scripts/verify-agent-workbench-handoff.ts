@@ -10,6 +10,8 @@ import {
 import type { StructuredAgentOutputReadyDetail } from "../src/lib/structured-agent-output";
 import {
   AGENT_WORKBENCH_HANDOFF_TTL_MS,
+  acknowledgeAgentWorkbenchHandoff,
+  buildHomepageStoryboardDraftDetail,
   agentWorkbenchHandoffStorageKey,
   createAgentWorkbenchHandoff,
   parseAgentWorkbenchHandoff,
@@ -84,6 +86,7 @@ const detail: StructuredAgentOutputReadyDetail = {
   source: "stable_json",
   segments: [],
   machine_payload: fixturePackage(),
+  expected_input: fixturePackage().input,
 };
 
 const now = Date.UTC(2026, 7, 27, 12, 0, 0);
@@ -99,17 +102,22 @@ for (const target of targets) {
   const storage = new MemoryStorage();
   const saved = saveAgentWorkbenchHandoff(detail, target, storage);
   assert.ok(saved, `${target} handoff should persist`);
-  const stored = storage.getItem(agentWorkbenchHandoffStorageKey(target));
+  const handoffId = target === "storyboard-workbench" ? saved.handoff_id : undefined;
+  const stored = storage.getItem(agentWorkbenchHandoffStorageKey(target, handoffId));
   assert.ok(stored, `${target} should use a target-specific storage key`);
   storage.setItem(`agent_workbench_handoff_receipt_v1:${target}:${saved.handoff_id}`, JSON.stringify({ legacy: true }));
 
-  const fresh = readAgentWorkbenchHandoff(target, storage, Date.now());
+  const fresh = readAgentWorkbenchHandoff(target, storage, Date.now(), handoffId);
   if (!fresh.ok) throw new Error(fresh.error);
   assert.equal(fresh.ok, true, `${target} should read its own handoff`);
   assert.equal(fresh.handoff.target, target);
-  assert.equal(storage.getItem(agentWorkbenchHandoffStorageKey(target)), null, `${target} payload should be removed before use`);
+  if (target === "storyboard-workbench") {
+    assert.ok(storage.getItem(agentWorkbenchHandoffStorageKey(target, saved.handoff_id)), "storyboard draft remains until save ACK");
+    assert.ok(acknowledgeAgentWorkbenchHandoff(target, saved.handoff_id, storage));
+  }
+  assert.equal(storage.getItem(agentWorkbenchHandoffStorageKey(target, handoffId)), null, `${target} payload should be removed after consumption`);
   assert.equal(storage.getItem(`agent_workbench_handoff_receipt_v1:${target}:${saved.handoff_id}`), null, `${target} legacy receipt should be removed`);
-  const consumed = readAgentWorkbenchHandoff(target, storage, Date.now());
+  const consumed = readAgentWorkbenchHandoff(target, storage, Date.now(), handoffId);
   if (consumed.ok) throw new Error("consumed handoff unexpectedly remained readable");
   assert.equal(consumed.ok, false);
   assert.equal(consumed.code, "MISSING");
@@ -138,6 +146,33 @@ assert.equal(expired.code, "EXPIRED");
 assert.equal(createAgentWorkbenchHandoff({ ...detail, source: "legacy_text_blocks" }, "canvas", now), null);
 assert.equal(createAgentWorkbenchHandoff({ ...detail, commit_key: "" }, "canvas", now), null);
 
+// Homepage conversion is explicitly a draft: no completion receipt is synthesized.
+const draftMessage = { id: "homepage-draft-001", role: "assistant" as const, content: JSON.stringify(fixturePackage()) };
+assert.ok(buildHomepageStoryboardDraftDetail(draftMessage, fixturePackage().input));
+for (const change of [
+  { role: "user" as const }, { isStreaming: true }, { error: "failed" }, { streamStatus: "aborted" },
+  { content: draftMessage.content + "\n[已终止]" },
+  { content: draftMessage.content + "\n[已停止接收；任务完成后按实际用量结算，可在历史查看结果]" },
+  { content: draftMessage.content + "\nRESULT_UNKNOWN" },
+  { content: draftMessage.content + "\n最终结果暂未确认，禁止重复提交" },
+  { content: draftMessage.content + "\n输出中断" }, { content: "ordinary prose" },
+  { content: draftMessage.content.slice(0, -4) }, { content: "" },
+]) assert.equal(buildHomepageStoryboardDraftDetail({ ...draftMessage, ...change }, fixturePackage().input), null);
+assert.equal(buildHomepageStoryboardDraftDetail({ ...draftMessage, content: JSON.stringify({
+  ...fixturePackage(), segments: [{ ...fixturePackage().segments[0], panel_count: 99 }],
+}) }, fixturePackage().input), null);
+const originalBytesOnly = { ...draftMessage, displayContent: "rewritten visible prose" };
+assert.ok(buildHomepageStoryboardDraftDetail(originalBytesOnly, fixturePackage().input));
+const brokenOriginal = { ...originalBytesOnly, content: "broken", displayContent: draftMessage.content };
+assert.equal(buildHomepageStoryboardDraftDetail(brokenOriginal, fixturePackage().input), null);
+const homepageEnvelope = createAgentWorkbenchHandoff(detail, "storyboard-workbench", now, "/");
+assert.ok(homepageEnvelope);
+assert.equal(homepageEnvelope.source_route, "/");
+assert.equal(parseAgentWorkbenchHandoff(JSON.stringify(homepageEnvelope), "storyboard-workbench", { nowMs: now + 1 }).ok, true);
+const homepageStorage = new MemoryStorage();
+assert.equal(saveAgentWorkbenchHandoff(detail, "storyboard-workbench", homepageStorage, "/")?.source_route, "/");
+assert.equal(parseAgentWorkbenchHandoff(JSON.stringify({ ...homepageEnvelope, source_route: "/unknown" }), "storyboard-workbench", { nowMs: now + 1 }).ok, false);
+
 const root = process.cwd();
 const agentSource = readFileSync(join(root, "src/features/official-core-routes/official-agent-route.tsx"), "utf8");
 const storyboardSource = readFileSync(join(root, "src/components/storyboard-workbench.tsx"), "utf8");
@@ -154,10 +189,10 @@ for (const route of [
 assert.ok(agentSource.includes('result.kind !== "storyboard_director"') || agentSource.includes('result.kind === "storyboard_director"'));
 assert.ok(agentSource.includes('result.source !== "stable_json"') || agentSource.includes('result.source === "stable_json"'));
 
-assert.ok(storyboardSource.includes('readAgentWorkbenchHandoff("storyboard-workbench"'));
+assert.ok(storyboardSource.includes('readAgentWorkbenchHandoffAcrossTabs("storyboard-workbench"'));
 assert.ok(storyboardSource.includes('data-testid="agent-storyboard-handoff-confirm"'));
 assert.ok(storyboardSource.includes("agentHandoffConsumedRef.current = true"));
-assert.equal(storyboardSource.includes("acknowledgeAgentWorkbenchHandoff"), false);
+assert.ok(storyboardSource.includes("acknowledgeAgentWorkbenchHandoffAcrossTabs"));
 
 assert.ok(canvasSource.includes('readAgentWorkbenchHandoff("canvas")'));
 assert.ok(canvasSource.includes('searchParams.get("entry") !== "agent"'));
@@ -177,6 +212,6 @@ assert.ok(filmSource.includes("确认后只创建项目，不会生成图片或�
 console.log(JSON.stringify({
   ok: true,
   targets,
-  tests: 48,
-  contract: "stable-json-only; target-scoped; two-minute-delete-before-parse; explicit-confirm; film-readback-before-navigation",
+  tests: 69,
+  contract: "stable-json-only; independent-intake; target-scoped; storyboard-ID-addressed-save-ACK; legacy-canvas-film-single-use; two-minute-TTL; film-readback-before-navigation",
 }, null, 2));

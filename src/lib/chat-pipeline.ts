@@ -45,6 +45,30 @@ export interface ClassifiedError {
  * - abort → 不重试（用户主动行为）
  */
 export function classifyError(error: unknown): ClassifiedError {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const msg = error instanceof Error ? error.message : typeof error === "string" ? error
+    : typeof record.message === "string" ? record.message : typeof record.error === "string" ? record.error : "";
+  const code = typeof record.code === "string" ? record.code : "";
+  const diagnostic = `${code} ${msg}`;
+  // Unknown execution wins over secondary words such as balance or quota.
+  if (/RESULT_UNKNOWN|RECONCILIATION_REQUIRED|最终结果暂未确认/u.test(diagnostic)) {
+    return { class: "network", retryable: false, userMessage: "与模型通道的连接中断，最终结果暂未确认。原请求已保留，请先查看聊天记录，避免重复发送。", shouldCleanup: false };
+  }
+  if (/\bINSUFFICIENT_CREDITS\b/u.test(diagnostic)) {
+    return { class: "billing", retryable: false, userMessage: "站内积分不足，当前无法发起这次回复。请补充站内积分后再试。", shouldCleanup: false };
+  }
+  if (/\bLLM_UPSTREAM_BALANCE\b/u.test(diagnostic)) {
+    return { class: "billing", retryable: false, userMessage: "模型中转账户余额或额度不足，请管理员补充额度后再发起新请求。", shouldCleanup: false };
+  }
+  if (/\bLLM_UPSTREAM_BILLING\b/u.test(diagnostic)) {
+    return { class: "billing", retryable: false, userMessage: "模型中转账户的额度或计费状态暂不可用，请管理员核对后再发起新请求。", shouldCleanup: false };
+  }
+  if (/\bLLM_UPSTREAM_AUTH\b/u.test(diagnostic)) {
+    return { class: "auth", retryable: false, userMessage: "模型中转通道授权失效，请管理员检查通道配置。", shouldCleanup: false };
+  }
+  if (/\bLLM_UPSTREAM_(?:BUSY|CONCURRENCY_LIMIT)\b/u.test(diagnostic)) {
+    return { class: "rate_limit", retryable: false, userMessage: "模型通道当前繁忙或排队已满，本次未自动重试，请稍后再试。", shouldCleanup: false };
+  }
   // 用户主动取消
   if (error && typeof error === "object" && "name" in error && error.name === "AbortError") {
     return {
@@ -68,7 +92,6 @@ export function classifyError(error: unknown): ClassifiedError {
   }
 
   // HTTP 状态码错误（从 error message 中提取）
-  const msg = error instanceof Error ? error.message : String(error);
 
   if (msg.includes("429") || msg.includes("Too Many Requests") || msg.includes("rate_limit")) {
     return {
@@ -88,12 +111,12 @@ export function classifyError(error: unknown): ClassifiedError {
     };
   }
 
-  if (msg.includes("402") || msg.includes("Insufficient") || msg.includes("积分不足") || msg.includes("余额不足")) {
+  if (msg.includes("402") || /insufficient.*(?:quota|balance)|积分不足|余额不足/iu.test(msg)) {
     return {
       class: "billing",
       retryable: false,
-      userMessage: "发送失败：积分不足，请充值后重试",
-      shouldCleanup: true,
+      userMessage: "账户额度或计费状态暂不可用，请核对站内积分，或联系管理员检查模型中转通道。",
+      shouldCleanup: false,
     };
   }
 

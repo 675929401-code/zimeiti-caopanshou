@@ -61,33 +61,38 @@ export async function main() {
     });
 
     await page.goto(`${origin}/admin`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    await page.getByRole('heading', { name: '学员与会员', exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
-    assert.equal(new URL(page.url()).searchParams.get('tab'), 'users', 'NAKED_ADMIN_MUST_CANONICALIZE_TO_USERS');
+    await page.getByRole('heading', { name: '平台运营安全指挥中心', exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(new URL(page.url()).searchParams.get('tab'), 'dashboard', 'NAKED_ADMIN_MUST_CANONICALIZE_TO_DASHBOARD');
     assert.equal(await page.evaluate(() => sessionStorage.getItem('app_state_admin_activeTab')), null, 'LEGACY_ADMIN_TAB_CACHE_NOT_CLEARED');
     assert.equal(await page.evaluate(() => sessionStorage.getItem('app_state_admin_userSubTab')), null, 'LEGACY_MEMBER_SUBTAB_CACHE_NOT_CLEARED');
-    assert.equal(await page.getByRole('button', { name: '会员名单', exact: true }).getAttribute('aria-current'), 'page');
 
-    const nav = page.getByRole('navigation', { name: '管理后台功能导航' });
+    const nav = page.getByRole('navigation', { name: '管理后台一级导航' });
     await nav.waitFor({ state: 'visible' });
-    for (const group of ['学员与经营', '内容与模型', '平台与界面', '安全与数据']) {
-      await nav.getByRole('heading', { name: group, exact: true }).waitFor({ state: 'visible' });
+    for (const targetTab of ['dashboard', 'users', 'benefit-packages', 'credits', 'payment', 'announcements', 'agents', 'models', 'workspace-models', 'general', 'white-label', 'security', 'health', 'super-admin']) {
+      await nav.locator(`[data-testid="admin-primary-nav-${targetTab}"]`).waitFor({ state: 'visible' });
     }
     assert.equal(await page.getByRole('button', { name: '漫剧后台', exact: true }).count(), 0, 'INDEPENDENT_MANJU_HEADER_ENTRY_REMAINS');
     assert.equal(await nav.getByRole('button', { name: '漫剧工作台', exact: true }).count(), 0, 'DUPLICATE_MANJU_GLOBAL_NAV_ENTRY_REMAINS');
     assert.equal(await nav.getByRole('button', { name: '工作台配置', exact: true }).count(), 1, 'WORKSPACE_CONFIG_GLOBAL_NAV_ENTRY_INVALID');
     assert.equal(await page.getByRole('button', { name: '部署到线上', exact: true }).count(), 0, 'DEAD_GLOBAL_DEPLOY_ACTION_REMAINS');
-    assert.equal(await nav.getByRole('button', { name: '学员管理', exact: true }).getAttribute('aria-current'), 'page');
 
-    await nav.getByRole('button', { name: '模型资源池', exact: true }).click();
+    assert.equal(await nav.getByRole('button', { name: '平台指挥中心', exact: true }).getAttribute('aria-current'), 'page');
+    await nav.getByRole('button', { name: '会员管理', exact: true }).click();
+    await page.waitForURL(url => url.searchParams.get('tab') === 'users');
+    await page.getByRole('heading', { name: '学员与会员', exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(await page.getByRole('button', { name: '会员名单', exact: true }).getAttribute('aria-current'), 'page');
+    assert.equal(await nav.getByRole('button', { name: '会员管理', exact: true }).getAttribute('aria-current'), 'page');
+
+    await nav.getByRole('button', { name: '模型与服务', exact: true }).click();
     await page.waitForURL(url => url.searchParams.get('tab') === 'models');
-    assert.equal(await nav.getByRole('button', { name: '模型资源池', exact: true }).getAttribute('aria-current'), 'page');
-    await nav.getByRole('button', { name: '学员管理', exact: true }).click();
+    assert.equal(await nav.getByRole('button', { name: '模型与服务', exact: true }).getAttribute('aria-current'), 'page');
+    await nav.getByRole('button', { name: '会员管理', exact: true }).click();
     await page.waitForURL(url => url.searchParams.get('tab') === 'users');
     assert.equal(await page.getByRole('button', { name: '会员名单', exact: true }).getAttribute('aria-current'), 'page');
 
     await page.goto(`${origin}/admin`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    await page.getByRole('heading', { name: '学员与会员', exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
-    assert.equal(new URL(page.url()).searchParams.get('tab'), 'users', 'OLD_TAB_MUST_NOT_RECLAIM_NAKED_ADMIN');
+    await page.getByRole('heading', { name: '平台运营安全指挥中心', exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(new URL(page.url()).searchParams.get('tab'), 'dashboard', 'OLD_TAB_MUST_NOT_RECLAIM_NAKED_ADMIN');
 
     await page.goto(`${origin}/admin?tab=manju-workbench`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await page.waitForURL(url => url.searchParams.get('tab') === 'workspace-models' && url.searchParams.get('project') === 'manju');
@@ -121,7 +126,7 @@ export async function main() {
     assert.deepEqual(consoleErrors, [], 'ADMIN_NAV_CONSOLE_ERRORS');
     console.log(JSON.stringify({
       passed: true,
-      defaultRoute: '/admin?tab=users',
+      defaultRoute: '/admin?tab=dashboard',
       legacyStoredTabIgnored: true,
       explicitTabsRespected: ['models', 'legacy-manju-to-workspace', 'retired-digital-human-to-video'],
       groupedNavigation: true,

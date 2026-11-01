@@ -12,6 +12,8 @@ import {
 } from "@/lib/server/member-content-authority";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { isPersistentVideoUri, resolvePersistentVideoUri } from "@/lib/video-persistence";
+import { isStoryboardArchiveExpired, usableStoryboardArchive, type StoryboardArchiveTask } from "@/lib/storyboard-video-archive-policy";
+import { isVideoHistoryExplicitlyHidden, type VideoHistoryPolicyItem } from "@/lib/video-history-policy";
 import {
   createVideoAccessTicket,
   type VideoAccessIdentity,
@@ -38,59 +40,73 @@ async function redirectToOriginProxy(_req: NextRequest, taskId: string, identity
   });
 }
 
-async function canAccessVideoTask(req: NextRequest, taskId: string): Promise<VideoAccessIdentity | Response | null> {
+type StorageTask = StoryboardArchiveTask & VideoHistoryPolicyItem & {
+  id: string;
+  user_id: string;
+  storage_url?: string | null;
+  source_expired_at?: string | null;
+};
+
+type AuthorizedStorageTask = { task: StorageTask; identity: VideoAccessIdentity };
+
+async function canAccessVideoTask(req: NextRequest, taskId: string): Promise<AuthorizedStorageTask | Response | null> {
   const authorization = await authorizeVideoMediaRequest(req, taskId, "playback");
   if (!authorization.ok) return authorization.response;
   const identity = authorization.user;
 
   const supabase = getSupabaseClient();
-  const findOwner = async (allowCrossMember: boolean) => {
+  const findTask = async (allowCrossMember: boolean): Promise<StorageTask | null> => {
+    const fields = "id,user_id,storage_url,task_label,status,completed_at,created_at,source_expired_at,history_hidden_at,storyboard_archive_expires_at,storyboard_archive_state";
     let byLocalQuery = supabase
       .from("video_tasks")
-      .select("user_id")
+      .select(fields)
       .eq("id", taskId);
     if (!allowCrossMember) byLocalQuery = byLocalQuery.eq("user_id", identity.userId);
     const { data: byLocal, error: byLocalError } = await byLocalQuery.maybeSingle();
     if (byLocalError) throw byLocalError;
-    const localOwnerId = String((byLocal as { user_id?: string } | null)?.user_id || "");
-    if (localOwnerId) return localOwnerId;
+    if (byLocal?.id && byLocal.user_id) return byLocal as StorageTask;
 
     let byExternalQuery = supabase
       .from("video_tasks")
-      .select("user_id")
+      .select(fields)
       .eq("task_id_external", taskId);
     if (!allowCrossMember) byExternalQuery = byExternalQuery.eq("user_id", identity.userId);
     const { data: byExternal, error: byExternalError } = await byExternalQuery
       .order("completed_at", { ascending: false, nullsFirst: false })
-      .limit(1);
+      .limit(2);
     if (byExternalError) throw byExternalError;
-    return String(byExternal?.[0]?.user_id || "");
+    // An external provider ID is not necessarily unique across attempts or
+    // accounts. Refuse ambiguous IDs instead of checking one row's owner and
+    // returning a different row's object.
+    if ((byExternal?.length || 0) > 1) throw new Error("VIDEO_EXTERNAL_TASK_AMBIGUOUS");
+    const task = byExternal?.[0] as StorageTask | undefined;
+    return task?.id && task.user_id ? task : null;
   };
 
-  let ownerId: string;
+  let task: StorageTask | null;
   try {
-    ownerId = await findOwner(false);
-    if (!ownerId && identity.role === "admin") {
+    task = await findTask(false);
+    if (!task && identity.role === "admin") {
       const discovery = await authorizeMemberContentDiscovery(
         req,
         identity,
         { operation: "member_video_storage_discovery" },
       );
       if (!discovery.ok) return discovery.response;
-      ownerId = await findOwner(true);
+      task = await findTask(true);
     }
   } catch {
     return NextResponse.json({ error: "视频权限暂时无法核验" }, { status: 503 });
   }
 
-  if (!ownerId) return null;
+  if (!task) return null;
   const contentAccess = await authorizeMemberContentAccess(
     req,
     identity,
-    ownerId,
+    String(task.user_id),
     { operation: "member_video_storage_playback" },
   );
-  return contentAccess.ok ? contentAccess.deliveryIdentity : contentAccess.response;
+  return contentAccess.ok ? { task, identity: contentAccess.deliveryIdentity } : contentAccess.response;
 }
 
 export async function GET(
@@ -104,41 +120,27 @@ export async function GET(
     return NextResponse.json({ error: "无效的任务 ID" }, { status: 400 });
   }
 
-  const identity = await canAccessVideoTask(req, taskId);
-  if (identity instanceof Response) return identity;
-  if (!identity) {
+  const access = await canAccessVideoTask(req, taskId);
+  if (access instanceof Response) return access;
+  if (!access) {
     return NextResponse.json({ error: "无权访问该视频" }, { status: 403 });
   }
-
-  const supabase = getSupabaseClient();
-  const storedByIdQuery = supabase
-    .from("video_tasks")
-    .select("storage_url")
-    .eq("id", taskId);
-  const { data: storedById, error: storedByIdError } = identity.role === "admin"
-    ? await storedByIdQuery.maybeSingle()
-    : await storedByIdQuery.eq("user_id", identity.userId).maybeSingle();
-  if (storedByIdError) {
-    return NextResponse.json({ error: "视频地址暂时无法读取" }, { status: 503 });
+  const { task, identity } = access;
+  if (isVideoHistoryExplicitlyHidden(task) || isStoryboardArchiveExpired(task)
+    || (task.source_expired_at && !usableStoryboardArchive(task))) {
+    return NextResponse.json({ error: isVideoHistoryExplicitlyHidden(task)
+      ? "视频记录已从历史中移除，当前不可播放"
+      : "视频源已到期，请使用此前下载的文件" }, {
+      status: 410,
+      headers: { "Cache-Control": "private, no-store" },
+    });
   }
-  let storageUrl = (storedById as { storage_url?: string } | null)?.storage_url || "";
-  if (!storageUrl) {
-    const storedByExternalQuery = supabase
-      .from("video_tasks")
-      .select("storage_url")
-      .eq("task_id_external", taskId)
-      .order("completed_at", { ascending: false, nullsFirst: false })
-      .limit(1);
-    const { data: storedByExternal, error: storedByExternalError } = identity.role === "admin"
-      ? await storedByExternalQuery
-      : await storedByExternalQuery.eq("user_id", identity.userId);
-    if (storedByExternalError) {
-      return NextResponse.json({ error: "视频地址暂时无法读取" }, { status: 503 });
-    }
-    storageUrl = storedByExternal?.[0]?.storage_url || "";
-  }
+  const storageUrl = String(task.storage_url || "");
   if (isPersistentVideoUri(storageUrl)) {
-    return NextResponse.redirect(await resolvePersistentVideoUri(storageUrl), 302);
+    const response = NextResponse.redirect(await resolvePersistentVideoUri(storageUrl), 302);
+    response.headers.set("Cache-Control", "private, no-store");
+    response.headers.set("Vary", "Cookie, Authorization");
+    return response;
   }
-  return redirectToOriginProxy(req, taskId, identity);
+  return redirectToOriginProxy(req, String(task.id), identity);
 }

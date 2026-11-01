@@ -59,15 +59,23 @@ export function splitParagraphClauses(text: string): string[] {
       buf = "";
     }
   }
-  if (buf.trim()) clauses.push(buf);
+  if (buf) clauses.push(buf);
   return clauses;
 }
 
-export function buildSegmentUnits(text: string): SegmentUnit[] {
-  const cleaned = text.replace(/\n{3,}/g, "\n\n").trim();
-  if (!cleaned) return [];
+function normalizedParagraphs(text: string): string[] {
+  // Keep spaces, punctuation and genuine repetitions; only remove line breaks.
+  const paragraphs = text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()
+    .split(/\n(?=[ \t]*\n)/u).map(paragraph => paragraph.replace(/\n/g, "")).filter(Boolean);
+  return paragraphs.reduce<string[]>((result, paragraph) => {
+    if (!paragraph.trim() && result.length) result[result.length - 1] += paragraph;
+    else result.push(paragraph);
+    return result;
+  }, []);
+}
 
-  const paragraphs = cleaned.split(/\n\s*\n/).filter(p => p.trim());
+export function buildSegmentUnits(text: string): SegmentUnit[] {
+  const paragraphs = normalizedParagraphs(text);
   const units: SegmentUnit[] = [];
 
   for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
@@ -88,149 +96,215 @@ export function buildSegmentUnits(text: string): SegmentUnit[] {
   return units;
 }
 
-function boundaryPenalty(text: string) {
-  const trimmed = text.trim().replace(/[”’」』）》】]+$/u, "");
-  const last = trimmed.at(-1) || "";
-  if (/[。！？!?]/u.test(last)) return 0;
-  if (/[；;]/u.test(last)) return 5;
-  if (/[，,、]/u.test(last)) return 16;
-  if (/[：:]/u.test(last)) return 44;
-  return 28;
-}
-
-function segmentCost(text: string, chars: number, min: number, max: number, ideal: number, isLast: boolean) {
-  let score = Math.abs(chars - ideal) ** 2 + boundaryPenalty(text);
-  if (chars < min) score += (min - chars) ** 2 * 14 + (isLast ? 24 : 90);
-  if (chars > max) score += (chars - max) ** 2 * 18 + 72;
-  return score;
-}
-
-function splitOversizedClause(text: string, min: number, max: number, ideal: number): string[] {
+// Local, deterministic boundary hints. These are fallible, not a language model
+// or an audio-timing measurement. Text stays as contiguous original substrings.
+function segmentParagraphRule(text: string, min: number, max: number, ideal: number, duration: number): string[] {
+  const symbols = Array.from(text);
+  if (!symbols.length) return [];
   const total = countChars(text);
-  if (total <= max) return [text];
 
-  const minimumChunks = Math.ceil(total / max);
-  const maximumChunks = Math.max(1, Math.floor(total / min));
-  const idealChunks = Math.max(1, Math.round(total / ideal));
-  const chunkCount = minimumChunks <= maximumChunks
-    ? Math.min(maximumChunks, Math.max(minimumChunks, idealChunks))
-    : idealChunks;
-  if (chunkCount <= 1) return [text];
-
-  const baseTarget = Math.floor(total / chunkCount);
-  let remainder = total % chunkCount;
-  const targets = Array.from({ length: chunkCount }, () => {
-    const target = baseTarget + (remainder > 0 ? 1 : 0);
-    remainder = Math.max(0, remainder - 1);
-    return target;
-  });
-
-  const chunks: string[] = [];
-  let buffer = "";
-  let counted = 0;
-  let targetIndex = 0;
-  for (const char of Array.from(text)) {
-    buffer += char;
-    if (/[\u4e00-\u9fff\u3400-\u4dbf0-9]/u.test(char)) counted += 1;
-    if (targetIndex < targets.length - 1 && counted >= targets[targetIndex]) {
-      chunks.push(buffer);
-      buffer = "";
-      counted = 0;
-      targetIndex += 1;
-    }
+  const offsets = [0];
+  const counts = [0];
+  const visible = [0];
+  const speechSeconds = [0];
+  for (const symbol of symbols) {
+    offsets.push(offsets[offsets.length - 1] + symbol.length);
+    counts.push(counts[counts.length - 1] + (/[\u4e00-\u9fff\u3400-\u4dbf0-9]/u.test(symbol) ? 1 : 0));
+    visible.push(visible[visible.length - 1] + (/\S/u.test(symbol) ? 1 : 0));
+    // Conservative local heuristic only. Names, number readings and actual
+    // voices vary; this cannot prove real audio duration.
+    const durationCost = /\p{Script=Han}/u.test(symbol) ? 1 / 5.5
+      : /[0-9\p{Number}]/u.test(symbol) ? 1 / 5
+      : /[A-Za-z]/u.test(symbol) ? 0.07
+      : /[。！？!?；;]/u.test(symbol) ? 0.22
+      : /[，,、：:]/u.test(symbol) ? 0.12 : 0;
+    speechSeconds.push(speechSeconds[speechSeconds.length - 1] + durationCost);
   }
-  if (buffer) chunks.push(buffer);
-  return chunks.filter(Boolean);
-}
+  if (total <= max && speechSeconds[symbols.length] <= duration + 0.001) return [text];
 
-function segmentParagraphRule(text: string, min: number, max: number, ideal: number): string[] {
-  const clauses = splitParagraphClauses(text)
-    .flatMap(clause => splitOversizedClause(clause, min, max, ideal));
-  if (!clauses.length) return [];
+  // Prefer complete sentences and condition + consequence where each unit can
+  // fit. The protection is soft so there is always an in-limit path.
+  const indexByOffset = new Map(offsets.map((offset, index) => [offset, index]));
+  const protectedDiff = new Int32Array(symbols.length + 2);
+  const clauseDiff = new Int32Array(symbols.length + 2);
+  function protectRange(startOffset: number, endOffset: number, penalty: number, clause = false) {
+    const start = indexByOffset.get(startOffset);
+    const end = indexByOffset.get(endOffset);
+    if (start === undefined || end === undefined || end - start < 2 || counts[end] - counts[start] > max
+      || speechSeconds[end] - speechSeconds[start] > duration + 0.001) return;
+    const diff = clause ? clauseDiff : protectedDiff;
+    diff[start + 1] += penalty;
+    diff[end] -= penalty;
+  }
+  for (const match of text.matchAll(/[^。！？!?；;]+(?:[。！？!?；;]+[”’」』）》〉】\])]*|$)/gu)) {
+    protectRange(match.index, match.index + match[0].length, 400);
+  }
+  // Each punctuation-delimited clause that fits is a first-class unit.
+  // Oversized clauses remain splittable via character and word boundaries.
+  for (const match of text.matchAll(/[^。！？!?，,；;、：:]+(?:[。！？!?，,；;、：:]+[”’」』）》〉】\])]*|$)/gu)) {
+    protectRange(match.index, match.index + match[0].length, 1, true);
+  }
+  for (const match of text.matchAll(/(?:如果|假如|倘若|只要|一旦|要是)[^，,。！？!?；;]{0,100}[，,][^，,。！？!?；;]{1,100}/gu)) {
+    protectRange(match.index, match.index + match[0].length, 3000);
+  }
+  const protectedCosts = Array<number>(symbols.length + 1).fill(0);
+  const insideClause = Array<boolean>(symbols.length + 1).fill(false);
+  let protectedCost = 0;
+  let clauseDepth = 0;
+  for (let index = 1; index <= symbols.length; index++) {
+    protectedCost += protectedDiff[index];
+    protectedCosts[index] = protectedCost;
+    clauseDepth += clauseDiff[index];
+    insideClause[index] = clauseDepth > 0;
+  }
 
-  const best = Array<number>(clauses.length + 1).fill(Number.POSITIVE_INFINITY);
-  const previous = Array<number>(clauses.length + 1).fill(-1);
+  const wordOffsets = new Set<number>();
+  try {
+    if (typeof Intl.Segmenter === "function") {
+      const segmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
+      for (const word of segmenter.segment(text)) wordOffsets.add(word.index);
+    }
+  } catch {
+    // Some hosts do not have Chinese word segmentation. Character boundaries
+    // remain available and the same punctuation/phrase hints are still used.
+  }
+
+  const depths = [0];
+  const openings = "“‘「『（(《〈【[";
+  const closings = "”’」』）)》〉】]";
+  let depth = 0;
+  for (const symbol of symbols) {
+    if (openings.includes(symbol)) depth++;
+    else if (closings.includes(symbol)) depth = Math.max(0, depth - 1);
+    depths.push(depth);
+  }
+
+  function boundaryCost(index: number): number {
+    if (index === symbols.length) return 0;
+    const prev = symbols[index - 1] || "";
+    const next = symbols[index] || "";
+    const before = symbols.slice(Math.max(0, index - 8), index).join("");
+    const after = symbols.slice(index, index + 8).join("");
+    const last = before.replace(/[”’」』）》〉】\])]+$/u, "").at(-1) || "";
+    let penalty = /[。！？!?]/u.test(last) ? 0
+      : /[；;]/u.test(last) ? 25
+      : /[，,、]/u.test(last) ? 65
+      : /[：:]/u.test(last) ? 280
+      : wordOffsets.has(offsets[index]) ? 150 : 300;
+    if (depths[index] > 0) penalty += 220;
+    if (openings.includes(prev) || closings.includes(next)) penalty += 1500;
+    if (/^[，,。！？!?；;：:、]/u.test(next)) penalty += 1500;
+    if (/^[的了着过呢吗吧呀嘛]/u.test(next)) penalty += 700;
+    if (/[的地得]/u.test(prev)) penalty += 700;
+    if (/[前后大小]/u.test(prev) && /[\u3400-\u9fff]/u.test(next)) penalty += 400;
+    if (prev === next && /[\u3400-\u9fff]/u.test(prev)) penalty += 700;
+    if (/[A-Za-z0-9]/u.test(prev) && /[A-Za-z0-9]/u.test(next)) penalty += 800;
+    if (/[0-9]/u.test(prev) && /^[.．][0-9]/u.test(after)) penalty += 1200;
+    if (/[0-9][.．]$/u.test(before) && /[0-9]/u.test(next)) penalty += 1200;
+    // A verb and its directional/result complement are one expression, e.g.
+    // 表达出、看出来、拿出来. This is a soft cost so a very long word can
+    // still be segmented under the hard capacity limit.
+    if (/^(?:出来|出去|起来|下去|上来|出|来|去)/u.test(after)
+      && /(?:表达|显现|表现|发现|看|拿|走|跑|抬|跳|冲|站|发|说|做|带|伸|露|伸展)$/u.test(before)) penalty += 1200;
+    // A comma at the end of a condition often leads directly into its result.
+    // Use a bounded lookback and penalize rather than forbid the boundary.
+    const recent = symbols.slice(Math.max(0, index - max * 2), index).join("");
+    if (/(?:如果|假如|倘若|只要|一旦|要是)[^，,。！？!?；;]{0,100}[，,]$/u.test(recent)) penalty += 1200;
+    // Transitions are candidates, not mandatory cuts: their associated clauses
+    // can still stay together when the complete thought fits the limit.
+    if (/^(?:最后|接着|随后|第二天|后来|突然|于是|然后)/u.test(after)) penalty -= 120;
+    if (/(?:检查|打开|拿起|放下|接住|握住|关上|放回|抬起|看着|看到|拿出|擦干|听见)$/u.test(before)) penalty += 600;
+    if (/(?:如果|因为|虽然|不是|不仅|之所以)$/u.test(before)) penalty += 650;
+    if (/^(?:所以|那么|但是|而是|就会|才会|才能)/u.test(after)) penalty += 120;
+    return Math.max(0, penalty) + protectedCosts[index];
+  }
+
+  const best = Array<number>(symbols.length + 1).fill(Number.POSITIVE_INFINITY);
+  const previous = Array<number>(symbols.length + 1).fill(-1);
+  const boundaryCosts = Array.from({ length: symbols.length + 1 }, (_, index) =>
+    index === 0 ? 0 : boundaryCost(index),
+  );
   best[0] = 0;
-
-  for (let start = 0; start < clauses.length; start++) {
+  // Bounded scan protects against quadratic work on long Latin/emoji runs. A
+  // conservative streaming fallback below handles extreme zero-count spans.
+  const maxLookahead = Math.max(1024, max * 8);
+  for (let start = 0; start < symbols.length; start++) {
     if (!Number.isFinite(best[start])) continue;
-    let candidate = "";
-    for (let end = start; end < clauses.length; end++) {
-      candidate += clauses[end];
-      const chars = countChars(candidate);
-      const singleOversizedClause = start === end && chars > max;
-      if (chars > max + 12 && !singleOversizedClause) break;
-      const next = end + 1;
-      const score = best[start] + segmentCost(candidate, chars, min, max, ideal, next === clauses.length);
-      if (score < best[next]) {
-        best[next] = score;
-        previous[next] = start;
+    const limit = Math.min(symbols.length, start + maxLookahead);
+    for (let end = start + 1; end <= limit; end++) {
+      const length = counts[end] - counts[start];
+      if (length > max) break;
+      const spoken = speechSeconds[end] - speechSeconds[start];
+      if (spoken > duration * 3) break;
+      if (spoken <= 0 || visible[end] === visible[start]) continue;
+      if (insideClause[end]) continue;
+      const equivalentLength = Math.max(length, spoken * 5.5);
+      const tooShort = Math.max(0, min - equivalentLength);
+      const lengthCost = Math.abs(equivalentLength - ideal) ** 2 * 0.55 + tooShort ** 2 * 0.6;
+      const over = Math.max(0, spoken - duration);
+      // Soft rather than absolute: phrase boundaries and indivisible words can
+      // make a perfectly estimated fit unavailable. An overrun is costly so
+      // another feasible, shorter segment normally wins.
+      const overtimeCost = over > 0.001 ? 1500 + over ** 2 * 200 : 0;
+      const cost = best[start] + 220 + lengthCost + overtimeCost + boundaryCosts[end];
+      if (cost < best[end]) {
+        best[end] = cost;
+        previous[end] = start;
       }
     }
   }
 
-  if (previous[clauses.length] < 0) return [text.trim()];
-  const segments: string[] = [];
-  for (let cursor = clauses.length; cursor > 0;) {
+  if (previous[symbols.length] < 0) {
+    // Always make progress for pathological zero-cost runs. Prefer nearby word
+    // or punctuation boundaries, with a bounded speech-estimate soft budget;
+    // when a single word is longer than the budget it must be split. No text
+    // is added or dropped, and the hard effective-character cap still applies.
+    const result: string[] = [];
+    let start = 0;
+    let pendingSpace = "";
+    while (start < symbols.length) {
+      let end = start;
+      let preferred = -1;
+      while (end < symbols.length) {
+        const next = end + 1;
+        const tooMany = counts[next] - counts[start] > max;
+        const tooLong = speechSeconds[next] - speechSeconds[start] > duration + 0.001;
+        if ((tooMany || tooLong) && end > start && visible[end] > visible[start]) break;
+        end = next;
+        if ((wordOffsets.has(offsets[end]) || /[\s，,。！？!?；;、：:]/u.test(symbols[end - 1]))
+          && speechSeconds[end] - speechSeconds[start] >= duration * 0.5) preferred = end;
+      }
+      if (end < symbols.length && preferred > start && preferred < end) end = preferred;
+      if (end <= start) end = start + 1;
+      const chunk = pendingSpace + text.slice(offsets[start], offsets[end]);
+      if (chunk.trim()) { result.push(chunk); pendingSpace = ""; }
+      else pendingSpace = chunk;
+      start = end;
+    }
+    if (pendingSpace && result.length) result[result.length - 1] += pendingSpace;
+    else if (pendingSpace) result.push(pendingSpace);
+    return result;
+  }
+
+  const result: string[] = [];
+  for (let cursor = symbols.length; cursor > 0;) {
     const start = previous[cursor];
-    segments.unshift(clauses.slice(start, cursor).join("").trim());
+    result.push(text.slice(offsets[start], offsets[cursor]));
     cursor = start;
   }
-  return segments;
-}
-
-function trailingClauseBridge(text: string, maxChars: number) {
-  const trimmed = text.trim();
-  const pieces = trimmed.split(/(?<=[。！？!?，,；;、])/u).filter(Boolean);
-  const candidate = pieces.at(-1)?.trim() || "";
-  const chars = countChars(candidate);
-  if (chars >= 2 && chars <= maxChars) return candidate;
-
-  const symbols = Array.from(trimmed);
-  let counted = 0;
-  let start = symbols.length;
-  while (start > 0 && counted < maxChars) {
-    start -= 1;
-    if (/[一-鿿㐀-䶿0-9]/u.test(symbols[start])) counted += 1;
-  }
-  const suffix = symbols.slice(start).join("").trim();
-  return countChars(suffix) >= 2 ? suffix : "";
-}
-
-export function applySemanticOverlapBridges(
-  segments: string[],
-  mode: SegmentMode,
-  paragraphBreakBefore: boolean[] = segments.map(() => false),
-) {
-  const next = [...segments];
-  const overlapPrefixes = segments.map(() => "");
-  for (let index = 1; index < next.length; index++) {
-    if (paragraphBreakBefore[index]) continue;
-    const currentChars = countChars(next[index]);
-    if (currentChars >= mode.min) continue;
-    const bridge = trailingClauseBridge(next[index - 1], 10);
-    if (!bridge) continue;
-    const bridgeChars = countChars(bridge);
-    if (currentChars + bridgeChars > mode.max) continue;
-    next[index] = `${bridge}${next[index]}`;
-    overlapPrefixes[index] = bridge;
-  }
-  return { segments: next, overlapPrefixes };
+  return result.reverse();
 }
 
 export function segmentTextRule(text: string, duration: number): SegmentResult {
   const mode = DURATION_MODES[duration];
   if (!mode) return { segments: [], counts: [], compliant: [], paragraphBreakBefore: [] };
-  const cleaned = text.replace(/\n{3,}/g, "\n\n").trim();
-  if (!cleaned) return { segments: [], counts: [], compliant: [], paragraphBreakBefore: [] };
-
-  const paragraphs = cleaned.split(/\n\s*\n/).filter(p => p.trim());
+  const paragraphs = normalizedParagraphs(text);
   const allSegments: string[] = [];
   const allBreakBefore: boolean[] = [];
 
   for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
     const normalizedPara = paragraphs[pIdx].replace(/\n/g, "");
-    const segs = segmentParagraphRule(normalizedPara, mode.min, mode.max, mode.ideal);
+    const segs = segmentParagraphRule(normalizedPara, mode.min, mode.max, mode.ideal, duration);
 
     for (let sIdx = 0; sIdx < segs.length; sIdx++) {
       allSegments.push(segs[sIdx]);
@@ -238,30 +312,70 @@ export function segmentTextRule(text: string, duration: number): SegmentResult {
     }
   }
 
-  const bridged = applySemanticOverlapBridges(allSegments, mode, allBreakBefore);
-  const counts = bridged.segments.map(s => countChars(s));
-  const compliant = counts.map((c, i) => {
-    if (i === counts.length - 1 && c < mode.min) return true;
-    return c >= mode.min && c <= mode.max;
-  });
+  const counts = allSegments.map(countChars);
+  // The lower bound is a pacing target; short original text must never be padded.
+  const compliant = counts.map(count => count <= mode.max);
 
   return {
-    segments: bridged.segments,
+    segments: allSegments,
     counts,
     compliant,
     paragraphBreakBefore: allBreakBefore,
-    overlapPrefixes: bridged.overlapPrefixes,
     method: "rule",
   };
 }
 
 export function normalizeForIntegrity(text: string): string {
-  return text.replace(/\n{3,}/g, "\n\n").trim().replace(/\n/g, "");
+  return text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().replace(/\n/g, "");
 }
 
+/** Legacy decoding only. New segment bodies never contain generated overlap. */
 export function reconstructSegmentedText(segments: string[], overlapPrefixes: string[] = []) {
   return segments.map((segment, index) => {
     const prefix = overlapPrefixes[index] || "";
     return prefix && segment.startsWith(prefix) ? segment.slice(prefix.length) : segment;
   }).join("");
+}
+
+export function restoreSegmentResult(value: unknown, originalText: string, duration: number): SegmentResult {
+  const mode = DURATION_MODES[duration];
+  if (!mode || !value || typeof value !== "object") throw new Error("分段历史结果不完整");
+  const parsed = value as Partial<SegmentResult>;
+  if (!Array.isArray(parsed.segments) || !parsed.segments.length
+    || parsed.segments.some(segment => typeof segment !== "string" || !segment.trim())) {
+    throw new Error("分段历史结果不完整");
+  }
+  const breaks = parsed.paragraphBreakBefore ?? parsed.segments.map(() => false);
+  if (!Array.isArray(breaks) || breaks.length !== parsed.segments.length
+    || breaks.some(value => typeof value !== "boolean")) throw new Error("分段历史段落边界不完整");
+  let segments = [...parsed.segments];
+  const original = normalizeForIntegrity(originalText);
+  // Original-text equality takes precedence over stale metadata, so genuine
+  // repeated phrases are never removed from a valid narration.
+  if (normalizeForIntegrity(segments.join("")) !== original) {
+    const prefixes = parsed.overlapPrefixes;
+    if (!Array.isArray(prefixes) || prefixes.length !== segments.length
+      || prefixes.some((prefix, index) => typeof prefix !== "string" || (prefix !== ""
+        && (index === 0 || !segments[index].startsWith(prefix) || !segments[index - 1].endsWith(prefix))))) {
+      throw new Error("分段历史衔接标记不完整");
+    }
+    segments = segments.map((segment, index) => segment.slice(prefixes[index].length));
+    if (segments.some(segment => !segment.trim()) || normalizeForIntegrity(segments.join("")) !== original) {
+      throw new Error("分段历史结果与原文不一致");
+    }
+  }
+  const counts = segments.map(countChars);
+  if (counts.some(count => count > mode.max)) return segmentTextRule(originalText, duration);
+  return {
+    segments, counts, compliant: counts.map(count => count <= mode.max), paragraphBreakBefore: breaks,
+    ...(parsed.method === "rule" || parsed.method === "semantic" || parsed.method === "semantic_fallback" ? { method: parsed.method } : {}),
+    ...(typeof parsed.model === "string" ? { model: parsed.model } : {}),
+  };
+}
+
+export function formatSegmentedCopy(result: Pick<SegmentResult, "segments">, originalText: string): string {
+  if (normalizeForIntegrity(result.segments.join("")) !== normalizeForIntegrity(originalText)) {
+    throw new Error("分段结果与原文不一致，请重新分段后复制。");
+  }
+  return result.segments.map((segment, index) => `${index + 1}.【${segment}】`).join("\n");
 }

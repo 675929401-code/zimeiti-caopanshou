@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash, createHmac } from "node:crypto";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
 
 import {
   PRODUCT_USAGE_MAX_BATCH_EVENTS,
+  PRODUCT_USAGE_MAX_EVENTS_PER_MINUTE,
+  PRODUCT_USAGE_MAX_REQUEST_BYTES,
+  PRODUCT_USAGE_MAX_REQUESTS_PER_MINUTE,
   PRODUCT_USAGE_MIN_COHORT_SIZE,
   PRODUCT_USAGE_MIN_REQUEST_INTERVAL_MS,
   buildProductUsageAnalytics,
@@ -23,6 +29,316 @@ const NOW = "2026-10-03T00:00:00.000Z";
 const EVENT_ID = "8f6efc44-9848-4adf-9713-a9e743f89e92";
 const SESSION_ID = "2e646f40-24b2-4af8-900d-0e4de629f0a6";
 const JOURNEY_ID = "d5a3347d-70c5-48a3-8941-2e9f20d7556c";
+
+type UsageClient = typeof import("@/lib/product-usage-client");
+type FixtureResponder = (endpoint: string, init: RequestInit) => Promise<Response>;
+
+function runtimeSubject<T>(code: string, globals: Record<string, unknown>) {
+  const subject = { exports: {} };
+  const sandbox: Record<string, unknown> = { exports: subject.exports, module: subject, ...globals };
+  runInNewContext(ts.transpileModule(code, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, sandbox);
+  return { api: subject.exports as T, sandbox };
+}
+
+function clientFixture(code: string, respond: FixtureResponder, local: {
+  browser?: boolean; hidden?: boolean; offline?: boolean; token?: string | null;
+} = {}) {
+  const state = {
+    visibility: { visibilityState: local.hidden ? "hidden" : "visible" },
+    navigator: { onLine: !local.offline },
+    nowMs: 100_000,
+    storageReads: 0, storageWrites: 0, uuidCalls: 0,
+    requests: [] as Array<{ endpoint: string; init: RequestInit }>,
+    timers: new Map<number, () => void>(), timerDelays: [] as number[],
+  };
+  let timerId = 0;
+  const storage = new Map<string, string>();
+  const token = local.token === undefined ? "fixture-browser-token" : local.token;
+  class FixtureDate extends Date { static now() { return state.nowMs; } }
+  const { api } = runtimeSubject<UsageClient>(code, {
+    window: local.browser === false ? undefined : {},
+    document: state.visibility, navigator: state.navigator, Date: FixtureDate,
+    AbortController,
+    setTimeout: (callback: () => void, delay: number) => {
+      timerId += 1;
+      state.timerDelays.push(delay);
+      state.timers.set(timerId, callback);
+      return timerId;
+    },
+    clearTimeout: (id: number) => { state.timers.delete(id); },
+    localStorage: { getItem: () => token },
+    sessionStorage: {
+      getItem: (key: string) => { state.storageReads += 1; return storage.get(key) || null; },
+      setItem: (key: string, value: string) => { state.storageWrites += 1; storage.set(key, value); },
+    },
+    crypto: { randomUUID: () => {
+      state.uuidCalls += 1;
+      return `00000000-0000-4000-8000-${String(state.uuidCalls).padStart(12, "0")}`;
+    } },
+    fetch: async (endpoint: string, init: RequestInit) => {
+      state.requests.push({ endpoint, init });
+      return respond(endpoint, init);
+    },
+  });
+  return { api, state, expireTimers: () => {
+    const callbacks = [...state.timers.values()];
+    state.timers.clear();
+    for (const callback of callbacks) callback();
+  } };
+}
+
+async function verifyCollectionPolicyBehavior(clientCode: string, routeCode: string, event: unknown) {
+  let cases = 0;
+  const input = { eventType: "page_view", featureKey: "agent_chat", pageKey: "home" } as const;
+  const json = (value: unknown, status = 200) => Response.json(value, { status });
+  const enabledResponder: FixtureResponder = async (_endpoint, init) => init.method === "GET"
+    ? json({ collectionEnabled: true })
+    : json({ ok: true, code: "PRODUCT_USAGE_ACCEPTED", receivedCount: JSON.parse(String(init.body)).events.length }, 202);
+  const noEventsBuilt = (state: ReturnType<typeof clientFixture>["state"]) => {
+    assert.equal(state.uuidCalls, 0, "POLICY_MUST_PRECEDE_UUID_GENERATION");
+    assert.equal(state.storageReads, 0, "POLICY_MUST_PRECEDE_SESSION_OR_SEQUENCE_READ");
+    assert.equal(state.storageWrites, 0, "POLICY_MUST_PRECEDE_SESSION_OR_SEQUENCE_WRITE");
+    assert.equal(state.requests.some(request => request.init.method === "POST"), false);
+  };
+
+  for (const fixture of [
+    { local: { browser: false }, inputs: [input], code: "BROWSER_REQUIRED" },
+    { local: {}, inputs: [], code: "NO_EVENTS" },
+    { local: { hidden: true }, inputs: [input], code: "PAGE_HIDDEN" },
+    { local: { offline: true }, inputs: [input], code: "OFFLINE" },
+    { local: { token: null }, inputs: [input], code: "UNAUTHENTICATED" },
+  ]) {
+    const subject = clientFixture(clientCode, enabledResponder, fixture.local);
+    const result = await subject.api.recordProductUsageEvents(fixture.inputs);
+    assert.equal(result.status, "skipped");
+    assert.equal(result.code, fixture.code);
+    assert.equal(subject.state.requests.length, 0, "LOCAL_SKIP_MUST_NOT_FETCH_POLICY");
+    noEventsBuilt(subject.state);
+    cases += 1;
+  }
+  const disabled = clientFixture(clientCode, async () => json({ collectionEnabled: false }));
+  const disabledResult = await disabled.api.recordProductUsageEvent(input);
+  assert.equal(disabledResult.status, "skipped");
+  assert.equal(disabledResult.code, "COLLECTION_DISABLED");
+  assert.equal(disabledResult.receivedCount, 0);
+  noEventsBuilt(disabled.state);
+  assert.equal(new Headers(disabled.state.requests[0].init.headers).has("authorization"), false);
+  assert.equal(disabled.state.requests[0].init.cache, "no-store");
+  assert.equal(disabled.state.requests[0].init.credentials, "same-origin");
+  await disabled.api.recordProductUsageEvent(input);
+  disabled.state.nowMs += 59_999;
+  await disabled.api.recordProductUsageEvent(input);
+  assert.equal(disabled.state.requests.length, 1, "FALSE_POLICY_CACHE_MUST_LAST_LESS_THAN_SIXTY_SECONDS");
+  disabled.state.nowMs += 1;
+  await disabled.api.recordProductUsageEvent(input);
+  assert.equal(disabled.state.requests.length, 2, "FALSE_POLICY_CACHE_MUST_EXPIRE_AT_SIXTY_SECONDS");
+  await disabled.api.recordProductUsageEvent(input, { endpoint: "/fixture/other-policy" });
+  assert.equal(disabled.state.requests.length, 3, "POLICY_CACHE_MUST_BE_KEYED_BY_ENDPOINT");
+  cases += 1;
+
+  const unknownResponses: Array<() => Promise<Response>> = [
+    async () => json({ collectionEnabled: false }, 503),
+    async () => json({ collectionEnabled: "true" }),
+    async () => json({ collectionEnabled: 1 }),
+    async () => json({}), async () => json([]), async () => json(null),
+    async () => new Response("not-json", { status: 200 }),
+    async () => { throw new Error("fixture network failure"); },
+  ];
+  for (const respond of unknownResponses) {
+    const subject = clientFixture(clientCode, respond);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await subject.api.recordProductUsageEvent(input);
+      assert.equal(result.status, "unavailable");
+      assert.equal(result.code, "COLLECTION_STATUS_UNKNOWN");
+      assert.equal(result.receivedCount, 0);
+    }
+    assert.equal(subject.state.requests.length, 2, "UNKNOWN_POLICY_MUST_NOT_BE_CACHED_AS_DISABLED");
+    noEventsBuilt(subject.state);
+    cases += 1;
+  }
+
+  let releasePolicy: ((response: Response) => void) | undefined;
+  const shared = clientFixture(clientCode, async (_endpoint, init) => init.method === "GET"
+    ? new Promise<Response>(resolve => { releasePolicy = resolve; })
+    : json({ ok: true, code: "PRODUCT_USAGE_ACCEPTED", receivedCount: 1 }, 202));
+  const controller = new AbortController();
+  const cancelled = shared.api.recordProductUsageEvent(input, { signal: controller.signal });
+  const survivor = shared.api.recordProductUsageEvent(input);
+  assert.equal(shared.state.requests.length, 1, "CONCURRENT_CALLERS_MUST_SHARE_ONE_POLICY_GET");
+  assert.notEqual(shared.state.requests[0].init.signal, controller.signal, "FIRST_CALLER_MUST_NOT_OWN_SHARED_GET_ABORT");
+  controller.abort();
+  assert.equal(shared.state.requests[0].init.signal?.aborted, false, "CALLER_ABORT_MUST_NOT_CANCEL_SHARED_POLICY_GET");
+  assert(releasePolicy);
+  releasePolicy(json({ collectionEnabled: true }));
+  assert.equal((await cancelled).code, "ABORTED");
+  assert.equal((await survivor).status, "accepted");
+  assert.equal(shared.state.requests.filter(request => request.init.method === "POST").length, 1);
+  const getCount = shared.state.requests.filter(request => request.init.method === "GET").length;
+  await shared.api.recordProductUsageEvent(input);
+  assert.equal(shared.state.requests.filter(request => request.init.method === "GET").length, getCount,
+    "TRUE_POLICY_CACHE_MUST_BE_REUSED");
+  shared.state.nowMs += 60_000;
+  const refreshed = shared.api.recordProductUsageEvent(input);
+  assert(releasePolicy);
+  releasePolicy(json({ collectionEnabled: true }));
+  assert.equal((await refreshed).status, "accepted");
+  assert.equal(shared.state.requests.filter(request => request.init.method === "GET").length, getCount + 1);
+  assert.equal(shared.state.timers.size, 0, "COMPLETED_GET_MUST_CLEAR_ITS_DEADLINE");
+  cases += 1;
+
+  for (const phase of ["headers", "body"] as const) {
+    let getCalls = 0;
+    let bodyStarted = false;
+    let releaseHeaders: ((response: Response) => void) | undefined;
+    let releaseBody: ((value: unknown) => void) | undefined;
+    const subject = clientFixture(clientCode, async (_endpoint, init) => {
+      if (init.method !== "GET") return json({ ok: true, code: "PRODUCT_USAGE_ACCEPTED", receivedCount: 1 }, 202);
+      getCalls += 1;
+      if (getCalls > 1) return json({ collectionEnabled: true });
+      if (phase === "headers") return new Promise<Response>(resolve => { releaseHeaders = resolve; });
+      const response = json({});
+      response.json = () => {
+        bodyStarted = true;
+        return new Promise<unknown>(resolve => { releaseBody = resolve; });
+      };
+      return response;
+    });
+    const first = subject.api.recordProductUsageEvent(input);
+    const second = subject.api.recordProductUsageEvent(input);
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    assert.equal(subject.state.requests.length, 1, "STALLED_GET_MUST_STILL_BE_SINGLE_FLIGHT");
+    if (phase === "body") assert.equal(bodyStarted, true, "BODY_DEADLINE_CASE_MUST_REACH_JSON_READ");
+    assert.deepEqual(subject.state.timerDelays, [5_000], "POLICY_GET_MUST_HAVE_ITS_OWN_FIVE_SECOND_DEADLINE");
+    subject.state.nowMs += 5_000;
+    subject.expireTimers();
+    for (const result of await Promise.all([first, second])) {
+      assert.equal(result.status, "unavailable");
+      assert.equal(result.code, "COLLECTION_STATUS_UNKNOWN");
+      assert.equal(result.receivedCount, 0);
+    }
+    noEventsBuilt(subject.state);
+    assert.equal(subject.state.requests[0].init.signal?.aborted, true);
+    assert.equal(subject.state.timers.size, 0);
+    assert.equal((await subject.api.recordProductUsageEvent(input)).status, "accepted");
+    assert.equal(getCalls, 2, "TIMEOUT_MUST_RELEASE_SINGLE_FLIGHT_WITHOUT_CACHING_UNKNOWN");
+    if (releaseHeaders) releaseHeaders(json({ collectionEnabled: false }));
+    if (releaseBody) releaseBody({ collectionEnabled: false });
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    assert.equal((await subject.api.recordProductUsageEvent(input)).status, "accepted",
+      "LATE_TIMED_OUT_REPLY_MUST_NOT_REPLACE_THE_NEW_POLICY_CACHE");
+    assert.equal(getCalls, 2);
+    assert.equal(subject.state.timers.size, 0);
+    cases += 1;
+  }
+
+  for (const change of ["hidden", "offline"] as const) {
+    let release: ((response: Response) => void) | undefined;
+    const subject = clientFixture(clientCode, async () => new Promise<Response>(resolve => { release = resolve; }));
+    const pending = subject.api.recordProductUsageEvent(input);
+    if (change === "hidden") subject.state.visibility.visibilityState = "hidden";
+    else subject.state.navigator.onLine = false;
+    assert(release);
+    release(json({ collectionEnabled: true }));
+    assert.equal((await pending).code, change === "hidden" ? "PAGE_HIDDEN" : "OFFLINE");
+    noEventsBuilt(subject.state);
+    cases += 1;
+  }
+
+  for (const fixture of [
+    { status: 200, body: { ok: true, code: "PRODUCT_USAGE_ACCEPTED", receivedCount: 1 } },
+    { status: 202, body: { code: "PRODUCT_USAGE_ACCEPTED", receivedCount: 1 } },
+    { status: 202, body: { ok: true, code: "OTHER", receivedCount: 1 } },
+    { status: 202, body: { ok: true, code: "PRODUCT_USAGE_ACCEPTED" } },
+    ...[-1, 0, 0.5, 2, "1"].map(receivedCount => ({ status: 202, body: { ok: true, code: "PRODUCT_USAGE_ACCEPTED", receivedCount } })),
+    { status: 202, body: null },
+  ]) {
+    const subject = clientFixture(clientCode, async (_endpoint, init) => init.method === "GET"
+      ? json({ collectionEnabled: true }) : json(fixture.body, fixture.status));
+    const result = await subject.api.recordProductUsageEvent(input);
+    assert.equal(result.status, "unavailable", "MALFORMED_2XX_MUST_NOT_MEAN_COLLECTION_ACCEPTED");
+    assert.equal(result.code, "PRODUCT_USAGE_RESPONSE_INVALID");
+    assert.equal(result.receivedCount, 0);
+    cases += 1;
+  }
+
+  function serverFixture(policyBasisCode: string, noticeVersion: string, storageMissing = false) {
+    const counters = { auth: 0, jwt: 0, db: 0, persisted: 0 };
+    const { api, sandbox } = runtimeSubject<{ GET: () => Promise<Response>; POST: (request: Request) => Promise<Response> }>(routeCode, {
+      URL, TextEncoder, Date, process: { env: { PRODUCT_USAGE_POLICY_BASIS_CODE: policyBasisCode, PRODUCT_USAGE_NOTICE_VERSION: noticeVersion } },
+      require: (name: string) => {
+        if (name === "node:crypto") return { createHash, createHmac };
+        if (name === "next/server") return { NextResponse: { json: (body: unknown, init?: ResponseInit) => json(body, init?.status || 200) } };
+        if (name === "@/lib/auth") return {
+          getTokenFromHeaders: () => { counters.auth += 1; return "fixture-token"; },
+          authorizeToken: async () => { counters.auth += 1; return { ok: true, actor: { userId: "fixture-user" } }; },
+          getJwtSecretString: () => { counters.jwt += 1; return "fixture-only-not-a-production-secret"; },
+        };
+        if (name === "@/lib/operation-flight-recorder") return { readFlightRuntimeIdentity: () => ({ sourceVersion: "fixture", buildId: "fixture" }) };
+        if (name === "@/lib/product-usage-contract") return {
+          PRODUCT_USAGE_MAX_EVENTS_PER_MINUTE, PRODUCT_USAGE_MAX_REQUEST_BYTES,
+          PRODUCT_USAGE_MAX_REQUESTS_PER_MINUTE, productUsageEventBatchSchema,
+        };
+        if (name === "@/storage/database/supabase-client") return { getSupabaseAdminClient: () => {
+          counters.db += 1;
+          return { from: (table: string) => {
+            assert.equal(table, "product_usage_events");
+            return { upsert: async (rows: unknown[], options: { ignoreDuplicates?: boolean }) => {
+              assert.equal(options.ignoreDuplicates, true);
+              if (!storageMissing) counters.persisted += rows.length;
+              return { error: storageMissing ? { code: "PGRST205" } : null };
+            } };
+          } };
+        } };
+        throw new Error(`UNMOCKED_POLICY_DEPENDENCY:${name}`);
+      },
+    });
+    return { api, sandbox, counters };
+  }
+  for (const [basis, notice, expected] of [
+    ["", "", false], ["aa", "abc", false], ["abc", "aa", false],
+    ["a".repeat(81), "abc", false], ["abc", "a".repeat(65), false],
+    ["invalid space", "abc", false], ["abc", "invalid space", false],
+    ["abc", "abc", true], ["a".repeat(80), "a".repeat(64), true],
+  ] as const) {
+    const subject = serverFixture(basis, notice);
+    const response = await subject.api.GET();
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { collectionEnabled: expected });
+    assert.match(response.headers.get("cache-control") || "", /no-store/u);
+    assert.equal(subject.counters.auth + subject.counters.jwt + subject.counters.db, 0,
+      "POLICY_GET_MUST_NOT_READ_AUTH_JWT_OR_DATABASE");
+    assert.equal(subject.sandbox.__agentHubProductUsageIngestRateBucketsV1, undefined,
+      "POLICY_GET_MUST_NOT_WRITE_INGEST_RATE_LIMITS");
+    cases += 1;
+  }
+  const request = (withOrigin = true) => {
+    const req = new Request("http://fixture.test/api/product-usage/events", { method: "POST", body: JSON.stringify({ events: [event] }),
+      headers: { "content-type": "application/json", ...(withOrigin ? { origin: "http://fixture.test", "sec-fetch-site": "same-origin" } : {}) } });
+    return Object.assign(req, { nextUrl: new URL(req.url) });
+  };
+  for (const fixture of [
+    { policy: false, missing: false, status: 503, code: "PRODUCT_USAGE_POLICY_NOT_CONFIGURED", rows: 0 },
+    { policy: true, missing: true, status: 503, code: "PRODUCT_USAGE_STORAGE_NOT_DEPLOYED", rows: 0 },
+    { policy: true, missing: false, status: 202, code: "PRODUCT_USAGE_ACCEPTED", rows: 1 },
+  ]) {
+    const subject = serverFixture(fixture.policy ? "abc" : "", fixture.policy ? "abc" : "", fixture.missing);
+    const response = await subject.api.POST(request());
+    const body = await response.json();
+    assert.equal(response.status, fixture.status);
+    assert.equal(body.code, fixture.code);
+    assert.equal(body.receivedCount, fixture.rows);
+    assert.equal(subject.counters.persisted, fixture.rows);
+    assert.match(response.headers.get("cache-control") || "", /no-store/u);
+    cases += 1;
+  }
+  const crossOrigin = serverFixture("abc", "abc");
+  assert.equal((await crossOrigin.api.POST(request(false))).status, 403);
+  assert.equal(crossOrigin.counters.auth + crossOrigin.counters.db, 0);
+  cases += 1;
+  return cases;
+}
 
 async function source(relativePath: string): Promise<string> {
   return readFile(path.join(root, relativePath), "utf8");
@@ -73,6 +389,7 @@ async function verifyAdmissionGate(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  globalThis.fetch = async () => { throw new Error("UNMOCKED_PRODUCT_USAGE_NETWORK_FORBIDDEN"); };
   const event = buildProductUsageBrowserEvent({
     eventType: "workflow_started",
     featureKey: "agent_chat",
@@ -306,6 +623,7 @@ async function main(): Promise<void> {
     source("src/lib/operation-flight-recorder.ts"),
     source("docs/产品使用数据闭环设计-2026-10-03.md"),
   ]);
+  const collectionPolicyBehaviorCases = await verifyCollectionPolicyBehavior(clientSource, ingestRoute, event);
 
   for (const required of [
     "PRODUCT_USAGE_EVENT_TYPES",
@@ -463,6 +781,14 @@ async function main(): Promise<void> {
       noSensitivePayloadFields: true,
       dedupeAndRateLimit: true,
       policyFailClosed: true,
+      collectionPolicyBehaviorCases,
+      policyGetReadOnly: true,
+      policyGateBeforeIdentifierWrites: true,
+      collectionStatusCacheTtlMs: 60_000,
+      collectionStatusDeadlineMs: 5_000,
+      collectionStatusDeadlineCoversHeadersAndBody: true,
+      sharedPolicyGetIndependentOfCallerAbort: true,
+      strictAcceptedPostResponse: true,
       durableSchemaDesignOnly: true,
       migrationApplied: false,
       flightFallbackOperationalOnly: true,

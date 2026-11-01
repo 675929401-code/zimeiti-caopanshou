@@ -12,6 +12,8 @@ function load(file, imports, extra = {}) {
  const exports = {}; vm.runInNewContext(compiled.outputText, { ...globals, ...extra, exports, require(name) { if (!(name in imports)) throw new Error('UNMOCKED_IMPORT:' + name); return imports[name]; } }, { filename: file });
  return exports;
 }
+const historyPolicy = load('src/lib/video-history-policy.ts', {});
+const archivePolicy = load('src/lib/storyboard-video-archive-policy.ts', {});
 const types = load('src/lib/video-content-type.ts', {});
 const stream = load('src/lib/video-stream-prefix.ts', { '@/lib/video-content-type': types });
 const mp4 = Uint8Array.from([0,0,0,24,102,116,121,112,105,115,111,109,0,0,0,0]);
@@ -41,7 +43,7 @@ const imports = {
  '@/lib/autodl-h3-owned-result': {resolveOwnedAutodlH3VideoResultJobId(){throw Error('H3_FORBIDDEN');}},
  '@/lib/video-autodl-comfyui-workflow': {isAutodlComfyuiHostedProtocol:()=>false},
  '@/storage/database/supabase-client': {getSupabaseClient:()=>({from(table){const predicates=[]; const query={select(){return query;},eq(key,value){predicates.push([key,value]);return query;},order(){return query;},async limit(){return {data: task && predicates.every(([k,v])=>task[k]===v)?[task]:[],error:null};},async maybeSingle(){return {data:table==='video_models'?model:task && predicates.every(([k,v])=>task[k]===v)?task:null,error:null};}};return query;}})},
- '@/lib/video-persistence': {isPersistentVideoUri:()=>false,resolvePersistentVideoUri:()=>{throw Error('PERSISTENCE_FORBIDDEN');}},
+ '@/lib/video-persistence': {isPersistentVideoUri:value=>String(value).startsWith('object://'),resolvePersistentVideoUri:async()=> 'https://bucket.supabase.co/owned.mp4'},
  '@/lib/video-provider-result-url': {trustedVideoProviderResultHostname:()=> 'media.example.test'},
  '@/lib/video-media-auth': {authorizeVideoMediaRequest:async()=>authAllowed?{ok:true,user:{userId:owner,role:'student'}}:{ok:false,response:NextResponse.json({error:'ticket rejected'},{status:401})}},
  '@/lib/video-access-ticket': {createVideoAccessTicket:()=>{throw Error('UNEXPECTED_REDIRECT_TICKET');}},
@@ -51,6 +53,9 @@ const imports = {
  '@/lib/provider-secret': {resolveProviderSecret:()=> 'mock-only-secret'},
  '@/lib/video-source-expiry': {markVideoUpstreamSourceExpired:async()=>{expiryCalls++;}},
  '@/lib/video-stream-prefix': stream,
+ '@/lib/storyboard-video-archive-policy': archivePolicy,
+ '@/lib/video-history-policy':historyPolicy,
+ '@/lib/video-delivery-persistence': {scheduleVideoDeliveryPersistence(){}},
  '@/lib/autodl-h3-selfhost': {AUTODL_H3_SELFHOST_PROTOCOL:'autodl_h3_selfhost',AUTODL_H3_SELFHOST_GATEWAY_ORIGIN:'http://127.0.0.1:9999',AUTODL_H3_SELFHOST_VIDEO_ENDPOINT:'http://127.0.0.1:9999/v1/videos',isAutodlH3Selfhost:()=>false,assertAutodlH3SelfhostModelBinding(){},fetchAutodlH3SelfhostResult(){throw Error('H3_FORBIDDEN');},resolveAutodlH3SelfhostResultUrl(){throw Error('H3_FORBIDDEN');},redactAutodlH3SelfhostResultUrl(){throw Error('H3_FORBIDDEN');}},
 };
 const proxy = load('src/app/api/video/proxy/route.ts',imports);
@@ -58,6 +63,15 @@ const download = load('src/app/api/video/proxy-download/route.ts',imports);
 function reset() { task={id:'owned',user_id:owner,status:'completed',video_url:'https://media.example.test/opaque',task_id_external:'external',model_id:'model'}; model={protocol_type:'gaorui_video',api_endpoint:'https://api.example.test/v1',api_key:'mock-reference'};plan=[];calls=[];authAllowed=true;contentAllowed=true;unsafe=false;expiryCalls=0; }
 function request(download=false,range) {const url=new URL('https://local.example.test/api/video/'+(download?'proxy-download?taskId=owned&name=clip.webm':'proxy?id=owned'));return {url:url.toString(),nextUrl:url,headers:new Headers(range?{range}:{})};}
 function ranged(bytes,range='bytes 75-99/100',etag) {return new Response(bytes,{status:206,headers:{'content-type':'application/octet-stream','content-range':range,...(etag?{etag}:{})}});}
+for (const range of ['bytes=0-9', 'bytes=40-', 'bytes=-25']) {
+ reset();task.video_url+='?ignored='+encodeURIComponent(range);
+ plan=[()=>new Response(mp4,{status:200,headers:{'content-type':'application/octet-stream','content-length':String(mp4.length),'accept-ranges':'bytes'}})];
+ const response=await proxy.GET(request(false,range));assert.equal(response.status,200);
+ assert.equal(response.headers.get('content-range'),null);assert.equal(response.headers.get('accept-ranges'),null);
+ assert.equal(response.headers.get('content-length'),String(mp4.length));assert.equal(response.headers.get('content-type'),'video/mp4');
+ assert.deepEqual(new Uint8Array(await response.arrayBuffer()),mp4);assert.equal(calls.length,1);
+ checks.push('ignored '+range+' streams complete 200 with original bytes and no fabricated partial headers');
+}
 for (const range of ['bytes=-25','bytes=40-49']) {
  reset(); const payload=new Uint8Array(range==='bytes=-25'?25:10).fill(77);plan=[()=>ranged(payload,range==='bytes=-25'?'bytes 75-99/100':'bytes 40-49/100'),()=>ranged(mp4,'bytes 0-15/100')];
  // Use a new final URL to keep each case a true cold MIME cache.
@@ -73,6 +87,14 @@ for (const [name,handler,isDownload] of [['proxy',proxy,false],['download',downl
  reset();authAllowed=false;assert.equal((await handler.GET(request(isDownload))).status,401);assert.equal(calls.length,0);checks.push(name+' ticket denial');
  reset();task.user_id='other';assert.equal((await handler.GET(request(isDownload))).status,404);assert.equal(calls.length,0);checks.push(name+' foreign owner denial');
 }
+reset();Object.assign(task,{task_label:'分镜工作台:test',completed_at:new Date().toISOString(),storage_url:'object://tencent_cos/videos/scoped/storyboard-delivery/owner/owned.mp4',source_expired_at:'upstream-only'});
+assert.equal((await proxy.GET(request())).status,302);assert.equal(calls.length,0);checks.push('owned unexpired storyboard archive survives upstream expiry');
+reset();Object.assign(task,{task_label:'分镜工作台:test',completed_at:'2020-01-01T00:00:00Z',storage_url:'object://tencent_cos/videos/scoped/storyboard-delivery/owner/owned.mp4'});
+assert.equal((await proxy.GET(request())).status,410);assert.equal(calls.length,0);checks.push('storyboard archive expires at completion plus 72 hours before fetch');
+reset();Object.assign(task,{task_label:'分镜工作台:test',completed_at:new Date().toISOString(),storage_url:'object://tencent_cos/videos/scoped/storyboard-delivery/owner/owned.mp4',source_expired_at:'2026-10-23T01:00:00Z',history_hidden_at:'2026-10-23T01:00:00Z'});
+plan=[()=>new Response(mp4,{headers:{'content-type':'application/octet-stream'}})];const ownedDownload=await download.GET(request(true));assert.equal(ownedDownload.status,200);assert.equal(ownedDownload.headers.get('content-type'),'video/mp4');assert.equal(ownedDownload.headers.get('content-disposition'),'attachment; filename="clip.mp4"');assert.deepEqual(new Uint8Array(await ownedDownload.arrayBuffer()),mp4);assert.equal(calls.length,1);assert.equal(calls[0].url,'https://bucket.supabase.co/owned.mp4');checks.push('owned unexpired storyboard download survives upstream expiry and legacy automatic hide');
+reset();Object.assign(task,{task_label:'分镜工作台:test',completed_at:'2020-01-01T00:00:00Z',storage_url:'object://tencent_cos/videos/scoped/storyboard-delivery/owner/owned.mp4'});
+assert.equal((await download.GET(request(true))).status,410);assert.equal(calls.length,0);checks.push('old download ticket cannot bypass 72h expiry before media fetch');
 reset();unsafe=true;assert.equal((await proxy.GET(request())).status,502);assert.equal(calls.length,0);checks.push('proxy SSRF validation denies before fetch');
 reset();plan=[()=>new Response(mp4,{headers:{'content-type':'application/octet-stream'}})];assert.equal((await proxy.GET(request())).status,200);task.history_hidden_at='now';assert.equal((await proxy.GET(request())).status,410);assert.equal(calls.length,1);checks.push('proxy rereads hidden state after prior successful delivery');
 for(const [label,bytes,mime] of [['mp4',mp4,'video/mp4'],['webm',webm,'video/webm'],['mov',mov,'video/quicktime']]) {reset();plan=[()=>new Response(bytes,{headers:{'content-type':'application/octet-stream'}})];const response=await download.GET(request(true));assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),mime);assert.equal(response.headers.get('content-disposition'),'attachment; filename="clip.'+label+'"');assert.deepEqual(new Uint8Array(await response.arrayBuffer()),bytes);checks.push('download opaque '+label+' detects container and keeps matching attachment extension');}

@@ -10,6 +10,7 @@ import { decodeJwt } from "jose";
 import pg from "pg";
 import { chromium } from "playwright";
 import { computeLocalBuildFingerprint } from "./local-build-fingerprint.mjs";
+import { ADMIN_THEME_OPTIONS } from "../src/lib/themes.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").replace(/\/+$/u, "");
@@ -59,7 +60,7 @@ const REQUIRED_PERMISSIONS = [
   "agents.manage",
 ];
 const TAB_HEADINGS = Object.freeze({
-  general: "品牌与基本设置",
+  general: "品牌与联系设置",
   theme: "主题风格",
   connection: "模型与外部服务",
   layout: "布局编辑器",
@@ -75,14 +76,14 @@ const TAB_SCOPES = Object.freeze({
   credits: "payment",
 });
 const TAB_NAVIGATION = Object.freeze({
-  general: { root: "general", label: "基本设置" },
+  general: { root: "general", label: "品牌与联系" },
   theme: { root: "general", label: "界面设置" },
   connection: { root: "models", label: "外部服务" },
   layout: { root: "general", label: "卡片布局" },
   models: { root: "models", label: "模型资源池" },
   credits: { root: "credits", label: "资金与计费" },
 });
-const THEME_NAMES = Object.freeze({ lattice: "深空晶", "soft-white": "柔光白", "crystal-aurora": "黑曜霓彩" });
+const THEME_NAMES = Object.freeze(Object.fromEntries(ADMIN_THEME_OPTIONS.map(({ id, name }) => [id, name])));
 const THEME_MODES = Object.freeze({ lattice: "dark", "soft-white": "light", "crystal-aurora": "dark" });
 
 const report = {

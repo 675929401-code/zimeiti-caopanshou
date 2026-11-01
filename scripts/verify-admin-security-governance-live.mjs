@@ -635,10 +635,10 @@ try {
     body: JSON.stringify({
       action: "permissions",
       userId: promptFixtureUserId,
-      permissionKeys: ["agents.view", "prompts.view"],
+      permissionKeys: ["agents.view", "admin.accounts.manage"],
       isActive: true,
       expectedRevision: Number(promptProfileBefore.revision),
-      reason: "所有者权限边界验收：尝试向普通管理员授予提示词权限",
+      reason: "所有者权限边界验收：尝试向普通管理员授予管理员授权控制权",
     }),
   });
   const grantPrompts = await readJson(grantPromptsResponse);

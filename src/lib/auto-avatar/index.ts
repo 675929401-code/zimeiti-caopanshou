@@ -20,44 +20,10 @@
  */
 
 import { shouldGenerateAvatar, generateAndUpdateAvatar } from "./generator";
+import { isAutoAvatarEnabled } from "./settings";
 
 export { shouldGenerateAvatar } from "./generator";
 export { buildAvatarPrompt } from "./prompts";
-
-// ── 开关缓存 ──
-let switchCached = true;       // 默认开启
-let switchCacheTime = 0;
-const SWITCH_CACHE_TTL = 1000;
-
-/**
- * 从数据库读取功能开关（带缓存）
- * platform_settings 表中 auto_avatar_enabled = "true"/"false"
- */
-async function isAutoAvatarEnabled(): Promise<boolean> {
-  // 环境变量优先：显式关闭则不查库
-  if (process.env.AUTO_AVATAR_ENABLED === "false") return false;
-
-  // 缓存未过期，直接返回
-  if (Date.now() - switchCacheTime < SWITCH_CACHE_TTL) return switchCached;
-
-  try {
-    const { getSupabaseClient } = await import("@/storage/database/supabase-client");
-    const db = getSupabaseClient();
-    const { data } = await db
-      .from("platform_settings")
-      .select("setting_value")
-      .eq("setting_key", "auto_avatar_enabled")
-      .single();
-
-    switchCached = data?.setting_value !== "false";
-    switchCacheTime = Date.now();
-  } catch {
-    // 查库失败，保持上次缓存值（默认 true）
-    switchCacheTime = Date.now(); // 防止频繁查库
-  }
-
-  return switchCached;
-}
 
 /**
  * 触发自动头像生成（异步，fire-and-forget）

@@ -116,75 +116,8 @@ interface CoverResult extends Omit<CoverGenerationTask, "source"> {
 }
 
 const VIRAL_TITLE_RULE = "标题遵循抖音封面爆款逻辑：先抛痛点/反常识/危险提醒，再制造答案缺口；12-18字内优先，分两行，大词要狠，避免平铺直叙。";
-const COVER_FLAGSHIP_MODELS = [
-  {
-    key: "gpt-image-25",
-    id: "pm_PZ3hS353YQNbfRnz2_9Ro0aX",
-    rawCatalogId: "gpt-image-25-sunburst-chA",
-    label: "GPT Image 2.5 Sunburst",
-    shortLabel: "GPT Image 2.5",
-    role: "综合首选",
-    aliases: ["GPT Image 2.5 Sunburst", "GPT-Image-2.5 Sunburst"],
-  },
-  {
-    key: "nano-banana-2",
-    id: "pm_sHaGkgaNoH1ZgQzpHW2dEUyF",
-    rawCatalogId: "gemini-3-1-flash-image-chA",
-    label: "Nano Banana 2",
-    shortLabel: "Banana",
-    role: "参考图优先",
-    aliases: ["Nano Banana 2"],
-  },
-  {
-    key: "seedream-50-pro",
-    id: "pm_7y8qxRpEQYgNuYBVvqL4MJgs",
-    rawCatalogId: "cover-model-seedream-5-pro",
-    label: "豆包 Seedream 5.0 Pro",
-    shortLabel: "豆包 5.0",
-    role: "中文封面",
-    aliases: ["豆包 Seedream 5.0 Pro"],
-  },
-] as const;
-
-function normalizeCoverModelName(value: string) {
-  return value
-    .normalize("NFKC")
-    .toLocaleLowerCase("en-US")
-    .replace(/[·|｜/_-]+/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-}
-
-function coverFlagship(model: Pick<CoverGenerationModel, "id" | "name">) {
-  const normalizedName = normalizeCoverModelName(model.name);
-  return COVER_FLAGSHIP_MODELS.find((item) => item.id === model.id || item.aliases.some((alias) => {
-    const normalizedAlias = normalizeCoverModelName(alias);
-    return normalizedName === normalizedAlias || normalizedName.startsWith(`${normalizedAlias} `);
-  }));
-}
-
-function sortCoverGenerationModels(models: CoverGenerationModel[]) {
-  return [...models].sort((left, right) => {
-    const leftFlagship = coverFlagship(left);
-    const rightFlagship = coverFlagship(right);
-    const leftIndex = leftFlagship ? COVER_FLAGSHIP_MODELS.findIndex((item) => item.key === leftFlagship.key) : -1;
-    const rightIndex = rightFlagship ? COVER_FLAGSHIP_MODELS.findIndex((item) => item.key === rightFlagship.key) : -1;
-    const leftPriority = leftIndex >= 0 ? leftIndex : Number.MAX_SAFE_INTEGER;
-    const rightPriority = rightIndex >= 0 ? rightIndex : Number.MAX_SAFE_INTEGER;
-    return leftPriority - rightPriority || left.name.localeCompare(right.name, "zh-CN");
-  });
-}
-
 function defaultCoverModelId(models: CoverGenerationModel[]) {
-  const gpt = models.find((model) => coverFlagship(model)?.key === COVER_FLAGSHIP_MODELS[0].key);
-  if (gpt?.available) return gpt.id;
-  return COVER_FLAGSHIP_MODELS
-    .map((flagship) => models.find((model) => coverFlagship(model)?.key === flagship.key && model.available))
-    .find(Boolean)?.id
-    || models.find((model) => model.available)?.id
-    || gpt?.id
-    || models[0]?.id
-    || "";
+  return models.find((model) => model.available)?.id || models[0]?.id || "";
 }
 const TASK_LABELS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
 function getTaskLabel(taskNo: number) {
@@ -785,6 +718,21 @@ function CoverStudioForAccount() {
   const previewDialogRef = useRef<HTMLDivElement | null>(null);
   const [models, setModels] = useState<CoverGenerationModel[]>([]);
   const [modelId, setModelId] = useState("");
+  const selectedModelIdRef = useRef("");
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsError, setModelsError] = useState("");
+  useEffect(() => { selectedModelIdRef.current = modelId; }, [modelId]);
+  const applyModelCatalog = useCallback((next: CoverGenerationModel[]) => {
+    const selectedId = selectedModelIdRef.current;
+    setModelsError("");
+    setModelsLoading(false);
+    setModels(next);
+    if (next.some((model) => model.id === selectedId)) return;
+    const fallback = defaultCoverModelId(next);
+    selectedModelIdRef.current = fallback;
+    setModelId(fallback);
+    if (selectedId) setNotice("原生图模型已从当前目录移除，已按最新目录重新选择，请确认模型与价格");
+  }, []);
   const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
@@ -871,10 +819,6 @@ function CoverStudioForAccount() {
   const usesUploadedReference = materialSourceId === "upload";
   const hasReferenceMaterial = usesUploadedReference && Boolean(referenceImage);
   const activeModel = models.find((model) => model.id === modelId);
-  const flagshipModels = COVER_FLAGSHIP_MODELS.flatMap((flagship) => {
-    const model = models.find((item) => coverFlagship(item)?.key === flagship.key);
-    return model ? [{ flagship, model }] : [];
-  });
   const cartoonStyles = useMemo(() => COVER_ANIMATION_STYLES.filter((item) => item.id !== "photo-real" && item.id !== "cinematic-real"), []);
   const activeStyleOptions = isReferenceCreation ? COVER_ANIMATION_STYLES : cartoonStyles;
   const currentAnalysisFingerprint = useMemo(() => coverAnalysisFingerprint({
@@ -905,17 +849,18 @@ function CoverStudioForAccount() {
 
   useEffect(() => {
     let active = true;
+    setModelsLoading(true);
+    setModelsError("");
     void readCoverModelCatalog()
       .then((next) => {
         if (!active) return;
-        const ordered = sortCoverGenerationModels(next);
-        setModels(ordered);
-        setModelId((currentModelId) => {
-          if (ordered.some((model) => model.id === currentModelId)) return currentModelId;
-          return defaultCoverModelId(ordered);
-        });
+        applyModelCatalog(next);
       })
-      .catch(() => setNotice("模型列表暂时不可用，仍可先完成封面拆解"));
+      .catch(() => {
+        if (!active) return;
+        setModelsError("模型列表暂时不可用，请稍后刷新；仍可先完成封面拆解。");
+      })
+      .finally(() => { if (active) setModelsLoading(false); });
 
     const token = localStorage.getItem(TOKEN_KEY);
     if (token && currentUserId && currentUserId !== "anonymous") void loadBalance(token);
@@ -937,7 +882,7 @@ function CoverStudioForAccount() {
     return () => {
       active = false;
     };
-  }, [currentUserId, loadBalance]);
+  }, [currentUserId, loadBalance, applyModelCatalog]);
 
   useEffect(() => {
     clearLegacyCoverEditorDraft(currentUserId || "anonymous");
@@ -1036,7 +981,7 @@ function CoverStudioForAccount() {
     setFailureActionBusy(true);
     try {
       const freshModels = await readCoverModelCatalog(true);
-      setModels(freshModels);
+      applyModelCatalog(freshModels);
       const currentModel = freshModels.find((model) => model.id === record.publicModelId);
       if (!currentModel?.available) throw new Error(currentModel?.availabilityMessage || "原模型当前不可用，不能载入重试");
       if (!currentModel.priceReady || currentModel.price == null) throw new Error("原模型当前价格未就绪，不能载入重试");
@@ -1558,23 +1503,27 @@ function CoverStudioForAccount() {
               <WandSparkles size={18} />
               <div><strong>生图模型</strong><span>选择本次封面的图像引擎</span></div>
             </div>
-            {flagshipModels.length > 0 && (
-              <div className="cover-flagship-models" aria-label="旗舰封面模型">
-                {flagshipModels.map(({ flagship, model }) => (
-                  <button
-                    key={model.id}
-                    className={model.id === modelId ? "is-active" : ""}
-                    type="button"
-                    disabled={!model.available}
-                    onClick={() => setModelId(model.id)}
-                    title={model.available ? `${flagship.label} · ${flagship.role}` : model.availabilityMessage || "当前未开放"}
-                  >
-                    <span><strong>{flagship.shortLabel}</strong><em>{flagship.role}</em></span>
-                    <small>{model.supportsReferenceInput ? "支持参考图" : "文本生图"}{model.available ? " · 可生成" : ` · ${model.availabilityMessage || "当前未开放"}`}</small>
-                  </button>
-                ))}
-              </div>
-            )}
+            <span className="cover-select-shell cover-model-select-shell">
+              <WandSparkles size={14} aria-hidden="true" />
+              <select
+                className="cover-model-select"
+                aria-label="生图模型"
+                aria-describedby="cover-model-catalog-status"
+                value={modelId}
+                disabled={modelsLoading || Boolean(modelsError) || models.length === 0}
+                onChange={(event) => { selectedModelIdRef.current = event.target.value; setModelId(event.target.value); }}
+              >
+                {models.length === 0 && <option value="">{modelsLoading ? "正在加载模型…" : modelsError ? "模型目录读取失败" : "当前没有可用的封面模型"}</option>}
+                {models.map((model) => <option key={model.id} value={model.id} disabled={!model.available} title={model.availabilityMessage || undefined}>
+                  {model.name}{!model.available ? `（${model.availabilityMessage || "当前未开放"}）` : ""}
+                </option>)}
+              </select>
+              <ChevronDown size={15} aria-hidden="true" />
+            </span>
+            <p id="cover-model-catalog-status" className="cover-model-catalog-status" role={modelsError ? "alert" : "status"}>
+              {modelsLoading ? "正在读取当前封面模型目录…" : modelsError || (models.length === 0 ? "当前封面模型目录为空，请联系管理员配置。"
+                : activeModel && !activeModel.available ? activeModel.availabilityMessage || "当前所选模型未开放，请选择其他模型。" : "")}
+            </p>
           </section>
 
           <section className="cover-card cover-mode-card cover-setup-card">

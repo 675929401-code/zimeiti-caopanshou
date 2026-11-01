@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyVideoProviderError } from "../src/lib/video-error-policy";
+import { videoTokenBillingMessage } from "../src/lib/video-history-presentation";
 
 import {
   MEDIA_HISTORY_CATEGORY_KEYS,
@@ -78,7 +79,7 @@ assert.deepEqual(resolveMediaHistoryRetention({
 async function verifySourceContracts() {
   const [route, page, provenance, baseline, databaseContract, generatedContract, migrationNames] = await Promise.all([
     readFile(path.join(root, "src/app/api/media-history/route.ts"), "utf8"),
-    readFile(path.join(root, "src/app/media-history/page.tsx"), "utf8"),
+    readFile(path.join(root, "src/components/media-history-workspace.tsx"), "utf8"),
     readFile(path.join(root, "src/lib/media-image-provenance.ts"), "utf8"),
     readFile(path.join(root, "deploy/local/task-baseline.sql"), "utf8"),
     readFile(path.join(root, "deploy/policies/database-contract.v1.json"), "utf8"),
@@ -95,8 +96,8 @@ async function verifySourceContracts() {
   const errorExpression = route.slice(mappingStart, mappingEnd).match(/errorMessage:([\s\S]*?),\s*aspectRatio:/u)?.[1];
   assert.ok(errorExpression, "actual video error projection must be found");
   const normalizeStatus = new Function("value", statusBody);
-  const projectError = new Function("rawStatus", "hasAuthenticatedDeliverySource", "rawError", "modelName", "classifyVideoProviderError", `return (${errorExpression});`);
-  const errorFor = (status: string, rawError: string, hasDelivery = true) => projectError(normalizeStatus(status), hasDelivery, rawError, "公开视频模型", classifyVideoProviderError);
+  const projectError = new Function("rawStatus", "hasAuthenticatedDeliverySource", "rawError", "modelName", "classifyVideoProviderError", "videoTokenBillingMessage", "row", `return (${errorExpression});`);
+  const errorFor = (status: string, rawError: string, hasDelivery = true, billingState: string | null = null) => projectError(normalizeStatus(status), hasDelivery, rawError, "公开视频模型", classifyVideoProviderError, videoTokenBillingMessage, { billing_state: billingState });
   for (const status of ["pending", "queued", "processing", "generating", "finalizing", "submitting"]) {
     assert.equal(errorFor(status, "供应商已接收任务，等待生成终态"), "", `${status} progress must not become a failure`);
   }
@@ -105,6 +106,10 @@ async function verifySourceContracts() {
   assert.equal(errorFor("completed", "供应商已接收任务，等待生成终态"), "");
   assert.equal(errorFor("completed", "", false), "任务已标记完成，但没有可验证的交付地址，暂不可预览或下载。");
   assert.equal(errorFor("cancelled", "任务已取消"), "");
+  for (const billingState of ["usage_pending", "quote_exceeded", "billing_review"]) {
+    assert.equal(errorFor("completed", "", true, billingState), videoTokenBillingMessage(billingState), "completed video must preserve its actual pending-billing message");
+    assert.equal(errorFor("failed", "fixture failure", true, billingState), classifyVideoProviderError("fixture failure", "公开视频模型").publicMessage, "provider failure takes precedence over billing notes");
+  }
 
   for (const token of [
     '.from("short_drama_projects")',
@@ -121,7 +126,13 @@ async function verifySourceContracts() {
     "浏览器视频副本",
   ]) assert(!page.includes(forbidden), `media history page still exposes local cache: ${forbidden}`);
 
-  assert(page.includes("图片和普通视频随上游资源有效期提供预览与下载，确认失效后自动移出历史，不在平台备份"));
+  assert(page.includes("图片和普通视频的可用时间取决于原始来源"));
+  assert(page.includes("请以每件作品的实际状态为准"));
+  assert(page.includes("下载到电脑长期保存"));
+  assert.match(route, /retainedVideos\.filter\(entry => !entry\.expired\)/u,
+    "confirmed expired video indexes must stay excluded from visible history");
+  assert.match(route, /const images = [\s\S]*?\.filter\(entry => !entry\.expired\)/u,
+    "confirmed expired image indexes must stay excluded from visible history");
   assert(provenance.includes("delivery_asset_id,client_idempotency_key,request_snapshot"));
   assert(provenance.includes("origins.set"));
   assert(route.includes("mediaHistoryProjectUuid(row.batch_id)"));

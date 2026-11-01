@@ -20,6 +20,10 @@ export interface ProxyConfig {
   authScheme: "bearer" | "x-api-key";
   /** 协议版本（Anthropic Messages 通常为 2023-06-01） */
   protocolVersion?: string;
+  /** Administrator-saved provider capability policy, never a client request flag. */
+  thinkingStrategy?: "provider_default" | "adaptive_low";
+  /** Saved OpenAI-compatible output limit field; omission retains legacy compatibility. */
+  outputTokenField?: "max_tokens" | "max_completion_tokens";
   /** 请求超时（秒），默认 120 */
   timeout: number;
   /** 流式模式开关 */
@@ -77,12 +81,20 @@ export interface SSEChunk {
 }
 
 /** 构建请求体的输入参数 */
+export type AnthropicThinkingProfile = {
+  readonly id: "storyboard-high-energy-b-v6-adaptive-low-v1" | "storyboard-high-energy-b-v8-adaptive-low-v1";
+  readonly thinkingMode: "adaptive";
+  readonly effort: "low";
+};
+
 export interface ChatRequest {
   model: string;
   messages: Array<{ role: string; content: string | unknown[] }>;
   max_tokens?: number;
   temperature?: number;
   enable_thinking?: boolean;
+  /** Server-resolved versioned profile; never copied from client request fields. */
+  anthropic_thinking_profile?: AnthropicThinkingProfile;
   response_format?: { type: string } | undefined;
   tools?: unknown[];
   stream_options?: { include_usage: boolean };

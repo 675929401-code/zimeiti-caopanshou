@@ -4,6 +4,8 @@ import { resolveAppRuntimeDir } from "@/lib/runtime-paths";
 import { createVideoAccessUrl } from "@/lib/video-access-ticket";
 import { authorizeVideoMediaRequest } from "@/lib/video-media-auth";
 import { extractVideoThumbnail } from "@/lib/video-postprocess";
+import { isStoryboardArchiveExpired, usableStoryboardArchive } from "@/lib/storyboard-video-archive-policy";
+import { isVideoHistoryExplicitlyHidden } from "@/lib/video-history-policy";
 import {
   readVideoThumbnailCacheFile,
   readVideoThumbnailCachePolicy,
@@ -25,9 +27,37 @@ function resolveThumbnailDirectory(): string {
 }
 const thumbnailGlobal = globalThis as typeof globalThis & {
   __videoThumbnailJobs?: Map<string, Promise<Buffer>>;
+  __videoThumbnailCapacity?: { active: number; waiters: Array<() => void> };
+  __videoThumbnailFailures?: Map<string, number>;
 };
 const thumbnailJobs = thumbnailGlobal.__videoThumbnailJobs
   ?? (thumbnailGlobal.__videoThumbnailJobs = new Map<string, Promise<Buffer>>());
+const thumbnailCapacity = thumbnailGlobal.__videoThumbnailCapacity
+  ?? (thumbnailGlobal.__videoThumbnailCapacity = { active: 0, waiters: [] });
+const thumbnailFailures = thumbnailGlobal.__videoThumbnailFailures
+  ?? (thumbnailGlobal.__videoThumbnailFailures = new Map<string, number>());
+
+// One history page must not launch dozens of full downloads and ffmpeg processes.
+async function withThumbnailCapacity<T>(run: () => Promise<T>): Promise<T> {
+  if (thumbnailCapacity.active >= 2) {
+    if (thumbnailCapacity.waiters.length >= 24) throw new Error("VIDEO_THUMBNAIL_BUSY");
+    await new Promise<void>((resolve, reject) => {
+      const ready = () => { clearTimeout(timeout); resolve(); };
+      const timeout = setTimeout(() => {
+        const index = thumbnailCapacity.waiters.indexOf(ready);
+        if (index >= 0) thumbnailCapacity.waiters.splice(index, 1);
+        reject(new Error("VIDEO_THUMBNAIL_BUSY"));
+      }, 20_000);
+      thumbnailCapacity.waiters.push(ready);
+    });
+  } else thumbnailCapacity.active += 1;
+  try { return await run(); }
+  finally {
+    const next = thumbnailCapacity.waiters.shift();
+    if (next) next(); // Transfer the occupied slot; new requests cannot jump the queue.
+    else thumbnailCapacity.active -= 1;
+  }
+}
 
 function thumbnailResponse(buffer: Buffer) {
   return new NextResponse(buffer, {
@@ -64,7 +94,7 @@ export async function GET(
   const findTask = async (allowCrossMember: boolean) => {
     let taskQuery = db
       .from("video_tasks")
-      .select("id,user_id,status")
+      .select("id,user_id,status,task_label,completed_at,storage_url,source_expired_at,history_hidden_at,storyboard_archive_expires_at")
       .or(`id.eq.${taskId},task_id_external.eq.${taskId}`);
     if (!allowCrossMember) taskQuery = taskQuery.eq("user_id", user.userId);
     const { data: rows, error } = await taskQuery.limit(2);
@@ -97,6 +127,10 @@ export async function GET(
     { operation: "member_video_thumbnail" },
   );
   if (!contentAccess.ok) return contentAccess.response;
+  if (isVideoHistoryExplicitlyHidden(task) || isStoryboardArchiveExpired(task)
+    || (task.source_expired_at && !usableStoryboardArchive(task))) {
+    return NextResponse.json({ error: "视频媒体已到期或已移除，任务记录仍保留" }, { status: 410 });
+  }
 
   const thumbnailDirectory = resolveThumbnailDirectory();
   const cachePolicy = readVideoThumbnailCachePolicy();
@@ -115,9 +149,15 @@ export async function GET(
     return thumbnailResponse(cachedThumbnail);
   }
 
+  if ((thumbnailFailures.get(task.id) || 0) > Date.now()) {
+    return NextResponse.json({ error: "视频首帧暂不可用，请稍后重试" }, {
+      status: 503, headers: { "Retry-After": "30", "Cache-Control": "private, no-store" },
+    });
+  }
+
   let job = thumbnailJobs.get(task.id);
   if (!job) {
-    job = (async () => {
+    job = withThumbnailCapacity(async () => {
       const origin = localMediaOrigin();
       const relativeVideoUrl = await createVideoAccessUrl({
         taskId: task.id,
@@ -145,8 +185,20 @@ export async function GET(
         protectedPaths: [thumbPath],
         force: true,
       });
+      thumbnailFailures.delete(task.id);
       return thumbnail;
-    })().finally(() => thumbnailJobs.delete(task.id));
+    }).catch(error => {
+      // Capacity pressure says nothing about this video's extractability.
+      // Only actual capture failures should cool down the individual task.
+      if (!(error instanceof Error && error.message === "VIDEO_THUMBNAIL_BUSY")) {
+        thumbnailFailures.set(task.id, Date.now() + 30_000);
+      }
+      if (thumbnailFailures.size > 1000) {
+        for (const [id, until] of thumbnailFailures) if (until <= Date.now()) thumbnailFailures.delete(id);
+        if (thumbnailFailures.size > 1000) thumbnailFailures.delete(thumbnailFailures.keys().next().value || "");
+      }
+      throw error;
+    }).finally(() => thumbnailJobs.delete(task.id));
     thumbnailJobs.set(task.id, job);
   }
 
@@ -157,6 +209,8 @@ export async function GET(
       taskId: task.id,
       reason: thumbnailError instanceof Error ? thumbnailError.message.split(":", 1)[0] : "UNKNOWN",
     });
-    return NextResponse.json({ error: "视频封面生成失败" }, { status: 404 });
+    return NextResponse.json({ error: "视频首帧暂不可用，请稍后重试；仍可尝试播放视频" }, {
+      status: 503, headers: { "Retry-After": "30", "Cache-Control": "private, no-store" },
+    });
   }
 }

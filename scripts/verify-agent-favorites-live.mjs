@@ -2,13 +2,22 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { chromium } from "playwright";
 
 const origin = String(process.env.LOCAL_NAV_ORIGIN || "http://127.0.0.1:5000").replace(/\/$/u, "");
 const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || "").trim();
 assert.ok(token, "LOCAL_NAV_ADMIN_TOKEN_REQUIRED");
-const output = path.resolve(".codex-evidence/agent-favorites-additive-20261006/browser");
-await fs.mkdir(output, { recursive: true });
+const outputRoot = path.resolve(process.env.AGENT_FAVORITES_EVIDENCE_DIR || ".codex-evidence/agent-favorites-additive-20261006/browser");
+const requestedRunId = process.env.AGENT_FAVORITES_EVIDENCE_RUN_ID?.trim();
+const runId = requestedRunId || `${new Date().toISOString().replace(/[:.]/gu, "-")}-${process.pid}-${randomBytes(4).toString("hex")}`;
+assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u, "INVALID_EVIDENCE_RUN_ID");
+const output = path.join(outputRoot, runId);
+await fs.mkdir(outputRoot, { recursive: true });
+try { await fs.mkdir(output); } catch (error) {
+  if (error?.code === "EEXIST") throw new Error(`EVIDENCE_RUN_DIRECTORY_EXISTS:${output}`);
+  throw error;
+}
 const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 const paidPattern = /\/api\/(?:chat|llm|image\/generate|video\/generate)(?:\?|$)/u;
 
@@ -33,6 +42,9 @@ const agentsById = new Map((botsResult.body.agents || []).map((agent) => [String
 
 const report = {
   checkedAt: new Date().toISOString(),
+  runId,
+  outputRoot,
+  evidenceDirectory: output,
   candidate: null,
   initialFavoriteCount: beforeIds.size,
   categoryInvariant: null,
@@ -284,7 +296,7 @@ try {
   };
 }
 
-await fs.writeFile(path.join(output, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+await fs.writeFile(path.join(output, "failure-report.json"), `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
 assert.deepEqual(report.pageErrors, []);
 assert.deepEqual(report.consoleErrors, []);
 assert.deepEqual(report.serverErrors, []);
@@ -300,5 +312,5 @@ assert.equal(allowedWrites, true, `UNEXPECTED_WRITES:${JSON.stringify(report.wri
 report.passed = true;
 report.productionWrites = 0;
 report.paidGenerationRequests = 0;
-await fs.writeFile(path.join(output, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+await fs.writeFile(path.join(output, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
 console.log(JSON.stringify({ passed: true, categoryInvariant: report.categoryInvariant, pages: report.pages.length, restored: true }));

@@ -7,6 +7,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import vm from "node:vm";
+import ts from "typescript";
 import {
   CANONICAL_FORWARD_MIGRATION_NAME,
   forwardMigrationEntryViolations,
@@ -503,18 +505,56 @@ add(
 );
 add("script:only-uses-prefix-closure", script.includes("dependencyClosureAdded") && script.includes("ONLY_SELECTOR_NOT_FOUND"), "--only includes its ordered prerequisite closure");
 add("script:refreshes-postgrest", script.includes("notify pgrst"), "PostgREST schema reload notification is sent after apply");
-add("script:blocks-broad-destructive-ddl", ["DROP_DATABASE_FORBIDDEN", "DROP_SCHEMA_FORBIDDEN", "DROP_TABLE_FORBIDDEN", "TRUNCATE_FORBIDDEN"].every((item) => script.includes(item)), "broad destructive DDL is blocked");
 add("script:wraps-missing-transaction", script.includes("wrapped-by-runner") && script.includes("applySql"), "runner wraps migration files without explicit transaction");
 add(
   "script:failure-reports-committed-progress",
   ["committedMigrationCount", "ledgerRecordedCount", "committedButUnrecorded", "failedMigration", "failedStage"].every((item) => script.includes(item)),
   "apply failures disclose committed SQL and ledger progress instead of claiming zero writes",
 );
-add(
-  "script:destructive-detector-is-statement-scoped",
-  script.includes('expression: /^\\s*TRUNCATE\\b/imu') && script.includes('expression: /^\\s*DROP\\s+TABLE\\b/imu'),
-  "GRANT TRUNCATE is not misclassified as a destructive TRUNCATE statement",
-);
+// Run the actual scanner declarations in isolation; never execute the CLI or
+// connect to PostgreSQL. Extract complete AST nodes rather than duplicating its
+// detection logic in the tests.
+const scannerAst = ts.createSourceFile(scriptPath, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const scannerNames = ["forbiddenDropCodes", "forbiddenForwardSql"];
+const scannerNodes = scannerAst.statements.filter((node) =>
+  (ts.isVariableStatement(node) && node.declarationList.declarations.some((declaration) => declaration.name.getText(scannerAst) === "FORBIDDEN_FORWARD_PATTERNS"))
+  || (ts.isFunctionDeclaration(node) && node.name && scannerNames.includes(node.name.text)));
+assert.equal(scannerNodes.length, 3, "FORWARD_SCANNER_DECLARATIONS_NOT_FOUND");
+const scanForwardSql = vm.runInNewContext(`${scannerNodes.map((node) => node.getText(scannerAst)).join("\n")}\nforbiddenForwardSql`, Object.create(null));
+const scannerCases = [
+  ["truncate", "TRUNCATE public.accounts;", "TRUNCATE_FORBIDDEN", true],
+  ["truncate-after-statement", "SELECT 1; TRUNCATE public.accounts;", "TRUNCATE_FORBIDDEN", true],
+  ["truncate-in-do", "DO $$ BEGIN TRUNCATE public.accounts; END $$;", "TRUNCATE_FORBIDDEN", true],
+  ["truncate-comment-separated", "TRUNCATE/**/public.accounts;", "TRUNCATE_FORBIDDEN", true],
+  ["grant-truncate-fail-closed", "GRANT TRUNCATE ON public.accounts TO service_role;", "TRUNCATE_FORBIDDEN", true],
+  ["comment-truncate-fail-closed", "-- TRUNCATE is not permitted\nSELECT 1;", "TRUNCATE_FORBIDDEN", true],
+  ["similar-identifier", "SELECT truncated_at FROM public.accounts;", "TRUNCATE_FORBIDDEN", false],
+  ["temporary-cleanup", "DROP TABLE pg_temp.model_pool_canonical_visibility_permit;", "DROP_TABLE_FORBIDDEN", false],
+  ["public-drop", "DROP TABLE public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["temporary-and-public", "DROP TABLE pg_temp.allowed, public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["temporary-then-public", "DROP TABLE pg_temp.allowed; DROP TABLE public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["drop-comment-separated", "DROP/**/TABLE public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["quoted-line-comment-prefix", "SELECT '--'; DROP/**/TABLE public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["quoted-block-comment-prefix", "SELECT '/*'; DROP/**/TABLE public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["do-quoted-line-prefix", "DO $$ BEGIN PERFORM '--'; DROP/**/TABLE public.accounts; END $$;", "DROP_TABLE_FORBIDDEN", true],
+  ["do-quoted-block-prefix", "DO $$ BEGIN PERFORM '/*'; DROP/**/TABLE public.accounts; END $$;", "DROP_TABLE_FORBIDDEN", true],
+  ["drop-nested-comment", "DROP/* outer /* inner */ outer */TABLE public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["drop-line-comment-cr", "DROP-- comment\rTABLE public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["drop-line-comment-crlf", "DROP-- comment\r\nTABLE public.accounts;", "DROP_TABLE_FORBIDDEN", true],
+  ["schema-after-statement", "SELECT 1; DROP SCHEMA public;", "DROP_SCHEMA_FORBIDDEN", true],
+  ["schema-comment-separated", "SELECT '--'; DROP/**/SCHEMA public;", "DROP_SCHEMA_FORBIDDEN", true],
+  ["database-after-statement", "SELECT 1; DROP DATABASE example;", "DROP_DATABASE_FORBIDDEN", true],
+  ["database-comment-separated", "SELECT '/*'; DROP/**/DATABASE example;", "DROP_DATABASE_FORBIDDEN", true],
+  ["database-line-comment-cr", "DROP-- comment\rDATABASE example;", "DROP_DATABASE_FORBIDDEN", true],
+  ["schema-in-do", "DO $$ BEGIN PERFORM '/*'; DROP/**/SCHEMA public; END $$;", "DROP_SCHEMA_FORBIDDEN", true],
+  ["temporary-with-comment-no-exception", "DROP/**/TABLE pg_temp.allowed;", "DROP_TABLE_FORBIDDEN", true],
+  ["quoted-temporary", 'DROP TABLE "pg_temp".allowed;', "DROP_TABLE_FORBIDDEN", true],
+];
+for (const [name, sql, code, expected] of scannerCases) {
+  add(`script:scanner-${name}`, scanForwardSql(sql).includes(code) === expected, `actual scanner: ${name}`);
+}
+const fixtureMigrationNames = fs.readdirSync(migrationRoot).filter((name) => /^202610(?:16|18|19|20|22|23|27|30|31)\d{6}_.+\.sql$/u.test(name));
+add("script:scanner-current-migrations", fixtureMigrationNames.length >= 20 && fixtureMigrationNames.every((name) => scanForwardSql(read(path.join(migrationRoot, name))).length === 0), "current late-October migrations remain accepted by the conservative destructive-SQL gate");
 add("semantic-contract:catalog-exists", fs.existsSync(semanticCatalogPath), "normalized PostgreSQL semantic catalog exists");
 add(
   "semantic-contract:catalog-covers-runtime-security",
