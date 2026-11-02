@@ -78,6 +78,7 @@ const CANDIDATE_BROWSER_ASSETS = Object.freeze([
 const BROWSER_ROUTE_TARGETS = Object.freeze({
   "/admin": Object.freeze({ service: "web", expectedRoute: "/admin?tab=dashboard&view=overview" }),
   "/extract": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
+  "/formatter": Object.freeze({ service: "web", expectedRoute: "/tools?tab=format" }),
   "/segmenter": Object.freeze({ service: "web", expectedRoute: "/tools?tab=segment", expectedTool: "segment" }),
   "/tools": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
   "/tools/utility": Object.freeze({ service: "web", expectedRoute: "/tools/utility?tab=text", expectedTool: "text" }),
