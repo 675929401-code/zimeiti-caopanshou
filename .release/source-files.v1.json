@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "d785806dd96cb0f1cf4e7e3ec9ac93d52c3a7401746c4edf915e80a5fbe16821",
+  "sourceFingerprint": "9f16d4fed26e17d1027c84e88530e5e1800f8f4b2abd42cdb04f34ed90e12da7",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 4851,
-  "totalBytes": 77433375,
+  "totalBytes": 77435358,
   "files": [
     {
       "path": ".cnb.yml",
@@ -5033,8 +5033,8 @@
     },
     {
       "path": "scripts/run-release-browser-acceptance.mjs",
-      "bytes": 79082,
-      "sha256": "09d653ffa4619fbb6b6be2414a03294d9e2e37507161814205610d019be11741"
+      "bytes": 79314,
+      "sha256": "e35469b6d2a4e3f8461516117c87d36bbbf4276cd72b66182c474c85bd2acfa3"
     },
     {
       "path": "scripts/run-release-targeted-regressions.mjs",
@@ -9563,8 +9563,8 @@
     },
     {
       "path": "scripts/verify-release-workflow.mjs",
-      "bytes": 132778,
-      "sha256": "2ec197838dd86493461e08ab23c20fbc9abc0dbc4a4534a30ad2b521279d7636"
+      "bytes": 134529,
+      "sha256": "ae37ad4945610764f99c4425317cb1712aac7c50baad2dc08ed9f0da8cc870d8"
     },
     {
       "path": "scripts/verify-render-nginx-config-vnext.mjs",
