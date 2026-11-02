@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "0284462608c7dbedcc820bf487757ff3baa0e0f87d57265c4968a255ddbfc526",
+  "sourceFingerprint": "6ea1ed0ab548f021e35c1f5b2fe8603ea05ae81c5505cdb5d8b40a48dd20c44d",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 4851,
-  "totalBytes": 77436479,
+  "totalBytes": 77436848,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "30d38025d2cf0abaa356cfc98a53eba31dca3a9eb85a9c141e992f9f9f959076"
+      "sha256": "a2db63591b1d9fb5b0ace2c37da400e6bfe4fe87e9855ccd4adcae2c3564691a"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -15073,8 +15073,8 @@
     },
     {
       "path": "src/app/ui-shell-fixes.css",
-      "bytes": 106719,
-      "sha256": "63f07005809990a0512602c4a6e8f2b1debca8be6a5ab36368b879108bc2b694"
+      "bytes": 107088,
+      "sha256": "88e48fdf99c7c35ce2a3f4e12598f40ded2f629cdbe6e6bd76e4929247d41842"
     },
     {
       "path": "src/app/video/error.tsx",

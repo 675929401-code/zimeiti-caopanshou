@@ -2458,8 +2458,15 @@ html[data-theme][data-mode] .marketplace-shell .nav-bar-wrapper {
 }
 html[data-theme][data-mode] .marketplace-shell .primary-nav-rail { border-width: 0 !important; }
 html[data-theme][data-mode] .marketplace-shell .primary-nav-rail .nav-bar-container {
-  border-width: 1px !important;
+  border-width: 0 !important;
   border-style: solid !important;
+}
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-bar-wrapper,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-nav-rail,
+html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-nav-rail .nav-bar-container {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
 }
 html[data-theme][data-mode] .marketplace-shell .marketplace-category-inner { padding-inline: 12px !important; }
 @media (min-width: 1200px) {
