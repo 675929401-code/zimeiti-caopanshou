@@ -6213,8 +6213,7 @@ html[data-theme="soft-white"][data-mode="light"] .sbw-root .sbw-empty-state > sv
 
 /* Editor-only visual cleanup: solid theme surfaces and independent model panels.
    This scope excludes the reference-assets page, history and modal content. */
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main {
   --sbw-editor-card: #fffdf8;
   --sbw-editor-field: #ffffff;
   --sbw-editor-media: #f3f1ea;
@@ -6466,54 +6465,43 @@ html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-fra
   order: 2;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar {
   background: var(--sbw-editor-card) !important;
   border-color: var(--sbw-editor-line) !important;
   color: var(--sbw-editor-text);
 }
 
 html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-group,
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-group,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group {
   background: var(--sbw-editor-card) !important;
   border-color: var(--sbw-editor-line) !important;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active),
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active) {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active) {
   background: var(--sbw-editor-card) !important;
   color: var(--sbw-editor-muted) !important;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag {
   background: #f6f4ed !important;
   border-color: var(--sbw-editor-line) !important;
   color: var(--sbw-editor-image-accent) !important;
 }
 
 html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-stage-label strong,
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-stage-label strong,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main {
   color: var(--sbw-editor-text) !important;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button {
   background: var(--sbw-editor-card) !important;
 }
 
 html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
   background: #f6f4ed !important;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active {
   background: #f1f1e8 !important;
 }

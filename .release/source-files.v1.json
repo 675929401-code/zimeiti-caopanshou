@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "89667bacfe5980bfe42a3a7d9bf712f11827e4ecde3b40d9f823ec3931ae5872",
+  "sourceFingerprint": "15bbc4367a388615c5a342a2dcb82c90e4c85b369683d6f3080a36929a3f3bdf",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 4842,
-  "totalBytes": 77320059,
+  "totalBytes": 77318868,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "52f62989608c1e95c86f54b0fbcc185945d9700f906d5b2ab578facd6ce53a43"
+      "sha256": "4275552aabf96ad7a78f105756af18871edb68f9301681bd8f68f99e17a6bc7b"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -14883,8 +14883,8 @@
     },
     {
       "path": "src/app/storyboard-workbench/storyboard-workbench.css",
-      "bytes": 202034,
-      "sha256": "75cfcc9faba5d1b60ead345d29dcf010cda4ba0277daecd6a65febfcd8e8f292"
+      "bytes": 200843,
+      "sha256": "87108fd5a6ebd6259ca35d3c6c3863afd82d4b7bae6a48092416e7c0032e5a45"
     },
     {
       "path": "src/app/storyboard-workbench/visual-assets/page.tsx",
