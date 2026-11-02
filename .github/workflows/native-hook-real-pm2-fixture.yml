@@ -1,0 +1,72 @@
+name: Isolated real PM2 native hook fixture
+on:
+  push:
+    branches: [test/native-hook-real-pm2-v3-61e9-20261102]
+    paths: [.github/workflows/native-hook-real-pm2-fixture.yml, .codex-native-hook-real-pm2/**]
+permissions:
+  contents: read
+jobs:
+  kernel:
+    if: >-
+      github.repository == '675929401-code/zimeiti-caopanshou' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/test/native-hook-real-pm2-v3-61e9-20261102' &&
+      github.event.deleted == false && github.sha == github.event.after
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.19.0
+      - name: Verify pinned fixture and acquire integrity-locked test PM2
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          root=.codex-native-hook-real-pm2
+          test "$(find "$root" -type f | wc -l)" = 17
+          test "$(find "$root" -type l | wc -l)" = 0
+          printf '%s\n' \
+            'cf2246ace14989c6212b5d63f10c23acc2459928989b9346633de38223f3d32e  .codex-native-hook-real-pm2/bus_probe.py' \
+            '771025acefc32868833bf29a7cd327da4890849f6d1e4b86645b84e686051947  .codex-native-hook-real-pm2/continuous_watch.py' \
+            '340366f81f5f198bc28f0ffad38b74dee2683cb140522b7858ec6c6e9eb05997  .codex-native-hook-real-pm2/current_identity.py' \
+            'c43f6a82632a34edd8c1c3914da0c3e0559c896e987a34e97e4bb4839bda052c  .codex-native-hook-real-pm2/ecosystem.config.js' \
+            'a779b8a8a81421ba066d2b85f9c4b1fe0ddd119124a3b641bfa89c6fd9f4f0cd  .codex-native-hook-real-pm2/exact_stop.py' \
+            '5f4ed76065f1f9231948cd66aa5302c5047c2e9ca74df9ef88725813f6e9bf02  .codex-native-hook-real-pm2/fixture-hook.mjs' \
+            '22d66d101bb0f735116c7d8a903a5bc4de9caa8cc3bd2d9a47d76c996209b87c  .codex-native-hook-real-pm2/fixture-native-prepare.py' \
+            '7196856082edce034bb3cbe41e18a187068b645a6cb2d7a4450ac818477ea306  .codex-native-hook-real-pm2/live_drain.py' \
+            '02ddd7479f684ecbf34c10045a7808c940a0b7bfcf9667a45b6d4603aa48ff41  .codex-native-hook-real-pm2/native_prepare.py' \
+            'c2c49d9d73a527c99cae9a6f9c84899c2dc0809f7fca4e487ee7f4790071298e  .codex-native-hook-real-pm2/package-lock.json' \
+            'dbf05214f4b1db510a6e19625c35fb543a3726a072437fcd5155f7277b25cc45  .codex-native-hook-real-pm2/package.json' \
+            '64c3270ce40ce94c22d8cc432edbbe86afb6a4a05eaf264be36b16900a1e3010  .codex-native-hook-real-pm2/rpc_stop.py' \
+            '84e4a7e8d1c5e71ca0598906f385c44e625148a3b34f253c4bbbf90836b29ef5  .codex-native-hook-real-pm2/runner.sh' \
+            'c641916d5c8b1355dde2514785d77cabeeb0a397f4b77b48b5434d550be55806  .codex-native-hook-real-pm2/server.js' \
+            'd58f0b3f6a5fa5ab006d714ad683b26d5c025fb6bca5d1c91ad55b3f6ef6221b  .codex-native-hook-real-pm2/slot_monitor.py' \
+            '02317d1458242257f17d9e86323a5b80069cb63bde56540a693eb1f119501baf  .codex-native-hook-real-pm2/snapshot.mjs' \
+            '22662a3505d8ccdfd76065b460dee3ab00fa868722316c4e4cfae76c4f4feb02  .codex-native-hook-real-pm2/test_fixture.py' \
+            | sha256sum --check --strict
+          npm ci --prefix "$root" --ignore-scripts --no-audit --no-fund
+          test "$(node -p "require('./$root/node_modules/pm2/package.json').version")" = 7.0.1
+      - name: Real PM2 runtime in private network, mount and PID namespaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_bin="$(command -v node)"
+          host_net="$(readlink /proc/self/ns/net)"
+          fixture="$PWD/.codex-native-hook-real-pm2"
+          sudo -n /usr/bin/timeout --signal=TERM --kill-after=10s 240s \
+            /usr/bin/unshare --net --mount --pid --fork --mount-proc -- /bin/bash -c '
+              set -euo pipefail
+              umask 077
+              [[ -n "$3" && "$(readlink /proc/self/ns/net)" != "$3" ]] || exit 2
+              /usr/sbin/ip link set lo up
+              /usr/bin/mount -t tmpfs -o mode=0700,nosuid,nodev,size=512m tmpfs /tmp
+              exec /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C FIXTURE_ISOLATED=1 FIXTURE_HOST_NET="$3" \
+                /usr/bin/timeout --signal=TERM --kill-after=8s 220s /bin/bash "$2/runner.sh" "$1" "$2"
+            ' fixture "$node_bin" "$fixture" "$host_net"
