@@ -1409,6 +1409,7 @@ const reviewedRouteHelpers = runInNewContext(`${routeContractSource}\n${routeHel
 });
 const origins = { web: "http://127.0.0.1:4011", voice: "http://127.0.0.1:4012" };
 for (const [route, expected, tool] of [
+  ["/formatter", "/tools?tab=format", null],
   ["/segmenter", "/tools?tab=segment", "segment"],
   ["/tools/utility", "/tools/utility?tab=text", "text"],
 ]) {
@@ -1417,12 +1418,16 @@ for (const [route, expected, tool] of [
   assert.equal(target.expectedUrl.pathname + target.expectedUrl.search, expected);
   assert.equal(target.expectedTool, tool);
   assert.equal(reviewedRouteHelpers.matchesReviewedRoute(new URL(expected, origins.web), target.expectedUrl), true);
+  const wrongTab = new URL(expected, origins.web);
+  wrongTab.searchParams.set("tab", "unreviewed");
+  assert.equal(reviewedRouteHelpers.matchesReviewedRoute(wrongTab, target.expectedUrl), false);
   assert.equal(reviewedRouteHelpers.matchesReviewedRoute(new URL(expected, "http://127.0.0.1:4999"), target.expectedUrl), false);
   assert.equal(reviewedRouteHelpers.matchesReviewedRoute(new URL("/unreviewed?tab=text", origins.web), target.expectedUrl), false);
   assert.equal(reviewedRouteHelpers.matchesReviewedRoute(new URL(expected + "&unexpected=1", origins.web), target.expectedUrl), false);
 }
 assert.equal(reviewedRouteHelpers.resolveBrowserRouteTarget("/unreviewed", origins).expectedUrl.pathname, "/unreviewed");
 const nextConfiguration = read("next.config.ts");
+assert.match(nextConfiguration, /source:\s*['"]\/formatter['"][\s\S]{0,100}destination:\s*['"]\/tools\?tab=format['"]/u);
 assert.match(nextConfiguration, /source:\s*['"]\/segmenter['"][\s\S]{0,100}destination:\s*['"]\/tools\?tab=segment['"]/u);
 const utilityPageSource = read("src/app/tools/utility/page.tsx");
 assert.match(utilityPageSource, /window\.history\.replaceState\(null,\s*"",\s*`\$\{pathname\}\?tab=\$\{activeTab\}`\)/u);
