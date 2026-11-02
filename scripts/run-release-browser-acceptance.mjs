@@ -109,10 +109,8 @@ const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/demo/popup-styles|/",
   "/digital-human|/",
   "/digital-human|/voice-studio/workspace",
-  "/extract|/",
   "/help|/",
   "/help|/admin/help",
-  "/segmenter|/",
   "/storyboard-workbench|/",
   "/tools|/",
   "/tools/utility|/",
@@ -961,6 +959,13 @@ function matchesReviewedRoute(actualUrl, expectedUrl) {
     && actualUrl.search === expectedUrl.search;
 }
 
+function resolveBenignNavigationSourceRoute(route) {
+  const reviewed = BROWSER_ROUTE_TARGETS[route];
+  return reviewed?.service === "web"
+    ? new URL(reviewed.expectedRoute, "http://candidate.invalid").pathname
+    : route;
+}
+
 // Only the two reviewed legacy/default entries below get a tool-specific
 // smoke check.  Filling a synthetic value exercises hydration and input state;
 // it does not submit a request or invoke a paid provider.
@@ -1128,7 +1133,7 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
           item.elapsedMs = Date.now() - startedAt;
           item.requestDurationMs = requestStartedAt.has(request) ? Date.now() - requestStartedAt.get(request) : null;
         }
-        const benignNavigationKey = `${route}|${pathname}`;
+        const benignNavigationKey = `${resolveBenignNavigationSourceRoute(route)}|${pathname}`;
         const utilityIdentity = route === "/tools/utility" && pagePhase === "checking" && error === "net::ERR_ABORTED"
           ? reviewedUtilityRscIdentity(request, target.baseUrl) : null;
         if (sameOrigin && item.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"

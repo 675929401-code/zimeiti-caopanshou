@@ -1620,7 +1620,6 @@ for (const marker of [
   '"/admin|/admin/extraction-reconciliation"',
   '"/cover|/"',
   '"/demo/popup-styles|/"',
-  '"/extract|/"',
   '"/storyboard-workbench|/"',
   '"/tools|/"',
   '"/video|/"',
@@ -1632,11 +1631,16 @@ for (const marker of [
 assert.match(browserAcceptanceRunner, /benignNavigationAborts: browserReport\.benignNavigationAborts/u,
   "benign navigation aborts must remain visible in the signed browser report");
 const reviewedAbortPairs = [
+  ["/admin", "/admin/extraction-reconciliation"], ["/cover", "/"], ["/demo/popup-styles", "/"],
+  ["/extract", "/"], ["/formatter", "/"], ["/tools", "/"], ["/storyboard-workbench", "/"], ["/video", "/"],
   ["/digital-human", "/"], ["/digital-human", "/voice-studio/workspace"],
   ["/help", "/"], ["/help", "/admin/help"], ["/segmenter", "/"],
   ["/voice-studio/imitate", "/voice-studio/imitate"],
   ["/voice-studio/imitate", "/voice-studio/voices"],
   ["/voice-studio/imitate", "/voice-studio/workspace"],
+  ["/voice-studio/workspace", "/voice-studio/imitate"],
+  ["/voice-studio/workspace", "/voice-studio/voices"],
+  ["/voice-studio/workspace", "/voice-studio/workspace"],
   ["/youcai/storyboard-workbench", "/"], ["/youcai/storyboard-workbench", "/youcai/profile"],
   ["/tools/utility", "/"], ["/youcai/storyboard-workbench", "/youcai"],
 ];
@@ -1646,9 +1650,20 @@ const abortConditionStart = browserAcceptanceRunner.indexOf('if (sameOrigin && i
 const abortConditionEnd = browserAcceptanceRunner.indexOf(") {", abortConditionStart);
 assert.ok(abortSetStart >= 0 && abortSetEnd > abortSetStart && abortConditionStart >= 0 && abortConditionEnd > abortConditionStart);
 const abortCondition = browserAcceptanceRunner.slice(abortConditionStart + 4, abortConditionEnd);
-const classifyAbort = runInNewContext(`${browserAcceptanceRunner.slice(abortSetStart, abortSetEnd)}\n` +
+const abortSourceStart = browserAcceptanceRunner.indexOf("function resolveBenignNavigationSourceRoute(");
+const abortSourceEnd = browserAcceptanceRunner.indexOf("\n}", abortSourceStart) + 2;
+const abortKeyStart = browserAcceptanceRunner.indexOf("const benignNavigationKey =");
+const abortKeyEnd = browserAcceptanceRunner.indexOf(";", abortKeyStart) + 1;
+assert.ok(abortSourceStart >= 0 && abortSourceEnd > abortSourceStart && abortKeyStart >= 0 && abortKeyEnd > abortKeyStart);
+const abortSourceHelper = browserAcceptanceRunner.slice(abortSourceStart, abortSourceEnd);
+const abortKeyStatement = browserAcceptanceRunner.slice(abortKeyStart, abortKeyEnd);
+const resolveAbortSource = runInNewContext(`${routeContractSource}\n${abortSourceHelper}\nresolveBenignNavigationSourceRoute`, { URL });
+for (const alias of ["/extract", "/formatter", "/segmenter"]) assert.equal(resolveAbortSource(alias), "/tools");
+for (const unchanged of ["/admin", "/tools/utility", "/workspace", "/voice-studio/workspace", "/unreviewed"]) assert.equal(resolveAbortSource(unchanged), unchanged);
+assert.ok(!browserAcceptanceRunner.includes('"/extract|/"') && !browserAcceptanceRunner.includes('"/segmenter|/"'));
+const classifyAbort = runInNewContext(`${routeContractSource}\n${abortSourceHelper}\n${browserAcceptanceRunner.slice(abortSetStart, abortSetEnd)}\n` +
   `({route, pathname, sameOrigin, method, resourceType, error, nextRouterPrefetch}) => {` +
-  `const benignNavigationKey = route + "|" + pathname; const item = {method}; return (${abortCondition}); }`);
+  `${abortKeyStatement} const item = {method}; return (${abortCondition}); }`, { URL });
 for (const [route, pathname] of reviewedAbortPairs) {
   const valid = { route, pathname, sameOrigin: true, method: "GET", resourceType: "fetch", error: "net::ERR_ABORTED", nextRouterPrefetch: true };
   assert.equal(classifyAbort(valid), true, `reviewed prefetch not accepted: ${route}|${pathname}`);
@@ -1657,6 +1672,7 @@ for (const [route, pathname] of reviewedAbortPairs) {
     assert.equal(classifyAbort({ ...valid, ...mutation }), false, `unreviewed abort accepted: ${JSON.stringify(mutation)}`);
   }
 }
+assert.equal(classifyAbort({ route: "/workspace", pathname: "/", sameOrigin: true, method: "GET", resourceType: "fetch", error: "net::ERR_ABORTED", nextRouterPrefetch: true }), false);
 const captionFixture = "scripts/fixtures/release-browser-assets/storyboard-video-captions.vtt";
 const captionBytes = fs.readFileSync(path.join(root, captionFixture));
 const captionSha256 = "c44f2c33a2bb064b7dc60e5ddda7db9a9f8d58182fbf46cced73bcda0861902c";
