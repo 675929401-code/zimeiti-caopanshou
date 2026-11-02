@@ -6255,12 +6255,12 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root.sbw-editor .sbw-ma
   --sbw-editor-line: #393f49;
   --sbw-editor-text: #f0f6f6;
   --sbw-editor-muted: #a4b3b8;
-  --sbw-editor-image: #183431;
-  --sbw-editor-image-line: #37675e;
-  --sbw-editor-image-accent: #77dfc7;
-  --sbw-editor-video: #272c45;
-  --sbw-editor-video-line: #505c88;
-  --sbw-editor-video-accent: #b2beff;
+  --sbw-editor-image: var(--sbw-editor-card, var(--card));
+  --sbw-editor-image-line: var(--sbw-editor-line, var(--border));
+  --sbw-editor-image-accent: var(--primary);
+  --sbw-editor-video: var(--sbw-editor-card, var(--card));
+  --sbw-editor-video-line: var(--sbw-editor-line, var(--border));
+  --sbw-editor-video-accent: var(--primary);
 }
 
 html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-rail {
