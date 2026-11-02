@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { useApp } from "@/contexts/app-context";
 import { bipStep, BIP_STEPS, BIP_CATEGORY, BIP_CATEGORY_LABEL, TASK_CATEGORIES, displayCategory, matchesDisplayCategory } from "@/lib/business-ip/catalog";
 import { getAuthorizedAgentDisplayKeys, isAgentAuthorizedInSnapshot } from "@/lib/agent-category-access";
-import { Search, Sparkles, X, Layout, Pencil, LayoutGrid, Eraser, Scissors, Palette, FileSearch, Film, PenTool, Mic, Bot, UserRound, Video, Image, Music, BookOpen, Globe, ShoppingBag, Megaphone, MessageSquare, Puzzle, Clapperboard, Wrench, Heart, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Sparkles, X, Layout, Pencil, LayoutGrid, AppWindow, UsersRound, Eraser, Scissors, Palette, FileSearch, Film, PenTool, Mic, Bot, UserRound, Video, Image, Music, BookOpen, Globe, ShoppingBag, Megaphone, MessageSquare, Puzzle, Clapperboard, Wrench, Heart, ChevronLeft, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -94,7 +94,7 @@ const LEGACY_CATEGORY_LABELS: Record<string, string> = {
   "自用": "自用",
 };
 const CATEGORY_LUCIDE_ICONS = {
-  all: { Icon: LayoutGrid, color: "#38bdf8" },
+  all: { Icon: UsersRound, color: "#38bdf8" },
   [FAVORITES_CATEGORY]: { Icon: Heart, color: "#fb7185" },
   [BIP_CATEGORY]: { Icon: UserRound, color: "#a78bfa" },
   "task:影像编导": { Icon: Clapperboard, color: "#f59e0b" },
@@ -700,7 +700,7 @@ export function AgentMarketplace() {
   // 一级导航文字保持中性，图标用克制的语义色建立快速识别。
   const NAV_LUCIDE_ICONS: Record<string, { Icon: React.ComponentType<React.SVGProps<SVGSVGElement> & { className?: string; style?: React.CSSProperties }>; color: string }> = {
     commerce_agent: { Icon: ShoppingBag, color: "#d78a62" },
-    marketplace: { Icon: LayoutGrid, color: "#55bfae" },
+    marketplace: { Icon: AppWindow, color: "#55bfae" },
     segment: { Icon: Scissors, color: "#69ad87" },
     cover: { Icon: Palette, color: "#c69a61" },
     extract: { Icon: FileSearch, color: "#d0a45e" },

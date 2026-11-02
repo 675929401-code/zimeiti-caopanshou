@@ -21,6 +21,14 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.page[data-page="tools"] {
+  --toolbox-crystal-panel-strong: color-mix(in srgb, var(--card) 98%, var(--primary));
+  --toolbox-crystal-field: color-mix(in srgb, var(--card) 97%, var(--background));
+  --toolbox-crystal-line: color-mix(in srgb, var(--border) 72%, var(--card));
+  --toolbox-crystal-line-strong: color-mix(in srgb, var(--primary) 48%, var(--border));
+  --toolbox-crystal-shadow: none;
+}
+
 .main {
   width: min(1760px, 100%);
   margin: 0 auto;
@@ -502,6 +510,10 @@
   box-shadow: var(--toolbox-crystal-shadow-focus);
 }
 
+.page[data-page="tools"] .workspace :global(.toolbox-input-surface:focus-within) {
+  box-shadow: inset 0 0 0 1px var(--toolbox-crystal-line-strong);
+}
+
 .workspace :global(.toolbox-extract-card) {
   width: 100%;
   padding: 14px 16px;
@@ -514,6 +526,71 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-heading-actions) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex: none;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-heading-actions > button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  min-height: 32px;
+  min-width: 68px;
+  padding: 0 10px;
+  border: 1px solid var(--toolbox-crystal-line);
+  border-radius: 8px;
+  background: var(--toolbox-crystal-field) !important;
+  color: var(--foreground) !important;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-heading-actions > button:hover:not(:disabled)) {
+  border-color: var(--toolbox-crystal-line-strong);
+  background: color-mix(in srgb, var(--primary) 8%, var(--card)) !important;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-heading-actions > button:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: -3px;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-heading-actions > button:disabled) { opacity: .5; }
+
+.page[data-page="tools"] .workspace :global(.toolbox-input-heading) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 56px;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 0;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-input-heading .toolbox-input-title) { grid-area: 1 / 1; }
+.page[data-page="tools"] .workspace :global(.toolbox-input-heading .toolbox-input-meta) { grid-area: 1 / 2; }
+.page[data-page="tools"] .workspace :global(.toolbox-input-heading .toolbox-heading-actions) { grid-area: 1 / 3; }
+
+.page[data-page="tools"] .workspace :global(.toolbox-card-actions.toolbox-command-row-one),
+.page[data-page="tools"] .workspace :global(.toolbox-card-actions > .toolbox-command-row-one) {
+  display: grid;
+  grid-template-columns: minmax(180px, 300px);
+  justify-content: end;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-extract-card .toolbox-primary-actions.toolbox-command-row-two) {
+  grid-template-columns: minmax(180px, 300px) auto;
 }
 
 .workspace :global(.toolbox-extract-heading h3) {
@@ -1292,7 +1369,7 @@
     border: 1px solid var(--toolbox-crystal-line);
     border-radius: 16px;
     background: var(--card);
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 5%, transparent);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 3%, transparent);
   }
 
   .page[data-page="tools"] .toolRail {
@@ -1303,7 +1380,7 @@
     border: 0;
     border-right: 1px solid var(--toolbox-crystal-line);
     border-radius: 0;
-    background: color-mix(in srgb, var(--card) 96%, var(--muted));
+    background: var(--card);
   }
 
   .page[data-page="tools"] .railHeader {
@@ -1353,9 +1430,9 @@
   .page[data-page="tools"] .railSummary {
     margin-top: auto;
     padding: 14px 12px;
-    border: 1px solid color-mix(in srgb, var(--primary) 15%, var(--border));
+    border: 1px solid var(--toolbox-crystal-line);
     border-radius: 10px;
-    background: color-mix(in srgb, var(--primary) 5%, var(--card));
+    background: transparent;
   }
 
   .page[data-page="tools"] .railSummary > span,
@@ -1369,7 +1446,7 @@
   .page[data-page="tools"] .stage {
     min-height: 0;
     padding: 16px 18px;
-    background: color-mix(in srgb, var(--card) 94%, var(--muted));
+    background: var(--card);
   }
 
   /* One simple header line, aligned with the navigation heading. */
@@ -1389,7 +1466,7 @@
     padding: 10px 12px;
     border: 1px solid var(--toolbox-crystal-line) !important;
     border-radius: 10px;
-    background: color-mix(in srgb, var(--card) 96%, var(--primary)) !important;
+    background: var(--toolbox-duration-surface, color-mix(in srgb, var(--card) 96%, var(--primary))) !important;
   }
 
   .page[data-page="tools"] .workspace :global(.toolbox-embedded-toolbar p:first-child) {
@@ -1434,30 +1511,32 @@
     overflow: hidden;
   }
 
-  /* Editors benefit from side-by-side comparison and matching edges. */
+  /* Keep the input compact and stretch the result to the rail's bottom inset.
+     The minimum result track preserves reading space on short desktops. */
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout) {
     height: auto;
-    min-height: 480px;
-    flex: 1 0 480px;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+    flex: 1;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content minmax(200px, 1fr);
     align-content: stretch;
     align-items: stretch;
     gap: 12px;
   }
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane),
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-result-pane) {
-    height: 100%;
+    height: auto;
     min-height: 0;
-    align-self: stretch;
+    align-self: start;
   }
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane) { display: flex; overflow: visible; }
-  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane > .toolbox-input-surface) { height: 100%; flex: 1; }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-result-pane) { align-self: stretch; }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane > .toolbox-input-surface) { height: auto; flex: none; }
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane .toolbox-balanced-textarea) {
-    height: auto;
-    min-height: 180px;
-    max-height: none;
-    flex: 1 1 auto;
+    height: 132px;
+    min-height: 132px;
+    max-height: 132px;
+    flex: none;
   }
 
   .page[data-page="tools"] .workspace :global(.toolbox-result-pane > .toolbox-results-block),
@@ -1467,6 +1546,17 @@
     max-height: none;
     flex: 1 1 auto;
   }
+
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-result-pane > .toolbox-results-block),
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-result-pane > .toolbox-empty-result) {
+    height: 100%;
+    min-height: 200px;
+    max-height: none;
+    flex: 1;
+    overflow: auto;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-result-empty-card .toolbox-empty-body) { min-height: 0; }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-segment-result-list) { max-height: none; }
   .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-result-pane > .toolbox-results-block),
   .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-result-pane > .toolbox-empty-result),
   .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-result-pane > .toolbox-state-surface) {
@@ -1489,8 +1579,8 @@
   }
 
   .page[data-page="tools"] .workspace :global(.toolbox-embedded-workspace:has(.toolbox-segment-shell) > main) { overflow-y: auto; }
-  .page[data-page="tools"] .workspace :global(.toolbox-segment-shell) { height: auto; min-height: 100%; }
-  .page[data-page="tools"] .workspace :global(.toolbox-segment-shell > .toolbox-two-column) { height: auto; flex: 1 0 480px; }
+  .page[data-page="tools"] .workspace :global(.toolbox-segment-shell) { height: 100%; min-height: 0; }
+  .page[data-page="tools"] .workspace :global(.toolbox-segment-shell > .toolbox-two-column) { height: auto; flex: 1; }
 }
 
 @media (max-width: 1199px) {
@@ -1502,7 +1592,7 @@
 .page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea),
 .page[data-page="tools"] .workspace :global(.toolbox-extract-layout .toolbox-extract-textarea) {
   box-sizing: border-box;
-  border: 1px solid var(--toolbox-crystal-line) !important;
+  border: 1px solid var(--toolbox-field-line, var(--toolbox-crystal-line)) !important;
   border-radius: 8px;
   background: var(--toolbox-crystal-field) !important;
   color: var(--foreground) !important;
@@ -1514,8 +1604,8 @@
 .page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea),
 .page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea) {
   align-self: center;
-  width: calc(100% - 28px);
-  margin: 12px 14px;
+  width: calc(100% - 32px);
+  margin: 12px 16px;
 }
 
 .page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea::placeholder),
@@ -1536,4 +1626,121 @@
   color: var(--foreground);
   font-size: 15px;
   font-weight: 700;
+}
+
+/* One card boundary per operation: options and the read-only quote remain
+   visible without adding another full-width boxed surface inside the card. */
+.page[data-page="tools"] .workspace :global(.toolbox-operation-options) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 2px 0 6px;
+  overflow: visible;
+  flex-wrap: wrap;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-extract-card > p[role="status"]) {
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  padding: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-format-panel) {
+  box-shadow: none;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-empty-result) {
+  border-style: solid;
+  box-shadow: none;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-results-heading),
+.page[data-page="tools"] .workspace :global(.toolbox-empty-heading),
+.page[data-page="tools"] .workspace :global(.toolbox-result-pane-heading),
+.page[data-page="tools"] .workspace :global(.toolbox-video-results-heading) {
+  border-bottom-color: color-mix(in srgb, var(--toolbox-crystal-line) 72%, var(--card));
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-primary-action) {
+  box-shadow: none;
+}
+
+/* Input and result cards share one heading inset and a compact empty body.
+   Only empty-card bodies are sized here; populated/error surfaces keep their
+   existing content sizing and scrolling. */
+.page[data-page="tools"] .workspace :global(.toolbox-empty-heading),
+.page[data-page="tools"] .workspace :global(.toolbox-results-heading),
+.page[data-page="tools"] .workspace :global(.toolbox-result-pane-heading),
+.page[data-page="tools"] .workspace :global(.toolbox-video-results-heading) {
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 12px 16px;
+  gap: 8px;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-input-title) { gap: 8px; }
+
+.page[data-page="tools"] .workspace :global(.toolbox-result-empty-card .toolbox-empty-body) {
+  min-height: 196px;
+  padding: 24px 16px;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-result-empty-card .toolbox-empty-body > div) {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-result-empty-card .toolbox-empty-body h3),
+.page[data-page="tools"] .workspace :global(.toolbox-result-empty-card .toolbox-empty-body p) {
+  margin-block: 0;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-card-actions),
+.page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-results-footer) {
+  padding-inline: 16px;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-results-block) {
+  padding-inline: 16px;
+}
+
+/* Light mode uses solid theme surfaces and visible boundaries at each level:
+   a cool workspace, white cards, and a slightly stronger input outline. */
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] {
+  --toolbox-crystal-panel: var(--card);
+  --toolbox-crystal-panel-strong: var(--secondary);
+  --toolbox-crystal-field: var(--background);
+  --toolbox-crystal-line: var(--border);
+  --toolbox-crystal-line-strong: var(--primary);
+  --toolbox-field-line: var(--input, var(--border));
+  --toolbox-duration-surface: var(--card);
+}
+
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] .workbenchFrame,
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] .stage {
+  background: var(--background);
+}
+
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] .tabIcon {
+  border-color: var(--input, var(--border));
+  background: var(--secondary);
+  color: var(--primary);
+}
+
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] .tabs .activeTab {
+  border-color: var(--primary);
+  background: var(--secondary);
+}
+
+
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] .workspace :global(.toolbox-results-heading),
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] .workspace :global(.toolbox-empty-heading),
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] .workspace :global(.toolbox-result-pane-heading),
+:global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] .workspace :global(.toolbox-video-results-heading) {
+  border-bottom-color: var(--border);
 }

@@ -1032,17 +1032,29 @@ function VideoExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: 
             <Video className="w-4 h-4 text-[var(--primary)]" />
             输入分享文本或视频链接
           </h3>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handlePaste}
-            disabled={loading}
-            className="toolbox-extract-paste-button h-9 shrink-0 px-3 text-xs"
-            title="从剪贴板粘贴分享文本或视频链接"
-          >
-            <ClipboardPaste className="mr-1.5 h-4 w-4" />
-            一键粘贴
-          </Button>
+          <div className="toolbox-heading-actions">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClear}
+              disabled={loading || (!urls && results.length === 0)}
+              className="toolbox-clear-button"
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" />
+              清空
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePaste}
+              disabled={loading}
+              className="toolbox-extract-paste-button h-9 shrink-0 px-3 text-xs"
+              title="从剪贴板粘贴分享文本或视频链接"
+            >
+              <ClipboardPaste className="mr-1.5 h-4 w-4" />
+              一键粘贴
+            </Button>
+          </div>
         </div>
         {embedded && (
           <div className="toolbox-inline-options toolbox-operation-options" aria-label="视频提取支持平台">
@@ -1093,17 +1105,8 @@ function VideoExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: 
           ))}
         </div>}
 
-        <div className={`toolbox-primary-actions toolbox-card-actions toolbox-command-row ${loading ? "toolbox-command-row-three" : "toolbox-command-row-two"} w-full flex gap-2 mt-3`}>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleClear}
-            disabled={loading || (!urls && results.length === 0)}
-            className="h-10"
-          >
-            <Trash2 className="mr-1.5 h-4 w-4" />
-            清空
-          </Button>
+        <div className={`toolbox-primary-actions toolbox-card-actions toolbox-command-row ${loading ? "toolbox-command-row-two" : "toolbox-command-row-one"} w-full flex gap-2 mt-3`}>
+
           <Button
             onClick={handleExtract}
             disabled={loading || !urls.trim() || runtimeGate.loading || Boolean(runtimeGate.error) || !runtimeGate.quote?.available}
@@ -1489,17 +1492,29 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate, onOpenHistory }: 
             <FileText className="w-4 h-4 text-[var(--primary)]" />
             输入分享文本或链接
           </h3>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handlePasteText}
-            disabled={loading}
-            className="toolbox-extract-paste-button h-9 shrink-0 px-3 text-xs"
-            title="从剪贴板粘贴分享文本或链接"
-          >
-            <ClipboardPaste className="mr-1.5 h-4 w-4" />
-            一键粘贴
-          </Button>
+          <div className="toolbox-heading-actions">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClearText}
+              disabled={loading || (!url && !result)}
+              className="toolbox-clear-button"
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" />
+              清空
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePasteText}
+              disabled={loading}
+              className="toolbox-extract-paste-button h-9 shrink-0 px-3 text-xs"
+              title="从剪贴板粘贴分享文本或链接"
+            >
+              <ClipboardPaste className="mr-1.5 h-4 w-4" />
+              一键粘贴
+            </Button>
+          </div>
         </div>
         {embedded && (
           <div className="toolbox-inline-options toolbox-operation-options" aria-label="文案纠正规则">
@@ -1543,17 +1558,8 @@ function TextExtractTab({ addHistory, retryDraft, runtimeGate, onOpenHistory }: 
           </p>
         )}
 
-        <div className="toolbox-card-actions toolbox-command-row toolbox-command-row-two flex items-center gap-2 mt-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleClearText}
-            disabled={loading || (!url && !result)}
-            className="h-10"
-          >
-            <Trash2 className="mr-1.5 h-4 w-4" />
-            清空
-          </Button>
+        <div className="toolbox-card-actions toolbox-command-row toolbox-command-row-one flex items-center gap-2 mt-3">
+
           <Button
             type="button"
             onClick={handleExtract}

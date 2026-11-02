@@ -82,6 +82,7 @@ import {
   shouldRejectOrdinaryChatModelOverride,
   shouldRejectOrdinaryUnpublishedChatModel,
 } from "@/lib/chat-model-access-policy";
+import { canSelectPublicChatModel, isValidPublicChatModelId } from "@/lib/chat-model-switching-policy";
 import { isPublishedTextBillingModel, isTextModelEligible } from "@/lib/text-model-eligibility";
 import {
   resolveMangaSkillOrchestration,
@@ -434,8 +435,7 @@ export async function POST(request: Request) {
       _preSecurityBypassAuthorized = adminSecurityBypassRequested;
     }
 
-    // 普通用户只能使用服务端为当前智能体/工作台解析出的模型。
-    // 自由对话同样由服务端固定选择模型，浏览器不能指定内部模型。
+    // 普通用户只能显式选择目录公开的 opaque ID；内部模型与代理仍需管理员能力。
     // 画布编译器是同一路由上的内部协议，仍需携带其受控模型选择。
     const modelAccessInput = {
       authenticated: Boolean(_preVerifiedUser?.userId),
@@ -448,8 +448,8 @@ export async function POST(request: Request) {
     if (shouldRejectOrdinaryChatModelOverride(modelAccessInput)) {
       return new Response(
         JSON.stringify({
-          error: "普通用户不能切换智能体模型，请使用管理员配置的默认模型",
-          code: "MODEL_OVERRIDE_ADMIN_ONLY",
+          error: "请选择有效的公开对话模型，不能指定内部模型或冲突的模型标识",
+          code: "MODEL_SELECTION_INVALID",
           retryable: false,
         }),
         { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
@@ -549,9 +549,9 @@ export async function POST(request: Request) {
       }
       if (_preModelControlsAuthorized && clientProxyUrl.trim()) agentProxyUrl = clientProxyUrl.trim();
     } else {
-      const explicitPublicId = typeof requestedModelId === "string" && requestedModelId.startsWith("pm_")
+      const explicitPublicId = isValidPublicChatModelId(requestedModelId)
         ? requestedModelId
-        : typeof requestedModel === "string" && requestedModel.startsWith("pm_")
+        : isValidPublicChatModelId(requestedModel)
           ? requestedModel
           : "";
       if (requestedModelOverridden === true && !explicitPublicId) {
@@ -823,6 +823,14 @@ export async function POST(request: Request) {
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
     }
+    // Source and bound-model authority come from the loaded row, never the request.
+    // Preserve the controlled canvas protocol and administrator internal-model authority.
+    if (publicModelId && !isCanvasInternalWorkflow && !canSelectPublicChatModel(agentId, agentRow)) {
+      return new Response(
+        JSON.stringify({ error: "当前智能体使用固定模型，不支持切换对话模型", code: "AGENT_MODEL_SELECTION_UNSUPPORTED", retryable: false }),
+        { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+      );
+    }
     if (agentRow?.category === "自用" && !await canUseOwnerInternalAgent(request)) {
       return new Response(
         JSON.stringify({ error: "该内部工具仅限超级管理员使用", code: "OWNER_INTERNAL_AGENT_REQUIRED", retryable: false }),
@@ -1000,7 +1008,7 @@ export async function POST(request: Request) {
       const provider = String(row.provider || "").toLowerCase();
       return endpoint.includes("yunwu.ai") || provider === "yunwu";
     };
-    if (model && (!llmModelRow || isRetiredYunwuModel(llmModelRow))) {
+    if (!publicModelId && model && (!llmModelRow || isRetiredYunwuModel(llmModelRow))) {
       llmModelRow = await getProductionLlmModelByName(model);
     }
     if (llmModelRow) {
@@ -1249,9 +1257,8 @@ export async function POST(request: Request) {
       ? (model || agentModel || LLM_DEFAULT_MODEL)
       : ((modelPresetConfig?.model_name as string) || model || agentModel || LLM_DEFAULT_MODEL);
 
-    // Free chat is a product-level fixed contract: GPT-5.6 is selected above
-    // and its own reasoning stream is always enabled. Browser flags and stale
-    // conversation data cannot downgrade this setting.
+    // Free chat retains its reasoning contract for the default and public
+    // selections. Browser flags and stale conversation data cannot downgrade it.
     if (agentId === FREE_CHAT_AGENT_ID) {
       agentDeepThinkingType = FREE_CHAT_DEEP_THINKING_TYPE;
     }

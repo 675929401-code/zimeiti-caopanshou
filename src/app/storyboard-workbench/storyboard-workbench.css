@@ -6213,40 +6213,49 @@ html[data-theme="soft-white"][data-mode="light"] .sbw-root .sbw-empty-state > sv
 
 /* Editor-only visual cleanup: solid theme surfaces and independent model panels.
    This scope excludes the reference-assets page, history and modal content. */
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main {
-  --sbw-editor-card: #fffdf8;
-  --sbw-editor-field: #ffffff;
-  --sbw-editor-media: #f3f1ea;
-  --sbw-editor-line: #d7d2c5;
-  --sbw-editor-text: #242b29;
-  --sbw-editor-muted: #65716c;
-  --sbw-editor-image: #fffdf8;
-  --sbw-editor-image-line: #d7d2c5;
-  --sbw-editor-image-accent: #176b57;
-  --sbw-editor-video: #fffdf8;
-  --sbw-editor-video-line: #d7d2c5;
-  --sbw-editor-video-accent: #176b57;
-  /* Local surface/text aliases affect this editor subtree only. The theme's
-     primary action colors, brand assets and outer stationary grid stay owned
-     by the existing theme. */
-  --card: #fffdf8;
-  --background: #f3f1ea;
-  --foreground: #242b29;
-  --muted: #f3f1ea;
-  --muted-foreground: #65716c;
-  --border: #d7d2c5;
-  --input: #d7d2c5;
-  --sbw-stroke: #d7d2c5;
-  --sbw-stroke-soft: #e4dfd5;
-  --sbw-field: #ffffff;
-  --sbw-subtle: #65716c;
-  --sbw-video-primary: #176b57;
-  --sbw-video-card: #fffdf8;
-  --sbw-video-field: #ffffff;
-  --sbw-video-text: #242b29;
-  --sbw-video-line: #d7d2c5;
-  --sbw-video-muted: #65716c;
+/* Capture parent-theme values before the main subtree remaps its local tokens.
+   The root's existing vs-workbench/theme bridge does not read these aliases. */
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor {
+  --sbw-theme-card: var(--card);
+  --sbw-theme-background: var(--background);
+  --sbw-theme-border: var(--border);
+  --sbw-theme-fg: var(--foreground);
+  --sbw-theme-muted-fg: var(--muted-foreground);
+  --sbw-theme-muted: var(--muted);
+  --sbw-theme-input: var(--input);
+  --sbw-theme-primary: var(--primary);
+  --sbw-theme-field: var(--vs-input-bg, var(--popover));
+}
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main {
+  --sbw-editor-card: var(--sbw-theme-card);
+  --sbw-editor-field: var(--sbw-theme-field);
+  --sbw-editor-media: var(--sbw-theme-background);
+  --sbw-editor-line: var(--sbw-theme-border);
+  --sbw-editor-text: var(--sbw-theme-fg);
+  --sbw-editor-muted: var(--sbw-theme-muted-fg);
+  --sbw-editor-image: var(--sbw-theme-card);
+  --sbw-editor-image-line: var(--sbw-theme-border);
+  --sbw-editor-image-accent: var(--sbw-theme-primary);
+  --sbw-editor-video: var(--sbw-theme-card);
+  --sbw-editor-video-line: var(--sbw-theme-border);
+  --sbw-editor-video-accent: var(--sbw-theme-primary);
+  --card: var(--sbw-theme-card);
+  --background: var(--sbw-theme-background);
+  --foreground: var(--sbw-theme-fg);
+  --muted: var(--sbw-theme-muted);
+  --muted-foreground: var(--sbw-theme-muted-fg);
+  --border: var(--sbw-theme-border);
+  --input: var(--sbw-theme-input);
+  --sbw-stroke: var(--sbw-theme-border);
+  --sbw-stroke-soft: color-mix(in srgb, var(--sbw-theme-border) 70%, var(--sbw-theme-card));
+  --sbw-field: var(--sbw-theme-field);
+  --sbw-subtle: var(--sbw-theme-muted-fg);
+  --sbw-video-primary: var(--sbw-theme-primary);
+  --sbw-video-card: var(--sbw-theme-card);
+  --sbw-video-field: var(--sbw-theme-field);
+  --sbw-video-text: var(--sbw-theme-fg);
+  --sbw-video-line: var(--sbw-theme-border);
+  --sbw-video-muted: var(--sbw-theme-muted-fg);
 }
 
 html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root.sbw-editor .sbw-main {
@@ -6256,12 +6265,12 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .sbw-root.sbw-editor .sbw-ma
   --sbw-editor-line: #393f49;
   --sbw-editor-text: #f0f6f6;
   --sbw-editor-muted: #a4b3b8;
-  --sbw-editor-image: #183431;
-  --sbw-editor-image-line: #37675e;
-  --sbw-editor-image-accent: #77dfc7;
-  --sbw-editor-video: #272c45;
-  --sbw-editor-video-line: #505c88;
-  --sbw-editor-video-accent: #b2beff;
+  --sbw-editor-image: var(--sbw-editor-card, var(--card));
+  --sbw-editor-image-line: var(--sbw-editor-line, var(--border));
+  --sbw-editor-image-accent: var(--primary);
+  --sbw-editor-video: var(--sbw-editor-card, var(--card));
+  --sbw-editor-video-line: var(--sbw-editor-line, var(--border));
+  --sbw-editor-video-accent: var(--primary);
 }
 
 html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-rail {
@@ -6466,54 +6475,201 @@ html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-shared-media-fra
   order: 2;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar {
   background: var(--sbw-editor-card) !important;
   border-color: var(--sbw-editor-line) !important;
   color: var(--sbw-editor-text);
 }
 
 html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-group,
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-group,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-mode-group {
   background: var(--sbw-editor-card) !important;
   border-color: var(--sbw-editor-line) !important;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active),
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active) {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-ratio-control > button:not(.is-active) {
   background: var(--sbw-editor-card) !important;
   color: var(--sbw-editor-muted) !important;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag {
-  background: #f6f4ed !important;
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-toolbar .sbw-control-tag {
+  background: var(--sbw-theme-background) !important;
   border-color: var(--sbw-editor-line) !important;
   color: var(--sbw-editor-image-accent) !important;
 }
 
 html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-stage-label strong,
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-stage-label strong,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-zone-title-main {
   color: var(--sbw-editor-text) !important;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button {
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button {
   background: var(--sbw-editor-card) !important;
 }
 
 html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:hover:not(:disabled),
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
-  background: #f6f4ed !important;
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button:focus-visible {
+  background: color-mix(in srgb, var(--sbw-theme-primary) 4%, var(--sbw-theme-card)) !important;
 }
 
-html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active,
-html[data-theme="lattice"][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active {
-  background: #f1f1e8 !important;
+html[data-theme][data-mode="light"] .sbw-root.sbw-editor .sbw-main .sbw-model-list > button.is-active {
+  background: color-mix(in srgb, var(--sbw-theme-primary) 7%, var(--sbw-theme-card)) !important;
+}
+
+/* Global model parameters keep the same slots across model capabilities. */
+.sbw-root .sbw-global-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.sbw-root .sbw-global-toolbar .sbw-toolbar-settings {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: center;
+  justify-content: start;
+  gap: 8px;
+}
+.sbw-root .sbw-global-toolbar .sbw-control-group {
+  flex-wrap: nowrap;
+  max-width: none;
+  gap: 8px;
+}
+.sbw-root .sbw-global-toolbar .sbw-control-tag {
+  width: 76px;
+  padding-inline: 5px;
+  text-align: center;
+}
+.sbw-root .sbw-global-toolbar .sbw-ratio-control {
+  box-sizing: border-box;
+  width: 144px;
+  min-width: 144px;
+  flex: 0 0 144px;
+  height: 36px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.sbw-root .sbw-global-toolbar .sbw-ratio-control > button {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding-inline: 2px;
+}
+.sbw-root .sbw-global-toolbar .sbw-resolution-select {
+  width: 82px;
+  min-width: 82px;
+  max-width: 82px;
+  height: 36px;
+  box-sizing: border-box;
+  padding-inline: 6px 18px;
+}
+.sbw-root .sbw-global-toolbar .sbw-mode-group {
+  grid-column: 1;
+  grid-row: 2;
+  width: max-content;
+}
+.sbw-root .sbw-global-toolbar .sbw-toolbar-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: auto;
+  align-self: center;
+  justify-content: flex-end;
+}
+.sbw-root .sbw-global-toolbar .sbw-toolbar-actions button,
+.sbw-root .sbw-global-toolbar .sbw-history-action,
+.sbw-root .sbw-global-toolbar .sbw-history-action button {
+  width: auto;
+  min-width: 0;
+  min-height: 36px;
+  margin: 0;
+}
+.sbw-root .sbw-global-toolbar .sbw-toolbar-actions svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.sbw-root .sbw-global-toolbar .sbw-toolbar-actions button { gap: 6px; }
+.sbw-root .sbw-global-toolbar .sbw-parameter-info {
+  grid-column: 2;
+  grid-row: 2;
+  box-sizing: border-box;
+  width: 424px;
+  max-width: 424px;
+  min-width: 0;
+  /* A compact, unframed row keeps model changes stable without a large card. */
+  height: 72px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 0;
+  font-size: 11px;
+  line-height: 14px;
+}
+.sbw-root .sbw-global-toolbar .sbw-parameter-info-panel {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: start;
+  gap: 4px 8px;
+  overflow-wrap: anywhere;
+}
+.sbw-root .sbw-global-toolbar .sbw-parameter-info-panel p { margin: 0; }
+.sbw-root .sbw-global-toolbar .sbw-parameter-info-panel .video-duration-behavior-notice,
+.sbw-root .sbw-global-toolbar .sbw-parameter-info-panel .sbw-image-ratio-notice { flex: 0 0 100%; }
+.sbw-root .sbw-global-toolbar .sbw-token-budget-label {
+  display: grid;
+  order: -1;
+  flex: 0 0 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  grid-template-columns: minmax(0, 1fr) 88px;
+  align-items: center;
+  gap: 4px 6px;
+  font-weight: 600;
+}
+.sbw-root .sbw-global-toolbar .sbw-token-budget-label small {
+  grid-column: 1 / -1;
+  max-height: 24px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.sbw-root .sbw-global-toolbar .sbw-token-budget-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 5px 7px;
+}
+
+/* Desktop toolbar actions stay on one line; smaller desktops give the row its own track. */
+@media (max-width: 1699px) {
+  .sbw-root .sbw-global-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .sbw-root .sbw-global-toolbar .sbw-toolbar-actions { grid-column: 1; grid-row: 2; }
+}
+/* One restrained border owns each editor surface; focus remains explicit. */
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main :is(.sbw-toolbar, .sbw-control-group, .sbw-mode-group, .sbw-shot-card, .sbw-flow-section, .sbw-flow-prompt textarea, .sbw-resolution-select, .sbw-ratio-control > button, .sbw-mode-toggle button) {
+  border-width: 1px !important;
+  box-shadow: none !important;
+}
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main :is(.sbw-toolbar, .sbw-control-group, .sbw-mode-group, .sbw-shot-card) {
+  background: var(--card) !important;
+}
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main .sbw-global-toolbar :is(.sbw-batch-action, .sbw-toolbar-add-card, .sbw-history-action button) {
+  min-height: 36px;
+  border-width: 1px !important;
+  box-shadow: none !important;
+}
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main :is(button, textarea, select, input):focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 2px;
 }

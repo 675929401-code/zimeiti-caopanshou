@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { displayModelAvatar, isModelAvatarImage, modelBrandAsset, modelInitial, resolveModelBrand } from "@/lib/model-brand";
+import { modelInitial, resolveModelBadgeAppearance } from "@/lib/model-brand";
 import styles from "./model-badge.module.css";
 
 type ModelBadgeProps = {
@@ -23,21 +23,16 @@ export function ModelBadge({
   className = "",
   "data-video-model-avatar": videoModelAvatar,
 }: ModelBadgeProps) {
-  const avatar = String(avatarUrl || "").trim();
-  const brand = resolveModelBrand(name, ...identity);
-  const avatarSource = isModelAvatarImage(avatar) ? displayModelAvatar(avatar) : "";
-  const brandSource = brand ? modelBrandAsset(brand) : "";
-  const genericSource = modelBrandAsset("generic");
-  const imageSources = [avatarSource, brandSource, genericSource].filter((source, index, values) => source && values.indexOf(source) === index);
+  const { brand, candidates } = resolveModelBadgeAppearance(name, avatarUrl, identity);
+  const sourceIdentity = JSON.stringify([name, avatarUrl, identity, candidates]);
   const [failedSources, setFailedSources] = useState<string[]>([]);
 
-  useEffect(() => setFailedSources([]), [avatarSource, brandSource, genericSource]);
+  useEffect(() => setFailedSources([]), [sourceIdentity]);
 
   const initial = useMemo(() => modelInitial(name), [name]);
-  const imageSource = imageSources.find((source) => !failedSources.includes(source)) || "";
-  const renderedKind = imageSource
-    ? imageSource === avatarSource ? "avatar" : imageSource === genericSource ? "generic" : "brand"
-    : "initial";
+  const candidate = candidates.find(({ source }) => !failedSources.includes(source));
+  const imageSource = candidate?.source || "";
+  const renderedKind = candidate?.kind || "initial";
 
   return (
     <span

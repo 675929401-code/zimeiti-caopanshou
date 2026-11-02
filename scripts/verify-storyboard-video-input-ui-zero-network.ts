@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { resolveStoryboardVideoInputs, normalizeStoryboardVideoInputs, isStoryboardImageWorkflow, getStoryboardVideoInputRoles } from "../src/lib/storyboard-video-inputs";
+import { resolveStoryboardAutomaticVideoInputs } from "../src/lib/storyboard-automatic-video-inputs";
+import { resolveStoryboardVideoSameKeyRetryAttempt } from "../src/lib/storyboard-video-retry";
 import { getAiVideoPageInputCapabilities, resolveAiVideoInputAspectRatio } from "../src/lib/ai-video-page-capabilities";
 import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,7 +22,7 @@ const declarations = names.map(name => {
 }).join("\n");
 const harnessModule = { exports: {} as Record<string, (...args: any[]) => any> };
 runInNewContext(ts.transpileModule(`${declarations}\nmodule.exports = {${names.join(",")}};`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
-  module: harnessModule, resolveAiVideoInputAspectRatio, resolveStoryboardVideoInputs, normalizeStoryboardVideoInputs, isStoryboardImageWorkflow, resolveStoryboardExecutionMode, imageDimensionsMatchAspectRatio, isUnavailableCompletedStoryboardImage,
+  module: harnessModule, resolveAiVideoInputAspectRatio, resolveStoryboardAutomaticVideoInputs, resolveStoryboardVideoInputs, normalizeStoryboardVideoInputs, isStoryboardImageWorkflow, resolveStoryboardExecutionMode, imageDimensionsMatchAspectRatio, isUnavailableCompletedStoryboardImage,
 });
 const gate = harnessModule.exports.storyboardCardVideoInputIssue;
 const run = { id: "fixture-project", executionMode: "ordinary", ratio: "16:9", imageRatio: "16:9", videoModelId: "model", videoDuration: 8, videoResolution: "720p", cards: [] as any[] };
@@ -30,10 +32,10 @@ const textModel = { workflowInputMode: "text", supportsImageInput: false };
 assert.equal(gate(textModel, card, run), "", "text video must not require a storyboard image");
 const sourceModel = { ...textModel, requiresSourceVideo: true };
 assert.match(gate(sourceModel, card, run), /源视频/u);
-assert.equal(gate(sourceModel, { ...card, videoInputs: { sourceVideoUrl: video } }, run), "");
+assert.match(gate(sourceModel, { ...card, videoInputs: { sourceVideoUrl: video } }, run), /源视频/u, "hidden old source cannot enable the automatic workbench");
 const imageModel = { workflowInputMode: "flexible_image", supportsImageInput: true, requiresImage: true, maxReferenceImages: 1 };
 assert.match(gate(imageModel, card, run), /分镜图/u);
-assert.equal(gate(imageModel, { ...card, videoInputs: { useStoryboardImage: false, firstFrameUrl: image } }, run), "");
+assert.match(gate(imageModel, { ...card, videoInputs: { useStoryboardImage: false, firstFrameUrl: image } }, run), /本段分镜图/u, "hidden custom first frame cannot substitute the current image");
 const valid = { ...card, imageStatus: "done", imageUrl: image, imageValidatedAt: Date.now(), imageWidth: 1600, imageHeight: 900 };
 assert.equal(gate(imageModel, valid, run), "");
 const portrait = { ...valid, imageWidth: 900, imageHeight: 1600, imageRequestSnapshot: { aspectRatio: "9:16" } };
@@ -43,13 +45,19 @@ assert.match(gate({ ...imageModel, firstFrameRatioPolicy: "adaptive" }, { ...por
 assert.match(gate(imageModel, { ...valid, imageReferenceState: "stale" }, run), /参考已更换/u);
 assert.equal(gate(textModel, { ...valid, imageReferenceState: "stale" }, run), "", "unused stale image must not block text video");
 assert.match(gate(textModel, card, { ...run, executionMode: "chained" }), /切换普通模式/u);
-assert.match(gate(imageModel, { ...card, videoInputs: { useStoryboardImage: false, firstFrameUrl: image } }, { ...run, executionMode: "chained" }), /切换普通模式/u);
+assert.match(gate(imageModel, { ...card, videoInputs: { useStoryboardImage: false, firstFrameUrl: image } }, { ...run, executionMode: "chained" }), /本段分镜图/u);
+assert.match(gate(textModel, card, { ...run, executionMode: "reference" }), /切换普通模式/u);
 const frameModel = { ...imageModel, workflowInputMode: "first_last_frame", requiresFirstFrame: true, requiresLastFrame: true, maxReferenceImages: 2 };
 assert.match(gate(frameModel, valid, run), /尾帧/u);
-assert.equal(gate(frameModel, { ...valid, videoInputs: { lastFrameUrl: image } }, run), "");
+assert.match(gate(frameModel, { ...valid, videoInputs: { lastFrameUrl: image } }, run), /尾帧/u, "retained tails do not satisfy the simplified workbench");
 const lipModel = { ...imageModel, workflowInputMode: "image_audio_lipsync", supportsAudioInput: true, minReferenceAudios: 1, maxReferenceAudios: 1 };
 assert.match(gate(lipModel, valid, run), /音频/u);
-assert.equal(gate(lipModel, { ...valid, videoInputs: { audioUrl: audio } }, run), "");
+assert.match(gate(lipModel, { ...valid, videoInputs: { audioUrl: audio } }, run), /音频/u);
+for (const executionMode of ["ordinary", "reference", "chained"]) {
+  for (const [special, reason] of [[frameModel, /尾帧/u], [lipModel, /音频/u], [sourceModel, /源视频/u], [{ ...imageModel, minReferenceImages: 2, maxReferenceImages: 3 }, /至少需要2张/u]] as Array<[Record<string, unknown>, RegExp]>) {
+    assert.match(gate(special, { ...valid, videoInputs: { firstFrameUrl: image, lastFrameUrl: image, audioUrl: audio, sourceVideoUrl: video } }, { ...run, executionMode }), reason, `${executionMode} reports its actual unsupported required input before generic mode guidance`);
+  }
+}
 assert.equal(harnessModule.exports.batchCardInput(card, "images"), harnessModule.exports.batchCardInput({ ...card, videoInputs: { sourceVideoUrl: video } }, "images"), "video inputs must not become image-generation references");
 for (const videoInputs of [{ firstFrameUrl: image }, { lastFrameUrl: image }, { audioUrl: audio }, { referenceImageUrls: [image] }, { referenceAudioUrls: [audio] }, { sourceVideoUrl: video }, { useStoryboardImage: false }]) {
   const before = { ...run, cards: [card] };
@@ -66,7 +74,7 @@ const findFingerprint = (node: ts.Node) => {
 findFingerprint(ast); assert.ok(fingerprintObject, "real video request fingerprint object missing");
 const evaluateFingerprint = (inputCard: Record<string, unknown>, policy: { firstFrameRatioPolicy?: string } = {}) => {
   const holder = { exports: undefined as unknown };
-  const resolved = resolveStoryboardVideoInputs({ ...imageModel, ...policy }, inputCard);
+  const resolved = resolveStoryboardAutomaticVideoInputs({ ...imageModel, ...policy }, inputCard);
   runInNewContext(ts.transpileModule(`module.exports = (${fingerprintObject!.getText(ast)});`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
     { module: holder, current: run, card: { ...inputCard, order: 1 }, model: { ...imageModel, id: "model" }, executionPrompt: "编译后提示词", duration: 8, resolution: "720p", tokenBilling: undefined,
       submissionVideoInputs: resolved, submissionAspectRatio: resolveAiVideoInputAspectRatio(policy, run.ratio, resolved.input), effectiveImageRatio: harnessModule.exports.effectiveImageRatio, allowsIndependentReferenceRatio: harnessModule.exports.allowsIndependentReferenceRatio,
@@ -75,10 +83,10 @@ const evaluateFingerprint = (inputCard: Record<string, unknown>, policy: { first
 };
 assert.deepEqual(evaluateFingerprint(valid), { runId: run.id, cardId: card.id, cardOrder: 1, modelId: "model", prompt: "编译后提示词", duration: 8, aspectRatio: "16:9", sourceImageAspectRatio: "16:9", sourceImageDimensions: [1600, 900], referenceAspectRatioPolicy: "same", resolution: "720p", sourceImage: image }, "untouched legacy cards must preserve the exact original fingerprint fields for same-key retries");
 assert.ok(evaluateFingerprint({ ...valid, videoInputs: { useStoryboardImage: true } }).videoInputs, "explicit video inputs must bind helper identity");
-assert.equal(evaluateFingerprint({ ...card, videoInputs: { firstFrameUrl: image } }, { firstFrameRatioPolicy: "adaptive" }).aspectRatio, "adaptive", "actual video fingerprint must bind the visible first-frame ratio policy");
+assert.equal(evaluateFingerprint({ ...valid, videoInputs: { firstFrameUrl: image } }, { firstFrameRatioPolicy: "adaptive" }).aspectRatio, "adaptive", "actual video fingerprint must bind the current storyboard image ratio policy");
 assert.match(source, /videoInputs: submissionVideoInputs\.identity/u);
 assert.match(source, /\.\.\.submissionVideoInputs\.requestFields/u);
-assert.match(source, /JSON\.stringify\(resolveStoryboardVideoInputs\(model, \{ \.\.\.item, videoPrompt: executionPrompt \}\)\.identity\) !== submissionVideoInputIdentity/u);
+assert.match(source, /JSON\.stringify\(resolveStoryboardAutomaticVideoInputs\(model, \{ \.\.\.item, videoPrompt: executionPrompt \}\)\.identity\) !== submissionVideoInputIdentity/u);
 assert.ok(source.indexOf("const projectSaved = await saveStoryboardProject") < source.indexOf('const submitted = await fetchStoryboardJson("/api/video/generate"'), "save/readback must precede provider submission");
 assert.match(source, /videoStatus === "failed" && card\.videoRetryable !== true/u);
 assert.match(source, /resolveStoryboardVideoSameKeyRetryAttempt/u);
@@ -100,9 +108,10 @@ const collectInputPositions = (node: ts.Node) => {
   ts.forEachChild(node, collectInputPositions);
 };
 collectInputPositions(ast);
-assert.ok(inputNodes.imagePrompt && inputNodes.videoPrompt && inputNodes.materials);
+assert.ok(inputNodes.imagePrompt && inputNodes.videoPrompt);
+assert.equal(inputNodes.materials, undefined, "workbench no longer renders the manual materials editor");
 assert.ok(inputNodes.imagePrompt.getStart(ast) < inputNodes.videoPrompt.getStart(ast));
-assert.ok(inputNodes.videoPrompt.getEnd() < inputNodes.materials.getStart(ast), "material editor follows the 02 video prompt in the actual component tree");
+assert.doesNotMatch(source, /StoryboardVideoInputEditor|updateCardVideoInputs|uploadCardVideoInput|videoInputUploadLocksRef|videoInputUploadingIds/u, "remove all unused editor state, upload callbacks and locks");
 const editorModule = { exports: {} as { render?: (props: Record<string, unknown>) => React.ReactNode } };
 runInNewContext(ts.transpileModule(`${editor.getText()}\nmodule.exports = { render: StoryboardVideoInputEditor };`, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -136,6 +145,26 @@ for (const test of [
 }
 for (const mode of ["multi_image", "image_audio_lipsync", "multi_image_audio"] as const) {
   const model = { workflowInputMode: mode, supportsImageInput: true, minReferenceImages: 1, maxReferenceImages: 3 };
-  assert.equal(gate(model, { ...card, videoInputs: { useStoryboardImage: false, firstFrameUrl: image } }, run), "", `${mode} custom main image must pass the actual component gate`);
+  assert.match(gate(model, { ...card, videoInputs: { useStoryboardImage: false, firstFrameUrl: image } }, run), /本段分镜图/u, `${mode} cannot use hidden old custom images`);
+  assert.equal(gate(model, { ...valid, videoInputs: { useStoryboardImage: false, firstFrameUrl: image } }, run), "", `${mode} automatically uses the validated current image`);
 }
-console.log("Storyboard video UI gates PASS: actual component functions, seven input classes, chained protection, stale-image scope, batch identity changes, typed request spread, save-before-submit and unknown/same-key guards. Zero network.");
+// Every dispatch, preparation and visible gate resolves the same automatic projection.
+assert.doesNotMatch(source, /resolveStoryboardVideoInputs\(/u);
+assert.match(source, /continuousVideoInputFingerprint: storyboardAutomaticVideoProductionFingerprint\(current, card/u);
+assert.match(source, /storyboardAutomaticVideoProductionBlocker\(current\)/u);
+assert.doesNotMatch(source, /storyboardProductionVideoFingerprint\(current, card|storyboardProductionBlocker\(current\)/u, "automatic capture and admission must never compare raw retained custom inputs");
+assert.ok((source.match(/resolveStoryboardAutomaticVideoInputs\(/gu) || []).length >= 10);
+const continuousStart = source.slice(source.indexOf("const startContinuousProduction ="), source.indexOf("const session = continuousAuthorizationRef.current;", source.indexOf("const startContinuousProduction =")));
+assert.doesNotMatch(continuousStart, /card\.videoInputs|input\?\.useStoryboardImage/u, "retained hidden configuration cannot block continuous admission");
+assert.match(source, /使用当前分镜图和本段视频提示词/u);
+assert.match(source, /仅使用当前视频提示词，不使用图片或其他素材/u);
+assert.doesNotMatch(source, /或改用自定义视频素材|或关闭使用本段分镜图/u);
+assert.match(source, /showVideoStartIssue && !videoViewOnly/u, "display blocker text after removing its editor");
+const oldCustom = { ...valid, videoInputs: { useStoryboardImage: false, firstFrameUrl: "https://assets.example.invalid/old.png" } };
+const oldCustomFingerprint = JSON.stringify({ ...evaluateFingerprint(oldCustom), videoInputs: resolveStoryboardVideoInputs(imageModel, oldCustom).identity });
+const automaticFingerprint = JSON.stringify(evaluateFingerprint(oldCustom));
+assert.notEqual(oldCustomFingerprint, automaticFingerprint);
+assert.throws(() => resolveStoryboardVideoSameKeyRetryAttempt({ currentFingerprint: automaticFingerprint, previousRequestId: "old-request", previousFingerprint: oldCustomFingerprint, sameRequestKeyRequired: true }), /VIDEO_RETRY_FINGERPRINT_MISMATCH_NOT_DISPATCHED/u, "same-key old custom requests refuse a changed automatic request rather than minting a key");
+const legacyFingerprint = JSON.stringify(evaluateFingerprint(valid));
+assert.equal(resolveStoryboardVideoSameKeyRetryAttempt({ currentFingerprint: legacyFingerprint, previousRequestId: "legacy-request", previousFingerprint: legacyFingerprint, sameRequestKeyRequired: true })?.clientRequestId, "legacy-request", "untouched legacy image retry preserves its original key");
+console.log("Storyboard automatic video UI gates PASS: current-image-only dispatch, all entry points, reference/chained protection, batch/save/ratio/unknown guards, legacy same-key stability and changed-input rejection. Generic editor contracts remain tested. Zero network.");

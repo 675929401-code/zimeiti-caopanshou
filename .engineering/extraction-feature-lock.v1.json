@@ -18,6 +18,16 @@
     "verificationBoundary": "Source and isolated browser recovery verified before initial sealing; full current-build acceptance is recorded separately in the immutable handoff, not inferred from these hashes.",
     "sourceLockEvidence": ".codex-evidence/extraction-incident-20261029-9ea52c8d/source-lock-tests-unique/run-0BvvYi/report.json"
   },
+  "authorizedReseals": [
+    {
+      "date": "2026-11-02",
+      "session": "1dd66160-98dd-4136-b525-44d7e5884437",
+      "userRequest": "工具箱文案和视频提取布局优化；清空和粘贴放在同一排，压缩输入框下方留白。",
+      "scope": "src/app/extract/page.tsx UI only: relocate existing clear buttons beside paste; preserve callbacks, disabled conditions, extraction requests, status and billing.",
+      "previousSha256": "9fa32d5ad142deea2585b53922ffd84deebf2ea5fb63746b69fc7c92e37d9f9f",
+      "review": "Independent compatibility_release_review verified exact before/after delta and unchanged handlers. TypeScript and scoped ESLint passed; current-build browser acceptance is recorded separately."
+    }
+  ],
   "configurationBaseline": {
     "scope": "read-only local metadata snapshot; no secrets",
     "pluginId": "7d4a7de7-0318-4f37-ad9f-62f4516979b3",
@@ -100,7 +110,7 @@
     },
     {
       "path": "src/app/extract/page.tsx",
-      "sha256": "9fa32d5ad142deea2585b53922ffd84deebf2ea5fb63746b69fc7c92e37d9f9f"
+      "sha256": "4d955b4b842c1053060e9bde894140f38432256f9bddb5b31c60981fd03bd544"
     },
     {
       "path": "src/hooks/use-extraction-attempt-status.ts",

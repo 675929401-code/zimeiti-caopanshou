@@ -33,6 +33,7 @@ import { MessageBubble, inferAgentInstruction } from "./chat/message-item";
 import { ChatErrorBoundary } from "./chat/chat-error-boundary";
 import { ChatModelSwitcher } from "./chat/chat-model-switcher";
 import { useChatModelSelection } from "@/hooks/use-chat-model-selection";
+import { canSelectPublicChatModel } from "@/lib/chat-model-switching-policy";
 import { extractAllStructuredPrompts } from "./chat/message-content";
 import { NavButton } from "@/components/sub-page-header";
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
@@ -526,15 +527,24 @@ export function ChatView() {
   // BUG FIX: activeConv 可能为 undefined（如删除当前对话后），所有后续访问必须用 ?.
   // 不在 hooks 中间 early return（违反 React hooks 规则），改为安全访问
 
-  // 管理员在自由对话里热切换 GPT / Claude：只影响下一条消息，已有回复不变。
-  const isFreeChatConversation = (activeConv?.agentId || state.activeAgentId) === FREE_CHAT_AGENT_ID;
+  const requestedModelAgentId = bipAgentId || activeConv?.agentId || state.activeAgentId;
+  const modelTargetAgent = state.agents.find((agent) => agent.id === requestedModelAgentId || agent.botId === requestedModelAgentId);
+  const modelTargetAgentId = modelTargetAgent?.id || requestedModelAgentId;
+  const isFreeChatConversation = modelTargetAgentId === FREE_CHAT_AGENT_ID;
+  const canSwitchChatModel = Boolean(state.auth.isAuthenticated && state.auth.user?.id)
+    && canSelectPublicChatModel(modelTargetAgentId, modelTargetAgent);
   const chatModel = useChatModelSelection({
-    enabled: isAdmin && isFreeChatConversation,
+    enabled: canSwitchChatModel,
+    accountId: state.auth.user?.id ?? null,
     conversationId: activeConv?.id ?? state.activeConversationId,
+    targetAgentId: modelTargetAgentId ?? null,
+    useFreeChatDefault: isFreeChatConversation,
   });
-  const chatModelOverride = isAdmin && isFreeChatConversation ? chatModel.explicitModelId : null;
-  // 重试 / 继续生成沿用的模型覆盖；只有当前智能体就是自由对话时才生效。
-  const activeChatModelOverride = state.activeAgentId === FREE_CHAT_AGENT_ID ? chatModelOverride ?? undefined : undefined;
+  const chatModelOverride = canSwitchChatModel ? chatModel.explicitModelId : null;
+  const modelOverrideForTarget = (targetAgentId: string | null | undefined) => {
+    const canonicalId = state.agents.find((agent) => agent.id === targetAgentId || agent.botId === targetAgentId)?.id || targetAgentId;
+    return canonicalId === modelTargetAgentId ? chatModelOverride ?? undefined : undefined;
+  };
 
   // A single scroll controller owns the transcript position. Layout changes must
   // never be mistaken for user scrolling, otherwise streaming content oscillates.
@@ -720,7 +730,7 @@ export function ChatView() {
           msg.content,
           undefined,
           undefined,
-          state.activeAgentId === FREE_CHAT_AGENT_ID ? chatModelOverride ?? undefined : undefined,
+          chatModelOverride ?? undefined,
           undefined,
           deepThinking,
           webSearch,
@@ -898,8 +908,8 @@ export function ChatView() {
     const preservedAgentId = editingMessage?.agentId;
     const imageKeys = pendingImages.length > 0 ? pendingImages.map(img => img.key) : undefined;
     const targetAgentId = mentionedAgentId || preservedAgentId || state.activeAgentId;
-    // 模型热切换只作用于自由对话本体：@ 其他智能体时仍使用该智能体自己的模型。
-    const targetModelOverride = targetAgentId === FREE_CHAT_AGENT_ID ? chatModelOverride ?? undefined : undefined;
+    // 覆盖仅属于当前目标；@ 其他智能体时保留该智能体自己的模型。
+    const targetModelOverride = modelOverrideForTarget(targetAgentId);
     const deepThinkingValue = targetAgentId === FREE_CHAT_AGENT_ID
       ? FREE_CHAT_DEEP_THINKING_TYPE
       : undefined;
@@ -1129,13 +1139,15 @@ export function ChatView() {
                   <Search className="h-3.5 w-3.5" />
                 </button>
               )}
-              {isAdmin && isFreeChatConversation && (
+              {canSwitchChatModel && (
                 <ChatModelSwitcher
+                  disabled={Boolean(activeConv && isConvStreaming(activeConv.id))}
                   status={chatModel.status}
                   groups={chatModel.groups}
                   selectedModelId={chatModel.effectiveModelId}
                   selectedLabel={chatModel.selectedLabel}
                   onSelect={(model) => {
+                    if (activeConv && isConvStreaming(activeConv.id)) return;
                     chatModel.select(model);
                     toast.success(`已切换到 ${model.label}，下一条消息生效`);
                   }}
@@ -1276,7 +1288,7 @@ export function ChatView() {
                       prevUserMsg.content,
                       msg.agentId || prevUserMsg.agentId || activeConv?.agentId,
                       prevUserMsg.images,
-                      activeChatModelOverride,
+                      modelOverrideForTarget(msg.agentId || prevUserMsg.agentId || activeConv?.agentId),
                       undefined,
                       retryDeepThinking,
                       retryWebSearch,
@@ -1306,7 +1318,7 @@ export function ChatView() {
                     msg.content,
                     msg.agentId || activeConv?.agentId,
                     msg.images,
-                    activeChatModelOverride,
+                    modelOverrideForTarget(msg.agentId || activeConv?.agentId),
                     undefined,
                     retryDeepThinking,
                     retryWebSearch,
@@ -1336,7 +1348,7 @@ export function ChatView() {
                   "继续生成",
                   msg.agentId || previousUserMessage?.agentId || activeConv?.agentId,
                   previousUserMessage?.images,
-                  activeChatModelOverride,
+                  modelOverrideForTarget(msg.agentId || previousUserMessage?.agentId || activeConv?.agentId),
                   continuationInstruction,
                   retryDeepThinking,
                   webSearchOverride ? true : undefined,

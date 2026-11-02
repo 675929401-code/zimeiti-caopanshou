@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 对话头部模型切换器（仅管理员显示）。
+ * 对话头部模型切换器。
  * 只负责展示与选择：目录与持久化由 useChatModelSelection 统一管理，
  * 真实调用仍使用目录返回的 pm_ 标识，界面文案不参与路由。
  */
@@ -18,9 +18,11 @@ import {
 import { Check, ChevronDown, Cpu, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatModelGroup, ChatModelOption } from "@/lib/chat-model-catalog";
+import { chatModelSwitcherDisplayGroups } from "@/lib/chat-model-switcher-display";
 import type { ChatModelCatalogStatus } from "@/hooks/use-chat-model-selection";
 
 export interface ChatModelSwitcherProps {
+  disabled?: boolean;
   status: ChatModelCatalogStatus;
   groups: ChatModelGroup[];
   selectedModelId: string | null;
@@ -33,6 +35,7 @@ const TRIGGER_BASE =
   "ml-1 inline-flex h-6 max-w-[13rem] items-center gap-1 rounded-md border px-2 text-[11px] transition-colors";
 
 export function ChatModelSwitcher({
+  disabled = false,
   status,
   groups,
   selectedModelId,
@@ -40,6 +43,7 @@ export function ChatModelSwitcher({
   onSelect,
   onReload,
 }: ChatModelSwitcherProps) {
+  const visibleGroups = chatModelSwitcherDisplayGroups(groups);
   if (status === "loading") {
     return (
       <span
@@ -57,6 +61,7 @@ export function ChatModelSwitcher({
     return (
       <button
         type="button"
+        disabled={disabled}
         onClick={(event) => {
           event.stopPropagation();
           onReload();
@@ -75,11 +80,11 @@ export function ChatModelSwitcher({
     );
   }
 
-  if (status !== "ready" || groups.length === 0) {
+  if (status !== "ready" || visibleGroups.length === 0) {
     return (
       <span
         className={cn(TRIGGER_BASE, "border-[var(--border)] text-[var(--text-secondary)] opacity-80")}
-        title="当前没有可切换的 GPT / Claude 模型，继续使用服务端默认模型"
+        title={`当前菜单没有可切换模型；当前选择仍为${selectedLabel || "服务端默认模型"}`}
         data-testid="chat-model-empty"
       >
         <Cpu className="h-3 w-3" />
@@ -93,6 +98,7 @@ export function ChatModelSwitcher({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           className={cn(
             TRIGGER_BASE,
             "border-[var(--border)] bg-[var(--background)] text-[var(--text-secondary)] hover:border-[var(--primary)]/40 hover:text-[var(--foreground)] data-[state=open]:border-[var(--primary)]/50 data-[state=open]:text-[var(--foreground)]",
@@ -116,9 +122,9 @@ export function ChatModelSwitcher({
         onDoubleClick={(event) => event.stopPropagation()}
       >
         <DropdownMenuLabel className="px-2 pb-1 pt-1.5 text-[10px] font-medium text-[var(--muted-foreground)]">
-          本对话模型 · 仅管理员可切换
+          本对话模型
         </DropdownMenuLabel>
-        {groups.map((group, index) => (
+        {visibleGroups.map((group, index) => (
           <DropdownMenuGroup key={group.brand}>
             {index > 0 ? <DropdownMenuSeparator className="my-1 bg-[var(--border)]" /> : null}
             <DropdownMenuLabel className="px-2 py-1 text-[11px] font-semibold text-[var(--text-secondary)]">
@@ -129,7 +135,8 @@ export function ChatModelSwitcher({
               return (
                 <DropdownMenuItem
                   key={model.id}
-                  onSelect={() => onSelect(model)}
+                  disabled={disabled}
+                  onSelect={() => { if (!disabled) onSelect(model); }}
                   data-model-id={model.id}
                   data-active={active ? "true" : undefined}
                   className={cn(

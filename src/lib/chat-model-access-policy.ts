@@ -1,4 +1,5 @@
 import { isPublishedTextBillingModel } from "@/lib/text-model-eligibility";
+import { isValidPublicChatModelId } from "./chat-model-switching-policy";
 
 export interface ChatModelOverrideAccessInput {
   authenticated: boolean;
@@ -21,7 +22,11 @@ export function hasExplicitChatModelSelection(input: ChatModelOverrideAccessInpu
 
 export function shouldRejectOrdinaryChatModelOverride(input: ChatModelOverrideAccessInput): boolean {
   if (!input.authenticated || input.isAdmin || input.isCanvasInternalWorkflow) return false;
-  return hasExplicitChatModelSelection(input);
+  const selections = [input.requestedModelId, input.requestedModel]
+    .filter((value) => value !== undefined && value !== null && value !== "");
+  if (selections.some((value) => !isValidPublicChatModelId(value))) return true;
+  if (selections.length === 2 && selections[0] !== selections[1]) return true;
+  return input.requestedModelOverridden === true && selections.length === 0;
 }
 
 export interface BoundChatModelPublicationInput {

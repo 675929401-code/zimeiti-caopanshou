@@ -690,7 +690,6 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
   const [aigcTag, setAigcTag] = useState(false);
 
   const [voiceInstruction, setVoiceInstruction] = useState('');
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'role1' | 'role2'>('role1');
 
   const categories = useMemo(() => {
@@ -1272,8 +1271,16 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 </button>
               </div>
             </div>
-            <div data-voice-mode-picker className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-[var(--vs-text-muted)]">模式</span>
+          </div>
+        </div>
+
+        {/* 主工作区：模式与参数常驻第一行，音色与文案在其下。 */}
+        <div id="voice-synthesis-editor" data-voice-editor className="vs-synthesis-editor grid scroll-mt-6 grid-cols-1 gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+          {/* 第1行左：模式与基础声音参数。 */}
+          <div className="flex flex-col gap-5 min-w-0 self-start">
+            <div className="bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl p-5">
+            <div data-voice-mode-picker className="flex flex-col items-stretch gap-2">
+              <span className="mb-1 text-base font-semibold text-[var(--vs-text)]">模式</span>
               {[
                   { v: 'single', icon: <Mic2 className="h-4 w-4" />, label: '单人模式' },
                   { v: 'dual', icon: <MessagesSquare className="h-4 w-4" />, label: '双人对话' },
@@ -1294,15 +1301,204 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                   </button>
                 ))}
             </div>
+            </div>
+            {mode !== 'audio-gen' && (
+              <div className="bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <SlidersHorizontal className="h-5 w-5 text-[var(--vs-primary)]" aria-hidden="true" />
+                  <span className="text-base font-semibold">{mode === 'mix' ? '语速 · 音量' : '语速 · 音调 · 音量'}</span>
+                </div>
+                {basicVoiceControls}
+              </div>
+            )}
           </div>
-          <button type="button" data-voice-advanced-toggle aria-expanded={advancedOpen} aria-controls="voice-advanced-settings" onClick={() => setAdvancedOpen(value => !value)} className="flex shrink-0 items-center gap-2 rounded-xl border border-[var(--vs-border)] bg-[var(--vs-surface)] px-3 py-2 text-sm text-[var(--vs-text)] hover:border-[var(--vs-primary)]">
-            <Settings2 className="h-4 w-4 text-[var(--vs-primary)]" aria-hidden="true" />
-            高级设置 · {advancedOpen ? '收起' : '展开'}
-          </button>
-        </div>
 
-        {/* 主工作区先展示音色、文案与合成操作，高级参数放在其后。 */}
-        <div id="voice-synthesis-editor" data-voice-editor className="vs-synthesis-editor grid scroll-mt-6 grid-cols-1 gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+          {/* 第1行右：高级参数始终展示。 */}
+          <div id="voice-advanced-settings" data-voice-advanced-panel className="flex flex-col gap-5 min-w-0">
+            <div className="bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
+              <div className="w-full px-5 py-3.5 flex items-center justify-between bg-[var(--vs-surface)]/50 border-b border-[var(--vs-border)]">
+                <div className="flex items-center gap-2.5">
+                  <Settings2 className="h-5 w-5 text-[var(--vs-primary)]" aria-hidden="true" />
+                  <span className="text-base font-semibold text-[var(--vs-text)]">高级设置</span>
+                  <span className="text-sm text-[var(--vs-text-muted)]">
+                    当前：{mode === 'mix' ? 'TTS 1.0（混音）' : mode === 'audio-gen' ? 'Seed-Audio 1.0' : MODEL_VERSION_LABELS[modelVersion]} · {sampleRate >= 1000 ? `${sampleRate / 1000}kHz` : `${sampleRate}Hz`} {audioFormat.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+                <div className="p-4 space-y-3.5 flex-1 overflow-auto min-h-0">
+                  <div className="text-sm text-[var(--vs-text-muted)] bg-[var(--vs-surface)]/50 rounded-lg px-3.5 py-2 border border-[var(--vs-border)]/50">
+                    {mode === 'audio-gen' ? '音频生成使用参考音频与提示词控制声音，输出支持音频格式和采样率设置。' : '语速/音调/音量在左侧调整，此处配置模型版本与音频输出。具体音色支持以所选模型和账号权限为准。'}
+                  </div>
+
+                  <div className={mode === 'audio-gen' || mode === 'mix' ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'}>
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">模型版本</div>
+                      <select
+                        aria-label="模型版本"
+                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
+                        value={mode === 'mix' ? 'seed-tts-1.0' : mode === 'audio-gen' ? 'seed-audio-1.0' : modelVersion}
+                        disabled={synthesizing || mode === 'mix' || mode === 'audio-gen'}
+                        onChange={e => setModelVersion(e.target.value as typeof modelVersion)}
+                      >
+                        {mode === 'mix' ? <option value="seed-tts-1.0">TTS 1.0（混音）</option> : mode === 'audio-gen' ? <option value="seed-audio-1.0">Seed-Audio 1.0</option> : MODEL_VERSIONS.map(v => (
+                          <option key={v.value} value={v.value}>{MODEL_VERSION_LABELS[v.value]}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">音频格式</div>
+                      <select
+                        aria-label="音频格式"
+                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
+                        value={audioFormat}
+                        onChange={e => { const next = e.target.value as typeof audioFormat; setAudioFormat(next); if (next === 'ogg_opus' && ![8000,16000,24000,48000].includes(sampleRate)) setSampleRate(24000); }}
+                      >
+                        {FILE_AUDIO_FORMATS.map(f => (
+                          <option key={f.value} value={f.value}>{f.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">采样率</div>
+                      <select
+                        aria-label="采样率"
+                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
+                        value={sampleRate}
+                        onChange={e => setSampleRate(Number(e.target.value) as typeof sampleRate)}
+                      >
+                        {SAMPLE_RATES.filter(r => audioFormat !== 'ogg_opus' || [8000,16000,24000,48000].includes(r)).map(r => (
+                          <option key={r} value={r}>{r}Hz</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {mode !== 'audio-gen' && mode !== 'mix' && <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-secondary)] mb-1.5">情绪强度</div>
+                      <Slider value={emotionIntensity * 100 - 50} onChange={v => setEmotionIntensity((v + 50) / 100)} min={-50} max={50} />
+                    </div>
+                    <div>
+                      <div className="text-sm text-[var(--vs-text-secondary)] mb-1.5">句尾静音</div>
+                      <Slider value={silenceFinal / 20 - 10} onChange={v => setSilenceFinal((v + 10) * 20)} min={-10} max={40} />
+                    </div>
+                  </div>}
+
+
+                  {mode !== 'audio-gen' && mode !== 'mix' && <><div className="flex flex-wrap items-center gap-x-4 gap-y-3 text-xs text-[var(--vs-text-secondary)]">
+                    <div className="flex shrink-0 items-center gap-2">
+                    <span className="shrink-0">语种</span>
+                    <div className="w-44">
+                      <select
+                        aria-label="语种"
+                        className="w-full px-2 py-1.5 rounded-lg bg-[var(--vs-surface)] border border-[var(--vs-border)] text-[var(--vs-text)] text-xs"
+                        value={language}
+                        onChange={e => setLanguage(e.target.value)}
+                      >
+                        <option value="auto">自动</option>
+                        {EXPLICIT_LANGUAGES.map(l => (
+                          <option key={l.value} value={l.value}>{l.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    </div>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={subtitle} onChange={e => setSubtitle(e.target.checked)} className="w-3.5 h-3.5" />
+                      字幕
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={subtitleTimestamp} onChange={e => setSubtitleTimestamp(e.target.checked)} className="w-3.5 h-3.5" />
+                      时间戳
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={useCache} onChange={e => setUseCache(e.target.checked)} className="w-3.5 h-3.5" />
+                      缓存
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={silenceSeg} onChange={e => setSilenceSeg(e.target.checked)} className="w-3.5 h-3.5" />
+                      自动切分
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={langDetect} onChange={e => setLangDetect(e.target.checked)} className="w-3.5 h-3.5" />
+                      自动识别语种
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={filterMd} onChange={e => setFilterMd(e.target.checked)} className="w-3.5 h-3.5" />
+                      无Markdown过滤
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={filterEmoji} onChange={e => setFilterEmoji(e.target.checked)} className="w-3.5 h-3.5" />
+                      无Emoji过滤
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={latex} onChange={e => setLatex(e.target.checked)} className="w-3.5 h-3.5" />
+                      LaTeX公式
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                      <input type="checkbox" checked={aigcTag} onChange={e => setAigcTag(e.target.checked)} className="w-3.5 h-3.5" />
+                      AIGC水印
+                    </label>
+                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-not-allowed text-[var(--vs-text-muted)]" title="当前公开的 TTS 2.0 模型不支持 SSML">
+                      <input type="checkbox" checked={false} disabled className="w-3.5 h-3.5" />
+                      <span>SSML <span className="text-xs">当前模型未开放</span></span>
+                    </label>
+                  </div>
+
+                  {/* 情感预设：一键应用常用参数组合（固定 8 个） */}
+                  <div className="pt-3 border-t border-[var(--vs-border)]/40">
+                    <div className="flex items-center justify-between mb-2.5 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="flex items-center gap-1.5 text-sm text-[var(--vs-text-muted)] font-medium"><Heart className="h-4 w-4" aria-hidden="true" />情感预设</span>
+                        <span className="text-xs text-[var(--vs-text-muted)] opacity-70 truncate">固定 8 个，一键应用语速/音调/音量/情感</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {SYNTHESIS_PRESETS.map(preset => {
+                        const isActive = modelVersion === preset.config.modelVersion &&
+                          speed === preset.config.speed &&
+                          pitch === preset.config.pitch &&
+                          volume === preset.config.volume &&
+                          emotion === (preset.config.emotion || 'none') &&
+                          subtitle === preset.config.subtitle &&
+                          aigcTag === preset.config.aigcTag;
+                        return (
+                          <button
+                            key={preset.key}
+                            type="button"
+                            onClick={() => {
+                              setModelVersion(preset.config.modelVersion);
+                              setSpeed(preset.config.speed);
+                              setPitch(preset.config.pitch);
+                              setVolume(preset.config.volume);
+                              setEmotion(preset.config.emotion || 'none');
+                              setEmotionIntensity(preset.config.emotionIntensity ?? 0.5);
+                              setSubtitle(preset.config.subtitle);
+                              setAigcTag(preset.config.aigcTag);
+                            }}
+                            className={`flex flex-col items-start gap-1 px-3 py-2.5 rounded-lg text-left transition-all ${
+                              isActive
+                                ? 'bg-gradient-to-br from-[var(--vs-primary)]/20 to-[var(--vs-accent)]/15 border border-[var(--vs-primary)]/50 shadow-[0_0_12px_rgba(56,189,248,0.15)]'
+                                : 'bg-[var(--vs-surface)]/50 border border-[var(--vs-border)]/50 hover:border-[var(--vs-primary)]/40 hover:bg-[var(--vs-surface)]'
+                            }`}
+                            title={preset.desc}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-base leading-none">{preset.icon}</span>
+                              <span className={`text-[13px] font-semibold leading-none ${isActive ? 'text-[var(--vs-primary)]' : 'text-[var(--vs-text)]'}`}>
+                                {preset.name}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-[var(--vs-text-muted)] leading-tight line-clamp-1">{preset.desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div></>}
+                </div>
+            </div>
+          </div>
+
           {/* 主要输入：音色选择 */}
           {mode === 'single' && (
             <VoicePickerCard
@@ -1392,7 +1588,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
               h="h-[400px]"
             />
           )}
-          {/* 主要输入：文案与就近的语速、音调、音量 */}
+          {/* 主要输入：合成文案与参考音频 */}
           <div className={`flex flex-col gap-5 min-w-0 ${mode === 'audio-gen' || mode === 'mix' ? 'lg:col-span-2' : ''}`}>
             {/* 单人模式文本输入 */}
             {mode === 'single' && (
@@ -1404,7 +1600,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 maxLen={5000}
                 h="h-[400px]"
                 placeholder={useSsml ? '<speak>输入 SSML 内容...</speak>' : '输入要合成的文本内容...'}
-              >{basicVoiceControls}</TextInputCard>
+              ></TextInputCard>
             )}
 
             {/* 双人模式文本输入 */}
@@ -1418,7 +1614,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                   maxLen={5000}
                   h="flex-1 min-h-0"
                   placeholder="输入角色一的台词..."
-                >{basicVoiceControls}</TextInputCard>
+                ></TextInputCard>
                 <TextInputCard
                   title="角色二 台词"
                   icon={<AudioLines className="h-5 w-5" />}
@@ -1453,7 +1649,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 maxLen={5000}
                 h="h-[400px]"
                 placeholder="单次最多 5000 字符，提交后请在当前页面等待合成结果。更长内容请拆分后分次合成。&#10;请在此处粘贴或输入长文本内容..."
-              >{basicVoiceControls}</TextInputCard>
+              ></TextInputCard>
             )}
 
             {/* 混音合成配置 + 文本输入 */}
@@ -1535,7 +1731,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                   maxLen={5000}
                   h="flex-1 min-h-[160px]"
                   placeholder="输入要混音合成的文本内容..."
-                >{basicVoiceControls}</TextInputCard>
+                ></TextInputCard>
               </div>
             )}
 
@@ -1718,192 +1914,6 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
               </div>
             )}
           </div>
-          {/* 高级参数保留挂载，折叠仅改变展示，不重置任何参数。 */}
-          <div id="voice-advanced-settings" data-voice-advanced-panel hidden={!advancedOpen} className={`${advancedOpen ? 'flex' : 'hidden'} flex-col gap-5 min-w-0 lg:col-span-2`}>
-            <div className="bg-[var(--vs-card)] border border-[var(--vs-border)] rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
-              <div className="w-full px-5 py-3.5 flex items-center justify-between bg-[var(--vs-surface)]/50 border-b border-[var(--vs-border)]">
-                <div className="flex items-center gap-2.5">
-                  <Settings2 className="h-5 w-5 text-[var(--vs-primary)]" aria-hidden="true" />
-                  <span className="text-base font-semibold text-[var(--vs-text)]">高级设置</span>
-                  <span className="text-sm text-[var(--vs-text-muted)]">
-                    当前：{mode === 'mix' ? 'TTS 1.0（混音）' : mode === 'audio-gen' ? 'Seed-Audio 1.0' : MODEL_VERSION_LABELS[modelVersion]} · {sampleRate >= 1000 ? `${sampleRate / 1000}kHz` : `${sampleRate}Hz`} {audioFormat.toUpperCase()}
-                  </span>
-                </div>
-              </div>
-
-                <div className="p-4 space-y-3.5 flex-1 overflow-auto min-h-0">
-                  <div className="text-sm text-[var(--vs-text-muted)] bg-[var(--vs-surface)]/50 rounded-lg px-3.5 py-2 border border-[var(--vs-border)]/50">
-                    {mode === 'audio-gen' ? '音频生成使用参考音频与提示词控制声音，输出支持音频格式和采样率设置。' : '语速/音调/音量在文案区调整，此处配置模型版本与音频输出。具体音色支持以所选模型和账号权限为准。'}
-                  </div>
-
-                  <div className={mode === 'audio-gen' || mode === 'mix' ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'}>
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">模型版本</div>
-                      <select
-                        aria-label="模型版本"
-                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
-                        value={mode === 'mix' ? 'seed-tts-1.0' : mode === 'audio-gen' ? 'seed-audio-1.0' : modelVersion}
-                        disabled={synthesizing || mode === 'mix' || mode === 'audio-gen'}
-                        onChange={e => setModelVersion(e.target.value as typeof modelVersion)}
-                      >
-                        {mode === 'mix' ? <option value="seed-tts-1.0">TTS 1.0（混音）</option> : mode === 'audio-gen' ? <option value="seed-audio-1.0">Seed-Audio 1.0</option> : MODEL_VERSIONS.map(v => (
-                          <option key={v.value} value={v.value}>{MODEL_VERSION_LABELS[v.value]}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">音频格式</div>
-                      <select
-                        aria-label="音频格式"
-                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
-                        value={audioFormat}
-                        onChange={e => { const next = e.target.value as typeof audioFormat; setAudioFormat(next); if (next === 'ogg_opus' && ![8000,16000,24000,48000].includes(sampleRate)) setSampleRate(24000); }}
-                      >
-                        {FILE_AUDIO_FORMATS.map(f => (
-                          <option key={f.value} value={f.value}>{f.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-muted)] mb-1.5">采样率</div>
-                      <select
-                        aria-label="采样率"
-                        className="w-full px-3 py-2 rounded-lg bg-[var(--vs-surface)]/80 border border-[var(--vs-border)] text-[var(--vs-text)] text-[15px] focus:outline-none focus:border-[var(--vs-primary)]/50"
-                        value={sampleRate}
-                        onChange={e => setSampleRate(Number(e.target.value) as typeof sampleRate)}
-                      >
-                        {SAMPLE_RATES.filter(r => audioFormat !== 'ogg_opus' || [8000,16000,24000,48000].includes(r)).map(r => (
-                          <option key={r} value={r}>{r}Hz</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {mode !== 'audio-gen' && mode !== 'mix' && <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-secondary)] mb-1.5">情绪强度</div>
-                      <Slider value={emotionIntensity * 100 - 50} onChange={v => setEmotionIntensity((v + 50) / 100)} min={-50} max={50} />
-                    </div>
-                    <div>
-                      <div className="text-sm text-[var(--vs-text-secondary)] mb-1.5">句尾静音</div>
-                      <Slider value={silenceFinal / 20 - 10} onChange={v => setSilenceFinal((v + 10) * 20)} min={-10} max={40} />
-                    </div>
-                  </div>}
-
-
-                  {mode !== 'audio-gen' && mode !== 'mix' && <><div className="flex flex-wrap items-center gap-x-4 gap-y-3 text-xs text-[var(--vs-text-secondary)]">
-                    <div className="flex shrink-0 items-center gap-2">
-                    <span className="shrink-0">语种</span>
-                    <div className="w-44">
-                      <select
-                        aria-label="语种"
-                        className="w-full px-2 py-1.5 rounded-lg bg-[var(--vs-surface)] border border-[var(--vs-border)] text-[var(--vs-text)] text-xs"
-                        value={language}
-                        onChange={e => setLanguage(e.target.value)}
-                      >
-                        <option value="auto">自动</option>
-                        {EXPLICIT_LANGUAGES.map(l => (
-                          <option key={l.value} value={l.value}>{l.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    </div>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={subtitle} onChange={e => setSubtitle(e.target.checked)} className="w-3.5 h-3.5" />
-                      字幕
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={subtitleTimestamp} onChange={e => setSubtitleTimestamp(e.target.checked)} className="w-3.5 h-3.5" />
-                      时间戳
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={useCache} onChange={e => setUseCache(e.target.checked)} className="w-3.5 h-3.5" />
-                      缓存
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={silenceSeg} onChange={e => setSilenceSeg(e.target.checked)} className="w-3.5 h-3.5" />
-                      自动切分
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={langDetect} onChange={e => setLangDetect(e.target.checked)} className="w-3.5 h-3.5" />
-                      自动识别语种
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={filterMd} onChange={e => setFilterMd(e.target.checked)} className="w-3.5 h-3.5" />
-                      无Markdown过滤
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={filterEmoji} onChange={e => setFilterEmoji(e.target.checked)} className="w-3.5 h-3.5" />
-                      无Emoji过滤
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={latex} onChange={e => setLatex(e.target.checked)} className="w-3.5 h-3.5" />
-                      LaTeX公式
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={aigcTag} onChange={e => setAigcTag(e.target.checked)} className="w-3.5 h-3.5" />
-                      AIGC水印
-                    </label>
-                    <label className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap cursor-not-allowed text-[var(--vs-text-muted)]" title="当前公开的 TTS 2.0 模型不支持 SSML">
-                      <input type="checkbox" checked={false} disabled className="w-3.5 h-3.5" />
-                      <span>SSML <span className="text-xs">当前模型未开放</span></span>
-                    </label>
-                  </div>
-
-                  {/* 情感预设：一键应用常用参数组合（固定 8 个） */}
-                  <div className="pt-3 border-t border-[var(--vs-border)]/40">
-                    <div className="flex items-center justify-between mb-2.5 gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="flex items-center gap-1.5 text-sm text-[var(--vs-text-muted)] font-medium"><Heart className="h-4 w-4" aria-hidden="true" />情感预设</span>
-                        <span className="text-xs text-[var(--vs-text-muted)] opacity-70 truncate">固定 8 个，一键应用语速/音调/音量/情感</span>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {SYNTHESIS_PRESETS.map(preset => {
-                        const isActive = modelVersion === preset.config.modelVersion &&
-                          speed === preset.config.speed &&
-                          pitch === preset.config.pitch &&
-                          volume === preset.config.volume &&
-                          emotion === (preset.config.emotion || 'none') &&
-                          subtitle === preset.config.subtitle &&
-                          aigcTag === preset.config.aigcTag;
-                        return (
-                          <button
-                            key={preset.key}
-                            type="button"
-                            onClick={() => {
-                              setModelVersion(preset.config.modelVersion);
-                              setSpeed(preset.config.speed);
-                              setPitch(preset.config.pitch);
-                              setVolume(preset.config.volume);
-                              setEmotion(preset.config.emotion || 'none');
-                              setEmotionIntensity(preset.config.emotionIntensity ?? 0.5);
-                              setSubtitle(preset.config.subtitle);
-                              setAigcTag(preset.config.aigcTag);
-                            }}
-                            className={`flex flex-col items-start gap-1 px-3 py-2.5 rounded-lg text-left transition-all ${
-                              isActive
-                                ? 'bg-gradient-to-br from-[var(--vs-primary)]/20 to-[var(--vs-accent)]/15 border border-[var(--vs-primary)]/50 shadow-[0_0_12px_rgba(56,189,248,0.15)]'
-                                : 'bg-[var(--vs-surface)]/50 border border-[var(--vs-border)]/50 hover:border-[var(--vs-primary)]/40 hover:bg-[var(--vs-surface)]'
-                            }`}
-                            title={preset.desc}
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-base leading-none">{preset.icon}</span>
-                              <span className={`text-[13px] font-semibold leading-none ${isActive ? 'text-[var(--vs-primary)]' : 'text-[var(--vs-text)]'}`}>
-                                {preset.name}
-                              </span>
-                            </div>
-                            <span className="text-[11px] text-[var(--vs-text-muted)] leading-tight line-clamp-1">{preset.desc}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div></>}
-                </div>
-            </div>
-          </div>
-
         </div>
       </div>
     </div>
