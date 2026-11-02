@@ -40,6 +40,8 @@ import {
 } from "react";
 import { VerifiedStoryboardMessageContent, verifyStoryboardMessageReferenceAssets } from "@/components/chat/storyboard-verified-message";
 import { useApp } from "@/contexts/app-context";
+import { ChatModelSwitcher } from "@/components/chat/chat-model-switcher";
+import { buildChatModelGroups, chatModelSelectionScope, chatModelSelectionStorageKey, findChatModelOption, newConversationChatModelSelection } from "@/lib/chat-model-catalog";
 import { useAppScopedRouter } from "@/hooks/use-app-scoped-router";
 import { appendImageWorkbenchPromptTransfer } from "@/lib/image-workbench-transfer";
 import type {
@@ -81,7 +83,6 @@ import {
 import type { Message } from "@/types/coze";
 import styles from "./official-agent-route.module.css";
 
-const MODEL_STORAGE_KEY = "youcai_agent_model_id";
 const MANGA_CONVERSATION_NAME = "创作 Agent";
 const ALLOWED_INLINE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -238,6 +239,7 @@ interface ChatModelOption {
 
 interface QueuedPrompt {
   id: string;
+  ownerId?: string;
   mode: "new-conversation" | "retry";
   prompt: string;
   modelId?: string;
@@ -648,9 +650,13 @@ export function OfficialAgentRoute({
   const [input, setInput] = useState("");
   const [queuedPrompt, setQueuedPrompt] = useState<QueuedPrompt | null>(null);
   const [sending, setSending] = useState(false);
-  const [models, setModels] = useState<ChatModelOption[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState("");
-  const [modelsLoading, setModelsLoading] = useState(true);
+  const [catalogModels, setModels] = useState<ChatModelOption[]>([]);
+  const [modelSelection, setModelSelection] = useState({ scope: "", id: "" });
+  const modelSelectionRef = useRef(modelSelection);
+  modelSelectionRef.current = modelSelection;
+  const [catalogScope, setCatalogScope] = useState("");
+  const [catalogLoading, setModelsLoading] = useState(true);
+  const [modelReload, setModelReload] = useState(0);
   const [modelStatus, setModelStatus] = useState("正在读取统一模型池的文案模型");
   const [lastRequestModelLabel, setLastRequestModelLabel] = useState("");
   const [activeSkillTitle, setActiveSkillTitle] = useState("");
@@ -698,7 +704,7 @@ export function OfficialAgentRoute({
   const quickPrompts = useMemo(() => privateCacheReady ? privateQuickPrompts : [], [privateCacheReady, privateQuickPrompts]);
   const favoriteAssetIds = useMemo(() => privateCacheReady ? privateFavoriteAssetIds : [], [privateCacheReady, privateFavoriteAssetIds]);
   const installedCommunityIds = useMemo(() => privateCacheReady ? privateInstalledCommunityIds : [], [privateCacheReady, privateInstalledCommunityIds]);
-  const canSelectModel = state.auth.user?.role === "admin";
+  const canSelectModel = authenticated && Boolean(privateOwnerId);
   const conversations = useMemo(
     () => state.conversations
       .filter((conversation) => (
@@ -712,6 +718,13 @@ export function OfficialAgentRoute({
   const activeConversation = conversations.find(
     (conversation) => conversation.id === state.activeConversationId,
   );
+  const modelScope = chatModelSelectionScope(privateOwnerId, activeConversation?.id ?? null, MANGA_WORKBENCH_AGENT_ID) ?? "";
+  const modelScopeRef = useRef(modelScope);
+  modelScopeRef.current = modelScope;
+  const models = catalogScope === modelScope ? catalogModels : [];
+  const modelsLoading = catalogLoading || catalogScope !== modelScope;
+  const selectedModelId = modelSelection.scope === modelScope ? modelSelection.id : "";
+  const modelGroups = useMemo(() => buildChatModelGroups(models), [models]);
   const activeAgent = state.agents.find((agent) => agent.id === activeConversation?.agentId || agent.botId === activeConversation?.agentId);
   const storyboardPromptPushEnabled = hasStoryboardPromptPushCapability(activeConversation?.agentId, activeAgent?.outputStyle);
   const selectedModelOption = models.find((model) => model.id === selectedModelId);
@@ -1056,13 +1069,6 @@ export function OfficialAgentRoute({
   useEffect(() => {
     const controller = new AbortController();
     async function loadModels() {
-      if (!canSelectModel) {
-        try {
-          sessionStorage.removeItem(MODEL_STORAGE_KEY);
-        } catch {
-          // Role enforcement does not depend on browser storage cleanup.
-        }
-      }
       setModelsLoading(true);
       try {
         const headers: HeadersInit = {};
@@ -1083,21 +1089,24 @@ export function OfficialAgentRoute({
         const policyDefault = typeof payload.policy?.defaultModelId === "string"
           ? payload.policy.defaultModelId
           : "";
+        if (controller.signal.aborted || modelScopeRef.current !== modelScope) return;
         setModels(options);
+        setCatalogScope(modelScope);
         let stored = "";
         try {
           if (canSelectModel) {
-            stored = sessionStorage.getItem(MODEL_STORAGE_KEY) || "";
+            stored = sessionStorage.getItem(chatModelSelectionStorageKey(modelScope)) || "";
           }
         } catch {
           // A current server default remains usable without browser storage.
         }
-        setSelectedModelId((current) => {
-          if (canSelectModel && options.some((model) => model.id === current)) return current;
-          if (canSelectModel && options.some((model) => model.id === stored)) return stored;
-          if (options.some((model) => model.id === policyDefault)) return policyDefault;
-          return options[0]?.id || "";
-        });
+        // Preserve this route's explicit server default and full capability objects.
+        const pendingSelection = modelSelectionRef.current;
+        const scopedChoice = pendingSelection.scope === modelScope ? pendingSelection.id : stored;
+        const initialModelId = options.some((model) => model.id === scopedChoice)
+          ? scopedChoice
+          : options.some((model) => model.id === policyDefault) ? policyDefault : options[0]?.id || "";
+        setModelSelection({ scope: modelScope, id: initialModelId });
         setModelStatus(
           typeof payload.policy?.unavailableMessage === "string"
             ? payload.policy.unavailableMessage
@@ -1106,23 +1115,25 @@ export function OfficialAgentRoute({
               : "暂无已发布且兼容的文案模型",
         );
       } catch {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && modelScopeRef.current === modelScope) {
           setModels([]);
-          setSelectedModelId("");
+          setCatalogScope(modelScope);
+          setModelSelection({ scope: modelScope, id: "" });
           setModelStatus(modelCatalogEndpoint === "/api/chat-models"
             ? "平台文案模型列表暂时不可用，已阻止对话发送"
             : "分支文案模型列表暂时不可用，已阻止对话发送");
         }
       } finally {
-        if (!controller.signal.aborted) setModelsLoading(false);
+        if (!controller.signal.aborted && modelScopeRef.current === modelScope) setModelsLoading(false);
       }
     }
     void loadModels();
     return () => controller.abort();
-  }, [canSelectModel, modelCatalogEndpoint, state.auth.token]);
+  }, [canSelectModel, modelCatalogEndpoint, state.auth.token, modelScope, modelReload]);
 
   useEffect(() => {
     if (!queuedPrompt || !activeConversation) return;
+    if (queuedPrompt.ownerId && queuedPrompt.ownerId !== privateOwnerRef.current) return;
     if (activeConversation.agentId !== MANGA_WORKBENCH_AGENT_ID) return;
     if (
       queuedPrompt.requiredConversationId
@@ -1134,6 +1145,21 @@ export function OfficialAgentRoute({
     ) return;
     if (inFlightRequestRef.current === queuedPrompt.id) return;
     const task = queuedPrompt;
+    const transferredSelection = newConversationChatModelSelection({
+      mode: task.mode,
+      ownerId: task.ownerId,
+      currentOwnerId: privateOwnerRef.current,
+      createdConversationId: task.requiredConversationId,
+      currentConversationId: activeConversation.id,
+      targetAgentId: MANGA_WORKBENCH_AGENT_ID,
+      currentTargetAgentId: activeConversation.agentId,
+      modelId: task.modelId,
+    });
+    if (transferredSelection) {
+      modelSelectionRef.current = transferredSelection;
+      setModelSelection(transferredSelection);
+      try { sessionStorage.setItem(chatModelSelectionStorageKey(transferredSelection.scope), transferredSelection.id); } catch { /* Keep this submitted choice in memory. */ }
+    }
     inFlightRequestRef.current = task.id;
     setQueuedPrompt((current) => current?.id === task.id ? null : current);
     setSending(true);
@@ -1194,10 +1220,10 @@ export function OfficialAgentRoute({
   }, [dispatch, queuedPrompt]);
 
   function rememberModel(modelId: string) {
-    if (!canSelectModel) return;
-    setSelectedModelId(modelId);
+    if (!canSelectModel || sending || modelsLoading || !findChatModelOption(modelGroups, modelId)) return;
+    setModelSelection({ scope: modelScope, id: modelId });
     try {
-      sessionStorage.setItem(MODEL_STORAGE_KEY, modelId);
+      sessionStorage.setItem(chatModelSelectionStorageKey(modelScope), modelId);
     } catch {
       // The selected model still applies to the current page.
     }
@@ -1210,7 +1236,7 @@ export function OfficialAgentRoute({
   function loginWithPrefill(prompt: string) {
     try {
       if (prompt.trim()) storeYoucaiAgentPrefill(prompt);
-      if (canSelectModel && selectedModelId) sessionStorage.setItem(MODEL_STORAGE_KEY, selectedModelId);
+      if (canSelectModel && selectedModelId) sessionStorage.setItem(chatModelSelectionStorageKey(modelScope), selectedModelId);
     } catch {
       // Login remains available without browser storage.
     }
@@ -1637,9 +1663,19 @@ export function OfficialAgentRoute({
         .finally(() => setSending(false));
       return;
     }
+    // Capture the exact created conversation; unrelated new chats never inherit this choice.
+    if (privateOwnerRef.current !== privateOwnerId) return;
+    const createdConversationId = startFreeChat({
+      agentId: MANGA_WORKBENCH_AGENT_ID,
+      conversationName: MANGA_CONVERSATION_NAME,
+      title: "新创作对话",
+    });
+    if (!createdConversationId) return;
     setSending(true);
     setQueuedPrompt({
-      id: "agent-new-conversation",
+      id: `agent-new-conversation-${createdConversationId}`,
+      ownerId: privateOwnerId,
+      requiredConversationId: createdConversationId,
       mode: "new-conversation",
       prompt: normalized,
       modelId: requestModelId,
@@ -1647,11 +1683,6 @@ export function OfficialAgentRoute({
       attachments: attachmentSnapshot,
       imagePayloads,
       allowedSkillIds,
-    });
-    startFreeChat({
-      agentId: MANGA_WORKBENCH_AGENT_ID,
-      conversationName: MANGA_CONVERSATION_NAME,
-      title: "新创作对话",
     });
   }
 
@@ -1978,23 +2009,15 @@ export function OfficialAgentRoute({
             <button type="button" onClick={() => void openControlPanel("memory")} data-testid="agent-memory-control"><Brain size={13} />记忆</button>
             <div className={styles.modelChooser}>
               {canSelectModel ? (
-                <label className={styles.modelSelect}>
-                  {modelsLoading ? <LoaderCircle className={styles.spin} size={13} /> : null}
-                  <select
-                    value={selectedModelId}
-                    onChange={(event) => rememberModel(event.target.value)}
-                    disabled={sending || modelsLoading || models.length === 0}
-                    aria-label="选择创作模型"
-                  >
-                    {models.length === 0 ? (
-                      <option value="">{modelsLoading ? "读取模型中" : "暂无可用文案模型"}</option>
-                    ) : models.map((model) => (
-                      <option value={model.id} key={model.id}>
-                        {model.displayName}{model.variantLabel ? `（${model.variantLabel}）` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <ChatModelSwitcher
+                  status={modelsLoading ? "loading" : models.length ? "ready" : "error"}
+                  groups={modelGroups}
+                  selectedModelId={selectedModelId || null}
+                  selectedLabel={findChatModelOption(modelGroups, selectedModelId)?.label || selectedModelOption?.displayName || "智能体默认"}
+                  onSelect={(model) => rememberModel(model.id)}
+                  onReload={() => setModelReload((value) => value + 1)}
+                  disabled={sending}
+                />
               ) : null}
               <small
                 className={styles.modelPolicy}

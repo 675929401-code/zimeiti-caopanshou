@@ -29,12 +29,14 @@ const viewFile = "src/components/chat-view.tsx";
 const production = {
   customerStreamError: initializer(appFile, "customerStreamError"),
   sendLLMMessage: initializer(appFile, "sendLLMMessage"),
+  modelOverrideForTarget: initializer(viewFile, "modelOverrideForTarget"),
   handleSend: initializer(viewFile, "handleSend"),
 };
 const quiet = { log() {}, warn() {}, error() {} };
 type Mode = "success" | "unknown" | "eof" | "network" | "watchdog" | "stop" | "balance" | "site402" | "relay402" | "untyped402";
 const checks: string[] = [];
 async function scenario(mode: Mode) {
+  const selectedModelId = "pm_fixture_selected_model";
   const controller = new AbortController();
   const userStopped = new Set<string>(), watchdog = new Set<string>();
   const agent = { id: "fixture-agent", name: "测试智能体", model: "fixture", is_active: true, deepThinkingType: 0 };
@@ -67,12 +69,13 @@ async function scenario(mode: Mode) {
     inputValue: input, editingMessageId: editing, pendingImages: [], pendingImageScopeRef: { current: { key: "same-scope" } },
     sendDebounceRef: { current: false }, SEND_DEBOUNCE_MS: 500, inputRef: { current: null },
     isConvStreaming: () => false, resumeAutoFollow() {}, canSwitchAssistant: false, bipAgentId: undefined,
-    webSearchOverride: false, chatModelOverride: undefined, FREE_CHAT_AGENT_ID: "free", FREE_CHAT_DEEP_THINKING_TYPE: 0,
+    webSearchOverride: false, modelTargetAgentId: agent.id, chatModelOverride: selectedModelId, FREE_CHAT_AGENT_ID: "free", FREE_CHAT_DEEP_THINKING_TYPE: 0,
     shouldAutoEnableWebSearch: () => false, setPendingImages() {}, setShowMentionDropdown() {},
     setInputValue: (value: string | ((current: string) => string)) => { input = typeof value === "function" ? value(input) : value; },
     setEditingMessageId: (value: string | null) => { editing = value; },
     fetchWithRetry: async (_url: string, _request: RequestInit, retries: number) => {
       submissions++;
+      assert.equal(JSON.parse(String(_request.body)).modelId, selectedModelId, `${mode}: transport preserves the explicit scoped selection`);
       assert.equal(retries, 0, "a generation submission cannot retry automatically");
       if (mode === "network") throw new TypeError("Failed to fetch");
       if (mode === "watchdog" || mode === "stop") {
@@ -99,8 +102,9 @@ async function scenario(mode: Mode) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText, context);
   let result: boolean | undefined;
-  context.sendMessage = async () => {
-    result = await context.sendLLMMessage(conversation.id, "current-assistant", "A", conversation, agent, undefined, undefined, undefined, undefined, "edit-user");
+  context.sendMessage = async (_content: string, _targetAgentId?: string, _images?: string[], modelOverride?: string) => {
+    assert.equal(modelOverride, selectedModelId, `${mode}: production composer forwards the scoped selection`);
+    result = await context.sendLLMMessage(conversation.id, "current-assistant", "A", conversation, agent, undefined, modelOverride, undefined, undefined, "edit-user");
     return result;
   };
   await context.handleSend();

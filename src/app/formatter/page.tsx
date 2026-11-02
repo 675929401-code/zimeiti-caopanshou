@@ -490,17 +490,30 @@ function FormatterForAccount({ ownerUserId }: { ownerUserId: string }) {
             <span className="toolbox-input-meta text-xs" style={{ color: "var(--muted-foreground)" }}>
               粘贴含空行/空格/换行的文本
             </span>
-            <button
-              onClick={handlePaste}
-              className="toolbox-paste-button flex items-center gap-1.5 text-xs px-3.5 py-1.5 rounded-lg font-semibold transition-colors hover:opacity-90"
-              style={{
-                background: "var(--muted)",
-                color: "var(--muted-foreground)",
-              }}
-            >
-              <ClipboardPaste className="w-3.5 h-3.5" />
-              粘贴
-            </button>
+            <div className="toolbox-heading-actions">
+              <button
+                onClick={handleClear}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{
+                  background: embedded ? "var(--toolbox-crystal-field)" : "var(--muted)",
+                  color: "var(--muted-foreground)",
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+                清空
+              </button>
+              <button
+                onClick={handlePaste}
+                className="toolbox-paste-button flex items-center gap-1.5 text-xs px-3.5 py-1.5 rounded-lg font-semibold transition-colors hover:opacity-90"
+                style={{
+                  background: "var(--muted)",
+                  color: "var(--muted-foreground)",
+                }}
+              >
+                <ClipboardPaste className="w-3.5 h-3.5" />
+                粘贴
+              </button>
+            </div>
           </div>
           <textarea
             ref={inputRef}
@@ -525,18 +538,8 @@ function FormatterForAccount({ ownerUserId }: { ownerUserId: string }) {
             </div>
           )}
         {/* 操作按钮与输入框属于同一个功能卡片，保持结果区起始线稳定 */}
-        <div className={`toolbox-card-actions toolbox-command-row ${embedded ? "toolbox-command-row-two" : ""} flex items-center justify-end gap-3`}>
-          <button
-            onClick={handleClear}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-            style={{
-              background: embedded ? "var(--toolbox-crystal-field)" : "var(--muted)",
-              color: "var(--muted-foreground)",
-            }}
-          >
-            <Trash2 className="w-4 h-4" />
-            清空
-          </button>
+        <div className={`toolbox-card-actions toolbox-command-row ${embedded ? "toolbox-command-row-one" : ""} flex items-center justify-end gap-3`}>
+
           <button
             onClick={() => void handleFormat()}
             disabled={!inputText.trim() || historySaveStatus === "saving"}

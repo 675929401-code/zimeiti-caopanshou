@@ -1,12 +1,12 @@
 /**
- * 管理员对话模型热切换：从公开对话模型目录中收敛 GPT / Claude 两个海外模型族。
+ * 对话模型热切换：从公开对话模型目录中收敛 GPT / Claude / DeepSeek 模型族。
  *
  * 这里只做“显示层归一化”：真正调用仍使用目录返回的 pm_ 公开模型标识，
  * 不复制内部模型名、渠道、密钥或价格配置。目录本身是唯一数据源，
  * 目录里没有的模型不会在本模块中凭空出现。
  */
 
-export type ChatModelBrand = "gpt" | "claude";
+export type ChatModelBrand = "gpt" | "claude" | "deepseek";
 
 export interface ChatModelOption {
   /** 公开目录使用的 pm_ 标识，服务端据此解析真实模型行。 */
@@ -27,11 +27,12 @@ export interface ChatModelCatalogRow {
   displayName: string;
 }
 
-const BRAND_ORDER = ["gpt", "claude"] as const;
+const BRAND_ORDER = ["gpt", "claude", "deepseek"] as const;
 
 const BRAND_TITLES: Record<ChatModelBrand, string> = {
   gpt: "GPT 系列",
   claude: "Claude 系列",
+  deepseek: "DeepSeek 系列",
 };
 
 /**
@@ -77,23 +78,25 @@ function prettifyBrandLabel(label: string, brand: ChatModelBrand): string {
     }
     return label.replace(/^claude/iu, "Claude");
   }
+  if (brand === "deepseek") return label.replace(/^deepseek/iu, "DeepSeek");
   const versioned = /^gpt[\s_-]+(.+)$/iu.exec(label);
   if (versioned) return `GPT-${versioned[1].trim()}`;
   return label.replace(/^gpt/iu, "GPT");
 }
 
-/** 只认 GPT / Claude 两个海外模型族；其他品牌返回 null。 */
+/** 只认 GPT / Claude / DeepSeek 模型族；其他品牌返回 null。 */
 export function chatModelBrand(displayName: string): ChatModelBrand | null {
   const value = String(displayName || "").trim();
   if (!value) return null;
   if (/^gpt(?:[\s_-]|$)/iu.test(value)) return "gpt";
   if (/^(?:anthropic[\s_-]+)?claude(?:[\s_-]|$)/iu.test(value)) return "claude";
+  if (/^deepseek(?:[\s_-]|$)/iu.test(value)) return "deepseek";
   return null;
 }
 
 /**
- * 把公开目录归一成分组选项：过滤非 GPT/Claude、清理内部标注、同名去重。
- * 顺序保持目录原有顺序，只保证 GPT 组显示在 Claude 组之前。
+ * 把公开目录归一成分组选项：过滤非 GPT/Claude/DeepSeek、清理内部标注、同名去重。
+ * 顺序保持目录原有顺序，按 GPT、Claude、DeepSeek 排列品牌组。
  */
 export function buildChatModelGroups(rows: readonly ChatModelCatalogRow[]): ChatModelGroup[] {
   const bestByLabel = new Map<string, { option: ChatModelOption; penalty: number; order: number }>();
@@ -171,4 +174,31 @@ export function selectedChatModelLabel(
   return findChatModelOption(groups, selectedModelId)?.label
     ?? defaultChatModelOption(groups)?.label
     ?? "";
+}
+
+/** 账户、会话和目标智能体共同限定选择；不读取旧的全局选择。 */
+export function chatModelSelectionScope(accountId: string | null | undefined, conversationId: string | null | undefined, targetAgentId: string | null | undefined): string | null {
+  return accountId && targetAgentId ? JSON.stringify([accountId, conversationId ?? null, targetAgentId]) : null;
+}
+
+export function chatModelSelectionStorageKey(scope: string): string {
+  return `chat_model_selection_v2:${scope}`;
+}
+
+/** Transfer only the submitted draft's choice to the exact conversation it created. */
+export function newConversationChatModelSelection(input: {
+  mode: string;
+  ownerId?: string;
+  currentOwnerId: string;
+  createdConversationId?: string;
+  currentConversationId: string;
+  targetAgentId: string;
+  currentTargetAgentId: string;
+  modelId?: string;
+}): { scope: string; id: string } | null {
+  if (input.mode !== "new-conversation" || !input.ownerId || input.ownerId !== input.currentOwnerId
+    || !input.createdConversationId || input.createdConversationId !== input.currentConversationId
+    || input.targetAgentId !== input.currentTargetAgentId || !input.modelId) return null;
+  const scope = chatModelSelectionScope(input.ownerId, input.createdConversationId, input.targetAgentId);
+  return scope ? { scope, id: input.modelId } : null;
 }

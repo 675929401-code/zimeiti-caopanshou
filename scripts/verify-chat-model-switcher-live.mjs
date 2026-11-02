@@ -315,8 +315,9 @@ export async function main() {
 
     await openModelMenu(page);
     const menu = await snapshotModelMenu(page);
-    assert.deepEqual(menu.labels.slice(0, 2), ["本对话模型 · 仅管理员可切换", "GPT 系列"], "下拉应包含标题与 GPT 分组");
+    assert.deepEqual(menu.labels.slice(0, 2), ["本对话模型", "GPT 系列"], "下拉应包含标题与 GPT 分组");
     assert.ok(menu.labels.includes("Claude 系列"), "下拉应包含 Claude 分组");
+    assert.ok(menu.labels.includes("DeepSeek 系列"), "下拉应包含 DeepSeek 分组");
     assert.ok(menu.items.length >= 6, `可切换模型过少：${menu.items.length}`);
     const activeItem = menu.items.find((item) => item.active);
     assert.equal(activeItem?.label, "GPT-5.6-Terra", "默认模型在列表中应标记为选中且与头部一致");
@@ -325,12 +326,11 @@ export async function main() {
 
     const claudeItem = await chooseModel(page, "Claude Opus 5.5");
     await sleep(250);
-    const storedForA = await page.evaluate((conversationId) => ({
-      perConversation: localStorage.getItem(`model_override_${conversationId}`),
-      lastUsed: localStorage.getItem("last_used_model"),
-    }), conversationA);
-    assert.equal(storedForA.perConversation, claudeItem.id, "按会话记忆必须写入当前对话键");
-    assert.equal(storedForA.lastUsed, claudeItem.id, "最近使用模型必须写入 last_used_model");
+    const storedForA = await page.evaluate((conversationId) => {
+      const owner = JSON.parse(localStorage.getItem("auth_user") || "null");
+      return localStorage.getItem(`chat_model_selection_v2:${JSON.stringify([owner?.id, conversationId, "__free_chat__"])}`);
+    }, conversationA);
+    assert.equal(storedForA, claudeItem.id, "选择必须写入账户、会话与智能体作用域键");
     await saveScreenshot(page, "03-claude-selected.png");
 
     // 拦截 /api/llm：回放最小 SSE 夹具，验证真实发送 payload，不调用上游、不扣费。
@@ -368,9 +368,9 @@ export async function main() {
     assert.equal(llmRequests[0].modelOverridden, true, "管理员显式选择必须携带 model_overridden");
     assert.equal(llmRequests[0].conversationId, conversationA, "第一次发送应属于会话 A");
 
-    // 第二次新建对话：继承最近使用，再切回 GPT
+    // 第二次新建对话：保持服务端 GPT 默认，不继承其他对话选择
     const conversationB = await startNewChat(page);
-    assert.equal(await readModelLabel(page), "Claude Opus 5.5", "新对话应继承最近使用的模型");
+    assert.equal(await readModelLabel(page), "GPT-5.6-Terra", "新对话不得继承其他对话选择");
     const gptItem = await chooseModel(page, "GPT-5.6-Terra");
     await sendWithFixture(page, "第二次：GPT 验收", 2, llmRequests);
     assert.equal(llmRequests.length, 2, "第二次发送必须命中 /api/llm");

@@ -529,18 +529,28 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                   <span className="toolbox-input-meta text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
                     {inputCharCount}字（仅统计汉字和数字）
                   </span>
-                  <button
-                    onClick={handlePaste}
-                    disabled={!inputReady}
-                    className="toolbox-paste-button flex items-center gap-1.5 text-xs px-3.5 py-1.5 rounded-lg font-semibold transition-colors hover:opacity-90"
-                    style={{
-                      background: "var(--muted)",
-                      color: "var(--muted-foreground)",
-                    }}
-                  >
-                    <ClipboardPaste className="w-3.5 h-3.5" />
-                    粘贴
-                  </button>
+                  <div className="toolbox-heading-actions">
+                    <button
+                      onClick={handleClear}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                      style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      清空
+                    </button>
+                    <button
+                      onClick={handlePaste}
+                      disabled={!inputReady}
+                      className="toolbox-paste-button flex items-center gap-1.5 text-xs px-3.5 py-1.5 rounded-lg font-semibold transition-colors hover:opacity-90"
+                      style={{
+                        background: "var(--muted)",
+                        color: "var(--muted-foreground)",
+                      }}
+                    >
+                      <ClipboardPaste className="w-3.5 h-3.5" />
+                      粘贴
+                    </button>
+                  </div>
                 </div>
                 {!inputReady && <p role="status" aria-live="polite" className="px-4 py-2 text-xs text-muted-foreground">正在恢复文案输入...</p>}
                 <textarea
@@ -580,15 +590,8 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                     );
                   })}
                 </div>}
-                <div className={`toolbox-command-row ${embedded ? "toolbox-command-row-two" : ""} flex items-center gap-2`}>
-                  <button
-                    onClick={handleClear}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
-                    style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    清空
-                  </button>
+                <div className={`toolbox-command-row ${embedded ? "toolbox-command-row-one" : ""} flex items-center gap-2`}>
+
                   <button
                     onClick={handleSegment}
                     disabled={!inputReady || !inputText.trim() || segmenting}

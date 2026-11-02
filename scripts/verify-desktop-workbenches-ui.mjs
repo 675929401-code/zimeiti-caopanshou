@@ -56,8 +56,8 @@ async function verifySourceContract() {
     readFile(path.resolve("src/app/theme-lattice.css"), "utf8"),
   ]);
 
-  assert.match(badge, /isModelAvatarImage\(avatar\)[\s\S]*?modelBrandAsset\(brand\)[\s\S]*?data-model-badge-source/,
-    "ModelBadge 必须按头像、品牌、首字顺序回退并暴露来源");
+  assert.match(badge, /resolveModelBadgeAppearance\(name, avatarUrl, identity\)[\s\S]*?candidates\.find[\s\S]*?data-model-badge-source/,
+    "ModelBadge 必须复用自定义头像/库存品牌纠偏策略并暴露回退来源");
   assert.match(badge, /data-selected=/, "ModelBadge 缺少选中态数据属性");
   assert.match(badge, /data-availability=/, "ModelBadge 缺少可用态数据属性");
   assert.match(badgeCss, /width:\s*44px[\s\S]*height:\s*44px/, "ModelBadge 视觉面积不是44px");

@@ -5,7 +5,8 @@
   "approval": {
     "reference": "User correction 2026-10-30: only the existing reply-footer icon pushes into corresponding storyboard cards; remove code-header whole-reply actions. Fix the actual original chained intake versus visible ordinary-mode reply without generating again.",
     "scope": "Reviewed text-draft mode declaration is advisory, original submitted input remains authority. Preserve full original reply/input and all pairs; computed mismatch warning is rebuilt and displayed, not a new generation gate. Machine input conflicts, asset ownership, interrupted/unknown states, and async latest-source checks remain strict. Source-only manual baseline: 52 paths; actual new-build history-to-project acceptance still pending. Prior equal-height and real-wheel fixes retained; extraction 31 unchanged.",
-    "reviewedUpdate20261031": "User authorized global bug repairs including agents. Manual single-file update for sendCozeMessage terminal handling only; partial EOF remains unknown, no automatic replay. Independent Astra review matched exact callback-only diff and reran 37/37 zero-network cases. Evidence: .codex-evidence/global-release-20261031-a417dfa5/audit-review/scoped-final-review.json; prior baseline preserved in homepage-theme-restore/chat-lock.before.json. Other 51 file hashes unchanged."
+    "reviewedUpdate20261031": "User authorized global bug repairs including agents. Manual single-file update for sendCozeMessage terminal handling only; partial EOF remains unknown, no automatic replay. Independent Astra review matched exact callback-only diff and reran 37/37 zero-network cases. Evidence: .codex-evidence/global-release-20261031-a417dfa5/audit-review/scoped-final-review.json; prior baseline preserved in homepage-theme-restore/chat-lock.before.json. Other 51 file hashes unchanged.",
+    "reviewedUpdate20261102": "User explicitly requested ordinary-user model selection shared by new chat and compatible agent conversations, including the existing DeepSeek 4.1 Flash catalog option. Session 1dd66160-98dd-4136-b525-44d7e5884437: independent Astra review accepted exact client/server changes, scoped account/conversation/agent selection, trusted LLM eligibility and existing MANGA workflow exception; fixed-director/Coze boundaries and public-model/member/owner/billing guards remain. Manual reseal of app-context, chat-view and the submitted-outcome test only; all other 49 protected paths unchanged. The test harness now extracts the real selection helper and preserves all 10 UNKNOWN/error/success cases, with model forwarding assertions. Two business files normalized to LF. Typecheck, focused lint, policy/catalog tests and isolated component checks passed; local full-build browser verification follows. No provider call, database write, push or deployment is authorized by this reseal. Prior snapshots: work/chat-switch-client-1dd6/unknown-harness-before in the session workspace."
   },
   "basis": {
     "channelProbeReceipt": ".codex-evidence/chat-reliability-20261029/channel-once.json",
@@ -65,7 +66,7 @@
     },
     {
       "path": "src/contexts/app-context.tsx",
-      "sha256": "dcc9e810f48b7f09f76c9ef015ec648881f8abe50dcc705ff9e5f0599c0a58e8"
+      "sha256": "e9585cfb1aabbbe51106cb456f252867ea5731bedf1d5797939a739a47455f97"
     },
     {
       "path": "src/contexts/chat-utils.ts",
@@ -77,7 +78,7 @@
     },
     {
       "path": "scripts/verify-chat-submitted-outcome-zero-network.ts",
-      "sha256": "b7b55e34780756ddedc16e2b752557b342c32033c24341c787c93434885ccae0"
+      "sha256": "511a7c8d1ae29e89919f2cc926d38357424176c3984bebf5e6b4955941541ccd"
     },
     {
       "path": "scripts/verify-llm-provider-stream.mjs",
@@ -89,7 +90,7 @@
     },
     {
       "path": "src/components/chat-view.tsx",
-      "sha256": "bd88e17f03946050870a46fce6788d0eaa6c1d8bd2b175f5644c32e3e6227a08"
+      "sha256": "5d58a7285e56262b0f94843f08163f0f650b58aa94e5dc858fa0f4d27faeea40"
     },
     {
       "path": "src/components/chat/message-item.tsx",

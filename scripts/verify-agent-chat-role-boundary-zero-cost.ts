@@ -15,7 +15,8 @@ const ordinary = {
   isCanvasInternalWorkflow: false,
 };
 
-assert.equal(shouldRejectOrdinaryChatModelOverride({ ...ordinary, requestedModelId: "pm_chat_demo" }), true);
+const publicId = `pm_${"a".repeat(24)}`;
+assert.equal(shouldRejectOrdinaryChatModelOverride({ ...ordinary, requestedModelId: publicId }), false);
 assert.equal(shouldRejectOrdinaryChatModelOverride({ ...ordinary, requestedModel: "internal-model" }), true);
 assert.equal(shouldRejectOrdinaryChatModelOverride({ ...ordinary, requestedModelOverridden: true }), true);
 assert.equal(shouldRejectOrdinaryChatModelOverride({ ...ordinary }), false);
@@ -46,25 +47,25 @@ const appContextSource = read("src/contexts/app-context.tsx");
 assert.match(appContextSource, /rememberPendingLocalConversation\(conversation\);\s*dispatch\(\{ type: "START_CONVERSATION", payload: conversation \}\);\s*return conversation\.id;/u);
 
 const genericChat = read("src/components/chat-view.tsx");
-assert.doesNotMatch(genericChat, /\/api\/chat-models|切换对话模型|选择对话模型/u);
-assert.doesNotMatch(genericChat, /selectedPublicModelId|retryModelName/u);
+assert.match(genericChat, /canSelectPublicChatModel/u);
 assert.match(genericChat, /FREE_CHAT_DEEP_THINKING_TYPE/u);
 assert.match(genericChat, /shouldAutoEnableWebSearch/u);
 
 const officialAgent = read("src/features/official-core-routes/official-agent-route.tsx");
-assert.match(officialAgent, /const canSelectModel = state\.auth\.user\?\.role === "admin"/u);
-assert.match(officialAgent, /\{canSelectModel \? \(\s*<label className=\{styles\.modelSelect\}>/u);
+assert.match(officialAgent, /const canSelectModel = authenticated && Boolean\(privateOwnerId\)/u);
+assert.match(officialAgent, /\{canSelectModel \? \(\s*<ChatModelSwitcher/u);
 assert.match(officialAgent, /const requestModelId = canSelectModel \? selectedModelId : undefined/g);
 assert.match(officialAgent, /modelId: requestModelId/g);
-assert.match(officialAgent, /if \(canSelectModel\) \{\s*stored = sessionStorage\.getItem\(MODEL_STORAGE_KEY\)/u);
-assert.match(officialAgent, /sessionStorage\.removeItem\(MODEL_STORAGE_KEY\)/u);
+assert.match(officialAgent, /if \(canSelectModel\) \{\s*stored = sessionStorage\.getItem\(chatModelSelectionStorageKey\(modelScope\)\)/u);
+assert.match(officialAgent, /modelScopeRef\.current !== modelScope/u);
 
 const llmRoute = read("src/app/api/llm/route.ts");
 const rejectionIndex = llmRoute.indexOf("shouldRejectOrdinaryChatModelOverride(modelAccessInput)");
 assert.ok(rejectionIndex > 0, "server route must enforce the shared model access policy");
 assert.ok(rejectionIndex < llmRoute.indexOf("runSecurityChecks("), "model override must fail before security/database/provider work");
 assert.ok(rejectionIndex < llmRoute.indexOf("llmRequestAttemptStore.claim"), "model override must fail before request claim");
-assert.match(llmRoute, /code: "MODEL_OVERRIDE_ADMIN_ONLY"/u);
+assert.match(llmRoute, /code: "MODEL_SELECTION_INVALID"/u);
+assert.match(llmRoute, /code: "AGENT_MODEL_SELECTION_UNSUPPORTED"/u);
 assert.doesNotMatch(llmRoute, /FREE_CHAT_ADMIN_ONLY/u);
 assert.match(llmRoute, /FREE_CHAT_DEFAULT_MODEL_KEY/u);
 assert.match(llmRoute, /agentDeepThinkingType = FREE_CHAT_DEEP_THINKING_TYPE/u);

@@ -70,8 +70,8 @@ import { imageDimensionsMatchAspectRatio } from "@/lib/image-output-contract";
 import { readStoryboardProtectedPreview, StoryboardImagePreviewError } from "@/lib/storyboard-image-preview";
 import { isCompletedProviderImageReceipt, isUnavailableCompletedStoryboardImage, storyboardImageUnavailablePatch, storyboardImageUnavailablePresentation, type StoryboardImageMediaState } from "@/lib/storyboard-image-result-state";
 import { parsePublicImageResolutionPrices } from "@/lib/image-resolution-pricing";
-import { resolveStoryboardVideoInputs, normalizeStoryboardVideoInputs, isStoryboardImageWorkflow, type StoryboardVideoInputs } from "@/lib/storyboard-video-inputs";
-import { StoryboardVideoInputEditor } from "@/components/storyboard-video-input-editor";
+import { normalizeStoryboardVideoInputs, isStoryboardImageWorkflow, type StoryboardVideoInputs } from "@/lib/storyboard-video-inputs";
+import { resolveStoryboardAutomaticVideoInputs, storyboardAutomaticVideoProductionFingerprint, storyboardAutomaticVideoProductionBlocker } from "@/lib/storyboard-automatic-video-inputs";
 import {
   buildClientRequestFingerprint,
   clearBrowserClientAttempt,
@@ -119,7 +119,7 @@ import {
 } from "@/lib/storyboard-canvas-bridge";
 import { buildStoryboardDirectorExecution, compileStoryboardDirectorVideoPrompt, type StoryboardDirectorExecution } from "@/lib/storyboard-director-execution";
 import { collectStoryboardDirectorReferenceBindings } from "@/lib/storyboard-director-reference-verification";
-import { storyboardProductionPlanFingerprint, storyboardProductionAssetFingerprint, storyboardProductionImageFingerprint, storyboardProductionVideoFingerprint, storyboardProductionImageInputMatch, storyboardProductionBlocker, storyboardProductionQuote, runStoryboardProductionQueue } from "@/lib/storyboard-continuous-production";
+import { storyboardProductionPlanFingerprint, storyboardProductionAssetFingerprint, storyboardProductionImageFingerprint, storyboardProductionImageInputMatch, storyboardProductionQuote, runStoryboardProductionQueue } from "@/lib/storyboard-continuous-production";
 import { buildStoryboardDirectorResumeCard, StoryboardDirectorIntakeStateSchema, type StoryboardDirectorIntakeState } from "@/lib/storyboard-director-resume";
 import { confirmStoryboardDirectorAsset, hasStoryboardDirectorAssetConfirmation, pruneStoryboardDirectorAssetConfirmations, storyboardDirectorCandidateMatchesDraft } from "@/lib/storyboard-director-asset-confirmation";
 import {
@@ -1189,12 +1189,13 @@ function imageAttemptNeedsResolution(card: WorkbenchCard) {
 
 function storyboardCardVideoInputIssue(model: VideoModel | undefined, card: WorkbenchCard, run: WorkbenchRun) {
   if (!model) return "视频模型尚未加载";
-  const resolved = resolveStoryboardVideoInputs(model, card);
-  if (resolveStoryboardExecutionMode(run) === "chained" && (!isStoryboardImageWorkflow(model) || !resolved.usesStoryboardImage)) return "当前视频素材与串联模式不一致，请先切换普通模式。";
+  const resolved = resolveStoryboardAutomaticVideoInputs(model, card);
+  if (!resolved.isStoryboardImageWorkflow && resolved.issue) return resolved.issue;
+  if (resolveStoryboardExecutionMode(run) !== "ordinary" && !isStoryboardImageWorkflow(model)) return "当前模型无法使用本段分镜图保持参考一致，请选择单图视频模型或切换普通模式。";
   if (resolved.usesStoryboardImage || resolved.requiresStoryboardImage) {
     if (card.imageReferenceState === "stale") return "参考已更换，请先重新生成分镜；旧图和旧视频仍保留。";
-    if (!hasValidatedImage(card)) return isImageValidationPending(card) ? "正在加载/验证本段分镜图，验证完成后将自动解锁视频。" : imageAttemptNeedsResolution(card) ? "原分镜请求或费用尚未确认，请先查询原任务。" : "请先生成并加载本段分镜图，或改用自定义视频素材。";
-    if (card.imageDeliveryMode === "inline_ephemeral") return "临时图片仅当前页面可预览下载，请先保存或上传可用的视频图片。";
+    if (!hasValidatedImage(card)) return isImageValidationPending(card) ? "正在加载/验证本段分镜图，验证完成后将自动解锁视频。" : imageAttemptNeedsResolution(card) ? "原分镜请求或费用尚未确认，请先查询原任务。" : "请先生成并加载本段分镜图。";
+    if (card.imageDeliveryMode === "inline_ephemeral") return "请先保存本段分镜图，再生成视频。";
     const ratioIssue = storyboardImageRatioIssue(card, effectiveImageRatio(run), run.ratio, model);
     if (ratioIssue) return ratioIssue;
   }
@@ -1814,8 +1815,6 @@ function UserStoryboardWorkbench({
   const [imageFailureHistoryNextPage, setImageFailureHistoryNextPage] = useState<number | null>(null);
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [uploadingCardId, setUploadingCardId] = useState("");
-  const videoInputUploadLocksRef = useRef(new Set<string>());
-  const [videoInputUploadingIds, setVideoInputUploadingIds] = useState(new Set<string>());
   const visibleReferenceChoicesRef = useRef<{ owner: string; projectId: string; ids: Record<string, string> } | null>(null);
   const rememberVisibleReferenceChoices = useCallback((projectId: string, ids: Record<string, string>) => {
     visibleReferenceChoicesRef.current = { owner: userId + "\0" + token, projectId, ids };
@@ -2478,10 +2477,10 @@ function UserStoryboardWorkbench({
         resolution: run.videoResolution,
       })
     : "视频模型尚未加载";
-  const batchVideoMissingImages = run.cards.filter(card => activeVideoModel && resolveStoryboardVideoInputs(activeVideoModel, card).requiresStoryboardImage && !hasValidatedImage(card)).length;
+  const batchVideoMissingImages = run.cards.filter(card => activeVideoModel && resolveStoryboardAutomaticVideoInputs(activeVideoModel, card).requiresStoryboardImage && !hasValidatedImage(card)).length;
   const batchVideoInputIssue = run.cards.map(card => storyboardCardVideoInputIssue(activeVideoModel, card, run)).find(Boolean) || "";
   const batchVideoMissingPrompts = videoPromptRequired ? run.cards.filter(card => !card.videoPrompt.trim()).length : 0;
-  const batchVideoRatioMismatches = run.cards.filter(card => activeVideoModel && resolveStoryboardVideoInputs(activeVideoModel, card).usesStoryboardImage && storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel)).length;
+  const batchVideoRatioMismatches = run.cards.filter(card => activeVideoModel && resolveStoryboardAutomaticVideoInputs(activeVideoModel, card).usesStoryboardImage && storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel)).length;
   const batchVideoBlockedReason = activeVideoSelectionIssue
     ? publicModelSelectionNotice(activeVideoSelectionIssue, "视频模型")
     : batchMode ? "当前批量任务正在处理，请等待完成。"
@@ -4514,43 +4513,6 @@ function UserStoryboardWorkbench({
     }
   }, [patchCard, readOwnedStoryboardImage, referenceLimit, token]);
 
-  const updateCardVideoInputs = useCallback((cardId: string, value: StoryboardVideoInputs) => {
-    const card = runRef.current.cards.find(item => item.id === cardId);
-    if (!card || !scopeMountedRef.current || !contextReadyRef.current || navigationRef.current || batchAuthorizationRef.current || continuousAuthorizationRef.current
-      || videoSubmissionsRef.current.has(cardId) || boardExportLocksRef.current.has(cardId) || isActiveVideoStatus(card.videoStatus)
-      || videoNeedsRequestReconciliation(card) || (card.videoStatus === "failed" && card.videoRetryable !== true)) throw new Error("当前视频请求仍待处理，请确认原任务后再修改素材。");
-    let normalized: StoryboardVideoInputs | undefined;
-    try { normalized = normalizeStoryboardVideoInputs(value); } catch { throw new Error("视频素材链接或数量无效，请检查后重试。"); }
-    patchCard(cardId, { videoInputs: normalized });
-  }, [patchCard]);
-
-  const uploadCardVideoInput = useCallback(async (cardId: string, file: File, kind: "image" | "audio" | "video") => {
-    const before = runRef.current, card = before.cards.find(item => item.id === cardId);
-    const owner = userId + "\0" + token;
-    if (kind === "video") throw new Error("请填写可直接访问的源视频链接。");
-    if (!card || !token || !contextReadyRef.current || navigationRef.current || videoInputUploadLocksRef.current.has(cardId)
-      || videoSubmissionsRef.current.has(cardId) || batchAuthorizationRef.current || continuousAuthorizationRef.current || isActiveVideoStatus(card.videoStatus)
-      || videoNeedsRequestReconciliation(card) || (card.videoStatus === "failed" && card.videoRetryable !== true)) throw new Error("当前无法上传，请先处理视频任务。");
-    const inputIdentity = JSON.stringify([before.videoModelId, card.videoInputs]);
-    const current = () => scopeMountedRef.current && contextReadyRef.current && !navigationRef.current && imageDownloadOwnerRef.current === owner && runRef.current.id === before.id
-      && JSON.stringify([runRef.current.videoModelId, runRef.current.cards.find(item => item.id === cardId)?.videoInputs]) === inputIdentity;
-    videoInputUploadLocksRef.current.add(cardId);
-    setVideoInputUploadingIds(ids => new Set([...ids, cardId]));
-    try {
-      const form = new FormData(); form.set("file", file); form.set("category", kind); form.set("upload_session", `video_ref_${crypto.randomUUID()}`);
-      const response = await fetch("/api/video/reference-upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form, redirect: "error", signal: AbortSignal.timeout(60000) });
-      const data = await response.json().catch(() => ({})) as { file?: { url?: string; asset_ref?: string }; error?: string };
-      if (!response.ok || !data.file?.url || !data.file.asset_ref) throw new Error(data.error || "上传结果尚未确认，请核对素材后重试。");
-      if (!current()) throw new Error("账号、项目或视频素材已变化，上传结果未绑定；原任务保持不变。");
-      const asset = { url: data.file.url, assetRef: data.file.asset_ref, category: kind };
-      normalizeStoryboardVideoInputs({ uploadedAssets: [asset] });
-      return asset;
-    } finally {
-      videoInputUploadLocksRef.current.delete(cardId);
-      if (scopeMountedRef.current && imageDownloadOwnerRef.current === owner) setVideoInputUploadingIds(ids => { const next = new Set(ids); next.delete(cardId); return next; });
-    }
-  }, [token, userId]);
-
   const ensureInitialReferencesAdopted = useCallback(async (): Promise<boolean> => {
     if (resolveStoryboardExecutionMode(runRef.current) !== "reference") return true;
     const before = runRef.current;
@@ -5686,9 +5648,9 @@ function UserStoryboardWorkbench({
     const current = runRef.current;
     const card = current.cards.find((item) => item.id === cardId);
     const model = videoModels.find((item) => item.id === current.videoModelId);
-    const resolvedVideoInputs = model && card ? resolveStoryboardVideoInputs(model, card) : null;
+    const resolvedVideoInputs = model && card ? resolveStoryboardAutomaticVideoInputs(model, card) : null;
     if (boardExportLocksRef.current.has(cardId) || card && resolvedVideoInputs?.usesStoryboardImage && needsStoryboardBoardExport(card)) { setNotice("请先保存分镜图后再生成视频。"); return null; }
-    if (videoInputUploadLocksRef.current.has(cardId) || videoSubmissionsRef.current.has(cardId) && !ownsVideoPreparation) {
+    if (videoSubmissionsRef.current.has(cardId) && !ownsVideoPreparation) {
       setNotice(`分段${card?.order || ""}的视频请求已经提交，请勿重复点击`);
       return null;
     }
@@ -5737,7 +5699,7 @@ function UserStoryboardWorkbench({
       setNotice(`视频 Prompt 加模型护栏后为${executionPrompt.length}字，超过4000字上限，请精简创作 Prompt`);
       return null;
     }
-    const submissionVideoInputs = resolveStoryboardVideoInputs(model, { ...card, videoPrompt: executionPrompt });
+    const submissionVideoInputs = resolveStoryboardAutomaticVideoInputs(model, { ...card, videoPrompt: executionPrompt });
     if (submissionVideoInputs.issue) { setNotice(submissionVideoInputs.issue); return null; }
     const submissionVideoInputIdentity = JSON.stringify(submissionVideoInputs.identity);
     const submissionAspectRatio = resolveAiVideoInputAspectRatio(model, current.ratio, submissionVideoInputs.input);
@@ -5751,7 +5713,7 @@ function UserStoryboardWorkbench({
     const assertSubmissionCurrent = () => {
       const latest = runRef.current;
       const item = latest.cards.find(candidate => candidate.id === cardId);
-      if (!sameSubmissionScope() || videoSubmissionOperationsRef.current.get(cardId) !== videoOperation || !item || (submissionVideoInputs.usesStoryboardImage && item.imageReferenceState === "stale") || JSON.stringify(resolveStoryboardVideoInputs(model, { ...item, videoPrompt: executionPrompt }).identity) !== submissionVideoInputIdentity || batchCardInput(item, "videos") !== submissionInput
+      if (!sameSubmissionScope() || videoSubmissionOperationsRef.current.get(cardId) !== videoOperation || !item || (submissionVideoInputs.usesStoryboardImage && item.imageReferenceState === "stale") || JSON.stringify(resolveStoryboardAutomaticVideoInputs(model, { ...item, videoPrompt: executionPrompt }).identity) !== submissionVideoInputIdentity || batchCardInput(item, "videos") !== submissionInput
         || JSON.stringify([latest.videoModelId, latest.ratio, latest.videoDuration, latest.videoResolution, latest.videoContract]) !== submissionSettings
         || JSON.stringify(tokenChargeConsentRef.current) !== submissionConsent) {
         throw new Error("账号、项目、分镜图或视频参数已变化，本次未提交；请重新确认。");
@@ -5764,7 +5726,7 @@ function UserStoryboardWorkbench({
     const quotedPrice = tokenBilling?.maxChargeYuan ?? effectiveVideoCharge(model, resolution, duration);
     if (!Number.isFinite(quotedPrice) || quotedPrice < 0) { setNotice("视频报价尚未确认，本次未提交"); return null; }
     if (batchAuthorization && quotedPrice !== batchAuthorization.price) { setNotice("批量视频报价已改变，本段未提交"); return null; }
-    if (!batchAuthorization && !window.confirm("生成段落" + card.order + "视频 · " + compactVideoModelName(model) + "\n" + duration + "秒 · " + videoResolutionDisplayLabel(model, resolution) + (submissionVideoInputs.usesStoryboardImage ? "，使用本段分镜图及已确认的视频素材。" : "，使用已确认的视频提示词与素材，不会自动生成分镜图。") + (tokenBilling ? "按实际 Token 用量结算，本次最多自动扣款 ¥" + quotedPrice.toFixed(2) + "；预留不是扣费，超额待确认。" : "预计 ¥" + quotedPrice.toFixed(2) + "。") + "仅提交一次，不自动重试。")) return null;
+    if (!batchAuthorization && !window.confirm("生成段落" + card.order + "视频 · " + compactVideoModelName(model) + "\n" + duration + "秒 · " + videoResolutionDisplayLabel(model, resolution) + (submissionVideoInputs.usesStoryboardImage ? "，使用当前分镜图和本段视频提示词。" : "，仅使用当前视频提示词，不使用图片或其他素材。") + (tokenBilling ? "按实际 Token 用量结算，本次最多自动扣款 ¥" + quotedPrice.toFixed(2) + "；预留不是扣费，超额待确认。" : "预计 ¥" + quotedPrice.toFixed(2) + "。") + "仅提交一次，不自动重试。")) return null;
     videoSubmissionsRef.current.add(cardId);
     const videoOperation = Symbol(cardId);
     videoSubmissionOperationsRef.current.set(cardId, videoOperation);
@@ -5816,7 +5778,7 @@ function UserStoryboardWorkbench({
         resolution,
         tokenBilling,
         // Keep existing same-key retry fingerprints unchanged for untouched legacy
-        // single-image cards. Explicit video inputs always bind the full helper identity.
+        // single-image cards. Retained custom inputs bind only the automatic effective identity.
         ...(card.videoInputs === undefined && submissionVideoInputs.usesStoryboardImage ? {
           sourceImage: submissionVideoInputs.requestFields.image_ref
             ? generatedImageReferenceUri(submissionVideoInputs.requestFields.image_ref)
@@ -5847,7 +5809,7 @@ function UserStoryboardWorkbench({
       if (card.videoUrl) archiveRunSnapshot(`分段${card.order}重新生成视频前`);
       setNotice(`分段${card.order}正在使用 ${modelName} 提交视频任务`);
       const videoSubmissionPatch: Partial<WorkbenchCard> = {
-        continuousVideoInputFingerprint: storyboardProductionVideoFingerprint(current, card, card.continuousImageInputFingerprint ? card.imageRequestSnapshot : undefined),
+        continuousVideoInputFingerprint: storyboardAutomaticVideoProductionFingerprint(current, card, card.continuousImageInputFingerprint ? card.imageRequestSnapshot : undefined),
         videoClientRequestId: stableVideoClientRequestId,
         videoClientRequestFingerprint,
       };
@@ -6080,9 +6042,9 @@ function UserStoryboardWorkbench({
     const card = current.cards.find(item => item.id === cardId);
     const model = videoModels.find(item => item.id === current.videoModelId);
     if (!scopeMountedRef.current || !contextReadyRef.current || navigationRef.current || view !== "workbench" || !card || !token || !model) return null;
-    if (videoInputUploadLocksRef.current.has(cardId) || videoSubmissionsRef.current.has(cardId) || boardExportLocksRef.current.has(cardId) || (resolveStoryboardVideoInputs(model, card).usesStoryboardImage && imageAttemptNeedsResolution(card)) || isActiveVideoStatus(card.videoStatus)) return null;
+    if (videoSubmissionsRef.current.has(cardId) || boardExportLocksRef.current.has(cardId) || (resolveStoryboardAutomaticVideoInputs(model, card).usesStoryboardImage && imageAttemptNeedsResolution(card)) || isActiveVideoStatus(card.videoStatus)) return null;
     if (card.videoStatus === "failed" && card.videoRetryable !== true) { setNotice("原视频请求或费用尚未确认，请先查询原任务；本次未提交。"); return null; }
-    const resolvedVideoInputs = resolveStoryboardVideoInputs(model, card);
+    const resolvedVideoInputs = resolveStoryboardAutomaticVideoInputs(model, card);
     const cardInputIssue = storyboardCardVideoInputIssue(model, card, current);
     if (cardInputIssue) { setNotice(cardInputIssue); return null; }
     const issue = storyboardVideoModelSelectionIssue(model, { ratio: current.ratio, duration: effectiveVideoDuration(model, current.videoDuration), resolution: current.videoResolution })
@@ -6097,7 +6059,7 @@ function UserStoryboardWorkbench({
       if (!scopeMountedRef.current || !contextReadyRef.current || navigationRef.current || imageDownloadOwnerRef.current !== owner || latest.id !== current.id || !item) return null;
       return JSON.stringify([owner, latest.id, item.id, item.imageRecordId, item.imageWidth, item.imageHeight, item.imageRequestSnapshot,
         item.imageReferenceState, item.visualAssetRefs, item.referenceImageUrls, item.videoPrompt, item.videoStatus, item.videoTaskId,
-        item.videoClientRequestId, item.videoClientRequestFingerprint, resolveStoryboardVideoInputs(model, item).identity, latest.videoModelId, latest.ratio, latest.videoDuration,
+        item.videoClientRequestId, item.videoClientRequestFingerprint, resolveStoryboardAutomaticVideoInputs(model, item).identity, latest.videoModelId, latest.ratio, latest.videoDuration,
         latest.videoResolution, latest.videoContract, tokenChargeConsentRef.current]);
     };
     try {
@@ -6789,8 +6751,8 @@ function UserStoryboardWorkbench({
     if (continuousBusyRef.current || continuousAuthorizationRef.current || batchAuthorizationRef.current || visualAssetGenerationRef.current || visualAssetMutationRef.current
       || navigationRef.current || !contextReadyRef.current || !token || !userId || runRef.current.directorIntake?.phase === "assets" || runRef.current.draftImportNotice) return;
     const current = runRef.current;
-    if (!activeVideoModel || !isStoryboardImageWorkflow(activeVideoModel) || current.cards.some(card => { const input = card.videoInputs; return input?.useStoryboardImage === false || Boolean(input?.firstFrameUrl || input?.lastFrameUrl || input?.audioUrl || input?.sourceVideoUrl || input?.referenceImageUrls?.length || input?.referenceAudioUrls?.length); })) { setContinuousMessage("当前视频模型或素材需单独制作视频，请使用单段生成或批量视频；连续制作不会自动为这类视频生成图片。"); return; }
-    const blocker = storyboardProductionBlocker(current);
+    if (!activeVideoModel || !isStoryboardImageWorkflow(activeVideoModel)) { setContinuousMessage("连续制作需要支持单张分镜图的视频模型；请先选择兼容模型。"); return; }
+    const blocker = storyboardAutomaticVideoProductionBlocker(current);
     if (blocker) { setContinuousStatus("stopped"); setContinuousMessage(blocker); return; }
     if (pendingAssetAttempts.length || referenceUploadPending.length) { setContinuousMessage("角色原请求或上传仍待核验，请先处理原任务。"); return; }
     if (activeImageSelectionIssue || activeImageRatioIssue || activeVideoSelectionIssue) {
@@ -7527,7 +7489,7 @@ function UserStoryboardWorkbench({
             </section>
           )}
 
-          <section className="sbw-toolbar" aria-label="分镜工作台全局设置">
+          <section className="sbw-toolbar sbw-global-toolbar" aria-label="分镜工作台全局设置">
             <div className="sbw-toolbar-settings">
               <div className="sbw-control-group is-image">
                 <span className="sbw-control-tag">{run.directorIntake?.phase === "assets" ? "三视图比例" : "分镜图比例"}</span>
@@ -7537,7 +7499,6 @@ function UserStoryboardWorkbench({
                     return <button key={value} type="button" aria-pressed={activeImageRatio === value} disabled={disabled} title={disabled ? "当前图片模型不支持此比例" : `图片比例 ${value}`} className={activeImageRatio === value ? "is-active" : ""} onClick={() => patchRun({ imageRatio: value })}>{value}</button>;
                   })}
                 </div>
-                {activeImageRatioIssue && <p role="status" className="sbw-image-ratio-notice">{activeImageRatioIssue}</p>}
                 <select className="sbw-resolution-select" aria-label="图片分辨率" value={activeImageResolution} disabled={Boolean(batchMode) || imageResolutionChoices.length <= 1} title={activeImageModel ? "仅当前生图模型支持的清晰度可选" : undefined} onChange={(event) => patchRun({ imageResolution: event.target.value })}>
                   {imageResolutionChoices.map((value) => {
                     const supported = imageCapabilities.resolutionOptions.includes(value);
@@ -7546,34 +7507,18 @@ function UserStoryboardWorkbench({
                 </select>
               </div>
               <div className="sbw-control-group is-video">
-                {activeVideoModel?.generationReady !== false && <>
                 <span className="sbw-control-tag">视频比例</span>
                 <div className="sbw-ratio-control" aria-label="视频比例">
-                  {WORKBENCH_RATIOS.map(value => <button key={value} type="button" aria-pressed={run.ratio === value} disabled={Boolean(batchMode) || preferredVideoPresetActive || !activeVideoRatioOptions.includes(value)} title={preferredVideoPresetActive ? `当前预设视频比例 ${run.videoContract!.ratio}` : `视频比例 ${value}`} className={run.ratio === value ? "is-active" : ""} onClick={() => patchRun({ ratio: value })}>{value}</button>)}
+                  {WORKBENCH_RATIOS.map(value => <button key={value} type="button" aria-pressed={run.ratio === value} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || !activeVideoRatioOptions.includes(value)} title={preferredVideoPresetActive ? `当前预设视频比例 ${run.videoContract!.ratio}` : `视频比例 ${value}`} className={run.ratio === value ? "is-active" : ""} onClick={() => patchRun({ ratio: value })}>{value}</button>)}
                 </div>
-                {activeVideoModel?.resolutionOptions.length ? (
-                  activeVideoModel.resolutionOptions.length > 1 ? (
-                    <select className="sbw-resolution-select" aria-label="视频分辨率" value={activeVideoResolution} disabled={Boolean(batchMode) || preferredVideoPresetActive} onChange={(event) => patchRun({ videoResolution: event.target.value })}>
-                      {activeVideoModel.resolutionOptions.map((value) => (
-                        <option key={value} value={value}>{videoResolutionDisplayLabel(activeVideoModel, value)} · {videoResolutionPriceLabel(activeVideoModel, value, activeVideoDuration)}</option>
-                      ))}
-                    </select>
-                  ) : <span className="sbw-fixed-param">{videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)}</span>
-                ) : <span className="sbw-fixed-param">清晰度自动</span>}
-                {activeVideoDurationOptions.length > 1 ? (
-                  <select className="sbw-resolution-select" aria-label="视频时长" value={activeVideoDuration} disabled={Boolean(batchMode) || preferredVideoPresetActive} onChange={(event) => patchRun({ videoDuration: Number(event.target.value) })}>
-                    {activeVideoDurationOptions.map((value) => <option key={value} value={value}>{value} 秒</option>)}
-                  </select>
-                ) : <span className="sbw-fixed-param">固定 {activeVideoDuration} 秒</span>}
-                <VideoDurationBehaviorNotice durationBehavior={activeVideoModel?.durationBehavior} />
-                {activeVideoModel?.billingUnit === "token" && <label className="text-xs text-[var(--foreground)]">
-                  每条任务本次最多自动扣款 ¥
-                  <input aria-label="每条视频本次最多自动扣款金额" type="text" inputMode="decimal" autoComplete="off" placeholder="请填写金额" className="ml-2 w-24 rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-[var(--foreground)]" disabled={Boolean(batchMode)}
-                    value={tokenChargeConsent?.modelId === activeVideoModel.id && tokenChargeConsent.priceVersion === activeVideoModel.tokenPricing?.priceVersion ? tokenChargeConsent.amount : ""}
-                    onChange={event => setTokenChargeConsent({ modelId: activeVideoModel.id, priceVersion: activeVideoModel.tokenPricing?.priceVersion || "", amount: event.target.value })} />
-                  <small className="block">按实际 Token 用量结算；预留不是扣费，超额待确认。批量每条使用同一额度。</small>
-                </label>}
-                </>}
+                <select className="sbw-resolution-select" aria-label="视频分辨率" value={activeVideoResolution} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || (activeVideoModel?.resolutionOptions.length || 0) <= 1} title={activeVideoModel?.resolutionOptions.length ? `${videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)} · ${videoResolutionPriceLabel(activeVideoModel, activeVideoResolution, activeVideoDuration)}` : "清晰度由模型自动确定"} onChange={(event) => patchRun({ videoResolution: event.target.value })}>
+                  {activeVideoModel?.resolutionOptions.length ? activeVideoModel.resolutionOptions.map((value) => (
+                    <option key={value} value={value}>{videoResolutionDisplayLabel(activeVideoModel, value)}</option>
+                  )) : <option value={activeVideoResolution}>自动</option>}
+                </select>
+                <select className="sbw-resolution-select" aria-label="视频时长" value={activeVideoDuration} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || activeVideoDurationOptions.length <= 1} title={activeVideoDurationOptions.length <= 1 ? `固定 ${activeVideoDuration} 秒` : "选择当前模型支持的视频时长"} onChange={(event) => patchRun({ videoDuration: Number(event.target.value) })}>
+                  {activeVideoDurationOptions.length ? activeVideoDurationOptions.map((value) => <option key={value} value={value}>{value} 秒</option>) : <option value={activeVideoDuration}>固定 {activeVideoDuration} 秒</option>}
+                </select>
               </div>
               <div className="sbw-mode-group" role="group" aria-label="分镜创作模式" data-testid="storyboard-mode-toggle">
                 <span className="sbw-mode-label">创作模式</span>
@@ -7596,6 +7541,21 @@ function UserStoryboardWorkbench({
                     onClick={() => void changeReferenceDisplayMode("chained")} title="首段确认后，逐段使用首段与上一段参考生成">串联模式</button>
                 </div>
               </div>
+              <section className="sbw-parameter-info" aria-label="当前模型参数与计费说明">
+                <div className="sbw-parameter-info-panel">
+                  {activeImageRatioIssue && <p role="status" className="sbw-image-ratio-notice">{activeImageRatioIssue}</p>}
+                  <p>视频清晰度：{activeVideoModel?.resolutionOptions.length ? videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution) : "由模型自动确定"} · {activeVideoDurationOptions.length <= 1 ? "固定 " : "所选 "}{activeVideoDuration} 秒</p>
+                  {activeVideoModel && <p>{videoResolutionPriceLabel(activeVideoModel, activeVideoResolution, activeVideoDuration)}</p>}
+                  <VideoDurationBehaviorNotice durationBehavior={activeVideoModel?.durationBehavior} />
+                  {activeVideoModel?.billingUnit === "token" && <label className="sbw-token-budget-label">
+                    每条视频本次最多自动扣款金额（元）
+                    <input aria-label="每条视频本次最多自动扣款金额" type="text" inputMode="decimal" autoComplete="off" placeholder="请填写金额" className="sbw-token-budget-input" disabled={Boolean(batchMode)}
+                      value={tokenChargeConsent?.modelId === activeVideoModel.id && tokenChargeConsent.priceVersion === activeVideoModel.tokenPricing?.priceVersion ? tokenChargeConsent.amount : ""}
+                      onChange={event => setTokenChargeConsent({ modelId: activeVideoModel.id, priceVersion: activeVideoModel.tokenPricing?.priceVersion || "", amount: event.target.value })} />
+                    <small>按实际 Token 用量结算；预留不是扣费，超额待确认。批量每条使用同一额度。</small>
+                  </label>}
+                </div>
+              </section>
             </div>
             <div className="sbw-toolbar-actions">
               <button type="button" className="sbw-batch-action is-image-batch" onClick={() => void batchImages()} disabled={Boolean(activeImageSelectionIssue && !run.cards.some((card) => card.imageRecoveryReady)) || Boolean(batchMode) || run.cards.some((card) => card.imageRetryBlocked && imageAttemptNeedsResolution(card))} title="按当前项目与报价顺序生成所有待处理分镜图"><ImageIcon />批量生图</button>
@@ -7605,7 +7565,7 @@ function UserStoryboardWorkbench({
             </div>
           </section>
 
-          {batchVideoBlockedReason && <p id="sbw-batch-video-blocker" role="status" data-testid="storyboard-batch-video-blocker" style={{ margin: "0 0 12px", fontSize: "13px" }}>批量视频暂不可用：{batchVideoBlockedReason}</p>}
+          {batchVideoBlockedReason && <span id="sbw-batch-video-blocker" className="sr-only">{batchVideoBlockedReason}</span>}
           {referenceDisplayMode === "chained" && <section className="sbw-toolbar" aria-label="串联分镜控制" data-testid="storyboard-chain-control">
             <div role="status">{chainStatus === "running" ? "逐段生成中；正在等待当前分镜交付与保存。" : chainStatus === "waiting" ? "请查看首段图片，确认后将自动继续后续分镜。" : "首段确认一次；后续逐段使用首段（多图模型另带上一段）。"}</div>
             <div className="sbw-toolbar-actions">
@@ -7647,12 +7607,11 @@ function UserStoryboardWorkbench({
               const bindingSummary = assetBindingSummaries[cardIndex];
               const resolvedPreviousReferenceError = bindingSummary?.complete && !card.imageClientRequestId && !card.imageRequestSnapshot
                 && /^参考尚未落实或已失效：/u.test(card.imageError || "");
-              const cardVideoInputs = activeVideoModel ? resolveStoryboardVideoInputs(activeVideoModel, card) : null;
+              const cardVideoInputs = activeVideoModel ? resolveStoryboardAutomaticVideoInputs(activeVideoModel, card) : null;
               const videoStartIssue = publicModelSelectionNotice(activeVideoSelectionIssue, "视频模型")
                 || storyboardCardVideoInputIssue(activeVideoModel, card, run)
                 || (cardVideoInputs?.usesStoryboardImage && needsStoryboardBoardExport(card) ? "生成前将保存并确认当前分镜原图；保存失败不会提交视频。" : "");
-              const showVideoStartIssue = Boolean(videoStartIssue) && (!cardVideoInputs?.usesStoryboardImage || card.imageReferenceState === "stale"
-                || isImageValidationPending(card) || imageAttemptNeedsResolution(card) || hasValidatedImage(card));
+              const showVideoStartIssue = Boolean(videoStartIssue);
               return (
               <article
                 key={card.id}
@@ -7801,7 +7760,7 @@ function UserStoryboardWorkbench({
                         type="button"
                         className={`is-command is-video-command ${isActiveVideoStatus(card.videoStatus) && canRequestVideoTermination(card) ? "is-stop-command" : ""}`}
                          title={videoViewOnly ? "查看已有视频，不会生成或扣费" : videoNeedsRequestReconciliation(card) ? "查询原请求号；只恢复既有任务状态，不会自动重复提交" : isActiveVideoStatus(card.videoStatus) ? `${submittedVideoTaskLabel(card)} · ${canRequestVideoTermination(card) ? "管理视频任务" : "缺少可核验请求编号"}` : card.videoStatus === "failed" && card.videoRetryable !== true ? "原任务或费用尚未确认，请先刷新历史状态" : videoStartIssue || (batchMode && card.videoStatus !== "done" ? "当前卡片正在批量流程中" : card.videoStatus === "done" ? "使用当前所选视频模型重新生成" : "生成视频")}
-                         disabled={videoInputUploadingIds.has(card.id) || preparingVideoIds.has(card.id) || (videoViewOnly ? cardMediaBusy : isActiveVideoStatus(card.videoStatus) ? (videoNeedsRequestReconciliation(card) ? false : !canRequestVideoTermination(card)) : (Boolean(activeVideoSelectionIssue) || Boolean(storyboardCardVideoInputIssue(activeVideoModel, card, run)) || exportingBoardIds.has(card.id) || Boolean(batchMode && card.videoStatus !== "done")))}
+                         disabled={preparingVideoIds.has(card.id) || (videoViewOnly ? cardMediaBusy : isActiveVideoStatus(card.videoStatus) ? (videoNeedsRequestReconciliation(card) ? false : !canRequestVideoTermination(card)) : (Boolean(activeVideoSelectionIssue) || Boolean(storyboardCardVideoInputIssue(activeVideoModel, card, run)) || exportingBoardIds.has(card.id) || Boolean(batchMode && card.videoStatus !== "done")))}
                         onClick={() => { if (switchExistingCardMedia(card, "video", showVideoMedia ? "video" : "image")) return; void (videoNeedsRequestReconciliation(card) ? reconcileVideoRequest(card.id, "manual") : isActiveVideoStatus(card.videoStatus) && card.videoMonitoringPaused === true ? resumeVideoMonitoring(card.id) : isActiveVideoStatus(card.videoStatus) ? (card.videoTaskId && !canRemotelyCancelVideoTask(card) ? pauseVideoMonitoring(card.id) : cancelVideo(card.id)) : prepareAndGenerateVideo(card.id)); }}
                       >
                         {videoNeedsRequestReconciliation(card) || isActiveVideoStatus(card.videoStatus) && card.videoMonitoringPaused === true ? <RefreshCw /> : isActiveVideoStatus(card.videoStatus) ? (canRequestVideoTermination(card) ? <Square /> : <Loader2 className="animate-spin" />) : card.videoStatus === "done" || card.videoStatus === "failed" || card.videoStatus === "cancelled" ? <RotateCcw /> : <Film />}
@@ -7820,12 +7779,9 @@ function UserStoryboardWorkbench({
                     <div className="sbw-flow-prompt">
                       <textarea aria-label={`分段${card.order}视频提示词`} rows={6} disabled={card.videoStatus === "running" || card.videoStatus === "queued"} value={card.videoPrompt} onChange={(event) => patchCard(card.id, { videoPrompt: event.target.value })} placeholder="描述动作、镜头运动和节奏…" />
                     </div>
-                    {cardVideoInputs && <StoryboardVideoInputEditor cardOrder={card.order} capabilities={cardVideoInputs.capabilities} value={card.videoInputs}
-                      disabled={cardMediaBusy || videoInputUploadingIds.has(card.id) || videoNeedsRequestReconciliation(card) || (card.videoStatus === "failed" && card.videoRetryable !== true)}
-                      issue={storyboardCardVideoInputIssue(activeVideoModel, card, run)} onChange={value => updateCardVideoInputs(card.id, value)} onUpload={(file, kind) => uploadCardVideoInput(card.id, file, kind)} />}
                     {activeVideoModel?.firstFrameRatioPolicy === "adaptive" && cardVideoInputs?.input.imageUrl && <p className="sbw-note">视频比例：跟随首帧比例</p>}
-                    {cardVideoInputs?.usesStoryboardImage && hasValidatedImage(card) && <div className="sbw-video-reference-summary"><Film aria-hidden="true" /><span>使用当前分镜图</span></div>}
-                    {showVideoStartIssue && !storyboardCardVideoInputIssue(activeVideoModel, card, run) && !videoViewOnly && !isActiveVideoStatus(card.videoStatus) && !videoNeedsRequestReconciliation(card) && <p className="sbw-note" role="status">{videoStartIssue}</p>}
+                    {cardVideoInputs && <div className="sbw-video-reference-summary"><Film aria-hidden="true" /><span>{cardVideoInputs.requiresStoryboardImage ? "使用当前分镜图" : "仅使用当前视频提示词"}</span></div>}
+                    {showVideoStartIssue && !videoViewOnly && !isActiveVideoStatus(card.videoStatus) && !videoNeedsRequestReconciliation(card) && <p className="sbw-note" role="status">{videoStartIssue}</p>}
                     {card.videoError && <p className="sbw-error-line">{card.videoError}</p>}
                     {card.videoBillingState && <p className="sbw-billing-line">视频费用：{isActiveVideoStatus(card.videoStatus)
                       ? "任务处理中，成功交付后扣费"

@@ -43,6 +43,7 @@ import { knownChatFailureMessage } from "@/lib/chat-customer-failure";
 import { advanceChatGenerationProgress, CHAT_STREAM_RESULT_UNKNOWN_MESSAGE, classifyChatStreamFailure, closeChatStreamReader, isConversationMetadataSyncBlocked, readChatStreamChunk, settledChatPersistenceWarning } from "@/contexts/chat-recovery-policy";
 
 import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { canSelectPublicChatModel } from "@/lib/chat-model-switching-policy";
 import {
   DEFAULT_MODE_PREFERENCE,
   DEFAULT_THEME,
@@ -100,7 +101,7 @@ interface AppContextValue {
   dispatch: React.Dispatch<AppAction>;
   fetchAgents: () => Promise<void>;
   startChat: (agentId: string, requestedConversationId?: string) => string | null;
-  startFreeChat: (options?: { agentId?: string; conversationName?: string; title?: string }) => void;
+  startFreeChat: (options?: { agentId?: string; conversationName?: string; title?: string }) => string | undefined;
   sendMessage: (content: string, mentionedAgentId?: string, images?: string[], modelOverride?: string, apiContent?: string, deepThinkingOverride?: number, webSearchOverride?: boolean, skipUserMessage?: boolean, retryUserMessageId?: string, branch?: { persistUserMessage?: boolean; truncateFromMessageId?: string; appendUserMessage?: boolean }) => Promise<boolean>;
   abortCurrentStream: (convId?: string) => void;
   isConvStreaming: (convId: string) => boolean;
@@ -1268,6 +1269,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       rememberPendingLocalConversation(conversation);
       dispatch({ type: "START_CONVERSATION", payload: conversation });
+      return conversation.id;
     },
     [rememberPendingLocalConversation, state.agents]
   );
@@ -1500,11 +1502,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "SET_CONV_STREAMING", payload: { conversationId: convId, isStreaming: true } });
       resetTypewriterState({ conversationId: convId, messageId: assistantMessage.id });
 
-      // Route based on agent source (model override forces LLM route for any agent type)
-      const useLLMRoute = targetAgent.source === "llm" || !!modelOverride;
+      // A model override cannot convert a non-LLM or bound agent into an LLM route.
+      const allowedModelOverride = canSelectPublicChatModel(targetAgentId, targetAgent) ? modelOverride : undefined;
+      const useLLMRoute = targetAgent.source === "llm";
       const directorTextOnly = targetAgent.source === "llm" && Boolean(officialStoryboardDirectorIdentity(targetAgent.id));
       // 检测是否为生图模型（model name 包含 image/drawing/dall-e 等关键词）
-      const effectiveModel = modelOverride || targetAgent.model || "";
+      const effectiveModel = allowedModelOverride || targetAgent.model || "";
       const isImageModel = !directorTextOnly && isImageGenerationModelName(effectiveModel);
       const hybridImageConfig = getHybridImageConfig(targetAgent.outputStyle);
       // 协同调度：auto模式根据消息内容自动检测生图意图，always模式无条件路由到生图
@@ -1543,7 +1546,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             hybridImagePrompt
           );
         } else if (useLLMRoute) {
-          return await sendLLMMessage(convId, assistantMessage.id, effectiveApiContent, truncatedConversation, targetAgent, images, modelOverride, deepThinkingOverride, webSearchOverride, userMessageId, branch ? { persistUserMessage: branch.persistUserMessage, truncateFromMessageId: persistedBranchId, appendUserMessage: branch.appendUserMessage } : undefined);
+          return await sendLLMMessage(convId, assistantMessage.id, effectiveApiContent, truncatedConversation, targetAgent, images, allowedModelOverride, deepThinkingOverride, webSearchOverride, userMessageId, branch ? { persistUserMessage: branch.persistUserMessage, truncateFromMessageId: persistedBranchId, appendUserMessage: branch.appendUserMessage } : undefined);
         } else if (targetAgent.source === "coze_coding") {
           await sendCozeCodingMessage(convId, assistantMessage.id, effectiveApiContent, truncatedConversation, targetAgent, images, userMessageId, branch);
         } else {
