@@ -702,7 +702,6 @@ require_trusted_controller_file() {
   done
 }
 
-
 run_production_preflight() {
   local trusted_file source_version migration_manifest_sha receipt_path creator_summary verifier_summary receipt_metadata
   for trusted_file in \
