@@ -199,7 +199,53 @@ export function verifyCandidatePackage(directory,descriptor,run,repository) {
   if(s.mode!=='formal'||s.repository!==repository||run?.repository?.full_name!==repository||String(run?.id)!==s.candidateRunId||String(run?.run_attempt)!==s.candidateRunAttempt||run?.head_sha!==s.sourceCommit)fail('CONTROL_CANDIDATE_API_IDENTITY_MISMATCH');
   return verifyPackage(directory,descriptor);
 }
-export function verifyDeploymentBinding(bundleBytes,expectedBundleSha256,descriptor,{service,archiveSha256,releaseId,commit,sourceVersion,buildId,buildOutputDigest}) {
+export const CONTROL_COMPATIBILITY_SOURCE_PATHS = Object.freeze([
+  '.github/workflows/control-plane-compatibility.yml',
+  '.release/source-files.v1.json',
+  'public/version.json',
+  'scripts/deploy-artifact-vnext.sh', 'scripts/deployment-control-plane.mjs',
+  'scripts/package-control-plane-compatibility.mjs',
+  'scripts/verify-control-plane-compatibility-proof.mjs',
+  'scripts/verify-package-control-plane-compatibility.mjs',
+  'scripts/verify-prestop-adopt-readiness-compat.mjs',
+]);
+// This is a single, explicitly identified recovery. The original application,
+// database contract and release-ready evidence remain immutable.
+export function verifyControlCompatibilityProof(bytes,expectedSha256,{bundleBytes,bundleSha256,descriptor,identity}) {
+  if(!Buffer.isBuffer(bytes)||!HEX.test(expectedSha256||'')||digest(bytes)!==expectedSha256)fail('CONTROL_COMPATIBILITY_PROOF_DIGEST');
+  const p=parse(bytes,LIMITS.fileBytes);
+  keys(p,['kind','schemaVersion','repository','business','control','invariants','sourceDiff'],'CONTROL_COMPATIBILITY_PROOF_FIELDS');
+  if(p.kind!=='deployment-control-plane-compatibility-proof.v1'||p.schemaVersion!==1||p.repository!=='675929401-code/zimeiti-caopanshou')fail('CONTROL_COMPATIBILITY_PROOF_IDENTITY');
+  const business={commit:'ede4b913378c5e61a4586f00c8ea592e18feb39f',releaseId:'candidate-ede4b913378c-r60',archiveSha256:'ec2d3ee308ffa8ab44c4d1475695b5cd90070869bc0077f83f9a3ddcd38e21c5',validationBundleSha256:'590969ce3c633b37cb7db17a73807da2c6ad56115f5fa1016f99531bf32c77be',controlDescriptorSha256:'e7b14238b786d39fc7c009ce40351f1447026b12a7fabd16419f250b2dfc262d',migrationManifestSha256:'6468942caa1c63c5996ae3faae49301b9af73bdfcbd96e767f490edb3e03d9c7',candidateRunId:'41353541526',candidateRunAttempt:'1',browserRunId:'41355998423',browserRunAttempt:'1',finalizeRunId:'41356526504',finalizeRunAttempt:'1'};
+  keys(p.business,Object.keys(business),'CONTROL_COMPATIBILITY_BUSINESS_FIELDS');
+  if(canonical(p.business)!==canonical(business)||bundleSha256!==business.validationBundleSha256||!Buffer.isBuffer(bundleBytes)||digest(bundleBytes)!==bundleSha256)fail('CONTROL_COMPATIBILITY_BUSINESS_MISMATCH');
+  assertDescriptor(descriptor);
+  keys(p.control,['descriptorSha256','sourceCommit','runId','runAttempt'],'CONTROL_COMPATIBILITY_CONTROL_FIELDS');
+  const expectedControl={descriptorSha256:digest(encode(descriptor)),sourceCommit:descriptor.subject.sourceCommit,runId:descriptor.subject.candidateRunId,runAttempt:descriptor.subject.candidateRunAttempt};
+  if(descriptor.subject.mode!=='formal'||descriptor.subject.repository!==p.repository||descriptor.subject.sourceCommit===business.commit||canonical(p.control)!==canonical(expectedControl))fail('CONTROL_COMPATIBILITY_CONTROL_MISMATCH');
+  keys(p.sourceDiff,['base','head','paths','versionMetadata'],'CONTROL_COMPATIBILITY_SOURCE_FIELDS');
+  if(p.sourceDiff.base!==business.commit||p.sourceDiff.head!==p.control.sourceCommit||!Array.isArray(p.sourceDiff.paths)||!p.sourceDiff.paths.length||new Set(p.sourceDiff.paths).size!==p.sourceDiff.paths.length||p.sourceDiff.paths.some(n=>!CONTROL_COMPATIBILITY_SOURCE_PATHS.includes(n))||canonical(p.sourceDiff.paths)!==canonical([...p.sourceDiff.paths].sort())||!['.release/source-files.v1.json','public/version.json','scripts/deploy-artifact-vnext.sh','scripts/deployment-control-plane.mjs'].every(n=>p.sourceDiff.paths.includes(n)))fail('CONTROL_COMPATIBILITY_SOURCE_DIFF');
+  keys(p.sourceDiff.versionMetadata,['before','after'],'CONTROL_COMPATIBILITY_VERSION_FIELDS');
+  const before={schemaVersion:1,sourceVersion:'R001597-20261102-66d1decb',revision:1597,sourceDigest:'66d1decb24c1a2b6be1a5be0775941c2fec7ca15bb5b11832ee28f2e91afe3e2',version:'R001597-20261102-66d1decb',hash:'R001597-20261102-66d1decb',timestamp:'2026-11-01T21:03:55.487Z'};
+  const after=p.sourceDiff.versionMetadata.after;
+  keys(p.sourceDiff.versionMetadata.before,Object.keys(before),'CONTROL_COMPATIBILITY_VERSION_FIELDS');
+  keys(after,Object.keys(before),'CONTROL_COMPATIBILITY_VERSION_FIELDS');
+  if(canonical(p.sourceDiff.versionMetadata.before)!==canonical(before)||after.schemaVersion!==1||!Number.isSafeInteger(after.revision)||after.revision<=before.revision||!HEX.test(after.sourceDigest||'')||after.sourceDigest===before.sourceDigest||typeof after.sourceVersion!=='string'||!new RegExp(`^R${String(after.revision).padStart(6,'0')}-[0-9]{8}-${after.sourceDigest.slice(0,8)}$`,'u').test(after.sourceVersion)||after.version!==after.sourceVersion||after.hash!==after.sourceVersion||typeof after.timestamp!=='string'||!Number.isFinite(Date.parse(after.timestamp))||new Date(after.timestamp).toISOString()!==after.timestamp||Date.parse(after.timestamp)<=Date.parse(before.timestamp))fail('CONTROL_COMPATIBILITY_VERSION_MISMATCH');
+  const versionDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(after.timestamp)).replaceAll('-','');
+  if(after.sourceVersion!==`R${String(after.revision).padStart(6,'0')}-${versionDay}-${after.sourceDigest.slice(0,8)}`)fail('CONTROL_COMPATIBILITY_VERSION_MISMATCH');
+  keys(p.invariants,['contractHashes','hookSha256','configSha256','migrationManifestSha256'],'CONTROL_COMPATIBILITY_INVARIANT_FIELDS');
+  const hashes={'deploy/policies/database-contract.v1.json':'854b6707ca14c789c8a76509124bcfd1c978c3dc0bef1352c7b9d9f41cd237f3','deploy/policies/database-semantic-contract.v1.json':'528fa60036daa2144dc3bb910331bf095484c252185c999fd812dcbf73b4bc11','deploy/policies/release-policy.json':'76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd'};
+  keys(p.invariants.contractHashes,Object.keys(hashes),'CONTROL_COMPATIBILITY_CONTRACT_FIELDS');
+  if(canonical(p.invariants.contractHashes)!==canonical(hashes)||p.invariants.hookSha256!=='1d309a6c490d5ee800580f091f3d157a750f162a2c467a256a99e826cf6bb5ed'||p.invariants.configSha256!=='0a182588cdfe748c2cbccb3ddc3f4ea89666dad8eadf4bdf483183eed68fab7b'||p.invariants.migrationManifestSha256!==business.migrationManifestSha256)fail('CONTROL_COMPATIBILITY_INVARIANT_MISMATCH');
+  let b;try{b=JSON.parse(bundleBytes.toString());}catch{fail('CONTROL_COMPATIBILITY_BUNDLE_INVALID');}
+  if(digest(encode(b.subject?.controlPlane))!==business.controlDescriptorSha256||b.subject?.controlPlane?.subject?.candidateRunId!==business.candidateRunId||b.subject?.controlPlane?.subject?.candidateRunAttempt!==business.candidateRunAttempt)fail('CONTROL_COMPATIBILITY_ORIGINAL_DESCRIPTOR');
+  // Re-run every original release-ready gate against its original descriptor.
+  // Only the separate control/application association is changed by this proof.
+  verifyDeploymentBinding(bundleBytes,bundleSha256,b.subject.controlPlane,identity);
+  if(identity?.service!=='web'||identity.commit!==business.commit||identity.releaseId!==business.releaseId||identity.archiveSha256!==business.archiveSha256)fail('CONTROL_COMPATIBILITY_RUNTIME_IDENTITY');
+  return {verified:true,proof:p};
+}
+export function verifyDeploymentBinding(bundleBytes,expectedBundleSha256,descriptor,{service,archiveSha256,releaseId,commit,sourceVersion,buildId,buildOutputDigest,compatibilityProofBytes=null,compatibilityProofSha256=null}) {
   if(!HEX.test(expectedBundleSha256)||digest(bundleBytes)!==expectedBundleSha256)fail('CONTROL_RELEASE_BUNDLE_DIGEST_MISMATCH');
   if(bundleBytes.length>LIMITS.fileBytes)fail('CONTROL_RELEASE_BUNDLE_SIZE_LIMIT');
   let b;try{b=JSON.parse(bundleBytes.toString());}catch{fail('CONTROL_RELEASE_BUNDLE_JSON_INVALID');}
@@ -213,7 +259,9 @@ export function verifyDeploymentBinding(bundleBytes,expectedBundleSha256,descrip
   if(b.schemaVersion!=='zimeiti-release-change-validation-bundle.v1'||b.target!=='release-ready'||b.status!=='release-ready'||b.scope.input.trustedBase!==true||b.scope.input.head!==b.subject.commit)fail('CONTROL_RELEASE_READY_REQUIRED');
   const {bundleId,...core}=b;if(bundleId!==`validation-${digest(Buffer.from(canonical(core))).slice(0,24)}`)fail('CONTROL_RELEASE_BUNDLE_ID_MISMATCH');
   assertDescriptor(descriptor);assertDescriptor(b.subject.controlPlane);
-  if(canonical(b.subject.controlPlane)!==canonical(descriptor)||descriptor.subject.mode!=='formal'||b.subject.commit!==descriptor.subject.sourceCommit)fail('CONTROL_RELEASE_CONTROL_PLANE_MISMATCH');
+  if((compatibilityProofBytes===null)!==(compatibilityProofSha256===null))fail('CONTROL_COMPATIBILITY_PROOF_PAIR_REQUIRED');
+  if(compatibilityProofBytes!==null){verifyControlCompatibilityProof(compatibilityProofBytes,compatibilityProofSha256,{bundleBytes,bundleSha256:expectedBundleSha256,descriptor,identity:{service,archiveSha256,releaseId,commit,sourceVersion,buildId,buildOutputDigest}});}
+  else if(canonical(b.subject.controlPlane)!==canonical(descriptor)||descriptor.subject.mode!=='formal'||b.subject.commit!==descriptor.subject.sourceCommit)fail('CONTROL_RELEASE_CONTROL_PLANE_MISMATCH');
   if(!Array.isArray(b.subject.services)||!b.subject.services.includes('web')||!b.subject.services.includes(service)||!['web','voice'].includes(service)||new Set(b.subject.services).size!==b.subject.services.length||b.subject.services.some(s=>!['web','voice'].includes(s)))fail('CONTROL_RELEASE_SERVICE_MISMATCH');
   for(const s of ['web','voice'])if(b.subject.candidatePayloads[s]!==null){const payload=b.subject.candidatePayloads[s];keys(payload,['releaseId','artifactDigest','archiveSha256','fileCount','totalBytes'],'CONTROL_RELEASE_PAYLOAD_FIELDS');if(!HEX.test(payload.archiveSha256)||!HEX.test(payload.artifactDigest)||!Number.isSafeInteger(payload.fileCount)||payload.fileCount<1||!Number.isSafeInteger(payload.totalBytes)||payload.totalBytes<1)fail('CONTROL_RELEASE_PAYLOAD_INVALID');}
   const payload=b.subject.candidatePayloads[service];if(!payload||payload.archiveSha256!==archiveSha256||payload.releaseId!==releaseId||!HEX.test(archiveSha256))fail('CONTROL_RELEASE_ARTIFACT_MISMATCH');
@@ -280,14 +328,24 @@ export function installVerified(verified,parent,receiptPath,verifierSha256,{exec
 function args(argv){const a=new Map();for(let i=0;i<argv.length;i++){const t=argv[i];if(!t.startsWith('--')||a.has(t))fail('CONTROL_ARGUMENT_INVALID');a.set(t,argv[i+1]&&!argv[i+1].startsWith('--')?argv[++i]:'1');}return a;}
 export function main(argv=process.argv.slice(2)) {
   const [command,...rest]=argv,a=args(rest),root=path.resolve(a.get('--root')||process.cwd());
-  const allowed={plan:['--root'],'verify-source':['--root','--subject'],package:['--root','--output','--subject'],verify:['--package','--expected-descriptor'],install:['--package','--expected-descriptor','--parent','--receipt','--verifier-sha256','--plan','--execute'],'verify-installed':['--installed-root','--expected-descriptor','--receipt','--receipt-sha256','--verifier-sha256'],'verify-deployment-binding':['--expected-descriptor','--release-validation-bundle','--release-validation-sha256','--service','--artifact-sha256','--release-id','--commit','--source-version','--build-id','--build-output-digest']};
+  const allowed={plan:['--root'],'verify-source':['--root','--subject'],package:['--root','--output','--subject'],verify:['--package','--expected-descriptor'],install:['--package','--expected-descriptor','--parent','--receipt','--verifier-sha256','--plan','--execute'],'verify-installed':['--installed-root','--expected-descriptor','--receipt','--receipt-sha256','--verifier-sha256'],'verify-deployment-binding':['--expected-descriptor','--release-validation-bundle','--release-validation-sha256','--service','--artifact-sha256','--release-id','--commit','--source-version','--build-id','--build-output-digest','--compatibility-proof','--compatibility-proof-sha256']};
   if(!allowed[command]||[...a.keys()].some(k=>!allowed[command].includes(k)))fail('CONTROL_ARGUMENT_INVALID');
   if(command==='plan')return plan(root);
   const sourceSubject=()=>{try{return JSON.parse(a.get('--subject'));}catch{fail('CONTROL_SUBJECT_JSON_INVALID');}};
   if(command==='verify-source')return verifySource(root,sourceSubject(),process.env);
   if(command==='package')return packageBundle(root,a.get('--output'),sourceSubject(),process.env);
   const expected=JSON.parse(read(path.resolve(a.get('--expected-descriptor'))));assertDescriptor(expected);
-  if(command==='verify-deployment-binding')return verifyDeploymentBinding(read(path.resolve(a.get('--release-validation-bundle'))),a.get('--release-validation-sha256'),expected,{service:a.get('--service'),archiveSha256:a.get('--artifact-sha256'),releaseId:a.get('--release-id'),commit:a.get('--commit'),sourceVersion:a.get('--source-version'),buildId:a.get('--build-id'),buildOutputDigest:a.get('--build-output-digest')});
+  if(command==='verify-deployment-binding'){
+    if(a.has('--compatibility-proof')!==a.has('--compatibility-proof-sha256'))fail('CONTROL_COMPATIBILITY_PROOF_PAIR_REQUIRED');
+    let compatibilityProofBytes=null,compatibilityProofSha256=null;
+    if(a.has('--compatibility-proof')){
+      if(process.platform!=='linux'||process.geteuid?.()!==0)fail('CONTROL_COMPATIBILITY_ROOT_REQUIRED');
+      const proofPath=path.resolve(a.get('--compatibility-proof'));trustedParent(path.dirname(proofPath),true);const s=regular(proofPath);
+      if(s.uid!==0||s.gid!==0||(s.mode&0o022))fail('CONTROL_COMPATIBILITY_PROOF_UNTRUSTED');
+      compatibilityProofBytes=read(proofPath);compatibilityProofSha256=a.get('--compatibility-proof-sha256');
+    }
+    return verifyDeploymentBinding(read(path.resolve(a.get('--release-validation-bundle'))),a.get('--release-validation-sha256'),expected,{service:a.get('--service'),archiveSha256:a.get('--artifact-sha256'),releaseId:a.get('--release-id'),commit:a.get('--commit'),sourceVersion:a.get('--source-version'),buildId:a.get('--build-id'),buildOutputDigest:a.get('--build-output-digest'),compatibilityProofBytes,compatibilityProofSha256});
+  }
   if(command==='verify')return {verified:true,...verifyPackage(path.resolve(a.get('--package')),expected).descriptor};
   const self=fs.realpathSync(process.argv[1]);if(!HEX.test(a.get('--verifier-sha256')||'')||digest(read(self))!==a.get('--verifier-sha256'))fail('CONTROL_VERIFIER_DIGEST_MISMATCH');
   if(command==='verify-installed'){

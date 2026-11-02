@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "f71ed1fef2c5601d5301e565c9922732630c3632f4a8c1d9792d85011bdaedec",
+  "sourceFingerprint": "89667bacfe5980bfe42a3a7d9bf712f11827e4ecde3b40d9f823ec3931ae5872",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 4837,
-  "totalBytes": 77249210,
+  "fileCount": 4842,
+  "totalBytes": 77320059,
   "files": [
     {
       "path": ".cnb.yml",
@@ -55,6 +55,11 @@
       "path": ".gitattributes",
       "bytes": 583,
       "sha256": "b6c3bac2f36709a1a9cd40b8b323e49c5a7e08ea6b46a1e34106f6849eeddc55"
+    },
+    {
+      "path": ".github/workflows/control-plane-compatibility.yml",
+      "bytes": 4057,
+      "sha256": "f7bd16a63c941601d9b38e0856a1bedaa645159c0fc5e1bcbcb70becef676bd0"
     },
     {
       "path": ".github/workflows/deploy.yml",
@@ -1919,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "048cd17666bae5ca744e52f14fc6d1a7846f9f454809b6fa7cbd433b13837f7f"
+      "sha256": "52f62989608c1e95c86f54b0fbcc185945d9700f906d5b2ab578facd6ce53a43"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -3118,8 +3123,8 @@
     },
     {
       "path": "scripts/deploy-artifact-vnext.sh",
-      "bytes": 200503,
-      "sha256": "a649d4ac5277aa05f28026ab7026fbe21d64e742da5d2d4c6c2283d05a900c6e"
+      "bytes": 204422,
+      "sha256": "be18414f0db57e2912ebabec82c0d07b43254933a96d8e5a11a5e35022e9d246"
     },
     {
       "path": "scripts/deploy-direct.js",
@@ -3158,8 +3163,8 @@
     },
     {
       "path": "scripts/deployment-control-plane.mjs",
-      "bytes": 34643,
-      "sha256": "8a736b6dc60ae181d5b613c2b37cd92ee397d2573042ab711239c96d7597c773"
+      "bytes": 42860,
+      "sha256": "ed06b0bc69865c882ab07a6672dae6f687ee927707030884150c1a6d7fdf0e7f"
     },
     {
       "path": "scripts/dev-local.ps1",
@@ -4000,6 +4005,11 @@
       "path": "scripts/onboard-lconai-workbook-models-local.mjs",
       "bytes": 21907,
       "sha256": "81f8a2865b4da6bf07288d047cd0cb2b50facf8b58c6835110365d9c6cfca544"
+    },
+    {
+      "path": "scripts/package-control-plane-compatibility.mjs",
+      "bytes": 17807,
+      "sha256": "c5044263e441a7ef2ddb92e6f8e0f5a83b5e809f0cd6d71fd27742787bc21676"
     },
     {
       "path": "scripts/package-local-release.sh",
@@ -7197,6 +7207,11 @@
       "sha256": "bf266db4e3cbe76a70eccad251dbddccefe74810dee46eda7a8d6670aa17cc68"
     },
     {
+      "path": "scripts/verify-control-plane-compatibility-proof.mjs",
+      "bytes": 7772,
+      "sha256": "ed68c238d16607b98cdc2defb39902beeb72147ab33a756970ade3b14d4c8a13"
+    },
+    {
       "path": "scripts/verify-control-plane-first-batch-desktop.mjs",
       "bytes": 12373,
       "sha256": "c764b2eee7bc1cd35bad57426d8ad3d4a7a8b178a08f8520d19fe51b6528eed1"
@@ -9062,6 +9077,11 @@
       "sha256": "8081f4bec2ac8e0482a46de32a555700fde5c2bb5e96ddacabee51cbba564b35"
     },
     {
+      "path": "scripts/verify-package-control-plane-compatibility.mjs",
+      "bytes": 15223,
+      "sha256": "a6a771a306480f431af473fec5e2a4b51b991c06dbafac31f6b70443449f13e4"
+    },
+    {
       "path": "scripts/verify-payment-atomic-hardening.ts",
       "bytes": 5059,
       "sha256": "1edf0935b47d53778a3421eba2bc5f1ba9151fb73621e8beebbb033af101e00e"
@@ -9280,6 +9300,11 @@
       "path": "scripts/verify-popup-theme-home-zero-cost.mjs",
       "bytes": 6434,
       "sha256": "7651c77dfd41e82de51431b58dcd07a1fb5efd556acd8af74bbf1d97c1727dce"
+    },
+    {
+      "path": "scripts/verify-prestop-adopt-readiness-compat.mjs",
+      "bytes": 13854,
+      "sha256": "da979fd989a71b79d7ef780ef1617086fc0c9b5c46f47b99f97de9462df82e13"
     },
     {
       "path": "scripts/verify-prestop-adoption-zero-network.mjs",

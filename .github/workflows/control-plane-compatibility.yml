@@ -1,0 +1,86 @@
+name: Control plane compatibility package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/deploy-artifact-vnext.sh'
+      - 'scripts/deployment-control-plane.mjs'
+      - 'scripts/verify-prestop-adopt-readiness-compat.mjs'
+      - 'scripts/verify-control-plane-compatibility-proof.mjs'
+      - '.github/workflows/control-plane-compatibility.yml'
+      - 'scripts/package-control-plane-compatibility.mjs'
+      - 'scripts/verify-package-control-plane-compatibility.mjs'
+      - 'public/version.json'
+      - '.release/source-files.v1.json'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: control-plane-compatibility-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    if: github.repository == '675929401-code/zimeiti-caopanshou' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact control-only source before cancelling automatic candidate
+        run: node --input-type=module -e 'import {inspectSource} from "./scripts/package-control-plane-compatibility.mjs"; inspectSource(process.cwd());'
+      - name: Cancel only unpublished automatic candidate for this exact main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --input-type=module -e 'import {cancelAutomaticCandidate} from "./scripts/package-control-plane-compatibility.mjs"; await cancelAutomaticCandidate(process.cwd());'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.19.0'
+      - name: Verify producer contracts without external calls
+        run: node scripts/verify-package-control-plane-compatibility.mjs
+      - name: Download original immutable finalized business artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          repository: 675929401-code/zimeiti-caopanshou
+          run-id: '41356526504'
+          artifact-ids: '13102719744'
+          merge-multiple: true
+          path: ${{ runner.temp }}/original-release
+      - name: Read exact successful original main run provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/original-runs"
+          gh api repos/675929401-code/zimeiti-caopanshou/actions/runs/41353541526/attempts/1 > "$RUNNER_TEMP/original-runs/candidate.json"
+          gh api repos/675929401-code/zimeiti-caopanshou/actions/runs/41355998423/attempts/1 > "$RUNNER_TEMP/original-runs/browser.json"
+          gh api repos/675929401-code/zimeiti-caopanshou/actions/runs/41356526504/attempts/1 > "$RUNNER_TEMP/original-runs/finalize.json"
+      - name: Verify compatibility consumer against original finalized bundle bytes
+        run: node scripts/verify-control-plane-compatibility-proof.mjs --original-bundle "$RUNNER_TEMP/original-release/release-change-validations.json"
+      - name: Package current control plane and strictly bound compatibility proof
+        run: |
+          set -euo pipefail
+          node scripts/package-control-plane-compatibility.mjs \
+            --root "$GITHUB_WORKSPACE" \
+            --original-artifact-dir "$RUNNER_TEMP/original-release" \
+            --run-dir "$RUNNER_TEMP/original-runs" \
+            --output "$RUNNER_TEMP/control-compatibility"
+      - name: Upload new immutable control package and proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: control-plane-compatibility-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/control-compatibility
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

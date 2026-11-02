@@ -338,6 +338,8 @@ CONTROL_PLANE_INSTALLATION_RECEIPT="${CONTROL_PLANE_INSTALLATION_RECEIPT:-}"
 CONTROL_PLANE_INSTALLATION_RECEIPT_SHA256="${CONTROL_PLANE_INSTALLATION_RECEIPT_SHA256:-}"
 CONTROL_PLANE_EXPECTED_DESCRIPTOR="${CONTROL_PLANE_EXPECTED_DESCRIPTOR:-}"
 CONTROL_PLANE_EXPECTED_DESCRIPTOR_SHA256="${CONTROL_PLANE_EXPECTED_DESCRIPTOR_SHA256:-}"
+CONTROL_PLANE_COMPATIBILITY_PROOF="${CONTROL_PLANE_COMPATIBILITY_PROOF:-}"
+CONTROL_PLANE_COMPATIBILITY_PROOF_SHA256="${CONTROL_PLANE_COMPATIBILITY_PROOF_SHA256:-}"
 [[ "$CONTROL_PLANE_TRUSTED_VERIFIER" == /* && "$CONTROL_PLANE_TRUSTED_VERIFIER" != "$CONTROL_PLANE_ROOT/"* ]] || \
   die "an external trusted control-plane verifier is required"
 require_trusted_root_executable "$CONTROL_PLANE_TRUSTED_VERIFIER" "control-plane bootstrap verifier"
@@ -373,10 +375,15 @@ done
   --installed-root "$CONTROL_PLANE_ROOT" --expected-descriptor "$CONTROL_PLANE_EXPECTED_DESCRIPTOR" \
   --receipt "$CONTROL_PLANE_INSTALLATION_RECEIPT" --receipt-sha256 "$CONTROL_PLANE_INSTALLATION_RECEIPT_SHA256" \
   --verifier-sha256 "$CONTROL_PLANE_TRUSTED_VERIFIER_SHA256" || die "complete installed control-plane gate failed"
-if [[ "$SERVICE" == "web" ]]; then
-  [[ "${DIRECT_HOOK_PATH:-}" == "$CONTROL_PLANE_ROOT/transaction-hook.mjs" && \
-     "${DIRECT_HOOK_PM2_CONFIG_PATH:-}" == "$CONTROL_PLANE_ROOT/ecosystem.config.cjs" ]] || \
+CONTROL_PLANE_RUNTIME_PATHS_DEFERRED=0
+if [[ "$SERVICE" == "web" && ( "${DIRECT_HOOK_PATH:-}" != "$CONTROL_PLANE_ROOT/transaction-hook.mjs" || \
+     "${DIRECT_HOOK_PM2_CONFIG_PATH:-}" != "$CONTROL_PLANE_ROOT/ecosystem.config.cjs" ) ]]; then
+  [[ "${PRESTOP_ADOPT:-0}" == 1 && -n "${CONTROL_PLANE_COMPATIBILITY_PROOF:-}" && \
+     "${CONTROL_PLANE_COMPATIBILITY_PROOF_SHA256:-}" =~ ^[a-f0-9]{64}$ ]] || \
     die "media-worker hook/config must belong to this verified control-plane bundle"
+  # No old path is opened or executed here. The complete compatibility proof
+  # must pass before its original, byte-identical transaction paths are used.
+  CONTROL_PLANE_RUNTIME_PATHS_DEFERRED=1
 fi
 ASSET_POLICY_TRANSITION_VERIFIER="$CONTROL_PLANE_ROOT/scripts/asset-policy-transition-proof-vnext.mjs"
 PREFLIGHT_CREATOR="$CONTROL_PLANE_ROOT/scripts/create-production-preflight-receipt.mjs"
@@ -2214,6 +2221,49 @@ BUILD_OUTPUT_DIGEST="$(metadata_value buildOutputDigest)"
 SOURCE_MANIFEST_SHA256="$(metadata_value sourceManifestSha256)"
 # The external release-ready JSON is authenticated by its independently supplied
 # finalized-run SHA. It is never trusted because an incoming archive names it.
+prepare_control_plane_compatibility() {
+  CONTROL_PLANE_COMPATIBILITY_ARGS=()
+  if [[ -z "${CONTROL_PLANE_COMPATIBILITY_PROOF:-}" && -z "${CONTROL_PLANE_COMPATIBILITY_PROOF_SHA256:-}" ]]; then
+    return 0
+  fi
+  [[ "${CONTROL_PLANE_COMPATIBILITY_PROOF:-}" == /* && "${CONTROL_PLANE_COMPATIBILITY_PROOF:-}" != "$CONTROL_PLANE_ROOT/"* && \
+     "${CONTROL_PLANE_COMPATIBILITY_PROOF_SHA256:-}" =~ ^[a-f0-9]{64}$ ]] || \
+    die "external control-plane compatibility proof path and SHA-256 must be supplied together"
+  require_trusted_controller_file "${CONTROL_PLANE_COMPATIBILITY_PROOF:-}" "control-plane compatibility proof"
+  [[ "$(sha256sum -- "${CONTROL_PLANE_COMPATIBILITY_PROOF:-}" | awk 'NR == 1 { print $1 }')" == "${CONTROL_PLANE_COMPATIBILITY_PROOF_SHA256:-}" ]] || \
+    die "control-plane compatibility proof SHA-256 mismatch"
+  CONTROL_PLANE_COMPATIBILITY_ARGS=(--compatibility-proof "${CONTROL_PLANE_COMPATIBILITY_PROOF:-}" \
+    --compatibility-proof-sha256 "${CONTROL_PLANE_COMPATIBILITY_PROOF_SHA256:-}")
+}
+
+
+assert_deferred_runtime_control_paths() {
+  [[ "${CONTROL_PLANE_RUNTIME_PATHS_DEFERRED:-0}" == 1 ]] || return 0
+  [[ "${PRESTOP_ADOPT:-0}" == 1 && ${#CONTROL_PLANE_COMPATIBILITY_ARGS[@]} == 4 ]] || \
+    die "old runtime paths require verified adoption compatibility"
+  local original_control_root trusted_runtime_file
+  original_control_root="$(node - "$RELEASE_VALIDATION_BUNDLE" <<'NODE'
+const fs = require('node:fs');
+const b = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const manifest = b.subject?.controlPlane?.manifestSha256;
+if (!/^[a-f0-9]{64}$/.test(manifest || '')) throw Error('CONTROL_ORIGINAL_MANIFEST_REQUIRED');
+process.stdout.write('/data/direct-deploy/bin/V1.0-' + manifest.slice(0,12));
+NODE
+)" || die "verified original control-plane identity unavailable"
+  [[ "${DIRECT_HOOK_PATH:-}" == "$original_control_root/transaction-hook.mjs" && \
+     "${DIRECT_HOOK_PM2_CONFIG_PATH:-}" == "$original_control_root/ecosystem.config.cjs" ]] || \
+    die "adopted runtime paths do not match the verified original control plane"
+  for trusted_runtime_file in "$DIRECT_HOOK_PATH" "$DIRECT_HOOK_PM2_CONFIG_PATH" \
+    "$CONTROL_PLANE_ROOT/transaction-hook.mjs" "$CONTROL_PLANE_ROOT/ecosystem.config.cjs"; do
+    require_trusted_controller_file "$trusted_runtime_file" "adopted runtime control dependency"
+  done
+  [[ "$(sha256sum -- "$DIRECT_HOOK_PATH" | awk 'NR == 1 { print $1 }')" == \
+     "$(sha256sum -- "$CONTROL_PLANE_ROOT/transaction-hook.mjs" | awk 'NR == 1 { print $1 }')" && \
+     "$(sha256sum -- "$DIRECT_HOOK_PM2_CONFIG_PATH" | awk 'NR == 1 { print $1 }')" == \
+     "$(sha256sum -- "$CONTROL_PLANE_ROOT/ecosystem.config.cjs" | awk 'NR == 1 { print $1 }')" ]] || \
+    die "adopted hook/config bytes differ from the verified new control package"
+}
+
 RELEASE_VALIDATION_BUNDLE="${RELEASE_VALIDATION_BUNDLE:-}"
 RELEASE_VALIDATION_BUNDLE_SHA256="${RELEASE_VALIDATION_BUNDLE_SHA256:-}"
 [[ "$RELEASE_VALIDATION_BUNDLE" == /* && "$RELEASE_VALIDATION_BUNDLE" != "$CONTROL_PLANE_ROOT/"* && \
@@ -2222,12 +2272,14 @@ require_trusted_controller_file "$RELEASE_VALIDATION_BUNDLE" "finalized release 
 [[ "$(sha256sum -- "$CONTROL_PLANE_TRUSTED_VERIFIER" | awk 'NR == 1 { print $1 }')" == "$CONTROL_PLANE_TRUSTED_VERIFIER_SHA256" && \
    "$(sha256sum -- "$CONTROL_PLANE_EXPECTED_DESCRIPTOR" | awk 'NR == 1 { print $1 }')" == "$CONTROL_PLANE_EXPECTED_DESCRIPTOR_SHA256" ]] || \
   die "external control-plane trust changed during artifact audit"
+prepare_control_plane_compatibility
 "$DEPLOY_NODE_BIN" "$CONTROL_PLANE_TRUSTED_VERIFIER" verify-deployment-binding \
   --expected-descriptor "$CONTROL_PLANE_EXPECTED_DESCRIPTOR" \
   --release-validation-bundle "$RELEASE_VALIDATION_BUNDLE" --release-validation-sha256 "$RELEASE_VALIDATION_BUNDLE_SHA256" \
   --service "$SERVICE" --artifact-sha256 "${ACTUAL_SHA256,,}" --release-id "$RELEASE_ID" \
   --commit "$COMMIT_SHA" --source-version "$SOURCE_VERSION" --build-id "$BUILD_ID" \
-  --build-output-digest "$BUILD_OUTPUT_DIGEST" || die "business artifact/control-plane release binding failed"
+  --build-output-digest "$BUILD_OUTPUT_DIGEST" "${CONTROL_PLANE_COMPATIBILITY_ARGS[@]}" || die "business artifact/control-plane release binding failed"
+assert_deferred_runtime_control_paths
 ASSET_DIGEST=""
 ASSET_VERSION=""
 ASSET_MANIFEST_SHA256=""
@@ -2769,9 +2821,9 @@ assert_readiness_identity() {
   local expected_source_version="$6"
   local expected_build_output_digest="$7"
   local label="$8"
-  node - "$response_file" "$SERVICE" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" "$expected_source_version" "$expected_build_output_digest" "$label" <<'NODE'
+  node - "$response_file" "$SERVICE" "$expected_release" "$expected_commit" "$expected_build" "$expected_asset_digest" "$expected_source_version" "$expected_build_output_digest" "$label" "$PRESTOP_ADOPT" <<'NODE'
 const fs = require("node:fs");
-const [filePath, service, releaseId, commitSha, buildId, assetDigest, sourceVersion, buildOutputDigest, label] = process.argv.slice(2);
+const [filePath, service, releaseId, commitSha, buildId, assetDigest, sourceVersion, buildOutputDigest, label, prestopAdopt] = process.argv.slice(2);
 const body = JSON.parse(fs.readFileSync(filePath, "utf8"));
 if (body.ready !== true) throw new Error(`readiness is not true: ${String(body.ready)}`);
 if (body.service !== service) throw new Error(`readiness service mismatch: ${String(body.service)}`);
@@ -2782,9 +2834,15 @@ if (body.sourceVersion !== sourceVersion) throw new Error(`readiness source vers
 if (body.buildOutputDigest !== buildOutputDigest) throw new Error(`readiness build output digest mismatch: ${String(body.buildOutputDigest)}`);
 if (service === "web" && body.assetDigest !== assetDigest) throw new Error(`readiness asset digest mismatch: ${String(body.assetDigest)}`);
 const expectedReadinessScope = label === "candidate" ? "candidate-runtime" : "core-platform";
-if (body.readinessScope !== expectedReadinessScope) throw new Error(`readiness scope mismatch: ${String(body.readinessScope)}`);
-if (typeof body.fullVerificationReady !== "boolean" || typeof body.verificationState !== "string" || body.verificationState.length === 0) {
-  throw new Error("readiness verification semantics are missing");
+// An adopted pre-stop can originate from the complete earlier production contract.
+// Only the old predeploy baseline may omit all three newer semantic fields.
+const adoptedLegacyBaseline = prestopAdopt === "1" && service === "web" && label === "predeploy"
+  && ["readinessScope", "fullVerificationReady", "verificationState"].every((key) => !Object.hasOwn(body, key));
+if (!adoptedLegacyBaseline) {
+  if (body.readinessScope !== expectedReadinessScope) throw new Error(`readiness scope mismatch: ${String(body.readinessScope)}`);
+  if (typeof body.fullVerificationReady !== "boolean" || typeof body.verificationState !== "string" || body.verificationState.length === 0) {
+    throw new Error("readiness verification semantics are missing");
+  }
 }
 if (label === "candidate") {
   if (body.readinessProfile !== "candidate-runtime-v1" || body.activationReady !== false) {
