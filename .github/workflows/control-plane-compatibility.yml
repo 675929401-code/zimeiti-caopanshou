@@ -13,6 +13,7 @@ on:
       - 'scripts/package-control-plane-compatibility.mjs'
       - 'scripts/verify-package-control-plane-compatibility.mjs'
       - 'public/version.json'
+      - '.release/source-files.v1.json'
 
 permissions:
   actions: read

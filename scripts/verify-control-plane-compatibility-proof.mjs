@@ -37,6 +37,8 @@ rejected('original bundle byte drift rejected',()=>verify(proof,{...context,bund
 for(const pair of [{compatibilityProofBytes:bytes(proof)},{compatibilityProofSha256:digest(bytes(proof))}])rejected('partial proof pair rejected',()=>verifyDeploymentBinding(original,bundleSha256,descriptor,{...identity,...pair}));
 for(const field of ['schemaVersion','sourceVersion','revision','sourceDigest','version','hash','timestamp'])rejected(`version ${field} drift rejected`,()=>{const p=structuredClone(proof);p.sourceDiff.versionMetadata.after[field]=field==='revision'?1597:field==='timestamp'?'invalid':null;verify(p);});
 rejected('missing declared version change rejected',()=>{const p=structuredClone(proof);p.sourceDiff.paths=p.sourceDiff.paths.filter(n=>n!=='public/version.json');verify(p);});
+rejected('missing generated source metadata rejected',()=>{const p=structuredClone(proof);p.sourceDiff.paths=p.sourceDiff.paths.filter(n=>n!=='.release/source-files.v1.json');verify(p);});
+rejected('source repository identity change rejected',()=>{const p=structuredClone(proof);p.sourceDiff.paths.push('.release/source-repo.json');p.sourceDiff.paths.sort();verify(p);});
 rejected('unknown version metadata rejected',()=>{const p=structuredClone(proof);p.sourceDiff.versionMetadata.after.unexpected=true;verify(p);});
 rejected('changed original version record rejected',()=>{const p=structuredClone(proof);p.sourceDiff.versionMetadata.before.revision=1596;verify(p);});
 rejected('version day must match Shanghai timestamp',()=>{const p=structuredClone(proof);for(const k of ['sourceVersion','version','hash'])p.sourceDiff.versionMetadata.after[k]='R001598-20261103-aaaaaaaa';verify(p);});

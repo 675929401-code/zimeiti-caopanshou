@@ -201,6 +201,7 @@ export function verifyCandidatePackage(directory,descriptor,run,repository) {
 }
 export const CONTROL_COMPATIBILITY_SOURCE_PATHS = Object.freeze([
   '.github/workflows/control-plane-compatibility.yml',
+  '.release/source-files.v1.json',
   'public/version.json',
   'scripts/deploy-artifact-vnext.sh', 'scripts/deployment-control-plane.mjs',
   'scripts/package-control-plane-compatibility.mjs',
@@ -223,7 +224,7 @@ export function verifyControlCompatibilityProof(bytes,expectedSha256,{bundleByte
   const expectedControl={descriptorSha256:digest(encode(descriptor)),sourceCommit:descriptor.subject.sourceCommit,runId:descriptor.subject.candidateRunId,runAttempt:descriptor.subject.candidateRunAttempt};
   if(descriptor.subject.mode!=='formal'||descriptor.subject.repository!==p.repository||descriptor.subject.sourceCommit===business.commit||canonical(p.control)!==canonical(expectedControl))fail('CONTROL_COMPATIBILITY_CONTROL_MISMATCH');
   keys(p.sourceDiff,['base','head','paths','versionMetadata'],'CONTROL_COMPATIBILITY_SOURCE_FIELDS');
-  if(p.sourceDiff.base!==business.commit||p.sourceDiff.head!==p.control.sourceCommit||!Array.isArray(p.sourceDiff.paths)||!p.sourceDiff.paths.length||new Set(p.sourceDiff.paths).size!==p.sourceDiff.paths.length||p.sourceDiff.paths.some(n=>!CONTROL_COMPATIBILITY_SOURCE_PATHS.includes(n))||canonical(p.sourceDiff.paths)!==canonical([...p.sourceDiff.paths].sort())||!['public/version.json','scripts/deploy-artifact-vnext.sh','scripts/deployment-control-plane.mjs'].every(n=>p.sourceDiff.paths.includes(n)))fail('CONTROL_COMPATIBILITY_SOURCE_DIFF');
+  if(p.sourceDiff.base!==business.commit||p.sourceDiff.head!==p.control.sourceCommit||!Array.isArray(p.sourceDiff.paths)||!p.sourceDiff.paths.length||new Set(p.sourceDiff.paths).size!==p.sourceDiff.paths.length||p.sourceDiff.paths.some(n=>!CONTROL_COMPATIBILITY_SOURCE_PATHS.includes(n))||canonical(p.sourceDiff.paths)!==canonical([...p.sourceDiff.paths].sort())||!['.release/source-files.v1.json','public/version.json','scripts/deploy-artifact-vnext.sh','scripts/deployment-control-plane.mjs'].every(n=>p.sourceDiff.paths.includes(n)))fail('CONTROL_COMPATIBILITY_SOURCE_DIFF');
   keys(p.sourceDiff.versionMetadata,['before','after'],'CONTROL_COMPATIBILITY_VERSION_FIELDS');
   const before={schemaVersion:1,sourceVersion:'R001597-20261102-66d1decb',revision:1597,sourceDigest:'66d1decb24c1a2b6be1a5be0775941c2fec7ca15bb5b11832ee28f2e91afe3e2',version:'R001597-20261102-66d1decb',hash:'R001597-20261102-66d1decb',timestamp:'2026-11-01T21:03:55.487Z'};
   const after=p.sourceDiff.versionMetadata.after;

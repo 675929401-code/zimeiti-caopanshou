@@ -22,6 +22,40 @@ const encode=value=>Buffer.from(canonical(value)+'\n');
 const git=(root,args)=>execFileSync('git',['--no-optional-locks','--no-replace-objects',...args],{cwd:root,timeout:10000,maxBuffer:4*1024*1024,windowsHide:true,stdio:['ignore','pipe','pipe']});
 function read(file,max=16*1024*1024){const s=fs.lstatSync(file);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>max)fail('COMPAT_INPUT_METADATA');return fs.readFileSync(file);}
 export function assertAllowedPaths(paths){if(!paths.length||new Set(paths).size!==paths.length||paths.some(p=>!ALLOWED_PATHS.includes(p)))fail('COMPAT_SOURCE_DIFF_FORBIDDEN');return [...paths].sort();}
+// Same output contract as release-workflow.mjs sourceManifest/writeJsonAtomic.
+// Git blobs are checked in one batch; this never refreshes metadata or runs the
+// full release audit, which remains a separate mandatory CI gate.
+export function assertManagedSourceMetadata(bytes,baseline,rows){
+  if(!baseline||baseline.schemaVersion!==1||baseline.projectId!=='zimeiti-caopanshou'||baseline.kind!=='clean-source-snapshot'||baseline.canonicalTextEol!=='lf'||!Array.isArray(baseline.files)||!Array.isArray(rows)||rows.length<1)fail('COMPAT_SOURCE_METADATA_IDENTITY');
+  for(const field of ['policySha256','assetManifestSha256','assetDigest'])if(!/^[a-f0-9]{64}$/u.test(baseline[field]||''))fail('COMPAT_SOURCE_METADATA_IDENTITY');
+  if(baseline.assetVersion!==`sha256-${baseline.assetDigest}`)fail('COMPAT_SOURCE_METADATA_IDENTITY');
+  const seen=new Set();
+  for(const row of rows){if(!row||typeof row.path!=='string'||!row.path||/[\r\n\0]/u.test(row.path)||row.path.startsWith('/')||row.path.split('/').some(x=>!x||x==='.'||x==='..')||seen.has(row.path)||!Number.isSafeInteger(row.bytes)||row.bytes<0||!/^[a-f0-9]{64}$/u.test(row.sha256||''))fail('COMPAT_SOURCE_METADATA_ROWS');seen.add(row.path);}
+  if(canonical(rows.map(r=>r.path))!==canonical(rows.map(r=>r.path).sort((a,b)=>a.localeCompare(b,'en'))))fail('COMPAT_SOURCE_METADATA_ROWS');
+  const sourceFingerprint=digest(Buffer.from(rows.map(row=>`${row.sha256}  ${row.path}\n`).join('')));
+  const expected={schemaVersion:1,projectId:'zimeiti-caopanshou',kind:'clean-source-snapshot',canonicalTextEol:'lf',policySha256:baseline.policySha256,sourceFingerprint,assetManifestSha256:baseline.assetManifestSha256,assetDigest:baseline.assetDigest,assetVersion:baseline.assetVersion,fileCount:rows.length,totalBytes:rows.reduce((sum,row)=>sum+row.bytes,0),files:rows};
+  if(!Buffer.from(JSON.stringify(expected,null,2)+'\n').equals(bytes))fail('COMPAT_SOURCE_METADATA_CANONICAL');
+  return {sourceFingerprint,fileCount:expected.fileCount,totalBytes:expected.totalBytes};
+}
+export function verifyManagedSourceMetadata(root,base,head,changedPaths){
+  const baseline=JSON.parse(git(root,['show',`${base}:.release/source-files.v1.json`]));
+  if(!Array.isArray(baseline.files)||new Set(baseline.files.map(f=>f.path)).size!==baseline.files.length)fail('COMPAT_SOURCE_METADATA_BASELINE');
+  const tree=new Map();
+  for(const record of git(root,['ls-tree','-r','-z','--full-tree',head]).toString().split('\0').filter(Boolean)){
+    const tab=record.indexOf('\t'),header=record.slice(0,tab).split(' '),name=record.slice(tab+1);
+    if(tab<0||header.length!==3||tree.has(name))fail('COMPAT_SOURCE_METADATA_TREE');
+    tree.set(name,{mode:header[0],type:header[1],oid:header[2]});
+  }
+  const expectedPaths=new Set(baseline.files.map(f=>f.path));
+  for(const name of changedPaths){if(name==='.release/source-files.v1.json')continue;if(tree.has(name))expectedPaths.add(name);else expectedPaths.delete(name);}
+  const names=[...expectedPaths].sort((a,b)=>a.localeCompare(b,'en'));
+  for(const name of names)if(typeof name!=='string'||/[\r\n\0]/u.test(name)||!tree.has(name)||tree.get(name).type!=='blob'||!['100644','100755'].includes(tree.get(name).mode))fail('COMPAT_SOURCE_METADATA_TREE');
+  const packed=execFileSync('git',['--no-optional-locks','--no-replace-objects','cat-file','--batch'],{cwd:root,input:names.map(name=>tree.get(name).oid+'\n').join(''),timeout:60000,maxBuffer:256*1024*1024,windowsHide:true,stdio:['pipe','pipe','pipe']});
+  let cursor=0;const rows=[];
+  for(const name of names){const lineEnd=packed.indexOf(10,cursor);if(lineEnd<0)fail('COMPAT_SOURCE_METADATA_BLOB');const fields=packed.subarray(cursor,lineEnd).toString().split(' '),size=Number(fields[2]);cursor=lineEnd+1;if(fields.length!==3||fields[0]!==tree.get(name).oid||fields[1]!=='blob'||!Number.isSafeInteger(size)||size<0||cursor+size>=packed.length||packed[cursor+size]!==10)fail('COMPAT_SOURCE_METADATA_BLOB');const bytes=packed.subarray(cursor,cursor+size);rows.push({path:name,bytes:size,sha256:digest(bytes)});cursor+=size+1;}
+  if(cursor!==packed.length)fail('COMPAT_SOURCE_METADATA_BLOB');
+  return assertManagedSourceMetadata(git(root,['show',`${head}:.release/source-files.v1.json`]),baseline,rows);
+}
 export function assertVersionMetadata(before,after){
   const expected={schemaVersion:1,sourceVersion:'R001597-20261102-66d1decb',revision:1597,sourceDigest:'66d1decb24c1a2b6be1a5be0775941c2fec7ca15bb5b11832ee28f2e91afe3e2',version:'R001597-20261102-66d1decb',hash:'R001597-20261102-66d1decb',timestamp:'2026-11-01T21:03:55.487Z'};
   if(canonical(before)!==canonical(expected)||!after||canonical(Object.keys(after).sort())!==canonical(Object.keys(expected).sort())||after.schemaVersion!==1||!Number.isSafeInteger(after.revision)||after.revision<=before.revision||!/^[a-f0-9]{64}$/u.test(after.sourceDigest||'')||after.sourceDigest===before.sourceDigest||typeof after.sourceVersion!=='string'||!new RegExp(`^R${String(after.revision).padStart(6,'0')}-[0-9]{8}-${after.sourceDigest.slice(0,8)}$`,'u').test(after.sourceVersion)||after.version!==after.sourceVersion||after.hash!==after.sourceVersion||typeof after.timestamp!=='string'||!Number.isFinite(Date.parse(after.timestamp))||new Date(after.timestamp).toISOString()!==after.timestamp||Date.parse(after.timestamp)<=Date.parse(before.timestamp))fail('COMPAT_VERSION_METADATA');
@@ -33,7 +67,8 @@ export function inspectSource(root,env=process.env){
   if(git(root,['status','--porcelain=v1','--untracked-files=all']).length)fail('COMPAT_CLEAN_SOURCE_REQUIRED');
   git(root,['merge-base','--is-ancestor',ORIGINAL.commit,env.GITHUB_SHA]);
   const paths=assertAllowedPaths(git(root,['diff','--no-renames','--name-only','-z',ORIGINAL.commit,env.GITHUB_SHA]).toString().split('\0').filter(Boolean));
-  if(!['public/version.json','scripts/deploy-artifact-vnext.sh','scripts/deployment-control-plane.mjs'].every(p=>paths.includes(p)))fail('COMPAT_REQUIRED_SOURCE_PATHS');
+  if(!['public/version.json','.release/source-files.v1.json','scripts/deploy-artifact-vnext.sh','scripts/deployment-control-plane.mjs'].every(p=>paths.includes(p)))fail('COMPAT_REQUIRED_SOURCE_PATHS');
+  verifyManagedSourceMetadata(root,ORIGINAL.commit,env.GITHUB_SHA,paths);
   const versionMetadata=assertVersionMetadata(JSON.parse(git(root,['show',`${ORIGINAL.commit}:public/version.json`])),JSON.parse(git(root,['show',`${env.GITHUB_SHA}:public/version.json`])));
   return {base:ORIGINAL.commit,head:env.GITHUB_SHA,paths,versionMetadata};
 }

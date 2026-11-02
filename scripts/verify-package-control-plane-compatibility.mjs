@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
+import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { assertAllowedPaths, assertInvariantManifests, assertRun, assertVersionMetadata, cancellableCandidate, cancelCandidatesForCommit, inspectSource, verifyOriginal, main, ORIGINAL, ALLOWED_PATHS } from './package-control-plane-compatibility.mjs';
+import { assertAllowedPaths, assertManagedSourceMetadata, verifyManagedSourceMetadata, assertInvariantManifests, assertRun, assertVersionMetadata, cancellableCandidate, cancelCandidatesForCommit, inspectSource, verifyOriginal, main, ORIGINAL, ALLOWED_PATHS } from './package-control-plane-compatibility.mjs';
 const checks=[];
 const check=(name,fn)=>{fn();checks.push(name);};
 const reject=(name,fn,pattern)=>check(name,()=>assert.throws(fn,pattern));
@@ -18,7 +21,38 @@ const manifest={compatibility:{contractHashes:{database:'a'.repeat(64)}},files:[
   {sourcePath:'deploy/policies/database-semantic-contract.v1.json',sha256:'d'.repeat(64)},
 ]};
 check('exact explicitly approved control paths accepted',()=>assert.deepEqual(assertAllowedPaths([...ALLOWED_PATHS].reverse()),[...ALLOWED_PATHS].sort()));
-for(const forbidden of ['src/app/page.tsx','package.json','pnpm-lock.yaml','supabase/migrations/new.sql','public/other.json','deploy/policies/release-policy.json','scripts/deploy-artifact-vnext.sh/extra','Scripts/deploy-artifact-vnext.sh'])reject(`reject changed ${forbidden}`,()=>assertAllowedPaths([forbidden]),/COMPAT_SOURCE_DIFF_FORBIDDEN/u);
+for(const forbidden of ['src/app/page.tsx','package.json','pnpm-lock.yaml','supabase/migrations/new.sql','public/other.json','deploy/policies/release-policy.json','.release/source-repo.json','.release/source-files.v1.json.tmp','scripts/deploy-artifact-vnext.sh/extra','Scripts/deploy-artifact-vnext.sh'])reject(`reject changed ${forbidden}`,()=>assertAllowedPaths([forbidden]),/COMPAT_SOURCE_DIFF_FORBIDDEN/u);
+const metadataBaseline={schemaVersion:1,projectId:'zimeiti-caopanshou',kind:'clean-source-snapshot',canonicalTextEol:'lf',policySha256:'1'.repeat(64),assetManifestSha256:'2'.repeat(64),assetDigest:'3'.repeat(64),assetVersion:'sha256-'+'3'.repeat(64),files:[]};
+// Exercise the canonical owner's actual generation functions, without running
+// refresh-metadata against this shared workspace or triggering the full audit.
+const owner=fs.readFileSync(path.join(root,'scripts/release-workflow.mjs'),'utf8');
+const producerFunction=owner.match(/function sourceManifest\(source\) \{[\s\S]*?\n\}/u)?.[0],writerFunction=owner.match(/function writeJsonAtomic\(filePath, value\) \{[\s\S]*?\n\}/u)?.[0];
+assert.ok(producerFunction&&writerFunction);
+function canonicalMetadata(rows){
+  let written;const context={policy:{projectId:metadataBaseline.projectId},policySha256:metadataBaseline.policySha256,validateAssetManifest:()=>({failures:[],manifestSha256:metadataBaseline.assetManifestSha256,manifest:{digest:metadataBaseline.assetDigest,assetVersion:metadataBaseline.assetVersion}}),fs:{mkdirSync(){},writeFileSync(_file,bytes){written=Buffer.from(bytes);},existsSync(){return false;},renameSync(){}},path,crypto:{randomUUID:()=> 'fixture'},process:{pid:1}};
+  vm.runInNewContext(producerFunction+'\n'+writerFunction+'\nthis.emit=(source)=>writeJsonAtomic("fixture",sourceManifest(source));',context);
+  context.emit({fingerprint:metadataFingerprint(rows),bytes:rows.reduce((sum,row)=>sum+row.bytes,0),files:rows});return written;
+}
+function metadataFingerprint(rows){return metadataDigest(Buffer.from(rows.map(row=>`${row.sha256}  ${row.path}\n`).join('')));}
+function metadataDigest(bytes){return crypto.createHash('sha256').update(bytes).digest('hex');}
+const sourceRows=[{path:'scripts/deploy-artifact-vnext.sh',bytes:3,sha256:metadataDigest(Buffer.from('new'))}];
+check('canonical refresh-metadata owner output accepted against actual row contract',()=>{const result=assertManagedSourceMetadata(canonicalMetadata(sourceRows),metadataBaseline,sourceRows);assert.equal(result.sourceFingerprint,metadataFingerprint(sourceRows));assert.equal(result.totalBytes,3);});
+for(const [key,value] of [['schemaVersion',2],['projectId','other'],['kind','manual'],['canonicalTextEol','crlf'],['sourceFingerprint','0'.repeat(64)],['fileCount',99],['totalBytes',99],['policySha256','0'.repeat(64)],['assetDigest','0'.repeat(64)]])reject(`source metadata ${key} drift rejected`,()=>{const document=JSON.parse(canonicalMetadata(sourceRows));document[key]=value;assertManagedSourceMetadata(Buffer.from(JSON.stringify(document,null,2)+'\n'),metadataBaseline,sourceRows);},/COMPAT_SOURCE_METADATA_CANONICAL/u);
+reject('source manifest manually reformatted bytes rejected',()=>assertManagedSourceMetadata(Buffer.from(JSON.stringify(JSON.parse(canonicalMetadata(sourceRows)))+'\n'),metadataBaseline,sourceRows),/COMPAT_SOURCE_METADATA_CANONICAL/u);
+reject('source manifest stale file hash rejected',()=>{const document=JSON.parse(canonicalMetadata(sourceRows));document.files[0].sha256='0'.repeat(64);assertManagedSourceMetadata(Buffer.from(JSON.stringify(document,null,2)+'\n'),metadataBaseline,sourceRows);},/COMPAT_SOURCE_METADATA_CANONICAL/u);
+{
+  const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'compat-metadata-git-'));
+  const git=args=>execFileSync('git',['--no-optional-locks',...args],{cwd:fixture,windowsHide:true,stdio:['ignore','pipe','pipe']}).toString().trim();
+  const commit=()=>{git(['add','--','scripts','.release']);git(['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture only']);return git(['rev-parse','HEAD']);};
+  try{
+    git(['init','-q']);fs.mkdirSync(path.join(fixture,'scripts'));fs.mkdirSync(path.join(fixture,'.release'));
+    fs.writeFileSync(path.join(fixture,'scripts/deploy-artifact-vnext.sh'),'old');fs.writeFileSync(path.join(fixture,'.release/source-files.v1.json'),canonicalMetadata([{path:sourceRows[0].path,bytes:3,sha256:metadataDigest(Buffer.from('old'))}]));const base=commit();
+    fs.writeFileSync(path.join(fixture,'scripts/deploy-artifact-vnext.sh'),'new');fs.writeFileSync(path.join(fixture,'scripts/package-control-plane-compatibility.mjs'),'added');const rows=[...sourceRows,{path:'scripts/package-control-plane-compatibility.mjs',bytes:5,sha256:metadataDigest(Buffer.from('added'))}];fs.writeFileSync(path.join(fixture,'.release/source-files.v1.json'),canonicalMetadata(rows));const head=commit();const changed=['.release/source-files.v1.json',...rows.map(row=>row.path)];
+    check('actual Git HEAD batch hashes match canonical refreshed metadata',()=>assert.equal(verifyManagedSourceMetadata(fixture,base,head,changed).fileCount,2));
+    fs.writeFileSync(path.join(fixture,'.release/source-files.v1.json'),canonicalMetadata(sourceRows));const stale=commit();
+    reject('Git HEAD new helper cannot be omitted from refreshed inventory',()=>verifyManagedSourceMetadata(fixture,base,stale,changed),/COMPAT_SOURCE_METADATA_CANONICAL/u);
+  }finally{assert.ok(path.resolve(fixture).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(fixture,{recursive:true,force:true});}
+}
 reject('empty source change rejected',()=>assertAllowedPaths([]),/COMPAT_SOURCE_DIFF_FORBIDDEN/u);
 reject('duplicate source paths rejected',()=>assertAllowedPaths([ALLOWED_PATHS[0],ALLOWED_PATHS[0]]),/COMPAT_SOURCE_DIFF_FORBIDDEN/u);
 check('controller and verifier bytes may change',()=>{const next=clone(manifest);next.files[0].sha256='e'.repeat(64);next.files[1].sha256='f'.repeat(64);assertInvariantManifests(manifest,next);});
