@@ -7,7 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {Archive,PRIVATE_ROOT,PROJECT,fields,hash,bytesHash} from './agent-catalog-release-core.mjs';
 import {checkedAuthority} from './agent-catalog-release-readers.mjs';
 import {coverageGate,validateProductionIndex,validateReleaseManifest,manifestTemplate,bindIndexCapture} from './agent-catalog-release-gate.mjs';
-import {createCatalogOwnerFactory,createCatalogRequestPolicy} from './agent-catalog-release-owner.mjs';
+import {createCatalogOwnerFactory,createCatalogRequestPolicy,verifyCatalogOwnerSelf} from './agent-catalog-release-owner.mjs';
 import {runCli,cliExitCode} from './agent-catalog-release-cli.mjs';
 const attrs={author:'offline-gate-test',reason:'合成数据的覆盖与正常认证合同测试'};
 const authority={origin:'https://zyuani8.com',profileId:'formal-production-owner-v1',version:{sourceVersion:'fixture-r1631',buildId:'fixture-build',releaseId:'fixture-release',deployCommitSha:'a'.repeat(40)}};
@@ -68,7 +68,14 @@ test('publication approval binds manifest SHA, explicit source audience, lifecyc
  assert.throws(()=>validateReleaseManifest({...approved.manifest,actions:[{...action(c),audience:undefined}]}),/EXPLICIT_SOURCE_AND_AUDIENCE_REQUIRED/);
  assert.throws(()=>validateReleaseManifest({...approved.manifest,actions:[{...action(c),stripPortability:['KNOWLEDGE_REFERENCE']}]}),/MANIFEST_UNAPPROVED_STRIPPING/);
 });
-function self(){return {access:{adminLevel:'super_admin',authorityStatus:'ready',integrityValid:true,profileActive:true,revision:2,checksum:hash('profile'),permissionKeys:['backups.manage','agents.view','agents.manage','prompts.view','prompts.edit','models.manage','internal_tools.manage']},maintenanceLock:{status:'ready',enabled:false},stepUp:{status:'ready',authMethod:'login_password',sessionId:'synthetic-stepup',expiresAt:new Date(Date.now()+5*60000).toISOString()}};}
+function self(){return {access:{adminLevel:'super_admin',authorityStatus:'ready',integrityValid:true,profileActive:true,revision:2,updatedAt:new Date().toISOString(),permissionKeys:['backups.manage','agents.view','agents.manage','prompts.view','prompts.edit','models.manage','internal_tools.manage']},maintenanceLock:{status:'ready',enabled:false},stepUp:{status:'ready',authMethod:'login_password',sessionId:'synthetic-stepup',expiresAt:new Date(Date.now()+5*60000).toISOString()}};}
+test('real public self omits private checksum while owner integrity, revision, permissions and step-up remain mandatory',()=>{
+ const valid=self();assert.equal(Object.hasOwn(valid.access,'checksum'),false);assert.equal(verifyCatalogOwnerSelf(valid,'read').ownerVerified,true);assert.equal(verifyCatalogOwnerSelf(valid,'publish').ownerVerified,true);
+ for(const accessPatch of [{integrityValid:false},{profileActive:false},{revision:0},{adminLevel:'admin'},{authorityStatus:'invalid'}])assert.throws(()=>verifyCatalogOwnerSelf({...valid,access:{...valid.access,...accessPatch}},'publish'),/NORMAL_LEGITIMATE_OWNER_REQUIRED/);
+ assert.throws(()=>verifyCatalogOwnerSelf({...valid,access:{...valid.access,permissionKeys:valid.access.permissionKeys.filter(k=>k!=='prompts.edit')}},'publish'),/NORMAL_OWNER_CAPABILITY_MISSING/);
+ assert.throws(()=>verifyCatalogOwnerSelf({...valid,maintenanceLock:{status:'ready',enabled:true}},'publish'),/NORMAL_OWNER_MAINTENANCE_LOCKED/);
+ assert.throws(()=>verifyCatalogOwnerSelf({...valid,stepUp:{...valid.stepUp,expiresAt:new Date(Date.now()-1000).toISOString()}},'publish'),/NORMAL_OWNER_STEPUP_REQUIRED/);
+});
 function ownerTransport({ownerSelf=self(),wrongDatabase=false,failUnlock=false}={}){
  const calls=[];let cookie=false,closed=false;
  const request=async req=>{calls.push(structuredClone(req));if(req.path==='/api/version')return {status:200,body:authority.version};

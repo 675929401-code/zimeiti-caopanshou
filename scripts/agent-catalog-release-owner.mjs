@@ -50,7 +50,8 @@ export function createCatalogRequestPolicy(options){
 }
 export function verifyCatalogOwnerSelf(body,mode,now=Date.now()){
  const a=body?.access,s=body?.stepUp,required=['backups.manage','agents.view','prompts.view','models.manage','internal_tools.manage',...(mode==='publish'?['agents.manage','prompts.edit']:[])];
- demand(a?.adminLevel==='super_admin'&&a.authorityStatus==='ready'&&a.integrityValid===true&&a.profileActive===true&&Number.isSafeInteger(a.revision)&&a.revision>0&&typeof a.checksum==='string'&&a.checksum!=='legacy-schema-absent'&&a.checksum.length>0,'NORMAL_LEGITIMATE_OWNER_REQUIRED');
+ // The public self route attests integrityValid and a positive revision; its internal checksum is not exposed.
+ demand(a?.adminLevel==='super_admin'&&a.authorityStatus==='ready'&&a.integrityValid===true&&a.profileActive===true&&Number.isSafeInteger(a.revision)&&a.revision>0,'NORMAL_LEGITIMATE_OWNER_REQUIRED');
  demand(Array.isArray(a.permissionKeys)&&required.every(p=>a.permissionKeys.includes(p)),'NORMAL_OWNER_CAPABILITY_MISSING');
  demand(body.maintenanceLock?.status==='ready'&&body.maintenanceLock.enabled===false,'NORMAL_OWNER_MAINTENANCE_LOCKED');
  demand(s?.status==='ready'&&s.authMethod==='login_password'&&typeof s.sessionId==='string'&&s.sessionId.length>0&&Date.parse(s.expiresAt)>now+60000,'NORMAL_OWNER_STEPUP_REQUIRED');
