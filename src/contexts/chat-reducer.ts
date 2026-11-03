@@ -37,7 +37,6 @@ export interface AppState {
   isLoadingAgents: boolean;
   streamingConvIds: Set<string>;
   isStreaming: boolean;
-  isChatFullscreen: boolean;
   credits: CreditsInfo;
   cashBalance: number;
   theme: string;
@@ -73,7 +72,6 @@ export const initialState: AppState = {
   isLoadingAgents: false,
   streamingConvIds: new Set<string>(),
   isStreaming: false,
-  isChatFullscreen: false,
   credits: defaultCredits,
   cashBalance: 0,
   theme: DEFAULT_THEME,
@@ -138,7 +136,6 @@ export type Action =
   | { type: "DELETE_MESSAGE_PAIR"; payload: { conversationId: string; userMessageId: string; assistantMessageId: string } }
   | { type: "MARK_MESSAGE_ERROR"; payload: { conversationId: string; messageId: string; error: string } }
   | { type: "CLEAR_MESSAGE_ERROR"; payload: { conversationId: string; messageId: string } }
-  | { type: "TOGGLE_CHAT_FULLSCREEN" }
   | { type: "SET_SIDEBAR_WIDTH"; payload: number }
   | { type: "SET_SIDEBAR_COLLAPSED"; payload: boolean }
   | { type: "LOGOUT" }
@@ -509,8 +506,6 @@ export function reducer(state: AppState, action: Action): AppState {
       if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, String(action.payload));
       return { ...state, sidebarCollapsed: action.payload };
 
-    case "TOGGLE_CHAT_FULLSCREEN":
-      return { ...state, isChatFullscreen: !state.isChatFullscreen };
 
     case "DELETE_LAST_MESSAGE": {
       const convId = action.payload.conversationId;

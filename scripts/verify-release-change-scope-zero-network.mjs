@@ -535,6 +535,52 @@ try {
   // engineering identities on the existing shared desktop routes; individual
   // error/client/layout inputs name their actual route owners explicitly.
   const sharedDesktopRoutes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
+  // Root App Router pages have no directory segment. Resolve them to / while
+  // leaving nested dynamic / route-group pages fail-closed and policy routes exact.
+  for (const appRoot of ["src/app", "voice-platform/src/app"]) {
+    for (const extension of ["ts", "tsx", "js", "jsx"]) {
+      const inputPath = `${appRoot}/page.${extension}`;
+      const scoped = runScenario(`root-app-page-${sha256(inputPath).slice(0, 12)}`,
+        [{ status: "M", path: inputPath, content: "export default function Page() {}" }]);
+      const voiceRoot = appRoot === "voice-platform/src/app";
+      assert.equal(scoped.browserAcceptance.preciseRoute, voiceRoot ? "/voice-studio/workspace" : "/");
+      assert.deepEqual(scoped.browserAcceptance.requiredRoutes, voiceRoot
+        ? ["/", "/tools", "/voice-studio/workspace"] : ["/", "/tools", "/video"]);
+      assert.ok(scoped.browserAcceptance.routeRuleIds.includes("derived-static-page-route"));
+      assert.equal(scoped.browserAcceptance.explicitRoutesRequired, false);
+      assert.deepEqual(scoped.browserAcceptance.unresolvedPaths, []);
+      assert.equal(scoped.gate.releaseReady, false);
+      assertCommonValidations(scoped);
+    }
+  }
+  const rootPageWithSharedSurface = [
+    { status: "M", path: "src/app/page.tsx", content: "fixture root page" },
+    { status: "M", path: "src/components/chat-view.tsx", content: "fixture shared chat" },
+  ];
+  const exactRootShared = runScenario("root-page-with-exact-shared-routes", rootPageWithSharedSurface,
+    { acceptanceRoutes: sharedDesktopRoutes });
+  assert.deepEqual(exactRootShared.browserAcceptance.requiredRoutes, sharedDesktopRoutes);
+  assert.equal(exactRootShared.browserAcceptance.explicitRoutesRequired, false);
+  assert.equal(exactRootShared.browserAcceptance.explicitRoutesProvided, true);
+  assert.deepEqual(exactRootShared.browserAcceptance.unresolvedPaths, []);
+  const partialRootShared = runScenario("root-page-rejects-partial-shared-routes", rootPageWithSharedSurface,
+    { acceptanceRoutes: ["/", "/tools", "/video"] });
+  assert.equal(partialRootShared.failClosed, true);
+  assert.ok(partialRootShared.browserAcceptance.unresolvedPaths.includes("<caller-routes-not-policy-approved>"));
+  for (const inputPath of ["src/app/[slug]/page.tsx", "src/app/(public)/page.tsx", "src/app/page.tsx.extra"]) {
+    const unresolved = runScenario(`root-app-page-rejects-${sha256(inputPath).slice(0, 12)}`,
+      [{ status: "M", path: inputPath, content: "fixture unresolved page" }]);
+    assert.equal(unresolved.failClosed, true);
+    assert.equal(unresolved.browserAcceptance.explicitRoutesRequired, true);
+    assert.ok(unresolved.browserAcceptance.unresolvedPaths.includes(inputPath));
+    assert.equal(unresolved.gate.releaseReady, false);
+  }
+  const mappedVoiceDynamic = runScenario("voice-dynamic-keeps-explicit-policy-route",
+    [{ status: "M", path: "voice-platform/src/app/[slug]/page.tsx", content: "fixture mapped voice page" }]);
+  assert.ok(mappedVoiceDynamic.browserAcceptance.routeRuleIds.includes("voice-surface"));
+  assert.ok(!mappedVoiceDynamic.browserAcceptance.routeRuleIds.includes("derived-static-page-route"));
+  assert.equal(mappedVoiceDynamic.browserAcceptance.explicitRoutesRequired, false);
+  assert.deepEqual(mappedVoiceDynamic.browserAcceptance.unresolvedPaths, []);
   // Root build attributes and the retired legacy startup entry affect the
   // deployed surface. Exact mappings keep them FULL without guessing routes
   // for adjacent unknown files or accepting a partial caller route list.
