@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import { isIP } from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
@@ -219,6 +220,14 @@ function readLocalStandaloneRuntime() {
 
 function localProductionPreviewEnv(root, runtime, baseEnv = process.env) {
   const localDatabaseEnv = createLocalRuntimeDatabaseEnv(runtime, baseEnv);
+  let catalogOriginIP = baseEnv.FORMAL_CATALOG_ORIGIN_IP;
+  if (!catalogOriginIP && localDatabaseEnv.LOCAL_RUNTIME_PROFILE === LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE) {
+    const deploymentFile = path.join(root, "deploy", "environments", "production.env.example");
+    if (fs.existsSync(deploymentFile)) {
+      const target = /^DEPLOY_SSH_TARGET=(?:[^@\s]+@)?([^\s#]+)\s*$/m.exec(fs.readFileSync(deploymentFile, "utf8"))?.[1];
+      if (target && isIP(target)) catalogOriginIP = target;
+    }
+  }
   const runtimeDir = ensureDirectory(path.join(root, ".runtime"));
   const voiceSqlitePath = baseEnv.VOICE_SQLITE_PATH?.trim()
     || firstExistingFile([
@@ -237,6 +246,7 @@ function localProductionPreviewEnv(root, runtime, baseEnv = process.env) {
   const commerceDiscoveryCatalog = path.win32.join(LOCAL_PREVIEW_DATA_ROOT, "preview-runtime", "commerce-discovery", "catalog.json");
   return {
     ...localDatabaseEnv,
+    ...(catalogOriginIP ? { FORMAL_CATALOG_ORIGIN_IP: catalogOriginIP } : {}),
     // The standalone server runs with cwd=.next/standalone. Keep the verified
     // F-drive source root explicit so local runtime gates never resolve files
     // against the packaged working directory by accident.

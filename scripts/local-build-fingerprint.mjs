@@ -58,7 +58,9 @@ function hashFile(filePath) {
 }
 
 function gitFileList(root) {
-  const result = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+  // A release helper may have set core.worktree to a staging snapshot.
+  // Enumerate inputs in the exact source directory that is being built.
+  const result = spawnSync("git", [`--work-tree=${root}`, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
     cwd: root,
     encoding: "utf8",
     windowsHide: true,

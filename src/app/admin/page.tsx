@@ -48,6 +48,7 @@ import { Switch } from "@/components/ui/switch";
 import StoryboardDirectorContractEditor from "@/components/admin/StoryboardDirectorContractEditor";
 import StoryboardPromptPushCapabilityToggle from "@/components/admin/StoryboardPromptPushCapabilityToggle";
 import AgentSearchToolbar from "@/components/admin/agent-search-toolbar";
+import { ConfigurationReadbackPanel } from "@/components/admin/configuration-readback-panel";
 import { filterAdminAgents, normalizeAdminAgentSearchQuery } from "@/lib/admin-agent-search";
 import { BIP_CATEGORY, BIP_CATEGORY_LABEL, displayCategory, TASK_CATEGORIES } from "@/lib/business-ip/catalog";
 import { hasActivatedStoryboardDirectorContract, STORYBOARD_DIRECTOR_CONTRACT_FIELDS } from "@/lib/storyboard-director-contract-activation";
@@ -6685,6 +6686,12 @@ const handleDeleteCategory = async () => {
               <span className="ml-3">{agentDataSource.configuration === 'local-acceptance' ? '配置与账号数据均隔离在本机验收库，刷新页面会读取最新配置。' : agentDataSource.configuration === 'shared-cloud' ? '模型绑定与分类配置保存到云端，重新打开卡片读取最新配置。' : '保存修改无需重新部署代码。'}</span>
               <p className="mt-1">账号、聊天与账单：{agentDataSource.businessData === 'local' ? '本地测试库；未与线上用户数据合并' : '云端数据库'}。</p>
             </div>}
+            {agentDataSource && adminAccess?.access.adminLevel === "super_admin" && <ConfigurationReadbackPanel
+              key={`${userInfo?.id}:${sensitiveUnlocked}`}
+              token={token}
+              sensitiveUnlocked={sensitiveUnlocked}
+              localPreview={agentDataSource.configuration === "local-acceptance"}
+            />}
             <AgentSearchToolbar
               value={agentSearchQuery}
               onChange={handleAgentSearchChange}

@@ -25,8 +25,9 @@ test('only avatar bucket follows shared configuration storage', () => {
 test('cloud selection never silently falls back when credentials are missing or source is local', () => {
   assert.equal(sharedConfigurationConnection({}), null);
   assert.throws(() => sharedConfigurationConnection({ SHARED_CONFIGURATION_ENABLED: '1' }), /CREDENTIALS_MISSING/);
-  assert.throws(() => sharedConfigurationConnection({ SHARED_CONFIGURATION_ENABLED: '1', SHARED_CONFIGURATION_SUPABASE_URL: 'http://127.0.0.1:54321', SHARED_CONFIGURATION_SERVICE_ROLE_KEY: 'test-only' }), /CLOUD_HTTPS/);
-  const status = configurationSourceStatus({ SHARED_CONFIGURATION_ENABLED: '1', COZE_SUPABASE_URL: 'http://127.0.0.1:54321' });
+  const shared = { SHARED_CONFIGURATION_ENABLED: '1', SHARED_CONFIGURATION_ID: 'formal-test', SHARED_CONFIGURATION_SERVICE_ROLE_KEY: 'test-only' };
+  assert.throws(() => sharedConfigurationConnection({ ...shared, SHARED_CONFIGURATION_SUPABASE_URL: 'http://127.0.0.1:54321' }), /CLOUD_HTTPS/);
+  const status = configurationSourceStatus({ ...shared, SHARED_CONFIGURATION_SUPABASE_URL: 'https://configuration.example', COZE_SUPABASE_URL: 'http://127.0.0.1:54321' });
   assert.equal(status.configuration, 'shared-cloud');
   assert.equal(status.businessData, 'local');
   assert.equal(JSON.stringify(status).includes('test-only'), false);
@@ -38,6 +39,9 @@ test('local acceptance reports its loopback configuration source without exposin
     SHARED_CONFIGURATION_SUPABASE_URL: 'http://127.0.0.1:54321',
     SHARED_CONFIGURATION_SERVICE_ROLE_KEY: 'test-only',
     COZE_SUPABASE_URL: 'http://127.0.0.1:54321',
+    SHARED_CONFIGURATION_ID: 'local-acceptance',
+    LOCAL_RUNTIME_PROFILE: 'local-acceptance',
+    DATABASE_URL: 'postgresql://127.0.0.1:54322/zimeiti_local',
     LOCAL_ACCEPTANCE_PREVIEW: 'true',
   });
   assert.equal(status.configuration, 'local-acceptance');
