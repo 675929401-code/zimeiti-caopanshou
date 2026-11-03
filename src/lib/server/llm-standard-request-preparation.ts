@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isUnboundCatalogAgent, isViewOnlyAgentAccess } from "@/lib/agent-catalog-lifecycle";
 import { PENDING_TEXT_USER_ACCESS } from "@/lib/model-activation-gate";
 import { prepareContext, type ChatMessage } from "@/lib/llm-context";
 import { resolveChatReplyLimit } from "@/lib/llm-reply-limit";
@@ -205,11 +206,13 @@ export async function composeLlmRequestMessages(input: Row & RuntimeParameters) 
 export const STANDARD_AGENT_FIELDS = ["id","name","source","is_active","deleted_at","model_id","model","system_prompt","output_style","config_revision","deep_thinking_type","deduct_deep_think","max_context_rounds","max_context_tokens","max_reply_tokens","timeout","enable_web_search","temperature","response_format","user_access","category"] as const;
 export const STANDARD_MODEL_FIELDS = ["id","name","model_name","is_active","is_hidden","user_access","deep_thinking_type","deduct_deep_think","max_context_rounds","max_context_tokens","max_reply_tokens","timeout","enable_web_search","temperature","response_format","token_billing_enabled","input_cost_per_million","output_cost_per_million","cached_cost_per_million","profit_margin","token_rounding_unit","api_endpoint","provider","api_protocol_config"] as const;
 export const STANDARD_SETTING_KEYS = ["global_system_prefix","input_cost_per_million","output_cost_per_million","cached_cost_per_million","profit_margin","credits_per_yuan","token_rounding_enabled","token_rounding_unit","token_rounding_min","token_rounding_max"] as const;
-export interface StandardSnapshot { agent: Row; model: Row; settings: Array<{setting_key:string;setting_value:string}>; actor: Row; skills: Row[]; readsVerified: true }
+export interface StandardSnapshot { agent: Row; model: Row; settings: Array<{setting_key:string;setting_value:string}>; actor: Row; skills: Row[]; readsVerified: true; ownerSelfUseQuote?:boolean }
 export interface StrictPreparationReader { readAgent(id:string):Promise<Row[]>; readModel(id:string):Promise<Row[]>; readSettings():Promise<Array<{setting_key:string;setting_value:string}>>; readActor(id:string):Promise<Row[]>; readSkills(id:string):Promise<Row[]> }
 export async function readStandardSnapshot(reader: StrictPreparationReader, actorId: string, agentId: string): Promise<StandardSnapshot> {
   try {
     const agents = await reader.readAgent(agentId); if (agents.length !== 1) refuse("LLM_QUOTE_AGENT_UNKNOWN");
+    if (isUnboundCatalogAgent(agents[0])) refuse("LLM_QUOTE_AGENT_MODEL_NOT_CONFIGURED");
+    if (isViewOnlyAgentAccess(agents[0],undefined)) refuse("LLM_QUOTE_AGENT_VIEW_ONLY");
     const agent = agents[0]; if (typeof agent.model_id !== "string" || !agent.model_id) refuse("LLM_QUOTE_LINKED_MODEL_REQUIRED");
     const [models, settings, actors, skills] = await Promise.all([reader.readModel(agent.model_id),reader.readSettings(),reader.readActor(actorId),reader.readSkills(agentId)]);
     if (models.length !== 1 || actors.length !== 1 || !Array.isArray(skills)) refuse("LLM_QUOTE_SNAPSHOT_UNKNOWN");
@@ -266,7 +269,7 @@ export function assertStandardQuoteEligibility(body: Row, snapshot: StandardSnap
   if (!snapshot.readsVerified || actor.id!==actorId || actor.is_active!==true || (actor.status!=null && actor.status!=="active") || !["student","admin"].includes(actor.role)) refuse("LLM_QUOTE_ACTOR_UNSUPPORTED");
   if (Object.keys(body).some(key=>!REQUEST_KEYS.has(key))) refuse("LLM_QUOTE_REQUEST_UNSUPPORTED");
   if (body.model_overridden===true || body.modelId || body.model || body.stream===false) refuse("LLM_QUOTE_SELECTION_UNSUPPORTED");
-  if (!agent.id || body.agentId!==agent.id || agent.source!=="llm" || agent.is_active!==true || agent.deleted_at || agent.model_id!==model.id || model.is_active!==true || model.is_hidden===true || model.user_access==="hidden" || model.user_access===PENDING_TEXT_USER_ACCESS || agent.user_access==="hidden") refuse("LLM_QUOTE_SELECTION_UNSUPPORTED");
+  if (!agent.id || body.agentId!==agent.id || agent.source!=="llm" || agent.is_active!==true || agent.deleted_at || agent.model_id!==model.id || model.is_active!==true || model.is_hidden===true || model.user_access==="hidden" || model.user_access===PENDING_TEXT_USER_ACCESS || agent.user_access==="view_only" || ((agent.user_access==="hidden" || agent.category==="自用") && !(agent.category==="自用" && snapshot.ownerSelfUseQuote===true))) refuse("LLM_QUOTE_SELECTION_UNSUPPORTED");
   if (!Number.isSafeInteger(Number(agent.config_revision)) || Number(agent.config_revision)<=0 || typeof agent.system_prompt!=="string" || !agent.system_prompt.trim()) refuse("LLM_QUOTE_PROMPT_UNKNOWN");
   if (!Array.isArray(body.messages) || !body.messages.length || body.messages.some((m:Row)=>!m || !["system","user","assistant"].includes(m.role) || typeof m.content!=="string" || Object.keys(m).some(key=>!["role","content","name"].includes(key)))) refuse("LLM_QUOTE_MULTIMODAL_UNSUPPORTED");
   if (snapshot.skills.length && !isStoryboardTextOnlyAgent(agent.id,agent)) refuse("LLM_QUOTE_ACTIVE_SKILLS_UNSUPPORTED");

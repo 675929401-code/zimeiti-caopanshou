@@ -224,6 +224,10 @@ export function adminRequirementForRequest(
   searchParams?: URLSearchParams,
 ): AdminApiRequirement | null {
   const write = isWrite(method);
+  if (pathname === "/api/admin/agent-catalog-publications" && ["GET","POST"].includes(method.toUpperCase())) {
+    // The handler also verifies the live owner, prompt/model/internal scopes, and ordinary password step-up.
+    return { permission: "backups.manage", requireStepUp: true, operation: write ? "agent_catalog_publication" : "agent_catalog_publication_read" };
+  }
   if (pathname.startsWith("/api/admin/access-control/self") || pathname.startsWith("/api/admin/access-control/unlock")) return null;
   if (pathname === "/api/admin/security-events/internal") return null;
   if (method.toUpperCase() === "GET" && (pathname === "/api/admin/formal-catalog-preview" || pathname === "/api/admin/configuration-identity")) {

@@ -3,7 +3,7 @@
 const DATABASE_CONTRACT_SOURCE = {
   "schemaVersion": 1,
   "contractId": "zimeiti-caopanshou-production-database-v1",
-  "contractVersion": "20261031010000",
+  "contractVersion": "20261103010000",
   "openApiProfile": "public",
   "probeMode": "read-only-postgrest-openapi",
   "requiredProbeRole": "service_role",
@@ -125,6 +125,11 @@ const DATABASE_CONTRACT_SOURCE = {
           "version": "20261031010000",
           "file": "supabase/migrations/20261031010000_digital_human_asset_preflight.sql",
           "sha256": "35d412828f7128797f01f6387ccd7281c474126159d4f069a38de6c4f40a6a1e"
+        },
+        {
+          "version": "20261103010000",
+          "file": "supabase/migrations/20261103010000_agent_catalog_publications.sql",
+          "sha256": "d2a747d4d454ae609b9d5a55b4b3ad78fcc49f230cd77704362c453a0e397745"
         }
       ]
     },
@@ -814,6 +819,111 @@ const DATABASE_CONTRACT_SOURCE = {
             "LIMIT 101"
           ]
         }
+      },
+      {
+        "id": "agent-catalog-publication-invoker",
+        "ownerRelation": "public.agents",
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "postgres",
+        "securityDefinerRequired": false,
+        "searchPath": [
+          "pg_catalog",
+          "public"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "function_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.agent_catalog_canonical_json_v1(jsonb)",
+          "public.agent_catalog_projection_v1(public.agents)",
+          "public.agent_catalog_utf16_v1(text)",
+          "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)",
+          "public.read_agent_catalog_model_guard_v1(uuid)",
+          "public.read_agent_catalog_publication_index_v1(text,text)",
+          "public.read_agent_catalog_publication_v1(text)"
+        ],
+        "requiredSourceSha256": {
+          "public.agent_catalog_canonical_json_v1(jsonb)": "d230b4e4ffe6d8204ee4ac3d2030dc30f8b26dedeab14b6ea8d00e3dc03f564e",
+          "public.agent_catalog_projection_v1(public.agents)": "1d9fb6ba4019d6986a0758b6fc17476a577d5b65ed25f01aafb22b47f0cffe9a",
+          "public.agent_catalog_utf16_v1(text)": "270e80afa92c2812d68b90fc1a70d55df9937faf5a01f9c3ca380197a95638ef",
+          "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)": "a38d4fa83bf02ed4729a7f179b4c8a0b77bf3f5bf0bb9e9d97282b019daaf00b",
+          "public.read_agent_catalog_model_guard_v1(uuid)": "36020454bff4674a0c96a990386af6976afc0dcd7d1f9911d64187ff5160fbf6",
+          "public.read_agent_catalog_publication_index_v1(text,text)": "dc85077a7303db4c48dcf1caf024e85fbdec7568fbc08f16a64ff2a213b78af8",
+          "public.read_agent_catalog_publication_v1(text)": "a029625e856f9af4eade0ef45d2d6e1325f6b97af6ac6cda70a12776cf8b9434"
+        }
+      },
+      {
+        "id": "agent-catalog-owner-lock",
+        "ownerRelation": "public.agents",
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "postgres",
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "pg_catalog",
+          "public"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "function_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.lock_agent_catalog_publication_owner_v1(text,text,boolean)"
+        ],
+        "requiredSourceSha256": {
+          "public.lock_agent_catalog_publication_owner_v1(text,text,boolean)": "9ab2909b4b876b3ac545058e5a5dcee368a2c49f1e0b8c9480850ce82214d97b"
+        }
+      },
+      {
+        "id": "agent-catalog-number-codec",
+        "ownerRelation": "public.agents",
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "postgres",
+        "securityDefinerRequired": false,
+        "searchPath": [
+          "pg_catalog",
+          "public"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "function_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.agent_catalog_number_v1(numeric)"
+        ],
+        "requiredSourceSha256": {
+          "public.agent_catalog_number_v1(numeric)": "69ab91b41449b47301b37edc70dc18ff0fc48d3687cdff4b2054045eed386b5d"
+        },
+        "additionalSettings": [
+          "extra_float_digits=3"
+        ]
       }
     ],
     "functionDependencyEdges": [
@@ -3747,6 +3857,77 @@ const DATABASE_CONTRACT_SOURCE = {
         "p_model_id",
         "p_provider_origin",
         "p_credential_binding_fingerprint"
+      ]
+    },
+    {
+      "name": "agent_catalog_canonical_json_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_value"
+      ]
+    },
+    {
+      "name": "agent_catalog_number_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_number"
+      ]
+    },
+    {
+      "name": "agent_catalog_projection_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_agent"
+      ]
+    },
+    {
+      "name": "agent_catalog_utf16_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_text"
+      ]
+    },
+    {
+      "name": "apply_agent_catalog_publication_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_actor",
+        "p_step_hash",
+        "p_plan",
+        "p_fields",
+        "p_expected_row_hash",
+        "p_model_proof"
+      ]
+    },
+    {
+      "name": "lock_agent_catalog_publication_owner_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_actor",
+        "p_step_hash",
+        "p_self_use"
+      ]
+    },
+    {
+      "name": "read_agent_catalog_model_guard_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_model_id"
+      ]
+    },
+    {
+      "name": "read_agent_catalog_publication_index_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_actor",
+        "p_step_hash"
+      ]
+    },
+    {
+      "name": "read_agent_catalog_publication_v1",
+      "feature": "agent-catalog-publication",
+      "arguments": [
+        "p_agent_id"
       ]
     }
   ],

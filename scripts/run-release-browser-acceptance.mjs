@@ -1002,7 +1002,32 @@ async function verifyHelpCaptions(page) {
   }, null, { timeout: 15_000 });
 }
 
-async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, authToken, authUser, requiredAssets) {
+async function verifyPublishedPreviewProductionDenial(request, webOrigin) {
+  const origin = new URL(webOrigin);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" || origin.username || origin.password
+    || origin.pathname !== "/" || origin.search || origin.hash) fail("BROWSER_LOCAL_PREVIEW_ORIGIN_INVALID");
+  const target = new URL("/published-preview?format=json", origin).toString();
+  const response = await request.get(target, { failOnStatusCode: false, timeout: 12_000, maxRedirects: 0 });
+  try {
+    const headers = response.headers();
+    if (response.status() !== 404 || response.url() !== target || headers.location || headers["set-cookie"]
+      || !/^application\/json(?:\s*;|$)/iu.test(headers["content-type"] || "")
+      || !/(?:^|,)\s*no-store\s*(?:,|$)/iu.test(headers["cache-control"] || "")) {
+      fail("BROWSER_LOCAL_PREVIEW_DENIAL_INVALID");
+    }
+    const bytes = await response.body();
+    if (bytes.length > 1024) fail("BROWSER_LOCAL_PREVIEW_DENIAL_BODY_INVALID");
+    let body;
+    try { body = JSON.parse(bytes.toString("utf8")); } catch { fail("BROWSER_LOCAL_PREVIEW_DENIAL_BODY_INVALID"); }
+    if (!body || Object.keys(body).join(",") !== "code" || body.code !== "FORMAL_PREVIEW_LOCAL_ONLY") {
+      fail("BROWSER_LOCAL_PREVIEW_DENIAL_BODY_INVALID");
+    }
+    return { route: "/published-preview?format=json", method: "GET", status: 404,
+      code: body.code, cacheControl: headers["cache-control"], result: "passed" };
+  } finally { await response.dispose(); }
+}
+
+async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, authToken, authUser, requiredAssets, publishedPreviewExpected) {
   const browser = await chromium.launch({ headless: true, args: ["--disable-dev-shm-usage"] });
   const context = await browser.newContext({ viewport: VIEWPORT, serviceWorkers: "block", reducedMotion: "reduce" });
   const cookieOrigins = [...new Set(Object.values(serviceOrigins).filter(Boolean))];
@@ -1028,7 +1053,12 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
   const benignNavigationAborts = [];
   const reviewedUtilityNavigationAborts = [];
   const requiredAssetResponses = [];
+  const localOnlyEntryChecks = [];
   try {
+    if (publishedPreviewExpected) {
+      try { localOnlyEntryChecks.push(await verifyPublishedPreviewProductionDenial(context.request, serviceOrigins.web)); }
+      catch { blockingFailures.push({ route: "/published-preview?format=json", code: "BROWSER_LOCAL_PREVIEW_DENIAL_FAILED" }); }
+    }
     for (const asset of requiredAssets) {
       const assetUrl = new URL(asset.urlPath, serviceOrigins.web).toString();
       try {
@@ -1249,7 +1279,7 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
     await context.close();
     await browser.close();
   }
-  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors, benignNavigationAborts, reviewedUtilityNavigationAborts, requiredAssetResponses };
+  return { routes: results, blockingFailures, consoleErrors, requestFailures, nonBlockingHttpErrors, benignNavigationAborts, reviewedUtilityNavigationAborts, requiredAssetResponses, localOnlyEntryChecks };
 }
 
 function runtimeIdentity(bundle, service) {
@@ -1504,10 +1534,16 @@ async function main() {
       const readinessPath = extracted[service].manifest.readinessPath;
       runtimeReadbacks[service] = await waitForReadiness(`http://127.0.0.1:${ports[service]}${readinessPath}`, extracted[service].manifest, service);
     }
+    // This entry belongs to local 5000 only. Keep normal production routes strict
+    // and test its production refusal separately against the same packaged Web.
+    const publishedPreviewExpected = fs.existsSync(path.join(checkoutRoot, "src", "app", "published-preview", "route.ts"));
+    if (publishedPreviewExpected && !fs.existsSync(path.join(extracted.web.payloadRoot, ".next", "server", "app", "published-preview", "route.js"))) {
+      fail("BROWSER_LOCAL_PREVIEW_ENTRY_NOT_PACKAGED");
+    }
     browserReport = await runBrowserAcceptance({
       web: `http://127.0.0.1:${ports.web}`,
       voice: ports.voice ? `http://127.0.0.1:${ports.voice}` : null,
-    }, routes, screenshotRoot, authToken, authUser, assets.materialized);
+    }, routes, screenshotRoot, authToken, authUser, assets.materialized, publishedPreviewExpected);
   } finally {
     await Promise.all(Object.values(processes).map((entry) => stopChild(entry.child)));
     await stopFixtureServer(databaseFixture?.server);
@@ -1545,6 +1581,7 @@ async function main() {
     benignNavigationAborts: browserReport.benignNavigationAborts,
     reviewedUtilityNavigationAborts: browserReport.reviewedUtilityNavigationAborts,
     requiredAssetResponses: browserReport.requiredAssetResponses,
+    localOnlyEntryChecks: browserReport.localOnlyEntryChecks,
     assetFixture: {
       localOnly: true,
       source: "git-tracked-verifier-fixture-bound-to-candidate-asset-manifest",

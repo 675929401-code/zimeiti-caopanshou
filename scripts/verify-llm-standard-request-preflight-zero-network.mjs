@@ -235,18 +235,33 @@ for(const [owner,key] of [['agent','config_revision'],['agent','deep_thinking_ty
 // Execute the real route quote-bound early block with a fluent readonly adapter and effect sentinels.
 const routeSource=fs.readFileSync('src/app/api/llm/route.ts','utf8');const ast=ts.createSourceFile('route.ts',routeSource,ts.ScriptTarget.Latest,true);let early;
 function visit(n){if(ts.isIfStatement(n)&&n.expression.getText(ast)==='quoteBound'&&n.getText(ast).includes('readStandardSnapshot'))early=n.getText(ast);ts.forEachChild(n,visit);}visit(ast);assert.ok(early);
-function fluent(table,fixture=base){return {select(){return this;},eq(){return this;},in(){return this;},then(resolve){return Promise.resolve(resolve({error:null,data:table==='agents'?[fixture.agent]:table==='llm_models'?[fixture.model]:table==='users'?[fixture.actor]:table==='platform_settings'?fixture.settings:fixture.skills}));}};}
+function fluent(table,fixture=base){return {select(){return this;},eq(){return this;},in(){return this;},then(resolve){return Promise.resolve(resolve({error:null,data:table==='categories'?[{name:fixture.agent.category??'公开',visibility:'normal',is_active:true}]:table==='agents'?[fixture.agent]:table==='llm_models'?[fixture.model]:table==='users'?[fixture.actor]:table==='platform_settings'?fixture.settings:fixture.skills}));}};}
 const idempotency=load('src/lib/llm-request-idempotency.ts');
 const fingerprint=value=>idempotency.fingerprintLlmRequest(Object.fromEntries(Object.entries(value).filter(([key])=>!['client_request_id','userId'].includes(key))));
 let readonlyRecord=null, readonlyError=null, readonlyQueries=[];
 readonlyAdapter=table=>{const query={table,filters:[]};readonlyQueries.push(query);return {select(fields){query.fields=fields;return this;},eq(key,value){query.filters.push([key,value]);return this;},async maybeSingle(){return {data:readonlyRecord,error:readonlyError};}};};
 const admissionStore=new idempotency.DatabaseLlmRequestAttemptStore();
-function earlyEnvironment(requestBody={...body,quote_expectation:prepared.expectation}) {return {llmRequestAttemptStore:admissionStore,clientRequestId:body.client_request_id,requestFingerprintPayload:Object.fromEntries(Object.entries(requestBody).filter(([key])=>!['client_request_id','userId'].includes(key))),fingerprintLlmRequest:idempotency.fingerprintLlmRequest,
+function earlyEnvironment(requestBody={...body,quote_expectation:prepared.expectation}) {return {...load('src/lib/agent-catalog-lifecycle.ts'),request:new Request('http://fixture.invalid/api/llm',{method:'POST'}),userRole:'student',canUseOwnerInternalAgent:async()=>false,readMemberPermissionSnapshot:async()=>{throw Error('unexpected private member read');},llmRequestAttemptStore:admissionStore,clientRequestId:body.client_request_id,requestFingerprintPayload:Object.fromEntries(Object.entries(requestBody).filter(([key])=>!['client_request_id','userId'].includes(key))),fingerprintLlmRequest:idempotency.fingerprintLlmRequest,
   responseForLlmAttemptClaim:idempotency.responseForLlmAttemptClaim,LlmRequestIdempotencyError:idempotency.LlmRequestIdempotencyError,Response,Headers};}
 const routeModule={exports:{}};vm.runInNewContext(ts.transpileModule(`module.exports=async function(){let preparedQuote;${early};return preparedQuote;}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,
   {module:routeModule,...earlyEnvironment(),quoteBound:true,verifiedUserId:actor,agentId,isVirtualAgent:false,isCanvasInternalWorkflow:false,mangaSkillOrchestration:null,body:{...body,quote_expectation:prepared.expectation},client:{from:table=>fluent(table)},...core,
     readQuotePinFile:p=>p.endsWith('BUILD_ID')?pins.buildId:JSON.stringify({sourceVersion:pins.sourceVersion}),quotePinPath:path.join,process:{cwd:()=>root},toPublicModelId:()=>publicId});
 const accepted=await routeModule.exports();check('actual route preflight uses shared prepared request',accepted.chatRequest,prepared.chatRequest);
+// Drive the real quote adapter through both owner proof and durable member scope before any linked-model read.
+for(const [name,owner,granted,cardAccess,want] of [['owner',true,true,'available',true],['hidden owner',true,true,'hidden',true],['member',false,true,'available',false],['delegated admin',false,true,'hidden',false],['missing grant',true,false,'available',false],['view-only card',true,true,'view_only',false]]) {
+  const fixture=structuredClone(base);fixture.agent.category='自用';fixture.agent.user_access=cardAccess;fixture.actor.role='admin';
+  const isolated={exports:{}};let modelReads=0;
+  const expected=want?await core.prepareStandardLlmRequest(body,{...fixture,ownerSelfUseQuote:true},actor,publicId,pins):prepared;
+  const requestBody={...body,quote_expectation:expected.expectation};
+  vm.runInNewContext(ts.transpileModule(`module.exports=async function(){let preparedQuote;${early};return preparedQuote;}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,
+    {module:isolated,...earlyEnvironment(requestBody),quoteBound:true,verifiedUserId:actor,userRole:'admin',agentId,isVirtualAgent:false,isCanvasInternalWorkflow:false,mangaSkillOrchestration:null,body:requestBody,
+      canUseOwnerInternalAgent:async()=>owner,readMemberPermissionSnapshot:async()=>({revision:2,checksum:'fixture-checksum',integrityValid:true,authorityStatus:'ready',agentNavigationKeys:granted?['自用']:[]}),
+      client:{from:table=>{if(table==='llm_models')modelReads++;if(table==='categories')return {select(){return this;},eq(){return Promise.resolve({error:null,data:[{name:'自用',visibility:'view_only',is_active:true}]});}};return fluent(table,fixture);}},...core,
+      readQuotePinFile:p=>p.endsWith('BUILD_ID')?pins.buildId:JSON.stringify({sourceVersion:pins.sourceVersion}),quotePinPath:path.join,process:{cwd:()=>root},toPublicModelId:()=>publicId});
+  if(want)check('actual self-use quote: '+name,(await isolated.exports()).expectation,expected.expectation);
+  else await rejects('actual self-use quote refused: '+name,isolated.exports);
+  check('actual self-use linked model reads: '+name,modelReads,want?1:0);
+}
 let linkedBranch, replayBranch;
 function findBranches(n){if(ts.isIfStatement(n)&&n.getText(ast).includes('const linkedRow = modelPresetConfig || modelIdData;'))linkedBranch=n.getText(ast);
   if(ts.isIfStatement(n)&&n.expression.getText(ast)==='claim.action !== "execute"')replayBranch=n.getText(ast);ts.forEachChild(n,findBranches);}findBranches(ast);

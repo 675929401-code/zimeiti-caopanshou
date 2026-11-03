@@ -28,8 +28,6 @@ import { verifyToken } from "@/lib/auth";
 import { authorizeAdminToken } from "@/lib/admin-auth";
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
-import { configurationSourceStatus } from "@/storage/database/configuration-source";
-import { resolveAgentLookup } from "@/lib/agent-lookup-policy";
 import { getLLMProxy } from "@/lib/llm-proxy";
 import {
   LlmProviderBindingError,
@@ -68,7 +66,7 @@ import { readFileSync as readQuotePinFile } from "node:fs";
 import { join as quotePinPath } from "node:path";
 import { composeLlmRequestMessages, resolveLinkedModelRuntime, isStoryboardTextOnlyAgent, shouldAutoEnableRuntimeWebSearch, buildLlmChatRequest, readStandardSnapshot, prepareStandardLlmRequest, assertQuoteExpectation, LlmQuotePreparationError, STANDARD_AGENT_FIELDS, STANDARD_MODEL_FIELDS, STANDARD_SETTING_KEYS } from "@/lib/server/llm-standard-request-preparation";
 import { quoteLlmStreamReservation, reserveLlmStreamCredits, releaseLlmStreamCredits, recoverLlmCreditReservations, LlmCreditReservationError, type LlmStreamReservation } from "@/lib/llm-credit-reservation";
-import { getProductionAgentById, getProductionLlmModelById, getProductionLlmModelByName } from "@/lib/production-data-source";
+import { getProductionLlmModelById, getProductionLlmModelByName } from "@/lib/production-data-source";
 import { findModelByPublicId, toPublicModelId } from "@/lib/public-model-dto";
 import { ConversationNotFoundError, ensureConversationOwnership } from "@/lib/conversation-ownership";
 import { FREE_CHAT_AGENT_ID, isAllowedVirtualAgentId, MANGA_WORKBENCH_AGENT_ID } from "@/lib/virtual-agent-policy";
@@ -116,7 +114,8 @@ import {
   resolveAllowedAgentNavigationKeys,
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
-import { canUseOwnerInternalAgent } from "@/lib/server/internal-agent-catalog-access";
+import { canUseOwnerInternalAgent, readCurrentAgentForDispatch } from "@/lib/server/internal-agent-catalog-access";
+import { hasCurrentSelfUseGrant, isUnboundCatalogAgent, isViewOnlyAgentAccess, requiresOwnerAgentAccess, uniqueAgentCategory } from "@/lib/agent-catalog-lifecycle";
 import { isLocalBuildChatDrainActive, localBuildChatDrainResponse } from "@/lib/local-build-chat-drain";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { createOperationPerformanceTrace, type OperationPerformanceTrace } from "@/lib/operation-performance-trace";
@@ -696,13 +695,30 @@ export async function POST(request: Request) {
       }
       if (!verifiedUserId || !agentId || isVirtualAgent || isCanvasInternalWorkflow || mangaSkillOrchestration) throw new LlmQuotePreparationError("LLM_QUOTE_SELECTION_UNSUPPORTED");
       const rows = async (query: PromiseLike<{data: any; error: any}>) => { const result = await query; if (result.error || !Array.isArray(result.data)) throw new LlmQuotePreparationError("LLM_QUOTE_READ_UNKNOWN"); return result.data; };
+      let ownerSelfUseQuote = false;
       const snapshot = await readStandardSnapshot({
-        readAgent: id => rows(client.from("agents").select(STANDARD_AGENT_FIELDS.join(",")).eq("id",id)),
+        readAgent: async id => {
+          const agents = await rows(client.from("agents").select(STANDARD_AGENT_FIELDS.join(",")).eq("id",id));
+          if (agents.length !== 1) return agents;
+          const categories = await rows(client.from("categories").select("name,visibility,is_active").eq("name",agents[0].category));
+          if (categories.length !== 1 || categories[0].is_active !== true) throw new LlmQuotePreparationError("LLM_QUOTE_SELECTION_UNSUPPORTED");
+          const needsOwner = requiresOwnerAgentAccess(agents[0],categories[0]);
+          if (needsOwner && !await canUseOwnerInternalAgent(request)) throw new LlmQuotePreparationError("LLM_QUOTE_SELECTION_UNSUPPORTED");
+          if (agents[0].category === "自用") {
+            ownerSelfUseQuote = hasCurrentSelfUseGrant(await readMemberPermissionSnapshot(verifiedUserId, {knownRole:userRole}));
+            if (!ownerSelfUseQuote) throw new LlmQuotePreparationError("LLM_QUOTE_SELECTION_UNSUPPORTED");
+          }
+          if (!isUnboundCatalogAgent(agents[0]) && isViewOnlyAgentAccess(agents[0],categories[0],ownerSelfUseQuote)) {
+            throw new LlmQuotePreparationError("LLM_QUOTE_SELECTION_UNSUPPORTED");
+          }
+          return agents;
+        },
         readModel: id => rows(client.from("llm_models").select(STANDARD_MODEL_FIELDS.join(",")).eq("id",id)),
         readSettings: () => rows(client.from("platform_settings").select("setting_key,setting_value").in("setting_key",[...STANDARD_SETTING_KEYS])),
         readActor: id => rows(client.from("users").select("id,role,status,is_active").eq("id",id)),
         readSkills: id => rows(client.from("agent_skills").select("skills!inner(id,is_active)").eq("agent_id",id).eq("is_enabled",true).eq("skills.is_active",true)),
       }, verifiedUserId, agentId);
+      snapshot.ownerSelfUseQuote = ownerSelfUseQuote;
       let pins;
       try { pins = {sourceVersion:JSON.parse(readQuotePinFile(quotePinPath(process.cwd(),"public/version.json"),"utf8")).sourceVersion,
         buildId:readQuotePinFile(quotePinPath(process.cwd(),".next/BUILD_ID"),"utf8").trim()}; }
@@ -711,21 +727,21 @@ export async function POST(request: Request) {
       assertQuoteExpectation(body.quote_expectation,preparedQuote.expectation);
     }
 
-    let agentQueryPromise: Promise<{ data: Record<string, unknown> | null }>;
+    let agentQueryPromise: Promise<{ data: Record<string, unknown> | null; error?: unknown }>;
     if (agentId && !isVirtualAgent) {
       const cached = agentConfigCache.get(agentId);
-      if (!quoteBound && cached && cached.expiry > Date.now()
-        && Object.prototype.hasOwnProperty.call(cached.data, "output_style")) {
-        agentQueryPromise = Promise.resolve({ data: cached.data });
-      } else {
-        agentQueryPromise = client.from("agents").select("id, name, source, is_active, deleted_at, coze_coding_api_token, proxy_url, model, model_id, frequency_limit, image_parsing, file_parsing, system_prompt, output_style, config_revision, deep_thinking_type, deduct_deep_think, max_context_rounds, max_context_tokens, max_reply_tokens, timeout, enable_web_search, temperature, response_format, user_access, category, token_billing_enabled, input_cost_per_million, output_cost_per_million, cached_cost_per_million, profit_margin, token_rounding_unit").eq("id", agentId).maybeSingle().then(async (result: { data: Record<string, unknown> | null; error?: unknown }) => {
-          const data = quoteBound ? (result.error ? null : result.data) : await resolveAgentLookup(result.data, () => getProductionAgentById(agentId), configurationSourceStatus().configuration !== 'local-acceptance');
-          if (data) {
-            agentConfigCache.set(agentId, { data: data as Record<string, unknown>, expiry: Date.now() + AGENT_CONFIG_TTL });
+      const reusable = !quoteBound && cached && cached.expiry > Date.now() && Object.hasOwn(cached.data, "output_style") ? cached.data : null;
+      agentQueryPromise = readCurrentAgentForDispatch(
+        reusable,
+        () => client.from("agents").select("id,category,user_access,is_active,deleted_at,config_revision,source,model_id,model").eq("id", agentId).maybeSingle(),
+        async () => {
+          const result = await client.from("agents").select("id, name, source, is_active, deleted_at, coze_coding_api_token, proxy_url, model, model_id, frequency_limit, image_parsing, file_parsing, system_prompt, output_style, config_revision, deep_thinking_type, deduct_deep_think, max_context_rounds, max_context_tokens, max_reply_tokens, timeout, enable_web_search, temperature, response_format, user_access, category, token_billing_enabled, input_cost_per_million, output_cost_per_million, cached_cost_per_million, profit_margin, token_rounding_unit").eq("id", agentId).maybeSingle();
+          if (!result.error && result.data && result.data.deleted_at == null) {
+            agentConfigCache.set(agentId, { data: result.data, expiry: Date.now() + AGENT_CONFIG_TTL });
           }
-          return { data } as { data: Record<string, unknown> | null };
-        });
-      }
+          return result;
+        },
+      );
     } else {
       agentQueryPromise = Promise.resolve({ data: null });
     }
@@ -815,6 +831,10 @@ export async function POST(request: Request) {
 
     // ── 优先检查智能体用户权限（403 优先于 402） ──
     const agentRow = agentResult?.data as Record<string, unknown> | null;
+    if (agentResult?.error) {
+      return new Response(JSON.stringify({ error: "当前智能体访问权限暂时无法核实", code: "AGENT_ACCESS_AUTHORITY_UNAVAILABLE", retryable: true }),
+        { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
     // #5 修复：agentId 存在但数据库中找不到对应智能体时拒绝（防止用默认模型绕过权限）
     // 虚拟智能体（如 __free_chat__）豁免此检查——它们不存在于数据库，但属于合法的直通对话通道
     if (agentId && !isVirtualAgent && (!agentRow || agentRow.deleted_at != null)) {
@@ -831,11 +851,26 @@ export async function POST(request: Request) {
         { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
       );
     }
-    if (agentRow?.category === "自用" && !await canUseOwnerInternalAgent(request)) {
+    const dispatchCategory = uniqueAgentCategory(allCategoriesResult?.data as {name:string;visibility?:string}[] | null,agentRow?.category);
+    if (agentRow && (allCategoriesResult?.error || !dispatchCategory)) {
+      return new Response(JSON.stringify({ error: "无法核实智能体所属分类", code: "AGENT_CATEGORY_AUTHORITY_UNAVAILABLE", retryable: true }),
+        { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    const ownerScopeRequired = requiresOwnerAgentAccess(agentRow, dispatchCategory);
+    const ownerScopeVerified = ownerScopeRequired && await canUseOwnerInternalAgent(request);
+    if (ownerScopeRequired && !ownerScopeVerified) {
       return new Response(
-        JSON.stringify({ error: "该内部工具仅限超级管理员使用", code: "OWNER_INTERNAL_AGENT_REQUIRED", retryable: false }),
+        JSON.stringify({ error: "该智能体仅限所有者使用", code: "OWNER_INTERNAL_AGENT_REQUIRED", retryable: false }),
         { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
       );
+    }
+    if (isUnboundCatalogAgent(agentRow)) {
+      return new Response(JSON.stringify({ error: "该智能体尚未配置可用模型", code: "AGENT_MODEL_NOT_CONFIGURED", retryable: false }),
+        { status: 409, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    if (isViewOnlyAgentAccess(agentRow, dispatchCategory, ownerScopeVerified)) {
+      return new Response(JSON.stringify({ error: "该智能体仅供展示", code: "AGENT_VIEW_ONLY", retryable: false }),
+        { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
     if (agentRow && verifiedUserId) {
       // Administrator status authorizes the management console, not automatic
@@ -859,7 +894,7 @@ export async function POST(request: Request) {
         name: String(agentRow.name || ""),
         category: agentRow.category == null ? null : String(agentRow.category),
       });
-      if (!navigationKey || !permission.agentNavigationKeys.includes(navigationKey)) {
+      if (!navigationKey || !permission.agentNavigationKeys.includes(navigationKey) || (agentRow.category === "自用" && !hasCurrentSelfUseGrant(permission))) {
         return new Response(
           JSON.stringify({
             error: "当前账号未开通该智能体分类",

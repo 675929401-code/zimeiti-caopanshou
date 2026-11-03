@@ -9,7 +9,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const state = { network: 0, writes: 0, principalReads: [], accessReads: [], memberReads: [], attempts: 0, providerCalls: 0, charges: 0, users: {}, access: {}, grants: {}, revoked: false, userReadThrows: false, accessReadThrows: false, signatureThrows: false };
 const grants = ['自用', 'task:文案创作', 'task:影像编导'];
 const validAccess = () => ({ authorityStatus: 'ready', integrityValid: true, profileActive: true, adminLevel: 'super_admin', revision: 12, checksum: 'fixture-current-checksum', permissionKeys: ['agents.view', 'internal_tools.manage'] });
-const agent = (id, name, category, extra = {}) => ({ id, name, category, source: 'llm', is_active: true, user_access: 'available', deleted_at: null, system_prompt: 'FIXTURE_PRIVATE_PROMPT_MUST_NOT_ESCAPE', coze_coding_api_token: 'FIXTURE_PRIVATE_TOKEN_MUST_NOT_ESCAPE', ...extra });
+const agent = (id, name, category, extra = {}) => ({ id, name, category, source: 'llm', model:'fixture-text',model_id:'fixture-model',is_active: true, user_access: 'available', deleted_at: null, system_prompt: 'FIXTURE_PRIVATE_PROMPT_MUST_NOT_ESCAPE', coze_coding_api_token: 'FIXTURE_PRIVATE_TOKEN_MUST_NOT_ESCAPE', ...extra });
 const fixtureAgents = [
   ...Array.from({ length: 14 }, (_, index) => agent('internal-' + index, '内部工具' + index, '自用')),
   agent('deleted-internal', '已删除内部历史', '自用', { is_active: false, user_access: 'hidden', deleted_at: '2026-01-01T00:00:00Z' }),
@@ -17,7 +17,7 @@ const fixtureAgents = [
   agent('public-director', '3D影像编导', '公开'),
 ];
 const fixtureCategories = [
-  { id: 'category-internal', name: '自用', icon: null, visibility: 'normal', is_active: true, sort_order: 1 },
+  { id: 'category-internal', name: '自用', icon: null, visibility: 'view_only', is_active: true, sort_order: 1 },
   { id: 'category-public', name: '公开', icon: null, visibility: 'normal', is_active: true, sort_order: 0 },
 ];
 function identity(token) {
@@ -34,12 +34,14 @@ function reset() {
   state.users = {};
   state.access = {};
   state.grants = {};
+  state.memberLegacy = false;
   state.revoked = false;
   state.userReadThrows = false;
   state.accessReadThrows = false;
   state.signatureThrows = false;
   for (const id of ['owner', 'admin', 'learner', 'other-owner']) {
-    state.users[id] = { id, role: id === 'learner' ? 'student' : 'admin', status: 'active', is_active: true, session_id: 'fixture-session-' + id };
+    state.users[id] = { id, role: id === 'learner' ? 'student' : 'admin', status: 'active', is_active: true, session_id: 'fixture-session-' + id,
+      credits:100,member_status:'active',allowed_categories:[...grants] };
     state.access[id] = { ...validAccess(), adminLevel: id === 'admin' ? 'admin' : 'super_admin' };
     state.grants[id] = [...grants];
   }
@@ -59,6 +61,7 @@ function query(table) {
     eq(key, value) { predicates.push(row => row[key] === value); return this; },
     is(key, value) { predicates.push(row => row[key] === value); return this; },
     maybeSingle() { return Promise.resolve().then(() => finish(true)); },
+    single() { return Promise.resolve().then(() => finish(true)); },
     then(resolve, reject) { return Promise.resolve().then(() => finish(false)).then(resolve, reject); },
     insert() { state.writes++; throw new Error('REAL_WRITES_FORBIDDEN'); },
     update() { state.writes++; throw new Error('REAL_WRITES_FORBIDDEN'); },
@@ -69,7 +72,7 @@ function query(table) {
 const client = { from: query };
 async function readFixtureMemberPermissionSnapshot(userId) {
   state.memberReads.push(userId);
-  return { authorityStatus: 'ready', integrityValid: true, agentNavigationKeys: [...state.grants[userId]] };
+  return { authorityStatus: 'ready', integrityValid: true, revision:state.memberLegacy?0:3,checksum:state.memberLegacy?'legacy-schema-absent':'member-checksum',agentNavigationKeys: [...state.grants[userId]] };
 }
 const moduleCache = new Map();
 function load(relative) {
@@ -132,8 +135,10 @@ function compileActualAdmission(relative, rowName) {
   const tryBlock = post.body.statements.find(ts.isTryStatement)?.tryBlock;
   assert.ok(tryBlock, relative + ': POST try block exists');
   const statements = [...tryBlock.statements];
-  const guardIndex = statements.findIndex(node => ts.isIfStatement(node) && containsCall(node.expression, 'canUseOwnerInternalAgent'));
+  const guardIndex = statements.findIndex(node => ts.isIfStatement(node) && containsCode(node, 'OWNER_INTERNAL_AGENT_REQUIRED'));
   assert.ok(guardIndex >= 0, relative + ': actual owner guard must exist');
+  const ownerRead=statements[guardIndex-1],ownerRequired=statements[guardIndex-2];
+  assert.ok(containsCall(ownerRead,'canUseOwnerInternalAgent') && containsCall(ownerRequired,'requiresOwnerAgentAccess'));
   const guard = statements[guardIndex];
   assert.ok(containsCode(guard, 'OWNER_INTERNAL_AGENT_REQUIRED'));
   const memberStatements = [];
@@ -160,13 +165,23 @@ function compileActualAdmission(relative, rowName) {
   assert.ok(sideEffects.includes('claim'), relative + ': durable attempt claim order is checked');
   assert.ok(sideEffects.includes('markProviderCallStarted'), relative + ': provider dispatch marker order is checked');
   const loaded = { exports: {} };
-  const harness = `export async function admission(request, trustedAgent, body) {
+  const lateGate=rowName==='serverAgent'?statements.find(node=>ts.isIfStatement(node)&&containsCode(node,'INSUFFICIENT_CREDITS')):null;
+  if(rowName==='serverAgent')assert.ok(lateGate,'Coze later agent/credit/legacy membership checks must be tested too');
+  const unknown=statements.find(node=>ts.isIfStatement(node)&&containsCode(node,'AGENT_CATEGORY_AUTHORITY_UNAVAILABLE'));
+  assert.ok(unknown,'missing/unreadable category must fail closed');
+  const harness = `export async function admission(request, trustedAgent, body, dispatchCategory={id:'fixture-category',name:trustedAgent.category,visibility:'normal',is_active:true}) {
     const ${rowName} = trustedAgent;
+    const allCatsResult={data:dispatchCategory?[dispatchCategory]:[],error:null},allCategoriesResult=allCatsResult;
+    const selectedModelBillingSnapshot={config:{}},baseFeeCredits=0;
     const agentId = trustedAgent.id;
     const verifiedUserId = identity(request.headers.get('Authorization')?.replace(/^Bearer /, ''))?.userId;
     const userRole = identity(request.headers.get('Authorization')?.replace(/^Bearer /, ''))?.role;
+    ${unknown.getText(source)}
+    ${ownerRequired.getText(source)}
+    ${ownerRead.getText(source)}
     ${guard.getText(source)}
     ${memberStatements.map(statement => statement.getText(source)).join('\n')}
+    ${lateGate?lateGate.getText(source):''}
     // Only fixture sentinels run after the actual owner and member blocks.
     state.attempts++; state.charges++; state.providerCalls++;
     return Response.json({ code: 'ORIGINAL_ADMISSION_CONTINUED' });
@@ -175,6 +190,10 @@ function compileActualAdmission(relative, rowName) {
   vm.runInNewContext(compiled, {
     module: loaded, exports: loaded.exports, Response, String, identity, state,
     canUseOwnerInternalAgent: helper.canUseOwnerInternalAgent,
+    ...load('src/lib/agent-catalog-lifecycle.ts'),
+    getSupabaseClient:()=>({from:query}),calculateCredits:()=>({creditsCharged:1}),
+    normalizeAllowedAgentCategoryIds:load('src/lib/agent-category-access.ts').normalizeAllowedAgentCategoryIds,
+    resolveAllowedAgentNavigationKeys:load('src/lib/agent-category-access.ts').resolveAllowedAgentNavigationKeys,
     readMemberPermissionSnapshot: readFixtureMemberPermissionSnapshot,
     getAgentNavigationKey: load('src/lib/agent-category-access.ts').getAgentNavigationKey,
   }, { filename: relative + ':actual-admission-blocks' });
@@ -198,6 +217,7 @@ async function assertCatalog(token, internalCount, steppedUp = false) {
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.agents.filter(agent => agent.category === '自用').length, internalCount);
+  assert.equal(Boolean(body.navigationKeys?.includes('自用')),internalCount>0);
   assert.equal(body.agents.filter(agent => agent.category === '公开').length, 2, 'Existing public cards remain readable');
   assert.equal(body.agents.some(agent => agent.id === 'deleted-internal'), false, 'Deleted internal history must stay deleted');
   assert.doesNotMatch(JSON.stringify(body), /system_prompt|coze_coding_api_token|FIXTURE_PRIVATE/u);
@@ -206,6 +226,7 @@ async function assertCatalog(token, internalCount, steppedUp = false) {
   const categoryBody = await categoryResponse.json();
   assert.equal(categoryBody.categories.filter(category => category.name === '自用').length, internalCount > 0 ? 1 : 0);
   assert.equal(categoryBody.categories.filter(category => category.name === '公开').length, 1);
+  if(internalCount) assert.equal(categoryBody.categories.find(c=>c.name==='自用').user_can_use,true);
   return body;
 }
 
@@ -363,6 +384,122 @@ await test('authorized owner proceeds through both original member admission blo
   assert.equal(state.attempts, 2);
   assert.equal(state.charges, 2);
   assert.equal(state.providerCalls, 2);
+});
+await test('a hidden director keeps the film tab but ordinary admins and members cannot discover or dispatch it', async () => {
+  const hidden = agent('private-film-fixture', '3D故事导演测试', '公开', { user_access: 'hidden' });
+  fixtureAgents.push(hidden);
+  try {
+    assert.equal(load('src/lib/business-ip/catalog.ts').displayCategory(hidden), 'task:影像编导');
+    for (const token of ['owner', 'admin', 'learner', null]) {
+      const response = await bots.GET(request('/api/bots?shape=agents', token, 'GET'));
+      assert.equal(response.status, 200);
+      const row = (await response.json()).agents.find(x => x.id === hidden.id);
+      assert.equal(Boolean(row), token === 'owner');
+      if (row) assert.equal(row.category, '公开');
+      for (const admission of actualAdmissions) {
+        const result = await admission.run(request(admission.pathname, token, 'POST', true), hidden, { category: '公开', user_access: 'available' });
+        assert.equal(result.status, token === 'owner' ? 200 : 403);
+        if (token !== 'owner') assert.equal((await result.json()).code, 'OWNER_INTERNAL_AGENT_REQUIRED');
+      }
+    }
+    assert.equal(state.attempts, 2);assert.equal(state.providerCalls, 2);assert.equal(state.charges, 2);
+    state.grants.owner = state.grants.owner.filter(k => k !== 'task:影像编导');
+    for (const admission of actualAdmissions) {
+      const result = await admission.run(request(admission.pathname, 'owner', 'POST'), hidden, {});
+      assert.equal((await result.json()).code, 'CATEGORY_ACCESS_DENIED');
+    }
+    assert.equal(state.attempts, 2);
+  } finally { fixtureAgents.pop(); }
+});
+await test('a warm public prompt cannot grant use of a subsequently hidden, missing or deleted card', async () => {
+  const cached = { id: 'film', config_revision: 3, category: '公开', user_access: 'available', system_prompt: 'fixture' };
+  let fullReads = 0;
+  const full = async () => { fullReads++; return { data: { ...cached, config_revision: 4, user_access: 'hidden' } }; };
+  const run = data => helper.readCurrentAgentForDispatch(cached, async () => ({ data }), full);
+  assert.equal((await run({ ...cached, user_access: 'hidden' })).data.user_access, 'hidden');
+  assert.equal((await run(null)).data, null);
+  assert.ok((await run({ ...cached, deleted_at: '2026-11-03' })).data.deleted_at);
+  const failure = await helper.readCurrentAgentForDispatch(cached, async () => ({ data: null, error: 'unavailable' }), full);
+  assert.equal(failure.error, 'unavailable');assert.equal(fullReads, 0);
+  assert.equal((await run({ ...cached, config_revision: 4 })).data.user_access, 'hidden');
+  assert.equal(fullReads, 1);
+});
+await test('catalog-only denies every role before attempt, provider and billing even with a client-supplied alternative model', async () => {
+  const parked=agent('catalog-only','3D分镜导演','公开',{source:'llm',model_id:null,model:'',is_active:false,user_access:'view_only'});
+  for (const token of ['owner','admin','learner',null]) for (const admission of actualAdmissions) {
+    const result=await admission.run(request(admission.pathname,token,'POST'),parked,{model:'alternative',modelId:'alternative',is_active:true});
+    assert.equal(result.status,409);assert.equal((await result.json()).code,'AGENT_MODEL_NOT_CONFIGURED');
+  }
+  assert.equal(state.attempts,0);assert.equal(state.providerCalls,0);assert.equal(state.charges,0);
+});
+await test('an arbitrarily named private category stays owner-only in the catalogue and both actual dispatch routes',async()=>{
+  const category={id:'private-fixture',name:'客户研究室',is_active:true,visibility:'private'};
+  const row=agent('private-by-category','3D导演',category.name);fixtureCategories.push(category);fixtureAgents.push(row);
+  try{
+    for(const token of ['owner','admin','learner',null]){
+      const result=await bots.GET(request('/api/bots?shape=agents',token,'GET'));assert.equal(result.status,200);
+      assert.equal((await result.json()).agents.some(a=>a.id===row.id),token==='owner');
+      for(const admission of actualAdmissions){
+        const response=await admission.run(request(admission.pathname,token,'POST'),row,{category:'公开'},category);
+        assert.equal(response.status,token==='owner'?200:403);
+      }
+    }
+    assert.equal(state.attempts,2);
+  }finally{fixtureCategories.pop();fixtureAgents.pop();}
+});
+await test('only the owner with a durable grant can dispatch the actual view-only 自用 category on both methods',async()=>{
+  const category=fixtureCategories[0],card=fixtureAgents[0];
+  assert.equal(category.visibility,'view_only');
+  for(const admission of actualAdmissions){
+    for(const token of ['owner','admin','learner',null]){
+      const res=await admission.run(request(admission.pathname,token,'POST'),card,{},category);
+      assert.equal(res.status,token==='owner'?200:403);
+    }
+    const req=request(admission.pathname,'owner','POST');
+    assert.equal((await admission.run(req,{...card,user_access:'view_only'},{},category)).status,403);
+    assert.equal((await admission.run(req,{...card,model:null,model_id:null,is_active:false},{},category)).status,409);
+    state.grants.owner=[];assert.equal((await admission.run(req,card,{},category)).status,403);
+    state.grants.owner=[...grants];state.memberLegacy=true;
+    assert.equal((await admission.run(req,card,{},category)).status,403);await assertCatalog('owner',0);
+    state.memberLegacy=false;
+  }
+});
+await test('marketplace uses the server capability for its branded self-use category and both activation paths',()=>{
+  const source=fs.readFileSync(path.join(projectRoot,'src/components/agent-marketplace.tsx'),'utf8');
+  const ast=ts.createSourceFile('marketplace.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const initializers={};(function visit(n){if(ts.isVariableDeclaration(n)&&['viewOnlyCategoryNames','isAgentViewOnlyForUser','needsModel','isViewOnly','isCardDisabled','isDisabled'].includes(n.name.getText(ast)))initializers[n.name.getText(ast)]=n.initializer.getText(ast);ts.forEachChild(n,visit);})(ast);
+  assert.ok(source.includes("if (isAgentViewOnlyForUser(agent))"));assert.ok(source.includes("if (isUnboundCatalogAgent(agent))"));
+  function disabled(row,cat){const code=Object.entries(initializers).map(([key,value])=>'const '+key+'='+value+';').join('\n')+'result=isCardDisabled;';
+    const context={...load('src/lib/agent-catalog-lifecycle.ts'),dbCategories:cat?[cat]:[],agent:row,isAdmin:true,useMemo:fn=>fn(),useCallback:fn=>fn,result:null};vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);return context.result;}
+  for(const row of fixtureAgents.slice(0,14)){assert.equal(disabled(row,{...fixtureCategories[0],user_can_use:true}),false);assert.equal(disabled(row,{...fixtureCategories[0],user_can_use:false}),true);}
+  const self=fixtureAgents[0],allowed={...fixtureCategories[0],user_can_use:true};assert.equal(disabled(self,null),true);
+  assert.equal(disabled({...self,user_access:'view_only'},allowed),true);assert.equal(disabled({...self,is_active:false,model:null,model_id:null},allowed),true);
+  assert.equal(disabled({...self,category:'展览分类'},{name:'展览分类',visibility:'view_only',user_can_use:true}),true);
+});
+await test('a card or category marked view-only cannot execute even for an owner; a missing category cannot be treated as public',async()=>{
+  const row=agent('live-view-only','3D导演','展览分类'),normal={id:'n',name:'展览分类',is_active:true,visibility:'normal'};
+  for(const admission of actualAdmissions)for(const token of ['owner','admin','learner',null]){
+    const req=request(admission.pathname,token,'POST');
+    for(const [card,category]of [[{...row,user_access:'view_only'},normal],[row,{...normal,visibility:'view_only'}]]){
+      const response=await admission.run(req,card,{user_access:'available'},category);
+      assert.equal(response.status,403);assert.equal((await response.json()).code,'AGENT_VIEW_ONLY');
+    }
+    const missing=await admission.run(req,row,{},null);assert.equal(missing.status,503);
+  }
+  assert.equal(state.attempts+state.providerCalls+state.charges,0);
+});
+await test('an authorized hidden Coze card still checks the original wallet, membership and enabled gates after authorization',async()=>{
+  const coze=actualAdmissions.find(a=>a.pathname==='/api/chat');
+  const row=agent('owner-hidden','3D导演','公开',{user_access:'hidden'});
+  const req=request('/api/chat','owner','POST');
+  state.users.owner.credits=0;
+  let res=await coze.run(req,row,{});assert.equal(res.status,402);assert.equal((await res.json()).code,'INSUFFICIENT_CREDITS');
+  state.users.owner.credits=100;state.users.owner.member_status='expired';
+  res=await coze.run(req,row,{});assert.equal(res.status,403);assert.equal((await res.json()).code,'MEMBERSHIP_REQUIRED');
+  state.users.owner.member_status='active';res=await coze.run(req,{...row,is_active:false},{});assert.equal(res.status,403);
+  state.users.owner.allowed_categories=[];res=await coze.run(req,row,{});assert.equal(res.status,403);assert.equal((await res.json()).code,'CATEGORY_ACCESS_DENIED');
+  state.users.owner.allowed_categories=[...grants];res=await coze.run(req,row,{});assert.equal(res.status,200);
+  assert.equal(state.attempts,1);
 });
 await test('client category claims cannot turn a public server record into a private record', async () => {
   for (const admission of actualAdmissions) {

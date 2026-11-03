@@ -54,6 +54,7 @@ import {
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
 import { canUseOwnerInternalAgent } from "@/lib/server/internal-agent-catalog-access";
+import { hasCurrentSelfUseGrant, isUnboundCatalogAgent, isViewOnlyAgentAccess, requiresOwnerAgentAccess, uniqueAgentCategory } from "@/lib/agent-catalog-lifecycle";
 import { createOperationPerformanceTrace, type OperationPerformanceTrace } from "@/lib/operation-performance-trace";
 import { recordServerOperationPerformanceEventBestEffort } from "@/lib/operation-flight-recorder";
 import { ensureConversationOwnership } from "@/lib/conversation-ownership";
@@ -67,6 +68,8 @@ type CozeAgentRow = {
   id: string;
   name?: string | null;
   bot_id: string;
+  source?: string | null;
+  model?: string | null;
   model_id?: string | null;
   base_fee?: number | string | null;
   user_access?: string | null;
@@ -800,7 +803,7 @@ export async function POST(request: Request) {
     // 客户端传入的 agentId/agentName/baseFee 均不得参与授权或定价。
     const dataClient = getSupabaseClient();
     const agentResult = await dataClient.from("agents")
-      .select("id, name, bot_id, model_id, base_fee, user_access, category, is_active")
+      .select("id, name, source, model, bot_id, model_id, base_fee, user_access, category, is_active")
       .eq("bot_id", botId)
       .is("deleted_at", null)
       .single();
@@ -812,11 +815,27 @@ export async function POST(request: Request) {
     }
     const serverAgent = agentResult.data as CozeAgentRow;
 
-    if (serverAgent.category === "自用" && !await canUseOwnerInternalAgent(request)) {
+    const allCatsResult = await dataClient.from("categories").select("id,name,visibility,is_active");
+    const dispatchCategory = uniqueAgentCategory(allCatsResult.data as {name:string;visibility?:string}[] | null,serverAgent.category);
+    if (allCatsResult.error || !dispatchCategory) {
+      return new Response(JSON.stringify({ error: "无法核实智能体所属分类", code: "AGENT_CATEGORY_AUTHORITY_UNAVAILABLE", retryable: true }),
+        { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    const ownerScopeRequired = requiresOwnerAgentAccess(serverAgent, dispatchCategory);
+    const ownerScopeVerified = ownerScopeRequired && await canUseOwnerInternalAgent(request);
+    if (ownerScopeRequired && !ownerScopeVerified) {
       return new Response(
-        JSON.stringify({ error: "该内部工具仅限超级管理员使用", code: "OWNER_INTERNAL_AGENT_REQUIRED", retryable: false }),
+        JSON.stringify({ error: "该智能体仅限所有者使用", code: "OWNER_INTERNAL_AGENT_REQUIRED", retryable: false }),
         { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
       );
+    }
+    if (isUnboundCatalogAgent(serverAgent)) {
+      return new Response(JSON.stringify({ error: "该智能体尚未配置可用模型", code: "AGENT_MODEL_NOT_CONFIGURED", retryable: false }),
+        { status: 409, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    if (isViewOnlyAgentAccess(serverAgent, dispatchCategory, ownerScopeVerified)) {
+      return new Response(JSON.stringify({ error: "该智能体仅供展示", code: "AGENT_VIEW_ONLY", retryable: false }),
+        { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
 
     // The management role and product entitlements are intentionally separate.
@@ -841,7 +860,7 @@ export async function POST(request: Request) {
       name: String(serverAgent.name || ""),
       category: serverAgent.category,
     });
-    if (!permissionNavigationKey || !permission.agentNavigationKeys.includes(permissionNavigationKey)) {
+    if (!permissionNavigationKey || !permission.agentNavigationKeys.includes(permissionNavigationKey) || (serverAgent.category === "自用" && !hasCurrentSelfUseGrant(permission))) {
       return new Response(
         JSON.stringify({
           error: "当前账号未开通该智能体分类",
@@ -937,12 +956,7 @@ export async function POST(request: Request) {
     // 管理岗位不自动获得产品侧免费、隐藏内容或会员限制豁免。
     if (verifiedUserId) {
       const client = getSupabaseClient();
-      const [creditsResult, allCatsResult] = await Promise.all([
-        // 积分查询（含会员状态 + 用户状态 + allowed_categories）— 一次查询拿到所有用户字段
-        (async () => { try { return await client.from("users").select("credits, member_status, member_expires_at, status, allowed_categories").eq("id", verifiedUserId).single(); } catch { return { data: null }; } })(),
-        // ⚡ 分类查询并行化（之前是串行，节省一次 RTT）
-        (async () => { try { return await client.from("categories").select("id, name, visibility, is_active"); } catch { return { data: null }; } })(),
-      ]);
+      const creditsResult = await (async () => { try { return await client.from("users").select("credits, member_status, member_expires_at, status, allowed_categories").eq("id", verifiedUserId).single(); } catch { return { data: null }; } })();
 
       // ── 最高优先级：检查用户是否被拉黑（blocked）──
       const userRow = creditsResult?.data as { credits: number; member_status?: string; member_expires_at?: string; status?: string; allowed_categories?: string[] | null } | null;
@@ -962,13 +976,6 @@ export async function POST(request: Request) {
           { status: 403, headers: { "Content-Type": "application/json" } }
         );
       }
-      // ── 2. 检查智能体用户权限（hidden） ──
-      if (agentRow && agentRow.user_access === "hidden") {
-        return new Response(
-          JSON.stringify({ error: "该智能体当前不可使用", code: "AGENT_ACCESS_DENIED" }),
-          { status: 403, headers: { "Content-Type": "application/json" } }
-        );
-      }
       // ── 3. 检查分类状态和智能体导航栏权限 ──
       if (!agentRow?.category) {
         return new Response(
@@ -979,7 +986,7 @@ export async function POST(request: Request) {
       if (agentRow?.category) {
         const allCats = (allCatsResult?.data || []) as { id: string; name: string; visibility?: string; is_active?: boolean }[];
         const agentCat = allCats.find((c) => c.name === agentRow.category);
-        if (!agentCat || agentCat.is_active === false || agentCat.visibility === "private") {
+        if (!agentCat || agentCat.is_active === false) {
           return new Response(
             JSON.stringify({ error: "该智能体当前不可使用", code: "AGENT_ACCESS_DENIED" }),
             { status: 403, headers: { "Content-Type": "application/json" } }

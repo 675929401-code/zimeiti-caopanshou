@@ -6,6 +6,7 @@
     "reference": "User correction 2026-10-30: only the existing reply-footer icon pushes into corresponding storyboard cards; remove code-header whole-reply actions. Fix the actual original chained intake versus visible ordinary-mode reply without generating again.",
     "scope": "Reviewed text-draft mode declaration is advisory, original submitted input remains authority. Preserve full original reply/input and all pairs; computed mismatch warning is rebuilt and displayed, not a new generation gate. Machine input conflicts, asset ownership, interrupted/unknown states, and async latest-source checks remain strict. Source-only manual baseline: 52 paths; actual new-build history-to-project acceptance still pending. Prior equal-height and real-wheel fixes retained; extraction 31 unchanged.",
     "chatHeaderFullscreenRemoval": "Requested November 3. Independent review of the R1627 diff and ten passing zero-network outcome cases cover removal of the chat fullscreen overlay, reducer action, title double-click and key interception. The composer expander and sidebar controls are separate.",
+    "catalogPublicationQuoteAdmission": "Reviewed against R1630 main 6ac4c316. Catalog-only and view-only entries cannot quote or dispatch. Verified owner access to existing self-use tools still requires the current navigation grant. Independent runs passed 10 chat outcomes, 50 access cases, 287 quote checks and all 52 hashes with only these two replacements.",
     "reviewedUpdate20261031": "User authorized global bug repairs including agents. Manual single-file update for sendCozeMessage terminal handling only; partial EOF remains unknown, no automatic replay. Independent Astra review matched exact callback-only diff and reran 37/37 zero-network cases. Evidence: .codex-evidence/global-release-20261031-a417dfa5/audit-review/scoped-final-review.json; prior baseline preserved in homepage-theme-restore/chat-lock.before.json. Other 51 file hashes unchanged.",
     "reviewedUpdate20261102": "User explicitly requested ordinary-user model selection shared by new chat and compatible agent conversations, including the existing DeepSeek 4.1 Flash catalog option. Session 1dd66160-98dd-4136-b525-44d7e5884437: independent Astra review accepted exact client/server changes, scoped account/conversation/agent selection, trusted LLM eligibility and existing MANGA workflow exception; fixed-director/Coze boundaries and public-model/member/owner/billing guards remain. Manual reseal of app-context, chat-view and the submitted-outcome test only; all other 49 protected paths unchanged. The test harness now extracts the real selection helper and preserves all 10 UNKNOWN/error/success cases, with model forwarding assertions. Two business files normalized to LF. Typecheck, focused lint, policy/catalog tests and isolated component checks passed; local full-build browser verification follows. No provider call, database write, push or deployment is authorized by this reseal. Prior snapshots: work/chat-switch-client-1dd6/unknown-harness-before in the session workspace.",
     "reviewedUpdate20261103": "User requested the chat header retain Home only and preserve the default reading width. Independent review of session d8733d21-c502-45ba-85a6-0ba3fc9c0fac confirmed only chat-view layout and header changed in the 52 protected paths. All ten zero-network chat outcome checks, focused lint and typecheck passed. Full-build browser acceptance is recorded separately in the release evidence."
@@ -132,7 +133,7 @@
     },
     {
       "path": "scripts/verify-llm-standard-request-preflight-zero-network.mjs",
-      "sha256": "ba8b7c3d1ec5661bbaf9a3d8f0d76da79af96133feb612536d88775363165529"
+      "sha256": "8a421550e86f6016c3f405f254f97ae38b14ed863139496b630c9f008a637be6"
     },
     {
       "path": "src/components/chat/message-content.tsx",
@@ -148,7 +149,7 @@
     },
     {
       "path": "src/lib/server/llm-standard-request-preparation.ts",
-      "sha256": "a10624e14ce139b293cf648b11711b96b1a252da70dc60bf1f2cab9e98c7a723"
+      "sha256": "9f5bf133e067d599143858860c85b2da1b162417ba3fa3ec1a66414ea5719326"
     },
     {
       "path": "src/lib/chat-prompt-delivery-state.ts",
