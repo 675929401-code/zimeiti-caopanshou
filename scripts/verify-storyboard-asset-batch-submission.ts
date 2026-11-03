@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import { storyboardFirstThreeViewInput, buildStoryboardThreeViewPrompt } from "../src/lib/storyboard-visual-asset-three-view";
+import { storyboardReferenceImageSettings } from "../src/lib/storyboard-visual-asset-workspace";
 
 const source = readFileSync("src/components/storyboard-workbench.tsx", "utf8");
 const tree = ts.createSourceFile("storyboard-workbench.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -25,7 +27,8 @@ function harness(failFirst = false) {
   let announceSave: (() => void) | undefined;
   const saveEntered = new Promise<void>((resolve) => { announceSave = resolve; });
   const model = { id: "gpt-image-fixture", name: "GPT-2.5 fixture", prices: { "1K": 0.4, "2K": 0.8 } as Record<string, number> };
-  const run: { id: string; imageModelId: string; imageResolution: string; ratio: string; imageRatio?: string } = { id: "project-a", imageModelId: model.id, imageResolution: "1K", ratio: "16:9" };
+  const run = { id: "project-a", imageModelId: model.id, imageResolution: "1K", ratio: "16:9" as const,
+    visualAssetWorkspace: { drafts: [], candidates: [], generationSettings: { modelId: model.id, resolution: "1K", ratio: "16:9" as "16:9" | "9:16" | "1:1" } } };
   const posts: Array<Record<string, unknown>> = [];
   const pendingWrites: Array<unknown[]> = [];
   const errors: string[] = [];
@@ -33,7 +36,9 @@ function harness(failFirst = false) {
   const candidates: unknown[] = [];
   let uuid = 0, saveCalls = 0;
   const globals = {
-    contextReadyRef: {current:true}, navigationRef: {current:false}, scopeMountedRef:{current:true}, referenceOnly: false, token: "nonsecret-fixture-token", userId: "fixture-user", activeImageModel: model, activeImageSelectionIssue: "", activeImageResolution: "1K",
+    contextReadyRef: {current:true}, navigationRef: {current:false}, scopeMountedRef:{current:true}, referenceOnly: false, token: "nonsecret-fixture-token", userId: "fixture-user", referenceImageModel: model, referenceImageSelectionIssue: "", referenceImageResolution: "1K",
+    initialReferenceBlockedRef: { current: new Set<string>() }, imageDownloadOwnerRef: { current: "fixture-user\0nonsecret-fixture-token" },
+    readReferenceImageSettings: storyboardReferenceImageSettings, storyboardFirstThreeViewInput, buildStoryboardThreeViewPrompt,
     visualAssetGenerationRef: { current: false }, visualAssetGenerationIssue: "", visualAssetBatchRef: { current: null as unknown }, runRef: { current: run },
     window: { localStorage: {}, confirm: (message: string) => { confirms.push(message); return true; } },
     readStoryboardAssetAttempts: () => [], setPendingAssetAttempts: () => { throw new Error("UNEXPECTED_PENDING_READ"); },
@@ -41,7 +46,7 @@ function harness(failFirst = false) {
     storyboardImagePrice: (selected: typeof model, resolution: string) => selected.prices[resolution],
     storyboardImageModelName: (selected: typeof model) => selected.name,
     effectiveImageResolution: (_selected: typeof model, requested: string) => requested,
-    effectiveImageRatio: (current: typeof run) => current.imageRatio ?? current.ratio,
+    effectiveImageRatio: (current: typeof run) => current.ratio,
     visualAssetRoleLabel: (role: string) => role,
     createStoryboardPersistenceSnapshot: (value: typeof run) => structuredClone(value),
     saveVisualAssetContext: async () => { saveCalls++; if (saveCalls > 1) return true; announceSave?.(); return await new Promise<boolean>((resolve) => { releaseSave = resolve; }); },
@@ -63,7 +68,7 @@ function harness(failFirst = false) {
   vm.runInContext(singleCode, context);
   vm.runInContext(batchCode, context);
   const callbacks = context as unknown as { generateVisualAsset(input: Input, batch?: unknown): Promise<unknown>; generateVisualAssets(inputs: Input[]): Promise<unknown[]> };
-  const batch = { runId: run.id, modelId: model.id, resolution: "1K", ratio: "16:9", price: 0.4, inputs: new Map([[person.planId, JSON.stringify(person)]]), started: new Set<string>() };
+  const batch = { runId: run.id, modelId: model.id, resolution: "1K", ratio: "16:9", price: 0.4, inputs: new Map([[person.planId, JSON.stringify(storyboardFirstThreeViewInput(person))]]), started: new Set<string>() };
   return { model, run, globals, callbacks, batch, posts, pendingWrites, errors, confirms, candidates, saveEntered,
     release: () => { assert.ok(releaseSave, "must actually pause in real callback's awaited save"); releaseSave(true); },
     saveCalls: () => saveCalls,
@@ -72,9 +77,9 @@ function harness(failFirst = false) {
 
 async function main() {
   const mutations = [
-    { name: "ratio", mutate: (h: ReturnType<typeof harness>) => { h.run.ratio = "9:16"; } },
-    { name: "model", mutate: (h: ReturnType<typeof harness>) => { h.run.imageModelId = "different-model"; } },
-    { name: "resolution", mutate: (h: ReturnType<typeof harness>) => { h.run.imageResolution = "2K"; } },
+    { name: "ratio", mutate: (h: ReturnType<typeof harness>) => { h.run.visualAssetWorkspace.generationSettings.ratio = "9:16"; } },
+    { name: "model", mutate: (h: ReturnType<typeof harness>) => { h.run.visualAssetWorkspace.generationSettings.modelId = "different-model"; } },
+    { name: "resolution", mutate: (h: ReturnType<typeof harness>) => { h.run.visualAssetWorkspace.generationSettings.resolution = "2K"; } },
     { name: "price", mutate: (h: ReturnType<typeof harness>) => { h.model.prices["1K"] = 9; } },
     { name: "project", mutate: (h: ReturnType<typeof harness>) => { h.run.id = "project-b"; } },
   ];
@@ -120,7 +125,7 @@ async function main() {
     assert.equal(h.saveCalls(), 1, "second asset must not start after first unknown/null result");
     assert.equal(h.posts.length, 1);
     assert.equal(h.pendingWrites.length, 1, "unknown first request must remain recoverable, not cleared or overwritten by second");
-    assert.equal(h.confirms.length, 1);
+    assert.equal(h.confirms.length, 0, "batch submission must dispatch directly without a confirmation dialog");
     assert.equal(h.globals.visualAssetBatchRef.current, null);
   }
   console.log(JSON.stringify({ passed: true, actualCallbacksExtractedWithTypeScriptAst: true, changedDuringAwaitCases: mutations.length,

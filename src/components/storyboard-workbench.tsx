@@ -3191,7 +3191,7 @@ function UserStoryboardWorkbench({
         setVisualAssetError("资产批次参数已变化，剩余资产未提交，请重新确认"); return null;
       }
       batch.started.add(input.planId);
-    } else if (!window.confirm(`${input.threeView ? `生成${visualAssetRoleLabel(input.role)}三视图` : `生成${visualAssetRoleLabel(input.role)}参考图`}：${input.name}\n模型：${storyboardImageModelName(model)} · ${readReferenceImageSettings(runRef.current).ratio} · ${referenceImageResolution}\n${input.threeView ? sourceAsset ? "使用当前采用图作为身份参考；一张三视图，生成候选后再选择采用。\n" : "依据身份描述直接生成一张三视图，无需先生成或上传主图。\n" : ""}预计费用：¥${price.toFixed(2)}，仅提交一次，不自动重试。\n点“取消”不会生成、不会扣费。`)) throw new Error("USER_CANCELLED");
+    }
     visualAssetGenerationRef.current = true;
     setVisualAssetGenerating(true); setVisualAssetError("");
     try {
@@ -3264,7 +3264,6 @@ function UserStoryboardWorkbench({
       || frozen.some(item => !item.name.trim() || !item.prompt.trim())) return [];
     const price = storyboardImagePrice(referenceImageModel, referenceImageResolution);
     if (!Number.isFinite(price) || price < 0) return [];
-    if (!window.confirm(`生成 ${frozen.length} 张视觉资产（人物/宠物各一张三视图） · ${storyboardImageModelName(referenceImageModel)}\n${frozenSettings.ratio} · ${referenceImageResolution}，预计合计 ¥${(price * frozen.length).toFixed(2)}。逐张提交一次；任一结果未确认便停止剩余项，不自动重试。`)) return [];
     const batch: VisualAssetBatchAuthorization = { runId: runRef.current.id, modelId: referenceImageModel.id, resolution: referenceImageResolution,
       ratio: readReferenceImageSettings(runRef.current).ratio, price, inputs: new Map(frozen.map(item => [item.planId, JSON.stringify(item)])), started: new Set() };
     visualAssetBatchRef.current = batch; setVisualAssetGenerating(true);
@@ -4797,7 +4796,6 @@ function UserStoryboardWorkbench({
         const quote = storyboardImagePrice(model, effectiveImageResolution(model, current.imageResolution));
         if (!Number.isFinite(quote) || quote < 0) throw new Error("生图报价尚未确认，本次未提交");
         if (batchAuthorization && quote !== batchAuthorization.price) throw new Error("批量生图报价已改变，本段未提交");
-        if (!batchAuthorization && !window.confirm("生成段落" + card.order + "分镜图 · " + modelName + "\n参考图 " + (chainContext ? [chainContext.anchor?.imageRef.recordId, chainContext.previous?.imageRef.recordId].filter((id, index, ids) => id && ids.indexOf(id) === index).length : refreshed.referenceImageUrls.length) + "张，预计 ¥" + quote.toFixed(2) + "。仅提交一次，不自动重试。")) return null;
         requestSnapshot = {
           runId: current.id,
           cardId: card.id,
@@ -5726,7 +5724,6 @@ function UserStoryboardWorkbench({
     const quotedPrice = tokenBilling?.maxChargeYuan ?? effectiveVideoCharge(model, resolution, duration);
     if (!Number.isFinite(quotedPrice) || quotedPrice < 0) { setNotice("视频报价尚未确认，本次未提交"); return null; }
     if (batchAuthorization && quotedPrice !== batchAuthorization.price) { setNotice("批量视频报价已改变，本段未提交"); return null; }
-    if (!batchAuthorization && !window.confirm("生成段落" + card.order + "视频 · " + compactVideoModelName(model) + "\n" + duration + "秒 · " + videoResolutionDisplayLabel(model, resolution) + (submissionVideoInputs.usesStoryboardImage ? "，使用当前分镜图和本段视频提示词。" : "，仅使用当前视频提示词，不使用图片或其他素材。") + (tokenBilling ? "按实际 Token 用量结算，本次最多自动扣款 ¥" + quotedPrice.toFixed(2) + "；预留不是扣费，超额待确认。" : "预计 ¥" + quotedPrice.toFixed(2) + "。") + "仅提交一次，不自动重试。")) return null;
     videoSubmissionsRef.current.add(cardId);
     const videoOperation = Symbol(cardId);
     videoSubmissionOperationsRef.current.set(cardId, videoOperation);
@@ -6482,9 +6479,7 @@ function UserStoryboardWorkbench({
     if (runRef.current.cards.some(card => !card.imagePrompt.trim())) { setNotice("请补齐每段生图提示词。"); return; }
     if (runRef.current.cards.some(card => card.imageRecoveryReady || card.imageRetryBlocked || ["queued", "running"].includes(card.imageStatus))) { setNotice("原任务尚未确认，请先查询原任务；本次未提交。"); return; }
     const price = storyboardImagePrice(activeImageModel, activeImageResolution);
-    const count = runRef.current.cards.filter(card => !chainDelivered(card)).length;
     if (!Number.isFinite(price) || price < 0) { setNotice("生图报价尚未确认，本次未提交。"); return; }
-    if (!window.confirm(`串联生成 ${count} 张分镜图 · ${activeImageModel ? storyboardImageModelName(activeImageModel) : ""} · ${activeImageResolution} · ${activeImageRatio}\n每张 ¥${price.toFixed(2)}，预计总费用 ¥${(count*price).toFixed(2)}。\n首段只需确认一次；后续等待前段真实交付并保存后自动继续。失败或结果未知即停止，不自动重试。刷新、暂停或修改输入后需重新确认剩余费用。`)) return;
     const before = runRef.current, owner = imageDownloadOwnerRef.current;
     const effective = { ...before, imageResolution: activeImageResolution, imageRatio: activeImageRatio, updatedAt: Date.now() };
     const expectedPlan = storyboardChainPlanFingerprint(effective);
@@ -6779,9 +6774,8 @@ function UserStoryboardWorkbench({
       const videoPrice = tokenBilling?.maxChargeYuan ?? effectiveVideoCharge(activeVideoModel, activeVideoResolution, activeVideoDuration);
       const images = current.cards.filter(card => card.imageStatus !== "done").length;
       const videos = current.cards.filter(card => card.videoStatus !== "done").length;
-      const total = storyboardProductionQuote({ references: referenceCount, images, videos, referencePrice, imagePrice, videoPrice });
+      storyboardProductionQuote({ references: referenceCount, images, videos, referencePrice, imagePrice, videoPrice });
       if (!referenceCount && !images && !videos) { setContinuousStatus("done"); setContinuousMessage("本项目的分镜图与视频已完成。"); return; }
-      if (!window.confirm(`连续制作当前项目：${current.title}\n${referenceCount ? `角色三视图 ${referenceCount} 张 × ¥${referencePrice.toFixed(2)}；` : ""}分镜图 ${images} 张 × ¥${imagePrice.toFixed(2)}；视频 ${videos} 条 × ¥${videoPrice.toFixed(2)}。\n图片：${activeImageModel ? storyboardImageModelName(activeImageModel) : ""} · ${activeImageResolution} · ${effectiveImageRatio(current)}\n视频：${activeVideoModel ? compactVideoModelName(activeVideoModel) : ""} · ${activeVideoDuration}秒 · ${videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)} · ${current.ratio}\n${tokenBilling ? "视频按实际 Token 结算，以下为本次最多自动扣款总额" : "本次预计总费用"}：¥${total.toFixed(2)}。\n${resolveStoryboardExecutionMode(current) === "reference" && current.directorIntake?.phase === "planned" ? "角色图生成后必须逐项点击“使用这张”，全部确认保存后在本页继续分镜图→视频。" : "普通模式直接按全部分镜图→全部视频的顺序制作。"}逐项只提交一次；失败或结果未知即停止。暂停、刷新或修改输入后需重新确认剩余费用。`)) return;
       if (runRef.current !== current) throw new Error("项目已变化，请重新确认本次制作。");
       continuousAuthorizationRef.current = { owner: userId + "\0" + token, runId: current.id, planFingerprint: storyboardProductionPlanFingerprint(current),
         referencePrice, imagePrice, videoPrice, tokenBilling, referenceInputs, stage: "references" };
