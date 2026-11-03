@@ -6359,6 +6359,14 @@ function UserStoryboardWorkbench({
     const originalRun = runRef.current, original = originalRun.cards.find(item => item.id === cardId);
     const owner = imageDownloadOwnerRef.current, plan = storyboardChainPlanFingerprint(originalRun);
     const snapshot = storyboardChainFingerprint(original?.imageRequestSnapshot ?? null), confirmation = storyboardChainFingerprint(original?.chainAnchorConfirmation ?? null);
+    // Compare the restored request to the document actually sent to storage.
+    // The live request also contains transient inputs, such as presetReferences.
+    const matchesSavedRequest = (saved: WorkbenchCard | undefined, sent: WorkbenchRun) => {
+      const expected = sent.cards.find(item => item.id === cardId);
+      return Boolean(saved && expected && saved.imageClientRequestId === expected.imageClientRequestId
+        && saved.imageClientRequestFingerprint === expected.imageClientRequestFingerprint
+        && storyboardChainFingerprint(saved.imageRequestSnapshot ?? null) === storyboardChainFingerprint(expected.imageRequestSnapshot ?? null));
+    };
     const current = () => scopeMountedRef.current && contextReadyRef.current && !navigationRef.current && imageDownloadOwnerRef.current === owner
       && runRef.current.id === originalRun.id && storyboardChainPlanFingerprint(runRef.current) === plan
       && runRef.current.cards.some(item => item.id === cardId && item.imageRecordId === original?.imageRecordId
@@ -6367,12 +6375,13 @@ function UserStoryboardWorkbench({
     if (!chainDelivered(original)) throw new Error("分镜图尚未真实交付，串联停止；请查询原任务。");
     assertCurrent();
     if (original && (!original.imageAssetId || !original.imageStorageKey)) {
-      if (!await saveStoryboardProject(createStoryboardPersistenceSnapshot(runRef.current), true)) throw new Error("分镜记录保存未确认，本次未导出。");
+      const sent = createStoryboardPersistenceSnapshot(runRef.current);
+      if (!await saveStoryboardProject(sent, true)) throw new Error("分镜记录保存未确认，本次未导出。");
       assertCurrent();
       const originalReadback = normalizeRun(await cloud.restore(originalRun.id)); assertCurrent();
       const savedOriginal = originalReadback?.cards.find(item => item.id === cardId);
       if (!originalReadback || originalReadback.id !== originalRun.id || storyboardChainPlanFingerprint(originalReadback) !== plan || savedOriginal?.imageRecordId !== original.imageRecordId
-        || !isStoryboardChainHydratedReadback(savedOriginal, false) || storyboardChainFingerprint(savedOriginal?.imageRequestSnapshot ?? null) !== snapshot) throw new Error("原分镜记录回读未确认，本次未导出。");
+        || !isStoryboardChainHydratedReadback(savedOriginal, false) || !matchesSavedRequest(savedOriginal, sent)) throw new Error("原分镜记录回读未确认，本次未导出。");
       if (boardExportLocksRef.current.has(cardId)) throw new Error("本段原图正在保存，请等待完成。");
       boardExportLocksRef.current.add(cardId); setExportingBoardIds(new Set(boardExportLocksRef.current));
       try {
@@ -6412,14 +6421,15 @@ function UserStoryboardWorkbench({
     if (!card.imageAssetId || !card.imageStorageKey) throw new Error("分镜图持久保存未确认，串联已停止。");
     await readOwnedStoryboardImage({ assetId: card.imageAssetId, storageKey: card.imageStorageKey }, card.imageRequestSnapshot?.aspectRatio || effectiveImageRatio(originalRun));
     assertCurrent();
-    if (!await saveStoryboardProject(createStoryboardPersistenceSnapshot(runRef.current), true)) throw new Error("项目保存失败，串联已停止。");
+    const sent = createStoryboardPersistenceSnapshot(runRef.current);
+    if (!await saveStoryboardProject(sent, true)) throw new Error("项目保存失败，串联已停止。");
     assertCurrent();
     const restored = normalizeRun(await cloud.restore(originalRun.id));
     assertCurrent();
     const saved = restored?.cards.find(item => item.id === cardId);
     if (!restored || restored.id !== originalRun.id || resolveStoryboardExecutionMode(restored) !== "chained" || storyboardChainPlanFingerprint(restored) !== plan
       || !saved || saved.imageStatus !== "done" || !isStoryboardChainHydratedReadback(saved, true) || !storyboardProductionImageInputMatch(restored, saved).matches || saved.imageRecordId !== card.imageRecordId || saved.imageAssetId !== card.imageAssetId || saved.imageStorageKey !== card.imageStorageKey
-      || storyboardChainFingerprint(saved.imageRequestSnapshot ?? null) !== snapshot || storyboardChainFingerprint(saved.chainAnchorConfirmation ?? null) !== confirmation) throw new Error("保存回读未确认，串联已停止。");
+      || !matchesSavedRequest(saved, sent) || storyboardChainFingerprint(saved.chainAnchorConfirmation ?? null) !== confirmation) throw new Error("保存回读未确认，串联已停止。");
     return true;
   };
   const processChainedImages = async () => {
