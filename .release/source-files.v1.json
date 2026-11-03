@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "6ea1ed0ab548f021e35c1f5b2fe8603ea05ae81c5505cdb5d8b40a48dd20c44d",
+  "sourceFingerprint": "98fab2c8fb931584e37d60fab75652a2f6370bf6f3a1d3aa84fea82f8e6f1b35",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 4851,
-  "totalBytes": 77436848,
+  "fileCount": 4852,
+  "totalBytes": 77449971,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "a2db63591b1d9fb5b0ace2c37da400e6bfe4fe87e9855ccd4adcae2c3564691a"
+      "sha256": "b1c867f7a45cb057e309b35ec55dc19d40571db3d2cb975b5d9757d41403d16c"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -8805,6 +8805,11 @@
       "path": "scripts/verify-member-closure-local.ts",
       "bytes": 22664,
       "sha256": "ce747bf764c28e96f2a408933b26bc9e18b520c73d93431e5400f97a5c581eb1"
+    },
+    {
+      "path": "scripts/verify-member-feature-auth-initialization-zero-network.mjs",
+      "bytes": 12866,
+      "sha256": "ae6aa297ee6c4cdbac7c18998dd37ea2b037d79f7b0e5bd0f7b6f806b1a8d45c"
     },
     {
       "path": "scripts/verify-member-operations-archive-live-readonly.mjs",
@@ -17223,8 +17228,8 @@
     },
     {
       "path": "src/components/member-permission-boundary.tsx",
-      "bytes": 6442,
-      "sha256": "58628263513e8382c2898766ede8b6f52f1554cba0152226b3b5212696217efe"
+      "bytes": 6699,
+      "sha256": "c9ec601ffc22eeba5bf16472acfdb6e225a2171fa98656078a4c0196ed2fbd7e"
     },
     {
       "path": "src/components/model-badge.module.css",

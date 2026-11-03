@@ -101,6 +101,9 @@ export function MemberFeatureBoundary({ children }: { children: React.ReactNode 
     ? pathname.startsWith("/commerce") ? "带货创作" : "漫剧创作"
     : "";
   const requiredFeature = featurePermissionForPath(pathname || "/");
+  // AppProvider owns session restoration and anonymous/expired-session redirects.
+  // Its initial unverified state is not a completed feature-permission denial.
+  const authPending = !state.auth.isAuthenticated;
   const allowed = requiredFeature == null || (
     permission.status === "ready"
     && state.auth.isAuthenticated
@@ -116,14 +119,14 @@ export function MemberFeatureBoundary({ children }: { children: React.ReactNode 
   );
 
   useEffect(() => {
-    if (!requiredFeature || allowed || permission.status === "idle" || permission.status === "loading") return;
+    if (!requiredFeature || allowed || authPending || permission.status === "idle" || permission.status === "loading") return;
     const timer = window.setTimeout(() => router.replace("/"), 2500);
     return () => window.clearTimeout(timer);
-  }, [allowed, permission.status, requiredFeature, router]);
+  }, [allowed, authPending, permission.status, requiredFeature, router]);
 
   if (comingSoon && state.auth.user?.role !== "admin") return <FeatureComingSoonOverlay title={comingSoon} />;
   if (!requiredFeature || allowed) return <>{children}</>;
-  if (permission.status === "idle" || permission.status === "loading") {
+  if (authPending || permission.status === "idle" || permission.status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--background)] text-sm text-[var(--muted-foreground)]" role="status">
         正在核对会员功能权限…
