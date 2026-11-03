@@ -2469,12 +2469,3 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-
   box-shadow: none !important;
 }
 html[data-theme][data-mode] .marketplace-shell .marketplace-category-inner { padding-inline: 12px !important; }
-@media (min-width: 1200px) {
-  html[data-theme][data-mode] .marketplace-shell .marketplace-depth { padding-inline: 14px !important; }
-  html[data-theme][data-mode] .marketplace-shell .marketplace-agent-grid {
-    width: 100% !important;
-    max-width: none !important;
-    gap: 16px !important;
-    padding: 4px 0 28px !important;
-  }
-}
