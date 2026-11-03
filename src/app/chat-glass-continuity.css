@@ -109,7 +109,7 @@ html[data-theme] [data-chat-surface="unified-glass"].chat-stage {
   -webkit-mask-image: none;
 }
 
-[data-chat-surface="unified-glass"] > *:not(.chat-corner-float) { position: relative; z-index: 1; }
+[data-chat-surface="unified-glass"] > * { position: relative; z-index: 1; }
 
 [data-chat-surface="unified-glass"] .chat-stage-header {
   background: color-mix(in srgb, var(--chat-sheet) 82%, transparent) !important;

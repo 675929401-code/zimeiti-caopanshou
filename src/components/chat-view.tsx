@@ -147,17 +147,7 @@ export function ChatView() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const contentWidthClass = "max-w-6xl";
-  const [isExpanded, setIsExpanded] = useState(false); // 对话框放大状态（侧边栏折叠）
   const [isInputExpanded, setIsInputExpanded] = useState(false); // 输入框展开/收起（maxHeight切换）
-
-  // 侧边栏可见性检测：仅桌面端 + 非全屏 + 侧边栏展开时，内容区需要视觉居中补偿
-  const [isMobileView, setIsMobileView] = useState(false);
-  useEffect(() => {
-    const check = () => setIsMobileView(window.innerWidth < 768);
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
 
   // 文本代码框可按点击顺序推送到 AI 生图工作台；不解析、不拆分、不改写提示词。
   useEffect(() => {
@@ -379,19 +369,6 @@ export function ChatView() {
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
   }, []);
-
-  /** 侧边栏是否占据左侧空间 — 为使内容视觉居中于整个视口，需在右侧补偿等宽留白 */
-  const sidebarVisible = !isMobileView && !state.isChatFullscreen && !state.sidebarCollapsed;
-
-  // 同步侧边栏折叠状态，聊天内容始终保持默认宽度。
-  useEffect(() => {
-    // 仅在 isExpanded 与 sidebarCollapsed 不一致时同步
-    if (state.sidebarCollapsed && !isExpanded) {
-      setIsExpanded(true);
-    } else if (!state.sidebarCollapsed && isExpanded) {
-      setIsExpanded(false);
-    }
-  }, [state.sidebarCollapsed]);
 
   const [pendingImages, setPendingImages] = useState<{ key: string; url: string; name: string }[]>([]);
   type ComposerDraft = {
@@ -735,21 +712,6 @@ export function ChatView() {
   }, [state.pendingPresetMessage, state.activeConversationId, state.activeAgentId, isBipProject,
     webSearchOverride, chatModelOverride, sendMessage, setPendingPresetMessage]);
 
-  // ESC/F11 key to toggle fullscreen
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && state.isChatFullscreen) {
-        dispatch({ type: "TOGGLE_CHAT_FULLSCREEN" });
-      }
-      if (e.key === "F11" && activeConv) {
-        e.preventDefault();
-        dispatch({ type: "TOGGLE_CHAT_FULLSCREEN" });
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state.isChatFullscreen, dispatch, activeConv]);
-
   // Filter agents for mention (supports name + pinyin initials)
   const mentionAgents = useMemo(
     () =>
@@ -1051,52 +1013,11 @@ export function ChatView() {
   return (
     <div className="chat-stage relative flex flex-col h-full bg-[var(--background)]" data-chat-surface="unified-glass">
       {isBipProject && activeConv && bipAgentId && <BusinessIpFlow key={activeConv.id} value={bipAgentId} conversationId={activeConv.id} onChange={agentId=>setBipSelection({conversationId:activeConv.id,agentId})} agents={state.agents} disabled={isConvStreaming(activeConv.id)} onPrepare={text=>setInputValue(current=>current?`${current}\n\n${text}`:text)} />}
-      {/* Corner float: expand/collapse/fullscreen — 圆角融为一体 */}
-      <div className="chat-corner-float absolute top-1.5 right-1.5 z-50 flex items-center gap-0.5">
-        {activeConv?.messages?.length > 0 ? (
-          <>
-            {/* Fullscreen toggle — 仅常态下显示 */}
-            {!(isExpanded || state.isChatFullscreen) && (
-              <button
-                onClick={() => dispatch({ type: "TOGGLE_CHAT_FULLSCREEN" })}
-                className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]/80 transition-all duration-200"
-                title="全屏对话"
-                aria-label="全屏对话"
-              >
-                <Maximize2 className="w-3 h-3" />
-              </button>
-            )}
-            {/* Collapse from fullscreen */}
-            {state.isChatFullscreen && (
-              <button
-                onClick={() => dispatch({ type: "TOGGLE_CHAT_FULLSCREEN" })}
-                className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-all duration-200"
-                title="退出全屏 (Esc)"
-                aria-label="退出全屏"
-              >
-                <Minimize2 className="w-3 h-3" />
-              </button>
-            )}
-          </>
-        ) : (
-          /* 空对话：仅显示全屏按钮 */
-          <button
-            onClick={() => dispatch({ type: "TOGGLE_CHAT_FULLSCREEN" })}
-            className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--muted-foreground)]/40 hover:text-[var(--foreground)] hover:bg-[var(--accent)]/80 transition-all duration-200"
-            title="全屏对话"
-            aria-label="全屏对话"
-          >
-            <Maximize2 className="w-3 h-3" />
-          </button>
-        )}
-      </div>
       {/* Chat Header */}
       <div
         className={cn(
           "chat-stage-header relative z-50 bg-[var(--background)]/80 backdrop-blur-sm border-b border-[var(--border)] h-[60px] pl-14 sm:pl-3 pr-3 flex items-center justify-between cursor-default",
         )}
-        onDoubleClick={() => dispatch({ type: "TOGGLE_CHAT_FULLSCREEN" })}
-        title="双击切换全屏"
       >
         <div className="flex items-center gap-3">
           <Avatar className="w-11 h-11 ring-1 ring-[var(--border)]" data-testid="chat-agent-avatar">

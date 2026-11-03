@@ -238,6 +238,7 @@ function parseAcceptanceRoutes(value) {
 }
 
 function derivePageRoute(repoPath) {
+  if (/^(?:src|voice-platform\/src)\/app\/page\.(?:ts|tsx|js|jsx)$/u.test(repoPath)) return "/";
   const match = /^(?:src|voice-platform\/src)\/app\/(.+)\/page\.(?:ts|tsx|js|jsx)$/u.exec(repoPath);
   if (!match || match[1].split("/").some((part) => /^\(.*\)$|^\[.*\]$/u.test(part))) return null;
   return normalizeRoute(`/${match[1]}`);

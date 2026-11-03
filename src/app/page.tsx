@@ -240,12 +240,11 @@ export default function Home() {
   }, [isMobile]);
 
   const activeView = returnedFromSecondaryPage ? "marketplace" : state.view;
-  const isFullscreen = state.isChatFullscreen && activeView === "chat";
   const sidebarBaseWidth = state.sidebarWidth || 300;
   const desktopSidebarWidth = sidebarBaseWidth + (!isMobile ? DESKTOP_SIDEBAR_EXTRA_WIDTH : 0);
 
   // 桌面端侧边栏折叠状态
-  const isSidebarCollapsed = !isMobile && !isFullscreen && state.sidebarCollapsed;
+  const isSidebarCollapsed = !isMobile && state.sidebarCollapsed;
   // ── 入口守卫：sessionStorage entered_app 标记 ──
   // 未标记 entered_app → 始终显示首页 LandingPage（平台介绍 + 登录入口）
   // 已标记 entered_app → 显示应用主体（marketplace/chat 按状态恢复）
@@ -264,7 +263,7 @@ export default function Home() {
   return (
     <div className="app-shell h-screen overflow-clip bg-[var(--background)]">
       {/* 移动端汉堡菜单按钮 */}
-      {isMobile && !isFullscreen && (
+      {isMobile && (
         <button
           className="mobile-menu-btn"
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -275,7 +274,7 @@ export default function Home() {
       )}
 
       {/* 桌面端侧边栏 — fixed 定位 + translate-x 滑动动画（对标参考站） */}
-      {!isMobile && !isFullscreen && (
+      {!isMobile && (
         <div
           className={cn(
             "app-sidebar-frame fixed top-0 left-0 z-40 h-full bg-[var(--sidebar)] border-r border-[var(--sidebar-border)]",
@@ -301,7 +300,7 @@ export default function Home() {
       )}
 
       {/* 桌面端侧边栏折叠时 — 侧边展开按钮 */}
-      {!isMobile && !isFullscreen && isSidebarCollapsed && (
+      {isSidebarCollapsed && (
         <button
           onClick={() => dispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: false })}
           className="fixed top-3 left-3 z-30 w-8 h-8 rounded-lg flex items-center justify-center bg-[var(--card)] border border-[var(--border)] shadow-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-all duration-200"
@@ -334,12 +333,9 @@ export default function Home() {
 
       {/* 主内容区 — padding-left 避让 + 平滑过渡（对标参考站 transition-[padding]） */}
       <main
-        className={cn(
-          "app-main-stage h-screen overflow-hidden transition-[padding] duration-500 ease-in-out",
-          isFullscreen && "w-full !pl-0"
-        )}
+        className="app-main-stage h-screen overflow-hidden transition-[padding] duration-500 ease-in-out"
         style={{
-          paddingLeft: (!isMobile && !isFullscreen && !isSidebarCollapsed) ? `${desktopSidebarWidth}px` : "0px",
+          paddingLeft: (!isMobile && !isSidebarCollapsed) ? `${desktopSidebarWidth}px` : "0px",
         }}
       >
         <div key={activeView} className="animate-content-reveal h-full overflow-hidden">
