@@ -33,7 +33,7 @@ export async function canReadOwnerInternalAgentCatalog(request: Request): Promis
 }
 
 /**
- * Only the owner may dispatch a server-classified self-use Agent. This check
+ * Only the owner may dispatch a server-classified self-use or hidden Agent. This check
  * grants no navigation, model or billing exemption; the route continues its
  * existing admission policy. Administrative mutations still require step-up.
  */
@@ -41,4 +41,20 @@ export async function canUseOwnerInternalAgent(request: Request): Promise<boolea
   if (request.method !== 'POST'
     || !['/api/llm', '/api/chat'].includes(new URL(request.url).pathname)) return false;
   return isCurrentInternalAgentOwner(request);
+}
+
+type DispatchRow = Record<string, unknown>;
+type DispatchRead = { data: DispatchRow | null; error?: unknown };
+
+/** Keep large prompt payloads cached, but never take dispatch authorization from a cache or a different database. */
+export async function readCurrentAgentForDispatch(
+  cached: DispatchRow | null,
+  readAccess: () => PromiseLike<DispatchRead>,
+  readFull: () => PromiseLike<DispatchRead>,
+): Promise<DispatchRead> {
+  if (!cached || !Number.isSafeInteger(Number(cached.config_revision)) || Number(cached.config_revision) < 1) return readFull();
+  const current = await readAccess();
+  if (current.error || !current.data || current.data.deleted_at != null) return current;
+  if (current.data.id !== cached.id || current.data.config_revision !== cached.config_revision) return readFull();
+  return { data: { ...cached, ...current.data } };
 }

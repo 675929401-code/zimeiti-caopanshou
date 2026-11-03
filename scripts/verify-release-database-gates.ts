@@ -76,6 +76,7 @@ const contract = JSON.parse(read("deploy/policies/database-contract.v1.json")) a
       requiredSourceSha256?: Record<string, string>;
       securityDefinerRequired: boolean;
       searchPath: string[];
+      additionalSettings?: string[];
       requiredNonOwnerExecuteGrantees: string[];
       allowedEffectiveExecutePrincipals: string[];
       superuserInherentPrivilegeExcluded: boolean;
@@ -105,7 +106,7 @@ assertSharedAgentBatchCasCandidateCaptured(contract);
 const table = (name: string) => contract.tables.find((entry) => entry.name === name);
 const rpc = (name: string) => contract.rpcs.find((entry) => entry.name === name);
 
-assert.equal(contract.contractVersion, "20261031010000");
+assert.equal(contract.contractVersion, "20261103010000");
 assert.deepEqual(PRODUCTION_DATABASE_CONTRACT, contract, "embedded database contract is stale");
 assert.equal(contract.requiredProbeRole, "service_role");
 const liveCatalogChecks = (() => {
@@ -661,6 +662,111 @@ assert.deepEqual(liveCatalogChecks.functionSecurityGroups.filter(group => !group
       "LIMIT 101"
     ]
   }
+},
+{
+  "id": "agent-catalog-publication-invoker",
+  "ownerRelation": "public.agents",
+  "ownerMustMatchRelationOwner": false,
+  "requiredOwnerRole": "postgres",
+  "securityDefinerRequired": false,
+  "searchPath": [
+    "pg_catalog",
+    "public"
+  ],
+  "requiredNonOwnerExecuteGrantees": [
+    "service_role"
+  ],
+  "allowedEffectiveExecutePrincipals": [
+    "function_owner",
+    "service_role"
+  ],
+  "superuserInherentPrivilegeExcluded": true,
+  "forbiddenExecutePrincipals": [
+    "PUBLIC",
+    "anon",
+    "authenticated"
+  ],
+  "functions": [
+    "public.agent_catalog_canonical_json_v1(jsonb)",
+    "public.agent_catalog_projection_v1(public.agents)",
+    "public.agent_catalog_utf16_v1(text)",
+    "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)",
+    "public.read_agent_catalog_model_guard_v1(uuid)",
+    "public.read_agent_catalog_publication_index_v1(text,text)",
+    "public.read_agent_catalog_publication_v1(text)"
+  ],
+  "requiredSourceSha256": {
+    "public.agent_catalog_canonical_json_v1(jsonb)": "d230b4e4ffe6d8204ee4ac3d2030dc30f8b26dedeab14b6ea8d00e3dc03f564e",
+    "public.agent_catalog_projection_v1(public.agents)": "1d9fb6ba4019d6986a0758b6fc17476a577d5b65ed25f01aafb22b47f0cffe9a",
+    "public.agent_catalog_utf16_v1(text)": "270e80afa92c2812d68b90fc1a70d55df9937faf5a01f9c3ca380197a95638ef",
+    "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)": "a38d4fa83bf02ed4729a7f179b4c8a0b77bf3f5bf0bb9e9d97282b019daaf00b",
+    "public.read_agent_catalog_model_guard_v1(uuid)": "36020454bff4674a0c96a990386af6976afc0dcd7d1f9911d64187ff5160fbf6",
+    "public.read_agent_catalog_publication_index_v1(text,text)": "dc85077a7303db4c48dcf1caf024e85fbdec7568fbc08f16a64ff2a213b78af8",
+    "public.read_agent_catalog_publication_v1(text)": "a029625e856f9af4eade0ef45d2d6e1325f6b97af6ac6cda70a12776cf8b9434"
+  }
+},
+{
+  "id": "agent-catalog-owner-lock",
+  "ownerRelation": "public.agents",
+  "ownerMustMatchRelationOwner": false,
+  "requiredOwnerRole": "postgres",
+  "securityDefinerRequired": true,
+  "searchPath": [
+    "pg_catalog",
+    "public"
+  ],
+  "requiredNonOwnerExecuteGrantees": [
+    "service_role"
+  ],
+  "allowedEffectiveExecutePrincipals": [
+    "function_owner",
+    "service_role"
+  ],
+  "superuserInherentPrivilegeExcluded": true,
+  "forbiddenExecutePrincipals": [
+    "PUBLIC",
+    "anon",
+    "authenticated"
+  ],
+  "functions": [
+    "public.lock_agent_catalog_publication_owner_v1(text,text,boolean)"
+  ],
+  "requiredSourceSha256": {
+    "public.lock_agent_catalog_publication_owner_v1(text,text,boolean)": "9ab2909b4b876b3ac545058e5a5dcee368a2c49f1e0b8c9480850ce82214d97b"
+  }
+},
+{
+  "id": "agent-catalog-number-codec",
+  "ownerRelation": "public.agents",
+  "ownerMustMatchRelationOwner": false,
+  "requiredOwnerRole": "postgres",
+  "securityDefinerRequired": false,
+  "searchPath": [
+    "pg_catalog",
+    "public"
+  ],
+  "requiredNonOwnerExecuteGrantees": [
+    "service_role"
+  ],
+  "allowedEffectiveExecutePrincipals": [
+    "function_owner",
+    "service_role"
+  ],
+  "superuserInherentPrivilegeExcluded": true,
+  "forbiddenExecutePrincipals": [
+    "PUBLIC",
+    "anon",
+    "authenticated"
+  ],
+  "functions": [
+    "public.agent_catalog_number_v1(numeric)"
+  ],
+  "requiredSourceSha256": {
+    "public.agent_catalog_number_v1(numeric)": "69ab91b41449b47301b37edc70dc18ff0fc48d3687cdff4b2054045eed386b5d"
+  },
+  "additionalSettings": [
+    "extra_float_digits=3"
+  ]
 }
 
 ]);
@@ -685,7 +791,7 @@ assert.deepEqual(
     "20261010023000", "20261010130000", "20261010131000", "20261010132000",
     "20261010133000", "20261010134000", "20261010135000", "20261010140000",
     "20261012010000", "20261012011000", "20261012012000", "20261012013000",
-    "20261012014000", "20261030010000", "20261030020000", "20261030030000", "20261030040000", "20261030050000", "20261030060000", "20261030070000", "20261030080000", "20261031010000",
+    "20261012014000", "20261030010000", "20261030020000", "20261030030000", "20261030040000", "20261030050000", "20261030060000", "20261030070000", "20261030080000", "20261031010000", "20261103010000",
   ],
 );
 const pendingCredentialMigrations = [
@@ -2043,7 +2149,8 @@ function liveCatalogFailures(live: LiveCatalogProjection) {
         else if (sha256(actual.source) !== requiredSourceHash) failures.push(`FUNCTION_SOURCE_HASH_MISMATCH:${signature}`);
       }
       if (actual.securityDefiner !== expectedGroup.securityDefinerRequired) failures.push(`FUNCTION_SECURITY_DEFINER_REQUIRED:${signature}`);
-      if (actual.searchPath.length !== 1 || actual.searchPath[0] !== expectedSearchPath) {
+      const expectedSettings = [expectedSearchPath, ...(expectedGroup.additionalSettings || [])];
+      if (JSON.stringify(actual.searchPath) !== JSON.stringify(expectedSettings)) {
         failures.push(`FUNCTION_SEARCH_PATH_MISMATCH:${signature}`);
       }
       for (const token of expectedGroup.requiredDefinitionTokens?.[signature] || []) {
@@ -2138,6 +2245,63 @@ for (const signature of gaoruiAssetSecurityGroup.functions) {
   assert.equal(sha256(source), gaoruiAssetSecurityGroup.requiredSourceSha256?.[signature], `reviewed Gaorui asset function raw body changed: ${signature}`);
   canonicalGaoruiAssetSources[signature] = source;
 }
+const agentCatalogMigration = {
+  "version": "20261103010000",
+  "file": "supabase/migrations/20261103010000_agent_catalog_publications.sql",
+  "sha256": "d2a747d4d454ae609b9d5a55b4b3ad78fcc49f230cd77704362c453a0e397745"
+} as const;
+assert.equal(sha256(read(agentCatalogMigration.file)), agentCatalogMigration.sha256, "reviewed catalog migration source changed");
+assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === agentCatalogMigration.version), agentCatalogMigration);
+const agentCatalogRpcArguments = {
+  "agent_catalog_canonical_json_v1": [
+    "p_value"
+  ],
+  "agent_catalog_number_v1": [
+    "p_number"
+  ],
+  "agent_catalog_projection_v1": [
+    "p_agent"
+  ],
+  "agent_catalog_utf16_v1": [
+    "p_text"
+  ],
+  "apply_agent_catalog_publication_v1": [
+    "p_actor",
+    "p_step_hash",
+    "p_plan",
+    "p_fields",
+    "p_expected_row_hash",
+    "p_model_proof"
+  ],
+  "lock_agent_catalog_publication_owner_v1": [
+    "p_actor",
+    "p_step_hash",
+    "p_self_use"
+  ],
+  "read_agent_catalog_model_guard_v1": [
+    "p_model_id"
+  ],
+  "read_agent_catalog_publication_index_v1": [
+    "p_actor",
+    "p_step_hash"
+  ],
+  "read_agent_catalog_publication_v1": [
+    "p_agent_id"
+  ]
+} as const;
+const canonicalAgentCatalogSources: Record<string, string> = {};
+const catalogFunctionMatches = [...read(agentCatalogMigration.file).matchAll(/CREATE FUNCTION public[.]([a-z0-9_]+)\([^)]*\)[\s\S]*?AS \$\$([\s\S]*?)\$\$;/gu)];
+assert.deepEqual(catalogFunctionMatches.map(match => match[1]).sort(), Object.keys(agentCatalogRpcArguments).sort());
+for (const group of liveCatalogChecks.functionSecurityGroups.filter(entry => entry.id.startsWith("agent-catalog-"))) {
+  for (const signature of group.functions) {
+    const name = signature.match(/^public\.([^()]+)\(/u)![1];
+    const source = catalogFunctionMatches.find(match => match[1] === name)![2];
+    assert.equal(sha256(source), group.requiredSourceSha256?.[signature], `catalog raw body pin drift: ${signature}`);
+    assert.deepEqual(rpc(name)?.arguments, agentCatalogRpcArguments[name as keyof typeof agentCatalogRpcArguments]);
+    canonicalAgentCatalogSources[signature] = source;
+  }
+}
+assert.equal(Object.keys(canonicalAgentCatalogSources).length, 9);
 const fixtureFunction = (
   signature: string,
   group: {
@@ -2148,13 +2312,14 @@ const fixtureFunction = (
     requiredDefinitionTokens?: Record<string, string[]>;
     requiredNonOwnerExecuteGrantees: string[];
     searchPath: string[];
+    additionalSettings?: string[];
   },
 ): LiveFunctionSecurity => ({
   signature,
   owner: group.ownerMustMatchRelationOwner ? fixtureOwner : group.requiredOwnerRole || "",
-  source: signature === purgeSignature ? canonicalPurgeSource : signature === digitalPreflightSignature ? digitalPreflightSource : canonicalGaoruiAssetSources[signature],
+  source: signature === purgeSignature ? canonicalPurgeSource : signature === digitalPreflightSignature ? digitalPreflightSource : canonicalGaoruiAssetSources[signature] || canonicalAgentCatalogSources[signature],
   securityDefiner: group.securityDefinerRequired,
-  searchPath: [`search_path=${group.searchPath.join(", ")}`],
+  searchPath: [`search_path=${group.searchPath.join(", ")}`, ...(group.additionalSettings || [])],
   definition: (group.requiredDefinitionTokens?.[signature] || []).join("\n"),
   argumentNames: rpc(signature.match(/^public\.([^()]+)\(/u)?.[1] || "")?.arguments || [],
   executeGrantees: [...group.requiredNonOwnerExecuteGrantees, group.ownerMustMatchRelationOwner ? fixtureOwner : group.requiredOwnerRole || ""],
@@ -2382,6 +2547,39 @@ for(const id of ["image-provider-delivery","h3-provider-delivery-finalizer","h3-
   const bad=structuredClone(validLiveFixture);mutation(bad.functionSecurityGroups.find(g=>g.id===id)!.functions[0]);assert.ok(liveCatalogFailures(bad).length>0);
  }
 }
+let agentCatalogBlockingCases = 0;
+for (const group of liveCatalogChecks.functionSecurityGroups.filter(entry => entry.id.startsWith("agent-catalog-"))) {
+  for (const signature of group.functions) {
+    for (const mutation of [
+      (f: LiveFunctionSecurity) => { f.owner = "wrong_owner"; },
+      (f: LiveFunctionSecurity) => { f.securityDefiner = !f.securityDefiner; },
+      (f: LiveFunctionSecurity) => { f.searchPath = []; },
+      (f: LiveFunctionSecurity) => { f.searchPath.push("unreviewed_setting=on"); },
+      (f: LiveFunctionSecurity) => { f.source = (f.source || "") + "\n"; },
+      (f: LiveFunctionSecurity) => { f.argumentNames = ["wrong_argument"]; },
+      (f: LiveFunctionSecurity) => { f.executeGrantees.push("PUBLIC"); f.privileges.anonExecute = true; },
+      (f: LiveFunctionSecurity) => { f.privileges.authenticatedExecute = true; },
+      (f: LiveFunctionSecurity) => { f.executeGrantees = [f.owner]; f.privileges.serviceExecute = false; },
+      (f: LiveFunctionSecurity) => { f.unexpectedEffectiveGrantees.push("inherited_unreviewed_role"); },
+    ]) {
+      const bad = structuredClone(validLiveFixture);
+      mutation(bad.functionSecurityGroups.find(entry => entry.id === group.id)!.functions.find(entry => entry.signature === signature)!);
+      assert.ok(liveCatalogFailures(bad).some(message => message.includes(signature)), `catalog unsafe function accepted: ${signature}`);
+      agentCatalogBlockingCases++;
+    }
+    const missing = structuredClone(validLiveFixture);
+    missing.functionSecurityGroups.find(entry => entry.id === group.id)!.functions = missing.functionSecurityGroups.find(entry => entry.id === group.id)!.functions.filter(entry => entry.signature !== signature);
+    assert.ok(liveCatalogFailures(missing).includes(`FUNCTION_MISSING:${signature}`));
+    agentCatalogBlockingCases++;
+  }
+}
+const missingCatalogLedger = structuredClone(validLiveFixture);
+missingCatalogLedger.ledger = missingCatalogLedger.ledger.filter(entry => entry.version !== agentCatalogMigration.version);
+assert.ok(liveCatalogFailures(missingCatalogLedger).includes(`MIGRATION_LEDGER_ROW_MISSING:${agentCatalogMigration.version}`));
+const wrongCatalogLedger = structuredClone(validLiveFixture);
+wrongCatalogLedger.ledger.find(entry => entry.version === agentCatalogMigration.version)!.hash = "0".repeat(64);
+assert.ok(liveCatalogFailures(wrongCatalogLedger).includes(`MIGRATION_LEDGER_HASH_MISMATCH:${agentCatalogMigration.version}`));
+agentCatalogBlockingCases += 2;
 for(const entry of [
 {"version":"20261012013000","file":"supabase/migrations/20261012013000_image_model_validation_receipt_publication.sql","sha256":"75053bdad5e5d668f8dd3cf824e26ebbef72b4eb8f07515cfd3a4ff695ceb8f9"},
   {
@@ -2786,6 +2984,9 @@ async function main() {
     staleEmbeddedContractBlockingCases: 1,
     videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
     liveCatalogFixtureCases: 62,
+    agentCatalogFunctionsChecked: Object.keys(canonicalAgentCatalogSources).length,
+    agentCatalogBlockingCases,
+    agentCatalogMigrationSha256: agentCatalogMigration.sha256,
     pendingCredentialLedgerBlockingCases: 5,
     unsettledVideoBillingLedgerBlockingCases: 2,
     purgeFunctionSemanticBlockingCases,

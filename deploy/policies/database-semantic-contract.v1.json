@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "kind": "database-semantic-contract",
   "profile": "public-runtime-contract.v1",
-  "generatedAt": "2026-11-01T08:47:02.055Z",
-  "sourceLabel": "local-transaction-preview-rolled-back:20261101010000_storyboard_legacy_requeue_guard.sql",
+  "generatedAt": "2026-11-03T16:15:14.106367Z",
+  "sourceLabel": "local-transaction-preview-rolled-back:20261103010000_agent_catalog_publications.sql",
   "sourceDatabase": "zimeiti_local",
-  "migrationManifestSha256": "6468942caa1c63c5996ae3faae49301b9af73bdfcbd96e767f490edb3e03d9c7",
+  "migrationManifestSha256": "8e96104e274b2c09276109a244c0a5fd6ad8743779ce9fe5482f7862fe4b3ab6",
   "extraObjectPolicy": "structural extras warn; privilege extras block",
   "snapshot": {
     "profile": "public-runtime-contract.v1",
@@ -22903,8 +22903,8 @@
         ]
       },
       "functions": {
-        "rows": 373,
-        "sha256": "a07eddb904d2953afcd87fff5717ee62c9a542364ae5de9c0d78bc15cf9c0c2f",
+        "rows": 382,
+        "sha256": "65a11b9b233875a9de5d0d8f61c9e21f7120001c14355e00cac26490dd634f13",
         "exactExtras": false,
         "objects": [
           {
@@ -22916,8 +22916,28 @@
             "sha256": "2535873757807c4da934aefc1bb3ef7df02d631fac599681a1c47d50ee64e755"
           },
           {
+            "key": "public|agent_catalog_canonical_json_v1|p_value jsonb",
+            "sha256": "89195e1e5f3674cd4b4f27179968b1eca5793bdee62ef72b38a2fbd525050ceb"
+          },
+          {
+            "key": "public|agent_catalog_number_v1|p_number numeric",
+            "sha256": "146f114f8300ac2a89b38ddf8922eeb84679fbd60dd007d65b78e03f4a171ac9"
+          },
+          {
+            "key": "public|agent_catalog_projection_v1|p_agent agents",
+            "sha256": "4454aa8a53eaff4eeb5406193baab861257825ac349579ebc22ba7720fa8119d"
+          },
+          {
+            "key": "public|agent_catalog_utf16_v1|p_text text",
+            "sha256": "08e160dc83c2300b2b3b9afd58b7c7e55a9c7b2eda70fa8898f5ce22c83c1df2"
+          },
+          {
             "key": "public|append_admin_governance_audit|p_actor_id text, p_actor_level text, p_target_user_id text, p_permission_key text, p_action text, p_result text, p_reason_code text, p_resource text, p_request_path text, p_request_method text, p_request_key text, p_request_ip text, p_user_agent text, p_metadata jsonb",
             "sha256": "f2dcfb948b9efd0cf194401145e47ad58a4348aa3e93383fbc81744442c60335"
+          },
+          {
+            "key": "public|apply_agent_catalog_publication_v1|p_actor text, p_step_hash text, p_plan jsonb, p_fields jsonb, p_expected_row_hash text, p_model_proof jsonb",
+            "sha256": "1633129110f330729e56138e96b02d4d7d3efc2ee5e370373409a456e08d6544"
           },
           {
             "key": "public|apply_agent_reorder_cas_v1|p_entries jsonb",
@@ -23540,6 +23560,10 @@
             "sha256": "71b792468b50f7cf0e64774fa3f24bd3d6f5150ac49a5a9ab774648504af411f"
           },
           {
+            "key": "public|lock_agent_catalog_publication_owner_v1|p_actor text, p_step_hash text, p_self_use boolean",
+            "sha256": "e57da77d72e5ff0da4c746a21864042654a4063639de17d7c49e6089ffb09641"
+          },
+          {
             "key": "public|maintain_shared_agent_config_revision|",
             "sha256": "abc38678690db5c93560dbf6c9e57458063ffc98193ae86e2afbd594472c55f6"
           },
@@ -23766,6 +23790,18 @@
           {
             "key": "public|read_admin_step_up_session|p_actor_id text, p_token_hash text, p_permission_key text",
             "sha256": "56b162ca8460acd0129b9846a56bc96831edb89d19f8fe42ff43e6c56f54ff41"
+          },
+          {
+            "key": "public|read_agent_catalog_model_guard_v1|p_model_id uuid",
+            "sha256": "4c9c120e2b6a77ad13adac8e240a19d467b41dee9564153e38bb4f333975f938"
+          },
+          {
+            "key": "public|read_agent_catalog_publication_index_v1|p_actor text, p_step_hash text",
+            "sha256": "32f2a79a8ef2ed60b87a2fb008d3a5334d60e419c76a48cc0a1e5d38de817382"
+          },
+          {
+            "key": "public|read_agent_catalog_publication_v1|p_agent_id text",
+            "sha256": "e72cc2337278cfd596a4bf1227078e0536d0dffc602a6c2c59682386c019c4a9"
           },
           {
             "key": "public|read_extraction_account_history|p_user_id text, p_before timestamp with time zone, p_before_id text, p_limit integer",
@@ -30429,8 +30465,8 @@
         ]
       },
       "function-privileges": {
-        "rows": 277,
-        "sha256": "db184a66c45ba5596d5e26a1f10f140c25fd17b04889d598ddf08b644cb4f140",
+        "rows": 286,
+        "sha256": "2b2283852b285969da3bfb6a8f30e9b7e4495965aef3f7b474c6af76f8c3ea62",
         "exactExtras": true,
         "objects": [
           {
@@ -30438,8 +30474,28 @@
             "sha256": "31a14beba9e4874e745649177b5521087f69aa4a0e8541d0cb1760b5d24ec8c2"
           },
           {
+            "key": "public|agent_catalog_canonical_json_v1|p_value jsonb|service_role|EXECUTE",
+            "sha256": "83b1b135892270fc54a0893cf575dda65107a2e2c9b2b6420afa9434034dde54"
+          },
+          {
+            "key": "public|agent_catalog_number_v1|p_number numeric|service_role|EXECUTE",
+            "sha256": "4b59378e766e9de33012e7c1ea1fb0bdd5e70914d633a46e9be19d7c9975dc9f"
+          },
+          {
+            "key": "public|agent_catalog_projection_v1|p_agent agents|service_role|EXECUTE",
+            "sha256": "aad3601827fd5832da526e35d9b1bbaa026ab1e034acad91b9f5273867bbd713"
+          },
+          {
+            "key": "public|agent_catalog_utf16_v1|p_text text|service_role|EXECUTE",
+            "sha256": "e380e184609d3b8faecdfa77c4415c96f4180f44ad040c4875e26efd021f7a8c"
+          },
+          {
             "key": "public|append_admin_governance_audit|p_actor_id text, p_actor_level text, p_target_user_id text, p_permission_key text, p_action text, p_result text, p_reason_code text, p_resource text, p_request_path text, p_request_method text, p_request_key text, p_request_ip text, p_user_agent text, p_metadata jsonb|service_role|EXECUTE",
             "sha256": "10d9c27b4ba797dc8f8e1ac8e3965c6cf6050a3b0e80b514439a54e3bf688484"
+          },
+          {
+            "key": "public|apply_agent_catalog_publication_v1|p_actor text, p_step_hash text, p_plan jsonb, p_fields jsonb, p_expected_row_hash text, p_model_proof jsonb|service_role|EXECUTE",
+            "sha256": "06767619a939db87e3f2ef153bcc6a72acfc7424c775d0d944c1430430029651"
           },
           {
             "key": "public|apply_agent_reorder_cas_v1|p_entries jsonb|service_role|EXECUTE",
@@ -30906,6 +30962,10 @@
             "sha256": "5251cdf5bfe41d64f841a19743185dbd300e5f95aede2434d5d1a7f0d7c96a59"
           },
           {
+            "key": "public|lock_agent_catalog_publication_owner_v1|p_actor text, p_step_hash text, p_self_use boolean|service_role|EXECUTE",
+            "sha256": "8a6c20e8bb0432f8ee927b8693fd5038be8fc7000e5ac2bed6f7a0975fed89ac"
+          },
+          {
             "key": "public|mark_announcement_read|p_announcement_id text, p_user_id text, p_revision integer|service_role|EXECUTE",
             "sha256": "25d26f1a27cdd6fc8286fe94b5e319dda38bde4aec471dcc9dcea185f38b698d"
           },
@@ -31068,6 +31128,18 @@
           {
             "key": "public|read_admin_step_up_session|p_actor_id text, p_token_hash text, p_permission_key text|service_role|EXECUTE",
             "sha256": "41f22b0a76334c79ab6a7f1d5d424084896467abcbdd787657f777cebc46da25"
+          },
+          {
+            "key": "public|read_agent_catalog_model_guard_v1|p_model_id uuid|service_role|EXECUTE",
+            "sha256": "99bdf26ee0e2b261dd51ba839e0ccd845d9fd4e268f9d17402bffb8728006886"
+          },
+          {
+            "key": "public|read_agent_catalog_publication_index_v1|p_actor text, p_step_hash text|service_role|EXECUTE",
+            "sha256": "0ce9c757d7e3463dd8fe5b7fcaf4fea09f3fba6efa3c47cdc99ce6d217255c48"
+          },
+          {
+            "key": "public|read_agent_catalog_publication_v1|p_agent_id text|service_role|EXECUTE",
+            "sha256": "87dc6147369de3a2a08905d6de4dd66332db1f0d641153690fd146118a5eedec"
           },
           {
             "key": "public|read_extraction_account_history|p_user_id text, p_before timestamp with time zone, p_before_id text, p_limit integer|service_role|EXECUTE",
@@ -31567,7 +31639,7 @@
         ]
       }
     },
-    "sha256": "76a14c21fd4f013d5691dbe3efa3f5ef3c23822101df77a60213f09e298282fa"
+    "sha256": "0f764689361abfebd03a6b225b83c25d86a3f94c236de746845319b513c1b1b0"
   },
-  "contractSha256": "56e1ba861b24f9656ad7c04a6fcf9c1d5d87748c96a4e2e33a7c9b32381fed9d"
+  "contractSha256": "f40e5416418e4e9d8b467f21885d1f0e21e3f53fa2d65afbbd4da7749b290077"
 }

@@ -111,6 +111,7 @@ export function ConfigurationReadbackPanel({ localPreview, token, sensitiveUnloc
   return <section aria-label="配置核对" className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--muted-foreground)]">
     <h3 className="font-semibold text-[var(--foreground)]">配置核对</h3>
     <div className="mt-2 flex flex-wrap gap-2">
+      {localPreview && <a className={buttonStyle} href="/published-preview">查看线上已发布配置</a>}
       {localPreview && <button type="button" className={buttonStyle} disabled={loading} onClick={() => read("public")}>核对本地与正式公开目录</button>}
       <button type="button" className={buttonStyle} disabled={loading || !sensitiveUnlocked} onClick={() => read("private")}>读取本端配置摘要</button>
     </div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { hasCurrentSelfUseGrant, requiresOwnerAgentAccess, uniqueAgentCategory } from "@/lib/agent-catalog-lifecycle";
 import { getBotsCache, setBotsCache } from "@/lib/bots-cache";
 import { getTokenFromHeaders, verifyToken } from "@/lib/auth";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
@@ -83,14 +84,9 @@ export async function GET(request: NextRequest) {
     }
 
     const { agents, categories } = await getData();
-    const categoryByName = new Map(categories.map((category) => [category.name, category]));
-    const internalCategoryNames = new Set(
-      categories
-        .filter((category) => category.visibility === "private" || category.name.trim() === "自用")
-        .map((category) => category.name)
-    );
 
     let isAdmin = false;
+    let ownerSelfUse = false;
     let allowedNavigationKeys: Set<string> | null = null;
     if (token) {
       const payload = await verifyToken(token);
@@ -102,16 +98,18 @@ export async function GET(request: NextRequest) {
         if (permission.authorityStatus !== "ready" || !permission.integrityValid) {
           throw new Error(`MEMBER_PERMISSION_${permission.authorityStatus.toUpperCase()}`);
         }
+        ownerSelfUse = isAdmin && hasCurrentSelfUseGrant(permission);
         allowedNavigationKeys = new Set(permission.agentNavigationKeys);
+        if (!ownerSelfUse) allowedNavigationKeys.delete("自用");
       }
     }
 
     const visibleAgents = agents.filter((agent) => {
       if (agent.deleted_at != null) return false;
       const category = String(agent.category || "通用");
-      const categoryRecord = categoryByName.get(category);
-      if (!isAdmin && (!categoryRecord || categoryRecord.is_active === false || internalCategoryNames.has(category))) return false;
-      if (!isAdmin && agent.user_access === "hidden") return false;
+      const categoryRecord = uniqueAgentCategory(categories,category);
+      if (category === "自用" && !ownerSelfUse) return false;
+      if (!categoryRecord || (!isAdmin && (categoryRecord.is_active === false || requiresOwnerAgentAccess({ category, user_access: agent.user_access }, categoryRecord)))) return false;
       if (allowedNavigationKeys !== null) {
         const navigationKey = getAgentNavigationKey({
           id: String(agent.id || ""),

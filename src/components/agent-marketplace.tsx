@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useApp } from "@/contexts/app-context";
 import { bipStep, BIP_STEPS, BIP_CATEGORY, BIP_CATEGORY_LABEL, TASK_CATEGORIES, displayCategory, matchesDisplayCategory } from "@/lib/business-ip/catalog";
 import { getAuthorizedAgentDisplayKeys, isAgentAuthorizedInSnapshot } from "@/lib/agent-category-access";
+import { isUnboundCatalogAgent } from "@/lib/agent-catalog-lifecycle";
 import { Search, Sparkles, X, Layout, Pencil, LayoutGrid, AppWindow, UsersRound, Eraser, Scissors, Palette, FileSearch, Film, PenTool, Mic, Bot, UserRound, Video, Image, Music, BookOpen, Globe, ShoppingBag, Megaphone, MessageSquare, Puzzle, Clapperboard, Wrench, Heart, ChevronLeft, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -348,7 +349,7 @@ export function AgentMarketplace() {
     if (consumeMarketplaceShowAllRequest()) applyShowAll();
     return () => window.removeEventListener(MARKETPLACE_SHOW_ALL_EVENT, handleShowAll);
   }, []);
-  const [dbCategories, setDbCategories] = useState<{ id?: string; name: string; icon?: string; description?: string; sort_order?: number; is_active?: boolean; visibility?: string }[]>([]);
+  const [dbCategories, setDbCategories] = useState<{ id?: string; name: string; icon?: string; description?: string; sort_order?: number; is_active?: boolean; visibility?: string; user_can_use?: boolean }[]>([]);
   const [dbNavItems, setDbNavItems] = useState<{ id: string; name: string; icon: string; description: string; status: string; sort_order: number }[]>([]);
   const [presetAgent, setPresetAgent] = useState<{ id: string; name: string; iconUrl: string; presetFields: PresetField[] } | null>(null);
 
@@ -638,6 +639,7 @@ export function AgentMarketplace() {
     const controller = new AbortController();
     const headers: Record<string, string> = {};
     const token = state.auth.token;
+    setDbCategories([]);
     if (token) headers["Authorization"] = `Bearer ${token}`;
     // Auth is restored from localStorage immediately after hydration. Defer the
     // account-scoped catalog briefly so the anonymous request is cancelled when
@@ -882,7 +884,7 @@ export function AgentMarketplace() {
     && learnerPermissionIsCurrent
     && learnerPermissionSnapshot.status === "error";
   const visibleCatKeys = useMemo(() => {
-    if (!isPermissionControlledIdentity) return allCatKeys;
+    if (!isPermissionControlledIdentity) return allCatKeys.filter(key=>key!=="自用");
     const permittedKeys = new Set<string>();
     if (learnerPermissionIsCurrent && learnerPermissionSnapshot.status === "ready") {
       learnerPermissionSnapshot.navigationKeys.forEach((key) => permittedKeys.add(key));
@@ -1103,16 +1105,15 @@ export function AgentMarketplace() {
   const viewOnlyCategoryNames = useMemo(() => {
     const names = new Set<string>();
     dbCategories.forEach(c => {
-      if (c.visibility === "view_only") names.add(c.name);
+      if (c.visibility === "view_only" && !(c.name === "自用" && c.user_can_use === true)) names.add(c.name);
     });
     return names;
   }, [dbCategories]);
 
-  // 判断智能体是否因分类设置而对非管理员"仅展示"（仅 visibility=view_only 的分类）
-  const isAgentViewOnlyForUser = useCallback((agent: { category?: string }) => {
-    if (isAdmin) return false;
-    return viewOnlyCategoryNames.has(agent.category || "");
-  }, [isAdmin, viewOnlyCategoryNames]);
+  const isAgentViewOnlyForUser = useCallback((agent: { category?: string; user_access?: string }) => {
+    return agent.user_access === "view_only" || viewOnlyCategoryNames.has(agent.category || "")
+      || (agent.category === "自用" && !dbCategories.some(c => c.name === "自用" && c.user_can_use === true));
+  }, [viewOnlyCategoryNames,dbCategories]);
 
   const filteredAgents = useMemo(() => {
     let filtered = agents.filter((a) => a.id !== "__free_chat__"); // 排除虚拟自由对话智能体
@@ -1214,6 +1215,7 @@ export function AgentMarketplace() {
   const handleSelectAgent = (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
     if (!agent) return;
+    if (isUnboundCatalogAgent(agent)) { toast.warning("该智能体尚未配置可用模型"); return; }
     // 非管理员无法使用未启用的智能体
     if (!agent.is_active && !isAdmin) {
       toast.warning("该智能体正在开发中，暂不可用");
@@ -1677,7 +1679,7 @@ export function AgentMarketplace() {
                           } else if (nav.key.startsWith('cat_')) {
                             // 分类导航项：有智能体 → 应用广场+选中分类，无智能体 → 开发中占位
                             const catName = (nav as any).categoryName || nav.label;
-                            const hasAgents = agents.some(a => a.category === catName && a.user_access !== 'hidden');
+                            const hasAgents = agents.some(a => a.category === catName && (a.user_access !== 'hidden' || learnerPermissionSnapshot.agentIds.has(a.id)));
                             if (hasAgents) {
                               dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" });
                               setActiveCategory(catName);
@@ -2146,7 +2148,7 @@ export function AgentMarketplace() {
           if (catNav) {
             // 如果该分类有智能体了，不走占位页（由应用广场展示）
             const catName = catNav.categoryName;
-            const hasAgents = agents.some(a => a.category === catName && a.user_access !== 'hidden');
+            const hasAgents = agents.some(a => a.category === catName && (a.user_access !== 'hidden' || learnerPermissionSnapshot.agentIds.has(a.id)));
             if (hasAgents) return null;
             placeholderTitle = catNav.label;
             placeholderIcon = catNav.icon;
@@ -2428,13 +2430,15 @@ export function AgentMarketplace() {
 
               const isAgentDragging = dragAgentKey === agent.id;
               const isAgentDragOver = dragOverAgentKey === agent.id;
-              const isDisabled = !agent.is_active && !isAdmin; // 非管理员看到禁用的智能体
+              const needsModel = isUnboundCatalogAgent(agent);
+              const isDisabled = needsModel || (!agent.is_active && !isAdmin);
               const isInactive = !agent.is_active; // 智能体未启用
               const isViewOnly = isAgentViewOnlyForUser(agent); // 用户可见但不可用（智能体级或分类级）
               const isCardDisabled = isDisabled || isViewOnly;
               const activateAgent = () => {
                 if (isCardDisabled) {
-                  if (isViewOnly) toast.warning("该智能体仅展示，暂不可用");
+                  if (needsModel) toast.warning("该智能体尚未配置可用模型");
+                  else if (isViewOnly) toast.warning("该智能体仅展示，暂不可用");
                   else if (isDisabled) toast.warning("该智能体正在开发中，暂不可用");
                   return;
                 }
@@ -2564,7 +2568,7 @@ export function AgentMarketplace() {
                       <div className="absolute inset-0 flex items-center justify-center rounded-[inherit] bg-black/20 backdrop-blur-[1px] z-10">
                         <div className="bg-black/70 backdrop-blur-sm text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                          正在开发中
+                          {needsModel ? "待配置模型" : "正在开发中"}
                         </div>
                       </div>
                     )}
@@ -2572,7 +2576,7 @@ export function AgentMarketplace() {
 
 
                     {/* 管理员看到的未启用标识 */}
-                    {isInactive && isAdmin && (
+                    {isInactive && isAdmin && !needsModel && (
                       <div className="absolute top-1.5 right-11 z-10 bg-amber-500/90 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full">
                         未启用
                       </div>

@@ -535,6 +535,75 @@ try {
   // engineering identities on the existing shared desktop routes; individual
   // error/client/layout inputs name their actual route owners explicitly.
   const sharedDesktopRoutes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
+  // BEGIN reviewed-exact-release-metadata-scope
+  const exactReleaseMetadata = [
+    { path: ".engineering/chat-reliability-lock.v1.json", rule: "full-reviewed-chat-reliability-lock", routes: sharedDesktopRoutes },
+    { path: "deploy/database-repairs/20261009-production-semantic/20261009035000_migration_ledger_reconciliation.sql", rule: "full-generated-migration-ledger-metadata", routes: ["/", "/tools", "/video"] },
+  ];
+  for (const entry of exactReleaseMetadata) {
+    const receipt = runScenario(`exact-release-metadata-${entry.rule}`, [{ status: "M", path: entry.path, content: "reviewed generated metadata" }]);
+    assert.equal(receipt.classification, "FULL"); assert.equal(receipt.failClosed, false);
+    assert.ok(receipt.changedFiles[0].pathRuleIds.includes(entry.rule));
+    assert.deepEqual(receipt.browserAcceptance.requiredRoutes, entry.routes);
+    assert.deepEqual(receipt.browserAcceptance.unresolvedPaths, []);
+    for (const required of ["full-zero-network-regression", "security-and-permission-gates", "database-and-rollback-gates"]) assert.ok(receipt.requiredValidations.includes(required));
+  }
+  for (const input of [
+    ".engineering/chat-reliability-lock.v1.json.extra", ".engineering/chat-reliability-lock.v2.json",
+    "deploy/database-repairs/20261009-production-semantic/20261009035001_migration_ledger_reconciliation.sql",
+    "deploy/database-repairs/20261009-production-semantic/20261009035000_migration_ledger_reconciliation.sql.extra",
+  ]) {
+    const receipt = runScenario(`unknown-neighbor-release-metadata-${sha256(input).slice(0,8)}`, [{ status: "A", path: input, content: "unreviewed metadata" }]);
+    assert.equal(receipt.classification, "FULL"); assert.equal(receipt.failClosed, true);
+    assert.ok(receipt.reasons.some(reason => reason.code === "UNKNOWN_PATH_CLASSIFICATION"));
+    assert.equal(receipt.gate.releaseReady, false);
+  }
+  const exactMetadataShared = exactReleaseMetadata.map(entry => ({ status: "M", path: entry.path, content: "reviewed metadata" }));
+  const metadataShared = runScenario("exact-metadata-keeps-all-eleven-routes", exactMetadataShared, { acceptanceRoutes: sharedDesktopRoutes });
+  assert.deepEqual(metadataShared.browserAcceptance.requiredRoutes, sharedDesktopRoutes);
+  assert.deepEqual(metadataShared.browserAcceptance.unresolvedPaths, []);
+  const underreportedMetadata = runScenario("exact-metadata-rejects-underreported-routes", exactMetadataShared, { acceptanceRoutes: ["/", "/tools", "/video"] });
+  assert.equal(underreportedMetadata.failClosed, true);
+  assert.ok(underreportedMetadata.browserAcceptance.unresolvedPaths.includes("<caller-routes-not-policy-approved>"));
+  // END reviewed-exact-release-metadata-scope
+  // BEGIN reviewed-local-only-published-preview-scope
+  const localPreviewEntry = "src/app/published-preview/route.ts";
+  const localPreviewOnly = runScenario("local-only-published-preview-entry",
+    [{ status: "A", path: localPreviewEntry, content: "export async function GET() {}" }]);
+  assert.equal(localPreviewOnly.classification, "FULL");
+  assert.equal(localPreviewOnly.browserAcceptance.preciseRoute, "/admin");
+  assert.deepEqual(localPreviewOnly.browserAcceptance.requiredRoutes, ["/", "/admin", "/tools"]);
+  assert.ok(localPreviewOnly.changedFiles[0].pathRuleIds.includes("full-local-only-published-preview-entry"));
+  assert.deepEqual(localPreviewOnly.browserAcceptance.unresolvedPaths, []);
+  assert.equal(localPreviewOnly.browserAcceptance.explicitRoutesRequired, false);
+  const localPreviewWithShared = [
+    { status: "A", path: localPreviewEntry, content: "local-only Web entry" },
+    { status: "M", path: "src/components/admin/configuration-readback-panel.tsx", content: "local preview consumer" },
+  ];
+  const exactLocalPreviewShared = runScenario("local-only-preview-keeps-all-shared-routes", localPreviewWithShared,
+    { acceptanceRoutes: sharedDesktopRoutes });
+  assert.deepEqual(exactLocalPreviewShared.browserAcceptance.requiredRoutes, sharedDesktopRoutes);
+  assert.ok(!exactLocalPreviewShared.browserAcceptance.requiredRoutes.includes("/published-preview"));
+  assert.deepEqual(exactLocalPreviewShared.browserAcceptance.unresolvedPaths, []);
+  const partialLocalPreviewShared = runScenario("local-only-preview-rejects-underreported-routes", localPreviewWithShared,
+    { acceptanceRoutes: ["/", "/admin", "/tools"] });
+  assert.ok(partialLocalPreviewShared.browserAcceptance.unresolvedPaths.includes("<caller-routes-not-policy-approved>"));
+  for (const inputPath of ["src/app/published-preview-neighbor/route.ts", "src/app/published-preview/[id]/route.ts", "src/app/published-preview/route.ts.extra"]) {
+    const unknown = runScenario(`local-preview-neighbor-${sha256(inputPath).slice(0, 12)}`,
+      [{ status: "A", path: inputPath, content: "unknown route" }]);
+    assert.ok(unknown.browserAcceptance.unresolvedPaths.includes(inputPath));
+    assert.equal(unknown.failClosed, true);
+  }
+  for (const suffix of ["cli.mjs", "core.mjs", "gate-test.mjs", "gate.mjs", "owner.mjs", "publish.mjs", "readers.mjs", "test.mjs", "README.md"]) {
+    const inputPath = `scripts/agent-catalog-release-${suffix}`;
+    const classified = runScenario(`catalog-release-script-${suffix.replaceAll(".", "-")}`,
+      [{ status: "A", path: inputPath, content: fs.readFileSync(path.join(root, inputPath), "utf8") }]);
+    assert.ok(classified.changedFiles[0].pathRuleIds.length > 0);
+    assert.ok(!classified.reasons.some(reason => reason.code === "UNKNOWN_PATH_CLASSIFICATION"));
+    assert.deepEqual(classified.browserAcceptance.requiredRoutes, sharedDesktopRoutes);
+    assert.ok(classified.requiredValidations.includes("security-and-permission-gates") || suffix === "publish.mjs");
+  }
+  // END reviewed-local-only-published-preview-scope
   // Root App Router pages have no directory segment. Resolve them to / while
   // leaving nested dynamic / route-group pages fail-closed and policy routes exact.
   for (const appRoot of ["src/app", "voice-platform/src/app"]) {
@@ -1933,6 +2002,40 @@ try {
   const workflow = fs.readFileSync(workflowPath, "utf8");
   const browserAcceptanceWorkflow = fs.readFileSync(browserAcceptanceWorkflowPath, "utf8");
   const browserAcceptanceRunner = fs.readFileSync(browserAcceptanceRunnerPath, "utf8");
+  // BEGIN reviewed-local-only-published-preview-denial
+  const denialStart = browserAcceptanceRunner.indexOf("async function verifyPublishedPreviewProductionDenial(");
+  const denialEnd = browserAcceptanceRunner.indexOf("async function runBrowserAcceptance(", denialStart);
+  assert.ok(denialStart > 0 && denialEnd > denialStart);
+  const verifyLocalPreviewDenial = new Function("fail", `return (${browserAcceptanceRunner.slice(denialStart, denialEnd).trim()});`)(code => { throw new Error(code); });
+  const denialFixture = (overrides = {}) => {
+    const state = { status: 404, url: "http://127.0.0.1:15000/published-preview?format=json",
+      headers: { "content-type": "application/json", "cache-control": "private,no-store" }, body: JSON.stringify({ code: "FORMAL_PREVIEW_LOCAL_ONLY" }), ...overrides };
+    return { status: () => state.status, url: () => state.url, headers: () => state.headers,
+      body: async () => Buffer.from(state.body), dispose: async () => {} };
+  };
+  let localDenialRequests = 0;
+  const localDenial = await verifyLocalPreviewDenial({ get: async (url, options) => {
+    localDenialRequests++;
+    assert.equal(url, "http://127.0.0.1:15000/published-preview?format=json");
+    assert.deepEqual(options, { failOnStatusCode: false, timeout: 12_000, maxRedirects: 0 });
+    return denialFixture();
+  } }, "http://127.0.0.1:15000");
+  assert.equal(localDenial.status, 404); assert.equal(localDenial.result, "passed"); assert.equal(localDenialRequests, 1);
+  for (const bad of [
+    { status: 200 }, { status: 401 }, { status: 403 }, { status: 302 }, { status: 500 },
+    { url: "http://127.0.0.1:15000/other" },
+    { headers: { "content-type": "text/html", "cache-control": "private,no-store" } },
+    { headers: { "content-type": "application/json", "cache-control": "public,max-age=1" } },
+    { headers: { "content-type": "application/json", "cache-control": "private,no-store", "set-cookie": "fixture" } },
+    { body: "not JSON" }, { body: JSON.stringify({ code: "OTHER_404" }) },
+    { body: JSON.stringify({ code: "FORMAL_PREVIEW_LOCAL_ONLY", snapshot: {} }) }, { body: "x".repeat(1025) },
+  ]) await assert.rejects(() => verifyLocalPreviewDenial({ get: async () => denialFixture(bad) }, "http://127.0.0.1:15000"), /BROWSER_LOCAL_PREVIEW_DENIAL/u);
+  await assert.rejects(() => verifyLocalPreviewDenial({ get: async () => { throw Error("must not dispatch"); } }, "https://other.example"), /ORIGIN_INVALID/u);
+  assert.ok(browserAcceptanceRunner.includes("localOnlyEntryChecks.push(await verifyPublishedPreviewProductionDenial(context.request, serviceOrigins.web))"));
+  assert.ok(browserAcceptanceRunner.includes("BROWSER_LOCAL_PREVIEW_ENTRY_NOT_PACKAGED"));
+  assert.ok(browserAcceptanceRunner.includes("if (!response || responseStatus >= 400)"), "normal document HTTP failures remain blocking");
+  assert.ok(browserAcceptanceRunner.includes('if (sameOrigin || ["document", "script", "stylesheet"].includes(request.resourceType())) requestFailures.push(item);'), "same-origin failures remain blocking");
+  // END reviewed-local-only-published-preview-denial
   for (const marker of [
     "Classify, diff-check, and scan the exact candidate range",
     "scripts/classify-release-change-scope.mjs",

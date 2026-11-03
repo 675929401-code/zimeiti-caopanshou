@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTokenFromHeaders, verifyToken } from "@/lib/auth";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { hasCurrentSelfUseGrant, isViewOnlyAgentAccess } from "@/lib/agent-catalog-lifecycle";
 import { getAgentNavigationKey } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
 import { canReadOwnerInternalAgentCatalog } from "@/lib/server/internal-agent-catalog-access";
@@ -40,6 +41,7 @@ export async function GET(request: NextRequest) {
   try {
     let categories = await getCategories();
     let isAdmin = false;
+    let ownerSelfUse = false;
     let allowedCategoryNames: Set<string> | null = null;
 
     const token = getTokenFromHeaders(request.headers);
@@ -58,6 +60,7 @@ export async function GET(request: NextRequest) {
           .select("id,name,category")
           .is("deleted_at", null);
         if (agentResult.error) throw agentResult.error;
+        ownerSelfUse = isAdmin && hasCurrentSelfUseGrant(permission);
         const granted = new Set(permission.agentNavigationKeys);
         allowedCategoryNames = new Set(
           (agentResult.data || []).flatMap((agent: { id: unknown; name: unknown; category: unknown }) => {
@@ -73,6 +76,7 @@ export async function GET(request: NextRequest) {
     }
 
     categories = categories.filter((category) => {
+      if (category.name === "自用" && !ownerSelfUse) return false;
       if (!isAdmin && (category.visibility === "private" || category.name.trim() === "自用")) return false;
       if (allowedCategoryNames !== null && !allowedCategoryNames.has(category.name)) return false;
       return true;
@@ -81,7 +85,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       categories: categories.map((category) => ({
         ...category,
-        user_can_use: category.visibility !== "view_only",
+        user_can_use: !isViewOnlyAgentAccess({category:category.name},category,ownerSelfUse),
       })),
     });
   } catch (err) {

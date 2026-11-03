@@ -48,6 +48,17 @@
     ],
     "routeRules": [
       {
+        "id": "local-only-published-preview-entry",
+        "patterns": [
+          "^src/app/published-preview/route\\.ts$"
+        ],
+        "routes": [
+          "/admin",
+          "/",
+          "/tools"
+        ]
+      },
+      {
         "id": "video-surface",
         "patterns": ["^(?:src/app/video/|src/app/api/video/|src/lib/video)"],
         "routes": ["/video", "/media-history", "/storyboard-workbench"]
@@ -195,6 +206,27 @@
     }
   ],
   "pathRules": [
+    {
+      "id": "full-reviewed-chat-reliability-lock",
+      "level": "FULL",
+      "patterns": [
+        "^\\.engineering/chat-reliability-lock\\.v1\\.json$"
+      ]
+    },
+    {
+      "id": "full-generated-migration-ledger-metadata",
+      "level": "FULL",
+      "patterns": [
+        "^deploy/database-repairs/20261009-production-semantic/20261009035000_migration_ledger_reconciliation\\.sql$"
+      ]
+    },
+    {
+      "id": "full-local-only-published-preview-entry",
+      "level": "FULL",
+      "patterns": [
+        "^src/app/published-preview/route\\.ts$"
+      ]
+    },
     {
       "id": "full-database-migration-or-rollback",
       "level": "FULL",
