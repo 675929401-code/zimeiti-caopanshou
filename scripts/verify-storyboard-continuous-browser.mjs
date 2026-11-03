@@ -29,7 +29,7 @@ export async function main(args = []) {
   await fs.mkdir(output, { recursive: true });
   const report = { scope: 'real Edge chat and workbench callbacks with RAM-only engineering fixtures', startedAt: new Date().toISOString(),
     checks: [], pages: [], mockedWrites: {}, generationEvents: [], projectSaves: 0, proofReads: 0,
-    blockedExternalRequests: [], blockedUnknownWrites: [], serverBusinessWrites: 0, liveGenerationRequests: 0, errors: [],
+    blockedExternalRequests: [], blockedUnknownWrites: [], serverBusinessWrites: 0, liveGenerationRequests: 0, errors: [], unexpectedDialogs: [],
     limitations: ['Synthetic media and completed mock responses do not establish model output quality or real billing.'] };
   let browser; let activePage; let videoBytes;
   const projects = new Map(); const records = new Map(); const ownedImages = new Map(); const attempts = new Map(); const scenarios = new Map();
@@ -153,7 +153,13 @@ export async function main(args = []) {
       if (url.pathname === '/api/engineering-fixtures/video.webm') return route.fulfill({ status: 200, contentType: 'video/webm', body: videoBytes || Buffer.alloc(0) });
       return route.continue();
     });
-    const register = page => page.on('pageerror', error => report.errors.push(error.message.slice(0, 400).replaceAll(token, '[REDACTED]')));
+    const register = page => {
+      page.on('pageerror', error => report.errors.push(error.message.slice(0, 400).replaceAll(token, '[REDACTED]')));
+      page.on('dialog', async dialog => {
+        report.unexpectedDialogs.push({ type: dialog.type(), message: dialog.message().replaceAll(token, '[REDACTED]') });
+        await dialog.dismiss();
+      });
+    };
     context.on('page', register);
     const page = await context.newPage(); activePage = page;
     const waitRam = async (predicate, message = 'RAM_STATE_TIMEOUT') => {
@@ -196,11 +202,10 @@ export async function main(args = []) {
       await target.locator('.sbw-image-model-list button.is-active').waitFor({ state: 'visible', timeout: 30_000 });
       await target.locator('.sbw-video-model-list button.is-active').waitFor({ state: 'visible', timeout: 30_000 });
     };
-    const budget = async (target, accept) => {
+    const startProduction = async target => {
       const button = production(target).getByRole('button', { name: /^(?:开始连续制作|继续连续制作)$/u });
-      const dialogPromise = target.waitForEvent('dialog', { timeout: 15_000 }); const click = button.click(); const dialog = await dialogPromise;
-      assert.equal(dialog.type(), 'confirm'); assert.ok(dialog.message().includes('连续制作当前项目'));
-      if (accept) await dialog.accept(); else await dialog.dismiss(); await click;
+      await button.click();
+      assert.deepEqual(report.unexpectedDialogs, [], 'CONTINUOUS_PRODUCTION_MUST_START_WITHOUT_DIALOG');
     };
     const current = id => projects.get(id).document;
     const events = id => report.generationEvents.filter(event => event.projectId === id);
@@ -238,9 +243,12 @@ export async function main(args = []) {
     await saveDocumentFixture('imported-planned-document', current(projectId));
     await selectModels(workbench);
     await capture(workbench, 'imported-complete-plan', production(workbench));
-    await budget(workbench, false); assert.equal(events(projectId).length, 0);
-    report.checks.push('real planned chat pushes full prompts and role drafts through autoImport; dismissing total budget dispatches zero generation POSTs');
-    await budget(workbench, true);
+    assert.equal(await production(workbench).getByRole('button', { name: /^(?:开始连续制作|继续连续制作)$/u }).isEnabled(), true);
+    await workbench.waitForTimeout(300);
+    assert.equal(events(projectId).length, 0, 'IMPORTED_PROJECT_MUST_NOT_GENERATE_BEFORE_START_CLICK');
+    assert.deepEqual(report.unexpectedDialogs, []);
+    report.checks.push('real planned chat pushes full prompts and role drafts through autoImport; no generation POST occurs before an explicit Start click');
+    await startProduction(workbench);
     await workbench.locator('[data-testid="storyboard-continuous-production"][data-production-status="waiting"]').waitFor({ state: 'visible', timeout: 40_000 });
     await waitRam(() => current(projectId).visualAssetWorkspace.candidates.length === 2);
     assert.deepEqual(events(projectId).map(event => event.kind), ['reference', 'reference']);
@@ -257,9 +265,9 @@ export async function main(args = []) {
     await slot('pet').getByRole('button', { name: '使用这张', exact: true }).click();
     await waitRam(() => current(projectId).directorIntake.confirmedAssets?.length === 2);
     assert.deepEqual(events(projectId).map(event => event.kind), ['reference', 'reference']);
-    await capture(workbench, 'paused-reloaded-confirmed-requires-budget', production(workbench));
-    report.checks.push('two generated role candidates require separate explicit Apply; one confirmation never dispatches boards, and pause/reload discards spending authorization');
-    await budget(workbench, true);
+    await capture(workbench, 'paused-reloaded-confirmed-requires-start', production(workbench));
+    report.checks.push('two generated role candidates require separate explicit Apply; adopting one role never dispatches boards, and pause/reload requires a fresh Start click');
+    await startProduction(workbench);
     await workbench.locator('[data-production-status="done"]').waitFor({ state: 'visible', timeout: 60_000 });
     await waitRam(() => current(projectId).cards.every(card => card.imageStatus === 'done' && card.videoStatus === 'done'));
     assert.deepEqual(events(projectId).map(event => event.kind), ['reference', 'reference', ...planned.segments.map(() => 'image'), ...planned.segments.map(() => 'video')]);
@@ -307,13 +315,13 @@ export async function main(args = []) {
     await workbench.reload({ waitUntil: 'domcontentloaded' }); await production(workbench).waitFor({ state: 'visible', timeout: 30_000 });
     assert.equal(events(projectId).length, completedEvents);
     assert.deepEqual(current(projectId).cards[0].directorExecution.performancePlan, planned.segments[0].performance_plan);
-    report.checks.push('fresh remaining-budget approval calls actual image then video callbacks in order with immutable-original readback; completed media and performance survive reload without redispatch');
+    report.checks.push('a fresh Start click calls actual image then video callbacks in order with immutable-original readback and no dialog; completed media and performance survive reload without redispatch');
     await workbench.close(); activePage = page;
 
     await openChat('engineering-continuous-ordinary'); const ordinaryPage = await push();
     const ordinaryId = new URL(ordinaryPage.url()).searchParams.get('projectId');
     assert.equal(current(ordinaryId).directorIntake, undefined); await selectModels(ordinaryPage);
-    rejectNextBoard = true; await budget(ordinaryPage, true);
+    rejectNextBoard = true; await startProduction(ordinaryPage);
     await ordinaryPage.locator('[data-production-status="stopped"]').waitFor({ state: 'visible', timeout: 40_000 });
     assert.deepEqual(events(ordinaryId).map(event => event.kind), ['image']);
     await waitRam(() => current(ordinaryId).cards[0].imageStatus === 'failed');
@@ -330,7 +338,7 @@ export async function main(args = []) {
     await capture(page, 'adjacent-home', page.locator('[aria-label^="打开智能体："][aria-label*="高能版"]').first());
     await page.goto(`${origin}/video`, { waitUntil: 'domcontentloaded' });
     await capture(page, 'adjacent-video', page.getByRole('heading', { name: 'AI 视频创作台', exact: true }));
-    assert.deepEqual(report.blockedUnknownWrites, []); assert.deepEqual(report.errors, []);
+    assert.deepEqual(report.blockedUnknownWrites, []); assert.deepEqual(report.errors, []); assert.deepEqual(report.unexpectedDialogs, []);
     assert.equal(report.serverBusinessWrites, 0); assert.equal(report.liveGenerationRequests, 0);
     assert.equal(pins.fingerprint, computeLocalBuildFingerprint(process.cwd()).fingerprint, 'SOURCE_CHANGED_DURING_BROWSER'); report.passed = true;
   } catch (error) {

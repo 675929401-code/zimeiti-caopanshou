@@ -20,7 +20,7 @@ import { useApp } from "@/contexts/app-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { resolveAgentAvatarUrl } from "@/lib/utils";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
-import { Bot, Copy, Check, RotateCw, Sparkles, Search, Maximize2, Minimize2, ChevronDown, ChevronUp, ChevronRight, ClipboardCopy, Home, Film, X, ImagePlus, Palette, Save, Type, AlignLeft, AlignCenter, AlignJustify, Minus, Tag, Loader2, CheckCircle2, Volume2, VolumeX, Trash2, Pencil, LayoutGrid } from "lucide-react";
+import { Bot, Copy, Check, RotateCw, Sparkles, Search, Maximize2, Minimize2, ChevronDown, ChevronUp, ChevronRight, ClipboardCopy, Home, Film, X, ImagePlus, Palette, Save, Type, AlignLeft, AlignCenter, AlignJustify, Minus, Tag, Loader2, CheckCircle2, Volume2, VolumeX, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { cn, extractPureText, copyToClipboard } from "@/lib/utils";
 import { reportProblem } from "@/lib/diagnostic-sentry";
@@ -146,7 +146,7 @@ export function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
-  const [contentWidthClass, setContentWidthClass] = useState(2); // 0=紧凑, 1=标准, 2=宽屏, 3=全屏
+  const contentWidthClass = "max-w-6xl";
   const [isExpanded, setIsExpanded] = useState(false); // 对话框放大状态（侧边栏折叠）
   const [isInputExpanded, setIsInputExpanded] = useState(false); // 输入框展开/收起（maxHeight切换）
 
@@ -383,15 +383,13 @@ export function ChatView() {
   /** 侧边栏是否占据左侧空间 — 为使内容视觉居中于整个视口，需在右侧补偿等宽留白 */
   const sidebarVisible = !isMobileView && !state.isChatFullscreen && !state.sidebarCollapsed;
 
-  // 同步侧边栏折叠状态：当侧边栏从外部被操作时更新 isExpanded 和内容宽度
+  // 同步侧边栏折叠状态，聊天内容始终保持默认宽度。
   useEffect(() => {
     // 仅在 isExpanded 与 sidebarCollapsed 不一致时同步
     if (state.sidebarCollapsed && !isExpanded) {
       setIsExpanded(true);
-      setContentWidthClass(3);
     } else if (!state.sidebarCollapsed && isExpanded) {
       setIsExpanded(false);
-      setContentWidthClass(2);
     }
   }, [state.sidebarCollapsed]);
 
@@ -436,10 +434,6 @@ export function ChatView() {
     setWebSearchOverride(false);
     setMentionTip(null);
   }, [state.activeAgentId, state.activeConversationId]);
-
-  const widthClasses = ['max-w-4xl', 'max-w-5xl', 'max-w-6xl', 'max-w-full'];
-  const widthLabels = ['紧凑', '标准', '宽屏', '全屏'];
-
 
   // Image upload handler
   const handleImageUpload = useCallback(async (files: FileList | File[]) => {
@@ -1158,23 +1152,8 @@ export function ChatView() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          {/* Quick nav: app marketplace — keep it as the left-most navbar item */}
-          <NavButton icon={LayoutGrid} label="应用广场" variant="ghost" onClick={() => dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" })} title="前往应用广场" />
           {/* Quick nav: back to marketplace */}
           <NavButton icon={Home} label="主页" variant="ghost" onClick={() => dispatch({ type: "SET_ACTIVE_VIEW", payload: "marketplace" })} title="返回应用广场" />
-
-          {isAdmin && (
-          <button
-            onClick={() => setContentWidthClass(c => (c + 1) % widthClasses.length)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-[var(--text-secondary)] hover:text-[var(--foreground)] bg-[var(--background)] border border-[var(--border)] hover:border-[var(--primary)]/30 transition-colors"
-            title="切换内容宽度"
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="2" y="3" width="12" height="10" rx="1"/><line x1="5" y1="3" x2="5" y2="13"/>
-            </svg>
-            {widthLabels[contentWidthClass]}
-          </button>
-          )}
           {/* Credits badge */}
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#10B981]/10 text-[#10B981] text-xs font-medium">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6"/></svg>
@@ -1192,7 +1171,7 @@ export function ChatView() {
         onTouchMove={handleTouchMove}
         onPointerDown={handleScrollPointerDown}
       >
-        <div className={`chat-content-rail chat-shared-rail py-8 space-y-3 ${widthClasses[contentWidthClass]} mx-auto`}>
+        <div className={`chat-content-rail chat-shared-rail py-8 space-y-3 ${contentWidthClass} mx-auto`}>
           {activeConv?.messages?.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 animate-fade-up">
               {state.activeAgentId === FREE_CHAT_AGENT_ID ? (
@@ -1388,10 +1367,10 @@ export function ChatView() {
           store={latestButtonStore}
           hasMessages={activeConv.messages.length > 0}
           isStreaming={isConvStreaming(activeConv.id)}
-          widthClass={widthClasses[contentWidthClass]}
+          widthClass={contentWidthClass}
           onResume={resumeAutoFollow}
         />
-        <div className={`chat-composer-rail chat-shared-rail relative ${widthClasses[contentWidthClass]} mx-auto`}>
+        <div className={`chat-composer-rail chat-shared-rail relative ${contentWidthClass} mx-auto`}>
           {/* Mention Dropdown */}
           {showMentionDropdown && (
             <div className="absolute bottom-full left-0 mb-2 w-80 max-h-72 overflow-hidden bg-[var(--card)]/90 backdrop-blur-md rounded-xl shadow-2xl border border-[var(--border)]/60 z-50 flex flex-col animate-fade-scale" role="dialog" aria-label="选择智能体">

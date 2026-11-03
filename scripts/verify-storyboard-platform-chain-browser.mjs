@@ -68,7 +68,7 @@ async function prepare(name, options = {}) {
   const page = await context.newPage();
   const state = { name, image: [], video: [], persist: [], dialogs: [], events: [], errors: [], consoleErrors: [], resourceFailures: [], queuedAttempts: [], fixture: null, png: null,
     failPersist: options.failPersist === true, failBinding: options.failBinding === true, failQueued: options.failQueued === true,
-    uncertainVideo: options.uncertainVideo === true, acceptVideo: true };
+    uncertainVideo: options.uncertainVideo === true };
   // Catch-all is registered first: narrower fixture routes run before this guard.
   await page.route("**/*", async route => {
     const request = route.request(); const url = new URL(request.url()); const method = request.method();
@@ -153,7 +153,7 @@ async function prepare(name, options = {}) {
     if (response.status() >= 400) state.resourceFailures.push({ path: new URL(response.url()).pathname, status: response.status() });
   });
   page.on("console", message => { if (message.type() === "error") state.consoleErrors.push(message.text().slice(0, 250)); });
-  page.on("dialog", async dialog => { const kind = /生成段落\d+视频/u.test(dialog.message()) ? "video" : "other"; state.dialogs.push(kind); state.events.push(`confirm-${kind}`); await (kind === "video" && !state.acceptVideo ? dialog.dismiss() : dialog.accept()); });
+  page.on("dialog", async dialog => { state.dialogs.push({ type: dialog.type(), message: dialog.message() }); await dialog.dismiss(); });
   page.setDefaultTimeout(30000);
   await page.goto(`${origin}/storyboard-workbench`, { waitUntil: "domcontentloaded" });
   await page.locator(".sbw-shot-card").first().waitFor();
@@ -179,6 +179,7 @@ async function readySameKeyRetry(page, card) {
   return retry;
 }
 function result(state, extra = {}) {
+  assert.deepEqual(state.dialogs, [], "UNEXPECTED_GENERATION_DIALOG");
   assert.deepEqual(state.errors, [], "BROWSER_PAGE_ERRORS");
   const actualConsoleErrors = state.consoleErrors.filter(message => !/^Failed to load resource:/u.test(message));
   const fixtureResourceConsoleErrors = state.consoleErrors.filter(message => /^Failed to load resource:/u.test(message));
@@ -218,13 +219,13 @@ try {
   syntheticVideo = renderedVideo.stdout;
   browser = await chromium.launch({ channel: "msedge", headless: true });
   {
-    const { page, card, context, state } = await prepare("owned-image-cancel", { owned: true });
-    state.acceptVideo = false;
+    const { page, card, context, state } = await prepare("owned-image-direct-single-click", { owned: true });
+    assert.equal(state.video.length, 0, "VIDEO_DISPATCHED_WITHOUT_CLICK");
     await card.locator(".is-video-command").click();
-    await until(() => state.dialogs.includes("video"), "VIDEO_CONFIRMATION_MISSING");
-    await page.waitForTimeout(300);
-    assert.equal(state.video.length, 0); assert.equal(state.persist.length, 0);
-    result(state);
+    await until(() => state.video.length === 1, "SINGLE_CLICK_DID_NOT_SUBMIT_OWNED_VIDEO");
+    await until(() => state.fixture.latestDocument()?.cards.some(item => item.videoStatus === "done"), "OWNED_VIDEO_COMPLETION_NOT_SAVED");
+    assert.equal(state.persist.length, 0);
+    result(state, { singleClickOneVideoPost: true, noGenerationDialog: true });
     await visual(page, "/storyboard-workbench", 1440);
     await visual(page, "/storyboard-workbench", 1880);
     await visual(page, "/video", 1440);
@@ -235,14 +236,25 @@ try {
     await context.close();
   }
   {
+    const { page, card, context, state } = await prepare("owned-video-rapid-double-click", { owned: true });
+    await card.locator(".is-video-command").evaluate(button => { button.click(); button.click(); });
+    await until(() => state.video.length === 1, "DOUBLE_CLICK_DID_NOT_SUBMIT_VIDEO");
+    await until(() => state.fixture.latestDocument()?.cards.some(item => item.videoStatus === "done"), "DOUBLE_CLICK_VIDEO_COMPLETION_NOT_SAVED");
+    await page.waitForTimeout(300);
+    assert.equal(state.video.length, 1, "DOUBLE_CLICK_SUBMITTED_DUPLICATE_VIDEO");
+    assert.equal(state.persist.length, 0);
+    result(state, { rapidDoubleClickOneVideoPost: true, noGenerationDialog: true });
+    await context.close();
+  }
+  {
     const { page, card, context, state } = await prepare("inline-save-bind-generate-and-switch");
     assert.match(await card.locator(".is-video-command").innerText(), /保存分镜并生成视频/u);
     await card.locator(".is-video-command").click();
     await until(() => state.video.length === 1, "SINGLE_CLICK_DID_NOT_SUBMIT_VIDEO");
     await until(() => state.fixture.latestDocument()?.cards.some(item => item.videoStatus === "done"), "VIDEO_COMPLETION_NOT_SAVED");
     assert.equal(state.persist.length, 1);
-    assert.ok(state.events.indexOf("persist") < state.events.indexOf("confirm-video"));
-    assert.ok(state.events.indexOf("confirm-video") < state.events.indexOf("video"));
+    assert.ok(state.events.indexOf("persist") < state.events.indexOf("video"), "VIDEO_DISPATCHED_BEFORE_ORIGINAL_SAVE");
+    assert.deepEqual(state.events, ["image", "persist", "video"], "SAVE_AND_GENERATE_MUST_NOT_OPEN_CONFIRMATION");
     const counts = [state.image.length, state.video.length, state.persist.length, state.dialogs.length];
     await card.getByRole("button", { name: "查看图片", exact: true }).click();
     await card.getByRole("button", { name: "查看视频", exact: true }).click();
@@ -257,7 +269,7 @@ try {
     await card.locator(".is-video-command").click();
     await until(() => state.persist.length === 1, "SAVE_NOT_ATTEMPTED");
     await page.locator(".sbw-notice").filter({ hasText: failure === "persist" ? /Synthetic original save rejected/u : /项目绑定未确认/u }).waitFor();
-    assert.equal(state.video.length, 0); assert.equal(state.dialogs.filter(kind => kind === "video").length, 0);
+    assert.equal(state.video.length, 0); assert.equal(state.dialogs.length, 0);
     assert.match(await card.locator(".is-video-command").innerText(), /保存分镜并生成视频/u);
     result(state); await context.close();
   }
@@ -268,7 +280,7 @@ try {
     await page.locator(".sbw-notice").filter({ hasText: /本次未提交/u }).waitFor();
     assert.equal(state.video.length, 0, "VIDEO_DISPATCHED_AFTER_QUEUED_SAVE_FAILURE");
     assert.equal(state.persist.length, 0);
-    assert.equal(state.dialogs.filter(kind => kind === "video").length, 1);
+    assert.equal(state.dialogs.length, 0);
     assert.equal(await card.locator(".sbw-shared-media-frame.has-result img").count(), 1, "OWNED_IMAGE_LOST_AFTER_QUEUED_SAVE_FAILURE");
     assert.ok(await card.locator(".is-video-command").isEnabled(), "VIDEO_GATE_NOT_ROLLED_BACK");
     result(state, { queuedSnapshotFailureBeforeDispatch: true, ownedImageRetained: true }); await context.close();

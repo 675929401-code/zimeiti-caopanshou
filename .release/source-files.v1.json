@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "98fab2c8fb931584e37d60fab75652a2f6370bf6f3a1d3aa84fea82f8e6f1b35",
+  "sourceFingerprint": "d3cebc5c1f985ecd5364bae3d3b60bf3e39f27a0f1ca2693a72dfd38baadf005",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 4852,
-  "totalBytes": 77449971,
+  "totalBytes": 77450168,
   "files": [
     {
       "path": ".cnb.yml",
@@ -33,8 +33,8 @@
     },
     {
       "path": ".engineering/chat-reliability-lock.v1.json",
-      "bytes": 12410,
-      "sha256": "359c860faa60a5b9555fecd5c096992383e3c2207de2ee74ae431ac9af702d61"
+      "bytes": 12831,
+      "sha256": "3ba8bafd0f4eeb056a8a1534e5a3ac8e4f073b34032a6a0159e5283b9b692d97"
     },
     {
       "path": ".engineering/extraction-feature-lock.v1.json",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "b1c867f7a45cb057e309b35ec55dc19d40571db3d2cb975b5d9757d41403d16c"
+      "sha256": "c97b57f36bbabbbdcde8b40198698222a277a72a1dc70838acccef4a80fbeaf4"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -10083,8 +10083,8 @@
     },
     {
       "path": "scripts/verify-storyboard-asset-batch-submission.ts",
-      "bytes": 8968,
-      "sha256": "be3a44db30aacba232f67d161c1df2e6fd4f44d8e54952b24ce0829be47aac54"
+      "bytes": 9734,
+      "sha256": "4adb03e23787de1aafb2a30b14f59c34c8a823a50befb491cbb095e05d1bac01"
     },
     {
       "path": "scripts/verify-storyboard-asset-drawer-state.ts",
@@ -10133,8 +10133,8 @@
     },
     {
       "path": "scripts/verify-storyboard-continuous-browser.mjs",
-      "bytes": 32286,
-      "sha256": "84ce5a93a4ceaec7e46418c64f9cea03b62ea287246616326bce8c00bbfbfef6"
+      "bytes": 32639,
+      "sha256": "c7f811ee5cf55ee21f4ec6bbb5e67bad8d7581de8520c1d5a207f3052e7a3563"
     },
     {
       "path": "scripts/verify-storyboard-continuous-production.ts",
@@ -10393,8 +10393,8 @@
     },
     {
       "path": "scripts/verify-storyboard-image-single-submit.ts",
-      "bytes": 6703,
-      "sha256": "f61be50cada65ed47eff2fe33d80b000206f068532f116b3bc54a30f7ce08535"
+      "bytes": 9151,
+      "sha256": "5139881ea55bfb8305cb74b40a8181992dce227014060930de03c063d3c659a6"
     },
     {
       "path": "scripts/verify-storyboard-imported-asset-workspace.ts",
@@ -10493,8 +10493,8 @@
     },
     {
       "path": "scripts/verify-storyboard-platform-chain-browser.mjs",
-      "bytes": 25053,
-      "sha256": "4089ee5f1c3e1feca870d8659d8add5eab59f6eb923df5885c8f2c2db5c2e372"
+      "bytes": 25882,
+      "sha256": "cefa0b37584d785e69dec3772a3dc2caa5daa2cdd1d8cc95d3c3f2092fd28fbe"
     },
     {
       "path": "scripts/verify-storyboard-platform-persistence-retry-contract.ts",
@@ -16988,8 +16988,8 @@
     },
     {
       "path": "src/components/chat-view.tsx",
-      "bytes": 82060,
-      "sha256": "5d58a7285e56262b0f94843f08163f0f650b58aa94e5dc858fa0f4d27faeea40"
+      "bytes": 80703,
+      "sha256": "d3ba64c35094a2c9166ecd17a2a0a4cabb7dc0114402530146c31d29cccaa27c"
     },
     {
       "path": "src/components/chat/business-ip-flow.tsx",
@@ -17358,8 +17358,8 @@
     },
     {
       "path": "src/components/storyboard-workbench.tsx",
-      "bytes": 544308,
-      "sha256": "2678be542c655001607feadae7694ccc5bb9209e7da4dc9d06b6346bf58b6796"
+      "bytes": 541045,
+      "sha256": "70224f629cdfbf882c8133d376e5ff4a06281563e2abff810c7b58f1bc35a347"
     },
     {
       "path": "src/components/sub-page-header.tsx",
