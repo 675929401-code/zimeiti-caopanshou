@@ -82,7 +82,7 @@ try {
  await configure({accountId:"ordinary-a",targetAgentId:"agent-llm",source:"llm"});assert.equal((await snapshot()).label,"智能体默认");assert.equal((await snapshot()).explicit,null);
  await page.evaluate(id=>localStorage.setItem('chat_model_selection_v2:'+JSON.stringify(['ordinary-a','conversation-a','agent-llm']),id),fixture[1].id);
  await configure({targetAgentId:"agent-restore-probe"});await configure({targetAgentId:"agent-llm"});
- assert.equal((await snapshot()).explicit,fixture[1].id,"a previously saved Claude choice is retained even though the menu no longer offers it");
+ assert.equal((await snapshot()).explicit,fixture[1].id,"a previously saved Claude choice is retained");
  await configure({targetAgentId:"agent-other"});assert.equal((await snapshot()).explicit,null,"target isolation");
  await configure({targetAgentId:"agent-llm"});assert.equal((await snapshot()).explicit,fixture[1].id);
  await configure({sending:true});assert.equal(await page.$eval('[data-testid="chat-model-trigger"]',el=>el.disabled),true);
@@ -96,7 +96,8 @@ try {
  await ready();assert.equal((await snapshot()).explicit,null,"stale callback cannot select into another account");
  assert.equal((await snapshot()).label,"智能体默认");assert.deepEqual((await snapshot()).groups,["gpt","claude","deepseek"],"late catalog cannot replace current scope");
  const visibleIds=await menuIds();
- assert.deepEqual(visibleIds,[fixture[2].id],"actual menu offers only DeepSeek V4.1 Flash; GPT/Claude, Pro, bare 4.1, old DeepSeek and 4.10 are excluded");
+ assert.deepEqual(visibleIds,[fixture[0].id,fixture[9].id,fixture[1].id,fixture[2].id],"actual menu preserves GPT/Claude and trims only DeepSeek to exact V4.1 Flash");
+ for(const selectable of [fixture[0],fixture[1]]) { await choose(selectable.id);assert.equal((await snapshot()).explicit,selectable.id,"restored GPT and Claude options forward their original public ID"); }
  assert.deepEqual(new Set(await page.evaluate(()=>window.catalogOptions())),new Set(fixture.map(model=>model.id)),"the actual selection hook still owns the entire unfiltered catalog");
  for(const [index,old] of [fixture[0],fixture[1],...fixture.slice(3,7)].entries()){
   const conversationId=`legacy-choice-${index}`;
@@ -104,7 +105,7 @@ try {
   await configure({accountId:"ordinary-a",conversationId,targetAgentId:"__free_chat__",source:"llm"});
   assert.equal((await snapshot()).explicit,old.id,"existing hidden model must not be cleared or rebound to a default");
   assert.equal(await page.$eval('[data-testid="chat-model-label"]',element=>element.textContent),old.displayName,"the current chip stays truthful for an old persisted model");
-  assert.ok(!(await menuIds()).includes(old.id),"the current old choice is not offered as a new menu option");
+  assert.equal((await menuIds()).includes(old.id),!/DeepSeek/u.test(old.displayName),"old DeepSeek options stay hidden while GPT and Claude remain selectable");
  }
  await choose(fixture[2].id);assert.equal((await snapshot()).explicit,fixture[2].id,"a deliberate new 4.1 selection forwards its original public ID");
  catalogFixture=[fixture[3]];
@@ -116,12 +117,14 @@ try {
  assert.ok(empty.text.includes(fixture[3].displayName)&&empty.title.includes(fixture[3].displayName)&&!empty.title.includes('继续使用服务端默认模型'),"empty presentation reports the retained actual model, not a false default fallback");
  catalogFixture=[fixture[0]];
  await configure({conversationId:"unchanged-gpt-default"});
- assert.equal((await snapshot()).explicit,null,"a filtered empty menu must not introduce an override");
+ assert.equal((await snapshot()).explicit,null,"a GPT-only menu must not introduce an override");
  assert.equal((await snapshot()).label,fixture[0].displayName,"the existing GPT default stays truthful when no Flash option is published");
- assert.ok((await page.$eval('[data-testid="chat-model-empty"]',element=>element.title)).includes(fixture[0].displayName));
+ assert.deepEqual(await menuIds(),[fixture[0].id],"GPT remains selectable when Flash is not published");
+ catalogFixture=[fixture[0],fixture[1],fixture[3]];await configure({conversationId:"non-deepseek-without-flash"});
+ assert.deepEqual(await menuIds(),[fixture[0].id,fixture[1].id],"GPT and Claude remain selectable when the DeepSeek group has no Flash");
  assert.deepEqual(errors,[]);assert.ok(requests.every(r=>r.method==="GET" && r.url.startsWith("http://chat-switcher.test/")));
  const evidence=path.resolve(process.env.CHAT_MODEL_SWITCHER_EVIDENCE_DIR||".codex-evidence/chat-model-switcher-isolated",`run-${Date.now()}`);await fs.mkdir(evidence,{recursive:true});
  await page.screenshot({path:path.join(evidence,"shared-switcher.png")});
- const report={ok:true,kind:"isolated actual component and hook, not main application visual acceptance",cases:19,addedCases:["menu offers only exact DeepSeek V4.1 Flash and excludes other brands, Pro, bare 4.1 and 4.10","all six old GPT/Claude/DeepSeek scoped choices retain truthful current labels and IDs","new explicit Flash selection forwards its stable public ID","filtered-empty menu preserves actual current choice and truthful tooltip","filtered-empty GPT-only catalog preserves the existing default with no override"],visibleIds,completeCatalogIds:fixture.map(model=>model.id),requests:requests.length,providerRequests:0,writeRequests:0,consoleErrors:errors,evidence};
+ const report={ok:true,kind:"isolated actual component and hook, not main application visual acceptance",cases:22,addedCases:["GPT and Claude options and order preserved; only DeepSeek is trimmed to exact V4.1 Flash","restored GPT and Claude selections forward original IDs","all six old scoped choices retain truthful labels and IDs; only old DeepSeek is absent from menu","new explicit Flash selection forwards its stable public ID","DeepSeek-only filtered-empty menu preserves actual current choice","GPT/Claude remain selectable when Flash is unpublished"],visibleIds,completeCatalogIds:fixture.map(model=>model.id),requests:requests.length,providerRequests:0,writeRequests:0,consoleErrors:errors,evidence};
  await fs.writeFile(path.join(evidence,"report.json"),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
 } finally {await browser.close();}

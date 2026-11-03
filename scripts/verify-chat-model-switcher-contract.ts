@@ -99,9 +99,11 @@ console.log(JSON.stringify(report, null, 2));
 assert.deepEqual(groups[2].models.map((model) => model.id), ["pm_deepseek_r1", "pm_deepseek_v31", "pm_deepseek_v4_pro", "pm_deepseek_v4_flash", "pm_deepseek_v41_flash"], "DeepSeek 保留目录顺序与公开 ID");
 const originalCatalog = JSON.stringify(groups);
 const displayed = chatModelSwitcherDisplayGroups(groups);
-assert.deepEqual(displayed.map(group => group.brand), ["deepseek"], "the complete menu offers only DeepSeek V4.1 Flash");
-assert.deepEqual(displayed[0].models.map(model => model.id), ["pm_deepseek_v41_flash"], "only the exact Flash variant is offered");
-for (const id of ["pm_gpt_56_terra", "pm_claude_opus_55"]) assert.equal(resolveChatModelId(id, groups), id, "hidden GPT and Claude conversation choices remain unchanged");
+assert.deepEqual(displayed.map(group => group.brand), ["gpt", "claude", "deepseek"], "only the DeepSeek family is trimmed; other groups keep their order");
+assert.strictEqual(displayed[0], groups[0], "GPT group, models and order are preserved by reference");
+assert.strictEqual(displayed[1], groups[1], "Claude group, models and order are preserved by reference");
+assert.deepEqual(displayed[2].models.map(model => model.id), ["pm_deepseek_v41_flash"], "only the exact DeepSeek Flash variant is offered");
+for (const id of ["pm_gpt_56_terra", "pm_claude_opus_55"]) assert.equal(resolveChatModelId(id, groups), id, "GPT and Claude conversation choices remain unchanged");
 assert.equal(defaultChatModelOption(groups)?.id, "pm_gpt_56_terra", "presentation must not migrate the existing free-chat default");
 assert.equal(resolveChatModelId("pm_deepseek_r1", groups), "pm_deepseek_r1", "hidden menu options remain valid existing conversation choices");
 assert.equal(selectedChatModelLabel(groups, "pm_deepseek_r1"), "DeepSeek-R1 (官方直连)", "a retained old choice must not pretend to use 4.1 or default");
@@ -116,9 +118,11 @@ const versioned = buildChatModelGroups([
 ]);
 const frozen = structuredClone(versioned);
 for (const group of frozen) { Object.freeze(group.models); Object.freeze(group); } Object.freeze(frozen);
-assert.deepEqual(allChatModelOptions(chatModelSwitcherDisplayGroups(frozen)).map(model => model.id), ["pm_ds_41_flash", "pm_ds_41_channel"], "only exact DeepSeek V4.1 Flash including channel annotations is offered; Pro, bare 4.1, 4.10, Flash Plus and other brands are excluded");
-assert.deepEqual(chatModelSwitcherDisplayGroups([{ brand: "gpt", title: "GPT 系列", models: [{ id: "pm_wrong_brand", label: "DeepSeek-V4.1-Flash", brand: "gpt" }] }]), [], "a misleading label cannot bypass the DeepSeek brand group");
+assert.deepEqual(allChatModelOptions(chatModelSwitcherDisplayGroups(frozen)).map(model => model.id), ["pm_gpt_41", "pm_claude_41", "pm_ds_41_flash", "pm_ds_41_channel"], "non-DeepSeek options remain; only exact DeepSeek V4.1 Flash including channel annotations survives within DeepSeek");
+const unchangedNonDeepSeek = { brand: "gpt" as const, title: "GPT 系列", models: [{ id: "pm_non_ds", label: "DeepSeek-V4.1-Flash", brand: "gpt" as const }] };
+assert.strictEqual(chatModelSwitcherDisplayGroups([unchangedNonDeepSeek])[0], unchangedNonDeepSeek, "the presentation filter never edits a non-DeepSeek group based on its labels");
 assert.deepEqual(chatModelSwitcherDisplayGroups([{ brand: "deepseek", title: "DeepSeek 系列", models: [{ id: "pm_legacy", label: "DeepSeek-R1", brand: "deepseek" }] }]), [], "no allowed menu model means an empty visible menu, never a fabricated ID");
+assert.deepEqual(chatModelSwitcherDisplayGroups([groups[0], groups[1], { brand: "deepseek", title: "DeepSeek 系列", models: [{ id: "pm_legacy", label: "DeepSeek-R1", brand: "deepseek" }] }]), [groups[0], groups[1]], "an unpublished Flash never removes GPT or Claude options");
 const scope = chatModelSelectionScope("account-a", "conversation-a", "agent-a");
 assert.ok(scope);
 for (const other of [

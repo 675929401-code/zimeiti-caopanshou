@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "9f16d4fed26e17d1027c84e88530e5e1800f8f4b2abd42cdb04f34ed90e12da7",
+  "sourceFingerprint": "6ea1ed0ab548f021e35c1f5b2fe8603ea05ae81c5505cdb5d8b40a48dd20c44d",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 4851,
-  "totalBytes": 77435358,
+  "totalBytes": 77436848,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "88491fe0af4a5a12c4bb65788e81da3a293d57ce08a3b1ae2687c6a40ca6b0b4"
+      "sha256": "a2db63591b1d9fb5b0ace2c37da400e6bfe4fe87e9855ccd4adcae2c3564691a"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -6653,13 +6653,13 @@
     },
     {
       "path": "scripts/verify-chat-model-switcher-contract.ts",
-      "bytes": 9566,
-      "sha256": "b22628f22b8cc3bfd6b9af8c977acbe52d7c13bce93a26581e920dc19add40d7"
+      "bytes": 10205,
+      "sha256": "b51f4380df253eb2367676c342d348a17ae8f18df52047e4fcc2543175db2bb9"
     },
     {
       "path": "scripts/verify-chat-model-switcher-isolated.mjs",
-      "bytes": 12799,
-      "sha256": "6be89eebba7a94ea216342ee601359b65868e831ef8714708cb7edc26dcf2298"
+      "bytes": 13287,
+      "sha256": "4d79c795b1eb642aa094473a37939fa6df93a731d8ab323c3e28fcd518ae823b"
     },
     {
       "path": "scripts/verify-chat-model-switcher-live.mjs",
@@ -15073,8 +15073,8 @@
     },
     {
       "path": "src/app/ui-shell-fixes.css",
-      "bytes": 106719,
-      "sha256": "63f07005809990a0512602c4a6e8f2b1debca8be6a5ab36368b879108bc2b694"
+      "bytes": 107088,
+      "sha256": "88e48fdf99c7c35ce2a3f4e12598f40ded2f629cdbe6e6bd76e4929247d41842"
     },
     {
       "path": "src/app/video/error.tsx",
@@ -18933,8 +18933,8 @@
     },
     {
       "path": "src/lib/chat-model-switcher-display.ts",
-      "bytes": 602,
-      "sha256": "c015b877eb105347dbffde22689d88d6f0f8483b8ff736d6ae25c42dc1ce3319"
+      "bytes": 596,
+      "sha256": "10a07d8cbe48c863b0f30026285bc81a3ad6c90bca3fd9736fc7e53b8e40d345"
     },
     {
       "path": "src/lib/chat-model-switching-policy.ts",
