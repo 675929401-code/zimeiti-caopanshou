@@ -226,6 +226,10 @@ export function adminRequirementForRequest(
   const write = isWrite(method);
   if (pathname.startsWith("/api/admin/access-control/self") || pathname.startsWith("/api/admin/access-control/unlock")) return null;
   if (pathname === "/api/admin/security-events/internal") return null;
+  if (method.toUpperCase() === "GET" && (pathname === "/api/admin/formal-catalog-preview" || pathname === "/api/admin/configuration-identity")) {
+    // Each handler additionally verifies the owner and the scope of its read.
+    return { permission: "agents.view", requireStepUp: false, operation: "configuration_readback" };
+  }
   // manju-config resolves its capability from the requested configuration
   // domain (prompt, skill, agent/workflow, model policy, UI/content/media).
   // A single proxy permission would either leak a domain or block legitimate

@@ -71,6 +71,14 @@ try {
     "local environment changes must also require a fresh bundle",
   );
 
+  const historicalTree = fs.mkdtempSync(path.join(temporaryRoot, ".git", "historical-"));
+  execFileSync("git", ["config", "core.worktree", historicalTree], { cwd: temporaryRoot, windowsHide: true });
+  const beforeNewFile = computeLocalBuildFingerprint(temporaryRoot);
+  writeLocalBuildFingerprintReceipt(temporaryRoot, receiptPath, beforeNewFile.fingerprint);
+  fs.writeFileSync(path.join(temporaryRoot, "new-route.ts"), "export const live = true;\n", "utf8");
+  assert.throws(() => verifyLocalBuildFingerprintReceipt(temporaryRoot, receiptPath), /bundle is stale/u,
+    "new files under the build root must invalidate the bundle even when Git points to a historical checkout");
+
   console.log(JSON.stringify({
     ok: true,
     network_requests: 0,
