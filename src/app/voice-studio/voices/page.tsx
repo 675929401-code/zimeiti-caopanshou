@@ -224,13 +224,13 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
             const CategoryIcon = c.icon;
             const isActive = activeCategory === c.value;
             const borderColor = isActive
-              ? 'border-[var(--vs-primary)]'
+              ? 'border-[var(--brand-action-border)]'
               : 'border-[var(--vs-border)]';
             const bgColor = isActive
-              ? 'bg-[var(--vs-primary)]'
+              ? 'brand-action'
               : 'bg-[var(--vs-control-bg)]';
             const textColor = isActive
-              ? 'text-[var(--vs-on-accent)]'
+              ? 'text-[var(--brand-action-fg)]'
               : 'text-[var(--vs-text-secondary)]';
 
             return (
@@ -295,7 +295,7 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
               onClick={() => { setGender(g.value); setPage(1); }}
               className={`px-3.5 py-2.5 text-sm font-medium rounded-lg border transition-all ${
                 gender === g.value
-                  ? 'bg-[var(--vs-primary)] text-[var(--vs-on-accent)] border-[var(--vs-primary)]'
+                  ? 'brand-action'
                   : 'border-[var(--vs-border)] text-[var(--vs-text-muted)] hover:border-[var(--vs-border)] hover:text-[var(--vs-text)] hover:bg-[var(--vs-surface)]/30'
               }`}
             >
@@ -472,7 +472,7 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
                   onClick={() => setPage(i + 1)}
                   className={`min-w-[40px] px-3.5 py-2.5 text-sm font-semibold rounded-lg border transition-all ${
                     page === i + 1
-                      ? 'bg-[var(--vs-primary)] text-[var(--vs-on-accent)] border-[var(--vs-primary)]'
+                      ? 'brand-action'
                       : 'border-[var(--vs-border)] text-[var(--vs-text-muted)] hover:text-[var(--vs-text)] hover:border-[var(--vs-border)] hover:bg-[var(--vs-surface)]/30'
                   }`}
                 >

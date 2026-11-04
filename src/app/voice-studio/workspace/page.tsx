@@ -296,7 +296,7 @@ function VoicePickerCard({
                 }}
                 className={`group relative flex items-center gap-3 px-2.5 py-2 rounded-xl cursor-pointer transition-all border ${
                   isSelected
-                    ? 'border-[var(--vs-primary)] bg-[var(--vs-primary)]/10 shadow-[0_0_14px_rgba(56,189,248,0.18)]'
+                    ? 'brand-action'
                     : 'border-transparent hover:border-[var(--vs-border)] hover:bg-[var(--vs-surface)]/50'
                 }`}
               >
@@ -323,7 +323,7 @@ function VoicePickerCard({
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={`text-sm font-semibold truncate ${isSelected ? 'text-[var(--vs-primary)]' : 'text-[var(--vs-text)]'}`}>
+                    <span className={`text-sm font-semibold truncate ${isSelected ? 'text-[var(--brand-action-fg)]' : 'text-[var(--vs-text)]'}`}>
                       {voice.name}
                     </span>
                     {voice.tags?.[0] && (
@@ -332,7 +332,7 @@ function VoicePickerCard({
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-[var(--vs-text-muted)] truncate mt-0.5 leading-tight">
+                  <div className={`text-[11px] truncate mt-0.5 leading-tight ${isSelected ? "text-[var(--brand-action-fg)]" : "text-[var(--vs-text-muted)]"}`}>
                     {voice.description}
                   </div>
                 </div>
@@ -1256,14 +1256,14 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
               <span className="text-sm font-medium text-[var(--vs-text-muted)]">模型</span>
               <div className="flex bg-[var(--vs-surface)]/80 rounded-xl p-1 border border-[var(--vs-border)]">
                 <button
-                  className={`px-4 py-2 rounded-lg text-[15px] font-medium transition-all ${model === 'tts' ? 'bg-[var(--vs-primary)]/20 text-[var(--vs-primary)] shadow-[0_0_12px_rgba(56,189,248,0.18)]' : 'text-[var(--vs-text-muted)] hover:text-[var(--vs-text)]'}`}
+                  className={`px-4 py-2 rounded-lg text-[15px] font-medium transition-all ${model === 'tts' ? 'brand-action' : 'text-[var(--vs-text-muted)] hover:text-[var(--vs-text)]'}`}
                   onClick={() => handleSynthesisModelChange('tts')}
                   disabled={synthesizing || !isModeAvailable('single')}
                 >
                   {mode === 'mix' ? 'Doubao-TTS 1.0' : 'Doubao-TTS 2.0'}
                 </button>
                 <button
-                  className={`px-4 py-2 rounded-lg text-[15px] font-medium transition-all ${model === 'audio' ? 'bg-[var(--vs-primary)]/20 text-[var(--vs-primary)] shadow-[0_0_12px_rgba(56,189,248,0.18)]' : 'text-[var(--vs-text-muted)] hover:text-[var(--vs-text)]'}`}
+                  className={`px-4 py-2 rounded-lg text-[15px] font-medium transition-all ${model === 'audio' ? 'brand-action' : 'text-[var(--vs-text-muted)] hover:text-[var(--vs-text)]'}`}
                   onClick={() => handleSynthesisModelChange('audio')}
                   disabled={synthesizing || !isModeAvailable('audio-gen')}
                 >
@@ -1290,14 +1290,14 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                 ].filter(m => isModeAvailable(m.v)).map(m => (
                   <button
                     key={m.v}
-                    className={`flex shrink-0 items-center justify-center gap-2 px-3 py-2 whitespace-nowrap rounded-xl text-[15px] font-medium transition-all ${mode === m.v ? 'bg-gradient-to-r from-[var(--vs-primary)]/20 to-[var(--vs-secondary)]/15 text-[var(--vs-primary)] border border-[var(--vs-primary)]/40 shadow-[0_0_18px_rgba(56,189,248,0.18)]' : 'bg-[var(--vs-surface)]/60 border border-[var(--vs-border)] text-[var(--vs-text-muted)] hover:text-[var(--vs-text)] hover:border-[var(--vs-primary)]/25 hover:bg-[var(--vs-surface-hover)]'}`}
+                    className={`flex shrink-0 items-center justify-center gap-2 px-3 py-2 whitespace-nowrap rounded-xl text-[15px] font-medium transition-all ${mode === m.v ? 'brand-action border' : 'bg-[var(--vs-surface)]/60 border border-[var(--vs-border)] text-[var(--vs-text-muted)] hover:text-[var(--vs-text)] hover:border-[var(--vs-primary)]/25 hover:bg-[var(--vs-surface-hover)]'}`}
                     onClick={() => handleSynthesisModeChange(m.v as typeof mode)}
                     disabled={synthesizing}
                     aria-pressed={mode === m.v}
                   >
                     <span aria-hidden="true">{m.icon}</span>
                     <span>{m.label}</span>
-                    {mode === m.v && <span className="ml-1 text-[var(--vs-primary)] text-xs">✓</span>}
+                    {mode === m.v && <span className="ml-1 text-xs">✓</span>}
                   </button>
                 ))}
             </div>
@@ -1478,18 +1478,18 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                             }}
                             className={`flex flex-col items-start gap-1 px-3 py-2.5 rounded-lg text-left transition-all ${
                               isActive
-                                ? 'bg-gradient-to-br from-[var(--vs-primary)]/20 to-[var(--vs-accent)]/15 border border-[var(--vs-primary)]/50 shadow-[0_0_12px_rgba(56,189,248,0.15)]'
+                                ? 'brand-action border'
                                 : 'bg-[var(--vs-surface)]/50 border border-[var(--vs-border)]/50 hover:border-[var(--vs-primary)]/40 hover:bg-[var(--vs-surface)]'
                             }`}
                             title={preset.desc}
                           >
                             <div className="flex items-center gap-1.5">
                               <span className="text-base leading-none">{preset.icon}</span>
-                              <span className={`text-[13px] font-semibold leading-none ${isActive ? 'text-[var(--vs-primary)]' : 'text-[var(--vs-text)]'}`}>
+                              <span className={`text-[13px] font-semibold leading-none ${isActive ? 'text-[var(--brand-action-fg)]' : 'text-[var(--vs-text)]'}`}>
                                 {preset.name}
                               </span>
                             </div>
-                            <span className="text-[11px] text-[var(--vs-text-muted)] leading-tight line-clamp-1">{preset.desc}</span>
+                            <span className={`text-[11px] leading-tight line-clamp-1 ${isActive ? "text-[var(--brand-action-fg)]" : "text-[var(--vs-text-muted)]"}`}>{preset.desc}</span>
                           </button>
                         );
                       })}

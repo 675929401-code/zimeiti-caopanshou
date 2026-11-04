@@ -302,7 +302,7 @@ export function YoucaiAccountPage() {
           <span><UserRound size={31} /></span>
           <h1>个人中心</h1>
         <p>登录统一账号后，可在漫剧工作台内查看会员、积分、余额和个人资产。</p>
-          <Link href="/login?redirect=/youcai/profile"><LogIn size={17} />立即登录</Link>
+          <Link className="brand-action" href="/login?redirect=/youcai/profile"><LogIn size={17} />立即登录</Link>
         </section>
       </div>
     );

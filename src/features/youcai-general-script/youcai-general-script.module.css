@@ -403,6 +403,7 @@
 
 .primaryButton,
 .primaryLink {
+  composes: brand-action from global;
   display: inline-flex;
   min-height: 46px;
   padding: 0 23px;
@@ -1096,4 +1097,8 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+.primaryButton {
+  composes: brand-action from global;
 }

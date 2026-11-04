@@ -435,3 +435,7 @@
   .footer { flex-wrap: wrap; padding: 18px 14px; }
 }
 
+
+.primaryAction {
+  composes: brand-action from global;
+}

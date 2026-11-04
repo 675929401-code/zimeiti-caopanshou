@@ -3783,8 +3783,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                           size="sm"
                           onClick={batchDownload}
                           disabled={isBatchDownloading}
-                          className="gap-1.5 text-xs"
-                          style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+                          className="brand-action gap-1.5 text-xs"
                         >
                           <Download className="w-3.5 h-3.5" />
                           {isBatchDownloading ? "下载中..." : `下载到电脑 (${selectedIds.size})`}
@@ -3861,8 +3860,9 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                           type="button"
                           data-video-model-id={model.id}
                           disabled={!selectable}
+                          aria-pressed={selected}
                           onClick={() => { if (selectable) setSelectedModelId(model.id); }}
-                          className={`group min-h-[76px] w-full min-w-0 max-w-full rounded-md border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] ${selected ? "border-[var(--primary)] bg-[var(--accent)] shadow-[inset_3px_0_var(--primary)]" : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/35 hover:bg-[var(--muted)]/45"} ${selectable ? "" : "cursor-not-allowed opacity-70"}`}
+                          className={`group min-h-[76px] w-full min-w-0 max-w-full rounded-md border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] ${selected ? "brand-action" : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/35 hover:bg-[var(--muted)]/45"} ${selectable ? "" : "cursor-not-allowed opacity-70"}`}
                           title={model.name}
                         >
                           <span className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2">
@@ -3875,8 +3875,8 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                               data-video-model-avatar="true"
                             />
                             <span className="min-w-0 max-w-full">
-                              <span className="line-clamp-2 block text-[14px] font-semibold leading-5 text-[var(--foreground)]">{model.name}</span>
-                              {inputLabel && <span className="mt-0.5 block whitespace-normal break-words text-[12px] leading-4 text-[var(--text-secondary)]" title={videoModelInputHint(model)}>{inputLabel}</span>}
+                              <span className="line-clamp-2 block text-[14px] font-semibold leading-5 text-[var(--foreground)] group-aria-pressed:text-[var(--brand-action-fg)]">{model.name}</span>
+                              {inputLabel && <span className="mt-0.5 block whitespace-normal break-words text-[12px] leading-4 text-[var(--text-secondary)] group-aria-pressed:text-[var(--brand-action-fg)]" title={videoModelInputHint(model)}>{inputLabel}</span>}
                             </span>
                             <span data-video-model-price className="col-start-2 min-w-0 max-w-full justify-self-start whitespace-normal break-words rounded border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[12px] font-semibold leading-4 text-[var(--foreground)] [overflow-wrap:anywhere]">
                               {getVideoBillingUnit(model) === "token" ? model.generationReady === false ? "Token 计价" : videoTokenRateLabel(model, model.defaultResolution) : !model.priceReady ? "—" : modelPrice === 0 ? "免费" : `¥${modelPrice.toFixed(2)}${getVideoBillingUnit(model) === "output_second" ? "/秒" : "/次"}`}
@@ -4090,14 +4090,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       <button
                         type="button"
                         onClick={() => setOrderedImageMode("reference")}
-                        className={`px-2 text-[11px] font-semibold transition-colors ${orderedImageMode === "reference" ? "bg-[var(--primary)]/15 text-[var(--primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--background)]"}`}
+                        className={`px-2 text-[11px] font-semibold transition-colors ${orderedImageMode === "reference" ? "brand-action" : "text-[var(--text-secondary)] hover:bg-[var(--background)]"}`}
                       >
                         参考图
                       </button>
                       <button
                         type="button"
                         onClick={() => setOrderedImageMode("first-last")}
-                        className={`border-l border-[var(--border)] px-2 text-[11px] font-semibold transition-colors ${orderedImageMode === "first-last" ? "bg-[var(--primary)]/15 text-[var(--primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--background)]"}`}
+                        className={`border-l border-[var(--border)] px-2 text-[11px] font-semibold transition-colors ${orderedImageMode === "first-last" ? "brand-action" : "text-[var(--text-secondary)] hover:bg-[var(--background)]"}`}
                       >
                         首尾帧
                       </button>
@@ -4319,7 +4319,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                               role="radio"
                               aria-checked={task.generateAudio !== false}
                               onClick={() => updateTask(task.localId, "generateAudio", true)}
-                              className={`px-3 text-[11px] font-medium transition-colors ${task.generateAudio !== false ? "bg-[var(--primary)]/15 text-[var(--primary)]" : "text-[var(--text-secondary)]"}`}
+                              className={`px-3 text-[11px] font-medium transition-colors ${task.generateAudio !== false ? "brand-action" : "text-[var(--text-secondary)]"}`}
                             >
                               生成声音
                             </button>
@@ -4328,7 +4328,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                               role="radio"
                               aria-checked={task.generateAudio === false}
                               onClick={() => updateTask(task.localId, "generateAudio", false)}
-                              className={`border-l border-[var(--border)] px-3 text-[11px] font-medium transition-colors ${task.generateAudio === false ? "bg-[var(--primary)]/15 text-[var(--primary)]" : "text-[var(--text-secondary)]"}`}
+                              className={`border-l border-[var(--border)] px-3 text-[11px] font-medium transition-colors ${task.generateAudio === false ? "brand-action" : "text-[var(--text-secondary)]"}`}
                             >
                               静音
                             </button>

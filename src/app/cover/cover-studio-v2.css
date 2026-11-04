@@ -8404,3 +8404,31 @@ html[data-theme][data-mode] .cover-rebuild-shell:not(.commerce-root):not(:where(
   background-repeat: repeat, repeat, no-repeat, no-repeat !important;
   background-attachment: fixed !important;
 }
+
+/* Only actionable choices adopt the logo palette. Rendering stages and favorites use their own status colors. */
+html[data-theme][data-mode] .cover-rebuild-shell :is(
+  .cover-primary-button:not(:disabled),
+  .cover-flagship-models button.is-active,
+  .cover-mode-switch button.is-active,
+  .cover-source-options button.is-active,
+  .cover-ratio-picker button.is-active,
+  .cover-template-view-tabs button.is-active,
+  .cover-more-models button.is-active
+) {
+  background: var(--brand-action-bg);
+  border-color: var(--brand-action-border);
+  color: var(--brand-action-fg);
+  box-shadow: none;
+}
+html[data-theme][data-mode] .cover-rebuild-shell :is(
+  .cover-flagship-models, .cover-mode-switch, .cover-source-options, .cover-ratio-picker, .cover-more-models
+) button.is-active :is(strong, small, span) {
+  color: var(--brand-action-fg);
+}
+html[data-theme][data-mode] .cover-rebuild-shell .cover-primary-button:hover:not(:disabled) {
+  background: var(--brand-action-hover);
+}
+html[data-theme][data-mode] .cover-rebuild-shell :is(.cover-primary-button, button.is-active):focus-visible {
+  outline: 2px solid var(--brand-action-ring);
+  outline-offset: 2px;
+}

@@ -507,7 +507,7 @@ export function YoucaiReferralPage() {
                   <div className={styles.panelHeading}>
                     <div><span className={styles.panelIcon}><Sparkles size={19} /></span><div><h2>我的邀请码</h2><p>一次一人；礼包确认后直接到账，无需领取</p></div></div>
                     {availableCodes.length === 0 && (
-                      <button type="button" disabled={generating || !inviteOwnerEligible || quota.remainingThisMonth <= 0} onClick={() => void generateCode()}>
+                      <button type="button" className="brand-action" disabled={generating || !inviteOwnerEligible || quota.remainingThisMonth <= 0} onClick={() => void generateCode()}>
                         {generating ? <Loader2 className={styles.spin} size={15} /> : <UserPlus size={15} />}
                         {generating ? "生成中..." : !inviteOwnerEligible ? "正式会员可生成" : quota.remainingThisMonth <= 0 ? "本月额度已用完" : codes.length > 0 ? "生成下一枚" : "生成邀请码"}
                       </button>

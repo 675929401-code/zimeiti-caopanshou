@@ -76,6 +76,7 @@
 }
 
 .primaryButton {
+  composes: brand-action from global;
   border: 1px solid transparent;
   color: #ffffff;
   background: linear-gradient(105deg, #2563eb 0%, var(--fsp-primary) 100%);

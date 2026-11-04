@@ -483,8 +483,8 @@ function FormatterForAccount({ ownerUserId }: { ownerUserId: string }) {
             className="toolbox-input-heading flex items-center justify-between px-5 py-3.5 border-b"
             style={{ borderColor: embedded ? "var(--toolbox-crystal-line)" : "var(--border)" }}
           >
-            <span className="toolbox-input-title flex items-center gap-2 text-sm font-bold" style={{ color: "var(--primary)" }}>
-              <FileText className="h-4 w-4" aria-hidden="true" />
+            <span className="toolbox-input-title flex items-center gap-2 text-sm font-bold" style={{ color: embedded ? "var(--foreground)" : "var(--primary)" }}>
+              <FileText className="h-4 w-4 text-[var(--primary)]" aria-hidden="true" />
               原始文案
             </span>
             <span className="toolbox-input-meta text-xs" style={{ color: "var(--muted-foreground)" }}>
@@ -593,11 +593,7 @@ function FormatterForAccount({ ownerUserId }: { ownerUserId: string }) {
               </div>
               <button
                 onClick={handleCopy}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90 active:scale-95"
-                style={{
-                  background: "var(--primary)",
-                  color: "var(--primary-foreground)",
-                }}
+                className="brand-action flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90 active:scale-95"
               >
                 {copied ? (
                   <>

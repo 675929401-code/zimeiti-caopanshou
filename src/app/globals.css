@@ -144,6 +144,14 @@ body::-webkit-scrollbar {
    ============================================ */
 
 :root {
+  /* Neutral fallback for solid actions. Every shipped theme overrides these
+     tokens below, so primary buttons, selected tabs and send actions follow
+     that theme's own palette instead of one shared navy. */
+  --brand-action-bg: #2563eb;
+  --brand-action-fg: #fff;
+  --brand-action-hover: color-mix(in srgb, var(--brand-action-bg) 87%, white);
+  --brand-action-border: color-mix(in srgb, var(--brand-action-bg) 55%, var(--primary));
+  --brand-action-ring: var(--primary);
   --radius: 0.625rem;
   /* 全局字体设置（可由管理后台覆盖） */
   --font-sans-theme: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -581,9 +589,9 @@ body::-webkit-scrollbar {
 
 /* 新建对话按钮 */
 .new-chat-btn:hover {
-  background: var(--primary) !important;
-  color: var(--primary-foreground) !important;
-  border-color: var(--primary) !important;
+  background: var(--brand-action-hover) !important;
+  color: var(--brand-action-fg) !important;
+  border-color: var(--brand-action-border) !important;
 }
 
 /* 对话列表容器 */

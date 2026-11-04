@@ -22,6 +22,7 @@
 }
 
 .newConversationButton {
+  composes: brand-action from global;
   display: flex;
   width: 100%;
   min-height: 42px;
@@ -346,6 +347,7 @@
 
 .loginGate a,
 .canvasPrimaryAction {
+  composes: brand-action from global;
   color: #ffffff;
   background: linear-gradient(105deg, #2563eb, #7c3aed);
 }

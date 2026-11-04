@@ -932,3 +932,7 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+.primaryButton {
+  composes: brand-action from global;
+}

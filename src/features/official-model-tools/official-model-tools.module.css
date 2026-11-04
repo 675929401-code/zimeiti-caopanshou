@@ -71,8 +71,8 @@
 }
 
 .modeTab[data-active="true"] {
-  color: #fff;
-  background: linear-gradient(100deg, #a855f7, #ec4899);
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
 }
 
 .modeTab:disabled {
@@ -200,9 +200,9 @@
 }
 
 .segmented button[data-active="true"] {
-  border-color: #ec4899;
-  color: #c026d3;
-  background: #fdf2f8;
+  border-color: var(--brand-action-border);
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
 }
 
 .segmented strong {
@@ -246,8 +246,9 @@
   width: 100%;
   min-height: 44px;
   margin-top: 16px;
-  color: #fff;
-  background: linear-gradient(100deg, #2563eb, #a855f7);
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
+  border: 1px solid var(--brand-action-border);
 }
 
 .primaryButton:disabled {
@@ -255,9 +256,8 @@
   opacity: 0.52;
 }
 
-.musicButton {
-  background: linear-gradient(100deg, #fb923c, #fb7185);
-}
+.primaryButton:hover:not(:disabled) { background: var(--brand-action-hover); }
+.primaryButton:focus-visible { outline: 2px solid var(--brand-action-ring); outline-offset: 2px; }
 
 .disabledGenerationButton {
   width: 100%;

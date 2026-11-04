@@ -1925,7 +1925,8 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
                   type="button"
                   key={item}
                   onClick={() => setResolution(item)}
-                  className={`h-10 rounded-lg border text-xs font-bold transition-colors ${selectedResolution === item ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] text-[var(--primary)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                  aria-pressed={selectedResolution === item}
+                  className={`h-10 rounded-lg border text-xs font-bold transition-colors ${selectedResolution === item ? "brand-action" : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
                 >
                   {item}
                 </button>
@@ -1941,7 +1942,8 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
                   type="button"
                   key={ratio}
                   onClick={() => setAspectRatio(ratio)}
-                  className={`h-12 rounded-lg border text-xs font-bold transition-colors ${aspectRatio === ratio ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] text-[var(--primary)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                  aria-pressed={aspectRatio === ratio}
+                  className={`h-12 rounded-lg border text-xs font-bold transition-colors ${aspectRatio === ratio ? "brand-action" : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
                 >
                   {ratio}
                 </button>
@@ -2017,14 +2019,14 @@ function UserImageWorkbench({ identity }: { identity: WorkbenchIdentity }) {
               <button
                 type="button"
                 onClick={() => setVideoPushMode("reference")}
-                className={`min-h-12 rounded-md border px-2 text-xs font-bold transition-colors ${videoPushMode === "reference" ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] text-[var(--primary)]" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                className={`min-h-12 rounded-md border px-2 text-xs font-bold transition-colors ${videoPushMode === "reference" ? "brand-action" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
               >
                 <span className="leading-4">参考图<br />{activeReferenceLimit > 0 ? `当前模型上限 ${activeReferenceLimit} 张` : "当前模型不支持"}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setVideoPushMode("first-last")}
-                className={`min-h-12 rounded-md border px-2 text-xs font-bold transition-colors ${videoPushMode === "first-last" ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] text-[var(--primary)]" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                className={`min-h-12 rounded-md border px-2 text-xs font-bold transition-colors ${videoPushMode === "first-last" ? "brand-action" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
               >
                 <span className="leading-4">首尾帧<br />2 张 / 任务</span>
               </button>

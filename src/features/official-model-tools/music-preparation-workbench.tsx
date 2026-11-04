@@ -94,7 +94,7 @@ export function MusicPreparationWorkbench() {
           </label>
 
           {error ? <p className={styles.error} role="alert">{error}</p> : null}
-          <button className={`${styles.primaryButton} ${styles.musicButton}`} disabled={!brief.trim() || loading} type="submit">
+          <button className={styles.primaryButton} disabled={!brief.trim() || loading} type="submit">
             {loading ? <LoaderCircle className={styles.spinner} size={18} /> : <Sparkles size={18} />}
             {loading ? "正在生成方案" : "AI 生成歌词与编曲方案"}
           </button>

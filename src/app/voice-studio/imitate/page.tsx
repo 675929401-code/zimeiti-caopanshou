@@ -494,7 +494,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
                         onClick={() => setAudioConfig((c) => ({ ...c, format: opt.value }))}
                         className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
                           audioConfig.format === opt.value
-                            ? 'bg-[var(--vs-primary)]/15 border-[var(--vs-primary)]/40 text-[var(--vs-primary)]'
+                            ? 'brand-action'
                             : 'bg-[var(--vs-surface)] border-[var(--vs-border)] text-[var(--vs-text-muted)] hover:border-[var(--vs-border)]/80'
                         }`}
                       >
@@ -577,7 +577,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
             <button
               onClick={handleGenerate}
               disabled={providerStatus !== 'available' || generating || recovering || Boolean(recoveryError) || !quote || !textPrompt.trim() || references.length === 0}
-              className="w-full max-w-lg h-14 text-lg font-semibold rounded-2xl bg-[var(--vs-primary)] text-[var(--vs-on-accent)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_0_24px_rgba(124,92,255,0.3)] flex items-center justify-center gap-2"
+              className="w-full max-w-lg h-14 text-lg font-semibold rounded-2xl brand-action disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {providerStatus === 'checking' ? (
                 '正在检查服务状态'

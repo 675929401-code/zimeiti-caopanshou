@@ -755,6 +755,13 @@ html[data-theme="lattice"][data-mode="dark"] {
   --primary: #6ee7e0;
   --primary-foreground: #02100f;
   --ring: #69e7ff;
+  /* Solid actions use a deep crystal teal so they sit inside the cyan/violet
+     lattice instead of importing the light theme's navy. Mint stays an accent. */
+  --brand-action-bg: #0f766e;
+  --brand-action-fg: #ffffff;
+  --brand-action-hover: #115e59;
+  --brand-action-border: color-mix(in srgb, #0f766e 55%, #6ee7e0);
+  --brand-action-ring: #6ee7e0;
   --background: #10243a;
   --foreground: #f2f7fa;
   --font-title-color: #f8fbfd;
