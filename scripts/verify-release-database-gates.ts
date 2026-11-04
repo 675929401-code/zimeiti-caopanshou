@@ -106,7 +106,7 @@ assertSharedAgentBatchCasCandidateCaptured(contract);
 const table = (name: string) => contract.tables.find((entry) => entry.name === name);
 const rpc = (name: string) => contract.rpcs.find((entry) => entry.name === name);
 
-assert.equal(contract.contractVersion, "20261103010000");
+assert.equal(contract.contractVersion, "20261104010000");
 assert.deepEqual(PRODUCTION_DATABASE_CONTRACT, contract, "embedded database contract is stale");
 assert.equal(contract.requiredProbeRole, "service_role");
 const liveCatalogChecks = (() => {
@@ -699,7 +699,7 @@ assert.deepEqual(liveCatalogChecks.functionSecurityGroups.filter(group => !group
     "public.agent_catalog_canonical_json_v1(jsonb)": "d230b4e4ffe6d8204ee4ac3d2030dc30f8b26dedeab14b6ea8d00e3dc03f564e",
     "public.agent_catalog_projection_v1(public.agents)": "1d9fb6ba4019d6986a0758b6fc17476a577d5b65ed25f01aafb22b47f0cffe9a",
     "public.agent_catalog_utf16_v1(text)": "270e80afa92c2812d68b90fc1a70d55df9937faf5a01f9c3ca380197a95638ef",
-    "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)": "a38d4fa83bf02ed4729a7f179b4c8a0b77bf3f5bf0bb9e9d97282b019daaf00b",
+    "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)": "adce1c197ddc88308fa6a90592788be9900d79af38224447af8ced2a72a76a70",
     "public.read_agent_catalog_model_guard_v1(uuid)": "36020454bff4674a0c96a990386af6976afc0dcd7d1f9911d64187ff5160fbf6",
     "public.read_agent_catalog_publication_index_v1(text,text)": "dc85077a7303db4c48dcf1caf024e85fbdec7568fbc08f16a64ff2a213b78af8",
     "public.read_agent_catalog_publication_v1(text)": "a029625e856f9af4eade0ef45d2d6e1325f6b97af6ac6cda70a12776cf8b9434"
@@ -767,6 +767,68 @@ assert.deepEqual(liveCatalogChecks.functionSecurityGroups.filter(group => !group
   "additionalSettings": [
     "extra_float_digits=3"
   ]
+},
+{
+  "id": "reviewed-text-activation",
+  "ownerRelation": "public.agents",
+  "ownerMustMatchRelationOwner": false,
+  "requiredOwnerRole": "postgres",
+  "securityDefinerRequired": false,
+  "searchPath": [
+    "pg_catalog",
+    "public"
+  ],
+  "requiredNonOwnerExecuteGrantees": [
+    "service_role"
+  ],
+  "allowedEffectiveExecutePrincipals": [
+    "function_owner",
+    "service_role"
+  ],
+  "superuserInherentPrivilegeExcluded": true,
+  "forbiddenExecutePrincipals": [
+    "PUBLIC",
+    "anon",
+    "authenticated"
+  ],
+  "functions": [
+    "public.activate_reviewed_deepseek_history_v1(text,text,uuid,text,text,text)"
+  ],
+  "requiredSourceSha256": {
+    "public.activate_reviewed_deepseek_history_v1(text,text,uuid,text,text,text)": "362e3149a9fc652ca08ccaba3011b0d0245d4d17c3d35903e917cee2a179f0aa"
+  }
+},
+{
+  "id": "reviewed-text-owner-locks",
+  "ownerRelation": "public.agents",
+  "ownerMustMatchRelationOwner": false,
+  "requiredOwnerRole": "postgres",
+  "securityDefinerRequired": true,
+  "searchPath": [
+    "pg_catalog",
+    "public"
+  ],
+  "requiredNonOwnerExecuteGrantees": [
+    "service_role"
+  ],
+  "allowedEffectiveExecutePrincipals": [
+    "function_owner",
+    "service_role"
+  ],
+  "superuserInherentPrivilegeExcluded": true,
+  "forbiddenExecutePrincipals": [
+    "PUBLIC",
+    "anon",
+    "authenticated"
+  ],
+  "functions": [
+    "public.lock_reviewed_deepseek_history_v1(text,uuid,text,text,text)",
+    "public.lock_reviewed_text_activation_owner_v1(text,text)"
+  ],
+  "requiredSourceSha256": {
+    "public.lock_reviewed_deepseek_history_v1(text,uuid,text,text,text)": "3b44fd5bfcd0b7603207016c415952234e0618f22f09a04a6b6e5d6879b6f3a9",
+    "public.lock_reviewed_text_activation_owner_v1(text,text)": "01138d5cee7c9a8d23babef02fd0288db35f04a3150e0db9d19c90919e9aae2d"
+  }
 }
 
 ]);
@@ -791,7 +853,7 @@ assert.deepEqual(
     "20261010023000", "20261010130000", "20261010131000", "20261010132000",
     "20261010133000", "20261010134000", "20261010135000", "20261010140000",
     "20261012010000", "20261012011000", "20261012012000", "20261012013000",
-    "20261012014000", "20261030010000", "20261030020000", "20261030030000", "20261030040000", "20261030050000", "20261030060000", "20261030070000", "20261030080000", "20261031010000", "20261103010000",
+    "20261012014000", "20261030010000", "20261030020000", "20261030030000", "20261030040000", "20261030050000", "20261030060000", "20261030070000", "20261030080000", "20261031010000", "20261103010000", "20261104010000",
   ],
 );
 const pendingCredentialMigrations = [
@@ -1958,7 +2020,7 @@ type LiveFunctionSecurity = {
   securityDefiner: boolean;
   searchPath: string[];
   definition: string;
-  source?: string;
+  sourceSha256?: string;
   argumentNames: string[];
   executeGrantees: string[];
   unexpectedEffectiveGrantees: string[];
@@ -2145,8 +2207,8 @@ function liveCatalogFailures(live: LiveCatalogProjection) {
       }
       const requiredSourceHash = expectedGroup.requiredSourceSha256?.[signature];
       if (requiredSourceHash) {
-        if (typeof actual.source !== "string" || actual.source.length === 0) failures.push(`FUNCTION_SOURCE_MISSING:${signature}`);
-        else if (sha256(actual.source) !== requiredSourceHash) failures.push(`FUNCTION_SOURCE_HASH_MISMATCH:${signature}`);
+        if (!actual.sourceSha256) failures.push(`FUNCTION_SOURCE_MISSING:${signature}`);
+        else if (actual.sourceSha256 !== requiredSourceHash) failures.push(`FUNCTION_SOURCE_HASH_MISMATCH:${signature}`);
       }
       if (actual.securityDefiner !== expectedGroup.securityDefinerRequired) failures.push(`FUNCTION_SECURITY_DEFINER_REQUIRED:${signature}`);
       const expectedSettings = [expectedSearchPath, ...(expectedGroup.additionalSettings || [])];
@@ -2289,6 +2351,18 @@ const agentCatalogRpcArguments = {
     "p_agent_id"
   ]
 } as const;
+const reviewedHistoryMigration = {
+  "version": "20261104010000",
+  "file": "supabase/migrations/20261104010000_reviewed_text_history.sql",
+  "sha256": "33a61d1a6fe41b029945ee26bd290014b8767c0fa3271f4c564a7fb1bb8aca42"
+} as const;
+const reviewedHistorySql = read(reviewedHistoryMigration.file);
+assert.equal(sha256(reviewedHistorySql), reviewedHistoryMigration.sha256, "reviewed text history migration source changed");
+assert.deepEqual(liveCatalogChecks.migrationLedger.requiredMigrations.find(entry => entry.version === reviewedHistoryMigration.version), reviewedHistoryMigration);
+const nativePublicationSignature = "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)";
+const oldPublicationSourceHash = "a38d4fa83bf02ed4729a7f179b4c8a0b77bf3f5bf0bb9e9d97282b019daaf00b";
+const reviewedPublicationSourceHash = "adce1c197ddc88308fa6a90592788be9900d79af38224447af8ced2a72a76a70";
+assert.ok(reviewedHistorySql.includes(oldPublicationSourceHash) && reviewedHistorySql.includes(reviewedPublicationSourceHash));
 const canonicalAgentCatalogSources: Record<string, string> = {};
 const catalogFunctionMatches = [...read(agentCatalogMigration.file).matchAll(/CREATE FUNCTION public[.]([a-z0-9_]+)\([^)]*\)[\s\S]*?AS \$\$([\s\S]*?)\$\$;/gu)];
 assert.deepEqual(catalogFunctionMatches.map(match => match[1]).sort(), Object.keys(agentCatalogRpcArguments).sort());
@@ -2296,12 +2370,52 @@ for (const group of liveCatalogChecks.functionSecurityGroups.filter(entry => ent
   for (const signature of group.functions) {
     const name = signature.match(/^public\.([^()]+)\(/u)![1];
     const source = catalogFunctionMatches.find(match => match[1] === name)![2];
-    assert.equal(sha256(source), group.requiredSourceSha256?.[signature], `catalog raw body pin drift: ${signature}`);
+    assert.equal(sha256(source), signature === nativePublicationSignature ? oldPublicationSourceHash : group.requiredSourceSha256?.[signature], `catalog raw body pin drift: ${signature}`);
     assert.deepEqual(rpc(name)?.arguments, agentCatalogRpcArguments[name as keyof typeof agentCatalogRpcArguments]);
     canonicalAgentCatalogSources[signature] = source;
   }
 }
 assert.equal(Object.keys(canonicalAgentCatalogSources).length, 9);
+const reviewedRpcArguments = {
+  "activate_reviewed_deepseek_history_v1": [
+    "p_actor",
+    "p_step_hash",
+    "p_model_id",
+    "p_agent_id",
+    "p_configuration_hash",
+    "p_expected_row_version"
+  ],
+  "lock_reviewed_deepseek_history_v1": [
+    "p_actor",
+    "p_model_id",
+    "p_agent_id",
+    "p_configuration_hash",
+    "p_row_version"
+  ],
+  "lock_reviewed_text_activation_owner_v1": [
+    "p_actor",
+    "p_step_hash"
+  ]
+} as const;
+const reviewedFunctions = [...reviewedHistorySql.matchAll(/CREATE FUNCTION public[.]([a-z0-9_]+)\([^)]*\)[\s\S]*?AS (\$[a-z_]*\$)([\s\S]*?)\2;/gu)];
+assert.deepEqual(reviewedFunctions.map(match => match[1]).sort(), Object.keys(reviewedRpcArguments).sort());
+for (const group of liveCatalogChecks.functionSecurityGroups.filter(entry => entry.id.startsWith("reviewed-text-"))) {
+  for (const signature of group.functions) {
+    const name = signature.match(/^public\.([^()]+)\(/u)![1];
+    const match = reviewedFunctions.find(row => row[1] === name);
+    assert.ok(match);
+    assert.equal(sha256(match[3]), group.requiredSourceSha256?.[signature]);
+    assert.deepEqual(rpc(name)?.arguments, reviewedRpcArguments[name as keyof typeof reviewedRpcArguments]);
+    canonicalAgentCatalogSources[signature] = match[3];
+  }
+}
+function fixtureSourceDigest(signature: string) {
+  // The reviewed migration patches this native body inside PostgreSQL. The digest is
+  // independently pinned by the transaction rehearsal and checked against the live catalog.
+  if (signature === nativePublicationSignature) return reviewedPublicationSourceHash;
+  const source = signature === purgeSignature ? canonicalPurgeSource : signature === digitalPreflightSignature ? digitalPreflightSource : canonicalGaoruiAssetSources[signature] || canonicalAgentCatalogSources[signature];
+  return source ? sha256(source) : undefined;
+}
 const fixtureFunction = (
   signature: string,
   group: {
@@ -2317,7 +2431,7 @@ const fixtureFunction = (
 ): LiveFunctionSecurity => ({
   signature,
   owner: group.ownerMustMatchRelationOwner ? fixtureOwner : group.requiredOwnerRole || "",
-  source: signature === purgeSignature ? canonicalPurgeSource : signature === digitalPreflightSignature ? digitalPreflightSource : canonicalGaoruiAssetSources[signature] || canonicalAgentCatalogSources[signature],
+  sourceSha256: fixtureSourceDigest(signature),
   securityDefiner: group.securityDefinerRequired,
   searchPath: [`search_path=${group.searchPath.join(", ")}`, ...(group.additionalSettings || [])],
   definition: (group.requiredDefinitionTokens?.[signature] || []).join("\n"),
@@ -2395,7 +2509,7 @@ for (const mutate of [
   (fn: LiveFunctionSecurity) => { fn.owner = "postgres"; },
   (fn: LiveFunctionSecurity) => { fn.securityDefiner = false; },
   (fn: LiveFunctionSecurity) => { fn.searchPath = ["search_path=pg_catalog, public"]; },
-  (fn: LiveFunctionSecurity) => { fn.source = "SELECT 1"; },
+  (fn: LiveFunctionSecurity) => { fn.sourceSha256 = sha256("SELECT 1"); },
   (fn: LiveFunctionSecurity) => { fn.argumentNames = []; },
   (fn: LiveFunctionSecurity) => { fn.executeGrantees.push("anon"); },
   (fn: LiveFunctionSecurity) => { fn.privileges.anonExecute = true; },
@@ -2455,8 +2569,8 @@ for (const signature of gaoruiAssetSecurityGroup.functions) for (const mutate of
   (entry: LiveFunctionSecurity) => { entry.owner = "wrong_owner"; },
   (entry: LiveFunctionSecurity) => { entry.securityDefiner = false; },
   (entry: LiveFunctionSecurity) => { entry.searchPath = ["search_path=public, pg_temp"]; },
-  (entry: LiveFunctionSecurity) => { delete entry.source; },
-  (entry: LiveFunctionSecurity) => { entry.source += "\n-- drift"; },
+  (entry: LiveFunctionSecurity) => { delete entry.sourceSha256; },
+  (entry: LiveFunctionSecurity) => { entry.sourceSha256 = sha256("modified function"); },
   (entry: LiveFunctionSecurity) => { entry.argumentNames.pop(); },
   (entry: LiveFunctionSecurity) => { entry.privileges.serviceExecute = false; },
   (entry: LiveFunctionSecurity) => { entry.executeGrantees.push("PUBLIC"); },
@@ -2478,9 +2592,9 @@ for (const remove of [true, false]) {
 let purgeFunctionSemanticBlockingCases = 0;
 for (const mutation of [
   (entry: LiveFunctionSecurity) => { entry.owner = "wrong_owner"; },
-  (entry: LiveFunctionSecurity) => { delete entry.source; },
-  (entry: LiveFunctionSecurity) => { entry.source = `${entry.source}\n-- changed`; },
-  (entry: LiveFunctionSecurity) => { entry.source = `${entry.source}\n-- provider_submitted`; },
+  (entry: LiveFunctionSecurity) => { delete entry.sourceSha256; },
+  (entry: LiveFunctionSecurity) => { entry.sourceSha256 = sha256(canonicalPurgeSource + "\n-- changed"); },
+  (entry: LiveFunctionSecurity) => { entry.sourceSha256 = sha256(canonicalPurgeSource + "\n-- provider_submitted"); },
   (entry: LiveFunctionSecurity) => { entry.executeGrantees.push("PUBLIC"); },
   (entry: LiveFunctionSecurity) => { entry.executeGrantees.push("extra_runtime_role"); },
   (entry: LiveFunctionSecurity) => { entry.unexpectedEffectiveGrantees.push("inherited_runtime_role"); },
@@ -2492,10 +2606,10 @@ for (const mutation of [
   purgeFunctionSemanticBlockingCases += 1;
 }
 const missingPurgeSource = structuredClone(validLiveFixture);
-delete missingPurgeSource.functionSecurityGroups.find(group => group.id === "video-history-purge-billing-protection")!.functions[0].source;
+delete missingPurgeSource.functionSecurityGroups.find(group => group.id === "video-history-purge-billing-protection")!.functions[0].sourceSha256;
 assert.ok(liveCatalogFailures(missingPurgeSource).includes(`FUNCTION_SOURCE_MISSING:${purgeSignature}`));
 const changedPurgeSource = structuredClone(validLiveFixture);
-changedPurgeSource.functionSecurityGroups.find(group => group.id === "video-history-purge-billing-protection")!.functions[0].source += "\n";
+changedPurgeSource.functionSecurityGroups.find(group => group.id === "video-history-purge-billing-protection")!.functions[0].sourceSha256 = sha256(canonicalPurgeSource + "\n");
 assert.ok(liveCatalogFailures(changedPurgeSource).includes(`FUNCTION_SOURCE_HASH_MISMATCH:${purgeSignature}`));
 purgeFunctionSemanticBlockingCases += 2;
 
@@ -2548,14 +2662,14 @@ for(const id of ["image-provider-delivery","h3-provider-delivery-finalizer","h3-
  }
 }
 let agentCatalogBlockingCases = 0;
-for (const group of liveCatalogChecks.functionSecurityGroups.filter(entry => entry.id.startsWith("agent-catalog-"))) {
+for (const group of liveCatalogChecks.functionSecurityGroups.filter(entry => entry.id.startsWith("agent-catalog-") || entry.id.startsWith("reviewed-text-"))) {
   for (const signature of group.functions) {
     for (const mutation of [
       (f: LiveFunctionSecurity) => { f.owner = "wrong_owner"; },
       (f: LiveFunctionSecurity) => { f.securityDefiner = !f.securityDefiner; },
       (f: LiveFunctionSecurity) => { f.searchPath = []; },
       (f: LiveFunctionSecurity) => { f.searchPath.push("unreviewed_setting=on"); },
-      (f: LiveFunctionSecurity) => { f.source = (f.source || "") + "\n"; },
+      (f: LiveFunctionSecurity) => { f.sourceSha256 = sha256("modified catalog function"); },
       (f: LiveFunctionSecurity) => { f.argumentNames = ["wrong_argument"]; },
       (f: LiveFunctionSecurity) => { f.executeGrantees.push("PUBLIC"); f.privileges.anonExecute = true; },
       (f: LiveFunctionSecurity) => { f.privileges.authenticatedExecute = true; },
@@ -2580,6 +2694,15 @@ const wrongCatalogLedger = structuredClone(validLiveFixture);
 wrongCatalogLedger.ledger.find(entry => entry.version === agentCatalogMigration.version)!.hash = "0".repeat(64);
 assert.ok(liveCatalogFailures(wrongCatalogLedger).includes(`MIGRATION_LEDGER_HASH_MISMATCH:${agentCatalogMigration.version}`));
 agentCatalogBlockingCases += 2;
+const unpatchedNative = structuredClone(validLiveFixture);
+unpatchedNative.functionSecurityGroups.flatMap(group => group.functions).find(f => f.signature === nativePublicationSignature)!.sourceSha256 = oldPublicationSourceHash;
+assert.ok(liveCatalogFailures(unpatchedNative).includes(`FUNCTION_SOURCE_HASH_MISMATCH:${nativePublicationSignature}`));
+for (const reason of ["missing", "wrong hash"] as const) {
+  const bad = structuredClone(validLiveFixture);
+  if (reason === "missing") bad.ledger = bad.ledger.filter(row => row.version !== reviewedHistoryMigration.version);
+  else bad.ledger.find(row => row.version === reviewedHistoryMigration.version)!.hash = "0".repeat(64);
+  assert.ok(liveCatalogFailures(bad).includes(`${reason === "missing" ? "MIGRATION_LEDGER_ROW_MISSING" : "MIGRATION_LEDGER_HASH_MISMATCH"}:${reviewedHistoryMigration.version}`));
+}
 for(const entry of [
 {"version":"20261012013000","file":"supabase/migrations/20261012013000_image_model_validation_receipt_publication.sql","sha256":"75053bdad5e5d668f8dd3cf824e26ebbef72b4eb8f07515cfd3a4ff695ceb8f9"},
   {
@@ -2847,7 +2970,7 @@ async function verifyLiveCatalog(): Promise<LiveCatalogProjection> {
       for (const signature of expectedGroup.functions) {
         const row = (await client.query(
           `select pg_get_userbyid(p.proowner) as owner,p.prosecdef as security_definer,p.proconfig,p.proargnames,p.proargmodes::text[] as proargmodes,
-                  pg_get_functiondef(p.oid) as definition,p.prosrc as source,
+                  pg_get_functiondef(p.oid) as definition,encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') as source_sha256,
                   to_jsonb(array(
                     select distinct coalesce(pg_get_userbyid(acl.grantee),'PUBLIC')
                       from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
@@ -2878,7 +3001,7 @@ async function verifyLiveCatalog(): Promise<LiveCatalogProjection> {
           securityDefiner: row?.security_definer === true,
           searchPath: Array.isArray(row?.proconfig) ? row.proconfig.map(String) : [],
           definition: String(row?.definition || ""),
-          source: typeof row?.source === "string" ? row.source : undefined,
+          sourceSha256: typeof row?.source_sha256 === "string" ? row.source_sha256 : undefined,
           argumentNames: catalogInputArgumentNames(row?.proargnames, row?.proargmodes),
           executeGrantees: Array.isArray(row?.execute_grantees) ? row.execute_grantees.map(String) : [],
           unexpectedEffectiveGrantees: Array.isArray(row?.unexpected_effective_grantees)
@@ -2984,7 +3107,9 @@ async function main() {
     staleEmbeddedContractBlockingCases: 1,
     videoHealthProtocolVersion: VIDEO_CHANNEL_HEALTH_PROTOCOL_VERSION,
     liveCatalogFixtureCases: 62,
-    agentCatalogFunctionsChecked: Object.keys(canonicalAgentCatalogSources).length,
+    agentCatalogFunctionsChecked: catalogFunctionMatches.length,
+    reviewedTextFunctionsChecked: reviewedFunctions.length,
+    reviewedMigrationSha256: reviewedHistoryMigration.sha256,
     agentCatalogBlockingCases,
     agentCatalogMigrationSha256: agentCatalogMigration.sha256,
     pendingCredentialLedgerBlockingCases: 5,

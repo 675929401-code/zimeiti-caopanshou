@@ -1,11 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { hasReviewedDirectorChannel, REVIEWED_TEXT_HISTORY } from "../src/lib/server/text-model-reviewed-history";
 import { adminRequirementForRequest } from "../src/lib/admin-governance";
 import { isUnboundCatalogAgent } from "../src/lib/agent-catalog-lifecycle";
 import { assertStandardQuoteEligibility,readStandardSnapshot } from "../src/lib/server/llm-standard-request-preparation";
 import {
-  CATALOG_PUBLICATION_FIELDS, makePublicationPlan,parsePublication,parsePublicationJson,publicationHash,reviewedFields,hasExactCatalogDecimals,requirePublicationDestination,checkedPublicationIndex,
+  CATALOG_PUBLICATION_FIELDS, isReviewedDirectorRebind, makePublicationPlan,parsePublication,parsePublicationJson,publicationHash,reviewedFields,hasExactCatalogDecimals,requirePublicationDestination,checkedPublicationIndex,
   type PublicationFields,type PublicationSnapshot,
 } from "../src/lib/server/agent-catalog-publication";
 
@@ -21,6 +25,23 @@ function input(f=fields(),override:Record<string,unknown>={}){
 function snapshot(f:PublicationFields):PublicationSnapshot{
   return {id,deleted:false,fields:f,revision:2,rowDigest:"c".repeat(64),portability:[]};
 }
+test("an external operator can load the portable contract and owner CLI with only the project tsconfig",()=>{
+  const project=fileURLToPath(new URL("../",import.meta.url));
+  const probe=`
+    import assert from 'node:assert/strict';
+    import {createRequire} from 'node:module';
+    import path from 'node:path';
+    import {pathToFileURL} from 'node:url';
+    const project=process.argv[1], req=createRequire(path.join(project,'package.json'));
+    req('tsx/cjs/api').register({tsconfig:path.join(project,'tsconfig.json')});
+    const contract=req(path.join(project,'src/lib/server/agent-catalog-publication.ts'));
+    const core=await import(pathToFileURL(path.join(project,'scripts/agent-catalog-release-core.mjs')));
+    await import(pathToFileURL(path.join(project,'scripts/agent-catalog-release-owner.mjs')));
+    assert.equal(core.hash({fixture:true}),contract.publicationHash({fixture:true}));
+  `;
+  const run=spawnSync(process.execPath,["--input-type=module","--eval",probe,project],{cwd:tmpdir(),encoding:"utf8"});
+  assert.equal(run.status,0,run.stderr);
+});
 test("SQL and API expose the same explicit portable column whitelist",()=>{
   const sql=readFileSync(new URL("../supabase/migrations/20261103010000_agent_catalog_publications.sql",import.meta.url),"utf8");
   const list=sql.match(/FROM unnest\(ARRAY\[(.*?)\]\) k;/su)?.[1];
@@ -131,6 +152,58 @@ test("catalog-only is explicit, unbound for every role, preserves approved busin
   await assert.rejects(()=>readStandardSnapshot({readAgent:async()=>[parked],readModel:unused,readSettings:unused,readActor:unused,readSkills:unused},"actor",id),/LLM_QUOTE_AGENT_MODEL_NOT_CONFIGURED/);
   assert.equal(otherReads,0);
 });
+test("bound director review pins the previous revision and both complete projections",()=>{
+  const oldHash="e4a1cb0a4f0c7360e597f9ce0b200c51bfc200b9bbd5730ef1933e7fa02d64e0";
+  const nextHash="ff7387aa0c1ab87aecd885f84c546ebd6499b49da2967f7ade0bb2c11f49c027";
+  const {agentId}=REVIEWED_TEXT_HISTORY;
+  assert.equal(isReviewedDirectorRebind(agentId,2,oldHash,nextHash),true);
+  for(const [card,revision,before,after] of [[id,2,oldHash,nextHash],[agentId,3,oldHash,nextHash],
+    [agentId,2,nextHash,nextHash],[agentId,2,oldHash,oldHash]] as const){
+    assert.equal(isReviewedDirectorRebind(card,revision,before,after),false);
+  }
+  const old=snapshot(fields({model:"deepseek-v4-flash",model_id:"705eab71-df2d-4e4d-ab1d-ab2de6cc8ddd",
+    is_active:false,user_access:"view_only"}));
+  const next=fields({model:"deepseek-flash",model_id:REVIEWED_TEXT_HISTORY.modelId});
+  const request=parsePublication(input(next,{baseline:{revision:old.revision,hash:publicationHash(old.fields)}}));
+  const proof={source:REVIEWED_TEXT_HISTORY.source,checkedAt:REVIEWED_TEXT_HISTORY.checkedAt,
+    auditId:"00000000-0000-4000-8000-000000000001",auditCreatedAt:"2026-11-04T00:00:00.000Z"};
+  assert.ok(makePublicationPlan(request,old,next,[],{},proof).blockers.includes("CATALOG_VIEW_ONLY_PROMOTION_REQUIRES_NATIVE_REVIEW"));
+  assert.throws(()=>parsePublication({...input(next),reviewedModelAdmission:proof}),/UNAPPROVED|INVALID|FIELDS/u);
+});
+
+test("the reviewed r2 channel read projects only the stable ID and rejects any alternate route",async()=>{
+  const row:Record<string,unknown>={id:REVIEWED_TEXT_HISTORY.agentId,config_revision:2,source:"llm",is_active:false,user_access:"view_only",
+    deleted_at:null,model:"deepseek-v4-flash",model_id:"705eab71-df2d-4e4d-ab1d-ab2de6cc8ddd",proxy_url:"https://api.deepseek.com",
+    enable_knowledge_base:false,bot_id:null,knowledge_base_id:null,coze_coding_api_token:"",coze_coding_api_url:null,coze_coding_project_id:""};
+  const read=async(changes:Record<string,unknown>,endpoint:unknown="https://api.deepseek.com/")=>{
+    const source={...row,...changes};
+    let match=true;
+    const query={
+      select(columns:string){assert.equal(columns,"id");return this;},
+      eq(key:string,value:unknown){match=match&&source[key]===value;return this;},
+      is(key:string,value:unknown){return this.eq(key,value);},
+      or(filter:string){
+        const allowed=filter.match(/^([a-z_]+)\.is\.null,\1\.(is\.false|eq\."")$/u);
+        assert.ok(allowed);
+        const value=source[allowed[1]];
+        match=match && (value===null || value===(allowed[2]==="is.false"?false:""));
+        return this;
+      },
+      async maybeSingle(){return {data:match?{id:source.id}:null,error:null};},
+    };
+    const db={from(name:string){assert.equal(name,"agents");return query;}};
+    return hasReviewedDirectorChannel(db as unknown as Parameters<typeof hasReviewedDirectorChannel>[0],endpoint);
+  };
+  assert.ok(await read({}));
+  assert.ok(await read({enable_knowledge_base:null,bot_id:"",coze_coding_api_token:null,coze_coding_api_url:""}));
+  for(const key of ["bot_id","knowledge_base_id","coze_coding_api_token","coze_coding_api_url","coze_coding_project_id"])
+    assert.equal(await read({[key]:"fixture-nonempty"}),false);
+  for(const changes of [{id:"agent-other"},{config_revision:3},{model_id:"other"},{model:"other"},{is_active:true},{user_access:"hidden"},
+    {source:"other"},{deleted_at:"2026-11-04"},{enable_knowledge_base:true},{proxy_url:"https://other.invalid"}])
+    assert.equal(await read(changes),false);
+  assert.equal(await read({},"https://other.invalid"),false);
+});
+
 test("owner index validates count, strict order, full scope and whitelisted metadata before declaring completeness",()=>{
   const row={id:"a",revision:3,sourceHash:"a".repeat(64),promptHash:"b".repeat(64),deleted:false,isActive:true,userAccess:"hidden",category:"引流带货",portability:[]};
   const entries=[row,{...row,id:"z",deleted:true}],base={schema:"agent-catalog-production-index.v1",complete:true,observedAt:"2026-11-03T10:00:00Z",database:{database:"fixture",oid:"123"},totalCount:2,counts:{active:1,hidden:1,tombstones:1},entries};

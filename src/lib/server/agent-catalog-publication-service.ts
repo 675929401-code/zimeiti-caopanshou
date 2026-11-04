@@ -5,13 +5,14 @@ import { configurationSourceStatus,sharedConfigurationConnection } from "@/stora
 import { canonicalAgentModelBinding } from "@/lib/agent-model-binding";
 import { resolveProviderSecret } from "@/lib/provider-secret";
 import { assertFreshLlmModelValidationEvidence, llmModelValidationConfigurationHash } from "@/lib/llm-model-validation-gate";
+import { hasReviewedDirectorChannel, readReviewedTextHistory, type ReviewedHistoryProof } from "@/lib/server/text-model-reviewed-history";
 import { verifyOwnedAgentImageReference } from "@/lib/storage";
 import { invalidateBotsCache } from "@/lib/bots-cache";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
 import { hasCurrentSelfUseGrant, isUnboundCatalogAgent } from "@/lib/agent-catalog-lifecycle";
 import { PENDING_TEXT_USER_ACCESS } from "@/lib/model-activation-gate";
 import {
-  makePublicationPlan, publicationFieldHashes, publicationHash, PublicationFailure, record, reviewedFields, validatePortableNestedFields, hasExactCatalogDecimals, checkedPublicationIndex,
+  isReviewedDirectorRebind, makePublicationPlan, publicationFieldHashes, publicationHash, PublicationFailure, record, reviewedFields, validatePortableNestedFields, hasExactCatalogDecimals, checkedPublicationIndex,
   type PublicationFields, type PublicationRequest, type PublicationSnapshot,
 } from "./agent-catalog-publication";
 
@@ -68,7 +69,7 @@ function needsModel(fields:PublicationFields,current:PublicationSnapshot|null){
   return !current || current.fields.model_id!==fields.model_id || current.fields.model!==fields.model
     || (fields.is_active===true&&current.fields.is_active!==true) || (fields.user_access==="available"&&current.fields.user_access!=="available");
 }
-type ModelProof={rowVersion:string;configurationHash:string;checkedAt:string};
+type ModelProof={rowVersion:string;configurationHash:string;checkedAt:string;reviewedModelAdmission?:ReviewedHistoryProof};
 type CatalogOnlyProof={rowVersion:string;proposedModelId:string;proposedModelName:string};
 async function verifyPendingCandidate(source:PublicationFields):Promise<CatalogOnlyProof>{
   const db=client(),id=String(source.model_id);
@@ -81,7 +82,7 @@ async function verifyPendingCandidate(source:PublicationFields):Promise<CatalogO
   if(typeof version.data?.rowVersion!=="string")throw new PublicationFailure("CATALOG_ONLY_REQUIRES_REGISTERED_PENDING_MODEL",409);
   return {rowVersion:version.data.rowVersion,proposedModelId:id,proposedModelName:String(source.model)};
 }
-async function qualifyModel(fields:PublicationFields):Promise<ModelProof>{
+async function qualifyModel(fields:PublicationFields,agentId:string,current:PublicationSnapshot|null,audience:string):Promise<ModelProof>{
   const id=String(fields.model_id),db=client();
   const guard=async()=>{
     const {data,error}=await db.rpc("read_agent_catalog_model_guard_v1",{p_model_id:id});
@@ -106,10 +107,32 @@ async function qualifyModel(fields:PublicationFields):Promise<ModelProof>{
   const {data:evidence,error:readError}=await db.from("llm_model_validation_evidence").select("model_id,configuration_hash,checked_at")
     .eq("model_id",id).eq("configuration_hash",configurationHash).order("checked_at",{ascending:false}).limit(1).maybeSingle();
   if(readError)dbFailure(readError);
-  try{assertFreshLlmModelValidationEvidence(model,resolved,evidence);}
-  catch{throw new PublicationFailure("CATALOG_CURRENT_MODEL_EVIDENCE_REQUIRED",409);}
+  const reviewedRebind=current && audience==="source" && isReviewedDirectorRebind(current.id,current.revision,
+    publicationHash(current.fields),publicationHash(fields));
+  let checkedAt:string|null=null, reviewedModelAdmission:ReviewedHistoryProof|undefined;
+  if(reviewedRebind){
+    if(current.portability.length!==1 || current.portability[0]!=="PRIVATE_AGENT_PROXY"
+      || !await hasReviewedDirectorChannel(db,model.api_endpoint))
+      throw new PublicationFailure("CATALOG_PRIVATE_CHANNEL_REQUIRES_REVIEW",409);
+  }else{
+    try{
+      assertFreshLlmModelValidationEvidence(model,resolved,evidence);
+      // Keep PostgreSQL's microseconds for equality under the native transaction lock.
+      checkedAt=evidence!.checked_at;
+    }catch{ /* Without a fresh saved test, only the reviewed history path below is admissible. */ }
+  }
+  if(checkedAt===null){
+    const promoted=current && {...current.fields,model:fields.model,model_id:fields.model_id,is_active:true,user_access:"available"};
+    if(!current || audience!=="source" || (!reviewedRebind && !isUnboundCatalogAgent(current.fields)) || current.fields.is_active!==false
+      || current.fields.user_access!=="view_only" || publicationHash(promoted)!==publicationHash(fields))
+      throw new PublicationFailure("CATALOG_CURRENT_MODEL_EVIDENCE_REQUIRED",409);
+    const history=await readReviewedTextHistory(db,id,configurationHash,agentId);
+    if(!history)throw new PublicationFailure("CATALOG_CURRENT_MODEL_EVIDENCE_REQUIRED",409);
+    reviewedModelAdmission=history;
+    checkedAt=history.checkedAt;
+  }
   if(before!==await guard())throw new PublicationFailure("CATALOG_MODEL_CHANGED_DURING_PLAN",409);
-  return {rowVersion:before,configurationHash,checkedAt:evidence.checked_at};
+  return {rowVersion:before,configurationHash,checkedAt,...(reviewedModelAdmission?{reviewedModelAdmission}:{})};
 }
 async function validateAssets(fields:PublicationFields,previous:PublicationSnapshot|null,actor:string){
   for(const [key,purpose] of [["avatar","avatar"],["cover_url","cover"]] as const){
@@ -163,14 +186,22 @@ export async function runPublication(request:PublicationRequest,actor:string,ste
     try{modelProof=await verifyPendingCandidate(request.source.fields);}
     catch(error){if(!(error instanceof PublicationFailure)||error.status>=500)throw error;blockers.push(error.code);}
   }else if(needsModel(fields,current)){
-    if(current?.portability.some(s=>["PRIVATE_AGENT_CREDENTIAL_OR_CHANNEL","PRIVATE_AGENT_PROXY"].includes(s)))blockers.push("CATALOG_PRIVATE_CHANNEL_REQUIRES_REVIEW");
-    try{modelProof=await qualifyModel(fields);}
+    try{modelProof=await qualifyModel(fields,request.source.id,current,request.audience);}
     catch(error){if(!(error instanceof PublicationFailure)||error.status>=500)throw error;blockers.push(error.code);}
+    if(current?.portability.some(s=>s==="PRIVATE_AGENT_CREDENTIAL_OR_CHANNEL" || s==="PRIVATE_AGENT_PROXY")){
+      const admitted=modelProof && "reviewedModelAdmission" in modelProof && modelProof.reviewedModelAdmission;
+      if(!admitted || current.portability.includes("PRIVATE_AGENT_CREDENTIAL_OR_CHANNEL")
+        || !isReviewedDirectorRebind(current.id,current.revision,publicationHash(current.fields),publicationHash(fields)))
+        blockers.push("CATALOG_PRIVATE_CHANNEL_REQUIRES_REVIEW");
+    }
   }
   try{await validateAssets(fields,current,actor);}catch(error){if(!(error instanceof PublicationFailure))throw error;blockers.push(error.code);}
-  const plan=makePublicationPlan(request,current,fields,blockers,{previous,target});
+  const admission=modelProof && "reviewedModelAdmission" in modelProof ? modelProof.reviewedModelAdmission : undefined;
+  const plan=makePublicationPlan(request,current,fields,blockers,{previous,target},admission);
   // Bind the model observation as well as the portable fields; return no credential-derived evidence hashes to the caller.
-  plan.planHash=publicationHash({fieldsPlan:plan.planHash,modelVersion:modelProof?.rowVersion??null,validatedAt:modelProof&&"checkedAt" in modelProof?modelProof.checkedAt:null});
+  if(admission)Object.assign(plan,{reviewedModelAdmission:admission});
+  plan.planHash=publicationHash({fieldsPlan:plan.planHash,modelVersion:modelProof?.rowVersion??null,validatedAt:modelProof&&"checkedAt" in modelProof?modelProof.checkedAt:null,
+    ...(admission?{reviewedModelAdmission:admission}:{})});
   if(request.action==="plan")return {plan};
   if(!plan.eligible)throw new PublicationFailure(plan.blockers[0],409);
   if(plan.planHash!==request.planHash)throw new PublicationFailure("CATALOG_REVIEWED_PLAN_CHANGED",409);

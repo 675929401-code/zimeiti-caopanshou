@@ -8,6 +8,8 @@ import {
   llmModelValidationConfigurationHash,
 } from "@/lib/llm-model-validation-gate";
 import { resolveProviderSecret } from "@/lib/provider-secret";
+import { assertPublishedModelPoolEntry } from "@/lib/server/platform-configuration-compatibility";
+import { readReviewedTextHistory, REVIEWED_TEXT_HISTORY } from "@/lib/server/text-model-reviewed-history";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 
 type ModelTable = "cover_models" | "llm_models" | "video_models";
@@ -185,6 +187,25 @@ export async function GET(request: NextRequest) {
       { table: "video_models", rows: (video.data || []) as ModelRow[] },
     ];
 
+    const reviewedModel = (text.data as ModelRow[]).find(model => model.id === REVIEWED_TEXT_HISTORY.modelId);
+    let reviewedHistory = null;
+    let historyReadFailed = false;
+    if (reviewedModel && reviewedModel.is_active === true && reviewedModel.is_hidden !== true) {
+      try {
+        const resolved = resolveProviderSecret(String(reviewedModel.api_key || ""));
+        if (resolved) {
+          const proof = await readReviewedTextHistory(db, reviewedModel.id,
+            llmModelValidationConfigurationHash(reviewedModel, resolved), REVIEWED_TEXT_HISTORY.agentId);
+          if (proof) {
+            await assertPublishedModelPoolEntry("llm_models", reviewedModel.id);
+            reviewedHistory = proof;
+          }
+        }
+      } catch {
+        historyReadFailed = true;
+      }
+    }
+
     const credentials = sources.flatMap(({ table, rows }) => rows.map((model) => {
       const modelKey = `${table}:${model.id}`;
       const binding = bindingMap.get(modelKey);
@@ -215,7 +236,12 @@ export async function GET(request: NextRequest) {
         active: model.is_active !== false && model.is_hidden !== true,
         validationStatus: validation.status,
         lastValidatedAt: validation.at,
-        validationExplanation: validation.explanation,
+        validationExplanation: table === "llm_models" && model.id === REVIEWED_TEXT_HISTORY.modelId && reviewedHistory
+          ? `${validation.explanation}。另已采纳本地三笔成功且已结算的业务调用，正式指令验证状态单独记录。`
+          : validation.explanation,
+        ...(table === "llm_models" && model.id === REVIEWED_TEXT_HISTORY.modelId
+          ? { operationalAdmission: reviewedHistory, historicalAdmissionReadFailed: historyReadFailed }
+          : {}),
       };
     })).sort((left, right) => left.kind.localeCompare(right.kind) || left.modelName.localeCompare(right.modelName, "zh-CN"));
 
