@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "contractId": "zimeiti-caopanshou-production-database-v1",
-  "contractVersion": "20261103010000",
+  "contractVersion": "20261104010000",
   "openApiProfile": "public",
   "probeMode": "read-only-postgrest-openapi",
   "requiredProbeRole": "service_role",
@@ -128,6 +128,11 @@
           "version": "20261103010000",
           "file": "supabase/migrations/20261103010000_agent_catalog_publications.sql",
           "sha256": "d2a747d4d454ae609b9d5a55b4b3ad78fcc49f230cd77704362c453a0e397745"
+        },
+        {
+          "version": "20261104010000",
+          "file": "supabase/migrations/20261104010000_reviewed_text_history.sql",
+          "sha256": "33a61d1a6fe41b029945ee26bd290014b8767c0fa3271f4c564a7fb1bb8aca42"
         }
       ]
     },
@@ -854,7 +859,7 @@
           "public.agent_catalog_canonical_json_v1(jsonb)": "d230b4e4ffe6d8204ee4ac3d2030dc30f8b26dedeab14b6ea8d00e3dc03f564e",
           "public.agent_catalog_projection_v1(public.agents)": "1d9fb6ba4019d6986a0758b6fc17476a577d5b65ed25f01aafb22b47f0cffe9a",
           "public.agent_catalog_utf16_v1(text)": "270e80afa92c2812d68b90fc1a70d55df9937faf5a01f9c3ca380197a95638ef",
-          "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)": "a38d4fa83bf02ed4729a7f179b4c8a0b77bf3f5bf0bb9e9d97282b019daaf00b",
+          "public.apply_agent_catalog_publication_v1(text,text,jsonb,jsonb,text,jsonb)": "adce1c197ddc88308fa6a90592788be9900d79af38224447af8ced2a72a76a70",
           "public.read_agent_catalog_model_guard_v1(uuid)": "36020454bff4674a0c96a990386af6976afc0dcd7d1f9911d64187ff5160fbf6",
           "public.read_agent_catalog_publication_index_v1(text,text)": "dc85077a7303db4c48dcf1caf024e85fbdec7568fbc08f16a64ff2a213b78af8",
           "public.read_agent_catalog_publication_v1(text)": "a029625e856f9af4eade0ef45d2d6e1325f6b97af6ac6cda70a12776cf8b9434"
@@ -922,6 +927,68 @@
         "additionalSettings": [
           "extra_float_digits=3"
         ]
+      },
+      {
+        "id": "reviewed-text-activation",
+        "ownerRelation": "public.agents",
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "postgres",
+        "securityDefinerRequired": false,
+        "searchPath": [
+          "pg_catalog",
+          "public"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "function_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.activate_reviewed_deepseek_history_v1(text,text,uuid,text,text,text)"
+        ],
+        "requiredSourceSha256": {
+          "public.activate_reviewed_deepseek_history_v1(text,text,uuid,text,text,text)": "362e3149a9fc652ca08ccaba3011b0d0245d4d17c3d35903e917cee2a179f0aa"
+        }
+      },
+      {
+        "id": "reviewed-text-owner-locks",
+        "ownerRelation": "public.agents",
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "postgres",
+        "securityDefinerRequired": true,
+        "searchPath": [
+          "pg_catalog",
+          "public"
+        ],
+        "requiredNonOwnerExecuteGrantees": [
+          "service_role"
+        ],
+        "allowedEffectiveExecutePrincipals": [
+          "function_owner",
+          "service_role"
+        ],
+        "superuserInherentPrivilegeExcluded": true,
+        "forbiddenExecutePrincipals": [
+          "PUBLIC",
+          "anon",
+          "authenticated"
+        ],
+        "functions": [
+          "public.lock_reviewed_deepseek_history_v1(text,uuid,text,text,text)",
+          "public.lock_reviewed_text_activation_owner_v1(text,text)"
+        ],
+        "requiredSourceSha256": {
+          "public.lock_reviewed_deepseek_history_v1(text,uuid,text,text,text)": "3b44fd5bfcd0b7603207016c415952234e0618f22f09a04a6b6e5d6879b6f3a9",
+          "public.lock_reviewed_text_activation_owner_v1(text,text)": "01138d5cee7c9a8d23babef02fd0288db35f04a3150e0db9d19c90919e9aae2d"
+        }
       }
     ],
     "functionDependencyEdges": [
@@ -3926,6 +3993,37 @@
       "feature": "agent-catalog-publication",
       "arguments": [
         "p_agent_id"
+      ]
+    },
+    {
+      "name": "activate_reviewed_deepseek_history_v1",
+      "feature": "reviewed-text-history",
+      "arguments": [
+        "p_actor",
+        "p_step_hash",
+        "p_model_id",
+        "p_agent_id",
+        "p_configuration_hash",
+        "p_expected_row_version"
+      ]
+    },
+    {
+      "name": "lock_reviewed_deepseek_history_v1",
+      "feature": "reviewed-text-history",
+      "arguments": [
+        "p_actor",
+        "p_model_id",
+        "p_agent_id",
+        "p_configuration_hash",
+        "p_row_version"
+      ]
+    },
+    {
+      "name": "lock_reviewed_text_activation_owner_v1",
+      "feature": "reviewed-text-history",
+      "arguments": [
+        "p_actor",
+        "p_step_hash"
       ]
     }
   ],

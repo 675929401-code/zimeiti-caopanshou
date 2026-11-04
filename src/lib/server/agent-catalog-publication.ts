@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ReviewedHistoryProof } from "./text-model-reviewed-history";
 import { isUnboundCatalogAgent, isViewOnlyAgentAccess, requiresOwnerAgentAccess } from "../agent-catalog-lifecycle";
 import { isAgentPromptPushTargetConfigurationValid } from "../storyboard-prompt-push-capability";
 import { normalizeStoryboardDirectorContractActivation, STORYBOARD_DIRECTOR_CONTRACT_FIELDS } from "../storyboard-director-contract-activation";
@@ -33,6 +34,12 @@ export function publicationHash(value: unknown): string {
   const json = JSON.stringify(value, (_key, entry) => record(entry)
     ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]])) : entry);
   return createHash("sha256").update(json).digest("hex");
+}
+// The operator CLI shares this portable contract. Both digests cover all projected fields, including the prompt.
+export function isReviewedDirectorRebind(id: string, revision: number, sourceHash: string, targetHash: string): boolean {
+  return id === "agent-1793171231055-r9qzu6" && revision === 2
+    && sourceHash === "e4a1cb0a4f0c7360e597f9ce0b200c51bfc200b9bbd5730ef1933e7fa02d64e0"
+    && targetHash === "ff7387aa0c1ab87aecd885f84c546ebd6499b49da2967f7ade0bb2c11f49c027";
 }
 export function publicationFieldHashes(fields: PublicationFields) {
   return Object.fromEntries(CATALOG_PUBLICATION_FIELDS.map(k => [k, publicationHash(fields[k])]));
@@ -189,14 +196,17 @@ export function reviewedFields(request:PublicationRequest,current:PublicationSna
   }
   return fields;
 }
-export function makePublicationPlan(request:PublicationRequest,current:PublicationSnapshot|null,fields:PublicationFields,blockers:string[],categoryAccess:{previous?:{visibility?:unknown};target?:{visibility?:unknown}}={}) {
+export function makePublicationPlan(request:PublicationRequest,current:PublicationSnapshot|null,fields:PublicationFields,blockers:string[],categoryAccess:{previous?:{visibility?:unknown};target?:{visibility?:unknown}}={},reviewedAdmission?:ReviewedHistoryProof) {
   const currentHash=current?publicationHash(current.fields):null;
+  const targetHash=publicationHash(fields);
+  const reviewedRebind=Boolean(reviewedAdmission && current && currentHash && request.audience==="source"
+    && isReviewedDirectorRebind(current.id,current.revision,currentHash,targetHash));
   const targetAllowsSelfUse = request.audience === "owner-only" && fields.user_access === "hidden";
   if(current?.deleted)blockers.push("CATALOG_TOMBSTONE_REQUIRES_NATIVE_RESTORE");
   if(current && requiresOwnerAgentAccess(current.fields,categoryAccess.previous) && !requiresOwnerAgentAccess(fields,categoryAccess.target))blockers.push("CATALOG_AUDIENCE_BROADENING_REQUIRES_NATIVE_REVIEW");
   if(request.lifecycle!=="catalog-only" && isViewOnlyAgentAccess(fields,categoryAccess.target,targetAllowsSelfUse))blockers.push("CATALOG_VIEW_ONLY_NOT_EXECUTABLE");
   if(current && request.lifecycle!=="catalog-only" && isViewOnlyAgentAccess(current.fields,categoryAccess.previous,true) && !isViewOnlyAgentAccess(fields,categoryAccess.target,targetAllowsSelfUse)
-    && !(current.fields.is_active===false && isUnboundCatalogAgent(current.fields)))blockers.push("CATALOG_VIEW_ONLY_PROMOTION_REQUIRES_NATIVE_REVIEW");
+    && !reviewedRebind && !(current.fields.is_active===false && isUnboundCatalogAgent(current.fields)))blockers.push("CATALOG_VIEW_ONLY_PROMOTION_REQUIRES_NATIVE_REVIEW");
   if(current && (!request.baseline || request.baseline.revision!==current.revision || request.baseline.hash!==currentHash))blockers.push("CATALOG_PRODUCTION_BASELINE_CONFLICT");
   if(!current && request.baseline)blockers.push("CATALOG_PRODUCTION_ROW_MISSING");
   const changedFields=CATALOG_PUBLICATION_FIELDS.filter(k=>!current||publicationHash(current.fields[k])!==publicationHash(fields[k]));
@@ -206,6 +216,6 @@ export function makePublicationPlan(request:PublicationRequest,current:Publicati
     sourceAccess:request.source.fields.user_access,categoryPolicy:{previous:categoryAccess.previous?.visibility??null,target:categoryAccess.target?.visibility??null},
     stripPortability:request.stripPortability??[],proposedModel:request.lifecycle==="catalog-only"?{id:request.source.fields.model_id,name:request.source.fields.model}:null,
     sourceRevision:request.source.revision,sourceHash:request.source.sourceHash,baseline:request.baseline,
-    currentRevision:current?.revision??null,currentHash,targetHash:publicationHash(fields),changedFields,fieldChanges};
+    currentRevision:current?.revision??null,currentHash,targetHash,changedFields,fieldChanges};
   return {...core,planHash:publicationHash(core),eligible:blockers.length===0,blockers,billingEvidence:"configuration-only",providerCalls:0};
 }

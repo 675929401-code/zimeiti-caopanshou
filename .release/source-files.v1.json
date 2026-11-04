@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "cb853d42d59547826f016cb8c4b3788c6a4eb9060c622551904a2f3f1a9f4aa8",
+  "sourceFingerprint": "58efbd8fbf539b52d1da60f84691fc7ce1accbb142d438d5f40267004b1d8301",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 4884,
-  "totalBytes": 77932730,
+  "fileCount": 4889,
+  "totalBytes": 78025832,
   "files": [
     {
       "path": ".cnb.yml",
@@ -178,13 +178,13 @@
     },
     {
       "path": "deploy/policies/database-contract.v1.json",
-      "bytes": 112939,
-      "sha256": "7fbebd2f48012b15d38207299582ef98a4b4a92e16e9d38f87189bf4c9bc55fd"
+      "bytes": 116061,
+      "sha256": "14f781da56aa0681a7e1a0318232ad30b62568aa38625d3ef80b5c48856c4ce6"
     },
     {
       "path": "deploy/policies/database-semantic-contract.v1.json",
-      "bytes": 1543406,
-      "sha256": "d1d215c7ff93bba2a6266488229ad7133f63c530dc36e84420cad0171a5847e0"
+      "bytes": 1545033,
+      "sha256": "d33bf5ed12a08d1080405cba84454f037fbecb149976ecfdfdee0cd2a9da3b30"
     },
     {
       "path": "deploy/policies/deployment-control-plane.v1.json",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "f835ac9275465fc2fcee6793e36578aa58e0078db037acd42c79e8b920791429"
+      "sha256": "1835cd31317a4c39c913fe5e11eee75bbee8991a5bb0222e93d9c1afe5b9d154"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -9588,8 +9588,8 @@
     },
     {
       "path": "scripts/verify-release-database-gates.ts",
-      "bytes": 157371,
-      "sha256": "23df52383b82401f0ae9a5fc0aad1eb9bfc470f94f15d938f9145dabeb413d98"
+      "bytes": 163158,
+      "sha256": "ce8f0a8e58ad4fad0bdc07cd65303c96656e4d343e08424910d2f49cf4da361e"
     },
     {
       "path": "scripts/verify-release-operational-capacity.mjs",
@@ -9650,6 +9650,16 @@
       "path": "scripts/verify-revenue-profit-zero-cost.mjs",
       "bytes": 3046,
       "sha256": "ee00023d68abced51b6a1080134122e4fed33a499e51ad643d36fb2556d79ac0"
+    },
+    {
+      "path": "scripts/verify-reviewed-text-history-routes.mjs",
+      "bytes": 9913,
+      "sha256": "64fae6a8e94c6cf967cd9a0d068fc9b1a872e18ae911c10de4db693d723f03e5"
+    },
+    {
+      "path": "scripts/verify-reviewed-text-history.ts",
+      "bytes": 5328,
+      "sha256": "a4a75315a18ef6abf0e3b03bb89626fbf6bb1ca1a5c37e03ce261efa82eb6223"
     },
     {
       "path": "scripts/verify-root-layout-performance.ts",
@@ -12608,8 +12618,8 @@
     },
     {
       "path": "src/app/api/admin/credential-health/route.ts",
-      "bytes": 12146,
-      "sha256": "436fb0b6c88a937d9f3d7bd6eeec7aed98a82a14602b51c0bcd554886ba32367"
+      "bytes": 13602,
+      "sha256": "7c89abee5567db98162d2bb969a37f9b642db86d476ea3a1e406a1443c47eb15"
     },
     {
       "path": "src/app/api/admin/credits/route.ts",
@@ -12763,8 +12773,8 @@
     },
     {
       "path": "src/app/api/admin/models/activate/route.ts",
-      "bytes": 6679,
-      "sha256": "7bdaf96e613c5f12d3f9b0ecc6f8c349b3f4528734e4e07b7754bd6c3cc95cfe"
+      "bytes": 12003,
+      "sha256": "cb78fcd904e59f2abdbe0b83c1bc0b8cd10d0a479f1329a41b0494c072436730"
     },
     {
       "path": "src/app/api/admin/models/route.ts",
@@ -19478,8 +19488,8 @@
     },
     {
       "path": "src/lib/generated/database-contract.ts",
-      "bytes": 113172,
-      "sha256": "c127b6c92634a1ac97786c2d93e765b6f5cd0e45e9648575babc47deacbc0172"
+      "bytes": 116294,
+      "sha256": "c7a8ea9f8751ffcdc97ce65ec6c75c4e316d94a820ba7e52ed15a2ea5acc779e"
     },
     {
       "path": "src/lib/health-check-auth.ts",
@@ -20293,13 +20303,13 @@
     },
     {
       "path": "src/lib/server/agent-catalog-publication-service.ts",
-      "bytes": 13977,
-      "sha256": "f529b2600116f696f77555780140109276c4a4196d6e05ab3f39b4bbb3156ac7"
+      "bytes": 16343,
+      "sha256": "d2739bb5a2cc05fb5baa529f7e3fe9566bdefcb4f842df7175b3832a08d20a36"
     },
     {
       "path": "src/lib/server/agent-catalog-publication.ts",
-      "bytes": 18229,
-      "sha256": "4cdf5119971d5877693652ba719cc17380e4f7b9210b521cf50755e9f25e654d"
+      "bytes": 19055,
+      "sha256": "34b075c784f5702a3011d884b54c280896c29975e8cd255c5a42d49a49d5b90a"
     },
     {
       "path": "src/lib/server/agent-chat-prompt-authority.ts",
@@ -20680,6 +20690,11 @@
       "path": "src/lib/server/text-model-generation-admission.ts",
       "bytes": 1604,
       "sha256": "51200d15cc17fd5e5bf4f6f0f5411a5e07751a554a1292e92f66908e1d968bb6"
+    },
+    {
+      "path": "src/lib/server/text-model-reviewed-history.ts",
+      "bytes": 5869,
+      "sha256": "5799d91d8b1be965e0bbd8ac45d2e5fbdaf7583a9a25f1964de78c5d49c2a202"
     },
     {
       "path": "src/lib/server/user-appearance-preference.ts",
@@ -23267,6 +23282,11 @@
       "sha256": "d2a747d4d454ae609b9d5a55b4b3ad78fcc49f230cd77704362c453a0e397745"
     },
     {
+      "path": "supabase/migrations/20261104010000_reviewed_text_history.sql",
+      "bytes": 21211,
+      "sha256": "33a61d1a6fe41b029945ee26bd290014b8767c0fa3271f4c564a7fb1bb8aca42"
+    },
+    {
       "path": "supabase/rollbacks/20260822032000_aid_integration_bridge.rollback.sql",
       "bytes": 1054,
       "sha256": "3f5b08b394d815dd75909c449d942ac47b0592bd6fd1dd1ec40016fd593d51e0"
@@ -23793,8 +23813,13 @@
     },
     {
       "path": "tests/agent-catalog-publication.test.ts",
-      "bytes": 14888,
-      "sha256": "d806cd6bc1c0d8a633108e04d4e46e97d34ee5f4a0ebf2fa9769ff04f34f0ac8"
+      "bytes": 19846,
+      "sha256": "f503db795ae10d4a260f1b8ce559cab67ece0f880c42f5dccc6e4e39ead0695d"
+    },
+    {
+      "path": "tests/agent-catalog-reviewed-history-pg.test.mjs",
+      "bytes": 22193,
+      "sha256": "0e36407c1e25a553af4dbfd7100d54c65278b19f281919503d47b4538a92de76"
     },
     {
       "path": "tests/agent-configuration-source.test.ts",

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "kind": "database-semantic-contract",
   "profile": "public-runtime-contract.v1",
-  "generatedAt": "2026-11-03T16:15:14.106367Z",
-  "sourceLabel": "local-transaction-preview-rolled-back:20261103010000_agent_catalog_publications.sql",
+  "generatedAt": "2026-11-04T05:27:09.095Z",
+  "sourceLabel": "local-transaction-preview-rolled-back:20261104010000_reviewed_text_history.sql",
   "sourceDatabase": "zimeiti_local",
-  "migrationManifestSha256": "8e96104e274b2c09276109a244c0a5fd6ad8743779ce9fe5482f7862fe4b3ab6",
+  "migrationManifestSha256": "f06b04487e0f5e3d8464dda07a84e01508014dbe3dbd02993c63ca8a8c2c23b6",
   "extraObjectPolicy": "structural extras warn; privilege extras block",
   "snapshot": {
     "profile": "public-runtime-contract.v1",
@@ -22903,10 +22903,14 @@
         ]
       },
       "functions": {
-        "rows": 382,
-        "sha256": "65a11b9b233875a9de5d0d8f61c9e21f7120001c14355e00cac26490dd634f13",
+        "rows": 385,
+        "sha256": "a5f49aef6b335cce37621ef80bdffe4a2741eccf6d00b87e613bd6dd625a1e45",
         "exactExtras": false,
         "objects": [
+          {
+            "key": "public|activate_reviewed_deepseek_history_v1|p_actor text, p_step_hash text, p_model_id uuid, p_agent_id text, p_configuration_hash text, p_expected_row_version text",
+            "sha256": "f1554867f9ae37180d9b5f3be8b9d2adeb386037251cf55e025d8f421760e960"
+          },
           {
             "key": "public|admin_access_checksum|p_user_id text, p_admin_level text, p_permission_keys jsonb, p_revision integer, p_is_active boolean",
             "sha256": "25f7dacd57fb7708e101acae77aad1808f61005ee8ce098ab47494c51a41bb9d"
@@ -22937,7 +22941,7 @@
           },
           {
             "key": "public|apply_agent_catalog_publication_v1|p_actor text, p_step_hash text, p_plan jsonb, p_fields jsonb, p_expected_row_hash text, p_model_proof jsonb",
-            "sha256": "1633129110f330729e56138e96b02d4d7d3efc2ee5e370373409a456e08d6544"
+            "sha256": "686a9cdc2facfcfd77299da69955da1c4017fcc12d2df8be3217d1e4e14703c1"
           },
           {
             "key": "public|apply_agent_reorder_cas_v1|p_entries jsonb",
@@ -23562,6 +23566,14 @@
           {
             "key": "public|lock_agent_catalog_publication_owner_v1|p_actor text, p_step_hash text, p_self_use boolean",
             "sha256": "e57da77d72e5ff0da4c746a21864042654a4063639de17d7c49e6089ffb09641"
+          },
+          {
+            "key": "public|lock_reviewed_deepseek_history_v1|p_actor text, p_model_id uuid, p_agent_id text, p_configuration_hash text, p_row_version text",
+            "sha256": "26406608fa96e741202eff5e2911587cfe13f7e7b9585215eede29d63e8d08ff"
+          },
+          {
+            "key": "public|lock_reviewed_text_activation_owner_v1|p_actor text, p_step_hash text",
+            "sha256": "cb9fc73181ff06b4db9e914aa7ed4289c74da1c4a37520b4cc048ab9b6b40439"
           },
           {
             "key": "public|maintain_shared_agent_config_revision|",
@@ -30465,10 +30477,14 @@
         ]
       },
       "function-privileges": {
-        "rows": 286,
-        "sha256": "2b2283852b285969da3bfb6a8f30e9b7e4495965aef3f7b474c6af76f8c3ea62",
+        "rows": 289,
+        "sha256": "4abfd7c6f2600ac87fff6a0f2cc5fcd1a358d9d7cad6a817e746ce71db256934",
         "exactExtras": true,
         "objects": [
+          {
+            "key": "public|activate_reviewed_deepseek_history_v1|p_actor text, p_step_hash text, p_model_id uuid, p_agent_id text, p_configuration_hash text, p_expected_row_version text|service_role|EXECUTE",
+            "sha256": "e6fd129557141be2013b1ec7ee51a92710cd08b92bda3d30aea7fb3b47487df8"
+          },
           {
             "key": "public|admin_governance_health||service_role|EXECUTE",
             "sha256": "31a14beba9e4874e745649177b5521087f69aa4a0e8541d0cb1760b5d24ec8c2"
@@ -30964,6 +30980,14 @@
           {
             "key": "public|lock_agent_catalog_publication_owner_v1|p_actor text, p_step_hash text, p_self_use boolean|service_role|EXECUTE",
             "sha256": "8a6c20e8bb0432f8ee927b8693fd5038be8fc7000e5ac2bed6f7a0975fed89ac"
+          },
+          {
+            "key": "public|lock_reviewed_deepseek_history_v1|p_actor text, p_model_id uuid, p_agent_id text, p_configuration_hash text, p_row_version text|service_role|EXECUTE",
+            "sha256": "d090207948684b3c57fbc7a66f3a55220c7a36cb11bb693893268f62b361e4db"
+          },
+          {
+            "key": "public|lock_reviewed_text_activation_owner_v1|p_actor text, p_step_hash text|service_role|EXECUTE",
+            "sha256": "6cc3b197288f0614bf7248106a3c1d80c91fbcd5e00ec8ef9b1c7e0973936a9c"
           },
           {
             "key": "public|mark_announcement_read|p_announcement_id text, p_user_id text, p_revision integer|service_role|EXECUTE",
@@ -31639,7 +31663,7 @@
         ]
       }
     },
-    "sha256": "0f764689361abfebd03a6b225b83c25d86a3f94c236de746845319b513c1b1b0"
+    "sha256": "a919f9fc8829cd4d40e264af9f8ffa1e08cbf8d08d81b4fa41143f7d0d92e53b"
   },
-  "contractSha256": "f40e5416418e4e9d8b467f21885d1f0e21e3f53fa2d65afbbd4da7749b290077"
+  "contractSha256": "85635cb89a9fa81c826e50b5d907f66fcc023ae2ca750d3e7cf02f71b7ff820a"
 }
