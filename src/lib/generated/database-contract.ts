@@ -294,7 +294,7 @@ const DATABASE_CONTRACT_SOURCE = {
       },
       {
         "relation": "public.gaorui_provider_asset_operations",
-        "requiredOwnerRelation": "public.user_files",
+        "requiredOwnerRole": "zimeiti_owner",
         "rlsRequired": true,
         "forbiddenPrivilegePrincipals": [
           "PUBLIC",
@@ -742,7 +742,8 @@ const DATABASE_CONTRACT_SOURCE = {
       {
         "id": "gaorui-person-reference-assets",
         "ownerRelation": "public.user_files",
-        "ownerMustMatchRelationOwner": true,
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "zimeiti_owner",
         "securityDefinerRequired": true,
         "searchPath": [
           "pg_catalog",
@@ -752,7 +753,7 @@ const DATABASE_CONTRACT_SOURCE = {
           "service_role"
         ],
         "allowedEffectiveExecutePrincipals": [
-          "relation_owner",
+          "function_owner",
           "service_role"
         ],
         "superuserInherentPrivilegeExcluded": true,
