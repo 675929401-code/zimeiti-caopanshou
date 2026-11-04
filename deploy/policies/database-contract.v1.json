@@ -292,7 +292,7 @@
       },
       {
         "relation": "public.gaorui_provider_asset_operations",
-        "requiredOwnerRelation": "public.user_files",
+        "requiredOwnerRole": "zimeiti_owner",
         "rlsRequired": true,
         "forbiddenPrivilegePrincipals": [
           "PUBLIC",
@@ -740,7 +740,8 @@
       {
         "id": "gaorui-person-reference-assets",
         "ownerRelation": "public.user_files",
-        "ownerMustMatchRelationOwner": true,
+        "ownerMustMatchRelationOwner": false,
+        "requiredOwnerRole": "zimeiti_owner",
         "securityDefinerRequired": true,
         "searchPath": [
           "pg_catalog",
@@ -750,7 +751,7 @@
           "service_role"
         ],
         "allowedEffectiveExecutePrincipals": [
-          "relation_owner",
+          "function_owner",
           "service_role"
         ],
         "superuserInherentPrivilegeExcluded": true,

@@ -55,6 +55,7 @@ const contract = JSON.parse(read("deploy/policies/database-contract.v1.json")) a
     relationSemantics: Array<{
       relation: string;
       requiredOwnerRelation?: string;
+      requiredOwnerRole?: string;
       rlsRequired?: boolean;
       forbiddenPrivilegePrincipals?: string[];
       requiredColumns: Array<{ name: string; type: string }>;
@@ -120,6 +121,9 @@ assert.equal(liveCatalogChecks.requiredBeforeCandidateActivation, true);
 assert.equal(liveCatalogChecks.migrationLedger.relation, "supabase_migrations.schema_migrations");
 assert.equal(liveCatalogChecks.migrationLedger.hashColumn, "hash");
 assert.equal(liveCatalogChecks.migrationLedger.hashAlgorithm, "sha256-source-bytes");
+for (const relation of liveCatalogChecks.relationSemantics) {
+  assert.ok(!(relation.requiredOwnerRole && relation.requiredOwnerRelation), `ambiguous owner requirement for ${relation.relation}`);
+}
 assert.deepEqual(liveCatalogChecks.relationSemantics, [
   {
     relation: "public.image_generation_requests",
@@ -203,7 +207,7 @@ assert.deepEqual(liveCatalogChecks.relationSemantics, [
   },
   {
     relation: "public.gaorui_provider_asset_operations",
-    requiredOwnerRelation: "public.user_files",
+    requiredOwnerRole: "zimeiti_owner",
     rlsRequired: true,
     forbiddenPrivilegePrincipals: ["PUBLIC", "anon", "authenticated", "service_role"],
     requiredColumns: [
@@ -592,11 +596,12 @@ assert.deepEqual(liveCatalogChecks.functionSecurityGroups.filter(group => !group
   {
     id: "gaorui-person-reference-assets",
     ownerRelation: "public.user_files",
-    ownerMustMatchRelationOwner: true,
+    ownerMustMatchRelationOwner: false,
+    requiredOwnerRole: "zimeiti_owner",
     securityDefinerRequired: true,
     searchPath: ["pg_catalog", "public"],
     requiredNonOwnerExecuteGrantees: ["service_role"],
-    allowedEffectiveExecutePrincipals: ["relation_owner", "service_role"],
+    allowedEffectiveExecutePrincipals: ["function_owner", "service_role"],
     superuserInherentPrivilegeExcluded: true,
     forbiddenExecutePrincipals: ["PUBLIC", "anon", "authenticated"],
     functions: [
@@ -2148,8 +2153,10 @@ function liveCatalogFailures(live: LiveCatalogProjection) {
         failures.push(`RELATION_COLUMN_TYPE_MISMATCH:${expectedRelation.relation}:${expectedColumn.name}`);
       }
     }
-    if (expectedRelation.requiredOwnerRelation && actualRelation.owner !== actualRelation.requiredOwner) {
-      failures.push(`RELATION_OWNER_MISMATCH:${expectedRelation.relation}:${expectedRelation.requiredOwnerRelation}`);
+    const ownerRequirement = expectedRelation.requiredOwnerRole ?? expectedRelation.requiredOwnerRelation;
+    const expectedOwner = expectedRelation.requiredOwnerRole ?? actualRelation.requiredOwner;
+    if (ownerRequirement && (!expectedOwner || actualRelation.owner !== expectedOwner)) {
+      failures.push(`RELATION_OWNER_MISMATCH:${expectedRelation.relation}:${ownerRequirement}`);
     }
     if (expectedRelation.rlsRequired && !actualRelation.rlsEnabled) {
       failures.push(`RELATION_RLS_REQUIRED:${expectedRelation.relation}`);
@@ -2454,8 +2461,8 @@ const validLiveFixture: LiveCatalogProjection = {
   })),
   relationSemantics: liveCatalogChecks.relationSemantics.map((relation) => ({
     relation: relation.relation,
-    owner: fixtureOwner,
-    requiredOwner: fixtureOwner,
+    owner: relation.requiredOwnerRole ?? fixtureOwner,
+    requiredOwner: relation.requiredOwnerRelation ? fixtureOwner : "",
     rlsEnabled: relation.rlsRequired === true,
     forbiddenPrivilegePrincipals: [],
     columns: relation.requiredColumns.map((column) => ({ ...column })),
@@ -2483,7 +2490,7 @@ const validLiveFixture: LiveCatalogProjection = {
   functionSecurityGroups: liveCatalogChecks.functionSecurityGroups.map((group) => ({
     id: group.id,
     ownerRelation: group.ownerRelation,
-    tableOwner: fixtureOwner,
+    tableOwner: group.ownerRelation === "public.user_files" ? "postgres" : fixtureOwner,
     functions: group.functions.map((signature) => fixtureFunction(signature, group)),
   })),
 };
@@ -2547,7 +2554,7 @@ for (const relationName of ["public.video_tasks", "public.gaorui_provider_asset_
   }
 }
 for (const mutate of [
-  (relation: LiveRelationSemantics) => { relation.owner = "wrong_owner"; },
+  (relation: LiveRelationSemantics) => { relation.owner = "postgres"; },
   (relation: LiveRelationSemantics) => { relation.rlsEnabled = false; },
   ...["PUBLIC", "anon", "authenticated", "service_role"].map(principal => (relation: LiveRelationSemantics) => { relation.forbiddenPrivilegePrincipals.push(principal); }),
 ]) {
@@ -2566,7 +2573,7 @@ for (const change of ["missing", "invalidated", "provider_asset_preparation", "j
   gaoruiAssetBlockingCases++;
 }
 for (const signature of gaoruiAssetSecurityGroup.functions) for (const mutate of [
-  (entry: LiveFunctionSecurity) => { entry.owner = "wrong_owner"; },
+  (entry: LiveFunctionSecurity) => { entry.owner = "postgres"; },
   (entry: LiveFunctionSecurity) => { entry.securityDefiner = false; },
   (entry: LiveFunctionSecurity) => { entry.searchPath = ["search_path=public, pg_temp"]; },
   (entry: LiveFunctionSecurity) => { delete entry.sourceSha256; },

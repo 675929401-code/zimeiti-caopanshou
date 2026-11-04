@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "58efbd8fbf539b52d1da60f84691fc7ce1accbb142d438d5f40267004b1d8301",
+  "sourceFingerprint": "58879a0d6f4949b9760c9ba40358fcbdb2229215603d15515f24136c04aecce6",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 4889,
-  "totalBytes": 78025832,
+  "totalBytes": 78026458,
   "files": [
     {
       "path": ".cnb.yml",
@@ -178,8 +178,8 @@
     },
     {
       "path": "deploy/policies/database-contract.v1.json",
-      "bytes": 116061,
-      "sha256": "14f781da56aa0681a7e1a0318232ad30b62568aa38625d3ef80b5c48856c4ce6"
+      "bytes": 116100,
+      "sha256": "688b1eab1d939c0c124fc94d937e9f71f78bb067a2c8466297207ef92c0519d1"
     },
     {
       "path": "deploy/policies/database-semantic-contract.v1.json",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "1835cd31317a4c39c913fe5e11eee75bbee8991a5bb0222e93d9c1afe5b9d154"
+      "sha256": "f9deb3048b2040bf13c49a9763e0ad1ed598c262cf5c55d50ddc5faa4c3b94e4"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -9588,8 +9588,8 @@
     },
     {
       "path": "scripts/verify-release-database-gates.ts",
-      "bytes": 163158,
-      "sha256": "ce8f0a8e58ad4fad0bdc07cd65303c96656e4d343e08424910d2f49cf4da361e"
+      "bytes": 163706,
+      "sha256": "655e94b4ba3db74cb64b13cd20f27224315cc029aa9b575ab06fa0783648e559"
     },
     {
       "path": "scripts/verify-release-operational-capacity.mjs",
@@ -19488,8 +19488,8 @@
     },
     {
       "path": "src/lib/generated/database-contract.ts",
-      "bytes": 116294,
-      "sha256": "c7a8ea9f8751ffcdc97ce65ec6c75c4e316d94a820ba7e52ed15a2ea5acc779e"
+      "bytes": 116333,
+      "sha256": "6c4d0a24cfedf34a81dabfb1cd011f4391d82043e7edebd5e393f799e31816fb"
     },
     {
       "path": "src/lib/health-check-auth.ts",
