@@ -355,10 +355,9 @@
 }
 
 .categoryTabs a[data-active="true"] {
-  border-color: transparent;
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--directory-accent), color-mix(in srgb, var(--directory-accent) 70%, #4f46e5));
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--directory-accent) 22%, transparent);
+  border-color: var(--brand-action-border);
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
 }
 
 .directoryHeading { margin: 27px auto 23px; }
@@ -742,9 +741,9 @@
 }
 
 .directoryPage .filterGroup button[data-active="true"] {
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--directory-accent), color-mix(in srgb, var(--directory-accent) 72%, #4f46e5));
-  box-shadow: 0 5px 13px color-mix(in srgb, var(--directory-accent) 20%, transparent);
+  border-color: var(--brand-action-border);
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
 }
 
 .directoryPage .toolCount {

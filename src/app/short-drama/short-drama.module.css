@@ -149,11 +149,14 @@
 .topbarAction,
 .primaryButton {
   padding: 0 16px;
-  border: 1px solid color-mix(in srgb, var(--sd-primary) 62%, transparent);
-  color: var(--sd-primary-foreground);
-  background: linear-gradient(135deg, var(--sd-primary), var(--sd-purple));
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--sd-primary) 24%, transparent);
+  border: 1px solid var(--brand-action-border);
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
 }
+
+.topbarAction:hover,
+.primaryButton:hover { background: var(--brand-action-hover); }
+:is(.topbarAction, .primaryButton):focus-visible { outline: 2px solid var(--brand-action-ring); outline-offset: 2px; }
 
 .topbarAction:hover,
 .primaryButton:hover,

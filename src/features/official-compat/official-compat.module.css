@@ -242,12 +242,6 @@
   font-weight: 700;
 }
 
-.categoryRow button[data-active="true"] {
-  border-color: #6366f1;
-  color: #ffffff;
-  background: linear-gradient(105deg, #2563eb, #7c3aed);
-}
-
 .resourceGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 18px;
@@ -407,10 +401,27 @@
   min-height: 38px;
   padding: 0 14px;
   border-radius: 10px;
-  color: #ffffff;
-  background: linear-gradient(105deg, #2563eb, #7c3aed);
   font-size: 12px;
   font-weight: 800;
+}
+
+.purchaseCard > button,
+.purchaseCard > a,
+.secondaryLink,
+.sectionHeadingRow > button,
+.categoryRow button[data-active="true"] {
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
+  border-color: var(--brand-action-border);
+
+  &:hover:not(:disabled) {
+    background: var(--brand-action-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--brand-action-ring);
+    outline-offset: 2px;
+  }
 }
 
 .purchaseCard > button,

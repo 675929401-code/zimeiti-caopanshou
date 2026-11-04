@@ -281,10 +281,22 @@ export function UploadScriptWorkbench() {
           <section className={styles.panel}>
             <h2>选择剧本类型</h2>
             <div className={styles.genreGrid}>
-              <button type="button" data-active={genre === "drama"} onClick={() => setGenre("drama")}>
+              <button
+                type="button"
+                className={genre === "drama" ? "brand-action" : undefined}
+                aria-pressed={genre === "drama"}
+                data-active={genre === "drama"}
+                onClick={() => setGenre("drama")}
+              >
                 <span>🔥</span><strong>爽剧</strong><small>爽点模型的网络短剧</small>{genre === "drama" && <Check />}
               </button>
-              <button type="button" data-active={genre === "short"} onClick={() => setGenre("short")}>
+              <button
+                type="button"
+                className={genre === "short" ? "brand-action" : undefined}
+                aria-pressed={genre === "short"}
+                data-active={genre === "short"}
+                onClick={() => setGenre("short")}
+              >
                 <span>🎬</span><strong>短剧</strong><small>通用剧本、童话/改编/原创</small>{genre === "short" && <Check />}
               </button>
               <button type="button" data-active={genre === "formal"} onClick={() => setGenre("formal")}>

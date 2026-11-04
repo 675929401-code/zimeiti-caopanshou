@@ -130,26 +130,6 @@
   border-color: #c7d2fe;
 }
 
-.mediaFilters button[data-active="true"] {
-  color: #ffffff;
-  background: linear-gradient(110deg, #c13be5, #e43b99);
-  box-shadow: 0 5px 12px rgba(211, 63, 185, 0.2);
-}
-
-.categoryFilters button[data-active="true"] {
-  color: #4f46e5;
-  background: #eef2ff;
-}
-
-.sortFilters button[data-active="true"] {
-  color: #ffffff;
-  background: #3b82f6;
-}
-
-.sortFilters button:last-child[data-active="true"] {
-  background: #f59e0b;
-}
-
 .resultMeta {
   display: flex;
   max-width: 1320px;
@@ -473,8 +453,6 @@
   padding: 9px 16px;
   border: 0;
   border-radius: 9px;
-  color: #ffffff;
-  background: #6366f1;
   cursor: pointer;
 }
 
@@ -848,36 +826,50 @@
   gap: 7px;
   border: 0;
   border-radius: 10px;
-  color: #ffffff;
   font-size: 13px;
   font-weight: 750;
   cursor: pointer;
 }
 
-.copyAction {
-  background: linear-gradient(110deg, #c13be5, #ec4899);
+.modalFooter :is(.copyAction, .shareAction, .downloadAction) {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+
+  &:hover:enabled {
+    background: var(--muted);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--brand-action-ring);
+    outline-offset: 2px;
+  }
 }
 
-.shareAction {
-  background: linear-gradient(110deg, #0891b2, #2563eb);
-}
-
-.downloadAction {
-  background: linear-gradient(110deg, #059669, #10b981);
-}
-
-.downloadAction[data-disabled="true"] {
-  color: #64748b;
-  background: #e2e8f0;
+.modalFooter .downloadAction:disabled {
+  color: var(--muted-foreground);
+  background: var(--muted);
   cursor: not-allowed;
 }
 
-.continueAction {
-  background: linear-gradient(110deg, #2563eb, #7c3aed);
-}
-
+.mediaFilters button[data-active="true"],
+.categoryFilters button[data-active="true"],
+.sortFilters button[data-active="true"],
+.emptyState button,
+.continueAction,
 .workbenchAction {
-  background: linear-gradient(110deg, #7c3aed, #c026d3);
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
+  border-color: var(--brand-action-border);
+
+  &:hover:enabled {
+    background: var(--brand-action-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--brand-action-ring);
+    outline-offset: 2px;
+  }
 }
 
 .handoffNote {

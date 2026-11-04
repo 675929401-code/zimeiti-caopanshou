@@ -355,6 +355,8 @@ export function YoucaiUploadScript({
             <div className={styles.genreGrid}>
               <button
                 type="button"
+                className={genre === "drama" ? "brand-action" : undefined}
+                aria-pressed={genre === "drama"}
                 data-active={genre === "drama"}
                 onClick={() => setGenre("drama")}
               >
@@ -363,6 +365,8 @@ export function YoucaiUploadScript({
               </button>
               <button
                 type="button"
+                className={genre === "short" ? "brand-action" : undefined}
+                aria-pressed={genre === "short"}
                 data-active={genre === "short"}
                 onClick={() => setGenre("short")}
               >

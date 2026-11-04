@@ -190,7 +190,7 @@ export function YoucaiInfoPage({ kind }: { kind: InfoKind }) {
             <p>{kind === "about" ? "选择适合的工具，把创意逐步转化为图片、音频或视频作品。" : "先浏览创作能力与帮助文章，明确需要解决的内容生产问题。"}</p>
           </div>
         </div>
-        <Link href={kind === "about" ? "/tools" : "/articles"}>
+        <Link className={styles.primaryAction} href={kind === "about" ? "/tools" : "/articles"}>
           {kind === "about" ? "进入创作中心" : "查看帮助中心"}<ArrowRight aria-hidden="true" />
         </Link>
       </section>

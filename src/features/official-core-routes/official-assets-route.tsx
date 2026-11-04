@@ -671,7 +671,14 @@ export function OfficialAssetsRoute() {
         <div className={`${styles.assetsP0Layer} ${styles.assetsP0PrimaryLayer}`}>
           <div className={styles.assetsFilterGroup} aria-label="素材类型">
             {CATEGORY_OPTIONS.map(({ value, label, icon: Icon }) => (
-              <button key={value} type="button" data-active={category === value ? "true" : undefined} onClick={() => setCategory(value)}>
+              <button
+                key={value}
+                type="button"
+                className={category === value ? "brand-action" : undefined}
+                aria-pressed={category === value}
+                data-active={category === value ? "true" : undefined}
+                onClick={() => setCategory(value)}
+              >
                 {Icon ? <Icon size={14} /> : null}{label}
               </button>
             ))}
@@ -779,7 +786,7 @@ export function OfficialAssetsRoute() {
           <p>
             登录后可以按类型、来源和标签筛选素材，并继续预览、下载或创作。公开示例与个人资产会分别展示。
           </p>
-          <Link href="/login?redirect=/youcai/assets"><LogIn size={17} />去登录</Link>
+          <Link className="brand-action" href="/login?redirect=/youcai/assets"><LogIn size={17} />去登录</Link>
         </section>
       ) : loading ? (
         <section className={styles.assetsLoading} role="status">

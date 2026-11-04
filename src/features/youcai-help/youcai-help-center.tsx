@@ -252,7 +252,7 @@ function ArticleList({ catalog }: { catalog: PublicHelpCatalog }) {
           {DISPLAY_GROUPS.map(({ id, label, Icon }) => (
             <button
               aria-pressed={group === id}
-              className={styles.filterButton}
+              className={group === id ? `${styles.filterButton} brand-action` : styles.filterButton}
               data-active={group === id ? "true" : undefined}
               key={id}
               onClick={() => updateGroup(id)}
@@ -419,7 +419,7 @@ function ArticleDetail({ article, catalog }: { article: HelpArticle; catalog: Pu
 
           <div className={styles.detailActions}>
             <Link href="/articles"><ArrowLeft aria-hidden="true" />返回帮助中心</Link>
-            <Link href="/tools">继续创作<ArrowRight aria-hidden="true" /></Link>
+            <Link className="brand-action" href="/tools">继续创作<ArrowRight aria-hidden="true" /></Link>
           </div>
         </article>
       </div>

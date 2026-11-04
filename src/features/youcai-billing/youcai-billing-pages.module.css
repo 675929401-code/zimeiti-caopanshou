@@ -325,20 +325,10 @@
   gap: 7px;
   border: 0;
   border-radius: 11px;
-  color: #ffffff;
-  background: linear-gradient(100deg, #6e91f5, #b36bef);
-  box-shadow: 0 8px 18px rgba(124, 58, 237, 0.18);
   font-size: 13px;
   font-weight: 750;
   text-decoration: none;
   cursor: pointer;
-}
-
-.productBody button:hover,
-.primaryLink:hover,
-.heroAction:hover {
-  filter: brightness(1.04);
-  transform: translateY(-1px);
 }
 
 .cardStatus {
@@ -403,8 +393,6 @@
   justify-content: center;
   gap: 7px;
   border-radius: 11px;
-  color: #ffffff;
-  background: linear-gradient(100deg, #2563eb, #7c3aed);
   font-size: 13px;
   font-weight: 750;
   text-decoration: none;
@@ -534,6 +522,24 @@
   align-items: center;
   gap: 7px;
   font-weight: 750;
+}
+
+.productBody button,
+.primaryLink,
+.heroAction {
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
+  border-color: var(--brand-action-border);
+
+  &:hover:not(:disabled) {
+    background: var(--brand-action-hover);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--brand-action-ring);
+    outline-offset: 2px;
+  }
 }
 
 .heroAction:disabled,

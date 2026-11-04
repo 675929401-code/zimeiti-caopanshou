@@ -80,7 +80,7 @@
 
 .assetsPrimaryTabs small {
   margin-left: 5px;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 11px;
 }
 
@@ -97,8 +97,8 @@
 }
 
 .assetsActions button[aria-pressed="true"] {
-  color: #2563eb;
-  background: #e8efff;
+  color: var(--brand-action-bg);
+  background: color-mix(in srgb, var(--brand-action-bg) 9%, white);
 }
 
 .assetsActions button:disabled {
@@ -149,14 +149,9 @@
 }
 
 .assetsFilterGroup button[data-active="true"] {
-  color: #2563eb;
-  background: #e9efff;
+  color: var(--brand-action-bg);
+  background: color-mix(in srgb, var(--brand-action-bg) 9%, white);
   font-weight: 700;
-}
-
-.assetsP0PrimaryLayer > .assetsFilterGroup:first-child button[data-active="true"] {
-  color: #ffffff;
-  background: #2f68ea;
 }
 
 .assetsSourceGroup {
@@ -199,8 +194,7 @@
 }
 
 .assetsP0GenerateLink {
-  color: #265fdc;
-  background: #e9efff;
+  composes: brand-action from global;
   font-weight: 700;
 }
 
@@ -263,7 +257,7 @@
 }
 
 .assetsSortGroup button[data-active="true"] {
-  color: #2563eb;
+  color: var(--brand-action-bg);
   font-weight: 700;
 }
 
@@ -391,16 +385,9 @@
   align-items: center;
   gap: 6px;
   border-radius: 11px;
-  color: #ffffff;
-  background: #2f68ea;
-  box-shadow: 0 7px 15px rgba(47, 104, 234, 0.18);
   text-decoration: none;
   font-size: 12px;
   font-weight: 700;
-}
-
-.assetsLoginState a:hover {
-  background: #255bd4;
 }
 
 .assetsLoading {

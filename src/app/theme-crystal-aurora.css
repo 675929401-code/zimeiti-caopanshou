@@ -11,6 +11,13 @@ html[data-theme="crystal-aurora"][data-mode="dark"] {
   --primary: #28d5c0;
   --primary-foreground: #021815;
   --ring: #35d8cd;
+  /* Solid actions use the theme's deep cyan-teal; neon cyan remains the
+     border/ring accent on the near-black structural field. */
+  --brand-action-bg: #0e7490;
+  --brand-action-fg: #ffffff;
+  --brand-action-hover: #155e75;
+  --brand-action-border: color-mix(in srgb, #0e7490 55%, #28d5c0);
+  --brand-action-ring: #28d5c0;
   --background: #05070a;
   --foreground: #f1fefd;
   --font-title-color: #f1fefd;

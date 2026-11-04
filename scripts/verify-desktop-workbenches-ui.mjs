@@ -221,8 +221,8 @@ async function auditStoryboard(context, session, viewport, theme) {
     const imageCommand = document.querySelector(".sbw-media-actions button.is-image-command");
     const videoCommand = document.querySelector(".sbw-video-compact button.is-video-command, .sbw-media-actions button.is-video-command");
     const semanticProbe = document.createElement("span");
-    semanticProbe.style.backgroundColor = "var(--primary)";
-    semanticProbe.style.color = "var(--primary-foreground)";
+    semanticProbe.style.backgroundColor = "var(--brand-action-bg)";
+    semanticProbe.style.color = "var(--brand-action-fg)";
     semanticProbe.style.position = "absolute";
     semanticProbe.style.pointerEvents = "none";
     document.body.appendChild(semanticProbe);
@@ -232,7 +232,7 @@ async function auditStoryboard(context, session, viewport, theme) {
       return {
         background: style.backgroundColor,
         color: style.color,
-        primaryForeground: style.getPropertyValue("--primary-foreground").trim(),
+        brandForeground: style.getPropertyValue("--brand-action-fg").trim(),
         ancestry: (() => {
           const chain = [];
           let current = element;
@@ -243,7 +243,7 @@ async function auditStoryboard(context, session, viewport, theme) {
               className: current.className,
               theme: current.getAttribute("data-theme"),
               mode: current.getAttribute("data-mode"),
-              primaryForeground: currentStyle.getPropertyValue("--primary-foreground").trim(),
+              brandForeground: currentStyle.getPropertyValue("--brand-action-fg").trim(),
             });
             current = current.parentElement;
           }
@@ -282,7 +282,7 @@ async function auditStoryboard(context, session, viewport, theme) {
       semanticCommandColors: {
         background: semanticProbeStyle.backgroundColor,
         color: semanticProbeStyle.color,
-        primaryForeground: semanticProbeStyle.getPropertyValue("--primary-foreground").trim(),
+        brandForeground: semanticProbeStyle.getPropertyValue("--brand-action-fg").trim(),
       },
       overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > innerWidth + 2,
     };
@@ -313,7 +313,8 @@ async function auditStoryboard(context, session, viewport, theme) {
   assert.ok(metrics.solidSurfaces.length > 0 && metrics.solidSurfaces.every((value) => value === "none"), `${viewport.width}px 分镜核心区仍使用彩色渐变`);
   assert.equal(metrics.commandColors.length, 2, `${viewport.width}px 分镜图像或视频主操作缺失`);
   assert.ok(metrics.commandColors.every((entry) => entry.background === metrics.commandColors[0].background && entry.color === metrics.commandColors[0].color), `${viewport.width}px 分镜图像与视频主操作没有使用同一语义色`);
-  assert.ok(metrics.commandColors.every((entry) => entry.background === metrics.semanticCommandColors.background && entry.color === metrics.semanticCommandColors.color), `${viewport.width}px 分镜主操作没有使用主题 primary/primary-foreground 计算色：${JSON.stringify({ commandColors: metrics.commandColors, semanticCommandColors: metrics.semanticCommandColors })}`);
+  assert.deepEqual([metrics.semanticCommandColors.background, metrics.semanticCommandColors.color], ["rgb(1, 34, 100)", "rgb(255, 255, 255)"], `${viewport.width}px 品牌主按钮配色不正确`);
+  assert.ok(metrics.commandColors.every((entry) => entry.background === metrics.semanticCommandColors.background && entry.color === metrics.semanticCommandColors.color), `${viewport.width}px 分镜主操作没有使用品牌按钮色：${JSON.stringify({ commandColors: metrics.commandColors, semanticCommandColors: metrics.semanticCommandColors })}`);
   assert.equal(metrics.overflow, false, `${viewport.width}px 分镜工作台发生横向溢出`);
   await page.screenshot({ path: path.join(path.dirname(output), `storyboard-${theme.id}-${viewport.width}.png`), fullPage: false });
   await page.close();

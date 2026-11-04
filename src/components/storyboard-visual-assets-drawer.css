@@ -316,13 +316,21 @@
   font-size: 13px;
 }
 
-.svad-primary {
+.svad-surface .svad-primary {
   padding: 8px 14px;
-  border: 1px solid var(--svad-accent);
-  background: var(--svad-accent);
-  color: var(--svad-accent-fg);
+  border: 1px solid var(--brand-action-border);
+  background: var(--brand-action-bg);
+  color: var(--brand-action-fg);
   font-weight: 600 !important;
   min-height: 36px !important;
+}
+
+.svad-surface .svad-primary:hover:enabled {
+  background: var(--brand-action-hover);
+}
+
+.svad-surface .svad-primary:focus-visible {
+  outline-color: var(--brand-action-ring);
 }
 
 /* Full image preview keeps its own bounded scroll area when portalled to body. */

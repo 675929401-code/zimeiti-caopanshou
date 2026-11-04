@@ -586,3 +586,12 @@
   .headerButton { transition: none; }
   .spin { animation-duration: 1.8s; }
 }
+
+.primaryAction {
+  composes: brand-action from global;
+}
+
+.activeFilterButton {
+  composes: filterButton;
+  composes: brand-action from global;
+}

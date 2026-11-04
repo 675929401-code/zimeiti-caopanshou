@@ -1411,3 +1411,7 @@
     transition: none;
   }
 }
+
+.primaryButton {
+  composes: brand-action from global;
+}

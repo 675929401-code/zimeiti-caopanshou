@@ -524,7 +524,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                 >
                   <div className="toolbox-input-title flex items-center gap-3">
                     <Type className="w-4 h-4" style={{ color: "var(--primary)" }} />
-                    <span className="text-sm font-bold" style={{ color: "var(--primary)" }}>输入文案</span>
+                    <span className="text-sm font-bold" style={{ color: embedded ? "var(--foreground)" : "var(--primary)" }}>输入文案</span>
                   </div>
                   <span className="toolbox-input-meta text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
                     {inputCharCount}字（仅统计汉字和数字）
@@ -652,7 +652,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <AlignLeft className="w-4 h-4" style={{ color: "var(--primary)" }} />
-                    <span className="text-sm font-bold" style={{ color: "var(--primary)" }}>分段结果</span>
+                    <span className="text-sm font-bold" style={{ color: embedded ? "var(--foreground)" : "var(--primary)" }}>分段结果</span>
                     <span className="text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
                       {mode.label}（{mode.desc}）
                     </span>
@@ -669,8 +669,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                     {!saved && auth.isAuthenticated && auth.user?.id && auth.token && (
                       <button
                         onClick={saveToHistory}
-                        className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors hover:opacity-90"
-                        style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+                        className="brand-action text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors hover:opacity-90"
                       >
                         保存记录
                       </button>

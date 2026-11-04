@@ -149,6 +149,7 @@
 }
 
 .primaryAction {
+  composes: brand-action from global;
   color: var(--primary-foreground);
   background: linear-gradient(110deg, var(--primary), var(--primary));
   box-shadow: 0 14px 34px rgba(84, 208, 255, 0.2);

@@ -63,6 +63,7 @@
 }
 
 .primaryAction {
+  composes: brand-action from global;
   color: #ffffff;
   background: linear-gradient(135deg, #2563eb, #8b5cf6);
   box-shadow: 0 15px 36px rgba(79, 70, 229, 0.2);

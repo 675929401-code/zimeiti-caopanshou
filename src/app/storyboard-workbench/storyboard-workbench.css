@@ -6673,3 +6673,33 @@ html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main :is(button, textarea,
   outline: 2px solid var(--ring, var(--primary));
   outline-offset: 2px;
 }
+
+/* Keep brand actions separate from model badges, prices, and stop controls. */
+html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main :is(
+  .sbw-toolbar-actions > .is-primary,
+  .sbw-toolbar-actions > .sbw-batch-action,
+  .sbw-toolbar-actions > .sbw-toolbar-add-card,
+  .sbw-ratio-control > button.is-active,
+  .sbw-mode-toggle > button[aria-pressed="true"],
+  .sbw-media-actions > .is-command:not(.is-stop-command),
+  .sbw-media-actions > .sbw-board-export
+) {
+  background: var(--brand-action-bg) !important;
+  color: var(--brand-action-fg) !important;
+  border-color: var(--brand-action-border) !important;
+  box-shadow: none !important;
+
+  &:hover:enabled {
+    background: var(--brand-action-hover) !important;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--brand-action-ring) !important;
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: .58 !important;
+    cursor: not-allowed;
+  }
+}

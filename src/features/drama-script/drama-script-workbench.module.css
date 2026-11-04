@@ -348,6 +348,7 @@
 }
 
 .primaryButton {
+  composes: brand-action from global;
   display: inline-flex;
   min-height: 45px;
   padding: 0 22px;

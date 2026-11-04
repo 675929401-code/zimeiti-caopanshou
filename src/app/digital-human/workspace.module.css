@@ -34,3 +34,19 @@
 /* Keep status, balance, and voice controls readable at both acceptance widths. */
 .page small{font-size:12px}
 .accountBar button,.sectionLabel,.sectionLabel button,.speechControls,.speechControls label{font-size:12px}
+
+.generateButton,
+.secondaryPrimary,
+.modes button[aria-selected=true],
+.audioTabs button[aria-selected=true],
+.voiceOption[aria-selected=true] {
+  background: var(--brand-action-bg);
+  border-color: var(--brand-action-border);
+  color: var(--brand-action-fg);
+}
+.modes button[aria-selected=true] span { color: var(--brand-action-fg); }
+:is(.generateButton, .secondaryPrimary):hover:not(:disabled) { background: var(--brand-action-hover); }
+:is(.generateButton, .secondaryPrimary, .modes button, .audioTabs button, .voiceOption):focus-visible {
+  outline: 2px solid var(--brand-action-ring);
+  outline-offset: 2px;
+}

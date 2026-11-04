@@ -14,10 +14,17 @@
   background-size: 64px 64px;
   background-attachment: fixed;
 }
-.page:not(:global([data-testid="manju-content"]) *) :is(.icon, .primary, .guideBox) {
+.page:not(:global([data-testid="manju-content"]) *) :is(.icon, .guideBox) {
   background: var(--primary);
   color: var(--primary-foreground);
 }
-.page:not(:global([data-testid="manju-content"]) *) .download {
-  color: var(--primary-foreground);
+.page :is(.primary, .download, .tabActive, .regionActive) {
+  color: var(--brand-action-fg);
+  background: var(--brand-action-bg);
+  border-color: var(--brand-action-border);
+}
+.page :is(.primary, .download):hover:not(:disabled) { background: var(--brand-action-hover); }
+.page :is(.primary, .download, .tabActive, .regionActive):focus-visible {
+  outline: 2px solid var(--brand-action-ring);
+  outline-offset: 2px;
 }

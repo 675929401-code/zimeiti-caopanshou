@@ -1166,7 +1166,7 @@ export function MediaHistoryWorkspace({ onBack, initialCategory, recoveryContent
                       <button
                         key={option.key}
                         type="button"
-                        className={styles.filterButton}
+                        className={category === option.key ? styles.activeFilterButton : styles.filterButton}
                         data-active={category === option.key}
                         onClick={() => { if (option.key !== category) { clearSelectionForFilterChange(); setCategory(option.key); } }}
                         disabled={downloadingBatch}
@@ -1190,7 +1190,7 @@ export function MediaHistoryWorkspace({ onBack, initialCategory, recoveryContent
                       <button
                         key={option.key}
                         type="button"
-                        className={styles.filterButton}
+                        className={kind === option.key ? styles.activeFilterButton : styles.filterButton}
                         data-active={kind === option.key}
                         onClick={() => { if (option.key !== kind) { clearSelectionForFilterChange(); setKind(option.key); } }}
                         disabled={downloadingBatch}
