@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "4e97f6232478c8aedfa8d367fdd2923790a7a90534838ee491e4e0de9db3157f",
+  "sourceFingerprint": "f406bd945754cb1e88dbf0ba3c550f5dac98307d9cc16c24bdb329582282a0ef",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 4890,
-  "totalBytes": 78045023,
+  "totalBytes": 78045090,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "c4b95ef16daa83c4add3ba4594ba441bbe83393c4e29fd4241061fb3d67d56a2"
+      "sha256": "d99dc945dbb0a993e9e4c4399d6a795d7dd7ab335464223edd68a9c51622ce0e"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -17833,8 +17833,8 @@
     },
     {
       "path": "src/components/vs/Footer.tsx",
-      "bytes": 895,
-      "sha256": "07144bc26502c5ed8b3839b0508e9643d9d173f4cadf6a6faec68d84e6521b45"
+      "bytes": 912,
+      "sha256": "57cefcbaa444bba0ea4b271905969048ef566dd27d92dcf6821d99d0a6ccf553"
     },
     {
       "path": "src/components/vs/GlobalTaskBar.tsx",
@@ -17843,8 +17843,8 @@
     },
     {
       "path": "src/components/vs/Header.tsx",
-      "bytes": 3557,
-      "sha256": "a958b95e0d391c2527ec8632bcdabc369787e55b51dd05d024a7316c98616cee"
+      "bytes": 3607,
+      "sha256": "857bfba4e30f536cba42e5b8f2e869d86d3c1d7e156c95331adaabcc515bbe50"
     },
     {
       "path": "src/components/vs/LicenseGate.tsx",
