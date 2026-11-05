@@ -1444,7 +1444,7 @@
 
   .page[data-page="tools"] .stage {
     min-height: 0;
-    padding: 16px 18px;
+    padding: 0 18px;
     background: transparent;
   }
 

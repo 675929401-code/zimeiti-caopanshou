@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "e32beea53c9a578b247be7756af316264973b3f41e9bbcbff40c1f086d6ee12f",
+  "sourceFingerprint": "256bfa270cf1a321225a2462c72ebfa2fb88afa717a2b366f4cfa3cabf784b37",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 4889,
-  "totalBytes": 78035768,
+  "totalBytes": 78035757,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "a033a4e909cdedfdc01d146a8421070869dd3dc090c3792e1f1f3d282999d2e0"
+      "sha256": "06637934b7ca3f2c2fd081d7160cdd05ac197feefca19dcaeda06883ee40e2d2"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -15038,8 +15038,8 @@
     },
     {
       "path": "src/app/theme-soft-white.css",
-      "bytes": 36319,
-      "sha256": "4be1bbe45060803cec7d8093ea5df46f66183ae122853c38cbb781ea34c26783"
+      "bytes": 36311,
+      "sha256": "07bae546b82cf057176a88a154562adeb0352020202c5694a8f3c1dc6b19c0bd"
     },
     {
       "path": "src/app/tools/[category]/[tool]/page.tsx",
@@ -15143,8 +15143,8 @@
     },
     {
       "path": "src/app/tools/tools.module.css",
-      "bytes": 55107,
-      "sha256": "95c8c45a30213d522978d71e54777e058aa90abbc1c370f1e061e0ea3f856184"
+      "bytes": 55104,
+      "sha256": "74e959940f88409c51ef4b335e6379f6dca813b3dccd9dddc5c6cc0d24557857"
     },
     {
       "path": "src/app/tools/utility/page.tsx",
