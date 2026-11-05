@@ -30,7 +30,7 @@ export default function Header() {
   return (
     <header className="vs-studio-header sticky top-0 z-40">
       <div className="vs-studio-header-inner">
-        <Link href="/voice-studio/workspace" className="vs-studio-logo" aria-label="进入智音工坊语音合成">
+        <Link href="/voice-studio/workspace" prefetch={false} className="vs-studio-logo" aria-label="进入智音工坊语音合成">
           <span className="vs-studio-logo-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="3" width="6" height="11" rx="3" />
@@ -64,6 +64,7 @@ export default function Header() {
               <Link
                 key={link.href}
                 href={link.href}
+                prefetch={false}
                 className="vs-studio-nav-link"
                 data-active={active || undefined}
                 aria-current={active ? 'page' : undefined}

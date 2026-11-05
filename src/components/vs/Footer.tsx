@@ -15,7 +15,7 @@ export default function Footer() {
           <div><strong>智音工坊</strong><span>内容创作语音工作台</span></div>
         </div>
         <nav aria-label="智音工坊快捷入口">
-          {links.map(([href, label]) => <Link key={href} href={href}>{label}</Link>)}
+          {links.map(([href, label]) => <Link key={href} href={href} prefetch={false}>{label}</Link>)}
         </nav>
         <span className="vs-studio-footer-note">语音任务、资产与历史由服务端统一保存</span>
       </div>
