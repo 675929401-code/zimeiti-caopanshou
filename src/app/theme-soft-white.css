@@ -12,13 +12,14 @@ html[data-theme="soft-white"][data-mode="light"] {
   --primary: #0066f5;
   --primary-foreground: #ffffff;
   --ring: #0066f5;
-  /* Solid actions use the aurora deep blue from the design system, so
-     secondary-page buttons match soft-white instead of reading as indigo. */
-  --brand-action-bg: #1677ff;
+  /* Solid actions mirror the soft-white landing CTA and sign-in button:
+     deep jade (#0b7a6b) with the darker #075f54 hover. Manju and commerce
+     are scoped out and keep their own palettes. */
+  --brand-action-bg: #0b7a6b;
   --brand-action-fg: #ffffff;
-  --brand-action-hover: #0b63e0;
-  --brand-action-border: color-mix(in srgb, #1677ff 55%, #0066f5);
-  --brand-action-ring: #1677ff;
+  --brand-action-hover: #075f54;
+  --brand-action-border: color-mix(in srgb, #0b7a6b 72%, #2e6f96);
+  --brand-action-ring: #0b7a6b;
   --background: #f5f7fb;
   --foreground: #202020;
   --font-title-color: #202020;
