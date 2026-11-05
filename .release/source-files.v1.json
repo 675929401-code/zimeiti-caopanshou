@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "b3851de4ba5d8fee3c00e92ca97242705a8cdfecaf65f95f15bedffa384adefc",
+  "sourceFingerprint": "4e97f6232478c8aedfa8d367fdd2923790a7a90534838ee491e4e0de9db3157f",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 4889,
-  "totalBytes": 78036495,
+  "fileCount": 4890,
+  "totalBytes": 78045023,
   "files": [
     {
       "path": ".cnb.yml",
@@ -1924,7 +1924,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "eaf61caec656a542527b325ba4ce98add5abf68e4e5c86f32b69dcbdb2f3d852"
+      "sha256": "c4b95ef16daa83c4add3ba4594ba441bbe83393c4e29fd4241061fb3d67d56a2"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -15033,8 +15033,8 @@
     },
     {
       "path": "src/app/theme-polish.css",
-      "bytes": 12922,
-      "sha256": "daf7776b3c4d7c3c77744122a41abc96fb2abf7d14d35e47bffb1b50cee5512c"
+      "bytes": 13281,
+      "sha256": "1d33478a0b95977645889a02b23f9d63a4ce35dc02754cee9feebb27c5c044d4"
     },
     {
       "path": "src/app/theme-soft-white.css",
@@ -15173,8 +15173,8 @@
     },
     {
       "path": "src/app/ui-shell-fixes.css",
-      "bytes": 108932,
-      "sha256": "ee90d17d538e9be24e046603ed1b0d2ceac4e54bb70303f293dc08a85112c801"
+      "bytes": 111642,
+      "sha256": "183ee0815022d94575213ead85d2c62e0bb88f50c34b05af019cc2ab2719cd01"
     },
     {
       "path": "src/app/video/error.tsx",
@@ -17028,8 +17028,8 @@
     },
     {
       "path": "src/components/app-route-shell.tsx",
-      "bytes": 23896,
-      "sha256": "25a606410d10d09c405ae8aceed77e6d93f13b1097f100dd31c6b9160e33ede5"
+      "bytes": 24477,
+      "sha256": "eab9f0d5098f42f80d82db24c9f43aa41d230ccf9f2fd2e33efc0bc204044b60"
     },
     {
       "path": "src/components/app-scoped-link.tsx",
@@ -18928,8 +18928,8 @@
     },
     {
       "path": "src/lib/billing.ts",
-      "bytes": 42331,
-      "sha256": "672c4f716cd72c85c8a5386f138cbf839d7dc12906ccf5a3044a6a60b26be155"
+      "bytes": 42692,
+      "sha256": "1576d52491925d96946c44efaf647c2984688c8bc0d662e871cc4afab437fe6b"
     },
     {
       "path": "src/lib/bots-cache.ts",
@@ -19733,8 +19733,8 @@
     },
     {
       "path": "src/lib/llm-credit-reservation.ts",
-      "bytes": 7880,
-      "sha256": "ac54fce706acd75979c8c2225feb31a811a2e6922b69d890be05a22af448920b"
+      "bytes": 8179,
+      "sha256": "7d70ebde19a5ff2b4a67124598cdd634d64e87bf8ef5ed22d6b465a8822c7e9f"
     },
     {
       "path": "src/lib/llm-fallback.ts",
@@ -19943,8 +19943,8 @@
     },
     {
       "path": "src/lib/member-permissions.ts",
-      "bytes": 4757,
-      "sha256": "ba11d2c17c5ae6f3bc39848f80f9966a9208afcbb88bb9ed594ab37120d267f2"
+      "bytes": 5100,
+      "sha256": "337c7ad477d7505b042e46fe84649c4c6535dc326711b926498257e7dde3deab"
     },
     {
       "path": "src/lib/member-region-distribution-contract.ts",
@@ -20288,8 +20288,8 @@
     },
     {
       "path": "src/lib/server/admin-governance-authority.ts",
-      "bytes": 15404,
-      "sha256": "49b863ce5cc7e5bc1b0bfe7348a9cb4dadc6e80eec4bb2666cd36e41489f1b91"
+      "bytes": 15718,
+      "sha256": "1863999553a823189a01d0d43e83f07336e25c3b7df199f6e1261c9837a2bb67"
     },
     {
       "path": "src/lib/server/admin-recharge-read-model.ts",
@@ -20488,8 +20488,8 @@
     },
     {
       "path": "src/lib/server/member-permission-authority.ts",
-      "bytes": 5302,
-      "sha256": "d2823d349be2f82d7e22c10422032226619bb4b91a198768863b131ead837b0e"
+      "bytes": 5657,
+      "sha256": "bb93cccac9e346b59ee6343e7abdfb28ab6675ce7fe2dbe8280f04000be573be"
     },
     {
       "path": "src/lib/server/member-region-distribution.ts",
@@ -22168,8 +22168,8 @@
     },
     {
       "path": "src/proxy.ts",
-      "bytes": 19671,
-      "sha256": "4226bf9842d453e7854814fa6b2753930d6cd5a4b1e6269b0c544dad81326a03"
+      "bytes": 20767,
+      "sha256": "afa1877915c38170760b1152f59f827186ea355f4864c3dc01a496d5f61f3600"
     },
     {
       "path": "src/server.ts",
@@ -23285,6 +23285,11 @@
       "path": "supabase/migrations/20261104010000_reviewed_text_history.sql",
       "bytes": 21211,
       "sha256": "33a61d1a6fe41b029945ee26bd290014b8767c0fa3271f4c564a7fb1bb8aca42"
+    },
+    {
+      "path": "supabase/migrations/20261105140000_admin_default_permissions_minimal.sql",
+      "bytes": 2110,
+      "sha256": "722728209a4978fb44587ebc52dcb8248f65ffa3eb6649801a8743a1708b4784"
     },
     {
       "path": "supabase/rollbacks/20260822032000_aid_integration_bridge.rollback.sql",

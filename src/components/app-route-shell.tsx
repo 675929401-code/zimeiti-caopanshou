@@ -425,8 +425,10 @@ function AccountSummary({ insideYoucai }: { insideYoucai: boolean }) {
   const userBalance = user as (typeof user & { cashBalance?: number | string | null; cash_balance?: number | string | null });
   const userCashBalance = Number(userBalance?.cashBalance ?? userBalance?.cash_balance ?? 0);
   const credits = Number(state.credits?.remaining ?? user?.credits ?? 0);
+  const reservedCredits = Math.max(0, Number((user as (typeof user & { reservedCredits?: number }) | null)?.reservedCredits ?? 0));
   const cashBalance = Number(state.cashBalance ?? userCashBalance ?? 0);
   const creditsLabel = credits.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  const reservedLabel = reservedCredits.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   const cashBalanceLabel = cashBalance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   if (!user && insideYoucai) {
@@ -462,7 +464,7 @@ function AccountSummary({ insideYoucai }: { insideYoucai: boolean }) {
       <span className={styles.accountCopy}>
         <strong>{displayName}</strong>
         <span className={styles.balancePills} aria-hidden="true">
-          <small className={styles.creditBalance}>{creditsLabel} 积分</small>
+          <small className={styles.creditBalance} title={reservedCredits > 0 ? `总积分 ${(credits + reservedCredits).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}，冻结 ${reservedLabel}` : undefined}>{creditsLabel} 可用{reservedCredits > 0 ? ` · 冻结${reservedLabel}` : ""}</small>
           <small className={styles.cashBalance}>¥{cashBalanceLabel} 现金</small>
         </span>
       </span>
@@ -474,7 +476,7 @@ function AccountSummary({ insideYoucai }: { insideYoucai: boolean }) {
       <div className={styles.themeRow} aria-hidden="true"><Moon size={17} /></div>
       {insideYoucai ? (
         <AppScopedLink
-          aria-label={`进入个人中心，当前余额：${creditsLabel}积分，现金${cashBalanceLabel}元`}
+          aria-label={`进入个人中心，当前可用：${creditsLabel}积分${reservedCredits > 0 ? `，冻结${reservedLabel}积分` : ""}，现金${cashBalanceLabel}元`}
           className={styles.accountLink}
           data-testid="youcai-account-profile-link"
           href="/profile"
@@ -482,7 +484,7 @@ function AccountSummary({ insideYoucai }: { insideYoucai: boolean }) {
           {accountContent}
         </AppScopedLink>
       ) : (
-        <div className={styles.accountCard} role="group" aria-label={`账号余额：${creditsLabel}积分，现金${cashBalanceLabel}元`}>
+        <div className={styles.accountCard} role="group" aria-label={`账号余额：可用${creditsLabel}积分${reservedCredits > 0 ? `，冻结${reservedLabel}积分` : ""}，现金${cashBalanceLabel}元`}>
           {accountContent}
         </div>
       )}

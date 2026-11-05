@@ -27,7 +27,12 @@ export function estimateLlmReservationInputBudget(
   messages: ChatRequest["messages"],
   roundingAllowance: number,
 ): number {
-  return Buffer.byteLength(JSON.stringify(messages), "utf8")
+  // UTF-16 code units are a conservative token ceiling for mixed Chinese/English
+  // (one BMP character cannot exceed one token; emoji use two units for one token).
+  // UTF-8 bytes triple-count Chinese characters and inflated holds ~3x without
+  // changing the real billing amount.
+  const serialized = JSON.stringify(messages);
+  return serialized.length
     + messages.length * 64
     + LLM_PROVIDER_INPUT_ALLOWANCE_TOKENS
     + roundingAllowance;

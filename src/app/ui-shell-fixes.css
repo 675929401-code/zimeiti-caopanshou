@@ -1463,7 +1463,11 @@ html:is(
   [aria-current="page"],
   [data-active="true"]
 ) {
-  color: var(--primary) !important;
+  color: var(--brand-action-bg, var(--primary)) !important;
+  background: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 8%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-action-bg, var(--primary)) 15%, transparent) !important;
+  border-radius: 10px !important;
+  font-weight: 620 !important;
 }
 
 html:is(
@@ -2529,3 +2533,47 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .primary-
   box-shadow: none !important;
 }
 html[data-theme][data-mode] .marketplace-shell .marketplace-category-inner { padding-inline: 12px !important; }
+
+/* 主导航：轻量选中态与 hover，去掉厚重包裹框，保留布局与高度不变。 */
+html[data-theme] .marketplace-shell .nav-pill {
+  border-radius: 10px;
+  font-weight: 560;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+html[data-theme] .marketplace-shell .nav-pill:hover {
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  color: var(--foreground);
+  box-shadow: none;
+}
+html[data-theme] .marketplace-shell .nav-pill.nav-pill-active,
+html[data-theme] .marketplace-shell .nav-pill.nav-pill-active:hover {
+  background: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 8%, transparent) !important;
+  border: 0 !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-action-bg, var(--primary)) 16%, transparent) !important;
+  color: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 88%, var(--foreground)) !important;
+  font-weight: 620;
+}
+html[data-theme] .marketplace-shell .nav-pill.nav-pill-active .nav-pill-icon {
+  color: var(--brand-action-bg, var(--primary));
+}
+html[data-theme] .marketplace-shell .nav-pill:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 38%, transparent);
+  outline-offset: 2px;
+}
+/* Final cascade for plain-tabs: keep a light, precise selected pill instead of
+   a transparent or heavy box; later rules in this file force the base state. */
+html[data-theme][data-mode] .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill.nav-pill-active,
+html[data-theme][data-mode] .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill[aria-current="page"] {
+  background: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 8%, transparent) !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-action-bg, var(--primary)) 15%, transparent) !important;
+  color: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 88%, var(--foreground)) !important;
+  font-weight: 620 !important;
+}
+html[data-theme][data-mode] .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill:not(.nav-pill-active):hover {
+  background: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 5%, transparent) !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
