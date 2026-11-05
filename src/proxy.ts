@@ -28,7 +28,7 @@ import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 import { getTokenFromHeaders, verifyTokenSignature } from "@/lib/auth";
 import { authorizeAdminToken } from "@/lib/admin-auth";
 import { ADMIN_LOGIN_PATH, isAdminLoginPath } from "@/lib/admin-entry";
-import { featurePermissionForApiPath } from "@/lib/member-permissions";
+import { featurePermissionForApiPath, featurePermissionForPath } from "@/lib/member-permissions";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
 import { adminRequirementForRequest } from "@/lib/admin-governance";
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
@@ -261,6 +261,28 @@ export async function proxy(request: NextRequest, lifecycle?: NextFetchEvent) {
             },
         { status: authorityFailure ? 503 : 403 },
       );
+      applySecurityHeaders(response, request);
+      return response;
+    }
+  }
+
+  // ── 会员业务功能：页面级服务端门禁 ──
+  // Client navigation is presentation only. Direct URL entry must resolve the
+  // same durable snapshot as the API gate; denied or unavailable authority is
+  // redirected before the page shell renders business content.
+  const requiredPageFeature = !pathname.startsWith("/api/")
+    ? featurePermissionForPath(pathname)
+    : null;
+  if (requiredPageFeature && identity.userId) {
+    const pagePermission = await readMemberPermissionSnapshot(identity.userId, { knownRole: identity.role });
+    if (pagePermission.authorityStatus !== "ready"
+      || !pagePermission.featureNavigationKeys.includes(requiredPageFeature)) {
+      const deniedUrl = request.nextUrl.clone();
+      deniedUrl.pathname = "/";
+      deniedUrl.search = "";
+      deniedUrl.searchParams.set("featureDenied", requiredPageFeature);
+      const response = NextResponse.redirect(deniedUrl);
+      response.headers.set("Vary", "Cookie, Authorization");
       applySecurityHeaders(response, request);
       return response;
     }

@@ -91,6 +91,12 @@ async function legacyAdminAccessSnapshot(userId: string): Promise<AdminAccessSna
       .eq("id", userId)
       .maybeSingle();
     if (error || !data || data.is_active === false || data.role !== "admin") return null;
+    // Fail closed unless an operator explicitly opts into the pre-migration
+    // legacy behavior for a staged rollout. A missing governance schema must
+    // never silently promote every administrator to super_admin.
+    if (process.env.ADMIN_GOVERNANCE_LEGACY_SUPER_ACCESS !== "1") {
+      return null;
+    }
     return {
       authorityStatus: "ready",
       integrityValid: true,

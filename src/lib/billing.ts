@@ -225,6 +225,13 @@ export function calculateCredits(
   // cached_tokens 是其中缓存命中的部分，价格更低
   const nonCachedInputTokens = Math.max(0, promptTokens - cachedTokens);
 
+  // 缓存命中价不得高于普通输入价：模型目录若配反（cached > input），
+  // 命中缓存反而更贵，会直接多扣用户积分。此处按输入价封顶，保留成本口径。
+  const effectiveCachedCostPerMillion = Math.min(
+    Math.max(0, config.cachedCostPerMillion),
+    Math.max(0, config.inputCostPerMillion),
+  );
+
   // ── Token 取整（保障不亏损） ──
   // 若 tokenRoundingEnabled 开启且 tokenRoundingUnit > 0，对各类 token 向上取整到该单位的整数倍
   // 取整单位会被限制在 [tokenRoundingMin, tokenRoundingMax] 范围内
@@ -239,25 +246,25 @@ export function calculateCredits(
   // 进货成本（元）：非缓存输入 + 输出 + 缓存输入（用原始值计算成本）
   const inputCostRmb = (nonCachedInputTokens / 1_000_000) * config.inputCostPerMillion;
   const outputCostRmb = (completionTokens / 1_000_000) * config.outputCostPerMillion;
-  const cachedCostRmb = (cachedTokens / 1_000_000) * config.cachedCostPerMillion;
+  const cachedCostRmb = (cachedTokens / 1_000_000) * effectiveCachedCostPerMillion;
   const actualCostRmb = inputCostRmb + outputCostRmb + cachedCostRmb;
 
   // 用户售价（元）：用取整后的 token 数计算（用户按取整后数量付费）
   const inputSellRmb = (roundedNonCachedInput / 1_000_000) * sellPrice(config.inputCostPerMillion, config.profitMargin);
   const outputSellRmb = (roundedCompletion / 1_000_000) * sellPrice(config.outputCostPerMillion, config.profitMargin);
-  const cachedSellRmb = (roundedCached / 1_000_000) * sellPrice(config.cachedCostPerMillion, config.profitMargin);
+  const cachedSellRmb = (roundedCached / 1_000_000) * sellPrice(effectiveCachedCostPerMillion, config.profitMargin);
   const sellPriceRmb = inputSellRmb + outputSellRmb + cachedSellRmb;
 
   // 积分：用取整后的 token 数计算
   const inputCredits = creditsPer1k(config.inputCostPerMillion, config.profitMargin, config.creditsPerYuan) * (roundedNonCachedInput / 1000);
   const outputCredits = creditsPer1k(config.outputCostPerMillion, config.profitMargin, config.creditsPerYuan) * (roundedCompletion / 1000);
-  const cachedCredits = creditsPer1k(config.cachedCostPerMillion, config.profitMargin, config.creditsPerYuan) * (roundedCached / 1000);
+  const cachedCredits = creditsPer1k(effectiveCachedCostPerMillion, config.profitMargin, config.creditsPerYuan) * (roundedCached / 1000);
   const rawCredits = inputCredits + outputCredits + cachedCredits;
 
   // 同时计算不取整时的积分（用于对比取整带来的额外费用）
   const inputCreditsRaw = creditsPer1k(config.inputCostPerMillion, config.profitMargin, config.creditsPerYuan) * (nonCachedInputTokens / 1000);
   const outputCreditsRaw = creditsPer1k(config.outputCostPerMillion, config.profitMargin, config.creditsPerYuan) * (completionTokens / 1000);
-  const cachedCreditsRaw = creditsPer1k(config.cachedCostPerMillion, config.profitMargin, config.creditsPerYuan) * (cachedTokens / 1000);
+  const cachedCreditsRaw = creditsPer1k(effectiveCachedCostPerMillion, config.profitMargin, config.creditsPerYuan) * (cachedTokens / 1000);
   const rawCreditsNoRounding = inputCreditsRaw + outputCreditsRaw + cachedCreditsRaw;
 
   // 精度处理（保留2位小数，向上取整到0.01积分，用多少扣多少）

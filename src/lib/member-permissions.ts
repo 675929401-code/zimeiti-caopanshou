@@ -83,6 +83,8 @@ export function featurePermissionForPath(pathname: string): PrimaryNavigationKey
   if (["/tools", "/extract", "/formatter", "/segmenter"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) return "toolbox";
   if (["/storyboard-workbench", "/short-drama"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) return "storyboard_workbench";
   if (path === "/image-workbench" || path.startsWith("/image-workbench/")) return "image_workbench";
+  if (path === "/digital-human" || path.startsWith("/digital-human/")) return "toolbox";
+  if (path === "/creation-center" || path.startsWith("/creation-center/")) return "marketplace";
   if (path === "/video" || path.startsWith("/video/")) return "create";
   if (path === "/voice-studio" || path.startsWith("/voice-studio/")) return "voice";
   if (path === "/cover" || path.startsWith("/cover/")) return "cover";
@@ -101,6 +103,10 @@ const API_FEATURE_PREFIXES: ReadonlyArray<readonly [string, PrimaryNavigationKey
   ["/api/drama", "storyboard_workbench"],
   ["/api/image-workbench", "image_workbench"],
   ["/api/image", "image_workbench"],
+  ["/api/bridge/image", "image_workbench"],
+  ["/api/canvas", "image_workbench"],
+  ["/api/digital-human", "toolbox"],
+  ["/api/general-script", "toolbox"],
   ["/api/video", "create"],
   ["/api/voice", "voice"],
   ["/api/cover-models", "cover"],

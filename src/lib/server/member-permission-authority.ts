@@ -33,6 +33,12 @@ function isMemberPermissionSchemaAbsent(error: unknown): boolean {
 }
 
 function legacyFullAccessSnapshot(userId: string, role: string): MemberPermissionSnapshot {
+  // Fail closed by default: a missing permission schema must not silently grant
+  // every feature. The explicit env flag exists only for a staged migration
+  // window where the old behavior must be preserved temporarily.
+  if (process.env.MEMBER_PERMISSION_LEGACY_FULL_ACCESS !== "1") {
+    return unavailableSnapshot(userId, role, "unavailable");
+  }
   return {
     userId,
     role,
