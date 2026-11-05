@@ -12,13 +12,13 @@ html[data-theme="soft-white"][data-mode="light"] {
   --primary: #0066f5;
   --primary-foreground: #ffffff;
   --ring: #0066f5;
-  /* Solid actions keep the sign-in palette: indigo fill, white label and a
-     blue-leaning border so they read as part of the same blue/violet family. */
-  --brand-action-bg: #4f46e5;
+  /* Solid actions use the aurora deep blue from the design system, so
+     secondary-page buttons match soft-white instead of reading as indigo. */
+  --brand-action-bg: #1677ff;
   --brand-action-fg: #ffffff;
-  --brand-action-hover: #4338ca;
-  --brand-action-border: color-mix(in srgb, #4f46e5 55%, #0066f5);
-  --brand-action-ring: #4f46e5;
+  --brand-action-hover: #0b63e0;
+  --brand-action-border: color-mix(in srgb, #1677ff 55%, #0066f5);
+  --brand-action-ring: #1677ff;
   --background: #f5f7fb;
   --foreground: #202020;
   --font-title-color: #202020;
