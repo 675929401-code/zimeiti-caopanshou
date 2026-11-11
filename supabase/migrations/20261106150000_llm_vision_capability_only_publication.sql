@@ -10,7 +10,7 @@ DO $precondition$
 DECLARE v_expected record; v_proc pg_proc%ROWTYPE;
 BEGIN
   FOR v_expected IN SELECT * FROM (VALUES
-      ('model_pool_projection_delta(jsonb)','e592f304b404eafe5d44400c7e0ae7a748134114269101157fa3a51d673b5762','s'),
+      ('model_pool_projection_delta(jsonb)','d60f87a7bb9f9bb244f2eec5499906d264d8706691c9d1738f93e131043e9061','s'),
       ('project_model_pool_configuration_atomic(jsonb)','0b364dc0fa70f9c26bfe54387677af525944bcab0cf88d475877c44f8930efe8','v'),
       ('project_model_pool_configuration_atomic_before_explicit_protoco(jsonb)','5a8084bd7b6a7236aa2c3f8136da0b25b90d419eae3bc4cda5b08df136659749','v'),
       ('project_model_pool_configuration_atomic_before_explicit_protoco(jsonb,jsonb)','ba3c54ebc9cdc3d092c7d25ffcec6a2e4603096dc99ce05222cc8f2a81c35605','v'),
