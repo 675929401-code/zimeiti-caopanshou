@@ -434,4 +434,3 @@ try {
 finally { await browser.close(); await fs.writeFile(path.join(directory, "report.json"), JSON.stringify(report, null, 2), { flag: "wx" }); }
 console.log(JSON.stringify({ passed: report.passed, cases: report.cases.length, errors: report.errors, failure: report.failure,
   paidCalls: report.paidCalls, providerCalls: report.providerCalls, businessMutations: report.businessMutations, report: path.join(directory, "report.json") }));
-

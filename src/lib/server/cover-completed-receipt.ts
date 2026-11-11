@@ -57,4 +57,3 @@ export async function completedCoverResult(request: NextRequest, userId: string,
     width: history.output_width, height: history.output_height, sourceWidth: history.source_width, sourceHeight: history.source_height,
     taskNo: history.task_no, createdAt: history.created_at, historyVisible: !history.hidden_at, nativeUpscaleApplied: false };
 }
-

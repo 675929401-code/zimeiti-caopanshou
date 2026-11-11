@@ -50,4 +50,3 @@ try {
   const report = { passed: true, sourceSha256: createHash('sha256').update(source).digest('hex'), localOnly: true, localHttpRequests: calls.length, externalProviderCalls: 0, liveDatabaseCalls: 0, globalDispatcherUnchanged: true, results };
   console.log(JSON.stringify(report, null, 2));
 } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-
