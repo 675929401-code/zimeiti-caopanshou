@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "a8590d409fb71004f63fb655b65688c6481455b455dd33b9259dd6fd6a2d6a7e",
+  "sourceFingerprint": "dadb218b7b2be0ccb144a641bd92b5c55734eb8e749f8a53626098c1862b8a82",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5293,
-  "totalBytes": 86364092,
+  "totalBytes": 86364262,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2019,7 +2019,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "95bedce39e66032f7c4ae9a15e0d0dc13d18969e693aa876675f3e67ac1adafc"
+      "sha256": "2f94f2f10c8c355e4e189d8c914826701c791a3773c0d5c8f87bf3c831e5c3a9"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -8418,8 +8418,8 @@
     },
     {
       "path": "scripts/verify-generated-image-reference-zero-network.mjs",
-      "bytes": 23243,
-      "sha256": "ac58f874fab891ef946cff8afc38e5e6f7a08c801cae19b5de1836df85f9636e"
+      "bytes": 23370,
+      "sha256": "56148ea18728cfa0ae71c7b41a1af81aeb9a157d5904845a9af20c96ffb12968"
     },
     {
       "path": "scripts/verify-generated-media-direct-delivery-zero-network.mjs",
@@ -14658,8 +14658,8 @@
     },
     {
       "path": "src/app/api/llm/route.ts",
-      "bytes": 114766,
-      "sha256": "d351026412c1181f7b2a63fc28e5fa0f2282cebeed74317da3a2c3ebb6041422"
+      "bytes": 114809,
+      "sha256": "f833bde1c0d7466b90d1ed33125d66f5729694671147e4f2f656d35fcba02ef5"
     },
     {
       "path": "src/app/api/media-history/commerce/access-ticket/route.ts",
