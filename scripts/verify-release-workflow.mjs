@@ -1605,7 +1605,7 @@ assert.match(browserAcceptanceRunner.slice(diagnosticLogFixtureIndex, genericRpc
   "diagnostic-log fixture must satisfy PostgREST insert-select-single semantics");
 assert.ok(browserAcceptanceRunner.includes(`const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
   "marketplace", "toolbox", "storyboard_workbench", "image_workbench", "create",
-  "voice", "cover", "youcai", "commerce_agent",
+  "voice", "cover", "publish_center", "youcai", "commerce_agent",
 ]);`), "member-permission feature fixture must contain the exact full product navigation set");
 assert.ok(browserAcceptanceRunner.includes(`const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
   "bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用",
