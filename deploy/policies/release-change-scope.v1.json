@@ -95,6 +95,26 @@
         ]
       },
       {
+        "id": "repo-config-and-retired-modules",
+        "patterns": [
+          "^eslint\\.config\\.mjs$",
+          "^next-env\\.d\\.ts$",
+          "^src/app/robots\\.ts$",
+          "^src/app/image-workbench/(?:error|loading)\\.tsx$"
+        ],
+        "routes": ["/", "/tools", "/video"]
+      },
+      {
+        "id": "tools-page-header-surface",
+        "patterns": ["^src/app/tools/tools-page-header\\.tsx$"],
+        "routes": ["/tools", "/tools/utility"]
+      },
+      {
+        "id": "voice-studio-layout-surface",
+        "patterns": ["^src/app/voice-studio/layout\\.tsx$"],
+        "routes": ["/voice-studio/workspace", "/voice-studio/imitate", "/voice-studio/voices"]
+      },
+      {
         "id": "cover-exact-error-boundary",
         "patterns": ["^src/app/cover/error\\.tsx$"],
         "routes": ["/cover"]
