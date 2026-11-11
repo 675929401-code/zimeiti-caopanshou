@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "030ef2cd5eaa8f92dd274bdbae6ab39dd18f4eed7a752124f001ed4e1a13c37b",
+  "sourceFingerprint": "b9449d3bf5a3fefa3290d5c0512db1ad3af7a832ace6a9907bf71e6f27c7c316",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5293,
-  "totalBytes": 86365329,
+  "totalBytes": 86366031,
   "files": [
     {
       "path": ".cnb.yml",
@@ -218,8 +218,8 @@
     },
     {
       "path": "deploy/policies/release-change-scope.v1.json",
-      "bytes": 14074,
-      "sha256": "9c1108b4a310f0148b381a048b48a15ca16101d19c912322f6663f607865bf1c"
+      "bytes": 14179,
+      "sha256": "25794cd3e0cac7085cbf5a37ebfa4e713ba00a753a100d2d199cd07b6fa86e96"
     },
     {
       "path": "deploy/policies/release-policy.json",
@@ -2019,7 +2019,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "285452563a125d2686466fb0d5f1a02ebb960091726e6620181fc8d88454793b"
+      "sha256": "968322effa24c6f92127b51fc0b6e0ddc27f3d9aab841244c9cc0eb60d10449f"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -3083,8 +3083,8 @@
     },
     {
       "path": "scripts/classify-release-change-scope.mjs",
-      "bytes": 26678,
-      "sha256": "b9c2fe165faf09d1c2b09e281526b6ed284c74e155b296b94157de2559903c37"
+      "bytes": 27256,
+      "sha256": "4938b2022234db7efc603b9985f10bc6d5e420eac277231b4d0626ebe606c96c"
     },
     {
       "path": "scripts/cleanup-local-fixture-members.mjs",
@@ -5398,8 +5398,8 @@
     },
     {
       "path": "scripts/run-release-browser-acceptance.mjs",
-      "bytes": 81803,
-      "sha256": "2c77d50e987520df2412810da7430879b54a2af162cc74ce17cbdf691e07c408"
+      "bytes": 81822,
+      "sha256": "3bc62e247a46b01a79dc3bb04fff2d2a8e1972dabea02ad5edb61ef2ace47616"
     },
     {
       "path": "scripts/run-release-targeted-regressions.mjs",
