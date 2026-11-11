@@ -208,7 +208,7 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
       </div>
 
       {/* ===== 场景分类 - 置顶主分类栏 ===== */}
-      <div className="mb-5 rounded-2xl border border-[var(--vs-border)] bg-[var(--vs-surface)] p-5">
+      <div data-workbench-surface="toolbar" className="mb-5 rounded-2xl border border-[var(--vs-border)] bg-[var(--vs-surface)] p-5">
         <div className="mb-3.5 flex items-center gap-3">
           <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[var(--vs-control-hover)] text-[var(--vs-primary)]">
             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
@@ -236,6 +236,7 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
             return (
               <button
                 key={c.value}
+                data-workbench-control="choice"
                 onClick={() => { setActiveCategory(c.value); setPage(1); }}
                 aria-pressed={isActive}
                 className={`group rounded-xl border ${borderColor} ${bgColor} ${textColor} px-3 py-3.5 text-left transition-all duration-200 hover:border-[var(--vs-primary)] active:scale-[0.98]`}
@@ -292,6 +293,8 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
           {GENDERS.map((g) => (
             <button
               key={g.value}
+              data-workbench-control="choice"
+              aria-pressed={gender === g.value}
               onClick={() => { setGender(g.value); setPage(1); }}
               className={`px-3.5 py-2.5 text-sm font-medium rounded-lg border transition-all ${
                 gender === g.value
@@ -308,7 +311,7 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
       {/* ===== 推荐音色（仅在'全部'分类下显示，分类标签已移除避免重复） ===== */}
       {activeCategory === '全部' && (
         <>
-          <div className="mb-5 rounded-2xl border border-amber-300/15 bg-gradient-to-br from-[var(--vs-surface)]/50 to-[var(--vs-surface)]/40 p-5 backdrop-blur-sm">
+          <div data-workbench-surface="card" className="mb-5 rounded-2xl border border-amber-300/15 bg-gradient-to-br from-[var(--vs-surface)]/50 to-[var(--vs-surface)]/40 p-5 backdrop-blur-sm">
             <div className="mb-4 flex items-end justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -373,7 +376,7 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
             </div>
             <p className="mt-2 text-sm text-[var(--vs-text-muted)]">中文目录 · {VOICE_CURATION_DATE} 按官方页面对齐</p>
           </section>
-          <div className="mb-5 rounded-2xl border border-emerald-300/15 bg-gradient-to-br from-emerald-300/5 to-[var(--vs-surface)]/40 p-5 backdrop-blur-sm">
+          <div data-workbench-surface="card" className="mb-5 rounded-2xl border border-emerald-300/15 bg-gradient-to-br from-emerald-300/5 to-[var(--vs-surface)]/40 p-5 backdrop-blur-sm">
             <div className="mb-4 flex items-end justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -469,6 +472,8 @@ function VoicesLibrary({userId,token}:{userId:string;token?:string|null}) {
               {Array.from({ length: totalPages }).map((_, i) => (
                 <button
                   key={i}
+                  data-workbench-control="choice"
+                  aria-pressed={page === i + 1}
                   onClick={() => setPage(i + 1)}
                   className={`min-w-[40px] px-3.5 py-2.5 text-sm font-semibold rounded-lg border transition-all ${
                     page === i + 1

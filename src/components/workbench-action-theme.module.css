@@ -1,0 +1,263 @@
+.scopeMarker { display: none; }
+
+/* The catalog field follows the current theme into its main navigation routes. */
+:global(html[data-theme][data-mode]):has(.scopeMarker) {
+  --unified-workbench-field: var(--marketplace-field);
+  --unified-workbench-grid-image: var(--creation-grid-image);
+}
+
+/* Resolve these aliases at the route root, before .vs-workbench maps its local
+   surface tokens back to --background and --card. */
+:global(html[data-theme="soft-white"][data-mode="light"]):has(.scopeMarker) {
+  --background: var(--marketplace-field);
+  --card: #fffefa;
+  --popover: var(--card);
+  --secondary: #eeede7;
+  --muted: #f3f2ed;
+  --accent: #e9f2ed;
+  --accent-foreground: var(--creation-nav-text);
+  --primary: var(--creation-nav-accent);
+  --ring: var(--primary);
+  --border: #deddd6;
+  --input: #c6c8bd;
+  --ui-surface: var(--card);
+  --ui-surface-strong: var(--popover);
+  --ui-line: var(--border);
+  --ui-line-strong: var(--input);
+  --ui-focus: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+  --scrollbar-thumb: #c5c7bb;
+  --scrollbar-thumb-hover: #8b9389;
+  --scrollbar-track: var(--muted);
+  --creation-card: var(--card);
+  --creation-muted: var(--muted);
+  --creation-secondary: var(--secondary);
+  --creation-edge: var(--border);
+  --creation-input: var(--input);
+
+  :global(.voice-studio-root) {
+    --vs-bg: var(--marketplace-field);
+    --vs-bg-secondary: var(--creation-secondary);
+    --vs-surface: var(--creation-card);
+    --vs-card: var(--creation-card);
+    --vs-glass-bg: var(--creation-card);
+    --vs-surface-hover: var(--creation-muted);
+    --vs-card-hover: var(--creation-muted);
+    --vs-border: var(--creation-edge);
+    --vs-glass-border: var(--creation-edge);
+    --vs-input-bg: var(--marketplace-field);
+    --vs-input-border: var(--creation-input);
+    --vs-primary: var(--creation-nav-accent);
+    --vs-primary-hover: var(--brand-action-hover);
+    --vs-glow: var(--creation-nav-accent);
+    --vs-input-focus-shadow: var(--ui-focus);
+  }
+
+  :global(.vs-workbench) {
+    --popover: var(--creation-card);
+    --secondary: var(--creation-secondary);
+    --muted: var(--creation-muted);
+  }
+}
+
+/* The route marker is absent from reused workbenches under Youcai and Commerce. */
+:global(html[data-theme][data-mode] body):has(.scopeMarker) {
+  :global(:is(
+    [data-page="tools"],
+    [data-page="tools-utility"],
+    .sbw-root.sbw-editor,
+    .secondary-workbench.voice-studio-root.vs-workbench,
+    .voice-studio-root.vs-studio-shell,
+    .cover-rebuild-shell,
+    [data-cover-workbench]
+  )) {
+    --workbench-action-bg: #012264;
+    --workbench-action-hover: #123a7c;
+    --workbench-surface: rgb(from var(--card) r g b / 1);
+    --workbench-choice-bg: color-mix(in srgb, var(--primary) 8%, var(--workbench-surface));
+    --workbench-choice-hover: color-mix(in srgb, var(--primary) 12%, var(--workbench-surface));
+    --workbench-choice-fg: color-mix(in srgb, var(--primary) 88%, var(--foreground));
+    --workbench-choice-border: color-mix(in srgb, var(--primary) 36%, var(--border));
+    --workbench-secondary-hover: color-mix(in srgb, var(--foreground) 4%, var(--workbench-surface));
+
+    /* These workbenches use the same solid action color as their own theme.
+       Embedded tool panels also get a local set of action variables. */
+    &:global(:is([data-cover-workbench], .sbw-editor, [data-page="tools"], [data-page="tools-utility"], .toolbox-embedded-workspace)) {
+      --workbench-action-bg: var(--studio-action);
+      --workbench-action-hover: var(--studio-action-hover);
+    }
+
+    :global(:is(
+      [data-workbench-action="primary"],
+      .toolbox-primary-action,
+      .toolbox-extract-card .toolbox-card-actions > button[data-slot="button"][data-variant="default"],
+      .sbw-toolbar-actions > .sbw-batch-action,
+      .sbw-media-actions > .is-command:not(.is-stop-command),
+      .cover-primary-button
+    )) {
+      --brand-action-bg: var(--workbench-action-bg);
+      --brand-action-fg: #fff;
+      --brand-action-hover: var(--workbench-action-hover);
+      --brand-action-border: color-mix(in srgb, var(--workbench-action-bg) 76%, var(--primary));
+      --brand-action-ring: var(--primary);
+      background: var(--brand-action-bg) !important;
+      border-color: var(--brand-action-border) !important;
+      color: var(--brand-action-fg) !important;
+      box-shadow: none !important;
+      transform: none !important;
+
+      &:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--brand-action-hover) !important; }
+
+      &:disabled {
+        background: var(--muted) !important;
+        border-color: var(--border) !important;
+        color: var(--muted-foreground) !important;
+        opacity: .65 !important;
+        cursor: not-allowed;
+      }
+    }
+
+    :global(:is(
+      [data-workbench-action="secondary"],
+      .sub-page-back,
+      .sub-page-open,
+      .sub-page-nav-button,
+      .vs-studio-home,
+      .vs-studio-nav-link,
+      .toolbox-toolbar-action,
+      .toolbox-heading-actions > button,
+      .toolbox-extract-paste-button,
+      .sbw-toolbar-add-card,
+      .sbw-board-export,
+      .sbw-history-action .sub-page-nav-button,
+      .sbw-toolbar-actions > .is-primary:not(.sbw-batch-action),
+      .cover-secondary-button
+    )) {
+      --brand-action-bg: var(--workbench-surface);
+      --brand-action-fg: var(--foreground);
+      --brand-action-hover: var(--workbench-secondary-hover);
+      --brand-action-border: var(--border);
+      background: var(--brand-action-bg) !important;
+      border-color: var(--brand-action-border) !important;
+      color: var(--brand-action-fg) !important;
+      box-shadow: none !important;
+      transform: none !important;
+
+      &:hover:not(:disabled):not([aria-disabled="true"]) {
+        background: var(--brand-action-hover) !important;
+        color: var(--brand-action-fg) !important;
+      }
+    }
+
+    :global([data-workbench-control="choice"]) {
+      box-shadow: none !important;
+      transform: none !important;
+
+      &:hover:not(:disabled):not([aria-disabled="true"]) {
+        background: var(--workbench-secondary-hover) !important;
+        color: var(--foreground) !important;
+      }
+    }
+
+    :global(:is(
+      [data-workbench-control="choice"][aria-pressed="true"],
+      [data-workbench-control="choice"][aria-checked="true"],
+      .sbw-ratio-control > button.is-active,
+      .sbw-mode-toggle > button[aria-pressed="true"],
+      .cover-mode-switch > button.is-active,
+      .cover-source-options > button.is-active,
+      .cover-ratio-picker > button.is-active,
+      .cover-template-view-tabs > button.is-active
+    ):not(:disabled):not([aria-disabled="true"])) {
+      --brand-action-bg: var(--workbench-choice-bg) !important;
+      --brand-action-fg: var(--workbench-choice-fg) !important;
+      --brand-action-hover: var(--workbench-choice-hover) !important;
+      --brand-action-border: var(--workbench-choice-border) !important;
+      background: var(--workbench-choice-bg) !important;
+      border-color: var(--workbench-choice-border) !important;
+      color: var(--workbench-choice-fg) !important;
+      box-shadow: none !important;
+      transform: none !important;
+      font-weight: 650;
+
+      &:hover:not(:disabled):not([aria-disabled="true"]) {
+        background: var(--workbench-choice-hover) !important;
+        color: var(--workbench-choice-fg) !important;
+      }
+    }
+
+    :global(:is(
+      [data-workbench-control="choice"],
+      .sbw-ratio-control > button,
+      .sbw-mode-toggle > button,
+      .cover-mode-switch > button,
+      .cover-source-options > button,
+      .cover-ratio-picker > button,
+      .cover-template-view-tabs > button
+    ):is(:disabled, [aria-disabled="true"])) {
+      --brand-action-bg: var(--muted);
+      --brand-action-fg: var(--muted-foreground);
+      --brand-action-border: var(--border);
+      background: var(--muted) !important;
+      border-color: var(--border) !important;
+      color: var(--muted-foreground) !important;
+      opacity: .65 !important;
+      cursor: not-allowed;
+    }
+
+    :global(:is(.vs-studio-nav-link, .sub-page-nav-button)[data-active="true"]:not(:disabled)) {
+      border: 1px solid var(--creation-nav-edge) !important;
+      background: var(--creation-nav-fill) !important;
+      color: var(--creation-nav-text) !important;
+
+      &:hover, &:focus-visible {
+        background: var(--workbench-choice-hover) !important;
+        color: var(--creation-nav-text) !important;
+      }
+    }
+
+    :global(.vs-studio-nav-link[data-active="true"]) {
+      &::after { content: none; }
+      & svg { color: inherit; }
+    }
+  }
+  :global([data-cover-workbench] button[data-workbench-control="choice"][aria-pressed="true"]:enabled small) {
+    color: var(--workbench-choice-fg);
+  }
+}
+
+/* Keep keyboard focus visible even when a global hover reset is also active. */
+@layer base {
+  :global(html[data-theme][data-mode] body):has(.scopeMarker) :global(:is(
+    [data-workbench-action="primary"],
+    [data-workbench-action="secondary"],
+    [data-workbench-action="ghost"],
+    [data-workbench-control="choice"],
+    .sub-page-back,
+    .sub-page-open,
+    .sub-page-nav-button,
+    .vs-studio-home,
+    .vs-studio-nav-link,
+    .toolbox-primary-action,
+    .toolbox-extract-card .toolbox-card-actions > button[data-slot="button"][data-variant="default"],
+    .toolbox-toolbar-action,
+    .toolbox-heading-actions > button,
+    .toolbox-extract-paste-button,
+    .sbw-toolbar-add-card,
+    .sbw-toolbar-actions > .sbw-batch-action,
+    .sbw-toolbar-actions > .is-primary,
+    .sbw-media-actions > .is-command:not(.is-stop-command),
+    .sbw-board-export,
+    .sbw-model-list > button,
+    .sbw-ratio-control > button,
+    .sbw-mode-toggle > button,
+    .cover-primary-button,
+    .cover-secondary-button,
+    .cover-mode-switch > button,
+    .cover-source-options > button,
+    .cover-ratio-picker > button,
+    .cover-template-view-tabs > button
+  ):focus-visible) {
+    outline: 2px solid var(--primary) !important;
+    outline-offset: 2px;
+  }
+}

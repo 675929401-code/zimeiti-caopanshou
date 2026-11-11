@@ -22,7 +22,6 @@ const protectedReads = [
   "/api/digital-human/long-history",
   "/api/extract/history",
   "/api/formatter/history",
-  "/api/image-workbench/history",
   "/api/media-history",
   "/api/media-history/content?id=fixture",
   "/api/segmenter/history",

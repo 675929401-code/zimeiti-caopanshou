@@ -37,7 +37,9 @@ function response(body: Record<string, unknown>, status = 200, headers: Record<s
 
 function resumeInput(record: Awaited<ReturnType<DatabaseImageExactlyOnceStore["get"]>>) {
   const snapshot = parseImageFailureRequestSnapshot(record?.requestSnapshot);
-  if (!snapshot || !["image-workbench", "cover-studio", "storyboard-workbench"].includes(snapshot.surface)) return {};
+  // Cover prompts are application-owned private configuration. The cover
+  // operation/confirmation ID is sufficient for its server-side recovery.
+  if (!snapshot || !["image-workbench", "storyboard-workbench"].includes(snapshot.surface)) return {};
   return {
     resumeInput: {
       prompt: snapshot.prompt,

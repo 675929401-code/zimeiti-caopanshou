@@ -28,3 +28,91 @@
   box-sizing: border-box;
   object-fit: contain;
 }
+
+/* One public model row reserves name, full specification/price and purpose.
+   ID controls retain their existing behavior in a uniformly taller variant. */
+.publicRail { --sbw-public-model-row-height: 72px; }
+.publicRail:has(:global(.sbw-model-id-copy)) { --sbw-public-model-row-height: 90px; }
+:global(html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main) .publicRail {
+  :global(.sbw-model-list) { gap: 0; }
+  :global(.sbw-model-list > button) {
+    position: relative;
+    box-sizing: border-box;
+    height: var(--sbw-public-model-row-height);
+    min-height: var(--sbw-public-model-row-height);
+    max-height: var(--sbw-public-model-row-height);
+    padding-block: 8px;
+    border-radius: 0;
+  }
+  :global(.sbw-model-list > button::after) {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 1px;
+    background: var(--studio-edge, var(--border));
+    pointer-events: none;
+  }
+  :global(.sbw-model-list > button .sbw-model-copy) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 16px 18px 14px;
+    justify-content: stretch;
+    width: 100%;
+    row-gap: 2px;
+    min-width: 0;
+  }
+  :global(.sbw-model-copy > strong) { grid-row: 1; min-height: 0; line-height: 16px; }
+  :global(.sbw-model-copy .sbw-model-meta) {
+    grid-row: 2;
+    display: flex;
+    flex-wrap: nowrap;
+    min-height: 0;
+    overflow: visible;
+    white-space: nowrap;
+    line-height: 16px;
+  }
+  :global(.sbw-model-meta .sbw-model-tier),
+  :global(.sbw-model-meta .sbw-model-channel),
+  :global(.sbw-model-meta .sbw-model-price) {
+    flex: 0 0 auto;
+    max-width: none;
+    overflow: visible;
+    white-space: nowrap;
+  }
+  :global(.sbw-model-copy > .sbw-model-cap),
+  :global(.sbw-model-copy > .sbw-model-need) {
+    grid-row: 3;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 14px;
+    overflow: hidden;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    text-overflow: ellipsis;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--sbw-editor-muted, var(--muted-foreground));
+    line-height: 14px;
+  }
+  :global(.sbw-model-copy > .sbw-model-id-copy) { grid-row: 4; min-height: 0; line-height: 12px; }
+}
+:global(html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main) .publicRail:has(:global(.sbw-model-id-copy)) :global(.sbw-model-copy) {
+  grid-template-rows: 16px 18px 14px 18px;
+}
+
+/* Accent belongs to the group heading, never to the selected model surface. */
+:global(html[data-theme][data-mode]):has(.publicRail) {
+  --sbw-public-model-info: var(--info);
+}
+:global(html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main) .publicRail :global(.sbw-model-section > header) {
+  --sbw-editor-panel-accent: var(--primary);
+  padding: 3px 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--sbw-editor-panel-accent) 7%, var(--studio-toolbar, var(--card)));
+}
+:global(html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main) .publicRail :global(.sbw-video-model-section > header) {
+  --sbw-editor-panel-accent: color-mix(in srgb, var(--sbw-public-model-info, var(--info)) 80%, var(--foreground));
+}

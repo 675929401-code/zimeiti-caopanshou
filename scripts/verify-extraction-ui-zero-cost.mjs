@@ -63,7 +63,7 @@ async function verifySourceContracts() {
   assert.match(textSource, /else router\.push\("\/segmenter"\)/u, "独立提取页送去分段必须进入独立分段页");
   assert.doesNotMatch(textSource, /router\.push\(embedded \? "\/tools\?tab=segment"/u, "嵌入工具箱不得触发 Next 路由卸载");
   assert.match(textSource, /const pendingAttempt = useExtractionAttemptStatus/u, "文案待确认结果必须持续读取原请求状态");
-  assert.match(textSource, /正在后台处理原请求/u, "文案待确认结果必须提供明确后台反馈");
+  assert.match(textSource, /正在跟踪原请求状态/u, "文案待确认结果必须提供明确后台反馈");
   assert.match(textSource, /result\?\.status === "error" && !result\.pending/u, "待确认时不得出现可重复提交的失败入口");
   assert.match(source, /通道已配置/u);
   assert.doesNotMatch(source, /服务状态：可用/u);
@@ -293,6 +293,7 @@ async function verifyBrowser(context, sourceChecks) {
       }
       extractRequests.push({
         mode: body.extraction_mode,
+        videoLinks: body.extraction_mode === "video" ? body.links : undefined,
         headerId: request.headers()["idempotency-key"],
         bodyId: body.client_request_id,
         markerPresent: JSON.stringify(body).includes(marker),
@@ -418,7 +419,7 @@ async function verifyBrowser(context, sourceChecks) {
   await page.goto(`${baseUrl}/tools?tab=text`, { waitUntil: "networkidle", timeout: 60_000 });
   await page.getByRole("textbox", { name: "文案分享文本或链接" }).fill("https://v.douyin.com/fixture-text-pending/");
   await page.getByRole("button", { name: "提取文案", exact: true }).click();
-  await page.getByText("正在后台处理原请求", { exact: true }).waitFor({ state: "visible", timeout: 15_000 });
+  await page.getByText("正在跟踪原请求状态", { exact: true }).waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(await page.getByRole("button", { name: "重新提取", exact: true }).count(), 0, "原请求待确认时不得出现重复提取入口");
   await page.getByText(`${marker}-后台回填文案`, { exact: true }).waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(textPendingPosts, 1, "后台跟踪场景必须只提交一次原请求");
@@ -427,8 +428,8 @@ async function verifyBrowser(context, sourceChecks) {
   await page.goto(`${baseUrl}/tools?tab=video`, { waitUntil: "networkidle", timeout: 60_000 });
   const videoInput = page.getByRole("textbox", { name: "视频分享文本或链接" });
   await videoInput.waitFor({ state: "visible" });
-  const videoValue = `${marker} https://v.douyin.com/fixture-video/`;
-  await videoInput.fill(videoValue);
+  const videoUrl = "https://v.douyin.com/fixture-video/";
+  await videoInput.fill(`${marker}，分享一个视频\n${videoUrl}\n复制链接查看`);
   await page.waitForTimeout(100);
   assert.equal(
     await page.evaluate(() => localStorage.getItem("extract_page_state")),
@@ -484,6 +485,8 @@ async function verifyBrowser(context, sourceChecks) {
   const requestsByMode = Object.fromEntries(
     ["text", "video"].map((mode) => [mode, extractRequests.filter((request) => request.mode === mode)]),
   );
+  assert.deepEqual(requestsByMode.video.map(request => request.videoLinks), [[videoUrl]],
+    "完整分享文本只应提交其中的视频链接");
   for (const [mode, requests] of Object.entries(requestsByMode)) {
     assert.ok(requests.length >= 1 && requests.length <= 2, `${mode} 双击产生了异常请求数量 ${requests.length}`);
     assert.equal(new Set(requests.map((request) => request.bodyId)).size, 1, `${mode} 重复提交没有复用稳定请求标识`);

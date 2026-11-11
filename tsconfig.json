@@ -44,6 +44,7 @@
   ],
   "exclude": [
     "node_modules",
+    "integrations/aitoearn-native-app",
     "dist",
     "scripts/billing-baseline",
     "main-site",

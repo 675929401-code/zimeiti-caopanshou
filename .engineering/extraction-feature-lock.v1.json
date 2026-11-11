@@ -26,6 +26,15 @@
       "scope": "src/app/extract/page.tsx UI only: relocate existing clear buttons beside paste; preserve callbacks, disabled conditions, extraction requests, status and billing.",
       "previousSha256": "9fa32d5ad142deea2585b53922ffd84deebf2ea5fb63746b69fc7c92e37d9f9f",
       "review": "Independent compatibility_release_review verified exact before/after delta and unchanged handlers. TypeScript and scoped ESLint passed; current-build browser acceptance is recorded separately."
+    },
+    {
+      "date": "2026-11-08",
+      "session": "3f431c5d-870f-4afa-8cf9-f76afaa886e6",
+      "userRequest": "允许，修复视频输入拆分",
+      "scope": "Only select video URL lines and standalone video IDs from multiline shares before the existing per-item extraction loop.",
+      "previousSha256": "4d955b4b842c1053060e9bde894140f38432256f9bddb5b31c60981fd03bd544",
+      "newSha256": "928e99fcd5fed26f464ab708473d7fd333f743add3f2f52c9d043b7bfc1d1759",
+      "review": "Reviewed the input-only delta against the locked source. Eight input cases, scoped TypeScript and ESLint passed. Current-build browser request counts are recorded in the session handoff."
     }
   ],
   "configurationBaseline": {
@@ -110,7 +119,7 @@
     },
     {
       "path": "src/app/extract/page.tsx",
-      "sha256": "4d955b4b842c1053060e9bde894140f38432256f9bddb5b31c60981fd03bd544"
+      "sha256": "928e99fcd5fed26f464ab708473d7fd333f743add3f2f52c9d043b7bfc1d1759"
     },
     {
       "path": "src/hooks/use-extraction-attempt-status.ts",

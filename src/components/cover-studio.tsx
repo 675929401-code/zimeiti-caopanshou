@@ -1415,7 +1415,7 @@ function CoverStudioForAccount() {
   const latestPreviewResult = previewResult ? results.find((item) => item.id === previewResult.id) ?? null : null;
   const previewModeId: CoverModeId = currentPreview?.renderPlan?.coverModeId === "funny-cartoon"
     || (!currentPreview?.renderPlan?.coverModeId && currentPreview?.prompt?.includes("封面制作模式：卡通搞怪"))
-    ? "funny-cartoon" : currentPreview?.renderPlan?.coverModeId ?? coverModeId;
+    ? "funny-cartoon" : currentPreview?.renderPlan?.coverModeId === "cartoon" ? "cartoon" : coverModeId;
   const previewSourceId: MaterialSourceId = currentPreview?.renderPlan?.materialSourceId
     ?? (currentPreview?.prompt?.includes("参考方式：上传参考图") ? "upload"
       : currentPreview?.prompt?.includes("参考方式：参考模板") ? "template" : materialSourceId);

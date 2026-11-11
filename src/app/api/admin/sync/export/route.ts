@@ -1,7 +1,7 @@
 // 数据导出 API - 导出全量管理数据为 JSON
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { MANJU_PLATFORM_SETTINGS_PREFIX } from '@/lib/server/platform-settings-reserved';
+import { MANJU_PLATFORM_SETTINGS_PREFIX, isReservedPlatformSettingKey } from '@/lib/server/platform-settings-reserved';
 import { isPlatformSecretSettingKey } from '@/lib/server/platform-secret-settings';
 
 // 需要同步的管理配置表
@@ -22,7 +22,7 @@ function isSensitiveSettingKey(key: unknown): boolean {
 
 function sanitizeExportRows(tableName: string, rows: Record<string, unknown>[]): Record<string, unknown>[] {
   if (tableName === 'platform_settings') {
-    return rows.filter((row) => !isSensitiveSettingKey(row.setting_key));
+    return rows.filter((row) => !isSensitiveSettingKey(row.setting_key) && !isReservedPlatformSettingKey(row.setting_key));
   }
   return rows.map((row) => {
     const safe = { ...row };
@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
       source: process.env.COZE_PROJECT_ENV === 'PROD' ? 'production' : 'sandbox',
       tables: SYNC_TABLES.map(t => t.name),
       excluded_namespaces: [MANJU_PLATFORM_SETTINGS_PREFIX],
+      reserved_settings_excluded: true,
       secret_fields_excluded: true,
       credential_binding_required_on_import: true,
       data: exportData,

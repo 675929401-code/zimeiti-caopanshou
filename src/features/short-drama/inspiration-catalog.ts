@@ -24,7 +24,6 @@ export const INSPIRATION_EXAMPLES = [
     imagePath: "/short-drama/previews/inspiration-silent-pet-v1.webp",
     imageAlt: "原创无对白萌宠动画方法示例",
     primaryHref: "/storyboard-workbench?entry=inspiration&template=silent-pet-care",
-    secondaryHref: "/image-workbench?entry=inspiration&template=silent-pet-care",
   },
   {
     id: "paper-fox-adventure",
@@ -37,7 +36,6 @@ export const INSPIRATION_EXAMPLES = [
     imagePath: "/short-drama/previews/inspiration-paper-fox-v1.webp",
     imageAlt: "原创纸艺狐狸风格实验示例",
     primaryHref: "/storyboard-workbench?entry=inspiration&template=paper-fox-adventure",
-    secondaryHref: "/image-workbench?entry=inspiration&template=paper-fox-adventure",
   },
   {
     id: "product-micro-film",
@@ -50,7 +48,6 @@ export const INSPIRATION_EXAMPLES = [
     imagePath: "/short-drama/previews/inspiration-product-film-v1.webp",
     imageAlt: "原创产品微电影创作示例",
     primaryHref: "/storyboard-workbench?entry=inspiration&template=product-micro-film",
-    secondaryHref: "/image-workbench?entry=inspiration&template=product-micro-film",
   },
   {
     id: "moon-observatory",
@@ -63,6 +60,5 @@ export const INSPIRATION_EXAMPLES = [
     imagePath: "/short-drama/previews/inspiration-moon-observatory-v1.webp",
     imageAlt: "原创月面观测站知识故事示例",
     primaryHref: "/storyboard-workbench?entry=inspiration&template=moon-observatory",
-    secondaryHref: "/image-workbench?entry=inspiration&template=moon-observatory",
   },
 ] as const satisfies readonly InspirationExample[];

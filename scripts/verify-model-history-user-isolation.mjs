@@ -11,7 +11,6 @@ const endpoints = [
   ["conversation", "/api/conversations/history", ["conversations", "history", "items"]],
   ["video", "/api/video/history?limit=100", ["tasks", "history", "items"]],
   ["digitalHuman", "/api/video/history?surface=digital-human&limit=100", ["tasks", "history", "items"]],
-  ["image", "/api/image-workbench/history?page=1", ["records", "items"]],
   ["cover", "/api/cover/history?page=1", ["records", "items"]],
   ["voice", "/api/voice/history?page=1&pageSize=100", ["records", "tasks", "items", "history"]],
   ["storyboard", "/api/storyboard/projects?offset=0", ["projects", "items"]],

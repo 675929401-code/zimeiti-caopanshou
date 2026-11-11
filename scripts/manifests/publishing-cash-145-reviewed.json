@@ -1,0 +1,48 @@
+{
+  "kind": "publishing-cash-145-review.v1",
+  "candidateSha256": "fb27f5ee2a12a18834050ca56395ed072e181e9cd05a501e2e826857163cc31d",
+  "testedGuardedCandidateSha256": "82b4e49dfd26d763be3111bc3934eb8738616f40f9398d40f11185f7a578a201",
+  "targetFingerprint": "f182534099e8496efcf791f5ff09470500b0d3d320ad801992056f183a32ca35",
+  "beforeSemanticSha256": "ceac6202b9aaf92513921aa7c8a1496d9b83211bd3dfe3a1005ca38de952f8b0",
+  "afterSemanticSha256": "5c8ba9c38219bed326eedd76eb2c6666bf46b91d2dc1971e0e65dac235917e3f",
+  "reviewEvidence": {
+    "report": {
+      "file": ".codex-evidence/publishing-closure-3261d91f/qa/cash-145-final-rehearsal-2026-11-10T11-28-23-841Z.json",
+      "sha256": "8b58a02600b0582b48b081219ad12c31636a881712cdf6d4be8f13712a269dec",
+      "passedChecks": 13
+    },
+    "pureDdl": {
+      "file": ".codex-evidence/publishing-closure-3261d91f/qa/cash-145-final-after-ddl-2026-11-10T11-28-23-556Z.json",
+      "sha256": "9d55cd5b2dd64989cd74f7be7b2a72051dcbdba357806853ec4462a1779a6191",
+      "preparedSqlSha256": "311ce286d2bc86b605af97c1d7c2005fd4fe57131f698656651c29a9b2f04900",
+      "fixtureRowsPresent": false,
+      "temporaryLedgerOnly": true,
+      "sourceDatabaseConnected": false
+    },
+    "isolatedTarget": {
+      "fingerprint": "0c597b4e0a25989eb6c2078b0c7142b9c9c593a9398d895ae451164b924259f6",
+      "configuredHost": "127.0.0.1",
+      "databaseName": "zimeiti_restore_20261110112519_1fe286a7",
+      "serverAddress": "127.0.0.1/32",
+      "serverPort": "54322",
+      "serverVersion": "150019"
+    }
+  },
+  "finalization": {
+    "allowedChanges": [
+      "replace stale incomplete comments with reviewed header",
+      "remove exactly one deliberate guard",
+      "replace final outer ROLLBACK with COMMIT"
+    ],
+    "innerStatementChanges": false,
+    "independentReviewer": "/root/astra_studio_acceptance",
+    "approval": "Root and independent QA approved final envelope changes after all thirteen final isolated checks passed."
+  },
+  "execution": {
+    "singleMigration": "20261110144500",
+    "cashMutations": 0,
+    "externalCalls": 0,
+    "configurationEnable": false,
+    "sourceApplyExecutor": "/root"
+  }
+}

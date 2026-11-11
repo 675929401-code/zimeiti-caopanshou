@@ -8,6 +8,8 @@ import { isDigitalHumanWorkspaceModel } from "@/lib/video-model-surface";
 
 export type WorkspaceModelKind = "image" | "video";
 export type WorkspaceModelSurface =
+  | "publish-center-image"
+  | "publish-center-video"
   | "image-workbench"
   | "cover-studio"
   | "storyboard-image"
@@ -49,7 +51,7 @@ export const WORKSPACE_MODEL_SURFACES: ReadonlyArray<{
     id: "cover-studio",
     kind: "image",
     label: "封面制作 · 生图",
-    description: "生成封面底图，精确文字由平台排版层完成。",
+    description: "用于动画、商品和参考封面的图片制作；原图排版保留上传图片。",
     storageValue: "cover-studio",
   },
   {
@@ -107,6 +109,16 @@ export const WORKSPACE_MODEL_SURFACES: ReadonlyArray<{
     label: "主站视频制作",
     description: "按模型能力动态展示首尾帧、参考图、音频、源视频、时长和清晰度。",
     storageValue: "ai-video",
+  },
+  {
+    id: "publish-center-image", kind: "image", label: "发布中心 · 生图",
+    description: "主站发布中心的明确用户动作；模型目录展示与场景执行准入分别管理。",
+    storageValue: "publish-center-image",
+  },
+  {
+    id: "publish-center-video", kind: "video", label: "发布中心 · 生视频",
+    description: "主站发布中心的明确用户动作；每次执行须绑定原生动作及冻结预算。",
+    storageValue: "publish-center-video",
   },
 ] as const;
 
@@ -178,6 +190,7 @@ export function withWorkspaceModelAssignment(
 
 export function imageWorkspaceSurfaceFromRequest(value: unknown): WorkspaceModelSurface | null {
   const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "publish-center-image") return "publish-center-image";
   if (normalized === "image-workbench") return "image-workbench";
   if (normalized === "cover-studio" || normalized === "cover") return "cover-studio";
   if (normalized === "storyboard-workbench" || normalized === "storyboard") return "storyboard-image";
@@ -188,6 +201,7 @@ export function imageWorkspaceSurfaceFromRequest(value: unknown): WorkspaceModel
 
 export function videoWorkspaceSurfaceFromRequest(value: unknown): WorkspaceModelSurface | null {
   const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "publish-center-video") return "publish-center-video";
   if (normalized === "storyboard-workbench" || normalized === "storyboard") return "storyboard-video";
   if (normalized === "video-page" || normalized === "ai-video") return "video-page";
   if (normalized === "commerce-agent" || normalized === "commerce" || normalized === "commerce-video") return "commerce-video";

@@ -486,7 +486,7 @@ export function getSecurityHeadersForHost(host: string, _pathname = ""): Record<
   // actual protection boundary.
   const privateSurfacePrefixes = [
     "/api/", "/admin", "/profile", "/media-history", "/tools/", "/video",
-    "/image-workbench", "/cover", "/storyboard-workbench", "/segmenter",
+    "/cover", "/storyboard-workbench", "/segmenter",
     "/formatter", "/extract", "/voice-studio", "/digital-human", "/short-drama",
     "/commerce", "/youcai",
   ];

@@ -41,7 +41,8 @@ containsAll(workspace, [
   'vs-text-input-card',
   'vs-text-input-control flex-1 w-full',
   'data-voice-output-region',
-  'lg:col-start-2',
+  'className="vs-compose-panel"',
+  'aria-describedby="voice-synthesis-fee"',
   '{result && (',
   'data-voice-output-card="ready"',
 ], 'workspace composition');

@@ -1,0 +1,10 @@
+.qr { display: grid; place-items: center; gap: 12px; padding: 22px; margin: 16px 0; background: #fffdf8; border: 1px solid #e8dfd0; border-radius: 14px; color: #352c20; }
+.qr img,.qr svg { max-width: 100%; background: white; padding: 8px; }
+.mediaRow { display: grid; grid-template-columns: 24px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid #e8dfd0; }
+.mediaRow strong { overflow-wrap: anywhere; }
+.mediaRow small { display: block; color: #756b5b; margin-top: 4px; }
+.mediaRow progress { width: 120px; max-width: 100%; }
+.options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.operation { margin-top: 12px; padding: 16px; border: 1px solid #e8dfd0; border-radius: 12px; background: #fffdf8; color: #352c20; }
+.operation p { overflow-wrap: anywhere; }
+.spaced { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; align-items: center; }

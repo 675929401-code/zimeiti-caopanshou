@@ -21,6 +21,7 @@ import {
 } from "@/lib/image-model-surface-order";
 import {
   configuredAspectRatios,
+  evaluateWorkspaceModelCompatibility,
   imageWorkspaceSurfaceFromRequest,
 } from "@/lib/workspace-model-policy";
 import {
@@ -97,7 +98,8 @@ function publicImageCatalogPriority(model: Record<string, unknown>): number {
 export async function GET(request: Request) {
   try {
     const surface = new URL(request.url).searchParams.get("surface");
-    const includeAutodlH3Selfhost = surface === "image-workbench"
+    const nativeCatalog = surface === "publish-center-image";
+    const includeAutodlH3Selfhost = nativeCatalog || surface === "image-workbench"
       || surface === "storyboard-workbench";
     const commerceCatalog = surface === "commerce-agent";
     const dbClient = getSupabaseClient();
@@ -131,7 +133,7 @@ export async function GET(request: Request) {
         // General creation workbenches expose the complete configured catalog.
         // Workspace assignment is an administrator organization aid, not a
         // prerequisite for users to discover an otherwise configured model.
-        if (commerceCatalog) return true;
+        if (commerceCatalog || nativeCatalog) return true;
         if (requestedWorkspaceSurface) return isWorkspaceModelAssigned(
           assignmentOverrides,
           "image",
@@ -149,9 +151,9 @@ export async function GET(request: Request) {
       .map((model): Record<string, unknown> => ({ ...model, name: cleanImageModelText(model, model.name), model_name: cleanImageModelText(model, model.model_name), ...publicImageModelCapabilities(model) }))
       .sort((left, right) => {
         const priorityDifference = publicImageCatalogPriority(left) - publicImageCatalogPriority(right);
-        // Cover's dropdown follows the administrator's workspace order. Other
-        // image workbenches keep their existing family-grouped presentation.
-        if (orderSurface !== "cover-studio" && priorityDifference !== 0) return priorityDifference;
+        // Cover and publishing follow the administrator's workspace order.
+        // Other image workbenches retain their family-grouped presentation.
+        if (orderSurface !== "cover-studio" && !nativeCatalog && priorityDifference !== 0) return priorityDifference;
         const leftSurfaceOrder = requestedWorkspaceSurface ? imageModelSurfaceSortOrder(surfaceOrders, orderSurface, left.id) : null;
         const rightSurfaceOrder = requestedWorkspaceSurface ? imageModelSurfaceSortOrder(surfaceOrders, orderSurface, right.id) : null;
         if ((leftSurfaceOrder !== null) !== (rightSurfaceOrder !== null)) return leftSurfaceOrder !== null ? -1 : 1;
@@ -179,7 +181,9 @@ export async function GET(request: Request) {
         // off the public catalog merely because an APM or upstream probe
         // failed. The submit route validates the current provider contract.
         const legacyGenerationReady = priceReady && publicationState?.available === true;
-        const generationReady = legacyGenerationReady && readiness.protocolBindingReady;
+        const nativeWorkspaceAssigned = !nativeCatalog || isWorkspaceModelAssigned(assignmentOverrides, "image", model, "publish-center-image");
+        const nativeSurfaceCompatible = !nativeCatalog || evaluateWorkspaceModelCompatibility("image", model, "publish-center-image").compatible;
+        const generationReady = legacyGenerationReady && readiness.protocolBindingReady && nativeWorkspaceAssigned && nativeSurfaceCompatible;
         return toPublicModelDto("cover", {
           ...model,
           // The cover UI charges the default resolution. Project that exact
@@ -191,6 +195,7 @@ export async function GET(request: Request) {
         family: publicImageFamily(model),
         admission: publicationState?.admission || 'pending',
         catalogVisible: true,
+        ...(nativeCatalog ? { workspaceAssigned: nativeWorkspaceAssigned, surfaceCompatible: nativeSurfaceCompatible } : {}),
         available: generationReady,
         priceReady,
         protocolBindingReady: readiness.protocolBindingReady,
@@ -198,7 +203,9 @@ export async function GET(request: Request) {
         generationReady,
         readinessMessage: readiness.protocolBindingReady ? "" : readiness.readinessMessage,
         verificationNotice: readiness.verificationNotice,
-        availabilityMessage: !priceReady
+        availabilityMessage: nativeCatalog && !nativeWorkspaceAssigned ? "该模型尚未加入发布中心场景，目录保留展示"
+          : nativeCatalog && !nativeSurfaceCompatible ? "发布中心暂不支持该模型所需输入，目录保留展示"
+          : !priceReady
           ? "该模型正在维护"
             : model.is_active !== true
               ? disabledImageModelMessage(model)

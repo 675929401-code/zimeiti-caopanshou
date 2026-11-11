@@ -1,6 +1,6 @@
 export const IMAGE_MODEL_SURFACE_ORDER_SETTING_KEY = "image_model_surface_orders_v1";
 
-export type ImageModelOrderSurface = "image-workbench" | "cover-studio" | "storyboard-workbench" | "free-canvas" | "film-studio";
+export type ImageModelOrderSurface = "image-workbench" | "cover-studio" | "storyboard-workbench" | "free-canvas" | "film-studio" | "publish-center-image";
 
 export interface ImageModelSurfaceOrders {
   "image-workbench": Record<string, number>;
@@ -8,6 +8,7 @@ export interface ImageModelSurfaceOrders {
   "storyboard-workbench": Record<string, number>;
   "free-canvas": Record<string, number>;
   "film-studio": Record<string, number>;
+  "publish-center-image": Record<string, number>;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -38,6 +39,7 @@ export function parseImageModelSurfaceOrders(value: unknown): ImageModelSurfaceO
     ),
     "free-canvas": normalizeOrderMap(surfaces["free-canvas"] || surfaces.canvas),
     "film-studio": normalizeOrderMap(surfaces["film-studio"] || surfaces["short-drama-film-studio"]),
+    "publish-center-image": normalizeOrderMap(surfaces["publish-center-image"]),
   };
 }
 
@@ -50,12 +52,14 @@ export function serializeImageModelSurfaceOrders(orders: ImageModelSurfaceOrders
       "storyboard-workbench": normalizeOrderMap(orders["storyboard-workbench"]),
       "free-canvas": normalizeOrderMap(orders["free-canvas"]),
       "film-studio": normalizeOrderMap(orders["film-studio"]),
+      "publish-center-image": normalizeOrderMap(orders["publish-center-image"]),
     },
   });
 }
 
 export function normalizeImageModelOrderSurface(value: string | null | undefined): ImageModelOrderSurface | null {
   const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "publish-center-image") return "publish-center-image";
   if (normalized === "image-workbench") return "image-workbench";
   if (normalized === "cover-studio" || normalized === "cover") return "cover-studio";
   if (normalized === "storyboard-workbench" || normalized === "storyboard") return "storyboard-workbench";

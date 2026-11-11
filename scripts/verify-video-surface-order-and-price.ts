@@ -24,6 +24,7 @@ const encoded = serializeVideoModelSurfaceOrders({
   "free-canvas": {},
   "film-studio": {},
   "commerce-agent": {},
+  "publish-center-video": {},
 });
 const orders = parseVideoModelSurfaceOrders(encoded);
 assert.equal(videoModelSurfaceSortOrder(orders, "ai-video", "omni"), 10);

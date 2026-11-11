@@ -1,3 +1,6 @@
+import { resolveNativeAiImageInput } from "@/lib/server/native-main-media";
+import type { NativeAiInvocation } from "@/lib/server/native-ai-admission";
+import { resolveNativeAiConsumer, admitNativeAiConsumer, buildNativeAiPriceHash, toNativeAiReservationAmount, NativeAiAdmissionError, nativeAiAdmissionFailure } from "@/lib/server/native-ai-admission";
 import { resolveStoryboardChainReferences, assertStoryboardChainDispatchCurrent, StoryboardChainReferenceError } from "@/lib/server/storyboard-chain-reference";
 import { storyboardChainFingerprint, buildStoryboardChainReferenceInstruction } from "@/lib/storyboard-chain-contract";
 import { ImageAdminValidationError } from "@/lib/image-admin-validation";
@@ -24,6 +27,7 @@ import {
   isRetryableImageUpstreamStatus,
 } from "@/lib/image-model-fallback";
 import { safeFetch } from "@/lib/safe-fetch";
+import { fetchSynchronousImageProvider, synchronousImageProviderTimeoutMs } from "@/lib/server/image-provider-http";
 import { readPublicImageResult, validatePublicImageResultUrl } from "@/lib/image-result-network";
 import { readOwnedImageReference } from "@/lib/server/image-owned-reference";
 import { validateUploadBuffer } from "@/lib/file-upload-security";
@@ -386,10 +390,13 @@ async function fetchImageUpstream(
   init: RequestInit = {},
   context: ImageUpstreamContext = {},
   timeoutMs = 5 * 60 * 1000,
+  providerProtocol?: ImageProviderProtocol,
 ): Promise<Response> {
   const target = safeUpstreamTarget(typeof input === "string" ? input : input.url);
   try {
     // 断连或超时无法证明供应商未受理，所有图片模型都只能提交一次。
+    const synchronousTimeout = synchronousImageProviderTimeoutMs(providerProtocol);
+    if (synchronousTimeout !== undefined) return await fetchSynchronousImageProvider(input, init, synchronousTimeout);
     return await fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
     console.error("[Image] Upstream result unknown; automatic resubmission disabled:", {
@@ -434,6 +441,7 @@ async function fetchAuditedImageProviderPost(input: {
       {},
       input.upstreamContext,
       input.timeoutMs,
+      input.providerProtocol,
     );
     return { response, dispatchReceipt };
   } catch (error) {
@@ -1291,13 +1299,31 @@ export async function POST(request: NextRequest) {
     const userId = payload.userId;
     const userRole = currentAuthorization.ok ? "admin" : "student";
 
-    const body = await readImageGenerationInput(request);
+    const dbClient = getSupabaseClient();
+    const nativeInput: { invocation: NativeAiInvocation | null; referenceUris: string[]; replay: boolean } = { invocation: null, referenceUris: [], replay: false };
+    const body = await readImageGenerationInput(request, { transformWireRequest: async raw => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+      const wire = raw as Record<string, unknown>;
+      nativeInput.invocation = await resolveNativeAiConsumer({ db: dbClient, userId, consumer: "main_image", requestKey: typeof wire.clientIdempotencyKey === "string" ? wire.clientIdempotencyKey : "", wireRequest: raw });
+      if (wire.historySurface === "publish-center-image" && !nativeInput.invocation) throw new NativeAiAdmissionError("NATIVE_AI_ACTION_REQUIRED", "发布中心生图需要当前会员的明确动作");
+      if (!nativeInput.invocation) return raw;
+      if (!Array.isArray(wire.referenceImageUrls) || wire.referenceImageUrls.length > 9 || wire.referenceImageUrls.some(uri => typeof uri !== "string")) throw new NativeAiAdmissionError("NATIVE_AI_REFERENCE_INVALID", "原生参考图合同无效");
+      nativeInput.referenceUris = wire.referenceImageUrls as string[];
+      const previous = await imageExactlyOnceStore.get({ userId, clientIdempotencyKey: nativeInput.invocation.requestKey, clientTraceId: String(wire.clientTraceId || "") });
+      nativeInput.replay = Boolean(previous && ((previous.state === "completed" && previous.response) || hasImageProviderCheckpoint(previous)));
+      if (previous && !nativeInput.replay) throw new NativeAiAdmissionError("NATIVE_AI_ALREADY_ADMITTED", "原图片请求结果待核对，只能读取原任务");
+      if (nativeInput.replay) return { ...wire, referenceImageUrls: [] };
+      try { return { ...wire, referenceImageUrls: await Promise.all(nativeInput.referenceUris.map(uri => resolveNativeAiImageInput(dbClient, userId, uri))) }; }
+      catch { throw new NativeAiAdmissionError("NATIVE_AI_REFERENCE_UNAVAILABLE", "参考图已失效或当前无法安全读取，请核对主站原素材"); }
+    } });
+    const nativeInvocation = nativeInput.invocation;
     const {
       prompt, modelId, style, mode, aspectRatio, resolution, coverText,
       referenceImageUrls, referenceUsage, clientTraceId, clientIdempotencyKey,
       clientNodeId, clientNodeTitle, historySurface, noRetry,
-      strictSingleSubmit, resumeDeliveryOnly = false, adminValidation: rawAdminValidation,
+      strictSingleSubmit, resumeDeliveryOnly: inputResumeDeliveryOnly = false, adminValidation: rawAdminValidation,
     } = body;
+    const resumeDeliveryOnly = inputResumeDeliveryOnly || nativeInput.replay;
     const deliveryRequirement = historySurface === "short-drama-film-studio" ? "recoverable_reference" : body.deliveryRequirement;
     const adminValidation = rawAdminValidation as ImageGenerationValidationInput | undefined;
     const internalModelIdRequested = typeof modelId === "string"
@@ -1359,7 +1385,7 @@ export async function POST(request: NextRequest) {
       ? `h3_${createHash("sha256").update(`${userId}:${requestedIdempotencyKey}`).digest("hex").slice(0, 48)}`
       : traceId;
 
-    const dbClient = getSupabaseClient();
+
     const effectiveMode = mode || "local";
     const ratio = aspectRatio || "3:4";
     if (!["3:4", "9:16", "4:3", "16:9", "1:1"].includes(ratio)) {
@@ -1854,7 +1880,7 @@ export async function POST(request: NextRequest) {
         ? { outputPolicy } : {}),
       providerProtocol,
       imageCount: IMAGE_FIXED_OUTPUT_COUNT,
-      references: body.presetReferences?.length ? referenceImageUrls : references,
+      references: nativeInvocation ? nativeInput.referenceUris : body.presetReferences?.length ? referenceImageUrls : references,
       ...(body.presetReferences?.length ? { presetReferences: body.presetReferences } : {}),
       referenceUsage: referenceUsage || "general",
       costPrice,
@@ -1871,7 +1897,7 @@ export async function POST(request: NextRequest) {
       modelName: userVisibleImageModelLabel,
       aspectRatio: ratio,
       resolution: effectiveResolution,
-      referenceImageUrls: references,
+      referenceImageUrls: nativeInvocation ? nativeInput.referenceUris : references,
       quotedPriceYuan: sellingPrice,
       billingExempt: sellingPrice === 0,
       exactCoverText,
@@ -1940,6 +1966,11 @@ export async function POST(request: NextRequest) {
     if (previousImageRequest && !resumingImageDelivery) {
       throw new ImageExactlyOnceError("IMAGE_IDEMPOTENCY_FAIL_CLOSED", "图片结果待确认，原请求已保留。请稍后刷新状态。", 409);
     }
+    if (nativeInvocation && !resumingImageDelivery) await admitNativeAiConsumer({
+      db: dbClient, userId, invocation: nativeInvocation, modelPublicId: selectedBillingPublicModelId,
+      surface: "publish-center-image", unit: "CNY", reservationAmount: toNativeAiReservationAmount(sellingPrice),
+      priceHash: await buildNativeAiPriceHash({ consumer: "main_image", modelPublicId: selectedBillingPublicModelId, surface: "publish-center-image", pricing: { mode: effectiveMode, resolution: effectiveResolution, costPrice, sellingPrice, imageCount: 1 } }),
+    });
     if (!resumingImageDelivery) {
       if (sellingPrice > 0) {
         const { data: user } = await dbClient.from("users").select("cash_balance").eq("id", userId).single();
@@ -2045,7 +2076,11 @@ export async function POST(request: NextRequest) {
       // reserve the wallet or reach the provider callback.
       beforeSubmitOnce: resumeDeliveryOnly ? async () => {
         throw new ImageExactlyOnceError("IMAGE_DELIVERY_RESUME_ONLY", "仅可恢复原图片交付，不能创建新请求或预留费用", 409);
-      } : async () => { await assertChainCurrent(); await reserveImageBudgetOnce?.(); },
+      } : async () => {
+        await assertChainCurrent();
+
+        await reserveImageBudgetOnce?.();
+      },
       submitOnce: async (receiptContext) => {
         await assertChainCurrent();
         if (resumeDeliveryOnly) throw new ImageExactlyOnceError("IMAGE_DELIVERY_RESUME_ONLY", "仅可恢复原图片交付，不能再次调用图片模型", 409);
@@ -2563,6 +2598,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     deductResult = imageBudgetState.deduction;
     billingReservation = imageBudgetState.reservation;
+    const nativeFailure = nativeAiAdmissionFailure(error);
+    if (nativeFailure) return NextResponse.json(nativeFailure.body, { status: nativeFailure.status });
     if (error instanceof ImageGenerationInputError) {
       return imageParameterRejection(error.message, error.code, {}, error.status);
     }

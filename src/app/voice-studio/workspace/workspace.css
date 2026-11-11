@@ -1,0 +1,291 @@
+/* Synthesis workspace owns its layout without changing the studio shell. */
+[data-voice-workspace="synthesis"] .vs-page-container {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 57px);
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+[data-voice-workspace="synthesis"] .vs-synthesis-editor {
+  flex: 1 0 auto;
+  grid-template-rows: minmax(min-content, 1fr);
+}
+
+[data-voice-workspace="synthesis"] .vs-page-intro {
+  min-height: 56px;
+  margin-bottom: 10px;
+}
+
+[data-voice-workspace="synthesis"] .vs-page-kicker {
+  display: none;
+}
+
+[data-voice-workspace="synthesis"] .vs-page-title {
+  font-size: 26px;
+  line-height: 34px;
+}
+
+[data-voice-workspace="synthesis"] .vs-configuration-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--vs-border);
+  border-radius: 16px;
+  background: var(--studio-toolbar, var(--vs-card));
+}
+
+[data-voice-workspace="synthesis"] .vs-model-toolbar {
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--vs-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+[data-voice-workspace="synthesis"] .vs-model-toolbar button {
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+[data-voice-workspace="synthesis"] .vs-compact-controls {
+  padding: 8px 12px 10px;
+}
+
+[data-voice-workspace="synthesis"] .vs-mode-section {
+  border: 0;
+  border-radius: 0;
+}
+
+[data-voice-workspace="synthesis"] .vs-mode-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+[data-voice-workspace="synthesis"] .vs-control-label {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+[data-voice-workspace="synthesis"] .vs-mode-options button {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+[data-voice-workspace="synthesis"] .vs-basic-section {
+  margin-top: 8px;
+}
+
+[data-voice-workspace="synthesis"] [data-voice-basic-controls] {
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-catalog {
+  flex: 1 0 auto;
+  position: relative;
+  height: clamp(364px, calc(100dvh - 398px), 552px);
+  border: 0;
+  border-top: 1px solid var(--vs-border);
+  border-radius: 0;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-picker-heading {
+  min-height: 38px;
+  padding: 7px 12px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-picker-heading > span {
+  font-size: 14px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  padding: 6px 12px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-filters > * {
+  margin: 0;
+  min-width: 0;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-filters > div:not([data-voice-catalog-source]) > span {
+  display: none;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-filters > p,
+[data-voice-workspace="synthesis"] .vs-voice-filters > [data-voice-catalog-source] {
+  grid-column: 1 / -1;
+}
+
+[data-voice-workspace="synthesis"] .vs-selected-voice {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-scroll {
+  padding: 0 8px 8px;
+  scrollbar-gutter: stable;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-option {
+  height: 54px;
+  min-width: 0;
+  gap: 6px;
+  padding: 6px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-option > button:first-child {
+  width: 30px;
+  height: 30px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-option > button:last-child {
+  width: 24px;
+  height: 28px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-option-name {
+  gap: 4px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-option-name > span:first-child {
+  font-size: 14px;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-option-name > span:not(:first-child) {
+  display: none;
+}
+
+[data-voice-workspace="synthesis"] .vs-voice-grid > button,
+[data-voice-workspace="synthesis"] .vs-voice-grid > div:not([data-voice-option]) {
+  grid-column: 1 / -1;
+}
+
+[data-voice-workspace="synthesis"] .vs-compose-panel,
+[data-voice-workspace="synthesis"] .vs-composition-inputs {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+[data-voice-workspace="synthesis"] .vs-compose-panel {
+  border: 1px solid var(--vs-border);
+  border-radius: 16px;
+  background: var(--studio-card, var(--vs-card));
+}
+
+[data-voice-workspace="synthesis"] .vs-composition-inputs {
+  gap: 12px;
+}
+
+[data-voice-workspace="synthesis"] .vs-composition-inputs > .vs-text-input-card {
+  flex: 1 0 auto;
+  height: clamp(160px, calc(100dvh - 720px), 360px);
+  min-height: 160px;
+  border: 0;
+  box-shadow: none;
+}
+
+[data-voice-workspace="synthesis"] .vs-synthesis-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 66px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--vs-border);
+  border-radius: 0 0 15px 15px;
+  background: rgb(from var(--vs-card) r g b / 1);
+}
+
+[data-voice-workspace="synthesis"] .vs-action-status {
+  min-width: 0;
+  color: var(--vs-text-secondary);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+[data-voice-workspace="synthesis"] .vs-action-error {
+  margin-top: 4px;
+  color: var(--error);
+  overflow-wrap: anywhere;
+}
+
+[data-voice-workspace="synthesis"] .vs-result-link {
+  color: var(--vs-primary);
+  text-decoration: underline;
+}
+
+[data-voice-workspace="synthesis"] .vs-synthesis-submit {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 154px;
+  min-height: 44px;
+  padding: 8px 20px;
+  border: 1px solid var(--vs-primary);
+  border-radius: 10px;
+  background: var(--vs-primary);
+  color: var(--vs-on-accent);
+  font-size: 16px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+[data-voice-workspace="synthesis"] .vs-synthesis-submit:enabled:hover {
+  background: var(--vs-primary-hover);
+}
+
+[data-voice-workspace="synthesis"] .vs-synthesis-submit:disabled {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--vs-text) 25%, var(--vs-card));
+  background: color-mix(in srgb, var(--vs-text) 12%, var(--vs-card));
+  color: var(--vs-text-secondary);
+  cursor: not-allowed;
+}
+
+@media (min-width: 1024px) {
+  [data-voice-workspace="synthesis"] .vs-synthesis-editor {
+    grid-template-columns: 440px minmax(0, 1fr);
+  }
+
+  [data-voice-workspace="synthesis"] .vs-output-panel {
+    grid-column: 1 / -1;
+  }
+
+  [data-voice-workspace="synthesis"] .vs-dual-catalogs {
+    flex: 1 0 auto;
+  }
+}
+
+[data-voice-workspace="synthesis"] .vs-advanced-toggle:focus-visible {
+  outline: 2px solid var(--vs-primary);
+  outline-offset: -4px;
+}

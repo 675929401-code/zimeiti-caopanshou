@@ -246,6 +246,7 @@ export default function UnifiedModelsTab({
   }, []);
   const [textActions, setTextActions] = useState<Record<string, { busy?: "validate" | "activate"; message?: string; failed?: boolean }>>({});
   const textActionLocks = useRef(new Set<string>());
+  const [visionActions, setVisionActions] = useState<Record<string, { busy?: boolean; message?: string; failed?: boolean; unknown?: boolean }>>({});
   const textConfigurationSnapshots = useRef(new Map<string, string>());
   const [quickAddText, setQuickAddText] = useState("");
   const [quickAddBusy, setQuickAddBusy] = useState(false);
@@ -813,6 +814,33 @@ export default function UnifiedModelsTab({
     }
   };
 
+  const handleVisionValidation = async (model: UnifiedModel) => {
+    if (!token || !canManageModels || textActionLocks.current.has(model.id) || visionActions[model.id]?.unknown) return;
+    const saved = model.image_parsing === "gpt_vision";
+    if (!window.confirm(`对「${model.name || model.model_name}」执行一次真实三图识别验证？使用该原模型现有接口、密钥和价格${saved ? "" : "，仅临时测试gpt_vision能力候选"}。会产生供应商Token费用，不自动重试，不发布能力或启用模型。`)) return;
+    textActionLocks.current.add(model.id);
+    setVisionActions(prev => ({ ...prev, [model.id]: { busy: true } }));
+    try {
+      const response = await fetch("/api/admin/llm-test", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ scope: saved ? "saved" : "draft", model_id: model.id, model_type: "text", capability: "vision", ...(!saved ? { image_parsing: "gpt_vision" } : {}) }) });
+      const result = await response.json().catch(() => null);
+      const passed = response.ok && result?.capability === "vision" && result.success === true && result.evidence?.evidenceRecorded === true;
+      const recognized = result?.capability === "vision" && (passed
+        || (result.outcome === "not_dispatched" && result.paidProbeUsed === false)
+        || (result.diagnosticCode === "VISION_CHALLENGE_FAILED" && result.success === false && result.paidProbeUsed === true)
+        || (result.diagnosticCode === "VISION_EVIDENCE_PERSIST_FAILED" && result.outcome === "evidence_not_recorded"));
+      const unknown = !recognized && response.status !== 401 && response.status !== 403;
+      const usage = result?.usage ? ` · 输入 ${result.usage.prompt_tokens ?? "未知"} / 输出 ${result.usage.completion_tokens ?? "未知"} Token（金额待账单核对）` : "";
+      setVisionActions(prev => ({ ...prev, [model.id]: { failed: !passed, unknown,
+        message: `${result?.message || "验证结果未知，请先核对原请求和供应商账单；未自动重试"}${usage}` } }));
+    } catch {
+      setVisionActions(prev => ({ ...prev, [model.id]: { failed: true, unknown: true, message: "三图验证结果未知；请先核对原请求与供应商账单，本页不重复提交" } }));
+    } finally {
+      textActionLocks.current.delete(model.id);
+      setVisionActions(prev => ({ ...prev, [model.id]: { ...prev[model.id], busy: false } }));
+    }
+  };
+
   // ── 删除模型 ──
   const handleDelete = async (model: UnifiedModel) => {
     if (!canManageModels || candidateWriteLock.current || candidateUncertain) return;
@@ -1215,6 +1243,7 @@ export default function UnifiedModelsTab({
             <p>真实文字验证：{(m.validation?.passed === true && m.validation.fingerprint_current === true) ? "当前配置已通过" : m.validation?.reason || "尚无当前配置的有效证据"}</p>
             {m.validation?.validated_at && <p>证据时间 {new Date(m.validation.validated_at).toLocaleString("zh-CN")} · {m.validation.latency_ms ?? "未知"}ms · 输入 {m.validation.input_tokens ?? "未知"} / 输出 {m.validation.output_tokens ?? "未知"} Token</p>}
             {textActions[modelId]?.message && <p role="status" className={textActions[modelId].failed ? "text-red-600" : "text-emerald-700"}>{textActions[modelId].message}</p>}
+            {visionActions[modelId]?.message && <p role="status" data-vision-validation className={visionActions[modelId].failed ? "text-red-600" : "text-emerald-700"}>{visionActions[modelId].message}</p>}
             <p>目录显示与调用启用分别管理；验证失败不会隐藏或删除模型。</p>
           </div>}
           {canManageModels && (adminNotes || (channelHealth && mt === "video")) && <details className="mt-2 text-xs text-[var(--muted-foreground)]">
@@ -1239,10 +1268,11 @@ export default function UnifiedModelsTab({
         </div>
 
         {/* 操作按钮 */}
-        {canManageModels && <div className={mt === "video" || mt === "drawing" ? "flex flex-wrap items-center justify-end gap-2 shrink-0 max-w-md" : "flex items-center gap-2 shrink-0"} onPointerDown={(e) => e.stopPropagation()}>
+        {canManageModels && <div className={mt === "video" || mt === "drawing" || mt === "text" ? "flex flex-wrap items-center justify-end gap-2 shrink-0 max-w-md" : "flex items-center gap-2 shrink-0"} onPointerDown={(e) => e.stopPropagation()}>
           {mt === "text" && <>
-            <button type="button" disabled={Boolean(textActions[modelId]?.busy)} onClick={() => void handleTextAction(m, "validate")} className="px-3 py-1.5 text-xs rounded-lg border border-orange-400 text-orange-600 disabled:opacity-50">{textActions[modelId]?.busy === "validate" ? "验证中…" : "真实文字验证（付费）"}</button>
-            <button type="button" disabled={Boolean(textActions[modelId]?.busy) || (m.validation?.passed === true && m.validation.fingerprint_current === true) !== true || isActive} onClick={() => void handleTextAction(m, "activate")} className="px-3 py-1.5 text-xs rounded-lg border border-emerald-500 text-emerald-700 disabled:opacity-40">{textActions[modelId]?.busy === "activate" ? "启用中…" : isActive ? "已启用" : "启用当前配置"}</button>
+            <button type="button" disabled={Boolean(textActions[modelId]?.busy || visionActions[modelId]?.busy)} onClick={() => void handleTextAction(m, "validate")} className="px-3 py-1.5 text-xs rounded-lg border border-orange-400 text-orange-600 disabled:opacity-50">{textActions[modelId]?.busy === "validate" ? "验证中…" : "真实文字验证（付费）"}</button>
+            <button type="button" data-testid={`vision-validate-${modelId}`} disabled={Boolean(textActions[modelId]?.busy || visionActions[modelId]?.busy || visionActions[modelId]?.unknown)} onClick={() => void handleVisionValidation(m)} className="px-3 py-1.5 text-xs rounded-lg border border-orange-400 text-orange-600 disabled:opacity-50">{visionActions[modelId]?.busy ? "三图验证中…" : visionActions[modelId]?.unknown ? "结果待核对" : "真实图片验证（付费）"}</button>
+            <button type="button" disabled={Boolean(textActions[modelId]?.busy || visionActions[modelId]?.busy) || (m.validation?.passed === true && m.validation.fingerprint_current === true) !== true || isActive} onClick={() => void handleTextAction(m, "activate")} className="px-3 py-1.5 text-xs rounded-lg border border-emerald-500 text-emerald-700 disabled:opacity-40">{textActions[modelId]?.busy === "activate" ? "启用中…" : isActive ? "已启用" : "启用当前配置"}</button>
           </>}
           {mt === "video" && (
             <button

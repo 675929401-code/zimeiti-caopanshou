@@ -106,7 +106,20 @@ function load(relative) {
   const absolute = path.resolve(relative);
   if (modules.has(absolute)) return modules.get(absolute).exports;
   const module = { exports: {} }; modules.set(absolute, module);
-  const localRequire = name => name === '@/storage/database/supabase-client' ? { getSupabaseAdminClient: () => db } : name === '@/lib/provider-secret' ? {resolveProviderSecret:value=>String(value||'')} : name === 'server-only' ? {} : name.startsWith('@/') ? load(`src/${name.slice(2)}.ts`) : require(name);
+  const localRequire = name => {
+    if (name === '@/storage/database/supabase-client') return { getSupabaseAdminClient: () => db };
+    if (name === '@/lib/provider-secret') return { resolveProviderSecret: value => String(value || '') };
+    if (name === 'server-only') return {};
+    if (name === 'node:crypto') return require(name);
+    // Vision imports sharp, but video staging must never perform media I/O.
+    if (name === 'sharp') return () => { throw Error('UNMOCKED_MEDIA_IO_FORBIDDEN'); };
+    if (name.startsWith('@/')) return load(`src/${name.slice(2)}.ts`);
+    if (name.startsWith('.')) {
+      const source = path.resolve(path.dirname(absolute), name);
+      return load(path.extname(source) ? source : `${source}.ts`);
+    }
+    throw Error(`UNMOCKED_IMPORT:${name}`);
+  };
   const js = ts.transpileModule(fs.readFileSync(absolute, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(js, { module, exports: module.exports, require: localRequire, console: { log: (...items) => logs.push(items.join(' ')), error: (...items) => logs.push(items.join(' ')) }, URL, Date, Object, JSON, Set, Map }, { filename: relative });
   return module.exports;

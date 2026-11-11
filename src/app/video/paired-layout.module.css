@@ -1,0 +1,96 @@
+/* Each desktop row reserves three tracks even when only one or two tasks exist.
+   Smaller task panes drop columns before the editors become too narrow. */
+.taskGrid {
+  --task-gap: 1rem;
+  gap: var(--task-gap);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}
+
+.creator .taskGrid {
+  --third-of-row: calc((100% - var(--task-gap) - var(--task-gap)) / 3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(19rem, var(--third-of-row))), 1fr));
+}
+
+.creator .modelCapabilities {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* The public route palette supplies opaque roles without changing task state
+   borders, media proportions, or the existing desktop sizing contract. */
+.creator [data-video-model-list],
+.creator [data-video-toolbar] {
+  background: var(--studio-toolbar, var(--card));
+}
+.creator [data-video-task-card] { background: var(--studio-card, var(--card)); }
+.creator [data-video-task-card] textarea,
+.creator [data-video-task-card] :global(.video-frame-expanded),
+.creator [data-video-task-card] [class~="aspect-video"] {
+  background: var(--studio-well, var(--background));
+}
+
+.creator .addTaskButton {
+  --add-green: color-mix(in srgb, var(--success, var(--primary)) 70%, var(--primary));
+  --brand-action-bg: color-mix(in srgb, var(--add-green) 70%, black);
+  --brand-action-hover: color-mix(in srgb, var(--add-green) 60%, black);
+  --brand-action-fg: white;
+  --brand-action-border: var(--brand-action-bg);
+  border: 1px solid var(--brand-action-border);
+}
+
+:global(html[data-mode="dark"]) .creator .addTaskButton {
+  --brand-action-bg: var(--add-green);
+  --brand-action-hover: color-mix(in srgb, var(--add-green) 84%, white);
+  --brand-action-fg: #08251c;
+}
+
+.creator .addTaskButton:focus-visible { outline: 2px solid var(--add-green); outline-offset: 2px; }
+
+/* Both desktop panes share the space left by the header and notices.
+   Additional tasks scroll inside the editor; model selection stays visible. */
+@media (min-width: 1280px) {
+  .creator > :global(.sub-page-header) :global(.sub-page-header-inner) {
+    width: 100%;
+    max-width: 1760px;
+    padding-inline: 24px;
+  }
+
+  .creator > main { min-height: 0; }
+  .creator [data-video-creator-layout] {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: clamp(20px, 2vh, 24px);
+  }
+  .creator [data-video-creator-columns] {
+    flex: 1 0 280px;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 312px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .creator [data-video-model-list] {
+    position: static;
+    align-self: stretch;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .creator [data-video-model-list] > :first-child { flex: none; }
+  .creator [data-video-model-list] > :last-child {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    overflow: auto;
+  }
+  .creator [data-video-task-pane] {
+    min-height: 0;
+    overflow: auto;
+    border-bottom: 1px solid var(--border);
+  }
+}

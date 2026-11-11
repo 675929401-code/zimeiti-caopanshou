@@ -488,6 +488,9 @@ function applySecurityHeaders(response: NextResponse, request: NextRequest): voi
   ))) {
     response.headers.set(key, value);
   }
+  if (request.nextUrl.pathname === "/api/admin/cover-styles") {
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  }
 
   // 防御性清理：确保 X-Frame-Options 不被设置
   // 该头已被 CSP frame-ancestors 取代，保留会阻止沙箱 iframe 嵌入

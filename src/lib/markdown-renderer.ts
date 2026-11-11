@@ -40,7 +40,6 @@ function codeBlockToolbar(label: string): string {
   return `<div class="code-block-header"><span class="code-block-lang">${label}</span><div class="code-block-actions">` +
     `<button type="button" class="code-block-expand-button" aria-expanded="false">展开全文</button>` +
     `<button type="button" class="send-video-task-button" data-video-task-send title="发送到视频工作台">发送到视频工作台</button>` +
-    `<button type="button" class="send-image-workbench-button" data-image-workbench-send title="推送到生图工作台">推送到生图工作台</button>` +
     `<button type="button" class="copy-code-button" title="复制完整内容" aria-label="复制完整内容"></button></div></div>`;
 }
 

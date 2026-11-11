@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { ensureLocalDataReady } from "./local-data-readiness.mjs";
+import { ensureNativePublishingReady } from "./native-publishing-readiness.mjs";
 import { verifyLocalBuildFingerprintReceipt } from "./local-build-fingerprint.mjs";
 import { LOCAL_PREVIEW_DATA_ROOT, LOCAL_PREVIEW_RUNTIME_FILE, validateLocalPreviewRuntime } from "./start-local-data-preview.mjs";
 
@@ -333,6 +334,8 @@ async function main() {
         console.log("[run-start] F-drive local database and REST services restored and verified.");
       }
     }
+    const native = await ensureNativePublishingReady({ cwd: root, executable: process.execPath });
+    console.log(`[run-start] original publishing UI verified BUILD_ID=${native.nativeBuildId}.`);
     run(process.execPath, [serverPath], {
       cwd: path.dirname(serverPath),
       env,

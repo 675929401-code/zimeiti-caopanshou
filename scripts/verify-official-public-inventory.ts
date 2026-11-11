@@ -12,7 +12,6 @@ const compatibleTargets = new Map([
   ["/tools/video/video-chat", "/video"],
   ["/tools/video/seedance-video", "/video"],
   ["/tools/video/minimax-video", "/video"],
-  ["/tools/image/openrouter-image", "/image-workbench"],
 ] as const);
 
 const unavailablePaths = [
@@ -23,6 +22,11 @@ const unavailablePaths = [
   "/tools/video/pippit-video-2",
   "/tools/video/pippit-marketing",
   "/tools/video/aliyun-super-resolve",
+  // 独立 AI 生图工作台已下线：这些图片生成别名不再暴露生成落地页。
+  "/tools/image/image-edit",
+  "/tools/image/kling-image",
+  "/tools/image/qwen-image",
+  "/tools/image/volcengine-image",
 ] as const;
 
 const expectedHomeTools = [
@@ -95,7 +99,7 @@ for (const path of compatibleTargets.keys()) {
 for (const path of unavailablePaths) {
   const card = directoryByPath.get(path);
   assert.ok(card, `missing directory card: ${path}`);
-  assert.equal(card.availability, "coming", `${path} card must remain coming soon`);
+  assert.ok(["coming", "retired"].includes(card.availability), `${path} card must be unavailable`);
   assert.equal(card.href, undefined, `${path} card must not bypass its unavailable alias`);
 }
 
@@ -132,6 +136,10 @@ assert.match(publicSharedSource, /href="\/about">关于我们<\/AppScopedLink>/,
 assert.match(publicSharedSource, /href="\/business">商务合作<\/AppScopedLink>/, "business footer must target /business");
 
 console.log("PASS official public inventory alignment");
-console.log("aliases=11 compatible=4 unavailable=7");
+const aliasStatusCounts = OFFICIAL_TOOL_ALIASES.reduce<Record<string, number>>((counts, alias) => {
+  counts[alias.status] = (counts[alias.status] || 0) + 1;
+  return counts;
+}, {});
+console.log(`aliases=${OFFICIAL_TOOL_ALIASES.length} compatible=${aliasStatusCounts.compatible || 0} unavailable=${aliasStatusCounts.unavailable || 0}`);
 console.log("home_hot_tools=5 resources=26 footer_links=2");
 console.log("paid_calls=0 network_calls=0");

@@ -577,6 +577,7 @@ export async function GET(req: NextRequest) {
           success_count: m.success_count || 0,
           fail_count: m.fail_count || 0,
           created_at: m.created_at || "",
+          updated_at: m.updated_at || "",
         });
       }
     }
@@ -1255,6 +1256,7 @@ export async function PATCH(req: NextRequest) {
         "free-canvas": "free-canvas-video",
         "film-studio": "film-studio-video",
         "commerce-agent": "commerce-video",
+        "publish-center-video": "publish-center-video",
       } as const)[surface];
       const result = await stageLegacyWorkspaceMutation({
         actorId: admin.userId,

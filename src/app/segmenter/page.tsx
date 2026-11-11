@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { copyToClipboard } from "@/lib/utils";
 import { Zap, Trash2, Copy, Check, ClipboardPaste, Type, AlignLeft, Sparkles, History, X, ChevronRight, Clock, Home } from "lucide-react";
 import { SubPageHeader, NavButton } from "@/components/sub-page-header";
@@ -57,6 +57,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
   const router = useRouter();
   const toolboxHost = useToolboxHost();
   const embedded = Boolean(toolboxHost);
+  const mainTools = usePathname() === "/tools";
   const { state, checkAuth } = useApp();
   const auth = state.auth;
   const [inputReady, setInputReady] = useState(false);
@@ -371,7 +372,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
       {embedded && (
         <div className="toolbox-embedded-toolbar toolbox-duration-toolbar">
           <div className="toolbox-duration-control">
-            <span className="toolbox-toolbar-label">分段时长</span>
+            <span className="toolbox-toolbar-label">{mainTools ? "每段时长与字数" : "分段时长"}</span>
             <div className="toolbox-duration-options" role="group" aria-label="选择分段时长">
               {Object.entries(DURATION_MODES).map(([sec, cfg]) => {
                 const isActive = duration === Number(sec);
@@ -387,7 +388,7 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                     data-duration={sec}
                     title={`${cfg.desc} · ${DURATION_HINTS[Number(sec)]}`}
                   >
-                    {sec}秒
+                    {sec}秒{mainTools && <small>{cfg.desc}</small>}
                   </button>
                 );
               })}
@@ -526,8 +527,8 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                     <Type className="w-4 h-4" style={{ color: "var(--primary)" }} />
                     <span className="text-sm font-bold" style={{ color: embedded ? "var(--foreground)" : "var(--primary)" }}>输入文案</span>
                   </div>
-                  <span className="toolbox-input-meta text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
-                    {inputCharCount}字（仅统计汉字和数字）
+                  <span className="toolbox-input-meta text-xs font-medium" style={{ color: "var(--muted-foreground)" }} title="仅统计汉字和数字">
+                    {inputCharCount}字<span>（仅统计汉字和数字）</span>
                   </span>
                   <div className="toolbox-heading-actions">
                     <button
@@ -759,12 +760,14 @@ function SegmenterForAccount({ ownerUserId }: { ownerUserId: string }) {
                 <div className={embedded ? "toolbox-empty-body" : undefined}>
                 <div className="text-center max-w-md">
                   {!embedded && <div className="text-5xl mb-5 animate-float">✂️</div>}
+                  {mainTools ? <p role="status">{segmenting ? "正在按标点和字数分段…" : inputText ? "开始分段后，可在这里逐段复制。" : "分好的段落会显示在这里。"}</p> : <>
                   <h3 className={`${embedded ? "text-sm mb-1.5" : "text-xl mb-3"} font-bold`} style={{ color: "var(--foreground)" }}>
                     {segmenting ? "正在分段" : inputText ? "等待生成分段" : "粘贴文案，快速分段"}
                   </h3>
                   <p className={`${embedded ? "text-xs" : "text-sm"} leading-relaxed`} style={embedded ? undefined : { color: "var(--muted-foreground)" }}>
                     {segmenting ? "正在按字数范围、标点和原文段落拆分文案。" : inputText ? "选择时长后点击开始分段，结果会在此列显示。" : "按口播时长对应的字数范围切分，优先在标点和原文段落处断开。"}
                   </p>
+                  </>}
                   {!embedded && <div className="mt-6 flex flex-wrap justify-center gap-2.5">
                     {Object.values(DURATION_MODES).map((cfg) => (
                       <span

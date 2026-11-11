@@ -5,6 +5,7 @@ export const COVER_ATTEMPT_ACTIVE_STATES = ["claimed", "dispatched", "delivery_p
 export type CoverAttemptState = typeof COVER_ATTEMPT_ACTIVE_STATES[number] | "completed" | "failed" | "cancelled";
 
 export type CoverAttemptTaskSnapshot = {
+  prepareOperationId?: string;
   id: string;
   ratio: "16:9" | "9:16" | "4:3" | "3:4";
   title: string;
@@ -61,7 +62,17 @@ export function projectCoverCompositionPlan(plan: CoverCompositionPlan): CoverCo
     layoutTemplateId: plan.layoutTemplateId, animationStyleId: plan.animationStyleId,
     ...(plan.coverModeId ? { coverModeId: plan.coverModeId } : {}),
     ...(plan.materialSourceId ? { materialSourceId: plan.materialSourceId } : {}),
-    ...(plan.subjectModeId ? { subjectModeId: plan.subjectModeId } : {}), };
+    ...(plan.subjectModeId ? { subjectModeId: plan.subjectModeId } : {}),
+    ...(plan.planVersion === 2 ? { planVersion: 2 as const } : {}),
+    ...(plan.outputSpec ? { outputSpec: { aspectRatio: plan.outputSpec.aspectRatio, width: plan.outputSpec.width,
+      height: plan.outputSpec.height, format: plan.outputSpec.format, ...(plan.outputSpec.fit ? { fit: plan.outputSpec.fit } : {}) } } : {}),
+    ...(plan.titleStyle ? { titleStyle: { x: plan.titleStyle.x, y: plan.titleStyle.y, width: plan.titleStyle.width,
+      scale: plan.titleStyle.scale, color: plan.titleStyle.color, colorMode: plan.titleStyle.colorMode } } : {}),
+    ...(plan.textRendering ? { textRendering: { mode: plan.textRendering.mode, version: plan.textRendering.version } } : {}),
+    ...(plan.originalLayout ? { originalLayout: { version: plan.originalLayout.version, sourceWidth: plan.originalLayout.sourceWidth,
+      sourceHeight: plan.originalLayout.sourceHeight, structure: plan.originalLayout.structure, focus: plan.originalLayout.focus } } : {}),
+    ...(plan.generatedOverlayLayout ? { generatedOverlayLayout: { version: plan.generatedOverlayLayout.version, placement: plan.generatedOverlayLayout.placement,
+      canvasColor: plan.generatedOverlayLayout.canvasColor } } : {}), };
 }
 
 function stringValue(value: unknown, maximum: number, required = true) {
@@ -104,11 +115,14 @@ function taskSnapshot(value: unknown): CoverAttemptTaskSnapshot | null {
   const subtitle = stringValue(row.subtitle, 500, false);
   const prompt = stringValue(row.prompt, 50_000);
   const briefText = row.briefText === undefined ? undefined : stringValue(row.briefText, 20_000, false);
+  const prepareOperationId = row.prepareOperationId === undefined ? undefined : stringValue(row.prepareOperationId, 36);
   if (!id || !title || subtitle === null || !prompt || briefText === null || row.source !== "生成"
     || !RATIOS.includes(row.ratio as typeof RATIOS[number]) || typeof row.createdAt !== "string"
     || !Number.isFinite(Date.parse(row.createdAt)) || !Number.isSafeInteger(row.taskNo) || Number(row.taskNo) < 0
-    || coverCompositionValidationError(row.renderPlan as CoverCompositionPlan)) return null;
+    || coverCompositionValidationError(row.renderPlan as CoverCompositionPlan)
+    || (prepareOperationId !== undefined && (!prepareOperationId || !/^[a-f0-9-]{36}$/iu.test(prepareOperationId)))) return null;
   return {
+    ...(prepareOperationId ? { prepareOperationId } : {}),
     id,
     ratio: row.ratio as CoverAttemptTaskSnapshot["ratio"],
     title,
@@ -129,7 +143,9 @@ export function parseCoverAttemptClaim(value: unknown) {
   const input = generationInput(row.payload);
   const referenceCount = Number(row.referenceCount ?? 0);
   if (!task || !input || !Number.isSafeInteger(referenceCount) || referenceCount < 0 || referenceCount > 5
-    || task.ratio !== input.aspectRatio || task.prompt !== input.prompt) return null;
+    || (task.renderPlan.planVersion !== 2 && task.ratio !== input.aspectRatio)
+    || (task.renderPlan.planVersion === 2 && (!task.prepareOperationId || task.renderPlan.aspectRatio !== task.ratio))
+    || task.prompt !== input.prompt) return null;
   return { task, generationInput: input, referenceCount };
 }
 
@@ -168,6 +184,16 @@ export function coverAttemptProjection(row: CoverAttemptRow) {
       : row.state === "cancelled" ? "cancelled" : "unknown";
   const task = {
     ...taskSnapshot(row.task)!,
+    // The persisted snapshot remains private authority for original delivery.
+    // Browsers receive their own brief, never the platform-compiled prompt.
+    prompt: "" as const,
+    imageOrigin: "generated" as const,
+    publicModelId: row.generation_input.modelId,
+    resolution: row.generation_input.resolution,
+    ...(row.result_asset_id ? { assetId: row.result_asset_id } : {}),
+    ...(row.history_record_id ? { historyRecordId: row.history_record_id } : {}),
+    ...(row.background_asset_id ? { backgroundAssetId: row.background_asset_id } : {}),
+    ...(row.result_asset_id && row.history_record_id ? { cloudStored: true } : {}),
     status,
     clientIdempotencyKey: row.client_idempotency_key,
     clientTraceId: row.client_trace_id,
@@ -193,7 +219,7 @@ export function coverAttemptProjection(row: CoverAttemptRow) {
     state: row.state,
     updatedAt: Date.parse(row.updated_at) || Date.now(),
     task,
-    dispatchInput: row.state === "claimed" ? row.generation_input : undefined,
+    dispatchInput: undefined,
     canDispatch: row.state === "claimed" && !row.requires_reference_reupload,
     requiresReferenceReupload: row.requires_reference_reupload,
     backgroundAssetId: row.background_asset_id || undefined,

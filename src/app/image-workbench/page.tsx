@@ -1,21 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import dynamic from "next/dynamic";
-
-// Drafts and unresolved requests live in browser storage. Restore them on the
-// client instead of hydrating different server and browser card collections.
-const ImageWorkbench = dynamic(
-  () => import("@/components/image-workbench").then((module) => module.ImageWorkbench),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground" role="status" aria-live="polite">
-        正在打开生图工作台...
-      </div>
-    ),
-  },
-);
-
-export default function ImageWorkbenchPage() {
-  return <ImageWorkbench />;
+/**
+ * “AI 生图工作台”独立板块已下线（首页“图像生成”入口同步移除）。
+ * 保留旧深链：服务端跳转到首页。
+ * 全站共享生图服务与封面设计、分镜编排、漫剧创作、带货创作内部的生图能力不受影响。
+ */
+export default function ImageWorkbenchRetiredPage() {
+  redirect("/");
 }

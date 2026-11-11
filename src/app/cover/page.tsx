@@ -1,7 +1,5 @@
-import { CoverStudio } from "@/components/cover-studio";
-import "./cover-studio.css";
-import "./cover-studio-v2.css";
+import { CoverWorkbench } from "@/components/cover-workbench";
 
 export default function CoverPage() {
-  return <CoverStudio />;
+  return <CoverWorkbench mainWorkspace />;
 }

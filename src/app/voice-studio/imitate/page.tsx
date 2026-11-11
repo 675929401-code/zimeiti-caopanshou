@@ -339,6 +339,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
                       </p>
                     </div>
                     <button
+                      data-workbench-action="secondary"
                       onClick={() => insertTag(idx)}
                       className="shrink-0 px-3 py-1.5 text-sm rounded-lg bg-[var(--vs-primary)]/15 text-[var(--vs-primary)] border border-[var(--vs-primary)]/30 hover:bg-[var(--vs-primary)]/25 transition-colors font-medium"
                       title="在文末插入 @音频N 引用"
@@ -376,6 +377,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
               </div>
             ) : (
               <button
+                data-workbench-action="secondary"
                 onClick={() => setShowSelector(true)}
                 disabled={references.length >= MAX_REFERENCES}
                 className="w-full py-3.5 rounded-xl border-2 border-dashed border-[var(--vs-border)] hover:border-[var(--vs-primary)]/50 text-base font-medium text-[var(--vs-text-muted)] hover:text-[var(--vs-primary)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--vs-border)] disabled:hover:text-[var(--vs-text-muted)]"
@@ -491,6 +493,8 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
                     {FORMAT_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
+                        data-workbench-control="choice"
+                        aria-pressed={audioConfig.format === opt.value}
                         onClick={() => setAudioConfig((c) => ({ ...c, format: opt.value }))}
                         className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
                           audioConfig.format === opt.value
@@ -556,6 +560,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
                 references.map((_, idx) => (
                   <button
                     key={idx}
+                    data-workbench-action="secondary"
                     onClick={() => insertTag(idx)}
                     className="px-3 py-1.5 text-sm rounded-lg bg-[var(--vs-primary)]/10 text-[var(--vs-primary)] border border-[var(--vs-primary)]/25 hover:bg-[var(--vs-primary)]/20 transition-colors font-medium"
                   >
@@ -575,6 +580,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
           <p className="text-sm text-[var(--vs-text-muted)]" role={quoteError||recoveryError?'alert':'status'}>{recovering?'正在确认原模仿任务，请勿重复提交。':recoveryError?<>{recoveryError}，为避免重复扣费已关闭新提交。 <button type="button" className="underline" onClick={()=>setRecoveryRevision(value=>value+1)}>重新确认原任务</button></>:quoteError?<>{quoteError}，已关闭提交。 <button type="button" className="underline" onClick={()=>setQuoteRevision(value=>value+1)}>重新读取价格</button></>:quote ? '当前模型：Seed-Audio 1.0 · ¥'+quote.unitPrice+'/分钟，按实际秒数折算。预留 '+quote.reserveCredits+' 积分（最长120秒），完成退差额，失败全退。':'正在读取音色模仿价格…'}</p>
           <div className="flex justify-center">
             <button
+              data-workbench-action="primary"
               onClick={handleGenerate}
               disabled={providerStatus !== 'available' || generating || recovering || Boolean(recoveryError) || !quote || !textPrompt.trim() || references.length === 0}
               className="w-full max-w-lg h-14 text-lg font-semibold rounded-2xl brand-action disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
@@ -615,7 +621,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
 
                 </div>
                 <div className="flex items-center gap-2 ml-auto">
-                  <button type="button" onClick={() => void downloadOwnedAudio(result.audioUrl, `模仿配音.${audioConfig.format}`).catch(error=>setError(customerVoiceError(error.message,'音频下载暂时不可用')))}
+                  <button type="button" data-workbench-action="secondary" onClick={() => void downloadOwnedAudio(result.audioUrl, `模仿配音.${audioConfig.format}`).catch(error=>setError(customerVoiceError(error.message,'音频下载暂时不可用')))}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--vs-primary)]/15 text-[var(--vs-primary)] border border-[var(--vs-primary)]/30 hover:bg-[var(--vs-primary)]/25 text-sm font-medium transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -643,6 +649,7 @@ function ImitateWorkspace({userId,token}:{userId:string;token:string}) {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-[var(--vs-text)]">📋 生成历史</h3>
                 <button
+                  data-workbench-action="secondary"
                   onClick={() => void refreshHistory()}
                   className="text-sm text-[var(--vs-text-muted)] hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-400/10"
                 >

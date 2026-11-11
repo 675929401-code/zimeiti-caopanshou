@@ -7,6 +7,7 @@ import {
   validateModelPoolSnapshot,
   validateWorkspaceModelSnapshot,
   type ConfigurationValidation,
+  type ModelPoolEntry,
   type ModelPoolSnapshot,
   type PlatformConfigurationKind,
   type PlatformConfigurationReleaseIdentity,
@@ -16,6 +17,9 @@ import {
 } from "@/lib/platform-configuration-contract";
 
 import { MODEL_MUTATION_REQUEST_UUID, normalizeCredentialMetadata, type PlatformCredentialChange, type PlatformCredentialMetadata } from "@/lib/server/platform-configuration-pending-credentials";
+import { resolveProviderSecret } from "@/lib/provider-secret";
+import { LlmModelValidationError, llmModelValidationConfigurationHash } from "@/lib/llm-model-validation-gate";
+import { assertFreshVisionEvidence, visionCandidateBinding, visionCapabilityTransitions, visionConfigurationHash } from "@/lib/server/llm-vision-validation";
 
 type Row = Record<string, unknown>;
 type EvaluatedValidation = ConfigurationValidation & {
@@ -90,6 +94,18 @@ export class PlatformConfigurationError extends Error {
   constructor(public readonly code: string, message: string) {
     super(message);
     this.name = "PlatformConfigurationError";
+  }
+}
+
+export class PlatformConfigurationImageAdditionError extends PlatformConfigurationError {
+  readonly retryable = false;
+  readonly receiptPath: string;
+  constructor(code: string, readonly candidateId: string, readonly status = 409,
+    readonly outcome?: "outcome_unknown") {
+    super(code, code === "IMAGE_ADDITION_ALREADY_PUBLISHED" ? "原图片模型候选已发布，请读取原候选和当前版本，不要重复提交"
+      : outcome ? "原图片模型发布结果待核对，请查询原候选，不要重新发布" : "单图片模型新增事务未通过校验，本次未发布");
+    this.name = "PlatformConfigurationImageAdditionError";
+    this.receiptPath = `/api/admin/model-pool-releases?releaseId=${encodeURIComponent(candidateId)}`;
   }
 }
 
@@ -208,6 +224,13 @@ async function release(kind: PlatformConfigurationKind, releaseId: string): Prom
   if (result.error) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_READ_FAILED", `读取配置版本失败：${result.error.message}`);
   if (!result.data) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_RELEASE_NOT_FOUND", "配置版本不存在");
   return result.data as Row;
+}
+
+/** Read the original release after a lost publication acknowledgement; never dispatches a model. */
+export async function readPlatformConfigurationRelease(kind: PlatformConfigurationKind, releaseIdValue: string): Promise<Row> {
+  const row = await release(kind, requireUuid(releaseIdValue, "配置版本 ID"));
+  snapshotFromRow(kind, row);
+  return row;
 }
 
 async function currentRelease(kind: PlatformConfigurationKind): Promise<Row | null> {
@@ -329,9 +352,13 @@ export async function stagePlatformModelCandidateWithCredentials(input: {
   actorId: string; requestId: string; requestPayload: Row; snapshot: ModelPoolSnapshot;
   credentialChanges: PlatformCredentialChange[]; changeNote: string;
   expectedBase?: { releaseId: string; snapshotSha256: string };
+  operation?: "video-upsert-only";
 }) {
   const actorId = requireUuid(input.actorId, "管理员 ID");
   if (!MODEL_MUTATION_REQUEST_UUID.test(String(input.requestId || ""))) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_REQUEST_ID_REQUIRED", "请提供有效的模型变更请求标识后重试");
+  if (input.operation !== undefined && (input.operation !== "video-upsert-only" || !input.expectedBase)) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_OPERATION_INVALID", "模型候选操作范围或基础版本无效");
+  }
   const snapshot = normalizeModelPoolSnapshot(input.snapshot);
   const validation = await validateSnapshot("model-pool", snapshot);
   const current = await currentRelease("model-pool");
@@ -342,7 +369,9 @@ export async function stagePlatformModelCandidateWithCredentials(input: {
   try { staged = await getSupabaseAdminClient().rpc("stage_model_pool_candidate_with_credentials_atomic", {
     p_actor_id: actorId, p_request_id: input.requestId, p_request_payload: input.requestPayload,
     p_snapshot: snapshot, p_snapshot_sha256: configurationSha256(snapshot),
-    p_validation_result: { ...validationRecord(validation, actorId), ...(input.expectedBase ? { operation: "video-upsert-only", baseSnapshotSha256: input.expectedBase.snapshotSha256 } : {}) }, p_status: validation.ok ? "validated" : "draft",
+    // expectedBase is an application-level check and parent identity. Only the
+    // explicit video marker selects the SQL transaction's video-specific CAS.
+    p_validation_result: { ...validationRecord(validation, actorId), ...(input.expectedBase ? { baseSnapshotSha256: input.expectedBase.snapshotSha256 } : {}), ...(input.operation === "video-upsert-only" ? { operation: input.operation } : {}) }, p_status: validation.ok ? "validated" : "draft",
     p_change_note: changeNote(input.changeNote, "创建模型池候选"), p_parent_release_id: input.expectedBase?.releaseId || (current ? String(current.id) : null),
     p_credential_changes: input.credentialChanges,
   }); } catch { throw new PlatformConfigurationMutationOutcomeUnknown(input.requestId, null, "stage"); }
@@ -425,16 +454,46 @@ async function assertWorkspaceDependencyIsCurrent(snapshot: WorkspaceModelSnapsh
   }
 }
 
+/** Gate direct model-pool publication as well as the legacy editor path. */
+async function assertNewVisionCapabilityEvidence(releaseId: string) {
+  const [candidate, current, pendingCredentials] = await Promise.all([release("model-pool", releaseId), currentRelease("model-pool"), credentialMetadata(releaseId)]);
+  const candidateSnapshot = snapshotFromRow("model-pool", candidate);
+  if (candidateSnapshot.models.some(entry => entry.kind === "agent" && entry.catalogState === "enabled" && String(entry.capabilities.imageParsing || "none") !== "none"
+    && pendingCredentials.some(change => change.modelKey === `${entry.configuration.legacyTable}:${entry.configuration.legacyId}`))) throw new PlatformConfigurationError("VISION_CAPABILITY_BINDING_CHANGED", "图片能力证据不能同时授权密钥变更，请先单独核验通路");
+  const transitions = visionCapabilityTransitions(current ? snapshotFromRow("model-pool", current) : null, candidateSnapshot);
+  for (const { before, after } of transitions) {
+    if (pendingCredentials.some(change => change.modelKey === `${after.configuration.legacyTable}:${after.configuration.legacyId}`)) throw new PlatformConfigurationError("VISION_CAPABILITY_BINDING_CHANGED", "图片能力单独验证不能同时授权密钥变更，请先独立发布并验证通路");
+    const id = String(after.configuration.legacyId ?? "");
+    const db = getSupabaseAdminClient();
+    const lookup = await db.from("llm_models").select("*").eq("id", id).maybeSingle();
+    if (lookup.error || !lookup.data) throw new PlatformConfigurationError("VISION_MODEL_NOT_FOUND", "视觉能力候选必须保留已有原模型ID");
+    const secret = resolveProviderSecret(lookup.data.api_key);
+    const binding = visionCandidateBinding(before, after, lookup.data);
+    if (llmModelValidationConfigurationHash(binding, secret) !== llmModelValidationConfigurationHash(lookup.data, secret)) {
+      throw new PlatformConfigurationError("VISION_CAPABILITY_BINDING_CHANGED", "原模型当前通路与候选执行配置不同，请重新核对后验证");
+    }
+    const expectedHash = visionConfigurationHash(binding, secret);
+    const evidence = await db.from("llm_model_validation_evidence").select("model_id,configuration_hash,checked_at")
+      .eq("model_id", id).eq("configuration_hash", expectedHash).maybeSingle();
+    if (evidence.error) throw new PlatformConfigurationError("VISION_VALIDATION_EVIDENCE_UNAVAILABLE", "无法读取当前候选的视觉验证证据，本次未发布");
+    assertFreshVisionEvidence(binding, secret, evidence.data);
+  }
+}
+
 export async function publishPlatformConfigurationRelease(
   actorIdValue: string,
   kind: PlatformConfigurationKind,
   releaseIdValue: string,
   expectedPreviewSha256: string,
+  options: { imageAdditionDryRun?: boolean } = {},
 ) {
   const actorId = requireUuid(actorIdValue, "管理员 ID");
   const releaseId = requireUuid(releaseIdValue, "配置版本 ID");
   const existing = await release(kind, releaseId);
-  if (existing.is_current === true && existing.status === "published") return existing;
+  if (existing.is_current === true && existing.status === "published") {
+    if (options.imageAdditionDryRun) throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_CANDIDATE_INVALID", releaseId);
+    return existing;
+  }
   if (existing.status === "superseded") throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_ALREADY_PUBLISHED_NOT_CURRENT", "该候选已发布且已被更新版本替代，请读取当前版本");
   const preview = await previewPlatformConfigurationRelease(kind, releaseId);
   if (!expectedPreviewSha256 || preview.previewSha256 !== expectedPreviewSha256) {
@@ -444,7 +503,13 @@ export async function publishPlatformConfigurationRelease(
   // No database mutation occurs while a legacy path can bypass versioning.
   await assertPlatformConfigurationPublishReady();
 
-  await validatePlatformConfigurationCandidate(actorId, kind, releaseId);
+  if (options.imageAdditionDryRun) {
+    if (kind !== "model-pool" || existing.status !== "validated") {
+      throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_CANDIDATE_INVALID", releaseId);
+    }
+    const validation = await validateSnapshot("model-pool", snapshotFromRow("model-pool", existing));
+    if (!validation.ok) throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_CANDIDATE_INVALID", releaseId);
+  } else await validatePlatformConfigurationCandidate(actorId, kind, releaseId);
   const freshPreview = await previewPlatformConfigurationRelease(kind, releaseId);
   if (freshPreview.previewSha256 !== expectedPreviewSha256) {
     throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_PREVIEW_STALE", "发布校验后配置身份已变化，请重新预览");
@@ -452,6 +517,68 @@ export async function publishPlatformConfigurationRelease(
   if (kind === "workspace-models") {
     const row = await release(kind, releaseId);
     await assertWorkspaceDependencyIsCurrent(snapshotFromRow("workspace-models", row));
+  }
+  if (kind === "model-pool") {
+    try { await assertNewVisionCapabilityEvidence(releaseId); }
+    catch (error) {
+      if (error instanceof LlmModelValidationError) throw new PlatformConfigurationError(error.code, error.message);
+      throw error;
+    }
+  }
+  // The reviewed logical diff selects the narrow transaction on the server.
+  // The helper rechecks both complete snapshots while holding the publish lock.
+  const diff = freshPreview.diff;
+  const singleImageAddition = kind === "model-pool" && freshPreview.current !== null && existing.rollback_target_id == null
+    && diff?.schema === "model-pool-config-diff/v1"
+    && diff.models.added.length === 1 && diff.models.added[0].startsWith("image:")
+    && diff.models.removed.length === 0 && diff.models.changed.length === 0
+    && !freshPreview.credentialChanges?.some(change => change.modelKey !== `cover_models:${diff.models.added[0].slice("image:".length)}`);
+  if (singleImageAddition || options.imageAdditionDryRun) {
+    if (!singleImageAddition || !freshPreview.current) {
+      throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_CANDIDATE_INVALID", releaseId);
+    }
+    const [candidate, current] = await Promise.all([release("model-pool", releaseId), currentRelease("model-pool")]);
+    if (!current || String(current.id) !== freshPreview.current.releaseId
+      || String(current.snapshot_sha256) !== freshPreview.current.snapshotSha256
+      || String(candidate.snapshot_sha256) !== freshPreview.candidate.snapshotSha256) {
+      throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_BASE_CHANGED", releaseId);
+    }
+    snapshotFromRow("model-pool", current); snapshotFromRow("model-pool", candidate);
+    const imageAddition = await import("@/lib/server/image-model-addition-publication");
+    const addition = imageAddition.inspectImageModelAddition(current.snapshot, candidate.snapshot);
+    if (!addition) throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_CANDIDATE_INVALID", releaseId);
+    let result;
+    try {
+      result = await imageAddition.publishImageModelAdditionRelease({ actorId,
+        currentReleaseId: freshPreview.current.releaseId, currentSnapshotSha256: freshPreview.current.snapshotSha256,
+        candidateReleaseId: releaseId, candidateSnapshotSha256: freshPreview.candidate.snapshotSha256,
+        targetModelId: addition.targetId, dryRun: options.imageAdditionDryRun === true });
+    } catch (error) {
+      if (error instanceof imageAddition.ImageModelAdditionPublicationError) {
+        const unknown = error.code === "IMAGE_ADDITION_OUTCOME_UNKNOWN" || error.outcome === "outcome_unknown";
+        throw new PlatformConfigurationImageAdditionError(error.code, releaseId, unknown ? 503 : error.status,
+          unknown ? "outcome_unknown" : undefined);
+      }
+      // An unclassified failure from a dispatched transaction is never a retry signal.
+      throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_OUTCOME_UNKNOWN", releaseId, 503, "outcome_unknown");
+    }
+    if (options.imageAdditionDryRun) {
+      if (result.dryRun !== true || result.outcome !== "rolled_back") {
+        throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_OUTCOME_UNKNOWN", releaseId, 503, "outcome_unknown");
+      }
+      return { dryRun: true, outcome: "rolled_back", releaseId, evidence: result.evidence };
+    }
+    try {
+      const readback = await currentRelease("model-pool");
+      if (!readback || String(readback.id) !== releaseId || readback.status !== "published"
+        || readback.is_current !== true || String(readback.snapshot_sha256) !== freshPreview.candidate.snapshotSha256) {
+        throw new Error("IMAGE_ADDITION_READBACK_MISMATCH");
+      }
+      snapshotFromRow("model-pool", readback);
+      return readback;
+    } catch {
+      throw new PlatformConfigurationImageAdditionError("IMAGE_ADDITION_OUTCOME_UNKNOWN", releaseId, 503, "outcome_unknown");
+    }
   }
   const published = await getSupabaseAdminClient().rpc("publish_platform_configuration_release_atomic", {
     p_kind: kind,
@@ -479,6 +606,11 @@ export async function publishPlatformConfigurationRelease(
   }
   snapshotFromRow(kind, readback);
   return readback;
+}
+
+/** Same authenticated publication preparation, with all image transaction DML rolled back. */
+export async function previewImageModelAdditionTransaction(actorId: string, releaseId: string, expectedPreviewSha256: string) {
+  return publishPlatformConfigurationRelease(actorId, "model-pool", releaseId, expectedPreviewSha256, { imageAdditionDryRun: true });
 }
 
 export async function createPlatformConfigurationRollbackCandidate(
@@ -521,4 +653,175 @@ export async function readCurrentPlatformConfiguration(kind: PlatformConfigurati
     release: current,
     snapshot: snapshotFromRow(kind, current),
   };
+}
+
+/** Dedicated capability-only path: never delegates to the ordinary publisher. */
+const VISION_PUBLICATION_ONLY_MODEL_ID = "b6a9d79d-9a0f-4ca5-86fa-4601d80e590d";
+function visionPublicationPrivateJson(value: unknown): string {
+  const stable = (item: unknown): unknown => Array.isArray(item) ? item.map(stable) : item && typeof item === "object"
+    ? Object.fromEntries(Object.entries(item).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, stable(child)])) : item;
+  return JSON.stringify(stable(value));
+}
+function visionOnlyTarget(current: Row, candidate: Row, modelId: string) {
+  if (modelId !== VISION_PUBLICATION_ONLY_MODEL_ID) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_SCOPE_INVALID", "本次单独发布仅限已审核的原GPT6Sol模型ID");
+  }
+  // Check persisted JSON as well as its normalized/hash-checked contract. JSONB
+  // object key order is immaterial; every array order and every other value is
+  // preserved. Normalization must never hide a reorder or a second legacy alias.
+  snapshotFromRow("model-pool", current);
+  snapshotFromRow("model-pool", candidate);
+  const previous = record(current.snapshot);
+  const next = record(candidate.snapshot);
+  if (!Array.isArray(previous.models) || !Array.isArray(next.models)) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_SCOPE_INVALID", "图片能力候选快照无效");
+  }
+  const models = previous.models as ModelPoolEntry[];
+  const positions = models.flatMap((entry, index) => entry.id === `llm:${modelId}` ? [index] : []);
+  if (positions.length !== 1 || models.filter(entry => entry.configuration.legacyTable === "llm_models" && entry.configuration.legacyId === modelId).length !== 1) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_SCOPE_INVALID", "图片能力候选必须唯一绑定原模型ID");
+  }
+  const index = positions[0];
+  const before = models[index];
+  const after = next.models[index] as ModelPoolEntry | undefined;
+  if (before.kind !== "agent" || before.catalogState !== "enabled"
+    || before.configuration.legacyTable !== "llm_models" || before.configuration.legacyId !== modelId
+    || String(before.capabilities.imageParsing || "none") !== "none"
+    || !before.credentialRef || after?.capabilities.imageParsing !== "gpt_vision") {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_SCOPE_INVALID", "仅支持原模型图片解析能力从none改为gpt_vision");
+  }
+  const expected = structuredClone(previous);
+  const expectedModels = expected.models as ModelPoolEntry[];
+  expectedModels[index].capabilities.imageParsing = "gpt_vision";
+  if (configurationSha256(expected) !== configurationSha256(next)) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_SCOPE_INVALID", "图片能力单独发布不能改变其他配置、模型或顺序");
+  }
+  return { before, after };
+}
+
+export async function publishLlmVisionCapabilityOnlyRelease(
+  actorIdValue: string, releaseIdValue: string, expectedPreviewSha256: string, targetModelIdValue: string,
+) {
+  const actorId = requireUuid(actorIdValue, "管理员 ID");
+  const releaseId = requireUuid(releaseIdValue, "配置版本 ID");
+  const modelId = requireUuid(targetModelIdValue, "原模型 ID");
+  if (modelId !== VISION_PUBLICATION_ONLY_MODEL_ID || !/^[a-f0-9]{64}$/u.test(expectedPreviewSha256)) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_INPUT_INVALID", "仅接受本次原模型ID和已审阅预览身份");
+  }
+  const [candidate, current] = await Promise.all([release("model-pool", releaseId), currentRelease("model-pool")]);
+  if (!current) throw new PlatformConfigurationError("VISION_PUBLICATION_CURRENT_CHANGED", "当前模型池发布身份缺失");
+  if (candidate.is_current === true && candidate.status === "published") {
+    // Already published recovery does not depend on fresh evidence or a new
+    // provider call, but still checks this operation's original target/scope.
+    if (current.id !== candidate.id) throw new PlatformConfigurationError("VISION_PUBLICATION_CURRENT_CHANGED", "发布回执已不是当前版本");
+    const parentId = requireUuid(candidate.parent_release_id, "原发布基础版本 ID");
+    visionOnlyTarget(await release("model-pool", parentId), candidate, modelId);
+    return candidate;
+  }
+  if (candidate.status !== "validated" || candidate.is_current === true
+    || candidate.parent_release_id !== current.id || candidate.rollback_target_id != null) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_CANDIDATE_BASE_CHANGED", "仅能力候选须已校验且以当前模型池为基础");
+  }
+  const { before, after } = visionOnlyTarget(current, candidate, modelId);
+  const validation = await validateSnapshot("model-pool", snapshotFromRow("model-pool", candidate));
+  if (!validation.ok) throw new PlatformConfigurationError("VISION_PUBLICATION_SCOPE_INVALID", "图片能力候选未通过模型池合同校验");
+  const preview = await previewPlatformConfigurationRelease("model-pool", releaseId);
+  if (!expectedPreviewSha256 || preview.previewSha256 !== expectedPreviewSha256) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_PREVIEW_STALE", "发布差异预览已缺失或过期，请重新预览");
+  }
+  if ((await credentialMetadata(releaseId)).length) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_PENDING_CREDENTIALS_REJECTED", "图片能力单独发布不能携带任何暂存凭据");
+  }
+  await assertPlatformConfigurationPublishReady();
+  const db = getSupabaseAdminClient();
+  // SERVER-PRIVATE: guard contains the existing physical credential. Never
+  // return it, log it, persist it as review evidence, or accept it from HTTP.
+  const guarded = await db.rpc("read_llm_vision_publication_guard", {
+    p_model_id: modelId, p_credential_ref: before.credentialRef,
+  });
+  if (guarded.error) throw new PlatformConfigurationError("VISION_PUBLICATION_RPC_UNAVAILABLE", "图片能力单独发布迁移尚未就绪，本次未发布");
+  const guard = record(guarded.data);
+  const physical = record(guard.physical);
+  if (physical.id !== modelId || guard.credentialLiteral !== true || guard.bindingExists !== true
+    || guard.bindingMatches !== true || guard.credentialRef !== before.credentialRef
+    || !UUID.test(String(guard.bindingRevision || "")) || !/^[0-9]+$/u.test(String(guard.rowVersion || ""))) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_CREDENTIAL_CHANGED", "原模型凭据绑定已变化或不属于本次支持的字面凭据通路");
+  }
+  if (physical.is_hidden !== false || physical.user_access === "hidden") {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_PHYSICAL_CHANGED", "原模型当前目录状态不属于本次已审核范围");
+  }
+  let ordinaryHash: string;
+  let expectedVisionHash: string;
+  let evidenceRow: Row;
+  try {
+    const secret = resolveProviderSecret(physical.api_key);
+    const binding = visionCandidateBinding(before, after, physical);
+    ordinaryHash = llmModelValidationConfigurationHash(binding, secret);
+    if (ordinaryHash !== llmModelValidationConfigurationHash(physical, secret)) {
+      throw new PlatformConfigurationError("VISION_CAPABILITY_BINDING_CHANGED", "原模型执行与计费配置已变化，图片证据不能授权额外变更");
+    }
+    expectedVisionHash = visionConfigurationHash(binding, secret);
+    const evidence = await db.from("llm_model_validation_evidence").select("id,model_id,configuration_hash,checked_at")
+      .eq("model_id", modelId).eq("configuration_hash", expectedVisionHash).maybeSingle();
+    if (evidence.error) throw new PlatformConfigurationError("VISION_VALIDATION_EVIDENCE_UNAVAILABLE", "无法读取当前能力候选的真实视觉验证证据");
+    assertFreshVisionEvidence(binding, secret, evidence.data);
+    evidenceRow = record(evidence.data);
+    requireUuid(evidenceRow.id, "视觉验证证据 ID");
+  } catch (error) {
+    if (error instanceof LlmModelValidationError) throw new PlatformConfigurationError(error.code, error.message);
+    throw error;
+  }
+  // All proof fields originate above. The HTTP action accepts only target ID,
+  // release ID and the user's reviewed preview identity.
+  let published;
+  try { published = await db.rpc("publish_llm_vision_capability_only_atomic", {
+    p_release_id: releaseId, p_actor_id: actorId,
+    p_expected_candidate_sha256: String(candidate.snapshot_sha256),
+    p_expected_current_id: String(current.id), p_expected_current_sha256: String(current.snapshot_sha256),
+    p_expected_current_snapshot: current.snapshot, p_expected_candidate_snapshot: candidate.snapshot,
+    p_target_model_id: modelId, p_expected_row_version: String(guard.rowVersion),
+    p_expected_credential_ref: before.credentialRef, p_expected_credential_revision: String(guard.bindingRevision),
+    p_ordinary_configuration_hash: ordinaryHash, p_vision_configuration_hash: expectedVisionHash,
+    p_evidence_id: String(evidenceRow.id), p_evidence_checked_at: String(evidenceRow.checked_at),
+  }); } catch {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_OUTCOME_UNKNOWN", "发布请求结果待核对，请读取原候选和当前版本；不要重复提交或转入普通发布");
+  }
+  if (published.error) {
+    const errorCode = String(published.error.code || "");
+    const message = String(published.error.message || "");
+    if (["PGRST202", "42883"].includes(errorCode)) {
+      throw new PlatformConfigurationError("VISION_PUBLICATION_RPC_UNAVAILABLE", "图片能力单独发布迁移尚未就绪，本次未发布");
+    }
+    const allowed = ["INPUT_INVALID", "CURRENT_CHANGED", "CANDIDATE_CHANGED", "CANDIDATE_BASE_CHANGED", "PENDING_CREDENTIALS_REJECTED",
+      "SCOPE_INVALID", "CREDENTIAL_CHANGED", "PHYSICAL_CHANGED", "EVIDENCE_DOMAIN_INVALID", "EVIDENCE_REQUIRED", "UPDATE_INCOMPLETE"];
+    const suffix = allowed.find(value => message.includes(`VISION_PUBLICATION_${value}`));
+    throw new PlatformConfigurationError(suffix ? `VISION_PUBLICATION_${suffix}` : "VISION_PUBLICATION_OUTCOME_UNKNOWN", "图片能力单独发布未获确认，请核对原候选和当前版本；不会转入全局发布");
+  }
+  let readback: Row | null;
+  let postGuard: Row;
+  try {
+    readback = await currentRelease("model-pool");
+    const post = await db.rpc("read_llm_vision_publication_guard", { p_model_id: modelId, p_credential_ref: before.credentialRef });
+    if (post.error) throw new Error("private readback unavailable");
+    postGuard = record(post.data);
+  } catch { throw new PlatformConfigurationError("VISION_PUBLICATION_OUTCOME_UNKNOWN", "发布后读回暂不可确认，请查询原候选；不要重复提交"); }
+  if (!readback || readback.id !== releaseId || readback.status !== "published" || readback.is_current !== true
+    || readback.snapshot_sha256 !== candidate.snapshot_sha256) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_OUTCOME_UNKNOWN", "图片能力单独发布后读回身份不一致，请读取当前版本核验");
+  }
+  snapshotFromRow("model-pool", readback);
+  // The existing visibility trigger keeps ordinary catalogue rows active and
+  // visible. Generation remains gated by user_access, not is_active. Compare
+  // every other physical value and credential exactly; never serialize this
+  // credential-bearing row into an HTTP reply or an evidence file.
+  const expectedPhysical: Row = { ...physical, image_parsing: "gpt_vision", is_active: true, user_access: "pending_model_activation" };
+  const actualPhysical: Row = { ...record(postGuard.physical) };
+  delete expectedPhysical.updated_at; delete actualPhysical.updated_at;
+  if (visionPublicationPrivateJson(expectedPhysical) !== visionPublicationPrivateJson(actualPhysical)
+    || postGuard.credentialRef !== guard.credentialRef || postGuard.bindingRevision !== guard.bindingRevision
+    || postGuard.bindingMatches !== true || postGuard.credentialLiteral !== true
+    || !Number.isFinite(Date.parse(String(record(postGuard.physical).updated_at || "")))) {
+    throw new PlatformConfigurationError("VISION_PUBLICATION_OUTCOME_UNKNOWN", "模型能力或待激活状态读回不一致，请查询原候选；视觉验证不会自动激活模型");
+  }
+  return readback;
 }

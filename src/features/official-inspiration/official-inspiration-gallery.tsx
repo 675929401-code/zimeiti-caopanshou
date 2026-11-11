@@ -34,7 +34,6 @@ import {
 } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { useManjuShowcaseCatalog } from "@/components/app-route-shell";
-import { appendImageWorkbenchPromptTransfer } from "@/lib/image-workbench-transfer";
 import { applyManjuInspirationOverrides } from "@/lib/manju-showcase-runtime";
 import { storeYoucaiMusicPrefill, storeYoucaiVideoPrefill } from "@/lib/youcai-agent-routing";
 import { storeYoucaiAgentPrefill } from "@/lib/youcai-agent-prefill";
@@ -111,10 +110,9 @@ function getDisplayMediaLabel(item: OfficialInspirationItem): Exclude<MediaFilte
   return item.mediaType === "音频" && item.category === "音乐" ? "音乐" : item.mediaType;
 }
 
-function getWorkbenchAction(item: OfficialInspirationItem): { href: string; label: string } {
-  if (item.mediaType === "图片") {
-    return { href: "/youcai/tools/image/image-chat", label: "进入图片工作台" };
-  }
+function getWorkbenchAction(item: OfficialInspirationItem): { href: string; label: string } | null {
+  // 独立 AI 生图工作台已下线：图片类素材不再提供工作台入口。
+  if (item.mediaType === "图片") return null;
   if (item.mediaType === "视频") {
     return { href: "/youcai/video", label: "进入视频工作台" };
   }
@@ -126,9 +124,7 @@ function getWorkbenchAction(item: OfficialInspirationItem): { href: string; labe
 
 function storeWorkbenchPrompt(item: OfficialInspirationItem): boolean {
   try {
-    if (item.mediaType === "图片") {
-      return Boolean(appendImageWorkbenchPromptTransfer(item.prompt));
-    }
+    if (item.mediaType === "图片") return false;
     if (item.mediaType === "视频") {
       return storeYoucaiVideoPrefill(item.prompt);
     }
@@ -381,6 +377,10 @@ function InspirationDetailModal({
 
   const continueInWorkbench = () => {
     setHandoffError("");
+    if (!workbenchAction) {
+      setHandoffError("独立 AI 生图工作台已下线，图片类素材暂不支持直接带入工作台；请复制提示词到保留的创作模块使用。");
+      return;
+    }
     if (!storeWorkbenchPrompt(item)) {
       setHandoffError("无法把提示词保存到创作工作台，请确认浏览器允许站内存储后重试。本次不会打开没有素材提示词的空工作台。");
       return;
@@ -491,8 +491,8 @@ function InspirationDetailModal({
           <button type="button" className={styles.continueAction} onClick={continueOnCanvas}>
             进入创作画布<ArrowRight size={16} />
           </button>
-          <button type="button" className={styles.workbenchAction} onClick={continueInWorkbench}>
-            <WandSparkles size={16} />{workbenchAction.label}
+          <button type="button" className={styles.workbenchAction} onClick={continueInWorkbench} disabled={!workbenchAction} data-disabled={!workbenchAction || undefined}>
+            <WandSparkles size={16} />{workbenchAction?.label || "图片工作台已下线"}
           </button>
         </footer>
         <p className={styles.handoffNote}>进入画布或工作台只传递本站素材引用与提示词，不会自动生成内容，也不会自动扣费。</p>

@@ -151,6 +151,8 @@ const eslintConfig = defineConfig([
     'main-site/**',
     'voice-studio/**',
     'voice-platform/**',
+    // The original publishing UI has an isolated compiler and its own lint gate.
+    'integrations/aitoearn-native-app/**',
     'docs/**',
     'backups/**',
     '项目备份/**',

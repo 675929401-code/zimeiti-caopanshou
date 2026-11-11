@@ -12,6 +12,7 @@ export const SHORT_DRAMA_FAILURE_HISTORY_SURFACE = "short-drama-film-studio" as 
 export const IMAGE_FAILURE_HISTORY_PAGE_SIZE = 20;
 
 const IMAGE_FAILURE_HISTORY_SURFACES = new Set<string>([
+  "publish-center-image",
   IMAGE_FAILURE_HISTORY_SURFACE,
   COVER_FAILURE_HISTORY_SURFACE,
   STORYBOARD_FAILURE_HISTORY_SURFACE,
@@ -36,7 +37,7 @@ const PROVIDER_PROTOCOLS = new Set([
 
 export type ImageFailureRequestSnapshot = {
   schema: "image_generation_request_snapshot.v1" | "image_generation_request_snapshot.v2";
-  surface: "image-workbench" | "cover-studio" | "storyboard-workbench" | "free-canvas" | "short-drama-film-studio" | "other";
+  surface: "publish-center-image" | "image-workbench" | "cover-studio" | "storyboard-workbench" | "free-canvas" | "short-drama-film-studio" | "other";
   prompt: string;
   publicModelId: string;
   modelName: string;

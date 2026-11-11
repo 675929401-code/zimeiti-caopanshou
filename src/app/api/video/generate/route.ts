@@ -1,3 +1,5 @@
+import { resolveNativeAiImageInput } from "@/lib/server/native-main-media";
+import { resolveNativeAiConsumer, admitNativeAiConsumer, buildNativeAiPriceHash, toNativeAiReservationAmount, NativeAiAdmissionError, nativeAiAdmissionFailure } from "@/lib/server/native-ai-admission";
 import { generatedImageReferenceUri, parseGeneratedImageReferenceUri, parseGeneratedVideoImageInputs } from "@/lib/generated-image-reference";
 import { GeneratedImageReferenceError, resolveGeneratedImageReference, readGeneratedImageMaterial } from "@/lib/server/generated-image-reference";
 import { bridgeGeneratedImageForVideoProvider } from "@/lib/server/generated-image-video-bridge";
@@ -440,7 +442,29 @@ export async function POST(req: NextRequest) {
     }
     let userRole: "admin" | "student" = currentAuthorization.ok ? "admin" : "student";
 
-    const body = await req.json();
+    let body = await req.json();
+    const nativeRawWire = body;
+    const nativeInvocation = await resolveNativeAiConsumer({ db: getSupabaseAdminClient(), userId, consumer: "main_video", requestKey: typeof body?.client_request_id === "string" ? body.client_request_id : "", wireRequest: body });
+    if (body?.surface === "publish-center-video" && !nativeInvocation) throw new NativeAiAdmissionError("NATIVE_AI_ACTION_REQUIRED", "发布中心视频需要当前会员的明确动作");
+    if (nativeInvocation) {
+      const prior = await getSupabaseAdminClient().from("video_tasks").select("id,model_id,task_id_external,status,billing_state,billing_reserved_yuan,price_charged,resolution,duration_seconds").eq("user_id", userId).eq("client_request_id", nativeInvocation.requestKey).maybeSingle();
+      if (prior.error) throw new NativeAiAdmissionError("NATIVE_AI_RESULT_UNAVAILABLE", "原视频任务暂不可读取，请保留原请求", 503);
+      if (prior.data) {
+        if (toPublicModelId("video", String(prior.data.model_id)) !== nativeInvocation.modelPublicId) throw new NativeAiAdmissionError("NATIVE_AI_BINDING_MISMATCH", "原视频任务模型与动作不一致");
+        return NextResponse.json({ task_id: prior.data.task_id_external || prior.data.id, business_task_id: prior.data.id, model_id: nativeRawWire.model_id, status: prior.data.status, billing_state: prior.data.billing_state, price: Number(prior.data.price_charged || 0), reserved_amount: Number(prior.data.billing_reserved_yuan || 0), resolution: prior.data.resolution, target_duration: prior.data.duration_seconds, replayed: true, message: "已读取原视频任务，没有重新上传参考图、预留费用或提交模型" });
+      }
+      const resolverDb = getSupabaseAdminClient();
+      if (body.reference_image_urls !== undefined && (!Array.isArray(body.reference_image_urls) || body.reference_image_urls.length > 9 || body.reference_image_urls.some((uri: unknown) => typeof uri !== "string"))) throw new NativeAiAdmissionError("NATIVE_AI_REFERENCE_INVALID", "原生参考图合同无效");
+      try {
+        body = { ...body,
+          ...(body.image_url ? { image_url: await resolveNativeAiImageInput(resolverDb, userId, body.image_url) } : {}),
+          ...(body.last_frame_url ? { last_frame_url: await resolveNativeAiImageInput(resolverDb, userId, body.last_frame_url) } : {}),
+          ...(body.reference_image_url ? { reference_image_url: await resolveNativeAiImageInput(resolverDb, userId, body.reference_image_url) } : {}),
+          reference_image_urls: await Promise.all((body.reference_image_urls || []).map((uri: string) => resolveNativeAiImageInput(resolverDb, userId, uri))),
+        };
+      } catch { throw new NativeAiAdmissionError("NATIVE_AI_REFERENCE_UNAVAILABLE", "参考图已失效或当前无法安全读取，请核对主站原素材"); }
+    }
+    const nativeSnapshotInputs = { imageUrl: nativeRawWire?.image_url, lastFrameUrl: nativeRawWire?.last_frame_url, referenceImageUrl: nativeRawWire?.reference_image_url, referenceImageUrls: nativeRawWire?.reference_image_urls };
     let generatedInputs: ReturnType<typeof parseGeneratedVideoImageInputs>;
     try { generatedInputs = parseGeneratedVideoImageInputs(body); } catch {
       return NextResponse.json({ error: "生成图片引用格式无效或与原始地址冲突", error_code: "GENERATED_IMAGE_REFERENCE_INVALID", task_submitted: false }, { status: 422 });
@@ -451,6 +475,7 @@ export async function POST(req: NextRequest) {
     const last_frame_url = generatedInputs.lastFrameUrl;
     const reference_image_url = generatedInputs.referenceImageUrl;
     const { model_id, prompt, audio_url, negative_prompt, duration, aspect_ratio, resolution, resolution_tier, source_video_url, task_label, batch_id, batch_topic, card_index, surface, client_request_id } = body;
+
     const generateAudio = Object.prototype.hasOwnProperty.call(body, "generate_audio")
       ? body.generate_audio
       : body.generateAudio;
@@ -500,7 +525,7 @@ export async function POST(req: NextRequest) {
     // An accepted Token request replays its frozen authorization, even after
     // prices or wallet availability change. Only an identical original body
     // may reuse the client request key; no provider submission occurs here.
-    const tokenRequestPayloadHash = buildVideoRequestFingerprint({ tokenRequestBody: body });
+    const tokenRequestPayloadHash = buildVideoRequestFingerprint({ tokenRequestBody: nativeInvocation ? nativeRawWire : body });
     if (typeof client_request_id === "string" && client_request_id.trim()) {
       const { data: prior, error: priorError } = await getSupabaseAdminClient().from("video_tasks")
         .select("id,model_id,task_id_external,status,billing_state,billing_unit,billing_token_quote,billing_reserved_yuan,price_charged,resolution,duration_seconds")
@@ -1113,6 +1138,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Native grants precede every provider-side asset upload as well as wallet reservation.
+    const nativeBilling = nativeInvocation ? requireVideoPriceSnapshot(selectedModel, selectedResolution, videoTiming.target, {
+      hasReferenceVideo: Boolean(source_video_url), maxChargeYuan: body.tokenBilling?.maxChargeYuan, priceVersion: body.tokenBilling?.priceVersion,
+    }) : null;
+    if (nativeInvocation && nativeBilling) {
+      const nativePublicModelId = String(model_id).startsWith("pm_") ? String(model_id) : toPublicModelId("video", String(selectedModel.id));
+      await admitNativeAiConsumer({ db, userId, invocation: nativeInvocation, modelPublicId: nativePublicModelId,
+        surface: "publish-center-video", unit: "CNY", reservationAmount: toNativeAiReservationAmount(nativeBilling.tokenQuote?.maxChargeYuan ?? nativeBilling.priceYuan),
+        priceHash: await buildNativeAiPriceHash({ consumer: "main_video", modelPublicId: nativePublicModelId, surface: "publish-center-video", pricing: nativeBilling }),
+      });
+    }
+
     // Reference inputs were checked before dispatch. Image creation has its own
     // priced, durable workflow; a video request never creates an implicit image.
     // hosted H3 的 ref_image/ref_audio 参数必须使用无查询参数的公开 COS 地址。
@@ -1256,7 +1293,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const billing = requireVideoPriceSnapshot(selectedModel, selectedResolution, videoTiming.target, {
+    const billing = nativeBilling ?? requireVideoPriceSnapshot(selectedModel, selectedResolution, videoTiming.target, {
       hasReferenceVideo: Boolean(effectiveSourceVideoUrl),
       maxChargeYuan: body.tokenBilling?.maxChargeYuan,
       priceVersion: body.tokenBilling?.priceVersion,
@@ -1431,10 +1468,10 @@ export async function POST(req: NextRequest) {
         effectivePrompt: executionPrompt,
         promptNormalizations,
         negativePrompt: typeof negative_prompt === "string" ? negative_prompt : "",
-        referenceAssets: buildVideoRequestAssetRefs({
+        referenceAssets: buildVideoRequestAssetRefs(nativeInvocation ? nativeSnapshotInputs : {
           imageUrl: stableInputAssets.imageAssetRef,
-          lastFrameUrl: stableInputAssets.lastFrameAssetRef,
-          referenceImageUrl: stableInputAssets.referenceImageAssetRef,
+          lastFrameUrl: nativeInvocation ? nativeRawWire.last_frame_url : stableInputAssets.lastFrameAssetRef,
+          referenceImageUrl: nativeInvocation ? nativeRawWire.reference_image_url : stableInputAssets.referenceImageAssetRef,
           referenceImageUrls: stableInputAssets.imageAssetRefs,
           audioUrl: stableInputAssets.audioAssetRef,
           referenceAudioUrls: stableInputAssets.audioAssetRefs,
@@ -1452,7 +1489,7 @@ export async function POST(req: NextRequest) {
         publicModelId: publicRequestedModelId,
         routingConfigHash: routingSnapshot.configVersion,
         adapterVersion: `video-adapter:${channelConfig.protocol_type}:v1`,
-        providerPayload: h3RequestPayload,
+        providerPayload: nativeInvocation ? nativeRawWire : h3RequestPayload,
       });
       const requestFingerprint = buildVideoRequestFingerprint({
         modelId: channelConfig.id,
@@ -1482,7 +1519,7 @@ export async function POST(req: NextRequest) {
           batchTopic: batch_topic,
           cardIndex: card_index,
           prompt: typeof prompt === "string" ? prompt : "",
-          firstFrameUrl: stableInputAssets.imageAssetRef,
+          firstFrameUrl: nativeInvocation ? nativeRawWire.image_url : stableInputAssets.imageAssetRef,
           lastFrameUrl: stableInputAssets.lastFrameAssetRef,
           referenceImageUrl: stableInputAssets.referenceImageAssetRef,
           aspectRatio: aspect_ratio || "16:9",
@@ -1685,7 +1722,7 @@ export async function POST(req: NextRequest) {
       effectivePrompt: executionPrompt,
       promptNormalizations,
       negativePrompt: typeof negative_prompt === "string" ? negative_prompt : "",
-      referenceAssets: buildVideoRequestAssetRefs({
+      referenceAssets: buildVideoRequestAssetRefs(nativeInvocation ? nativeSnapshotInputs : {
         imageUrl: image_url,
         imageStorageKey: image_storage_key,
         lastFrameUrl: last_frame_url,
@@ -1708,7 +1745,7 @@ export async function POST(req: NextRequest) {
       publicModelId: publicRequestedModelId,
       routingConfigHash: routingSnapshot.configVersion,
       adapterVersion: `video-adapter:${channelConfig.protocol_type}:v1`,
-      providerPayload: dispatch || (generatedInputs.typed.size ? { ...adapterParams, imageUrl: generatedImageUri || adapterParams.imageUrl, lastFrameUrl: generatedInputs.typed.has("last_frame_url") ? last_frame_url : adapterParams.lastFrameUrl, referenceImageUrl: generatedInputs.typed.has("reference_image_url") ? reference_image_url : adapterParams.referenceImageUrl, imageUrls: effectiveReferenceImageUrls.map((url, index) => generatedInputs.typed.has(`reference_image_urls[${index}]`) ? referenceImageUrls[index] : url) } : adapterParams),
+      providerPayload: nativeInvocation ? nativeRawWire : dispatch || (generatedInputs.typed.size ? { ...adapterParams, imageUrl: generatedImageUri || adapterParams.imageUrl, lastFrameUrl: generatedInputs.typed.has("last_frame_url") ? last_frame_url : adapterParams.lastFrameUrl, referenceImageUrl: generatedInputs.typed.has("reference_image_url") ? reference_image_url : adapterParams.referenceImageUrl, imageUrls: effectiveReferenceImageUrls.map((url, index) => generatedInputs.typed.has(`reference_image_urls[${index}]`) ? referenceImageUrls[index] : url) } : adapterParams),
     });
     const reservation = await reserveVideoGenerationTask({
       dispatch,
@@ -1727,9 +1764,9 @@ export async function POST(req: NextRequest) {
         batchTopic: batch_topic,
         cardIndex: card_index,
         prompt: typeof prompt === "string" ? prompt : "",
-        firstFrameUrl: image_url,
-        lastFrameUrl: last_frame_url,
-        referenceImageUrl: reference_image_url,
+        firstFrameUrl: nativeInvocation ? nativeRawWire.image_url : image_url,
+        lastFrameUrl: nativeInvocation ? nativeRawWire.last_frame_url : last_frame_url,
+        referenceImageUrl: nativeInvocation ? nativeRawWire.reference_image_url : reference_image_url,
         aspectRatio: aspect_ratio || "16:9",
         resolution: selectedResolution,
         durationSeconds: videoTiming.target,
@@ -2210,6 +2247,8 @@ export async function POST(req: NextRequest) {
     if (acceptedReceipt) {
       return NextResponse.json({ task_id: acceptedReceipt.taskId, business_task_id: acceptedReceipt.businessTaskId, model_id: acceptedReceipt.modelId, status: "processing", error_code: "VIDEO_ACCEPTED_RESULT_PENDING", message: "上游已受理，任务结果正在保存，请继续追踪原任务", task_submitted: true, retryable: false, ...tokenPendingFinancials }, { status: 503 });
     }
+    const nativeFailure = nativeAiAdmissionFailure(error);
+    if (nativeFailure) return NextResponse.json(nativeFailure.body, { status: nativeFailure.status });
     const terminalError = videoTerminalErrorResponse(error);
     if (terminalError) {
       await writeVideoTrace({

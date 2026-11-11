@@ -70,7 +70,6 @@ import {
   isImageGenerationModelName,
   shouldTriggerHybridImage,
 } from "@/lib/hybrid-image-routing";
-import { appendImageWorkbenchPromptTransfer } from "@/lib/image-workbench-transfer";
 import {
   clearConversationCache,
 } from "@/lib/conversation-cache";
@@ -1962,40 +1961,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [cancelStreamingFrameIfIdle, dispatch, markStreamFinal, streamKey, throttledDispatchUpdate]);
 
-  // ── 生图意图交接到专用工作台 ──
+  // ── 已退役生图入口：本地明确拒绝，保留当前对话原文 ──
   const sendImageGenMessage = useCallback(
-    async (convId: string, assistantMsgId: string, content: string) => {
-      const transferred = appendImageWorkbenchPromptTransfer(content);
-      if (!transferred) {
-        const transferError = "无法写入 AI 生图工作台草稿，请检查浏览器存储权限后重试";
-        dispatch({
-          type: "UPDATE_MESSAGE",
-          payload: {
-            conversationId: convId,
-            messageId: assistantMsgId,
-            content: transferError,
-          },
-        });
-        dispatch({
-          type: "SET_MESSAGE_STREAMING",
-          payload: { conversationId: convId, messageId: assistantMsgId, isStreaming: false },
-        });
-        dispatch({
-          type: "SET_CONV_STREAMING",
-          payload: { conversationId: convId, isStreaming: false },
-        });
-        toast.error(transferError);
-        throw new Error(transferError);
-      }
-
+    async (convId: string, assistantMsgId: string, _content: string) => {
+      // The caller has already appended the original user message. Do not
+      // enqueue a retired draft or route it into an unrelated replacement page.
+      const unavailableMessage = "独立 AI 生图工作台已下线，此入口暂不支持生成图片。你的原始提示词已保留在当前对话中。";
+      resetTypewriterState({ conversationId: convId, messageId: assistantMsgId });
       dispatch({
         type: "UPDATE_MESSAGE",
         payload: {
           conversationId: convId,
           messageId: assistantMsgId,
-          content:
-            "已将完整提示词带入 AI 生图工作台。请在工作台确认模型、尺寸、数量与预计费用后再生成。",
+          content: unavailableMessage,
+          streamStatus: "",
         },
+      });
+      dispatch({
+        type: "MARK_MESSAGE_ERROR",
+        payload: { conversationId: convId, messageId: assistantMsgId, error: unavailableMessage },
       });
       dispatch({
         type: "SET_MESSAGE_STREAMING",
@@ -2005,12 +1989,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         type: "SET_CONV_STREAMING",
         payload: { conversationId: convId, isStreaming: false },
       });
-      toast.success("已带入 AI 生图工作台");
-      window.setTimeout(() => {
-        window.location.assign("/tools/image/image-chat");
-      }, 0);
+      toast.error(unavailableMessage);
     },
-    [dispatch]
+    [dispatch, resetTypewriterState]
   );
 
   const sendLLMMessage = useCallback(

@@ -37,52 +37,7 @@ await assert.rejects(helper.readImageDownloadBlob({ kind: 'inline_ephemeral', bl
 const beforeInvalid = fetched.length;
 await assert.rejects(helper.readImageDownloadBlob({ kind: 'provider_url', recordId: 'wrong' }, 'synthetic', new AbortController().signal)); checks++;
 check(fetched.length === beforeInvalid);
-const source = readFileSync('src/components/image-workbench.tsx', 'utf8');
-const start = source.indexOf('  const captureImageDownload = useCallback('), end = source.indexOf('  const pushGeneratedImagesToVideo =', start);
-assert.ok(start > 0 && end > start);
-const actual = compile('module.exports=function(){' + source.slice(start, end) + 'return {captureImageDownload,downloadImage,downloadAll};}');
-function harness(jobs, held) {
-  let owner = 'owner\0synthetic'; const notices = [], downloads = [], zipEntries = [];
-  const operations = new helper.ImageDownloadOperations(() => owner), module = { exports: {} };
-  runInNewContext(actual, { module, useCallback: callback => callback, jobs, completedJobs: jobs, token: 'synthetic', identity: { userId: 'owner' },
-    transientImageBlobs: { current: held }, downloadOperations: { current: operations },
-    readImageDownloadBlob: helper.readImageDownloadBlob, imageDownloadFilename: helper.imageDownloadFilename,
-    fetchWorkbenchImagePng: async () => blob,
-    setNotice: notice => notices.push(notice), setDownloadBusy: () => {},
-    buildZip: entries => { zipEntries.push(entries); return new Blob(['zip'], { type: 'application/zip' }); },
-    downloadBlob: (blob, name) => downloads.push({ blob, name }), Uint8Array, Error });
-  return { ...module.exports(), notices, downloads, zipEntries, operations, setOwner: value => { owner = value; operations.cancelAll(); } };
-}
-const inline = { id: 'inline', status: 'done', imageUrl: 'blob:current', deliveryReceipt: { recordId, deliveryMode: 'inline_ephemeral', cashCharged: 0.01 } };
-const provider = { id: 'provider', status: 'done', imageUrl: '/api/media-history/content?recordId=' + recordId, deliveryReceipt: { recordId, deliveryMode: 'provider_url', cashCharged: 0.02 } };
-const held = () => new Map([['blob:current', { jobId: 'inline', recordId, blob }]]);
-let h = harness([inline], held());
-const calls = fetched.length;
-await h.downloadImage(inline, '1.png'); check(h.downloads.length === 1 && fetched.length === calls);
-await h.downloadAll(); check(h.downloads.length === 2 && h.zipEntries[0][0].name === '1.png' && fetched.length === calls);
-check(inline.deliveryReceipt.cashCharged === 0.01); // Downloads never alter billing/receipt state.
-assert.throws(() => h.captureImageDownload({ ...inline, deliveryReceipt: { ...inline.deliveryReceipt, recordId: 'b'.repeat(64) } })); checks++;
-assert.throws(() => h.captureImageDownload({ ...provider, imageUrl: 'https://external.invalid/image' })); checks++;
-assert.throws(() => h.captureImageDownload({ ...inline, id: 'other-card' })); checks++;
-responseFactory = () => new Response('expired', { status: 410 });
-h = harness([inline, provider], held()); await h.downloadAll();
-check(h.downloads.length === 0 && h.zipEntries.length === 0 && h.notices.some(message => /收据仍保留/u.test(message)));
-// ZIP synchronously captures every inline Blob before waiting for a provider read.
-let completeRead; responseFactory = () => new Promise(resolve => { completeRead = resolve; });
-const retained = held(); h = harness([provider, inline], retained);
-const pendingZip = h.downloadAll(); retained.clear(); completeRead(new Response(png, { headers: { 'content-type': 'image/png' } })); await pendingZip;
-check(h.downloads.length === 1 && h.zipEntries[0].length === 2 && h.zipEntries[0][1].bytes.length === png.length);
-// An owner/token change aborts provider reads and prevents any final download.
-responseFactory = options => new Promise((_, reject) => { options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }); });
-h = harness([provider], held()); const cancelled = h.downloadAll(); h.setOwner('new-owner'); await cancelled;
-check(h.downloads.length === 0 && h.zipEntries.length === 0);
-// The final owner guard also covers a completed read racing an account change.
-const operationOwner = { value: 'owner' }, operations = new helper.ImageDownloadOperations(() => operationOwner.value);
-const operation = operations.begin('owner'); operationOwner.value = 'other'; assert.throws(operation.assertCurrent); operation.finish(); checks++;
-const disposed = operations.begin('other'); operations.cancelAll(); assert.throws(disposed.assertCurrent); disposed.finish(); checks++;
-responseFactory = () => new Response(png, { headers: { 'content-type': 'image/png' } });
-h = harness([{ id: 'legacy', status: 'done', imageUrl: '/legacy.png', assetId: 'legacy-asset', storageKey: 'legacy-key' }], new Map());
-await h.downloadAll(); check(h.downloads.length === 1 && h.zipEntries[0][0].name === '1.png');
+// 独立 AI 生图工作台已下线：其组件下载处理器不再存在，本脚本只保留共享下载助手与分镜处理器验证。
 // Execute the actual storyboard callback, owner hooks and anchor helper in RAM.
 const referenceModule = { exports: {} };
 runInNewContext(compile(readFileSync('src/lib/generated-image-reference.ts', 'utf8')), {
@@ -187,4 +142,4 @@ for (const card of [
   check(sb.downloads.length === 1 && sb.downloads[0].url === card.imageUrl && sb.created.length === 0 && fetched.length === storyboardCalls);
 }
 check(JSON.stringify(storyboardCard) === originalCard);
-console.log(JSON.stringify({ passed: true, checks, actualWorkbenchDownloadHandlers: true, actualStoryboardDownloadHandler: true, realNetworkCalls: 0, paidCalls: 0, databaseCalls: 0 }));
+console.log(JSON.stringify({ passed: true, checks, actualWorkbenchDownloadHandlers: false, actualStoryboardDownloadHandler: true, realNetworkCalls: 0, paidCalls: 0, databaseCalls: 0 }));

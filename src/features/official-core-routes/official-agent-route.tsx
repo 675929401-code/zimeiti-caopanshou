@@ -43,7 +43,6 @@ import { useApp } from "@/contexts/app-context";
 import { ChatModelSwitcher } from "@/components/chat/chat-model-switcher";
 import { buildChatModelGroups, chatModelSelectionScope, chatModelSelectionStorageKey, findChatModelOption, newConversationChatModelSelection } from "@/lib/chat-model-catalog";
 import { useAppScopedRouter } from "@/hooks/use-app-scoped-router";
-import { appendImageWorkbenchPromptTransfer } from "@/lib/image-workbench-transfer";
 import type {
   ManjuSkillOutput,
   ManjuSkillToolProposal,
@@ -1916,14 +1915,16 @@ export function OfficialAgentRoute({
       setNotice("该建议没有可验证的目标工作台，已阻止跳转；当前未生成、未创建任务、未扣费。");
       return;
     }
+    if (destination === "image") {
+      setNotice("独立 AI 生图工作台已下线，图片类建议无法再交接；请在封面设计、分镜编排、漫剧创作或带货创作内使用生图能力。当前未生成、未创建任务、未扣费。");
+      return;
+    }
 
     const meta = PROPOSAL_DESTINATIONS[destination];
     const prefill = extractProposalPrefill(proposal);
     let prepared = true;
     try {
-      if (destination === "image" && prefill) {
-        prepared = Boolean(appendImageWorkbenchPromptTransfer(prefill));
-      } else if (destination === "video" && prefill) {
+      if (destination === "video" && prefill) {
         prepared = storeYoucaiVideoPrefill(prefill);
       } else if (destination === "music" && prefill) {
         prepared = storeYoucaiMusicPrefill(prefill);

@@ -1042,11 +1042,11 @@ html[data-theme="soft-white"][data-mode="light"] .voice-studio-root {
   overflow: hidden;
   border-color: color-mix(in srgb, var(--vs-primary) 32%, var(--vs-border));
   border-radius: 13px;
-  background: color-mix(in srgb, var(--vs-card) 94%, transparent);
+  background: var(--studio-card, color-mix(in srgb, var(--vs-card) 94%, transparent));
   padding: 0;
   box-shadow: 0 10px 28px color-mix(in srgb, var(--vs-bg) 54%, transparent);
-  backdrop-filter: blur(16px) saturate(1.08);
-  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: var(--studio-panel-backdrop, blur(16px) saturate(1.08));
+  -webkit-backdrop-filter: var(--studio-panel-backdrop, blur(16px) saturate(1.08));
   transition: width .18s ease, height .18s ease, box-shadow .18s ease;
 }
 

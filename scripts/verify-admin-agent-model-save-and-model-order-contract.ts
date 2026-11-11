@@ -54,14 +54,16 @@ const upsertStart = modelCompatibility.indexOf("export async function stageLegac
 const upsertEnd = modelCompatibility.indexOf("export async function stageLegacyModelPoolCatalogState(", upsertStart);
 assert.ok(upsertStart >= 0 && upsertEnd > upsertStart, "MODEL_UPSERT_HANDLER_REQUIRED");
 const upsertHandler = modelCompatibility.slice(upsertStart, upsertEnd);
-assert.match(upsertHandler, /const videoBase = input\.table === "video_models" \? await readCurrentPlatformConfiguration\("model-pool"\) : null/u, "VIDEO_UPSERT_MUST_READ_IMMUTABLE_CURRENT_BASE");
-assert.match(upsertHandler, /input\.table === "video_models" && !videoBase[\s\S]*MODEL_POOL_CURRENT_RELEASE_REQUIRED/u, "VIDEO_UPSERT_REQUIRES_PUBLISHED_BASE");
-assert.match(upsertHandler, /applyModelPoolCompatibilityMutation\(videoBase \? videoBase\.snapshot : await currentModelPoolWithLiveBindings\(\), \{ action: "upsert", entry \}\)/u, "NONVIDEO_UPSERT_MUST_RECONCILE_LIVE_BINDINGS");
-assert.match(upsertHandler, /expectedBase: \{ releaseId: string\(videoBase\.release\.id\), snapshotSha256: string\(videoBase\.release\.snapshot_sha256\) \}/u, "VIDEO_UPSERT_MUST_BIND_RELEASE_AND_SNAPSHOT");
+assert.match(upsertHandler, /const scopedUpsert = input\.table === "cover_models" \|\| input\.table === "video_models"/u, "IMAGE_VIDEO_UPSERT_MUST_HAVE_EXPLICIT_SCOPE");
+assert.match(upsertHandler, /const scopedBase = scopedUpsert \? await readCurrentPlatformConfiguration\("model-pool"\) : null/u, "IMAGE_VIDEO_UPSERT_MUST_READ_IMMUTABLE_CURRENT_BASE");
+assert.match(upsertHandler, /scopedUpsert && !scopedBase[\s\S]*MODEL_POOL_CURRENT_RELEASE_REQUIRED/u, "IMAGE_VIDEO_UPSERT_REQUIRES_PUBLISHED_BASE");
+assert.match(upsertHandler, /applyModelPoolCompatibilityMutation\(scopedBase \? scopedBase\.snapshot : await currentModelPoolWithLiveBindings\(\), \{ action: "upsert", entry \}\)/u, "TEXT_UPSERT_MUST_RECONCILE_LIVE_BINDINGS");
+assert.match(upsertHandler, /expectedBase: \{ releaseId: string\(scopedBase\.release\.id\), snapshotSha256: string\(scopedBase\.release\.snapshot_sha256\) \}/u, "IMAGE_VIDEO_UPSERT_MUST_BIND_RELEASE_AND_SNAPSHOT");
+assert.match(upsertHandler, /input\.table === "video_models" \? \{ operation: "video-upsert-only" as const \}/u, "ONLY_VIDEO_UPSERT_MAY_SELECT_VIDEO_OPERATION");
 
 // Execute the actual snapshot-selection and credential-preservation block in
 // RAM. Its persistence dependencies only capture arguments; none loads a DB client.
-const snapshotStart = upsertHandler.indexOf("  const videoBase =");
+const snapshotStart = upsertHandler.indexOf("  const scopedUpsert =");
 const snapshotEnd = upsertHandler.indexOf("  try { const preview =", snapshotStart);
 assert.ok(snapshotStart >= 0 && snapshotEnd > snapshotStart, "MODEL_UPSERT_SNAPSHOT_BLOCK_REQUIRED");
 const snapshotProgram = ts.transpileModule(
@@ -80,11 +82,12 @@ const withoutCredential = (entry: ModelPoolEntry): ModelPoolEntry => {
 };
 const unchangedAgent = fixtureEntry("agent-fixture", "agent", "https://published.invalid/v1", "secret://fixture/published-agent");
 const publishedSnapshot: ModelPoolSnapshot = { schema: "model-pool-config/v1", models: [
-  fixtureEntry("video-fixture", "video", "https://published.invalid/video", "secret://fixture/current-video"), unchangedAgent,
+  fixtureEntry("video-fixture", "video", "https://published.invalid/video", "secret://fixture/current-video"),
+  fixtureEntry("image-fixture", "image", "https://published.invalid/image", "secret://fixture/current-image"), unchangedAgent,
 ] };
 const liveSnapshot: ModelPoolSnapshot = { ...publishedSnapshot, models: publishedSnapshot.models.map(entry =>
   entry.kind === "agent" ? { ...entry, endpoint: "https://live-drift.invalid/v1" } : entry) };
-type StagedFixture = { snapshot: ModelPoolSnapshot; credentialChanges: unknown[]; expectedBase?: { releaseId: string; snapshotSha256: string } };
+type StagedFixture = { snapshot: ModelPoolSnapshot; credentialChanges: unknown[]; expectedBase?: { releaseId: string; snapshotSha256: string }; operation?: "video-upsert-only" };
 async function verifyUpsertSnapshot(table: string, options: { noCurrent?: boolean; unbound?: boolean; newCredential?: boolean } = {}) {
   let liveReads = 0;
   const fixtureModule = { exports: undefined as unknown as (input: object, entry: ModelPoolEntry, credentials: unknown[]) => Promise<StagedFixture> };
@@ -99,7 +102,7 @@ async function verifyUpsertSnapshot(table: string, options: { noCurrent?: boolea
     stagePlatformModelCandidateWithCredentials: async (input: StagedFixture) => input,
   });
   const kind = table === "video_models" ? "video" : table === "cover_models" ? "image" : "agent";
-  const entry = fixtureEntry(table === "video_models" ? "video-fixture" : "edited-fixture", kind, "https://edited.invalid/model", "secret://fixture/new-binding");
+  const entry = fixtureEntry(table === "video_models" ? "video-fixture" : table === "cover_models" ? "image-fixture" : "edited-fixture", kind, "https://edited.invalid/model", "secret://fixture/new-binding");
   const credentials = options.newCredential ? [{ credential_ref: entry.credentialRef }] : [];
   if (options.noCurrent) {
     await assert.rejects(fixtureModule.exports({ table }, entry, credentials), /MODEL_POOL_CURRENT_RELEASE_REQUIRED/u);
@@ -109,15 +112,16 @@ async function verifyUpsertSnapshot(table: string, options: { noCurrent?: boolea
   const staged = await fixtureModule.exports({ table }, entry, credentials);
   assert.equal(staged.snapshot.models.find(model => model.id === entry.id)?.endpoint, entry.endpoint);
   assert.equal(staged.credentialChanges, credentials);
-  if (table === "video_models") {
-    assert.equal(liveReads, 0, "VIDEO_UPSERT_MUST_NOT_IMPORT_UNRELATED_LIVE_DRIFT");
+  if (table === "video_models" || table === "cover_models") {
+    assert.equal(liveReads, 0, "IMAGE_VIDEO_UPSERT_MUST_NOT_IMPORT_UNRELATED_LIVE_DRIFT");
     assert.deepEqual(staged.snapshot.models.find(model => model.id === unchangedAgent.id), options.unbound ? withoutCredential(unchangedAgent) : unchangedAgent);
     assert.equal(staged.expectedBase?.releaseId, "release-fixture");
     assert.equal(staged.expectedBase?.snapshotSha256, "a".repeat(64));
+    assert.equal(staged.operation, table === "video_models" ? "video-upsert-only" : undefined);
     assert.equal(staged.snapshot.models.find(model => model.id === entry.id)?.credentialRef,
-      options.newCredential ? "secret://fixture/new-binding" : options.unbound ? undefined : "secret://fixture/current-video");
+      options.newCredential ? "secret://fixture/new-binding" : options.unbound ? undefined : table === "video_models" ? "secret://fixture/current-video" : "secret://fixture/current-image");
   } else {
-    assert.equal(liveReads, 1, "NONVIDEO_UPSERT_MUST_REFRESH_LIVE_BINDINGS");
+    assert.equal(liveReads, 1, "TEXT_UPSERT_MUST_REFRESH_LIVE_BINDINGS");
     assert.equal(staged.snapshot.models.find(model => model.id === unchangedAgent.id)?.endpoint, "https://live-drift.invalid/v1");
     assert.equal(staged.expectedBase, undefined);
   }
@@ -162,6 +166,9 @@ async function main() {
   await verifyUpsertSnapshot("video_models", { newCredential: true });
   await verifyUpsertSnapshot("video_models", { noCurrent: true });
   await verifyUpsertSnapshot("cover_models");
+  await verifyUpsertSnapshot("cover_models", { unbound: true });
+  await verifyUpsertSnapshot("cover_models", { newCredential: true });
+  await verifyUpsertSnapshot("cover_models", { noCurrent: true });
   await verifyUpsertSnapshot("llm_models");
 
   console.log(JSON.stringify({
@@ -170,15 +177,16 @@ async function main() {
     databaseCalls: 0,
     paidCalls: 0,
     actualUpsertSnapshotBlock: true,
-    upsertSnapshotCases: 6,
+    upsertSnapshotCases: 9,
     contracts: [
       "agent model changes submit only changed allowlisted fields",
       "unchanged legacy media does not block model binding saves",
       "model ordering is local until explicit save",
       "explicit save validates, previews, publishes, and reads back",
-      "nonvideo upserts and ordering refresh live bindings without expanding release membership",
-      "video upserts preserve unrelated published entries and bind the exact base release and snapshot",
-      "video upserts preserve current credential references unless new credentials are supplied",
+      "text upserts and ordering refresh live bindings without expanding release membership",
+      "image and video upserts preserve unrelated published entries and bind the exact base release and snapshot",
+      "image and video upserts preserve current credential references unless new credentials are supplied",
+      "only video upserts set the video-specific SQL operation marker",
       "all model mutations preserve current credential ownership",
       "fractional deep-thinking deductions survive model-pool publication",
       "endpoint trailing-slash canonicalization does not revoke validation",

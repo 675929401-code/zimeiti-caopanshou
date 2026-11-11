@@ -402,8 +402,8 @@ html[data-theme="crystal-aurora"][data-mode="dark"] :where(
   border-color: var(--ui-line) !important;
   background: linear-gradient(145deg, rgba(9, 43, 51, .92), rgba(5, 27, 34, .9)) !important;
   box-shadow: var(--ui-shadow-sm) !important;
-  backdrop-filter: blur(20px) saturate(1.12);
-  -webkit-backdrop-filter: blur(20px) saturate(1.12);
+  backdrop-filter: var(--studio-panel-backdrop, blur(20px) saturate(1.12));
+  -webkit-backdrop-filter: var(--studio-panel-backdrop, blur(20px) saturate(1.12));
 }
 
 html[data-theme="crystal-aurora"][data-mode="dark"] .chat-message-bubble-user {
@@ -755,7 +755,6 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill
   [data-nav-key="commerce_agent"]
 ) :where(svg, .nav-pill-icon) { color: #ffb85f !important; }
 html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .nav-pill:not(.nav-pill-active):is(
-  [data-nav-key="image_workbench"],
   [data-nav-key="youcai"]
 ) :where(svg, .nav-pill-icon) { color: #76bddd !important; }
 html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .category-tab:not(.category-tab-active) .cat-tab-icon { color: #67d9b8 !important; }

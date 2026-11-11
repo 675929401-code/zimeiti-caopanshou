@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import {
   findReservedPlatformSettingKeys,
+  isReservedPlatformSettingKey,
 } from '@/lib/server/platform-settings-reserved';
 import { isPlatformSecretSettingKey } from '@/lib/server/platform-secret-settings';
 import {
@@ -152,7 +153,7 @@ export async function POST(req: NextRequest) {
     if (reservedKeys.length > 0) {
       return NextResponse.json(
         {
-          error: '通用同步不得创建、更新或恢复漫剧版本化配置，请使用专用控制平面',
+          error: '通用同步不得创建、更新或恢复受保护的版本配置，请使用对应管理入口',
           code: 'RESERVED_PLATFORM_SETTING_KEY',
           setting_keys: reservedKeys.slice(0, 10),
         },
@@ -185,6 +186,31 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
+    // Validate every setting target before any import or candidate write. The
+    // caller can disguise a protected row by reusing its ID with another key.
+    const supabase = getSupabaseClient();
+    const incomingSettings = Array.isArray(importData.platform_settings) ? importData.platform_settings : [];
+    const settingIds = incomingSettings.map((row: unknown) => row && typeof row === 'object' && !Array.isArray(row)
+      ? (row as Record<string, unknown>).id : undefined);
+    if (incomingSettings.some((row: unknown) => !row || typeof row !== 'object' || Array.isArray(row)
+      || typeof (row as Record<string, unknown>).setting_key !== 'string' || !(row as Record<string, unknown>).setting_key)
+      || settingIds.some((id: unknown) => typeof id !== 'string' || !id)
+      || new Set(settingIds).size !== settingIds.length) {
+      return NextResponse.json({ error: '设置必须包含唯一 ID 和明确的设置键', code: 'SYNC_SETTING_IDENTITY_INVALID' }, { status: 400 });
+    }
+    if (settingIds.length) {
+      const existing = await supabase.from('platform_settings').select('id,setting_key').in('id', settingIds);
+      if (existing.error) return NextResponse.json({ error: '无法核对设置目标，未执行导入', code: 'SYNC_SETTING_TARGET_UNAVAILABLE' }, { status: 503 });
+      const byId = new Map<string, string>((existing.data || []).map((row: { id: unknown; setting_key: unknown }) => [String(row.id), String(row.setting_key)]));
+      for (const row of incomingSettings as Record<string, unknown>[]) {
+        const oldKey = byId.get(String(row.id));
+        if (oldKey && (isReservedPlatformSettingKey(oldKey) || isPlatformSecretSettingKey(oldKey)
+          || VERSIONED_WORKSPACE_SETTING_KEYS.has(oldKey) || oldKey !== row.setting_key)) {
+          return NextResponse.json({ error: '设置身份受保护或设置键不一致，未执行导入', code: 'SYNC_SETTING_TARGET_FORBIDDEN' }, { status: 409 });
+        }
+      }
+    }
+
     let configurationCandidate: Record<string, unknown> | null = null;
     const configurationImport = importData.platform_configuration;
     if (configurationImport !== undefined) {
@@ -206,7 +232,6 @@ export async function POST(req: NextRequest) {
       configurationCandidate = { kind, release, preview, published: false };
     }
 
-    const supabase = getSupabaseClient();
     const results: SyncResult[] = [];
 
     for (const tableName of SYNC_TABLES) {
@@ -221,9 +246,10 @@ export async function POST(req: NextRequest) {
       try {
         // 合并模式：逐条 upsert，以 updated_at 判断新旧
         // 先查本端数据
-        const { data: localRows } = await supabase
+        const { data: localRows, error: localReadError } = await supabase
           .from(tableName)
           .select('*');
+        if (localReadError) throw new Error('无法核对本端记录，已停止该表导入');
 
         const localMap = new Map<string, Record<string, unknown>>();
         for (const row of (localRows || [])) {
@@ -234,6 +260,13 @@ export async function POST(req: NextRequest) {
         for (const incomingRow of incomingRows) {
           const pk = String(incomingRow[PK_MAP[tableName]]);
           const localRow = localMap.get(pk);
+          if (tableName === 'platform_settings' && localRow
+            && (isReservedPlatformSettingKey(localRow.setting_key) || isPlatformSecretSettingKey(String(localRow.setting_key || ''))
+              || VERSIONED_WORKSPACE_SETTING_KEYS.has(String(localRow.setting_key || '')) || localRow.setting_key !== incomingRow.setting_key)) {
+            result.errors.push(`设置身份受保护或设置键不一致 (id=${pk})`);
+            result.skipped++;
+            continue;
+          }
 
           // 清理字段
           const cleanRow = { ...incomingRow };
@@ -257,10 +290,12 @@ export async function POST(req: NextRequest) {
 
             if (incomingUpdatedAt && localUpdatedAt && incomingUpdatedAt > localUpdatedAt) {
               // 对端更新，覆盖本端
-              const { error } = await supabase
+              let update = supabase
                 .from(tableName)
                 .update(cleanRow)
                 .eq(PK_MAP[tableName], pk);
+              if (tableName === 'platform_settings') update = update.eq('setting_key', localRow.setting_key);
+              const { error } = await update;
 
               if (error) {
                 result.errors.push(`更新失败 (id=${pk}): ${error.message}`);

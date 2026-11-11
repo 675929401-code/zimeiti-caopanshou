@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { cache } from "react";
-import { Toaster } from "@/components/ui/sonner";
 import "@xyflow/react/dist/style.css";
 import "./globals.css";
 import "./theme-polish.css";
@@ -19,16 +18,8 @@ import "./dialog-theme.css";
 // Chat-only visual layer. It is scoped by data-chat-surface and must remain
 // after the shared shell guards so the three themes render one glass surface.
 import "./chat-glass-continuity.css";
-import { AppProvider } from "@/contexts/app-context";
-import { ErrorBoundary } from "@/components/error-boundary";
-import { VersionChecker } from "@/components/version-checker";
 import { ThemeInit } from "@/components/theme-init";
-import { DiagnosticSentry } from "@/components/diagnostic-sentry";
-import { SecondaryPageReturnGuard } from "@/components/secondary-page-return-guard";
-import { AnnouncementPopup } from "@/components/announcement-popup";
-import { AccountNotificationCenter } from "@/components/account-notification-center";
-import { SecurityInterruptionDialog } from "@/components/security-interruption-dialog";
-import { MemberFeatureBoundary, MemberPermissionProvider } from "@/components/member-permission-boundary";
+import { RouteProviderBoundary } from "@/components/route-provider-boundary";
 import {
   DEFAULT_MODE_PREFERENCE,
   DEFAULT_THEME,
@@ -588,26 +579,7 @@ export default async function RootLayout({
         ` }} />
         <PlatformBrandingProvider initialBranding={displayBrand.branding}>
           <ThemeInit />
-          <AppProvider>
-            <MemberPermissionProvider>
-              <SecondaryPageReturnGuard />
-              <ErrorBoundary>
-                <MemberFeatureBoundary>{children}</MemberFeatureBoundary>
-              </ErrorBoundary>
-              <ErrorBoundary>
-                <SecurityInterruptionDialog />
-              </ErrorBoundary>
-              <ErrorBoundary>
-                <AnnouncementPopup />
-              </ErrorBoundary>
-              <ErrorBoundary>
-                <AccountNotificationCenter />
-              </ErrorBoundary>
-              <Toaster position="top-center" richColors />
-              <DiagnosticSentry />
-              <VersionChecker />
-            </MemberPermissionProvider>
-          </AppProvider>
+          <RouteProviderBoundary>{children}</RouteProviderBoundary>
         </PlatformBrandingProvider>
       </body>
     </html>

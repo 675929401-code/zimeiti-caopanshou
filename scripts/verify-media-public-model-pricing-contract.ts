@@ -274,7 +274,6 @@ const consumers = [
   ["src/app/video/page.tsx", surfaces[0]],
   ["src/components/storyboard-workbench.tsx", surfaces[1]],
   ["src/app/digital-human/page.tsx", surfaces[2]],
-  ["src/components/image-workbench.tsx", surfaces[3]],
   ["src/components/storyboard-workbench.tsx", surfaces[4]],
   ["src/components/cover-studio.tsx", surfaces[5]],
 ] as const;

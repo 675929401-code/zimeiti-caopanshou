@@ -9,7 +9,10 @@ import SegmenterPage from "@/app/segmenter/page";
 import { NavButton, SubPageHeader } from "@/components/sub-page-header";
 import { ToolboxProvider, type ToolboxTabId } from "@/components/toolbox-context";
 import { useAppScopedRouter } from "@/hooks/use-app-scoped-router";
+import { isYoucaiPath } from "@/lib/youcai-routes";
 import styles from "../tools.module.css";
+import utilityStyles from "./utility-layout.module.css";
+import { ToolsPageHeader } from "../tools-page-header";
 
 const TOOL_TABS = [
   { id: "text", label: "文案提取", description: "提取字幕与口播文案", Icon: FileText },
@@ -27,6 +30,7 @@ function normalizeTab(value: string | null): ToolTab {
 function ToolboxWorkspace() {
   const router = useAppScopedRouter();
   const pathname = usePathname();
+  const mainSite = !isYoucaiPath(pathname);
   const searchParams = useSearchParams();
   const activeTab = normalizeTab(searchParams.get("tab"));
 
@@ -40,7 +44,7 @@ function ToolboxWorkspace() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
       router.push("/tools");
@@ -62,24 +66,26 @@ function ToolboxWorkspace() {
   };
 
   return (
-    <div className={styles.page} data-page="tools-utility">
-      <SubPageHeader
+    <div className={mainSite ? `${styles.page} ${utilityStyles.expanded}` : styles.page} data-page="tools-utility">
+      {mainSite ? <ToolsPageHeader title="实用工具箱">
+        <NavButton icon={Wrench} label="效率工具" href="/tools" variant="ghost" />
+      </ToolsPageHeader> : <SubPageHeader
         title="实用工具箱"
         subtitle="分段、提取与排版集中处理"
         icon={<Wrench className="h-5 w-5 text-[var(--primary)]" />}
         rightSlot={<NavButton icon={Home} label="创作中心" href="/tools" title="返回创作中心" />}
-      />
+      />}
 
-      <main className={`${styles.main} workspace-depth-frame`}>
-        <header className={styles.intro}>
+      <main className={mainSite ? `${styles.main} ${utilityStyles.main} workspace-depth-frame` : `${styles.main} workspace-depth-frame`}>
+        {!mainSite && <header className={styles.intro}>
           <div>
             <h1>短视频内容工具</h1>
             <p>原工具箱功能完整保留在独立入口，切换不会改动原任务和历史。</p>
           </div>
           <span>内容处理工具</span>
-        </header>
+        </header>}
 
-        <div className={styles.tabs} role="tablist" aria-label="工具箱功能">
+        <div className={mainSite ? `${styles.tabs} ${utilityStyles.tabs}` : styles.tabs} role="tablist" aria-label="工具箱功能">
           {TOOL_TABS.map(({ id, label, description, Icon }) => (
             <button
               key={id}
@@ -116,7 +122,7 @@ function ToolboxWorkspace() {
           id="toolbox-active-panel"
           role="tabpanel"
           aria-labelledby={`tool-tab-${activeTab}`}
-          className={`${styles.workspace} workspace-depth-canvas`}
+          className={mainSite ? `${styles.workspace} ${utilityStyles.workspace} workspace-depth-canvas` : `${styles.workspace} workspace-depth-canvas`}
         >
           <ToolboxProvider activeTab={activeTab} onTabChange={selectTab}>
             {activeTab === "segment" && <SegmenterPage />}

@@ -44,7 +44,6 @@ type CategoryFilter = "all" | CategoryKey;
 
 const CATEGORY_OPTIONS: ReadonlyArray<{ key: CategoryFilter; label: string }> = [
   { key: "all", label: "全部来源" },
-  { key: "image-workbench", label: getPrimaryNavigationLabel("image_workbench", "图像生成") },
   { key: "video-production", label: getPrimaryNavigationLabel("create", "视频创作") },
   { key: "storyboard-workbench", label: getPrimaryNavigationLabel("storyboard_workbench", "分镜编排") },
   { key: "cover-studio", label: getPrimaryNavigationLabel("cover", "封面设计") },

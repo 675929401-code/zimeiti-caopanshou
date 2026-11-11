@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   // 生产发布只交付 Next.js traced runtime，不再把完整 node_modules 复制到服务器。
   // Web 构建器固定从项目根执行；保留 Next 的默认 tracing root，避免动态 cwd 让 NFT 追踪整个工作树。
   output: 'standalone',
+  // The native Agent uses an isolated, pinned SDK package. Its worker receives
+  // only a per-turn capability and loads these files from the traced release.
+  outputFileTracingIncludes: {
+    '/api/native-operations/*': ['./integrations/aitoearn-agent-runtime/package.json', './integrations/aitoearn-agent-runtime/node_modules/**/*'],
+  },
   // video-postprocess intentionally discovers a packaged FFmpeg binary at
   // runtime. Without an explicit boundary, Node File Trace treats that dynamic
   // lookup as permission to copy the whole checkout (including backups and
@@ -109,6 +114,15 @@ const nextConfig: NextConfig = {
   // These two public sections were retired from the Manju workbench. Keep the
   // former URLs useful by sending saved bookmarks straight to the workbench.
   redirects: async () => [
+    { source: '/publish-center/native', destination: '/publish-center', permanent: false },
+    // Exact retired publishing UI entries only. Keep native assets and APIs
+    // on the existing rewrite so stored receipts and service calls still work.
+    { source: '/publish-center/native/:lng/ai-social', destination: '/publish-center', permanent: false },
+    { source: '/publish-center/native/:lng/accounts', destination: '/publish-center', permanent: false },
+    { source: '/publish-center/native/:lng/tasks-history', destination: '/publish-center?tab=history', permanent: false },
+    { source: '/publish-center/native/:lng/agent-assets', destination: '/publish-center', permanent: false },
+    { source: '/publish-center/native/:lng/draft-box', destination: '/publish-center', permanent: false },
+    { source: '/publish-center/native/:lng/chat/:taskId', destination: '/publish-center', permanent: false },
     // Retired standalone utility URLs now enter the matching tab in the
     // consolidated toolbox. Keep these at the config layer so bookmarks get a
     // real redirect before the legacy page component or app shell can mount.
@@ -176,6 +190,11 @@ const nextConfig: NextConfig = {
     {
       source: '/voice-platform/:path*',
       destination: 'http://localhost:5001/voice-platform/:path*',
+    },
+    {
+      // Fixed local service only. Its API requests use the main authenticated BFF.
+      source: '/publish-center/native/:path*',
+      destination: 'http://127.0.0.1:5041/publish-center/native/:path*',
     },
   ],
   headers: async () => [

@@ -2096,8 +2096,7 @@
   background: #223047 !important;
 }
 
-.messageBubble :global(.send-video-task-button),
-.messageBubble :global(.send-image-workbench-button) {
+.messageBubble :global(.send-video-task-button) {
   display: none !important;
 }
 

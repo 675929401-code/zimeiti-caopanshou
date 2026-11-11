@@ -13,17 +13,6 @@ export const CREATION_CAPABILITIES: readonly CreationCapability[] = [
     metric: "chat",
   },
   {
-    id: "image",
-    eyebrow: "视觉生成",
-    title: "图片创作",
-    description: "支持文生图、参考图与多种分辨率，结果沿用主站结算。",
-    href: "/image-workbench",
-    icon: "image",
-    accent: "cyan",
-    status: "ready",
-    metric: "image",
-  },
-  {
     id: "video",
     eyebrow: "动态内容",
     title: "视频生成",

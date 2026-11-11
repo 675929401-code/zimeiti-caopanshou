@@ -1,3 +1,4 @@
+import { NativeOwnedMediaRefSchema } from "@/lib/native-main-media-contract";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -151,7 +152,9 @@ function normalizeAssetRef(value: unknown): VideoRequestAssetRef {
   const role = requestText(asset.role, "VIDEO_REQUEST_ASSET_ROLE_INVALID", 32) as VideoRequestAssetRole;
   const index = finiteNumber(asset.index, "VIDEO_REQUEST_ASSET_INDEX_INVALID", 0, 255);
   const ref = requestText(asset.ref, "VIDEO_REQUEST_ASSET_REF_INVALID", 4096);
-  const durableRef = Boolean(parseGeneratedImageReferenceUri(ref)) || /^(?:object|asset):\/\/[^\s?#\u0000-\u001f]+$/u.test(ref)
+  const native = /^native-owned-image:\/\/(image_record|image_asset)\/([A-Za-z0-9_.:-]{1,256})$/u.exec(ref);
+  const nativeRef = native && NativeOwnedMediaRefSchema.safeParse({ kind: native[1], id: native[2] }).success;
+  const durableRef = Boolean(nativeRef) || Boolean(parseGeneratedImageReferenceUri(ref)) || /^(?:object|asset):\/\/[^\s?#\u0000-\u001f]+$/u.test(ref)
     || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(ref)
     || (() => {
       try {

@@ -176,9 +176,14 @@ function isRetiredDigitalHumanNavLabel(value: string) {
   return label === "ai数字人" || label === "usersai数字人" || label === "aa数字人" || label === "数字人";
 }
 
+function isRetiredTopicsNavLabel(value: string) {
+  const label = repairMojibake(value).replace(/\s+/gu, "");
+  return ["行业选题", "选题工作台", "发布中心"].includes(label);
+}
+
 function isReplacedLegacyNavLabel(value: string) {
   const label = repairMojibake(value);
-  if (isRetiredAidNavLabel(label) || isLegacyFilmStudioNavLabel(label) || isRetiredDigitalHumanNavLabel(label)) return true;
+  if (isRetiredAidNavLabel(label) || isLegacyFilmStudioNavLabel(label) || isRetiredDigitalHumanNavLabel(label) || isRetiredTopicsNavLabel(label)) return true;
   return [
     "3D动画工作流",
     "3D动画",
@@ -708,7 +713,6 @@ export function AgentMarketplace() {
     extract: { Icon: FileSearch, color: "#d0a45e" },
     create: { Icon: Film, color: "#64a8bc" },
     storyboard_workbench: { Icon: Clapperboard, color: "#d2a35c" },
-    image_workbench: { Icon: Image, color: "#a68bd0" },
     toolbox: { Icon: Wrench, color: "#75a9dc" },
     youcai: { Icon: Sparkles, color: "#a988d4" },
     copywriting: { Icon: PenTool, color: "#c98391" },
@@ -745,29 +749,25 @@ export function AgentMarketplace() {
     // 如果数据库有导航项，优先使用数据库数据
     if (dbNavItems.length > 0) {
       const legacyYoucaiNavLabels = new Set(["\u6709\u5f69\u521b\u4f5c", "\u6709\u5f69\u89c6\u754c"]);
-      const dbDefs = dbNavItems.filter(item => !["格式", "格式去除"].includes(repairMojibake(item.name)) && !isRetiredAidNavLabel(item.name) && !isLegacyFilmStudioNavLabel(item.name) && !isRetiredDigitalHumanNavLabel(item.name)).map(item => {
+      const dbDefs = dbNavItems.filter(item => !["格式", "格式去除"].includes(repairMojibake(item.name)) && !isRetiredAidNavLabel(item.name) && !isLegacyFilmStudioNavLabel(item.name) && !isRetiredDigitalHumanNavLabel(item.name) && !isRetiredTopicsNavLabel(item.name)).map(item => {
         const repairedName = repairMojibake(item.name);
         const normalizedName = legacyYoucaiNavLabels.has(repairedName)
           ? "漫剧工作台"
-          : repairedName === "3D动画工作流" || repairedName === "3D动画"
-            ? "AI生图工作台"
-            : repairedName;
+          : repairedName;
         // 根据名称匹配内置 key（向后兼容）
         const nameKeyMap: Record<string, string> = {
           "带货 Agent": "commerce_agent", "带货Agent": "commerce_agent",
           "应用广场": "marketplace", "工具箱": "toolbox", "效率工具": "toolbox", "分镜工作台": "storyboard_workbench", "分镜编排": "storyboard_workbench", "分段工具": "segment", "智能分段": "segment",
-          "文案提取": "extract", "视频提取": "extract", "网页提取": "extract", "视频文案提取": "extract", "文字排版": "formatter", "格式整理": "formatter", "封面制作": "cover", "封面设计": "cover", "视频制作": "create", "视频工坊": "create", "视频创作": "create", "漫剧工作台": "youcai", "漫剧创作": "youcai", "AI生图工作台": "image_workbench", "图像生成": "image_workbench", "3D动画工作流": "image_workbench", "3D动画": "image_workbench", "文案操盘": "copywriting", "语音克隆": "voice", "智音工坊": "voice", "声音制作": "voice", "带货创作": "commerce_agent",
+          "文案提取": "extract", "视频提取": "extract", "网页提取": "extract", "视频文案提取": "extract", "文字排版": "formatter", "格式整理": "formatter", "封面制作": "cover", "封面设计": "cover", "视频制作": "create", "视频工坊": "create", "视频创作": "create", "漫剧工作台": "youcai", "漫剧创作": "youcai", "文案操盘": "copywriting", "语音克隆": "voice", "智音工坊": "voice", "声音制作": "voice", "带货创作": "commerce_agent",
         };
         const key = resolvePrimaryNavigationKey(normalizedName) || resolvePrimaryNavigationKey(repairedName) || nameKeyMap[normalizedName] || nameKeyMap[repairedName] || `nav_${item.id.slice(0, 8)}`;
         return {
           key,
           label: normalizedName,
-          icon: key === "image_workbench" ? "Image" : item.icon || "🛠️",
+          icon: item.icon || "🛠️",
           iconType: (item as { icon_type?: string }).icon_type || "emoji",
           iconImage: (item as { icon_image?: string }).icon_image || "",
-          desc: key === "image_workbench"
-              ? "批量文生图与图生图"
-              : key === "youcai"
+          desc: key === "youcai"
                 ? "进入漫剧工作台"
                 : repairMojibake(item.description || "") || `${normalizedName}模块`,
           group: "",
@@ -815,7 +815,7 @@ export function AgentMarketplace() {
   }, [dbCategories, isAdmin]);
 
   // 分类不在一级导航栏显示，仅在应用广场内部作为二级分类栏。
-  // 九项核心能力始终固定在前；后台或用户创建的独立入口继续追加在后，
+  // 核心能力始终固定在前；后台或用户创建的独立入口继续追加在后，
   // 避免标准化导航时静默吞掉既有自定义入口。
   const allNavKeys = useMemo<string[]>(() => {
     const collapsedToolKeys = new Set(["extract", "segment", "format", "formatter", "toolbox"]);
@@ -827,6 +827,7 @@ export function AgentMarketplace() {
         .map((item) => item.key),
     ].filter((key) => (
       !isPrimaryNavigationKey(key)
+      && key !== "topics"
       && !collapsedToolKeys.has(key)
       && key !== "short_drama"
       && !hiddenNavKeys.includes(key)
@@ -1666,8 +1667,6 @@ export function AgentMarketplace() {
                             router.push('/segmenter');
                           } else if (nav.key === 'cover') {
                             router.push('/cover');
-                          } else if (nav.key === 'image_workbench') {
-                            router.push('/image-workbench');
                           } else if (nav.key === 'storyboard_workbench') {
                             router.push('/storyboard-workbench');
                           } else if (nav.key === 'extract') {

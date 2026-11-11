@@ -1,8 +1,8 @@
 .page {
-  --toolbox-crystal-panel: var(--card);
+  --toolbox-crystal-panel: var(--studio-card, var(--card));
   --toolbox-crystal-panel-strong: color-mix(in srgb, var(--card) 92%, var(--muted));
-  --toolbox-crystal-field: color-mix(in srgb, var(--background) 88%, var(--card));
-  --toolbox-crystal-line: var(--border);
+  --toolbox-crystal-field: var(--studio-well, color-mix(in srgb, var(--background) 88%, var(--card)));
+  --toolbox-crystal-line: var(--studio-edge, var(--border));
   --toolbox-crystal-line-strong: color-mix(in srgb, var(--primary) 42%, var(--border));
   --toolbox-crystal-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   --toolbox-crystal-shadow-focus: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
@@ -24,8 +24,8 @@
 .page[data-page="tools"] {
   --toolbox-panel-solid: rgb(from var(--toolbox-crystal-panel) r g b / 1);
   --toolbox-crystal-panel-strong: color-mix(in srgb, var(--card) 98%, var(--primary));
-  --toolbox-crystal-field: color-mix(in srgb, var(--card) 97%, var(--background));
-  --toolbox-crystal-line: color-mix(in srgb, var(--border) 72%, var(--card));
+  --toolbox-crystal-field: var(--studio-well, color-mix(in srgb, var(--card) 97%, var(--background)));
+  --toolbox-crystal-line: var(--studio-edge, color-mix(in srgb, var(--border) 72%, var(--card)));
   --toolbox-crystal-line-strong: color-mix(in srgb, var(--primary) 48%, var(--border));
   --toolbox-crystal-shadow: none;
 }
@@ -64,17 +64,12 @@
   padding: 16px 12px;
 }
 
-.railHeader {
-  display: grid;
-  gap: 3px;
-  border-bottom: 1px solid var(--toolbox-crystal-line);
-  padding: 0 4px 14px;
-}
-
-.railHeader > strong {
-  color: var(--foreground);
-  font-size: 16px;
-  line-height: 1.3;
+.railLabel {
+  padding: 0 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
 .stage {
@@ -174,7 +169,7 @@
   position: relative;
   color: var(--brand-action-fg);
   border-color: color-mix(in srgb, var(--brand-action-bg) 76%, var(--brand-action-fg));
-  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-action-bg) 88%, #ffffff) 0%, var(--brand-action-bg) 54%);
+  background: var(--brand-action-bg);
   box-shadow:
     0 10px 22px -10px color-mix(in srgb, var(--brand-action-bg) 55%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
@@ -1388,23 +1383,6 @@
     background: var(--toolbox-panel-solid);
   }
 
-  .page[data-page="tools"] .railHeader {
-    gap: 5px;
-    padding: 0 8px 4px;
-    border: 0;
-  }
-
-  .page[data-page="tools"] .railHeader > strong {
-    font-size: 17px;
-    letter-spacing: .01em;
-  }
-
-  .page[data-page="tools"] .railHeader > span {
-    color: var(--muted-foreground);
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
   .page[data-page="tools"] .tabs { flex: none; gap: 5px; }
 
   .page[data-page="tools"] .tabs button {
@@ -1424,29 +1402,13 @@
 
   .page[data-page="tools"] .tabs .activeTab {
     border-color: color-mix(in srgb, var(--brand-action-bg) 76%, var(--brand-action-fg));
-    background: linear-gradient(135deg, color-mix(in srgb, var(--brand-action-bg) 88%, #ffffff) 0%, var(--brand-action-bg) 54%);
+    background: var(--brand-action-bg);
   }
 
   .page[data-page="tools"] .tabs .activeTab::before { inset: 12px auto 12px 8px; }
   .page[data-page="tools"] .tabIcon { width: 36px; height: 36px; }
   .page[data-page="tools"] .tabs strong { font-size: 15px; }
   .page[data-page="tools"] .tabs small { font-size: 12px; }
-
-  .page[data-page="tools"] .railSummary {
-    margin-top: auto;
-    padding: 14px 12px;
-    border: 1px solid var(--toolbox-crystal-line);
-    border-radius: 10px;
-    background: transparent;
-  }
-
-  .page[data-page="tools"] .railSummary > span,
-  .page[data-page="tools"] .railSummary > small,
-  .page[data-page="tools"] .railSummary > strong { display: block; }
-  .page[data-page="tools"] .railSummary > span { color: var(--muted-foreground); font-size: 11px; }
-  .page[data-page="tools"] .railSummary > strong { margin-top: 7px; color: var(--foreground); font-size: 14px; }
-  .page[data-page="tools"] .railSummary > small { margin-top: 4px; color: var(--primary); font-size: 12px; line-height: 1.5; }
-  .page[data-page="tools"] .railSummary > p { margin: 11px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.55; }
 
   .page[data-page="tools"] .stage {
     min-height: 0;
@@ -1483,7 +1445,7 @@
   .page[data-page="tools"] .workspace :global(.toolbox-segment-shell),
   .page[data-page="tools"] .workspace :global(.toolbox-format-layout) { padding-block: 12px 0; }
 
-  /* Link extraction gets a compact form above a full-width reading surface. */
+  /* Keep a generous input above the full-width reading surface. */
   .page[data-page="tools"] .workspace :global(.toolbox-extract-layout) {
     height: 100%;
     min-height: 480px;
@@ -1503,10 +1465,17 @@
     flex: none;
   }
   .page[data-page="tools"] .workspace :global(.toolbox-extract-card .toolbox-extract-textarea) {
-    height: 72px;
-    min-height: 72px;
-    max-height: 72px;
+    height: 176px;
+    min-height: 176px;
+    max-height: 176px;
     flex: none;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-card) {
+    padding-bottom: 8px;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-extract-card .toolbox-card-actions) {
+    min-height: 44px;
+    margin-top: 6px;
   }
   .page[data-page="tools"] .workspace :global(.toolbox-extract-layout > .toolbox-result-pane) {
     height: 100%;
@@ -1516,7 +1485,7 @@
     overflow: hidden;
   }
 
-  /* Keep the input compact and stretch the result to the rail's bottom inset.
+  /* Enlarge the editor and stretch the result to the rail's bottom inset.
      The minimum result track preserves reading space on short desktops. */
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout) {
     height: auto;
@@ -1538,10 +1507,14 @@
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-result-pane) { align-self: stretch; }
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane > .toolbox-input-surface) { height: auto; flex: none; }
   .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-primary-pane .toolbox-balanced-textarea) {
-    height: 132px;
-    min-height: 132px;
-    max-height: 132px;
+    height: 220px;
+    min-height: 220px;
+    max-height: 220px;
     flex: none;
+  }
+  .page[data-page="tools"] .workspace :global(.toolbox-balanced-layout .toolbox-card-actions) {
+    min-height: 0;
+    padding-block: 4px 8px;
   }
 
   .page[data-page="tools"] .workspace :global(.toolbox-result-pane > .toolbox-results-block),
@@ -1588,10 +1561,6 @@
   .page[data-page="tools"] .workspace :global(.toolbox-segment-shell > .toolbox-two-column) { height: auto; flex: 1; }
 }
 
-@media (max-width: 1199px) {
-  .page[data-page="tools"] .railSummary { display: none; }
-}
-
 /* Keep the input focus treatment inside each toolbox card on every side. */
 .page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea),
 .page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea),
@@ -1610,14 +1579,21 @@
 .page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea) {
   align-self: center;
   width: calc(100% - 32px);
-  margin: 12px 16px;
+  margin: 12px 16px 6px;
 }
 
 .page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea::placeholder),
 .page[data-page="tools"] .workspace :global(.toolbox-format-layout .toolbox-primary-pane .toolbox-balanced-textarea::placeholder),
 .page[data-page="tools"] .workspace :global(.toolbox-extract-layout .toolbox-extract-textarea::placeholder) {
+  font-size: 12px;
   color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground)) !important;
   opacity: 1 !important;
+}
+
+.page[data-page="tools"] .workspace :global(.toolbox-extract-card .toolbox-check-chip),
+.page[data-page="tools"] .workspace :global(.toolbox-extract-card .toolbox-platform-summary),
+.page[data-page="tools"] .workspace :global(.toolbox-extract-card .toolbox-toolbar-note) {
+  font-size: 13px;
 }
 
 .page[data-page="tools"] .workspace :global(.toolbox-segment-layout .toolbox-balanced-textarea:focus),
@@ -1717,10 +1693,10 @@
 /* Light mode uses solid theme surfaces and visible boundaries at each level:
    a cool workspace, white cards, and a slightly stronger input outline. */
 :global(html[data-theme="soft-white"][data-mode="light"]) .page[data-page="tools"] {
-  --toolbox-crystal-panel: var(--card);
+  --toolbox-crystal-panel: var(--studio-card, var(--card));
   --toolbox-crystal-panel-strong: var(--secondary);
-  --toolbox-crystal-field: var(--background);
-  --toolbox-crystal-line: var(--border);
+  --toolbox-crystal-field: var(--studio-well, var(--background));
+  --toolbox-crystal-line: var(--studio-edge, var(--border));
   --toolbox-crystal-line-strong: var(--primary);
   --toolbox-field-line: var(--input, var(--border));
 }
@@ -1773,19 +1749,454 @@
   border-bottom-color: var(--border);
 }
 
-/* Brand footer gutter: the shared footer is 1024px wide and transparent, so on
-   the toolbox page its rule did not line up with the workbench and the page
-   grid showed through underneath. Match the .main gutter and paint the page
-   field so the footer reads as one closed surface. */
-.page[data-page="tools"] footer {
-  flex: none;
-  border-top: 0 !important;
-  background: var(--unified-workbench-field, var(--background));
+/* The route root paints the same grid as the video workbench. Keep that
+   canvas visible outside the navigation and the document being edited. */
+:global(html[data-theme][data-mode] body:has([data-workbench-actions-scope="main"])) .page:is([data-page="tools"], [data-page="tools-utility"]) {
+  --studio-surface: var(--studio-card, rgb(from var(--card) r g b / 1));
+  --tools-panel-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%));
+  --tools-heading-surface: var(--studio-toolbar, color-mix(in srgb, var(--background) 50%, var(--studio-surface)));
+  .workspace {
+    flex: 0 1 auto;
+    overflow: auto;
+    background: var(--studio-surface);
+  }
+  .toolPanel,
+  .workspace :global(:is(.toolbox-embedded-workspace, .toolbox-extract-main, .toolbox-extract-panel-host, .toolbox-segment-shell, .toolbox-balanced-layout)) {
+    height: auto;
+    min-height: 0;
+  }
+  .workspace :global(.toolbox-embedded-workspace),
+  .workspace :global(.toolbox-embedded-workspace > main) {
+    flex: none;
+    overflow: visible;
+  }
+  :global([role="tablist"] > button[aria-selected="false"]:not(:hover):not(:focus-visible)) {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  :global(.toolbox-embedded-toolbar) {
+    margin: 0;
+    padding-inline: 16px;
+    border: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+    border-radius: 0 !important;
+    background: var(--tools-heading-surface) !important;
+    box-shadow: none !important;
+  }
+  .workspace :global(.toolbox-two-column) {
+    column-gap: 0;
+    row-gap: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace :global(:is(.toolbox-input-surface, .toolbox-result-pane, .toolbox-results-block, .toolbox-empty-result)) {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: var(--studio-surface) !important;
+    box-shadow: none !important;
+  }
+  .workspace :global(.toolbox-result-pane) {
+    border-top: 1px solid var(--border) !important;
+  }
+  .workspace :global(:is(.toolbox-result-pane-heading, .toolbox-empty-heading, .toolbox-video-results-heading, .toolbox-results-heading)) {
+    min-height: 42px;
+    padding: 10px 16px;
+    background: var(--tools-heading-surface);
+  }
+  .workspace :global(.toolbox-input-surface textarea:not(:focus)) { box-shadow: var(--shadow-xs, 0 1px 2px rgb(0 0 0 / 5%)) !important; }
+  .workspace :global(.toolbox-card-actions > button[data-variant="default"]:disabled),
+  .workspace :global(button.toolbox-primary-action:disabled) {
+    background: var(--muted) !important;
+    color: color-mix(in srgb, var(--muted-foreground) 82%, var(--foreground)) !important;
+    border-color: var(--border);
+    opacity: 1 !important;
+  }
+
+  /* An empty result is a short hint below its heading. Do not constrain real
+     content, history, progress notices or error/retry panels. */
+  .workspace :global(.toolbox-two-column:has(> .toolbox-result-pane > :is(.toolbox-empty-result, .toolbox-video-empty))) {
+    height: auto !important;
+    min-height: 0 !important;
+    grid-template-rows: max-content max-content !important;
+    align-content: start;
+  }
+  .workspace :global(.toolbox-result-pane:has(> :is(.toolbox-empty-result, .toolbox-video-empty))),
+  .workspace :global(:is(.toolbox-empty-result, .toolbox-video-empty, .toolbox-empty-body, .toolbox-video-empty-body)) {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+  .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result),
+  .workspace :global(:is(.toolbox-empty-body, .toolbox-video-empty-body)) {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 8px;
+    padding: 12px 16px !important;
+    text-align: start !important;
+  }
+  .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result > div) {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 2px 8px;
+    text-align: start;
+  }
+  .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result > div > svg) {
+    grid-row: span 2;
+    width: 17px;
+    height: 17px;
+    margin: 3px 0 0;
+  }
+  .workspace :global(.toolbox-empty-body > div) {
+    display: grid !important;
+    justify-items: start !important;
+    gap: 2px;
+    text-align: start !important;
+  }
+  .workspace :global(.toolbox-video-empty-body > svg) { margin: 2px 0 0; }
+  .workspace :global(.toolbox-empty-result :is(h3, p)) { margin: 0; }
 }
-.page[data-page="tools"] footer > div {
-  width: min(1720px, calc(100% - 40px));
-  max-width: none;
-  margin-inline: auto;
-  padding: 15px 0 17px;
-  border-top: 1px solid var(--toolbox-crystal-line);
+
+/* One frame owns both edges. The document scrolls within the viewport. */
+:global(html[data-theme][data-mode] body:has([data-workbench-actions-scope="main"])) .page[data-page="tools"] {
+  --tools-directory-width: clamp(156px, 13vw, 184px);
+  --tools-editor-width: 920px;
+  --tools-frame-width: calc(var(--tools-directory-width) + var(--tools-editor-width));
+  --tools-inset: clamp(12px, 2vw, 24px);
+  --tools-heading-height: 64px;
+  --unified-workbench-grid-image: var(--creation-grid-image);
+  :global(.sub-page-header-inner) {
+    width: min(calc(100% - 2 * var(--tools-inset)), var(--tools-frame-width));
+    max-width: none;
+    padding-inline: 0;
+  }
+  .main {
+    width: 100%;
+    max-width: none;
+    padding: clamp(12px, 2vh, 24px) var(--tools-inset) 18px;
+    background: transparent;
+  }
+  .workbenchFrame {
+    width: min(100%, var(--tools-frame-width));
+    margin-inline: auto;
+    flex: 0 1 auto;
+    grid-template-columns: var(--tools-directory-width) minmax(0, 1fr);
+    grid-template-rows: minmax(0, auto);
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--studio-surface);
+    box-shadow: var(--tools-panel-shadow);
+    overflow: hidden;
+  }
+  .toolRail, .stage {
+    align-self: stretch;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--studio-surface);
+    box-shadow: none;
+  }
+  .toolRail {
+    gap: 0;
+    overflow: auto;
+    border-inline-end: 1px solid var(--border);
+    background: var(--tools-heading-surface);
+  }
+  .railLabel {
+    display: flex;
+    align-items: center;
+    flex: none;
+    min-height: var(--tools-heading-height);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--tools-heading-surface);
+  }
+  .toolRail :global([role="tablist"]) {
+    padding: 6px;
+    gap: 3px;
+  }
+  .stage {
+    overflow: hidden;
+  }
+  .workspace, .localToolHeading {
+    width: 100%;
+  }
+  .localToolHeading {
+    display: flex;
+    align-items: center;
+    flex: none;
+    min-height: var(--tools-heading-height);
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--tools-heading-surface);
+  }
+  .localToolHeading h2,
+  .workspace :global(.toolbox-embedded-toolbar > .min-w-0 > p:first-child) {
+    margin: 0;
+    color: var(--foreground);
+    font-size: 22px !important;
+    line-height: 1.35 !important;
+    font-weight: 700;
+  }
+  .localToolHeading span,
+  .workspace :global(.toolbox-embedded-toolbar > .min-w-0 > p + p) {
+    font-size: 13px;
+    color: var(--muted-foreground);
+  }
+  .workspace :global(.toolbox-embedded-workspace .toolbox-embedded-toolbar) {
+    padding: 10px 16px;
+    background: var(--tools-heading-surface) !important;
+  }
+  .workspace :global(.toolbox-embedded-toolbar:has(> .min-w-0)) {
+    min-height: var(--tools-heading-height);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .workspace:has(:global(.toolbox-embedded-toolbar > .min-w-0)) { scroll-padding-top: var(--tools-heading-height); }
+  .workspace :global(.toolbox-extract-main) { padding-block: 0; }
+  .workspace :global(:is(.toolbox-input-title, .toolbox-empty-heading, .toolbox-result-pane-heading, .toolbox-video-results-heading) :is(h3, strong, span)),
+  .workspace :global(.toolbox-input-title) {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .workspace :global(.toolbox-empty-result h3) {
+    font-size: 14px;
+    font-weight: 550;
+  }
+  .workspace .toolPanel :global(.toolbox-embedded-workspace :is(.toolbox-input-surface, .toolbox-empty-result, .toolbox-video-empty, .toolbox-result-pane)) {
+    background: var(--studio-surface) !important;
+  }
+  .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result > div) {
+    display: block;
+  }
+  .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result > div > :is(svg, h3)),
+  .workspace :global(.toolbox-video-empty-body > svg) {
+    display: none;
+  }
+  .workspace :global(.toolbox-video-empty-body p) {
+    max-width: 40em;
+    text-wrap: balance;
+  }
+  .workspace :global(#tool-panel-extract .toolbox-video-input-card .toolbox-card-actions > button:first-child:disabled) {
+    opacity: 1 !important;
+    border: 1px solid var(--border);
+    color: color-mix(in srgb, var(--muted-foreground) 70%, var(--foreground)) !important;
+    background: color-mix(in srgb, var(--muted) 90%, var(--foreground)) !important;
+  }
+  .workspace :global(.toolbox-embedded-workspace .toolbox-duration-toolbar) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 14px 16px;
+    border: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+    border-radius: 0;
+    background: var(--studio-surface) !important;
+  }
+  .workspace :global(.toolbox-duration-control) {
+    display: contents;
+  }
+  .workspace :global(.toolbox-duration-control .toolbox-toolbar-label) {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    grid-area: 1 / 1;
+  }
+  .workspace :global(.toolbox-duration-options) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+    gap: 6px;
+  }
+  .workspace :global(.toolbox-duration-options > .toolbox-duration-chip) {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 2px;
+    min-height: 50px;
+    line-height: 1.25;
+  }
+  .workspace :global(.toolbox-duration-chip small) {
+    font-size: 11px;
+    font-weight: 450;
+    color: var(--muted-foreground);
+  }
+  .workspace :global(.toolbox-duration-chip[aria-pressed="true"] small) { color: inherit; }
+  .workspace :global(.toolbox-duration-summary) { display: none; }
+  .workspace :global(.toolbox-duration-toolbar > .toolbox-toolbar-action) {
+    grid-area: 1 / 2;
+  }
+  /* On desktop the working surface occupies the available canvas; the
+     document can grow past it when a tool produces a long result. */
+  @media (min-width: 1100px) {
+    --tools-frame-width: 2560px;
+    --tools-inset: clamp(28px, 4vw, 112px);
+    --tools-directory-width: clamp(190px, 13vw, 258px);
+    --tools-heading-height: clamp(76px, 6vw, 101px);
+    --tools-document-inset: clamp(24px, 2.3vw, 48px);
+    --tools-input-height: clamp(164px, 27dvh, 540px);
+    .main { padding-block: clamp(16px, 2dvh, 32px) clamp(20px, 3dvh, 44px); }
+    .workbenchFrame { flex: 1; grid-template-rows: minmax(0, 1fr); }
+    .railLabel { padding-inline: 20px; }
+    .toolRail :global([role="tablist"]) { padding: 12px; gap: 4px; }
+    .toolRail :global([role="tab"]) { padding-inline: 12px; min-height: 48px; }
+    .toolRail :global([role="tab"] strong) { font-size: 15px; }
+    .localToolHeading, .workspace :global(.toolbox-embedded-workspace .toolbox-embedded-toolbar) {
+      padding-inline: var(--tools-document-inset);
+    }
+    .localToolHeading h2, .workspace :global(.toolbox-embedded-toolbar > .min-w-0 > p:first-child) {
+      font-size: clamp(24px, 1.6vw, 32px) !important;
+    }
+    .workspace { flex: 1; container-type: size; }
+    .toolPanel, .workspace :global(.toolbox-embedded-workspace) { min-height: 100%; display: flex; flex-direction: column; }
+    .toolPanel[hidden] { display: none; }
+    .workspace :global(.toolbox-embedded-workspace),
+    .workspace :global(.toolbox-embedded-workspace > main),
+    .workspace :global(.toolbox-segment-shell),
+    .workspace :global(.toolbox-extract-panel-host) { flex: 1 0 auto; }
+    .workspace :global(.toolbox-embedded-workspace > main:has(> .toolbox-segment-shell)) { display: flex; flex-direction: column; }
+    .workspace :global(.toolbox-extract-panel-host > .toolbox-extract-layout:has(> .toolbox-result-pane > :is(.toolbox-empty-result, .toolbox-video-empty))) {
+      min-height: calc(100cqh - var(--tools-heading-height)) !important;
+    }
+    .workspace :global(.toolbox-two-column:has(> .toolbox-result-pane > :is(.toolbox-empty-result, .toolbox-video-empty))) {
+      flex-grow: 1;
+      grid-template-rows: max-content minmax(min-content, 1fr) !important;
+      align-content: stretch;
+    }
+    .workspace :global(.toolbox-input-surface textarea:is(.toolbox-extract-textarea, .toolbox-balanced-textarea)) {
+      height: var(--tools-input-height);
+      min-height: var(--tools-input-height);
+      max-height: none;
+      padding: 16px 20px;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    .workspace :global(.toolbox-input-surface textarea::placeholder) { font-size: 14px; }
+    .workspace :global(.toolbox-input-heading), .workspace :global(.toolbox-primary-pane > .toolbox-card-actions) { padding-inline: var(--tools-document-inset); }
+    .workspace :global(.toolbox-primary-pane .toolbox-balanced-textarea) { margin-inline: var(--tools-document-inset); width: calc(100% - 2 * var(--tools-document-inset)); }
+    .workspace :global(.toolbox-extract-heading > h3), .workspace :global(.toolbox-input-title span) { font-size: clamp(16px, 1vw, 18px); }
+    .workspace :global(.toolbox-extract-card) { padding: 18px var(--tools-document-inset) 14px; }
+    .workspace :global(.toolbox-extract-layout .toolbox-extract-card) {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+    }
+    .workspace :global(.toolbox-extract-layout .toolbox-extract-card > *) { grid-column: 1 / -1; }
+    .workspace :global(.toolbox-extract-layout .toolbox-extract-card > :is([role="status"]:not([id]), [role="alert"])) { order: 1; grid-column: 1; margin: 0; }
+    .workspace :global(.toolbox-extract-layout .toolbox-extract-card > .toolbox-card-actions) { order: 2; grid-column: 2; width: clamp(170px, 12vw, 206px); margin: 0; }
+    .workspace :global(.toolbox-video-input-card > .toolbox-card-actions:has(> button + button)) { width: auto; gap: 8px; }
+    .workspace :global(:is(.toolbox-result-pane-heading, .toolbox-video-results-heading, .toolbox-empty-heading, .toolbox-results-heading)) {
+      min-height: 52px;
+      padding-inline: var(--tools-document-inset);
+    }
+    .workspace :global(.toolbox-result-pane:has(> :is(.toolbox-empty-result, .toolbox-video-empty))) {
+      display: flex;
+      flex-direction: column;
+      align-self: stretch;
+      align-items: stretch;
+    }
+    .workspace :global(.toolbox-result-pane > :is(.toolbox-empty-result, .toolbox-video-empty)),
+    .workspace :global(:is(.toolbox-empty-body, .toolbox-video-empty-body)) { flex: 1 0 auto !important; }
+    .workspace :global(:is(.toolbox-empty-body, .toolbox-video-empty-body)),
+    .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result) {
+      flex-direction: column;
+      justify-content: center !important;
+      align-items: center !important;
+      text-align: center !important;
+      min-height: clamp(96px, 13dvh, 220px) !important;
+    }
+    .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result > div),
+    .workspace :global(.toolbox-empty-body > div) { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center !important; text-align: center !important; gap: 6px; }
+    .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result > div > svg),
+    .workspace :global(.toolbox-video-empty-body > svg) { display: block; width: 24px; height: 24px; margin: 0 0 4px; color: var(--muted-foreground); }
+    .workspace :global(.toolbox-text-result-pane > .toolbox-empty-result > div > h3) { display: block; }
+  }
+  @media (max-width: 760px) {
+    .workbenchFrame {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .toolRail {
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--border);
+      overflow: visible;
+    }
+    .railLabel { display: none; }
+    .toolRail :global([role="tablist"]) {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 2px;
+      padding: 4px;
+    }
+    .toolRail :global([role="tab"]) {
+      justify-content: center;
+      gap: 3px;
+      min-height: 42px;
+      padding: 5px 2px;
+    }
+    .toolRail :global([role="tab"] > span:first-child) { width: 16px; height: 16px; }
+    .toolRail :global([role="tab"] svg) { width: 15px; height: 15px; }
+    .toolRail :global([role="tab"] strong) { font-size: 13px; }
+  }
+  @media (max-width: 560px) {
+    .workspace :global(.toolbox-video-input-card .toolbox-extract-heading) { flex-wrap: wrap; gap: 8px; }
+    .workspace :global(.toolbox-video-input-card .toolbox-extract-heading h3) { flex: 1 1 max-content; }
+    .workspace :global(.toolbox-embedded-toolbar:has(> .min-w-0)) {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      position: static;
+      gap: 6px;
+    }
+    .workspace :global(.toolbox-embedded-toolbar > .min-w-0) { flex: 1 0 100%; }
+    .workspace :global(.toolbox-segment-layout .toolbox-input-meta) { white-space: nowrap; }
+    .workspace :global(.toolbox-segment-layout .toolbox-input-meta > span) { display: none; }
+  }
+}
+
+:global(html[data-theme][data-mode] body:has([data-workbench-actions-scope="main"])) .page:is([data-page="tools"], [data-page="tools-utility"]) {
+  :global(.sub-page-header .sub-page-title) { font-size: 24px; }
+  :global(.sub-page-header .public-contact-trigger) { white-space: nowrap; }
+}
+
+/* The utility entry has horizontal tabs in place of the vertical tool rail. */
+:global(html[data-theme][data-mode] body:has([data-workbench-actions-scope="main"])) .page[data-page="tools-utility"] {
+  .main { width: min(100%, 1080px); gap: 0; }
+  .tabs {
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--studio-line);
+    border-bottom: 0;
+    border-radius: 10px 10px 0 0;
+    background: var(--studio-surface);
+  }
+  .workspace:global(#toolbox-active-panel) {
+    border: 1px solid var(--studio-line);
+    border-radius: 0 0 10px 10px;
+    background: var(--studio-surface) !important;
+    box-shadow: var(--tools-panel-shadow);
+  }
+  .workspace :global(.toolbox-extract-card .toolbox-command-row-one) {
+    justify-content: flex-end;
+    grid-template-columns: minmax(0, 300px);
+  }
+  .workspace :global(.toolbox-extract-card .toolbox-command-row-one > button) {
+    flex: 0 1 300px;
+    max-width: 300px;
+  }
+  .tabs > button[aria-selected="true"] {
+    color: var(--creation-nav-text) !important;
+    border-color: var(--creation-nav-edge) !important;
+    background: var(--creation-nav-fill) !important;
+    box-shadow: none !important;
+  }
+  .tabs > button[aria-selected="true"]::before {
+    inset-inline-start: 0;
+    background: var(--creation-nav-accent);
+  }
+  .tabs > button[aria-selected="true"] :is(strong, small, svg) { color: inherit; }
 }

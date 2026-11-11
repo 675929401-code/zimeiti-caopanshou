@@ -40,7 +40,7 @@ const baseVideo = {
   },
 };
 
-assert.deepEqual(WORKSPACE_MODEL_SURFACES.map((entry) => entry.id), [
+assert.deepEqual(WORKSPACE_MODEL_SURFACES.slice(0, 10).map((entry) => entry.id), [
   "image-workbench",
   "cover-studio",
   "storyboard-image",
@@ -52,6 +52,10 @@ assert.deepEqual(WORKSPACE_MODEL_SURFACES.map((entry) => entry.id), [
   "commerce-video",
   "video-page",
 ]);
+assert.deepEqual(WORKSPACE_MODEL_SURFACES.slice(10).map((entry) => entry.id), ["publish-center-image", "publish-center-video"]);
+assert.equal(imageWorkspaceSurfaceFromRequest("publish-center-image"), "publish-center-image");
+assert.equal(videoWorkspaceSurfaceFromRequest("publish-center-video"), "publish-center-video");
+
 assert.equal(imageWorkspaceSurfaceFromRequest("image-workbench"), "image-workbench");
 assert.equal(imageWorkspaceSurfaceFromRequest("cover-studio"), "cover-studio");
 assert.equal(imageWorkspaceSurfaceFromRequest("storyboard-workbench"), "storyboard-image");

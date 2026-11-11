@@ -29,8 +29,40 @@ function publicModel<T extends Record<string, unknown>>(model: T): Omit<T, "api_
 }
 
 // 管理后台 — 封面模型单项操作
+// GET: 读取单个封面模型（只回 api_key_configured 与 updated_at，不回密钥本体）
 // PUT: 更新封面模型
 // DELETE: 删除封面模型（软删除）
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.slice(7);
+    const payload = token ? await verifyAdminToken(token) : null;
+    if (!payload || payload.role !== "admin") {
+      return NextResponse.json({ error: "需要管理员权限" }, { status: 403 });
+    }
+
+    const dbClient = getSupabaseClient();
+    const { data, error } = await dbClient.from("cover_models").select("*").eq("id", id).maybeSingle();
+    if (error) return NextResponse.json({ error: "当前模型配置不可读取" }, { status: 503 });
+    if (!data || data.provider === "retired_configuration") {
+      return NextResponse.json({ error: "封面模型不存在" }, { status: 404 });
+    }
+    return NextResponse.json(
+      { model: publicModel(data as Record<string, unknown>) },
+      { headers: { "Cache-Control": "no-store, max-age=0" } },
+    );
+  } catch (error) {
+    const configurationFailure = modelPoolMutationFailure(error);
+    if (configurationFailure) return configurationFailure;
+    console.error("[CoverModels] GET detail error:", error);
+    return NextResponse.json({ error: "获取封面模型失败" }, { status: 500 });
+  }
+}
 
 export async function PUT(
   request: NextRequest,

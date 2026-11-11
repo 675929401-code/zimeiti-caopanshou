@@ -34,5 +34,4 @@ export interface InspirationExample {
   imagePath: string;
   imageAlt: string;
   primaryHref: string;
-  secondaryHref: string;
 }

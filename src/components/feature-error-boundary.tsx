@@ -2,6 +2,7 @@
 
 import { Component, type ReactNode } from "react";
 import { reportClientRenderError } from "@/lib/client-error-telemetry";
+import { isChunkLoadError } from "@/lib/chunk-load-error";
 
 interface FallbackProps {
   error: Error;
@@ -10,6 +11,8 @@ interface FallbackProps {
 }
 
 function DefaultFallback({ error, moduleName, onRetry }: FallbackProps) {
+  const chunkLoadFailed = isChunkLoadError(error);
+
   return (
     <div className="flex flex-col items-center justify-center p-6 m-2 rounded-xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20">
       <div className="w-10 h-10 mb-2 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
@@ -18,16 +21,18 @@ function DefaultFallback({ error, moduleName, onRetry }: FallbackProps) {
         </svg>
       </div>
       <h3 className="text-sm font-medium text-red-700 dark:text-red-400 mb-1">
-        「{moduleName}」模块出现异常
+        {chunkLoadFailed ? `「${moduleName}」页面资源加载失败` : `「${moduleName}」模块出现异常`}
       </h3>
-      <p className="text-xs text-red-500/70 mb-3 max-w-xs text-center truncate">
-        {error.message}
+      <p className={`text-xs text-red-500/70 mb-3 max-w-xs text-center${chunkLoadFailed ? "" : " truncate"}`}>
+        {chunkLoadFailed
+          ? "刷新会重新加载页面。请先保存其他未提交内容，再刷新页面恢复。"
+          : error.message}
       </p>
       <button
         onClick={onRetry}
         className="px-3 py-1.5 text-xs font-medium text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors"
       >
-        重试模块
+        {chunkLoadFailed ? "刷新页面恢复" : "重试模块"}
       </button>
     </div>
   );
@@ -55,7 +60,7 @@ interface State {
  *
  * 包裹在任何功能模块外部，确保该模块崩溃时：
  * 1. 不会影响页面上其他模块的正常运行
- * 2. 用户可一键重试该模块（不影响其他模块）
+ * 2. 普通错误可局部重试；资源加载失败由用户明确点击刷新页面恢复
  * 3. 错误被限制在模块内部
  *
  * 使用示例：
@@ -81,6 +86,11 @@ export class FeatureErrorBoundary extends Component<Props, State> {
   }
 
   handleRetry = () => {
+    if (isChunkLoadError(this.state.error)) {
+      // React.lazy/dynamic imports can cache a rejected Promise until a new document loads.
+      window.location.reload();
+      return;
+    }
     this.setState({ error: null, key: this.state.key + 1 });
   };
 

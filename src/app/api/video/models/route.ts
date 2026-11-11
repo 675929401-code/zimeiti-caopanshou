@@ -213,6 +213,7 @@ function videoOutputCapabilities(row: Record<string, unknown>, config: Record<st
 export async function GET(request: Request) {
   try {
     const requestedSurface = new URL(request.url).searchParams.get("surface") || "";
+    const nativeCatalog = requestedSurface === "publish-center-video";
     const orderSurface = normalizeVideoModelOrderSurface(requestedSurface);
     const workspaceSurface = videoWorkspaceSurfaceFromRequest(requestedSurface);
     // Every public consumer can create tasks, including callers with no/unknown surface.
@@ -249,8 +250,8 @@ export async function GET(request: Request) {
     }
 
     const rows = ((Array.isArray(data) ? data : []) as Record<string, unknown>[])
-      .filter((row) => modelMatchesSurface(row, requestedSurface))
-      .filter((row) => !workspaceSurface || isWorkspaceModelAssigned(
+      .filter((row) => nativeCatalog || modelMatchesSurface(row, requestedSurface))
+      .filter((row) => nativeCatalog || !workspaceSurface || isWorkspaceModelAssigned(
         assignmentOverrides,
         "video",
         row,
@@ -321,8 +322,9 @@ export async function GET(request: Request) {
         : !priceReady ? "VIDEO_PRICE_UNCONFIGURED"
         : m.is_active !== true ? "VIDEO_MODEL_INACTIVE"
         : !configuredForSubmission ? "VIDEO_CONFIGURATION_PENDING" : "";
-      const available = baseAvailable && surfaceCompatibility?.compatible !== false && personAssetAdmission.ready && operatorAdmission.ready;
-      const availabilityMessage = publicVideoModelCompatibilityMessage(compatibilityCode) || (surfaceCompatibility?.compatible === false
+      const nativeWorkspaceAssigned = !nativeCatalog || isWorkspaceModelAssigned(assignmentOverrides, "video", m, "publish-center-video");
+      const available = nativeWorkspaceAssigned && baseAvailable && surfaceCompatibility?.compatible !== false && personAssetAdmission.ready && operatorAdmission.ready;
+      const availabilityMessage = nativeCatalog && !nativeWorkspaceAssigned ? "该模型尚未加入发布中心场景，目录保留展示" : publicVideoModelCompatibilityMessage(compatibilityCode) || (surfaceCompatibility?.compatible === false
         ? "当前页面不支持该模型所需的输入方式"
         : !operatorAdmission.ready
           ? operatorAdmission.message
@@ -473,6 +475,7 @@ export async function GET(request: Request) {
       showAudioInputs: model.showAudioInputs,
       ...publicMediaBillingCapabilities(model.billingUnit),
       workspaceSurfaces: model.workspaceSurfaces,
+      ...(nativeCatalog ? { workspaceAssigned: isWorkspaceModelAssigned(assignmentOverrides, "video", model.row, "publish-center-video") } : {}),
       supportsRemoteCancel: model.supportsRemoteCancel,
       supportsGenerateAudioToggle: model.supportsGenerateAudioToggle,
       durationStep: model.durationStep,
