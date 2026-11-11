@@ -1764,7 +1764,6 @@ export async function POST(request: Request) {
       agentDeepThinkingType === 2 ? agentDeductDeepThink : 1);
 
     if (preparedQuote && (!streamQuote || streamQuote.amount !== preparedQuote.reservation.amount)) throw new LlmQuotePreparationError("LLM_QUOTE_RESERVATION_DRIFT");
-    if (nativeInvocation && !streamQuote) throw new NativeAiAdmissionError("NATIVE_AI_TEXT_UNBOUNDED", "本次原生文字调用没有可确认的预留上限");
 
 
     // ── 重新生成 / 改写：按稳定消息 ID 截断旧分支，再决定是否落新用户消息 ──
@@ -1772,6 +1771,7 @@ export async function POST(request: Request) {
     // Verify its owner/conversation before invoking the provider, and append
     // the new attempt so admission, generation or persistence failures cannot
     // destroy a previously delivered reply.
+    if (typeof nativeInvocation !== "undefined" && nativeInvocation && !streamQuote) throw new NativeAiAdmissionError("NATIVE_AI_TEXT_UNBOUNDED", "本次原生文字调用没有可确认的预留上限");
     if (truncateFromMessageId) {
       if (!conversationId || !verifiedUserId) {
         throw new LlmTruncateContractError(
