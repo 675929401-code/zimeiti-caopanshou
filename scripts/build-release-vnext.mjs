@@ -160,7 +160,7 @@ if (sourceManifest.assetManifestSha256 !== sha256File(assetManifestPath)) stop("
 if (sourceManifest.assetDigest !== assetManifest.digest) stop("source snapshot asset digest mismatch", 2);
 
 const expectedNextVersions = {
-  web: "16.2.11",
+  web: "16.4.5",
   voice: "15.5.21",
 };
 const nextPackagePath = path.join(serviceRoot, "node_modules", "next", "package.json");

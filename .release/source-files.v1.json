@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "3a66695c32ee970e7dafd5cfd542d95b948c629dba24aff5697f08c85498bcfb",
+  "sourceFingerprint": "41795f3bab97b17f828c4b1260477c64a4d63553c6bfd6553a5eb352a011e2f7",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5293,
-  "totalBytes": 86364367,
+  "totalBytes": 86365329,
   "files": [
     {
       "path": ".cnb.yml",
@@ -38,8 +38,8 @@
     },
     {
       "path": ".engineering/extraction-feature-lock.v1.json",
-      "bytes": 7795,
-      "sha256": "c8d8b31ffa9d999a006d38596fc23f7157efac51d92ccc3c1115f1afa827cedb"
+      "bytes": 8759,
+      "sha256": "5b9652b62e607b734263473d67f8ae9a7d7ab3f3aed957ada941d2393f8bd273"
     },
     {
       "path": ".engineering/project-profile.v1.json",
@@ -418,8 +418,8 @@
     },
     {
       "path": "docs/deployment/DEPLOYMENT-STANDARD-vNext.md",
-      "bytes": 70137,
-      "sha256": "5c455f606d7a155df13fc169a792ef80d9473927666f3d6526c9cf62c806b290"
+      "bytes": 70136,
+      "sha256": "d9f02b4efcc626aa1235db8a56ecae5f0d92c87081787ef015ce2633a700542a"
     },
     {
       "path": "docs/deployment/LOCAL-DISK-DISASTER-RECOVERY.md",
@@ -2019,7 +2019,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "787f3c7c09e905bf4e3ac64944814dae80b3e2538832fa0f335984c205b458ad"
+      "sha256": "28e7d685a7c186048dda0dfa20a359515dd11734d846826fa1c5442e9b77c7a9"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -2988,8 +2988,8 @@
     },
     {
       "path": "scripts/build-release-vnext.mjs",
-      "bytes": 14392,
-      "sha256": "c467430ca47e1d043091fb074eaff6d1c46170333b1b425678c8e6151d275277"
+      "bytes": 14391,
+      "sha256": "3f5da97a8a55ef76d2562af5144642d1240b6e012ecf1c35dc237068a9c2c316"
     },
     {
       "path": "scripts/build-storyboard-assets-order-compiler.mjs",

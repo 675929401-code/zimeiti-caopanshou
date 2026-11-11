@@ -191,7 +191,7 @@ CI 制品是“构建一次、处处运行”的交付单位。每个服务独�
 - `.next/release-provenance.v1.json`；
 - 代码提交 SHA、锁文件 SHA、Node/pnpm/ABI/libc、素材清单 SHA 和资产 digest。
 
-其中 commitSha 是不可变发布身份，`deploymentId` 是 Next.js 的跨实例版本偏斜保护，BUILD_ID 是该框架版本的实际构建标识。Web 固定 Next 16.2.11，必须验证编译配置中的 `deploymentId === commitSha`；Voice 固定 Next 15.5.21，并额外要求 `BUILD_ID === commitSha`。provenance 同时记录 `nextVersion`、`buildIdStrategy`、实际 BUILD_ID 和编译后的 deploymentId，readiness 必须逐项与制品 manifest 对账。
+其中 commitSha 是不可变发布身份，`deploymentId` 是 Next.js 的跨实例版本偏斜保护，BUILD_ID 是该框架版本的实际构建标识。Web 固定 Next 16.4.5，必须验证编译配置中的 `deploymentId === commitSha`；Voice 固定 Next 15.5.21，并额外要求 `BUILD_ID === commitSha`。provenance 同时记录 `nextVersion`、`buildIdStrategy`、实际 BUILD_ID 和编译后的 deploymentId，readiness 必须逐项与制品 manifest 对账。
 
 运行时不再从 `process.cwd()/.next/BUILD_ID` 读取身份，因为这种根目录文件访问会让 Next/NFT 把源码根误判为动态追踪范围并膨胀 standalone。打包器先核对制品内 BUILD_ID，部署器再从已校验 manifest 注入 `EXPECTED_BUILD_ID`；候选 readiness、PM2 环境和回滚路径都必须与该值一致。真实 BUILD_ID 文件仍保留在制品内供安装前离线校验，但不会触发运行时全项目追踪。
 

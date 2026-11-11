@@ -35,6 +35,15 @@
       "previousSha256": "4d955b4b842c1053060e9bde894140f38432256f9bddb5b31c60981fd03bd544",
       "newSha256": "928e99fcd5fed26f464ab708473d7fd333f743add3f2f52c9d043b7bfc1d1759",
       "review": "Reviewed the input-only delta against the locked source. Eight input cases, scoped TypeScript and ESLint passed. Current-build browser request counts are recorded in the session handoff."
+    },
+    {
+      "date": "2026-11-11",
+      "session": "dsh-lead-20261111-release-r1840",
+      "userRequest": "将本地端的自媒体操盘手最新版本，通过部署流水线推送到服务器进行切换更新；用户将基线选择授权交由执行方决定。",
+      "scope": "Only scripts/build-release-vnext.mjs expected web Next.js version 16.2.11 -> 16.4.5 to match the R1840 package.json and frozen pnpm-lock. No extraction API, UI, provider, billing, migration or runtime behavior change; all other protected hashes unchanged.",
+      "previousSha256": "c467430ca47e1d043091fb074eaff6d1c46170333b1b425678c8e6151d275277",
+      "newSha256": "3f5da97a8a55ef76d2562af5144642d1240b6e012ecf1c35dc237068a9c2c316",
+      "review": "Single-constant diff reviewed. Extraction lock verifier, extraction zero-network contracts and extraction UI source checks rerun after resealing; browser/build acceptance recorded separately by the release pipeline."
     }
   ],
   "configurationBaseline": {
@@ -59,7 +68,7 @@
     },
     {
       "path": "scripts/build-release-vnext.mjs",
-      "sha256": "c467430ca47e1d043091fb074eaff6d1c46170333b1b425678c8e6151d275277"
+      "sha256": "3f5da97a8a55ef76d2562af5144642d1240b6e012ecf1c35dc237068a9c2c316"
     },
     {
       "path": "scripts/release-preflight.mjs",
