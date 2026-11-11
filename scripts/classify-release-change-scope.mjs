@@ -248,6 +248,7 @@ function derivePageRoute(repoPath) {
 function browserAcceptanceForChanges(policy, changes, explicitRoutes) {
   const browser = policy.browserAcceptance;
   const mappedRoutes = new Set();
+  const derivedRoutes = new Set();
   const routeRuleIds = new Set();
   const unresolvedPaths = new Set();
   let preciseRoute = null;
@@ -271,6 +272,7 @@ function browserAcceptanceForChanges(policy, changes, explicitRoutes) {
       mapped = true;
       routeRuleIds.add("derived-static-page-route");
       mappedRoutes.add(derived);
+      derivedRoutes.add(derived);
       preciseRoute ||= derived;
     }
     const isDynamicPage = /^(?:src|voice-platform\/src)\/app\/.+\/page\.(?:ts|tsx|js|jsx)$/u.test(repoPath) && !derived;
@@ -288,7 +290,7 @@ function browserAcceptanceForChanges(policy, changes, explicitRoutes) {
     if (!next) break;
     mappedRoutes.add(next);
   }
-  for (const route of browser.retiredPageRoutes || []) mappedRoutes.delete(route);
+  for (const route of browser.retiredPageRoutes || []) { if (derivedRoutes.has(route)) mappedRoutes.delete(route); }
   if (preciseRoute && !mappedRoutes.has(preciseRoute)) preciseRoute = null;
   while (mappedRoutes.size < browser.minimumDistinctRoutes) {
     const next = browser.defaultRoutes.find((route) => !mappedRoutes.has(route));

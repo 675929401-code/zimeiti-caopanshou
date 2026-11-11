@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "b9449d3bf5a3fefa3290d5c0512db1ad3af7a832ace6a9907bf71e6f27c7c316",
+  "sourceFingerprint": "d857369a2b7d19e4eccf6d6eda2624e1a86bf8874728a959b17187ac268cb368",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5293,
-  "totalBytes": 86366031,
+  "totalBytes": 86366164,
   "files": [
     {
       "path": ".cnb.yml",
@@ -218,8 +218,8 @@
     },
     {
       "path": "deploy/policies/release-change-scope.v1.json",
-      "bytes": 14179,
-      "sha256": "25794cd3e0cac7085cbf5a37ebfa4e713ba00a753a100d2d199cd07b6fa86e96"
+      "bytes": 14209,
+      "sha256": "541c4d76373d475c4219218ccd157a92b3b4541b3867ac1374b6206661e15dce"
     },
     {
       "path": "deploy/policies/release-policy.json",
@@ -2019,7 +2019,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "968322effa24c6f92127b51fc0b6e0ddc27f3d9aab841244c9cc0eb60d10449f"
+      "sha256": "95f56199d0fd44793ab2bf8afec7155ae1a5b9ac633d1bf384459000d2f1f422"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -3083,8 +3083,8 @@
     },
     {
       "path": "scripts/classify-release-change-scope.mjs",
-      "bytes": 27256,
-      "sha256": "4938b2022234db7efc603b9985f10bc6d5e420eac277231b4d0626ebe606c96c"
+      "bytes": 27359,
+      "sha256": "6c4ec0eba64f7e89594681826515d7a16b6b9c0956198dd85e48f03b19e6bde2"
     },
     {
       "path": "scripts/cleanup-local-fixture-members.mjs",
