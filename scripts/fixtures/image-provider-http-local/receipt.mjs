@@ -68,4 +68,3 @@ try {
     evidence: 'Actual AST-extracted route fetch wrapper and audited POST plus complete real audit module and helper; receipt acknowledgements are in-memory fixtures. The only HTTP server binds 127.0.0.1 random port.', results };
   console.log(JSON.stringify(report, null, 2));
 } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-

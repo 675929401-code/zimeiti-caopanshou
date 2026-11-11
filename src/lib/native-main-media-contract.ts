@@ -41,4 +41,3 @@ export function nativeMainMediaReference(value: string, origin = "https://native
     return parsed.success && new URL(nativeMainMediaPath(parsed.data), origin).href === url.href ? parsed.data : null;
   } catch { return null; }
 }
-

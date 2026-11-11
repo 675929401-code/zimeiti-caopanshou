@@ -85,4 +85,3 @@ BEGIN
 END$$;
 SELECT name,passed FROM native_bridge_fixture_results ORDER BY name;
 ROLLBACK;
-

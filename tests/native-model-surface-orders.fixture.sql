@@ -27,4 +27,3 @@ DO $$DECLARE snapshot jsonb:='{"schema":"workspace-model-config/v1","surfaces":{
 END$$;
 SELECT name,passed FROM native_model_surface_fixture_results ORDER BY name;
 ROLLBACK;
-

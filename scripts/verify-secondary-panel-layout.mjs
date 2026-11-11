@@ -145,4 +145,3 @@ export async function main() {
   console.log(JSON.stringify({ cases: results.length, maxTop: Math.max(...results.map(r => Math.abs(r.top))),
     maxBottom: Math.max(...results.map(r => Math.abs(r.bottom))) }));
 }
-
