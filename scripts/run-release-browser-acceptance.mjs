@@ -103,6 +103,10 @@ const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
 const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
   "bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用",
 ]);
+const BENIGN_READ_ONLY_API_ABORT_PATHS = new Set([
+  "/api/native-operations/v2/channels/accounts",
+  "/api/native-operations/studio/history",
+]);
 const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/admin|/admin/extraction-reconciliation",
   "/cover|/",
@@ -123,6 +127,14 @@ const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
   "/voice-studio/workspace|/voice-studio/workspace",
   "/youcai/storyboard-workbench|/",
   "/youcai/storyboard-workbench|/youcai",
+  "/publish-center|/",
+  "/publish-center|/recharge",
+  "/publish-center/legacy|/cover",
+  "/publish-center/legacy|/video",
+  "/publish-center/legacy|/voice-studio/workspace",
+  "/youcai/cover|/",
+  "/youcai/cover|/youcai",
+  "/youcai/cover|/youcai/profile",
   "/youcai/storyboard-workbench|/youcai/profile",
 ]);
 
@@ -445,6 +457,10 @@ async function startCandidateDatabaseFixture(port) {
         return;
       }
       sendJson(request, response, 201, []);
+      return;
+    }
+    if (url.pathname === "/rest/v1/rpc/read_publishing_studio_history") {
+      sendJson(request, response, 200, { total: 0, items: [] });
       return;
     }
     if (url.pathname.startsWith("/rest/v1/rpc/")) {
@@ -1167,8 +1183,12 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         const benignNavigationKey = `${resolveBenignNavigationSourceRoute(route)}|${pathname}`;
         const utilityIdentity = route === "/tools/utility" && pagePhase === "checking" && error === "net::ERR_ABORTED"
           ? reviewedUtilityRscIdentity(request, target.baseUrl) : null;
+        const benignReadOnlyApiAbort = sameOrigin && item.method === "GET" && resourceType === "fetch"
+          && error === "net::ERR_ABORTED" && !nextRouterPrefetch && BENIGN_READ_ONLY_API_ABORT_PATHS.has(pathname);
         if (sameOrigin && item.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"
           && nextRouterPrefetch && BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)) {
+          benignNavigationAborts.push(item);
+        } else if (benignReadOnlyApiAbort) {
           benignNavigationAborts.push(item);
         } else if (utilityIdentity) {
           utilityPendingAborts.push({ item, sequence: ++requestSequence, identity: utilityIdentity });
