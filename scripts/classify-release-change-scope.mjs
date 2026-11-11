@@ -62,6 +62,7 @@ function assertPolicy(policy) {
     || !Array.isArray(browser.defaultRouteEligiblePatterns)
     || !Array.isArray(browser.routeRules)) throw new Error("POLICY_BROWSER_ACCEPTANCE_INVALID");
   for (const pattern of [...browser.blockedUnlessPolicyMappedPatterns, ...browser.defaultRouteEligiblePatterns]) new RegExp(pattern, "iu");
+  if (browser.retiredPageRoutes !== undefined && (!Array.isArray(browser.retiredPageRoutes) || browser.retiredPageRoutes.some((route) => !normalizeRoute(route)))) throw new Error("POLICY_BROWSER_RETIRED_ROUTES_INVALID");
   for (const rule of browser.routeRules) {
     if (!rule.id || !Array.isArray(rule.patterns) || !Array.isArray(rule.routes)) throw new Error("POLICY_BROWSER_ROUTE_RULE_INVALID");
     for (const pattern of rule.patterns) new RegExp(pattern, "iu");
@@ -282,6 +283,13 @@ function browserAcceptanceForChanges(policy, changes, explicitRoutes) {
     for (const route of browser.defaultRoutes) mappedRoutes.add(route);
     preciseRoute = browser.defaultRoutes[0];
   }
+  while (mappedRoutes.size < browser.minimumDistinctRoutes) {
+    const next = browser.defaultRoutes.find((route) => !mappedRoutes.has(route));
+    if (!next) break;
+    mappedRoutes.add(next);
+  }
+  for (const route of browser.retiredPageRoutes || []) mappedRoutes.delete(route);
+  if (preciseRoute && !mappedRoutes.has(preciseRoute)) preciseRoute = null;
   while (mappedRoutes.size < browser.minimumDistinctRoutes) {
     const next = browser.defaultRoutes.find((route) => !mappedRoutes.has(route));
     if (!next) break;

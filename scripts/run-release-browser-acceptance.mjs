@@ -98,7 +98,7 @@ const CANDIDATE_ADMIN_PERMISSIONS = Object.freeze([
 ]);
 const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
   "marketplace", "toolbox", "storyboard_workbench", "image_workbench", "create",
-  "voice", "cover", "youcai", "commerce_agent",
+  "voice", "cover", "publish_center", "youcai", "commerce_agent",
 ]);
 const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
   "bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用",
@@ -317,6 +317,7 @@ async function startCandidateDatabaseFixture(port) {
       sendJson(request, response, 405, { code: "CANDIDATE_FIXTURE_METHOD_NOT_ALLOWED" });
     };
     requests.push({ method: requestMethod, path: url.pathname });
+
     const objectResponse = String(request.headers.accept || "").includes("application/vnd.pgrst.object+json");
     const fixtureResponse = candidateFixtureResponse(requestMethod, url, objectResponse);
     if (fixtureResponse) {

@@ -30,6 +30,7 @@
   "browserAcceptance": {
     "minimumDistinctRoutes": 3,
     "defaultRoutes": ["/", "/tools", "/video"],
+    "retiredPageRoutes": ["/image-workbench", "/tools/image/image-chat", "/youcai/image-workbench", "/youcai/tools/image/image-chat"],
     "blockedUnlessPolicyMappedPatterns": [
       "^supabase/",
       "^src/app/api/",
@@ -85,7 +86,6 @@
           "/announcements",
           "/commerce/rebuild",
           "/cover",
-          "/image-workbench",
           "/media-history",
           "/storyboard-workbench",
           "/tools",
