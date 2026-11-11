@@ -4,7 +4,7 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "41795f3bab97b17f828c4b1260477c64a4d63553c6bfd6553a5eb352a011e2f7",
+  "sourceFingerprint": "030ef2cd5eaa8f92dd274bdbae6ab39dd18f4eed7a752124f001ed4e1a13c37b",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
@@ -2019,7 +2019,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "28e7d685a7c186048dda0dfa20a359515dd11734d846826fa1c5442e9b77c7a9"
+      "sha256": "285452563a125d2686466fb0d5f1a02ebb960091726e6620181fc8d88454793b"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -24959,7 +24959,7 @@
     {
       "path": "supabase/migrations/20261106150000_llm_vision_capability_only_publication.sql",
       "bytes": 15553,
-      "sha256": "2efc8fc177aedfbe04f96cbe26d6282f6680a7dec9804207aefc93c72e32940f"
+      "sha256": "7d5434cee08950a82f03040170914258751ae487497f2fc60715a56256a857b8"
     },
     {
       "path": "supabase/migrations/20261107180000_image_model_addition_only_publication.sql",
