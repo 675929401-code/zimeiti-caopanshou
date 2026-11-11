@@ -881,8 +881,12 @@ const expectedPnpmOverrides = {
   ini: "1.3.8",
   "linkify-it": "5.0.2",
   nanoid: "3.3.18",
-  postcss: "8.5.18",
-  sharp: "0.35.0",
+  postcss: "8.5.23",
+  sharp: "0.35.5",
+  axios: "1.20.0",
+  "follow-redirects": "1.16.2",
+  browserslist: "4.28.7",
+  "source-map-js": "1.2.2",
 };
 assert.deepEqual(packageJson.pnpm?.overrides, expectedPnpmOverrides, "pnpm 9 overrides must live in package.json#pnpm");
 const expectedOnlyBuiltDependencies = [
