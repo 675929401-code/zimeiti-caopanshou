@@ -133,14 +133,6 @@ const LOCAL_RESOURCES: readonly ResourceEntry[] = [
     tags: ["短剧", "项目"],
   },
   {
-    title: "AI 生图工作台",
-    description: "使用主站已配置的图片模型完成文生图、参考图和结果保存。",
-    href: "/image-workbench",
-    category: "视觉工具",
-    Icon: ImageIcon,
-    tags: ["生图", "参考图"],
-  },
-  {
     title: "视频生成工作台",
     description: "统一提交、轮询、恢复、预览和下载主站视频任务。",
     href: "/video",
@@ -345,6 +337,12 @@ export function RechargeCompatPage() {
           <h2>卡密与会员</h2>
           <p>卡密兑换、会员状态和充值记录继续由个人中心管理。</p>
           <Link href="/profile?tab=cami">进入个人中心<ArrowRight size={16} /></Link>
+        </article>
+        <article className={styles.purchaseCard}>
+          <span className={styles.purchaseIcon}><WalletCards size={24} /></span>
+          <h2>发布套餐</h2>
+          <p>开通发布中心权限后，可使用本站现金余额购买发布次数；可用套餐、价格和有效期以发布中心为准。</p>
+          <Link href="/publish-center?tab=plans">查看发布套餐<ArrowRight size={16} /></Link>
         </article>
       </section>
 

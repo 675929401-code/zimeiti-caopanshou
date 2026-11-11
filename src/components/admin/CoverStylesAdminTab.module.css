@@ -1,0 +1,57 @@
+.root { display: grid; gap: 20px; color: var(--foreground); }
+.header, .sectionHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.header h2 { margin: 0; font-size: 23px; font-weight: 750; line-height: 1.4; }
+.header p, .sectionHeading p { margin: 6px 0 0; color: var(--muted-foreground); font-size: 13px; line-height: 1.75; }
+.panel { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); box-shadow: 0 2px 5px rgb(16 24 40 / 3%); }
+.sectionHeading { margin-bottom: 20px; }
+.sectionHeading h3 { margin: 0; font-size: 17px; font-weight: 700; }
+.badge { flex-shrink: 0; padding: 6px 10px; border: 1px solid #b2ccff; border-radius: 8px; background: #eff4ff; color: #175cd3; font-size: 12px; font-weight: 600; }
+.button, .primaryButton { display: inline-flex; min-height: 38px; align-items: center; justify-content: center; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--foreground); font-size: 13px; font-weight: 600; line-height: 1.5; cursor: pointer; }
+.button:hover { background: var(--muted); }
+.primaryButton { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+.button:disabled, .primaryButton:disabled { opacity: .45; cursor: default; }
+.button:focus-visible, .primaryButton:focus-visible, .styleSelect:focus-visible { outline: 3px solid #b2ccff; outline-offset: 2px; }
+.notice, .locked { padding: 13px 16px; border: 1px solid #fecd89; border-radius: 10px; background: #fffaeb; color: #7a2e0e; font-size: 13px; line-height: 1.8; }
+.locked { padding: 24px; }
+.currentSummary { display: flex; flex-wrap: wrap; gap: 16px 28px; margin-bottom: 20px; padding: 14px 16px; border: 1px solid #e4e7ec; border-radius: 10px; background: #f8fafc; }
+.currentSummary > div { min-width: 160px; flex: 1; }
+.currentSummary span, .currentSummary strong, .currentSummary small { display: block; }
+.currentSummary span { margin-bottom: 5px; color: #667085; font-size: 12px; }
+.currentSummary strong { overflow-wrap: anywhere; color: #172033; font-size: 13px; font-weight: 650; }
+.currentSummary small { margin-top: 5px; color: #b54708; font-size: 12px; }
+.modelGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+.label { display: grid; min-width: 0; gap: 8px; margin-bottom: 18px; font-size: 13px; font-weight: 650; line-height: 1.5; }
+.modelGrid .label { margin-bottom: 0; }
+.label input, .label select, .label textarea, .actions select { display: block; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--card); color: var(--foreground); font-size: 13px; font-weight: 400; line-height: 1.75; }
+.label textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.label textarea[readonly] { background: #f8fafc; }
+.label input:disabled, .label select:disabled, .label textarea:disabled { background: #f2f4f7; color: #667085; }
+.label input:focus-visible, .label select:focus-visible, .label textarea:focus-visible, .actions select:focus-visible { outline: 3px solid #d1e0ff; outline-offset: 0; border-color: #84adff; }
+.label small { color: var(--muted-foreground); font-size: 12px; font-weight: 400; line-height: 1.75; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.actions > span { color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.actions select { width: auto; max-width: 100%; flex: 1; min-width: 180px; }
+.details { min-width: 0; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 16px; }
+.details summary { color: #344054; font-size: 13px; font-weight: 600; cursor: pointer; }
+.details[open] summary { margin-bottom: 14px; }
+.details pre, .previewResult > pre, .comparison pre { max-height: 480px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border: 1px solid #e4e7ec; border-radius: 8px; background: #f8fafc; color: #344054; font: 12px/1.85 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.details > pre { margin-bottom: 14px; }
+.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.comparison > div { min-width: 0; }
+.comparison h4, .previewResult h4 { margin: 0 0 10px; font-size: 13px; font-weight: 650; }
+.comparison p { margin: 0 0 10px; color: #667085; font-size: 12px; line-height: 1.8; }
+.styleGrid { display: grid; grid-template-columns: 230px minmax(0, 1fr); align-items: start; gap: 24px; }
+.styleList { display: grid; gap: 12px; }
+.styleList article { min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 11px; background: #fff; }
+.styleList article[data-selected="true"] { border-color: #84adff; box-shadow: 0 0 0 2px #eff4ff; background: #f9fbff; }
+.styleSelect { display: block; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.styleSelect strong { display: block; color: #172033; font-size: 14px; line-height: 1.6; }
+.styleSelect span { display: block; margin-top: 6px; color: #667085; font-size: 11px; line-height: 1.8; }
+.rowActions { display: flex; gap: 6px; margin-top: 12px; }
+.rowActions .button { min-height: 30px; padding: 4px 8px; font-size: 11px; }
+.styleEditor { min-width: 0; padding-left: 24px; border-left: 1px solid var(--border); }
+.previewResult { min-width: 0; margin-top: 20px; }
+.footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 0 4px 12px; color: var(--muted-foreground); font-size: 12px; line-height: 1.8; }
+.footer a { color: #175cd3; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 1150px) { .styleGrid { grid-template-columns: 190px minmax(0, 1fr); gap: 18px; } .styleEditor { padding-left: 18px; } .panel { padding: 20px; } }
+@media (max-width: 800px) { .header, .sectionHeading { flex-wrap: wrap; gap: 12px; } .styleGrid, .modelGrid, .comparison { grid-template-columns: minmax(0, 1fr); } .styleList { grid-template-columns: repeat(2, minmax(0, 1fr)); } .styleEditor { padding: 18px 0 0; border-left: 0; border-top: 1px solid var(--border); } }

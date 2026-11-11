@@ -1,0 +1,126 @@
+.tabs {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tabs > button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.tabs > button:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, var(--card));
+}
+
+.tabs > button[aria-selected="true"] {
+  border-color: var(--creation-nav-edge);
+  background: var(--creation-nav-fill);
+  color: var(--creation-nav-text);
+}
+
+.tabs > button[aria-selected="true"]:hover {
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+}
+
+.tabs > button[aria-selected="true"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--creation-nav-accent);
+  transform: translateY(-50%);
+}
+
+.icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--muted-foreground);
+}
+
+.icon > svg {
+  width: 19px;
+  height: 19px;
+}
+
+.tabs > button[aria-selected="true"] .icon {
+  color: inherit;
+}
+
+.tabs > button > span {
+  min-width: 0;
+}
+
+.tabs strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabs strong {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.tabs > button[aria-selected="true"] strong {
+  font-weight: 650;
+}
+
+.segmentPanel :global(.toolbox-duration-options > button.toolbox-duration-chip) {
+  font-weight: 600;
+  box-shadow: none;
+  transform: none;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.segmentPanel :global(.toolbox-duration-options > button.toolbox-duration-chip:hover) {
+  border-color: var(--toolbox-crystal-line);
+  background: color-mix(in srgb, var(--foreground) 4%, var(--toolbox-panel-solid));
+}
+
+.segmentPanel :global(.toolbox-duration-options > button.toolbox-duration-chip[aria-pressed="true"]) {
+  border-color: color-mix(in srgb, var(--primary) 36%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--toolbox-panel-solid));
+  color: color-mix(in srgb, var(--primary) 88%, var(--foreground));
+  font-weight: 650;
+}
+
+.segmentPanel :global(.toolbox-duration-options > button.toolbox-duration-chip[aria-pressed="true"]:hover) {
+  background: color-mix(in srgb, var(--primary) 12%, var(--toolbox-panel-solid));
+}
+
+@layer base {
+  .tabs > button:focus-visible,
+  .segmentPanel :global(.toolbox-duration-options > button.toolbox-duration-chip:focus-visible) {
+    outline: 2px solid var(--primary) !important;
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs > button,
+  .segmentPanel :global(.toolbox-duration-options > button.toolbox-duration-chip) {
+    transition: none;
+  }
+}

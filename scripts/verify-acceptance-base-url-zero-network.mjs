@@ -13,7 +13,6 @@ const acceptanceScripts = [
   "scripts/diagnose-youcai-navigation.mjs",
   "scripts/verify-toolbox-draft-refresh-readonly.mjs",
   "scripts/verify-media-history-retry-readonly.mjs",
-  "scripts/verify-image-workbench-fresh-readonly.mts",
   "scripts/verify-image-workbench-live-e2e.mjs",
   "scripts/verify-video-page-chain-safety.ts",
   "scripts/verify-video-paper-history-ui.mjs",

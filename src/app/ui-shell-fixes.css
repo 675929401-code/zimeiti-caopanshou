@@ -1668,7 +1668,7 @@ html[data-theme="crystal-aurora"][data-mode="dark"] :where(
   input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select
 ) {
   border-color: rgba(96, 195, 201, .30) !important;
-  background: #06151a !important;
+  background: var(--studio-well, #06151a) !important;
   color: #effefd !important;
 }
 
@@ -1771,9 +1771,9 @@ html[data-theme="crystal-aurora"][data-mode="dark"] :is(
   --vs-text-secondary: #b9d1d1 !important;
   --vs-text-muted: #9baead !important;
   --vs-border: rgba(255, 255, 255, .18) !important;
-  --vs-card: rgba(24, 26, 31, .98) !important;
+  --vs-card: var(--studio-card, rgba(24, 26, 31, .98)) !important;
   --vs-card-hover: rgba(33, 37, 43, .98) !important;
-  --vs-input-bg: #06151a !important;
+  --vs-input-bg: var(--studio-well, #06151a) !important;
   --vs-input-border: rgba(96, 195, 201, .30) !important;
   --vs-glow: #54e3d2 !important;
   --vs-on-accent: #021815 !important;
@@ -1869,7 +1869,7 @@ html[data-theme="crystal-aurora"][data-mode="dark"] :is(
   [data-testid="announcement-reading-pane"]
 ) {
   border-color: rgba(255, 255, 255, .18) !important;
-  background: linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98)) !important;
+  background: var(--studio-section-paint, var(--studio-card, linear-gradient(145deg, rgba(24, 26, 31, .98), rgba(11, 13, 17, .98)))) !important;
   box-shadow: 0 1px 0 rgba(255,255,255,.055) inset, 0 22px 56px rgba(0,7,10,.32) !important;
 }
 
@@ -1884,7 +1884,7 @@ html[data-theme="crystal-aurora"][data-mode="dark"] :is(
   .help-page
 ):not(:where(.commerce-root *, [data-testid="manju-content"] *)) :is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select) {
   border-color: rgba(96, 195, 201, .30) !important;
-  background: #06151a !important;
+  background: var(--studio-well, #06151a) !important;
   color: #effefd !important;
 }
 
@@ -1900,6 +1900,15 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell .marketpl
  * Commerce and Manju keep their independent shells. */
 html[data-theme][data-mode] {
   --unified-workbench-grid-size: 64px;
+  --creation-grid-image:
+    linear-gradient(var(--marketplace-field-horizontal) 1px, transparent 1px),
+    linear-gradient(90deg, var(--marketplace-field-vertical) 1px, transparent 1px),
+    radial-gradient(ellipse at 8% 0%, var(--marketplace-field-glow-one), transparent 65%),
+    radial-gradient(ellipse at 94% 0%, var(--marketplace-field-glow-two), transparent 65%);
+  --creation-nav-accent: var(--primary);
+  --creation-nav-fill: color-mix(in srgb, var(--creation-nav-accent) 8%, transparent);
+  --creation-nav-edge: color-mix(in srgb, var(--creation-nav-accent) 20%, transparent);
+  --creation-nav-text: color-mix(in srgb, var(--creation-nav-accent) 88%, var(--foreground));
   --unified-workbench-field: var(--background);
   --unified-workbench-card: var(--card);
   --unified-workbench-control: var(--popover);
@@ -1982,13 +1991,16 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell {
 
 html[data-theme][data-mode] .marketplace-shell:has(.marketplace-depth) {
   --unified-workbench-field: var(--marketplace-field);
+  --unified-workbench-grid-image: var(--creation-grid-image);
   --marketplace-grid-horizontal: var(--marketplace-field-horizontal);
   --marketplace-grid-vertical: var(--marketplace-field-vertical);
   --unified-workbench-glow-one: var(--marketplace-field-glow-one);
   --unified-workbench-glow-two: var(--marketplace-field-glow-two);
 }
 
-html[data-theme="soft-white"][data-mode="light"] .marketplace-shell:has(.marketplace-depth) {
+/* The catalog and its six main workbenches share this field. */
+html[data-theme="soft-white"][data-mode="light"] {
+  --creation-nav-accent: var(--brand-action-bg);
   --marketplace-field: #f7f6f2;
   --marketplace-field-horizontal: rgba(91, 117, 145, .22);
   --marketplace-field-vertical: rgba(91, 117, 145, .22);
@@ -1996,17 +2008,19 @@ html[data-theme="soft-white"][data-mode="light"] .marketplace-shell:has(.marketp
   --marketplace-field-glow-two: transparent;
 }
 
-html[data-theme="lattice"][data-mode="dark"] .marketplace-shell:has(.marketplace-depth) {
+html[data-theme="lattice"][data-mode="dark"] {
   --marketplace-field: #1b3957;
-  /* Horizontal lines start at the top of the scrollport in this theme. */
-  --marketplace-horizontal-attachment: scroll;
   --marketplace-field-horizontal: rgba(105, 226, 237, .41);
   --marketplace-field-vertical: rgba(135, 196, 255, .38);
   --marketplace-field-glow-one: rgba(19, 176, 187, .34);
   --marketplace-field-glow-two: rgba(117, 100, 227, .32);
 }
 
-html[data-theme="crystal-aurora"][data-mode="dark"] .marketplace-shell:has(.marketplace-depth) {
+html[data-theme="lattice"][data-mode="dark"] .marketplace-shell:has(.marketplace-depth) {
+  --marketplace-horizontal-attachment: scroll;
+}
+
+html[data-theme="crystal-aurora"][data-mode="dark"] {
   --marketplace-field: #102735;
   --marketplace-field-horizontal: rgba(56, 226, 196, .39);
   --marketplace-field-vertical: rgba(78, 163, 249, .38);
@@ -2148,17 +2162,9 @@ html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-work
 }
 
 /* Exactly one background layer under each scrollable work area. */
-html[data-theme][data-mode] .image-workbench-root:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) > main,
-html[data-theme][data-mode] .image-workbench-root:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) > main > section,
 html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.workspace-depth-frame, .workspace-depth-stage, .workspace-depth-canvas, .toolbox-embedded-workspace.secondary-workbench, .toolbox-embedded-workspace.voice-studio-root.vs-workbench, .vs-studio-main .secondary-workbench.voice-studio-root) {
   background: transparent !important;
   background-image: none !important;
-}
-
-html[data-theme][data-mode] .image-workbench-root:not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) > main > aside {
-  background: color-mix(in srgb, var(--unified-workbench-card) 86%, transparent) !important;
-  border-color: var(--unified-workbench-line) !important;
-  backdrop-filter: blur(14px) saturate(1.04) !important;
 }
 
 html[data-theme][data-mode] :is(.secondary-workbench, .voice-studio-root.vs-workbench:not(.marketplace-shell), .voice-studio-root.vs-studio-shell, .sbw-root:not(.sbw-model-dialog), .cover-rebuild-shell, .cover-studio, .marketplace-shell, [data-page="tools"], [data-page="tools-utility"], [data-page="creation-center"], .help-page, .media-history-page, [data-testid="announcement-reading-center"], [data-testid="local-video-editor"], [data-testid="subtitle-remover-workbench"], [data-testid="app-route-content"] > [data-official-tool-directory="true"]):not(.commerce-root):not(:where(.commerce-root *, [data-testid="manju-content"], [data-testid="manju-content"] *)) :is(.workspace-depth-rail, .workspace-depth-header, .toolbox-embedded-toolbar, .toolbox-input-surface, .toolbox-results-block, .toolbox-state-surface, .toolbox-empty-result) {
@@ -2565,15 +2571,45 @@ html[data-theme] .marketplace-shell .nav-pill:focus-visible {
    a transparent or heavy box; later rules in this file force the base state. */
 html[data-theme][data-mode] .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill.nav-pill-active,
 html[data-theme][data-mode] .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill[aria-current="page"] {
-  background: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 8%, transparent) !important;
+  background: var(--creation-nav-fill) !important;
   border: 0 !important;
   border-radius: 10px !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-action-bg, var(--primary)) 15%, transparent) !important;
-  color: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 88%, var(--foreground)) !important;
+  box-shadow: inset 0 0 0 1px var(--creation-nav-edge) !important;
+  color: var(--creation-nav-text) !important;
   font-weight: 620 !important;
 }
 html[data-theme][data-mode] .marketplace-shell [data-primary-nav-style="plain-tabs"] .nav-pill:not(.nav-pill-active):hover {
   background: color-mix(in srgb, var(--brand-action-bg, var(--primary)) 5%, transparent) !important;
   border-radius: 10px !important;
   box-shadow: none !important;
+}
+
+/* Desktop shortcut frames follow the theme; per-feature accents belong to
+   the icons. The home sidebar owns every shortcut in this grid. */
+@media (min-width: 1024px) {
+  html[data-theme][data-mode] .app-sidebar-frame .sidebar-shell .sidebar-shortcut-grid .sidebar-shortcut-card {
+    height: 64px !important;
+    min-height: 64px !important;
+    border-radius: 10px !important;
+    padding: 4px !important;
+  }
+
+  html[data-theme][data-mode] .app-sidebar-frame .sidebar-shell .sidebar-shortcut-grid .sidebar-shortcut-card:is(:hover, :focus-visible) {
+    border-color: var(--creation-nav-edge) !important;
+    background: color-mix(in srgb, var(--creation-nav-accent) 5%, var(--card)) !important;
+  }
+
+  html[data-theme][data-mode] .app-sidebar-frame .sidebar-shell .sidebar-shortcut-grid .sidebar-shortcut-card[aria-current="page"] {
+    border: 1px solid var(--creation-nav-edge) !important;
+    background: var(--creation-nav-fill) !important;
+    box-shadow: inset 0 0 0 1px var(--creation-nav-edge) !important;
+  }
+}
+
+/* Route-local editor surface aliases must not tint the shared header's
+   navigation differently. Scope the aliases to the two main workbenches. */
+body:has([data-workbench-actions-scope="main"]) :is([data-cover-workbench], .sbw-root.sbw-editor) .sub-page-header {
+  --workbench-surface: var(--unified-workbench-card);
+  --border: var(--unified-workbench-line);
+  --foreground: var(--unified-workbench-text);
 }

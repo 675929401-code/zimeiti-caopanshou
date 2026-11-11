@@ -11,6 +11,7 @@ const STABLE_KEY = /^[A-Za-z0-9_-]{8,128}$/u;
 const ASPECT_RATIOS = new Set(["3:4", "9:16", "4:3", "16:9", "1:1"]);
 const RESOLUTIONS = new Set(["0.5K", "1K", "2K", "3K", "4K"]);
 const HISTORY_SURFACES = new Set([
+  "publish-center-image",
   "image-workbench",
   "cover-studio",
   "storyboard-workbench",
@@ -147,7 +148,7 @@ export type NormalizedImageGenerationInput = {
   clientIdempotencyKey?: string;
   clientNodeId?: string;
   clientNodeTitle?: string;
-  historySurface?: "image-workbench" | "cover-studio" | "storyboard-workbench" | "free-canvas" | "short-drama-film-studio";
+  historySurface?: "publish-center-image" | "image-workbench" | "cover-studio" | "storyboard-workbench" | "free-canvas" | "short-drama-film-studio";
   noRetry?: boolean;
   strictSingleSubmit?: boolean;
   resumeDeliveryOnly?: boolean;
@@ -282,7 +283,7 @@ export function normalizeImageGenerationInput(value: unknown): NormalizedImageGe
   };
 }
 
-export async function readImageGenerationInput(request: Request) {
+export async function readImageGenerationInput(request: Request, options?: { onWireRequest?: (value: unknown) => void; transformWireRequest?: (value: unknown) => Promise<unknown> }) {
   const bytes = await readRequestBytes(request);
   let parsed: unknown;
   try {
@@ -290,7 +291,8 @@ export async function readImageGenerationInput(request: Request) {
   } catch {
     throw new ImageGenerationInputError("IMAGE_REQUEST_BODY_INVALID", "生图请求体不是有效 JSON");
   }
-  return normalizeImageGenerationInput(parsed);
+  options?.onWireRequest?.(parsed);
+  return normalizeImageGenerationInput(options?.transformWireRequest ? await options.transformWireRequest(parsed) : parsed);
 }
 
 export const IMAGE_GENERATION_REQUEST_LIMITS = {

@@ -53,6 +53,7 @@ import { GeneratedImageReferenceSchema, generatedImageReferenceUri, generatedIma
 import { useApp } from "@/contexts/app-context";
 import { resolveWorkbenchIdentity, workbenchUserStorageKey, type WorkbenchIdentity } from "@/lib/workbench-user-storage";
 import { NavButton, SubPageHeader } from "@/components/sub-page-header";
+import { StoryboardEditorViewport } from "./storyboard-editor-viewport";
 import { StoryboardVisualAssetsDrawer, type DrawerVisualAsset, type DrawerVisualAssetMutation, type DrawerVisualAssetInput, type ImportReferenceImage } from "@/components/storyboard-visual-assets-drawer";
 import type { StoryboardPresetPublic } from "@/lib/storyboard-preset-assets";
 import { rememberStoryboardBoardBlob, readStoryboardBoardBlob, type StoryboardBoardBlob, saveStoryboardBoardOriginal, isOwnedStoryboardBoard, needsStoryboardBoardExport, rollbackStoryboardBoardBinding } from "@/lib/storyboard-board-export";
@@ -1670,7 +1671,7 @@ function submittedVideoPrompt(prompt: string, model?: VideoModel, requestedDurat
   return buildStoryboardVideoPrompt({ prompt, duration });
 }
 
-export function StoryboardWorkbench({ view = "workbench", historyPage = false }: { view?: "workbench" | "visual-assets"; historyPage?: boolean }) {
+export function StoryboardWorkbench({ view = "workbench", historyPage = false, compactEditor = false }: { view?: "workbench" | "visual-assets"; historyPage?: boolean; compactEditor?: boolean }) {
   const params = useSearchParams();
   const requestedProjectId = params.get("projectId")?.trim() || "";
   const requestedSlotId = params.get("slotId")?.trim() || "";
@@ -1682,6 +1683,7 @@ export function StoryboardWorkbench({ view = "workbench", historyPage = false }:
     identity={identity}
     view={view}
     historyPage={historyPage}
+    compactEditor={compactEditor}
     requestedProjectId={requestedProjectId}
     requestedSlotId={requestedSlotId}
     showAdminModelIds={false}
@@ -1693,6 +1695,7 @@ function UserStoryboardWorkbench({
   showAdminModelIds,
   view,
   historyPage,
+  compactEditor,
   requestedProjectId: requestedEntryProjectId,
   requestedSlotId,
 }: {
@@ -1700,6 +1703,7 @@ function UserStoryboardWorkbench({
   showAdminModelIds: boolean;
   view: "workbench" | "visual-assets";
   historyPage: boolean;
+  compactEditor: boolean;
   requestedProjectId: string;
   requestedSlotId: string;
 }) {
@@ -7133,6 +7137,7 @@ function UserStoryboardWorkbench({
   return (
     <div className="voice-studio-root vs-workbench sbw-root sbw-editor" data-ratio={activeImageRatio}>
       <div className="sbw-main" hidden={historyPage} aria-hidden={historyPage || undefined}>
+      <StoryboardEditorViewport enabled={compactEditor}>
       <SubPageHeader
         title="分镜工作台"
         icon={<Sparkles className="h-5 w-5" />}
@@ -7141,7 +7146,7 @@ function UserStoryboardWorkbench({
       />
 
       <fieldset className="sbw-body" disabled={navigating || visualAssetSaving}><main className="sbw-shell">
-        <aside className={`${modelRailRestoration.rail} sbw-model-rail`} aria-label="生成模型">
+        <aside className={`${modelRailRestoration.rail}${compactEditor ? ` ${modelRailRestoration.publicRail}` : ""} sbw-model-rail`} aria-label="生成模型">
           <section className="sbw-model-section sbw-image-model-section" aria-label="生图模型">
             <header><span>生图模型</span><small className="sbw-model-hint">{imageModelCatalogState === "loading" && imageModels.length === 0 ? "读取中" : `${imageModels.length} 个模型 · ${selectableImageModelCount} 个可选`}</small></header>
             {imageModelCatalogState === "loading" && imageModels.length === 0 && (
@@ -7204,11 +7209,12 @@ function UserStoryboardWorkbench({
                       </strong>
                       <small className="sbw-model-meta" title={`默认 ${capabilities.defaultResolution} · ${capabilities.referenceCapabilityLabel}`}>
                         <span className="sbw-model-tier">{resolutionSummary}</span>
-                        <span className="sbw-model-cap">{capabilities.referenceCapabilityLabel}</span>
+                        {!compactEditor && <span className="sbw-model-cap">{capabilities.referenceCapabilityLabel}</span>}
                         <span className={`sbw-model-price${model.priceReady ? "" : " is-pending"}`} title={imagePriceLabel}>
                           {imagePriceChip}{model.priceReady && <em>/张</em>}
                         </span>
                       </small>
+                      {compactEditor && <span className="sbw-model-cap" title={capabilities.referenceCapabilityLabel}>{capabilities.referenceCapabilityLabel}</span>}
                       {showAdminModelIds && (
                         <span
                           className="sbw-model-id-copy"
@@ -7337,11 +7343,12 @@ function UserStoryboardWorkbench({
                       <small className="sbw-model-meta" title={[channelLabel, priceLabel, videoModelInputHint(model)].filter(Boolean).join(" · ")}>
                         {channelLabel && <span className="sbw-model-channel">{channelLabel}</span>}
                         {model.generationReady !== false && <span className="sbw-model-tier">{videoResolutionDisplayLabel(model, preferredResolution)}</span>}
-                        {inputLabel && <span className="sbw-model-need">{inputLabel}</span>}
+                        {!compactEditor && inputLabel && <span className="sbw-model-need">{inputLabel}</span>}
                         <span className={`sbw-model-price${model.priceReady ? "" : " is-pending"}`} title={priceLabel} aria-label={priceLabel}>
                           {model.billingUnit === "token" ? priceLabel.replace(" · 按实际用量结算", "") : priceLabel}
                         </span>
                       </small>
+                      {compactEditor && <span className="sbw-model-need" title={inputLabel}>{inputLabel.split(" · ", 1)[0]}</span>}
                       {showAdminModelIds && (
                         <span
                           className="sbw-model-id-copy"
@@ -7616,6 +7623,8 @@ function UserStoryboardWorkbench({
                 || storyboardCardVideoInputIssue(activeVideoModel, card, run)
                 || (cardVideoInputs?.usesStoryboardImage && needsStoryboardBoardExport(card) ? "生成前将保存并确认当前分镜原图；保存失败不会提交视频。" : "");
               const showVideoStartIssue = Boolean(videoStartIssue);
+              const showInlineVideoStartIssue = compactEditor && videoStartIssue === "请先生成并加载本段分镜图。"
+                && !videoViewOnly && !isActiveVideoStatus(card.videoStatus) && !videoNeedsRequestReconciliation(card);
               return (
               <article
                 key={card.id}
@@ -7652,7 +7661,7 @@ function UserStoryboardWorkbench({
                       <textarea aria-label={`分段${card.order}生图提示词`} rows={6} disabled={imageAttemptNeedsResolution(card)} value={card.imagePrompt} onChange={(event) => patchCard(card.id, { imagePrompt: event.target.value })} placeholder="写下这一段的画面…" />
                     </div>
 
-                    <div className="sbw-zone-title"><span className="sbw-stage-index">03</span><strong className="sbw-zone-title-main">{showVideoMedia ? <Film size={15} /> : <ImageIcon size={15} />}{showVideoMedia ? "媒体结果" : "分镜图"}</strong><span title={!showVideoMedia && hasValidatedImage(card) ? `已验证 ${card.imageWidth && card.imageHeight ? `${card.imageWidth}×${card.imageHeight}` : ""} ${needsStoryboardBoardExport(card) ? "· 保存后用于视频" : "并自动绑定"}${card.imageModelNameUsed ? ` · ${card.imageModelNameUsed}` : ""}` : undefined}>{showVideoMedia ? (card.videoStatus === "done" ? `已完成 · ${submittedVideoTaskLabel(card)}` : submittedVideoTaskLabel(card)) : storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel) || (hasValidatedImage(card) ? `${needsStoryboardBoardExport(card) ? "需保存原图" : "已绑定"}${card.imageWidth && card.imageHeight ? ` · ${card.imageWidth}×${card.imageHeight}` : ""}` : isImageValidationPending(card) ? "正在加载/验证" : "")}</span></div>
+                    <div className="sbw-zone-title"><span className="sbw-stage-index">03</span><strong className="sbw-zone-title-main">{showVideoMedia ? <Film size={15} /> : <ImageIcon size={15} />}{showVideoMedia ? "媒体结果" : "分镜图"}</strong><span title={!showVideoMedia && hasValidatedImage(card) ? `已验证 ${card.imageWidth && card.imageHeight ? `${card.imageWidth}×${card.imageHeight}` : ""} ${needsStoryboardBoardExport(card) ? "· 保存后用于视频" : "并自动绑定"}${card.imageModelNameUsed ? ` · ${card.imageModelNameUsed}` : ""}` : undefined}>{showVideoMedia ? (card.videoStatus === "done" ? `已完成 · ${submittedVideoTaskLabel(card)}` : submittedVideoTaskLabel(card)) : storyboardImageRatioIssue(card, activeImageRatio, run.ratio, activeVideoModel) || (hasValidatedImage(card) ? `${needsStoryboardBoardExport(card) ? "需保存原图" : "已绑定"}${card.imageWidth && card.imageHeight ? ` · ${card.imageWidth}×${card.imageHeight}` : ""}` : isImageValidationPending(card) ? "正在加载/验证" : "")}</span>{showInlineVideoStartIssue && <span className="sbw-inline-video-prerequisite" role="status" title={videoStartIssue} aria-label={videoStartIssue}>待生成分镜图</span>}</div>
                     <div
                       className={`sbw-shared-media-frame sbw-ratio-frame ${showVideoMedia ? "is-video" : card.imageUrl ? "has-result" : "is-placeholder"} ${(showVideoMedia ? run.ratio : card.imageRequestSnapshot?.aspectRatio || activeImageRatio) === "9:16" ? "is-portrait" : ""}`}
                       style={{ aspectRatio: (showVideoMedia ? run.ratio : card.imageRequestSnapshot?.aspectRatio || activeImageRatio).replace(":", " / ") }}
@@ -7785,7 +7794,7 @@ function UserStoryboardWorkbench({
                     </div>
                     {activeVideoModel?.firstFrameRatioPolicy === "adaptive" && cardVideoInputs?.input.imageUrl && <p className="sbw-note">视频比例：跟随首帧比例</p>}
                     {cardVideoInputs && <div className="sbw-video-reference-summary"><Film aria-hidden="true" /><span>{cardVideoInputs.requiresStoryboardImage ? "使用当前分镜图" : "仅使用当前视频提示词"}</span></div>}
-                    {showVideoStartIssue && !videoViewOnly && !isActiveVideoStatus(card.videoStatus) && !videoNeedsRequestReconciliation(card) && <p className="sbw-note" role="status">{videoStartIssue}</p>}
+                    {showVideoStartIssue && !showInlineVideoStartIssue && !videoViewOnly && !isActiveVideoStatus(card.videoStatus) && !videoNeedsRequestReconciliation(card) && <p className="sbw-note" role="status">{videoStartIssue}</p>}
                     {card.videoError && <p className="sbw-error-line">{card.videoError}</p>}
                     {card.videoBillingState && <p className="sbw-billing-line">视频费用：{isActiveVideoStatus(card.videoStatus)
                       ? "任务处理中，成功交付后扣费"
@@ -7816,10 +7825,11 @@ function UserStoryboardWorkbench({
 
         </div>
       </main></fieldset>
-
-      {(notice || batchMode) && <div className="sbw-notice" role="status">{batchMode && <Loader2 className="animate-spin" />}{notice}</div>}
-
+      </StoryboardEditorViewport>
       </div>
+
+      {!historyPage && (notice || batchMode) && <div className="sbw-notice" role="status">{batchMode && <Loader2 className="animate-spin" />}{notice}</div>}
+
       {historyNavigationIssue && <div className="sbw-notice" role="alert">
         <span>页面切换较慢，当前工作内容仍保留。</span>
         <button type="button" onClick={() => setHistoryOpen(historyNavigationIssue.open)}>重试切换</button>

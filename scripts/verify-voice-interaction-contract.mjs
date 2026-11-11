@@ -28,8 +28,10 @@ includes(workspace, [
   "<VoicePortrait", "useVoiceFavorites", "previewSequenceRef", "URL.revokeObjectURL",
   "aria-label={`${isThisPlaying ? '停止试听'", "aria-pressed={isFav}",
   // Option wrapping and control geometry are checked in desktop browser acceptance.
-  "lg:grid-cols-[360px_minmax(0,1fr)]",
+  "data-voice-configuration", "vs-writing-column", "vs-voice-grid",
 ], "voice workspace interaction");
+const workspaceStyles = read("src/app/voice-studio/workspace/workspace.css");
+includes(workspaceStyles, [".vs-synthesis-editor", "minmax(0, 1fr)", ".vs-voice-grid", "repeat(2, minmax(0, 1fr))"], "synthesis editor and two-column voice catalogue");
 if (workspace.includes("previewLockRef")) throw new Error("voice workspace still ignores a second preview click while the first is loading");
 
 includes(favoritesHook, [

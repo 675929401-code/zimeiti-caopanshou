@@ -800,6 +800,13 @@ function autoCleanShareText(text: string): string {
   return trimmed;
 }
 
+function videoShareInputs(value: string): string[] {
+  const lines = value.split(/\r?\n/u).map(line => line.trim()).filter(Boolean);
+  // A copied share often puts the title and the copy instructions on their own lines.
+  const targets = lines.filter(line => /https?:\/\/\S+/iu.test(line) || /^\d{15,22}$/u.test(line));
+  return (targets.length ? targets : lines).map(autoCleanShareText).filter(Boolean);
+}
+
 /* ── Helper: format number ── */
 function formatNum(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + "w";
@@ -845,11 +852,7 @@ function VideoExtractTab({ addHistory, retryDraft, runtimeGate }: { addHistory: 
   const handleExtract = async () => {
     if (extractInFlightRef.current) return;
     if (runtimeGate.loading || runtimeGate.error || !runtimeGate.quote?.available) return;
-    // 自动清理分享口令，每行只保留链接部分
-    const cleanedLinks = urls.split("\n")
-      .map(line => autoCleanShareText(line))
-      .filter(Boolean);
-    const linkList = cleanedLinks;
+    const linkList = videoShareInputs(urls);
     if (linkList.length === 0) return;
     if (!confirmLoadedRetry(retryDraft, 'video', runtimeGate)) return;
 

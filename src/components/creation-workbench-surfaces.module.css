@@ -1,0 +1,90 @@
+/* Only the thirteen public creation routes mount this palette marker. */
+.surfaceScope { display: none; }
+
+:global(html[data-theme][data-mode]):has(.surfaceScope) {
+  --studio-toolbar: rgb(from var(--card) r g b / 1);
+  --studio-card: rgb(from var(--card) r g b / 1);
+  --studio-well: rgb(from var(--background) r g b / 1);
+  --studio-edge: var(--border);
+  --studio-panel-backdrop: none;
+  --unified-workbench-header: var(--studio-toolbar);
+  --unified-workbench-line: var(--studio-edge);
+}
+
+:global(html[data-theme="soft-white"][data-mode="light"]):has(.surfaceScope) {
+  --studio-toolbar: #fffefa;
+  --studio-card: #f4f8f8;
+  --studio-well: #eaf2f5;
+  --studio-edge: #c8dce0;
+  --marketplace-field: #f7faf9;
+  --marketplace-field-horizontal: rgba(32, 148, 137, .25);
+  --marketplace-field-vertical: rgba(59, 131, 185, .25);
+}
+
+:global(html[data-theme="lattice"][data-mode="dark"]):has(.surfaceScope) {
+  --studio-toolbar: #263e55;
+  --studio-card: #1c3044;
+  --studio-well: #132537;
+  --studio-edge: #41617b;
+}
+
+:global(html[data-theme="crystal-aurora"][data-mode="dark"]):has(.surfaceScope) {
+  --studio-toolbar: #203039;
+  --studio-card: #16242d;
+  --studio-well: #0e1b23;
+  --studio-edge: #36535c;
+}
+
+/* Public route consumers bridge roles locally. The root field remains owned
+   by the existing theme grid; none of these rules adds a page-sized panel. */
+:global(html[data-theme][data-mode]):has(.surfaceScope) {
+  :global([data-cover-workbench]) {
+    --studio-surface: var(--studio-card);
+    --studio-inset: var(--studio-well);
+  }
+  :global(.voice-studio-root.vs-workbench:not(.sbw-root):not(.commerce-root)) {
+    --card: var(--studio-card);
+  }
+  :global(:is(.voice-studio-root.vs-workbench, .voice-studio-root.vs-studio-shell, [data-cover-workbench], [data-page="tools"], [data-page="tools-utility"]):not(.commerce-root):not(.sbw-model-dialog) :is(.sub-page-header, .vs-studio-header)) {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  :global(.voice-studio-root.vs-studio-shell),
+  :global(.vs-studio-shell .voice-studio-root) {
+    --vs-card: var(--studio-card);
+    --vs-surface: var(--studio-well);
+    --vs-control-bg: var(--studio-toolbar);
+    --vs-input-bg: var(--studio-well);
+    --vs-glass-bg: var(--studio-card);
+    --vs-header-bg: var(--studio-toolbar);
+    --vs-border: var(--studio-edge);
+  }
+  :global(.vs-studio-shell [data-workbench-surface="toolbar"]) { background: var(--studio-toolbar); }
+  :global(.vs-studio-shell .vs-model-toolbar) {
+    --studio-section-paint: var(--studio-toolbar);
+    background: var(--studio-toolbar);
+  }
+  :global(.toolbox-embedded-toolbar) { --studio-section-paint: var(--studio-toolbar); }
+  :global(.vs-studio-shell [data-workbench-surface="card"]) {
+    background: var(--studio-card);
+    backdrop-filter: none;
+  }
+  :global(.vs-studio-shell textarea) { background: var(--studio-well); }
+  :global(.vs-studio-shell .vs-output-card) {
+    --studio-section-paint: var(--studio-well);
+    background: var(--studio-well);
+  }
+  :global(.voice-studio-root.vs-studio-shell > .vs-studio-main > .voice-studio-root) {
+    background: transparent !important;
+  }
+  :global(.sbw-root .svad-surface),
+  :global(.svad-preview) {
+    --svad-bg: var(--studio-card);
+    --svad-line: var(--studio-edge);
+    --svad-soft: var(--studio-toolbar);
+    --svad-field-bg: var(--studio-well);
+  }
+  :global(.sbw-root .sbh-storyboard-card) { background: var(--studio-card); }
+  :global(.sbw-root .sbh-storyboard-cover) { background: var(--studio-well); }
+}
+

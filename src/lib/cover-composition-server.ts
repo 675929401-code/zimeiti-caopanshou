@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import sharp from "sharp";
-import type { CoverCompositionPlan } from "./cover-composition";
+import { coverCompositionValidationError, coverCompositionTextReceipt, coverOriginalLayoutGeometry, coverGeneratedOverlayGeometry, coverTextRendering, coverTitleColorMode, coverV2ValidationError, type CoverCompositionPlan, type CoverLayoutRect } from "./cover-composition";
 import { parseAcceptedLegacyStoryboardAnnotationPanels, parseStoryboardAnnotationPanels, STORYBOARD_ANNOTATION_TEXT_PREFIX, STORYBOARD_ANNOTATION_TEXT_PREFIX_V2, type StoryboardAnnotationPanel } from "./storyboard-annotation-layout";
 
 export const COVER_COMPOSITION_VERSION = "cover-composition-v2";
@@ -10,13 +10,13 @@ export const COVER_COMPOSITION_VERSION = "cover-composition-v2";
 interface CoverSharpPipeline {
   metadata(): Promise<{ width?: number; height?: number; orientation?: number }>;
   rotate(): CoverSharpPipeline;
-  resize(width: number, height: number, options: { fit: "cover"; withoutEnlargement: boolean }): CoverSharpPipeline;
+  resize(width: number, height: number, options: { fit: "cover" | "contain"; withoutEnlargement: boolean; background?: string }): CoverSharpPipeline;
   png(options?: { compressionLevel?: number }): CoverSharpPipeline;
   composite(layers: Array<{ input: Buffer; left?: number; top?: number }>): CoverSharpPipeline;
   toBuffer(): Promise<Buffer>;
   toBuffer(options: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number } }>;
 }
-type CoverSharpInput = Buffer | { text: { text: string; font: string; fontfile: string; width: number; height: number; align: "left" | "center"; rgba: true; wrap?: "none" } };
+type CoverSharpInput = Buffer | { text: { text: string; font: string; fontfile: string; width: number; height?: number; align: "left" | "center"; rgba: true; wrap?: "none" | "char" } };
 const coverSharp = sharp as unknown as (input: CoverSharpInput, options?: { failOn: "error"; limitInputPixels: number }) => CoverSharpPipeline;
 type RenderCoverCompositionPlan = Omit<CoverCompositionPlan, "aspectRatio"> & {
   aspectRatio: CoverCompositionPlan["aspectRatio"] | "1:1";
@@ -53,7 +53,8 @@ export function coverCompositionFont(profile: CoverCompositionProfile = "referen
 
 const escapeMarkup = (value: string) => value.replace(/[&<>"']/gu, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[char]!));
 
-const profileForPlan = (plan: RenderCoverCompositionPlan): CoverCompositionProfile => plan.materialSourceId === "template" || plan.materialSourceId === "upload"
+const profileForPlan = (plan: RenderCoverCompositionPlan): CoverCompositionProfile => plan.planVersion === 2 && plan.animationStyleId === "photo-real"
+  || plan.materialSourceId === "template" || plan.materialSourceId === "upload"
   ? "reference-adaptive"
   : plan.coverModeId === "funny-cartoon" ? "funny-cartoon" : "story-cartoon";
 
@@ -89,6 +90,88 @@ export function coverTitleLines(title: string, aspectRatio: RenderCoverCompositi
   const oneLineLimit = portrait ? 8 : 13;
   const twoLineLimit = portrait ? 18 : 28;
   return splitBalanced(value, value.length <= oneLineLimit ? 1 : value.length <= twoLineLimit ? 2 : 3);
+}
+
+function originalTextColor(value?: string) {
+  if (!value || !/^#[0-9a-f]{6}$/iu.test(value)) return "#152332";
+  const channels = [1, 3, 5].map(index => { const v = Number.parseInt(value.slice(index, index + 2), 16) / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+  return 1.05 / (.2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2] + .05) >= 4.5 ? value : "#152332";
+}
+
+/** Shared real Pango fitting for the two dedicated, disjoint text policies.
+ * The original policy's bounds, split rule, font limits and weight are retained. */
+async function safeCoverText(plan: CoverCompositionPlan, titleArea: CoverLayoutRect, options: { maximumFont: number; weight: "heavy" | "bold"; errorCode: string }) {
+  const font = coverCompositionFont("reference-adaptive");
+  if (!font) throw new Error("COVER_COMPOSITION_FONT_NOT_READY");
+  const output = plan.outputSpec!, geometry = { title: titleArea };
+  const layers: Array<{ input: Buffer; left: number; top: number }> = [];
+  const gap = Math.max(12, Math.round(output.height * .014));
+  const explicit = plan.title.split(/\r?\n/u).map(line => line.trim()).filter(Boolean);
+  const titleLines = explicit.length > 1 ? explicit : Array.from(plan.title.trim()).length * 60 <= geometry.title.width ? explicit : splitBalanced(plan.title, 2);
+  if (titleLines.length > 2) throw new Error(options.errorCode);
+  const minimumFont = 24, maximumFont = Math.min(options.maximumFont, Math.round(Math.min(output.width, output.height) * (options.weight === "heavy" ? .07 : .1)),
+    Math.floor(geometry.title.width / Math.min(4, Math.max(...titleLines.map(line => Array.from(line).length)))));
+  // Pango performs actual glyph measurement/wrapping, including explicit line
+  // breaks. No truncation, guessed character width, or clipping to a photo.
+  for (let size = Math.round(maximumFont * (plan.titleStyle?.scale ?? 1)); size >= minimumFont; size -= 2) {
+    const textLayer = (text: string, fontSize: number, color: string, wrap: "none" | "char") => coverSharp({ text: {
+      text: `<span foreground="${color}" weight="${options.weight}">${escapeMarkup(text)}</span>`,
+      font: `${font.family} ${fontSize}`, fontfile: font.path, width: geometry.title.width, align: "left", rgba: true, wrap,
+    } }).png().toBuffer({ resolveWithObject: true });
+    const title = await textLayer(titleLines.join("\n"), size, originalTextColor(plan.titleStyle?.color), "none");
+    const subtitle = plan.subtitle ? await textLayer(plan.subtitle, Math.max(20, Math.round(size * .55)), "#334155", "char") : undefined;
+    const totalHeight = title.info.height + (subtitle ? gap + subtitle.info.height : 0);
+    if (title.info.width > geometry.title.width || (subtitle && subtitle.info.width > geometry.title.width) || totalHeight > geometry.title.height) continue;
+    const top = geometry.title.top + Math.floor((geometry.title.height - totalHeight) / 2);
+    layers.push({ input: title.data, left: geometry.title.left, top });
+    if (subtitle) layers.push({ input: subtitle.data, left: geometry.title.left, top: top + title.info.height + gap });
+    return { layers, titleLines, fontSize: size, titleBounds: { left: geometry.title.left, top, width: title.info.width, height: title.info.height },
+      ...(subtitle ? { subtitleBounds: { left: geometry.title.left, top: top + title.info.height + gap, width: subtitle.info.width, height: subtitle.info.height } } : {}) };
+  }
+  throw new Error(options.errorCode);
+}
+
+async function renderOriginalLayoutComposition(source: Buffer, plan: CoverCompositionPlan) {
+  const font = coverCompositionFont("reference-adaptive");
+  if (!font) throw new Error("COVER_COMPOSITION_FONT_NOT_READY");
+  const metadata = await coverSharp(source, { failOn: "error", limitInputPixels: 40_000_000 }).metadata();
+  const rotated = [5, 6, 7, 8].includes(metadata.orientation || 1);
+  const sourceWidth = (rotated ? metadata.height : metadata.width) || 0, sourceHeight = (rotated ? metadata.width : metadata.height) || 0;
+  if (sourceWidth !== plan.originalLayout!.sourceWidth || sourceHeight !== plan.originalLayout!.sourceHeight) throw new Error("COVER_ORIGINAL_SOURCE_MISMATCH");
+  const output = plan.outputSpec!, geometry = coverOriginalLayoutGeometry(plan);
+  const photo = await coverSharp(source).rotate().resize(geometry.image.width, geometry.image.height, { fit: "contain", withoutEnlargement: true, background: "#ffffff" }).png().toBuffer();
+  const text = await safeCoverText(plan, geometry.title, { maximumFont: 76, weight: "heavy", errorCode: "COVER_ORIGINAL_TEXT_DOES_NOT_FIT" });
+  const layers = [{ input: photo, left: geometry.image.left, top: geometry.image.top }, ...text.layers];
+  // White canvas + complete photograph + glyphs only. In particular no fixed
+  // focus gradient, stroke, decoration or shadow can change a photo pixel.
+  const canvas = Buffer.from(`<svg width="${output.width}" height="${output.height}"><rect width="100%" height="100%" fill="#ffffff"/></svg>`);
+  const bytes = await coverSharp(canvas).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+  const actual = await coverSharp(bytes).metadata();
+  if (actual.width !== output.width || actual.height !== output.height) throw new Error("COVER_OUTPUT_SPEC_MISMATCH");
+  return { bytes, width: output.width, height: output.height, sourceWidth, sourceHeight, compositionProfile: "reference-adaptive" as const,
+    originalLayout: plan.originalLayout, layoutGeometry: geometry, renderedText: { title: plan.title, subtitle: plan.subtitle, lines: text.titleLines } };
+}
+
+async function renderGeneratedOverlayComposition(source: Buffer, plan: CoverCompositionPlan) {
+  const metadata = await coverSharp(source, { failOn: "error", limitInputPixels: 40_000_000 }).metadata();
+  const rotated = [5, 6, 7, 8].includes(metadata.orientation || 1);
+  const sourceWidth = (rotated ? metadata.height : metadata.width) || 0, sourceHeight = (rotated ? metadata.width : metadata.height) || 0;
+  if (sourceWidth < 256 || sourceHeight < 256) throw new Error("COVER_BACKGROUND_TOO_SMALL");
+  const output = plan.outputSpec!, policy = plan.generatedOverlayLayout!;
+  // Keep the existing export pixel gate. A safe header does not turn a small
+  // source into a claimed higher-resolution photograph.
+  if (Math.min(output.width / sourceWidth, output.height / sourceHeight) > 1 + 1e-12) throw new Error("COVER_BACKGROUND_INSUFFICIENT_PIXELS");
+  const geometry = coverGeneratedOverlayGeometry(plan, sourceWidth, sourceHeight);
+  const photo = await coverSharp(source).rotate().resize(geometry.image.width, geometry.image.height,
+    { fit: "contain", withoutEnlargement: true, background: policy.canvasColor }).png().toBuffer();
+  const text = await safeCoverText(plan, geometry.title, { maximumFont: 108, weight: "bold", errorCode: "COVER_GENERATED_TEXT_DOES_NOT_FIT" });
+  const canvas = Buffer.from(`<svg width="${output.width}" height="${output.height}"><rect width="100%" height="100%" fill="${policy.canvasColor}"/></svg>`);
+  const bytes = await coverSharp(canvas).composite([{ input: photo, left: geometry.image.left, top: geometry.image.top }, ...text.layers]).png({ compressionLevel: 9 }).toBuffer();
+  const actual = await coverSharp(bytes).metadata();
+  if (actual.width !== output.width || actual.height !== output.height) throw new Error("COVER_OUTPUT_SPEC_MISMATCH");
+  return { bytes, width: output.width, height: output.height, sourceWidth, sourceHeight, compositionProfile: "reference-adaptive" as const,
+    generatedOverlayLayout: policy, layoutGeometry: geometry, textGeometry: { fontSize: text.fontSize, title: text.titleBounds, ...(text.subtitleBounds ? { subtitle: text.subtitleBounds } : {}) },
+    renderedText: { title: plan.title, subtitle: plan.subtitle, lines: text.titleLines } };
 }
 
 async function renderStoryboardAnnotationComposition(source: Buffer, plan: RenderCoverCompositionPlan, options: { preserveSourceDimensions?: boolean; legacyAccepted?: boolean }) {
@@ -161,8 +244,32 @@ async function renderStoryboardAnnotationComposition(source: Buffer, plan: Rende
 }
 
 export async function renderCoverComposition(source: Buffer, plan: RenderCoverCompositionPlan, options: { preserveSourceDimensions?: boolean; legacyAccepted?: boolean } = {}) {
+  if (plan.planVersion !== undefined || plan.outputSpec !== undefined || plan.titleStyle !== undefined || plan.generatedOverlayLayout !== undefined) {
+    if (plan.aspectRatio === "1:1" || coverV2ValidationError(plan as CoverCompositionPlan)
+      || (plan.planVersion === 2 && coverCompositionValidationError(plan as CoverCompositionPlan))
+      || options.preserveSourceDimensions || plan.layoutTemplateId === "gaoding-storyboard-annotations") throw new Error("COVER_V2_PLAN_INVALID");
+  }
   if (plan.layoutTemplateId === "gaoding-storyboard-annotations") {
     return renderStoryboardAnnotationComposition(source, plan, options);
+  }
+  if (plan.originalLayout) return renderOriginalLayoutComposition(source, plan as CoverCompositionPlan);
+  if (plan.generatedOverlayLayout) return renderGeneratedOverlayComposition(source, plan as CoverCompositionPlan);
+  // Native lettering is already part of the provider's image. Run before font
+  // discovery and before every decorative/text layer; contain preserves it all.
+  if (coverTextRendering(plan).mode === "native") {
+    const output = plan.outputSpec!;
+    const metadata = await coverSharp(source, { failOn: "error", limitInputPixels: 40_000_000 }).metadata();
+    const rotated = [5, 6, 7, 8].includes(metadata.orientation || 1);
+    const sourceWidth = (rotated ? metadata.height : metadata.width) || 0;
+    const sourceHeight = (rotated ? metadata.width : metadata.height) || 0;
+    if (sourceWidth < 256 || sourceHeight < 256) throw new Error("COVER_BACKGROUND_TOO_SMALL");
+    if (Math.min(output.width / sourceWidth, output.height / sourceHeight) > 1 + 1e-12) throw new Error("COVER_BACKGROUND_INSUFFICIENT_PIXELS");
+    const bytes = await coverSharp(source).rotate().resize(output.width, output.height,
+      { fit: "contain", withoutEnlargement: true, background: "#ffffff" }).png({ compressionLevel: 9 }).toBuffer();
+    const actual = await coverSharp(bytes).metadata();
+    if (actual.width !== output.width || actual.height !== output.height) throw new Error("COVER_OUTPUT_SPEC_MISMATCH");
+    return { bytes, width: output.width, height: output.height, sourceWidth, sourceHeight,
+      compositionProfile: profileForPlan(plan), ...coverCompositionTextReceipt(plan as CoverCompositionPlan), renderedText: undefined };
   }
   const profile = profileForPlan(plan);
   const font = coverCompositionFont(profile);
@@ -173,21 +280,27 @@ export async function renderCoverComposition(source: Buffer, plan: RenderCoverCo
   if (sourceWidth < 256 || sourceHeight < 256) throw new Error("COVER_BACKGROUND_TOO_SMALL");
   const [ratioWidth, ratioHeight] = plan.aspectRatio.split(":").map(Number);
   const unit = Math.floor(Math.min(sourceWidth / ratioWidth, sourceHeight / ratioHeight, 2560 / ratioWidth, 2560 / ratioHeight));
-  const width = options.preserveSourceDimensions ? sourceWidth : ratioWidth * unit;
-  const height = options.preserveSourceDimensions ? sourceHeight : ratioHeight * unit;
+  const output = plan.planVersion === 2 ? plan.outputSpec! : undefined;
+  const width = output ? output.width : options.preserveSourceDimensions ? sourceWidth : ratioWidth * unit;
+  const height = output ? output.height : options.preserveSourceDimensions ? sourceHeight : ratioHeight * unit;
+  const fit = output?.fit ?? "cover";
+  if (output && (fit === "contain" ? Math.min(width / sourceWidth, height / sourceHeight) : Math.max(width / sourceWidth, height / sourceHeight)) > 1 + 1e-12) {
+    throw new Error("COVER_BACKGROUND_INSUFFICIENT_PIXELS");
+  }
   // Crop/downsize only: a small provider image never becomes a claimed native 2K image.
-  const background = await coverSharp(source).rotate().resize(width, height, { fit: "cover", withoutEnlargement: true }).png().toBuffer();
+  const background = await coverSharp(source).rotate().resize(width, height, { fit, withoutEnlargement: true, ...(fit === "contain" ? { background: "#ffffff" } : {}) }).png().toBuffer();
   const portrait = height > width;
   const lines = coverTitleLines(plan.title, plan.aspectRatio);
   const layoutLeft = plan.layoutTemplateId === "gaoding-teacher-interview" || /(?:01|03|05|07|09)$/u.test(plan.layoutTemplateId);
   const align: "left" | "center" = profile === "funny-cartoon" ? "center" : layoutLeft ? "left" : "center";
   const padding = Math.max(22, Math.round(width * (portrait ? 0.06 : 0.045)));
-  const titleLeft = profile === "reference-adaptive" && !portrait && layoutLeft ? padding : Math.round(width * (portrait ? 0.07 : 0.055));
-  const titleWidth = profile === "reference-adaptive" && !portrait && layoutLeft
+  const titleStyle = plan.planVersion === 2 ? plan.titleStyle : undefined;
+  const titleLeft = titleStyle?.x !== undefined ? Math.round(width * titleStyle.x) : profile === "reference-adaptive" && !portrait && layoutLeft ? padding : Math.round(width * (portrait ? 0.07 : 0.055));
+  const titleWidth = titleStyle?.width !== undefined ? Math.round(width * titleStyle.width) : titleStyle?.x !== undefined ? Math.round(width * Math.min(0.86, 0.98 - titleStyle.x)) : profile === "reference-adaptive" && !portrait && layoutLeft
     ? Math.round(width * 0.56)
     : width - titleLeft * 2;
-  const titleTop = Math.round(height * (profile === "funny-cartoon" ? 0.045 : 0.055));
-  const titleZoneHeight = Math.round(height * (portrait ? (profile === "funny-cartoon" ? 0.31 : 0.27) : 0.3));
+  const titleTop = Math.round(height * (titleStyle?.y ?? (profile === "funny-cartoon" ? 0.045 : 0.055)));
+  const titleZoneHeight = Math.round(height * (portrait ? (profile === "funny-cartoon" ? 0.31 : 0.27) : 0.3) * (titleStyle?.scale ?? 1));
   const lineGap = Math.max(2, Math.round(height * 0.004));
   const lineHeight = Math.max(34, Math.floor((titleZoneHeight - lineGap * (lines.length - 1)) / Math.max(1, lines.length)));
   const outline = Math.max(2, Math.round(Math.min(width, height) * (profile === "funny-cartoon" ? 0.006 : 0.0045)));
@@ -204,24 +317,39 @@ export async function renderCoverComposition(source: Buffer, plan: RenderCoverCo
       ? Buffer.from(`<svg width="${width}" height="${height}"><defs><radialGradient id="pop"><stop stop-color="#32102b" stop-opacity=".38"/><stop offset="1" stop-color="#32102b" stop-opacity="0"/></radialGradient></defs><ellipse cx="${Math.round(width * .5)}" cy="${Math.round(height * .09)}" rx="${Math.round(width * .58)}" ry="${Math.round(height * .31)}" fill="url(#pop)"/><g fill="#67e8f9" opacity=".82"><circle cx="${Math.round(width * .08)}" cy="${Math.round(height * .08)}" r="${Math.max(4, Math.round(width * .008))}"/><circle cx="${Math.round(width * .9)}" cy="${Math.round(height * .17)}" r="${Math.max(3, Math.round(width * .006))}"/></g><g stroke="#ffd54d" stroke-width="${Math.max(3, Math.round(width * .005))}" stroke-linecap="round" opacity=".86"><path d="M${Math.round(width * .12)} ${Math.round(height * .17)} l${Math.round(width * .035)} -${Math.round(height * .026)}"/><path d="M${Math.round(width * .84)} ${Math.round(height * .06)} l${Math.round(width * .035)} ${Math.round(height * .025)}"/></g></svg>`)
       : Buffer.from(`<svg width="${width}" height="${height}"><defs><radialGradient id="focus"><stop stop-color="#071521" stop-opacity=".30"/><stop offset="1" stop-color="#071521" stop-opacity="0"/></radialGradient></defs><ellipse cx="${align === "left" ? Math.round(width * .24) : Math.round(width * .5)}" cy="${Math.round(height * .08)}" rx="${Math.round(width * .48)}" ry="${Math.round(height * .28)}" fill="url(#focus)"/><path d="M${titleLeft} ${Math.round(height * .043)} h${Math.round(width * .08)}" stroke="#7dd3fc" stroke-width="${Math.max(4, Math.round(height * .005))}" stroke-linecap="round"/></svg>`);
   const layers: Array<{ input: Buffer; left?: number; top?: number }> = [{ input: decorative }];
+  // V2 renders an explicit font size. Supplying both width and height asks
+  // Pango to autofit, which can otherwise cancel a user's scale adjustment.
+  const baseLineHeight = (height * (portrait ? (profile === "funny-cartoon" ? 0.31 : 0.27) : 0.3) - lineGap * (lines.length - 1)) / Math.max(1, lines.length);
+  const longestLine = Math.max(1, ...lines.map(line => Array.from(line).length));
+  const v2FontSize = Math.max(12, Math.floor(Math.min(baseLineHeight * 0.56, titleWidth / (longestLine * 1.4 * 1.3)) * (titleStyle?.scale ?? 1)));
+  let renderedTitleBottom = titleTop;
   for (const [index, line] of lines.entries()) {
-    const top = titleTop + index * (lineHeight + lineGap);
+    // Width-fitting can make glyphs much shorter than the allocated line box.
+    // Advance V2 by their measured height so a two-line title remains one block.
+    const top = output && index > 0 ? renderedTitleBottom + outline + lineGap : titleTop + index * (lineHeight + lineGap);
     const createLine = async (color: string) => coverSharp({ text: {
       text: `<span foreground="${color}" weight="heavy">${escapeMarkup(line)}</span>`,
-      font: font.family, fontfile: font.path, width: titleWidth, height: lineHeight, align, rgba: true,
+      font: output ? `${font.family} ${v2FontSize}` : font.family, fontfile: font.path, width: titleWidth,
+      ...(output ? { wrap: "none" as const } : { height: lineHeight }), align, rgba: true,
     } }).png().toBuffer({ resolveWithObject: true });
     const strokeLayer = await createLine(stroke);
     const shadowLayer = await createLine(shadow);
-    const fillLayer = await createLine(palettes[profile][index % palettes[profile].length]);
+    const fillLayer = await createLine(coverTitleColorMode(titleStyle) === "single"
+      ? titleStyle!.color! : palettes[profile][index % palettes[profile].length]);
+    if (output && (fillLayer.info.width > titleWidth || fillLayer.info.height > lineHeight
+      || titleLeft - outline < 0 || top - outline < 0 || titleLeft + fillLayer.info.width + outline * 2 > width
+      || top + fillLayer.info.height + outline * 3 > height)) throw new Error("COVER_TITLE_OUT_OF_BOUNDS");
     layers.push({ input: shadowLayer.data, left: titleLeft + outline * 2, top: top + outline * 3 });
     for (const [offsetX, offsetY] of [[-outline, 0], [outline, 0], [0, -outline], [0, outline], [-outline, -outline], [outline, outline]] as const) {
       layers.push({ input: strokeLayer.data, left: titleLeft + offsetX, top: top + offsetY });
     }
     if (profile === "funny-cartoon") layers.push({ input: fillLayer.data, left: titleLeft - Math.max(1, Math.round(outline / 2)), top: top - Math.max(1, Math.round(outline / 2)) });
     layers.push({ input: fillLayer.data, left: titleLeft, top });
+    renderedTitleBottom = top + fillLayer.info.height + outline * 3;
   }
   if (plan.subtitle) {
-    const subtitleTop = Math.min(Math.round(height * 0.42), titleTop + lines.length * (lineHeight + lineGap) + Math.round(height * 0.012));
+    const subtitleTop = output ? renderedTitleBottom + Math.round(height * 0.012)
+      : Math.min(Math.round(height * 0.42), titleTop + lines.length * (lineHeight + lineGap) + Math.round(height * 0.012));
     const subtitleHeight = Math.max(24, Math.round(height * (portrait ? 0.05 : 0.065)));
     const subtitleWidth = Math.min(titleWidth, Math.round(width * (portrait ? 0.72 : 0.52)));
     const subtitleColor = profile === "funny-cartoon" ? "#fff8de" : profile === "story-cartoon" ? "#fff4d0" : "#ffffff";
@@ -235,10 +363,16 @@ export async function renderCoverComposition(source: Buffer, plan: RenderCoverCo
     } }).png().toBuffer({ resolveWithObject: true });
     const subtitleLeft = align === "left" ? titleLeft : Math.floor((width - subtitle.info.width) / 2);
     const subtitleOutline = Math.max(1, Math.round(outline * 0.6));
+    if (output && (subtitleLeft < 0 || subtitleTop < 0 || subtitleLeft + subtitle.info.width + subtitleOutline > width
+      || subtitleTop + subtitle.info.height + subtitleOutline * 2 > height)) throw new Error("COVER_TITLE_OUT_OF_BOUNDS");
     layers.push({ input: subtitleStroke.data, left: subtitleLeft + subtitleOutline, top: subtitleTop + subtitleOutline * 2 });
     layers.push({ input: subtitle.data, left: subtitleLeft, top: subtitleTop });
   }
   const bytes = await coverSharp(background).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+  if (output) {
+    const actual = await coverSharp(bytes).metadata();
+    if (actual.width !== output.width || actual.height !== output.height) throw new Error("COVER_OUTPUT_SPEC_MISMATCH");
+  }
   return {
     bytes, width, height, sourceWidth, sourceHeight, compositionProfile: profile,
     renderedText: { title: plan.title, subtitle: plan.subtitle, lines },

@@ -4,6 +4,7 @@ import {
   applyModelPoolCompatibilityMutation,
   applyWorkspaceModelCompatibilityMutation,
   normalizeModelPoolSnapshot,
+  stableConfigurationJson,
   normalizeWorkspaceModelSnapshot,
   type ModelPoolCompatibilityMutation,
   type ModelPoolEntry,
@@ -37,6 +38,9 @@ import {
   VIDEO_MODEL_SURFACE_ORDER_SETTING_KEY,
 } from "@/lib/video-model-surface-order";
 
+import { getImageModelCapabilities } from "@/lib/image-model-capabilities";
+import { resolveImageProviderContract } from "@/lib/image-provider-contract";
+import { IMAGE_MODEL_READINESS_KEYS } from "@/lib/image-model-extra-configuration";
 import { MODEL_MUTATION_REQUEST_UUID, modelMutationLegacyId, type PlatformCredentialChange } from "@/lib/server/platform-configuration-pending-credentials";
 
 type Row = Record<string, unknown>;
@@ -279,6 +283,136 @@ export async function stageInitialModelPoolCandidate(input: { actorId: string; c
   );
 }
 
+
+type ImageBusinessDelta = { path: string[]; remove: boolean; value?: unknown };
+const IMAGE_BINDING_IDENTITY = ["provider", "protocol", "modelName", "endpoint"] as const;
+const IMAGE_REQUEST_BINDING_FIELDS = ["provider_contract", "submit_path", "poll_path"] as const;
+const IMAGE_NON_EXECUTION_PROTOCOL_FIELDS = new Set(["admin_notes", "resolution_prices", "resolution_cost_prices"]);
+const IMAGE_DELTA_UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function assertImageDeltaJson(value: unknown, depth = 0): void {
+  if (!value || typeof value !== "object") return;
+  if (depth > 32) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_DELTA_INVALID", "图片配置层级过深");
+  for (const key of Object.keys(value)) {
+    if (IMAGE_DELTA_UNSAFE_KEYS.has(key)) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_DELTA_INVALID", "图片配置包含不安全字段");
+    assertImageDeltaJson((value as Row)[key], depth + 1);
+  }
+}
+
+/** Operate on canonical JSON. Absence/deletion differs from null/false/zero;
+ * arrays are one value, never merged by index or unioned with physical drift. */
+function imageBusinessDelta(before: unknown, after: unknown, path: string[] = []): ImageBusinessDelta[] {
+  if (stableConfigurationJson(before) === stableConfigurationJson(after)) return [];
+  if (!before || !after || typeof before !== "object" || typeof after !== "object" || Array.isArray(before) || Array.isArray(after)) {
+    return [{ path, remove: false, value: after }];
+  }
+  const prior = before as Row, next = after as Row;
+  return [...new Set([...Object.keys(prior), ...Object.keys(next)])].sort().flatMap(key => {
+    if (!Object.hasOwn(next, key)) return [{ path: [...path, key], remove: true }];
+    if (!Object.hasOwn(prior, key)) return [{ path: [...path, key], remove: false, value: next[key] }];
+    return imageBusinessDelta(prior[key], next[key], [...path, key]);
+  });
+}
+
+function applyImageBusinessDelta(base: unknown, changes: ImageBusinessDelta[]): Row {
+  if (base !== undefined && (!base || typeof base !== "object" || Array.isArray(base))) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_DELTA_SHAPE_CONFLICT", "已发布图片配置结构与编辑基线不一致，请核对后重建候选");
+  }
+  const result = JSON.parse(JSON.stringify(record(base))) as Row;
+  for (const change of changes) {
+    let parent = result;
+    let missingRemovalParent = false;
+    for (const key of change.path.slice(0, -1)) {
+      if (!Object.hasOwn(parent, key)) {
+        if (change.remove) { missingRemovalParent = true; break; }
+        parent[key] = {};
+      } else if (!parent[key] || typeof parent[key] !== "object" || Array.isArray(parent[key])) {
+        if (change.remove) { missingRemovalParent = true; break; }
+        throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_DELTA_SHAPE_CONFLICT", "已发布图片配置结构与编辑基线不一致，请核对后重建候选");
+      }
+      parent = parent[key] as Row;
+    }
+    if (missingRemovalParent) continue;
+    const key = change.path[change.path.length - 1];
+    if (!key || change.path.some(part => IMAGE_DELTA_UNSAFE_KEYS.has(part))) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_DELTA_INVALID", "图片配置变更路径无效");
+    if (change.remove) delete parent[key];
+    else parent[key] = JSON.parse(JSON.stringify(change.value)) as unknown;
+  }
+  return result;
+}
+
+/** A full physical form is an edit intent, never the published target's base.
+ * This intentionally does not claim stale-browser baseline/CAS protection. */
+function mergePublishedImageEdit(published: ModelPoolEntry, physical: ModelPoolEntry, submitted: ModelPoolEntry): ModelPoolEntry {
+  for (const entry of [physical, submitted]) assertImageDeltaJson(entry);
+  const normalize = (entry: ModelPoolEntry) => normalizeModelPoolSnapshot({ schema: "model-pool-config/v1", models: [entry] }).models[0];
+  const before = normalize(physical), after = normalize(submitted);
+  if (published.kind !== "image" || published.id !== before.id || before.id !== after.id
+    || [before, after].some(entry => entry.configuration.legacyTable !== published.configuration.legacyTable || entry.configuration.legacyId !== published.configuration.legacyId)) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_IDENTITY_CONFLICT", "图片目标身份与已发布记录不一致");
+  }
+  if (IMAGE_BINDING_IDENTITY.some(key => before[key] !== after[key])) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_BINDING_CHANGE_UNSUPPORTED", "更换图片供应商、协议、端点或模型标识须新建隔离候选并重新验收");
+  }
+  const protocol = (entry: ModelPoolEntry) => Object.fromEntries(Object.entries(record(entry.configuration.protocolConfig))
+    .filter(([key]) => !(IMAGE_MODEL_READINESS_KEYS as readonly string[]).includes(key)));
+  // One intent feeds both mirrors. Readiness always remains release-owned.
+  const protocolChanges = imageBusinessDelta(protocol(before), protocol(after));
+  const executionProtocolChanged = protocolChanges.some(change => !IMAGE_NON_EXECUTION_PROTOCOL_FIELDS.has(change.path[0]));
+  const supportsChanged = before.capabilities.supportsImageInput !== after.capabilities.supportsImageInput;
+  const contract = (entry: ModelPoolEntry) => {
+    const binding = resolveImageProviderContract({ provider: entry.provider, model_name: entry.modelName, api_endpoint: entry.endpoint,
+      supports_image_input: entry.capabilities.supportsImageInput === true, api_protocol_config: record(entry.configuration.protocolConfig) });
+    return { requestProtocol: binding.requestProtocol, referenceTransport: binding.referenceTransport };
+  };
+  if (executionProtocolChanged || supportsChanged) {
+    let changedContract = true;
+    try { changedContract = stableConfigurationJson(contract(before)) !== stableConfigurationJson(contract(after)); } catch { /* Unknown execution binding stays isolated. */ }
+    if (changedContract || IMAGE_REQUEST_BINDING_FIELDS.some(key => stableConfigurationJson(protocol(before)[key] ?? null) !== stableConfigurationJson(protocol(after)[key] ?? null))) {
+      throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_BINDING_CHANGE_UNSUPPORTED", "更换图片请求协议、传输或提交/轮询接口须新建隔离候选并重新验收");
+    }
+  }
+  let physicalBindingDrift = IMAGE_BINDING_IDENTITY.some(key => published[key] !== before[key]);
+  if (executionProtocolChanged && !physicalBindingDrift) {
+    try { physicalBindingDrift = stableConfigurationJson(contract(published)) !== stableConfigurationJson(contract(before)); } catch { physicalBindingDrift = true; }
+  }
+  if (executionProtocolChanged && physicalBindingDrift) {
+    throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_PHYSICAL_BASE_CONFLICT", "物理接口与已发布接口不一致，请先核对逻辑配置后再修改协议参数");
+  }
+  const businessChanges = imageBusinessDelta(before, after).filter(change => !["id", "kind", "credentialRef", "catalogState"].includes(change.path[0])
+    && !(change.path[0] === "configuration" && ["legacyTable", "legacyId", "protocolConfig"].includes(change.path[1]))
+    && !(change.path[0] === "capabilities" && change.path[1] === "protocol"));
+  const result = applyImageBusinessDelta(published, businessChanges);
+  if (protocolChanges.length) {
+    const configuration = record(result.configuration), capabilities = record(result.capabilities);
+    configuration.protocolConfig = applyImageBusinessDelta(configuration.protocolConfig, protocolChanges);
+    capabilities.protocol = applyImageBusinessDelta(capabilities.protocol, protocolChanges);
+    result.configuration = configuration; result.capabilities = capabilities;
+  }
+  const candidate = normalize(result as ModelPoolEntry);
+  if (executionProtocolChanged || supportsChanged) {
+    // An inactive physical alias can become active in L. Check the ACTUAL
+    // normalized object to be persisted, including each mirror's own fields.
+    const executionIdentity = (entry: ModelPoolEntry, mirror: "configuration" | "capabilities") => {
+      const config = record(mirror === "configuration" ? entry.configuration.protocolConfig : entry.capabilities.protocol);
+      const model = { provider: entry.provider, model_name: entry.modelName, api_endpoint: entry.endpoint,
+        supports_image_input: entry.capabilities.supportsImageInput === true, api_protocol_config: config };
+      const binding = resolveImageProviderContract(model), inputs = getImageModelCapabilities(model);
+      return { provider: entry.provider, protocol: entry.protocol, modelName: entry.modelName, endpoint: entry.endpoint,
+        supportsImageInput: model.supports_image_input, requestProtocol: binding.requestProtocol, referenceTransport: binding.referenceTransport,
+        supportsReferenceInput: inputs.supportsReferenceInput, referenceInputMode: inputs.referenceInputMode,
+        identityReferenceLevel: inputs.identityReferenceLevel, maxReferenceImages: inputs.maxReferenceImages, maxCharacterReferences: inputs.maxCharacterReferences,
+        requestBinding: Object.fromEntries(IMAGE_REQUEST_BINDING_FIELDS.map(key => [key, config[key] ?? null])) };
+    };
+    let changedExecution = true;
+    try { changedExecution = (["configuration", "capabilities"] as const).some(mirror =>
+      stableConfigurationJson(executionIdentity(published, mirror)) !== stableConfigurationJson(executionIdentity(candidate, mirror))); }
+    catch { /* An unparseable execution edit never reaches stage or credentials. */ }
+    if (changedExecution) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_BINDING_CHANGE_UNSUPPORTED", "最终图片协议、输入能力或请求绑定发生变化，须新建隔离候选并重新验收");
+  }
+  return candidate;
+}
+
 export async function stageLegacyModelPoolUpsert(input: {
   actorId: string;
   requestId: string;
@@ -310,22 +444,39 @@ export async function stageLegacyModelPoolUpsert(input: {
     ? [{ model_key: `${input.table}:${legacyId}`, credential_ref: credentialRef(input.table, legacyId), secret_value: secret }]
     : [];
   const merged: Row = { ...existing, ...input.values, id: legacyId };
+  // Unified image forms send an empty operator note even when the existing
+  // protocol has never stored one. Preserve absence for that redundant default;
+  // an existing note can still be explicitly cleared, and creates keep defaults.
+  if (input.table === "cover_models" && !imageCreate && string(existing.id) === legacyId
+      && !Object.hasOwn(record(existing.api_protocol_config), "admin_notes")
+      && record(merged.api_protocol_config).admin_notes === "") {
+    const protocol = { ...record(merged.api_protocol_config) };
+    delete protocol.admin_notes;
+    merged.api_protocol_config = protocol;
+  }
   if (!string(merged.api_key) && string(input.values.api_key)) merged.api_key = input.values.api_key;
-  const entry = entryFromLegacyRow(input.table, merged);
+  let entry = entryFromLegacyRow(input.table, merged);
   if (string(merged.provider) !== "retired_configuration") entry.catalogState = "enabled";
   if (string(input.values.api_key) && !entry.credentialRef) entry.credentialRef = credentialRef(input.table, legacyId);
-  // Video upserts own exactly one entry. Re-reading all physical bindings here
-  // would silently import unrelated LLM drift into this immutable candidate.
-  const videoBase = input.table === "video_models" ? await readCurrentPlatformConfiguration("model-pool") : null;
-  if (input.table === "video_models" && !videoBase) throw new PlatformConfigurationError("MODEL_POOL_CURRENT_RELEASE_REQUIRED", "视频变更需要已发布的模型池基础版本");
-  if (videoBase && credentialChanges.length === 0) {
-    const previous = videoBase.snapshot.models.find((model) => model.id === entry.id);
+  // Image/video upserts own exactly one entry. Keep all other published
+  // entries unchanged. Published image targets receive only actual edit intent.
+  const scopedUpsert = input.table === "cover_models" || input.table === "video_models";
+  const scopedBase = scopedUpsert ? await readCurrentPlatformConfiguration("model-pool") : null;
+  if (scopedUpsert && !scopedBase) throw new PlatformConfigurationError("MODEL_POOL_CURRENT_RELEASE_REQUIRED", "图片和视频变更需要已发布的模型池基础版本");
+  const previous = scopedBase?.snapshot.models.find((model) => model.kind === entry.kind && model.id === entry.id);
+  if (input.table === "cover_models" && !imageCreate && previous) {
+    if (string(existing.id) !== legacyId) throw new PlatformConfigurationError("PLATFORM_CONFIGURATION_IMAGE_PHYSICAL_BASE_NOT_FOUND", "无法读取已发布图片目标的物理基线");
+    entry = mergePublishedImageEdit(previous, entryFromLegacyRow(input.table, existing), entry);
+    if (credentialChanges.length) entry.credentialRef = credentialRef(input.table, legacyId);
+  }
+  if (scopedBase && credentialChanges.length === 0) {
     delete entry.credentialRef;
     if (previous?.credentialRef) entry.credentialRef = previous.credentialRef;
   }
-  const snapshot = applyModelPoolCompatibilityMutation(videoBase ? videoBase.snapshot : await currentModelPoolWithLiveBindings(), { action: "upsert", entry });
+  const snapshot = applyModelPoolCompatibilityMutation(scopedBase ? scopedBase.snapshot : await currentModelPoolWithLiveBindings(), { action: "upsert", entry });
   const release = await stagePlatformModelCandidateWithCredentials({ actorId: input.actorId, requestId: input.requestId, requestPayload: input.requestPayload, snapshot, credentialChanges, changeNote: input.changeNote,
-    ...(videoBase ? { expectedBase: { releaseId: string(videoBase.release.id), snapshotSha256: string(videoBase.release.snapshot_sha256) } } : {}),
+    ...(scopedBase ? { expectedBase: { releaseId: string(scopedBase.release.id), snapshotSha256: string(scopedBase.release.snapshot_sha256) } } : {}),
+    ...(input.table === "video_models" ? { operation: "video-upsert-only" as const } : {}),
   });
   try { const preview = await previewPlatformConfigurationRelease("model-pool", string(release.id)); return { release, preview, modelId: entry.id, legacyId }; }
   catch { throw new PlatformConfigurationMutationOutcomeUnknown(input.requestId, string(release.id), "preview"); }
@@ -398,6 +549,8 @@ async function bootstrapWorkspaceSnapshot(): Promise<WorkspaceModelSnapshot> {
   const models = pool.snapshot.models.filter((model) => model.catalogState === "enabled");
   const order = new Map(models.map((model) => [model.id, model.sortOrder]));
   const orderFor = (surface: WorkspaceSurface) => {
+    if (surface === "publish-center-image") return imageOrders["publish-center-image"];
+    if (surface === "publish-center-video") return videoOrders["publish-center-video"];
     if (surface === "image-workbench") return imageOrders["image-workbench"];
     if (surface === "cover-studio") return imageOrders["cover-studio"];
     if (surface === "storyboard-image") return imageOrders["storyboard-workbench"];
@@ -446,7 +599,7 @@ async function currentOrBootstrapWorkspace() {
     .filter((model) => model.catalogState === "enabled")
     .map((model) => [model.id, model]));
   const surfaces = Object.fromEntries((Object.keys(WORKSPACE_SURFACE_KIND) as WorkspaceSurface[]).map((surface) => {
-    const existing = current.snapshot.surfaces[surface];
+    const existing = current.snapshot.surfaces[surface] || { kind: WORKSPACE_SURFACE_KIND[surface], assignedModelIds: [], orderedModelIds: [] };
     const assignedModelIds = existing.assignedModelIds.filter((id) => enabled.get(id)?.kind === existing.kind);
     const assigned = new Set(assignedModelIds);
     const orderedModelIds = existing.orderedModelIds.filter((id) => assigned.has(id));

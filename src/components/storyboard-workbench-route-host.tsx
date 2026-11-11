@@ -22,5 +22,5 @@ export function StoryboardWorkbenchRouteHost() {
       savedPositions.set(pathname, scroller ? scroller.scrollTop : window.scrollY);
     };
   }, [pathname]);
-  return <div ref={root} hidden={!visible}>{visible && <StoryboardWorkbench historyPage={historyPage} />}</div>;
+  return <div ref={root} hidden={!visible}>{visible && <StoryboardWorkbench historyPage={historyPage} compactEditor />}</div>;
 }

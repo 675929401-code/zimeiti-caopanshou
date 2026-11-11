@@ -58,7 +58,7 @@ export function assessWorkspaceReadback(beforeWorkspace, afterWorkspace, beforeP
 
 export async function resolveWorkspaceCatalogConsumers() {
   const policy = await tsImport('../src/lib/workspace-model-policy.ts', import.meta.url);
-  const consumers = ['src/components/image-workbench.tsx', 'src/components/cover-studio.tsx', 'src/components/storyboard-workbench.tsx', 'src/components/free-canvas-shell.tsx', 'src/app/video/page.tsx'];
+  const consumers = ['src/components/cover-studio.tsx', 'src/components/storyboard-workbench.tsx', 'src/components/free-canvas-shell.tsx', 'src/app/video/page.tsx'];
   const found = new Map();
   for (const file of consumers) {
     const source = await fs.readFile(file, 'utf8');

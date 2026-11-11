@@ -17,6 +17,9 @@ const secretA = 'fixture-secret-alpha-never-network', secretB = 'fixture-secret-
 let state = { releases: [], active: {}, pending: [], receipts: [], physical: { cover_models: [], video_models: [], llm_models: [], chat_models: [] } };
 let writes = 0, raceInsert = false, failure = '', readbackFailure = false, previewFailure = false, unknownRpc = false;
 const logs = [], cases = [];
+// Imported provider-secret constructs its resolver at module initialization.
+// Keep the real module, but never inject the host process/env into this VM.
+const fixtureProcess = Object.freeze({ env: Object.freeze({}), platform: 'linux' });
 const error = code => Object.assign(new Error(code), { code: 'P0001' });
 const db = {
   from(table) {
@@ -106,9 +109,20 @@ function load(relative) {
   const absolute = path.resolve(relative);
   if (modules.has(absolute)) return modules.get(absolute).exports;
   const module = { exports: {} }; modules.set(absolute, module);
-  const localRequire = name => name === '@/storage/database/supabase-client' ? { getSupabaseAdminClient: () => db } : name === 'server-only' ? {} : name.startsWith('@/') ? load(`src/${name.slice(2)}.ts`) : require(name);
-  const js = ts.transpileModule(fs.readFileSync(absolute, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(js, { module, exports: module.exports, require: localRequire, console: { log: (...items) => logs.push(items.join(' ')), error: (...items) => logs.push(items.join(' ')) }, URL, Date, Object, JSON, Set, Map }, { filename: relative });
+  const localRequire = name => {
+    if (name === '@/storage/database/supabase-client') return { getSupabaseAdminClient: () => db };
+    if (name === 'server-only') return {};
+    if (name === 'node:os') return { homedir: () => '/fixture-home' };
+    if (name.startsWith('@/')) return load(`src/${name.slice(2)}.ts`);
+    if (name.startsWith('.')) {
+      const source = path.resolve(path.dirname(absolute), name);
+      return load(path.extname(source) ? source : `${source}.ts`);
+    }
+    return require(name);
+  };
+  // Match tsconfig's interop for newly imported node:os/node:path defaults.
+  const js = ts.transpileModule(fs.readFileSync(absolute, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  vm.runInNewContext(js, { module, exports: module.exports, require: localRequire, console: { log: (...items) => logs.push(items.join(' ')), error: (...items) => logs.push(items.join(' ')) }, process: fixtureProcess, URL, Date, Object, JSON, Set, Map }, { filename: relative });
   return module.exports;
 }
 const contract = load('src/lib/platform-configuration-contract.ts');
@@ -141,7 +155,11 @@ const targetChanged = clone(a); targetChanged.requestPayload.targetId = 'differe
 cases.push('changed secret endpoint or target cannot reuse request id');
 for (const point of ['candidate', 'pending', 'receipt']) { reset(); failure = point; await fail(() => stage(request()), 'PLATFORM_CONFIGURATION_CREDENTIAL_STAGE_FAILED'); assert.equal(writes, 0); assert.equal(state.releases.length + state.pending.length + state.receipts.length, 0); }
 cases.push('stateful fake stage transaction injection rolls all three writes back');
-reset(); const image = request(); image.table = 'cover_models'; image.id = 'pending-cover-model-random-one'; image.requestPayload.modelType = 'drawing'; image.values = { ...values, api_protocol_config: { protocol: 'images_generations' } }; const imageResult = await stage(image); assert.ok(imageResult.legacyId.startsWith('pending-cover-model-')); const imageAgain = await stage({ ...image, id: 'pending-cover-model-random-two' }); assert.equal(imageAgain.legacyId, imageResult.legacyId); cases.push('image create stable request identity retains pending activation prefix');
+reset();
+// Image upserts require a published base and never bootstrap a full live pool.
+const imageBase = { schema: 'model-pool-config/v1', models: [] };
+state.releases.push({ id: randomUUID(), release_version: 1, snapshot: imageBase, snapshot_sha256: contract.configurationSha256(imageBase), status: 'published', is_current: true });
+const image = request(); image.table = 'cover_models'; image.id = 'pending-cover-model-random-one'; image.requestPayload.modelType = 'drawing'; image.values = { ...values, api_protocol_config: { protocol: 'images_generations' } }; const imageResult = await stage(image); assert.ok(imageResult.legacyId.startsWith('pending-cover-model-')); const imageAgain = await stage({ ...image, id: 'pending-cover-model-random-two' }); assert.equal(imageAgain.legacyId, imageResult.legacyId); cases.push('image create stable request identity retains pending activation prefix');
 for (const masked of ['', '***', 'sk-***', 'configured', 'unchanged']) { reset(); const input = request(); input.values.api_key = masked; input.requestPayload.body.api_key = masked; await stage(input); assert.equal(state.pending.length, 0); assert.equal(Object.keys(state.active).length, 0); }
 cases.push('blank and masked values create no pending secret');
 reset(); const editId = '10000000-0000-4000-8000-000000000003', modelKey = `llm_models:${editId}`; state.active[modelKey] = { modelKey, ref: `secret://platform-model/llm_models/${editId}`, secret: secretA, revision: randomUUID() };
@@ -176,6 +194,7 @@ assert.ok(sql.indexOf("platform-configuration-publish:model-pool") < sql.indexOf
 cases.push('SQL ACL, lock order, private legacy publisher and revision CAS source contracts');
 assert.equal(helper.modelMutationLegacyId(actor, a.requestId, 'llm_models'), helper.modelMutationLegacyId(actor, a.requestId, 'llm_models'));
 const report = { passed: true, cases, scenarioGroups: cases.length, realNetworkRequests: 0, realDatabaseWrites: 0, postgresTransactionAndConcurrencyProof: 'NOT EXECUTED: root must verify the migration against authorized PostgreSQL before apply/deploy' };
-fs.mkdirSync('.codex-evidence/admin-full-acceptance-20261030-9592a6d0/model-pending-credentials', { recursive: true });
-fs.writeFileSync('.codex-evidence/admin-full-acceptance-20261030-9592a6d0/model-pending-credentials/zero-network-report.json', JSON.stringify(report, null, 2));
+const reportDirectory = process.env.PLATFORM_PENDING_CREDENTIALS_EVIDENCE_DIR || '.codex-evidence/admin-full-acceptance-20261030-9592a6d0/model-pending-credentials';
+fs.mkdirSync(reportDirectory, { recursive: true });
+fs.writeFileSync(path.join(reportDirectory, 'zero-network-report.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));

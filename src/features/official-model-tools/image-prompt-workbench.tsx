@@ -150,7 +150,7 @@ export function ImagePromptWorkbench() {
 
           <div className={styles.statusLine}>
             <span>执行模型：AI 文案模型</span>
-            <span>输出目标：图片创作工作台</span>
+            <span>输出目标：复制提示词到保留的创作模块使用</span>
           </div>
           {error ? <p className={styles.error} role="alert">{error}</p> : null}
           <button className={styles.primaryButton} disabled={!theme.trim() || loading} type="submit">
@@ -173,7 +173,7 @@ export function ImagePromptWorkbench() {
             <div className={styles.resultBox}>
               {result?.title ? <h3>{result.title}</h3> : null}
               <pre>{displayPrompt}</pre>
-              <Link className={styles.secondaryButton} href="/tools/image/image-chat">进入图片创作</Link>
+              <small>独立 AI 生图工作台已下线，请复制提示词到封面设计、分镜编排等创作模块使用。</small>
             </div>
           ) : (
             <div className={styles.emptyResult}>

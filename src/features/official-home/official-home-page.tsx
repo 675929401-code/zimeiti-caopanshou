@@ -81,7 +81,7 @@ type HomeToolCard = {
 
 const TOOL_CARDS = [
   { icon: Bot, title: "对话式视频创作", text: "用对话组织文生、图生与参考生视频", href: "/tools/video/video-chat", color: "blue", image: "/short-drama/previews/hero-pipeline-v1.webp", imageAlt: "视频创作流程视觉", label: "多模型视频", available: true },
-  { icon: ImageIcon, title: "图片生成 - 对话式", text: "用多轮对话创作图片并持续调整", href: "/tools/image/image-chat", color: "pink", image: "/short-drama/previews/inspiration-silent-pet-v1.webp", imageAlt: "对话式图片创作视觉", label: "对话式生图", available: true },
+  { icon: ImageIcon, title: "图片生成 - 对话式", text: "独立生图工作台已下线，图片能力保留在创作模块内", color: "pink", image: "/short-drama/previews/inspiration-silent-pet-v1.webp", imageAlt: "对话式图片创作视觉", label: "对话式生图", available: false, statusLabel: "工作台已下线" },
   { icon: Music2, title: "音乐创作", text: "AI 歌曲、纯音乐与歌词创作入口", href: "/tools/audio/minimax-music", color: "orange", image: "/product-assets/youcai-demo-v1/clean-v21/previews/03-shot-02.webp", imageAlt: "AI 音乐创作视觉", label: "AI 音乐", available: true },
   { icon: WandSparkles, title: "即梦AI-智能超清", text: "专项超分与细节增强服务正在准备中", color: "cyan", image: "/short-drama/previews/inspiration-product-film-v1.webp", imageAlt: "图片智能超清视觉", label: "4K/8K 超清", available: false, statusLabel: "暂未开放" },
   { icon: UserRound, title: "视频生成 - 即梦动作模仿2.0", text: "动作与表情驱动服务正在准备中", color: "violet", image: "/short-drama/previews/inspiration-paper-fox-v1.webp", imageAlt: "视频动作模仿视觉", label: "动作模仿", available: false, statusLabel: "暂未开放" },

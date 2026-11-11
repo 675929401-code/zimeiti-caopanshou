@@ -700,9 +700,6 @@ export function OfficialAssetsRoute() {
                 {uploading ? <LoaderCircle className={styles.spin} size={16} /> : <Upload size={16} />}
                 {uploading ? "上传中" : "上传素材"}
               </button>
-              <Link href="/youcai/image-workbench" className={styles.assetsP0GenerateLink}>
-                <Sparkles size={16} />开始创作
-              </Link>
               <button
                 className={styles.assetsP0RefreshAction}
                 type="button"

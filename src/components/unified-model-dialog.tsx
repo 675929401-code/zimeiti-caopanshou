@@ -68,6 +68,7 @@ const DRAWING_PROVIDERS = [
   { value: "zhipu", label: "智谱AI", defaultEndpoint: "https://open.bigmodel.cn/api/paas/" },
   { value: "siliconflow", label: "硅基流动", defaultEndpoint: "https://api.siliconflow.cn/" },
   { value: "openai", label: "OpenAI", defaultEndpoint: "https://api.openai.com/" },
+  { value: "openai_compat", label: "OpenAI 兼容渠道", defaultEndpoint: "" },
   { value: "custom", label: "自定义", defaultEndpoint: "" },
 ];
 
@@ -1606,8 +1607,10 @@ export default function UnifiedModelDialog({
                 saveData.cost_price = 0;
                 saveData.token_rounding_unit = 0;
                 saveData.enable_web_search = false;
-                saveData.image_parsing = "none";
-                saveData.file_parsing = "none";
+                // These capabilities may be configured outside the compact text
+                // form. Editing a name or price must preserve their saved values.
+                saveData.image_parsing = form.image_parsing || "none";
+                saveData.file_parsing = form.file_parsing || "none";
                 saveData.max_context_rounds = 0;
                 saveData.api_protocol_config = {
                   ...form.api_protocol_config,

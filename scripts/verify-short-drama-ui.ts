@@ -127,7 +127,7 @@ const allConfiguredHrefs = [
   ...SHORT_DRAMA_WORKFLOW_STEPS.map((step) => step.href),
   ...SHORT_DRAMA_UTILITY_LINKS.map((link) => link.href),
   SHORT_DRAMA_FEATURED_TEMPLATE.href,
-  ...INSPIRATION_EXAMPLES.flatMap((example) => [example.primaryHref, example.secondaryHref]),
+  ...INSPIRATION_EXAMPLES.flatMap((example) => [example.primaryHref]),
 ];
 
 check(

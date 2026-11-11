@@ -160,6 +160,7 @@ function videoOrderForSurface(orders: VideoModelSurfaceOrders, surface: Workspac
 }
 
 function imageOrderKey(surface: WorkspaceModelSurface): ImageModelOrderSurface | null {
+  if (surface === "publish-center-image") return "publish-center-image";
   if (surface === "image-workbench") return "image-workbench";
   if (surface === "cover-studio") return "cover-studio";
   if (surface === "storyboard-image") return "storyboard-workbench";
@@ -169,6 +170,7 @@ function imageOrderKey(surface: WorkspaceModelSurface): ImageModelOrderSurface |
 }
 
 function videoOrderKey(surface: WorkspaceModelSurface): VideoModelOrderSurface | null {
+  if (surface === "publish-center-video") return "publish-center-video";
   if (surface === "video-page") return "ai-video";
   if (surface === "storyboard-video") return "storyboard";
   if (surface === "free-canvas-video") return "free-canvas";

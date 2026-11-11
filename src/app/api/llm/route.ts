@@ -1,3 +1,4 @@
+import { resolveNativeAiConsumer, admitNativeAiConsumer, buildNativeAiPriceHash, toNativeAiReservationAmount, NativeAiAdmissionError, nativeAiAdmissionFailure } from "@/lib/server/native-ai-admission";
 /**
  * 🔒 核心底层代码 — 锁定保护
  * 
@@ -65,6 +66,8 @@ import { resolveChatReplyLimit } from "@/lib/llm-reply-limit";
 import { readFileSync as readQuotePinFile } from "node:fs";
 import { join as quotePinPath } from "node:path";
 import { composeLlmRequestMessages, resolveLinkedModelRuntime, isStoryboardTextOnlyAgent, shouldAutoEnableRuntimeWebSearch, buildLlmChatRequest, readStandardSnapshot, prepareStandardLlmRequest, assertQuoteExpectation, LlmQuotePreparationError, STANDARD_AGENT_FIELDS, STANDARD_MODEL_FIELDS, STANDARD_SETTING_KEYS } from "@/lib/server/llm-standard-request-preparation";
+import { authorizeCoverAnalysisWorkflow, CoverAnalysisAuthorityError, COVER_ANALYSIS_RUNTIME_FIELDS, type AuthorizedCoverAnalysisWorkflow } from "@/lib/server/cover-analysis-authority";
+import { prepareCoverAnalysisMessages } from "@/lib/server/cover-analysis-message-preparation";
 import { quoteLlmStreamReservation, reserveLlmStreamCredits, releaseLlmStreamCredits, recoverLlmCreditReservations, LlmCreditReservationError, type LlmStreamReservation } from "@/lib/llm-credit-reservation";
 import { getProductionLlmModelById, getProductionLlmModelByName } from "@/lib/production-data-source";
 import { findModelByPublicId, toPublicModelId } from "@/lib/public-model-dto";
@@ -221,6 +224,8 @@ export async function POST(request: Request) {
     const body = await request.json();
     const quoteBound = Object.prototype.hasOwnProperty.call(body, "quote_expectation");
     let preparedQuote: Awaited<ReturnType<typeof prepareStandardLlmRequest>> | undefined;
+    let authorizedCoverWorkflowPrompt: string | undefined;
+    let authorizedCoverWorkflow: AuthorizedCoverAnalysisWorkflow | undefined;
     const { messages, model: requestedModel, modelId: requestedModelId, model_overridden: requestedModelOverridden, persist_user_message: persistUserMessageRequested, truncate_from_message_id: truncateFromMessageIdRequested, truncate_from: legacyTruncateFromRequested, stream = true, userId, agentName: requestAgentName, agent_name: requestAgentName2, agentId, conversationId, proxyUrl, proxy_url, deepThinkingType, deep_thinking_type, deepThinkingOverridden, deep_thinking_overridden, deductDeepThink, deduct_deep_think, maxContextRounds, max_context_rounds, maxContextTokens, max_context_tokens, maxReplyTokens, max_reply_tokens, timeout: reqTimeout, enableWebSearch, enable_web_search, enableWebSearchOverridden, enable_web_search_overridden, temperature: reqTemperature, responseFormat, response_format, internal_workflow, adminSecurityBypass, admin_security_bypass } = body;
     performanceTrace = createOperationPerformanceTrace({
       domain: "chat",
@@ -524,6 +529,19 @@ export async function POST(request: Request) {
         { status: 401, headers: { "Content-Type": "application/json" } }
       );
     }
+    try {
+      const coverAuthority = await authorizeCoverAnalysisWorkflow({ body, verifiedUserId, clientRequestId });
+      if (coverAuthority) {
+        authorizedCoverWorkflow = coverAuthority;
+        authorizedCoverWorkflowPrompt = coverAuthority.prompt;
+        messages.splice(0, messages.length, ...coverAuthority.messages);
+      }
+    } catch (error) {
+      if (!(error instanceof CoverAnalysisAuthorityError)) throw error;
+      return new Response(JSON.stringify({ error: error.message, code: error.code, retryable: false, retry_safe: true }), {
+        status: error.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-LLM-Retry-Safe": "true" },
+      });
+    }
     performanceTrace.enrichIdentity({ userId: verifiedUserId, accountId: verifiedUserId, agentId });
     performanceTrace.checkpoint("auth.permission");
 
@@ -569,6 +587,7 @@ export async function POST(request: Request) {
     // Only server-supported virtual agents may bypass the database lookup.
     const isVirtualAgent = isAllowedVirtualAgentId(agentId);
     const client = getSupabaseClient();
+    const nativeInvocation = await resolveNativeAiConsumer({ db: client, userId: verifiedUserId, consumer: "main_llm", requestKey: clientRequestId, wireRequest: body });
 
     // ── 漫剧工作台可信 Skill 调度 ──
     // 客户端的 system_prompt / selected_skill_hint 都只是界面提示。服务端从
@@ -845,7 +864,7 @@ export async function POST(request: Request) {
     }
     // Source and bound-model authority come from the loaded row, never the request.
     // Preserve the controlled canvas protocol and administrator internal-model authority.
-    if (publicModelId && !isCanvasInternalWorkflow && !canSelectPublicChatModel(agentId, agentRow)) {
+    if (publicModelId && !isCanvasInternalWorkflow && !authorizedCoverWorkflowPrompt && !canSelectPublicChatModel(agentId, agentRow)) {
       return new Response(
         JSON.stringify({ error: "当前智能体使用固定模型，不支持切换对话模型", code: "AGENT_MODEL_SELECTION_UNSUPPORTED", retryable: false }),
         { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
@@ -1317,9 +1336,19 @@ export async function POST(request: Request) {
     const lastUserInput = [...messages]
       .reverse()
       .find((entry: { role?: string }) => entry.role === "user");
-    const semanticWebSearchRequested = shouldAutoEnableRuntimeWebSearch(messageText(lastUserInput?.content), anthropic_thinking_profile, trustedTextOnly);
+    const semanticWebSearchRequested = shouldAutoEnableRuntimeWebSearch(messageText(lastUserInput?.content), anthropic_thinking_profile, trustedTextOnly || Boolean(authorizedCoverWorkflowPrompt));
     if (semanticWebSearchRequested) {
       agentEnableWebSearch = true;
+    }
+    if (authorizedCoverWorkflowPrompt) {
+      // The authorized analysis profile has no search/tools or extra thinking
+      // phase. Ordinary chat and persisted agents retain their own settings.
+      agentEnableWebSearch = false;
+      agentDeepThinkingType = 0;
+      agentResponseFormat = COVER_ANALYSIS_RUNTIME_FIELDS.response_format;
+      agentTemperature = COVER_ANALYSIS_RUNTIME_FIELDS.temperature;
+      agentMaxReplyTokens = Math.min(Number(agentMaxReplyTokens) || COVER_ANALYSIS_RUNTIME_FIELDS.max_reply_tokens, COVER_ANALYSIS_RUNTIME_FIELDS.max_reply_tokens);
+      agentTimeout = COVER_ANALYSIS_RUNTIME_FIELDS.timeout;
     }
 
     let billingModelRow = (model_overridden
@@ -1415,7 +1444,11 @@ export async function POST(request: Request) {
     console.log(`[LLM] Model selection: model_overridden=${!!model_overridden}, requestModel=${model}, agentModel=${agentModel || "none"}, presetModelName=${modelPresetConfig?.model_name || "none"}, useModel=${useModel}, agentId=${agentId || "none"}`);
     
     let composed;
-    try { composed = await composeLlmRequestMessages({
+    try {
+      if (authorizedCoverWorkflow) {
+        composed = prepareCoverAnalysisMessages(authorizedCoverWorkflow, { maxContextTokens: Number(agentMaxContextTokens), maxReplyTokens: Number(agentMaxReplyTokens) });
+        agentMaxReplyTokens = composed.agentMaxReplyTokens;
+      } else composed = await composeLlmRequestMessages({
       agentId, agentName, agentRow, mangaSkillOrchestration, isCanvasInternalWorkflow, verifiedUserId,
       body, globalPrefix, messages, useModel, agentDeepThinkingType, agentDeductDeepThink,
       agentMaxContextRounds, agentMaxContextTokens, agentMaxReplyTokens, agentTimeout,
@@ -1428,6 +1461,9 @@ export async function POST(request: Request) {
       })),
     });
     } catch (error) {
+      if (error instanceof CoverAnalysisAuthorityError) return new Response(JSON.stringify({ error: error.message, code: error.code, retryable: false, retry_safe: true }), {
+        status: error.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-LLM-Retry-Safe": "true" },
+      });
       if (!(error instanceof AgentPromptUnavailableError)) throw error;
       return new Response(JSON.stringify({error:error.message,code:error.code,retryable:true}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
     }
@@ -1524,6 +1560,7 @@ export async function POST(request: Request) {
       );
     }
 
+    if (nativeInvocation && (stream !== true || agentEnableWebSearch || agentDeepThinkingType === 1 || skillInjection)) throw new NativeAiAdmissionError("NATIVE_AI_TEXT_UNBOUNDED", "本次原生任务尚未开放联网、工具、多阶段或非流式调用");
     if (preparedQuote && (agentEnableWebSearch || agentDeepThinkingType === 1 || skillInjection)) throw new LlmQuotePreparationError("LLM_QUOTE_CAPABILITY_DRIFT");
 
     // ── 前置搜索注入：联网搜索开启时，为不支持原生 web_search 的模型注入搜索结果 ──
@@ -1727,6 +1764,8 @@ export async function POST(request: Request) {
       agentDeepThinkingType === 2 ? agentDeductDeepThink : 1);
 
     if (preparedQuote && (!streamQuote || streamQuote.amount !== preparedQuote.reservation.amount)) throw new LlmQuotePreparationError("LLM_QUOTE_RESERVATION_DRIFT");
+    if (nativeInvocation && !streamQuote) throw new NativeAiAdmissionError("NATIVE_AI_TEXT_UNBOUNDED", "本次原生文字调用没有可确认的预留上限");
+
 
     // ── 重新生成 / 改写：按稳定消息 ID 截断旧分支，再决定是否落新用户消息 ──
     // A branch anchor selects request context, never authorizes deletion.
@@ -1851,6 +1890,12 @@ export async function POST(request: Request) {
         }
       }
       // ── 流式模式：委托给 handle-stream 模块 ──
+      if (nativeInvocation) await admitNativeAiConsumer({
+        db: client, userId: verifiedUserId, invocation: nativeInvocation,
+        modelPublicId: selectedModelBillingSnapshot.publicModelId, surface: "native-agent-text",
+        priceHash: await buildNativeAiPriceHash({ consumer: "main_llm", modelPublicId: selectedModelBillingSnapshot.publicModelId, surface: "native-agent-text", pricing: selectedModelBillingSnapshot.priceSnapshot }),
+        reservationAmount: toNativeAiReservationAmount(streamQuote!.amount), unit: "credits",
+      });
       if (streamQuote && streamQuote.amount > 0) {
         streamReservation = await reserveLlmStreamCredits(activeLlmAttempt!, streamQuote.amount,
           { ...selectedModelBillingSnapshot.priceSnapshot, reservation_budget: streamQuote });
@@ -1931,6 +1976,8 @@ export async function POST(request: Request) {
         });
       }
     }
+    const nativeFailure = nativeAiAdmissionFailure(error);
+    if (nativeFailure) return new Response(JSON.stringify(nativeFailure.body), { status: nativeFailure.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     if (error instanceof LlmTruncateContractError) {
       return new Response(JSON.stringify({
         error: error.message,

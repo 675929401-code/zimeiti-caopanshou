@@ -245,9 +245,6 @@ export function CreationCenterPage() {
               对话、图片、视频、故事板与画布集中在一个创作中心；每次生成前都能确认能力、价格和输入内容。
             </p>
             <div className={styles.heroActions}>
-              <Link className={styles.primaryAction} href="/image-workbench">
-                <WandSparkles /> 开始图片创作 <ArrowUpRight />
-              </Link>
               <Link className={styles.secondaryAction} href="/video">
                 <Clapperboard /> 进入视频工作台
               </Link>

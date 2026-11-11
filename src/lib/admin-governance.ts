@@ -116,6 +116,8 @@ export const ADMIN_TAB_PERMISSIONS: Readonly<Record<string, AdminPermissionRequi
   models: "models.view",
   "workspace-models": "models.view",
   "storyboard-presets": "platform.settings.manage",
+  "cover-styles": "prompts.view",
+  publishing: ["integrations.manage", "packages.manage"],
   "aiweb-import": "agents.manage",
   general: "brand.settings.manage",
   theme: "brand.settings.manage",
@@ -287,6 +289,11 @@ export function adminRequirementForRequest(
     permission: "platform.settings.manage", requireStepUp: true,
     operation: write ? "storyboard_preset_manage" : "storyboard_preset_admin_read",
   };
+  // A POST can be a read-only draft preview. The route parses one bounded body
+  // and requires prompts.view for preview or prompts.edit for every mutation.
+  if (pathname === "/api/admin/cover-styles") return write ? null : {
+    permission: "prompts.view", requireStepUp: true, operation: "cover_style_admin_read",
+  };
   if (pathname.startsWith("/api/admin/branding/assets")) return {
     permission: "brand.settings.manage",
     requireStepUp: write,
@@ -403,6 +410,9 @@ export function adminRequirementForRequest(
     return { permission: "models.manage", requireStepUp: true, operation: "llm_request_attempt_reconcile" };
   }
   if (pathname.startsWith("/api/admin/llm-test")) return { permission: "models.manage", requireStepUp: write, operation: "llm_test" };
+  if (pathname === "/api/admin/native-agent-runtime" && ["GET", "POST"].includes(method.toUpperCase())) {
+    return { permission: write ? "models.manage" : "models.view", requireStepUp: write, operation: write ? "native_agent_runtime_save" : "native_agent_runtime_read" };
+  }
   if (/^\/api\/admin\/(chat-models|video-models|cover-models|workspace-model-releases|model-pool-releases|model-health|credential-health|voice-config|voice-list|voice-services|voice-studio|voices)/u.test(pathname)) {
     return { permission: "models.manage", requireStepUp: true, operation: "model_internal_configuration" };
   }

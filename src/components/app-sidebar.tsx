@@ -220,14 +220,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
     link_type: string;
     link_value: string;
   }
-  const MEDIA_HISTORY_SHORTCUT: ShortcutItem = {
-    id: "media-history",
-    title: "作品历史",
-    icon_svg: '<path d="M3 3v5h5"/><path d="M3.05 13a9 9 0 1 0 .5-5.5"/><path d="M12 7v5l3 2"/>',
-    icon_color: "#3b82f6",
-    link_type: "internal",
-    link_value: "/media-history",
-  };
+  // 作品历史已从快捷导航移除；后台遗留的同名快捷项只做过滤，不再渲染入口。
   const TOOLBOX_SHORTCUT: ShortcutItem = {
     id: "toolbox",
     title: "效率工具",
@@ -267,6 +260,14 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
     icon_color: "#f97316",
     link_type: "internal",
     link_value: "/commerce",
+  };
+  const PUBLISH_CENTER_SHORTCUT: ShortcutItem = {
+    id: "publish-center",
+    title: "发布中心",
+    icon_svg: '<path d="m3 11 18-7-7 18-3-8-8-3Z"/><path d="m11 14 10-10"/>',
+    icon_color: "#a855f7",
+    link_type: "internal",
+    link_value: "/publish-center",
   };
   const isFormatterShortcut = (item: ShortcutItem) => {
     const title = repairMojibake(item.title);
@@ -336,6 +337,8 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
     item.id === "cover-studio" || item.link_value === "/cover" || ["封面制作", "封面设计"].includes(repairMojibake(item.title));
   const isCommerceAgentShortcut = (item: ShortcutItem) =>
     item.id === "commerce-agent" || item.link_value === "/commerce" || ["带货agent", "带货创作"].includes(repairMojibake(item.title).replace(/\s+/g, "").toLowerCase());
+  const isPublishCenterShortcut = (item: ShortcutItem) =>
+    item.id === "publish-center" || item.link_value.split("?")[0] === "/publish-center" || repairMojibake(item.title) === "发布中心";
   const isAgentShortcut = (item: ShortcutItem) =>
     item.id === "fb4" ||
     item.link_value === "/agents" ||
@@ -358,12 +361,10 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
       !isLegacyFreeCanvasShortcut(item) &&
       !isMediaHistoryShortcut(item) &&
       !isCoverStudioShortcut(item) &&
+      !isPublishCenterShortcut(item) &&
       !isCommerceAgentShortcut(item)
     );
-    const marketplaceIndex = next.findIndex((item) =>
-      item.link_value === "marketplace" || repairMojibake(item.title) === "应用广场"
-    );
-    next.splice(marketplaceIndex >= 0 ? marketplaceIndex + 1 : 0, 0, MEDIA_HISTORY_SHORTCUT);
+    // 作品历史不再插入快捷导航；应用广场由后台记录或兜底列表保持首位。
     const imageInsertAfter = next.findIndex(isVideoShortcut);
     const creativeInsertIndex = imageInsertAfter >= 0 ? imageInsertAfter + 1 : next.length;
     next.splice(
@@ -372,18 +373,18 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
       YOUCAI_STUDIO_SHORTCUT,
       TOOLBOX_SHORTCUT,
     );
-    next.push(STORYBOARD_WORKBENCH_SHORTCUT, COVER_STUDIO_SHORTCUT, COMMERCE_AGENT_SHORTCUT);
+    next.push(STORYBOARD_WORKBENCH_SHORTCUT, COVER_STUDIO_SHORTCUT, PUBLISH_CENTER_SHORTCUT, COMMERCE_AGENT_SHORTCUT);
     return next;
   };
 
   // 兜底默认图标（API 失败时使用，保持原有体验）
   const FALLBACK_SHORTCUTS: ShortcutItem[] = [
     { id: "fb1", title: "应用广场", icon_svg: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', icon_color: "#68c7b4", link_type: "action", link_value: "marketplace" },
-    MEDIA_HISTORY_SHORTCUT,
     { id: "fb5", title: "视频创作", icon_svg: '<rect x="2" y="3" width="20" height="14" rx="2.5"/><path d="m10 9 5 3-5 3z"/><path d="M2 21h20"/>', icon_color: "#68c7b4", link_type: "internal", link_value: "/video" },
     YOUCAI_STUDIO_SHORTCUT,
     STORYBOARD_WORKBENCH_SHORTCUT,
     COVER_STUDIO_SHORTCUT,
+    PUBLISH_CENTER_SHORTCUT,
     COMMERCE_AGENT_SHORTCUT,
     { id: "fb6", title: "声音制作", icon_svg: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>', icon_color: "#68c7b4", link_type: "internal", link_value: "/voice-studio/workspace" },
   ];
@@ -395,7 +396,7 @@ export function AppSidebar({ isMobile, onNavigate }: { isMobile?: boolean; onNav
       const isMarketplace = item.link_value === "marketplace" || repairMojibake(item.title) === "应用广场";
       const required = isMarketplace
         ? "marketplace"
-        : featurePermissionForPath(item.link_value.startsWith("/") ? item.link_value : "/media-history");
+        : featurePermissionForPath(item.link_value.startsWith("/") ? item.link_value : "/navigation");
       return required ? grantedFeatureKeys.has(required) : grantedFeatureKeys.has("marketplace");
     });
   }, [grantedFeatureKeys, memberPermission.status, shortcuts]);

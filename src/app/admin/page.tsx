@@ -90,6 +90,15 @@ const StoryboardPresetsAdminTab = dynamic(
   () => import("@/components/admin/StoryboardPresetsAdminTab").then((module) => module.StoryboardPresetsAdminTab),
   { ssr: false, loading: () => <div className="p-6 text-sm text-[var(--muted-foreground)]">正在加载角色预设…</div> },
 );
+const CoverStylesAdminTab = dynamic(
+  () => import("@/components/admin/CoverStylesAdminTab").then((module) => module.CoverStylesAdminTab),
+  { ssr: false, loading: () => <div className="p-6 text-sm text-[var(--muted-foreground)]">正在加载封面风格…</div> },
+);
+const NativeAgentRuntimeAdmin = dynamic(() => import("@/components/admin/NativeAgentRuntimeAdmin").then(module => module.NativeAgentRuntimeAdmin), { ssr: false });
+const PublishingAdminTab = dynamic(
+  () => import("@/components/admin/PublishingAdminTab"),
+  { ssr: false, loading: () => <div className="p-6 text-sm text-[var(--muted-foreground)]">正在加载发布管理…</div> },
+);
 const CommerceAgentAdminTab = dynamic(
   () => import("@/components/admin/CommerceAgentAdminTab").then((module) => module.CommerceAgentAdminTab),
   { ssr: false, loading: () => <div className="rounded-2xl border border-[#d0d5dd] bg-white p-8 text-sm text-[#667085]">正在加载授权模块…</div> },
@@ -513,7 +522,7 @@ function normalizePlatformThemeMode(themeValue: string, _themeModeValue: string)
   return modeForTheme(normalizeTheme(themeValue));
 }
 
-type Tab = "super-admin" | "workspace-models" | "storyboard-presets" | "dashboard" | "agents" | "trash" | "users" | "invitations" | "credits" | "offline-payments" | "general" | "theme" | "connection" | "layout" | "models" | "announcements" | "health" | "security" | "guard-logs" | "login-logs" | "sync" | "backup" | "benefit-packages" | "cami" | "aiweb-import" | "payment" | "billing-audit" | "white-label";
+type Tab = "super-admin" | "workspace-models" | "storyboard-presets" | "cover-styles" | "publishing" | "dashboard" | "agents" | "trash" | "users" | "invitations" | "credits" | "offline-payments" | "general" | "theme" | "connection" | "layout" | "models" | "announcements" | "health" | "security" | "guard-logs" | "login-logs" | "sync" | "backup" | "benefit-packages" | "cami" | "aiweb-import" | "payment" | "billing-audit" | "white-label";
 type UserSubTab = "members" | "recharge" | "consumption" | "chats";
 type MemberFilter = "all" | "inactive" | "trial" | "active" | "expired" | "test";
 
@@ -563,7 +572,7 @@ function getUserAllowedNavigationKeys(user: UserInfo): string[] {
 }
 
 /** 有效 Tab 列表 — 与 Tab 类型保持同步，用于运行时校验 sessionStorage 脏数据 */
-const VALID_TABS: Tab[] = ["super-admin", "workspace-models", "storyboard-presets", "dashboard", "agents", "trash", "users", "invitations", "credits", "offline-payments", "general", "theme", "connection", "layout", "models", "announcements", "health", "security", "guard-logs", "login-logs", "sync", "backup", "benefit-packages", "cami", "aiweb-import", "payment", "billing-audit", "white-label"];
+const VALID_TABS: Tab[] = ["super-admin", "workspace-models", "storyboard-presets", "cover-styles", "publishing", "dashboard", "agents", "trash", "users", "invitations", "credits", "offline-payments", "general", "theme", "connection", "layout", "models", "announcements", "health", "security", "guard-logs", "login-logs", "sync", "backup", "benefit-packages", "cami", "aiweb-import", "payment", "billing-audit", "white-label"];
 
 /** 校验 sessionStorage 恢复的 activeTab 是否为合法值 */
 function isValidTab(v: unknown): v is Tab {
@@ -586,6 +595,8 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "models", label: "模型资源池", icon: "M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.5 6.75l.75-.75M19.5 6.75H16.5M19.5 6.75V3.75M6.75 21h10.5a2.25 2.25 0 002.25-2.25V15a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 15v3.75A2.25 2.25 0 006.75 21z" },
   { key: "workspace-models", label: "工作台配置", icon: "M4.5 6.75h15M4.5 12h15m-15 5.25h15M8.25 4.5v4.5m7.5-4.5v4.5m-4.5.75v4.5m-3 0v4.5m7.5-4.5v4.5" },
   { key: "storyboard-presets", label: "角色预设", icon: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m11-3v6m-3-3h6" },
+  { key: "cover-styles", label: "封面制作管理", icon: "M4 5h16v14H4zM7 9h10M7 13h6" },
+  { key: "publishing", label: "发布管理", icon: "m3 11 18-7-7 18-3-8-8-3Zm8 3L21 4" },
   { key: "announcements", label: "公告管理", icon: "M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46" },
   { key: "health", label: "系统运维", icon: "M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" },
   { key: "security", label: "安全中心", icon: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" },
@@ -610,7 +621,8 @@ const ADMIN_PRIMARY_NAVIGATION: Array<{ root: Tab; title: string; tabs: Tab[] }>
   { root: "announcements", title: "公告与通知", tabs: ["announcements"] },
   { root: "agents", title: "智能体管理", tabs: ["agents", "aiweb-import", "trash"] },
   { root: "models", title: "模型与服务", tabs: ["models", "connection"] },
-  { root: "workspace-models", title: "工作台配置", tabs: ["workspace-models", "storyboard-presets"] },
+  { root: "workspace-models", title: "工作台配置", tabs: ["workspace-models", "storyboard-presets", "cover-styles"] },
+  { root: "publishing", title: "发布管理", tabs: ["publishing"] },
   { root: "general", title: "品牌与界面", tabs: ["general", "theme", "layout"] },
   { root: "white-label", title: "域名与贴牌", tabs: ["white-label"] },
   { root: "security", title: "安全审计", tabs: ["security", "guard-logs", "login-logs"] },
@@ -648,6 +660,7 @@ const BASE_WORKSPACE_PROJECT_IDS: readonly WorkspaceProjectId[] = [
   "storyboard",
   "video",
   "film",
+  "publish-center",
 ];
 
 // 旧书签仅做一次 URL 迁移，不再作为后台正式 tab 或前端导航项。
@@ -663,7 +676,7 @@ const LEGACY_WORKSPACE_TAB_PROJECT: Readonly<Record<string, WorkspaceProjectId>>
 };
 
 const WORKSPACE_PROJECT_IDS: WorkspaceProjectId[] = [
-  "image", "cover", "storyboard", "video", "film",
+  "image", "cover", "storyboard", "video", "film", "publish-center",
   "voice", "commerce", "manju", "tools",
 ];
 
@@ -2737,6 +2750,8 @@ export default function AdminPage() {
   }, []);
 
   const [activeTab, setActiveTab] = useState<Tab>("users");
+  const [hasUnsavedCoverConfiguration, setHasUnsavedCoverConfiguration] = useState(false);
+  const [hasUnsavedPublishingConfiguration, setHasUnsavedPublishingConfiguration] = useState(false);
   const [memberContextId, setMemberContextId] = useState("");
   const [workspaceProject, setWorkspaceProject] = useState<WorkspaceProjectId>("storyboard");
   const [importMode, setImportMode] = useState<"aiweb" | "coze">("aiweb");
@@ -2892,6 +2907,8 @@ export default function AdminPage() {
   const openAdminTab = useCallback((tab: Tab, historyMode: "push" | "replace" = "push") => {
     const nextTab = visibleAdminTabSet.has(tab) ? tab : firstAllowedTab;
     if (!nextTab) return;
+    if (nextTab !== "cover-styles" && hasUnsavedCoverConfiguration && !window.confirm("封面制作管理有尚未保存的修改，是否离开？")) return;
+    if (nextTab !== "publishing" && hasUnsavedPublishingConfiguration && !window.confirm("发布管理有尚未保存的修改，是否离开？")) return;
     setActiveTab(nextTab);
     if (nextTab === "users") setUserSubTab("members");
     const url = new URL(window.location.href);
@@ -2905,7 +2922,7 @@ export default function AdminPage() {
     } else {
       window.history.pushState(null, "", nextUrl);
     }
-  }, [firstAllowedTab, visibleAdminTabSet]);
+  }, [firstAllowedTab, hasUnsavedCoverConfiguration, hasUnsavedPublishingConfiguration, visibleAdminTabSet]);
 
   const openMemberModule = useCallback((tab: Extract<Tab, "invitations" | "cami" | "login-logs" | "offline-payments">, userId: string) => {
     if (!visibleAdminTabSet.has(tab)) return;
@@ -2927,6 +2944,8 @@ export default function AdminPage() {
 
   const openWorkspaceProject = useCallback((project: WorkspaceProjectId, historyMode: "push" | "replace" = "push") => {
     if (!visibleAdminTabSet.has("workspace-models")) return;
+    if (hasUnsavedCoverConfiguration && !window.confirm("封面制作管理有尚未保存的修改，是否离开？")) return;
+    if (hasUnsavedPublishingConfiguration && !window.confirm("发布管理有尚未保存的修改，是否离开？")) return;
     const requestedProject = normalizeWorkspaceProject(project);
     const nextProject = requestedProject && visibleWorkspaceProjectSet.has(requestedProject)
       ? requestedProject
@@ -2939,7 +2958,7 @@ export default function AdminPage() {
     const nextUrl = `${url.pathname}${url.search}${url.hash}`;
     if (historyMode === "replace") window.history.replaceState(null, "", nextUrl);
     else window.history.pushState(null, "", nextUrl);
-  }, [visibleAdminTabSet, visibleWorkspaceProjectIds, visibleWorkspaceProjectSet]);
+  }, [hasUnsavedCoverConfiguration, hasUnsavedPublishingConfiguration, visibleAdminTabSet, visibleWorkspaceProjectIds, visibleWorkspaceProjectSet]);
 
   const openWorkspaceAdminTarget = useCallback((target: WorkspaceSpecializedTarget) => {
     const project = LEGACY_WORKSPACE_TAB_PROJECT[target] || "storyboard";
@@ -2960,9 +2979,25 @@ export default function AdminPage() {
       const nextTab = candidateTab && visibleAdminTabSet.has(candidateTab)
         ? candidateTab
         : firstAllowedTab;
+      if (nextTab !== "cover-styles" && hasUnsavedCoverConfiguration && visibleAdminTabSet.has("cover-styles")
+        && !window.confirm("封面制作管理有尚未保存的修改，是否离开？")) {
+        url.searchParams.set("tab", "cover-styles");
+        url.searchParams.delete("project");
+        url.searchParams.delete("member");
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+        return;
+      }
       if (!nextTab) {
         setMemberContextId("");
         url.searchParams.delete("tab");
+        url.searchParams.delete("project");
+        url.searchParams.delete("member");
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+        return;
+      }
+      if (nextTab !== "publishing" && hasUnsavedPublishingConfiguration && visibleAdminTabSet.has("publishing")
+        && !window.confirm("发布管理有尚未保存的修改，是否离开？")) {
+        url.searchParams.set("tab", "publishing");
         url.searchParams.delete("project");
         url.searchParams.delete("member");
         window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
@@ -3000,7 +3035,7 @@ export default function AdminPage() {
     activateTabFromUrl();
     window.addEventListener("popstate", activateTabFromUrl);
     return () => window.removeEventListener("popstate", activateTabFromUrl);
-  }, [adminAccess, firstAllowedTab, visibleAdminTabSet, visibleWorkspaceProjectIds, visibleWorkspaceProjectSet]);
+  }, [adminAccess, firstAllowedTab, hasUnsavedCoverConfiguration, hasUnsavedPublishingConfiguration, visibleAdminTabSet, visibleWorkspaceProjectIds, visibleWorkspaceProjectSet]);
 
   // 操作密码相关状态
   const [opPasswordSet, setOpPasswordSet] = useState(false);
@@ -9290,6 +9325,14 @@ const handleDeleteCategory = async () => {
           />
         )}
 
+        {activeTab === "cover-styles" && token && grantedPermissionKeys.has("prompts.view") && (
+          <CoverStylesAdminTab token={token} canEdit={canEditPrompts} unlocked={canReadPrompts} onDirtyChange={setHasUnsavedCoverConfiguration} />
+        )}
+
+        {activeTab === "publishing" && token && grantedPermissionKeys.has("integrations.manage") && grantedPermissionKeys.has("packages.manage") && (
+          <PublishingAdminTab onDirtyChange={setHasUnsavedPublishingConfiguration} accessEpoch={String(adminAccess?.stepUp.expiresAt || "")} />
+        )}
+
         {activeTab === "storyboard-presets" && token && grantedPermissionKeys.has("platform.settings.manage") && (
           <StoryboardPresetsAdminTab token={token} actorId={String(userInfo?.id || "")}
             accessEpoch={String(adminAccess?.stepUp.expiresAt || "")}
@@ -9298,6 +9341,8 @@ const handleDeleteCategory = async () => {
         )}
 
         {activeTab === "workspace-models" && token && (
+          <div className="space-y-6">
+          {workspaceProject === "publish-center" && <NativeAgentRuntimeAdmin token={token} permissionKeys={adminAccess?.access.permissionKeys || []} stepUpReady={sensitiveUnlocked} onDirtyChange={setHasUnsavedPublishingConfiguration} />}
           <WorkspaceModelsAdminTab
             token={token}
             selectedProject={workspaceProject}
@@ -9346,6 +9391,7 @@ const handleDeleteCategory = async () => {
               return null;
             }}
           />
+          </div>
         )}
 
         {/* 数据同步 */}

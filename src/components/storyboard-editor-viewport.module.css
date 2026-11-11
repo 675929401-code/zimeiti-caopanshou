@@ -1,0 +1,116 @@
+.port {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.canvas {
+  --storyboard-workspace-gutter: 24px;
+  display: flex;
+  flex-direction: column;
+  width: var(--storyboard-editor-width, 1440px);
+  height: var(--storyboard-editor-height, 100%);
+  min-height: 0;
+  zoom: var(--storyboard-editor-scale, 1);
+}
+
+:global(html[data-theme][data-mode] .sbw-root.sbw-editor):has(> :global(.sbw-main:not([hidden])) .port) {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+:global(html[data-theme][data-mode] .sbw-root.sbw-editor > .sbw-main[hidden]):has(.port) { display: none; }
+
+/* These are logical desktop dimensions even when physical media queries match. */
+:global(html[data-theme][data-mode] .sbw-root.sbw-editor) .port .canvas {
+  :global(.sub-page-header-inner) { gap: 16px; }
+  :global(.sub-page-back) {
+    width: auto;
+    min-width: 104px;
+    padding-inline: 13px;
+  }
+  :global(.sub-page-open) { display: flex; }
+  :global(.sub-page-back > span),
+  :global(.sub-page-open > span),
+  :global(.sub-page-heading > span) { display: block; }
+  :global(.sub-page-heading > div) { width: auto; }
+  :global(.sub-page-title) { font-size: 18px; }
+  :global(.sub-page-subtitle) { display: block; }
+  :global(.sub-page-actions) { max-width: min(40%, 520px); }
+  :global(.sbw-body) { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  :global(.sbw-body > .sbw-shell) {
+    display: grid;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: min(100%, max(1920px, 90%));
+    height: auto;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-columns: 312px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  :global(.sbw-body .sbw-model-rail) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 2fr);
+    position: static;
+    height: auto;
+    max-height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  :global(.sbw-model-rail .sbw-model-section) {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  :global(.sbw-model-rail .sbw-model-list) {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  :global(.sbw-model-rail .sbw-model-list > button) {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  :global(.sbw-body .sbw-workspace) {
+    height: auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  :global(.sbw-workspace .sbw-shot-grid) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  :global(.sbw-workspace .sbw-global-toolbar) {
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    grid-template-areas: "image video video" "mode info actions";
+  }
+  :global(.sbw-global-toolbar .sbw-toolbar-settings) { display: contents !important; }
+  :global(.sbw-global-toolbar .sbw-control-group) {
+    flex-wrap: nowrap;
+    width: auto;
+    max-width: none;
+    overflow: visible;
+  }
+  :global(.sbw-global-toolbar .sbw-control-group.is-image) { grid-area: image; }
+  :global(.sbw-global-toolbar .sbw-control-group.is-video) { grid-area: video; }
+  :global(.sbw-global-toolbar .sbw-mode-group) { grid-area: mode; }
+  :global(.sbw-global-toolbar .sbw-parameter-info) { grid-area: info; }
+  :global(.sbw-global-toolbar .sbw-toolbar-actions) {
+    grid-area: actions;
+    flex-wrap: nowrap !important;
+    justify-self: end;
+    justify-content: flex-end;
+    width: auto;
+  }
+  :global(.sbw-shot-card .sbw-flow-prompt) { padding: 0; }
+}

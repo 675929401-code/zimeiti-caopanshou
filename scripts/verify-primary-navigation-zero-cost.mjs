@@ -28,7 +28,6 @@ const primaryEntries = [
   { label: "应用广场", path: "/", readySelector: ".marketplace-category-bar" },
   { label: "效率工具", path: "/tools", readySelector: 'section[aria-label="短视频效率工具工作区"]' },
   { label: "分镜编排", path: "/storyboard-workbench", readySelector: ".sbw-root" },
-  { label: "图像生成", path: "/image-workbench", readyHeading: "AI生图工作台" },
   { label: "视频创作", path: "/video", readyHeading: "AI 视频创作台" },
   { label: "声音制作", path: "/voice-studio/workspace", readySelector: ".vs-page-title" },
   { label: "封面设计", path: "/cover", readySelector: '[aria-label="封面制作"]' },
@@ -101,8 +100,6 @@ function verifySourceContracts() {
     "src/app/video/error.tsx",
     "src/app/storyboard-workbench/loading.tsx",
     "src/app/storyboard-workbench/error.tsx",
-    "src/app/image-workbench/loading.tsx",
-    "src/app/image-workbench/error.tsx",
     "src/app/voice-studio/loading.tsx",
     "src/app/voice-studio/error.tsx",
     "src/app/cover/loading.tsx",
@@ -345,6 +342,8 @@ async function main() {
     for (const entry of auditedShortcutEntries) {
       assert.ok(labels.shortcuts.includes(entry.label), `shortcut navigation is missing ${entry.label}`);
     }
+    assert.equal(labels.primary.includes("图像生成"), false, "图像生成 must stay removed from primary navigation");
+    assert.equal(labels.primary.includes("AI生图工作台"), false, "AI生图工作台 must stay removed from primary navigation");
     assert.equal(labels.shortcuts.includes("AI生图工作台"), false, "AI生图工作台 must stay removed from shortcut navigation");
 
     const initialRequests = requestLog.filter((item) => item.step === "initial");

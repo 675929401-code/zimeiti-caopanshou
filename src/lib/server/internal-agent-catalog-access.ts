@@ -33,6 +33,17 @@ export async function canReadOwnerInternalAgentCatalog(request: Request): Promis
 }
 
 /**
+ * The owner may favorite the same internal agents the owner catalog exposes to them.
+ * This is a favorites-only eligibility check: it grants no navigation, dispatch,
+ * billing or administrative mutation rights.
+ */
+export async function canFavoriteOwnerInternalAgents(request: Request): Promise<boolean> {
+  if (request.method !== 'POST'
+    || new URL(request.url).pathname !== '/api/agent-favorites') return false;
+  return isCurrentInternalAgentOwner(request);
+}
+
+/**
  * Only the owner may dispatch a server-classified self-use or hidden Agent. This check
  * grants no navigation, model or billing exemption; the route continues its
  * existing admission policy. Administrative mutations still require step-up.

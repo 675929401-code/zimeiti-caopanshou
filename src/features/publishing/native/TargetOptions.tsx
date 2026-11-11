@@ -1,0 +1,29 @@
+"use client";
+import { useState } from "react";
+import { Search, X } from "lucide-react";
+import type { PublishingV2Target } from "@/lib/publishing-v2-contract";
+import { searchPublishingActivities, searchPublishingLocations, publishingPluginMessage } from "@/lib/publishing-plugin";
+import type { NativeWxPoi, NativeWxEvent } from "@/lib/publishing-native";
+import { platformLabel } from "./WorkbenchUI";
+import styles from "../PublishingWorkbench.module.css";
+
+export function TargetOptions({ target, disabled, onChange, onError }: { target: PublishingV2Target; disabled: boolean; onChange(target: PublishingV2Target): void; onError(message: string): void }) {
+  const [locationQuery, setLocationQuery] = useState(""); const [activityQuery, setActivityQuery] = useState(""); const [locations, setLocations] = useState<NativeWxPoi[]>([]); const [activities, setActivities] = useState<NativeWxEvent[]>([]); const [searching, setSearching] = useState("");
+  const search = async (kind: "location" | "activity") => { const query = (kind === "location" ? locationQuery : activityQuery).trim(); if (!query || searching) return; setSearching(kind); try { if (kind === "location") setLocations(await searchPublishingLocations(query)); else setActivities(await searchPublishingActivities(query)); } catch (reason) { onError(publishingPluginMessage(reason)); } finally { setSearching(""); } };
+  return <details className={styles.parameters}><summary>{platformLabel(target.platform)}原生发布设置</summary>
+    {target.platform === "xhs" && <label className={styles.field}><span>内容声明</span><select disabled={disabled} value={target.options.declaration || ""} onChange={event => onChange({ ...target, options: event.target.value ? { declaration: Number(event.target.value) as 1 | 2 | 3 } : {} })}><option value="">不设置声明</option><option value="1">虚拟演绎，仅供娱乐</option><option value="2">笔记含 AI 合成内容</option><option value="3">内容包含营销广告</option></select><small>使用官方插件的用户声明字段，按本次作品真实情况选择。</small></label>}
+    {target.platform === "wxSph" && <>
+      <label className={styles.confirmation}><input type="checkbox" disabled={disabled} checked={target.options.postFlag === 1} onChange={event => onChange({ ...target, options: { ...target.options, postFlag: event.target.checked ? 1 : 0 } })} />声明原创内容</label>
+      <label className={styles.field}><span>扩展链接</span><input type="url" placeholder="https://" value={target.options.extLink || ""} disabled={disabled} onChange={event => { const options = { ...target.options }; if (event.target.value) options.extLink = event.target.value; else delete options.extLink; onChange({ ...target, options }); }} /></label>
+      <label className={styles.field}><span>发布位置 <small>由当前浏览器插件实际搜索</small></span><div className={styles.inline}><input placeholder="输入地点关键词" value={locationQuery} onChange={event => setLocationQuery(event.target.value)} disabled={disabled} /><button type="button" disabled={disabled || !!searching || !locationQuery.trim()} onClick={() => void search("location")}><Search size={13} />{searching === "location" ? "搜索中" : "搜索"}</button></div></label>
+      {target.options.poiInfo && <div className={styles.inline}><span className={styles.badge}>{target.options.poiInfo.poiName || target.options.poiInfo.poiId}</span><button type="button" className={styles.iconButton} aria-label="移除发布位置" disabled={disabled} onClick={() => { const options = { ...target.options }; delete options.poiInfo; onChange({ ...target, options }); }}><X size={12} /></button></div>}
+      {!!locations.length && <div className={styles.chipList}>{locations.map((location, index) => <button type="button" key={`${location.poiId}-${index}`} className={styles.smallButton} disabled={disabled} onClick={() => { onChange({ ...target, options: { ...target.options, poiInfo: location } }); setLocations([]); }}>{location.poiName || location.poiId}{location.poiCity ? ` · ${location.poiCity}` : ""}</button>)}</div>}
+      <label className={styles.field}><span>参与活动</span><div className={styles.inline}><input placeholder="输入活动关键词" value={activityQuery} onChange={event => setActivityQuery(event.target.value)} disabled={disabled} /><button type="button" disabled={disabled || !!searching || !activityQuery.trim()} onClick={() => void search("activity")}><Search size={13} />{searching === "activity" ? "搜索中" : "搜索"}</button></div></label>
+      {target.options.event && <div className={styles.inline}><span className={styles.badge}>{target.options.event.eventName}</span><button type="button" className={styles.iconButton} aria-label="移除参与活动" disabled={disabled} onClick={() => { const options = { ...target.options }; delete options.event; onChange({ ...target, options }); }}><X size={12} /></button></div>}
+      {!!activities.length && <div className={styles.chipList}>{activities.map(activity => <button type="button" className={styles.smallButton} key={activity.eventTopicId} disabled={disabled} onClick={() => { onChange({ ...target, options: { ...target.options, event: activity } }); setActivities([]); }}>{activity.eventName}</button>)}</div>}
+      <label className={styles.field}><span>交由平台定时 <small>可选，需本次浏览器先提交</small></span><input type="datetime-local" disabled={disabled} value={target.scheduledAt ? localDatetime(target.scheduledAt) : ""} onChange={event => onChange({ ...target, scheduledAt: event.target.value ? new Date(event.target.value).toISOString() : null })} /><small>这是插件的平台排期参数。本站日历计划仍需你打开浏览器执行。</small></label>
+    </>}
+    {target.platform === "douyin" && <p className={styles.warning}>官方 API 发布尚未启用，需管理员接入及账号验证；当前不会通过插件直发。</p>}
+  </details>;
+}
+export function localDatetime(value: string) { const date = new Date(value); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`; }

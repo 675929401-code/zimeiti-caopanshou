@@ -49,11 +49,11 @@ function officialToolSlug(tool: ToolDirectoryCard): string {
 
 function ToolCard({ tool }: { tool: ToolDirectoryCard }) {
   const slug = officialToolSlug(tool);
-  const workspaceHref = tool.availability === "coming"
-    ? undefined
-    : tool.officialPath || tool.href;
-  const modelBindingPending = tool.availability !== "coming" && MODEL_BINDING_PENDING_SLUGS.has(slug);
-  const localExtension = tool.availability !== "coming" && LOCAL_EXTENSION_SLUGS.has(slug);
+  const workspaceHref = tool.availability === "available"
+    ? (tool.officialPath || tool.href)
+    : undefined;
+  const modelBindingPending = tool.availability === "available" && MODEL_BINDING_PENDING_SLUGS.has(slug);
+  const localExtension = tool.availability === "available" && LOCAL_EXTENSION_SLUGS.has(slug);
   const displayedPrice = modelBindingPending
     ? "工作台内确认"
     : slug === "aliyun-erase-subtitles" || slug === "video-edit"
@@ -72,6 +72,8 @@ function ToolCard({ tool }: { tool: ToolDirectoryCard }) {
           <h3>{tool.title}</h3>
           {tool.availability === "coming" ? (
             <span className={styles.comingState}><Clock3 size={12} aria-hidden="true" />即将上线</span>
+          ) : tool.availability === "retired" ? (
+            <span className={styles.comingState}><Clock3 size={12} aria-hidden="true" />已下线</span>
           ) : modelBindingPending ? (
             <span className={styles.contractState}>通用能力</span>
           ) : localExtension ? (

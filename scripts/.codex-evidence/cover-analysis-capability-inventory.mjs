@@ -1,0 +1,4 @@
+import assert from 'node:assert/strict';import fs from 'node:fs/promises';
+export async function main(){const base=process.env.COZE_SUPABASE_URL;assert.equal(new URL(base).origin,'http://127.0.0.1:54321');const service=process.env.COZE_SUPABASE_SERVICE_ROLE_KEY;
+ const u=new URL('/rest/v1/llm_models',base);u.searchParams.set('select','id,name,model_name,is_active,is_hidden,user_access,image_parsing,category,sort_order');u.searchParams.set('order','sort_order.asc');const r=await fetch(u,{headers:{apikey:service,Authorization:'Bearer '+service}});assert.ok(r.ok);const rows=await r.json();
+ const out={at:new Date().toISOString(),readOnly:true,models:rows};await fs.writeFile('.codex-evidence/cover-paid-20261106-3fd15654/analysis-capability-inventory.json',JSON.stringify(out,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(out));}

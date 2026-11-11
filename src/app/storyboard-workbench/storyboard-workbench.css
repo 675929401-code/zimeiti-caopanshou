@@ -6703,3 +6703,41 @@ html[data-theme][data-mode] .sbw-root.sbw-editor .sbw-main :is(
     cursor: not-allowed;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * DSH-UI-FIX 20261106：分镜工作台排版对齐
+ * 1) 分段卡片标题不再用负外边距溢出卡片，标题与正文左边距一致；
+ * 2) 项目标题行（“分段分镜”+项目名）与分段卡片网格左边界对齐；
+ * 3) 项目名输入框使用主题化 hover/focus 态，替代浏览器默认的高对比实心描边。
+ * ------------------------------------------------------------------------- */
+.sbw-root .sbw-workspace > .sbw-project-heading {
+  padding-inline: 14px;
+}
+
+.sbw-root .sbw-shot-card > .sbw-card-header {
+  margin: 0;
+  padding: 10px 14px;
+}
+
+.sbw-root .sbw-project-heading input {
+  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.sbw-root .sbw-reference-step {
+  padding-inline: 14px;
+}
+
+.sbw-root .sbw-project-heading input:hover:not(:focus) {
+  border-color: var(--sbw-stroke-soft, var(--border));
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+}
+
+.sbw-root .sbw-project-heading input:focus,
+.sbw-root .sbw-project-heading input:focus-visible {
+  outline: none !important;
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--sbw-stroke-soft, var(--border)));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+  background: var(--card);
+}

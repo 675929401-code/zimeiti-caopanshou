@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { renderCoverComposition } from "@/lib/cover-composition-server";
-import type { CoverCompositionPlan } from "@/lib/cover-composition";
+import { coverCompositionTextReceipt, type CoverCompositionPlan } from "@/lib/cover-composition";
 import type { ImageExactlyOnceRecord } from "@/lib/image-exactly-once";
 import { decodeInlineImage, isImageEphemeralReceipt } from "@/lib/image-ephemeral-delivery";
 import { readGeneratedImageMaterial } from "@/lib/server/generated-image-reference";
@@ -47,6 +47,7 @@ export async function composeGeneratedCover(input: {
   if (!rendered.bytes.length || rendered.bytes.length > 30 * 1024 * 1024) throw new Error("COVER_COMPOSITION_SIZE_INVALID");
   return {
     ...receipt, mediaAvailable: true, contentType: "image/png", width: rendered.width, height: rendered.height,
+    ...coverCompositionTextReceipt(input.plan),
     byteLength: rendered.bytes.length, sha256: createHash("sha256").update(rendered.bytes).digest("hex"),
     images: [{ url: `data:image/png;base64,${rendered.bytes.toString("base64")}`, recordId: input.record.recordId,
       deliveryMode: "inline_ephemeral", ephemeral: true, width: rendered.width, height: rendered.height, dimensionsVerified: true }],

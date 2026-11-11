@@ -1,18 +1,31 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createRequire } from "node:module";
 
 const root = process.cwd();
 const read = (path: string) => readFile(resolve(root, path), "utf8");
+const projectRequire = createRequire(resolve(root, "package.json"));
+const postcss = projectRequire(projectRequire.resolve("postcss", { paths: [projectRequire.resolve("next")] }));
+
+type CssNode = { type: string; parent?: CssNode; selectors?: string[]; important?: boolean };
+const toolboxScope = /^\.page\[data-page="tools"\] \.workspace(?:\s|$)/u;
+const publicScope = /^:global\(html\[data-theme\]\[data-mode\] body:has\(\[data-workbench-actions-scope="main"\]\)\) \.page(?:\[data-page="tools(?:-utility)?"\]|:is\(\[data-page="tools"\], \[data-page="tools-utility"\]\))$/u;
 
 function assertImportantScope(css: string) {
-  for (const rule of css.replace(/\/\*[\s\S]*?\*\//gu, "").matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
-    if (!/!important/iu.test(rule[2])) continue;
-    for (const selector of rule[1].split(",")) {
-      assert.match(selector.trim(), /^(?::global\(html\[data-theme\]\[data-mode\]\) )?\.page\[data-page="tools"\] \.workspace\s+:global\(\.toolbox-/u,
-        `important override must require tools page and workspace, protecting adjacent pages: ${selector.trim()}`);
+  postcss.parse(css).walkDecls((decl: CssNode) => {
+    if (!decl.important) return;
+    let outer: CssNode | undefined;
+    for (let parent = decl.parent; parent; parent = parent.parent) {
+      if (parent.type === "rule") outer = parent;
     }
-  }
+    assert.ok(outer?.selectors?.length, "important declaration must be inside a scoped rule");
+    for (const selector of outer.selectors) {
+      const local = selector.replace(/^:global\(html\[data-theme\]\[data-mode\]\) /u, "");
+      assert.ok(toolboxScope.test(local) || publicScope.test(selector),
+        `important override escapes the public tools workspace: ${selector}`);
+    }
+  });
 }
 
 type Fixture = {
@@ -132,7 +145,11 @@ async function verifySourceContracts() {
   assert.match(extract, /setUrls\(e\.target\.value\);\s*setResults\(\[\]\);/, "editing the source link must invalidate stale video results");
   assert.match(extract, /重新提取/);
 
-  assert.match(styles, /grid-template-columns:\s*312px minmax\(0, 1fr\)/, "toolbox rail must match the 312px production rail");
+  assert.match(styles, /--tools-directory-width:\s*clamp\(184px, 15vw, 240px\)/, "public desktop toolbox uses the compact navigation rail");
+  assert.match(styles, /--tools-editor-width:\s*1040px/, "the reading column remains bounded on wide displays");
+  assert.doesNotMatch(styles, /grid-template-columns:\s*minmax\(0, 6fr\) minmax\(0, 5fr\)/, "tools keep input above output on wide desktops");
+  assert.match(page, /<ToolsPageHeader title="效率工具"/, "efficiency tools expose the shared secondary header");
+  assert.doesNotMatch(page, /<BrandFooter\b/, "the contact action belongs in the header only");
   assert.match(styles, /\.workspace :global\(\.toolbox-two-column\)[\s\S]*?display:\s*grid[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/, "all four tools must use one aligned desktop column");
   assert.match(styles, /\.workspace :global\(\.toolbox-two-column\)[\s\S]*?grid-template-rows:\s*max-content max-content/, "operation cards must sit above compact result cards without shrinking into overlap");
   assert.match(styles, /\.workspace :global\(\.toolbox-balanced-layout\)[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/, "formatter and segmenter must share the stacked workbench contract");
@@ -157,6 +174,7 @@ async function verifySourceContracts() {
   assertImportantScope(styles);
   assert.throws(() => assertImportantScope(".adjacent-page textarea { color:red !important; }"));
   assert.throws(() => assertImportantScope('.workspace :global(.toolbox-field) { color:red !important; }'));
+  assert.throws(() => assertImportantScope('.page[data-page="tools"] .workspace, .adjacent-page { .field { color:red !important; } }'));
 }
 
 async function verifyRoutes() {
@@ -182,7 +200,7 @@ async function main() {
   if (process.env.TOOLBOX_SKIP_RUNTIME !== "1") {
     await verifyRoutes();
   }
-  console.log(`[toolbox-ui] 12 fixture contracts, 312px desktop rail, persistent mounted panels, clipboard actions, and stacked operation/result workflows passed; runtime routes ${process.env.TOOLBOX_SKIP_RUNTIME === "1" ? "were intentionally not probed" : "also returned HTTP 200"}.`);
+  console.log(`[toolbox-ui] 12 fixture contracts, public header and rail, persistent mounted panels, clipboard actions, and operation/result workflows passed; runtime routes ${process.env.TOOLBOX_SKIP_RUNTIME === "1" ? "were intentionally not probed" : "also returned HTTP 200"}.`);
 }
 
 main().catch((error) => {

@@ -39,7 +39,6 @@ const customerFiles = [
   "src/app/youcai/inspiration/error.tsx",
   "src/components/creation-center/creation-center-page.tsx",
   "src/components/storyboard-workbench.tsx",
-  "src/components/image-workbench.tsx",
   "src/components/cover-studio.tsx",
   "src/components/vs/Footer.tsx",
   "src/components/vs/LinkCloneForm.tsx",

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { assertToolboxPanelAlignment } from './lib/toolbox-panel-alignment.mjs';
 
 const origin = String(process.env.LOCAL_NAV_ORIGIN || process.env.LOCAL_APP_ORIGIN || 'http://127.0.0.1:5000').replace(/\/$/u, '');
 const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || '').trim();
@@ -229,7 +230,8 @@ async function visualAudit(browser, theme, viewport, tab) {
   }, tab);
   const shot = `tools-${tab}-${theme.id}-${viewport.width}.png`;
   await page.screenshot({ path: path.join(outputDir, shot), fullPage: false });
-  report.visual.push({ theme, viewport, tab, metrics, screenshot: shot });
+  const panelEdges = await assertToolboxPanelAlignment(page);
+  report.visual.push({ theme, viewport, tab, metrics, panelEdges, screenshot: shot });
   assert.ok(metrics.primary && metrics.result, `${tab} panes missing`);
   assert.ok(Math.abs(metrics.primary.width - metrics.result.width) <= 2, `${tab} operation and result cards do not share one width: ${JSON.stringify(metrics)}`);
   assert.ok(metrics.result.top >= metrics.primary.bottom + 8, `${tab} result must start below the operation card: ${JSON.stringify(metrics)}`);
@@ -424,6 +426,7 @@ async function verifyVideoWorkbench(browser, theme, viewport) {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
   assert.equal(requests.length, 1, 'video primary action must submit exactly one request');
+  await assertToolboxPanelAlignment(page);
   const metrics = await panel.evaluate(root => {
     const rect = selector => root.querySelector(selector)?.getBoundingClientRect();
     const primary = rect('.toolbox-primary-pane');

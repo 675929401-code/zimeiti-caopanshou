@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { WorkspaceSurface } from "@/lib/platform-configuration-contract";
+import { WORKSPACE_SURFACE_KIND } from "@/lib/workspace-surface-contract";
 
 type ReleaseKind = "model-pool" | "workspace-models";
 type Row = Record<string, unknown>;
@@ -94,19 +94,17 @@ function credentialChangeRows(preview: Pick<Preview, "kind" | "credentialChanges
 
 // Basic browser checks only; the server's canonical contract remains authoritative.
 function readWorkspaceImport(value: unknown): Row {
-  const surfaces: Record<WorkspaceSurface, "image" | "video"> = {
-    "image-workbench": "image", "cover-studio": "image", "storyboard-image": "image", "free-canvas-image": "image", "film-studio-image": "image",
-    "video-page": "video", "storyboard-video": "video", "free-canvas-video": "video", "film-studio-video": "video", "commerce-video": "video",
-  };
+  const surfaces = WORKSPACE_SURFACE_KIND;
   const object = (entry: unknown): entry is Row => Boolean(entry && typeof entry === "object" && !Array.isArray(entry));
   if (!object(value) || value.schema !== "workspace-model-config/v1") throw new Error("请选择工作台配置快照 JSON。");
   if (Object.keys(value).some((key) => !["schema", "modelPoolRelease", "surfaces"].includes(key))) throw new Error("快照包含不支持的字段。");
   const pool = value.modelPoolRelease;
   if (!object(pool) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(pool.releaseId || "")) || !/^[0-9a-f]{64}$/i.test(String(pool.snapshotSha256 || ""))) throw new Error("模型资源池版本身份不完整。");
   if (Object.keys(pool).some((key) => !["releaseId", "snapshotSha256"].includes(key))) throw new Error("资源池身份包含不支持的字段。");
-  if (!object(value.surfaces) || Object.keys(value.surfaces).length !== Object.keys(surfaces).length || Object.keys(value.surfaces).some((key) => !(key in surfaces))) throw new Error("快照必须包含完整的已知页面分配。");
+  if (!object(value.surfaces) || Object.keys(surfaces).filter(key => !key.startsWith("publish-center-")).some(key => !(key in (value.surfaces as Row))) || Object.keys(value.surfaces).some((key) => !(key in surfaces))) throw new Error("快照必须包含完整的已知页面分配。");
   for (const [surface, kind] of Object.entries(surfaces)) {
     const entry = value.surfaces[surface];
+    if (surface.startsWith("publish-center-") && entry === undefined) continue;
     if (!object(entry) || entry.kind !== kind || Object.keys(entry).some((key) => !["kind", "assignedModelIds", "orderedModelIds"].includes(key)) || !Array.isArray(entry.assignedModelIds) || !Array.isArray(entry.orderedModelIds) || [...entry.assignedModelIds, ...entry.orderedModelIds].some((id) => typeof id !== "string" || !id.trim())) throw new Error("页面分配格式不完整。");
     const assigned = entry.assignedModelIds;
     const ordered = entry.orderedModelIds;

@@ -5,20 +5,8 @@ export type PlatformConfigurationKind = typeof PLATFORM_CONFIGURATION_KINDS[numb
 export type ModelPoolKind = "agent" | "image" | "video";
 export type ModelCatalogState = "enabled" | "retired";
 
-export const WORKSPACE_SURFACE_KIND = {
-  "image-workbench": "image",
-  "cover-studio": "image",
-  "storyboard-image": "image",
-  "free-canvas-image": "image",
-  "film-studio-image": "image",
-  "video-page": "video",
-  "storyboard-video": "video",
-  "free-canvas-video": "video",
-  "film-studio-video": "video",
-  "commerce-video": "video",
-} as const;
-
-export type WorkspaceSurface = keyof typeof WORKSPACE_SURFACE_KIND;
+import { WORKSPACE_SURFACE_KIND, type WorkspaceSurface } from "@/lib/workspace-surface-contract";
+export { WORKSPACE_SURFACE_KIND, type WorkspaceSurface } from "@/lib/workspace-surface-contract";
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
 
@@ -55,7 +43,8 @@ export type WorkspaceModelSnapshot = {
     releaseId: string;
     snapshotSha256: string;
   };
-  surfaces: Record<WorkspaceSurface, WorkspaceSurfaceConfiguration>;
+  surfaces: Record<Exclude<WorkspaceSurface, "publish-center-image" | "publish-center-video">, WorkspaceSurfaceConfiguration>
+    & Partial<Record<"publish-center-image" | "publish-center-video", WorkspaceSurfaceConfiguration>>;
 };
 
 export type PlatformConfigurationSnapshot = ModelPoolSnapshot | WorkspaceModelSnapshot;
@@ -284,6 +273,7 @@ export function normalizeWorkspaceModelSnapshot(value: unknown): WorkspaceModelS
   assertOnlyKeys(rawSurfaces, Object.keys(WORKSPACE_SURFACE_KIND), "surfaces");
   const surfaces = {} as WorkspaceModelSnapshot["surfaces"];
   for (const surface of Object.keys(WORKSPACE_SURFACE_KIND) as WorkspaceSurface[]) {
+    if ((surface === "publish-center-image" || surface === "publish-center-video") && rawSurfaces[surface] === undefined) continue;
     const source = record(rawSurfaces[surface], `surfaces.${surface}`);
     assertOnlyKeys(source, ["kind", "assignedModelIds", "orderedModelIds"], `surfaces.${surface}`);
     const kind = WORKSPACE_SURFACE_KIND[surface];
@@ -357,7 +347,7 @@ export function applyWorkspaceModelCompatibilityMutation(
   current: WorkspaceModelSnapshot,
   mutation: WorkspaceModelCompatibilityMutation,
 ): WorkspaceModelSnapshot {
-  const surface = current.surfaces[mutation.surface];
+  const surface = current.surfaces[mutation.surface] || ((mutation.surface === "publish-center-image" || mutation.surface === "publish-center-video") ? { kind: WORKSPACE_SURFACE_KIND[mutation.surface], assignedModelIds: [], orderedModelIds: [] } : undefined);
   if (!surface) throw new Error(`未知工作台 ${mutation.surface}`);
   if (mutation.action === "assign") {
     const id = modelId(mutation.modelId, "mutation.modelId");
@@ -410,7 +400,8 @@ export function validateWorkspaceModelSnapshot(snapshot: WorkspaceModelSnapshot,
   const index = new Map(modelPool.models.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
   for (const surface of Object.keys(WORKSPACE_SURFACE_KIND) as WorkspaceSurface[]) {
     const configuration = snapshot.surfaces[surface];
-    if (configuration.assignedModelIds.length === 0) issues.push(`${surface} 没有分配模型`);
+    if (!configuration) continue;
+    if (configuration.assignedModelIds.length === 0 && surface !== "publish-center-image" && surface !== "publish-center-video") issues.push(`${surface} 没有分配模型`);
     for (const id of configuration.assignedModelIds) {
       const model = index.get(`${configuration.kind}:${id}`);
       if (!model) issues.push(`${surface} 引用了不存在或类型不匹配的模型 ${id}`);
@@ -459,7 +450,7 @@ export function diffWorkspaceModelSnapshots(before: WorkspaceModelSnapshot | nul
   };
   const surfaces = (Object.keys(WORKSPACE_SURFACE_KIND) as WorkspaceSurface[]).map((surface) => {
     const previous = before?.surfaces[surface];
-    const next = after.surfaces[surface];
+    const next = after.surfaces[surface] || { kind: WORKSPACE_SURFACE_KIND[surface], assignedModelIds: [], orderedModelIds: [] };
     const assignments = collectionDiff(previous?.assignedModelIds || [], next.assignedModelIds);
     const beforeOrder = previous?.orderedModelIds || [];
     const afterOrder = next.orderedModelIds;

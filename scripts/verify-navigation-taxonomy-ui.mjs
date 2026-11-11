@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -7,7 +7,7 @@ const origin = String(process.env.LOCAL_NAV_ORIGIN || 'http://127.0.0.1:5000').r
 const token = String(process.env.LOCAL_NAV_ADMIN_TOKEN || '').trim();
 const outputDir = path.resolve('.codex-evidence/navigation-taxonomy-20260923');
 const expectedCategories = ['全部助手', '我的收藏', '商业IP', '影像编导', '文案创作', '运营增长', '内部工具'];
-const expectedPrimaryNavigation = ['应用广场', '效率工具', '分镜编排', '图像生成', '视频创作', '声音制作', '封面设计', '漫剧创作', '带货创作'];
+const expectedPrimaryNavigation = ['应用广场', '效率工具', '分镜编排', '视频创作', '声音制作', '封面设计', '发布中心', '漫剧创作', '带货创作'];
 const paidPattern = /\/api\/(?:chat|llm|image\/generate|video\/generate)(?:\?|$)/u;
 
 await fs.mkdir(outputDir, { recursive: true });
@@ -21,10 +21,11 @@ const [sidebarSource, toolboxSource, marketplaceSource, catalogSource, navigatio
   fs.readFile(path.resolve('src/app/ui-shell-fixes.css'), 'utf8'),
 ]);
 
-assert.match(sidebarSource, /const MEDIA_HISTORY_SHORTCUT[\s\S]*?title: "作品历史"[\s\S]*?link_value: "\/media-history"/u);
+assert.doesNotMatch(sidebarSource, /const MEDIA_HISTORY_SHORTCUT/u, '快捷导航不得再定义作品历史入口');
+assert.match(sidebarSource, /const isMediaHistoryShortcut[\s\S]*?"作品历史"/u, '后台遗留作品历史快捷项必须继续被过滤');
 assert.doesNotMatch(sidebarSource, /\u4f5c\u54c1\u76f4\u8fbe/u);
 assert.match(sidebarSource, /const isExtractShortcut[\s\S]*?item\.link_value === "\/tools\?tab=text"[\s\S]*?item\.link_value === "\/extract"[\s\S]*?title === "文案提取"/u);
-assert.match(sidebarSource, /next\.splice\(marketplaceIndex >= 0 \? marketplaceIndex \+ 1 : 0, 0, MEDIA_HISTORY_SHORTCUT\)/u);
+assert.doesNotMatch(sidebarSource, /next\.splice\([^\n]*MEDIA_HISTORY_SHORTCUT/u, '快捷导航不得重新插入作品历史入口');
 assert.match(sidebarSource, /text-\[clamp\(13px,calc\(13px\*var\(--sidebar-scale,1\)\),15px\)\]/u);
 assert.match(toolboxSource, /text-\[clamp\(13px,calc\(13px\*var\(--sidebar-scale,1\)\),15px\)\]/u);
 assert.match(marketplaceSource, /label: "全部助手"/u);
@@ -51,7 +52,7 @@ const report = {
   expectedPrimaryNavigation,
   source: {
     stableKeysPreserved: true,
-    mediaHistoryShortcutInserted: true,
+    mediaHistoryShortcutRemoved: true,
     legacyExtractShortcutsFiltered: true,
     minimumShortcutFontPx: 13,
     lucideCategoryIcons: true,
@@ -125,24 +126,21 @@ if (!sourceOnly) {
       assert.deepEqual(labels.slice(0, expectedCategories.length), expectedCategories);
       assert.equal(await tabs.locator('svg').count() >= expectedCategories.length, true, '内置分类应使用统一线性图标');
 
-      const mediaHistory = page.locator('button[title="作品历史"]');
-      await mediaHistory.waitFor({ state: 'visible', timeout: 15_000 });
-      const fontSize = Number.parseFloat(await mediaHistory.locator('span').last().evaluate(node => getComputedStyle(node).fontSize));
-      assert.ok(fontSize >= 13, `作品历史字号过小：${fontSize}px`);
-      const shortcutGrid = mediaHistory.locator('xpath=..');
-      const shortcutLabels = (await shortcutGrid.locator('button').allTextContents()).map(value => value.trim());
-      assert.equal(shortcutLabels.includes('作品历史'), true);
+      const shortcutGrid = page.locator('.sidebar-shortcut-grid');
+      await shortcutGrid.waitFor({ state: 'visible', timeout: 15_000 });
+      const shortcutButtons = shortcutGrid.locator('button.sidebar-shortcut-card');
+      const shortcutLabels = (await shortcutButtons.allTextContents()).map(value => value.replace(/\s+/gu, '').trim());
+      assert.ok(shortcutLabels.length >= 8, `快捷导航入口过少：${shortcutLabels.length}`);
+      assert.equal(shortcutLabels.includes('作品历史'), false, '作品历史已从快捷导航移除');
+      assert.equal(shortcutLabels.includes('应用广场'), true, '应用广场必须保留在快捷导航');
       assert.equal(shortcutLabels.includes('文案提取'), false, '文案提取已归入效率工具，不应再占用快捷位');
       assert.equal(new Set(shortcutLabels).size, shortcutLabels.length, '快捷导航不应出现重复入口');
+      const fontSize = Number.parseFloat(await shortcutButtons.first().locator('span').last().evaluate(node => getComputedStyle(node).fontSize));
+      assert.ok(fontSize >= 13, `快捷导航字号过小：${fontSize}px`);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert.ok(overflow <= 1, `${viewport.name} 首页横向溢出 ${overflow}px`);
       await page.screenshot({ path: path.join(outputDir, `${viewport.name}-home.png`), fullPage: false });
-      report.viewports.push({ ...viewport, categoryLabels: labels.slice(0, expectedCategories.length), shortcutLabels, mediaHistoryFontSize: fontSize, overflow });
-
-      await mediaHistory.click();
-      await page.waitForURL(url => url.pathname === '/media-history', { timeout: 20_000 });
-      const mediaHistoryUrl = new URL(page.url());
-      assert.equal(mediaHistoryUrl.pathname, '/media-history');
+      report.viewports.push({ ...viewport, categoryLabels: labels.slice(0, expectedCategories.length), shortcutLabels, shortcutFontSize: fontSize, overflow });
       await context.close();
     }
 
@@ -160,6 +158,7 @@ if (!sourceOnly) {
       await page.waitForTimeout(800);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert.ok(overflow <= 1, `${pathname} 横向溢出 ${overflow}px`);
+      await page.screenshot({ path: path.join(outputDir, `adjacent-${pathname.replace(/[^a-z0-9]+/giu, "_")}.png`), fullPage: false });
       report.adjacentPages.push({ pathname, overflow });
     }
     await context.close();

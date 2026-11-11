@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
     const fileName = `${actor.userId}-${digest.slice(0, 16)}.webp`;
     const stored = await storageManager.upload(normalized, fileName, 'image/webp', {
       category: 'image',
-      prefix: 'user-profile-avatars',
+      prefix: 'user-profile-avatars/',
       fileName,
       publicRead: true,
       userId: actor.userId,

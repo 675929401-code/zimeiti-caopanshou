@@ -12,7 +12,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 
 function harness(responses) {
   let now = Date.parse("2026-10-21T00:00:00Z"), cursor = 0, timerId = 0;
-  const slots = [], effects = [], timers = new Map(), calls = [];
+  const slots = [], effects = [], timers = new Map(), calls = [], wireBodies = [];
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => value === b[i]);
   const react = {
     useRef(value) { const i = cursor++; return slots[i] ??= { current: value }; },
@@ -42,6 +42,7 @@ function harness(responses) {
     },
     fetch: async (url, options) => {
       if (options.method !== "POST") return { ok: true, json: async () => ({ projects: [], nextOffset: null }) };
+      wireBodies.push(options.body);
       calls.push(JSON.parse(options.body));
       const response = responses.shift(); assert.ok(response, "Unexpected POST");
       return { ok: response.status === 200, status: response.status,
@@ -53,7 +54,7 @@ function harness(responses) {
     while (effects.length) effects.shift()();
     return hook;
   }
-  return { exported, calls, render, advance(ms) {
+  return { exported, calls, wireBodies, render, advance(ms) {
     now += ms;
     for (const [id, timer] of timers) if (timer.at <= now) { timers.delete(id); timer.callback(); }
   } };
@@ -74,7 +75,7 @@ const document = { id: "project-a", title: "initial draft" };
 const success = revision => ({ status: 200, body: { project: { id: document.id, revision } } });
 const rate = harness([
   { status: 429, header: "5", body: { error: "请求过于频繁", code: "RATE_LIMITED" } },
-  success(1), success(2),
+  success(1), success(2), success(3),
 ]);
 let hook = rate.render();
 const results = await Promise.all([hook.save(document), hook.save(document), hook.save(document, true), hook.save({ id: "project-b" })]);
@@ -89,13 +90,24 @@ assert.equal(rate.calls.length, 1);
 hook = rate.render(); assert.match(hook.message, /3 秒/);
 rate.advance(3000);
 hook = rate.render(); assert.equal(hook.saveRetryAt, 0, "One timer wakes autosave at expiry");
-assert.equal(await hook.save({ ...document, title: "latest draft" }), true);
+assert.deepEqual(await Promise.all([
+  hook.save({ ...document, title: "latest draft" }),
+  hook.save({ ...document, title: "latest draft" }),
+  hook.save({ ...document, title: "latest draft" }, true),
+]), [true, true, true], "concurrent automatic/manual recovery serializes the original confirmation and deduplicates latest edits");
 assert.equal(rate.calls[1].expectedRevision, 0, "429 must not advance revision");
-assert.equal(rate.calls[1].document.title, "latest draft");
+assert.deepEqual(rate.calls[1], rate.calls[0], "a transient response must first confirm the exact original body, including its revision");
+assert.equal(rate.wireBodies[1], rate.wireBodies[0], "original confirmation must replay the exact wire body bytes, not a reconstructed equivalent object");
+assert.equal(rate.calls[1].document.title, "initial draft");
+assert.equal(rate.calls[2].document.title, "latest draft", "the second pass must save the latest edits after confirming the original body");
+assert.equal(rate.calls[2].expectedRevision, 1, "latest edits must use the confirmed original revision");
 assert.equal(await hook.save({ ...document, title: "latest draft" }), true);
-assert.equal(rate.calls.length, 2, "Only confirmed successful content is deduplicated");
+assert.equal(rate.calls.length, 3, "Only confirmed successful latest content is deduplicated");
 assert.equal(await hook.save({ ...document, title: "newer draft" }), true);
-assert.equal(rate.calls[2].expectedRevision, 1);
+assert.equal(rate.calls[3].expectedRevision, 2, "subsequent edits must advance from the latest confirmed revision");
+assert.equal(rate.calls[3].document.title, "newer draft");
+assert.equal(rate.calls.length, 4, "recovery and concurrent dedup must issue only original replay, latest save and one newer edit");
+assert.deepEqual(rate.calls.map(call => call.expectedRevision), [0, 0, 1, 2]);
 
 const conflict = harness([{ status: 409, body: { error: "版本冲突", code: "REVISION_CONFLICT" } }, success(3)]);
 hook = conflict.render();

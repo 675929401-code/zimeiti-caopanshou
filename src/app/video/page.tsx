@@ -1,7 +1,10 @@
 "use client";
+import { usePathname } from "next/navigation";
+import pairedLayout from "./paired-layout.module.css";
 import { resolveAiVideoInputAspectRatio } from "@/lib/ai-video-page-capabilities";
 import { readVideoDurationBehavior, type VideoDurationBehavior } from "@/lib/video-duration-behavior";
 import { VideoDurationBehaviorNotice } from "@/components/video-duration-behavior-notice";
+import { VideoModelCapabilityPhrases } from "@/components/video-model-capability-phrases";
 import { videoProgressLabel, videoProgressStatus, videoSubmissionConfirmationSignal } from '@/lib/video-task-progress';
 import { getVideoMediaUnavailable, videoCompletedDeliveryPatch } from "@/lib/video-media-availability";
 
@@ -100,7 +103,6 @@ import {
   Eraser,
 } from "lucide-react";
 import { SubPageHeader, NavButton } from "@/components/sub-page-header";
-import { BrandFooter } from "@/components/brand-footer";
 import { ModelBadge } from "@/components/model-badge";
 import { useApp } from "@/contexts/app-context";
 import { RechargeDialog } from "@/components/recharge-dialog";
@@ -698,6 +700,8 @@ export default function VideoPage() {
 }
 
 function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
+  const pathname = usePathname();
+  const publicWorkspace = pathname === "/video" || pathname === "/tools/video/kling-video";
   const router = useAppScopedRouter();
   const { state, dispatch } = useApp();
   const auth = state.auth;
@@ -3589,7 +3593,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
   /* ── Render ── */
   return (
-    <div className="secondary-workbench voice-studio-root vs-workbench h-screen overflow-hidden flex flex-col">
+    <div className={`secondary-workbench voice-studio-root vs-workbench h-screen overflow-hidden flex flex-col ${publicWorkspace && !showHistory ? pairedLayout.creator : ""}`}>
       {/* ── Top bar ── */}
       {!showHistory && <SubPageHeader
         title="AI 视频创作台"
@@ -3725,7 +3729,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
               </div>
             </div>
             <div className="flex items-center gap-3 mt-3">
-              <Button
+              <Button data-workbench-action="secondary"
                 variant="outline"
                 size="sm"
                 onClick={() => {
@@ -3779,7 +3783,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                         {selectedIds.size === downloadableHistory.length ? "取消全选" : "全选"}
                       </Button>
                       {selectedIds.size > 0 && (
-                        <Button
+                        <Button data-workbench-action="secondary"
                           size="sm"
                           onClick={batchDownload}
                           disabled={isBatchDownloading}
@@ -3791,7 +3795,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       )}
                     </>
                   )}
-                  <Button variant="ghost" size="sm" onClick={refreshRecoveryHistory} disabled={historyLoading} className="gap-1.5 text-[var(--text-secondary)]">
+                  <Button data-workbench-action="secondary" variant="ghost" size="sm" onClick={refreshRecoveryHistory} disabled={historyLoading} className="gap-1.5 text-[var(--text-secondary)]">
                     <RefreshCw className={`w-3.5 h-3.5${historyLoading ? " animate-spin" : ""}`} /> {historyLoading ? "读取中…" : "刷新"}
                   </Button>
                 </div>
@@ -3831,12 +3835,12 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
               {taskRecoveryError && (
                 <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
                   <span>{taskRecoveryError}。可继续填写新任务；原任务同步完成前请勿重复提交。</span>
-                  <Button variant="outline" size="sm" onClick={() => setTaskRecoveryAttempt((current) => current + 1)} className="h-7 gap-1 text-xs">
+                  <Button data-workbench-action="secondary" variant="outline" size="sm" onClick={() => setTaskRecoveryAttempt((current) => current + 1)} className="h-7 gap-1 text-xs">
                     <RefreshCw className="h-3.5 w-3.5" />重新同步
                   </Button>
                 </div>
               )}
-              <div className="flex flex-col items-stretch gap-4 xl:flex-row xl:items-start">
+              <div data-video-creator-columns className="flex flex-col items-stretch gap-4 xl:flex-row xl:items-start">
                 <aside className="w-full shrink-0 self-start overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-sm xl:sticky xl:top-2 xl:w-[312px]" aria-label="视频模型列表" data-video-model-list>
                   <div className="border-b border-[var(--border)] bg-[var(--muted)]/35 px-4 py-3.5">
                     <div className="flex items-center justify-between gap-2">
@@ -3855,7 +3859,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       const selectable = model.available && model.generationReady;
                       const inputLabel = videoModelInputLabel(model);
                       return (
-                        <button
+                        <button data-workbench-control="choice"
                           key={model.id}
                           type="button"
                           data-video-model-id={model.id}
@@ -3876,7 +3880,11 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                             />
                             <span className="min-w-0 max-w-full">
                               <span className="line-clamp-2 block text-[14px] font-semibold leading-5 text-[var(--foreground)] group-aria-pressed:text-[var(--brand-action-fg)]">{model.name}</span>
-                              {inputLabel && <span className="mt-0.5 block whitespace-normal break-words text-[12px] leading-4 text-[var(--text-secondary)] group-aria-pressed:text-[var(--brand-action-fg)]" title={videoModelInputHint(model)}>{inputLabel}</span>}
+                              {inputLabel && (
+                                <span className={`mt-0.5 block whitespace-normal break-words text-[12px] leading-4 text-[var(--text-secondary)] group-aria-pressed:text-[var(--brand-action-fg)]${publicWorkspace ? ` ${pairedLayout.modelCapabilities}` : ""}`} title={videoModelInputHint(model)}>
+                                  {publicWorkspace ? <VideoModelCapabilityPhrases label={inputLabel} /> : inputLabel}
+                                </span>
+                              )}
                             </span>
                             <span data-video-model-price className="col-start-2 min-w-0 max-w-full justify-self-start whitespace-normal break-words rounded border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[12px] font-semibold leading-4 text-[var(--foreground)] [overflow-wrap:anywhere]">
                               {getVideoBillingUnit(model) === "token" ? model.generationReady === false ? "Token 计价" : videoTokenRateLabel(model, model.defaultResolution) : !model.priceReady ? "—" : modelPrice === 0 ? "免费" : `¥${modelPrice.toFixed(2)}${getVideoBillingUnit(model) === "output_second" ? "/秒" : "/次"}`}
@@ -3887,9 +3895,10 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     })}
                   </div>
                 </aside>
-                <div className="w-full min-w-0 flex-1">
+                <div data-video-task-pane className="w-full min-w-0 flex-1" role={publicWorkspace ? "region" : undefined}
+                  tabIndex={publicWorkspace ? 0 : undefined} aria-label={publicWorkspace ? "视频参数与创作任务" : undefined}>
               {/* Global Config Bar */}
-              <div className="relative z-20 mb-4 overflow-visible rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm lg:p-5">
+              <div data-video-toolbar className="relative z-20 mb-4 overflow-visible rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm lg:p-5">
                 {/* Cash balance bar */}
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-2">
                   <div className="flex items-center gap-2 text-sm">
@@ -4065,14 +4074,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       className="h-8 text-sm border-[var(--border)] bg-[var(--background)]"
                     />
                   </div>
-                  <Button
+                  <Button data-workbench-action={publicWorkspace ? "add" : "secondary"}
                     onClick={addTask}
                     disabled={tasks.length >= 40}
-                    className="gap-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 h-8"
+                    className={`h-8 gap-1.5 ${publicWorkspace ? pairedLayout.addTaskButton : "bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"}`}
                   >
 	                    <Plus className="w-4 h-4" /> 添加任务{tasks.length > 0 ? `(${tasks.length}/40)` : ""}
 	                  </Button>
-	                  <Button onClick={() => setShowSmartImport(!showSmartImport)} variant="outline" className="gap-1.5 h-8 border-[var(--primary)]/40 text-[var(--primary)] hover:bg-[var(--primary)]/10">
+	                  <Button data-workbench-action="secondary" onClick={() => setShowSmartImport(!showSmartImport)} variant="outline" className="gap-1.5 h-8 border-[var(--primary)]/40 text-[var(--primary)] hover:bg-[var(--primary)]/10">
 	                    <Wand2 className="w-4 h-4" /> 智能导入
 	                  </Button>
                     <input
@@ -4087,14 +4096,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       }}
                     />
                     <div className="flex h-8 overflow-hidden rounded-md border border-[var(--border)]">
-                      <button
+                      <button data-workbench-control="choice" aria-pressed={orderedImageMode === "reference"}
                         type="button"
                         onClick={() => setOrderedImageMode("reference")}
                         className={`px-2 text-[11px] font-semibold transition-colors ${orderedImageMode === "reference" ? "brand-action" : "text-[var(--text-secondary)] hover:bg-[var(--background)]"}`}
                       >
                         参考图
                       </button>
-                      <button
+                      <button data-workbench-control="choice" aria-pressed={orderedImageMode === "first-last"}
                         type="button"
                         onClick={() => setOrderedImageMode("first-last")}
                         className={`border-l border-[var(--border)] px-2 text-[11px] font-semibold transition-colors ${orderedImageMode === "first-last" ? "brand-action" : "text-[var(--text-secondary)] hover:bg-[var(--background)]"}`}
@@ -4102,7 +4111,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                         首尾帧
                       </button>
                     </div>
-                    <Button
+                    <Button data-workbench-action="secondary"
                       type="button"
                       onClick={() => orderedImageInputRef.current?.click()}
                       disabled={isImportingOrderedImages || tasks.some(requiresVideoTaskTracking)}
@@ -4148,7 +4157,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     </Button>
                   )}
                   {tasks.filter(t => t.status === "completed").length > 1 && (
-                    <Button
+                    <Button data-workbench-action="secondary"
                       onClick={batchDownload}
                       disabled={isBatchDownloading}
                       className="gap-1.5 h-8"
@@ -4178,7 +4187,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                       <span className="text-xs text-[var(--text-secondary)]">
                         {smartImportText.trim() ? `识别到 ${estimatePromptCount(smartImportText)} 段提示词` : "请粘贴提示词文案"}
                       </span>
-                      <Button
+                      <Button data-workbench-action="secondary"
                         onClick={handleSmartImport}
                         disabled={!smartImportText.trim() || tasks.some(requiresVideoTaskTracking)}
                         className="gap-1.5 h-8 bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
@@ -4193,10 +4202,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
               {/* Task Cards + Chat Panel */}
               <div className="flex min-w-0 items-start gap-4">
                 {/* Task Cards */}
-                <div
-                  className="grid min-w-0 flex-1 gap-4"
-                  style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))" }}
-                >
+                <div className={`grid min-w-0 flex-1 ${pairedLayout.taskGrid}`}>
                 {tasks.map((task) => {
                   const confirmingVideoSubmission = isActiveVideoTaskStatus(task.status) && videoSubmissionConfirmationSignal(task) === true;
                   const cardModel = requiresVideoTaskTracking(task) || task.taskId ? task.modelSnapshot || models.find((model) => model.id === task.modelId) : selectedModel;
@@ -4314,7 +4320,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                             aria-label={`任务${task.cardIndex}声音设置`}
                             className="inline-flex h-8 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--background)]"
                           >
-                            <button
+                            <button data-workbench-control="choice"
                               type="button"
                               role="radio"
                               aria-checked={task.generateAudio !== false}
@@ -4323,7 +4329,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                             >
                               生成声音
                             </button>
-                            <button
+                            <button data-workbench-control="choice"
                               type="button"
                               role="radio"
                               aria-checked={task.generateAudio === false}
@@ -4717,14 +4723,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                             />
                           </div>
                           <div className="flex gap-2">
-                            <Button
+                            <Button data-workbench-action="primary"
                               onClick={() => generate(task.localId)}
                               variant="outline"
                               className="flex-1 gap-1.5 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
                             >
                               <RefreshCw className="w-3.5 h-3.5" /> 再次生成
                             </Button>
-                            <Button
+                            <Button data-workbench-action="secondary"
                               onClick={async () => {
                                 const fileName = task.cardIndex
                                   ? `任务${task.cardIndex}.mp4`
@@ -4749,7 +4755,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                               </>
                             )}
                           </div>
-                          <Button
+                          <Button data-workbench-action={requiresVideoTaskTracking(task) ? "secondary" : "primary"}
                             onClick={() => generate(task.localId)}
                             className="w-full gap-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
                           >
@@ -4802,7 +4808,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                           </>}
                         </div>
                       ) : (
-                        <Button
+                        <Button data-workbench-action="primary"
                           onClick={() => generate(task.localId)}
                           disabled={!selectedModel?.available || !selectedModel.generationReady || (cardInputCapabilities.supportsPrompt && !task.prompt.trim())}
                           className="w-full gap-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
@@ -4820,10 +4826,6 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
               </div>
 
-              {/* Bottom tip */}
-              <div className="text-center mt-10 mb-6 text-xs text-[var(--text-secondary)]">
-                生成完成后通过原始链路播放或下载；平台保留任务与账务记录，不复制普通视频文件。
-              </div>
                 </div>
               </div>
             </>
@@ -4851,7 +4853,6 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
           </div>
         </div>
       )}
-      <BrandFooter privacyNote="视频由所选模型处理；普通视频不复制到平台存储，长期保存请下载到电脑" />
 
       <AlertDialog open={cardAction !== null} onOpenChange={open => { if (!open) setCardAction(null); }}>
         <AlertDialogContent>

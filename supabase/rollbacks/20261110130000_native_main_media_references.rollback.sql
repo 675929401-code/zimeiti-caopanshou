@@ -1,0 +1,35 @@
+BEGIN;
+SET LOCAL lock_timeout='10s';
+SET LOCAL statement_timeout='120s';
+-- Reverting the schema must never strip a main-site media identity or V2 history.
+DO $$BEGIN
+ IF to_regclass('public.pub_native_media_bridges') IS NOT NULL OR to_regclass('public.pub_native_media_bridge_phases') IS NOT NULL OR to_regclass('public.pub_native_media_bridge_requests') IS NOT NULL OR to_regclass('public.pub_native_media_bridge_events') IS NOT NULL OR to_regprocedure('public.mutate_native_media_bridge_atomic(text,jsonb)') IS NOT NULL OR to_regprocedure('public.read_native_media_bridge_atomic(text,jsonb)') IS NOT NULL THEN RAISE EXCEPTION 'NATIVE_MEDIA_ROLLBACK_REQUIRES_BRIDGE_141000_FIRST';END IF;
+ IF EXISTS(SELECT 1 FROM public.pub_native_media_entries WHERE source_kind='main_asset') OR EXISTS(SELECT 1 FROM public.pub_native_draft_meta WHERE payload->'schemaVersion'='2'::jsonb) OR EXISTS(SELECT 1 FROM public.pub_native_core_requests WHERE request_payload->'save'->'metadata'->'schemaVersion'='2'::jsonb) THEN RAISE EXCEPTION 'NATIVE_MEDIA_ROLLBACK_REQUIRES_PRESERVED_HISTORY';END IF;
+END$$;
+DROP FUNCTION public.mutate_publish_v3_atomic(text,jsonb);
+ALTER FUNCTION public.mutate_publish_v3_media_v1_atomic(text,jsonb) RENAME TO mutate_publish_v3_atomic;
+REVOKE ALL ON FUNCTION public.mutate_publish_v3_atomic(text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.mutate_publish_v3_atomic(text,jsonb) TO service_role;
+DROP FUNCTION public.native_media_assert_official_source(text,uuid,integer,jsonb,jsonb);
+DROP FUNCTION public.native_core_media_usage_facts(text,uuid);
+ALTER FUNCTION public.native_core_media_usage_facts_v1(text,uuid) RENAME TO native_core_media_usage_facts;
+DROP FUNCTION public.mutate_native_auxiliary_atomic(text,jsonb);
+ALTER FUNCTION public.mutate_native_auxiliary_v1_atomic(text,jsonb) RENAME TO mutate_native_auxiliary_atomic;
+REVOKE ALL ON FUNCTION public.mutate_native_auxiliary_atomic(text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.mutate_native_auxiliary_atomic(text,jsonb) TO service_role;
+DROP FUNCTION public.native_media_mapping_source(jsonb);
+DROP FUNCTION public.mutate_native_core_atomic(text,jsonb);
+ALTER FUNCTION public.mutate_native_core_v1_atomic(text,jsonb) RENAME TO mutate_native_core_atomic;
+REVOKE ALL ON FUNCTION public.mutate_native_core_atomic(text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.mutate_native_core_atomic(text,jsonb) TO service_role;
+DROP FUNCTION public.native_media_register_source(text,uuid,jsonb,text);
+DROP FUNCTION public.native_assert_draft_metadata(jsonb,jsonb,text,text);
+ALTER FUNCTION public.native_assert_draft_metadata_v1(jsonb,jsonb,text,text) RENAME TO native_assert_draft_metadata;
+DROP TRIGGER native_media_source_identity ON public.pub_native_media_entries;
+DROP FUNCTION public.native_media_source_immutable();
+DROP FUNCTION public.native_media_entry_source(public.pub_native_media_entries);
+DROP INDEX public.native_original_main_media_once;
+ALTER TABLE public.pub_native_media_entries DROP CONSTRAINT native_media_source_xor,DROP COLUMN source_kind,DROP COLUMN main_reference;
+ALTER TABLE public.pub_native_media_entries ALTER COLUMN asset_id SET NOT NULL;
+NOTIFY pgrst,'reload schema';
+COMMIT;

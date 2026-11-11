@@ -1,5 +1,5 @@
 import { isConfirmedTerminalImageFailure } from "@/lib/image-workbench-attempt-guard";
-import { coverCompositionMatches, coverCompositionValidationError, type CoverCompositionPlan } from "@/lib/cover-composition";
+import { coverCompositionMatches, coverCompositionValidationError, coverTextRendering, type CoverCompositionPlan } from "@/lib/cover-composition";
 import { parsePublicImageResolutionPrices } from "@/lib/image-resolution-pricing";
 import { projectGeneratedImageClientReceipt, resolveGeneratedImageClientDelivery, type GeneratedImageClientReceipt } from "@/lib/generated-image-client-delivery";
 import { projectCoverCompositionPlan } from "@/lib/cover-durable-attempt";
@@ -59,12 +59,14 @@ export type CoverGenerationPayload = {
 };
 
 export type CoverGenerationTask = {
+  prepareOperationId?: string;
   id: string;
   ratio: "16:9" | "9:16" | "4:3" | "3:4";
   title: string;
   subtitle: string;
   prompt: string;
   source: "生成";
+  imageOrigin?: "original" | "generated";
   briefText?: string;
   createdAt: string;
   taskNo: number;
@@ -82,6 +84,8 @@ export type CoverGenerationTask = {
   sourceWidth?: number;
   sourceHeight?: number;
   cloudStored?: boolean;
+  /** Native requested text is never promoted to visually verified by code. */
+  textVerification?: "unverified";
   failureRecordId?: string;
   publicModelId?: string;
   modelName?: string;
@@ -223,17 +227,19 @@ function persistedCoverTask(value: unknown): CoverGenerationTask | undefined {
     || !["16:9", "9:16", "4:3", "3:4"].includes(row.ratio || "")
     || typeof row.title !== "string" || row.title.length > 200
     || typeof row.subtitle !== "string" || row.subtitle.length > 500
-    || typeof row.prompt !== "string" || !row.prompt.trim() || row.prompt.length > 50_000
+    || typeof row.prompt !== "string" || row.prompt.length > 50_000
     || row.source !== "生成" || typeof row.createdAt !== "string" || !Number.isFinite(Date.parse(row.createdAt))
     || !Number.isSafeInteger(row.taskNo) || Number(row.taskNo) < 0
     || (row.briefText !== undefined && (typeof row.briefText !== "string" || row.briefText.length > 20_000))
     || (row.renderPlan !== undefined && Boolean(coverCompositionValidationError(row.renderPlan)))) return undefined;
   return {
     id: row.id,
+    ...(typeof row.prepareOperationId === "string" && /^[a-f0-9-]{36}$/iu.test(row.prepareOperationId) ? { prepareOperationId: row.prepareOperationId } : {}),
     ratio: row.ratio!,
     title: row.title,
     subtitle: row.subtitle,
     prompt: row.prompt,
+    ...(row.imageOrigin === "original" || row.imageOrigin === "generated" ? { imageOrigin: row.imageOrigin } : {}),
     source: "生成",
     createdAt: row.createdAt,
     taskNo: Number(row.taskNo),
@@ -241,6 +247,7 @@ function persistedCoverTask(value: unknown): CoverGenerationTask | undefined {
     error: "系统正在核验并完成封面保存和展示",
     ...(row.briefText !== undefined ? { briefText: row.briefText } : {}),
     ...(row.renderPlan ? { renderPlan: projectCoverCompositionPlan(row.renderPlan) } : {}),
+    ...(row.renderPlan && coverTextRendering(row.renderPlan).mode === "native" ? { textVerification: "unverified" as const } : {}),
   };
 }
 
@@ -423,7 +430,7 @@ export type CoverFailureHistoryReadiness = {
 function isValidCoverFailureHistoryRecord(record: CoverGenerationTask) {
   return record.status === "failed"
     && typeof record.failureRecordId === "string" && /^[a-f0-9]{64}$/u.test(record.failureRecordId)
-    && typeof record.prompt === "string" && Boolean(record.prompt.trim())
+    && typeof record.prompt === "string" && record.prompt.length <= 50_000
     && typeof record.publicModelId === "string" && record.publicModelId.startsWith("pm_")
     && typeof record.modelName === "string" && Boolean(record.modelName.trim())
     && ["16:9", "9:16", "4:3", "3:4"].includes(record.ratio)
@@ -549,6 +556,8 @@ export async function runCoverGeneration(input: {
   payload?: CoverGenerationPayload;
   task?: CoverGenerationTask;
   recovery?: boolean;
+  /** A prepared parent owns this identity across refreshes and tabs. */
+  identity?: { clientIdempotencyKey: string; clientTraceId: string };
   storage: Storage;
   fetcher?: typeof fetch;
   onState: (state: CoverGenerationState) => void;
@@ -569,7 +578,9 @@ export async function runCoverGeneration(input: {
       clientIdempotencyKey: string; clientTraceId: string;
     }) => {
       const controller = new AbortController();
-      const timeout = globalThis.setTimeout(() => controller.abort(), method === "GET" ? 30_000 : body?.action === "dispatch" ? 330_000 : 30_000);
+      const timeout = globalThis.setTimeout(() => controller.abort(), method === "GET"
+        ? input.recovery && input.task?.renderPlan?.planVersion === 2 ? 120_000 : 30_000
+        : body?.action === "dispatch" ? 330_000 : 30_000);
       const query = keys ? `?${new URLSearchParams(keys)}` : "";
       let response: Response;
       try {
@@ -638,6 +649,7 @@ export async function runCoverGeneration(input: {
         historyRecordId: stored.historyRecordId,
         operationId: typeof data.operationId === "string" ? data.operationId : attempt.task.operationId,
         cloudStored: true,
+        ...(coverTextRendering(plan).mode === "native" ? { textVerification: "unverified" as const } : {}),
         createdAt: typeof stored.createdAt === "string" && Number.isFinite(Date.parse(stored.createdAt)) ? stored.createdAt : attempt.task.createdAt,
         taskNo: Number.isSafeInteger(stored.taskNo) ? Number(stored.taskNo) : attempt.task.taskNo,
         backgroundAssetId: data.backgroundAssetId,
@@ -656,17 +668,16 @@ export async function runCoverGeneration(input: {
       if (!input.payload || !input.task || !input.task.renderPlan) throw new Error("封面提交参数不完整");
       const invalidPlan = coverCompositionValidationError(input.task.renderPlan);
       if (invalidPlan) throw new Error(`${invalidPlan}，本次尚未提交生图`);
-      const ready = await fetcher("/api/cover/render", { cache: "no-store" });
-      const readiness = await ready.json().catch(() => ({}));
-      if (!ready.ok || readiness.ready !== true) throw new Error("封面字体排版服务尚未就绪，本次尚未提交生图");
-      const proposedKey = `cover_${crypto.randomUUID()}`;
+      const proposedKey = input.identity?.clientIdempotencyKey || `cover_${crypto.randomUUID()}`;
+      const proposedTrace = input.identity?.clientTraceId || proposedKey;
+      if (!validKey(proposedKey) || !validKey(proposedTrace)) throw new Error("封面请求编号无效");
       let response: Response;
       let data: Record<string, unknown>;
       try {
         ({ response, data } = await requestAttempt("POST", {
           action: "claim",
           clientIdempotencyKey: proposedKey,
-          clientTraceId: proposedKey,
+          clientTraceId: proposedTrace,
           task: input.task,
           payload: { ...input.payload, referenceImageUrls: [], resumeDeliveryOnly: undefined },
           referenceCount: input.payload.referenceImageUrls.length,
@@ -674,16 +685,32 @@ export async function runCoverGeneration(input: {
       } catch {
         const pending: PendingCoverGeneration = { payload: input.payload, task: { ...input.task, status: "unknown",
           error: "账号认领结果暂时无法确认；稳定请求号已保留，系统将先查询原任务" },
-        clientIdempotencyKey: proposedKey, clientTraceId: proposedKey, updatedAt: Date.now() };
+        clientIdempotencyKey: proposedKey, clientTraceId: proposedTrace, updatedAt: Date.now() };
         publish({ ...current, pending });
         return { state: current, message: pending.task.error || "封面任务认领结果待确认" };
       }
+      const originalTask = persistedCoverTask(input.task);
+      if (response.ok && originalTask && await complete({ clientIdempotencyKey: proposedKey, clientTraceId: proposedTrace,
+        updatedAt: Date.now(), task: originalTask }, data)) return { state: current, message: "原封面已完成，图片与编辑历史已保存到账号" };
       const active = serverCoverAttempt(data.activeAttempt);
       if (!response.ok || !active) throw new Error(responseMessage(data, "封面任务未能在账号内安全认领，本次尚未提交生图"));
+      if (active.task.id !== input.task.id) {
+        publish({ ...current, pending: pendingFromServer(active) });
+        return { state: current, message: "账号内还有另一条封面任务，请先查询原任务状态；本次没有提交新的生图请求" };
+      }
       const firstPayload = active.task.id === input.task.id ? input.payload : active.dispatchInput;
       publish({ ...current, pending: pendingFromServer(active, firstPayload) });
     } else if (!current.pending && input.recovery) {
-      const { response, data } = await requestAttempt("GET");
+      const { response, data } = await requestAttempt("GET", undefined, input.identity);
+      // A refreshed V2 parent still owns its frozen task. The server may have
+      // finished delivery already, leaving no activeAttempt to reconstruct.
+      // Accept that original completed receipt before looking for active work.
+      const recoveredTask = input.task?.renderPlan?.planVersion === 2 ? persistedCoverTask(input.task) : undefined;
+      if (response.ok && input.identity && recoveredTask && await complete({
+        clientIdempotencyKey: input.identity.clientIdempotencyKey,
+        clientTraceId: input.identity.clientTraceId,
+        updatedAt: Date.now(), task: recoveredTask,
+      }, data)) return { state: current, message: "封面已完成，图片与编辑历史已保存到账号" };
       const active = response.ok ? serverCoverAttempt(data.activeAttempt) : null;
       if (!active) return { state: current, message: "当前没有待完成的封面任务" };
       publish({ ...current, pending: pendingFromServer(active, input.payload || active.dispatchInput) });
@@ -773,6 +800,18 @@ export async function runCoverGeneration(input: {
         ? "原任务确认尚未提交，但参考图未跨浏览器保存；请回到原浏览器或重新上传参考图"
         : "原任务确认尚未提交，安全参数暂不可用；系统不会创建新请求号" };
     }
+    // Status recovery is a read-only operation. A claimed but unpaid image
+    // must wait for a separate explicit confirmation, even if this browser
+    // still has the old dispatch payload in RAM.
+    if (input.recovery) return { state: current, message: "原任务已认领但尚未生成。查询不会提交图片，请恢复方案并明确确认后继续。" };
+    // A claimed order is still unpaid. Both first submission and recovery must
+    // prove local delivery readiness immediately before their first dispatch.
+    // Completed/dispatched originals returned above never depend on this gate.
+    const native = active.task.renderPlan && coverTextRendering(active.task.renderPlan).mode === "native";
+    const ready = await fetcher(`/api/cover/render${native ? "?textMode=native" : ""}`, { cache: "no-store" });
+    const readiness = await ready.json().catch(() => ({}));
+    if (!ready.ok || readiness.ready !== true) return { state: current,
+      message: native ? "封面保存服务尚未就绪，原任务已保留，尚未提交生图" : "封面字体排版服务尚未就绪，原任务已保留，尚未提交生图" };
     let response: Response;
     let data: Record<string, unknown>;
     try {
@@ -818,10 +857,11 @@ export async function saveCoverCompositionEdit(input: {
   onState: (state: CoverGenerationState) => void; fetcher?: typeof fetch;
 }) {
   if (!input.task.backgroundAssetId || !input.task.renderPlan) throw new Error("这张历史图没有独立底图，请保留原图并新建封面");
+  if (coverTextRendering(input.task.renderPlan).mode === "native" || coverTextRendering(input.plan).mode === "native") throw new Error("原生封面的文字已在图片内，请新建制作任务修改标题");
   const invalidPlan = coverCompositionValidationError(input.plan);
   if (invalidPlan) throw new Error(invalidPlan);
   const current = readCoverGenerationState(input.storage, input.userId);
-  if (current.pending) throw new Error("请先确认未完成任务");
+  if (current.pending?.task.id === input.task.id) throw new Error("这张封面还未完成，请先查询原任务");
   const response = await (input.fetcher || fetch)("/api/cover/render", { method: "POST",
     headers: { Authorization: `Bearer ${input.token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ sourceAssetId: input.task.backgroundAssetId, plan: input.plan, authoring: { briefText: input.task.briefText || '', prompt: input.task.prompt } }),

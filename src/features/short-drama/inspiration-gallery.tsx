@@ -35,7 +35,6 @@ export function InspirationGallery() {
           <nav className={styles.topnav} aria-label="灵感广场导航">
             <Link href="/short-drama">项目门户</Link>
             <Link href="/storyboard-workbench?entry=inspiration">分镜工作台</Link>
-            <Link href="/image-workbench?entry=inspiration">图片创作</Link>
           </nav>
           <Link className={styles.topbarAction} href="/short-drama">
             <ArrowLeft size={15} />
@@ -54,7 +53,7 @@ export function InspirationGallery() {
           <aside className={styles.inspirationPrinciples} aria-label="灵感广场使用原则">
             <span><ImageIcon size={19} /><b>素材来源</b><small>主站 public/short-drama</small></span>
             <span><Layers3 size={19} /><b>使用方式</b><small>方法参考，不自动生成</small></span>
-            <span><Compass size={19} /><b>下一步</b><small>进入分镜或图片创作</small></span>
+            <span><Compass size={19} /><b>下一步</b><small>带入分镜继续制作</small></span>
           </aside>
         </section>
 
@@ -133,9 +132,6 @@ export function InspirationGallery() {
                       <Link className={styles.primaryButton} href={example.primaryHref}>
                         带入分镜
                         <ArrowRight size={15} />
-                      </Link>
-                      <Link className={styles.secondaryButton} href={example.secondaryHref}>
-                        打开画布
                       </Link>
                     </div>
                   </div>

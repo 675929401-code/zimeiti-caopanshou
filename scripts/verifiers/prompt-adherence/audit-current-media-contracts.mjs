@@ -4,11 +4,10 @@ import path from "node:path";
 
 const root = process.cwd();
 const read = relative => readFile(path.join(root, relative), "utf8");
-const [imageRequest, imageParameters, imageSnapshot, imageHistory, videoRoute, videoSnapshot, videoHistory, h3Adapter, videoAdapter, videoParameterIntegrityTest] = await Promise.all([
+const [imageRequest, imageParameters, imageSnapshot, videoRoute, videoSnapshot, videoHistory, h3Adapter, videoAdapter, videoParameterIntegrityTest] = await Promise.all([
   read("src/lib/image-generation-request.ts"),
   read("src/lib/image-parameter-contract.ts"),
   read("src/lib/image-failure-history.ts"),
-  read("src/app/api/image-workbench/history/route.ts"),
   read("src/app/api/video/generate/route.ts"),
   read("src/lib/video-budget-reservation.ts"),
   read("src/app/api/video/history/route.ts"),
@@ -21,7 +20,8 @@ for (const token of ["prompt", "aspectRatio", "resolution", "referenceImageUrls"
 for (const token of ["negativePrompt: \"rejected\"", "seed: \"rejected\"", "imageCount", "effectivePrompt", "payloadFingerprint"]) {
   assert.match(`${imageParameters}\n${imageSnapshot}`, new RegExp(token, "u"));
 }
-for (const token of ["request_snapshot", "effectivePrompt", "providerProtocol", "outputPixelSize"]) assert.match(imageHistory, new RegExp(token, "u"));
+// 独立 AI 生图工作台已下线，其旧 history 路由合同不再校验；共享快照合同仍由 image-generation-request/image-failure-history 覆盖。
+
 
 for (const token of ["userPrompt", "effectivePrompt", "negativePrompt", "referenceAssets", "targetDurationSeconds", "effectiveDurationSeconds", "fps", "seed", "generateAudio", "providerPayloadHash"]) {
   assert.match(videoSnapshot, new RegExp(token, "u"));

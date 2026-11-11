@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import CoverPage from "@/app/cover/page";
+import { CoverWorkbench } from "@/components/cover-workbench";
 import { AppRouteShell } from "@/components/app-route-shell";
 
 export const metadata: Metadata = {
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function YoucaiCoverPage() {
   return (
     <AppRouteShell>
-      <CoverPage />
+      <CoverWorkbench />
     </AppRouteShell>
   );
 }

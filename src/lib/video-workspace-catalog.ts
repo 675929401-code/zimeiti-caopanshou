@@ -2,7 +2,7 @@ import type { WorkspaceModelSurface } from "./workspace-model-policy";
 
 /** These catalogues may display assigned models whose input is unavailable here. */
 export function isVideoCatalogDisplaySurface(surface: unknown): boolean {
-  return surface === "storyboard-video" || surface === "video-page";
+  return surface === "publish-center-video" || surface === "storyboard-video" || surface === "video-page";
 }
 
 export function isVisibleInPublicWorkspace(

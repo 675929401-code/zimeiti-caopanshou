@@ -36,6 +36,7 @@ export default function Button({
 }: ButtonProps) {
   return (
     <button
+      data-workbench-action={variant === 'outline' ? 'secondary' : variant}
       className={`inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
       disabled={disabled || loading}
       {...props}

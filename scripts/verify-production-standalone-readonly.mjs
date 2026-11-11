@@ -21,7 +21,6 @@ const endpoints = [
   "/api/storyboard/projects",
   "/api/digital-human/long-history",
   "/api/digital-human/voices",
-  "/api/image-workbench/history",
   "/api/extract/history",
   "/api/cover/history",
   "/api/media-history",

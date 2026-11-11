@@ -1,16 +1,6 @@
-import type { Metadata } from "next";
-import { AppRouteShell } from "@/components/app-route-shell";
-import { ImageWorkbench } from "@/components/image-workbench";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "图片创作",
-  description: "沿用主站真实生图模型、文件持久化、积分和历史记录链路。",
-};
-
-export default function ImageChatPage() {
-  return (
-    <AppRouteShell>
-      <ImageWorkbench />
-    </AppRouteShell>
-  );
+/** 原“图片创作（对话式）”别名页随 AI 生图工作台一同下线，保留旧深链跳转。 */
+export default function ImageChatRetiredPage() {
+  redirect("/");
 }

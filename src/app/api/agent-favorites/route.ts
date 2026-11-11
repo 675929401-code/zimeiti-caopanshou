@@ -5,6 +5,7 @@ import {
   getAgentNavigationKey,
 } from "@/lib/agent-category-access";
 import { readMemberPermissionSnapshot } from "@/lib/server/member-permission-authority";
+import { canFavoriteOwnerInternalAgents } from "@/lib/server/internal-agent-catalog-access";
 
 type AppSupabaseClient = Parameters<ApiHandler>[1];
 type AgentFavoritesDatabase = {
@@ -49,6 +50,7 @@ async function canUseAgent(
   user: AuthUser,
   agentId: string,
   allowedNavigationKeys: ReadonlySet<string>,
+  ownerInternalCatalog: boolean,
 ) {
   const { data: agent, error } = await supabase
     .from("agents")
@@ -58,7 +60,11 @@ async function canUseAgent(
     .maybeSingle();
   if (error) throw error;
   if (!agent) return false;
-  if (agent.user_access === "hidden" || agent.is_active === false) return false;
+  // The owner catalog (/api/bots) intentionally exposes inactive, hidden and
+  // owner-only agents. Favorites must follow the same visibility rule so every
+  // card the owner can see stays collectible; regular members keep the strict
+  // admission rule below.
+  if (!ownerInternalCatalog && (agent.user_access === "hidden" || agent.is_active === false)) return false;
 
   const { data: category, error: categoryError } = await supabase
     .from("categories")
@@ -66,7 +72,8 @@ async function canUseAgent(
     .eq("name", agent.category)
     .maybeSingle();
   if (categoryError) throw categoryError;
-  if (!category || category.is_active === false || category.visibility === "private") return false;
+  if (!category) return false;
+  if (!ownerInternalCatalog && (category.is_active === false || category.visibility === "private")) return false;
   const navigationKey = getAgentNavigationKey(agent);
   if (!navigationKey) return false;
   return allowedNavigationKeys.has(navigationKey);
@@ -108,7 +115,8 @@ export async function POST(request: NextRequest) {
           { status: 503, headers: RESPONSE_HEADERS },
         );
       }
-      if (!(await canUseAgent(db, user, agentId, new Set(permission.agentNavigationKeys)))) {
+      const ownerInternalCatalog = await canFavoriteOwnerInternalAgents(request);
+      if (!(await canUseAgent(db, user, agentId, new Set(permission.agentNavigationKeys), ownerInternalCatalog))) {
         return NextResponse.json({ error: "该智能体不可收藏" }, { status: 404, headers: RESPONSE_HEADERS });
       }
       const { error } = await db

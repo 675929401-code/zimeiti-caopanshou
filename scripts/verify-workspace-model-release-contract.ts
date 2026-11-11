@@ -50,7 +50,18 @@ const baseline = normalizeWorkspaceModelSnapshot(rawWorkspace());
 
 check("十个工作台表面均固定归属 image 或 video", () => {
   assert.equal(Object.keys(baseline.surfaces).length, Object.keys(WORKSPACE_SURFACE_KIND).length);
-  for (const [surface, kind] of Object.entries(WORKSPACE_SURFACE_KIND)) assert.equal(baseline.surfaces[surface as keyof typeof WORKSPACE_SURFACE_KIND].kind, kind);
+  for (const [surface, kind] of Object.entries(WORKSPACE_SURFACE_KIND)) assert.equal(baseline.surfaces[surface as keyof typeof WORKSPACE_SURFACE_KIND]?.kind, kind);
+});
+
+check("旧十场景 v1 快照不补 native key 且保持原始哈希", () => {
+  const legacy = rawWorkspace();
+  delete legacy.surfaces["publish-center-image"];
+  delete legacy.surfaces["publish-center-video"];
+  const hash = configurationSha256(legacy);
+  const normalized = normalizeWorkspaceModelSnapshot(legacy);
+  assert.equal(Object.keys(normalized.surfaces).length, 10);
+  assert.equal(configurationSha256(normalized), hash);
+  assert.equal(validateWorkspaceModelSnapshot(normalized, modelPool).ok, true);
 });
 
 check("工作台引用精确模型池 releaseId 与 snapshotSha256", () => {

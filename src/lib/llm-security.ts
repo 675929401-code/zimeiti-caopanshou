@@ -86,6 +86,52 @@ export function omitSecurityScanFields(
   return filtered;
 }
 
+/** Binary image bytes are not SQL, HTML or filesystem text. Keep this exemption
+ * bound to the actual multimodal field, and leave every sibling field scanned.
+ * The ceiling bounds validation work; larger values retain ordinary scanning.
+ */
+function isInlineRasterImage(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 32 * 1024 * 1024) return false;
+  const header = /^data:image\/(png|jpeg|webp);base64,/u.exec(value);
+  if (!header) return false;
+  const encoded = value.slice(header[0].length);
+  if (!encoded.length || encoded.length % 4 !== 0) return false;
+  const paddingAt = encoded.indexOf("=");
+  const payloadEnd = paddingAt < 0 ? encoded.length : paddingAt;
+  if (paddingAt >= 0 && (encoded.length - paddingAt > 2 || /[^=]/u.test(encoded.slice(paddingAt)))) return false;
+  if (/[^A-Za-z0-9+/]/u.test(encoded.slice(0, payloadEnd))) return false;
+  // Buffer's decoder accepts malformed padding, so check the canonical tail too.
+  const tail = encoded.slice(-4);
+  if (Buffer.from(tail, "base64").toString("base64") !== tail) return false;
+  const prefix = Buffer.from(encoded.slice(0, 24), "base64");
+  if (header[1] === "png") return prefix.length >= 8 && prefix.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (header[1] === "jpeg") return prefix.length >= 3 && prefix[0] === 255 && prefix[1] === 216 && prefix[2] === 255;
+  return prefix.length >= 12 && prefix.toString("ascii", 0, 4) === "RIFF" && prefix.toString("ascii", 8, 12) === "WEBP";
+}
+
+/** A scan-only copy: never alter the messages forwarded to the model. */
+export function prepareSecurityScanBody(body: Record<string, unknown>, skipFields: string[] = []): Record<string, unknown> {
+  const filtered = omitSecurityScanFields(body, skipFields);
+  if (!Object.hasOwn(filtered, "messages") || !Array.isArray(filtered.messages)) return filtered;
+  let imageCount = 0;
+  let imageCodeUnits = 0;
+  for (const message of filtered.messages) {
+    if (!message || typeof message !== "object" || Array.isArray(message) || !Object.hasOwn(message, "content") || !Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (!part || typeof part !== "object" || Array.isArray(part) || !Object.hasOwn(part, "type") || part.type !== "image_url" || !Object.hasOwn(part, "image_url")) continue;
+      const image = part.image_url;
+      if (!image || typeof image !== "object" || Array.isArray(image) || !Object.hasOwn(image, "url")) continue;
+      if (imageCount >= 16 || typeof image.url !== "string" || imageCodeUnits + image.url.length > 32 * 1024 * 1024) continue;
+      if (isInlineRasterImage(image.url)) {
+        imageCount++;
+        imageCodeUnits += image.url.length;
+        image.url = "[inline raster image bytes]";
+      }
+    }
+  }
+  return filtered;
+}
+
 /**
  * 安全防护1：请求体注入检测
  * 检测 SQL 注入、XSS、路径遍历等恶意内容
@@ -99,7 +145,7 @@ export async function checkBodyInjection(
   fallbackUserId?: string,
   preVerifiedUser?: PreVerifiedAuthUser
 ): Promise<SecurityCheckResult> {
-  const suspicious = detectSuspiciousBody(omitSecurityScanFields(body, skipFields));
+  const suspicious = detectSuspiciousBody(prepareSecurityScanBody(body, skipFields));
   if (!suspicious.suspicious) return null;
 
   const secIP = getSecIP(request);

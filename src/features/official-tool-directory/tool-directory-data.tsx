@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 
 export type ToolCategory = "text" | "image" | "audio" | "video";
-export type ToolAvailability = "available" | "coming";
+export type ToolAvailability = "available" | "coming" | "retired";
 export type ToolTag = "热门" | "推荐" | "新增" | "优惠";
 export type OfficialThirdLevelToolPath = `/tools/${ToolCategory}/${string}`;
 
@@ -123,29 +123,29 @@ export const TOOL_CATEGORIES: Record<ToolCategory, ToolCategoryConfig> = {
     bannerSubtitle: "从文字与参考图出发，快速完成视觉表达",
     bannerImage: "/short-drama/previews/inspiration-moon-observatory-v1.webp",
     tools: [
-      card("图片生成 - 对话式", "对话式图片生成，可使用多种图片模型，支持快捷指令、多轮迭代编辑和聊天式出图。", Bot, {
-        availability: "available", href: "/tools/image/image-chat", officialPath: "/tools/image/image-chat",
-        tags: ["热门", "推荐", "优惠"], accent: visual.blue, eyebrow: "对话式图片生成", price: "低至 2 积分/次",
+      card("图片生成 - 对话式", "独立 AI 生图工作台已下线；图片能力保留在封面设计、分镜编排、漫剧创作等模块内。", Bot, {
+        availability: "retired", officialPath: "/tools/image/image-chat",
+        tags: [], accent: visual.blue, eyebrow: "对话式图片生成", price: "已下线",
       }),
-      card("图片编辑", "支持点选、框选、文字指令和参考图编辑，适合局部修改、构图调整与整体风格重塑。", Palette, {
-        availability: "available", href: "/tools/image/image-chat", officialPath: "/tools/image/image-edit",
-        tags: ["新增"], accent: visual.cyan, eyebrow: "精准图片编辑", price: "低至 4 积分/次", promotion: "限时8折",
+      card("图片编辑", "独立 AI 生图工作台已下线；参考图编辑能力保留在封面设计、分镜编排等创作模块内。", Palette, {
+        availability: "retired", officialPath: "/tools/image/image-edit",
+        tags: [], accent: visual.cyan, eyebrow: "精准图片编辑", price: "已下线",
       }),
-      card("图片生成 - 可灵", "支持文生图、多图参考与组图分镜，适合快速完成创意画面和系列视觉内容。", ImageIcon, {
-        availability: "available", href: "/tools/image/image-chat", officialPath: "/tools/image/kling-image",
-        tags: ["热门", "推荐", "优惠"], accent: visual.night, eyebrow: "图片生成 · 可灵", price: "低至 1 积分/次", promotion: "限时3.3折",
+      card("图片生成 - 可灵", "独立 AI 生图工作台已下线；分镜编排等模块仍可使用真实图片模型链路。", ImageIcon, {
+        availability: "retired", officialPath: "/tools/image/kling-image",
+        tags: [], accent: visual.night, eyebrow: "图片生成 · 可灵", price: "已下线",
       }),
-      card("图片生成 - AI创意", "多模型可选，支持高质量文生图、参考图编辑和多图生成，适合自由创意探索。", Sparkles, {
-        availability: "available", href: "/tools/image/openrouter-image", officialPath: "/tools/image/openrouter-image",
-        tags: ["热门", "推荐"], accent: "linear-gradient(135deg, #263b57 0%, #93a78e 54%, #c79b64 120%)", eyebrow: "多模型创意", price: "低至 3 积分/次", promotion: "限时7.5折",
+      card("图片生成 - AI创意", "独立 AI 生图工作台已下线；图片创意能力保留在封面设计、分镜编排等模块内。", Sparkles, {
+        availability: "retired", officialPath: "/tools/image/openrouter-image",
+        tags: [], accent: "linear-gradient(135deg, #263b57 0%, #93a78e 54%, #c79b64 120%)", eyebrow: "多模型创意", price: "已下线",
       }),
-      card("图片生成 - 千问", "千问图像生成与编辑，支持文生图、1-3 张参考图精确编辑和最高 6 张批量输出。", Images, {
-        availability: "available", href: "/tools/image/image-chat", officialPath: "/tools/image/qwen-image",
-        tags: ["新增", "推荐", "优惠"], accent: visual.violet, eyebrow: "图片生成 · 千问", price: "低至 2 积分/次", promotion: "限时6.7折",
+      card("图片生成 - 千问", "独立 AI 生图工作台已下线；保留模块仍按后台实时目录使用图片模型。", Images, {
+        availability: "retired", officialPath: "/tools/image/qwen-image",
+        tags: [], accent: visual.violet, eyebrow: "图片生成 · 千问", price: "已下线",
       }),
-      card("图片生成 - Seedream", "支持文生图、图生图和多种模型尺寸，可生成单图或系列组图。", ImageIcon, {
-        availability: "available", href: "/tools/image/image-chat", officialPath: "/tools/image/volcengine-image",
-        tags: ["推荐", "优惠"], accent: visual.blue, eyebrow: "Seedream 图像生成", price: "低至 2 积分/次", promotion: "限时6.7折",
+      card("图片生成 - Seedream", "独立 AI 生图工作台已下线；共享图片网关仍由保留的创作模块使用。", ImageIcon, {
+        availability: "retired", officialPath: "/tools/image/volcengine-image",
+        tags: [], accent: visual.blue, eyebrow: "Seedream 图像生成", price: "已下线",
       }),
       card("角色设定图生成", "生成角色立绘、肖像特写、表情九宫格、三视图，支持文生图和参考图两种方式。", UserRound, {
         availability: "available", href: "/storyboard-workbench", officialPath: "/tools/image/character-sheet",

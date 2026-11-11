@@ -1,0 +1,22 @@
+import fs from 'node:fs/promises';import path from 'node:path';import assert from 'node:assert/strict';import {spawn}from'node:child_process';
+import {nativeRoot,nativeBasePath,nativeIdentityPath,nativeSourceFingerprint,nativeEnvironment,assertNativePortFree}from'./native-publishing-local-utils.mjs';
+assert.equal(process.platform,'win32','LOCAL_WINDOWS_CANDIDATE_ONLY');
+assert.equal(process.version,'v24.19.0','APPROVED_NODE_RUNTIME_REQUIRED');
+await assertNativePortFree();
+const before=await nativeSourceFingerprint();
+const dependencies=JSON.parse(await fs.readFile(path.join(nativeRoot,'package.json'),'utf8'));
+assert.equal(dependencies.dependencies.next,'16.4.5');assert.equal(dependencies.dependencies.zod,'4.6.7');
+assert.ok(!dependencies.scripts.prepare&&!dependencies.scripts.postinstall,'NO_UPSTREAM_LIFECYCLE_HOOK');
+// Keep the original UI and compiler; bound module compilation on the Windows candidate builder.
+const buildEnvironment={...nativeEnvironment(),NEXT_WEBPACK_PARALLELISM:'1'};
+const exit=await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[path.join(nativeRoot,'node_modules/next/dist/bin/next'),'build','--webpack'],{cwd:nativeRoot,env:buildEnvironment,windowsHide:true,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>resolve(code));});
+assert.equal(exit,0,'NATIVE_BUILD_FAILED');
+const after=await nativeSourceFingerprint();assert.equal(after.digest,before.digest,'NATIVE_SOURCE_CHANGED_DURING_BUILD');
+const buildId=(await fs.readFile(path.join(nativeRoot,'.next/BUILD_ID'),'utf8')).trim();
+const identity={schemaVersion:'native-publishing-build.v1',upstreamCommit:'47e5a6fa8a5d2d0a52f1b7b5220a2ed3c034c294',buildId,sourceDigest:after.digest,basePath:nativeBasePath,framework:dependencies.dependencies.next,builtAt:new Date().toISOString()};
+await fs.mkdir(path.dirname(nativeIdentityPath),{recursive:true});await fs.writeFile(nativeIdentityPath,JSON.stringify(identity,null,2)+'\n');
+const standalone=path.join(nativeRoot,'.next/standalone');
+await fs.cp(path.join(nativeRoot,'public'),path.join(standalone,'public'),{recursive:true});
+await fs.cp(path.join(nativeRoot,'.next/static'),path.join(standalone,'.next/static'),{recursive:true});
+await fs.copyFile(path.join(nativeRoot,'LICENSE'),path.join(standalone,'UPSTREAM-LICENSE.txt'));
+console.log(JSON.stringify({nativeBuildComplete:true,...identity,webpackParallelism:1,sourceFiles:after.files,sourceBytes:after.bytes,mainBuildStillRequired:true}));

@@ -49,7 +49,7 @@ async function main() {
     .flatMap((category) => category.tools)
     .filter((tool) => tool.availability === "available" && tool.officialPath)
     .map((tool) => tool.officialPath!);
-  assert.ok(availableToolPaths.length >= 30, `public available tool routes regressed below the verified 30-route baseline: ${availableToolPaths.length}`);
+  assert.ok(availableToolPaths.length >= 24, `public available tool routes regressed below the verified 24-route baseline: ${availableToolPaths.length}`);
   const toolResponses = await Promise.all(availableToolPaths.map(async (officialPath) => {
     const [, category, tool] = officialPath.split("/").slice(1);
     const directPage = existsSync(join(process.cwd(), "src", "app", "youcai", officialPath, "page.tsx"));

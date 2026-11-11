@@ -10,6 +10,7 @@ import {
   GripVertical,
   ImageIcon,
   LayoutGrid,
+  Megaphone,
   Mic2,
   MonitorPlay,
   PackageSearch,
@@ -29,19 +30,10 @@ import PlatformConfigurationReleasePanel from "./PlatformConfigurationReleasePan
 import { ModelBadge } from "@/components/model-badge";
 import { isVideoCatalogDisplaySurface } from "@/lib/video-workspace-catalog";
 import { publicVideoModelCompatibilityMessage } from "@/lib/video-model-public-status";
+import type { WorkspaceModelKind, WorkspaceModelSurface } from "@/lib/workspace-model-policy";
 
-type ModelKind = "image" | "video";
-type SurfaceId =
-  | "image-workbench"
-  | "cover-studio"
-  | "storyboard-image"
-  | "storyboard-video"
-  | "free-canvas-image"
-  | "free-canvas-video"
-  | "film-studio-image"
-  | "film-studio-video"
-  | "commerce-video"
-  | "video-page";
+type ModelKind = WorkspaceModelKind;
+type SurfaceId = WorkspaceModelSurface;
 
 export type WorkspaceSpecializedTarget =
   | "digital-human"
@@ -56,6 +48,7 @@ export type WorkspaceProjectId =
   | "storyboard"
   | "video"
   | "film"
+  | "publish-center"
   | "digital-human"
   | "voice"
   | "commerce"
@@ -117,10 +110,11 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "image", label: "图片创作", description: "生图模型", group: "内容生产", icon: ImageIcon, surfaceIds: ["image-workbench"] },
-  { id: "cover", label: "封面制作", description: "底图与排版", group: "内容生产", icon: WandSparkles, surfaceIds: ["cover-studio"] },
+  { id: "cover", label: "封面制作", description: "画面与标题", group: "内容生产", icon: WandSparkles, surfaceIds: ["cover-studio"] },
   { id: "storyboard", label: "AI 分镜工作台", description: "分镜图与图生视频", group: "内容生产", icon: LayoutGrid, surfaceIds: ["storyboard-image", "storyboard-video"] },
   { id: "video", label: "AI 视频创作", description: "主站视频制作", group: "内容生产", icon: MonitorPlay, surfaceIds: ["video-page"] },
   { id: "film", label: "影视工坊", description: "关键帧与镜头视频", group: "内容生产", icon: Film, surfaceIds: ["film-studio-image", "film-studio-video"] },
+  { id: "publish-center", label: "发布中心", description: "发布配图与视频", group: "内容生产", icon: Megaphone, surfaceIds: ["publish-center-image", "publish-center-video"] },
   { id: "commerce", label: "带货 Agent", description: "多参考视频复刻", group: "专项能力", icon: ShoppingCart, surfaceIds: ["commerce-video"] },
   { id: "voice", label: "智音工坊", description: "音色与 TTS 引擎", group: "专项能力", icon: Mic2, adminTarget: "voice-studio" },
   { id: "manju", label: "漫剧工作台", description: "漫剧生产能力", group: "专项能力", icon: Film, adminTarget: "manju-workbench" },

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeCurrentApiUser } from "@/lib/current-api-user";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { storageManager, type StorageProviderType } from "@/storage/object";
-import type { CoverCompositionPlan } from "@/lib/cover-composition";
+import { coverTextRendering, type CoverCompositionPlan } from "@/lib/cover-composition";
 import { DatabaseImageExactlyOnceStore } from "@/lib/image-exactly-once";
 import { coverGeneratedReceipt, COVER_TEMPORARY_DELIVERY_CODE, COVER_TEMPORARY_COMPOSITION_ERROR } from "@/lib/cover-generated-delivery";
 import {
@@ -19,6 +19,7 @@ import {
 import {
   COVER_ATTEMPT_ACTIVE_STATES,
   coverAttemptProjection,
+  projectCoverCompositionPlan,
   isCoverAttemptRow,
   type CoverAttemptRow,
 } from "@/lib/cover-durable-attempt";
@@ -168,7 +169,8 @@ async function loadFailedCoverHistory(
       ratio: task?.ratio || snapshot.aspectRatio,
       title: task?.title || "失败的封面生成",
       subtitle: task?.subtitle || "",
-      prompt: task?.prompt || snapshot.prompt,
+      prompt: "",
+      imageOrigin: "generated" as const,
       ...(task?.briefText ? { briefText: task.briefText } : {}),
       ...(task?.renderPlan ? { renderPlan: task.renderPlan } : {}),
       source: "生成",
@@ -185,10 +187,7 @@ async function loadFailedCoverHistory(
       requestIntegrity: {
         schema: snapshot.schema,
         payloadFingerprint: snapshot.payloadFingerprint || row.payload_fingerprint,
-        effectivePrompt: snapshot.effectivePrompt || snapshot.prompt,
-        style: snapshot.style || "",
         referenceUsage: snapshot.referenceUsage || "general",
-        providerProtocol: snapshot.providerProtocol || "legacy_unknown",
         outputPixelSize: snapshot.outputPixelSize || "",
         imageCount: snapshot.imageCount || 1,
       },
@@ -302,12 +301,16 @@ export async function GET(request: NextRequest) {
       assetId: row.asset_id,
       historyRecordId: row.history_record_id,
       backgroundAssetId: row.background_asset_id,
-      renderPlan: row.plan,
+      renderPlan: projectCoverCompositionPlan(row.plan),
+      ...(coverTextRendering(row.plan).mode === "native" ? { textVerification: "unverified" as const } : {}),
       title: row.plan.title,
       subtitle: row.plan.subtitle,
       ratio: row.plan.aspectRatio,
       briefText: row.authoring_context?.briefText || "",
-      prompt: row.authoring_context?.prompt || "",
+      prompt: "",
+      // Historical provenance is resolved here from the private authoring
+      // snapshot. The browser never needs that compiled prompt to classify it.
+      imageOrigin: row.authoring_context?.prompt?.trim() || coverTextRendering(row.plan).mode === "native" ? "generated" as const : "original" as const,
       source: "生成",
       status: displayReady ? "done" : "display_pending",
       error: displayReady ? undefined : "封面文件已保存，展示地址暂未取得；系统会自动重试",

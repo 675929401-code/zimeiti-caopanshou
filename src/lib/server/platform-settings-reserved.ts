@@ -1,9 +1,10 @@
 import "server-only";
+import { COVER_STYLE_SETTING_KEY } from "./cover-style-config";
 
 export const MANJU_PLATFORM_SETTINGS_PREFIX = "manju.config.v1.";
 
 export function isReservedPlatformSettingKey(value: unknown): boolean {
-  return typeof value === "string" && value.startsWith(MANJU_PLATFORM_SETTINGS_PREFIX);
+  return typeof value === "string" && (value.startsWith(MANJU_PLATFORM_SETTINGS_PREFIX) || value === COVER_STYLE_SETTING_KEY);
 }
 
 export function findReservedPlatformSettingKeys(rows: readonly unknown[]): string[] {

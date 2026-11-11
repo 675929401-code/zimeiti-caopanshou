@@ -19,7 +19,8 @@ interface YoucaiMusicPrefill {
 }
 
 export const YOUCAI_AGENT_WORKBENCH_ROUTES = {
-  image: "/tools/image/image-chat",
+  // 独立 AI 生图工作台已下线：图片类建议不再交接，落到模块首页以保持路由自洽。
+  image: "/youcai/tools",
   video: "/video",
   music: "/tools/audio/minimax-music",
 } as const;

@@ -1,0 +1,30 @@
+BEGIN;
+SET LOCAL lock_timeout='10s';
+SET LOCAL statement_timeout='120s';
+-- Never discard approvals, claimed requests, budgets or result evidence.
+DO $$BEGIN
+ IF to_regprocedure('public.native_media_register_source(text,uuid,jsonb,text)') IS NOT NULL THEN RAISE EXCEPTION 'NATIVE_AI_ROLLBACK_REQUIRES_MEDIA_130000_FIRST';END IF;
+ IF EXISTS(SELECT 1 FROM public.pub_native_ai_actions) OR EXISTS(SELECT 1 FROM public.pub_native_ai_batches) OR EXISTS(SELECT 1 FROM public.pub_native_ai_requests) OR EXISTS(SELECT 1 FROM public.pub_native_ai_events) OR EXISTS(SELECT 1 FROM public.pub_native_ai_publish_manifests) THEN RAISE EXCEPTION 'NATIVE_AI_ROLLBACK_REQUIRES_PRESERVED_HISTORY';END IF;
+END$$;
+DROP FUNCTION public.read_native_ai_atomic(text,jsonb);
+DROP FUNCTION public.mutate_native_ai_atomic(text,jsonb);
+DROP FUNCTION public.native_ai_insert_action(text,uuid,jsonb,jsonb,text);
+DROP FUNCTION public.native_ai_touch(text,uuid,text);
+DROP FUNCTION public.native_ai_batch_result(public.pub_native_ai_batches);
+DROP FUNCTION public.native_ai_item_dto(public.pub_native_ai_items);
+DROP FUNCTION public.native_ai_batch_dto(public.pub_native_ai_batches);
+DROP FUNCTION public.native_ai_manifest(text,uuid);
+DROP FUNCTION public.native_ai_action_dto(public.pub_native_ai_actions);
+DROP FUNCTION public.native_ai_slot_dto(public.pub_native_ai_slots);
+DROP FUNCTION public.native_ai_aggregate(text[]);
+DROP FUNCTION public.native_ai_assert_snapshot(text,uuid,jsonb,jsonb);
+DROP FUNCTION public.native_ai_assert_source(text,jsonb,text);
+DROP TABLE public.pub_native_ai_publish_manifests,public.pub_native_ai_events,public.pub_native_ai_requests,public.pub_native_ai_slots,public.pub_native_ai_actions,public.pub_native_ai_items,public.pub_native_ai_batches;
+DROP FUNCTION public.native_ai_history_guard();
+DROP FUNCTION public.native_ai_integer(jsonb,bigint,bigint);
+DROP FUNCTION public.native_ai_uuid(jsonb);
+DROP FUNCTION public.native_ai_decimal(text);
+DROP FUNCTION public.native_ai_no_credentials(jsonb,integer);
+DROP FUNCTION public.native_ai_hash(jsonb);
+NOTIFY pgrst,'reload schema';
+COMMIT;

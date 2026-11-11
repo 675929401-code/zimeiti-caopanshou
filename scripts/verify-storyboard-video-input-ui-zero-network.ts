@@ -156,10 +156,56 @@ assert.doesNotMatch(source, /storyboardProductionVideoFingerprint\(current, card
 assert.ok((source.match(/resolveStoryboardAutomaticVideoInputs\(/gu) || []).length >= 10);
 const continuousStart = source.slice(source.indexOf("const startContinuousProduction ="), source.indexOf("const session = continuousAuthorizationRef.current;", source.indexOf("const startContinuousProduction =")));
 assert.doesNotMatch(continuousStart, /card\.videoInputs|input\?\.useStoryboardImage/u, "retained hidden configuration cannot block continuous admission");
-assert.match(source, /使用当前分镜图和本段视频提示词/u);
-assert.match(source, /仅使用当前视频提示词，不使用图片或其他素材/u);
+const summaries: ts.JsxElement[] = [];
+const collectSummaries = (node: ts.Node) => {
+  if (ts.isJsxElement(node) && node.openingElement.attributes.properties.some(attribute =>
+    ts.isJsxAttribute(attribute) && attribute.name.getText(ast) === "className"
+      && attribute.initializer?.getText(ast) === '"sbw-video-reference-summary"')) summaries.push(node);
+  ts.forEachChild(node, collectSummaries);
+};
+collectSummaries(ast);
+assert.equal(summaries.length, 1, "the automatic input summary must have one owning JSX consumer");
+for (const [requiresStoryboardImage, text] of [[true, "使用当前分镜图"], [false, "仅使用当前视频提示词"]] as const) {
+  const summaryModule = { exports: {} as { render?: () => React.ReactNode } };
+  runInNewContext(ts.transpileModule(`module.exports = { render: () => (${summaries[0].getText(ast)}) };`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, { module: summaryModule, exports: summaryModule.exports, require: (id: string) => { assert.equal(id, "react/jsx-runtime"); return jsxRuntime; },
+    Film: () => null, cardVideoInputs: { requiresStoryboardImage } });
+  assert.equal(renderToStaticMarkup(summaryModule.exports.render!()), `<div class="sbw-video-reference-summary"><span>${text}</span></div>`,
+    "the real JSX must describe the same automatic input branch that its requestFields submit");
+}
 assert.doesNotMatch(source, /或改用自定义视频素材|或关闭使用本段分镜图/u);
-assert.match(source, /showVideoStartIssue && !videoViewOnly/u, "display blocker text after removing its editor");
+const blockerExpressions: ts.JsxExpression[] = [], inlineExpressions: ts.JsxExpression[] = [];
+const collectBlockers = (node: ts.Node) => {
+  if (ts.isJsxExpression(node) && node.expression?.getText(ast).startsWith("showVideoStartIssue &&")) blockerExpressions.push(node);
+  if (ts.isJsxExpression(node) && node.expression?.getText(ast).startsWith("showInlineVideoStartIssue &&")) inlineExpressions.push(node);
+  ts.forEachChild(node, collectBlockers);
+};
+collectBlockers(ast);
+assert.equal(blockerExpressions.length, 1); assert.equal(inlineExpressions.length, 1);
+const statusDeclarations = ["isActiveVideoStatus", "videoNeedsRequestReconciliation"].map(name => {
+  const declaration = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
+  assert.ok(declaration, `actual prerequisite dependency missing: ${name}`); return declaration.getText(ast);
+}).join("\n");
+for (const flags of [
+  { showVideoStartIssue: true, showInlineVideoStartIssue: false, videoViewOnly: false, card: { videoStatus: "idle" }, visible: true },
+  { showVideoStartIssue: true, showInlineVideoStartIssue: true, videoViewOnly: false, card: { videoStatus: "idle" }, visible: false },
+  { showVideoStartIssue: true, showInlineVideoStartIssue: false, videoViewOnly: true, card: { videoStatus: "idle" }, visible: false },
+  { showVideoStartIssue: true, showInlineVideoStartIssue: false, videoViewOnly: false, card: { videoStatus: "running" }, visible: false },
+  { showVideoStartIssue: false, showInlineVideoStartIssue: false, videoViewOnly: false, card: { videoStatus: "idle" }, visible: false },
+]) {
+  const displayModule = { exports: {} as { render: () => React.ReactNode; inline: () => React.ReactNode } };
+  runInNewContext(ts.transpileModule(`${statusDeclarations}\nmodule.exports = {
+    render: () => (${blockerExpressions[0].expression!.getText(ast)}), inline: () => (${inlineExpressions[0].expression!.getText(ast)}) };`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, { module: displayModule, exports: displayModule.exports,
+    require: (id: string) => { assert.equal(id, "react/jsx-runtime"); return jsxRuntime; }, ...flags, videoStartIssue: "请先生成并加载本段分镜图。" });
+  const blockerHtml = renderToStaticMarkup(displayModule.exports.render());
+  assert.equal(blockerHtml.includes('role="status"'), flags.visible, "real blocker JSX must display exactly once for actionable idle cards");
+  if (flags.visible) assert.match(blockerHtml, /请先生成并加载本段分镜图。/u);
+  const inlineHtml = renderToStaticMarkup(displayModule.exports.inline());
+  assert.equal(inlineHtml.includes("待生成分镜图"), flags.showInlineVideoStartIssue, "compact prerequisites retain their actual inline status instead of duplicate prose");
+}
 const oldCustom = { ...valid, videoInputs: { useStoryboardImage: false, firstFrameUrl: "https://assets.example.invalid/old.png" } };
 const oldCustomFingerprint = JSON.stringify({ ...evaluateFingerprint(oldCustom), videoInputs: resolveStoryboardVideoInputs(imageModel, oldCustom).identity });
 const automaticFingerprint = JSON.stringify(evaluateFingerprint(oldCustom));
