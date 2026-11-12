@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "0d595c6dc50de76114355ba2cc23af06e37b4a184c31048816a62378ee4ae4b9",
+  "sourceFingerprint": "59bacaed9bb17bb85fb275172f7ad446924a86324d4a1ad7ba0e8d6514c51fb2",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 5293,
-  "totalBytes": 86367756,
+  "fileCount": 5296,
+  "totalBytes": 86378437,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2019,7 +2019,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "ef6bdb48bce7c29379b093b6f01b59709ab17f333e28984d2c32fe0757448d11"
+      "sha256": "ec47d7e702920e1a9b30783df4d7bd754d982aad4d42147668ad25cff1d1e32e"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -15918,8 +15918,8 @@
     },
     {
       "path": "src/app/video/page.tsx",
-      "bytes": 257588,
-      "sha256": "9ea52110153dd6c05df8ae6928d720216e0c8223f3d22da0022e3aff2d2f6250"
+      "bytes": 258479,
+      "sha256": "9cd60e23696a787554d04ba5ca6c66bda9cf4476a84d6aa37c8937d797224af8"
     },
     {
       "path": "src/app/video/paired-layout.module.css",
@@ -18223,8 +18223,8 @@
     },
     {
       "path": "src/components/storyboard-editor-viewport.tsx",
-      "bytes": 1716,
-      "sha256": "9f154dac1e9a28c55aace76d3d322f7cb5e4f6d33fb82850c257900c590a8200"
+      "bytes": 1701,
+      "sha256": "298ecaebb2fe2f6419aca41b5762b9062db8605d540452fb96c23ed98e692281"
     },
     {
       "path": "src/components/storyboard-history-browser.css",
@@ -18293,8 +18293,8 @@
     },
     {
       "path": "src/components/storyboard-workbench.tsx",
-      "bytes": 542195,
-      "sha256": "20886d0b8d9d4cfc8d79335d1cc5dc85ba3a1e6429221b501b114d1fcac60a8b"
+      "bytes": 544543,
+      "sha256": "98b0fbb89e3bb42065f99fe7664036dccc589a123b173de6c4288a7ba594c873"
     },
     {
       "path": "src/components/sub-page-header.tsx",
@@ -19710,6 +19710,11 @@
       "path": "src/hooks/use-tool-runtime-catalog.ts",
       "bytes": 1505,
       "sha256": "eecb8f9a7dd005209676323f6e45472597e142e839073f60c20324119fced934"
+    },
+    {
+      "path": "src/hooks/use-unsaved-work-warning.ts",
+      "bytes": 599,
+      "sha256": "3bb146d0800c9f61ade47021ecd8d8624a6c55af028201d1c98fc1f73502db6d"
     },
     {
       "path": "src/hooks/use-voice-favorites.ts",
@@ -22797,6 +22802,11 @@
       "sha256": "2beef3b38ec6309507ab9215ea2bd8fad92755557aed780f52e8e143cfb21dc3"
     },
     {
+      "path": "src/lib/storyboard-page-draft.ts",
+      "bytes": 2705,
+      "sha256": "b2206658264f2395271e66806abf4c6dc2931f9d3a9004946152969203320968"
+    },
+    {
       "path": "src/lib/storyboard-preset-assets.ts",
       "bytes": 4489,
       "sha256": "e0c93a59d6d6a79faae49b7981c1bf773deaed6c8c62d3a2dca09fb7cae101f1"
@@ -23335,6 +23345,11 @@
       "path": "src/lib/video-optional-media-input.ts",
       "bytes": 409,
       "sha256": "48f8886812b0482edf53f4493ad8e0f207c338a95dcb7c0093e84258607e40d2"
+    },
+    {
+      "path": "src/lib/video-page-draft.ts",
+      "bytes": 4153,
+      "sha256": "d9703d20073e0c07e85582f36a807ff177deb5869f1ecf67e518707ade598b77"
     },
     {
       "path": "src/lib/video-persistence.ts",
