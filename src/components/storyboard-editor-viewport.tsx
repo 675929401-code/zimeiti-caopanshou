@@ -18,9 +18,9 @@ export function StoryboardEditorViewport({ enabled, children }: { enabled: boole
       const height = port.clientHeight;
       // History hides this subtree. Keep its last geometry until it is visible.
       if (!width || !height) return;
-      const scale = Math.min(1, Math.max(0.9, width / 1440));
+      const scale = Math.min(1, Math.max(0.75, width / 1440));
       canvas.style.setProperty("--storyboard-editor-scale", String(scale));
-      canvas.style.setProperty("--storyboard-editor-width", `${Math.max(1440, width / scale)}px`);
+      canvas.style.setProperty("--storyboard-editor-width", `${width / scale}px`);
       canvas.style.setProperty("--storyboard-editor-height", `${height / scale}px`);
       canvas.dataset.scale = String(scale);
     };
