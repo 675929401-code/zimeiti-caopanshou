@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "youcai.public-inspiration-media.v1",
+  "retrievedAt": "2026-08-23T17:00:00+08:00",
+  "sourcePage": "https://youcai.art/inspiration",
+  "sourceApi": "https://youcai.art/api/inspiration",
+  "scope": "Public inspiration media snapshots selected to restore playable audio and video content types. No authenticated or paid endpoint was used.",
+  "items": [
+    {
+      "officialId": "cmt06udx900hvg8rxfw10zi5a",
+      "type": "audio",
+      "category": "music",
+      "sourceUrl": "https://youcaiapp.oss-accelerate.aliyuncs.com/users/cmmrhtkku000ew1x0ox0tsboo/generated/1787149792886-minimax-music_1787149792885.mp3",
+      "localPath": "/short-drama/inspiration-media/v1/official-latest-music-v1.mp3",
+      "bytes": 7352205,
+      "duration": "00:03:49.69",
+      "sha256": "5b74ff03464edbd3a323848f6d89370dc2e702b81ea7406ed7d2289861b767e5"
+    },
+    {
+      "officialId": "cmmx26uv7023ogdnx2pcnwe78",
+      "type": "audio",
+      "category": "voice",
+      "sourceUrl": "https://youcaiapp.oss-accelerate.aliyuncs.com/users/cmmsu19520132y3zjfpgnyait/generated/1773899884348-minimax-tts_1773899884348.mp3",
+      "localPath": "/short-drama/inspiration-media/v1/official-voice-sample-v1.mp3",
+      "bytes": 81204,
+      "duration": "00:00:04.97",
+      "sha256": "11c220f3890557f6d18c3b95b824294994592add2909d98f51a06c49e5fe2a72"
+    },
+    {
+      "officialId": "cmreqtxrp00x412o9vht6yoxw",
+      "type": "audio",
+      "category": "audio",
+      "sourceUrl": "https://youcaiapp.oss-accelerate.aliyuncs.com/users/cmmrhtkku000ew1x0ox0tsboo/generated/1783676326293-volcengine-audio_1783676326293.mp3",
+      "localPath": "/short-drama/inspiration-media/v1/official-audio-mix-v1.mp3",
+      "bytes": 220460,
+      "duration": "00:00:27.55",
+      "sha256": "fd825bd7e65ca54c84553284c83ec89fb7b4b931674deb515cd0ba31800bf8c3"
+    },
+    {
+      "officialId": "cms4chh8m007al81vllwhwh5a",
+      "type": "video",
+      "category": "video",
+      "sourceUrl": "https://youcaiapp.oss-accelerate.aliyuncs.com/users/cmmrhtkku000ew1x0ox0tsboo/generated/1785224350760-video-chat_1785224350760.mp4",
+      "localPath": "/short-drama/inspiration-media/v1/official-video-showcase-v1.mp4",
+      "posterPath": "/short-drama/inspiration-media/v1/official-video-showcase-v1-poster.jpg",
+      "bytes": 7746039,
+      "duration": "00:00:15.07",
+      "sha256": "880a5ff2404449bfef6e02f1d07cd34f6479971a54e344c0df8bb362f905327a",
+      "visualReview": "Three sampled frames reviewed; no website logo observed."
+    },
+    {
+      "officialId": "cmp5mycmm001rlb2yvuzru39h",
+      "type": "video",
+      "category": "shot",
+      "sourceUrl": "https://youcaiapp.oss-accelerate.aliyuncs.com/users/cmoi6mjh201a6d5j22hq4sssd/generated/1778772053367-drama-shot-video_1778772053367.mp4",
+      "localPath": "/short-drama/inspiration-media/v1/official-shot-showcase-v1.mp4",
+      "posterPath": "/short-drama/inspiration-media/v1/official-shot-showcase-v1-poster.jpg",
+      "bytes": 5422746,
+      "duration": "00:00:15.07",
+      "sha256": "3f5db04acefb9649928a32533f6aa4e68f657bb450ff69bf3cbcdbab4fe2965d",
+      "visualReview": "Three sampled frames reviewed; no website logo observed. The video itself contains narrative title text."
+    },
+    {
+      "officialId": "cmpws0h4w0026i92wrs61aak3",
+      "type": "video",
+      "category": "film",
+      "sourceUrl": "https://youcaiapp.oss-accelerate.aliyuncs.com/users/cmmrhtkku000ew1x0ox0tsboo/generated/1780413136786-video-clip-1780413136785.mp4",
+      "localPath": "/short-drama/inspiration-media/v1/official-film-showcase-v1.mp4",
+      "posterPath": "/short-drama/inspiration-media/v1/official-film-showcase-v1-poster.jpg",
+      "bytes": 19314217,
+      "duration": "00:00:50.01",
+      "sha256": "423bc81933fa3a98e5f90ca549328edbc3af409d0953e2fc1f58d38ea31e88bf",
+      "visualReview": "Three sampled frames reviewed; no website logo observed. The official API exposes no prompt for this item."
+    }
+  ]
+}

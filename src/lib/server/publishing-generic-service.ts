@@ -5,7 +5,7 @@ import { PublishingDraftProfileSchema, PublishingGenericMutationSchema, Publishi
 import { PublishingAuthorizationPlatformSchema } from '../publishing-authorization-contract'
 import { readMemberPermissionSnapshot } from './member-permission-authority'
 import { PublishingError, publishingRuntimeEnabled } from './publishing-service'
-import { readPublishingProviderConfiguration } from './publishing-provider-config'
+import { readPublishingProviderConfiguration, readPublishingProviderConfigurationForNamespace, OVERSEAS_PUBLISHING_PLATFORMS } from './publishing-provider-config'
 import { PublishingProvider, PublishingProviderError, publishingProviderPayloadHash, projectProviderStatus, validatePublishingProviderOptions, type PublishingProviderFlowInput, type PublishingProviderGrant } from './publishing-provider'
 import { readNativeMediaSource } from './native-main-media'
 import { effectiveGenericPublishingContent, validateGenericPublishingContent, validateGenericPublishingPolicy, validateGenericReservedOptions } from '../publishing-generic-validation'
@@ -65,7 +65,8 @@ function configured(cfg: Config) { if (!cfg.configured || !cfg.apiKey) fail('PRO
 async function execution(db: DB, cfg: Config, platforms: string[]) {
   configured(cfg)
   const c = await configuration(db)
-  if (!publishingRuntimeEnabled() || c.execution_enabled !== true || !Array.isArray(c.enabled_platforms) || platforms.some(p => !(c.enabled_platforms as string[]).includes(p))) fail('PUBLISH_EXECUTION_DISABLED', '管理员尚未开启所选平台的发布执行')
+  const allowed = cfg.environment === 'international' ? [...OVERSEAS_PUBLISHING_PLATFORMS] : Array.isArray(c.enabled_platforms) ? c.enabled_platforms as string[] : []
+  if (!publishingRuntimeEnabled() || c.execution_enabled !== true || platforms.some(p => !allowed.includes(p))) fail('PUBLISH_EXECUTION_DISABLED', '管理员尚未开启所选平台的发布执行')
   return c
 }
 function provider(user: AuthUser, cfg: Config, op?: Row, consumeGrant?: (grant: PublishingProviderGrant) => Promise<boolean>) {
@@ -77,6 +78,7 @@ function provider(user: AuthUser, cfg: Config, op?: Row, consumeGrant?: (grant: 
     taskIds: new Set([str(snapshot.taskId)].filter(Boolean)), authSessionIds: new Set(),
   }, consumeGrant })
 }
+const configForNamespace = (namespace: string) => readPublishingProviderConfigurationForNamespace(namespace)
 function capabilityHash(caps: Capability[], platforms: string[]) {
   const selected = [...new Set(platforms)].sort().map(platform => {
     const cap = caps.find(item => item.platform === platform)
@@ -178,7 +180,8 @@ async function prepare(db: DB, user: AuthUser, cfg: Config, action: Extract<Publ
       const ownedUrls = new Set(assets.map(a => str(a.asset.public_url)))
       if (!validateGenericReservedOptions(target.options, str(binding.platform_uid), ownedUrls)) fail('NATIVE_OFFICIAL_OPTIONS_SCOPE_INVALID', '平台选项中的身份或素材地址不属于此次已确认目标')
       const url = (id: string) => ({ url: str(assets.find(a => a.mediaId === id)!.asset.public_url) })
-      const options = { ...target.options, ...(target.platform === 'pinterest' && draft.contentType === 'video' && target.coverMediaId ? { coverImageUrl: url(target.coverMediaId).url } : {}) }
+      const options = { ...target.options, ...(target.platform === 'pinterest' && draft.contentType === 'video' && target.coverMediaId ? { coverImageUrl: url(target.coverMediaId).url } : {}), // 公众号只进草稿箱：无论界面选项如何，服务端强制草稿模式，群发由客户在公众号后台完成
+        ...(target.platform === 'wxGzh' ? { draftOnly: true, massSend: false } : {}) }
       if (errors.length || !validatePublishingProviderOptions(cap.optionSchema, options)) fail('NATIVE_OFFICIAL_OPTIONS_INVALID', `${target.platform}：${errors.join('；') || '发布参数未通过当前平台规则校验'}`)
       const content = { ...(Number(row(cap.contentLimits).maxTitleLength) === 0 ? {} : { title: effective.title }), body: effective.body, media: target.mediaIds.map(url), ...(target.coverMediaId ? { cover: url(target.coverMediaId) } : {}) }
       if (!wire.items.length) wire.content = content
@@ -265,7 +268,7 @@ async function execute(db: DB, user: AuthUser, cfg: Config, op: Row, expectedRev
 
 export async function mutatePublishingGeneric(user: AuthUser, db: DB, action: PublishingGenericAction) {
   await access(user)
-  const cfg = readPublishingProviderConfiguration()
+  let cfg = readPublishingProviderConfiguration()
   if (action.action === 'save-draft') {
     const prior = await request(db, user, action.requestKey, action)
     if (prior) return publicResult(db, user, cfg, prior)
@@ -273,15 +276,28 @@ export async function mutatePublishingGeneric(user: AuthUser, db: DB, action: Pu
     PublishingDraftProfileSchema.parse(action.draft.profile)
     return publicResult(db, user, cfg, await rpc(db, user, cfg, { action: 'save-draft', requestKey: action.requestKey, request: action, draftId: action.id ?? randomUUID(), expectedRevision: action.expectedRevision, draft: action.draft }))
   }
-  if (action.action === 'prepare') return prepare(db, user, cfg, action)
+  if (action.action === 'prepare') {
+    const saved = await storedDraft(db, user, action.draftId, action.draftVersion)
+    const bindings = await Promise.all(action.targetIds.map(id => {
+      const target = saved.draft.profile.targets.find(item => item.id === id)
+      return target ? owned(db, user, 'pub4_account_bindings', target.accountId) : null
+    }))
+    const namespaces = new Set(bindings.filter(Boolean).map(binding => str(binding!.connection_id)))
+    if (namespaces.size > 1) fail('NATIVE_OFFICIAL_BINDING_CHANGED', '一次发布不能混用国内与国际账号，请分开提交')
+    const namespace = [...namespaces][0]
+    if (namespace) cfg = configForNamespace(namespace)
+    return prepare(db, user, cfg, action)
+  }
   if (action.action === 'execute') {
     const op = await owned(db, user, 'pub5_operations', action.operationId)
+    cfg = configForNamespace(str(op.namespace))
     if (op.request_key !== action.requestKey) fail('PUBLISH_IDEMPOTENCY_CONFLICT', '执行请求标识与原操作不一致')
     return execute(db, user, cfg, op, action.expectedRevision, action.snapshotHash, action.funding)
   }
   if (action.action === 'reconcile') {
     const op = await owned(db, user, 'pub5_operations', action.operationId)
-    if (op.namespace !== cfg.namespace || op.revision !== action.expectedRevision) fail('NATIVE_OFFICIAL_OPERATION_CHANGED', '操作版本或服务连接已变化')
+    cfg = configForNamespace(str(op.namespace))
+    if (op.revision !== action.expectedRevision) fail('NATIVE_OFFICIAL_OPERATION_CHANGED', '操作版本或服务连接已变化')
     if (op.grant_used !== true) return publicResult(db, user, cfg, await rpc(db, user, cfg, { action: 'block-unissued', operationId: op.id, dispatchId: op.dispatch_id, expectedRevision: op.revision, errorCode: 'NATIVE_OFFICIAL_RECOVERED_UNISSUED' }))
     const revisions = await targetRevisions(db, user, op)
     return publicResult(db, user, cfg, await recordResult(db, user, cfg, op, await observe(user, cfg, db, op), revisions))
@@ -290,10 +306,12 @@ export async function mutatePublishingGeneric(user: AuthUser, db: DB, action: Pu
   if (prior) {
     const id = Array.isArray(prior.operationIds) ? str(prior.operationIds[0]) : ''
     const op = await owned(db, user, 'pub5_operations', id)
+    cfg = configForNamespace(str(op.namespace))
     return op.state === 'prepared' ? execute(db, user, cfg, op, Number(op.revision), str(op.snapshot_hash)) : publicResult(db, user, cfg, prior)
   }
   const target = await owned(db, user, 'pub5_targets', action.targetId), parent = await owned(db, user, 'pub5_operations', str(target.operation_id))
-  if (parent.namespace !== cfg.namespace || target.revision !== action.expectedRevision || target.state !== 'queued' || !target.provider_task_id || !target.provider_record_id) fail('NATIVE_OFFICIAL_TASK_STATE_INVALID', '原任务版本或状态不支持此操作')
+  cfg = configForNamespace(str(parent.namespace))
+  if (target.revision !== action.expectedRevision || target.state !== 'queued' || !target.provider_task_id || !target.provider_record_id) fail('NATIVE_OFFICIAL_TASK_STATE_INVALID', '原任务版本或状态不支持此操作')
   await execution(db, cfg, [str(target.platform)])
   const caps = await provider(user, cfg).readCapabilities(), hash = capabilityHash(caps, [str(target.platform)])
   const change = action.change === 'publish_now' ? 'publish-now' : action.change
@@ -310,11 +328,22 @@ export async function readPublishingGenericStatus(db: DB) {
 }
 export async function readPublishingGeneric(user: AuthUser, db: DB, query: PublishingGenericQuery) {
   await access(user)
-  const cfg = readPublishingProviderConfiguration()
+  let cfg = readPublishingProviderConfiguration()
   if (query.resource === 'status') return { ...await readPublishingGenericStatus(db), configured: cfg.configured, executionEnabled: publishingRuntimeEnabled() }
   if (query.resource === 'operation') {
-    if (query.requestKey) { const result = await request(db, user, query.requestKey); return result ? publicResult(db, user, cfg, result) : null }
-    return publicResult(db, user, cfg, { operationIds: [query.id], alreadyFulfilled: true })
+    if (query.requestKey) {
+      const result = await request(db, user, query.requestKey)
+      if (!result) return null
+      const id = Array.isArray(result.operationIds) ? str(result.operationIds[0]) : ''
+      const op = await owned(db, user, 'pub5_operations', id)
+      cfg = configForNamespace(str(op.namespace))
+      return publicResult(db, user, cfg, result)
+    }
+    const id = query.id
+    if (!id) fail('NATIVE_OFFICIAL_INPUT_INVALID', '缺少发布操作标识')
+    const op = await owned(db, user, 'pub5_operations', id)
+    cfg = configForNamespace(str(op.namespace))
+    return publicResult(db, user, cfg, { operationIds: [id], alreadyFulfilled: true })
   }
   if (query.resource === 'profile') {
     const result = await storedDraft(db, user, query.draftId, query.draftVersion)
@@ -328,12 +357,14 @@ export async function readPublishingGeneric(user: AuthUser, db: DB, query: Publi
   }
   if (query.resource === 'record') {
     const target = await owned(db, user, 'pub5_targets', query.id), op = await owned(db, user, 'pub5_operations', str(target.operation_id))
+    cfg = configForNamespace(str(op.namespace))
     // GET returns durable state. Persisting a provider observation is explicit reconcile POST.
     return targetDto(target, op, cfg)
   }
   if (query.resource === 'options') {
     const binding = await owned(db, user, 'pub4_account_bindings', query.bindingId)
-    if (binding.connection_id !== cfg.namespace || binding.status !== 'active') fail('NATIVE_OFFICIAL_BINDING_CHANGED', '账号连接已变化')
+    cfg = configForNamespace(str(binding.connection_id))
+    if (binding.status !== 'active') fail('NATIVE_OFFICIAL_BINDING_CHANGED', '账号连接已变化')
     const p = provider(user, cfg, { snapshot: { accountId: binding.provider_account_id } })
     return query.option ? p.readPublishOptionValues(str(binding.provider_account_id), query.option, query.query ? { query: query.query } : {}) : p.readPublishOptions(str(binding.platform))
   }
@@ -343,6 +374,6 @@ export async function readPublishingGeneric(user: AuthUser, db: DB, query: Publi
   if (query.to) q = q.lt('publish_at', query.to)
   const r = await q.order('publish_at', { ascending: false }).order('id', { ascending: false }).range((query.page - 1) * query.pageSize, query.page * query.pageSize - 1)
   if (r.error) dbError(r.error)
-  const items = await Promise.all(rows(r.data).map(async t => targetDto(t, await owned(db, user, 'pub5_operations', str(t.operation_id)), cfg)))
+  const items = await Promise.all(rows(r.data).map(async t => { const op = await owned(db, user, 'pub5_operations', str(t.operation_id)); return targetDto(t, op, configForNamespace(str(op.namespace))) }))
   return { items, total: r.count ?? 0, page: query.page, pageSize: query.pageSize }
 }

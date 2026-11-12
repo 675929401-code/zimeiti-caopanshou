@@ -87,6 +87,8 @@ import { ImageDownloadOperations, readImageDownloadBlob, imageDownloadFilename }
 import { MEDIA_CANCEL_DEADLINE_MS, providerMediaUrl, readMediaStreamWithDeadline } from "@/lib/generated-media-delivery";
 import { storyboardRecoveryStorageKey, readStoryboardRecovery, readStoryboardRecoveryConflicts, clearStoryboardWorkspaceRecovery, writeStoryboardRecovery, storyboardRecoveryContentFingerprint, inspectStoryboardRecoveryEdits, preserveStoryboardRecoveryConflict } from "@/lib/storyboard-workspace-recovery";
 import { useStoryboardProjects } from "@/hooks/use-storyboard-projects";
+import { useUnsavedWorkWarning } from "@/hooks/use-unsaved-work-warning";
+import { readStoryboardPageDraft, writeStoryboardPageDraft } from "@/lib/storyboard-page-draft";
 import type { StoryboardAgentOutputSegment } from "@/lib/storyboard-agent-output";
 import {
   StoryboardWardrobePlanSchema,
@@ -1710,6 +1712,7 @@ function UserStoryboardWorkbench({
   const [freshWorkspace, setFreshWorkspace] = useState(false);
   const requestedProjectId = freshWorkspace ? "" : requestedEntryProjectId;
   const { token, userId } = identity;
+  const storyboardDraftKey = `storyboard:page-draft:v1:${userId}`;
   const initialReferenceBlockedRef = useRef(new Set<string>());
   const initialReferenceAdoptionRef = useRef(false);
   const [tokenChargeConsent, setTokenChargeConsent] = useState<{ modelId: string; priceVersion: string; amount: string } | null>(null);
@@ -1747,7 +1750,30 @@ function UserStoryboardWorkbench({
   const projectAutosaveRef = useRef<{ timer: number; runId: string; owner: string; dueAt: number } | null>(null);
   const [confirmedProjectSnapshot, setConfirmedProjectSnapshot] = useState("");
   const cloudReady = cloud.ready;
-  const [run, setRun] = useState<WorkbenchRun>(() => createRun());
+  const [run, setRun] = useState<WorkbenchRun>(() => {
+    const base = createRun();
+    if (requestedEntryProjectId || historyPage) return base;
+    const draft = readStoryboardPageDraft(typeof window === "undefined" ? null : localStorage, storyboardDraftKey);
+    if (!draft) return base;
+    const count = Math.min(40, Math.max(base.cards.length, ...draft.cards.map(card => card.order)));
+    const cards = Array.from({ length: count }, (_, index) => {
+      const order = index + 1;
+      const card = base.cards[index] ?? createCard(order);
+      const saved = draft.cards.find(item => item.order === order);
+      return saved ? { ...card, ...saved } : card;
+    });
+    const ratio = draft.ratio === "16:9" || draft.ratio === "9:16" || draft.ratio === "1:1" ? draft.ratio : undefined;
+    return {
+      ...base,
+      cards,
+      ...(ratio ? { ratio } : {}),
+      ...(draft.imageResolution ? { imageResolution: draft.imageResolution } : {}),
+      ...(draft.videoResolution ? { videoResolution: draft.videoResolution } : {}),
+      ...(draft.videoDuration ? { videoDuration: draft.videoDuration } : {}),
+      ...(draft.imageModelId ? { imageModelId: draft.imageModelId } : {}),
+      ...(draft.videoModelId ? { videoModelId: draft.videoModelId } : {}),
+    };
+  });
   const [referenceDisplayMode, setReferenceDisplayMode] = useState<"normal" | "reference" | "chained">("normal");
   const referenceDisplayContextRef = useRef("");
   const referenceUploadOperationRef = useRef<string | null>(null);
@@ -1774,6 +1800,7 @@ function UserStoryboardWorkbench({
   const videoBatchPreflightRef = useRef(false);
   const [notice, setNotice] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  useUnsavedWorkWarning(storageReady && projectContext === "ready" && Boolean(confirmedProjectSnapshot) && !storyboardProjectSnapshotMatches(run, confirmedProjectSnapshot));
   const [historyNavigationIssue, setHistoryNavigationIssue] = useState<{ open: boolean } | null>(null);
   const historyNavigationTimerRef = useRef<number | null>(null);
   const historyOpen = historyPage;
@@ -2212,6 +2239,19 @@ function UserStoryboardWorkbench({
   }, [cloudReady, cloud.saveRetryAt, confirmedProjectSnapshot, navigating, run, saveStoryboardProject, storageReady, exportingBoardIds, visualAssetSaving, view, userId, token]);
 
   useEffect(() => () => { if (projectAutosaveRef.current) window.clearTimeout(projectAutosaveRef.current.timer); projectAutosaveRef.current = null; }, []);
+  useEffect(() => {
+    if (requestedEntryProjectId || historyPage) return;
+    const timer = window.setTimeout(() => writeStoryboardPageDraft(typeof window === "undefined" ? null : localStorage, storyboardDraftKey, {
+      ratio: run.ratio,
+      imageResolution: run.imageResolution,
+      videoResolution: run.videoResolution,
+      videoDuration: run.videoDuration,
+      imageModelId: run.imageModelId,
+      videoModelId: run.videoModelId,
+      cards: run.cards.map(card => ({ order: card.order, narration: card.narration, imagePrompt: card.imagePrompt, videoPrompt: card.videoPrompt })),
+    }), 300);
+    return () => window.clearTimeout(timer);
+  }, [requestedEntryProjectId, historyPage, run, storyboardDraftKey]);
 
   useEffect(() => {
     if (!storageReady) return;

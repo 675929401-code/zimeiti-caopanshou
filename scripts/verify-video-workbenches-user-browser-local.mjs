@@ -261,10 +261,10 @@ async function selectVideoModel(page, model) {
   await target.click();
   await page.waitForFunction((modelId) => {
     const item = document.querySelector(`[data-video-model-list] button[data-video-model-id="${CSS.escape(modelId)}"]`);
-    return item?.className.includes("shadow-[inset_3px_0_var(--primary)]");
+    return item?.getAttribute("aria-pressed") === "true";
   }, String(model.id), { timeout: 10_000 });
   await page.waitForTimeout(180);
-  assert.ok((await target.getAttribute("class") || "").includes("shadow-[inset_3px_0_var(--primary)]"), `${model.displayName}: model card did not remain selected`);
+  assert.equal(await target.getAttribute("aria-pressed"), "true", `${model.displayName}: model card did not remain selected`);
   return target;
 }
 
@@ -294,7 +294,7 @@ async function assertVideoInputMapping(page, model) {
   assert.equal(failedBeforeStart, 0, `${model.displayName}: selection created a failure before submission`);
   const selectedCard = page.locator(`[data-video-model-list] button[data-video-model-id=${JSON.stringify(String(model.id))}]`);
   assert.equal(await selectedCard.count(), 1, `${model.displayName}: selected model card is missing`);
-  assert.ok((await selectedCard.getAttribute("class") || "").includes("shadow-[inset_3px_0_var(--primary)]"), `${model.displayName}: selection changed unexpectedly`);
+  assert.equal(await selectedCard.getAttribute("aria-pressed"), "true", `${model.displayName}: selection changed unexpectedly`);
   return observed;
 }
 
@@ -452,7 +452,7 @@ try {
     assert.equal(await visibleCount(card.getByRole("button", { name: "生成视频", exact: true })), 1, "Preflight did not keep the task editable");
     assert.ok((await page.locator("body").innerText()).includes("源视频"), "Missing-source guidance is absent");
     const selectedCard = page.locator(`[data-video-model-list] button[data-video-model-id=${JSON.stringify(String(sourceModel.id))}]`);
-    assert.ok((await selectedCard.getAttribute("class") || "").includes("shadow-[inset_3px_0_var(--primary)]"), "Preflight switched the selected model");
+    assert.equal(await selectedCard.getAttribute("aria-pressed"), "true", "Preflight switched the selected model");
     return { providerRequests: 0, remainedEditable: true, selectedModelStable: true };
   });
 
@@ -461,11 +461,11 @@ try {
     await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
     const selectedCard = page.locator(`[data-video-model-list] button[data-video-model-id=${JSON.stringify(String(sourceModel.id))}]`);
     await selectedCard.waitFor({ timeout: 30_000 });
-    await page.waitForFunction((modelId) => document.querySelector(`[data-video-model-list] button[data-video-model-id="${CSS.escape(modelId)}"]`)?.className.includes("shadow-[inset_3px_0_var(--primary)]"), String(sourceModel.id), { timeout: 30_000 });
+    await page.waitForFunction((modelId) => document.querySelector(`[data-video-model-list] button[data-video-model-id="${CSS.escape(modelId)}"]`)?.getAttribute("aria-pressed") === "true", String(sourceModel.id), { timeout: 30_000 });
     await page.goto(`${ORIGIN}/`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await page.goto(`${ORIGIN}/video?acceptance=return`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await selectedCard.waitFor({ timeout: 30_000 });
-    await page.waitForFunction((modelId) => document.querySelector(`[data-video-model-list] button[data-video-model-id="${CSS.escape(modelId)}"]`)?.className.includes("shadow-[inset_3px_0_var(--primary)]"), String(sourceModel.id), { timeout: 30_000 });
+    await page.waitForFunction((modelId) => document.querySelector(`[data-video-model-list] button[data-video-model-id="${CSS.escape(modelId)}"]`)?.getAttribute("aria-pressed") === "true", String(sourceModel.id), { timeout: 30_000 });
     return { refreshRetained: true, routeReturnRetained: true };
   });
 
@@ -520,7 +520,9 @@ try {
         assert.ok((await button.getAttribute("class") || "").includes("is-active"), `Storyboard model did not remain selected: ${model.displayName}`);
       }
       const text = await button.innerText();
-      assert.ok(text.includes(String(model.displayName).split(" · ")[0]), `Storyboard model label lost identity: ${model.displayName}`);
+      assert.ok(text.trim(), `Storyboard model has no visible label: ${model.displayName}`);
+      assert.equal(await button.getAttribute("title"), String(model.displayName), `Storyboard model label lost identity: ${model.displayName}`);
+      assert.equal(await button.getAttribute("aria-label"), `选择视频模型：${model.displayName}`, `Storyboard accessible label lost identity: ${model.displayName}`);
       modelResults.push({ id: model.id, displayName: model.displayName, available: selectable, buttonText: text.replace(/\s+/gu, " ").trim() });
     }
     const chosen = availableStoryboardModels.find((model) => /Omni Flash/u.test(String(model.displayName))) || availableStoryboardModels[0];
@@ -549,8 +551,8 @@ try {
     return { ...timing, models: modelResults, selectedAfterRefresh: chosen.displayName, cardsAddedForOverflow, scroll };
   });
 
-  await stage("storyboard idle draft stays session-only without generation", async () => {
-    const input = page.getByRole("textbox", { name: "镜头1视频提示词", exact: true });
+  await stage("storyboard idle draft stays local without generation", async () => {
+    const input = page.getByRole("textbox", { name: "分段1视频提示词", exact: true });
     const marker = `只读验收草稿-${runId}`;
     const unexpectedBefore = report.unexpectedMutations.length;
     await input.fill(marker);
@@ -558,15 +560,16 @@ try {
     await page.waitForTimeout(1_500);
     assert.equal(report.unexpectedMutations.length, unexpectedBefore, "Typing an idle draft attempted a server mutation");
     await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
-    const restored = page.getByRole("textbox", { name: "镜头1视频提示词", exact: true });
+    const restored = page.getByRole("textbox", { name: "分段1视频提示词", exact: true });
     await restored.waitFor({ timeout: 30_000 });
-    assert.notEqual(await restored.inputValue(), marker, "Idle draft unexpectedly survived refresh without an explicit save or submission");
+    assert.equal(await restored.inputValue(), marker, "Local prompt draft did not survive refresh");
     await page.goto(`${ORIGIN}/`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await page.goto(`${ORIGIN}/storyboard-workbench?acceptance=return`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await restored.waitFor({ timeout: 30_000 });
-    assert.notEqual(await restored.inputValue(), marker, "Idle draft unexpectedly survived route return without an explicit save or submission");
+    assert.equal(await restored.inputValue(), marker, "Local prompt draft did not survive route return");
+    assert.equal(report.unexpectedMutations.length, unexpectedBefore, "Local draft restore attempted a server mutation");
     assert.equal(report.providerGenerationRequests, 0, "Draft persistence submitted a generation request");
-    return { refreshCleared: true, routeReturnCleared: true, providerRequests: 0 };
+    return { refreshRestored: true, routeReturnRestored: true, serverMutations: 0, providerRequests: 0 };
   });
 
   await context.close();

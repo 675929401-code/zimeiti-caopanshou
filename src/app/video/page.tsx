@@ -16,6 +16,8 @@ import { VideoLocalAutoCache, type AutoCacheResult } from "@/lib/video-local-aut
 import { SseEventStreamDecoder } from "@/lib/sse-stream-decoder";
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useId, Fragment } from "react";
 import { useAppScopedRouter } from "@/hooks/use-app-scoped-router";
+import { useUnsavedWorkWarning } from "@/hooks/use-unsaved-work-warning";
+import { readVideoPageDraft, writeVideoPageDraft } from "@/lib/video-page-draft";
 import { boundVideoTaskModel, reconcileVideoModelSelection, videoModelInputHint, videoModelInputLabel } from "@/lib/video-model-selection-state";
 import { publicVideoModelCompatibilityCode } from "@/lib/video-model-public-status";
 import { reportVideoSubmitFailed, reportVideoPollTimeout } from "@/lib/diagnostic-sentry";
@@ -729,12 +731,18 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   const [referenceUploadSession] = useState(createVideoReferenceUploadSession);
   const initialBatchSeed = useId().replace(/[^a-zA-Z0-9_-]/g, "") || "initial";
   const [currentBatchId, setCurrentBatchId] = useState(`batch_ui_${initialBatchSeed}`);
-  // 初始化：默认 3 张空白卡片，刷新即清空
-  const [tasks, setTasks] = useState<TaskCard[]>(() => [
-    emptyCard(1, 1, currentBatchId, ""),
-    emptyCard(2, 2, currentBatchId, ""),
-    emptyCard(3, 3, currentBatchId, ""),
-  ]);
+  const videoDraftKey = `ai-video:page-draft:v1:${identity.userId}`;
+  // 初始化：默认 3 张空白卡片；无生成任务的输入草稿按卡片恢复。
+  const [tasks, setTasks] = useState<TaskCard[]>(() => {
+    const drafts = readVideoPageDraft(typeof window === "undefined" ? null : localStorage, videoDraftKey);
+    const count = drafts.length ? Math.max(3, Math.max(...drafts.map(draft => draft.localId))) : 3;
+    return Array.from({ length: Math.min(40, count) }, (_, index) => {
+      const order = index + 1;
+      const card = emptyCard(order, order, currentBatchId, "");
+      const draft = drafts.find(item => item.localId === order);
+      return draft ? { ...card, ...draft } : card;
+    });
+  });
   const localVideoCache = useVideoAutomaticLocalCache(identity.userId, auth?.token, tasks);
   const submissionLocksRef = useRef(new Set<number>());
   useEffect(() => {
@@ -765,6 +773,11 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   useEffect(() => {
     tasksRef.current = tasks;
   }, [tasks]);
+  useUnsavedWorkWarning(tasks.some(hasExistingVideoWork));
+  useEffect(() => {
+    const timer = window.setTimeout(() => writeVideoPageDraft(localStorage, videoDraftKey, tasks), 300);
+    return () => window.clearTimeout(timer);
+  }, [tasks, videoDraftKey]);
   useEffect(() => {
     authTokenRef.current = auth?.token || null;
   }, [auth?.token]);

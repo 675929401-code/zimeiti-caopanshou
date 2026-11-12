@@ -1599,46 +1599,105 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landin
   cursor: pointer;
 }
 
+/* 联系二维码：两个二维码各自独立成框，不再共用一个外层大框。 */
 .soft-white-home[data-landing-version="v2"] .swh-contact-visual {
-  min-height: 430px;
-  padding: 24px;
-  border: 1px solid var(--oh-line-strong);
-  border-radius: 28px;
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--oh-surface-solid) 94%, transparent), color-mix(in srgb, var(--oh-surface-strong) 88%, transparent));
-  box-shadow: 0 34px 90px color-mix(in srgb, var(--oh-shadow) 72%, transparent), 0 1px 0 var(--oh-card-sheen) inset;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  display: block;
 }
 
 .soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 18px;
-  height: 100%;
-  align-items: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  height: auto;
+  align-items: stretch;
 }
 
 .soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid figure {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   margin: 0;
-  padding: 13px;
-  border: 1px solid var(--oh-line);
-  border-radius: 18px;
+  padding: 14px;
+  border: 1px solid var(--oh-line-strong);
+  border-radius: 24px;
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--oh-surface-solid) 97%, transparent), color-mix(in srgb, var(--oh-surface-strong) 93%, transparent));
+  box-shadow:
+    0 26px 64px color-mix(in srgb, var(--oh-shadow) 78%, transparent),
+    0 1px 0 var(--oh-card-sheen) inset;
+  transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
+}
+
+.soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid figure::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 26px;
+  right: 26px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--oh-accent), transparent);
+  opacity: .55;
+  pointer-events: none;
+}
+
+.soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid figure:hover {
+  transform: translateY(-3px);
+  border-color: var(--oh-accent);
+  box-shadow:
+    0 34px 78px color-mix(in srgb, var(--oh-shadow) 88%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--oh-accent) 26%, transparent),
+    0 1px 0 var(--oh-card-sheen) inset;
+}
+
+.soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid .swh-contact-qr-open {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--oh-line) 70%, transparent);
+  border-radius: 17px;
   background: #fff;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--oh-shadow) 40%, transparent);
+}
+
+.soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid .swh-contact-qr-open:focus-visible {
+  outline: 2px solid var(--oh-accent);
+  outline-offset: 3px;
 }
 
 .soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid img {
   display: block;
   width: 100%;
+  min-width: 0;
+  min-height: 0;
   aspect-ratio: 1;
   border-radius: 10px;
   object-fit: contain;
+  background: #fff;
 }
 
 .soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid figcaption {
-  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  margin-top: 0;
+  padding: 7px 12px;
   overflow: hidden;
-  color: #1c2825;
-  font-size: 12px;
+  border: 1px solid var(--oh-line);
+  border-radius: 999px;
+  color: var(--oh-text);
+  background: var(--oh-chip);
+  font-size: 12.5px;
   font-weight: 700;
+  letter-spacing: .02em;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1646,10 +1705,14 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landin
 
 .soft-white-home[data-landing-version="v2"] .swh-contact-placeholder {
   display: grid;
-  height: 380px;
+  min-height: 260px;
+  padding: 24px;
   place-content: center;
   justify-items: center;
   gap: 10px;
+  border: 1px dashed var(--oh-line-strong);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--oh-surface-solid) 70%, transparent);
   color: var(--oh-text-soft);
   text-align: center;
 }
@@ -1749,6 +1812,20 @@ html[data-theme="crystal-aurora"][data-mode="dark"] .soft-white-home[data-landin
   .soft-white-home[data-landing-version="v2"] .swh-contact {
     grid-template-columns: minmax(0, 1fr) 360px;
     gap: 34px;
+  }
+
+  .soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid {
+    gap: 16px;
+  }
+
+  .soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid figure {
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .soft-white-home[data-landing-version="v2"] .swh-contact-qr-grid .swh-contact-qr-open {
+    padding: 10px;
+    border-radius: 15px;
   }
 }
 

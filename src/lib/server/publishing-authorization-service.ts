@@ -4,7 +4,7 @@ import type { AuthUser, getSupabase } from "../api-middleware";
 import { PublishingAuthorizationActionSchema, PublishingAuthorizationBindingSchema, PublishingAuthorizationMutationSchema, PublishingAuthorizationOperationSchema, PublishingAuthorizationPageSchema, PublishingAuthorizationQuerySchema, PublishingAuthorizationSessionSchema, type PublishingAuthorizationAction, type PublishingAuthorizationPlatform, type PublishingAuthorizationQuery } from "../publishing-authorization-contract";
 import { PublishingError } from "./publishing-service";
 import { readMemberPermissionSnapshot } from "./member-permission-authority";
-import { readPublishingProviderConfiguration } from "./publishing-provider-config";
+import { readPublishingProviderConfiguration, readPublishingProviderConfigurationForNamespace, readPublishingProviderConfigurations, providerEnvironmentForPlatform } from "./publishing-provider-config";
 import { publishingProviderPayloadHash } from "./publishing-provider";
 import { openPublishingAuthContinuation, publishingAuthCookieName, sealPublishingAuthContinuation } from "./publishing-auth-continuation";
 import { PublishingAuthorizationProvider, PublishingAuthorizationProviderError, type AuthorizationGrant, type PublishingAuthorizationProviderClient, type PublishingAuthorizationProviderOptions } from "./publishing-authorization-provider";
@@ -64,14 +64,17 @@ export function createPublishingAuthorizationService(overrides: Partial<Publishi
   function client(user: AuthUser, cfg: Configuration, db: DB, op?: Row, session?: Row, accountIds: string[] = []) {
     configured(cfg);
     return deps.provider({ environment: cfg.environment, apiKey: cfg.apiKey!, ownerId: user.id, sessionIds: new Set(session?.provider_session_id ? [text(session.provider_session_id)] : []), accountIds: new Set(accountIds), consumeGrant: async (grant: AuthorizationGrant) => {
-      if (!op || op.owner_id !== user.id || op.connection_id !== cfg.namespace || deps.configuration().namespace !== cfg.namespace || grant.ownerId !== user.id || grant.operationId !== op.id || grant.kind !== op.grant_kind || grant.subject !== op.grant_subject || grant.payloadHash !== op.provider_request_hash) return false;
+      if (!op || op.owner_id !== user.id || op.connection_id !== cfg.namespace || !Object.values(readPublishingProviderConfigurations()).some(item => item.namespace === cfg.namespace) || grant.ownerId !== user.id || grant.operationId !== op.id || grant.kind !== op.grant_kind || grant.subject !== op.grant_subject || grant.payloadHash !== op.provider_request_hash) return false;
       const result = await rpc(db, user, cfg, { action: "consume-grant", operationId: op.id, grantKind: grant.kind, grantSubject: grant.subject, providerRequestHash: grant.payloadHash });
       if (result.consumed === true) Object.assign(op, object(result.operation)); return result.consumed === true;
     } });
   }
   async function platformGate(user: AuthUser, cfg: Configuration, db: DB, platform: PublishingAuthorizationPlatform) {
     const caps = await client(user, cfg, db).capabilities(), cap = caps.find(c => c.platform === platform);
-    if (!cap || cap.status !== "available" || cap.authType !== "oauth2") throw new PublishingAuthorizationError("PUBLISH_AUTH_PLATFORM_UNAVAILABLE", "该平台目前尚未开放官方授权，目录与历史连接仍会保留", 409);
+    // Account authorization is independent from whether publish execution is
+    // currently available. Any OAuth2 platform may start the account login;
+    // publish remains gated separately by its capability.
+    if (!cap || cap.authType !== "oauth2") throw new PublishingAuthorizationError("PUBLISH_AUTH_PLATFORM_UNAVAILABLE", "该平台暂不支持账号授权", 409);
   }
   async function result(db: DB, user: AuthUser, cfg: Configuration, op: Row, cookies: CookieReader, alreadyFulfilled: boolean) {
     // Local actions replay their immutable original result; later edits never replace it.
@@ -110,14 +113,18 @@ export function createPublishingAuthorizationService(overrides: Partial<Publishi
     async mutate(user: AuthUser, db: DB, value: PublishingAuthorizationAction, cookies: CookieReader = { get: () => undefined }): Promise<PublishingAuthorizationResult> {
       await deps.access(user);
       const checked = PublishingAuthorizationActionSchema.safeParse(value); if (!checked.success) throw new PublishingAuthorizationError("PUBLISH_AUTH_INPUT_INVALID", "授权参数不符合合同", 400);
-      const action = checked.data, cfg = deps.configuration();
+      const action = checked.data; let cfg = deps.configuration();
       const existing = await db.from("pub4_auth_operations").select("*").eq("owner_id", user.id).eq("request_key", action.requestKey).maybeSingle(); if (existing.error) databaseFailure(existing.error);
       const prior = existing.data ? object(existing.data) : undefined;
+      if (prior) cfg = readPublishingProviderConfigurationForNamespace(text(prior.connection_id));
+      else if (action.action === "start") cfg = readPublishingProviderConfiguration(providerEnvironmentForPlatform(action.platform));
       if (prior) {
         if (publishingProviderPayloadHash(prior.request_payload) !== publishingProviderPayloadHash(action)) throw new PublishingAuthorizationError("PUBLISH_AUTH_IDEMPOTENCY_CONFLICT", "请求标识已用于不同内容，请核对原操作", 409, text(prior.id));
         if (prior.dispatch_state !== "ready" || prior.grant_used === true || prior.connection_id !== cfg.namespace || !["start", "select"].includes(text(prior.kind))) return { data: await result(db, user, cfg, prior, cookies, true) };
       }
       if (action.action === "disconnect" || action.action === "move-binding") {
+        const binding = await owned(db, user, "pub4_account_bindings", action.bindingId);
+        cfg = readPublishingProviderConfigurationForNamespace(text(binding.connection_id));
         const prepared = await rpc(db, user, cfg, { action: action.action === "disconnect" ? "disconnect-binding" : "move-binding", operationId: deps.randomId(), request: action });
         return { data: await result(db, user, cfg, object(prepared.operation), cookies, prepared.alreadyFulfilled === true) };
       }
@@ -130,7 +137,9 @@ export function createPublishingAuthorizationService(overrides: Partial<Publishi
         sessionId = text(prior.session_id); body = object(prior.provider_request);
       } else if (action.action === "start") { await platformGate(user, cfg, db, action.platform); sessionId = deps.randomId(); body = { type: action.platform, correlationId: sessionId, callbackUrl: null }; }
       else {
-        session = await owned(db, user, "pub4_auth_sessions", action.sessionId); current(cfg, session);
+        session = await owned(db, user, "pub4_auth_sessions", action.sessionId);
+        cfg = readPublishingProviderConfigurationForNamespace(text(session.connection_id));
+        current(cfg, session);
         if (session.revision !== action.expectedRevision) throw new PublishingAuthorizationError("PUBLISH_AUTH_REVISION_CONFLICT", "授权会话已有新版本，请刷新", 409);
         cookie = continuation(cfg, session, cookies); if (!cookie) throw new PublishingAuthorizationError("PUBLISH_AUTH_RESTART_REQUIRED", "选择账号所需的授权续传已失效，请重新授权；原会话仍可只读核对", 409);
         await platformGate(user, cfg, db, session.platform as PublishingAuthorizationPlatform);
@@ -164,16 +173,17 @@ export function createPublishingAuthorizationService(overrides: Partial<Publishi
     },
     async read(user: AuthUser, db: DB, value: PublishingAuthorizationQuery, cookies: CookieReader = { get: () => undefined }): Promise<PublishingAuthorizationResult> {
       await deps.access(user); const checked = PublishingAuthorizationQuerySchema.safeParse(value); if (!checked.success) throw new PublishingAuthorizationError("PUBLISH_AUTH_INPUT_INVALID", "查询参数不符合合同", 400);
-      const query = checked.data, cfg = deps.configuration();
+      const query = checked.data; let cfg = deps.configuration();
       if (query.resource === "session") {
         const local = await owned(db, user, "pub4_auth_sessions", query.id);
+        cfg = readPublishingProviderConfigurationForNamespace(text(local.connection_id));
         try { return { data: sessionDto(await observe(db, user, cfg, local), cfg, cookies) }; } catch (error) { if (error instanceof PublishingAuthorizationError && error.status < 500) throw error; return { data: sessionDto(local, cfg, cookies, "AUTH_PROVIDER_UNAVAILABLE") }; }
       }
       let q = db.from(query.resource === "bindings" ? "pub4_account_bindings" : "pub4_auth_operations").select("*", { count: "exact" }).eq("owner_id", user.id);
       if (query.resource === "bindings" && query.platform) q = q.eq("platform", query.platform);
       if (query.resource === "operations") { if (query.id) q = q.eq("id", query.id); if (query.requestKey) q = q.eq("request_key", query.requestKey); }
       const result = await q.order("created_at", { ascending: false }).order("id", { ascending: false }).range((query.page - 1) * query.pageSize, query.page * query.pageSize - 1); if (result.error) databaseFailure(result.error);
-      return { data: query.resource === "bindings" ? PublishingAuthorizationPageSchema(PublishingAuthorizationBindingSchema).parse({ items: list(result.data).map(r => bindingDto(r, cfg)), total: result.count ?? 0, page: query.page, pageSize: query.pageSize }) : PublishingAuthorizationPageSchema(PublishingAuthorizationOperationSchema).parse({ items: list(result.data).map(r => operationDto(r, cfg)), total: result.count ?? 0, page: query.page, pageSize: query.pageSize }) };
+      return { data: query.resource === "bindings" ? PublishingAuthorizationPageSchema(PublishingAuthorizationBindingSchema).parse({ items: list(result.data).map(r => bindingDto(r, readPublishingProviderConfigurationForNamespace(text(r.connection_id)))), total: result.count ?? 0, page: query.page, pageSize: query.pageSize }) : PublishingAuthorizationPageSchema(PublishingAuthorizationOperationSchema).parse({ items: list(result.data).map(r => operationDto(r, readPublishingProviderConfigurationForNamespace(text(r.connection_id)))), total: result.count ?? 0, page: query.page, pageSize: query.pageSize }) };
     },
   };
 }

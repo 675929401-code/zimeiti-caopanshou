@@ -22,6 +22,23 @@ type PermissionAuthorityOptions = {
  * 迁移应用后 RPC 成功返回，真实门控自动接管，本回退不再触发。
  */
 const MEMBER_PERMISSION_SCHEMA_ABSENT_CODES = new Set(["42P01", "PGRST202", "PGRST204", "PGRST205"]);
+const permissionSnapshotCache = new Map<string, { value: MemberPermissionSnapshot; expiresAt: number }>();
+const permissionInFlight = new Map<string, Promise<MemberPermissionSnapshot>>();
+
+function fallbackPermissionSnapshot(userId: string) {
+  const cached = permissionSnapshotCache.get(userId);
+  return cached && cached.expiresAt > Date.now() ? cached.value : undefined;
+}
+
+/** One retry for transient network failures; successful snapshots are kept only for fallback. */
+async function readPermissionRpc(database: ReturnType<typeof getSupabaseAdminClient>, userId: string) {
+  let result = await database.rpc("read_member_permission_snapshot", { p_user_id: userId });
+  for (let attempt = 0; attempt < 2 && result.error && /fetch failed|network|timeout|ECONNRESET|ETIMEDOUT/i.test(String(result.error.message || "")); attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+    result = await database.rpc("read_member_permission_snapshot", { p_user_id: userId });
+  }
+  return result;
+}
 
 function isMemberPermissionSchemaAbsent(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -56,7 +73,19 @@ function legacyFullAccessSnapshot(userId: string, role: string): MemberPermissio
   };
 }
 
-export async function readMemberPermissionSnapshot(
+export function readMemberPermissionSnapshot(
+  userId: string,
+  options: PermissionAuthorityOptions = {},
+): Promise<MemberPermissionSnapshot> {
+  const key = String(userId || "").trim();
+  const running = permissionInFlight.get(key);
+  if (running) return running;
+  const request = readMemberPermissionSnapshotInternal(userId, options).finally(() => permissionInFlight.delete(key));
+  permissionInFlight.set(key, request);
+  return request;
+}
+
+async function readMemberPermissionSnapshotInternal(
   userId: string,
   options: PermissionAuthorityOptions = {},
 ): Promise<MemberPermissionSnapshot> {
@@ -66,16 +95,14 @@ export async function readMemberPermissionSnapshot(
   }
   try {
     const database = getSupabaseAdminClient();
-    const { data, error } = await database.rpc("read_member_permission_snapshot", {
-      p_user_id: normalizedUserId,
-    });
+    const { data, error } = await readPermissionRpc(database, normalizedUserId);
     if (error) {
       if (isMemberPermissionSchemaAbsent(error)) {
         console.warn("[member-permission] schema absent; legacy full-access snapshot until migrations applied");
         return legacyFullAccessSnapshot(normalizedUserId, options.knownRole || "student");
       }
       console.error("Member permission authority read failed:", error.message);
-      return unavailableSnapshot(normalizedUserId, options.knownRole || "student", "unavailable");
+      return fallbackPermissionSnapshot(normalizedUserId) ?? unavailableSnapshot(normalizedUserId, options.knownRole || "student", "unavailable");
     }
     const row = (data || {}) as Record<string, unknown>;
     const role = String(row.role || options.knownRole || "student");
@@ -88,7 +115,7 @@ export async function readMemberPermissionSnapshot(
         status === "missing" ? "missing" : "invalid",
       );
     }
-    return {
+    const snapshot: MemberPermissionSnapshot = {
       userId: normalizedUserId,
       role,
       featureNavigationKeys: normalizeFeatureNavigationKeys(row.feature_navigation_keys),
@@ -103,13 +130,15 @@ export async function readMemberPermissionSnapshot(
       integrityValid: true,
       authorityStatus: "ready",
     };
+    permissionSnapshotCache.set(normalizedUserId, { value: snapshot, expiresAt: Date.now() + 5 * 60_000 });
+    return snapshot;
   } catch (error) {
     if (isMemberPermissionSchemaAbsent(error)) {
       console.warn("[member-permission] schema absent (thrown); legacy full-access snapshot until migrations applied");
       return legacyFullAccessSnapshot(normalizedUserId, options.knownRole || "student");
     }
     console.error("Member permission authority unavailable:", error);
-    return unavailableSnapshot(normalizedUserId, options.knownRole || "student", "unavailable");
+    return fallbackPermissionSnapshot(normalizedUserId) ?? unavailableSnapshot(normalizedUserId, options.knownRole || "student", "unavailable");
   }
 }
 

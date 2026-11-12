@@ -989,8 +989,8 @@ export function MediaHistoryWorkspace({ onBack, initialCategory, recoveryContent
       const anchor = document.createElement("a");
       anchor.href = mediaUrl;
       anchor.download = safeDownloadName(item);
-      anchor.target = "_blank";
-      anchor.rel = "noopener";
+      // Same-origin attachments do not need another tab. Keeping the current
+      // browsing context also avoids leaving a blank tab after the download.
       document.body.appendChild(anchor); anchor.click(); anchor.remove();
       return;
     }

@@ -373,6 +373,8 @@ function generateFixture(card, options = {}) {
     storyboardImageModelName: (model) => model.name,
     storyboardImagePrice: () => 0.34,
     effectiveImageResolution: (_model, resolution) => resolution || '2K',
+    resolveStoryboardExecutionMode: (run) => run?.executionMode || "ordinary",
+    storyboardChainContext: () => null,
     buildClientRequestFingerprint: browserAttempts.buildClientRequestFingerprint,
     resolveBrowserClientAttempt: browserAttempts.resolveBrowserClientAttempt,
     clearBrowserClientAttempt: (scope, requestId) => {

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "native-publishing-build.v1",
+  "upstreamCommit": "47e5a6fa8a5d2d0a52f1b7b5220a2ed3c034c294",
+  "buildId": "tyTvLzX_6aak3VIB73GVw",
+  "sourceDigest": "ea082e9c118d1b4fcbbe3e673ef37ba4c1fa7869551345feb5d4b49e611a0f1f",
+  "basePath": "/publish-center/native",
+  "framework": "16.4.5",
+  "builtAt": "2026-11-12T02:09:55.809Z"
+}

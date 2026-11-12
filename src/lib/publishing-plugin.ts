@@ -112,6 +112,10 @@ export async function inspectPublishingPlugin(platform: PublishingPlatform, sour
   const version = await verify(plugin);
   return { version, account: await login(plugin, platform) };
 }
+/** Read-only plugin presence/version/permission check; never logs in to a platform. */
+export async function detectPublishingPlugin(source?: unknown): Promise<{ version: string }> {
+  return { version: await verify(getPlugin(source)) };
+}
 export function projectPublishingReceipt(value: unknown, platform: PublishingPlatform): PublishingPluginReceipt {
   const original = record(value);
   if (typeof original?.success !== "boolean") throw new PublishingPluginError("invalid_receipt");

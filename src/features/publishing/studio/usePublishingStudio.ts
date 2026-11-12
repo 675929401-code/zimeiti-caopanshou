@@ -37,6 +37,15 @@ interface FrozenReview { legacyCash?: { prepared?: NativePreparedPublish; plan?:
 const networkFailure = (reason: unknown) => reason instanceof TypeError && /failed to fetch|networkerror|load failed/iu.test(reason.message)
 const message = (reason: unknown) => reason instanceof z.ZodError ? '输入或服务回执不符合发布合同，请检查字段并重新读取' : networkFailure(reason) ? '网络连接中断，请检查本地发布服务后刷新重试' : reason instanceof Error ? reason.message : '操作结果暂不可确认，请核对原记录'
 
+/** First-paint guard: a stalled session/workspace read must not spin forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(timeoutMessage)), ms) }),
+  ]).finally(() => { if (timer !== undefined) clearTimeout(timer) }) as Promise<T>
+}
+
 export function usePublishingStudio(): PublishingStudioController {
   const [session, setSession] = useState<PublishingStudioController['session']>({ loading: true, authenticated: false })
   const [workspace, setWorkspace] = useState<PublishingStudioController['workspace']>({ loading: true, ready: false })
@@ -96,7 +105,7 @@ export function usePublishingStudio(): PublishingStudioController {
   async function refreshWorkspace() {
     const actor = assertHostSession(), revision = getHostSessionRevision()
     setWorkspace(value => ({ ...value, loading: true, error: undefined }))
-    try { const value = await readStudioWorkspace(); guard(actor.user.id, revision); installWorkspace(value); return value }
+    try { const value = await withTimeout(readStudioWorkspace(), 25_000, '发布服务读取超时，请点击"重新读取"'); guard(actor.user.id, revision); installWorkspace(value); return value }
     catch (reason) {
       if (mounted.current && getHostSession()?.user.id === actor.user.id && getHostSessionRevision() === revision) setWorkspace(value => ({ ...value, loading: false, error: message(reason) }))
       throw reason
@@ -118,7 +127,7 @@ export function usePublishingStudio(): PublishingStudioController {
     window.addEventListener('storage', storage); window.addEventListener('focus', refreshSession); document.addEventListener('visibilitychange', refreshSession)
     void (async () => {
       try {
-        const actor = await loadHostSession(); if (!mounted.current) return
+        const actor = await withTimeout(loadHostSession(), 20_000, '主站会话读取超时，请刷新页面重试'); if (!mounted.current) return
         setSession({ loading: false, authenticated: true, userName: actor.user.displayName || actor.user.username, cashBalance: actor.wallet.cashCents / 100, credits: actor.wallet.credits })
         await refreshWorkspace(); syncPending()
       } catch (reason) { if (mounted.current) { setSession(value => ({ ...value, loading: false, ...(!value.authenticated ? { error: message(reason) } : {}) })); setError(message(reason)) } }

@@ -581,7 +581,8 @@ async function finalizeVideoGenerationSuccessUnlocked(input: FinalizeVideoInput)
     throw new VideoTerminalError("VIDEO_DELIVERY_SOURCE_REQUIRED", "供应商未返回可播放的视频地址", 503, true);
   }
   const usesPersistentCopy = PERSISTENT_VIDEO_URI_PATTERN.test(stableStorageUrl);
-  if (!String(task.task_label || "").startsWith("分镜工作台") && !usesPersistentCopy && providerResultUrl && !String(task.storage_url || "")) {
+  const isStoryboardWorkbenchTask = String(task.task_label || "").startsWith("分镜工作台");
+  if (!usesPersistentCopy && providerResultUrl && !String(task.storage_url || "") && !isStoryboardWorkbenchTask) {
     let providerKey = "";
     try { providerKey = resolveProviderSecret(String(model.api_key || "")); } catch { providerKey = ""; }
     scheduleVideoDeliveryPersistence({

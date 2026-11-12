@@ -65,6 +65,7 @@ const formalBase = {
     password: "cloud_password",
     search: { sslmode: "verify-full" },
   }),
+  PUBLISHING_EXTERNAL_EXECUTION_ENABLED: "true",
 };
 
 assert.equal(resolveLocalRuntimeProfile({}), LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE);
@@ -78,6 +79,7 @@ const formal = createFormalLocalSharedDatabaseEnv({ localOnly: false }, formalBa
 assert.deepEqual(createLocalRuntimeDatabaseEnv(runtime(), formalBase), formal);
 assert.equal(formal.LOCAL_RUNTIME_PROFILE, LOCAL_RUNTIME_PROFILE_FORMAL_SHARED);
 assert.equal(formal.LOCAL_ACCEPTANCE_PREVIEW, "false");
+assert.equal(formal.PUBLISHING_EXTERNAL_EXECUTION_ENABLED, "true");
 assert.equal(formal.LOCAL_VALIDATION_DIST_DIR, ".next");
 assert.equal(formal.COZE_SUPABASE_URL, "https://business.example.invalid/");
 assert.equal(formal.COZE_SUPABASE_SERVICE_ROLE_KEY, formalBase.COZE_SUPABASE_SERVICE_ROLE_KEY);
@@ -177,6 +179,7 @@ const acceptance = createLocalStandaloneDatabaseEnv(runtime(), formalBase);
 assert.deepEqual(createLocalRuntimeDatabaseEnv(runtime(), {}), createLocalStandaloneDatabaseEnv(runtime(), {}));
 assert.equal(acceptance.LOCAL_RUNTIME_PROFILE, LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE);
 assert.equal(acceptance.LOCAL_ACCEPTANCE_PREVIEW, "true");
+assert.equal(acceptance.PUBLISHING_EXTERNAL_EXECUTION_ENABLED, "false");
 assert.equal(acceptance.SHARED_CONFIGURATION_ID, LOCAL_RUNTIME_PROFILE_LOCAL_ACCEPTANCE);
 assert.equal(acceptance.SHARED_CONFIGURATION_SUPABASE_URL, "http://127.0.0.1:54321");
 assert.equal(acceptance.SHARED_CONFIGURATION_SERVICE_ROLE_KEY, runtime().serviceRoleKey);

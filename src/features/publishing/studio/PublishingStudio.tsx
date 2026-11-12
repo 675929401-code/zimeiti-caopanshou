@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, CalendarDays, CircleAlert, FileImage, FileText, Film, FolderInput, History, Info, LayoutGrid, Loader2, Plus, RefreshCw, Save, Send, Users, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, CircleAlert, FileImage, FileText, Film, FolderInput, History, Info, LayoutGrid, Loader2, Plus, RefreshCw, Save, Send, Users, X } from "lucide-react";
 import { AppScopedLink } from "@/components/app-scoped-link";
 import { handlePlatformBrandLogoError, platformBrandLogoUrl, usePlatformBranding } from "@/hooks/use-platform-branding";
 import { usePublishingStudio } from "./usePublishingStudio";
@@ -10,7 +10,8 @@ import { BusyLabel, StudioDialog } from "./StudioPrimitives";
 import { StudioComposer } from "./StudioComposer";
 import { StudioHistoryPanel } from "./StudioHistoryPanel";
 import { StudioCalendar } from "./StudioCalendar";
-import { AccountsPanel, ImportDialog } from "./StudioAuxiliary";
+import { AccountsPanel, ImportDialog, PluginStatusPanel } from "./StudioAuxiliary";
+import { usePublishingPlugin } from "./usePublishingPlugin";
 import { StudioPublishDialogs } from "./StudioPublishDialogs";
 import { AccountMark, historyStateLabel, platformName } from "./StudioPresentation";
 import styles from "./Studio.module.css";
@@ -26,6 +27,7 @@ const descriptions: Record<View, string> = { overview: "让每一份作品，有
 
 export function PublishingStudio({ initialTab = "overview" }: { initialTab?: string }) {
   const work = usePublishingStudio();
+  const plugin = usePublishingPlugin();
   const branding = usePlatformBranding(), logo = platformBrandLogoUrl(branding, "square");
   const [view, setView] = useState<View>(entries.some(entry => entry.key === initialTab) ? initialTab as View : "overview");
   const [step, setStep] = useState(1);
@@ -38,20 +40,20 @@ export function PublishingStudio({ initialTab = "overview" }: { initialTab?: str
   const start = (kind: "image" | "video" | "text") => { if (!hasDraft) work.patchDraft({ contentType: kind }); setStep(1); navigate("compose"); };
   return <div className={styles.root} data-testid="publishing-studio" data-publishing-studio="true" data-studio-theme="light">
     <aside className={styles.sidebar} aria-label="发布门户导航">
-      <div className={styles.portalIdentity} data-testid="studio-brand"><span className={styles.portalLogo} data-testid="studio-brand-logo" aria-hidden="true">{logo ? <img src={logo} alt="" onError={event => handlePlatformBrandLogoError(event, branding)} /> : branding.brand.name.slice(0,1)}</span><div><span className={styles.identityLabel}>{branding.brand.name}</span><strong>发布工作台</strong></div></div>
+      <div className={styles.portalIdentity} data-testid="studio-brand"><span className={styles.portalLogo} data-testid="studio-brand-logo" aria-hidden="true">{logo ? <img src={logo} alt="" onError={event => handlePlatformBrandLogoError(event, branding)} /> : branding.brand.name.slice(0,1)}</span><strong>发布工作台</strong></div>
       <AppScopedLink href="/" className={styles.returnMain} data-testid="studio-return-main"><ArrowLeft size={16} />返回主站</AppScopedLink>
       <nav className={styles.sideNav} aria-label="工作台功能">{entries.map(entry => <button type="button" key={entry.key} aria-current={view === entry.key ? "page" : undefined} className={styles.sideNavItem} data-testid={entry.key === "overview" || entry.key === "calendar" ? `studio-nav-${entry.key}` : `studio-${entry.key}-tab`} onClick={() => navigate(entry.key)}><entry.icon size={18} strokeWidth={1.7} /><span>{entry.label}</span>{entry.key === "compose" && hasDraft && <i className={styles.draftDot} aria-label="有本次编辑内容" />}</button>)}</nav>
-      <div className={styles.sidebarBottom}><div className={styles.cashBalance} data-testid="studio-cash-footer"><div className={styles.cashBalanceHead}><span>现金余额</span><strong>{work.session.cashBalance !== undefined ? `¥${work.session.cashBalance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : work.session.loading ? "读取中…" : "—"}</strong><AppScopedLink href="/recharge" className={styles.cashRecharge}>充值</AppScopedLink></div></div></div>
+      <div className={styles.sidebarBottom}><PluginStatusPanel state={plugin.state} onCheck={() => void plugin.check()} /><div className={styles.cashBalance} data-testid="studio-cash-footer"><div className={styles.cashBalanceHead}><span>现金余额</span><strong>{work.session.cashBalance !== undefined ? `¥${work.session.cashBalance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : work.session.loading ? "读取中…" : "—"}</strong><AppScopedLink href="/recharge" className={styles.cashRecharge}>充值</AppScopedLink></div></div></div>
     </aside>
     <main className={styles.main}>
-      <div className={styles.pageHeading}><div><span className={styles.pageEyebrow}>{view === "overview" ? "你的创作，正在发生" : "发布工作台"}</span><h1>{view === "overview" ? "从这里，发布好作品" : entries.find(entry => entry.key === view)?.label}</h1><p>{descriptions[view]}</p></div><div className={styles.headingActions}>{view === "compose" && <><button type="button" className={styles.quietButton} onClick={() => setResetOpen(true)} disabled={!!work.busy || !hasDraft}>清空新建</button><button type="button" className={styles.button} onClick={() => void work.saveDraft()} disabled={!!work.busy || !work.session.authenticated || !hasDraft}><BusyLabel busy={work.busy === "save"}><Save size={16} />保存发布草稿</BusyLabel></button></>}{(view === "accounts" || view === "history") && <button type="button" className={styles.button} disabled={!!work.busy || !work.session.authenticated || work.workspace.loading} onClick={() => void (view === "accounts" ? work.refreshAccounts() : work.loadHistory())}><RefreshCw size={15} />刷新{view === "accounts" ? "账号" : "记录"}</button>}</div></div>
+      <div className={styles.pageHeading}><div>{view === "overview" && <span className={styles.pageEyebrow}>你的创作，正在发生</span>}<h1>{view === "overview" ? "从这里，发布好作品" : entries.find(entry => entry.key === view)?.label}</h1><p>{descriptions[view]}</p></div>{view === "accounts" && <AppScopedLink href="/plugin-guide" className={styles.accountTopGuide} data-testid="studio-plugin-guide-link"><BookOpen size={14} />插件安装教程</AppScopedLink>}<div className={styles.headingActions}>{view === "compose" && <><button type="button" className={styles.quietButton} onClick={() => setResetOpen(true)} disabled={!!work.busy || !hasDraft}>清空新建</button><button type="button" className={styles.button} onClick={() => void work.saveDraft()} disabled={!!work.busy || !work.session.authenticated || !hasDraft}><BusyLabel busy={work.busy === "save"}><Save size={16} />保存发布草稿</BusyLabel></button></>}{view === "history" && <button type="button" className={styles.button} disabled={!!work.busy || !work.session.authenticated || work.workspace.loading} onClick={() => void work.loadHistory()}><RefreshCw size={15} />刷新记录</button>}</div></div>
       {(work.error || work.notice || work.session.error) && <div className={styles.banner} data-error={!!(work.error || work.session.error)} role={work.error || work.session.error ? "alert" : "status"}><CircleAlert size={17} /><span>{work.error || work.session.error || work.notice}</span><button type="button" className={styles.iconButton} aria-label="关闭提示" onClick={work.dismissMessage}><X size={16} /></button></div>}
       {work.pending && <div className={styles.banner} data-error="true"><History size={17} /><span>上一笔发布结果需要核对。核对完成后再继续新发布。</span><button type="button" className={styles.smallButton} disabled={!!work.busy} onClick={() => void work.recoverPending()}>核对原发布</button></div>}
-      {work.publishing && !work.publishing.executionEnabled && <div className={styles.publishNotice} data-testid="studio-publish-notice" role="status"><Info size={17} /><span>{work.publishing.announcement || "发布执行尚未开放，可以先整理内容与保存草稿。"}</span></div>}
+      {work.publishing && !work.publishing.executionEnabled && <div className={styles.publishNotice} data-testid="studio-publish-notice" data-execution="disabled" role="status"><Info size={17} /><span>发布执行已关闭，当前可整理内容与保存草稿，不会向外部平台提交作品。</span></div>}
       {work.session.loading || work.session.authenticated && work.workspace.loading && !work.workspace.ready ? <div className={styles.loading} role="status" data-testid="studio-workspace-loading"><Loader2 size={20} className={styles.spin} />正在读取发布服务…</div> : !work.session.authenticated ? <div className={styles.emptyView}><Send size={36} /><h2>登录后开始发布</h2><p>使用左侧“返回主站”登录，账号与现金余额会同步到这里。</p></div> : !work.workspace.ready ? <div className={styles.emptyView} data-testid="studio-workspace-error"><CircleAlert size={36} /><h2>发布信息暂未读取完成</h2><p>{work.workspace.error || "请重新读取，账号与作品信息会保留。"}</p><button type="button" className={styles.button} disabled={!!work.busy || work.workspace.loading} onClick={() => void work.refreshAccounts()}><RefreshCw size={15} />重新读取</button></div> : <>
         {view === "overview" && <Overview work={work} hasDraft={hasDraft} onStart={start} onContinue={() => navigate("compose")} onImport={openImport} onAccounts={() => navigate("accounts")} onCalendar={() => navigate("calendar")} onHistory={() => navigate("history")} />}
         {view === "compose" && <StudioComposer work={work} step={step} onStep={setStep} onAccounts={() => navigate("accounts")} />}
-        {view === "accounts" && <AccountsPanel work={work} />}
+        {view === "accounts" && <AccountsPanel work={work} pluginState={plugin.state} />}
         {view === "history" && <StudioHistoryPanel work={work} onCompose={() => { setStep(1); navigate("compose"); }} />}
         {view === "calendar" && <StudioCalendar work={work} onCompose={() => { setStep(1); navigate("compose"); }} />}
       </>}

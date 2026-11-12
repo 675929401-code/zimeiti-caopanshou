@@ -98,7 +98,7 @@ export async function main(args = process.argv.slice(2)) {
     } : {}),
   }));
   const fixtureBootstrap = (ready, membership = false) => ({
-    config: { version: 1, mode: 'browser_plugin', executionEnabled: ready, salesEnabled: false, cloudEnabled: false, enabledPlatforms: Object.keys(platformNames), pluginUrl: null, announcement: '', usageNotice: '显式只读界面验收夹具' },
+    config: { version: 1, mode: 'browser_plugin', executionEnabled: ready, salesEnabled: false, cloudEnabled: false, enabledPlatforms: Object.keys(platformNames), pluginUrl: null, announcement: ready ? '' : '[FIXTURE] 发布执行已开启（故意冲突，不得展示）', usageNotice: '显式只读界面验收夹具' },
     entitlements: ready && !membership ? [{ id: uid(111), purchaseId: uid(112), planId: uid(113), planVersion: 1, planName: '验收夹具额度', quota: 40, used: 0, expiresAt: future, platforms: Object.keys(platformNames) }] : [],
     schemaReady: true, access: { allowed: true, code: 'PUBLISH_ACCESS_READY', message: '仅验收夹具' },
     membership: { schemaReady: true, canConsumeExisting: true, quote: membership ? { quoteHash: 'c'.repeat(64), policyId: uid(501), policyVersion: 1, profileKey: 'qa_member', profileVersion: 1, periodStart: new Date(Date.now() - 86400000).toISOString(), periodEnd: future, periodKind: 'calendar_month', timeZone: 'Asia/Shanghai', quota: 10, platforms: Object.keys(platformNames), expiresAt: future, wouldGrant: true, cashChargeCents: 0 } : null },
@@ -554,6 +554,10 @@ export async function main(args = process.argv.slice(2)) {
       check(`${mode} cannot skip the empty draft to final publication`, await page.getByTestId('studio-step-3').isDisabled() && await page.getByTestId('studio-confirm-dialog').count() === 0);
       const text = await studio(page).innerText();
       check(`${mode} explains unavailable service`, /未开放|不可用|尚未|未就绪|暂时|读取失败|连接失败/u.test(text));
+      if (mode === 'unready') {
+        const notice = page.getByTestId('studio-publish-notice');
+        check('closed execution ignores a contradictory stale announcement', await notice.getAttribute('data-execution') === 'disabled' && /发布执行已关闭/u.test(await notice.innerText()) && !/执行已开启|故意冲突/u.test(await notice.innerText()));
+      }
       await layout(page, mode); await capture(page, `fixture-${mode}`); await context.close(); contexts.delete(context);
     });
     for (const theme of ['soft-white', 'crystal-aurora', 'lattice']) await scenario(`fixture-theme-isolation-${theme}`, 'GET-fixture-ui-only', async () => {

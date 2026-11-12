@@ -53,7 +53,7 @@ export default function PublishingNativeReadiness({ accessEpoch = "" }: { access
     ] as const).map(([label, value]) => <div className={styles.stat} key={label}><span>{label}</span><strong>{value.toLocaleString("zh-CN")}</strong><small>条 · 授权元数据</small></div>)}</div>}
     {status?.official && <div className={styles.statsGrid}>{([["官方账号绑定", status.official.bindings], ["官方上传素材", status.official.assets], ["官方操作记录", status.official.operations], ["结果待核对", status.official.unknown]] as const).map(([label,value]) => <div className={styles.stat} key={label}><span>{label}</span><strong>{status.official?.schemaReady ? value.toLocaleString("zh-CN") : "待初始化"}</strong><small>条 · 官方连接元数据</small></div>)}</div>}
     <details className={styles.details}><summary>浏览器插件安装入口</summary><div className={styles.resourceGrid}>{downloads.map(download => <article className={styles.resource} key={download.href}><h4>{download.title}</h4><p>{download.description}</p><a className={styles.linkButton} href={download.href} target="_blank" rel="noopener noreferrer">打开官方入口 ↗</a></article>)}</div></details>
-    <p className={styles.help}>安装后打开扩展，选择 Authorize Only（仅授权），填入主站实际来源并确认，然后刷新发布中心。成员无需为此登录第二套 AiToEarn 网页账号。<a href={PUBLISHING_PLUGIN_DOWNLOADS.guide} target="_blank" rel="noopener noreferrer">查看官方图文教程 ↗</a></p>
+    <p className={styles.help}>安装后打开扩展，选择 Authorize Only（仅授权），填入主站实际来源并确认，然后刷新发布中心。成员无需为此登录第二套 AiToEarn 网页账号。<a href={PUBLISHING_PLUGIN_DOWNLOADS.guide}>查看安装教程</a></p>
     <p className={styles.help}>源码基于 AiToEarn MIT 固定提交 <a href={PUBLISHING_PLUGIN_DOWNLOADS.source} target="_blank" rel="noopener noreferrer">{PUBLISHING_PLUGIN_DOWNLOADS.commit.slice(0, 8)} ↗</a>。本地计划不等同于平台托管定时；浏览器报告不等同于平台最终发布凭证。</p>
   </section>;
 }

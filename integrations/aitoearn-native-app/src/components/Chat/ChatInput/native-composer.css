@@ -1,0 +1,28 @@
+.native-agent-composer {
+  border-radius: 20px;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  box-shadow: 0 10px 32px -22px rgb(30 41 59 / 30%), 0 2px 5px rgb(30 41 59 / 4%);
+}
+
+.native-agent-composer:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 9%, transparent), 0 10px 32px -22px rgb(30 41 59 / 30%);
+}
+
+.native-agent-composer__input {
+  display: block;
+  font-family: inherit;
+  line-height: 1.8;
+  letter-spacing: 0.01em;
+}
+
+.native-agent-composer__input::placeholder {
+  color: #8a93a3;
+  opacity: 1;
+}
+
+.native-agent-composer__status {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}

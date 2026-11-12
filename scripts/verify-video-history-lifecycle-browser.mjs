@@ -1,119 +1,316 @@
-#!/usr/bin/env node
-/** Actual built pages with intercepted identity/task/media boundaries; never writes server data. */
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {execFileSync} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
-import {computeLocalBuildFingerprint} from './local-build-fingerprint.mjs';
-const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),origin='http://127.0.0.1:5000';
-const arg=(key,fallback='')=>process.argv.find(v=>v.startsWith(`--${key}=`))?.slice(key.length+3)||fallback;
-process.env.PLAYWRIGHT_BROWSERS_PATH ||= arg('browser-cache','F:/总项目文件/Skill存储系统/运行数据/自媒体操盘手/.cache/ms-playwright');
-const {chromium,firefox,webkit}=await import('playwright');
-const browsers=arg('browsers','chromium').split(','),surfaces=arg('surfaces','storyboard-workbench').split(','),themes=['lattice','soft-white','crystal-aurora'];
-for(const name of browsers)assert.ok(['chromium','chrome','edge','firefox','webkit'].includes(name));
-for(const name of surfaces)assert.ok(['storyboard-workbench','video-page'].includes(name));
-const expectedAssertions=['matching built runtime BuildID/sourceVersion/fingerprint before and after','three platform themes at 1440 four columns and 1920 six columns','batch/card order and independent retry attempts, terminal TTL and protected unknown states','loading/empty/error/pagination','real 16-second H264 playback, pause, seek and download SHA','manual cache, reload/offline playback/download, unavailable cache/quota fallback','Escape restores focus','partial clear fixed-cutoff retry, cross-tab stop, stale props do not resurrect, surface isolation; combined response-loss/reconciliation-failure scenario on first requested engine/surface','HTTP boundary prevents real business writes/providers/external traffic'];
-if(process.argv.includes('--plan')){console.log(JSON.stringify({mode:'plan',browsers,surfaces,expectedAssertions,actualServerWrites:0,actualProviderCalls:0},null,2));process.exit(0);}
-const output=path.resolve(root,'../运行日志/视频历史闭环-20261018-a758','browser-'+new Date().toISOString().replace(/[:.]/g,'-'));await fs.mkdir(output,{recursive:true});
-const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
-const report={schema:'video-history-lifecycle-browser.v1',startedAt:new Date().toISOString(),actualProductUi:true,fixtureIdentity:true,fixtureTasks:true,fixtureMedia:true,actualLogin:false,actualServerWrites:0,actualProviderCalls:0,cloudMediaCopies:0,origin,browsers,surfaces,expectedAssertions,engines:[],checks:[],blocked:[],realPublicReads:[],fixtureRequests:[],pageErrors:[],passed:false,output,limitations:['Interception exercises actual built UI and browser media/storage engines; it does not prove real login, supplier generation, production cleanup or paid generation.']};
-const saveReport=()=>fs.writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
-let sequence=0;
-async function stage(name,fn,page){const result={name,passed:false},start=Date.now();try{result.result=await fn();result.passed=true;}catch(error){result.error={name:error.name,message:String(error.message).slice(0,1400)};if(page&&!page.isClosed())await page.screenshot({path:path.join(output,`failure-${++sequence}.png`)}).catch(()=>{});}result.elapsedMs=Date.now()-start;report.checks.push(result);await saveReport();console.log(JSON.stringify({check:name,passed:result.passed,elapsedMs:result.elapsedMs}));if(!result.passed)throw Error(`${name}: ${result.error.message}`);return result.result;}
-async function runtimeIdentity(){const response=await fetch(origin+'/api/version',{cache:'no-store',signal:AbortSignal.timeout(20000)});assert.ok(response.ok);const runtime=await response.json();const [versionText,buildText,receiptText]=await Promise.all([fs.readFile(path.join(root,'public/version.json'),'utf8'),fs.readFile(path.join(root,'.next/BUILD_ID'),'utf8'),fs.readFile(path.join(root,'.next/local-source-fingerprint.v1.json'),'utf8')]);const version=JSON.parse(versionText),receipt=JSON.parse(receiptText),current=computeLocalBuildFingerprint(root);const state={sourceVersion:runtime.sourceVersion,buildId:runtime.buildId,diskBuildId:buildText.trim(),receiptBuildId:receipt.buildId,receiptFingerprint:receipt.fingerprint,currentFingerprint:current.fingerprint,fileCount:current.fileCount};state.runningLatest=state.sourceVersion===version.sourceVersion&&state.buildId===state.diskBuildId&&state.receiptBuildId===state.diskBuildId&&state.receiptFingerprint===state.currentFingerprint&&receipt.fileCount===current.fileCount;assert.equal(state.runningLatest,true,'5000 must be runningLatest=true');if(arg('expected-build-id'))assert.equal(state.buildId,arg('expected-build-id'));if(arg('expected-source-version'))assert.equal(state.sourceVersion,arg('expected-source-version'));return state;}
-const suffixes={'storyboard-workbench':'sb','video-page':'vp'},taskId=(surface,label)=>`fixture-${suffixes[surface]}-${label}-0001`;
-function tasksFor(surface){const now=Date.now(),ago=ms=>new Date(now-ms).toISOString(),minute=60000,day=86400000;const base={status:'completed',completedAt:ago(minute),createdAt:ago(5*minute),durationSeconds:16,modelName:'Fixture H264 Video',resolution:'720p',aspectRatio:'16:9',billingState:'settled',priceCharged:0,thumbnailUrl:'/__history_fixture__/poster.svg',videoUrl:'/api/video/proxy?media_ticket=fixture',surface};const make=(label,patch={})=>({...base,id:taskId(surface,label),taskIdExternal:taskId(surface,label),taskLabel:label,batchId:surface+'-batch-a',batchTopic:'顺序与多版本验收批次',prompt:'fixture-prompt-'+taskId(surface,label),...patch});return [make('card2',{cardIndex:2,createdAt:ago(2*minute)}),make('card1old',{cardIndex:1,createdAt:ago(4*minute)}),make('card0',{cardIndex:0,createdAt:ago(3*minute)}),make('unknown',{batchId:surface+'-protected',batchTopic:'受保护记录',billingState:'unknown',createdAt:ago(7*day),completedAt:ago(6*day)}),make('active',{batchId:surface+'-protected',batchTopic:'受保护记录',status:'processing',billingState:'pending',createdAt:ago(6*minute),completedAt:undefined}),make('expired',{batchId:surface+'-expired',createdAt:ago(7*day),completedAt:ago(6*day)}),make('failed',{batchId:surface+'-failed',status:'failed',errorMessage:'夹具任务失败详情'}),make('late',{batchId:surface+'-late',batchTopic:'晚完成保留',createdAt:ago(7*day),completedAt:ago(minute)}),make('card1new',{cardIndex:1,createdAt:ago(minute)})];}
-const user={id:'history-lifecycle-fixture-user',username:'history_fixture',displayName:'历史闭环夹具',email:'fixture@example.invalid',role:'admin',status:'active',is_active:true,credits:1000},fixtureToken='history-lifecycle-fixture-token';
-const posterSvg='<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#173249"/><circle cx="160" cy="90" r="38" fill="#57d3c1"/></svg>';
-const json=(route,data,status=200)=>route.fulfill({status,contentType:'application/json',headers:{'cache-control':'no-store'},body:JSON.stringify(data)});
-const protectedTask=task=>!['completed','failed','cancelled','expired'].includes(task.status)||!['settled','not_required','exempt','failed','cancelled','submission_failed','refunded','not_charged'].includes(task.billingState);
-function pagedTasksFor(surface){const base=tasksFor(surface),fillers=Array.from({length:94},(_,index)=>({...base[0],id:taskId(surface,'filler'+index),taskIdExternal:taskId(surface,'filler'+index),prompt:'fixture-filler-'+index,batchId:surface+'-filler-batch',batchTopic:'分页窗口验收',cardIndex:index,createdAt:new Date(Date.now()-10*60000).toISOString()}));return [...base.slice(0,6),...fillers,...base.slice(6)].map(task=>surface==='video-page'&&Number.isInteger(task.cardIndex)?{...task,cardIndex:task.cardIndex+1}:task);}
-function stateFor(browser,surface){return {browser,surface,theme:'lattice',rows:Object.fromEntries(Object.keys(suffixes).map(name=>[name,pagedTasksFor(name)])),hidden:Object.fromEntries(Object.keys(suffixes).map(name=>[name,new Set()])),historyReads:0,reconcileRequests:0,tickets:0,mediaRequests:[],cutoffs:[],clearSurfaces:[],empty:false,error:false,offline:false,partialClearOnce:false,dropDeleteOnce:false,reconcileFailure:false,stale:false,delay:0};}
-async function install(context,state,bytes,cacheMode='normal'){
- await context.addCookies([{name:'auth_token',value:fixtureToken,url:origin,httpOnly:true,sameSite:'Lax'}]);
- await context.addInitScript(({user,fixtureToken,cacheMode})=>{if(location.origin!=='http://127.0.0.1:5000')return;localStorage.setItem('auth_token',fixtureToken);localStorage.setItem('auth_user',JSON.stringify(user));sessionStorage.setItem('entered_app','1');if(cacheMode==='unavailable')Object.defineProperty(window,'caches',{configurable:true,value:undefined});if(navigator.storage)Object.defineProperty(navigator.storage,'estimate',{configurable:true,value:async()=>cacheMode==='quota'?{usage:7*1024**2,quota:8*1024**2}:{usage:0,quota:4*1024**3}});},{user,fixtureToken,cacheMode});
- context.on('page',page=>page.on('pageerror',error=>report.pageErrors.push({browser:state.browser,surface:state.surface,message:error.message.slice(0,1000)})));
- await context.route('**/*',async route=>{const request=route.request(),url=new URL(request.url()),method=request.method();
-  if(url.origin!==origin){report.blocked.push({browser:state.browser,method,kind:'external',path:url.pathname});return route.abort();}
-  if(url.pathname==='/__history_fixture__/poster.svg')return route.fulfill({status:200,contentType:'image/svg+xml',body:posterSvg});
-  if(!url.pathname.startsWith('/api/')){if(!['GET','HEAD'].includes(method)){report.blocked.push({method,path:url.pathname,kind:'non-api-write'});return route.abort();}return route.continue();}
-  const log={browser:state.browser,method,path:url.pathname,surface:url.searchParams.get('surface')||null};report.fixtureRequests.push(log);
-  if(/\/api\/video\/(generate|stream|submit|reference-upload)/u.test(url.pathname)){report.blocked.push({...log,kind:'generation'});return json(route,{error:'Generation blocked by acceptance harness'},409);}
-  if(url.pathname==='/api/video/history'){
-   const surface=url.searchParams.get('surface');assert.ok(suffixes[surface],'history must specify surface');state.historyReads++;const tasks=state.rows[surface],ids=state.hidden[surface];
-   if(method==='DELETE'){assert.equal(url.searchParams.get('clearAll'),'true');const cutoff=url.searchParams.get('cutoff');assert.ok(Number.isFinite(Date.parse(cutoff)));state.cutoffs.push(cutoff);state.clearSurfaces.push(surface);const eligible=tasks.filter(task=>!protectedTask(task)&&Date.parse(task.createdAt)<=Date.parse(cutoff)&&Date.parse(task.completedAt||task.createdAt)<=Date.parse(cutoff)),protectedCount=tasks.filter(protectedTask).length;
-    if(state.partialClearOnce){state.partialClearOnce=false;const selected=eligible.find(task=>task.id===taskId(surface,'card0'));if(selected)ids.add(selected.id);return json(route,{error:'夹具部分清理失败',cutoff,clearedTaskIds:selected?[selected.id]:[],clearedCount:selected?1:0,protectedCount},503);}
-    eligible.forEach(task=>ids.add(task.id));if(state.dropDeleteOnce){state.dropDeleteOnce=false;return route.abort('connectionfailed');}return json(route,{success:true,cutoff,clearedTaskIds:eligible.map(task=>task.id),clearedCount:eligible.length,protectedCount});
-   }
-   assert.equal(method,'GET');
-   if(url.searchParams.has('reconcileTaskIds')){const requested=url.searchParams.get('reconcileTaskIds').split(',').filter(Boolean);assert.ok(requested.length<=200);if(requested.length){state.reconcileRequests++;if(state.reconcileFailure)return json(route,{error:'夹具对账失败'},503);}return json(route,{hiddenTaskIds:requested.filter(id=>ids.has(id)),serverTime:new Date().toISOString()});}
-   if(state.error)return json(route,{error:'夹具历史读取失败'},503);if(state.delay)await new Promise(resolve=>setTimeout(resolve,state.delay));if(state.empty)return json(route,{tasks:[],nextOffset:null,serverTime:new Date().toISOString()});
-   const offset=Number(url.searchParams.get('offset')||0),filtered=tasks.filter(task=>state.stale||!ids.has(task.id));
-   // Deliberately include an expired row to exercise client TTL independently.
-   return json(route,{tasks:offset?filtered.slice(100):filtered.slice(0,100),total:filtered.length,nextOffset:!offset&&filtered.length>100?100:null,retentionDays:5,serverTime:new Date().toISOString()});
+import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { createRequire } from 'node:module';
+import { chromium } from 'playwright';
+
+// Current MediaHistoryWorkspace acceptance. All business responses and media
+// bytes are isolated fixtures; only static application pages come from 5000.
+const root = process.cwd();
+const origin = String(process.env.LOCAL_NAV_ORIGIN || 'http://127.0.0.1:5000').replace(/\/$/u, '');
+assert.equal(origin, 'http://127.0.0.1:5000');
+const runFile = promisify(execFile);
+const require = createRequire(import.meta.url);
+const ffmpeg = require('ffmpeg-static');
+const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+const output = path.resolve(root, '../运行日志/视频历史闭环-20261018-a758', 'current-workspace-' + new Date().toISOString().replace(/[:.]/g, '-'));
+await fs.mkdir(output, { recursive: true });
+const videoFile = path.join(output, 'fixture-16s.mp4');
+const generated = await runFile(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=12', '-t', '16', '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', videoFile], { timeout: 45000, windowsHide: true });
+assert.ok(generated.stderr === '');
+const bytes = await fs.readFile(videoFile), mediaSha = sha(bytes);
+const mainTask = 'fixture-main-0001', mainTitle = '16秒统一历史真实播放验收';
+const token = 'history-lifecycle-fixture-token';
+const user = { id: 'history-lifecycle-fixture-user', username: 'history_fixture', displayName: '历史闭环夹具', email: 'fixture@example.invalid', role: 'admin', status: 'active', is_active: true, credits: 1000 };
+const now = Date.now();
+const makeItem = (task, index) => ({
+  id: `video:${task}`, kind: 'video', title: index === 0 ? mainTitle : `分页恢复作品 ${String(index).padStart(2, '0')}`,
+  project: '统一历史隔离项目', segment: `分段 ${index + 1}`, source: '视频创作', sourcePath: '/video', retryPath: '',
+  categoryKey: 'video-production', removable: true, status: 'completed',
+  createdAt: new Date(now - (index + 1) * 60000).toISOString(), completedAt: new Date(now - (index + 1) * 60000 + 16000).toISOString(),
+  publicModelName: '本地验收模型（未调用）', cost: null, costNote: '隔离夹具，无账单',
+  previewPath: `/api/video/storage/${task}`, thumbnailPath: `/api/video/thumbnail/${task}`, downloadPath: `/api/video/storage/${task}`,
+  errorMessage: '', aspectRatio: '16:9', durationSeconds: 16,
+  expiresAt: new Date(now + 5 * 86400000).toISOString(), retentionSource: 'policy',
+});
+const items = [makeItem(mainTask, 0), ...Array.from({ length: 60 }, (_, index) => makeItem(`fixture-page-${String(index + 1).padStart(4, '0')}`, index + 1))];
+const state = { historyReads: 0, tickets: [], mediaRequests: [], thumbnailRequests: 0, blockedWrites: [], externalRequests: [], generationRequests: [] };
+const report = {
+  passed: false, mode: 'current MediaHistoryWorkspace with isolated API and native H264 fixtures', origin,
+  media: { bytes: bytes.length, sha256: mediaSha, seconds: 16, width: 320, height: 180 },
+  checks: [], stages: [], screenshots: [], pageErrors: [], fixtureRequests: [],
+  actualServerWrites: 0, actualProviderCalls: 0, paidCalls: 0, realPosts: 0,
+  limitations: [
+    '本用例覆盖当前统一作品历史的刷新恢复、分页、搜索、原生播放、暂停、seek 和下载 SHA；票据重试由 verify-media-history-native-preview.mjs 独立覆盖。',
+    '旧 .sbh-panel 的清空历史、多 surface 自动刷新和“保存本机副本”按钮合同不直接套用到当前统一页面；离线副本恢复由独立离线专项覆盖。',
+    '全部业务数据与媒体响应均为隔离夹具，不证明上游真实生成结果。',
+  ],
+};
+const saveReport = () => fs.writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
+const check = (name, condition, detail) => { report.checks.push({ name, passed: Boolean(condition), ...(detail === undefined ? {} : { detail }) }); assert.ok(condition, name); };
+const json = (route, data, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'cache-control': 'no-store' }, body: JSON.stringify(data) });
+const posterSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#173249"/><circle cx="160" cy="90" r="38" fill="#57d3c1"/></svg>';
+let browser;
+let page;
+
+async function stage(name, action) {
+  const started = Date.now();
+  try {
+    const detail = await action();
+    report.stages.push({ name, passed: true, elapsedMs: Date.now() - started, ...(detail === undefined ? {} : { detail }) });
+    await saveReport();
+  } catch (error) {
+    report.stages.push({ name, passed: false, elapsedMs: Date.now() - started, error: error.message.slice(0, 1400) });
+    if (page && !page.isClosed()) {
+      const file = path.join(output, `failure-${report.stages.length}.png`);
+      await page.screenshot({ path: file, fullPage: true }).catch(() => {});
+      await fs.writeFile(path.join(output, `failure-${report.stages.length}.txt`), (await page.locator('body').innerText().catch(() => '')).slice(0, 16000));
+    }
+    throw error;
   }
-  if(url.pathname==='/api/video/access-ticket'){state.tickets++;if(state.offline)return json(route,{error:'夹具上游已断开'},503);const scope=url.searchParams.get('scope'),task=url.searchParams.get('taskId');assert.ok(Object.values(state.rows).flat().some(row=>row.id===task),'ticket requested for unknown task');return json(route,{url:`${scope==='download'?'/api/video/proxy-download':'/api/video/proxy'}?media_ticket=fixture-${encodeURIComponent(task)}`});}
-  if(['/api/video/proxy','/api/video/proxy-download'].includes(url.pathname)){if(state.offline)return route.abort();assert.equal(method,'GET');const range=request.headers().range;state.mediaRequests.push({path:url.pathname,range:range||null,taskId:url.searchParams.get('taskId')});const headers={'content-type':'video/mp4','accept-ranges':'bytes','cache-control':'no-store'};if(url.pathname.endsWith('proxy-download'))headers['content-disposition']='attachment; filename="fixture-16s.mp4"';
-   if(range){const match=/^bytes=(\d+)-(\d*)$/u.exec(range);assert.ok(match,`unsupported range ${range}`);const start=Number(match[1]),end=Math.min(Number(match[2]||bytes.length-1),bytes.length-1);if(start>=bytes.length)return route.fulfill({status:416,headers:{'content-range':`bytes */${bytes.length}`},body:''});headers['content-range']=`bytes ${start}-${end}/${bytes.length}`;headers['content-length']=String(end-start+1);return route.fulfill({status:206,headers,body:bytes.subarray(start,end+1)});}
-   headers['content-length']=String(bytes.length);return route.fulfill({status:200,headers,body:bytes});
-  }
-  if(url.pathname==='/api/video/thumbnail'){report.blocked.push({...log,kind:'forbidden-thumbnail'});return json(route,{error:'No server thumbnail copies'},409);}
-  if(method==='GET'&&['/api/cover-models','/api/video/models'].includes(url.pathname)){report.realPublicReads.push(log);return route.continue();}
-  if(!['GET','HEAD','OPTIONS'].includes(method)){report.blocked.push({...log,kind:'background-write'});return route.fulfill({status:204,body:''});}
-  if(url.pathname==='/api/auth/me')return json(route,{user});
-  if(['/api/settings/appearance','/api/settings'].includes(url.pathname))return json(route,{settings:{theme:state.theme,theme_mode:state.theme==='soft-white'?'light':'dark'}});
-  if(url.pathname==='/api/member-permissions')return json(route,{permission:{userId:user.id,role:'admin',featureNavigationKeys:['marketplace','toolbox','storyboard_workbench','image_workbench','create','voice','cover'],agentNavigationKeys:[],integrityValid:true,authorityStatus:'admin',revision:1}});
-  if(url.pathname==='/api/storyboard/projects')return json(route,{projects:[],nextOffset:null});
-  if(url.pathname==='/api/video/active-tasks')return json(route,{activeTasks:[]});
-  if(['/api/cash/balance','/api/credits'].includes(url.pathname))return json(route,{credits:1000,cashBalance:1000,balance:1000,transactions:[]});
-  return json(route,{settings:{},tasks:[],records:[],projects:[],bots:[],agents:[],models:[],assets:[],items:[],notifications:[],unreadCount:0,nextOffset:null});
- });
 }
-const panel=page=>page.locator('.sbh-panel').first(),card=(page,surface,label)=>page.locator(`.sbh-card[data-task-id="${taskId(surface,label)}"]`);
-async function openHistory(page,surface){await page.goto(`${origin}/${surface==='video-page'?'video':'storyboard-workbench'}`,{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'历史',exact:true}).waitFor({timeout:45000});await page.getByRole('button',{name:'历史',exact:true}).click();await panel(page).waitFor({timeout:45000});}
-async function refresh(page,state){const before=state.historyReads;await panel(page).getByRole('button',{name:'刷新',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.sbh-content')?.getAttribute('aria-busy')==='false',null,{timeout:20000});assert.ok(state.historyReads>before,'refresh did not request history');}
-async function loadAll(page){const more=panel(page).getByRole('button',{name:'加载更多历史',exact:true});if(await more.isVisible()){await more.click();await more.waitFor({state:'hidden',timeout:20000});}}
-async function openPlayer(page,surface,label='card0'){await card(page,surface,label).locator('.sbh-card-play').click();await page.locator('.sbh-player-dialog[open]').waitFor({timeout:20000});await page.waitForFunction(()=>{const v=document.querySelector('.sbh-player video');return v&&(v.readyState>=2||document.querySelector('.sbh-player-dialog .sbh-error'));},null,{timeout:20000});const manual=page.locator('.sbh-player-dialog').getByRole('button',{name:'点击播放',exact:true});if(await manual.isVisible())await manual.click();await page.waitForFunction(()=>{const v=document.querySelector('.sbh-player video');return v&&!v.paused&&v.currentTime>0.1;},null,{timeout:20000});}
-async function downloadAndCheck(page,name,expectedSha){const pending=page.waitForEvent('download',{timeout:30000});await page.locator('.sbh-player-dialog').getByRole('button',{name:'下载视频',exact:true}).click();const download=await pending,target=path.join(output,name+'.mp4');await download.saveAs(target);const bytes=await fs.readFile(target);assert.equal(sha(bytes),expectedSha,'download must contain complete original media');return {bytes:bytes.length,sha256:sha(bytes)};}
-async function layoutState(page){return page.evaluate(()=>{const root=document.documentElement,element=document.querySelector('.sbh-panel'),grid=document.querySelector('.sbh-grid'),content=document.querySelector('.sbh-content'),sample=document.createElement('span');sample.style.backgroundColor='var(--card)';sample.style.color='var(--foreground)';document.body.appendChild(sample);const expectedBackground=getComputedStyle(sample).backgroundColor,expectedForeground=getComputedStyle(sample).color;sample.remove();const box=element.getBoundingClientRect();return {theme:root.dataset.theme,mode:root.dataset.mode,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,panelBackground:getComputedStyle(element).backgroundColor,foreground:getComputedStyle(element).color,expectedBackground,expectedForeground,width:box.width,left:box.left,right:box.right,overflow:content.scrollWidth-content.clientWidth,viewport:innerWidth};});}
-async function launch(name){if(name==='chrome')return chromium.launch({headless:true,channel:'chrome'});if(name==='edge')return chromium.launch({headless:true,channel:'msedge'});if(name==='firefox')return firefox.launch({headless:true});if(name==='webkit')return webkit.launch({headless:true});return chromium.launch({headless:true,executablePath:arg('chromium-path','F:/总项目文件/Skill存储系统/运行数据/自媒体操盘手/.cache/ms-playwright/chromium-1228/chrome-win64/chrome.exe')});}
-try{
- report.runtimeBefore=await stage('runtime identity before',runtimeIdentity);
- report.sourceSha256=Object.fromEntries(await Promise.all(['src/components/video-history-panel.tsx','src/components/storyboard-history-panel.css','src/lib/video-history-policy.ts','src/lib/storyboard-local-video-cache.ts','scripts/verify-video-history-lifecycle-browser.mjs'].map(async file=>[file,sha(await fs.readFile(path.join(root,file)))])));
- const clip=path.join(output,'fixture-16s.mp4');execFileSync(path.join(root,'node_modules/ffmpeg-static/ffmpeg.exe'),['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=320x180:rate=15','-t','16','-an','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-movflags','+faststart',clip],{windowsHide:true});const bytes=await fs.readFile(clip),mediaSha=sha(bytes);report.media={filename:'fixture-16s.mp4',bytes:bytes.length,sha256:mediaSha,durationSeconds:16,codec:'H264/yuv420p',generatedWith:'ffmpeg-static'};
- for(const browserName of browsers){let browser;try{browser=await launch(browserName);report.engines.push({name:browserName,version:browser.version(),available:true});}catch(error){report.engines.push({name:browserName,available:false,reason:error.message.slice(0,600)});await saveReport();continue;}
- try{for(const surface of surfaces){const state=stateFor(browserName,surface),context=await browser.newContext({viewport:{width:1440,height:900},acceptDownloads:true,serviceWorkers:'block'});await install(context,state,bytes);const page=await context.newPage(),prefix=browserName+'/'+surface;
- try{
-  await stage(prefix+'/open actual page',async()=>{await openHistory(page,surface);await card(page,surface,'card0').waitFor();return {route:page.url(),fixtureIdentity:true};},page);
-  await stage(prefix+'/pagination, attempts, expiry and protected states',async()=>{await loadAll(page);const batch=page.locator('.sbh-batch').filter({has:page.getByRole('heading',{name:/顺序与多版本验收批次/u})});const order=await batch.locator('.sbh-card').evaluateAll(nodes=>nodes.map(node=>node.dataset.taskId));assert.deepEqual(order,['card0','card1new','card1old','card2'].map(label=>taskId(surface,label)));assert.equal(await card(page,surface,'expired').count(),0);assert.equal(await card(page,surface,'unknown').count(),1);assert.equal(await card(page,surface,'late').count(),1);assert.equal(await card(page,surface,'active').locator('.sbh-card-play').isDisabled(),true);assert.equal(await card(page,surface,'failed').locator('.sbh-card-play').isDisabled(),true);return {order,unknownPreserved:true,expiredRemoved:true,lateCompletionPreserved:true};},page);
-  await stage(prefix+'/automatic refresh preserves loaded later page',async()=>{const before=state.historyReads;await page.waitForTimeout(16000);await card(page,surface,'card1new').waitFor();assert.ok(state.historyReads>before,'15-second refresh did not read history');assert.equal(await card(page,surface,'late').count(),1);assert.equal(await card(page,surface,'failed').count(),1);return {refreshRequests:state.historyReads-before,laterPagePreserved:true};},page);
-  await stage(prefix+'/status filters',async()=>{const filters=panel(page).locator('.sbh-filters');await filters.getByRole('button',{name:'进行中 / 待确认',exact:true}).click();assert.equal(await page.locator('.sbh-card').count(),2);assert.equal(await card(page,surface,'active').count(),1);assert.equal(await card(page,surface,'unknown').count(),1);await filters.getByRole('button',{name:'失败 / 已结束',exact:true}).click();assert.equal(await page.locator('.sbh-card').count(),1);assert.equal(await card(page,surface,'failed').count(),1);await filters.getByRole('button',{name:'全部',exact:true}).click();return {protectedFilter:true,failedFilter:true};},page);
-  for(const theme of themes){state.theme=theme;await page.evaluate(()=>window.dispatchEvent(new Event('theme-updated')));await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme,{timeout:20000});for(const width of [1440,1920])await stage(`${prefix}/${theme}/${width} theme and layout`,async()=>{await page.setViewportSize({width,height:width===1440?900:1080});await page.waitForTimeout(450);await loadAll(page);const layout=await layoutState(page);assert.equal(layout.columns,width===1440?4:6);assert.equal(layout.panelBackground,layout.expectedBackground);assert.equal(layout.foreground,layout.expectedForeground);assert.ok(layout.left>=0&&layout.right<=width+1&&layout.overflow<=1,'history overflows viewport');await page.locator('.sbh-content').evaluate(element=>{element.scrollTop=0;});await page.screenshot({path:path.join(output,`${browserName}-${surface}-${theme}-${width}.png`)});return layout;},page);}
-  await page.setViewportSize({width:1440,height:900});
-  await stage(prefix+'/empty, failure and loading states',async()=>{state.empty=true;await refresh(page,state);await panel(page).getByText('暂无视频历史',{exact:true}).waitFor();state.error=true;await refresh(page,state);await panel(page).locator('.sbh-error').waitFor();assert.equal(await panel(page).getByText('暂无视频历史',{exact:true}).count(),0);assert.match(await panel(page).locator('.sbh-error').innerText(),/夹具历史读取失败/u);state.error=false;state.empty=false;state.delay=650;const before=state.historyReads;await panel(page).getByRole('button',{name:'刷新',exact:true}).click();await page.locator('.sbh-content[aria-busy="true"]').waitFor();await card(page,surface,'card0').waitFor();state.delay=0;assert.ok(state.historyReads>before);return {empty:true,failure:true,loading:true};},page);
-  await stage(prefix+'/decode, play, pause, seek and upstream download',async()=>{await openPlayer(page,surface);const media=await page.locator('.sbh-player video').evaluate(async element=>{const playedTo=element.currentTime;element.pause();const seeked=new Promise((resolve,reject)=>{element.addEventListener('seeked',resolve,{once:true});setTimeout(()=>reject(Error('seek timeout')),10000);});element.currentTime=13;await seeked;return {playedTo,paused:element.paused,seekedTo:element.currentTime,duration:element.duration,readyState:element.readyState};});assert.equal(media.paused,true);assert.ok(media.duration>=15.9&&media.duration<=16.2&&media.seekedTo>=12.9);const download=await downloadAndCheck(page,`${browserName}-${surface}-upstream-download`,mediaSha);return {...media,download};},page);
-  await stage(prefix+'/manual cache and Escape focus',async()=>{await page.locator('.sbh-player-dialog').getByRole('button',{name:'保存本机副本',exact:true}).click();await page.locator('.sbh-player-dialog').getByRole('button',{name:'本机副本可用',exact:true}).waitFor({timeout:45000});await page.keyboard.press('Escape');await page.locator('.sbh-player-dialog').waitFor({state:'hidden'});assert.equal(await card(page,surface,'card0').locator('.sbh-card-play').evaluate(element=>element===document.activeElement),true,'Escape did not restore card focus');return {completeLocalCopy:true,focusRestored:true};},page);
-  await stage(prefix+'/refresh and upstream-offline local play/download',async()=>{state.offline=true;await openHistory(page,surface);await openPlayer(page,surface);assert.match(await page.locator('.sbh-player video').getAttribute('src'),/^blob:/u);const download=await downloadAndCheck(page,`${browserName}-${surface}-offline-download`,mediaSha);await page.keyboard.press('Escape');return {source:'local Blob',download};},page);
-  state.offline=false;const tab=await context.newPage();await openHistory(tab,surface);await openPlayer(tab,surface);await page.bringToFront();
-  await stage(prefix+'/clear partial failure, fixed cutoff, cross-tab stop and no resurrection',async()=>{state.partialClearOnce=true;state.stale=true;await panel(page).getByRole('button',{name:'清空历史',exact:true}).click();await panel(page).locator('.sbh-confirm button').first().click();await panel(page).getByText(/清理尚未完成/u).waitFor({timeout:20000});await tab.locator('.sbh-player-dialog').waitFor({state:'hidden',timeout:20000});assert.equal(await card(page,surface,'card0').count(),0);assert.equal(await card(tab,surface,'card0').count(),0);await panel(page).locator('.sbh-confirm button').first().click();await panel(page).getByText(/^已清空 /u).waitFor({timeout:20000});assert.ok(state.cutoffs.length>=2);assert.equal(state.cutoffs.at(-1),state.cutoffs.at(-2));assert.ok(state.clearSurfaces.every(name=>name===surface));await refresh(page,state);await loadAll(page);for(const label of ['card0','card1old','card1new','card2','failed','late'])assert.equal(await card(page,surface,label).count(),0,label+' resurrected from stale props');assert.equal(await card(page,surface,'active').count(),1);assert.equal(await card(page,surface,'unknown').count(),1);const localBytes=await page.evaluate(async()=>{if(!window.caches)return null;const cache=await caches.open('storyboard-local-video-bytes-v1');return (await cache.keys()).length;});assert.equal(localBytes,0);state.stale=false;await openHistory(page,surface);assert.equal(await card(page,surface,'card0').count(),0);const other=surface==='video-page'?'storyboard-workbench':'video-page';assert.equal(state.hidden[other].size,0);if(surfaces.includes(other)){await openHistory(tab,other);await card(tab,other,'card0').waitFor();}return {cutoffs:state.cutoffs,clearedSurface:surface,protectedCount:2,cacheBytesEntries:localBytes,crossTabStopped:true,otherSurfaceUnchanged:true};},page);
-  await tab.close();await stage(prefix+'/network and browser errors',async()=>{assert.equal(report.blocked.filter(row=>row.kind==='generation'||row.kind==='forbidden-thumbnail').length,0);assert.equal(report.pageErrors.length,0,JSON.stringify(report.pageErrors));return {actualServerWrites:0,actualProviderCalls:0,mediaRanges:state.mediaRequests.filter(row=>row.range).length,tickets:state.tickets};},page);
- }finally{await context.close();}
- for(const cacheMode of ['unavailable','quota']){const failureState=stateFor(browserName,surface),isolated=await browser.newContext({viewport:{width:1440,height:900},acceptDownloads:true,serviceWorkers:'block'});await install(isolated,failureState,bytes,cacheMode);const failurePage=await isolated.newPage();try{await stage(prefix+'/cache-'+cacheMode+' upstream fallback',async()=>{await openHistory(failurePage,surface);await openPlayer(failurePage,surface);assert.match(await failurePage.locator('.sbh-player video').getAttribute('src'),/^\/api\/video\/proxy\?/u);const save=failurePage.locator('.sbh-player-dialog').getByRole('button',{name:'保存本机副本',exact:true});if(cacheMode==='unavailable')assert.equal(await save.isDisabled(),true);else{await save.click();await failurePage.locator('.sbh-player-dialog .sbh-notice').filter({hasText:/空间/u}).waitFor();assert.equal(await failurePage.getByRole('button',{name:'本机副本可用',exact:true}).count(),0);}await downloadAndCheck(failurePage,`${browserName}-${surface}-${cacheMode}-download`,mediaSha);return {mediaStillPlayable:true,cacheReadyFalselyDisplayed:false};},failurePage);}finally{await isolated.close();}}
- if(browserName===browsers[0]&&surface===surfaces[0]){
-  const lost=stateFor(browserName,surface),isolated=await browser.newContext({viewport:{width:1440,height:900},acceptDownloads:true,serviceWorkers:'block'});await install(isolated,lost,bytes);const lostPage=await isolated.newPage();
-  try{await stage(browserName+'/'+surface+'/server-cleared lost response and failed reconciliation require explicit retry',async()=>{
-   await openHistory(lostPage,surface);await openPlayer(lostPage,surface);await lostPage.locator('.sbh-player-dialog').getByRole('button',{name:'保存本机副本',exact:true}).click();await lostPage.locator('.sbh-player-dialog').getByRole('button',{name:'本机副本可用',exact:true}).waitFor({timeout:45000});await lostPage.keyboard.press('Escape');
-   lost.dropDeleteOnce=true;lost.reconcileFailure=true;
-   await panel(lostPage).getByRole('button',{name:'清空历史',exact:true}).click();await panel(lostPage).locator('.sbh-confirm button').first().click();await panel(lostPage).getByText(/清理尚未完成/u).waitFor();assert.ok(lost.hidden[surface].size>0,'fixture server clear must actually succeed before response loss');assert.equal(await panel(lostPage).getByText(/^已清空 /u).count(),0);
-   const before=lost.reconcileRequests;await lostPage.evaluate(()=>window.dispatchEvent(new Event('focus')));const deadline=Date.now()+10000;while(lost.reconcileRequests===before&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,50));assert.ok(lost.reconcileRequests>before,'failed reconciliation path not exercised');await refresh(lostPage,lost);assert.equal(await panel(lostPage).getByText(/^已清空 /u).count(),0,'response loss/reconcile failure must never claim success');
-   lost.reconcileFailure=false;await panel(lostPage).locator('.sbh-confirm button').first().click();await panel(lostPage).getByText(/^已清空 /u).waitFor();assert.equal(lost.cutoffs.length,2);assert.equal(lost.cutoffs[0],lost.cutoffs[1]);assert.equal(await card(lostPage,surface,'card0').count(),0);
-   return {serverActuallyCleared:true,responseLost:true,reconciliationFailed:true,noFalseSuccess:true,sameCutoffRetry:true};
-  },lostPage);}finally{await isolated.close();}
- }
- }}finally{await browser.close();}}
- report.runtimeAfter=await stage('runtime identity after',runtimeIdentity);assert.deepEqual(report.runtimeAfter,report.runtimeBefore,'runtime identity changed during acceptance');report.passed=report.engines.length===browsers.length&&report.engines.every(engine=>engine.available)&&report.checks.every(check=>check.passed);if(!report.engines.every(engine=>engine.available))report.limitations.push('Requested engines that failed launch are unverified; full requested browser matrix has not passed.');
-}catch(error){report.failure={name:error.name,message:String(error.message).slice(0,1600)};}
-finally{report.completedAt=new Date().toISOString();await saveReport();console.log(JSON.stringify({passed:report.passed,output,report:path.join(output,'report.json'),checks:report.checks.length,actualServerWrites:0,actualProviderCalls:0}));}
-if(!report.passed)process.exitCode=1;
+async function snapshot(name) {
+  const file = path.join(output, `${name}.png`);
+  await page.screenshot({ path: file, fullPage: true });
+  report.screenshots.push(file);
+}
+async function openHistory() {
+  await page.goto(`${origin}/video`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: '历史', exact: true }).waitFor({ timeout: 45000 });
+  await page.getByRole('button', { name: '历史', exact: true }).click();
+  await page.locator('.media-history-page').waitFor({ timeout: 45000 });
+  await page.getByRole('heading', { name: '作品历史', exact: true }).first().waitFor();
+  await page.getByRole('button', { name: `预览${mainTitle}`, exact: true }).waitFor({ timeout: 45000 });
+}
+async function openPreview() {
+  await page.getByRole('button', { name: `预览${mainTitle}`, exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: mainTitle, exact: true });
+  await dialog.waitFor();
+  const video = dialog.locator('video[aria-label]');
+  await video.waitFor();
+  await page.waitForFunction(() => {
+    const video = document.querySelector('dialog video');
+    return video && video.readyState >= 2 && video.videoWidth === 320 && video.videoHeight === 180 && Math.abs(video.duration - 16) < 0.25;
+  }, null, { timeout: 45000 });
+  return { dialog, video };
+}
+async function mediaResponse(route, download) {
+  const request = route.request(), url = new URL(request.url()), headers = await request.allHeaders();
+  assert.equal(request.method(), 'GET');
+  assert.ok(!headers.authorization, 'account token must not enter media requests');
+  assert.ok(!url.href.includes(token), 'account token must not enter media URL');
+  const range = /^bytes=(\d+)-(\d*)$/u.exec(headers.range || '');
+  state.mediaRequests.push({ path: url.pathname, range: headers.range || null, download });
+  if (download) {
+    return route.fulfill({ status: 200, headers: {
+      'content-type': 'video/mp4', 'content-length': String(bytes.length), 'cache-control': 'no-store',
+      'content-disposition': `attachment; filename="fixture-16s.mp4"`,
+    }, body: bytes });
+  }
+  if (!range) return route.fulfill({ status: 200, headers: { 'content-type': 'video/mp4', 'accept-ranges': 'bytes', 'content-length': String(bytes.length), 'cache-control': 'no-store' }, body: bytes });
+  const start = Number(range[1]), end = Math.min(Number(range[2] || bytes.length - 1), bytes.length - 1);
+  assert.ok(start >= 0 && start <= end && end < bytes.length, 'valid media Range required');
+  return route.fulfill({ status: 206, headers: {
+    'content-type': 'video/mp4', 'accept-ranges': 'bytes', 'cache-control': 'no-store',
+    'content-range': `bytes ${start}-${end}/${bytes.length}`, 'content-length': String(end - start + 1),
+  }, body: bytes.subarray(start, end + 1) });
+}
+
+try {
+  browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, serviceWorkers: 'block' });
+  await context.addCookies([{ name: 'auth_token', value: token, url: origin, httpOnly: true, sameSite: 'Lax' }]);
+  await context.addInitScript(({ token, user }) => {
+    localStorage.setItem('auth_token', token);
+    localStorage.setItem('auth_user', JSON.stringify(user));
+    sessionStorage.setItem('entered_app', '1');
+  }, { token, user });
+  await context.route('**/*', async route => {
+    const request = route.request(), url = new URL(request.url()), method = request.method();
+    if (url.origin !== origin) { state.externalRequests.push({ method, url: url.href }); return route.abort('blockedbyclient'); }
+    if (!url.pathname.startsWith('/api/')) {
+      if (!['GET', 'HEAD'].includes(method)) { state.blockedWrites.push({ method, path: url.pathname }); return route.abort('blockedbyclient'); }
+      return route.continue();
+    }
+    // Chromium cancels direct attachment navigations fulfilled through
+    // Playwright route.fulfill. A scoped CDP responder below handles this one
+    // endpoint at the network layer, preserving the production streaming UI.
+    if (url.pathname === '/api/video/proxy-download') return route.continue();
+    report.fixtureRequests.push({ method, path: url.pathname, query: Object.fromEntries(url.searchParams) });
+    if (/\/api\/video\/(generate|stream|submit|reference-upload)/u.test(url.pathname)) { state.generationRequests.push({ method, path: url.pathname }); return json(route, { error: 'Generation forbidden by acceptance' }, 409); }
+    if (!['GET', 'HEAD'].includes(method)) { state.blockedWrites.push({ method, path: url.pathname }); return route.abort('blockedbyclient'); }
+    if (url.pathname === '/api/auth/me') return json(route, { user });
+    if (url.pathname === '/api/media-history') {
+      state.historyReads++;
+      assert.equal((await request.allHeaders()).authorization, `Bearer ${token}`);
+      const category = url.searchParams.get('category') || 'all', kind = url.searchParams.get('kind') || 'all', q = (url.searchParams.get('q') || '').trim().toLowerCase();
+      const offset = Number(url.searchParams.get('offset') || 0), limit = Number(url.searchParams.get('limit') || 60);
+      assert.equal(limit, 60); assert.ok(Number.isInteger(offset) && offset >= 0);
+      const filtered = items.filter(item => (category === 'all' || item.categoryKey === category) && (kind === 'all' || item.kind === kind)
+        && (!q || [item.id, item.title, item.project, item.segment, item.source, item.publicModelName].join(' ').toLowerCase().includes(q)));
+      const pageItems = filtered.slice(offset, offset + limit), nextOffset = offset + pageItems.length < filtered.length ? offset + limit : null;
+      return json(route, {
+        items: pageItems, total: filtered.length, totalCount: filtered.length, nextOffset, serverTime: new Date().toISOString(), expiredCount: 0, sourceFailures: [],
+        pagination: { total: filtered.length, limit, offset, nextOffset, hasMore: nextOffset !== null },
+        facets: { categories: { all: filtered.length, 'video-production': filtered.length }, kinds: { all: filtered.length, video: filtered.length, image: 0 } },
+      });
+    }
+    if (url.pathname === '/api/video/history') return json(route, { tasks: [], total: 0, nextOffset: null, retentionDays: 5, serverTime: new Date().toISOString() });
+    if (url.pathname === '/api/video/access-ticket') {
+      const headers = await request.allHeaders(), task = url.searchParams.get('taskId'), scope = url.searchParams.get('scope') || 'playback';
+      assert.equal(headers.authorization, `Bearer ${token}`);
+      assert.ok(items.some(item => item.id === `video:${task}`), 'ticket requested for a fixture task');
+      assert.ok(['playback', 'download'].includes(scope));
+      state.tickets.push({ task, scope });
+      const target = scope === 'download' ? '/api/video/proxy-download' : '/api/video/proxy';
+      return json(route, { url: `${target}?taskId=${encodeURIComponent(task)}&media_ticket=fixture-${state.tickets.length}` });
+    }
+    if (url.pathname === '/api/video/proxy' || url.pathname === '/api/video/proxy-download') return mediaResponse(route, url.pathname === '/api/video/proxy-download');
+    if (url.pathname.startsWith('/api/video/thumbnail/')) {
+      state.thumbnailRequests++;
+      assert.ok(items.some(item => item.thumbnailPath === url.pathname));
+      return route.fulfill({ status: 200, contentType: 'image/svg+xml', headers: { 'cache-control': 'no-store' }, body: posterSvg });
+    }
+    if (['/api/settings/appearance', '/api/settings'].includes(url.pathname)) return json(route, { settings: { theme: 'soft-white', theme_mode: 'light' } });
+    if (url.pathname === '/api/member-permissions') return json(route, { permission: { userId: user.id, role: 'admin', featureNavigationKeys: ['marketplace', 'toolbox', 'storyboard_workbench', 'image_workbench', 'create', 'voice', 'cover'], agentNavigationKeys: [], integrityValid: true, authorityStatus: 'admin', revision: 1 } });
+    if (url.pathname === '/api/storyboard/projects') return json(route, { projects: [], nextOffset: null });
+    if (url.pathname === '/api/video/active-tasks') return json(route, { activeTasks: [] });
+    if (['/api/cash/balance', '/api/credits'].includes(url.pathname)) return json(route, { credits: 1000, cashBalance: 1000, balance: 1000, transactions: [] });
+    if (url.pathname === '/api/announcements/inbox') return json(route, { announcements: [], cursor: '' });
+    if (url.pathname === '/api/popup-pushes') return json(route, { success: true, popups: [] });
+    return json(route, { settings: {}, tasks: [], records: [], projects: [], bots: [], agents: [], models: [], assets: [], items: [], notifications: [], unreadCount: 0, nextOffset: null });
+  });
+  page = await context.newPage();
+  page.setDefaultTimeout(30000);
+  page.on('pageerror', error => report.pageErrors.push(error.message.slice(0, 1000)));
+  const cdp = await context.newCDPSession(page);
+  cdp.on('Fetch.requestPaused', async event => {
+    const url = new URL(event.request.url);
+    if (url.origin !== origin || url.pathname !== '/api/video/proxy-download') {
+      await cdp.send('Fetch.failRequest', { requestId: event.requestId, errorReason: 'Aborted' });
+      return;
+    }
+    const headers = event.request.headers || {};
+    assert.equal(event.request.method, 'GET');
+    assert.ok(!headers.authorization && !headers.Authorization, 'account token must not enter attachment requests');
+    assert.ok(url.searchParams.get('media_ticket'), 'download-scoped media ticket required');
+    report.fixtureRequests.push({ method: 'GET', path: url.pathname, query: Object.fromEntries(url.searchParams), transport: 'cdp' });
+    state.mediaRequests.push({ path: url.pathname, range: null, download: true, transport: 'cdp' });
+    await cdp.send('Fetch.fulfillRequest', {
+      requestId: event.requestId,
+      responseCode: 200,
+      responseHeaders: [
+        { name: 'content-type', value: 'video/mp4' },
+        { name: 'content-length', value: String(bytes.length) },
+        { name: 'cache-control', value: 'no-store' },
+        { name: 'content-disposition', value: 'attachment; filename="fixture-16s.mp4"' },
+      ],
+      body: bytes.toString('base64'),
+    });
+  });
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*\/api/video/proxy-download*' }] });
+
+  await stage('runtime identity and source binding', async () => {
+    const response = await fetch(`${origin}/api/version`, { signal: AbortSignal.timeout(15000) });
+    assert.equal(response.status, 200);
+    report.runtime = await response.json();
+    report.sourceSha256 = Object.fromEntries(await Promise.all([
+      'src/components/media-history-workspace.tsx', 'src/components/media-history-video-preview.tsx',
+      'src/lib/media-history-video-preview.ts', 'scripts/verify-video-history-lifecycle-browser.mjs',
+    ].map(async file => [file, sha(await fs.readFile(path.join(root, file)))])));
+    return { buildId: report.runtime.buildId || report.runtime.build_id || report.runtime.version || null };
+  });
+  await stage('open current unified history and restore fixture items', async () => {
+    await openHistory();
+    check('current workspace root replaces retired sbh panel', await page.locator('.media-history-page').count() === 1 && await page.locator('.sbh-panel').count() === 0);
+    check('completed item exposes preview action', await page.getByRole('button', { name: `预览${mainTitle}`, exact: true }).isVisible());
+    check('history API uses current account token', state.historyReads > 0 && report.fixtureRequests.some(row => row.path === '/api/media-history'));
+    await snapshot('current-history-first-page');
+    return { historyReads: state.historyReads, firstPageItems: 60 };
+  });
+  await stage('pagination search empty state and manual refresh', async () => {
+    const more = page.getByRole('button', { name: /加载更多/u });
+    await more.waitFor(); await more.click();
+    await page.getByRole('button', { name: '预览分页恢复作品 60', exact: true }).waitFor();
+    check('second page appends the sixtieth additional record', state.historyReads >= 2 && await page.getByRole('button', { name: '预览分页恢复作品 60', exact: true }).count() === 1);
+    const search = page.getByRole('textbox', { name: '搜索作品历史', exact: true });
+    await search.fill('绝无匹配结果-EMPTY'); await page.getByRole('heading', { name: '没有匹配的作品', exact: true }).waitFor();
+    check('unmatched search renders the real empty state', await page.getByRole('heading', { name: '没有匹配的作品', exact: true }).isVisible());
+    await search.fill(mainTask);
+    await page.waitForFunction(() => document.querySelectorAll('section[aria-label="作品历史列表"] article').length === 1);
+    check('server-side search restores the matching record', await page.getByRole('button', { name: `预览${mainTitle}`, exact: true }).count() === 1);
+    await search.fill(''); await page.getByRole('button', { name: `预览${mainTitle}`, exact: true }).waitFor();
+    const before = state.historyReads;
+    const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/media-history' && response.request().method() === 'GET', { timeout: 30000 });
+    await page.getByRole('button', { name: '刷新', exact: true }).click(); await refreshed;
+    await page.getByRole('button', { name: `预览${mainTitle}`, exact: true }).waitFor();
+    check('manual refresh issues a new current-history read', state.historyReads > before);
+    await snapshot('current-history-refreshed');
+    return { historyReads: state.historyReads };
+  });
+  await stage('native H264 first frame play pause and seek', async () => {
+    const { video } = await openPreview();
+    check('native video decodes real H264 metadata', await video.evaluate(element => element.readyState >= 2 && element.videoWidth === 320 && element.videoHeight === 180));
+    check('video uses metadata preload without autoplay', await video.getAttribute('preload') === 'metadata' && await video.getAttribute('autoplay') === null);
+    check('native media uses Range and keeps account token out of URL', state.mediaRequests.some(row => row.range) && state.mediaRequests.every(row => !row.path.includes(token)));
+    await video.evaluate(element => element.play());
+    await page.waitForFunction(() => { const video = document.querySelector('dialog video'); return video && !video.paused && video.currentTime > 0.2; });
+    await video.evaluate(element => element.pause());
+    check('play and pause control the real media element', await video.evaluate(element => element.paused && element.currentTime > 0));
+    await video.evaluate(element => { element.currentTime = 13; });
+    await page.waitForFunction(() => { const video = document.querySelector('dialog video'); return video && video.currentTime >= 12.8 && video.seeking === false; });
+    check('seek reaches the requested later frame', await video.evaluate(element => element.currentTime >= 12.8 && element.paused));
+    await snapshot('current-history-native-preview');
+    return { rangeRequests: state.mediaRequests.filter(row => row.range).length, tickets: state.tickets.length };
+  });
+  await stage('download original MP4 and verify SHA256', async () => {
+    const dialog = page.getByRole('dialog', { name: mainTitle, exact: true });
+    const pending = page.waitForEvent('download', { timeout: 45000 });
+    await dialog.getByRole('button', { name: '下载到电脑', exact: true }).click();
+    const download = await pending, target = path.join(output, 'downloaded-16s.mp4');
+    const failure = await download.failure();
+    report.downloadDebug = { url: download.url(), suggestedFilename: download.suggestedFilename(), failure };
+    assert.equal(failure, null, `browser download failed before save: ${failure}`);
+    await download.saveAs(target);
+    const downloaded = await fs.readFile(target);
+    check('download is a complete MP4 attachment', download.suggestedFilename().endsWith('.mp4') && downloaded.length === bytes.length);
+    check('downloaded bytes match original SHA256', sha(downloaded) === mediaSha, { expected: mediaSha, actual: sha(downloaded) });
+    check('download performs playback preflight and download-scoped ticket', state.tickets.some(row => row.scope === 'download') && state.mediaRequests.some(row => row.download));
+    report.download = { file: target, bytes: downloaded.length, sha256: sha(downloaded), suggestedFilename: download.suggestedFilename() };
+    await dialog.getByRole('button', { name: '关闭预览', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    return report.download;
+  });
+  await stage('reload restores current history from API and layout stays within viewport', async () => {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: '历史', exact: true }).click();
+    await page.getByRole('button', { name: `预览${mainTitle}`, exact: true }).waitFor({ timeout: 45000 });
+    check('page reload restores the completed item through media-history', await page.getByRole('button', { name: `预览${mainTitle}`, exact: true }).isVisible());
+    check('1440 desktop has no horizontal overflow', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    check('1920 desktop has no horizontal overflow', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await snapshot('current-history-1920-restored');
+    await page.getByRole('button', { name: /返回.*视频/u }).click();
+    await page.locator('.media-history-page').waitFor({ state: 'hidden' });
+    check('return control restores the video workbench', await page.locator('.media-history-page').count() === 0);
+  });
+  await stage('zero paid generation zero writes and no browser exceptions', async () => {
+    check('no generation request was attempted', state.generationRequests.length === 0 && report.actualProviderCalls === 0 && report.paidCalls === 0);
+    check('no API or non-API write was attempted', state.blockedWrites.length === 0 && report.actualServerWrites === 0);
+    check('no uncaught browser exceptions', report.pageErrors.length === 0, report.pageErrors);
+    check('all history preview and download responses were isolated fixtures', report.fixtureRequests.every(row => row.path.startsWith('/api/')));
+    report.state = state;
+    report.passed = report.stages.every(item => item.passed) && report.checks.every(item => item.passed);
+  });
+} catch (error) {
+  report.error = String(error.stack || error.message).slice(0, 4000);
+  report.state = state;
+  process.exitCode = 1;
+} finally {
+  await browser?.close();
+  await saveReport();
+  console.log(JSON.stringify({ passed: report.passed, checks: report.checks.length, stages: report.stages.length, screenshots: report.screenshots.length, actualServerWrites: report.actualServerWrites, actualProviderCalls: report.actualProviderCalls, paidCalls: report.paidCalls, output, error: report.error?.split('\n')[0] }));
+}
