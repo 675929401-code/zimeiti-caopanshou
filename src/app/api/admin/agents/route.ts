@@ -18,6 +18,7 @@ import { visibleAdminAgentRows } from '@/lib/admin-agent-catalog-visibility';
 import { normalizeStoryboardDirectorContractActivation, StoryboardDirectorContractActivationError, STORYBOARD_DIRECTOR_CONTRACT_FIELDS } from '@/lib/storyboard-director-contract-activation';
 import { authorizeAdminCapability } from '@/lib/server/admin-governance-authority';
 import { invalidateAgentConfigCache } from '@/app/api/llm/llm-state';
+import { scheduleAutoAvatarForCreatedAgents } from '@/lib/auto-avatar/schedule';
 import {
   agentRevisionConflict,
   deleteAgentByRevision,
@@ -626,6 +627,15 @@ export async function POST(request: NextRequest) {
     // 新建智能体后失效前台缓存。
     invalidateAgentConfigCache(agentId);
     invalidateBotsCache();
+
+    // 新增智能体缺少头像时，在响应返回后静默生成；设置开关与并发上限
+    // 由 auto-avatar 模块控制，保存请求不等候生图。
+    scheduleAutoAvatarForCreatedAgents([{
+      agentId,
+      name: String(data.name || name),
+      description: String(data.description || description || ''),
+      avatar: data.avatar as string | null,
+    }], admin.userId);
 
     return NextResponse.json({ success: true, agent: publicAgent(data as Record<string, unknown>) });
   } catch (err) {

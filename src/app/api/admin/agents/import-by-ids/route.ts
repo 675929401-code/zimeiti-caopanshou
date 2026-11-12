@@ -3,6 +3,7 @@ import { getTokenFromHeaders } from "@/lib/auth";
 import { verifyAdminToken } from "@/lib/admin-auth";
 import { getBotInfo, clearCozeConfigCache } from "@/lib/coze-api";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { scheduleAutoAvatarForCreatedAgents } from "@/lib/auto-avatar/schedule";
 
 /**
  * POST /api/admin/agents/import-by-ids
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
     const imported: Array<{ bot_id: string; name: string }> = [];
     const skipped: Array<{ bot_id: string; reason: string }> = [];
     const failed: Array<{ bot_id: string; reason: string }> = [];
+    const createdAgents: Array<{ agentId: string; name: string; description: string; avatar: string | null }> = [];
 
     for (const botId of botIds) {
       const trimmedId = botId.trim();
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Insert agent
-      const { error } = await client.from("agents").insert({
+      const { data: created, error } = await client.from("agents").insert({
         name,
         description,
         source: "coze",
@@ -93,15 +95,23 @@ export async function POST(request: NextRequest) {
         sort_order: nextSort,
         cost_per_message: 0,
         is_active: true,
-      });
+      }).select("id,name,description,avatar").single();
 
-      if (!error) {
+      if (!error && created) {
         imported.push({ bot_id: trimmedId, name });
+        createdAgents.push({
+          agentId: String(created.id),
+          name: String(created.name || name),
+          description: String(created.description || description || ""),
+          avatar: created.avatar as string | null,
+        });
         nextSort += 10;
       } else {
-        failed.push({ bot_id: trimmedId, reason: error.message });
+        failed.push({ bot_id: trimmedId, reason: error?.message || "插入失败" });
       }
     }
+
+    scheduleAutoAvatarForCreatedAgents(createdAgents, String(payload.userId || ""));
 
     return NextResponse.json({
       success: true,

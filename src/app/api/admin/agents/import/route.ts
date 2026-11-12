@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminToken } from "@/lib/admin-auth";
 import { listBots } from "@/lib/coze-api";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { scheduleAutoAvatarForCreatedAgents } from "@/lib/auto-avatar/schedule";
 
 /**
  * GET /api/admin/agents/import
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
     const client = getSupabaseClient();
     const imported: string[] = [];
     const skipped: string[] = [];
+    const createdAgents: Array<{ agentId: string; name: string; description: string; avatar: string | null }> = [];
 
     // Get max sort_order
     const { data: maxSort } = await client
@@ -127,7 +129,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Insert new agent
-      const { error } = await client.from("agents").insert({
+      const { data: created, error } = await client.from("agents").insert({
         name: bot.name,
         description: bot.description || "",
         source: "coze",
@@ -137,16 +139,24 @@ export async function POST(request: NextRequest) {
         sort_order: nextSort,
         cost_per_message: 0,
         is_active: true,
-      });
+      }).select("id,name,description,avatar").single();
 
-      if (!error) {
+      if (!error && created) {
         imported.push(bot.bot_id);
+        createdAgents.push({
+          agentId: String(created.id),
+          name: String(created.name || bot.name),
+          description: String(created.description || bot.description || ""),
+          avatar: created.avatar as string | null,
+        });
         nextSort += 10;
       } else {
         console.error(`Failed to import bot ${bot.bot_id}:`, error);
         skipped.push(bot.bot_id);
       }
     }
+
+    scheduleAutoAvatarForCreatedAgents(createdAgents, String(payload.userId || ""));
 
     return NextResponse.json({
       success: true,

@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { verifyAdminToken } from "@/lib/admin-auth";
 import { readImagePublicationStates } from "@/lib/image-model-availability";
 import { cleanImageModelText, publicImageModelCapabilities } from "@/lib/image-admin-validation";
 import { NextResponse } from "next/server";
@@ -97,6 +98,32 @@ function publicImageCatalogPriority(model: Record<string, unknown>): number {
 
 export async function GET(request: Request) {
   try {
+    // The admin avatar settings need the internal cover_models id/model_name
+    // and activation flag. The public DTO intentionally exposes only pm_* ids
+    // and display metadata, so an authenticated administrator gets a separate
+    // read-only projection here. This route is outside /api/admin and is not a
+    // step-up mutation endpoint; it never returns api_key values.
+    const authorization = request.headers.get("authorization") || "";
+    const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const admin = bearer ? await verifyAdminToken(bearer) : null;
+    if (admin?.role === "admin") {
+      const { data, error } = await getSupabaseClient()
+        .from("cover_models")
+        .select("id,name,model_name,provider,is_active,is_hidden,sort_order,api_endpoint,api_key")
+        .order("created_at", { ascending: true });
+      if (error) {
+        return NextResponse.json({ error: "模型列表读取失败", models: [] }, { status: 500, headers: noStoreHeaders });
+      }
+      return NextResponse.json({
+        models: (data || [])
+          .filter((model: Record<string, unknown>) => model.provider !== "retired_configuration")
+          .map((model: Record<string, unknown>) => {
+            const { api_key, ...safe } = model;
+            return { ...safe, api_key_configured: Boolean(String(api_key || "").trim()) };
+          }),
+      }, { headers: noStoreHeaders });
+    }
+
     const surface = new URL(request.url).searchParams.get("surface");
     const nativeCatalog = surface === "publish-center-image";
     const includeAutodlH3Selfhost = nativeCatalog || surface === "image-workbench"

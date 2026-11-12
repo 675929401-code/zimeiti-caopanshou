@@ -106,7 +106,11 @@ function hasEmoji(str: string): boolean {
 export async function generateAndUpdateAvatar(
   agentId: string,
   name: string,
-  description: string
+  description: string,
+  persistence: {
+    ownerUserId?: string;
+    source?: "agent-avatar-generated";
+  } = {}
 ): Promise<void> {
   // ── 防重复 ──
   if (inProgress.has(agentId)) {
@@ -116,7 +120,7 @@ export async function generateAndUpdateAvatar(
   inProgress.add(agentId);
 
   try {
-    await generateAndUpdateAvatarInner(agentId, name, description);
+    await generateAndUpdateAvatarInner(agentId, name, description, persistence);
   } catch (err) {
     // 终极兜底：任何未预期的异常只记日志
     console.error(
@@ -134,14 +138,24 @@ export async function generateAndUpdateAvatar(
 async function generateAndUpdateAvatarInner(
   agentId: string,
   name: string,
-  description: string
+  description: string,
+  persistence: {
+    ownerUserId?: string;
+    source?: "agent-avatar-generated";
+  } = {}
 ): Promise<void> {
   console.log(`[AutoAvatar] Starting generation for agent "${name}" (${agentId})`);
 
   const snapshot = await readAgentAvatarCommitSnapshot(agentId);
   if (!snapshot || !shouldGenerateAvatar(snapshot.avatar)) return;
 
-  const persistedUrl = await generateAvatarUrlForAgent(name, description, `auto-avatar-${agentId}`);
+  const persistedUrl = await generateAvatarUrlForAgent(
+    name,
+    description,
+    `auto-avatar-${agentId}`,
+    undefined,
+    persistence,
+  );
   if (!persistedUrl) return;
 
   const result = await replaceGeneratedAvatarIfUnclaimed(agentId, persistedUrl, snapshot);
@@ -338,10 +352,16 @@ async function resolveAutoAvatarModel(): Promise<AutoAvatarModel | null> {
     if (selectedId) {
       const selected = available.find((model) => model.id === selectedId);
       if (selected) return selected;
-      console.warn(`[AutoAvatar] Selected model ${selectedId} is unavailable, falling back to first enabled drawing model`);
+      console.warn(`[AutoAvatar] Selected model ${selectedId} is unavailable, falling back to preferred image model`);
     }
 
-    return available[0] || null;
+    // The marketplace's default avatar model is GPT-Image-2.5. Prefer it when
+    // the administrator has not explicitly selected an available model, so a
+    // stale/empty setting cannot silently fall back to a non-GPT model.
+    const preferred = available.find((model) =>
+      /gpt[\s_-]*image[\s_-]*2\.5/i.test(`${model.name || ""} ${model.model_name}`)
+    );
+    return preferred || available[0] || null;
   } catch (error) {
     console.warn("[AutoAvatar] Failed to resolve configured model:", error instanceof Error ? error.message : error);
     return null;
