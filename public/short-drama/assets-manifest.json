@@ -1,0 +1,119 @@
+{
+  "version": "2026-08-27.1",
+  "generator": "Codex built-in image generation plus offline FFmpeg motion treatment",
+  "policy": "Original replacement assets; no official-site pixels, logos, characters, or watermarks are reused.",
+  "assets": [
+    {
+      "path": "/short-drama/previews/hero-dream-floral-v2.webp",
+      "role": "YouCai homepage dreamlike floral hero lightweight poster preview",
+      "mediaType": "image",
+      "mimeType": "image/webp",
+      "width": 1280,
+      "height": 720,
+      "fileBytes": 48176,
+      "sha256": "66FCF566F9612775555A2EB44A3487A771AE204A0BBA4B3D1CD9ED72F039BED8",
+      "derivedFrom": "/short-drama/hero-dream-floral-v2.png",
+      "promptSummary": "Optimized local WebP poster for the original cinematic dream garden homepage hero."
+    },
+    {
+      "path": "/short-drama/hero-dream-floral-v2.png",
+      "role": "YouCai homepage dreamlike floral hero poster",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "width": 1672,
+      "height": 941,
+      "fileBytes": 2016138,
+      "sha256": "BEB573DF5D7568A28010260E00FB5A643EDCB2F77FBE2A0F33095004FD7F873B",
+      "promptSummary": "Original cinematic dream garden with luminous pink peony and violet iris flowers, calm dark-blue copy space on the left, no people, text, logo or watermark."
+    },
+    {
+      "path": "/short-drama/hero-dream-floral-loop-v2.mp4",
+      "role": "YouCai homepage dreamlike floral ambient loop MP4 fallback",
+      "mediaType": "video",
+      "mimeType": "video/mp4",
+      "derivedFrom": "/short-drama/hero-dream-floral-v2.png",
+      "durationSeconds": 10,
+      "width": 1914,
+      "height": 820,
+      "fps": 30,
+      "audio": false,
+      "loopSafe": true,
+      "fileBytes": 2070870,
+      "sha256": "8DA71BF9C9540C9E9E68331E41B9868ECE72A6E4B3CE914D4957D6B1292298E0",
+      "transformation": "Offline centered reversible breathing zoom; first and final frames converge for a soft loop."
+    },
+    {
+      "path": "/short-drama/hero-dream-floral-loop-v2.webm",
+      "role": "YouCai homepage dreamlike floral ambient loop preferred WebM encoding",
+      "mediaType": "video",
+      "mimeType": "video/webm",
+      "derivedFrom": "/short-drama/hero-dream-floral-v2.png",
+      "durationSeconds": 10,
+      "width": 1914,
+      "height": 820,
+      "fps": 30,
+      "audio": false,
+      "loopSafe": true,
+      "fileBytes": 551942,
+      "sha256": "FF10A17DD5EA4772F5488BB33E87640CA16E833ECAB5CB00F19E49E12FA36102",
+      "transformation": "VP9 encoding of the same offline reversible breathing loop."
+    },
+    {
+      "path": "/short-drama/hero-pipeline-v1.png",
+      "role": "film-studio and tool-card pipeline poster",
+      "promptSummary": "Panoramic cinematic AI film pipeline with story, character, scene, storyboard and cinema panels; dark violet and cyan; no text or logo."
+    },
+    {
+      "path": "/short-drama/hero-pipeline-loop-v1.mp4",
+      "role": "film-studio pipeline ambient loop MP4 fallback",
+      "mediaType": "video",
+      "mimeType": "video/mp4",
+      "derivedFrom": "/short-drama/hero-pipeline-v1.png",
+      "durationSeconds": 10,
+      "width": 1914,
+      "height": 820,
+      "fps": 30,
+      "audio": false,
+      "loopSafe": true,
+      "fileBytes": 1564921,
+      "sha256": "7BEF753888165B50967093A8FFE4346185C6144F8B6C5B1A754A4E50A68098AF",
+      "transformation": "Offline centered push-in and reversible light breathing; first and final frames converge for a soft loop."
+    },
+    {
+      "path": "/short-drama/hero-pipeline-loop-v1.webm",
+      "role": "film-studio pipeline ambient loop preferred WebM encoding",
+      "mediaType": "video",
+      "mimeType": "video/webm",
+      "derivedFrom": "/short-drama/hero-pipeline-v1.png",
+      "durationSeconds": 10,
+      "width": 1914,
+      "height": 820,
+      "fps": 30,
+      "audio": false,
+      "loopSafe": true,
+      "fileBytes": 541384,
+      "sha256": "A59BBA344FDC8959534BD4CDFF015BDABC32291DC387A689CE2B0FB07188567C",
+      "transformation": "VP9 encoding of the same offline centered push-in and reversible light breathing loop."
+    },
+    {
+      "path": "/short-drama/inspiration-silent-pet-v1.png",
+      "role": "silent pet narration inspiration",
+      "promptSummary": "Original wordless 3D pet micro-story with closed mouths, expressive acting and a glowing feather."
+    },
+    {
+      "path": "/short-drama/inspiration-paper-fox-v1.png",
+      "role": "paper craft inspiration",
+      "promptSummary": "Original layered-paper fox crossing a miniature rope bridge with a brass compass."
+    },
+    {
+      "path": "/short-drama/inspiration-product-film-v1.png",
+      "role": "commercial product inspiration",
+      "promptSummary": "Original unbranded translucent fragrance bottle with liquid light and abstract petals."
+    },
+    {
+      "path": "/short-drama/inspiration-moon-observatory-v1.png",
+      "role": "historical animation inspiration",
+      "promptSummary": "Original wordless astronomer at a moonlit mountain observatory with flying star charts."
+    }
+  ]
+}
