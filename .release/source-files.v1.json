@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "fef5b8ecc1e2e9d94111fdfb1abcd5cc4f5ef136c96306e4167af2a682ac45c9",
+  "sourceFingerprint": "b57a64099e444754572352b68405a3b53fcdced3b8147dabeed6d65cecc3516e",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5286,
-  "totalBytes": 86236453,
+  "totalBytes": 86236435,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2024,7 +2024,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "9c61b46bdb62db9f7ea8b45e00fa5c182c86277814c48149a82c924345e4f474"
+      "sha256": "059d224b44217d4e6694b67a12ade20baa1dcf721912c288a4bb115a5c2167b9"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -10938,8 +10938,8 @@
     },
     {
       "path": "scripts/verify-storyboard-history-resume.mjs",
-      "bytes": 25105,
-      "sha256": "1c1788a01e19bdd3b4f9664e953e3ce61846fb7fe95d7554046a6252544a0540"
+      "bytes": 25101,
+      "sha256": "935703685e3fc14c4b28b7a9dc116167018f03dc9818c67276425d41ad53e4c2"
     },
     {
       "path": "scripts/verify-storyboard-history-view.ts",
@@ -21918,8 +21918,8 @@
     },
     {
       "path": "src/lib/server/member-permission-authority.ts",
-      "bytes": 7347,
-      "sha256": "146b8b5f27ffd1950c6b76d56b31f72964acb4e93ad60d57167e7aca92f8f245"
+      "bytes": 7346,
+      "sha256": "a69011c46190244c6c3d942f79ac7128966de9a82b18ed95cb8a35c500b22cba"
     },
     {
       "path": "src/lib/server/member-region-distribution.ts",
@@ -22038,8 +22038,8 @@
     },
     {
       "path": "src/lib/server/native-operations-service.ts",
-      "bytes": 77932,
-      "sha256": "6766cbc5b04f10c90ac80652c053c196b13e5cb1e6575d9572264e7bfd2f5d8b"
+      "bytes": 77925,
+      "sha256": "cfe10c4f5d1cae137c87c8d2b393222fa22cb53b37ddb0cbe38e888ca982ec45"
     },
     {
       "path": "src/lib/server/native-profile-service.ts",
@@ -22123,8 +22123,8 @@
     },
     {
       "path": "src/lib/server/publishing-authorization-provider.ts",
-      "bytes": 13315,
-      "sha256": "66b1ddec330896bf444f75ec1a8b52663d8d2a2a479ec427e462fa96ce9c6d27"
+      "bytes": 13313,
+      "sha256": "1f072728b1a46d3c1faca65d4d3fb1d8a08beddbebabe0864d90819d800828c2"
     },
     {
       "path": "src/lib/server/publishing-authorization-service.ts",
@@ -23428,8 +23428,8 @@
     },
     {
       "path": "src/lib/video-terminal-finalizer.ts",
-      "bytes": 37009,
-      "sha256": "ebccee5efb81d96e55573a005579177a609f0e9a4d74073970b7512ad24a5a90"
+      "bytes": 37005,
+      "sha256": "665b58e345ed986f653c70fddba0154c34accc0c3a083a5bbae34f8631a8702f"
     },
     {
       "path": "src/lib/video-thumbnail-cache.ts",

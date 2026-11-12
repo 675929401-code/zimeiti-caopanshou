@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { createHash } from "node:crypto";
 import { executeCashDeduction } from "@/lib/billing-executor";
@@ -831,4 +831,3 @@ export function videoTerminalErrorResponse(error: unknown) {
   }
   return null;
 }
-

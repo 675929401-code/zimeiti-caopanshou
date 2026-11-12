@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { AuthUser,getSupabase } from "@/lib/api-middleware";
@@ -345,7 +345,3 @@ export async function executeNativeOperation(user:AuthUser,db:DB,method:string,p
  }
  return unavailable();
 }
-
-
-
-

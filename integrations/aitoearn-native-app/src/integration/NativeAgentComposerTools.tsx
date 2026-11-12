@@ -92,4 +92,3 @@ export function NativeAgentComposerTools({ disabled = false, statusId }: { disab
     {recovery && <p role="status">{recovery}</p>}
   </div>
 }
-

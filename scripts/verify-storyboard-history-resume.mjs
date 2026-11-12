@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import { createHash, webcrypto } from 'node:crypto';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -553,4 +553,3 @@ console.log(JSON.stringify({
   realNetworkRequests: 0,
   realDatabaseWrites: 0,
 }, null, 2));
-

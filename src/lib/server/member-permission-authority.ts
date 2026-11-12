@@ -163,4 +163,3 @@ function unavailableSnapshot(
     authorityStatus: status,
   };
 }
-
