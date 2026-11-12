@@ -45,7 +45,8 @@
       "^(?:docs|tests?|fixtures)/",
       "^README(?:\\.[^/]+)?$",
       "^.+\\.md$",
-      "^scripts/(?:verify-|test-).+\\.(?:mjs|js|ts|tsx|py)$"
+      "^scripts/(?:verify-|test-).+\\.(?:mjs|js|ts|tsx|py)$",
+      "^integrations/"
     ],
     "routeRules": [
       {
