@@ -1,0 +1,14 @@
+{
+  "name": "zimeiti-aitoearn-agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.33",
+    "zod": "4.3.6"
+  },
+  "engines": {
+    "node": ">=24.19.0 <25"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

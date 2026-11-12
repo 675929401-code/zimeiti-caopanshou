@@ -11,6 +11,7 @@ const PUBLIC_UNAUTHENTICATED_PATHS = new Set([
   "/help",
   "/login",
   "/payment/result",
+  "/plugin-guide",
   "/register",
 ]);
 

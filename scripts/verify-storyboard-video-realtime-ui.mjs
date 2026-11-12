@@ -42,6 +42,8 @@ function buildRun(scenario) {
   Object.assign(run.cards[0], {
     id: `card-${scenario}`,
     order: 1,
+    imagePrompt: "单幅16:9画面，一只金毛犬在客厅看向镜头。",
+    videoPrompt: "镜头缓慢推进，金毛犬自然抬头，动作连续。",
     videoStatus: "idle",
     videoUrl: undefined,
     videoError: undefined,
@@ -174,7 +176,7 @@ async function runScenario(name, terminalEvent, expectedStatus, expectedText) {
     localStorage.setItem("auth_user", JSON.stringify(user));
     localStorage.setItem("active_view", "storyboard-workbench");
     sessionStorage.setItem("entered_app", "1");
-    localStorage.setItem("storyboard_prompt_workbench_current_v2", JSON.stringify(payload));
+    localStorage.setItem(`storyboard_prompt_workbench_current_v2:user:${encodeURIComponent(user.id)}`, JSON.stringify(payload));
   }, { token: session.token, user: session.user, payload: run });
   await mockPeripheralApis(page);
   await mockModelCatalog(page, run);
@@ -204,18 +206,13 @@ async function runScenario(name, terminalEvent, expectedStatus, expectedText) {
     body: JSON.stringify(terminalEvent.data),
   }));
 
-  await page.goto(`${baseUrl}/storyboard-workbench`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}/storyboard-workbench?projectId=${encodeURIComponent(run.id)}`, { waitUntil: "domcontentloaded" });
   try {
     await page.getByText("Realtime Video Test", { exact: false }).first().waitFor({ timeout: 15_000 });
   } catch (error) {
     const pageText = await page.locator("body").innerText().catch(() => "body unavailable");
     throw new Error(`${error.message}\nURL=${page.url()}\nDIAGNOSTICS=${JSON.stringify(diagnostics)}\nBODY=${pageText.slice(0, 2400)}`);
   }
-  await page.getByRole("button", { name: "最近任务", exact: true }).click();
-  const project = page.locator(`[data-storyboard-project-id="${run.id}"]`);
-  await project.waitFor({ timeout: 15_000 });
-  page.once("dialog", (dialog) => dialog.accept());
-  await project.getByRole("button", { name: "打开任务", exact: true }).click();
   const card = page.locator(".sbw-shot-card").first();
   await card.waitFor({ timeout: 30_000 });
   const generate = card.getByRole("button", { name: "生成视频", exact: true });
@@ -226,7 +223,8 @@ async function runScenario(name, terminalEvent, expectedStatus, expectedText) {
   } catch (error) {
     const debugRun = projectFixture.latestDocument();
     const debugText = await card.innerText().catch(() => "card unavailable");
-    throw new Error(`${error.message}\nSTATUS=${JSON.stringify(debugRun?.cards?.[0] || null)}\nREQUESTS=${JSON.stringify(diagnostics.requests)}\nFAILED=${JSON.stringify(diagnostics.failedRequests)}\nCARD=${debugText.slice(-1200)}`);
+    const notices = await page.locator(".sbw-notice").allTextContents().catch(() => []);
+    throw new Error(`${error.message}\nSTATUS=${JSON.stringify(debugRun?.cards?.[0] || null)}\nNOTICES=${JSON.stringify(notices)}\nREQUESTS=${JSON.stringify(diagnostics.requests)}\nFAILED=${JSON.stringify(diagnostics.failedRequests)}\nCARD=${debugText.slice(-1200)}`);
   }
   const saveDeadline = Date.now() + 10_000;
   while (projectFixture.latestDocument()?.cards?.[0]?.videoStatus !== expectedStatus && Date.now() < saveDeadline) {
@@ -263,7 +261,7 @@ async function runCancelScenario() {
     localStorage.setItem("auth_user", JSON.stringify(user));
     localStorage.setItem("active_view", "storyboard-workbench");
     sessionStorage.setItem("entered_app", "1");
-    localStorage.setItem("storyboard_prompt_workbench_current_v2", JSON.stringify(payload));
+    localStorage.setItem(`storyboard_prompt_workbench_current_v2:user:${encodeURIComponent(user.id)}`, JSON.stringify(payload));
   }, { token: session.token, user: session.user, payload: run });
   await mockPeripheralApis(page);
   await mockModelCatalog(page, run);
@@ -288,13 +286,8 @@ async function runCancelScenario() {
     body: JSON.stringify({ success: true, status: "cancelled", message: "任务已终止" }),
   }));
 
-  await page.goto(`${baseUrl}/storyboard-workbench`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}/storyboard-workbench?projectId=${encodeURIComponent(run.id)}`, { waitUntil: "domcontentloaded" });
   await page.getByText("Realtime Video Test", { exact: false }).first().waitFor({ timeout: 15_000 });
-  await page.getByRole("button", { name: "最近任务", exact: true }).click();
-  const project = page.locator(`[data-storyboard-project-id="${run.id}"]`);
-  await project.waitFor({ timeout: 15_000 });
-  page.once("dialog", (dialog) => dialog.accept());
-  await project.getByRole("button", { name: "打开任务", exact: true }).click();
   const card = page.locator(".sbw-shot-card").first();
   await card.getByRole("button", { name: "生成视频", exact: true }).click();
   const stop = card.getByRole("button", { name: "终止生成", exact: true });

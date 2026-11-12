@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { webcrypto, createHash } from 'node:crypto';
 import { Blob, File } from 'node:buffer';
 import ts from 'typescript';
+import { z } from 'zod';
 
 // Runs the real migrated upload implementation with RAM browser/transport
 // dependencies. No credential, database, build, server or provider access.
@@ -33,14 +34,19 @@ function harness(options = {}) {
   const host = { assertHostSession: assertOwner, getHostSession: session, getHostSessionRevision: () => revision, hostStorageKey: key => owner ? `fixture:${owner}:${key}` : null,
     subscribeHostSession: fn => { listeners.add(fn); return () => listeners.delete(fn); }, trackHostRequest: controller => { controllers.add(controller); return () => controllers.delete(controller); } };
   const ownerChange = () => { owner = actorB; revision++; for (const controller of controllers) controller.abort(); for (const listener of listeners) listener(); };
-  let signKey;
+  let signKey, signMediaId;
   const transport = async (url, init = {}) => {
     const method = init.method || 'GET';
     if (url === 'assets/upload-sign' && method === 'POST') {
-      signed++; const value = JSON.parse(init.body); signKey = value.requestKey;
+      signed++; const value = JSON.parse(init.body); signKey = value.requestKey; signMediaId = value.mediaId;
       if (options.signUnknown) throw new Error('SIGN_RESPONSE_LOST_FIXTURE');
       if (options.ownerDuringSign) ownerChange();
       return { json: async () => ({ code: 0, data: { id: assetId, url: canonicalUrl, uploadUrl: 'https://upload.fixture.invalid/never-network' }, message: '' }) };
+    }
+    if (url.startsWith('assets/upload-sign?requestKey=') && method === 'GET') {
+      reads++; assert.equal(new URL(url, 'http://fixture.invalid').searchParams.get('requestKey'), signKey);
+      const asset = options.remoteReady ? { id: assetId, mediaId: signMediaId, fileName: 'explicit-ram-fixture.png', mime: 'image/png', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), state: 'ready', metadata: {} } : null;
+      return { json: async () => ({ code: 0, data: { operation: { kind: 'asset_sign', requestKey: signKey }, asset, uploadUrlRecoverable: false }, message: '' }) };
     }
     if (url === `assets/${assetId}/confirm` && method === 'POST') {
       confirms++; if (options.confirmUnknown) throw new Error('CONFIRM_RESPONSE_LOST_FIXTURE');
@@ -48,7 +54,7 @@ function harness(options = {}) {
     }
     if (url === `assets/${assetId}` && method === 'GET') {
       reads++; const phaseReady = options.remoteReady || !options.putUnknown && !options.confirmUnknown;
-      return { json: async () => ({ code: 0, data: { id: assetId, mediaId: '00000000-0000-4000-8000-000000000204', fileName: 'explicit-ram-fixture.png', mime: 'image/png', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), state: phaseReady ? 'ready' : 'signed', metadata: {} }, message: '' }) };
+      return { json: async () => ({ code: 0, data: { id: assetId, mediaId: signMediaId, fileName: 'explicit-ram-fixture.png', mime: 'image/png', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), state: phaseReady ? 'ready' : 'signed', metadata: {} }, message: '' }) };
     }
     if (url === `assets/${assetId}/content` && method === 'GET') return { ok: true, blob: async () => new Blob([bytes], { type: 'image/png' }) };
     throw new Error(`UNEXPECTED_RAM_TRANSPORT_${method}_${url}`);
@@ -67,9 +73,10 @@ function harness(options = {}) {
     require: name => {
       if (name === './host-session') return host;
       if (name === './host-transport') return { nativeBffFetch: transport };
-      // Schema parsing is not under test here. The production state/hash/owner
-      // checks still run against the explicitly shaped RAM asset DTO.
-      if (name === '@/lib/publishing-v3-contract') return { PublishingV3AssetSchema: { safeParse: value => ({ success: true, data: value }) } };
+      if (name === 'zod') return { z };
+      // Provider DTO schema details are not under test here. Marker parsing
+      // still uses real zod; state/hash/owner checks run in production code.
+      if (name === '@/lib/publishing-v3-contract') return { PublishingV3AssetSchema: z.any(), PublishingV3OperationSchema: z.any() };
       throw new Error(`UNEXPECTED_IMPORT_${name}`);
     },
   });
@@ -83,8 +90,14 @@ try {
     const h = harness({ signUnknown: true }), blob = file();
     await assert.rejects(h.implementation.uploadNativeAsset(blob), /SIGN_RESPONSE_LOST/);
     const markerBefore = [...h.storage.values()][0];
-    await assert.rejects(h.implementation.uploadNativeAsset(blob), /签名结果未知/);
+    await assert.rejects(h.implementation.uploadNativeAsset(blob), /尚未查明/);
     check('unknown signing retains original request key and cannot sign or PUT twice', h.counts().signed === 1 && h.counts().puts === 0 && [...h.storage.values()][0] === markerBefore && JSON.parse(markerBefore).requestKey === h.counts().signKey);
+  }
+  {
+    const h = harness({ signUnknown: true, remoteReady: true }), blob = file();
+    await assert.rejects(h.implementation.uploadNativeAsset(blob), /SIGN_RESPONSE_LOST/);
+    const recovered = await h.implementation.uploadNativeAsset(blob);
+    check('lost signing can recover the exact ready asset through GET-only readback', recovered === canonicalUrl && h.counts().signed === 1 && h.counts().puts === 0 && h.counts().confirms === 0 && h.counts().reads === 2);
   }
   {
     const h = harness({ putUnknown: true }), blob = file();

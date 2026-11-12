@@ -8,7 +8,10 @@ export function genericPublishingFieldPolicy(platform: string): GenericPublishin
   if (platform === 'linkedin') return { allowedValues: { visibility: ['PUBLIC'], distribution: ['MAIN_FEED'] }, blockedFields: {} }
   if (platform === 'facebook') return { allowedValues: { video_state: ['PUBLISHED'] }, blockedFields: { feed_targeting: '当前通道不能保证仅向指定受众展示，请移除受众限制后再确认，或到平台完成发布' } }
   if (platform === 'instagram') return { allowedValues: {}, blockedFields: { caption: '请将这段文字填写到本账号正文，并移除重复的说明选项', product_tags: '当前通道暂不能添加商品标记，请移除此设置，发布后到平台补充', user_tags: '当前通道暂不能添加用户标记，请移除此设置，发布后到平台补充', collaborators: '当前通道暂不能邀请协作者，请移除此设置，发布后到平台补充' } }
-  if (platform === 'wxGzh') return { allowedValues: {}, blockedFields: {}, executionReason: '当前公众号连接尚不能确认作品的接收账号，请先联系管理员完成账号核验' }
+  // 公众号按官方 optionSchema 走 draftOnly 草稿模式：服务端在组装发布参数时
+  // 强制 draftOnly=true、massSend=false，作品只进公众号后台草稿箱，由客户在
+  // 公众号后台核对后手动群发，不再整平台阻断。
+  if (platform === 'wxGzh') return { allowedValues: {}, blockedFields: {} }
   return { allowedValues: {}, blockedFields: {} }
 }
 export function validateGenericPublishingPolicy(platform: string, options: Record<string, unknown>): string[] {

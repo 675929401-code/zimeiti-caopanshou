@@ -36,6 +36,7 @@ const oldRemote = {
   JWT_SECRET: "old-jwt-secret",
   DATABASE_URL: "postgresql://old.example.invalid/old",
   NODE_ENV: "development",
+  PUBLISHING_EXTERNAL_EXECUTION_ENABLED: "true",
 };
 const env = createLocalStandaloneDatabaseEnv(runtime(), oldRemote);
 const database = new URL(env.DATABASE_URL);
@@ -58,6 +59,7 @@ assert.equal(database.port, "54322");
 assert.equal(database.pathname, "/zimeiti_local");
 assert.equal(env.NODE_ENV, "production");
 assert.equal(env.LOCAL_ACCEPTANCE_PREVIEW, "true");
+assert.equal(env.PUBLISHING_EXTERNAL_EXECUTION_ENABLED, "false");
 assert.equal(env.LOCAL_VALIDATION_DIST_DIR, ".next-local-acceptance");
 // The production-style local launcher intentionally uses the system resolver
 // for provider result downloads; a fixed DoH endpoint is not injected here.

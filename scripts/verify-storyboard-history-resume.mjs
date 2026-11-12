@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { createHash, webcrypto } from 'node:crypto';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -373,6 +373,8 @@ function generateFixture(card, options = {}) {
     storyboardImageModelName: (model) => model.name,
     storyboardImagePrice: () => 0.34,
     effectiveImageResolution: (_model, resolution) => resolution || '2K',
+    resolveStoryboardExecutionMode: (run) => run?.executionMode || "ordinary",
+    storyboardChainContext: () => null,
     buildClientRequestFingerprint: browserAttempts.buildClientRequestFingerprint,
     resolveBrowserClientAttempt: browserAttempts.resolveBrowserClientAttempt,
     clearBrowserClientAttempt: (scope, requestId) => {
@@ -551,3 +553,4 @@ console.log(JSON.stringify({
   realNetworkRequests: 0,
   realDatabaseWrites: 0,
 }, null, 2));
+

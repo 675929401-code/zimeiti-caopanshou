@@ -153,8 +153,17 @@ type ProviderCapability = {
   defaultOption?: Record<string, unknown>;
   capabilities: Record<string, unknown>;
 };
-const capabilityCache = new Map<string, { at: number; value: ProviderCapability[] }>();
-const capabilityInFlight = new Map<string, Promise<ProviderCapability[]>>();
+// Capability metadata is low-frequency reference data. Keep the cache on
+// globalThis so every route bundle in the standalone server shares one copy;
+// serve stale entries immediately and refresh them in the background instead of
+// blocking the studio first paint on the upstream round trip.
+const CAPABILITY_FRESH_MS = 10 * 60_000;
+const capabilityStore = globalThis as unknown as {
+  __publishingCapabilityCache?: Map<string, { at: number; value: ProviderCapability[] }>;
+  __publishingCapabilityInFlight?: Map<string, Promise<ProviderCapability[]>>;
+};
+const capabilityCache = capabilityStore.__publishingCapabilityCache ??= new Map<string, { at: number; value: ProviderCapability[] }>();
+const capabilityInFlight = capabilityStore.__publishingCapabilityInFlight ??= new Map<string, Promise<ProviderCapability[]>>();
 
 export class PublishingProvider {
   private readonly origin: string;
@@ -214,7 +223,7 @@ export class PublishingProvider {
     const metadata = z.object({ platform, displayName: localeText, logoUrl: https.optional(), status: z.string().or(z.number()), authType: z.string(), authInstructions: localeText.optional(), editor: z.string().optional(), contentLimits: metadataObject.optional(), mediaRules: metadataObject.optional(), topic: metadataObject.optional(), optionSchema: metadataObject, defaultOption: metadataObject.optional(), capabilities: metadataObject }).strip();
     const key = `${this.options.environment}:${this.options.apiKey}`;
     const cached = capabilityCache.get(key);
-    if (cached && cached.at > Date.now() - 60_000) return cached.value;
+    if (cached && cached.at > Date.now() - CAPABILITY_FRESH_MS) return cached.value;
     const running = capabilityInFlight.get(key);
     if (running) return running;
     const request = this.request("/platforms", z.array(metadata).max(100)).then(value => {
@@ -226,6 +235,13 @@ export class PublishingProvider {
       throw error;
     });
     capabilityInFlight.set(key, request);
+    // Stale-while-revalidate: a previous catalog is good enough for directory
+    // display and option pre-validation; the upstream still validates the actual
+    // publish submission. Refresh failures keep the last good catalog.
+    if (cached) {
+      void request.catch(() => undefined);
+      return cached.value;
+    }
     return request;
   }
   async readPublishOptions(type: string) {

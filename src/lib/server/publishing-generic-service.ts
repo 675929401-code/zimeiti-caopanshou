@@ -180,7 +180,8 @@ async function prepare(db: DB, user: AuthUser, cfg: Config, action: Extract<Publ
       const ownedUrls = new Set(assets.map(a => str(a.asset.public_url)))
       if (!validateGenericReservedOptions(target.options, str(binding.platform_uid), ownedUrls)) fail('NATIVE_OFFICIAL_OPTIONS_SCOPE_INVALID', '平台选项中的身份或素材地址不属于此次已确认目标')
       const url = (id: string) => ({ url: str(assets.find(a => a.mediaId === id)!.asset.public_url) })
-      const options = { ...target.options, ...(target.platform === 'pinterest' && draft.contentType === 'video' && target.coverMediaId ? { coverImageUrl: url(target.coverMediaId).url } : {}) }
+      const options = { ...target.options, ...(target.platform === 'pinterest' && draft.contentType === 'video' && target.coverMediaId ? { coverImageUrl: url(target.coverMediaId).url } : {}), // 公众号只进草稿箱：无论界面选项如何，服务端强制草稿模式，群发由客户在公众号后台完成
+        ...(target.platform === 'wxGzh' ? { draftOnly: true, massSend: false } : {}) }
       if (errors.length || !validatePublishingProviderOptions(cap.optionSchema, options)) fail('NATIVE_OFFICIAL_OPTIONS_INVALID', `${target.platform}：${errors.join('；') || '发布参数未通过当前平台规则校验'}`)
       const content = { ...(Number(row(cap.contentLimits).maxTitleLength) === 0 ? {} : { title: effective.title }), body: effective.body, media: target.mediaIds.map(url), ...(target.coverMediaId ? { cover: url(target.coverMediaId) } : {}) }
       if (!wire.items.length) wire.content = content

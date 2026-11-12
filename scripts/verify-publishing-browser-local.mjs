@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto';
 import { SignJWT } from 'jose';
 import pg from 'pg';
 import { chromium } from 'playwright';
-import { verifyPublishingUiMock } from './verify-publishing-ui-mock-local.mjs';
 
 export async function main() {
   const origin = 'http://127.0.0.1:5000';
@@ -47,12 +46,12 @@ export async function main() {
     const features = JSON.stringify(['marketplace', 'toolbox', 'storyboard_workbench', 'create', 'voice', 'cover', 'publish_center', 'youcai', 'commerce_agent']);
     await database.query("INSERT INTO public.member_permission_assignments(user_id,feature_navigation_keys,agent_navigation_keys,revision,checksum,source,reason) VALUES($1::text,$2::jsonb,'[]',1,public.member_permission_checksum($1::text,$2::jsonb,'[]',1),'custom','isolated local browser fixture') ON CONFLICT(user_id) DO UPDATE SET feature_navigation_keys=EXCLUDED.feature_navigation_keys,agent_navigation_keys='[]',revision=1,checksum=EXCLUDED.checksum", [userId, features]);
     await database.query("INSERT INTO public.user_auth_sessions(user_id,session_id,expires_at) VALUES($1,$2,now()+interval '1 hour') ON CONFLICT(session_id) DO NOTHING", [userId, sessionId]);
-    await fs.writeFile(path.join(directory, 'temporary-fixture.json'), JSON.stringify({ userId, username, createdAt: new Date().toISOString(), scope: 'new browser fixture only; delete by exact owner and username' }));
+    await fs.writeFile(path.join(directory, 'temporary-fixture.json'), JSON.stringify({ userId, username, createdAt: new Date().toISOString(), scope: 'new browser fixture only; revoke sessions, deactivate the exact owner, archive drafts, retain isolated immutable audit rows' }));
     inserted = true; // Cleanup is required even if COMMIT's response is lost.
     await database.query('COMMIT');
     const token = await new SignJWT({ userId, username, role: 'student', displayName: user.displayName, sessionId }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('30m').sign(new TextEncoder().encode(runtime.jwtSecret));
     report.runtime = (await request('/api/version', token)).data;
-    report.scope = { actualLocalPublishingApi: true, actualLocalDrafts: true, pluginExecution: 'explicit zero-network mock', unrelatedAnnouncements: 'empty read fixture, no read-state writes' };
+    report.scope = { actualLocalPublishingApi: true, actualLocalStudioDrafts: true, currentStudioUi: true, legacyWorkbenchMock: 'removed; current Studio coverage runs in verify-publishing-studio-ui.mjs', unrelatedAnnouncements: 'empty read fixture, no read-state writes' };
     const state = await request('/api/publish-center', token);
     check('real member API uses fixture permission and ready local schema', state.status === 200 && state.data.schemaReady && state.data.access.allowed);
     check('sales and external execution stay disabled', !state.data.config.salesEnabled && !state.data.config.executionEnabled);
@@ -85,18 +84,21 @@ export async function main() {
         if (url.pathname === '/api/auth/me') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ user: { ...user, themePreference: theme, themeModePreference: theme === 'soft-white' ? 'light' : 'dark', themePreferenceExpiresAt: new Date(Date.now()+3600000).toISOString() } }) });
         if (!['GET', 'HEAD'].includes(request.method())) {
           const body = request.postDataJSON();
-          if (url.pathname !== '/api/publish-center' || !['save-draft', 'delete-draft', 'save-account'].includes(body?.action)) { report.blockedWrites.push({ path: url.pathname, method: request.method() }); return route.abort('blockedbyclient'); }
+          if (url.pathname !== '/api/native-operations/publishing/generic' || body?.action !== 'save-draft') { report.blockedWrites.push({ path: url.pathname, method: request.method() }); return route.abort('blockedbyclient'); }
         }
         return route.continue();
       });
       const page = await context.newPage(); page.on('pageerror', error => report.errors.push(error.message.slice(0,300)));
       await page.goto(origin+'/publish-center', { waitUntil: 'networkidle' });
-      const root = page.locator('[data-publishing-workbench]'); await root.waitFor();
-      await page.getByRole('heading', { name: '作品准备好，发布就从这里开始' }).waitFor();
+      const root = page.getByTestId('publishing-studio'); await root.waitFor();
+      await page.getByRole('heading', { name: '从这里，发布好作品', exact: true }).waitFor();
+      await page.getByTestId('studio-overview').waitFor();
       await page.waitForFunction(theme => document.documentElement.getAttribute('data-theme') === theme, theme);
-      const colors = await root.evaluate(el => { const c = getComputedStyle(el); const h = el.querySelector('h2'); return { theme: document.documentElement.getAttribute('data-theme'), background: c.backgroundColor, ink: c.color, heading: getComputedStyle(h).color, width: el.getBoundingClientRect().width, overflow: document.documentElement.scrollWidth > innerWidth }; });
-      check(`fixed light palette under ${theme}`, colors.background === 'rgb(251, 250, 255)' && colors.ink === 'rgb(40, 33, 56)' && colors.heading === colors.ink && !colors.overflow, colors);
-      check(`execution button disabled under ${theme}`, await page.getByRole('button', { name: '核对并发起发布', exact: true }).isDisabled());
+      const colors = await root.evaluate(el => { const c = getComputedStyle(el); const h = el.querySelector('h1'), hc = getComputedStyle(h); return { theme: document.documentElement.getAttribute('data-theme'), colorScheme: c.colorScheme, backgroundImage: c.backgroundImage, ink: c.color, heading: hc.color, headingFill: hc.webkitTextFillColor, headingBackground: hc.backgroundImage, width: el.getBoundingClientRect().width, overflow: document.documentElement.scrollWidth > innerWidth }; });
+      check(`Studio fixed light palette under ${theme}`, colors.colorScheme === 'light' && colors.backgroundImage.includes('radial-gradient') && colors.backgroundImage.includes('linear-gradient') && colors.ink === 'rgb(24, 24, 27)' && colors.heading === 'rgba(0, 0, 0, 0)' && colors.headingFill === 'rgba(0, 0, 0, 0)' && colors.headingBackground.includes('linear-gradient') && !colors.overflow, colors);
+      const notice = page.getByTestId('studio-publish-notice');
+      check(`closed runtime has accurate execution notice under ${theme}`, await notice.getAttribute('data-execution') === 'disabled' && /发布执行已关闭/u.test(await notice.innerText()) && !/执行已开启|仅限本机测试/u.test(await notice.innerText()));
+      check(`overview has no premature publish action under ${theme}`, await page.getByTestId('studio-publish-button').count() === 0);
       await snap(page, `publish-${theme}`);
       if (theme === 'soft-white') {
         await page.setViewportSize({ width: 1920, height: 1080 });
@@ -104,19 +106,22 @@ export async function main() {
         await snap(page, 'publish-1920');
         await page.setViewportSize({ width: 1440, height: 900 });
       }
-      await page.goto(origin+'/publish-center?tab=plans', { waitUntil: 'networkidle' });
-      await page.getByRole('heading', { name: '套餐与可用额度' }).waitFor();
-      check(`direct plans link works under ${theme}`, await page.getByText('暂无在售套餐', { exact: true }).isVisible());
+      await page.goto(origin+'/publish-center?tab=accounts', { waitUntil: 'networkidle' });
+      await page.getByRole('heading', { name: '平台账号', exact: true }).waitFor();
+      check(`direct accounts link works under ${theme}`, await page.getByTestId('studio-accounts-tab').getAttribute('aria-current') === 'page');
       if (theme === 'soft-white') {
-        await snap(page, 'publish-plans');
-        await page.getByRole('tab', { name: '准备发布', exact: true }).click();
-        const title = page.locator('#publishing-title');
-        await title.fill('本地验收临时草稿');
-        await page.getByRole('button', { name: '保存草稿', exact: true }).click();
-        await page.getByText('草稿已保存，视频与封面仍需保留本机原文件。', { exact: true }).waitFor();
-        const persisted = await request('/api/publish-center', token);
-        check('browser draft saves to actual owner-scoped local service', persisted.data.drafts.some(d => d.title === '本地验收临时草稿'));
-        await page.getByRole('tab', { name: '草稿与记录', exact: true }).click(); await snap(page, 'publish-drafts');
+        await snap(page, 'publish-accounts');
+        await page.goto(origin+'/publish-center?tab=compose', { waitUntil: 'networkidle' });
+        await page.getByTestId('studio-type-text').click();
+        await page.getByTestId('studio-title').fill('本地验收临时草稿');
+        await page.getByTestId('studio-body').fill('仅保存到隔离本地发布服务，不连接账号、不提交外部平台。');
+        await page.getByRole('button', { name: '保存发布草稿', exact: true }).click();
+        await page.getByText('稿件与所选账号的素材、发布参数和排期已完整保存', { exact: true }).waitFor();
+        const persistedResponse = await fetch(`${origin}/api/native-operations/publishing/generic?resource=drafts&pageSize=100`, { headers: { Cookie: `auth_token=${token}`, 'X-Native-Actor-Id': userId }, cache: 'no-store', signal: AbortSignal.timeout(20000) });
+        const persisted = { status: persistedResponse.status, data: await persistedResponse.json() };
+        const persistedItems = Array.isArray(persisted.data?.data?.items) ? persisted.data.data.items : [];
+        check('Studio text draft saves to actual owner-scoped local service', persisted.status === 200 && persisted.data.code === 0 && persistedItems.some(d => d.title === '本地验收临时草稿'), { status: persisted.status, code: persisted.data?.code, titles: persistedItems.map(item => item.title), response: persisted.data?.data });
+        await page.getByTestId('studio-history-tab').click(); await page.getByRole('heading', { name: '发布记录', exact: true }).waitFor(); await snap(page, 'publish-history');
         for (const [route, name] of [['/cover','neighbor-cover'], ['/youcai','neighbor-youcai'], ['/','neighbor-marketplace']]) {
           await page.goto(origin+route, { waitUntil: 'networkidle' });
           const neighborText = await page.locator('body').innerText();
@@ -127,14 +132,18 @@ export async function main() {
       }
       await context.close();
     }
-    report.uiMock = await verifyPublishingUiMock({ browser, origin, token, user, check });
+    report.currentStudioSuite = 'scripts/verify-publishing-studio-ui.mjs';
     const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block', extraHTTPHeaders: { Authorization: `Bearer ${adminToken}`, 'x-admin-step-up': step } });
     await adminContext.addCookies([{ name: 'auth_token', value: adminToken, url: origin, httpOnly: true }, { name: 'zimeiti_admin_step_up', value: step, url: origin, httpOnly: true }]);
     await adminContext.addInitScript(({ token, identity }) => { localStorage.setItem('auth_token', token); localStorage.setItem('auth_user', JSON.stringify(identity.user)); sessionStorage.setItem('entered_app', '1'); }, { token: adminToken, identity: adminIdentity });
     await adminContext.route('**/*', route => { const r=route.request(), url=new URL(r.url()); if(url.origin!==origin) { report.externalRequestsBlocked++; return route.abort('blockedbyclient'); } if(url.pathname==='/api/auth/me') return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(adminIdentity)}); if(!['GET','HEAD'].includes(r.method())) return route.abort('blockedbyclient'); return route.continue(); });
     const page = await adminContext.newPage(); page.on('pageerror', error => report.errors.push(error.message.slice(0,300)));
     await page.goto(origin+'/admin?tab=publishing', { waitUntil: 'networkidle' });
-    await page.getByTestId('publishing-admin').waitFor(); await page.getByTestId('publishing-plan-management').waitFor();
+    await page.getByTestId('publishing-admin').waitFor();
+    await page.getByTestId('publishing-service-config').waitFor();
+    await page.getByTestId('publishing-cash-pricing').waitFor();
+    check('admin panel exposes current service config and cash pricing', await page.getByTestId('publishing-service-config').isVisible() && await page.getByTestId('publishing-cash-pricing').isVisible());
+    check('admin runtime gate remains visibly closed', await page.getByText('执行门禁未开放', { exact: true }).isVisible());
     check('admin panel keeps site admin layout and procurement links', await page.getByTestId('publishing-procurement').isVisible());
     await snap(page, 'admin-publishing');
     await adminContext.close();
@@ -157,10 +166,21 @@ export async function main() {
       await database.query('BEGIN');
       try {
         await database.query("SELECT set_config('app.member_permission_write','on',true)");
-        for (const table of ['pub_tasks','pub_drafts','pub_accounts','pub_entitlements','pub_purchases']) await database.query(`DELETE FROM public.${table} WHERE user_id=$1`, [userId]);
-        await database.query('DELETE FROM public.users WHERE id=$1 AND username=$2', [userId, username]);
+        // Draft versions and request receipts are deliberately immutable. Do
+        // not disable history triggers for a browser test. Isolate the owner,
+        // revoke access and hide its drafts while retaining that audit chain.
+        await database.query('DELETE FROM public.user_auth_sessions WHERE user_id=$1', [userId]);
+        await database.query('UPDATE public.pub5_studio_drafts SET archived=true,updated_at=now() WHERE owner_id=$1', [userId]);
+        await database.query("UPDATE public.users SET is_active=false,status='blocked',session_id=null WHERE id=$1 AND username=$2", [userId, username]);
         await database.query('COMMIT');
-        report.fixtureCleaned = Number((await database.query('SELECT count(*) count FROM public.users WHERE id=$1', [userId])).rows[0].count) === 0;
+        const [owner, sessions, visibleDrafts, auditVersions] = await Promise.all([
+          database.query('SELECT is_active,status,session_id FROM public.users WHERE id=$1 AND username=$2', [userId, username]),
+          database.query('SELECT count(*)::int count FROM public.user_auth_sessions WHERE user_id=$1', [userId]),
+          database.query('SELECT count(*)::int count FROM public.pub5_studio_drafts WHERE owner_id=$1 AND archived=false', [userId]),
+          database.query('SELECT count(*)::int count FROM public.pub5_draft_profiles WHERE owner_id=$1', [userId]),
+        ]);
+        report.fixtureRetention = { mode: 'deactivated-owner-archived-drafts-immutable-audit-retained', auditVersions: auditVersions.rows[0].count };
+        report.fixtureCleaned = owner.rows[0]?.is_active === false && owner.rows[0]?.status === 'blocked' && owner.rows[0]?.session_id === null && sessions.rows[0].count === 0 && visibleDrafts.rows[0].count === 0;
       } catch (error) { await database.query('ROLLBACK'); report.cleanupError=String(error.message).slice(0,200); process.exitCode=1; report.passed=false; }
     } else { await database.query('ROLLBACK').catch(()=>{}); }
     await database.end();
