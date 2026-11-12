@@ -10,9 +10,12 @@ import type { PublishingPlatform } from "./publishing-contract";
 
 export const PUBLISHING_PLUGIN_DOWNLOADS = {
   chrome: "https://chromewebstore.google.com/detail/aitoearn-extension/hnmocdhmnfgcjnedmdgfefcobideaeja",
-  china: "https://ai-to-earn.oss-cn-beijing.aliyuncs.com/comment/aitoearn-extension.crx",
+  china: "/api/downloads/aitoearn-extension",
+  direct: "/api/downloads/aitoearn-extension",
+  version: "2.1.0",
+  sha256: "801a67f273c1bf6f08cf4892aec966c9b428c539795e7913fffbee718ebe28cf",
   github: "https://github.com/yikart/AiToEarn/releases/download/v2.1.0/aitoearn-extension.crx",
-  guide: "https://docs.aitoearn.ai/zh/use/plugin-publish",
+  guide: "/plugin-guide",
   updateGuide: "https://aitoearn.cn/zh-CN/websit/plugin-update-docs",
   source: "https://github.com/yikart/AiToEarn/tree/47e5a6fa8a5d2d0a52f1b7b5220a2ed3c034c294",
   commit: "47e5a6fa8a5d2d0a52f1b7b5220a2ed3c034c294",

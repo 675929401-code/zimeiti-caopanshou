@@ -27,13 +27,24 @@ const platformSchema = z.object({ platform: NativePlatformSchema, name: z.string
 function memberPlatformStatus(connection: boolean, publishing: boolean) {
   return !connection ? { reasonCode: 'connection_unavailable' as const, reason: '此通道暂时无法连接账号，请稍后重试或联系管理员' } : !publishing ? { reasonCode: 'execution_unavailable' as const, reason: '可以先连接账号和整理作品，发布服务开放后即可提交' } : { reasonCode: 'ready' as const, reason: '请核对发布账号、作品内容和发布时间' }
 }
-export async function readStudioWorkspace() {
+let workspaceInFlight: ReturnType<typeof loadStudioWorkspace> | null = null;
+
+async function loadStudioWorkspace() {
   const [bootstrap, accountData, platformData] = await Promise.all([studioRequest('studio/bootstrap'), studioRequest('v2/channels/accounts'), studioRequest('v2/channels/platforms')])
   return {
     bootstrap: PublishingStudioBootstrapSchema.parse(bootstrap),
     accounts: z.object({ list: z.array(accountSchema) }).parse(accountData).list.map((item): StudioAccount => ({ id: item.id, platform: item.type, name: item.nickname, avatar: item.avatar, status: item.status === 1 ? 'ready' : 'unavailable', selected: false, kind: item.nativeAccountKind, revision: item.nativeRevision, metadataRevision: item.nativeMetadataRevision ?? 0, uid: item.uid })),
     platforms: z.array(platformSchema).parse(platformData).map((item): StudioPlatform => ({ ...PublishingPlatformMetadataSchema.parse(item), channels: item.channels?.map(channel => ({ ...channel, ...memberPlatformStatus(channel.connectionAllowed, channel.publishAllowed), ...(channel.transport === 'browser_plugin' && item.platform === 'xhs' && channel.publishAllowed ? { reason: '小红书插件定时尚不稳定，建议立即发布，并在平台核对作品' } : {}) })), transport: item.platform === 'xhs' || item.platform === 'wxSph' ? 'browser_plugin' : 'official_api', key: item.platform, name: item.name?.trim() && item.name.trim() !== item.platform ? item.name.trim() : NATIVE_OFFICIAL_API_PLATFORMS.find(platform => platform.platform === item.platform)?.name || item.platform, available: item.nativePublishAllowed, connectionAllowed: item.nativeConnectionAllowed, executionBlocked: item.nativeExecutionBlocked === true, nativeReason: typeof item.nativeReason === 'string' && item.nativeReason.trim() ? item.nativeReason.trim() : undefined, ...memberPlatformStatus(item.nativeConnectionAllowed, item.nativePublishAllowed) })),
   }
+}
+
+/** Coalesce the strict-mode/double-mount initial reads into one request pair. */
+export function readStudioWorkspace() {
+  if (workspaceInFlight) return workspaceInFlight
+  const request = loadStudioWorkspace()
+  workspaceInFlight = request
+  void request.finally(() => { if (workspaceInFlight === request) workspaceInFlight = null })
+  return request
 }
 export async function readStudioImport(kind: 'media' | 'draft'): Promise<StudioImportItem[]> {
   if (kind === 'draft') {

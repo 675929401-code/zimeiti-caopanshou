@@ -2,7 +2,7 @@
 /* The authorization QR is an ephemeral, schema-validated image from the current session. */
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import type { PublishingStudioController } from "./types";
 import { dateText, StudioDialog } from "./StudioPrimitives";
 import { platformName } from "./StudioPresentation";
@@ -17,6 +17,7 @@ export function AuthorizationDialog({ work }: { work: PublishingStudioController
   const [pollStartedAt] = useState(() => Date.now());
   const [autoCheckStopped, setAutoCheckStopped] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false), [failedQr, setFailedQr] = useState<string | null>(null);
+  const [showPluginGuide, setShowPluginGuide] = useState(false);
   const latest = useRef(work), closed = useRef(false);
   const hasAuthorizationError = flow?.phase === "error";
   const authorizationId = auth?.sessionId, authorizationState = auth?.state, authorizationExpiresAt = auth?.expiresAt;
@@ -82,7 +83,21 @@ export function AuthorizationDialog({ work }: { work: PublishingStudioController
   </>}>
     <div className={styles.authorizationStatus} role="status" aria-live="polite">{complete && <CheckCircle2 size={24} />}<strong>{busy ? busyText : status}</strong></div>
     {error && <div className={styles.authorizationError} role="alert" data-testid="studio-authorization-error">{error}</div>}
-    {browser && <p className={styles.fieldHint}>请启用 AiToEarn 扩展，在 Authorize Only（仅授权）中允许本网站，并登录要连接的{platformName(work, platform)}账号。<a href={PUBLISHING_PLUGIN_DOWNLOADS.chrome} target="_blank" rel="noopener noreferrer">安装浏览器插件</a> · <a href={PUBLISHING_PLUGIN_DOWNLOADS.china} target="_blank" rel="noopener noreferrer">国内下载</a> · <a href={PUBLISHING_PLUGIN_DOWNLOADS.guide} target="_blank" rel="noopener noreferrer">查看安装与授权教程</a></p>}
+    {browser && <div className={styles.fieldHint} data-testid="studio-plugin-download">
+      <p>未检测到发布插件。下载并安装官方 AiToEarn 扩展，在 Authorize Only 中允许本网站，然后回到这里重新连接。</p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "10px 0" }}>
+        <a href={PUBLISHING_PLUGIN_DOWNLOADS.direct} download={`aitoearn-extension-v${PUBLISHING_PLUGIN_DOWNLOADS.version}.crx`} className={styles.primaryButton} data-testid="studio-plugin-download-direct"><Download size={15} />直接下载插件 v{PUBLISHING_PLUGIN_DOWNLOADS.version}</a>
+        <a href={PUBLISHING_PLUGIN_DOWNLOADS.guide} className={styles.button} data-testid="studio-plugin-guide">查看安装教程</a>
+        <button type="button" className={styles.button} onClick={() => setShowPluginGuide(value => !value)}>{showPluginGuide ? "收起安装步骤" : "快速安装步骤"}</button>
+      </div>
+      {showPluginGuide && <div style={{ lineHeight: 1.8 }}>
+        <p>1. 下载后打开 <code>chrome://extensions</code>，开启右上角“开发者模式”。</p>
+        <p>2. 把下载的 `.crx` 文件拖入扩展页面，按 Chrome 提示确认安装。</p>
+        <p>3. 打开扩展，选择 Authorize Only，允许来源 <code>{typeof window !== "undefined" ? window.location.origin : "本站"}</code>。</p>
+        <p>4. 回到本弹窗，点“重新连接浏览器账号”。</p>
+        <p style={{ wordBreak: "break-all" }}>文件校验 SHA-256：<code>{PUBLISHING_PLUGIN_DOWNLOADS.sha256}</code></p>
+      </div>}
+    </div>}
     {busy && !auth && <div className={styles.authorizationWaiting}><Loader2 size={26} className={styles.spin} /><p>正在连接平台，请稍候。关闭窗口后仍可继续核对这次授权。</p></div>}
     {!busy && !auth && !error && <p className={styles.fieldHint}>尚未取得授权入口，请核对这次授权后继续。</p>}
     {qr && <div className={styles.authorizationQr}>{failedQr === qr ? <p role="alert">二维码未能显示，请核对授权状态后再试。</p> : <img data-testid="studio-authorization-qr" src={qr} alt={`${platformName(work, platform)}账号授权二维码`} onError={() => setFailedQr(qr)} />}<p>打开{platformName(work, platform)} App 扫一扫，按提示确认授权。</p>{auth?.expiresAt && <small>有效至 {dateText(auth.expiresAt)}</small>}</div>}

@@ -123,3 +123,5 @@ export class PublishingAuthorizationProvider implements PublishingAuthorizationP
   }
   takeCookie(sessionId: string) { const value = this.cookies.get(sessionId); this.cookies.delete(sessionId); return value; }
 }
+
+

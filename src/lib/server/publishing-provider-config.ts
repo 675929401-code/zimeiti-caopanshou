@@ -51,16 +51,43 @@ function localCredential(environment: string): string | undefined {
   const key = valid(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { encoding: "utf8", env: { ...process.env, PUBLISHING_DPAPI_PATH: file }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], timeout: 10000 }).trim());
   cached = { signature, key, until: Date.now() + 60000 }; return key;
 }
-export function readPublishingProviderConfiguration() {
-  const environment = process.env.PUBLISHING_AITO_ENVIRONMENT === "international" ? "international" as const : "domestic" as const;
+export type PublishingProviderEnvironment = "domestic" | "international";
+
+export const OVERSEAS_PUBLISHING_PLATFORMS = new Set([
+  "youtube", "tiktok", "twitter", "facebook", "instagram", "threads", "pinterest", "linkedin",
+]);
+
+export function providerEnvironmentForPlatform(platform: string): PublishingProviderEnvironment {
+  return OVERSEAS_PUBLISHING_PLATFORMS.has(String(platform)) ? "international" : "domestic";
+}
+
+export function readPublishingProviderConfiguration(requestedEnvironment?: PublishingProviderEnvironment) {
+  const environment = requestedEnvironment ?? (process.env.PUBLISHING_AITO_ENVIRONMENT === "international" ? "international" as const : "domestic" as const);
   let apiKey: string | undefined;
   let credentialSource: "environment" | "secret_file" | "dpapi" | "missing" = "missing";
   let credentialIssue: "unavailable" | "ambiguous" | null = null;
   try {
-    const file = process.env.PUBLISHING_AITO_API_KEY_FILE?.trim();
+    const file = environment === "international"
+      ? (process.env.PUBLISHING_AITO_INTERNATIONAL_API_KEY_FILE?.trim() || process.env.PUBLISHING_AITO_API_KEY_FILE?.trim())
+      : process.env.PUBLISHING_AITO_API_KEY_FILE?.trim();
+    const environmentKey = environment === "international"
+      ? (process.env.PUBLISHING_AITO_INTERNATIONAL_API_KEY?.trim() || process.env.PUBLISHING_AITO_API_KEY?.trim())
+      : process.env.PUBLISHING_AITO_API_KEY?.trim();
     if (file) { credentialSource = "secret_file"; apiKey = valid(readServerOnlySecretFile({ filePath: file, errorLabel: "PUBLISHING_AITO_SECRET", policy: createDefaultServerSecretFilePolicy(process.platform) }).trim()); }
-    else if (process.env.PUBLISHING_AITO_API_KEY?.trim()) { credentialSource = "environment"; apiKey = valid(process.env.PUBLISHING_AITO_API_KEY.trim()); }
+    else if (environmentKey) { credentialSource = "environment"; apiKey = valid(environmentKey); }
     else { apiKey = localCredential(environment); credentialSource = apiKey ? "dpapi" : "missing"; }
   } catch (error) { apiKey = undefined; credentialIssue = error instanceof Error && error.message === "PUBLISHING_CREDENTIAL_AMBIGUOUS" ? "ambiguous" : "unavailable"; }
   return { environment, apiKey, credentialSource, credentialIssue, configured: Boolean(apiKey), namespace: `${environment}:${apiKey ? createHash("sha256").update(`aitoearn:${apiKey}`).digest("hex").slice(0, 24) : "unconfigured"}` };
+}
+
+export function readPublishingProviderConfigurations() {
+  return {
+    domestic: readPublishingProviderConfiguration("domestic"),
+    international: readPublishingProviderConfiguration("international"),
+  } as const;
+}
+
+export function readPublishingProviderConfigurationForNamespace(namespace: string) {
+  const all = readPublishingProviderConfigurations();
+  return all.domestic.namespace === namespace ? all.domestic : all.international.namespace === namespace ? all.international : all.domestic;
 }

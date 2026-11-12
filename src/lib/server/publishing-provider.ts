@@ -138,6 +138,24 @@ export function projectProviderStatus(status?: number): "failed" | "waiting" | "
 }
 function validated<T>(schema: z.ZodType<T>, value: unknown): T { const parsed = schema.safeParse(value); return parsed.success ? parsed.data : fail("PROVIDER_INPUT_INVALID"); }
 
+type ProviderCapability = {
+  platform: string;
+  displayName: Record<string, string>;
+  logoUrl?: string;
+  status: string | number;
+  authType: string;
+  authInstructions?: Record<string, string>;
+  editor?: string;
+  contentLimits?: Record<string, unknown>;
+  mediaRules?: Record<string, unknown>;
+  topic?: Record<string, unknown>;
+  optionSchema: Record<string, unknown>;
+  defaultOption?: Record<string, unknown>;
+  capabilities: Record<string, unknown>;
+};
+const capabilityCache = new Map<string, { at: number; value: ProviderCapability[] }>();
+const capabilityInFlight = new Map<string, Promise<ProviderCapability[]>>();
+
 export class PublishingProvider {
   private readonly origin: string;
   private readonly fetcher: typeof fetch;
@@ -191,10 +209,24 @@ export class PublishingProvider {
       return fail(options.mutation ? "PROVIDER_OUTCOME_UNKNOWN" : "PROVIDER_UNAVAILABLE");
     } finally { clearTimeout(timer); }
   }
-  async readCapabilities() {
+  async readCapabilities(): Promise<ProviderCapability[]> {
     // Strip operational extra fields. Dynamic schemas remain server-only validation input.
     const metadata = z.object({ platform, displayName: localeText, logoUrl: https.optional(), status: z.string().or(z.number()), authType: z.string(), authInstructions: localeText.optional(), editor: z.string().optional(), contentLimits: metadataObject.optional(), mediaRules: metadataObject.optional(), topic: metadataObject.optional(), optionSchema: metadataObject, defaultOption: metadataObject.optional(), capabilities: metadataObject }).strip();
-    return this.request("/platforms", z.array(metadata).max(100));
+    const key = `${this.options.environment}:${this.options.apiKey}`;
+    const cached = capabilityCache.get(key);
+    if (cached && cached.at > Date.now() - 60_000) return cached.value;
+    const running = capabilityInFlight.get(key);
+    if (running) return running;
+    const request = this.request("/platforms", z.array(metadata).max(100)).then(value => {
+      capabilityCache.set(key, { at: Date.now(), value });
+      capabilityInFlight.delete(key);
+      return value;
+    }, error => {
+      capabilityInFlight.delete(key);
+      throw error;
+    });
+    capabilityInFlight.set(key, request);
+    return request;
   }
   async readPublishOptions(type: string) {
     validated(platform, type);
