@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "59bacaed9bb17bb85fb275172f7ad446924a86324d4a1ad7ba0e8d6514c51fb2",
+  "sourceFingerprint": "2dd61a5929b9ce6ae2397d21514cebffa25a3abc89ac7400d6962ed47bd36650",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 5296,
-  "totalBytes": 86378437,
+  "fileCount": 5300,
+  "totalBytes": 86412734,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2019,7 +2019,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "ec47d7e702920e1a9b30783df4d7bd754d982aad4d42147668ad25cff1d1e32e"
+      "sha256": "e822ae7f0bd7f9bcf51faba670f4bdf11de391f904e83e7db186598a59be0fca"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -14467,6 +14467,11 @@
       "sha256": "70127d31c9850240e5932509b6c485048eb914cd19d209bcef49811bc1666779"
     },
     {
+      "path": "src/app/api/downloads/aitoearn-extension/route.ts",
+      "bytes": 1868,
+      "sha256": "02f4b611bd3030e8f006c60f47ddc14a8449b198db9b34f54db158458e277a03"
+    },
+    {
       "path": "src/app/api/drama/projects/previews/route.ts",
       "bytes": 3058,
       "sha256": "48d532416d9df5b09a5493797ec4dc0fb2750a99c6e19dbfc9c3e775828f12d0"
@@ -15605,6 +15610,16 @@
       "path": "src/app/payment/result/page.tsx",
       "bytes": 11459,
       "sha256": "d8446216dde36a3310823ec897b3ea03c951771698dc7fc3e6a9f457e4c24aa9"
+    },
+    {
+      "path": "src/app/plugin-guide/page.tsx",
+      "bytes": 9209,
+      "sha256": "4084a44fb7d7b1467fec26a80fe9fcb3c8798103a759485b0c3cb2e292ec1c9b"
+    },
+    {
+      "path": "src/app/plugin-guide/plugin-guide.module.css",
+      "bytes": 4775,
+      "sha256": "6429c8e2ab37fcdc79ae96e06b19d15b484549931d80265eac398a368b91fcbc"
     },
     {
       "path": "src/app/profile/page.tsx",
@@ -17683,8 +17698,8 @@
     },
     {
       "path": "src/components/admin/PublishingNativeReadiness.tsx",
-      "bytes": 7930,
-      "sha256": "e739e8194ef81581037d5039451197532a5fa85b6768ec2167f7ed046601bf45"
+      "bytes": 7878,
+      "sha256": "1a8251fc2ad22622d3f43b008ad84b1a21b61a99ad5bfc84c881bf078e08fbf8"
     },
     {
       "path": "src/components/admin/recharge-timeline-panel.module.css",
@@ -19228,8 +19243,8 @@
     },
     {
       "path": "src/features/publishing/native/PluginSetup.tsx",
-      "bytes": 6296,
-      "sha256": "29162b654cedf90d79cb44ccb26baee3e0dacf57f00c78f76ebdad829bad58a9"
+      "bytes": 5636,
+      "sha256": "e3e2f2f4293e4ab17a5dab2f8c4ced7128c8a9d0ee6f2c0354aca802f51806ab"
     },
     {
       "path": "src/features/publishing/native/PublishEditor.tsx",
@@ -19353,13 +19368,13 @@
     },
     {
       "path": "src/features/publishing/studio/PublishingStudio.tsx",
-      "bytes": 18611,
-      "sha256": "356ea1d1a71f1462ad2cfae00d92ef5e584c046cb614a7fcbec7c30d4e2260e7"
+      "bytes": 18827,
+      "sha256": "cc831256485b5a5c22abfaf14858c0808b25a961bd16c00557aa7a31ed024d9b"
     },
     {
       "path": "src/features/publishing/studio/studio-api.ts",
-      "bytes": 10895,
-      "sha256": "365dae185fbecddcb3486a1b361f00c15acaf129a251bc85f471247f014350ed"
+      "bytes": 11322,
+      "sha256": "064f93ffdb07b2fbc391fe4b401741f852922daf2bff7f496f83dcfa41a8bc9e"
     },
     {
       "path": "src/features/publishing/studio/studio-browser-local.ts",
@@ -19418,18 +19433,18 @@
     },
     {
       "path": "src/features/publishing/studio/Studio.module.css",
-      "bytes": 83733,
-      "sha256": "9b6e8f5ee5ec55b8ed6db8619b9b87ea538d5ba5651fca14d98e362441968e03"
+      "bytes": 92939,
+      "sha256": "b71d91dcfbb2b0ad80e9777ab3664a5dfce33b9579778d87145ed6f5f41e7187"
     },
     {
       "path": "src/features/publishing/studio/StudioAuthorizationDialog.tsx",
-      "bytes": 10470,
-      "sha256": "e2d12386eaca4ea23ad9f82a6c6acb4fad2db94b78f9bf956b110c18698f4886"
+      "bytes": 11602,
+      "sha256": "21a92ee45607feabad7ae285d767f30dd20ac9d2ae32b4f3668444640bc3095d"
     },
     {
       "path": "src/features/publishing/studio/StudioAuxiliary.tsx",
-      "bytes": 8313,
-      "sha256": "947437b3ae17ad4f39642640dd20ebad0777fc9d025148a959b45024306b257f"
+      "bytes": 10068,
+      "sha256": "46052a53cd0fe85127fdb3a4ec7d5556a759c9f37684970d8885c997568de070"
     },
     {
       "path": "src/features/publishing/studio/StudioCalendar.tsx",
@@ -19500,6 +19515,11 @@
       "path": "src/features/publishing/studio/types.ts",
       "bytes": 7621,
       "sha256": "d5d9eeedd7adc0be66cc0ee2ade94917ac76512a805b7ebe0507f9506ffcca2b"
+    },
+    {
+      "path": "src/features/publishing/studio/usePublishingPlugin.ts",
+      "bytes": 860,
+      "sha256": "525badb51c747b2ac957b8bdaca34c4f39493dbce191129a8640a2932809bcfb"
     },
     {
       "path": "src/features/publishing/studio/usePublishingStudio.ts",
@@ -21473,8 +21493,8 @@
     },
     {
       "path": "src/lib/publishing-native.ts",
-      "bytes": 12519,
-      "sha256": "008d2981df644fc063f8ca4c3ef87276f371047ee11cf4ac6715e241750f184f"
+      "bytes": 12587,
+      "sha256": "f51dec50c6ed4c690cbbcf5e8ae928d06835e33f015b93002926c8d4fce02548"
     },
     {
       "path": "src/lib/publishing-option-schema.ts",
@@ -21483,8 +21503,8 @@
     },
     {
       "path": "src/lib/publishing-plugin.ts",
-      "bytes": 17601,
-      "sha256": "73b531975f8da0dee394a960a8a5cee4b3f0769ee4fe0b099c266dc3700a0b2a"
+      "bytes": 17841,
+      "sha256": "93f2f1a58649d578536303fd6f46f121464a1c883877acf4a2798e032bbd8743"
     },
     {
       "path": "src/lib/publishing-purchase-recovery.ts",
@@ -22178,13 +22198,13 @@
     },
     {
       "path": "src/lib/server/publishing-authorization-provider.ts",
-      "bytes": 13313,
-      "sha256": "1f072728b1a46d3c1faca65d4d3fb1d8a08beddbebabe0864d90819d800828c2"
+      "bytes": 13315,
+      "sha256": "66b1ddec330896bf444f75ec1a8b52663d8d2a2a479ec427e462fa96ce9c6d27"
     },
     {
       "path": "src/lib/server/publishing-authorization-service.ts",
-      "bytes": 24219,
-      "sha256": "36c4f9d130cb34032d969369a8c620bacbd96b4d264a5f374bbb3f122e41a3cf"
+      "bytes": 25280,
+      "sha256": "83015b60a9e1bcb9b469235554c0849ec3bf12366d4c6dead8ec5fd85903260c"
     },
     {
       "path": "src/lib/server/publishing-cash-admin-service.ts",
@@ -22198,8 +22218,8 @@
     },
     {
       "path": "src/lib/server/publishing-generic-service.ts",
-      "bytes": 33253,
-      "sha256": "aaacd6913a2fac8dab0fad84f28683a3d0ea0731f7210110fd6fc15e9433ac67"
+      "bytes": 34886,
+      "sha256": "a6f1b31b725726dee749e36de1c8d00d0a71e457006717dd7309f8ebf2bdb8f4"
     },
     {
       "path": "src/lib/server/publishing-native-status.ts",
@@ -22208,13 +22228,13 @@
     },
     {
       "path": "src/lib/server/publishing-provider-config.ts",
-      "bytes": 5859,
-      "sha256": "5ccbbd5463651dffcd0e1921c6ce7d652110b04d66a595e29fb518e541ad69d6"
+      "bytes": 7200,
+      "sha256": "0fa14bceef6e1fa84c82154eb79f65978adeacc5dd807dc23f943ef0c4459b52"
     },
     {
       "path": "src/lib/server/publishing-provider.ts",
-      "bytes": 32256,
-      "sha256": "3ff96507836785c6d5829d30a34331ee6e6283bcb2faeed72df6a5a0c1083520"
+      "bytes": 33472,
+      "sha256": "6d6da252ab5137365c93300b99040b6f642909161c84455fb89acfbef8b49b33"
     },
     {
       "path": "src/lib/server/publishing-service.ts",
