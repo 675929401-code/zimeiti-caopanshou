@@ -1,9 +1,9 @@
 {
   "schemaVersion": "native-publishing-build.v1",
   "upstreamCommit": "47e5a6fa8a5d2d0a52f1b7b5220a2ed3c034c294",
-  "buildId": "rswn-7GcE4UK_Nv_frRCA",
-  "sourceDigest": "239108384362b5b876cbdfad1076d2e56bb96d40cb142dfb60e39edc55d88fdf",
+  "buildId": "bICqH__g9Tm06cTkrBs7b",
+  "sourceDigest": "22c7589231ed17189b7f66f2c962537742707d971721bf51bfa80a1e04bd157d",
   "basePath": "/publish-center/native",
   "framework": "16.4.5",
-  "builtAt": "2026-11-12T00:59:03.772Z"
+  "builtAt": "2026-11-12T01:07:41.106Z"
 }
