@@ -103,7 +103,7 @@ function verifyLocaleProtocolRegression() {
     assert.notDeepEqual(probe.hostSorted, probe.sorted, "fixture must expose the real zh-CN/en-US difference");
   }
 
-  const routes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
+  const routes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/plugin-guide", "/publish-center", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
   const changes = strings.map((label, index) => ({ status: "M", path: `scripts/locale-${label}-${index}.mjs`, content: "export const fixture = true;" }));
   const first = runScenario("locale-unicode-a", changes, { acceptanceRoutes: routes });
   const second = runScenario("locale-unicode-b", [...changes].reverse(), { acceptanceRoutes: routes });
@@ -515,7 +515,7 @@ try {
   ]);
   assert.equal(projectProfileShared.classification, "FULL");
   assert.deepEqual(projectProfileShared.browserAcceptance.requiredRoutes,
-    ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"]);
+    ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/plugin-guide", "/publish-center", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"]);
   assert.deepEqual(projectProfileShared.browserAcceptance.unresolvedPaths, []);
   assert.equal(projectProfileShared.gate.validationState, "pending-required");
   assert.equal(projectProfileShared.gate.releaseReady, false);
@@ -534,7 +534,7 @@ try {
   // Exact known inputs from the current reviewed source closure. Keep build /
   // engineering identities on the existing shared desktop routes; individual
   // error/client/layout inputs name their actual route owners explicitly.
-  const sharedDesktopRoutes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
+  const sharedDesktopRoutes = ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/plugin-guide", "/publish-center", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"];
   // BEGIN reviewed-exact-release-metadata-scope
   const exactReleaseMetadata = [
     { path: ".engineering/chat-reliability-lock.v1.json", rule: "full-reviewed-chat-reliability-lock", routes: sharedDesktopRoutes },
@@ -683,11 +683,11 @@ try {
     ...releaseExtraPageRoutes.map(route => ({ status: "M", path: `src/app${route}/page.tsx`, content: "fixture page" })),
   ];
   const expandedReleaseRoutes = [...new Set([...sharedDesktopRoutes, ...releaseExtraPageRoutes])].sort(compareProtocolStrings);
-  assert.equal(expandedReleaseRoutes.length, 22);
+  assert.equal(expandedReleaseRoutes.length, 24);
   const partialReleaseRoutes = runScenario("release-root-partial-eleven-routes", releaseRouteChanges, { acceptanceRoutes: sharedDesktopRoutes });
   assert.deepEqual(partialReleaseRoutes.browserAcceptance.unresolvedPaths, ["<caller-routes-not-policy-approved>"]);
   assert.equal(partialReleaseRoutes.browserAcceptance.explicitRoutesProvided, false);
-  const completeReleaseRoutes = runScenario("release-root-exact-twenty-two-routes", releaseRouteChanges, { acceptanceRoutes: expandedReleaseRoutes });
+  const completeReleaseRoutes = runScenario("release-root-exact-twenty-four-routes", releaseRouteChanges, { acceptanceRoutes: expandedReleaseRoutes });
   assert.deepEqual(completeReleaseRoutes.browserAcceptance.requiredRoutes, expandedReleaseRoutes);
   assert.deepEqual(completeReleaseRoutes.browserAcceptance.unresolvedPaths, []);
   assert.equal(completeReleaseRoutes.browserAcceptance.explicitRoutesProvided, true);
@@ -1980,7 +1980,7 @@ try {
   );
   assert.deepEqual(
     policy.browserAcceptance.routeRules.find((rule) => rule.id === "platform-wide-shared-surface")?.routes,
-    ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"],
+    ["/", "/admin", "/announcements", "/commerce/rebuild", "/cover", "/image-workbench", "/media-history", "/plugin-guide", "/publish-center", "/storyboard-workbench", "/tools", "/video", "/voice-studio/workspace"],
     "shared platform changes must fan out to the reviewed high-impact desktop surface",
   );
   const pinnedTrustPath = path.join(root, ...policy.browserAcceptanceTrust.path.split("/"));
