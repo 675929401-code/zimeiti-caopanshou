@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "6e3672909bd21387bea90c8ce9839c055a160c2619377a4f8e3b91ebdf0719a2",
+  "sourceFingerprint": "9e25917b495526c6a01eef2f460a09d847364c7c2b8251146c9fb33a854b2b51",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 5286,
-  "totalBytes": 86236475,
+  "fileCount": 5288,
+  "totalBytes": 86247087,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2024,7 +2024,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "d78672d4946e589f25f07fd7930252c9c6ea6b0f1a2cbaba9fec50abfcb7f405"
+      "sha256": "9e5435eb4066c756d908e76c041074882d91bf40de26417156df0ceb680331bd"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -12873,8 +12873,8 @@
     },
     {
       "path": "src/app/admin/page.tsx",
-      "bytes": 636747,
-      "sha256": "69dd0a9af16e0c4947fcb9fcc69fa53bce9a74c70897c1371f308458469a0aec"
+      "bytes": 639708,
+      "sha256": "ab94bc01a5f286daac640b1856371b57628dcd705ec305701d3992ca678bda7d"
     },
     {
       "path": "src/app/admin/superzhujunguo/page.tsx",
@@ -12938,8 +12938,8 @@
     },
     {
       "path": "src/app/api/admin/agents/import-by-ids/route.ts",
-      "bytes": 4012,
-      "sha256": "7d519322864abaeafb87b278f78d328e0e87806f1807aa8f28bdf32cbfede224"
+      "bytes": 4636,
+      "sha256": "9e26942fb7e64c5249384db071b277a062f72e663123953c1c09dc15660e04d7"
     },
     {
       "path": "src/app/api/admin/agents/import-coding/route.ts",
@@ -12948,13 +12948,13 @@
     },
     {
       "path": "src/app/api/admin/agents/import-coze/route.ts",
-      "bytes": 8503,
-      "sha256": "953d947194353d7e892b2ca5ebb85998c81018b515fdfa40dafacd5142c18f73"
+      "bytes": 8957,
+      "sha256": "c2fa72784b63d701cf55f344d6edbd7e7327328fac35adc0fa8afee16e0000c6"
     },
     {
       "path": "src/app/api/admin/agents/import/route.ts",
-      "bytes": 4777,
-      "sha256": "c6c13c1912a9a09ade30fb17878d025aa9decfa1f5183031c8adf2dfd673e6b8"
+      "bytes": 5390,
+      "sha256": "43b0e558f160ff6af46fcf384161d82eb8c2168f095ead14d81f67fa22be31eb"
     },
     {
       "path": "src/app/api/admin/agents/reorder/route.ts",
@@ -12968,8 +12968,8 @@
     },
     {
       "path": "src/app/api/admin/agents/route.ts",
-      "bytes": 47885,
-      "sha256": "0a924507acfe1eb2f21541e638bced21bb7525d7ab037d71a0fa594fcfd2241a"
+      "bytes": 48366,
+      "sha256": "e5431bfe478131608d0f9555fa90dcd9eed60a3c1e5d9c7c9acae6283a8c4923"
     },
     {
       "path": "src/app/api/admin/aiweb-import/route.ts",
@@ -14233,8 +14233,8 @@
     },
     {
       "path": "src/app/api/cover-models/route.ts",
-      "bytes": 15007,
-      "sha256": "c4530631db8bcf7066ef39e55cc113109e36d61e4ef21306f9e52bb2fff53242"
+      "bytes": 16502,
+      "sha256": "009fd3d4654095b1151ffb33d01fba81f8ca5dff7a31ff32367123fc45c6a8e5"
     },
     {
       "path": "src/app/api/cover-styles/route.ts",
@@ -19918,18 +19918,23 @@
     },
     {
       "path": "src/lib/auto-avatar/generator.ts",
-      "bytes": 12941,
-      "sha256": "cff7c9d4c789f75be6fff855212501e709550dec812f918f760900c9b06de4d8"
+      "bytes": 13563,
+      "sha256": "abd36edfc11821d3b8c19a35dae47671d3b4e520ffebc6ebf42e775337a8e441"
     },
     {
       "path": "src/lib/auto-avatar/index.ts",
-      "bytes": 2574,
-      "sha256": "403ba2738e39ce18e9b0b5028ab6afd9f897c00560cc4ca508967fdd314cbb43"
+      "bytes": 2688,
+      "sha256": "e8d362ff83feef6263176c3be5913a362fb1e5e126ae3a902b57a332c471893e"
     },
     {
       "path": "src/lib/auto-avatar/prompts.ts",
       "bytes": 15301,
       "sha256": "5589c8622a737e1aa4a231398a35765aff7c35856392052d5e1ab6ceb9b3ee83"
+    },
+    {
+      "path": "src/lib/auto-avatar/schedule.ts",
+      "bytes": 2159,
+      "sha256": "ed64a6661321f4ab06ee43fa778c6694c37f316d230e70f6251a8809d7ff62f2"
     },
     {
       "path": "src/lib/auto-avatar/settings.ts",
@@ -25030,6 +25035,11 @@
       "path": "supabase/migrations/20261112010000_user_auth_session_no_login_eviction.sql",
       "bytes": 4713,
       "sha256": "dd4decdfa789f069c35839721abe74ada726a089311d34e59bf2e75b8092e9a3"
+    },
+    {
+      "path": "supabase/migrations/20261113090000_auto_avatar_default_gpt_image.sql",
+      "bytes": 1089,
+      "sha256": "59c48ef40bdd7d2e373cca3009df4fc87596c43a3d03617886989067e3d3fdb3"
     },
     {
       "path": "supabase/rollbacks/20260822032000_aid_integration_bridge.rollback.sql",

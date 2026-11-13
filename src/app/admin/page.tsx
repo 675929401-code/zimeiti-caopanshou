@@ -501,7 +501,7 @@ const LAYOUT_SETTING_FIELDS = ["page_layout", "card_layout"] as const satisfies 
 const COZE_CONNECTION_SETTING_FIELDS = ["coze_api_base_url", "coze_api_token", "coze_workspace_id"] as const satisfies readonly (keyof PlatformSettings)[];
 const SMTP_SETTING_FIELDS = ["email_smtp_host", "email_smtp_port", "email_smtp_user", "email_smtp_pass", "email_from"] as const satisfies readonly (keyof PlatformSettings)[];
 const COVER_WORKFLOW_SETTING_FIELDS = ["cover_workflow_api_url", "cover_workflow_app_id", "cover_workflow_token"] as const satisfies readonly (keyof PlatformSettings)[];
-const AVATAR_MODEL_SETTING_FIELDS = ["auto_avatar_model_id"] as const satisfies readonly (keyof PlatformSettings)[];
+const AVATAR_MODEL_SETTING_FIELDS = ["auto_avatar_model_id", "auto_avatar_enabled"] as const satisfies readonly (keyof PlatformSettings)[];
 const CREDIT_EXCHANGE_SETTING_FIELDS = ["credits_per_yuan"] as const satisfies readonly (keyof PlatformSettings)[];
 const GLOBAL_PROMPT_SETTING_FIELDS = ["global_system_prefix"] as const satisfies readonly (keyof PlatformSettings)[];
 const ADMIN_SECRET_SETTING_FIELDS = new Set<keyof PlatformSettings>([
@@ -3352,7 +3352,15 @@ export default function AdminPage() {
     id: string; name: string; model_name: string; description?: string;
     selling_price?: number; price_per_use?: number; is_active?: boolean; sort_order?: number;
   }>>([]);
+  const [drawingModelsError, setDrawingModelsError] = useState("");
   const activeDrawingModels = drawingModels.filter(m => m.is_active !== false);
+  const isPreferredAvatarModel = (model: { name: string; model_name: string }) =>
+    /gpt[\s_-]*image[\s_-]*2\.5/i.test(`${model.name} ${model.model_name}`);
+  const avatarDrawingModels = [...activeDrawingModels].sort((a, b) => {
+    const preferred = Number(isPreferredAvatarModel(b)) - Number(isPreferredAvatarModel(a));
+    if (preferred !== 0) return preferred;
+    return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+  });
   const selectedAvatarModelId = visibleSettings.auto_avatar_model_id.trim();
   const selectedAvatarModelUnavailable = selectedAvatarModelId !== ""
     && !activeDrawingModels.some((model) => model.id === selectedAvatarModelId);
@@ -3968,14 +3976,31 @@ export default function AdminPage() {
 
   const loadDrawingModels = useCallback(async () => {
     try {
+      // 管理后台需要内部 id / is_active / model_name；公共 DTO 是 pm_* id，
+      // 直接用于后台下拉会把选项渲染成空白。该公开路由在带管理员 token 时
+      // 返回只读内部目录（不含密钥），避免敏感操作的 step-up 拦截。
       const res = await fetch("/api/cover-models", { headers: authHeaders });
-      if (res.ok) {
-        const data = await res.json();
-        setDrawingModels(data.models || []);
+      if (!res.ok) {
+        setDrawingModelsError(res.status === 403 ? "当前账号没有模型管理权限" : "模型列表读取失败，请稍后重试");
+        return;
       }
-    } catch {/* */}
+      const data = await res.json();
+      setDrawingModels(Array.isArray(data.models) ? data.models : []);
+      setDrawingModelsError("");
+    } catch {
+      setDrawingModelsError("模型列表读取失败，请检查网络后重试");
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authHeaders]);
+
+  // The avatar model selector lives on the brand/general tab, but the drawing
+  // pool used to be loaded only when opening the add-agent dialog. Load it as
+  // soon as the settings section is reachable so the select is never blank.
+  useEffect(() => {
+    if (!hasModelSettingsPermission) return;
+    if (activeTab !== "general" && activeTab !== "models" && activeTab !== "workspace-models") return;
+    void loadDrawingModels();
+  }, [activeTab, hasModelSettingsPermission, sensitiveUnlocked, loadDrawingModels]);
 
   // Sync agent counts when agents change
   useEffect(() => {
@@ -8780,9 +8805,11 @@ const handleDeleteCategory = async () => {
                   <div className="flex items-center gap-2">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-500"><path d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /><path d="M18 3v2.25M21 6h-2.25M3 6h2.25M6 3v2.25" /></svg>
                     <label className={`${labelCls} mb-0`}>头像生成默认模型</label>
-                    <span className="text-[10px] text-[var(--muted-foreground)] font-normal">（仅供管理员主动生成头像时使用）</span>
+                    <span className="text-[10px] text-[var(--muted-foreground)] font-normal">（管理员主动生成 / 新增智能体自动补齐）</span>
                   </div>
-                  <span className="rounded-full bg-purple-500/10 px-2 py-1 text-[10px] font-semibold text-purple-700">不会在保存智能体时自动扣费</span>
+                  <span className="rounded-full bg-purple-500/10 px-2 py-1 text-[10px] font-semibold text-purple-700">
+                    {visibleSettings.auto_avatar_enabled !== "false" ? "新增缺头像时自动补齐" : "仅管理员主动生成"}
+                  </span>
                 </div>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
                   <div>
@@ -8792,18 +8819,21 @@ const handleDeleteCategory = async () => {
                       onChange={(e) => updateSetting("auto_avatar_model_id", e.target.value)}
                       className={inputCls}
                     >
-                      <option value="">自动选择第一个启用的生图模型</option>
+                      <option value="">自动（优先 GPT-Image-2.5）</option>
                       {selectedAvatarModelUnavailable && (
                         <option value={selectedAvatarModelId} disabled>
                           {selectedAvatarModelId}（{selectedAvatarModelIsSaved ? "当前已保存" : "当前选择"}，暂不可用于新生成）
                         </option>
                       )}
-                      {activeDrawingModels.map((model) => (
+                      {avatarDrawingModels.map((model) => (
                         <option key={model.id} value={model.id}>
                           {model.name}{model.model_name !== model.name ? ` (${model.model_name})` : ""}
                         </option>
                       ))}
                     </select>
+                    {drawingModelsError && (
+                      <p className="mt-1 text-[10px] text-[var(--destructive)]">{drawingModelsError}</p>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -8813,7 +8843,20 @@ const handleDeleteCategory = async () => {
                     刷新模型
                   </button>
                 </div>
-                <p className="text-[10px] text-[var(--muted-foreground)] mt-1.5">管理员可先手动上传头像；只有在「智能体管理」中明确点击单个或批量生成、确认数量并提交后，系统才调用生图模型。批量任务最多 20 个，默认不会在新建或保存智能体时触发。</p>
+                <div className="mt-3 flex items-start gap-2 rounded-lg border border-purple-500/10 bg-[var(--background)]/60 px-3 py-2">
+                  <input
+                    id="auto-avatar-enabled"
+                    type="checkbox"
+                    checked={visibleSettings.auto_avatar_enabled !== "false"}
+                    onChange={(e) => updateSetting("auto_avatar_enabled", e.target.checked ? "true" : "false")}
+                    className="mt-0.5 h-4 w-4 accent-[var(--primary)]"
+                  />
+                  <label htmlFor="auto-avatar-enabled" className="text-xs text-[var(--secondary-foreground)] cursor-pointer">
+                    <strong className="text-[var(--foreground)]">新增智能体缺少头像时自动生成</strong>
+                    <span className="block mt-0.5 text-[10px] text-[var(--muted-foreground)]">开启后，新增或导入的智能体如果没有头像，保存完成后会在后台静默使用上方模型补齐，单次最多 20 个；可在智能体列表用“生成缺失头像”手动补跑。</span>
+                  </label>
+                </div>
+                <p className="text-[10px] text-[var(--muted-foreground)] mt-1.5">头像统一使用主站 3D 卡通职业人物风格。手动上传会优先于自动生成；批量按钮会先列出无头像智能体的数量并二次确认费用。</p>
                 <div className="mt-3 flex justify-end">
                   <button onClick={() => void saveSettings("models", true, AVATAR_MODEL_SETTING_FIELDS)} disabled={settingsSaving || !canManageModelSettings} className="px-4 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] font-bold text-xs hover:opacity-90 transition disabled:opacity-50">
                     {settingsSaving ? "保存中..." : "保存模型默认项"}

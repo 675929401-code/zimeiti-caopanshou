@@ -44,22 +44,23 @@ export function triggerAutoAvatar(
   agentId: string,
   name: string,
   description: string,
-  currentAvatar: string | null | undefined
-): void {
+  currentAvatar: string | null | undefined,
+  options: { ownerUserId?: string } = {}
+): Promise<void> {
   // ── 条件判断：已有头像则跳过 ──
   if (!shouldGenerateAvatar(currentAvatar)) {
     console.log(
       `[AutoAvatar] Agent "${name}" has existing avatar (${JSON.stringify(currentAvatar)?.slice(0, 60)}), skipping`
     );
-    return;
+    return Promise.resolve();
   }
 
   console.log(
     `[AutoAvatar] Agent "${name}" needs auto-avatar (current: ${JSON.stringify(currentAvatar)}), triggering...`
   );
 
-  // ── 异步检查开关 + 触发生成（fire-and-forget） ──
-  void (async () => {
+  // ── 异步检查开关 + 触发生成（调用方可以 fire-and-forget，也可以 await） ──
+  return (async () => {
     try {
       const enabled = await isAutoAvatarEnabled();
       if (!enabled) {
@@ -67,7 +68,7 @@ export function triggerAutoAvatar(
         return;
       }
 
-      await generateAndUpdateAvatar(agentId, name, description);
+      await generateAndUpdateAvatar(agentId, name, description, options);
     } catch {
       // 终极兜底：任何异常只记日志，绝不外泄
     }

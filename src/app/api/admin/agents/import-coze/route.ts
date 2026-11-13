@@ -5,6 +5,7 @@ import { authorizeAdminCapability } from '@/lib/server/admin-governance-authorit
 import { agentBatchConflict, isAgentBatchConflict, parseExpectedAgentRevision } from '@/lib/server/agent-config-cas';
 import { invalidateBotsCache } from '@/lib/bots-cache';
 import { invalidateAgentConfigCache } from '@/app/api/llm/llm-state';
+import { scheduleAutoAvatarForCreatedAgents } from '@/lib/auto-avatar/schedule';
 
 /**
  * POST /api/admin/agents/import-coze
@@ -210,6 +211,17 @@ export async function POST(request: NextRequest) {
       }
       for (const entry of mutations) invalidateAgentConfigCache(entry.id);
       invalidateBotsCache();
+      scheduleAutoAvatarForCreatedAgents(
+        mutations
+          .filter((entry) => entry.operation === 'insert')
+          .map((entry) => ({
+            agentId: entry.id,
+            name: entry.name,
+            description: entry.description || '',
+            avatar: entry.avatar as string | null,
+          })),
+        managementAccess.actor.userId,
+      );
     }
 
     console.log(`[import-coze] Done: imported=${imported}, updated=${updated}, skipped=${skipped}, failed=${failed}`);
