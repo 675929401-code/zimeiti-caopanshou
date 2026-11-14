@@ -103,8 +103,14 @@ const CANDIDATE_FEATURE_NAVIGATION_KEYS = Object.freeze([
 const CANDIDATE_AGENT_NAVIGATION_KEYS = Object.freeze([
   "bip:loop", "task:影像编导", "task:文案创作", "task:获客转化", "自用",
 ]);
+// These are read-only workspace fetches. Playwright aborts them when the
+// per-route page closes after its final screenshot; that teardown is not a
+// product request failure. Successful route status/console/blocking checks
+// still guard the page itself.
 const BENIGN_READ_ONLY_API_ABORT_PATHS = new Set([
   "/api/native-operations/v2/channels/accounts",
+  "/api/native-operations/v2/channels/platforms",
+  "/api/native-operations/studio/bootstrap",
   "/api/native-operations/studio/history",
 ]);
 const BENIGN_NAVIGATION_ABORT_KEYS = new Set([
