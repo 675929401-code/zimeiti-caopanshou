@@ -11,12 +11,11 @@ import styles from "./Studio.module.css";
 
 export function PluginStatusPanel({ state, lastIssue, onCheck }: { state: PublishingPluginState; lastIssue?: string | null; onCheck: () => void }) {
   const label = state === "checking" ? "检测中…" : state === "present" ? "已就绪" : state === "unauthorized" ? "待授权" : "未检测到";
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://zyuani8.com";
   return <div className={styles.sidebarPlugin} data-state={state} data-testid="studio-plugin-status">
     <div className={styles.sidebarPluginHead}><span className={styles.sidebarPluginIcon}><Plug size={14} /></span><span>发布插件</span><strong>{label}</strong></div>
     <p>{state === "present" ? "浏览器类平台可以连接。" : state === "checking" ? "正在检测当前浏览器。" : state === "unauthorized" ? "插件已安装，但还没有授权本站。" : "未检测到已授权本站的插件。浏览器类平台需要先完成插件授权。"}</p>
     {lastIssue && state !== "present" && <p data-testid="studio-plugin-issue" style={{ color: "#9a5b16" }}>{lastIssue}</p>}
-    <p data-testid="studio-plugin-domain-hint" style={{ color: "#667085" }}>扩展侧栏 →「仅授权」→ 允许注入的域名填写 <code>{origin}/</code>，保存并确认后刷新本页。</p>
+    <p data-testid="studio-plugin-domain-hint" style={{ color: "#667085" }}>扩展侧栏 →「仅授权」→ 允许注入的域名填写 <code>https://zyuani8.com/</code>（本机预览填 <code>http://127.0.0.1:5000/</code>），保存并确认后刷新本页。</p>
     <div className={styles.sidebarPluginActions}>
       {state === "missing" && <a href={PUBLISHING_PLUGIN_DOWNLOADS.direct} download={`aitoearn-extension-v${PUBLISHING_PLUGIN_DOWNLOADS.version}.crx`}>下载最新版</a>}
       <a href={PUBLISHING_PLUGIN_DOWNLOADS.guide}>授权步骤</a>
@@ -71,7 +70,7 @@ export function AccountsPanel({ work, pluginState }: { work: PublishingStudioCon
     {pluginHelpOpen && <StudioDialog title="先完成发布插件授权" testId="studio-plugin-help" description="浏览器插件发布只读取当前浏览器已登录的平台账号，不连接浏览器账号本身。" onClose={() => setPluginHelpOpen(false)} footer={<><button type="button" className={styles.button} onClick={() => setPluginHelpOpen(false)}>稍后处理</button><a className={styles.primaryButton} href={PUBLISHING_PLUGIN_DOWNLOADS.guide}>打开完整授权步骤</a></>}>
       <div className={styles.steps} style={{ gridTemplateColumns: "1fr" }}>
         <div className={styles.step}><h3>1. 打开扩展侧栏</h3><p>点击浏览器工具栏的 AiToEarn 图标，进入「仅授权」。</p></div>
-        <div className={styles.step}><h3>2. 添加本站域名</h3><p>在「允许注入的域名」中逐行填写 <code>{typeof window !== "undefined" ? window.location.origin + "/" : "https://zyuani8.com/"}</code>，保存域名并确认授权。</p></div>
+        <div className={styles.step}><h3>2. 添加本站域名</h3><p>在「允许注入的域名」中逐行填写 <code>https://zyuani8.com/</code>（本机预览填 <code>http://127.0.0.1:5000/</code>），保存域名并确认授权。</p></div>
         <div className={styles.step}><h3>3. 刷新本页再连接</h3><p>刷新发布工作台，点左下角「重新检测」，状态变为「已就绪」后再连接当前平台账号。</p></div>
       </div>
     </StudioDialog>}

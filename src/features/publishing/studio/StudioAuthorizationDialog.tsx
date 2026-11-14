@@ -84,7 +84,7 @@ export function AuthorizationDialog({ work }: { work: PublishingStudioController
     <div className={styles.authorizationStatus} role="status" aria-live="polite">{complete && <CheckCircle2 size={24} />}<strong>{busy ? busyText : status}</strong></div>
     {error && <div className={styles.authorizationError} role="alert" data-testid="studio-authorization-error">{error}</div>}
     {browser && <div className={styles.fieldHint} data-testid="studio-plugin-download">
-      <p><strong>这里连接的是当前浏览器里已登录的平台账号，不是 360 浏览器账号。</strong>如果扩展已安装但仍显示未检测到，请打开 AiToEarn 扩展侧栏 → 仅授权 → 在「允许注入的域名」中逐行填入 <code>{typeof window !== "undefined" ? window.location.origin + "/" : "https://zyuani8.com/"}</code> → 保存域名并确认授权 → 刷新本页后再连接。</p>
+      <p><strong>这里连接的是当前浏览器里已登录的平台账号，不是 360 浏览器账号。</strong>如果扩展已安装但仍显示未检测到，请打开 AiToEarn 扩展侧栏 → 仅授权 → 在「允许注入的域名」中逐行填入 <code>https://zyuani8.com/</code>（本机预览填 <code>http://127.0.0.1:5000/</code>）→ 保存域名并确认授权 → 刷新本页后再连接。</p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "10px 0" }}>
         <a href={PUBLISHING_PLUGIN_DOWNLOADS.direct} download={`aitoearn-extension-v${PUBLISHING_PLUGIN_DOWNLOADS.version}.crx`} className={styles.primaryButton} data-testid="studio-plugin-download-direct"><Download size={15} />直接下载插件 v{PUBLISHING_PLUGIN_DOWNLOADS.version}</a>
         <a href={PUBLISHING_PLUGIN_DOWNLOADS.guide} className={styles.button} data-testid="studio-plugin-guide">查看安装教程</a>
@@ -93,7 +93,7 @@ export function AuthorizationDialog({ work }: { work: PublishingStudioController
       {showPluginGuide && <div style={{ lineHeight: 1.8 }}>
         <p>1. 下载后打开 <code>chrome://extensions</code>，开启右上角“开发者模式”。</p>
         <p>2. 把下载的 `.crx` 文件拖入扩展页面，按 Chrome 提示确认安装。</p>
-        <p>3. 打开扩展，选择 Authorize Only，允许来源 <code>{typeof window !== "undefined" ? window.location.origin : "本站"}</code>。</p>
+        <p>3. 打开扩展，选择 Authorize Only，并在「允许注入的域名」添加本站地址。</p>
         <p>4. 回到本弹窗，点“重新连接浏览器账号”。</p>
         <p style={{ wordBreak: "break-all" }}>文件校验 SHA-256：<code>{PUBLISHING_PLUGIN_DOWNLOADS.sha256}</code></p>
       </div>}
