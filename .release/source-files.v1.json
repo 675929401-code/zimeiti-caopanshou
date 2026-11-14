@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "9e25917b495526c6a01eef2f460a09d847364c7c2b8251146c9fb33a854b2b51",
+  "sourceFingerprint": "aff475a6b350ff0329cb5b017cabd68398b1938144c1934589f9f4a2716f15d1",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
-  "fileCount": 5288,
-  "totalBytes": 86247087,
+  "fileCount": 5289,
+  "totalBytes": 86253850,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2024,7 +2024,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "9e5435eb4066c756d908e76c041074882d91bf40de26417156df0ceb680331bd"
+      "sha256": "bb3023d0a69349c3d26af4f594bd66c43f9c39b1d689c49d92d414139edef02e"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -15538,8 +15538,8 @@
     },
     {
       "path": "src/app/plugin-guide/page.tsx",
-      "bytes": 9209,
-      "sha256": "4084a44fb7d7b1467fec26a80fe9fcb3c8798103a759485b0c3cb2e292ec1c9b"
+      "bytes": 9725,
+      "sha256": "13e1ca2f542b4a9ad6a85dd9e687d90ad0ce9233141ff062ba508815e953c4a2"
     },
     {
       "path": "src/app/plugin-guide/plugin-guide.module.css",
@@ -19263,8 +19263,8 @@
     },
     {
       "path": "src/features/publishing/studio/native-auth.ts",
-      "bytes": 5475,
-      "sha256": "034e56fa0c61d0cb83f1ba24f75118246b0a07a05d56b19ec424be608cbbe3ba"
+      "bytes": 6422,
+      "sha256": "66684a477a420f6bab76392d0d9568745b88ebc7be76f15ec1d9d87cdbf0be93"
     },
     {
       "path": "src/features/publishing/studio/native-media-bridge-client.ts",
@@ -19293,8 +19293,8 @@
     },
     {
       "path": "src/features/publishing/studio/PublishingStudio.tsx",
-      "bytes": 18850,
-      "sha256": "d22922d769bd579602bd4e26b866532ecede5d50425544161fc8d662e364f92f"
+      "bytes": 18879,
+      "sha256": "4fe4ca72f9b69ceac3a345ed85c17a2cbd5bf0dd115bbbcdfaadd382cc126608"
     },
     {
       "path": "src/features/publishing/studio/studio-api.ts",
@@ -19363,13 +19363,13 @@
     },
     {
       "path": "src/features/publishing/studio/StudioAuthorizationDialog.tsx",
-      "bytes": 11602,
-      "sha256": "21a92ee45607feabad7ae285d767f30dd20ac9d2ae32b4f3668444640bc3095d"
+      "bytes": 12202,
+      "sha256": "7717ad9f4b9782ba7ff9a59fa380430e817ecf4fc7cfc68e2d692dc5f0e0605a"
     },
     {
       "path": "src/features/publishing/studio/StudioAuxiliary.tsx",
-      "bytes": 10068,
-      "sha256": "46052a53cd0fe85127fdb3a4ec7d5556a759c9f37684970d8885c997568de070"
+      "bytes": 11973,
+      "sha256": "1f89d6e83787cc247820656b5bbd5641bdefb6b3db7978acc731368f892ffe95"
     },
     {
       "path": "src/features/publishing/studio/StudioCalendar.tsx",
@@ -19438,18 +19438,18 @@
     },
     {
       "path": "src/features/publishing/studio/types.ts",
-      "bytes": 7621,
-      "sha256": "d5d9eeedd7adc0be66cc0ee2ade94917ac76512a805b7ebe0507f9506ffcca2b"
+      "bytes": 7655,
+      "sha256": "631ecc61364dadbbf0582e794c148828e7c7e79f15ea033bf72649952c2c939f"
     },
     {
       "path": "src/features/publishing/studio/usePublishingPlugin.ts",
-      "bytes": 860,
-      "sha256": "525badb51c747b2ac957b8bdaca34c4f39493dbce191129a8640a2932809bcfb"
+      "bytes": 2894,
+      "sha256": "8b17f1d96223cc762756e7f67437fba3f05b87ee0cfe2e26bbc6c753104bca74"
     },
     {
       "path": "src/features/publishing/studio/usePublishingStudio.ts",
-      "bytes": 66654,
-      "sha256": "176ed713d4e4259cbc37c3bd205178ea7a18783f4e765b5f3e12c2a091fe07fe"
+      "bytes": 66728,
+      "sha256": "157833b7154290f037e871d35515d7eaafa7d6482e6af650186b237a3b06ca69"
     },
     {
       "path": "src/features/short-drama/formal-script-unavailable.tsx",
@@ -25040,6 +25040,11 @@
       "path": "supabase/migrations/20261113090000_auto_avatar_default_gpt_image.sql",
       "bytes": 1089,
       "sha256": "59c48ef40bdd7d2e373cca3009df4fc87596c43a3d03617886989067e3d3fdb3"
+    },
+    {
+      "path": "supabase/migrations/20261115090000_repair_publishing_runtime_service_role_grants.sql",
+      "bytes": 624,
+      "sha256": "8d3f2842bc7c7b4e181774c70687941c95ea56e753c4afea8827590e79411213"
     },
     {
       "path": "supabase/rollbacks/20260822032000_aid_integration_bridge.rollback.sql",

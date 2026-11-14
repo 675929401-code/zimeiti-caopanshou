@@ -16,22 +16,51 @@ async function read(path: string, method = 'GET', body?: unknown) {
   if (!response.ok || value.code !== 0) throw new NativeAuthReadError(value.message || '原官方授权结果待核对', String(value.code), response.status, value.operationId, value.outcome)
   return value.data
 }
-/** Persist local identifiers only. A lost response is recovered with GET, never a second auth POST. */
-export async function startNativeAuthorization(): Promise<ChannelAccountAuthStart> {
+/**
+ * Persist local identifiers only. A lost response is recovered with GET, never a
+ * second auth POST. Truly absent/terminal sessions (for example after a failed
+ * or abandoned attempt was cleaned up) are discarded so the user can explicitly
+ * start a fresh authorization instead of being stuck forever on an old marker.
+ */
+function isRecoverableMissingAuthorization(reason: unknown) {
+  if (!(reason instanceof NativeAuthReadError)) return false
+  if (reason.status === 404 || reason.status === 410) return true
+  return /NOT_FOUND|NOT_FOUND_OR_EXPIRED|AUTH_SESSION_NOT_FOUND|AUTHORIZATION_NOT_FOUND/i.test(reason.code)
+}
+
+export async function startNativeAuthorization(options?: { forceNew?: boolean }): Promise<ChannelAccountAuthStart> {
   const owner = assertHostSession().user.id, revision = getHostSessionRevision()
   const key = hostStorageKey('official-auth'); if (!key) throw new Error('请先登录主站会员')
+  if (options?.forceNew) localStorage.removeItem(key)
   const raw = localStorage.getItem(key)
   if (raw) {
-    let marker: z.infer<typeof markerSchema>
-    try { marker = markerSchema.parse(JSON.parse(raw)) } catch { throw new Error('原授权标记格式待核对，请保留浏览器数据') }
-    let id = marker.sessionId
-    if (!id) { const page = PublishingV3PageSchema.parse(await read(`publishing/v3?resource=operations&requestKey=${encodeURIComponent(marker.requestKey)}&pageSize=1`)); const operation = page.items.map(item => PublishingV3OperationSchema.parse(item)).find(item => item.kind === 'authorization'); if (!operation) throw new Error('原授权请求尚未查询到，暂不创建新授权，请稍后核对'); id = operation.subjectId }
-    const session = PublishingV3AuthSessionSchema.parse(await read(`publishing/v3?resource=auth-session&id=${id}`))
-    if (!['completed', 'failed', 'expired'].includes(session.state)) {
-      localStorage.setItem(key, JSON.stringify({ ...marker, sessionId: session.id }))
-      return { sessionId: session.id, ...(session.url ? { url: session.url } : {}), ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}), nativeRevision: session.revision }
+    let marker: z.infer<typeof markerSchema> | null = null
+    try { marker = markerSchema.parse(JSON.parse(raw)) } catch { localStorage.removeItem(key) }
+    let sessionId = marker?.sessionId
+    if (marker && !sessionId) {
+      try {
+        const page = PublishingV3PageSchema.parse(await read(`publishing/v3?resource=operations&requestKey=${encodeURIComponent(marker.requestKey)}&pageSize=1`))
+        const operation = page.items.map(item => PublishingV3OperationSchema.parse(item)).find(item => item.kind === 'authorization')
+        if (!operation) localStorage.removeItem(key)
+        else sessionId = operation.subjectId
+      } catch (reason) {
+        if (!isRecoverableMissingAuthorization(reason)) throw reason
+        localStorage.removeItem(key)
+      }
     }
-    localStorage.removeItem(key)
+    if (sessionId) {
+      try {
+        const session = PublishingV3AuthSessionSchema.parse(await read(`publishing/v3?resource=auth-session&id=${sessionId}`))
+        if (!['completed', 'failed', 'expired'].includes(session.state)) {
+          localStorage.setItem(key, JSON.stringify({ ...marker!, sessionId: session.id }))
+          return { sessionId: session.id, ...(session.url ? { url: session.url } : {}), ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}), nativeRevision: session.revision }
+        }
+        localStorage.removeItem(key)
+      } catch (reason) {
+        if (!isRecoverableMissingAuthorization(reason)) throw reason
+        localStorage.removeItem(key)
+      }
+    }
   }
   const marker = { requestKey: `native-auth:${crypto.randomUUID()}` }; localStorage.setItem(key, JSON.stringify(marker))
   let response: unknown

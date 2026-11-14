@@ -69,7 +69,7 @@ export interface PublishingStudioController {
   patchDraft(patch: Partial<StudioDraft>): void
   patchTarget(accountId: string, patch: StudioTargetOverride): void; setTargetCover(accountId: string, file: File): Promise<void>
   addFiles(files: File[]): Promise<void>; setCover(file: File): Promise<void>; removeMedia(id: string): void
-  toggleAccount(id: string): void; connectAccount(platform: string, transport?: 'browser_plugin' | 'official_api'): Promise<void>; refreshAccounts(): Promise<void>
+  toggleAccount(id: string): void; connectAccount(platform: string, transport?: 'browser_plugin' | 'official_api', options?: { forceNew?: boolean }): Promise<void>; refreshAccounts(): Promise<void>
   openImport(): Promise<void>; closeImport(): void; loadImport(kind?: 'media' | 'draft'): Promise<void>; importItem(id: string): Promise<void>
   checkDraft(): Promise<void>; saveDraft(): Promise<void>; publish(reviewId: string): Promise<void>; cancelReview(): void
   confirmBridge(approved: boolean): void; refreshAuthorization(): Promise<void>; selectAuthorization(ids: string[]): Promise<void>; closeAuthorization(): void

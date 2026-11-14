@@ -462,7 +462,7 @@ export function usePublishingStudio(): PublishingStudioController {
     try { await work(current); if (visible()) setAuthorizationFlow(authRef.current?.platform === platform ? { platform, transport: selectedTransport, phase: 'ready' } : null) }
     catch (reason) { if (visible()) setAuthorizationFlow({ platform, transport: selectedTransport, phase: 'error', error: message(reason), errorCode: reason && typeof reason === 'object' && 'code' in reason && typeof reason.code === 'string' ? reason.code : 'AUTHORIZATION_UNCONFIRMED' }); throw reason }
   } }
-  async function connectAccount(platform: string, transport?: 'browser_plugin' | 'official_api') { await run('连接发布账号', authorizationWork(platform, 'starting', async current => {
+  async function connectAccount(platform: string, transport?: 'browser_plugin' | 'official_api', options?: { forceNew?: boolean }) { await run('连接发布账号', authorizationWork(platform, 'starting', async current => {
     invalidate(); const config = platformsRef.current.find(value => value.key === platform)
     if (!config?.connectionAllowed) throw new Error(config?.reason || '该平台暂未开放账号连接')
     const channel = config.channels?.find(value => value.transport === (transport ?? (platform === 'douyin' ? 'official_api' : 'browser_plugin')))
@@ -474,7 +474,7 @@ export function usePublishingStudio(): PublishingStudioController {
       await studioRequest('v2/channels/accounts', 'POST', { type: platform, uid: detected.account.uid, nickname: detected.account.nickname, ...(detected.account.avatar ? { avatar: detected.account.avatar } : {}) }); guard(owner, revision); current()
       await refreshWorkspace(); setNotice('已读取并保存当前浏览器平台账号摘要')
     } else if (platform === 'douyin') {
-      const started = await startNativeAuthorization(); guard(owner, revision); current()
+      const started = await startNativeAuthorization({ forceNew: options?.forceNew === true }); guard(owner, revision); current()
       const value = PublishingV3AuthSessionSchema.parse(await studioRequest(`publishing/v3?resource=auth-session&id=${started.sessionId}`)); guard(owner, revision); current(); projectAuthorization(value)
     } else if (isNativeOAuthPlatform(platform)) { const value = await startNativeOAuth(platform); guard(owner, revision); current(); projectAuthorization(value) }
   }, transport ?? (platform === 'xhs' || platform === 'wxSph' ? 'browser_plugin' : 'official_api'))) }
