@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "aff475a6b350ff0329cb5b017cabd68398b1938144c1934589f9f4a2716f15d1",
+  "sourceFingerprint": "81dc0263316fa80f93f93335578d5a3239b4f5220d5799e8a58819573d6ff655",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5289,
-  "totalBytes": 86253850,
+  "totalBytes": 86253758,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2024,7 +2024,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "bb3023d0a69349c3d26af4f594bd66c43f9c39b1d689c49d92d414139edef02e"
+      "sha256": "e75b20476ac6499dd013a99951b8bd72d190bf7e0fc7f4d2f6f9c2863513ef5e"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -19363,13 +19363,13 @@
     },
     {
       "path": "src/features/publishing/studio/StudioAuthorizationDialog.tsx",
-      "bytes": 12202,
-      "sha256": "7717ad9f4b9782ba7ff9a59fa380430e817ecf4fc7cfc68e2d692dc5f0e0605a"
+      "bytes": 12149,
+      "sha256": "85bab5f36ea4dbd529361426227dddcec9aec5d84f4088c04d53fcd1990e77ba"
     },
     {
       "path": "src/features/publishing/studio/StudioAuxiliary.tsx",
-      "bytes": 11973,
-      "sha256": "1f89d6e83787cc247820656b5bbd5641bdefb6b3db7978acc731368f892ffe95"
+      "bytes": 11934,
+      "sha256": "0b1d9747823af3137564e19490a915c6e45bbe70d59663e1544a03c98bc81926"
     },
     {
       "path": "src/features/publishing/studio/StudioCalendar.tsx",
