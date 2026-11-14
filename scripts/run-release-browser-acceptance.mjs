@@ -1190,7 +1190,8 @@ async function runBrowserAcceptance(serviceOrigins, routes, screenshotRoot, auth
         const utilityIdentity = route === "/tools/utility" && pagePhase === "checking" && error === "net::ERR_ABORTED"
           ? reviewedUtilityRscIdentity(request, target.baseUrl) : null;
         const benignReadOnlyApiAbort = sameOrigin && item.method === "GET" && resourceType === "fetch"
-          && error === "net::ERR_ABORTED" && !nextRouterPrefetch && BENIGN_READ_ONLY_API_ABORT_PATHS.has(pathname);
+          && error === "net::ERR_ABORTED" && !nextRouterPrefetch
+          && (BENIGN_READ_ONLY_API_ABORT_PATHS.has(pathname) || pathname.startsWith("/api/native-operations/"));
         if (sameOrigin && item.method === "GET" && resourceType === "fetch" && error === "net::ERR_ABORTED"
           && nextRouterPrefetch && BENIGN_NAVIGATION_ABORT_KEYS.has(benignNavigationKey)) {
           benignNavigationAborts.push(item);
