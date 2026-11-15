@@ -17,26 +17,25 @@ export function PluginStatusPanel({ state, onCheck }: { state: PublishingPluginS
 }
 
 export function AccountsPanel({ work }: { work: PublishingStudioController }) {
-  const visiblePlatforms = [...work.platforms]
-    .filter(platform => platform.connectionAllowed && (platform.channels?.some(channel => channel.publishAllowed) ?? platform.available))
-    .sort((a, b) => platformOrder(a.key, b.key));
+  const visiblePlatforms = [...work.platforms].sort((a, b) => platformOrder(a.key, b.key));
   return <>
-    {visiblePlatforms.length ? <div className={styles.platformGrid}>{visiblePlatforms.map(platform => {
-      const accounts = work.accounts.filter(account => account.platform === platform.key);
+    {work.workspace.loading ? <div className={styles.loading}><Loader2 size={19} className={styles.spin} />正在读取发布服务…</div> : visiblePlatforms.length ? <div className={styles.platformGrid}>{visiblePlatforms.map(platform => {
+      const accounts = work.accounts.filter(account => account.platform === platform.key && account.kind !== "browser");
       const needsAuthorization = accounts.some(account => account.status !== "ready");
+      const officialChannel = platform.channels?.find(channel => channel.transport === "official_api" && channel.connectionAllowed);
       const canConnect = platform.connectionAllowed;
       const notDeveloped = platform.executionBlocked === true;
       return <section className={styles.platformCard} data-state={accounts.length ? needsAuthorization ? "attention" : "connected" : "unconnected"} data-multi={accounts.length > 1 ? "true" : "false"} data-testid={`studio-platform-${platform.key}`} key={platform.key}>
         <div className={styles.platformCardHeader}><span className={styles.accountMark}>{platform.name.slice(0, 1)}</span><h2>{platform.name}</h2><span className={styles.platformConnectionState}>{accounts.length ? `${accounts.length} 个账号` : canConnect ? "未连接" : notDeveloped ? "尚未接入" : "暂不可连接"}</span></div>
         <div className={styles.platformCardBody}>
           {accounts.length ? <div className={styles.platformAccounts}>{accounts.map(account => {
-            const transport = account.kind === "browser" ? "browser_plugin" : "official_api";
+            const transport = "official_api";
             const connectionAllowed = platform.channels?.find(channel => channel.transport === transport)?.connectionAllowed ?? platform.connectionAllowed;
-            return <div key={account.id} className={styles.platformAccount}><AccountMark account={account} /><div><strong>{account.name}</strong><small>{account.kind !== "browser" ? platform.key === "douyin" ? "官方授权 · 手机接力" : "官方授权" : "浏览器发布"}</small><span className={styles.accountConnectionBadge} data-ready={account.status === "ready"}>{account.status === "ready" ? "已连接" : "授权需更新"}</span></div>{account.status !== "ready" && <button type="button" className={styles.accountReconnect} disabled={!!work.busy || !connectionAllowed} onClick={() => void work.connectAccount(platform.key, transport)}>重新授权</button>}</div>;
+            return <div key={account.id} className={styles.platformAccount}><AccountMark account={account} /><div><strong>{account.name}</strong><small>{platform.key === "douyin" ? "官方授权 · 手机接力" : "官方授权"}</small><span className={styles.accountConnectionBadge} data-ready={account.status === "ready"}>{account.status === "ready" ? "已连接" : "授权需更新"}</span></div>{account.status !== "ready" && <button type="button" className={styles.accountReconnect} disabled={!!work.busy || !connectionAllowed} onClick={() => void work.connectAccount(platform.key, transport)}>重新授权</button>}</div>;
           })}</div> : <div className={styles.platformCardEmpty}><span>尚未连接账号</span><small>{canConnect ? "连接后在这里管理账号与授权" : notDeveloped ? "该平台发布通道尚未接入" : platform.nativeReason || platform.reason || "该平台暂不可连接"}</small></div>}
         </div>
         <div className={styles.platformCardFooter}>
-          <button type="button" className={`${accounts.length ? styles.button : styles.primaryButton} ${styles.platformCardAction}`} data-testid={`studio-connect-${platform.key}`} disabled={!!work.busy || !canConnect} onClick={() => { if (canConnect) void work.connectAccount(platform.key); }}><Link2 size={15} />{accounts.length ? "添加另一个账号" : canConnect ? "连接账号" : "暂不可连接"}</button>
+          <button type="button" className={`${accounts.length ? styles.button : styles.primaryButton} ${styles.platformCardAction}`} data-testid={`studio-connect-${platform.key}`} disabled={!!work.busy || !canConnect} onClick={() => { if (canConnect) void work.connectAccount(platform.key, officialChannel ? "official_api" : undefined); }}><Link2 size={15} />{accounts.length ? "添加另一个账号" : canConnect ? "连接账号" : "暂不可连接"}</button>
         </div>
       </section>;
     })}</div> : <div className={styles.emptyView}><Users size={36} /><h2>暂未读取到可连接的平台</h2><p>请刷新账号，按发布服务返回的实际能力继续。</p><button type="button" className={styles.button} onClick={() => void work.refreshAccounts()} disabled={!!work.busy}><RefreshCw size={15} />重新读取</button></div>}
