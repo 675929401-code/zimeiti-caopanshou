@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "59a0b06e6f4f84dd2206014707a4f0756d4965dbbdb3f18eb2d5253adfd19369",
+  "sourceFingerprint": "0aa62018d2f4c5d6e3b5edc361eeb90082a6eefdb1b75acd10c16ef18075c47e",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5289,
-  "totalBytes": 86254173,
+  "totalBytes": 86246435,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2024,7 +2024,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "ef3e6b6c87ce20e87c59274a53179ebb75e5dc28779814860afd47f7021935de"
+      "sha256": "1d5c2bc23a26e43428c25eca08c204270dcaafc1fe63a60797a95d0ddc9d6027"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -19293,8 +19293,8 @@
     },
     {
       "path": "src/features/publishing/studio/PublishingStudio.tsx",
-      "bytes": 18879,
-      "sha256": "4fe4ca72f9b69ceac3a345ed85c17a2cbd5bf0dd115bbbcdfaadd382cc126608"
+      "bytes": 18823,
+      "sha256": "2ed6000a458dfc7c0c39993100fb54d5c81293a5a96410a36a286f14f5992096"
     },
     {
       "path": "src/features/publishing/studio/studio-api.ts",
@@ -19363,13 +19363,13 @@
     },
     {
       "path": "src/features/publishing/studio/StudioAuthorizationDialog.tsx",
-      "bytes": 12149,
-      "sha256": "85bab5f36ea4dbd529361426227dddcec9aec5d84f4088c04d53fcd1990e77ba"
+      "bytes": 10063,
+      "sha256": "b9309241c5e7e7edd64ea4506d55dd0bc7dccc79a96ea72467f33515c84fc23a"
     },
     {
       "path": "src/features/publishing/studio/StudioAuxiliary.tsx",
-      "bytes": 11934,
-      "sha256": "0b1d9747823af3137564e19490a915c6e45bbe70d59663e1544a03c98bc81926"
+      "bytes": 6831,
+      "sha256": "1e8ef7a186dec19d11733a190fc179a46183ffa4ce490d5aa8aaf3af90a21b47"
     },
     {
       "path": "src/features/publishing/studio/StudioCalendar.tsx",
@@ -19443,8 +19443,8 @@
     },
     {
       "path": "src/features/publishing/studio/usePublishingPlugin.ts",
-      "bytes": 2894,
-      "sha256": "8b17f1d96223cc762756e7f67437fba3f05b87ee0cfe2e26bbc6c753104bca74"
+      "bytes": 2401,
+      "sha256": "e835e17b4d0275a4158fdb48103e6ecf83c9db4c50ba26e3f871b8fd9c5dd700"
     },
     {
       "path": "src/features/publishing/studio/usePublishingStudio.ts",
