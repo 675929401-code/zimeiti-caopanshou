@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "0aa62018d2f4c5d6e3b5edc361eeb90082a6eefdb1b75acd10c16ef18075c47e",
+  "sourceFingerprint": "cb316b9abed64869afb406e17c9dfa69dbb8942590cb7ae59881c76fabd9cce1",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5289,
-  "totalBytes": 86246435,
+  "totalBytes": 86246542,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2024,7 +2024,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "1d5c2bc23a26e43428c25eca08c204270dcaafc1fe63a60797a95d0ddc9d6027"
+      "sha256": "6ba884119b5410d26c19f7935839f440497435da751ac70e901dd5465fd8b07a"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -19368,8 +19368,8 @@
     },
     {
       "path": "src/features/publishing/studio/StudioAuxiliary.tsx",
-      "bytes": 6831,
-      "sha256": "1e8ef7a186dec19d11733a190fc179a46183ffa4ce490d5aa8aaf3af90a21b47"
+      "bytes": 6938,
+      "sha256": "32e90b1df1591218db3a3791aa496177e3e037a007f742379fc1dfec9b9d54d9"
     },
     {
       "path": "src/features/publishing/studio/StudioCalendar.tsx",
