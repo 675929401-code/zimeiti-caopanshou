@@ -127,7 +127,29 @@ export default function Home() {
   // 已标记 entered_app → 显示应用（marketplace/chat，根据 localStorage 恢复）
   const [enteredApp, setEnteredApp] = useState(false);
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [authCheckSettled, setAuthCheckSettled] = useState(false);
   const [returnedFromSecondaryPage, setReturnedFromSecondaryPage] = useState(false);
+
+  // A retained "/" tab can still carry entered_app in sessionStorage after the
+  // session has gone. Wait for the authoritative auth reconciliation, then
+  // clear the retained app flag and return to the public landing/login page.
+  useEffect(() => {
+    if (!hasHydrated || !enteredApp) return;
+    let active = true;
+    void checkAuth().finally(() => {
+      if (active) setAuthCheckSettled(true);
+    });
+    return () => { active = false; };
+  }, [checkAuth, enteredApp, hasHydrated]);
+
+  useEffect(() => {
+    if (!hasHydrated || !enteredApp || !authCheckSettled || state.auth.isAuthenticated) return;
+    try {
+      sessionStorage.removeItem("entered_app");
+      sessionStorage.removeItem("trial_dialog_dismissed");
+    } catch {}
+    window.location.replace("/");
+  }, [authCheckSettled, enteredApp, hasHydrated, state.auth.isAuthenticated]);
 
   useEffect(() => {
     const shouldShowMarketplace = consumeSecondaryPageReturn();
