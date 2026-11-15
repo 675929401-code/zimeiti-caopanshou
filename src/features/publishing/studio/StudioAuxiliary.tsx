@@ -2,43 +2,21 @@
 /* eslint-disable @next/next/no-img-element */
 import { useState } from "react";
 import { FileImage, FileText, Film, Link2, Loader2, Plug, RefreshCw, Users } from "lucide-react";
-import type { PublishingStudioController, StudioPlatform } from "./types";
+import type { PublishingStudioController } from "./types";
 import { dateText, StudioDialog } from "./StudioPrimitives";
 import { AccountMark, platformOrder } from "./StudioPresentation";
-import { PUBLISHING_PLUGIN_DOWNLOADS } from "@/lib/publishing-native";
 import type { PublishingPluginState } from "./usePublishingPlugin";
 import styles from "./Studio.module.css";
 
-export function PluginStatusPanel({ state, lastIssue, onCheck }: { state: PublishingPluginState; lastIssue?: string | null; onCheck: () => void }) {
-  const label = state === "checking" ? "检测中…" : state === "present" ? "已就绪" : state === "unauthorized" ? "待授权" : "未检测到";
+export function PluginStatusPanel({ state, onCheck }: { state: PublishingPluginState; onCheck: () => void }) {
+  const label = state === "checking" ? "检测中…" : state === "present" ? "已检测到" : state === "unauthorized" ? "待授权" : "未检测到";
   return <div className={styles.sidebarPlugin} data-state={state} data-testid="studio-plugin-status">
     <div className={styles.sidebarPluginHead}><span className={styles.sidebarPluginIcon}><Plug size={14} /></span><span>发布插件</span><strong>{label}</strong></div>
-    <p>{state === "present" ? "浏览器类平台可以连接。" : state === "checking" ? "正在检测当前浏览器。" : state === "unauthorized" ? "插件已安装，但还没有授权本站。" : "未检测到已授权本站的插件。浏览器类平台需要先完成插件授权。"}</p>
-    {lastIssue && state !== "present" && <p data-testid="studio-plugin-issue" style={{ color: "#9a5b16" }}>{lastIssue}</p>}
-    <p data-testid="studio-plugin-domain-hint" style={{ color: "#667085" }}>扩展侧栏 →「仅授权」→ 允许注入的域名填写 <code>https://zyuani8.com/</code>（本机预览填 <code>http://127.0.0.1:5000/</code>），保存并确认后刷新本页。</p>
-    <div className={styles.sidebarPluginActions}>
-      {state === "missing" && <a href={PUBLISHING_PLUGIN_DOWNLOADS.direct} download={`aitoearn-extension-v${PUBLISHING_PLUGIN_DOWNLOADS.version}.crx`}>下载最新版</a>}
-      <a href={PUBLISHING_PLUGIN_DOWNLOADS.guide}>授权步骤</a>
-      <button type="button" data-testid="studio-plugin-recheck" onClick={onCheck} disabled={state === "checking"}><RefreshCw size={12} />{state === "checking" ? "检测中…" : "重新检测"}</button>
-    </div>
+    <div className={styles.sidebarPluginActions}><button type="button" data-testid="studio-plugin-recheck" onClick={onCheck} disabled={state === "checking"}><RefreshCw size={12} />{state === "checking" ? "检测中…" : "重新检测"}</button></div>
   </div>;
 }
 
-export function AccountsPanel({ work, pluginState }: { work: PublishingStudioController; pluginState: PublishingPluginState }) {
-  const [connecting, setConnecting] = useState<string | null>(null);
-  const [pluginHelpOpen, setPluginHelpOpen] = useState(false);
-  const chosen = work.platforms.find(item => item.key === connecting);
-  const platformUsesBrowser = (platform: StudioPlatform | undefined) =>
-    platform?.channels?.some(channel => channel.transport === "browser_plugin" && channel.connectionAllowed)
-    ?? platform?.transport === "browser_plugin";
-  const connect = (platformKey: string, transport?: "browser_plugin" | "official_api") => {
-    const platform = work.platforms.find(item => item.key === platformKey);
-    if (pluginState !== "present" && (transport === "browser_plugin" || (!transport && platformUsesBrowser(platform)))) {
-      setPluginHelpOpen(true);
-      return;
-    }
-    void work.connectAccount(platformKey, transport);
-  };
+export function AccountsPanel({ work }: { work: PublishingStudioController }) {
   const visiblePlatforms = [...work.platforms]
     .filter(platform => platform.connectionAllowed && (platform.channels?.some(channel => channel.publishAllowed) ?? platform.available))
     .sort((a, b) => platformOrder(a.key, b.key));
@@ -46,9 +24,7 @@ export function AccountsPanel({ work, pluginState }: { work: PublishingStudioCon
     {visiblePlatforms.length ? <div className={styles.platformGrid}>{visiblePlatforms.map(platform => {
       const accounts = work.accounts.filter(account => account.platform === platform.key);
       const needsAuthorization = accounts.some(account => account.status !== "ready");
-      const connectableChannels = platform.channels?.filter(channel => channel.connectionAllowed) ?? [];
       const canConnect = platform.connectionAllowed;
-      const browserOnly = connectableChannels.length > 0 && connectableChannels.every(channel => channel.transport === "browser_plugin");
       const notDeveloped = platform.executionBlocked === true;
       return <section className={styles.platformCard} data-state={accounts.length ? needsAuthorization ? "attention" : "connected" : "unconnected"} data-multi={accounts.length > 1 ? "true" : "false"} data-testid={`studio-platform-${platform.key}`} key={platform.key}>
         <div className={styles.platformCardHeader}><span className={styles.accountMark}>{platform.name.slice(0, 1)}</span><h2>{platform.name}</h2><span className={styles.platformConnectionState}>{accounts.length ? `${accounts.length} 个账号` : canConnect ? "未连接" : notDeveloped ? "尚未接入" : "暂不可连接"}</span></div>
@@ -60,20 +36,10 @@ export function AccountsPanel({ work, pluginState }: { work: PublishingStudioCon
           })}</div> : <div className={styles.platformCardEmpty}><span>尚未连接账号</span><small>{canConnect ? "连接后在这里管理账号与授权" : notDeveloped ? "该平台发布通道尚未接入" : platform.nativeReason || platform.reason || "该平台暂不可连接"}</small></div>}
         </div>
         <div className={styles.platformCardFooter}>
-          <button type="button" className={`${accounts.length ? styles.button : styles.primaryButton} ${styles.platformCardAction}`} data-testid={`studio-connect-${platform.key}`} disabled={!!work.busy || !canConnect} onClick={() => { if (!canConnect) return; if (pluginState === "missing" && browserOnly) { window.location.assign(PUBLISHING_PLUGIN_DOWNLOADS.guide); return; } if (connectableChannels.length > 1) setConnecting(platform.key); else connect(platform.key, connectableChannels.length === 1 ? connectableChannels[0].transport : undefined); }}><Link2 size={15} />{accounts.length ? "添加另一个账号" : canConnect ? "连接账号" : "暂不可连接"}</button>
+          <button type="button" className={`${accounts.length ? styles.button : styles.primaryButton} ${styles.platformCardAction}`} data-testid={`studio-connect-${platform.key}`} disabled={!!work.busy || !canConnect} onClick={() => { if (canConnect) void work.connectAccount(platform.key); }}><Link2 size={15} />{accounts.length ? "添加另一个账号" : canConnect ? "连接账号" : "暂不可连接"}</button>
         </div>
       </section>;
     })}</div> : <div className={styles.emptyView}><Users size={36} /><h2>暂未读取到可连接的平台</h2><p>请刷新账号，按发布服务返回的实际能力继续。</p><button type="button" className={styles.button} onClick={() => void work.refreshAccounts()} disabled={!!work.busy}><RefreshCw size={15} />重新读取</button></div>}
-    {chosen && !work.authorization && !work.authorizationFlow && <StudioDialog title={`连接${chosen.name}账号`} testId="studio-connect-channel" description="选择连接方式。授权其他账号会追加到列表，同一账号重新授权会更新连接。" onClose={() => setConnecting(null)} footer={<button type="button" className={styles.button} data-studio-focus="true" onClick={() => setConnecting(null)}>暂不连接</button>}>
-      <div className={styles.channelChoices}>{chosen.channels?.map(channel => <div key={channel.transport} className={styles.channelChoice}><h3>{channel.transport === "browser_plugin" ? "浏览器插件发布" : "官方授权与手机接力"}</h3><p>{channel.transport === "browser_plugin" ? "通过已安装并授权本站的 AiToEarn 扩展，读取当前浏览器已登录的平台账号；这里连接的是平台账号，不是 360 浏览器账号。" : "用抖音 App 扫码授权。提交作品后，还需要在手机端继续确认发布。"}</p>{channel.reason && <p className={styles.fieldHint}>{channel.reason}</p>}<button type="button" className={styles.button} data-testid={`studio-connect-channel-${channel.transport}`} disabled={!!work.busy || !channel.connectionAllowed} onClick={() => { setConnecting(null); connect(chosen.key, channel.transport); }}>{channel.transport === "browser_plugin" ? "连接当前平台账号" : "开始官方授权"}</button></div>)}</div>
-    </StudioDialog>}
-    {pluginHelpOpen && <StudioDialog title="先完成发布插件授权" testId="studio-plugin-help" description="浏览器插件发布只读取当前浏览器已登录的平台账号，不连接浏览器账号本身。" onClose={() => setPluginHelpOpen(false)} footer={<><button type="button" className={styles.button} onClick={() => setPluginHelpOpen(false)}>稍后处理</button><a className={styles.primaryButton} href={PUBLISHING_PLUGIN_DOWNLOADS.guide}>打开完整授权步骤</a></>}>
-      <div className={styles.steps} style={{ gridTemplateColumns: "1fr" }}>
-        <div className={styles.step}><h3>1. 打开扩展侧栏</h3><p>点击浏览器工具栏的 AiToEarn 图标，进入「仅授权」。</p></div>
-        <div className={styles.step}><h3>2. 添加本站域名</h3><p>在「允许注入的域名」中逐行填写 <code>https://zyuani8.com/</code>（本机预览填 <code>http://127.0.0.1:5000/</code>），保存域名并确认授权。</p></div>
-        <div className={styles.step}><h3>3. 刷新本页再连接</h3><p>刷新发布工作台，点左下角「重新检测」，状态变为「已就绪」后再连接当前平台账号。</p></div>
-      </div>
-    </StudioDialog>}
   </>;
 }
 

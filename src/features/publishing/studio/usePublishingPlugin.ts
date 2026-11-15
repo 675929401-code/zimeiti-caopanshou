@@ -10,14 +10,12 @@ const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(r
 /** One detection owner for the account page and the sidebar status. */
 export function usePublishingPlugin() {
   const [state, setState] = useState<PublishingPluginState>("checking");
-  const [lastIssue, setLastIssue] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const mounted = useRef(true);
   const sequence = useRef(0);
   const check = useCallback(async () => {
     const current = ++sequence.current;
     setState("checking");
-    setLastIssue(null);
     // The extension injects Web API after document_idle; a single immediate
     // probe can miss a freshly authorized page. Retry briefly, then report a
     // stable result instead of silently flickering back to "未安装".
@@ -39,9 +37,6 @@ export function usePublishingPlugin() {
     if (!mounted.current || sequence.current !== current) return;
     const code = lastReason instanceof PublishingPluginError ? lastReason.code : "not_installed";
     setState(code === "not_authorized" ? "unauthorized" : "missing");
-    setLastIssue(code === "not_authorized"
-      ? "已检测到插件，但尚未授权当前网站。请在扩展「仅授权」中添加本站域名并确认授权，然后刷新页面。"
-      : "未检测到已授权本站的发布插件。若扩展已安装，请在扩展「仅授权」的“允许注入的域名”中添加本站地址，保存并确认授权后刷新页面。");
     setCheckedAt(Date.now());
   }, []);
   useEffect(() => {
@@ -57,5 +52,5 @@ export function usePublishingPlugin() {
       document.removeEventListener("visibilitychange", recheck);
     };
   }, [check]);
-  return { state, check, lastIssue, checkedAt };
+  return { state, check, checkedAt };
 }
