@@ -51,15 +51,16 @@ async function main() {
   assert.match(page, /\/api\/video\/models\?surface=video-page/u);
   assert.match(page, /\/api\/video\/reference-upload/u);
   assert.match(page, /surface:\s*"video-page"/u);
-  assert.match(page, /const selectable = model\.available/u,
-    "视频模型只按实时目录可用性进入提交链路");
-  assert.doesNotMatch(page, /currentModel\.generationReady === false/u,
-    "内部验收状态不得成为视频提交的第二道门槛");
+  assert.match(page, /const selectable = model\.available && model\.generationReady/u,
+    "视频模型必须同时在线且达到生成条件才能选择");
+  assert.match(page, /currentModel\.generationReady === false/u,
+    "未达到生成条件的可见模型不得进入提交链路");
   assert.match(page, /data-video-model-id=\{model\.id\}[\s\S]*?disabled=\{!selectable\}/u,
     "真正不可用的模型不得在视频页提交");
   assert.match(page, /视频模型目录加载中/u, "模型请求尚未完成时必须显示加载态");
-  assert.match(page, /视频模型目录加载失败，请刷新页面重试/u, "目录错误必须与真实空目录区分");
-  assert.match(page, /当前暂无可用视频模型，请稍后刷新重试/u, "真实空目录必须给客户可执行的重试提示");
+  assert.match(page, /视频模型目录加载失败，当前编辑内容已保留/u, "目录错误必须与真实空目录区分");
+  assert.match(page, /当前暂无可用视频模型/u, "真实空目录必须给客户可执行的重试提示");
+  assert.match(page, /setModelsReadAttempt\(\(attempt\) => attempt \+ 1\)/u, "目录错误后可在原页重新读取，保留作品输入");
   assert.doesNotMatch(page, /请联系管理员配置|待充值|上游余额|管理员显式恢复\s*canary/u, "客户视频页不得暴露内部运维措辞");
   assert.doesNotMatch(
     modelsRoute,
