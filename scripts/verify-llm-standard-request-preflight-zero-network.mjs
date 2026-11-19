@@ -139,8 +139,15 @@ check('cached input maximum used',prepared.reservation.inputBudget>8192);
 check('price conversion explicit',prepared.platformReservationYuanEquivalent,prepared.reservation.amount/50);
 for(const reply of [0,null]) {const fixture=structuredClone(base);fixture.agent.max_reply_tokens=reply;const result=await core.prepareStandardLlmRequest(body,fixture,actor,publicId,pins);
   check('agent reply '+reply+' existing semantics',result.chatRequest.max_tokens,reply===0?10000:4000);}
-const native=structuredClone(base);native.model.deep_thinking_type=2;native.model.deduct_deep_think=1.5;
-const nativeResult=await core.prepareStandardLlmRequest(body,native,actor,publicId,pins);check('native thinking actual multiplier',nativeResult.reservation.outputBudget,1800);
+const native = structuredClone(base);
+native.model.deep_thinking_type = 2;
+for (const legacyMultiplier of [1, 1.5, 2]) {
+  native.model.deduct_deep_think = legacyMultiplier;
+  const result = await core.prepareStandardLlmRequest(body, native, actor, publicId, pins);
+  check('native thinking request output cap ' + legacyMultiplier, result.chatRequest.max_tokens, 1200);
+  check('native thinking reserves the provider output cap ' + legacyMultiplier, result.reservation.outputBudget, result.chatRequest.max_tokens);
+  check('native thinking hold uses the same output budget at every legacy multiplier ' + legacyMultiplier, result.reservation.amount, prepared.reservation.amount);
+}
 const zero=structuredClone(base);for(const key of ['input_cost_per_million','output_cost_per_million','cached_cost_per_million'])zero.model[key]=0;
 check('zero price preserved', (await core.prepareStandardLlmRequest(body,zero,actor,publicId,pins)).reservation.amount,0);
 function reader(fixture=base){return {readAgent:async()=>[fixture.agent],readModel:async()=>[fixture.model],readSettings:async()=>fixture.settings,readActor:async()=>[fixture.actor],readSkills:async()=>fixture.skills};}
@@ -208,7 +215,7 @@ for(const multiplier of [1,1.5]) {
   core.assertQuoteExpectation(result.quoteExpectation,expected.expectation);checks.push('pg numeric '+multiplier+' actual expectation accepted');
   check('pg numeric '+multiplier+' price snapshot matches REST',result.denomination.priceSnapshot,expected.billing.priceSnapshot);
   check('pg numeric '+multiplier+' budgets and amount match REST',result.budgets,expected.reservation);
-  check('pg numeric '+multiplier+' native output multiplier',result.budgets.outputBudget,1200*multiplier);
+  check('pg numeric '+multiplier+' preserves the native output cap',result.budgets.outputBudget,1200);
   check('pg numeric '+multiplier+' preserves settings text',observation.snapshot.settings,original.settings);
   check('pg numeric '+multiplier+' name and ids remain strings',[observation.snapshot.agent.id,observation.snapshot.agent.name,observation.snapshot.model.id,observation.snapshot.model.model_name],[rest.agent.id,rest.agent.name,rest.model.id,rest.model.model_name]);
   check('pg numeric '+multiplier+' does not mutate SELECT rows',pg,original);

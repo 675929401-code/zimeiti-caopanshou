@@ -136,7 +136,7 @@
     },
     {
       "path": "scripts/verify-llm-standard-request-preflight-zero-network.mjs",
-      "sha256": "8a421550e86f6016c3f405f254f97ae38b14ed863139496b630c9f008a637be6"
+      "sha256": "6d39caa5b3d5d9bdd7b14112a6f5c7e38e5d1a14e9271623e4c83f016529499d"
     },
     {
       "path": "src/components/chat/message-content.tsx",
