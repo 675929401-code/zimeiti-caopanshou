@@ -6,7 +6,7 @@ import { PublishingError,publishingRuntimeEnabled } from "./publishing-service";
 import { publishingCashContentProof, publishingCashFailure } from './publishing-cash-service';
 import { publishingCashV3Content } from '../publishing-cash-content';
 import { PublishingProvider,PublishingProviderError,publishingProviderPayloadHash,projectProviderStatus,validatePublishingProviderOptions,type PublishingProviderScope,type PublishingProviderGrant,type PublishingProviderFlowInput } from "./publishing-provider";
-import { readPublishingProviderConfiguration,PUBLISHING_OFFICIAL_LINKS } from "./publishing-provider-config";
+import { activePublishingProviderForNamespace, readPublishingProviderConfiguration,PUBLISHING_OFFICIAL_LINKS } from "./publishing-provider-config";
 import { sealPublishingAuthContinuation,openPublishingAuthContinuation,publishingAuthCookieName } from "./publishing-auth-continuation";
 import { PublishingV2DraftInputSchema } from "@/lib/publishing-v2-contract";
 import { PublishingV3AssetSchema,PublishingV3AuthSessionSchema,PublishingV3BindingSchema,PublishingV3CapabilitiesSchema,PublishingV3EventSchema,PublishingV3IntentSchema,PublishingV3MutationSchema,PublishingV3OperationSchema,PublishingV3PageSchema,PublishingV3StatusSchema,PublishingV3UserActionSchema,preparePublishingV3Content,validatePublishingV3Media,type PublishingV3Action,type PublishingV3Query,type PublishingV3IntentInput } from "@/lib/publishing-v3-contract";
@@ -125,8 +125,18 @@ async function publishSnapshot(db:DB,user:AuthUser,cfg:Configuration,intent:Row,
  return {request,draft,intent:input,binding:{id:binding.id,revision:binding.revision,providerAccountId:binding.provider_account_id,platformUid:binding.platform_uid},assets:assets.map(a=>({id:a.id,mediaId:a.local_media_id,size:num(a.size),mime:a.mime,sha256:a.sha256,providerAssetId:a.provider_asset_id,publicUrl:a.public_url,metadata:a.metadata??{}}))};
 }
 
-export async function mutatePublishingV3(user:AuthUser,db:DB,action:PublishingV3Action,cookies:{get(name:string):string|undefined},bridge?:PublishingV3BridgeContext):Promise<PublishingV3Result>{
- await access(user);const cfg=readPublishingProviderConfiguration();requireConfigured(cfg);
+async function assetConfiguration(db: DB, user: AuthUser, assetId: string): Promise<Configuration> {
+ const asset = await owned(db, "pub3_assets", user, assetId);
+ const cfg = activePublishingProviderForNamespace(str(asset.connection_id));
+ if (!cfg) throw new PublishingV3Error("PUBLISH_API_CONNECTION_CHANGED", "素材所属的官方连接已变化", 409);
+ return cfg;
+}
+
+export async function mutatePublishingV3(user:AuthUser,db:DB,action:PublishingV3Action,cookies:{get(name:string):string|undefined},bridge?:PublishingV3BridgeContext, uploadEnvironment?: Configuration["environment"]):Promise<PublishingV3Result>{
+ await access(user);
+ const cfg = action.action === "upload-confirm" ? await assetConfiguration(db, user, action.assetId)
+   : readPublishingProviderConfiguration(action.action === "upload-sign" ? uploadEnvironment : undefined);
+ requireConfigured(cfg);
  await assertPublishingV3UploadBridge(db,user,cfg,action,bridge);
  if(action.action==="save-intent"){
   const {action:_action,id,expectedRevision,...payload}=action;void _action;
@@ -203,7 +213,8 @@ async function reconcile(db:DB,user:AuthUser,cfg:Configuration,op:Row){
 }
 
 export async function readPublishingV3(user:AuthUser,db:DB,query:PublishingV3Query):Promise<PublishingV3Result>{
- await access(user);const cfg=readPublishingProviderConfiguration();
+ await access(user);
+ const cfg = query.resource === "assets" && query.id ? await assetConfiguration(db, user, query.id) : readPublishingProviderConfiguration();
  if(query.resource==="status"){
   const r=await db.from("pub3_operations").select("id",{head:true}).eq("owner_id",user.id).limit(1);if(r.error&&!absent.has(r.error.code))dbFailure(r.error);const schemaReady=!r.error;let enabled=false;try{await executionGate(db,cfg);enabled=schemaReady;}catch{/* Explicit unconfigured/closed state only. */}
   return {body:PublishingV3StatusSchema.parse({schemaReady,configured:cfg.configured,environment:cfg.environment,executionEnabled:enabled,authorizationEnabled:schemaReady&&cfg.configured,platform:"douyin",message:cfg.configured?enabled?"官方发布连接已就绪":"可先连接官方账号并准备素材，发布执行尚未开放":"官方API尚未配置，可通过官方入口了解服务",links:PUBLISHING_OFFICIAL_LINKS})};

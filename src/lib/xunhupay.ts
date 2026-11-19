@@ -475,6 +475,59 @@ export async function refundPayment(params: XunhuRefundParams): Promise<XunhuRef
  * 查询传输遵循官方 POST form 合同。官方公开合同尚未说明嵌套 data 的
  * 完整响应签名范围，因此成功查询暂不能作为到账依据；已验签回调不受影响。
  */
+async function readQueryEnvelope(tradeOrderId: string) {
+  if (!tradeOrderId?.trim() || tradeOrderId.trim().length > 240) {
+    throw new XunhuIntegrityError('tradeOrderId 无效');
+  }
+  const normalizedTradeOrderId = tradeOrderId.trim();
+  const config = await getConfig();
+
+  const params: Record<string, string> = {
+    appid: config.appid,
+    out_trade_order: normalizedTradeOrderId,
+    time: String(Math.floor(Date.now() / 1000)),
+    nonce_str: crypto.randomBytes(16).toString('hex'),
+  };
+
+  params.hash = generateSign(params, config.secret);
+
+  const response = await fetch('https://api.xunhupay.com/payment/query.html', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString(),
+    redirect: 'error',
+    signal: AbortSignal.timeout(XUNHU_QUERY_TIMEOUT_MS),
+  });
+  const text = await readBoundedGatewayResponse(response);
+  if (!response.ok) {
+    console.warn('[迅虎支付] 查询订单 HTTP 失败:', response.status);
+    return null;
+  }
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new XunhuIntegrityError('迅虎支付查询返回格式错误');
+  }
+  return { result: parsed as Record<string, unknown>, secret: config.secret };
+}
+
+function orderHint(result: Record<string, unknown>, orderId: string) {
+  if (String(result.errcode) !== "0" || !result.data || typeof result.data !== "object" || Array.isArray(result.data)) return null;
+  const data = result.data as Record<string, unknown>;
+  if (data.out_trade_order !== orderId || !["OD", "WP", "CD"].includes(String(data.status))) return null;
+  const raw = data.total_amount;
+  if ((typeof raw !== "number" && typeof raw !== "string") || !/^\d+(?:\.\d{1,2})?$/u.test(String(raw)) || !Number.isFinite(Number(raw)) || Number(raw) <= 0) return null;
+  return { status: String(data.status), amount: Number(raw), hasTransactionId: typeof data.transaction_id === "string" && Boolean(data.transaction_id.trim()) };
+}
+
+/** Read-only channel statement for billing administrators. Never a wallet receipt. */
+export async function inspectXunhuOrder(orderId: string, expectedYuan: number) {
+  const envelope = await readQueryEnvelope(orderId);
+  const hint = envelope && orderHint(envelope.result, orderId);
+  return hint ? { status: hint.status, amountMatches: hint.amount === expectedYuan, hasTransactionId: hint.hasTransactionId } : null;
+}
+
+export class XunhuOrderNeedsReview extends XunhuIntegrityError {}
+
 export async function queryOrderStatus(tradeOrderId: string): Promise<{
   status: 'OD' | 'WP' | 'CD' | 'NOT_FOUND';  // OD=已支付, WP=待支付, CD=已退款
   tradeOrderId?: string;
@@ -484,44 +537,18 @@ export async function queryOrderStatus(tradeOrderId: string): Promise<{
   openOrderId?: string | null;
 } | null> {
   try {
-    if (!tradeOrderId?.trim() || tradeOrderId.trim().length > 240) {
-      throw new XunhuIntegrityError('tradeOrderId 无效');
+    const envelope = await readQueryEnvelope(tradeOrderId);
+    if (!envelope) return null;
+    const { result, secret } = envelope;
+    const hint = orderHint(result, tradeOrderId);
+    if (hint?.status === "OD" || hint?.status === "CD") {
+      throw new XunhuOrderNeedsReview("渠道有交易记录，请核对签名回调及钱包流水");
     }
-    const normalizedTradeOrderId = tradeOrderId.trim();
-    const config = await getConfig();
-
-    const params: Record<string, string> = {
-      appid: config.appid,
-      out_trade_order: normalizedTradeOrderId,
-      time: String(Math.floor(Date.now() / 1000)),
-      nonce_str: crypto.randomBytes(16).toString('hex'),
-    };
-
-    params.hash = generateSign(params, config.secret);
-
-    const response = await fetch('https://api.xunhupay.com/payment/query.html', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(params).toString(),
-      redirect: 'error',
-      signal: AbortSignal.timeout(XUNHU_QUERY_TIMEOUT_MS),
-    });
-    const text = await readBoundedGatewayResponse(response);
-    if (!response.ok) {
-      console.warn('[迅虎支付] 查询订单 HTTP 失败:', response.status);
-      return null;
-    }
-    const parsed: unknown = JSON.parse(text);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new XunhuIntegrityError('迅虎支付查询返回格式错误');
-    }
-    const result = parsed as Record<string, unknown>;
-
     const signedResult: Record<string, string> = {};
     for (const [key, value] of Object.entries(result)) {
       if (value != null && typeof value !== 'object') signedResult[key] = String(value);
     }
-    if (!signedResult.hash || !verifyResponseSign(signedResult, config.secret)) {
+    if (!signedResult.hash || !verifyResponseSign(signedResult, secret)) {
       throw new XunhuIntegrityError('迅虎支付查询响应签名验证失败');
     }
 

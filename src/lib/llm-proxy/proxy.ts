@@ -45,6 +45,7 @@ import { createHash } from "node:crypto";
 import type { ProxyConfig, ProxyResult, StreamCallbacks, ChatRequest } from "./types";
 import { SseEventStreamDecoder, type DecodedSseEvent } from "../sse-stream-decoder";
 import { LlmResponseStartError, LlmStreamError, LlmStreamReadError, upstreamStreamError, buildLlmSafeDiagnostics, sanitizeLlmSafeDiagnostics, summarizeLlmProviderFailure, type LlmSafeDiagnostics } from "./stream-error";
+import { readChatTokenUsage } from "../reported-token-usage";
 import { buildOpenAIEndpoint } from "../api-endpoints";
 import { ensureServerRuntimeEnvLoaded } from "@/lib/server-runtime-env";
 
@@ -366,7 +367,7 @@ export class LLMProxy {
               // cumulative output usage into message_delta. Preserve both
               // fragments so the settlement callback always receives totals.
               claudeUsage = mergeTokenUsage(claudeUsage, converted.usage);
-              callbacks?.onUsage?.(claudeUsage);
+              if (nativeUsageFieldsPresent.has("input_tokens") && nativeUsageFieldsPresent.has("output_tokens")) callbacks?.onUsage?.(claudeUsage);
             }
             return;
           }
@@ -382,7 +383,8 @@ export class LLMProxy {
             fullReasoning += reasoning;
             callbacks?.onReasoning?.(reasoning);
           }
-          if (parsed.usage) callbacks?.onUsage?.(extractTokenUsage(parsed));
+          const usage = readChatTokenUsage(parsed.usage);
+          if (usage) callbacks?.onUsage?.(usage);
           enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`));
         };
         enqueue(encoder.encode(": heartbeat\n\n"));
@@ -482,7 +484,7 @@ export class LLMProxy {
           // until the body is fully consumed, including a stalled JSON body.
           const data = await response.json();
           if (useClaudeMessages) return normalizeClaudeMessageResponse(data, model);
-          const usage = data.usage ? extractTokenUsage(data) : undefined;
+          const usage = readChatTokenUsage(data.usage);
           const content = data.choices?.[0]?.message?.content || "";
           const reasoning = data.choices?.[0]?.message?.reasoning_content || data.choices?.[0]?.message?.reasoning || undefined;
           return { content, reasoning_content: reasoning, usage, model, raw: data };
@@ -530,22 +532,6 @@ export class LLMProxy {
 // ═══════════════════════════════════════════════════════════════
 // 工具函数
 // ═══════════════════════════════════════════════════════════════
-
-/** 从 API 响应中提取 token usage（含 cached_tokens） */
-function extractTokenUsage(data: {
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number };
-  };
-}): { prompt_tokens: number; completion_tokens: number; cached_tokens: number } {
-  const usage = data.usage;
-  return {
-    prompt_tokens: usage?.prompt_tokens || 0,
-    completion_tokens: usage?.completion_tokens || 0,
-    cached_tokens: usage?.prompt_tokens_details?.cached_tokens || 0,
-  };
-}
 
 // ═══════════════════════════════════════════════════════════════
 // 全局单例（系统内共享，减少配置开销）
@@ -774,7 +760,8 @@ function normalizeClaudeMessageResponse(data: Record<string, unknown>, model: st
       return part.type === "text" && typeof part.text === "string" ? part.text : "";
     })
     .join("");
-  const usage = normalizeClaudeUsage(data.usage as Record<string, unknown> | undefined);
+  const fields = data.usage as Record<string, unknown> | undefined;
+  const usage = fields && Object.hasOwn(fields, "input_tokens") && Object.hasOwn(fields, "output_tokens") ? normalizeClaudeUsage(fields) : undefined;
   const raw = {
     id: data.id || `msg_${Date.now()}`,
     object: "chat.completion",

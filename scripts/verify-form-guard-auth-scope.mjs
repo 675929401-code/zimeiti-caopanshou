@@ -3,11 +3,11 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
 const layout = fs.readFileSync('src/app/layout.tsx', 'utf8');
-const start = layout.indexOf("document.addEventListener('submit', function(e)");
+const start = layout.indexOf('var pendingAuthFallbacks = new WeakSet();');
 const end = layout.indexOf('}, true);', start) + '}, true);'.length;
 assert.ok(start >= 0 && end > start, 'Actual root submit guard must be present');
 const script = layout.slice(start, end);
-async function submit({ fields = {}, managed = false, reactHandled = false, authPassword = null, genericPassword = null } = {}) {
+async function submit({ fields = {}, managed = false, reactHandled = false, authPassword = null, genericPassword = null, repeatWhilePending = false } = {}) {
   const timers = []; const requests = []; let listener; let reloads = 0; let preventCount = 0;
   const button = { textContent: '保存', disabled: false };
   const form = { tagName: 'FORM', hasAttribute: (name) => name === 'data-react-managed' && managed, querySelector(selector) {
@@ -30,12 +30,20 @@ async function submit({ fields = {}, managed = false, reactHandled = false, auth
     fetch(url, options) { requests.push({ url, body: JSON.parse(options.body) }); return Promise.resolve({ json: () => Promise.resolve({ success: false, error: 'Fixture rejection' }) }); },
     alert() {}, console: { warn() {} },
   });
-  listener({ target: form, preventDefault() { preventCount++; } });
+  let propagationStops = 0;
+  const event = { target: form, preventDefault() { preventCount++; }, stopImmediatePropagation() { propagationStops++; } };
+  listener(event);
   if (reactHandled) window.__reactSubmitHandled = true;
+  if (repeatWhilePending) {
+    timers.shift().callback();
+    listener(event);
+    assert.equal(button.textContent, '保存');
+    assert.equal(button.disabled, false);
+  }
   let rounds = 0;
   while (timers.length) { assert.ok(++rounds < 10); timers.shift().callback(); }
   await new Promise((resolve) => setImmediate(resolve));
-  return { requests, reloads, preventCount, button, window };
+  return { requests, reloads, preventCount, propagationStops, button, window };
 }
 let passed = 0;
 async function test(name, run) { await run(); passed++; console.log('PASS ' + name); }
@@ -57,6 +65,13 @@ await test('a hydrated login remains owned by its existing React submit handler'
 });
 await test('unhydrated named account login retains the existing API fallback', async () => {
   const result = await submit({ managed: true, fields: { account: 'fixture-account', password: 'fixture-password' } }); assert.equal(result.requests.length, 1); assert.equal(result.requests[0].url, '/api/auth/login'); assert.equal(result.requests[0].body.phone, 'fixture-account'); assert.equal(result.requests[0].body.password, 'fixture-password'); assert.equal(result.reloads, 0);
+});
+await test('a pending native login blocks repeat submission and leaves React markup untouched', async () => {
+  const result = await submit({
+    managed: true, repeatWhilePending: true, fields: { account: 'fixture-account', password: 'fixture-password' },
+  });
+  assert.equal(result.requests.length, 1);
+  assert.equal(result.propagationStops, 1);
 });
 await test('unhydrated named email login retains the existing API fallback', async () => {
   const result = await submit({ managed: true, fields: { email: 'fixture@example.test', emailCode: '000000' } }); assert.equal(result.requests.length, 1); assert.equal(result.requests[0].url, '/api/auth/login-email'); assert.equal(result.reloads, 0);

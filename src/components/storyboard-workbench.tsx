@@ -141,7 +141,6 @@ import {
   readVideoTokenPublicPricing,
   resolveVideoTokenBillingConsent,
   videoTokenBudgetTotal,
-  videoTokenRateLabel,
   type VideoTokenBillingRequest,
   type VideoTokenPublicPricing,
   getVideoResolutionCapabilities,
@@ -1654,13 +1653,6 @@ function effectiveVideoCharge(model?: VideoModel, requested = "", duration?: num
   return model.billingUnit === "output_second"
     ? unitPrice * effectiveVideoDuration(model, duration)
     : unitPrice;
-}
-
-function videoResolutionPriceLabel(model: VideoModel, resolution: string, duration: number) {
-  if (model.billingUnit === "token") return videoTokenRateLabel(model, resolution);
-  const charge = effectiveVideoCharge(model, resolution, duration);
-  if (!model.priceReady || !Number.isFinite(charge)) return "价格待配置";
-  return `¥${charge.toFixed(2)}${model.billingUnit === "output_second" ? `/${duration}秒` : "/次"}`;
 }
 
 function videoResolutionDisplayLabel(model: VideoModel | undefined, resolution: string) {
@@ -7104,9 +7096,7 @@ function UserStoryboardWorkbench({
     }
     return success;
   };
-  const referenceImagePrice = storyboardImagePrice(referenceImageModel, referenceImageResolution);
-  const referenceImageSummary = referenceImageModel && !referenceImageSelectionIssue && Number.isFinite(referenceImagePrice)
-    ? `图 ${referenceImageResolution} ¥${referenceImagePrice.toFixed(2)}` : "参考图价格待确认";
+  const referenceImageSummary = referenceImageModel && !referenceImageSelectionIssue ? `参考图 ${referenceImageResolution}` : "请选择可用模型";
   // 只给独立的「角色参考」页面用：那里没有顶部工具栏，需要就地选择模型/清晰度/比例。
   // 工作台内不再渲染这套控件，避免与顶部参数重复。
   const modelControls = <section className="sbw-asset-model-controls" aria-label="参考图生成设置">
@@ -7207,18 +7197,11 @@ function UserStoryboardWorkbench({
                 const brand = resolveModelBrand(displayName, model.display_name, model.name, model.model_name, model.provider) || "generic";
                 const preferredResolution = preferredStoryboardImageResolution(model);
                 const selectionIssue = storyboardImageModelSelectionIssue(model);
-                const preferredPrice = storyboardImagePrice(model, preferredResolution);
                 // Show every tier the catalog actually allows, not just the default,
                 // so a model that supports 1K/2K/4K never looks like a 1K-only model.
                 const resolutionSummary = capabilities.resolutionOptions.length
                   ? capabilities.resolutionOptions.join("/")
                   : preferredResolution;
-                const imagePriceLabel = model.priceReady && Number.isFinite(preferredPrice)
-                  ? `${resolutionSummary} ¥${preferredPrice.toFixed(2)}/张`
-                  : `${resolutionSummary} · 价格待配置`;
-                const imagePriceChip = model.priceReady && Number.isFinite(preferredPrice)
-                  ? `¥${preferredPrice.toFixed(2)}`
-                  : "待配置";
                 return (
                   <button
                     key={model.id}
@@ -7250,9 +7233,7 @@ function UserStoryboardWorkbench({
                       <small className="sbw-model-meta" title={`默认 ${capabilities.defaultResolution} · ${capabilities.referenceCapabilityLabel}`}>
                         <span className="sbw-model-tier">{resolutionSummary}</span>
                         {!compactEditor && <span className="sbw-model-cap">{capabilities.referenceCapabilityLabel}</span>}
-                        <span className={`sbw-model-price${model.priceReady ? "" : " is-pending"}`} title={imagePriceLabel}>
-                          {imagePriceChip}{model.priceReady && <em>/张</em>}
-                        </span>
+
                       </small>
                       {compactEditor && <span className="sbw-model-cap" title={capabilities.referenceCapabilityLabel}>{capabilities.referenceCapabilityLabel}</span>}
                       {showAdminModelIds && (
@@ -7304,18 +7285,7 @@ function UserStoryboardWorkbench({
                 const brand = resolveModelBrand(displayName, model.display_name, model.name, model.id) || "generic";
                 const channelCode = modelChannelCode(model);
                 const channelLabel = channelCode ? `渠道${channelCode}` : "";
-                const defaultDuration = effectiveVideoDuration(model);
                 const preferredResolution = effectiveVideoResolution(model);
-                const defaultCharge = effectiveVideoCharge(model, preferredResolution, defaultDuration);
-                const outputSecondPrice = model.billingUnit === "output_second" && defaultDuration > 0
-                  ? defaultCharge / defaultDuration
-                  : 0;
-                const priceLabel = model.generationReady === false
-                  ? model.billingUnit === "token" ? "Token 计价" : model.priceReady && Number.isFinite(model.pricePerUse)
-                    ? `¥${Number(model.pricePerUse).toFixed(2)}/${model.billingUnit === "output_second" ? "秒" : "次"}` : "—"
-                  : model.billingUnit === "token" ? videoTokenRateLabel(model, preferredResolution) : model.priceReady && Number.isFinite(defaultCharge) && Number.isFinite(outputSecondPrice)
-                  ? `¥${model.billingUnit === "output_second" ? outputSecondPrice.toFixed(2) : defaultCharge.toFixed(2)}/${model.billingUnit === "output_second" ? "秒" : "次"}`
-                  : "—";
                 const isPreferredContractModel = run.videoContract?.modelId === model.id;
                 const selectionTarget = {
                   ratio: isPreferredContractModel ? run.videoContract!.ratio : run.ratio,
@@ -7380,13 +7350,11 @@ function UserStoryboardWorkbench({
                     />
                     <span className="sbw-model-copy">
                       <strong title={fullDisplayName}><span className="sbw-model-name">{displayName}</span></strong>
-                      <small className="sbw-model-meta" title={[channelLabel, priceLabel, videoModelInputHint(model)].filter(Boolean).join(" · ")}>
+                      <small className="sbw-model-meta" title={[channelLabel, videoModelInputHint(model)].filter(Boolean).join(" · ")}>
                         {channelLabel && <span className="sbw-model-channel">{channelLabel}</span>}
                         {model.generationReady !== false && <span className="sbw-model-tier">{videoResolutionDisplayLabel(model, preferredResolution)}</span>}
                         {!compactEditor && inputLabel && <span className="sbw-model-need">{inputLabel}</span>}
-                        <span className={`sbw-model-price${model.priceReady ? "" : " is-pending"}`} title={priceLabel} aria-label={priceLabel}>
-                          {model.billingUnit === "token" ? priceLabel.replace(" · 按实际用量结算", "") : priceLabel}
-                        </span>
+
                       </small>
                       {compactEditor && <span className="sbw-model-need" title={inputLabel}>{inputLabel.split(" · ", 1)[0]}</span>}
                       {showAdminModelIds && (
@@ -7562,7 +7530,7 @@ function UserStoryboardWorkbench({
                 <div className="sbw-ratio-control" aria-label="视频比例">
                   {WORKBENCH_RATIOS.map(value => <button key={value} type="button" aria-pressed={run.ratio === value} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || !activeVideoRatioOptions.includes(value)} title={preferredVideoPresetActive ? `当前预设视频比例 ${run.videoContract!.ratio}` : `视频比例 ${value}`} className={run.ratio === value ? "is-active" : ""} onClick={() => patchRun({ ratio: value })}>{value}</button>)}
                 </div>
-                <select className="sbw-resolution-select" aria-label="视频分辨率" value={activeVideoResolution} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || (activeVideoModel?.resolutionOptions.length || 0) <= 1} title={activeVideoModel?.resolutionOptions.length ? `${videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)} · ${videoResolutionPriceLabel(activeVideoModel, activeVideoResolution, activeVideoDuration)}` : "清晰度由模型自动确定"} onChange={(event) => patchRun({ videoResolution: event.target.value })}>
+                <select className="sbw-resolution-select" aria-label="视频分辨率" value={activeVideoResolution} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || (activeVideoModel?.resolutionOptions.length || 0) <= 1} title={activeVideoModel?.resolutionOptions.length ? `${videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)} · ` : "清晰度由模型自动确定"} onChange={(event) => patchRun({ videoResolution: event.target.value })}>
                   {activeVideoModel?.resolutionOptions.length ? activeVideoModel.resolutionOptions.map((value) => (
                     <option key={value} value={value}>{videoResolutionDisplayLabel(activeVideoModel, value)}</option>
                   )) : <option value={activeVideoResolution}>自动</option>}
@@ -7596,7 +7564,7 @@ function UserStoryboardWorkbench({
                 <div className="sbw-parameter-info-panel">
                   {activeImageRatioIssue && <p role="status" className="sbw-image-ratio-notice">{activeImageRatioIssue}</p>}
                   <p>视频清晰度：{activeVideoModel?.resolutionOptions.length ? videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution) : "由模型自动确定"} · {activeVideoDurationOptions.length <= 1 ? "固定 " : "所选 "}{activeVideoDuration} 秒</p>
-                  {activeVideoModel && <p>{videoResolutionPriceLabel(activeVideoModel, activeVideoResolution, activeVideoDuration)}</p>}
+
                   <VideoDurationBehaviorNotice durationBehavior={activeVideoModel?.durationBehavior} />
                   {activeVideoModel?.billingUnit === "token" && <label className="sbw-token-budget-label">
                     每条视频本次最多自动扣款金额（元）

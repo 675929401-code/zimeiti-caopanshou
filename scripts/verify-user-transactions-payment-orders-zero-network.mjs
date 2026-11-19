@@ -7,7 +7,11 @@ import ts from 'typescript';
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 assert.equal(nodeMajor, 24, 'NODE_MAJOR_VERSION_REQUIRED');
 assert.ok(nodeMinor >= 19, 'NODE_MINIMUM_MINOR_VERSION_REQUIRED');
-const { NextRequest, NextResponse } = createRequire(import.meta.url)('next/server');
+const require = createRequire(import.meta.url);
+require('tsx/cjs');
+const wallet = require('../src/lib/member-wallet-history.ts');
+const publicBilling = require('../src/lib/public-billing-explanation.ts');
+const { NextRequest, NextResponse } = require('next/server');
 const source = readFileSync(new URL('../src/app/api/user/transactions/route.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 const OWNER = '11111111-1111-4111-8111-111111111111';
@@ -16,8 +20,9 @@ const at = day => `2026-10-${String(day).padStart(2, '0')}T12:00:00.000Z`;
 const owned = (id, fields, userId = OWNER) => ({ id, user_id: userId, ...fields });
 const rows = {
   credit_transactions: [
-    owned('credit-recharge', { type: 'recharge', transaction_type: 'recharge', amount: 500, created_at: at(10) }),
+    owned('credit-recharge', { type: 'topup', transaction_type: 'recharge', amount: 500, created_at: at(10) }),
     owned('credit-consume', { type: 'consume', transaction_type: 'consumption', amount: -7, created_at: at(9) }),
+    owned('credit-refund', { type: 'refund', amount: 75, created_at: at(6) }),
     owned('other-credit', { type: 'recharge', amount: 9000, created_at: at(11) }, OTHER),
   ],
   cash_transactions: [
@@ -54,7 +59,9 @@ function fixture({ actorId = OWNER, paymentError = null, paymentThrows = false, 
     not(column, operator, value) { assert.equal(operator, 'like'); this.filters.push({ kind: 'not-like', column, value }); return this; }
     gte(column, value) { this.filters.push({ kind: 'gte', column, value }); return this; }
     lte(column, value) { this.filters.push({ kind: 'lte', column, value }); return this; }
-    order(column, options) { this.ordering = { column, ascending: options.ascending }; return this; }
+    gt(column, value) { this.filters.push({ kind: 'gt', column, value }); return this; }
+    limit(count) { this.maximum = count; return this; }
+    order(column, {ascending = true} = {}) { (this.ordering ??= []).push({column,ascending}); return this; }
     range(from, to) { this.rangeBounds = [from, to]; return this.execute(); }
     single() { return this.execute(true); }
     then(resolve, reject) { return this.execute().then(resolve, reject); }
@@ -72,15 +79,16 @@ function fixture({ actorId = OWNER, paymentError = null, paymentThrows = false, 
       let data = rows[this.table].filter(row => this.filters.every(({ kind, column, value }) => {
         if (kind === 'eq') return row[column] === value;
         if (kind === 'in') return value.includes(row[column]);
+        if (kind === 'gt') return row[column] > value;
         if (kind === 'gte') return row[column] >= value;
         if (kind === 'lte') return row[column] <= value;
         assert.equal(kind, 'not-like'); assert.ok(value.endsWith('%'));
         return row[column] != null && !String(row[column]).startsWith(value.slice(0, -1));
       }));
-      if (this.ordering) {
-        const { column, ascending } = this.ordering;
+      for (const {column,ascending} of [...this.ordering || []].reverse()) {
         data = [...data].sort((a, b) => String(a[column]).localeCompare(String(b[column])) * (ascending ? 1 : -1));
       }
+      if (this.maximum) data = data.slice(0,this.maximum);
       const count = this.exactCount ? data.length : null;
       if (this.rangeBounds) data = data.slice(this.rangeBounds[0], this.rangeBounds[1] + 1);
       const projected = data.map(row => Object.fromEntries(this.columns.map(column => [column, row[column]])));
@@ -89,6 +97,8 @@ function fixture({ actorId = OWNER, paymentError = null, paymentThrows = false, 
   }
   const dependencies = {
     'next/server': { NextResponse },
+    '@/lib/member-wallet-history': wallet,
+    '@/lib/public-billing-explanation': publicBilling,
     '@/lib/auth': { getTokenFromHeaders: headers => headers.get('authorization')?.replace(/^Bearer /u, '') || null, verifyToken: async value => value === 'fixture-valid' ? { userId: actorId } : null },
     '@/storage/database/supabase-client': { getSupabaseAdminClient: () => { clientCalls++; return { from: table => new Query(table) }; } },
   };
@@ -112,9 +122,9 @@ function fixture({ actorId = OWNER, paymentError = null, paymentThrows = false, 
 
 const checks = [];
 const expectedTotals = {
-  'all/all': [2, 2, 2, 3], 'cash/all': [0, 2, 2, 3], 'credits/all': [2, 0, 0, 3],
-  'all/recharge': [1, 1, 0, 3], 'cash/recharge': [0, 1, 0, 3], 'credits/recharge': [1, 0, 0, 3],
-  'all/consume': [1, 1, 1, 0], 'cash/consume': [0, 1, 1, 0], 'credits/consume': [1, 0, 0, 0],
+  'all/all': [3, 3, 2, 3], 'cash/all': [0, 3, 2, 2], 'credits/all': [3, 0, 0, 1],
+  'all/recharge': [1, 1, 0, 3], 'cash/recharge': [0, 1, 0, 2], 'credits/recharge': [1, 0, 0, 1],
+  'all/consume': [1, 2, 0, 0], 'cash/consume': [0, 2, 0, 0], 'credits/consume': [1, 0, 0, 0],
 };
 for (const [scenario, totals] of Object.entries(expectedTotals)) {
   const [type, transactionType] = scenario.split('/');
@@ -127,7 +137,7 @@ for (const [scenario, totals] of Object.entries(expectedTotals)) {
   assert.equal(transactions.length, pagination.total);
   assert.equal(new Set(transactions.map(row => row.id)).size, transactions.length);
   assert.equal(transactions.some(row => row.id.startsWith('other-')), false);
-  assert.equal(transactions.some(row => row.id === 'cash-video'), false);
+  assert.equal(transactions.some(row => row.id === 'cash-video'), type !== 'credits' && transactionType !== 'recharge');
   const times = transactions.map(row => row.createdAt);
   assert.deepEqual(times, [...times].sort().reverse());
   assert.deepEqual(summary, { totalCreditsRecharged: 500, totalCreditsConsumed: 7, creditBalance: 350, totalCashRecharged: 20, totalCashConsumed: 2.85, cashBalance: 10.25 });
@@ -136,8 +146,8 @@ for (const [scenario, totals] of Object.entries(expectedTotals)) {
   if (transactionType !== 'consume') {
     const cash = transactions.find(row => row.id === 'payment-cash');
     const credits = transactions.find(row => row.id === 'payment-credits');
-    assert.equal(cash.amount, 20.5); assert.equal(cash.cashAmount, 20.5); assert.equal(cash.creditsAmount, null);
-    assert.equal(credits.amount, 8); assert.equal(credits.creditsAmount, 800); assert.equal(credits.cashAmount, null);
+    if (type === "credits") assert.equal(cash, undefined); else { assert.equal(cash.amount, 20.5); assert.equal(cash.cashAmount, 20.5); assert.equal(cash.creditsAmount, null); }
+    if (type === "cash") assert.equal(credits, undefined); else { assert.equal(credits.amount, 8); assert.equal(credits.creditsAmount, 800); assert.equal(credits.cashAmount, null); }
     assert.equal(paymentQueries[0].columns.includes('cash_amount'), false);
     assert.equal(JSON.stringify(transactions).includes('unexpected_field'), false);
     assert.equal(JSON.stringify(transactions).includes('fixture-unselected'), false);
@@ -148,14 +158,14 @@ for (const [scenario, totals] of Object.entries(expectedTotals)) {
 const page = fixture();
 const paginated = await page.run('type=credits&transactionType=recharge&page=2&pageSize=1');
 assert.equal(paginated.status, 200);
-assert.deepEqual(paginated.body.data.pagination, { page: 2, pageSize: 1, creditTotal: 1, cashTotal: 0, videoTotal: 0, paymentTotal: 3, total: 4 });
+assert.deepEqual(paginated.body.data.pagination, { page: 2, pageSize: 1, creditTotal: 1, cashTotal: 0, videoTotal: 0, paymentTotal: 1, total: 2 });
 assert.equal(paginated.body.data.transactions.length, 1);
 assert.equal(paginated.body.data.transactions[0].id, 'payment-credits');
 checks.push('exact-total-remains-full-filtered-count-after-pagination');
 
 const dated = fixture();
 const datedResult = await dated.run('type=cash&transactionType=recharge&dateFrom=2026-10-09&dateTo=2026-10-10');
-assert.equal(datedResult.status, 200); assert.equal(datedResult.body.data.pagination.paymentTotal, 2);
+assert.equal(datedResult.status, 200); assert.equal(datedResult.body.data.pagination.paymentTotal, 1);
 assert.equal(datedResult.body.data.transactions.some(row => row.id === 'payment-old'), false);
 const paymentDateFilters = dated.queries.find(query => query.table === 'payment_orders').filters;
 assert.ok(paymentDateFilters.some(filter => filter.kind === 'gte' && filter.column === 'created_at' && filter.value === '2026-10-09'));
@@ -187,5 +197,20 @@ for (const token of [null, 'fixture-invalid']) {
   assert.equal(result.status, 401); assert.equal(test.clientCalls(), 0); assert.equal(test.queries.length, 0);
   checks.push(token ? 'invalid-token-no-database-access' : 'missing-token-no-database-access');
 }
+for (const pageSize of [1,2,4]) {
+  const expected = (await fixture().run("type=all")).body.data.transactions.map(row => row.id);
+  const pages = [];
+  for(let page = 1; pages.length < expected.length; page++) {
+    const result = await fixture().run(`type=all&page=${page}&pageSize=${pageSize}`);
+    pages.push(...result.body.data.transactions.map(row => row.id));
+  }
+  assert.deepEqual(pages,expected);
+}
+const extra = Array.from({length:1005},(_,i) => owned("extra-"+String(i).padStart(5,"0"),{type:"consumption",amount:-1,created_at:at(5)}));
+rows.credit_transactions.push(...extra);
+const long = await fixture().run("type=credits&transactionType=consume&page=101&pageSize=10");
+assert.equal(long.body.data.summary.totalCreditsConsumed,1012);
+assert.equal(long.body.data.transactions.length,6);
+checks.push("cross-source-pagination-and-beyond-default-db-limit");
 assert.equal(networkCalls, 0);
 console.log(JSON.stringify({ kind: 'actual-user-transactions-payment-orders-route-zero-network', status: 'PASS', checks: checks.length, scenarios: checks, networkCalls, dbConnections: 0, browserRuns: 0, paidPosts: 0 }));

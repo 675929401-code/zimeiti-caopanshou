@@ -73,6 +73,14 @@ interface UserAssets {
   recentCashTransactions: CashTxRecord[];
 }
 
+function validUserAssets(value: unknown): value is UserAssets {
+  if (!value || typeof value !== "object") return false;
+  const data = value as UserAssets;
+  return [data.credits,data.cash].every(wallet => wallet &&
+    [wallet.balance,wallet.totalRecharged,wallet.totalConsumed].every(Number.isFinite)) &&
+    Array.isArray(data.recentCreditTransactions) && Array.isArray(data.recentCashTransactions);
+}
+
 interface CreditTxRecord {
   id: string;
   type: string;
@@ -200,6 +208,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
   }, []);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [assetReadFailed, setAssetReadFailed] = useState(false);
   const [assets, setAssets] = useState<UserAssets | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,12 +262,11 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
         setCashBalance(creditsData.cashBalance ?? 0);
         setTransactions(creditsData.transactions || []);
       }
-      if (assetsRes.ok) {
-        const assetsData = await assetsRes.json();
+      const assetsData: unknown = assetsRes.ok ? await assetsRes.json() : null;
         if (!isCurrent()) return;
-        setAssets(assetsData);
-      }
-    } catch {}
+        if (validUserAssets(assetsData)) { setAssets(assetsData); setAssetReadFailed(false); }
+        else { setAssets(null); setAssetReadFailed(true); }
+    } catch { if (isCurrent()) setAssetReadFailed(true); }
   }, [beginRead, scope]);
 
   // 充值记录相关
@@ -274,10 +282,11 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
     };
     pagination: { page: number; pageSize: number; total: number; creditTotal: number; cashTotal: number; videoTotal: number; paymentTotal: number };
   } | null>(null);
+  const [txError, setTxError] = useState(false);
   const [txLoading, setTxLoading] = useState(false);
   const [txPage, setTxPage] = useState(1);
   const [txType, setTxType] = useState<"all" | "credits" | "cash">("all");
-  const [txDirection, setTxDirection] = useState<"recharge" | "consume">("recharge");
+  const [txDirection, setTxDirection] = useState<"all" | "recharge" | "consume">("recharge");
   const txRequestRef = useRef(0);
 
   // 修改密码
@@ -401,12 +410,11 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
       try {
         const assetsRes = await fetch("/api/user/assets", { headers });
         if (!isCurrent()) return;
-        if (assetsRes.ok) {
-          const assetsData = await assetsRes.json();
-          if (!isCurrent()) return;
-          setAssets(assetsData);
-        }
-      } catch {}
+        const assetsData: unknown = assetsRes.ok ? await assetsRes.json() : null;
+        if (!isCurrent()) return;
+        if (validUserAssets(assetsData)) { setAssets(assetsData); setAssetReadFailed(false); }
+        else { setAssets(null); setAssetReadFailed(true); }
+      } catch { if (isCurrent()) setAssetReadFailed(true); }
 
       if (announceRes.ok) {
         const announceData = await announceRes.json();
@@ -427,6 +435,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
     if (!isCurrent()) return;
     const requestId = ++txRequestRef.current;
     try {
+      setTxError(false);
       setTxLoading(true);
       const token = getToken();
       const params = new URLSearchParams({
@@ -439,8 +448,10 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!isCurrent()) return;
-      if (res.ok) {
+      if (!res.ok) throw new Error("TRANSACTIONS_UNAVAILABLE");
+      {
         const data = await res.json();
+        if (!data.success) throw new Error("TRANSACTIONS_UNAVAILABLE");
         if (!isCurrent()) return;
         if (requestId !== txRequestRef.current) return;
         if (data.success) {
@@ -457,7 +468,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
       }
     } catch (err) {
       if (!isCurrent()) return;
-      console.error("加载交易记录失败:", err);
+      if (requestId === txRequestRef.current) setTxError(true);
     } finally {
       if (isCurrent() && requestId === txRequestRef.current) setTxLoading(false);
     }
@@ -1369,7 +1380,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                       .slice(0, 8)
                       .map((t) => {
-                        const isRecharge = t.type === "recharge" || t.type === "topup";
+                        const isRecharge = t.type === "recharge" || t.type === "topup" || t.type === "refund" || (t.type === "admin_adjust" && Number(t.amount) > 0);
                         const isCredits = t.assetType === "credits";
                         const amount = Math.abs(Number(t.amount));
                         return (
@@ -1385,7 +1396,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                                   <p className="text-[var(--foreground)] text-sm">
                                     {isCredits && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5" />}
                                     {!isCredits && <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500 mr-1.5" />}
-                                    {displayText(t.description, isRecharge ? "充值到账" : isCredits ? "积分消耗" : "现金消耗")}
+                                    {displayText(t.description, t.type === "refund" ? "退款到账" : isRecharge ? "充值到账" : isCredits ? "积分消耗" : "现金消耗")}
                                   </p>
                                   <p className="text-[var(--text-secondary)] text-xs">{formatTime(t.created_at)}</p>
                                 </div>
@@ -1610,6 +1621,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
           </div>
         )}
 
+        {assetReadFailed && (activeTab === "overview" || activeTab === "records") && <div role="status" className="mb-3 text-sm">资产概览暂时无法读取。<Button variant="link" onClick={() => void refreshAssets()}>刷新资产</Button></div>}
         {/* 充值记录 */}
         {activeTab === "records" && (
           <div className="space-y-4">
@@ -1671,6 +1683,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex bg-[var(--background)] rounded-lg p-0.5" aria-label="记录类型">
                     {([
+                      { value: "all", label: "全部记录" },
                       { value: "recharge", label: "充值记录" },
                       { value: "consume", label: "消费记录" },
                     ] as const).map(opt => (
@@ -1708,15 +1721,16 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
             {/* 交易列表 */}
             <Card className="bg-[var(--card)] border-[var(--border)]">
               <CardContent className="p-4">
-                {txLoading && !txData ? (
+                {txError && <div role="alert" className="py-3">交易记录暂时无法读取。<Button variant="link" onClick={() => loadTransactions(txData ? txPage + 1 : 1, Boolean(txData))}>重新加载</Button></div>}
+                {txError && !txData ? null : txLoading && !txData ? (
                   <div className="text-center py-12 text-[var(--foreground)]">加载中...</div>
                 ) : !txData || txData.transactions.length === 0 ? (
-                  <div className="text-center py-12 text-[var(--foreground)]">暂无{txDirection === "consume" ? "消费" : "充值"}记录</div>
+                  <div className="text-center py-12 text-[var(--foreground)]">暂无{txDirection === "consume" ? "消费" : txDirection === "recharge" ? "充值" : "交易"}记录</div>
                 ) : (
                   <div className="space-y-2">
                     {txData.transactions.map((t: any) => {
                       // 确定图标和颜色
-                      const isRecharge = t.type === "recharge" || t.type === "topup" || t.type === "admin_adjust" || t.category === "payment";
+                      const isRecharge = t.type === "recharge" || t.type === "topup" || t.type === "refund" || (t.type === "admin_adjust" && Number(t.amount) > 0);
                       const isCredits = t.category === "credits";
                       const isVideo = t.category === "video";
                       const isPayment = t.category === "payment";
@@ -1739,7 +1753,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                         }
                         if (isPayment) {
                           const payType = t.type === "credits" ? "积分" : "现金";
-                          const statusText = t.status === "paid" ? "已支付" : t.status === "expired" ? "已过期" : "待支付";
+                          const statusText = t.status === "paid" ? "已支付" : t.status === "expired" ? "已过期" : t.status === "refunded" ? "已退款" : t.status === "failed" ? "失败" : "待支付";
                           return `在线充值${payType} - ${statusText}`;
                         }
                         return displayText(t.description, isRecharge ? "充值" : "消耗");
@@ -1749,20 +1763,17 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                       const getAmountDisplay = () => {
                         if (isVideo) {
                           if (t.status === "completed") {
-                            return { text: `-¥${amount.toFixed(2)}`, className: "text-red-400" };
+                            return { text: "任务已完成", className: "text-[var(--foreground)]" };
                           }
                           if (t.status === "failed") {
-                            return { text: "未扣费", className: "text-[var(--foreground)]" };
+                            return { text: "任务失败", className: "text-[var(--foreground)]" };
                           }
-                          return { text: "待扣费", className: "text-yellow-400" };
+                          return { text: "任务处理中", className: "text-yellow-400" };
                         }
                         if (isPayment) {
-                          if (t.status === "paid") {
-                            const payAmount = t.creditsAmount || t.cashAmount || amount;
-                            return { text: `+${isCredits ? payAmount : `¥${Number(payAmount).toFixed(2)}`}`, className: "text-green-400" };
-                          }
                           return { text: `¥${amount.toFixed(2)}`, className: "text-[var(--foreground)]" };
                         }
+                        if (t.type === "refund") return { text: `退回 ${isCredits ? amount + " 积分" : "¥" + amount.toFixed(2)}`, className: "text-green-400" };
                         if (isRecharge) {
                           return { text: `+${isCredits ? amount : `¥${amount.toFixed(2)}`}`, className: "text-green-400" };
                         }
@@ -1812,6 +1823,7 @@ function ProfilePageContent({ scope }: { scope: ClientAccountScope }) {
                           {isPayment && (
                             <div className="mt-2 pt-2 border-t border-[var(--border)] flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]">
                               {t.tradeOrderId && <span>订单号: {t.tradeOrderId}</span>}
+                              {isPayment && t.tradeOrderId && <a href={`/payment/result?order=${encodeURIComponent(t.tradeOrderId)}`} className="underline">核对到账状态</a>}
                               {t.paidAt && <span>支付时间: {formatTime(t.paidAt)}</span>}
                             </div>
                           )}

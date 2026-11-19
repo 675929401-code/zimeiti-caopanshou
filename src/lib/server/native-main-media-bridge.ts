@@ -20,6 +20,7 @@ import { isBlockedIpAddress } from "@/lib/safe-fetch";
 import { assertNativeAccess } from "./native-operations-service";
 import { isPublishingProviderUploadUrl } from "./publishing-provider";
 import { PublishingError } from "./publishing-service";
+import type { PublishingProviderEnvironment } from "@/lib/publishing-regions";
 import type { PublishingV3Result } from "./publishing-v3-service";
 
 type DB = ReturnType<typeof getSupabase>;
@@ -28,6 +29,7 @@ type Phase = NativeMainMediaBridgePhaseDto["phase"];
 export interface NativeMainMediaBridgePrivateContext { bridgeId: string; phase: "sign" | "confirm"; dispatchId: string }
 export interface NativeMainMediaBridgeOptions {
   currentNamespace: string | (() => string | Promise<string>);
+  uploadEnvironment?: PublishingProviderEnvironment;
   headers?: Headers;
   cookies?: { get(name: string): string | undefined };
   signal?: AbortSignal;
@@ -156,7 +158,7 @@ export async function prepareNativeMainMediaBridge(user: AuthUser, db: DB, raw: 
   let bridge = await lookup(user, db, { requestKey: input.requestKey }, initialNamespace);
   if (bridge && (!same(bridge.reference, input.reference) || bridge.mediaId !== input.mediaId)) return refuse("NATIVE_MAIN_BRIDGE_IDEMPOTENCY_CONFLICT", "原请求标识已用于不同素材，请核对原记录", 409, bridge.id);
   const observe = async (id: string) => NativeMainMediaBridgeDtoSchema.parse((await rpc(db, user, true, { action: "reconcile", requestKey: `native-bridge:${id}:observe:${randomUUID()}`, currentNamespace: await namespace(options), bridgeId: id })).bridge);
-  const v3 = options.v3 ?? (async (action, context) => (await import("./publishing-v3-service")).mutatePublishingV3(user, db, action, options.cookies ?? { get: () => undefined }, context));
+  const v3 = options.v3 ?? (async (action, context) => (await import("./publishing-v3-service")).mutatePublishingV3(user, db, action, options.cookies ?? { get: () => undefined }, context, options.uploadEnvironment));
   if (bridge && (bridge.state !== "prepared" || bridge.phase !== null || !bridge.connectionCurrent)) {
     if (bridge.state !== "ready") bridge = await observe(bridge.id);
     // A persisted PUT receipt can authorize the first confirmation without the

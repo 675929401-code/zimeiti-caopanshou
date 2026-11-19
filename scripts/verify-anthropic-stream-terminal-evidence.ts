@@ -129,11 +129,11 @@ async function main() {
   const repeated = await run(start({ input_tokens: 9, cache_read_input_tokens: 2 }) + text("Repeated")
     + delta(undefined, { output_tokens: 5 }) + delta(undefined, { output_tokens: 5 }) + delta("end_turn", { output_tokens: 8 }) + stop);
   check("repeated cumulative usage uses max without addition", repeated.terminals[0].usage, { prompt_tokens: 11, completion_tokens: 8, cached_tokens: 2 });
-  check("one callback per received usage object remains", repeated.callbacks.usages.length, 4);
+  check("partial input alone cannot be used as a complete receipt", repeated.callbacks.usages.length, 3);
   check("terminal evidence does not add another callback", repeated.callbacks.usages.at(-1), repeated.terminals[0].usage);
 
   const eof = await run(start({ input_tokens: 5 }) + text("Partial") + delta("end_turn", { output_tokens: 4 }));
-  check("pure EOF still reports interruption", eof.frames.at(-1)?.code, "LLM_STREAM_INTERRUPTED");
+  check("pure EOF leaves the upstream outcome unknown", eof.frames.at(-1)?.code, "LLM_UPSTREAM_RESULT_UNKNOWN");
   check("reason alone does not turn EOF into successful evidence", eof.terminals.length, 0);
   check("pure EOF still has no DONE", eof.doneCount, 0);
   check("pure EOF does not invoke completion callback", eof.callbacks.done, 0);

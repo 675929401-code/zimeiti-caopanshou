@@ -11,7 +11,7 @@ export function targetMedia(work: PublishingStudioController, account?: StudioAc
 export function scheduleExplanation(account: StudioAccount) { return account.platform === "douyin" && account.kind !== "browser" ? "到期进入官方接力，仍需手机确认" : account.platform === "wxSph" ? "浏览器先提交，再由平台按计划处理" : account.kind === "browser" ? "浏览器计划到期后需在本机继续执行" : "按官方通道的排期能力处理"; }
 export function timezoneLabel() { return Intl.DateTimeFormat().resolvedOptions().timeZone || "设备本地时区"; }
 
-const HISTORY_STATE_LABELS: Record<string, string> = { success: "平台报告成功", succeeded: "平台报告成功", published: "平台报告已发布", completed: "已完成", failed: "发布未完成", rejected: "未通过", pending: "已受理，待核对", waiting: "等待官方处理", queued: "队列中", processing: "发布中", publishing: "平台处理中", running: "发布中", dispatching: "提交中", unknown: "结果待核对", awaiting_verification: "作品待核对", browser_reported: "浏览器报告成功，平台待核对", awaiting_user_action: "等待手机接力确认", requires_user_action: "等待平台确认", scheduled: "等待计划时间", planned: "浏览器计划待执行", platform_scheduled: "平台定时状态待核验", cancelled: "任务已取消", canceled: "任务已取消", accepted: "平台已受理" };
+const HISTORY_STATE_LABELS: Record<string, string> = { success: "平台报告成功", succeeded: "平台报告成功", published: "平台报告已发布", completed: "已完成", failed: "发布未完成", failed_known: "发布失败", blocked: "未执行", rejected: "未通过", pending: "已受理，待核对", waiting: "等待官方处理", queued: "队列中", processing: "发布中", publishing: "平台处理中", running: "发布中", dispatching: "提交中", unknown: "结果待核对", awaiting_verification: "作品待核对", browser_reported: "浏览器报告成功，平台待核对", awaiting_user_action: "等待手机接力确认", requires_user_action: "等待平台确认", scheduled: "等待计划时间", planned: "浏览器计划待执行", platform_scheduled: "平台定时状态待核验", cancelled: "任务已取消", canceled: "任务已取消", accepted: "平台已受理" };
 export function historyStateLabel(state: string, hasWorkLink = false) {
   if (state === "published") return hasWorkLink ? "平台报告已发布" : "平台状态待作品链接核验";
   return HISTORY_STATE_LABELS[state] || "状态待核对";
@@ -20,9 +20,9 @@ export function historyStateLabel(state: string, hasWorkLink = false) {
 /** 发布记录分组：进行中 / 成功 / 失败 / 待核对。 */
 export type StudioHistoryFilter = "all" | "progress" | "success" | "failed" | "verify";
 export function historyStateGroup(state: string): Exclude<StudioHistoryFilter, "all"> {
-  if (["pending", "waiting", "queued", "processing", "publishing", "running", "dispatching", "scheduled", "planned", "platform_scheduled", "awaiting_user_action", "requires_user_action", "accepted"].includes(state)) return "progress";
+  if (["pending", "waiting", "queued", "processing", "publishing", "running", "dispatching", "scheduled", "planned", "platform_scheduled", "accepted"].includes(state)) return "progress";
   if (["success", "succeeded", "published", "completed"].includes(state)) return "success";
-  if (["failed", "rejected", "cancelled", "canceled"].includes(state)) return "failed";
+  if (["failed", "failed_known", "blocked", "rejected", "cancelled", "canceled"].includes(state)) return "failed";
   return "verify";
 }
 

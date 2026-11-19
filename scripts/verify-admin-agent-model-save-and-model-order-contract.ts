@@ -93,6 +93,10 @@ async function verifyUpsertSnapshot(table: string, options: { noCurrent?: boolea
   const fixtureModule = { exports: undefined as unknown as (input: object, entry: ModelPoolEntry, credentials: unknown[]) => Promise<StagedFixture> };
   runInNewContext(snapshotProgram, {
     module: fixtureModule, applyModelPoolCompatibilityMutation,
+    imageCreate: false, legacyId: "image-fixture", existing: { id: "image-fixture" },
+    entryFromLegacyRow: () => publishedSnapshot.models.find(model => model.id === "image-fixture"),
+    mergePublishedImageEdit: (_published: unknown, _physical: unknown, submitted: ModelPoolEntry) => submitted,
+    credentialRef: () => "secret://fixture/new-binding",
     string: (value: unknown) => String(value ?? "").trim(), PlatformConfigurationError: Error,
     readCurrentPlatformConfiguration: async () => options.noCurrent ? null : ({
       snapshot: options.unbound ? { ...publishedSnapshot, models: publishedSnapshot.models.map(withoutCredential) } : publishedSnapshot,

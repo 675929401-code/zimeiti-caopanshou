@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { queryOrderStatus } from "@/lib/xunhupay";
+import { queryOrderStatus, inspectXunhuOrder, XunhuOrderNeedsReview } from "@/lib/xunhupay";
 import { fulfillPaymentOrder } from "@/lib/payment-fulfillment";
 import {
   appendAdminGovernanceAudit,
@@ -66,6 +66,29 @@ export async function GET(request: NextRequest) {
   if (!authorization.ok) return noStore(authorization.response);
 
   try {
+    const orderId = request.nextUrl.searchParams.get("order");
+    if (orderId !== null) {
+      if (!/^[a-zA-Z0-9_-]{1,128}$/u.test(orderId)) return noStore(NextResponse.json({error: "订单号无效"}, {status: 400}));
+      const database = getSupabaseAdminClient();
+      const {data: order, error} = await database.from("payment_orders").select("trade_order_id,payment_provider,user_id,type,amount,credits_amount,status")
+        .eq("trade_order_id", orderId).maybeSingle();
+      if (error) throw error;
+      if (!order) return noStore(NextResponse.json({error: "订单不存在"}, {status: 404}));
+      const channel = order.payment_provider === "xunhupay" ? await inspectXunhuOrder(orderId, Number(order.amount)).catch(() => null) : null;
+      let legacy: "matched" | "missing" | "unavailable" | "conflict" = "unavailable";
+      if (order.type === "cash" || order.type === "credits") {
+        let query = database.from(order.type === "cash" ? "cash_transactions" : "credit_transactions")
+          .select("amount,type").eq("user_id", order.user_id).in("type", ["topup","recharge"]);
+        query = order.type === "cash" ? query.in("reference_id",[orderId, "payment:"+orderId]) :
+          query.or(["trade_order_id","order_id","reference_id"].map(key => "metadata->>"+key+".eq."+orderId).join(","));
+        const result = await query.limit(2);
+        if (!result.error && result.data) {
+          const expected = Number(order.type === "cash" ? order.amount : order.credits_amount);
+          legacy = !result.data.length ? "missing" : result.data.length === 1 && Number(result.data[0].amount) === expected ? "matched" : "conflict";
+        }
+      }
+      return noStore(NextResponse.json({orderId, channel, legacy, writePerformed: false}));
+    }
     const [xunhu, epay] = await Promise.all([
       readCandidates("xunhupay", DISCOVERY_LIMIT_PER_PROVIDER),
       readCandidates("epay", DISCOVERY_LIMIT_PER_PROVIDER),
@@ -209,7 +232,7 @@ export async function POST(request: NextRequest) {
         const providerTradeOrderId = confirmation.tradeOrderId;
         const providerTransactionId = confirmation.transactionId?.trim() || "";
         const evidenceComplete = Number.isFinite(paidAmount) && paidAmount > 0
-          && Number.isFinite(localAmount) && Math.round(paidAmount * 100) === Math.round(localAmount * 100)
+          && Number.isFinite(localAmount) && paidAmount === localAmount
           && providerTradeOrderId === order.trade_order_id
           && Boolean(providerTransactionId);
         if (!evidenceComplete) {
@@ -233,7 +256,12 @@ export async function POST(request: NextRequest) {
           unresolved += 1;
           outcomes.push({ orderRef, outcome: "fulfillment_rejected" });
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof XunhuOrderNeedsReview) {
+          unresolved += 1;
+          outcomes.push({orderRef, outcome: "provider_receipt_requires_review"});
+          continue;
+        }
         providerQueryErrors += 1;
         unresolved += 1;
         outcomes.push({ orderRef, outcome: "provider_query_error" });

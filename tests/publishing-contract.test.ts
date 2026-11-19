@@ -37,7 +37,7 @@ test("commercial platform eligibility covers the native catalog without widening
 });
 test("reading existing purchased rights preserves their exact platform scope", () => {
   const entitlement = { id, purchaseId: id, planId: id, planVersion: 1, planName: "原套餐", quota: 10, used: 2, expiresAt: "2026-12-01T00:00:00Z", platforms: ["xhs"] };
-  assert.deepEqual(PublishingEntitlementSchema.parse(entitlement), entitlement);
+  assert.deepEqual(PublishingEntitlementSchema.parse(entitlement), { ...entitlement, source: "purchase" });
   const snapshot = PublishingCenterSchema.parse({ config: PUBLISHING_DEFAULT_PUBLIC_CONFIG, plans: [], entitlements: [entitlement], purchases: [], accounts: [], drafts: [], tasks: [], walletCash: 0, schemaReady: true, access: { allowed: true, code: "PUBLISH_ACCESS_READY", message: "" } });
   assert.deepEqual(snapshot.entitlements[0].platforms, ["xhs"]);
   assert.equal(snapshot.config.executionEnabled, false);

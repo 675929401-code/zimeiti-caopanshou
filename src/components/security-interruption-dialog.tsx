@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ShieldAlert } from "lucide-react";
+import { KeyRound, ShieldAlert } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
+import { SESSION_ENDED_REASON, UNAVAILABLE_ACCOUNT_MESSAGES } from "@/lib/auth-session-notice";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   APP_DIALOG_PRIORITY,
@@ -58,13 +59,14 @@ export function SecurityInterruptionDialog() {
 
   const active = useMemo(() => {
     if (forcedLogoutReason) {
+      const accountUnavailable = Object.values(UNAVAILABLE_ACCOUNT_MESSAGES).some(message => message === forcedLogoutReason);
+      const standardExpiry = forcedLogoutReason === SESSION_ENDED_REASON || forcedLogoutReason === "登录状态无效或已过期";
       return {
         owner: "forced-logout" as const,
-        title: "登录状态已失效",
-        message: forcedLogoutReason,
-        description: "当前会话已被服务器撤销。请确认后返回主页重新登录。",
-        actionLabel: "返回主页",
-        id: "forced-logout",
+        title: accountUnavailable ? "账号暂不可用" : "登录已结束",
+        description: standardExpiry ? "重新登录后即可继续使用工作台。" : forcedLogoutReason,
+        actionLabel: accountUnavailable ? "返回主页" : "重新登录",
+        destination: accountUnavailable ? undefined : "/login" as const,
       };
     }
     if (!securityNotice) return null;
@@ -93,7 +95,12 @@ export function SecurityInterruptionDialog() {
     releaseAppDialog(active.owner);
     setClaimedOwner(null);
     if (active.owner === "forced-logout") {
-      clearForcedLogout();
+      if (active.destination === "/login") {
+        // This notice is shown after the previous session has been cleared.
+        window.location.replace(active.destination);
+      } else {
+        clearForcedLogout();
+      }
       return;
     }
     setSecurityNotice(null);
@@ -104,6 +111,31 @@ export function SecurityInterruptionDialog() {
 
   const open = Boolean(active && claimedOwner === active.owner && currentAppDialogOwner() === active.owner);
   if (!active) return null;
+
+  if (active.owner === "forced-logout") {
+    return (
+      <Dialog open={open} onOpenChange={() => undefined}>
+        <DialogContent
+          data-testid="security-interruption-dialog"
+          showCloseButton={false}
+          className="session-expiry-dialog sm:max-w-[420px] gap-6 p-5 sm:p-7"
+        >
+          <div className="flex items-start gap-4">
+            <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--dialog-info-bg)] text-[var(--dialog-info-fg)]">
+              <KeyRound className="size-5" />
+            </span>
+            <div className="min-w-0 pt-0.5">
+              <DialogTitle>{active.title}</DialogTitle>
+              <DialogDescription className="mt-1.5">{active.description}</DialogDescription>
+            </div>
+          </div>
+          <button type="button" onClick={acknowledge} className="session-expiry-action min-h-11 w-full px-6 text-sm font-semibold sm:w-auto sm:justify-self-end">
+            {active.actionLabel}
+          </button>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={() => undefined}>

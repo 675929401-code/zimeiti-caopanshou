@@ -249,7 +249,7 @@ function modelAvailable(model: PublicModel): boolean {
 
 function modelLabel(model: PublicModel): string {
   const variant = model.variantLabel ? ` · ${model.variantLabel}` : "";
-  return `${model.displayName}${variant} · 报价 ${model.publicPrice.toFixed(2)}`;
+  return `${model.displayName}${variant}`;
 }
 
 function modelResolutionOptions(model: PublicModel | null): string[] {

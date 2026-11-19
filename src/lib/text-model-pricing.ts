@@ -1,6 +1,25 @@
 import type { BillingConfig } from "@/lib/billing";
 import type { PublicModelCapability } from "@/lib/public-model-dto";
 
+/** Operators enter cost markup. Stored prices retain their gross-margin convention. */
+export function marginFromCostMarkup(markup: number): number {
+  return 100 * markup / (100 + markup);
+}
+
+export function costMarkupFromMargin(margin: number): number {
+  return 100 * margin / (100 - margin);
+}
+
+export function billableCacheReadRate(inputRate: number, cacheReadRate: number): number {
+  return Math.min(inputRate, cacheReadRate);
+}
+
+export function effectiveTokenRoundingUnit(config: BillingConfig): number {
+  return config.tokenRoundingEnabled && config.tokenRoundingUnit > 0
+    ? Math.max(config.tokenRoundingMin, Math.min(config.tokenRoundingMax, config.tokenRoundingUnit))
+    : 0;
+}
+
 export interface TextModelTokenPricing {
   inputCostPerMillion: number;
   outputCostPerMillion: number;

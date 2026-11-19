@@ -3,19 +3,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { detectPublishingPlugin, PublishingPluginError } from "@/lib/publishing-plugin";
 
-export type PublishingPluginState = "checking" | "present" | "missing" | "unauthorized";
+export type PublishingPluginState = "checking" | "present" | "missing" | "unauthorized" | "incompatible";
+
+export const publishingPluginSetupHints = {
+  checking: "正在检测当前浏览器是否已给本站授权。",
+  missing: "请在当前 Chrome 或 Edge 中安装并启用插件。",
+  unauthorized: "打开扩展，选择「仅授权」，添加当前工作台的网址。",
+  incompatible: "插件没有正常响应。请更新或重新启用扩展。",
+} satisfies Record<Exclude<PublishingPluginState, "present">, string>;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 /** One detection owner for the account page and the sidebar status. */
 export function usePublishingPlugin() {
   const [state, setState] = useState<PublishingPluginState>("checking");
-  const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const [version, setVersion] = useState<string | null>(null);
   const mounted = useRef(true);
   const sequence = useRef(0);
   const check = useCallback(async () => {
     const current = ++sequence.current;
     setState("checking");
+    setVersion(null);
     // The extension injects Web API after document_idle; a single immediate
     // probe can miss a freshly authorized page. Retry briefly, then report a
     // stable result instead of silently flickering back to "未安装".
@@ -24,20 +32,19 @@ export function usePublishingPlugin() {
       if (attempt > 0) await sleep(250 * attempt);
       if (!mounted.current || sequence.current !== current) return;
       try {
-        await detectPublishingPlugin();
+        const result = await detectPublishingPlugin();
         if (!mounted.current || sequence.current !== current) return;
+        setVersion(result.version);
         setState("present");
-        setCheckedAt(Date.now());
         return;
       } catch (reason) {
         lastReason = reason;
-        if (reason instanceof PublishingPluginError && !["not_installed", "invalid_plugin"].includes(reason.code)) break;
+        if (reason instanceof PublishingPluginError && reason.code !== "not_installed") break;
       }
     }
     if (!mounted.current || sequence.current !== current) return;
-    const code = lastReason instanceof PublishingPluginError ? lastReason.code : "not_installed";
-    setState(code === "not_authorized" ? "unauthorized" : "missing");
-    setCheckedAt(Date.now());
+    const code = lastReason instanceof PublishingPluginError ? lastReason.code : "invalid_plugin";
+    setState(code === "not_authorized" ? "unauthorized" : code === "not_installed" ? "missing" : "incompatible");
   }, []);
   useEffect(() => {
     mounted.current = true;
@@ -52,5 +59,7 @@ export function usePublishingPlugin() {
       document.removeEventListener("visibilitychange", recheck);
     };
   }, [check]);
-  return { state, check, checkedAt };
+  return { state, check, version };
 }
+
+export type PublishingPluginControl = ReturnType<typeof usePublishingPlugin>;

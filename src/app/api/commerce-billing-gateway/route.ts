@@ -1,3 +1,4 @@
+import { BillingCatalogRequest } from "@/lib/server/member-model-catalog";
 import {NextRequest,NextResponse} from 'next/server';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -32,7 +33,7 @@ async function authoritativeModel(request:Request,kind:Kind,modelId:string):Prom
   const local=get<Model>('models',modelId,'system');
   if(process.env.SHARED_CONFIGURATION_ENABLED!=='1'&&local?.enabled&&local.kind===kind)return {...local,secret:undefined};
   const pathname=kind==='image'?'/api/cover-models?surface=commerce-agent':kind==='video'?'/api/video/models?surface=commerce-agent':'/api/llm-models';
-  const catalogRequest=new Request(new URL(pathname,request.url));
+  const catalogRequest=new BillingCatalogRequest(new URL(pathname,request.url));
   const response=await (kind==='image'?imageCatalog(catalogRequest):kind==='video'?videoCatalog(catalogRequest):textCatalog(catalogRequest));
   const payload=await response.json() as {models?:Record<string,unknown>[]};
   const row=payload.models?.find(value=>value.id===modelId);

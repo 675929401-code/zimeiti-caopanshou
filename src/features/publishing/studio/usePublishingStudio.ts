@@ -1,5 +1,6 @@
 'use client'
 
+import { subscribePaymentWallet } from '@/lib/payment-wallet-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { NativePreparedPublishSchema, nativePreparePlanCanonical, type NativePreparedPublish, type NativePreparePublish } from '@/lib/native-operations-contract'
@@ -18,12 +19,13 @@ import { confirmNativeOfficialMainMedia } from './native-media-bridge-client'
 import { readNativeUnclaimedAccountIds, executeNativePublishing, executeNativeScheduledPublish, prepareNativePublishing, readNativePending, recoverNativePublish, subscribeNativePending } from './native-publishing'
 import { isNativeOAuthPlatform, readNativeOAuthSession, safeNativeAuthorizationUrl, selectNativeOAuth, startNativeOAuth } from './native-oauth'
 import { selectNativeAuthorization, startNativeAuthorization } from './native-auth'
-import { projectStudioHistory, projectStudioGenericRecord, readStudioHistory, readStudioHistoryPage, readStudioImport, readStudioWorkspace, studioRequest } from './studio-api'
-import { allDraftMedia, assertStudioPreflight, copyStudioDraft, effectiveStudioTargetContent, emptyStudioDraft, freezeStudioDraft, materializeStudioDraft, readStudioMedia, studioContentHash, studioPlanItems, targetStudioMedia } from './studio-draft'
+import { projectStudioHistory, projectStudioGenericRecord, readStudioHistory, readStudioHistoryPage, readCompleteStudioHistoryRange, readStudioImport, readStudioWorkspace, studioRequest } from './studio-api'
+import { allDraftMedia, assertStudioPreflight, scopeStudioDraft, copyStudioDraft, effectiveStudioTargetContent, emptyStudioDraft, freezeStudioDraft, materializeStudioDraft, readStudioMedia, studioContentHash, studioPlanItems, targetStudioMedia } from './studio-draft'
 import { restoreStudioStoredDraft, restoreStudioLegacyDraft, saveStudioDraft } from './studio-save'
 import { reselectStudioPlanFiles } from './studio-plan-recovery'
 import { completeStudioGeneric, readStudioGenericOriginalDraft, observeStudioGeneric, executeStudioGeneric, prepareStudioGeneric, readStudioGenericPending } from './studio-generic'
-import { PublishingGenericMutationSchema, type PublishingGenericMutation } from '@/lib/publishing-generic-contract'
+import { groupStudioPublishingAccounts, studioTargetBlock } from './studio-routing'
+import { PublishingGenericMutationSchema } from '@/lib/publishing-generic-contract'
 import { buildStudioBrowserLocalPlan, prepareStudioBrowserLocal, readBrowserLocalPending, recoverBrowserLocalPending, completeBrowserLocalPlan, subscribeBrowserLocalPending } from './studio-browser-local'
 import { prepareStudioLegacyPlan, readStudioLegacyPending, recoverStudioLegacyPending, completeStudioLegacyPlan, subscribeStudioLegacyPending, verifyStudioLegacyPrepared } from './studio-legacy-plan'
 import type { PublishingStudioController, StudioAccount, StudioAuthorization, StudioBridgeConfirmation, StudioCheck, StudioDraft, StudioHistoryItem, StudioHistoryQuery, StudioImportItem, StudioMedia, StudioPlatform, StudioReview } from './types'
@@ -33,7 +35,7 @@ import { assertStudioCashFresh, buildStudioCashInput, readStudioCashQuote } from
 import { legacyStudioCashInput } from './studio-cash-legacy'
 import { readStudioCashPending, rememberStudioCashPending, restoreStudioCashPending, completeStudioCashPending } from './studio-cash-recovery'
 
-interface FrozenReview { legacyCash?: { prepared?: NativePreparedPublish; plan?: NativePreparePublish; generic?: PublishingGenericMutation; local?: boolean }; cashQuote: PublishingCashQuote; recovery?: boolean; remainingIds: string[]; id: string; owner: string; sessionRevision: number; editRevision: number; draft: StudioDraft; accounts: StudioAccount[]; contentHash: string; resume?: z.infer<typeof PublishingStudioPlanSchema> }
+interface FrozenReview { legacyCash?: { prepared?: NativePreparedPublish; plan?: NativePreparePublish; generic?: boolean; local?: boolean }; cashQuote: PublishingCashQuote; recovery?: boolean; remainingIds: string[]; id: string; owner: string; sessionRevision: number; editRevision: number; draft: StudioDraft; accounts: StudioAccount[]; contentHash: string; resume?: z.infer<typeof PublishingStudioPlanSchema> }
 const networkFailure = (reason: unknown) => reason instanceof TypeError && /failed to fetch|networkerror|load failed/iu.test(reason.message)
 const message = (reason: unknown) => reason instanceof z.ZodError ? '输入或服务回执不符合发布合同，请检查字段并重新读取' : networkFailure(reason) ? '网络连接中断，请检查本地发布服务后刷新重试' : reason instanceof Error ? reason.message : '操作结果暂不可确认，请核对原记录'
 
@@ -55,9 +57,10 @@ export function usePublishingStudio(): PublishingStudioController {
   const [busy, setBusy] = useState<string | null>(null), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null)
   const [checks, setChecks] = useState<StudioCheck[]>([]), [review, setReview] = useState<StudioReview | null>(null), [pending, setPending] = useState(false)
   const [history, setHistory] = useState<StudioHistoryItem[]>([]), [historyLoading, setHistoryLoading] = useState(false)
-  const [historyPage, setHistoryPage] = useState({ page: 1, pageSize: 30, total: 0, hasMore: false })
+  const [historyPage, setHistoryPage] = useState<PublishingStudioController['historyPage']>({ page: 1, pageSize: 30, total: 0, hasMore: false })
+  const [savedDraft, setSavedDraft] = useState<{ draft: StudioDraft; accountIds: string; at: string } | null>(null)
   const [recordDetail, setRecordDetail] = useState<StudioHistoryItem | null>(null), [userAction, setUserAction] = useState<PublishingStudioController['userAction']>(null)
-  const [importItems, setImportItems] = useState<StudioImportItem[]>([]), [importLoading, setImportLoading] = useState(false), [importOpen, setImportOpen] = useState(false)
+  const [importItems, setImportItems] = useState<StudioImportItem[]>([]), [importLoading, setImportLoading] = useState(false), [importError, setImportError] = useState<string | null>(null), [importOpen, setImportOpen] = useState(false)
   const [bridgeConfirmation, setBridgeConfirmation] = useState<StudioBridgeConfirmation | null>(null), [authorization, setAuthorization] = useState<StudioAuthorization | null>(null)
   const [authorizationFlow, setAuthorizationFlow] = useState<PublishingStudioController['authorizationFlow']>(null)
   const frozen = useRef<FrozenReview | null>(null), editing = useRef(0), busyRef = useRef(false), mounted = useRef(false)
@@ -116,7 +119,7 @@ export function usePublishingStudio(): PublishingStudioController {
     const clear = () => {
       const current = getHostSession()
       if (current) { if (mounted.current) setSession({ loading: false, authenticated: true, userName: current.user.displayName || current.user.username, cashBalance: current.wallet.cashCents / 100, credits: current.wallet.credits }); return }
-      invalidate(); revokeBlobs(); draftRef.current = emptyStudioDraft(); setDraft(draftRef.current); accountsRef.current = []; setAccounts([]); setPlatforms([]); setBootstrap(null); setHistory([]); setRecordDetail(null); setUserAction(null); setImportItems([]); setImportOpen(false); setAuthorization(null); authRef.current = null
+      invalidate(); revokeBlobs(); setSavedDraft(null); draftRef.current = emptyStudioDraft(); setDraft(draftRef.current); accountsRef.current = []; setAccounts([]); setPlatforms([]); setBootstrap(null); setHistory([]); setRecordDetail(null); setUserAction(null); setImportItems([]); setImportOpen(false); setAuthorization(null); authRef.current = null
       setWorkspace({ loading: false, ready: false })
       bridgeResolver.current?.(false); bridgeResolver.current = null; setBridgeConfirmation(null)
       authorizationGeneration.current++; authorizationVisible.current = false; setAuthorizationFlow(null); setSession({ loading: false, authenticated: false, error: '主站会话已变化，请重新进入工作台' })
@@ -124,6 +127,7 @@ export function usePublishingStudio(): PublishingStudioController {
     const sessionOff = subscribeHostSession(clear), pendingOff = subscribeNativePending(syncPending), browserPendingOff = subscribeBrowserLocalPending(syncPending), legacyPendingOff = subscribeStudioLegacyPending(syncPending)
     const storage = (event: StorageEvent) => { if ([':pending-publish', ':browser-local-prepare', ':studio-generic-publish', ':studio-legacy-plan', ':studio-cash-publish'].some(suffix => event.key?.endsWith(suffix))) { invalidate(); syncPending() } }
     const refreshSession = () => { if (document.visibilityState === 'visible') void loadHostSession().catch(reason => { if (mounted.current) setError(message(reason)) }) }
+    const walletOff = subscribePaymentWallet(id => { if (getHostSession()?.user.id === id) void loadHostSession().catch(() => undefined) })
     window.addEventListener('storage', storage); window.addEventListener('focus', refreshSession); document.addEventListener('visibilitychange', refreshSession)
     void (async () => {
       try {
@@ -134,7 +138,7 @@ export function usePublishingStudio(): PublishingStudioController {
     })()
     // This ref is a generation counter, intentionally advanced at cleanup; it is not a DOM node.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => { mounted.current = false; editing.current++; frozen.current = null; sessionOff(); pendingOff(); browserPendingOff(); legacyPendingOff(); window.removeEventListener('storage', storage); window.removeEventListener('focus', refreshSession); document.removeEventListener('visibilitychange', refreshSession); bridgeResolver.current?.(false); bridgeResolver.current = null; revokeBlobs() }
+    return () => { mounted.current = false; editing.current++; frozen.current = null; sessionOff(); walletOff(); pendingOff(); browserPendingOff(); legacyPendingOff(); window.removeEventListener('storage', storage); window.removeEventListener('focus', refreshSession); document.removeEventListener('visibilitychange', refreshSession); bridgeResolver.current?.(false); bridgeResolver.current = null; revokeBlobs() }
     // Session lifetime is owned by this mounted workbench; actions use refs for current form state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -173,9 +177,9 @@ export function usePublishingStudio(): PublishingStudioController {
 
   async function loadImport(kind: 'media' | 'draft' = 'media') {
     const request = ++importRevision.current
-    setImportLoading(true); setError(null)
+    setImportLoading(true); setImportError(null); setImportItems([]); setError(null)
     try { const actor = assertHostSession(), revision = getHostSessionRevision(); const values = await readStudioImport(kind); guard(actor.user.id, revision); if (request === importRevision.current) setImportItems(values) }
-    catch (reason) { if (mounted.current && request === importRevision.current) setError(message(reason)) }
+    catch (reason) { if (mounted.current && request === importRevision.current) setImportError(message(reason)) }
     finally { if (mounted.current && request === importRevision.current) setImportLoading(false) }
   }
   async function openImport() { setImportOpen(true); await loadImport('media') }
@@ -186,7 +190,7 @@ export function usePublishingStudio(): PublishingStudioController {
       if (item.storage === 'studio') {
         const result = z.object({ id: z.string().uuid(), revision: z.number().int().positive(), payload: z.unknown() }).passthrough().parse(await studioRequest(`publishing/generic?resource=profile&draftId=${id}&draftVersion=${item.revision}`)); current()
         const restored = restoreStudioStoredDraft(result.id, result.revision, result.payload)
-        replaceDraft(restored); setAccounts(previous => previous.map(account => ({ ...account, selected: !!restored.targetOverrides[account.id] }))); setImportOpen(false); setNotice('已恢复完整稿件；发布前会重新核对当前账号、素材和平台规则'); return
+        setSavedDraft(null); replaceDraft(restored); setAccounts(previous => previous.map(account => ({ ...account, selected: !!restored.targetOverrides[account.id] }))); setImportOpen(false); setNotice('已恢复完整稿件；发布前会重新核对当前账号、素材和平台规则'); return
       }
       const result = PublishingStudioDraftSchema.parse(await studioRequest(`studio/drafts/${id}`)); current()
       const payload = result.draft.payload, metadata = result.metadata
@@ -208,7 +212,7 @@ export function usePublishingStudio(): PublishingStudioController {
       if (schedules.length === 1) raw.publishAt = schedules[0]
       current()
       const targetIds = new Set(payload.targets.map(value => value.accountId)), nextAccounts = accountsRef.current.map(value => ({ ...value, selected: targetIds.has(value.id) }))
-      accountsRef.current = nextAccounts; setAccounts(nextAccounts); replaceDraft(raw)
+      accountsRef.current = nextAccounts; setAccounts(nextAccounts); setSavedDraft(null); replaceDraft(raw)
     } else {
       const value = await readStudioMedia({ id: crypto.randomUUID(), name: item.title, url: item.url, kind: item.kind, size: 0, status: 'reading' }); current()
       const selected = [...draftRef.current.media, value]
@@ -263,7 +267,7 @@ export function usePublishingStudio(): PublishingStudioController {
       assertStudioCashFresh(funding)
       if (approved.legacyCash) {
         const context = approved.legacyCash, live = await readStudioWorkspace(); current(); assertSameAccounts(approved.accounts, live.accounts)
-        if (context.generic) await executeStudioGeneric((await observeStudioGeneric(current))!.prepared, current, funding)
+        if (context.generic) await executeStudioGeneric((await observeStudioGeneric(current, true))!.batches, current, funding)
         if (context.prepared || context.plan) {
           const prepared = context.local ? await recoverBrowserLocalPending(current) : context.plan ? verifyStudioLegacyPrepared(context.plan, await prepareNativePublishing(context.plan, current)) : context.prepared
           if (!prepared) throw new Error('原发布准备尚未查询到')
@@ -293,37 +297,58 @@ export function usePublishingStudio(): PublishingStudioController {
         setNotice('已保存浏览器发布报告，请在平台核对实际作品'); await loadHistory(); await refreshWorkspace(); return
       }
       if (approved.recovery && (readStudioGenericPending() || readStudioLegacyPending())) {
-        const generic = await observeStudioGeneric(current), legacy = await recoverStudioLegacyPending(current); current()
-        if (generic) await executeStudioGeneric(generic.prepared, current, funding)
+        const generic = await observeStudioGeneric(current, true), legacy = await recoverStudioLegacyPending(current); current()
+        if (generic) await executeStudioGeneric(generic.batches, current, funding)
         if (legacy) await executeNativePublishing(legacy.prepared, await readNativePlanFiles(legacy.plan, current), () => {}, current, { funding, continueAfterKnownFailure: true })
         else if (generic?.legacyPlan) { const prepared = verifyStudioLegacyPrepared(generic.legacyPlan, await prepareNativePublishing(generic.legacyPlan, current)); await executeNativePublishing(prepared, await readNativePlanFiles(generic.legacyPlan, current), () => {}, current, { funding, continueAfterKnownFailure: true }) }
         current(); completeStudioLegacyPlan(current); completeStudioGeneric(); completeStudioCashPending(); setNotice('已继续原提交中的剩余账号，请到发布记录核对结果'); await loadHistory(); await refreshWorkspace(); return
       }
-      const materialized = await materializeStudioDraft(approved.draft, current); current()
-      const items = studioPlanItems(materialized, approved.accounts)
-      await confirmNativeOfficialMainMedia(items, { assertCurrent: current, confirm: value => new Promise(resolve => { current(); bridgeResolver.current = resolve; setBridgeConfirmation(value) }) }); current()
-      const genericAccounts = approved.accounts.filter(account => account.kind === 'generic'), legacyItems = items.filter(item => item.account.nativeAccountKind !== 'generic')
-      const built = legacyItems.length ? await buildNativePublishPlan({ items: legacyItems, common: { title: materialized.title, des: materialized.body, topics: materialized.topics, option: {} }, publishAt: materialized.publishAt, collectionId: materialized.collectionId, sourceDraftId: materialized.sourceDraftId, sourceDraftVersion: materialized.sourceDraftVersion }) : null; current()
-      if (genericAccounts.length) {
-        const saved = await saveStudioDraft(materialized, approved.accounts, current, live.platforms); current()
-        const prepared = await prepareStudioGeneric({ draftId: saved.id, draftVersion: saved.version, profileRevision: saved.metadataRevision, targetIds: genericAccounts.map(account => account.id), contentHash: approved.contentHash, legacyPending: legacyItems.length > 0, ...(built ? { legacyPlan: built.plan } : {}) }, current); current()
-        await executeStudioGeneric(prepared, current, funding); current()
-        if (!legacyItems.length) { completeStudioGeneric(); completeStudioCashPending(); setNotice('已提交官方发布任务；请在任务记录核对平台结果'); await refreshWorkspace(); return }
+      const routes = groupStudioPublishingAccounts(approved.accounts).filter(group => group.accounts.length)
+      const profiles: Parameters<typeof prepareStudioGeneric>[0] = []
+      const legacyAccounts = approved.accounts.filter(account => account.kind !== 'generic')
+      let built: Awaited<ReturnType<typeof buildNativePublishPlan>> | null = null
+      for (const { environment, accounts } of routes) {
+        const scoped = scopeStudioDraft(approved.draft, accounts)
+        const uploadEnvironment = environment === 'international' || routes.length > 1 ? environment : undefined
+        const materialized = await materializeStudioDraft(scoped, current, uploadEnvironment); current()
+        const items = studioPlanItems(materialized, accounts)
+        await confirmNativeOfficialMainMedia(items, { environment: uploadEnvironment, assertCurrent: current, confirm: value => new Promise(resolve => { current(); bridgeResolver.current = resolve; setBridgeConfirmation(value) }) }); current()
+        const legacyItems = items.filter(item => item.account.nativeAccountKind !== 'generic')
+        if (legacyItems.length) {
+          built = await buildNativePublishPlan({ items: legacyItems, common: { title: materialized.title, des: materialized.body, topics: materialized.topics, option: {} }, publishAt: materialized.publishAt, collectionId: materialized.collectionId, sourceDraftId: materialized.sourceDraftId, sourceDraftVersion: materialized.sourceDraftVersion })
+          current()
+        }
+        const generic = accounts.filter(account => account.kind === 'generic')
+        if (generic.length) {
+          const profileDraft = routes.length > 1 ? { ...materialized, studioDraftId: undefined, studioDraftVersion: undefined } : materialized
+          const saved = await saveStudioDraft(profileDraft, accounts, current, live.platforms); current()
+          profiles.push({ draftId: saved.id, draftVersion: saved.version, profileRevision: saved.metadataRevision, targetIds: generic.map(account => account.id) })
+        }
+      }
+      if (profiles.length) {
+        const prepared = await prepareStudioGeneric(profiles, approved.contentHash, built?.plan, current); current()
+        const results = await executeStudioGeneric(prepared, current, funding); current()
+        if (!legacyAccounts.length) {
+          completeStudioGeneric(); completeStudioCashPending()
+          const failed = results.filter(target => ['failed_known', 'blocked', 'cancelled'].includes(target.state)).length
+          setNotice(failed ? `已取得 ${results.length} 个账号的回执，其中 ${failed} 个未能发布。请到发布记录查看原因。` : `已取得 ${results.length} 个账号的提交回执，平台处理状态见发布记录。`)
+          await loadHistory(); await refreshWorkspace(); return
+        }
       }
       if (!built) throw new Error('原浏览器计划缺失')
       if (await nativeSha256(new Blob([nativePreparePlanCanonical(built.plan)], { type: 'text/plain' })) !== built.plan.planHash) throw new Error('执行计划摘要不一致，已停止准备')
       const approvedHashes = new Set(await Promise.all(allDraftMedia(approved.draft).map(value => nativeSha256(value.file!))))
       const planHashes = new Set(await Promise.all([...built.files.files.values()].map(value => nativeSha256(value))))
-      if ((!genericAccounts.length && approvedHashes.size !== planHashes.size) || [...planHashes].some(value => !approvedHashes.has(value))) throw new Error('计划素材与最终确认的实际文件不一致，已停止准备')
+      if ([...planHashes].some(value => !approvedHashes.has(value))) throw new Error('计划素材与最终确认的实际文件不一致，已停止准备')
       current()
-      const latest = await readStudioWorkspace(); current(); assertSameAccounts(approved.accounts, latest.accounts); assertStudioPreflight(materialized, approved.accounts.filter(account => account.kind !== 'generic'), latest.platforms, latest.bootstrap)
-      const prepared = genericAccounts.length ? verifyStudioLegacyPrepared(built.plan, await prepareNativePublishing(built.plan, current)) : await prepareStudioLegacyPlan(built.plan, current); current()
+      const latest = await readStudioWorkspace(); current(); assertSameAccounts(approved.accounts, latest.accounts); assertStudioPreflight(approved.draft, legacyAccounts, latest.platforms, latest.bootstrap)
+      const prepared = profiles.length ? verifyStudioLegacyPrepared(built.plan, await prepareNativePublishing(built.plan, current)) : await prepareStudioLegacyPlan(built.plan, current); current()
       await executeNativePublishing(prepared, built.files, value => {
         current()
         setHistory(previous => [{ id: value.recordId || value.targetId, title: approved.draft.title || '当前发布', platform: '', state: value.state, url: value.receipt?.shareLink, message: value.message, evidence: value.state === 'browser_reported' ? 'browser_reported' : 'provider_reported' }, ...previous.filter(item => item.id !== value.recordId && item.id !== value.targetId)])
       }, current, { funding, continueAfterKnownFailure: approved.recovery }); current()
       setNotice('已保存本次提交记录。浏览器报告和官方手机接力结果，请在发布记录中继续核对。')
-      if (!genericAccounts.length) completeStudioLegacyPlan(current)
+      if (!profiles.length) completeStudioLegacyPlan(current)
       if (!readNativePending()) { completeStudioGeneric(); completeStudioCashPending() }
       await refreshWorkspace()
     }) } catch (reason) {
@@ -341,7 +366,9 @@ export function usePublishingStudio(): PublishingStudioController {
       const result = await saveStudioDraft(saved, selected, current, platformsRef.current); current()
       const uploadedIds = new Map(input.media.map((value, index) => [value.id, saved.media[index]?.id]))
       const retainedOverrides = Object.fromEntries(Object.entries(draftRef.current.targetOverrides).map(([id, value]) => [id, { ...value, mediaIds: value.mediaIds?.map(mediaId => uploadedIds.get(mediaId) || mediaId) }]))
-      replaceDraft({ ...saved, targetOverrides: { ...retainedOverrides, ...saved.targetOverrides }, studioDraftId: result.id, studioDraftVersion: result.version })
+      const persisted = { ...saved, targetOverrides: { ...retainedOverrides, ...saved.targetOverrides }, studioDraftId: result.id, studioDraftVersion: result.version }
+      replaceDraft(persisted)
+      setSavedDraft({ draft: persisted, accountIds: selected.map(account => account.id).sort().join(), at: new Date().toISOString() })
       setNotice('稿件与所选账号的素材、发布参数和排期已完整保存')
     })
   }) }
@@ -349,8 +376,18 @@ export function usePublishingStudio(): PublishingStudioController {
     const sequence = ++historyRequest.current, actor = assertHostSession(), revision = getHostSessionRevision()
     const current = () => mounted.current && sequence === historyRequest.current && getHostSession()?.user.id === actor.user.id && getHostSessionRevision() === revision
     setHistoryLoading(true); setError(null)
-    try { const values = await readStudioHistoryPage(query); if (!current()) return; setHistory(values.items); setHistoryPage({ page: values.page, pageSize: values.pageSize, total: values.total, hasMore: values.hasMore }) }
-    catch (reason) { if (current()) setError(message(reason)) }
+    const range = query.completeRange ? `${query.from}/${query.to}` : undefined
+    try {
+      const values = await (range ? readCompleteStudioHistoryRange(query, current) : readStudioHistoryPage(query))
+      if (!current()) return
+      setHistory(values.items)
+      setHistoryPage({ page: values.page, pageSize: values.pageSize, total: values.total, hasMore: values.hasMore, range })
+    } catch (reason) {
+      if (current()) {
+        if (range) setHistoryPage({ page: 1, pageSize: 100, total: 0, hasMore: false, range, rangeError: true })
+        setError(message(reason))
+      }
+    }
     finally { if (current()) setHistoryLoading(false) }
   }, [])
   function installRecord(value: StudioHistoryItem) { setRecordDetail(value); setHistory(previous => [value, ...previous.filter(item => item.id !== value.id)]) }
@@ -465,10 +502,11 @@ export function usePublishingStudio(): PublishingStudioController {
   async function connectAccount(platform: string, transport?: 'browser_plugin' | 'official_api', options?: { forceNew?: boolean }) { await run('连接发布账号', authorizationWork(platform, 'starting', async current => {
     invalidate(); const config = platformsRef.current.find(value => value.key === platform)
     if (!config?.connectionAllowed) throw new Error(config?.reason || '该平台暂未开放账号连接')
-    const channel = config.channels?.find(value => value.transport === (transport ?? (platform === 'douyin' ? 'official_api' : 'browser_plugin')))
+    const selectedTransport = transport ?? (platform === 'xhs' || platform === 'wxSph' ? 'browser_plugin' : 'official_api')
+    const channel = config.channels?.find(value => value.transport === selectedTransport)
     if (channel && !channel.connectionAllowed) throw new Error(channel.reason)
     const owner = assertHostSession().user.id, revision = getHostSessionRevision()
-    if (platform === 'xhs' || platform === 'wxSph' || platform === 'douyin' && transport === 'browser_plugin') {
+    if (selectedTransport === 'browser_plugin' && (platform === 'xhs' || platform === 'wxSph' || platform === 'douyin')) {
       let detected; try { detected = await inspectPublishingPlugin(platform) } catch (reason) { throw new Error(publishingPluginMessage(reason)) }
       guard(owner, revision); current()
       await studioRequest('v2/channels/accounts', 'POST', { type: platform, uid: detected.account.uid, nickname: detected.account.nickname, ...(detected.account.avatar ? { avatar: detected.account.avatar } : {}) }); guard(owner, revision); current()
@@ -531,24 +569,31 @@ export function usePublishingStudio(): PublishingStudioController {
       let prepared = local ? await recoverBrowserLocalPending(current) : legacy?.prepared
       const plan = legacy?.plan ?? generic?.legacyPlan
       if (!prepared && plan) { const raw = NativePreparedPublishSchema.nullable().parse(await studioRequest(`publishing/prepare?requestKey=${encodeURIComponent(plan.requestKey)}`)); current(); if (raw) prepared = verifyStudioLegacyPrepared(plan, raw) }
-      const genericPayload = generic?.remainingIds.length ? await readStudioGenericOriginalDraft(generic.prepared, current) : undefined
+      if (generic && (generic.batches.length > 1 || generic.batches.length === 0 && generic.remainingIds.length)) throw new Error('原跨区发布缺少费用快照，请保留原任务和账号回执核对')
+      const genericPayload = generic?.remainingIds.length ? await readStudioGenericOriginalDraft(generic.batches[0], current) : undefined
       const remainingIds = [...(generic?.remainingIds ?? []), ...(prepared ? await readNativeUnclaimedAccountIds(prepared, current) : plan ? plan.groups.flatMap(group => [...group.draft.targets.map(t => t.accountId), ...group.officialTargets.map(t => t.bindingId)]) : [])]
       if (!remainingIds.length) { completeBrowserLocalPlan(current); completeStudioLegacyPlan(current); completeStudioGeneric(); setNotice('原账号均已有明确记录，没有新的执行费用或重复提交'); await loadHistory(); await refreshWorkspace(); return }
       const live = await readStudioWorkspace(); current(); installWorkspace(live)
       const original = await legacyStudioCashInput({ prepared: prepared ?? undefined, plan, generic: genericPayload, remainingIds, accounts: live.accounts }, current)
       const cashQuote = await readStudioCashQuote(original.input, current); current(); const id = crypto.randomUUID()
-      frozen.current = { id, owner, sessionRevision: revision, editRevision: edit, draft: emptyStudioDraft(), accounts: live.accounts.filter(a => remainingIds.includes(a.id)), contentHash: original.input.reviewHash, cashQuote, remainingIds, recovery: true, legacyCash: { prepared: prepared ?? undefined, plan, generic: generic?.prepared, local: !!local } }
+      frozen.current = { id, owner, sessionRevision: revision, editRevision: edit, draft: emptyStudioDraft(), accounts: live.accounts.filter(a => remainingIds.includes(a.id)), contentHash: original.input.reviewHash, cashQuote, remainingIds, recovery: true, legacyCash: { prepared: prepared ?? undefined, plan, generic: !!generic, local: !!local } }
       setReview({ id, title: original.targets[0]?.title || '原发布', accountNames: original.targets.map(t => t.accountName), mediaCount: original.targets.reduce((sum, t) => sum + (t.mediaNames?.length ?? 0), 0), contentHash: original.input.reviewHash, targets: original.targets, cashQuote, recovery: true })
       setNotice('已保留原内容和已执行账号。请确认剩余账号的现金费用后继续。')
     });
   }) }
   const selected = accounts.filter(value => value.selected), remaining = bootstrap?.entitlements.filter(value => Date.parse(value.expiresAt) > Date.now()).reduce((sum, value) => sum + Math.max(0, value.quota - value.used), 0)
-  const canPublish = !!bootstrap?.schemaReady && bootstrap.access.allowed && bootstrap.config.executionEnabled && selected.length > 0 && selected.every(account => platforms.some(platform => platform.key === account.platform && platform.available)) && !pending
-  return { session, workspace, publishing: bootstrap ? { executionEnabled: bootstrap.config.executionEnabled, announcement: bootstrap.config.announcement, enabledPlatforms: [...bootstrap.config.enabledPlatforms], mode: bootstrap.config.mode } : null, draft, accounts, platforms, checks, quota: { remaining, cost: selected.length, label: '主站发布额度', canPublish, reason: !bootstrap?.schemaReady ? '发布服务尚未就绪' : !bootstrap.config.executionEnabled ? '发布通道尚未开放' : pending ? '请先核对原提交' : !selected.length ? '请选择发布账号' : undefined }, busy, error, notice, review, pending, history, historyLoading, historyPage, recordDetail, userAction, importItems, importLoading, importOpen, bridgeConfirmation, authorization, authorizationFlow,
+  const offlineTarget = selected.map(account => ({ name: account.name, reason: studioTargetBlock(account, platforms.find(platform => platform.key === account.platform)) })).find(value => value.reason)
+  const publishBlock = !bootstrap?.schemaReady ? '发布服务尚未就绪'
+    : !bootstrap.access.allowed ? bootstrap.access.message || '当前账号没有发布权限'
+    : !bootstrap.config.executionEnabled ? '发布通道尚未开放'
+    : pending ? '请先核对原提交'
+    : !selected.length ? '请选择发布账号'
+    : offlineTarget ? `${offlineTarget.name}：${offlineTarget.reason}` : undefined
+  return { session, workspace, draftSave: savedDraft ? { savedAt: savedDraft.at, edited: savedDraft.draft !== draft || savedDraft.accountIds !== selected.map(account => account.id).sort().join() } : null, publishing: bootstrap ? { executionEnabled: bootstrap.config.executionEnabled, announcement: bootstrap.config.announcement, enabledPlatforms: [...bootstrap.config.enabledPlatforms], mode: bootstrap.config.mode } : null, draft, accounts, platforms, checks, quota: { remaining, cost: selected.length, label: '主站发布额度', canPublish: !publishBlock, reason: publishBlock }, busy, error, notice, review, pending, history, historyLoading, historyPage, recordDetail, userAction, importItems, importLoading, importError, importOpen, bridgeConfirmation, authorization, authorizationFlow,
     patchDraft, patchTarget, addFiles, setCover: file => cover(file), setTargetCover: (id, file) => cover(file, id), removeMedia, toggleAccount, connectAccount,
-    refreshAccounts: () => run('刷新账号', async () => { invalidate(); await refreshWorkspace() }), openImport, closeImport: () => { importRevision.current++; setImportOpen(false); setImportLoading(false) }, loadImport, importItem, checkDraft, saveDraft, publish,
+    refreshAccounts: () => run('刷新账号', async () => { invalidate(); await refreshWorkspace() }), openImport, closeImport: () => { importRevision.current++; setImportOpen(false); setImportLoading(false); setImportError(null) }, loadImport, importItem, checkDraft, saveDraft, publish,
     cancelReview: () => { frozen.current = null; setReview(null) }, confirmBridge: approved => { const resolve = bridgeResolver.current; bridgeResolver.current = null; setBridgeConfirmation(null); resolve?.(approved) }, refreshAuthorization, selectAuthorization, closeAuthorization: () => { authorizationGeneration.current++; authorizationVisible.current = false; setAuthorization(null); setAuthorizationFlow(null) }, loadHistory, recoverPending,
     refreshRecord, readUserAction, resumeRecord, mutateRecord, closeRecordDetail: () => { setRecordDetail(null); setUserAction(null) },
-    resetDraft: () => { revokeBlobs(); replaceDraft(emptyStudioDraft()); setNotice(null); setError(null) }, dismissMessage: () => { setNotice(null); setError(null) },
+    resetDraft: () => { revokeBlobs(); setSavedDraft(null); replaceDraft(emptyStudioDraft()); setNotice(null); setError(null) }, dismissMessage: () => { setNotice(null); setError(null) },
   }
 }

@@ -32,8 +32,7 @@ function accountDto(row: Row, ownerId: string, cfg: Configuration) {
   const binding = checked.data;
   return {
     id: binding.id, type: binding.platform, uid: binding.platformUid, nickname: binding.displayName, avatar: binding.avatar ?? "",
-    // The original UI interprets 1 as an executable online account. An OAuth
-    // binding currently proves connection only and therefore never claims 1.
+    // Active is the persisted connection state; it is not publish readiness.
     status: binding.status === 'active' ? 1 : 0, rank: 0, groupId: binding.groupId ?? "", clientType: "web",
     nativeAccountKind: "generic" as const, nativeTransport: "generic-oauth" as const,
     nativeBindingStatus: binding.status, nativeConnectionState: binding.status === "active" ? "official_bound" : binding.status,
@@ -101,7 +100,7 @@ export function projectNativeGenericPlatform(item: Row, configuration: { configu
   // OAuth flow; a catalog entry alone is not a working connector.
   const oauth = item.authType === "oauth2";
   const authSupported = object(object(item.capabilities).auth).supported === true;
-  const connectionAllowed = configuration.configured && oauth && authSupported;
+  const connectionAllowed = configuration.configured && item.status === "available" && oauth && authSupported;
   const executionReason = genericPublishingFieldPolicy(String(item.platform)).executionReason;
   const publish = !executionReason && item.status === "available" && connectionAllowed && configuration.schemaReady === true && configuration.executionEnabled === true && configuration.enabledPlatforms?.includes(String(item.platform)) === true && object(object(item.capabilities).publish).supported === true;
   return {

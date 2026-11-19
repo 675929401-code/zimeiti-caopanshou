@@ -5,13 +5,14 @@ import { PublishingDraftProfileSchema, PublishingGenericMutationSchema, Publishi
 import { PublishingAuthorizationPlatformSchema } from '../publishing-authorization-contract'
 import { readMemberPermissionSnapshot } from './member-permission-authority'
 import { PublishingError, publishingRuntimeEnabled } from './publishing-service'
-import { readPublishingProviderConfiguration, readPublishingProviderConfigurationForNamespace, OVERSEAS_PUBLISHING_PLATFORMS } from './publishing-provider-config'
+import { activePublishingProviderForNamespace, readPublishingProviderConfiguration, readPublishingProviderConfigurationForNamespace, providerEnvironmentForPlatform } from './publishing-provider-config'
 import { PublishingProvider, PublishingProviderError, publishingProviderPayloadHash, projectProviderStatus, validatePublishingProviderOptions, type PublishingProviderFlowInput, type PublishingProviderGrant } from './publishing-provider'
 import { readNativeMediaSource } from './native-main-media'
 import { effectiveGenericPublishingContent, validateGenericPublishingContent, validateGenericPublishingPolicy, validateGenericReservedOptions } from '../publishing-generic-validation'
 import { publishingCashContentProof, publishingCashFailure } from './publishing-cash-service'
 import { publishingCashGenericContent } from '../publishing-cash-content'
 import type { PublishingCashFunding } from '../publishing-cash-contract'
+import { PublishingDynamicFieldSchema, publishingDynamicFieldPlatform, publishingDynamicOptionsFilter } from '../publishing-dynamic-options'
 
 type DB = ReturnType<typeof getSupabase>
 type Row = Record<string, unknown>
@@ -65,8 +66,8 @@ function configured(cfg: Config) { if (!cfg.configured || !cfg.apiKey) fail('PRO
 async function execution(db: DB, cfg: Config, platforms: string[]) {
   configured(cfg)
   const c = await configuration(db)
-  const allowed = cfg.environment === 'international' ? [...OVERSEAS_PUBLISHING_PLATFORMS] : Array.isArray(c.enabled_platforms) ? c.enabled_platforms as string[] : []
-  if (!publishingRuntimeEnabled() || c.execution_enabled !== true || platforms.some(p => !allowed.includes(p))) fail('PUBLISH_EXECUTION_DISABLED', '管理员尚未开启所选平台的发布执行')
+  const allowed = Array.isArray(c.enabled_platforms) ? c.enabled_platforms : []
+  if (!publishingRuntimeEnabled() || c.execution_enabled !== true || platforms.some(p => !allowed.includes(p) || providerEnvironmentForPlatform(p) !== cfg.environment)) fail('PUBLISH_EXECUTION_DISABLED', '管理员尚未开启所选平台的发布执行')
   return c
 }
 function provider(user: AuthUser, cfg: Config, op?: Row, consumeGrant?: (grant: PublishingProviderGrant) => Promise<boolean>) {
@@ -272,6 +273,19 @@ export async function mutatePublishingGeneric(user: AuthUser, db: DB, action: Pu
   if (action.action === 'save-draft') {
     const prior = await request(db, user, action.requestKey, action)
     if (prior) return publicResult(db, user, cfg, prior)
+    const namespaces = new Set<string>()
+    for (const entry of action.draft.sources) {
+      if (entry.source.kind !== 'provider_asset') continue
+      const asset = await owned(db, user, 'pub3_assets', entry.source.assetId)
+      namespaces.add(str(asset.connection_id))
+    }
+    if (namespaces.size > 1) fail('NATIVE_OFFICIAL_MEDIA_INVALID', '一份稿件须使用同一区域的已确认素材')
+    const namespace = [...namespaces][0]
+    if (namespace !== undefined) {
+      const active = activePublishingProviderForNamespace(namespace)
+      if (!active) fail('NATIVE_OFFICIAL_MEDIA_INVALID', '素材所属的官方连接已变化')
+      cfg = active
+    }
     await validateDraftSources(db, user, cfg, action.draft)
     PublishingDraftProfileSchema.parse(action.draft.profile)
     return publicResult(db, user, cfg, await rpc(db, user, cfg, { action: 'save-draft', requestKey: action.requestKey, request: action, draftId: action.id ?? randomUUID(), expectedRevision: action.expectedRevision, draft: action.draft }))
@@ -334,7 +348,11 @@ export async function readPublishingGeneric(user: AuthUser, db: DB, query: Publi
     if (query.requestKey) {
       const result = await request(db, user, query.requestKey)
       if (!result) return null
+      if (Array.isArray(result.operationIds) && result.operationIds.length === 0 && str(result.draftId)) {
+        return publicResult(db, user, cfg, { ...result, alreadyFulfilled: true })
+      }
       const id = Array.isArray(result.operationIds) ? str(result.operationIds[0]) : ''
+      if (!id) fail('NATIVE_OFFICIAL_RESULT_INVALID', '原请求回执不完整，请保留原记录', 503, true)
       const op = await owned(db, user, 'pub5_operations', id)
       cfg = configForNamespace(str(op.namespace))
       return publicResult(db, user, cfg, result)
@@ -364,9 +382,20 @@ export async function readPublishingGeneric(user: AuthUser, db: DB, query: Publi
   if (query.resource === 'options') {
     const binding = await owned(db, user, 'pub4_account_bindings', query.bindingId)
     cfg = configForNamespace(str(binding.connection_id))
-    if (binding.status !== 'active') fail('NATIVE_OFFICIAL_BINDING_CHANGED', '账号连接已变化')
+    const platform = str(binding.platform)
+    if (binding.status !== 'active' || binding.connection_id !== cfg.namespace) fail('NATIVE_OFFICIAL_BINDING_CHANGED', '账号连接已变化')
     const p = provider(user, cfg, { snapshot: { accountId: binding.provider_account_id } })
-    return query.option ? p.readPublishOptionValues(str(binding.provider_account_id), query.option, query.query ? { query: query.query } : {}) : p.readPublishOptions(str(binding.platform))
+    if (!query.option) return p.readPublishOptions(platform)
+    const field = PublishingDynamicFieldSchema.safeParse(query.option)
+    const filters = Object.fromEntries(Object.entries({ query: query.query, keyword: query.keyword, regionCode: query.regionCode }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    if (field.success && (publishingDynamicFieldPlatform[field.data] !== platform || !publishingDynamicOptionsFilter(field.data).safeParse(filters).success) || !field.success && (query.keyword !== undefined || query.regionCode !== undefined)) {
+      fail('NATIVE_INVALID_OPTION_FILTER', '选项与当前账号的平台不匹配，或读取条件不正确', 400)
+    }
+    try {
+      return await p.readPublishOptionValues(str(binding.provider_account_id), query.option, filters, platform)
+    } catch {
+      fail('NATIVE_OPTION_VALUES_UNAVAILABLE', '暂时无法读取平台选项，请核对账号授权后再试', 503)
+    }
   }
   let q = db.from('pub5_targets').select('*', { count: 'exact' }).eq('owner_id', user.id)
   if (query.platform) q = q.eq('platform', query.platform)

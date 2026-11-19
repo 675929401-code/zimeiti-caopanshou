@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { PublishingV3AssetSchema, PublishingV3OperationSchema } from '@/lib/publishing-v3-contract'
+import type { PublishingProviderEnvironment } from '@/lib/publishing-regions'
+import { PublishingV3ActionSchema, PublishingV3AssetSchema, PublishingV3OperationSchema } from '@/lib/publishing-v3-contract'
 import { assertHostSession, getHostSession, getHostSessionRevision, hostStorageKey, subscribeHostSession, trackHostRequest } from './host-session'
 import { nativeBffFetch } from './host-transport'
 
@@ -27,18 +28,34 @@ async function envelope<T>(path: string, method: string, data?: unknown): Promis
   if (!value || typeof value !== 'object' || !('code' in value) || value.code !== 0 || !('data' in value)) throw new Error(value && typeof value === 'object' && 'message' in value && typeof value.message === 'string' ? value.message : '主站素材服务未完成，请核对原素材')
   return value.data as T
 }
-async function dispatchNativeAsset(blob: Blob, options: { onProgress?: (percent: number) => void, signal?: AbortSignal, assertCurrent?: () => void } = {}) {
+interface UploadOptions {
+  environment?: PublishingProviderEnvironment
+  onProgress?: (percent: number) => void
+  signal?: AbortSignal
+  assertCurrent?: () => void
+}
+
+const uploadScope = (environment?: PublishingProviderEnvironment) => environment === 'international' ? 'international:' : ''
+async function confirmNativeAsset(assetId: string) {
+  const result = await envelope<{ url: string, asset: unknown }>(`assets/${assetId}/confirm`, 'POST', { id: assetId, requestKey: `native-confirm:${assetId}` })
+  const asset = PublishingV3AssetSchema.parse(result.asset)
+  if (nativeAssetId(result.url) !== assetId || asset.id !== assetId || asset.state !== 'ready') throw new Error('官方素材仍待确认，请核对原上传')
+  return result.url
+}
+
+async function dispatchNativeAsset(blob: Blob, sha256: string, markerKey: string, options: UploadOptions) {
   options.assertCurrent?.(); const session = assertHostSession(); const sessionRevision = getHostSessionRevision()
-  if (!['image/jpeg', 'image/png', 'video/mp4'].includes(blob.type)) throw new Error('当前官方素材通道接收 JPEG、PNG 和 MP4，请重新选择兼容格式')
+  if (!['image/jpeg', 'image/png', 'image/webp', 'video/mp4'].includes(blob.type)) throw new Error('当前官方素材通道接收 JPEG、PNG、WebP 和 MP4，请重新选择兼容格式')
   if (blob.size <= 0 || blob.size > (blob.type === 'video/mp4' ? 100 : 20) * 1024 ** 2) throw new Error('图片须在 20 MiB 以内，MP4 须在 100 MiB 以内')
   let mediaId = blobIds.get(blob); if (!mediaId) { mediaId = crypto.randomUUID(); blobIds.set(blob, mediaId) }
-  const extension = blob.type === 'video/mp4' ? '.mp4' : blob.type === 'image/png' ? '.png' : '.jpg'
+  const extension = blob.type === 'video/mp4' ? '.mp4' : blob.type === 'image/png' ? '.png' : blob.type === 'image/webp' ? '.webp' : '.jpg'
   const fileName = blob instanceof File && blob.name ? blob.name : `media-${mediaId}${extension}`
   const file = blob instanceof File ? blob : new File([blob], fileName, { type: blob.type })
-  const sha256 = await nativeSha256(file); assertHostSession(session.user.id, sessionRevision); options.assertCurrent?.()
-  const markerKey = hostStorageKey(`studio-upload:${sha256}`)!
-  const marker = { requestKey: `native-upload:${mediaId}:${sha256}`, mediaId, sha256, phase: 'sign' }; localStorage.setItem(markerKey, JSON.stringify(marker))
-  const signed = await envelope<{ id: string, url: string, uploadUrl: string }>('assets/upload-sign', 'POST', { mediaId, fileName, mime: file.type, size: file.size, sha256, requestKey: `native-upload:${mediaId}:${sha256}` })
+  const marker = { requestKey: `native-upload:${uploadScope(options.environment)}${mediaId}:${sha256}`, mediaId, sha256, phase: 'sign' }
+  const signBody = PublishingV3ActionSchema.parse({ action: 'upload-sign', mediaId, fileName, mime: file.type, size: file.size, sha256, requestKey: marker.requestKey })
+  const signPath = options.environment ? `assets/upload-sign?region=${options.environment}` : 'assets/upload-sign'
+  localStorage.setItem(markerKey, JSON.stringify(marker))
+  const signed = await envelope<{ id: string, url: string, uploadUrl: string }>(signPath, 'POST', signBody)
   if (!uuid.test(signed.id) || nativeAssetId(signed.url) !== signed.id) throw new Error('素材上传回执不符合本站合同')
   localStorage.setItem(markerKey, JSON.stringify({ ...marker, assetId: signed.id, phase: 'put' })); options.assertCurrent?.()
   const destination = new URL(signed.uploadUrl)
@@ -58,9 +75,9 @@ async function dispatchNativeAsset(blob: Blob, options: { onProgress?: (percent:
     })
     assertHostSession(session.user.id, sessionRevision); options.assertCurrent?.()
     localStorage.setItem(markerKey, JSON.stringify({ ...marker, assetId: signed.id, phase: 'confirm' }))
-    const confirmed = await envelope<{ url: string }>(`assets/${signed.id}/confirm`, 'POST', { id: signed.id, requestKey: `native-confirm:${signed.id}` })
-    if (nativeAssetId(confirmed.url) !== signed.id) throw new Error('官方确认后的素材标识不一致，请核对原上传')
-    sourceFiles.set(signed.id, file); localStorage.setItem(markerKey, JSON.stringify({ ...marker, assetId: signed.id, phase: 'ready' })); options.onProgress?.(100); return confirmed.url
+    const url = await confirmNativeAsset(signed.id)
+    options.assertCurrent?.()
+    sourceFiles.set(signed.id, file); localStorage.setItem(markerKey, JSON.stringify({ ...marker, assetId: signed.id, phase: 'ready' })); options.onProgress?.(100); return url
   } finally { release(); options.signal?.removeEventListener('abort', abort) }
 }
 export async function readNativeAsset(value: string): Promise<{ asset: NativeAsset, file: File }> {
@@ -76,15 +93,16 @@ export async function readNativeAsset(value: string): Promise<{ asset: NativeAss
   assertHostSession(session.user.id, version); sourceFiles.set(id, file); return { asset, file }
 }
 
-/** A lost sign/PUT/confirm response is never repeated automatically. */
-export async function uploadNativeAsset(blob: Blob, options: { onProgress?: (percent: number) => void, signal?: AbortSignal, assertCurrent?: () => void } = {}) {
+/** Recover a recorded PUT using the original, server-gated confirmation key. */
+export async function uploadNativeAsset(blob: Blob, options: UploadOptions = {}) {
   options.assertCurrent?.(); const owner = assertHostSession().user.id, revision = getHostSessionRevision()
   const sha256 = await nativeSha256(blob); assertHostSession(owner, revision); options.assertCurrent?.()
   if (!navigator.locks?.request) throw new Error('当前浏览器不能保护跨页面上传，请使用支持的桌面浏览器')
-  return navigator.locks.request(`aitoearn-studio:upload:${owner}:${sha256}`, { ifAvailable: true }, async lock => {
+  const scopedHash = `${uploadScope(options.environment)}${sha256}`
+  return navigator.locks.request(`aitoearn-studio:upload:${owner}:${scopedHash}`, { ifAvailable: true }, async lock => {
     if (!lock) throw new Error('另一个页面正在处理这份素材，请核对原上传')
     assertHostSession(owner, revision)
-    const key = hostStorageKey(`studio-upload:${sha256}`)!, raw = localStorage.getItem(key)
+    const key = hostStorageKey(`studio-upload:${scopedHash}`)!, raw = localStorage.getItem(key)
     if (raw) {
       let prior: unknown
       try { prior = JSON.parse(raw) } catch { throw new Error('原上传标记无法读取，请保留浏览器数据核对') }
@@ -99,12 +117,15 @@ export async function uploadNativeAsset(blob: Blob, options: { onProgress?: (per
         localStorage.setItem(key, JSON.stringify({ ...marker, assetId }))
         if (found.asset.state !== 'ready') throw new Error('原素材传输尚未确认，请保留当前页面并联系站方核对原上传；本次尚未发布')
       }
-      const url = nativeAssetContentUrl(assetId)
+      options.assertCurrent?.()
+      const url = marker.phase === 'confirm' ? await confirmNativeAsset(assetId) : nativeAssetContentUrl(assetId)
+      options.assertCurrent?.()
       const result = await readNativeAsset(url)
       if (result.asset.sha256 !== sha256 || result.file.size !== blob.size || result.file.type !== blob.type) throw new Error('原素材与当前文件不一致，已停止上传')
-      assertHostSession(owner, revision)
+      assertHostSession(owner, revision); options.assertCurrent?.()
+      localStorage.setItem(key, JSON.stringify({ ...marker, assetId, phase: 'ready' }))
       return url
     }
-    return dispatchNativeAsset(blob, options)
+    return dispatchNativeAsset(blob, sha256, key, options)
   })
 }
