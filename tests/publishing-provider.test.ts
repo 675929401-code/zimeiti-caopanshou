@@ -30,6 +30,34 @@ test("account list filters supplier tenant accounts and totals, dropping private
   } });
   assert.deepEqual(await client.listAccounts(), { total: 1, list: [{ id: "account-1", type: "douyin", uid: "u", nickname: "作者" }] });
 });
+test("account option values use the authorized platform and project only selectable data", async () => {
+  let mode: "correct" | "wrong-platform" = "correct";
+  const paths: string[] = [];
+  const client = new PublishingProvider({ environment: "international", scope: scope(), apiKey: "fixture", fetch: async (url, init) => {
+    const { pathname, searchParams } = new URL(String(url));
+    paths.push(pathname);
+    assert.equal(init?.method, "GET");
+    if (pathname.endsWith("/accounts/account-1")) return reply({ id: "account-1", type: mode === "correct" ? "threads" : "youtube" });
+    if (pathname.endsWith("/platforms/threads/publish-options")) return reply([{ field: "location_id", label: "地点", valueType: "list", requiresAccount: true, filterSchema: { type: "object", properties: { keyword: { type: "string" } }, additionalProperties: false } }]);
+    assert.equal(searchParams.get("keyword"), "上海");
+    return reply({ field: "location_id", valueType: "list", items: [{ value: "location-1", label: "上海", rawCredential: "discard" }] });
+  } });
+  await assert.rejects(client.readPublishOptionValues("foreign", "location_id", { keyword: "上海" }, "threads"), { code: "PROVIDER_SCOPE_DENIED" });
+  assert.equal(paths.length, 0);
+  assert.deepEqual(await client.readPublishOptionValues("account-1", "location_id", { keyword: "上海" }, "threads"), { field: "location_id", valueType: "list", items: [{ value: "location-1", label: "上海" }] });
+  mode = "wrong-platform";
+  await assert.rejects(client.readPublishOptionValues("account-1", "location_id", { keyword: "上海" }, "threads"), { code: "PROVIDER_SCOPE_DENIED" });
+  assert.equal(paths.length, 4);
+});
+test("X community metadata retains search while excluding the unconsumed cursor", async () => {
+  const client = new PublishingProvider({ environment: "international", scope: scope(), apiKey: "fixture", fetch: async (url) => {
+    if (String(url).endsWith("/accounts/account-1")) return reply({ id: "account-1", type: "twitter" });
+    return reply([{ field: "community_id", label: "社区", valueType: "list", requiresAccount: true, filterSchema: { type: "object", properties: { query: { type: "string" }, next_token: { type: "string" } }, required: ["query"] } }]);
+  } });
+  const [option] = await client.readPublishOptions("twitter");
+  assert.deepEqual(option.filterSchema?.properties, { query: { type: "string" } });
+  await assert.rejects(client.readPublishOptionValues("account-1", "community_id", { query: "keyword", next_token: "blocked" }, "twitter"), { code: "PROVIDER_INPUT_INVALID" });
+});
 test("flow dispatch freezes full body grant, exact target correlation and never repeats unknown POST", async () => {
   let posts = 0; const grants: PublishingProviderGrant[] = [];
   const client = new PublishingProvider({ environment: "international", scope: scope(), apiKey: "fixture", consumeGrant: async grant => { grants.push(grant); return true; }, fetch: async (url, init) => {

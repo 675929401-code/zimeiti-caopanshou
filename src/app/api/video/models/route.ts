@@ -1,3 +1,4 @@
+import { catalogRatesForMember, withoutCatalogRates } from "@/lib/server/member-model-catalog";
 import { humanDurationCapabilities } from '@/features/digital-human/duration-policy';
 import { NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
@@ -501,7 +502,8 @@ export async function GET(request: Request) {
       capabilitiesVerified: model.capabilitiesVerified,
     }, model.tokenPricing));
 
-    return NextResponse.json({ models }, { headers: { "Cache-Control": "no-store" } });
+    const visibleModels = await catalogRatesForMember(request) ? models : models.map(withoutCatalogRates);
+    return NextResponse.json({ models: visibleModels }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json(
       { error: "视频模型列表暂不可用，请稍后刷新", code: "VIDEO_MODEL_CATALOG_UNAVAILABLE", models: [] },

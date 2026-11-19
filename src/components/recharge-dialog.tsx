@@ -18,6 +18,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { notifyPaymentCredited, readPaymentWallet } from "@/lib/payment-wallet-client";
+import { rechargeCreditsForAmount, normalizeRechargeAmount } from "@/lib/recharge-amount";
 import { reportPaymentCreateFailed, reportPaymentCallbackMissing } from "@/lib/diagnostic-sentry";
 import { Input } from "@/components/ui/input";
 import { Coins, Wallet, CreditCard, Loader2, CheckCircle2, XCircle, ArrowLeft, RefreshCw } from "lucide-react";
@@ -171,6 +173,7 @@ export function RechargeDialog({
   const [pollingStatus, setPollingStatus] = useState<"polling" | "paid" | "expired" | "timeout" | "reconciliation">("polling");
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStoppedRef = useRef(false);
+  const checkoutEpoch = useRef(0);
   // React state alone cannot stop two clicks in the same render frame. Keep a
   // synchronous lock so one user action can create at most one provider order.
   const createInFlightRef = useRef(false);
@@ -216,6 +219,8 @@ export function RechargeDialog({
   // 弹窗关闭时重置状态
   useEffect(() => {
     if (!open) {
+      checkoutEpoch.current++;
+      setCheckingBalance(false);
       setPaymentView("form");
       setQrcodeData(null);
       setResult(null);
@@ -226,6 +231,11 @@ export function RechargeDialog({
         pollTimerRef.current = null;
       }
     }
+    return () => {
+      checkoutEpoch.current++;
+      pollStoppedRef.current = true;
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
   }, [open]);
 
   const activeTab = tab;
@@ -238,8 +248,8 @@ export function RechargeDialog({
   // 计算实际支付金额（元）
   const getPayAmount = (): number => {
     if (!customAmount) return 0;
-    const val = parseFloat(customAmount);
-    if (isNaN(val) || val <= 0) return 0;
+    const val = normalizeRechargeAmount(Number(customAmount));
+    if (val === null) return 0;
     if (activeTab === "credits") {
       if (val < CREDITS_MIN_YUAN) return 0;
       return val;
@@ -249,7 +259,7 @@ export function RechargeDialog({
   };
 
   // 根据支付金额计算获得的积分
-  const getCreditsFromYuan = (yuan: number): number => yuan * creditsPerYuan;
+  const getCreditsFromYuan = (yuan: number): number => rechargeCreditsForAmount(yuan, creditsPerYuan);
 
   const handlePresetClick = (amount: number) => {
     setCustomAmount(String(amount));
@@ -262,61 +272,32 @@ export function RechargeDialog({
     setResult(null);
   };
 
-  // 从服务器刷新余额（含重试机制）
-  const refreshBalance = useCallback(async (type: string) => {
-    const maxRetries = 3;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const token = localStorage.getItem("auth_token");
-        const authUser = localStorage.getItem("auth_user");
-        const userId = authUser ? JSON.parse(authUser).id : null;
-        if (!userId || !token) {
-          console.warn("[refreshBalance] 缺少认证信息，跳过刷新");
-          return;
-        }
-
-        const res = await fetch(`/api/credits?user_id=${userId}&include_transactions=0`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        
-        if (!res.ok) {
-          console.warn(`[refreshBalance] API返回${res.status}，第${attempt}次重试`);
-          if (attempt < maxRetries) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-            continue;
-          }
-          return;
-        }
-        
-        const data = await res.json();
-        // 严格按充值类型刷新对应余额，双轨计费系统隔离
-        if (type === "credits") {
-          if (onCreditsUpdated && data.credits !== undefined) {
-            onCreditsUpdated(data.credits);
-          }
-        } else if (type === "cash") {
-          if (onCashUpdated && data.cashBalance !== undefined) {
-            onCashUpdated(data.cashBalance);
-          }
-        }
-        return; // 成功，退出重试循环
-      } catch (err) {
-        console.warn(`[refreshBalance] 第${attempt}次刷新失败:`, err);
-        if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 1000 * attempt));
-        }
+  const refreshBalance = useCallback(async (type: string, token: string) => {
+    notifyPaymentCredited(token);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (localStorage.getItem("auth_token") !== token) return;
+      const balance = await readPaymentWallet(token);
+      if (balance) {
+        if (type === "credits") onCreditsUpdated?.(balance.credits);
+        if (type === "cash") onCashUpdated?.(balance.cashBalance);
+        return;
       }
+      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
     }
   }, [onCreditsUpdated, onCashUpdated]);
 
   // 轮询订单状态
   const startPolling = useCallback((tradeOrderId: string, type: string, idempotencyKey?: string) => {
     const stableIdempotencyKey = idempotencyKey || currentPaymentIdempotencyKey();
+    const epoch = ++checkoutEpoch.current;
+    const token = localStorage.getItem("auth_token");
+    const current = () => epoch === checkoutEpoch.current && Boolean(token) && localStorage.getItem("auth_token") === token;
     let tries = 0;
     const maxTries = 60; // 最多轮询60次，约3分钟
     pollStoppedRef.current = false;
 
     const poll = async () => {
+      if (!current()) return;
       if (pollStoppedRef.current || tries >= maxTries) {
         if (!pollStoppedRef.current) {
           setPollingStatus("timeout");
@@ -326,22 +307,23 @@ export function RechargeDialog({
       tries++;
 
       try {
-        const token = localStorage.getItem("auth_token");
         const res = await fetch(
           `/api/payment/status?order=${tradeOrderId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(12_000) }
         );
         const data = await res.json();
 
+        if (!current() || !token || pollStoppedRef.current) return;
+        if (!res.ok || data.order?.trade_order_id !== tradeOrderId) throw new Error("ORDER_STATUS_UNAVAILABLE");
         if (data.order?.status === "paid" && data.order?.balance_credited === true) {
           pollStoppedRef.current = true;
           if (stableIdempotencyKey) clearPaymentIdempotencyKey(stableIdempotencyKey);
           setPollingStatus("paid");
           setPaymentView("success");
-          refreshBalance(type);
+          void refreshBalance(type, token);
           // 2秒后自动关闭弹窗返回主界面
-          setTimeout(() => {
-            onOpenChange(false);
+          pollTimerRef.current = setTimeout(() => {
+            if (current()) onOpenChange(false);
           }, 2000);
           return;
         }
@@ -364,7 +346,7 @@ export function RechargeDialog({
         // 轮询出错继续
       }
 
-      pollTimerRef.current = setTimeout(poll, 3000);
+      if (current() && !pollStoppedRef.current) pollTimerRef.current = setTimeout(poll, 3000);
     };
 
     // 首次轮询2秒后发起（加速主动检测介入），后续3秒间隔
@@ -381,6 +363,9 @@ export function RechargeDialog({
       return;
     }
 
+    const epoch = checkoutEpoch.current;
+    const token = localStorage.getItem("auth_token");
+    if (!token) { setResult({ success: false, message: "请先登录后充值" }); return; }
     createInFlightRef.current = true;
     setLoading(true);
     setResult(null);
@@ -391,7 +376,6 @@ export function RechargeDialog({
       const provider = selectedMethod.provider;
       const methodLabel = selectedMethod.label;
 
-      const token = localStorage.getItem("auth_token");
       const authUser = localStorage.getItem("auth_user");
       let userId = "unknown";
       try {
@@ -410,6 +394,7 @@ export function RechargeDialog({
       const idempotencyKey = getOrCreatePaymentIdempotencyKey(paymentIntent);
       const res = await fetch("/api/payment/create", {
         method: "POST",
+        signal: AbortSignal.timeout(30_000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -426,7 +411,8 @@ export function RechargeDialog({
 
       const data = await res.json();
 
-      if (data.paymentUrl || data.qrcodeUrl) {
+      if (epoch !== checkoutEpoch.current || !token || localStorage.getItem("auth_token") !== token) return;
+      if (res.ok && typeof data.tradeOrderId === "string" && data.tradeOrderId && (data.paymentUrl || data.qrcodeUrl)) {
         // 切换到二维码支付视图
         setQrcodeData({
           tradeOrderId: data.tradeOrderId,
@@ -452,6 +438,7 @@ export function RechargeDialog({
         reportPaymentCreateFailed(activeTab || "credits", data.error || "创建订单失败");
       }
     } catch {
+      if (checkoutEpoch.current !== epoch || localStorage.getItem("auth_token") !== token) return;
       setResult({ success: false, message: "网络错误，请重试" });
       reportPaymentCreateFailed(activeTab || "credits", "网络错误，创建订单异常");
     } finally {
@@ -463,21 +450,27 @@ export function RechargeDialog({
   // 手动刷新余额检查（二维码页面的刷新按钮）
   const handleManualCheck = async () => {
     if (!qrcodeData) return;
+    const epoch = ++checkoutEpoch.current;
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     setCheckingBalance(true);
     try {
       const token = localStorage.getItem("auth_token");
       // 先查订单状态；后端按支付渠道核验回调或平台订单证据。
       const res = await fetch(`/api/payment/status?order=${qrcodeData.tradeOrderId}`, {
+        signal: AbortSignal.timeout(12_000),
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
+      if (epoch !== checkoutEpoch.current || !token || localStorage.getItem("auth_token") !== token) return;
+      if (!res.ok || data.order?.trade_order_id !== qrcodeData.tradeOrderId) throw new Error("ORDER_STATUS_UNAVAILABLE");
       if (data.order?.status === "paid" && data.order?.balance_credited === true) {
         clearPaymentIdempotencyKey(qrcodeData.idempotencyKey);
         setPollingStatus("paid");
         setPaymentView("success");
-        void refreshBalance(qrcodeData.payType);
-        setTimeout(() => {
-          onOpenChange(false);
+        pollStoppedRef.current = true;
+        void refreshBalance(qrcodeData.payType, token);
+        pollTimerRef.current = setTimeout(() => {
+          if (epoch === checkoutEpoch.current && localStorage.getItem("auth_token") === token) onOpenChange(false);
         }, 2000);
         return;
       }
@@ -489,20 +482,30 @@ export function RechargeDialog({
       }
       // 订单证据是唯一成功依据。不能用“余额增加”推断当前订单成功，
       // 因为管理员加款或另一笔充值也会改变余额并造成错误归因。
-      setPollingStatus("polling");
+      if (data.order?.status === "expired" || data.order?.status === "failed") {
+        clearPaymentIdempotencyKey(qrcodeData.idempotencyKey);
+        pollStoppedRef.current = true;
+        setPollingStatus("expired");
+        return;
+      }
+      setPollingStatus("timeout");
       if (data.order?.status === "pending") {
         if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        startPolling(qrcodeData.tradeOrderId, qrcodeData.payType);
+        setCheckingBalance(false);
+        setPollingStatus("polling");
+        startPolling(qrcodeData.tradeOrderId, qrcodeData.payType, qrcodeData.idempotencyKey);
       }
     } catch {
-      // 查询失败
+      if (epoch === checkoutEpoch.current) setPollingStatus("timeout");
     } finally {
-      setCheckingBalance(false);
+      if (epoch === checkoutEpoch.current) setCheckingBalance(false);
     }
   };
 
   // 返回充值表单
   const handleBackToForm = () => {
+    checkoutEpoch.current++;
+    setCheckingBalance(false);
     pollStoppedRef.current = true;
     if (pollTimerRef.current) {
       clearTimeout(pollTimerRef.current);
@@ -631,7 +634,8 @@ export function RechargeDialog({
                 </span>
                 <Input
                   type="number"
-                  placeholder="输入金额（元）"
+                  placeholder="输入金额（元，最多两位小数）"
+                  step="0.01"
                   value={customAmount}
                   onChange={(e) => { setCustomAmount(e.target.value); setResult(null); }}
                   className="pl-8 pr-12 h-10"

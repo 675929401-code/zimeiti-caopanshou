@@ -15,7 +15,7 @@ import {
   buildLlmBillingIdempotencyKey,
   type LlmBillingPhase,
 } from "@/lib/llm-request-idempotency";
-import { toSelectedModelBillingConfig } from "@/lib/text-model-pricing";
+import { billableCacheReadRate, effectiveTokenRoundingUnit, toSelectedModelBillingConfig } from "@/lib/text-model-pricing";
 
 /** 计费结果 */
 export interface BillingResult {
@@ -101,6 +101,8 @@ export function buildSelectedModelBillingSnapshot(
       inputCostPerMillion: config.inputCostPerMillion,
       outputCostPerMillion: config.outputCostPerMillion,
       cachedCostPerMillion: config.cachedCostPerMillion,
+      billableCachedCostPerMillion: billableCacheReadRate(config.inputCostPerMillion, config.cachedCostPerMillion),
+      effectiveTokenRoundingUnit: effectiveTokenRoundingUnit(config),
       profitMargin: config.profitMargin,
       creditsPerYuan: config.creditsPerYuan,
       tokenRoundingEnabled: config.tokenRoundingEnabled,

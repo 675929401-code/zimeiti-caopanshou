@@ -2,6 +2,7 @@ import "server-only";
 import { validatePublishingProviderOptions } from '../publishing-option-schema';
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { PublishingDynamicOptionsSchema } from "../publishing-dynamic-options";
 import { isPublishingSafeHttps } from "../publishing-contract";
 import { readPublishingProviderConfiguration } from "./publishing-provider-config";
 
@@ -153,11 +154,10 @@ type ProviderCapability = {
   defaultOption?: Record<string, unknown>;
   capabilities: Record<string, unknown>;
 };
-// Capability metadata is low-frequency reference data. Keep the cache on
-// globalThis so every route bundle in the standalone server shares one copy;
-// serve stale entries immediately and refresh them in the background instead of
-// blocking the studio first paint on the upstream round trip.
+// Retain only recent successful lookups. Directory reads can stop waiting
+// before an upstream request finishes; official execution still checks fresh rules.
 const CAPABILITY_FRESH_MS = 10 * 60_000;
+const CAPABILITY_DIRECTORY_WAIT_MS = 6_000;
 const capabilityStore = globalThis as unknown as {
   __publishingCapabilityCache?: Map<string, { at: number; value: ProviderCapability[] }>;
   __publishingCapabilityInFlight?: Map<string, Promise<ProviderCapability[]>>;
@@ -235,29 +235,47 @@ export class PublishingProvider {
       throw error;
     });
     capabilityInFlight.set(key, request);
-    // Stale-while-revalidate: a previous catalog is good enough for directory
-    // display and option pre-validation; the upstream still validates the actual
-    // publish submission. Refresh failures keep the last good catalog.
-    if (cached) {
-      void request.catch(() => undefined);
-      return cached.value;
-    }
     return request;
+  }
+
+  async readDirectoryCapabilities(): Promise<ProviderCapability[]> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.readCapabilities(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new PublishingProviderError("PROVIDER_UNAVAILABLE", "官方服务暂不可读取")), CAPABILITY_DIRECTORY_WAIT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
   async readPublishOptions(type: string) {
     validated(platform, type);
-    return this.request(`/platforms/${encodeURIComponent(type)}/publish-options`, z.array(z.object({ field: ident, label: z.string().max(500), valueType: z.string().max(100), requiresAccount: z.boolean(), filterSchema: jsonObject.optional(), createSchema: jsonObject.optional() }).strip()).max(100));
+    const definitions = await this.request(`/platforms/${encodeURIComponent(type)}/publish-options`, z.array(z.object({ field: ident, label: z.string().max(500), valueType: z.string().max(100), requiresAccount: z.boolean(), filterSchema: z.record(z.string(), z.unknown()).optional(), createSchema: jsonObject.optional() }).strip()).max(100));
+    return definitions.map(definition => {
+      if (!definition.filterSchema) return definition;
+      const schema = definition.filterSchema;
+      // The X community search advertises a cursor. This adapter only requests
+      // the first page and does not accept or expose upstream pagination tokens.
+      if (type === "twitter" && definition.field === "community_id") {
+        const properties = z.record(z.string(), z.unknown()).parse(schema.properties ?? {});
+        const { next_token: _cursor, ...firstPage } = properties;
+        return { ...definition, filterSchema: validated(jsonObject, { ...schema, properties: firstPage }) };
+      }
+      return { ...definition, filterSchema: validated(jsonObject, schema) };
+    });
   }
-  async readPublishOptionValues(accountId: string, field: string, filter: Record<string, string | number | boolean> = {}) {
+  async readPublishOptionValues(accountId: string, field: string, filter: Record<string, string | number | boolean> = {}, expectedPlatform?: string) {
     this.requireScope("accountIds", accountId); validated(ident, field);
     const account = await this.readAccount(accountId);
+    if (expectedPlatform && account.type !== expectedPlatform) fail("PROVIDER_SCOPE_DENIED");
     const sources = await this.readPublishOptions(account.type);
     const descriptor = sources.find(item => item.field === field);
     if (!descriptor || !safeJson(filter) || descriptor.filterSchema && !validatePublishingProviderOptions(descriptor.filterSchema, filter) || !descriptor.filterSchema && Object.keys(filter).length) fail("PROVIDER_INPUT_INVALID");
-    interface ValueItem { value: string; label: string; disabled?: boolean; children?: ValueItem[] }
-    const itemSchema: z.ZodType<ValueItem> = z.lazy(() => z.object({ value: z.string().max(500), label: z.string().max(1000), disabled: z.boolean().optional(), children: z.array(itemSchema).max(1000).optional() }).strip());
     const query = new URLSearchParams(Object.entries(filter).map(([key, value]) => [key, String(value)]));
-    const result = await this.request(`/accounts/${encodeURIComponent(accountId)}/publish-options/${encodeURIComponent(field)}/values${query.size ? `?${query}` : ""}`, z.object({ field: ident, valueType: z.string().max(100), items: z.array(itemSchema).max(1000) }).strip());
+    const result = await this.request(`/accounts/${encodeURIComponent(accountId)}/publish-options/${encodeURIComponent(field)}/values${query.size ? `?${query}` : ""}`, PublishingDynamicOptionsSchema);
     if (result.field !== field) fail("PROVIDER_PROTOCOL_ERROR");
     return result;
   }

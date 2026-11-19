@@ -44,7 +44,7 @@ function containsAll(value: string, markers: readonly string[]): void {
 
 check("recharge exchange rate has one shared source", () => {
   containsAll(source.billing, [
-    'creditsPerYuan: get("credits_per_yuan", 50)',
+    'creditsPerYuan: get("credits_per_yuan", 50, true)',
     "export async function getBillingConfig()",
   ]);
 });
@@ -109,7 +109,7 @@ check("image generation uses the selected public model price and pre-provider ca
 check("video generation freezes model duration resolution pricing and charges once at terminal state", () => {
   containsAll(source.videoRoute, [
     "findModelByPublicId(",
-    "requireVideoPriceSnapshot(selectedModel, selectedResolution, videoTiming.target)",
+    "requireVideoPriceSnapshot(selectedModel, selectedResolution, videoTiming.target, {",
     "client_request_id",
   ]);
   containsAll(source.videoFinalizer, [
@@ -197,7 +197,7 @@ check("administrator privileges never create a role-based billing exemption", ()
     "管理员与普通用户执行同一钱包扣费规则",
   ]);
   assert.doesNotMatch(source.commerceAdmin, /管理员钱包扣费(?:为|\s*)\s*¥?0/u);
-  containsAll(source.videoPage, ["{cashBalance < selectedPrice && ("]);
+  containsAll(source.videoPage, ["cashBalance < selectedPrice && (", "maxChargeYuan"]);
   assert.doesNotMatch(source.videoPage, /!isAdmin\s*&&\s*cashBalance\s*<\s*selectedPrice/u);
   containsAll(source.digitalHumanSpeech, ["(credits ?? 0) < quote"]);
   assert.doesNotMatch(source.digitalHumanSpeech, /!admin\s*&&\s*\(credits\s*\?\?\s*0\)\s*<\s*quote/u);

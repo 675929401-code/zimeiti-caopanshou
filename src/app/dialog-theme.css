@@ -410,6 +410,36 @@ html[data-theme="lattice"] :is(
   text-wrap: balance;
 }
 
+/* A lapsed session needs a way back into the workbench. */
+html[data-theme] .platform-dialog-surface.session-expiry-dialog {
+  --dialog-shadow: 0 20px 56px rgba(12, 26, 45, .25), 0 3px 10px rgba(12, 26, 45, .10);
+  border-left-width: 1px !important;
+  border-radius: 16px !important;
+}
+
+.session-expiry-dialog::before {
+  content: none;
+}
+
+.session-expiry-dialog [data-slot="dialog-title"] {
+  font-size: 1.25rem;
+}
+
+html[data-theme] .session-expiry-dialog .session-expiry-action {
+  background: var(--dialog-info-fg);
+  color: #fff;
+  border-radius: 10px !important;
+}
+
+html[data-theme] .session-expiry-dialog .session-expiry-action:hover {
+  background: color-mix(in srgb, var(--dialog-info-fg) 90%, black);
+}
+
+html[data-theme] .session-expiry-dialog .session-expiry-action:focus-visible {
+  outline: 2px solid var(--dialog-info-fg);
+  outline-offset: 3px;
+}
+
 .platform-dialog-surface :is(button, a):focus-visible,
 .announcement-toast :is(button, a):focus-visible {
   outline: 2px solid color-mix(in srgb, var(--dialog-accent) 74%, white);

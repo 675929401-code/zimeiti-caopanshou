@@ -1,4 +1,5 @@
 "use client";
+import { costMarkupFromMargin } from "@/lib/text-model-pricing";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { modelMutationAttempt, type ModelMutationAttempt } from "@/components/admin/model-mutation-request";
 import UnifiedModelDialog from "./unified-model-dialog";
@@ -687,7 +688,7 @@ export default function UnifiedModelsTab({
       { key: "input_cost_per_million", label: "输入成本(元/百万Token)" },
       { key: "output_cost_per_million", label: "输出成本(元/百万Token)" },
       { key: "cached_cost_per_million", label: "缓存成本(元/百万Token)" },
-      { key: "profit_margin", label: "利润率(%)" },
+      { key: "profit_margin", label: "销售毛利率(%)" },
     ];
     const details: string[] = [];
     for (const { key, label, formKey } of billingFields) {
@@ -1235,7 +1236,7 @@ export default function UnifiedModelsTab({
           </div>
           {canManageModels && mt === "text" && m.token_billing_enabled && <div className="text-xs text-[var(--muted-foreground)] mt-1 break-words">
             输入成本 ¥{formatModelPrice(m.input_cost_per_million)}/百万Token · 输出成本 ¥{formatModelPrice(m.output_cost_per_million)}/百万Token
-            {Number(m.profit_margin) < 100 && <> · 输入售价 ¥{formatModelPrice(Number(m.input_cost_per_million || 0) / (1 - Number(m.profit_margin || 0) / 100))}/百万Token · 输出售价 ¥{formatModelPrice(Number(m.output_cost_per_million || 0) / (1 - Number(m.profit_margin || 0) / 100))}/百万Token</>}
+            {m.profit_margin != null && Number(m.profit_margin) < 100 && <> · 成本加价 {Number(costMarkupFromMargin(Number(m.profit_margin)).toFixed(4))}% · 输入售价 ¥{formatModelPrice(Number(m.input_cost_per_million || 0) / (1 - Number(m.profit_margin || 0) / 100))}/百万Token · 输出售价 ¥{formatModelPrice(Number(m.output_cost_per_million || 0) / (1 - Number(m.profit_margin || 0) / 100))}/百万Token</>}
           </div>}
           {canManageModels && <div className="text-xs text-[var(--muted-foreground)] mt-1">{connection.label} · {connection.kind === "relay" ? "渠道分组：" : "权限："}{connection.group}</div>}
           {canManageModels && mt === "text" && <div className="mt-2 space-y-1 text-xs text-[var(--muted-foreground)]" data-text-validation>

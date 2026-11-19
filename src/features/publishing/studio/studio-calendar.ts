@@ -7,6 +7,17 @@ const starts = calendar.months.map(([date, month]) => ({ date, month, time: Date
 const solarTerms: Record<string, string> = calendar.terms
 export const calendarDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
 
+/** Use civil-day boundaries in the same time zone as the calendar UI. */
+export function studioCalendarDates(month: Date, selectedDay: string, mode: "month" | "week") {
+  const anchor = mode === "month" ? new Date(month.getFullYear(), month.getMonth(), 1) : new Date(selectedDay + "T00:00:00");
+  const offset = (anchor.getDay() + 6) % 7;
+  const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - offset);
+  const monthDays = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const length = mode === "week" ? 7 : Math.ceil((offset + monthDays) / 7) * 7;
+  const dayAt = (index: number) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+  return { days: Array.from({ length }, (_, index) => dayAt(index)), from: start.toISOString(), to: dayAt(length).toISOString() };
+}
+
 /** Official civil dates use UTC+8; task timestamps retain the user's device timezone. */
 export function studioCalendarDay(dateKey: string) {
   const time = Date.parse(`${dateKey}T00:00:00Z`)
@@ -24,7 +35,7 @@ export function studioCalendarDay(dateKey: string) {
 
 export function calendarTaskTone(state: string): 'scheduled' | 'done' | 'attention' | 'failed' | 'muted' {
   if (['success','succeeded','published','completed'].includes(state)) return 'done'
-  if (['failed','rejected','failed_known'].includes(state)) return 'failed'
+  if (['failed','rejected','failed_known','blocked'].includes(state)) return 'failed'
   if (['cancelled','canceled'].includes(state)) return 'muted'
   if (['unknown','awaiting_user_action','requires_user_action','awaiting_verification','browser_reported'].includes(state)) return 'attention'
   if (['pending','waiting','queued','processing','publishing','running','dispatching','scheduled','planned','platform_scheduled','accepted'].includes(state)) return 'scheduled'

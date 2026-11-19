@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { PaymentWalletSync } from "@/components/payment-wallet-sync";
 import { AppProvider } from "@/contexts/app-context";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { MemberFeatureBoundary, MemberPermissionProvider } from "@/components/member-permission-boundary";
@@ -33,6 +34,7 @@ export function RouteProviderBoundary({ children }: { children: ReactNode }) {
 
   return <>
     {keepMainRuntime ? <AppProvider>
+      <PaymentWalletSync />
       <MemberPermissionProvider>
         {surface !== "pending" && <SecondaryPageReturnGuard />}
         {page}

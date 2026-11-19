@@ -3,6 +3,7 @@
 // 本文件是支付订单创建 API。
 // 修改此文件需要用户明确同意，详见 AGENTS.md "🔒 锁定模块清单 #12 支付系统"。
 
+import { normalizeRechargeAmount, rechargeCreditsForAmount } from "@/lib/recharge-amount";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { getTokenFromHeaders, verifyToken } from "@/lib/auth";
@@ -34,13 +35,6 @@ interface ProviderOrderResult {
   paymentUrl: string;
   qrcodeUrl: string;
   platformOrderId: string | null;
-}
-
-function normalizeAmount(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
-  const cents = Math.round(value * 100);
-  if (!Number.isSafeInteger(cents) || Math.abs(value * 100 - cents) > 1e-8) return null;
-  return cents / 100;
 }
 
 function normalizeCallbackBaseUrl(rawValue: unknown): string | null {
@@ -163,7 +157,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json() as Record<string, unknown>;
     const type = body.type;
-    const normalizedAmount = normalizeAmount(body.amount);
+    const normalizedAmount = normalizeRechargeAmount(body.amount);
     const paymentMethodId = typeof body.paymentMethodId === "string" ? body.paymentMethodId.trim() : "";
     const paymentMethod = typeof body.paymentMethod === "string" ? body.paymentMethod.trim() : "";
     const requestedProvider = typeof body.provider === "string" ? body.provider.trim().toLowerCase() : "";
@@ -223,7 +217,7 @@ export async function POST(request: NextRequest) {
     }
     let creditsAmount: number | null = null;
     if (type === "credits") {
-      const computedCredits = Math.floor(normalizedAmount * creditsPerYuan);
+      const computedCredits = rechargeCreditsForAmount(normalizedAmount, creditsPerYuan);
       if (!Number.isSafeInteger(computedCredits) || computedCredits <= 0) {
         console.error("[支付] creditsAmount 计算结果无效");
         return NextResponse.json({ error: "积分计费配置异常" }, { status: 503 });

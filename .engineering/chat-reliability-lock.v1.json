@@ -3,6 +3,7 @@
   "locked": true,
   "createdAt": "2026-10-29T10:43:38.934Z",
   "approval": {
+    "reviewedUsageSettlement20261119": "8af3a5c3: reviewed changes to three paths for user-requested settlement from supplier usage. Stream missing-usage, terminal, exactly-once, and submitted-outcome regressions passed locally. All other 49 paths verified against their original digest.",
     "reviewedUpdate20261110NativeIntegration": "Session afb7f0d4: after the prior response disclosed the reviewed package dependency candidate, nine passing chat regression groups, the unchanged other 51 protected paths and the single-package baseline gate, the user replied: 源代码里面的功能有了吗？我们的计费逻辑接入了吗。UI主题对齐了吗？功能链路是否形成闭环，能够正常交付使用，如果没有请继续推进任务. Root records this as a contextual continuation of that disclosed dependency scope, not an item-by-item user version approval or reviewer-granted authority. Independent Astra rechecked the exact 11 dependency deltas, candidate SHA 18c8020771aaf7884afcfd62a171be26a87da9b97785974a47b17af48cfD3fce (case-insensitive hex), sealed baseline and the other 51 hashes. Manual package.json hash replacement only; all 52 paths, other hashes and checker remain unchanged. Evidence: .codex-evidence/publish-center-closure-afb7f0d4/reviewed-single-package-gate.json; original user/context record is in 续接上下文/用户需求记录/publish-center-closure-continuation-20261110.json. No future protected change, production, remote write or paid call authorization is inferred. Normal build and browser acceptance still required.",
     "reference": "User correction 2026-10-30: only the existing reply-footer icon pushes into corresponding storyboard cards; remove code-header whole-reply actions. Fix the actual original chained intake versus visible ordinary-mode reply without generating again.",
     "scope": "Reviewed text-draft mode declaration is advisory, original submitted input remains authority. Preserve full original reply/input and all pairs; computed mismatch warning is rebuilt and displayed, not a new generation gate. Machine input conflicts, asset ownership, interrupted/unknown states, and async latest-source checks remain strict. Source-only manual baseline: 52 paths; actual new-build history-to-project acceptance still pending. Prior equal-height and real-wheel fixes retained; extraction 31 unchanged.",
@@ -47,7 +48,7 @@
     },
     {
       "path": "src/lib/llm-proxy/proxy.ts",
-      "sha256": "69145d69a86c983145d3673eadf4d5b5a53bce999e5027a864f9aa36d1a5faf2"
+      "sha256": "ea4fc8e7207733740c571d9481e59e3ac3a59354b601f56c2ce09f903a3b7050"
     },
     {
       "path": "src/lib/llm-request-idempotency.ts",
@@ -55,7 +56,7 @@
     },
     {
       "path": "src/app/api/llm/handle-stream.ts",
-      "sha256": "34c6a693576b920d98db09bed49111ef09092e7e2dcf306b9eea91375933ade4"
+      "sha256": "e132d92f05847f920b708387ae423e6ac0c8cda988e01600287a412f329ca058"
     },
     {
       "path": "src/lib/chat-pipeline.ts",
@@ -87,7 +88,7 @@
     },
     {
       "path": "scripts/verify-llm-provider-stream.mjs",
-      "sha256": "34593801ff8131248e452a1f1035b0d44e4d2836e7969f60071614197ba9b2cf"
+      "sha256": "182290ac95089ca8ac04f468fb65fcfc2ae35fc6698bcdeaa9f7b09a40ea2400"
     },
     {
       "path": "scripts/verify-llm-durable-exactly-once.ts",

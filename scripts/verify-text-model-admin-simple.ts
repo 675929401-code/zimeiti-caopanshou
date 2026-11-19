@@ -19,7 +19,7 @@ for (const required of [
   "输入成本",
   "输出成本",
   "缓存成本",
-  "利润率(%)",
+  "成本加价率 (%)",
   "上下文长度(Token)",
   "深度思考",
 ]) assert.ok(textForm.includes(required), `missing simplified field: ${required}`);
@@ -42,13 +42,16 @@ for (const removed of [
   "管理员备注",
 ]) assert.equal(textForm.includes(removed), false, `legacy field remains visible: ${removed}`);
 
-assert.ok(dialog.includes('value: "secure_skill"'));
-assert.ok(dialog.includes('endpoint: "https://token.secure-skill.com/v1"'));
+const presets = source("src/lib/llm-provider-presets.ts");
+assert.ok(dialog.includes("const TEXT_CONNECTION_PRESETS = LLM_PROVIDER_PRESETS;"));
+assert.ok(presets.includes('value: "secure_skill"'));
+assert.ok(presets.includes('endpoint: "https://token.secure-skill.com/v1"'));
 assert.ok(dialog.includes('billing_mode: form.model_type === "text" ? "token"'));
 assert.ok(dialog.includes('token_billing_enabled: form.model_type === "text"'));
 assert.ok(dialog.includes('saveData.cost_per_use = 0'));
 assert.ok(dialog.includes('saveData.cost_price = 0'));
-assert.ok(dialog.includes('saveData.enable_web_search = false'));
+assert.ok(dialog.includes('saveData.enable_web_search = isEdit ? model?.enable_web_search : false'));
+assert.ok(dialog.includes('saveData.max_context_rounds = isEdit ? model?.max_context_rounds : 0'));
 assert.equal(textForm.includes("/api/admin/llm-test"), false, "new-model form must not trigger a provider test");
 
 assert.ok(route.includes("function textTokenConfigurationError"));

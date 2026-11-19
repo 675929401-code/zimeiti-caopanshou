@@ -9356,6 +9356,8 @@ const handleDeleteCategory = async () => {
         {activeTab === "models" && (
           <ModelsAdminTab
             token={token}
+            onUnlock={() => setUnlockDialogRequested(true)}
+            onConfigureWorkspace={visibleAdminTabSet.has("workspace-models") && visibleWorkspaceProjectIds.length ? () => openWorkspaceProject(workspaceProject) : undefined}
             canManageModelsPermission={hasModelSettingsPermission}
             sensitiveUnlocked={sensitiveUnlocked}
             canManagePlugins={hasIntegrationSettingsPermission}

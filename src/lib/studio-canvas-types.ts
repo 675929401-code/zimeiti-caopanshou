@@ -80,10 +80,8 @@ export interface CanvasVoiceOption {
 export interface CanvasVoicePricing {
   modelId: string;
   name: string;
-  costPrice: number;
   unit: string;
-  profitMargin: number;
-  sellPrice: number;
+  priceReady: boolean;
 }
 
 export interface ChatModel {

@@ -1,5 +1,5 @@
 import type { BillingConfig } from "@/lib/billing";
-import { toSelectedModelBillingConfig } from "@/lib/text-model-pricing";
+import { billableCacheReadRate, effectiveTokenRoundingUnit, toSelectedModelBillingConfig } from "@/lib/text-model-pricing";
 
 type Row = Record<string, unknown>;
 
@@ -17,8 +17,6 @@ export interface PublicTransactionBillingExplanation {
   schemaVersion: "public_transaction_billing.v1";
   status: "snapshot" | "missing_snapshot" | "invalid_snapshot" | "recorded_amount";
   message: string;
-  price?: PublicTokenPrice;
-  baseFeeCredits?: number;
   walletLink: {
     status: "linked" | "unlinked";
     message: string;
@@ -38,17 +36,15 @@ function number(value: unknown): number | null {
 }
 
 /** Mirrors calculateCredits' effective unit and 60% rule; never substitutes a global model price. */
-export function toPublicTokenPrice(config: BillingConfig): PublicTokenPrice | undefined {
+export function toPublicTokenPrice(config: BillingConfig, historical?: { cachedRate: number; unit: number }): PublicTokenPrice | undefined {
   const values = [config.inputCostPerMillion, config.outputCostPerMillion, config.cachedCostPerMillion,
     config.profitMargin, config.creditsPerYuan, config.tokenRoundingUnit, config.tokenRoundingMin, config.tokenRoundingMax];
   if (values.some(value => number(value) === null) || config.profitMargin >= 100 || config.creditsPerYuan <= 0
       || config.tokenRoundingMax < config.tokenRoundingMin || typeof config.tokenRoundingEnabled !== "boolean") return undefined;
   const divisor = 1 - config.profitMargin / 100;
   const rate = (cost: number) => cost / divisor * config.creditsPerYuan;
-  const unit = config.tokenRoundingEnabled
-    ? Math.max(config.tokenRoundingMin, Math.min(config.tokenRoundingMax, config.tokenRoundingUnit))
-    : 0;
-  const rates = [rate(config.inputCostPerMillion), rate(config.outputCostPerMillion), rate(config.cachedCostPerMillion)];
+  const unit = historical?.unit ?? effectiveTokenRoundingUnit(config);
+  const rates = [rate(config.inputCostPerMillion), rate(config.outputCostPerMillion), rate(historical?.cachedRate ?? billableCacheReadRate(config.inputCostPerMillion, config.cachedCostPerMillion))];
   if (rates.some(value => !Number.isFinite(value))) return undefined;
   return {
     schemaVersion: "public_token_price.v1",
@@ -73,9 +69,9 @@ export function buildPublicBillingRules(globalConfig: BillingConfig, modelRow?: 
     pricingScope: modelRow ? "selected_public_model" as const : "model_specific" as const,
     priceReady: modelRow ? Boolean(price) : null,
     description: PUBLIC_TOKEN_BILLING_DESCRIPTION,
-    historyDescription: "历史消费优先展示该笔保存的价格快照；缺少快照时无法还原当时单价，不使用当前价格倒算旧交易。",
+    historyDescription: "历史消费展示当时实际扣款与用量，不使用当前价格倒算旧交易。",
     roundingDescription: price?.roundingDescription || "是否取整及取整单位由所选模型决定；模型明确不取整时，不使用平台默认取整单位。",
-    ...(price ? { price } : {}),
+
   };
 }
 
@@ -86,10 +82,14 @@ function publicSnapshotPrice(value: unknown): PublicTokenPrice | undefined {
   const fields = ["inputCostPerMillion", "outputCostPerMillion", "cachedCostPerMillion", "profitMargin",
     "creditsPerYuan", "tokenRoundingUnit", "tokenRoundingMin", "tokenRoundingMax"] as const;
   if (fields.some(field => number(snapshot[field]) === null) || typeof snapshot.tokenRoundingEnabled !== "boolean") return undefined;
+  const cachedRate = number("billableCachedCostPerMillion" in snapshot ? snapshot.billableCachedCostPerMillion : snapshot.cachedCostPerMillion);
+  const legacyUnit = snapshot.tokenRoundingEnabled ? Math.max(Number(snapshot.tokenRoundingMin), Math.min(Number(snapshot.tokenRoundingMax), Number(snapshot.tokenRoundingUnit))) : 0;
+  const unit = number("effectiveTokenRoundingUnit" in snapshot ? snapshot.effectiveTokenRoundingUnit : legacyUnit);
+  if (cachedRate === null || unit === null) return undefined;
   return toPublicTokenPrice(Object.fromEntries([
     ...fields.map(field => [field, number(snapshot[field])]),
     ["tokenRoundingEnabled", snapshot.tokenRoundingEnabled],
-  ]) as unknown as BillingConfig);
+  ]) as unknown as BillingConfig, { cachedRate, unit });
 }
 
 /** Explicit projection: never pass arbitrary billing metadata, credentials, provider IDs or raw snapshots to a user. */
@@ -100,7 +100,7 @@ export function toPublicTransactionMetadata(value: unknown): Row | null {
     if (typeof metadata[key] === "string" && metadata[key].trim()) result[key] = metadata[key].slice(0, 200);
   }
   for (const key of ["prompt_tokens", "completion_tokens", "cached_tokens", "total_tokens",
-    "credits_charged", "sell_price_rmb", "selling_price"] as const) {
+    "credits_charged"] as const) {
     const parsed = number(metadata[key]);
     if (parsed !== null) result[key] = parsed;
   }
@@ -134,10 +134,8 @@ export function buildPublicTransactionBillingExplanation(
   if (!price) return {
     ...base, status: "invalid_snapshot", message: "该笔价格快照不完整或版本不支持，无法还原当时单价与取整方式；扣分以账本金额为准。",
   };
-  const baseFeeCredits = number(object(snapshot).baseFeeCredits);
   return {
-    ...base, status: "snapshot", price,
-    ...(baseFeeCredits === null ? {} : { baseFeeCredits }),
-    message: "以下单价与取整方式来自该笔消费保存的价格快照。实际扣分以账本金额为准。",
+    ...base, status: "snapshot",
+    message: "已按本次请求的用量和下单时的计费配置结算。",
   };
 }

@@ -1,3 +1,4 @@
+import { BillingCatalogRequest } from "@/lib/server/member-model-catalog";
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual, createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -345,7 +346,7 @@ async function markProviderRequestSent(receipt:Receipt,attestation?:ProviderAtte
 }
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id);
 async function catalog(kind: string, request: Request) {
-  const req = new Request(new URL(kind === 'image' ? '/api/cover-models?surface=commerce-agent' : kind === 'video' ? '/api/video/models?surface=commerce-agent' : '/api/llm-models', request.url));
+  const req = new BillingCatalogRequest(new URL(kind === 'image' ? '/api/cover-models?surface=commerce-agent' : kind === 'video' ? '/api/video/models?surface=commerce-agent' : '/api/llm-models', request.url));
   return (await (kind === 'image' ? imageCatalog(req) : kind === 'video' ? videoCatalog(req) : textCatalog(req))).json();
 }
 async function modelFor(kind: string, id: string, request: Request): Promise<Row> {

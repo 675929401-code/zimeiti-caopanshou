@@ -342,12 +342,18 @@ export default async function RootLayout({
           确保 React 的事件委托（如果存在）先处理完 submit 事件并设置标志。
         */}
         <script dangerouslySetInnerHTML={{ __html: `
+          // Keep the unhydrated form's markup stable while the native request is pending.
+          var pendingAuthFallbacks = new WeakSet();
           document.addEventListener('submit', function(e) {
             var form = e.target;
             if (form.tagName !== 'FORM') return;
 
             // 始终阻止默认提交行为
             e.preventDefault();
+            if (pendingAuthFallbacks.has(form)) {
+              e.stopImmediatePropagation();
+              return;
+            }
 
             // 延迟到下一事件循环检查 React 是否已处理
             // 如果 React hydration 正常，React 的 onSubmit 会同步执行并设置标志
@@ -366,7 +372,7 @@ export default async function RootLayout({
                 (form.querySelector('input[name="email"]') && form.querySelector('input[name="emailCode"]')) ||
                 form.querySelector('input[name="securityAnswer"]')
               );
-              if (!isAuthFallbackForm) return;
+              if (!isAuthFallbackForm || pendingAuthFallbacks.has(form)) return;
 
               // React 未处理 → hydration 不完整，手动处理登录
               console.warn('[FormGuard] React hydration不完整，使用原生登录备份');
@@ -378,9 +384,6 @@ export default async function RootLayout({
               var emailCodeInput = form.querySelector('input[name="emailCode"]');
               var securityAnswerInput = form.querySelector('input[name="securityAnswer"]');
 
-              var btn = form.querySelector('button[type="submit"]');
-              var origBtnText = btn ? btn.textContent : '';
-
               // 安全问题验证
               if (securityAnswerInput) {
                 var answer = securityAnswerInput.value;
@@ -389,7 +392,7 @@ export default async function RootLayout({
                   var savedAccount = localStorage.getItem('last_login_account') || '';
                   var authPasswordInput = document.querySelector('form[data-react-managed] input[name="password"]');
                   var pw = authPasswordInput ? authPasswordInput.value : '';
-                  if (btn) { btn.textContent = '验证中...'; btn.disabled = true; }
+                  pendingAuthFallbacks.add(form);
                   fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -401,12 +404,10 @@ export default async function RootLayout({
                       window.location.href = '/';
                     } else {
                       alert(d.error || '验证失败');
-                      if (btn) { btn.textContent = origBtnText; btn.disabled = false; }
                     }
                   }).catch(function() {
                     alert('网络错误，请稍后重试');
-                    if (btn) { btn.textContent = origBtnText; btn.disabled = false; }
-                  });
+                  }).finally(function() { pendingAuthFallbacks.delete(form); });
                 } catch(ex) {}
                 return;
               }
@@ -416,7 +417,7 @@ export default async function RootLayout({
                 var email = emailInput.value;
                 var code = emailCodeInput.value;
                 if (!email || !code) return;
-                if (btn) { btn.textContent = '登录中...'; btn.disabled = true; }
+                pendingAuthFallbacks.add(form);
                 fetch('/api/auth/login-email', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -430,12 +431,10 @@ export default async function RootLayout({
                     window.location.href = '/';
                   } else {
                     alert(d.error || '登录失败');
-                    if (btn) { btn.textContent = origBtnText; btn.disabled = false; }
                   }
                 }).catch(function() {
                   alert('网络错误，请稍后重试');
-                  if (btn) { btn.textContent = origBtnText; btn.disabled = false; }
-                });
+                }).finally(function() { pendingAuthFallbacks.delete(form); });
                 return;
               }
 
@@ -444,7 +443,7 @@ export default async function RootLayout({
                 var account = accountInput.value;
                 var password = passwordInput.value;
                 if (!account || !password) return;
-                if (btn) { btn.textContent = '登录中...'; btn.disabled = true; }
+                pendingAuthFallbacks.add(form);
                 fetch('/api/auth/login', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -461,15 +460,12 @@ export default async function RootLayout({
                     location.reload();
                   } else if (d.code === 'NO_PASSWORD_SET') {
                     alert('该账号未设置密码，请使用邮箱登录');
-                    if (btn) { btn.textContent = origBtnText; btn.disabled = false; }
                   } else {
                     alert(d.error || '账号或密码错误');
-                    if (btn) { btn.textContent = origBtnText; btn.disabled = false; }
                   }
                 }).catch(function() {
                   alert('网络错误，请稍后重试');
-                  if (btn) { btn.textContent = origBtnText; btn.disabled = false; }
-                });
+                }).finally(function() { pendingAuthFallbacks.delete(form); });
                 return;
               }
 

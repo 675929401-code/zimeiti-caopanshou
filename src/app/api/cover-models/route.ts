@@ -1,3 +1,4 @@
+import { catalogRatesForMember, withoutCatalogRates } from "@/lib/server/member-model-catalog";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { verifyAdminToken } from "@/lib/admin-auth";
 import { readImagePublicationStates } from "@/lib/image-model-availability";
@@ -267,7 +268,8 @@ export async function GET(request: Request) {
           : {}),
         });
       });
-    return NextResponse.json({ models }, { headers: noStoreHeaders });
+    const visibleModels = await catalogRatesForMember(request) ? models : models.map(withoutCatalogRates);
+    return NextResponse.json({ models: visibleModels }, { headers: noStoreHeaders });
   } catch (error) {
     console.error("[CoverModels/Public] GET error:", error);
     return NextResponse.json({

@@ -1,3 +1,4 @@
+import { withoutCatalogRates } from "@/lib/server/member-model-catalog";
 /**
  * 公共对话模型列表 API
  * GET - 返回所有激活的 LLM 模型（从 llm_models 预设表读取，与模型管理实时同步）
@@ -46,8 +47,8 @@ export async function GET() {
     }));
 
     return NextResponse.json({
-      models: textModels.filter((model: PublicModelDto) => model.capabilities.priceReady === true),
-      unavailableModels: textModels.filter((model: PublicModelDto) => model.capabilities.priceReady !== true),
+      models: textModels.filter((model: PublicModelDto) => model.capabilities.priceReady === true).map(withoutCatalogRates),
+      unavailableModels: textModels.filter((model: PublicModelDto) => model.capabilities.priceReady !== true).map(withoutCatalogRates),
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("Error fetching LLM models for chat switcher:", error);

@@ -117,7 +117,7 @@ for (const [name, patch, label, expectedCalls] of [
   const calls = [];
   const card = { ...originalCard(), ...patch };
   const scope = context({ card, preparingVideoIds: new Set(), videoViewOnly: false,
-    switchExistingCardMedia: () => false, showVideoMedia: false,
+    switchExistingCardMedia: () => false, showVideoMedia: false, cardVideoInputs: { usesStoryboardImage: false },
     reconcileVideoRequest: (...args) => calls.push(['reconcile', ...args]),
     prepareAndGenerateVideo: (...args) => calls.push(['generate', ...args]),
     needsStoryboardBoardExport: () => false, canRequestVideoTermination: () => false,

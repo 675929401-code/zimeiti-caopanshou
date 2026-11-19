@@ -46,6 +46,7 @@
  *   实际使用1500输出tokens → 取整为2000（余500/1000=50%<60%→1000，但这里是1500，余500，50%<60%→1000）→ 扣 12.5 积分
  */
 
+import { billableCacheReadRate, effectiveTokenRoundingUnit } from "./text-model-pricing";
 import { getDb } from "./db";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
 
@@ -75,6 +76,8 @@ export interface BillingConfig {
 export interface BillingResult {
   /** 进货成本（元） */
   actualCostRmb: number;
+  /** Confirmed supplier cost above the capped customer cache-read sale, if any. */
+  cacheReadCapLossRmb?: number;
   /** 用户售价（元） */
   sellPriceRmb: number;
   /** 利润（元） */
@@ -124,9 +127,12 @@ const agentBillingCache = new Map<string, { data: BillingConfig | null; ts: numb
 const AGENT_BILLING_CACHE_TTL = 60_000; // 60秒缓存
 
 export function billingConfigFromSettingsRows(data: Array<{ setting_key: string; setting_value: string }>): BillingConfig {
-  const get = (key: string, fallback: number): number => {
+  const get = (key: string, fallback: number, positive = false): number => {
     const row = data?.find((r: { setting_key: string; setting_value: string }) => r.setting_key === key);
-    return row ? Number(row.setting_value) || fallback : fallback;
+    const raw = row?.setting_value;
+    if (raw == null || String(raw).trim() === "") return fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) && (positive ? value > 0 : value >= 0) ? value : fallback;
   };
 
   const getBool = (key: string, fallback: boolean): boolean => {
@@ -141,11 +147,11 @@ export function billingConfigFromSettingsRows(data: Array<{ setting_key: string;
     outputCostPerMillion: get("output_cost_per_million", 125),
     cachedCostPerMillion: get("cached_cost_per_million", 2.5),
     profitMargin: get("profit_margin", 50),
-    creditsPerYuan: get("credits_per_yuan", 50),
+    creditsPerYuan: get("credits_per_yuan", 50, true),
     tokenRoundingEnabled: getBool("token_rounding_enabled", false),
     tokenRoundingUnit: get("token_rounding_unit", 0),
-    tokenRoundingMin: get("token_rounding_min", 100),
-    tokenRoundingMax: get("token_rounding_max", 10000),
+    tokenRoundingMin: get("token_rounding_min", 100, true),
+    tokenRoundingMax: get("token_rounding_max", 10000, true),
   };
   return config;
 }
@@ -156,9 +162,12 @@ export async function getBillingConfig(): Promise<BillingConfig> {
   }
   const readEpoch = billingConfigEpoch;
   const db = await getDb();
-  const { data } = await db.from("platform_settings").select("setting_key, setting_value");
-
-  const config = billingConfigFromSettingsRows(data || []);
+  const { data, error } = await db.from("platform_settings").select("setting_key, setting_value")
+    .in("setting_key", ["credits_per_yuan", "input_cost_per_million", "output_cost_per_million", "cached_cost_per_million", "profit_margin", "token_rounding_enabled", "token_rounding_unit", "token_rounding_min", "token_rounding_max"]);
+  if (error || !Array.isArray(data)) throw new Error("BILLING_CONFIG_UNAVAILABLE");
+  const rate = data.find(row => row.setting_key === "credits_per_yuan")?.setting_value;
+  if (rate == null || !Number.isFinite(Number(rate)) || Number(rate) <= 0) throw new Error("BILLING_EXCHANGE_RATE_UNAVAILABLE");
+  const config = billingConfigFromSettingsRows(data);
   if (readEpoch === billingConfigEpoch) billingConfigCache = { data: config, ts: Date.now() };
   return config;
 }
@@ -223,22 +232,18 @@ export function calculateCredits(
   // ── 关键：promptTokens 包含 cachedTokens，需拆分避免重复计费 ──
   // API 返回的 prompt_tokens 是总输入 token 数（含缓存命中的部分）
   // cached_tokens 是其中缓存命中的部分，价格更低
+  cachedTokens = Math.max(0, Math.min(promptTokens, cachedTokens));
   const nonCachedInputTokens = Math.max(0, promptTokens - cachedTokens);
 
   // 缓存命中价不得高于普通输入价：模型目录若配反（cached > input），
   // 命中缓存反而更贵，会直接多扣用户积分。此处按输入价封顶，保留成本口径。
-  const effectiveCachedCostPerMillion = Math.min(
-    Math.max(0, config.cachedCostPerMillion),
-    Math.max(0, config.inputCostPerMillion),
-  );
+  const effectiveCachedCostPerMillion = billableCacheReadRate(config.inputCostPerMillion, config.cachedCostPerMillion);
 
   // ── Token 取整（保障不亏损） ──
   // 若 tokenRoundingEnabled 开启且 tokenRoundingUnit > 0，对各类 token 向上取整到该单位的整数倍
   // 取整单位会被限制在 [tokenRoundingMin, tokenRoundingMax] 范围内
   // 例如 unit=100：用了80 tokens → 按100计费，用了1500 tokens → 按2000计费
-  const effectiveRoundingUnit = config.tokenRoundingEnabled
-    ? Math.max(config.tokenRoundingMin, Math.min(config.tokenRoundingMax, config.tokenRoundingUnit))
-    : 0;
+  const effectiveRoundingUnit = effectiveTokenRoundingUnit(config);
   const roundedNonCachedInput = roundTokens(nonCachedInputTokens, effectiveRoundingUnit);
   const roundedCompletion = roundTokens(completionTokens, effectiveRoundingUnit);
   const roundedCached = roundTokens(cachedTokens, effectiveRoundingUnit);
@@ -246,7 +251,7 @@ export function calculateCredits(
   // 进货成本（元）：非缓存输入 + 输出 + 缓存输入（用原始值计算成本）
   const inputCostRmb = (nonCachedInputTokens / 1_000_000) * config.inputCostPerMillion;
   const outputCostRmb = (completionTokens / 1_000_000) * config.outputCostPerMillion;
-  const cachedCostRmb = (cachedTokens / 1_000_000) * effectiveCachedCostPerMillion;
+  const cachedCostRmb = (cachedTokens / 1_000_000) * config.cachedCostPerMillion;
   const actualCostRmb = inputCostRmb + outputCostRmb + cachedCostRmb;
 
   // 用户售价（元）：用取整后的 token 数计算（用户按取整后数量付费）
@@ -268,7 +273,10 @@ export function calculateCredits(
   const rawCreditsNoRounding = inputCreditsRaw + outputCreditsRaw + cachedCreditsRaw;
 
   // 精度处理（保留2位小数，向上取整到0.01积分，用多少扣多少）
-  const tokenCreditsVal = Math.ceil(rawCredits * 100) / 100;
+  const cents = rawCredits * 100;
+  const nearest = Math.round(cents);
+  const exactCents = nearest > 0 && Math.abs(cents - nearest) <= Number.EPSILON * cents * 4 ? nearest : cents;
+  const tokenCreditsVal = Math.ceil(exactCents) / 100;
   const creditsCharged = tokenCreditsVal + baseFeeCredits;
 
   const profitRmb = sellPriceRmb - actualCostRmb;
@@ -282,6 +290,8 @@ export function calculateCredits(
 
   return {
     actualCostRmb: Math.round(actualCostRmb * 1_000_000) / 1_000_000,
+    ...(config.cachedCostPerMillion > config.inputCostPerMillion && cachedCostRmb > cachedSellRmb
+      ? { cacheReadCapLossRmb: Math.round((cachedCostRmb - cachedSellRmb) * 1_000_000) / 1_000_000 } : {}),
     sellPriceRmb: Math.round(sellPriceRmb * 1_000_000) / 1_000_000,
     profitRmb: Math.round(profitRmb * 1_000_000) / 1_000_000,
     creditsCharged,

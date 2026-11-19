@@ -718,7 +718,7 @@ export async function POST(req: NextRequest) {
       const autoMaxReplyTokens = fields.max_reply_tokens != null && fields.max_reply_tokens > 0 ? fields.max_reply_tokens : (isReasoningModel ? 65536 : 4096);
       const autoMaxContextTokens = fields.max_context_tokens != null && fields.max_context_tokens > 0 ? fields.max_context_tokens : 64000;
       const autoMaxContextRounds = fields.max_context_rounds != null && fields.max_context_rounds > 0 ? fields.max_context_rounds : 20;
-      const autoDeductDeepThink = fields.deduct_deep_think != null ? fields.deduct_deep_think : (isReasoningModel ? 2 : 1);
+      const autoDeductDeepThink = fields.deduct_deep_think != null ? fields.deduct_deep_think : 1;
 
       const result = await stageLegacyModelPoolUpsert({
         ...mutationRequest,
@@ -1021,7 +1021,7 @@ export async function PUT(req: NextRequest) {
         fields.max_reply_tokens = isReasoningModel ? 65536 : 4096;
       }
       if (modelIdentityChanged && fields.deduct_deep_think === undefined) {
-        fields.deduct_deep_think = isReasoningModel ? 2 : 1;
+        fields.deduct_deep_think = 1;
       }
 
       // 鏇存柊 llm_models 棰勮琛?

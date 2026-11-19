@@ -1,3 +1,4 @@
+import { wholeWalletCredits } from "@/lib/wallet-credit-conversion";
 /**
  * 🔒 核心底层代码 — 锁定保护
  *
@@ -183,18 +184,13 @@ function readCozeUsage(payload: Record<string, unknown> | null): CozeUsage | nul
   const raw = payload?.usage;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const usage = raw as Record<string, unknown>;
-  const input = finiteNonNegative(usage.input_count);
-  const output = finiteNonNegative(usage.output_count);
-  const total = finiteNonNegative(usage.token_count);
-  const prompt = finiteNonNegative(usage.prompt_token_count);
-  const completion = finiteNonNegative(usage.completion_token_count)
-    ?? finiteNonNegative(usage.output_token_count);
+  const count = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const input = count(usage.input_count) ?? count(usage.prompt_token_count);
+  const output = count(usage.output_count) ?? count(usage.completion_token_count) ?? count(usage.output_token_count);
+  const total = count(usage.token_count);
   if (input !== null && output !== null) return { input_tokens: input, output_tokens: output };
-  if (total !== null && output !== null) {
-    return { input_tokens: Math.max(0, total - output), output_tokens: output };
-  }
-  if (total !== null) return { input_tokens: 0, output_tokens: total };
-  if (prompt !== null) return { input_tokens: prompt, output_tokens: completion ?? 0 };
+  if (total !== null && output !== null && total >= output) return { input_tokens: total - output, output_tokens: output };
+  if (total !== null && input !== null && total >= input) return { input_tokens: input, output_tokens: total - input };
   return null;
 }
 
@@ -292,8 +288,7 @@ async function persistCompletedCozeConversation(input: {
 
 type CozeBufferedDeliveryOptions = {
   openUpstream: () => Promise<Response>;
-  fallbackUsage: CozeUsage;
-  settle: (input: { usage: CozeUsage; fullContent: string }) => Promise<{
+  settle: (input: { usage: CozeUsage }) => Promise<{
     operationId?: string;
     alreadyFulfilled?: boolean;
     billing?: { creditsCharged?: number };
@@ -474,7 +469,14 @@ function createBufferedCozeDeliveryStream(options: CozeBufferedDeliveryOptions):
 
         let settlement;
         try {
-          settlement = await options.settle({ usage: chatUsage ?? options.fallbackUsage, fullContent });
+          const measured = chatUsage as CozeUsage | null;
+          if (!measured || measured.output_tokens === 0) {
+            safeEnqueue(encodeSseError("LLM_BILLING_FAILED", "供应商用量回执不完整，本阶段尚未扣分，请凭原请求核对。"));
+            recordTerminal("error", "LLM_BILLING_FAILED", response.status);
+            safeClose();
+            return;
+          }
+          settlement = await options.settle({ usage: measured });
         } catch (error) {
           console.error("[Coze Billing] 原子钱包结算失败:", error);
           safeEnqueue(encodeSseError(
@@ -937,7 +939,7 @@ export async function POST(request: Request) {
         { status: 503, headers: { "Content-Type": "application/json" } },
       );
     }
-    const baseFeeCredits = Math.ceil(baseFeeRmb * rawBillingSnapshot.config.creditsPerYuan);
+    const baseFeeCredits = wholeWalletCredits(baseFeeRmb, rawBillingSnapshot.config.creditsPerYuan, "ceil");
     const selectedModelBillingSnapshot: SelectedModelBillingSnapshot = {
       ...rawBillingSnapshot,
       priceSnapshot: {
@@ -1098,16 +1100,12 @@ export async function POST(request: Request) {
         cozeProviderCallStarted = true;
         return streamChat(botId, verifiedUserId, securedMessage, safeConversationId || undefined, cozeConfig, imageKeys);
       },
-      fallbackUsage: {
-        input_tokens: Math.ceil(message.length * 1.2),
-        output_tokens: 0,
-      },
-      settle: async ({ usage, fullContent }) => settleLlmUsage(
+      settle: async ({ usage }) => settleLlmUsage(
         verifiedUserId,
         serverAgentName,
         selectedModelBillingSnapshot.modelName,
         usage.input_tokens,
-        usage.output_tokens || Math.ceil(fullContent.length * 1.2),
+        usage.output_tokens,
         0,
         serverAgent.id,
         {

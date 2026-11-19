@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const inputCls = "w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-xl text-sm text-[var(--foreground)] outline-none focus:border-[var(--primary)] transition-colors placeholder-[var(--muted-foreground)]";
 const labelCls = "block text-sm text-[var(--secondary-foreground)] mb-1.5";
@@ -32,12 +32,37 @@ export function PaymentConfigAdminTab({
   const [methodSaving, setMethodSaving] = useState(false);
 
   // 订单状态
+  const orderRead = useRef(0);
+  const [orderInspection, setOrderInspection] = useState<Record<string,string>>({});
+  async function inspectOrder(orderId: string) {
+    if (!token || !canViewBilling) return;
+    const revision = orderRead.current;
+    setOrderInspection(previous => ({...previous,[orderId]: "核对中…"}));
+    let message = "暂时无法核对，请重试";
+    try {
+      const response = await fetch("/api/admin/payment-reconcile?order="+encodeURIComponent(orderId), {
+        headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok) throw new Error("ORDER_INSPECTION_FAILED");
+      const data = await response.json();
+      if (data.orderId !== orderId || data.writePerformed !== false) throw new Error("ORDER_INSPECTION_MISMATCH");
+      const channel = data.channel?.amountMatches === false ? "渠道金额不符" : data.channel?.status === "OD" ? "渠道显示已付，需核签名回执" :
+        data.channel?.status === "WP" ? "渠道显示待支付" : data.channel?.status === "CD" ? "渠道显示已关闭，需核实" : "渠道记录未能核实";
+      const legacy = data.legacy === "matched" ? "找到同账户、同订单、同金额的旧入账流水，请勿重复补款" :
+        data.legacy === "missing" ? "未找到关联旧入账流水" : data.legacy === "conflict" ? "旧流水冲突" : "旧流水读取失败";
+      message = channel + "。"+legacy+"。";
+    } catch {}
+    if (revision === orderRead.current) setOrderInspection(previous => ({...previous,[orderId]: message}));
+  }
+  const [orderError, setOrderError] = useState("");
+  const [summaryScope, setSummaryScope] = useState("");
   const [orders, setOrders] = useState<Array<{
     id: string; user_id: string; trade_order_id: string; type: string;
     amount: number; credits_amount: number | null; status: string;
     payment_method: string; platform_order_id: string | null;
     payment_url: string | null; expire_at: string | null;
     paid_at: string | null; created_at: string;
+    settlementStatus?: string; settlementIssues?: string[];
   }>>([]);
   const [orderSummary, setOrderSummary] = useState<{
     totalOrders: number; totalAmount: number; successAmount: number;
@@ -92,31 +117,40 @@ export function PaymentConfigAdminTab({
     }
   };
 
-  const loadOrders = async (page: number = 1, status: string = "") => {
+  const loadOrders = useCallback(async (page = 1, status = "") => {
+    const read = ++orderRead.current;
+    setOrderInspection({});
     if (!token || !canViewBilling) {
       setOrdersLoading(false);
       return;
     }
     try {
       setOrdersLoading(true);
+      setOrderError("");
       let url = `/api/admin/payment-orders?page=${page}&pageSize=20`;
       if (status) url += `&status=${status}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
+      if (!res.ok) throw new Error("订单读取失败");
+      {
         const data = await res.json();
+        if (read !== orderRead.current) return;
+        setSummaryScope(data.summaryStatus === "server_aggregate" ? "全部筛选结果" : "当前页");
         setOrders(data.orders || []);
         setOrderTotal(data.total || 0);
         setOrderPage(page);
         setOrderSummary(data.summary || { totalOrders: 0, totalAmount: 0, successAmount: 0, successCount: 0, pendingCount: 0, byPayType: {} });
       }
     } catch (err) {
-      console.error("加载订单失败:", err);
+      if (read !== orderRead.current) return;
+      setOrderError("暂时无法读取订单，请重新查询。");
+      setOrders([]);
+      setSummaryScope("");
     } finally {
-      setOrdersLoading(false);
+      if (read === orderRead.current) setOrdersLoading(false);
     }
-  };
+  }, [token, canViewBilling]);
 
   // 加载支付渠道配置
   const loadPaymentConfig = async () => {
@@ -172,11 +206,16 @@ export function PaymentConfigAdminTab({
   };
 
   useEffect(() => {
-    if (canViewBilling) loadOrders();
-    else setOrdersLoading(false);
-  // Preserve the original one-shot ledger bootstrap; later paging and filters call loadOrders explicitly.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setOrders([]);
+    setOrderPage(1);
+    setOrderTotal(0);
+    setOrderStatusFilter("");
+    setSummaryScope("");
+    setOrderError("");
+    setOrderSummary({ totalOrders: 0, totalAmount: 0, successAmount: 0, successCount: 0, pendingCount: 0, byPayType: {} });
+    void loadOrders();
+    return () => { orderRead.current += 1; };
+  }, [loadOrders]);
 
   useEffect(() => {
     void loadMethods();
@@ -565,7 +604,7 @@ export function PaymentConfigAdminTab({
                   <th className="py-2.5 px-3 text-left text-[var(--muted-foreground)] font-medium">编码</th>
                   <th className="py-2.5 px-3 text-left text-[var(--muted-foreground)] font-medium">提供商</th>
                   <th className="py-2.5 px-3 text-left text-[var(--muted-foreground)] font-medium">订单/成功</th>
-                  <th className="py-2.5 px-3 text-left text-[var(--muted-foreground)] font-medium">成功金额</th>
+                  <th className="py-2.5 px-3 text-left text-[var(--muted-foreground)] font-medium">标记已支付金额</th>
                   <th className="py-2.5 px-3 text-left text-[var(--muted-foreground)] font-medium">状态</th>
                   <th className="py-2.5 px-3 text-left text-[var(--muted-foreground)] font-medium">排序</th>
                   <th className="py-2.5 px-3 text-left text-[var(--muted-foreground)] font-medium">操作</th>
@@ -641,7 +680,7 @@ export function PaymentConfigAdminTab({
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="text-lg font-bold text-[var(--foreground)]">支付订单</h3>
-            <p className="text-xs text-[var(--muted-foreground)] mt-1">查看所有支付订单记录</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-1">订单状态来自支付记录，钱包到账状态按渠道回执与钱包流水核对。{summaryScope && ` 统计范围为${summaryScope}。`}</p>
           </div>
           <div className="flex items-center gap-2">
             <select
@@ -658,8 +697,9 @@ export function PaymentConfigAdminTab({
           </div>
         </div>
 
+        {orderError && <p role="alert">{orderError} <button type="button" onClick={() => loadOrders(orderPage, orderStatusFilter)}>重新查询</button></p>}
         {/* 统计概览 */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        {summaryScope && !ordersLoading && <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
           <div className="p-3 bg-[var(--border)]/20 rounded-xl text-center">
             <div className="text-xs text-[var(--muted-foreground)]">总订单</div>
             <div className="text-lg font-bold text-[var(--foreground)]">{orderSummary.totalOrders}</div>
@@ -673,7 +713,7 @@ export function PaymentConfigAdminTab({
             <div className="text-lg font-bold text-emerald-400">¥{orderSummary.successAmount.toFixed(2)}</div>
           </div>
           <div className="p-3 bg-[var(--border)]/20 rounded-xl text-center">
-            <div className="text-xs text-[var(--muted-foreground)]">成功/待付</div>
+            <div className="text-xs text-[var(--muted-foreground)]">已支付 / 待付</div>
             <div className="text-lg font-bold">
               <span className="text-emerald-400">{orderSummary.successCount}</span>
               <span className="text-[var(--muted-foreground)]"> / </span>
@@ -681,15 +721,16 @@ export function PaymentConfigAdminTab({
             </div>
           </div>
           <div className="p-3 bg-[var(--border)]/20 rounded-xl text-center">
-            <div className="text-xs text-[var(--muted-foreground)]">成功率</div>
+            <div className="text-xs text-[var(--muted-foreground)]">已支付占比</div>
             <div className="text-lg font-bold text-[var(--foreground)]">
               {orderSummary.totalOrders > 0 ? Math.round(orderSummary.successCount / orderSummary.totalOrders * 100) : 0}%
             </div>
           </div>
         </div>
 
+        }
         {/* 订单表格 */}
-        {ordersLoading ? (
+        {orderError ? null : ordersLoading ? (
           <div className="text-center py-8 text-[var(--muted-foreground)] text-sm">加载中...</div>
         ) : orders.length === 0 ? (
           <div className="text-center py-8 text-[var(--muted-foreground)] text-sm">暂无订单</div>
@@ -711,7 +752,7 @@ export function PaymentConfigAdminTab({
               <tbody>
                 {orders.map(o => (
                   <tr key={o.id} className="border-b border-[var(--border)]/50 hover:bg-[var(--border)]/10">
-                    <td className="py-2 px-3 font-mono text-xs text-[var(--foreground)] whitespace-nowrap">{o.trade_order_id?.slice(0, 25)}...</td>
+                    <td className="py-2 px-3 font-mono text-xs text-[var(--foreground)] whitespace-nowrap">{o.trade_order_id}</td>
                     <td className="py-2 px-3 text-xs">
                       {o.type === "credits" ? (
                         <span className="text-blue-400">积分</span>
@@ -722,7 +763,18 @@ export function PaymentConfigAdminTab({
                     <td className="py-2 px-3 text-xs font-medium text-[var(--foreground)]">¥{o.amount?.toFixed(2)}</td>
                     <td className="py-2 px-3 text-xs text-blue-400">{o.credits_amount || "-"}</td>
                     <td className="py-2 px-3 text-xs">{getPayMethodLabel(o.payment_method)}</td>
-                    <td className="py-2 px-3">{getStatusBadge(o.status)}</td>
+                    <td className="py-2 px-3">{getStatusBadge(o.status)}
+                      {o.status === "paid" && <span className="block mt-1 text-xs">{o.settlementStatus === "credited" ? "钱包已到账"
+                        : o.settlementStatus === "reconciliation_required" ? "钱包待核对" : "到账证据暂不可读"}</span>}
+                      {o.settlementStatus === "reconciliation_required" && <div>
+                        <button type="button" className="underline" disabled={orderInspection[o.trade_order_id] === "核对中…"} onClick={() => void inspectOrder(o.trade_order_id)}>核对渠道与旧流水</button>
+                        {orderInspection[o.trade_order_id] && <p role="status">{orderInspection[o.trade_order_id]}</p>}
+                      </div>}
+                      {o.settlementIssues?.map(issue => <span className="block text-xs text-[var(--muted-foreground)]" key={issue}>{({
+                        PROVIDER_CONFIRMATION_INCOMPLETE: "渠道收款凭证不完整", PAYMENT_AMOUNT_SNAPSHOT_INVALID: "订单金额需核对",
+                        COMPLETED_WALLET_OPERATION_MISSING: "钱包变动需核对", MATCHING_WALLET_LEDGER_MISSING: "入账流水需核对",
+                      } as Record<string, string>)[issue]}</span>)}
+                    </td>
                     <td className="py-2 px-3 text-xs text-[var(--muted-foreground)] whitespace-nowrap">{new Date(o.created_at).toLocaleString()}</td>
                     <td className="py-2 px-3 text-xs text-[var(--muted-foreground)] whitespace-nowrap">{o.paid_at ? new Date(o.paid_at).toLocaleString() : "-"}</td>
                   </tr>

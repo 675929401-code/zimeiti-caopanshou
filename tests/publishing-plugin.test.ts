@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createPublishingPluginRunner, inspectPublishingPlugin, projectPublishingAccount, projectPublishingReceipt, publishingPluginMessage } from "../src/lib/publishing-plugin";
+import { createPublishingPluginRunner, detectPublishingPlugin, inspectPublishingPlugin, projectPublishingAccount, projectPublishingReceipt, publishingPluginMessage } from "../src/lib/publishing-plugin";
 import type { PublishingMutationResponse } from "../src/lib/publishing-contract";
 
 const account = { type: "xhs", uid: "member-1", account: "creator", nickname: "创作者", loginCookie: "sensitive-fixture-cookie", unexpected: { secret: "hidden" } };
@@ -21,6 +21,13 @@ test("account projection strips credentials, unknown fields and unsafe avatar ad
   assert.deepEqual(result.account, expected);
   assert.doesNotMatch(JSON.stringify(result), /loginCookie|sensitive-fixture-cookie|unexpected|hidden/);
   await assert.rejects(inspectPublishingPlugin("douyin", fixture()), { code: "account_unavailable" });
+});
+
+test("detecting an authorized extension never calls login or publish", async () => {
+  let sideEffects = 0;
+  const source = fixture({ login: () => { sideEffects++; }, publish: () => { sideEffects++; } });
+  assert.deepEqual(await detectPublishingPlugin(source), { version: "1.2.3" });
+  assert.equal(sideEffects, 0);
 });
 
 test("a false or missing execution permission never calls the plugin", async () => {

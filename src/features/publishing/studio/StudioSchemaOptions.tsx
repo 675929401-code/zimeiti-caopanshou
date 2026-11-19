@@ -5,6 +5,8 @@ import { localDateTime } from "./StudioPrimitives";
 import { genericPublishingFieldPolicy } from "@/lib/publishing-generic-validation";
 import styles from "./Studio.module.css";
 import { memberFieldRestriction } from "./StudioMemberMessages";
+import { PublishingDynamicFieldSchema, publishingDynamicFieldPlatform } from "@/lib/publishing-dynamic-options";
+import { StudioDynamicOption } from "./StudioDynamicOption";
 type Schema = Record<string, unknown>;
 const object = (value: unknown): Schema => value && typeof value === "object" && !Array.isArray(value) ? value as Schema : {};
 const text = (value: unknown): string => typeof value === "string" ? value : typeof object(value)["zh-CN"] === "string" ? object(value)["zh-CN"] as string : typeof object(value)["en-US"] === "string" ? object(value)["en-US"] as string : "";
@@ -33,7 +35,7 @@ const optionLabel = (path: string, value: unknown) => path === "no_reprint" ? va
 const nativeTitles: Record<string, string> = { short_title: "抖音短标题", download_type: "允许下载", private_status: "作品可见范围", isOriginal: "原创声明", extLink: "扩展链接", origin: "内容声明", declaration: "内容声明", postFlag: "原创声明" };
 const enumLabels: Record<string, string> = { public: "公开", PUBLIC: "公开", PUBLIC_TO_EVERYONE: "所有人可见", unlisted: "不公开列出", private: "私密", SELF_ONLY: "仅自己", MUTUAL_FOLLOW_FRIENDS: "互相关注的好友", FOLLOWER_OF_CREATOR: "我的粉丝", following: "我关注的人", mentionedUsers: "提到的人", subscribers: "订阅者", verified: "已认证用户", CONNECTIONS: "我的联系人", MAIN_FEED: "主要动态", NONE: "不进入动态", everyone: "所有人", accounts_you_follow: "我关注的账号", mentioned_only: "仅提到的人", parent_post_author_only: "仅原作作者", followers_only: "仅粉丝", IMAGE: "图片", REELS: "Reels 视频", STORIES: "限时动态", CAROUSEL: "轮播内容", DRAFT: "草稿", SCHEDULED: "计划发布", PUBLISHED: "发布", FILE_UPLOAD: "文件上传", PULL_FROM_URL: "由平台读取素材", creativeCommon: "知识共享许可", youtube: "YouTube 标准许可" };
 
-export function SchemaOptions({ schema, value, disabled, onChange, forceOpen = false, platform }: { schema?: Schema; value: Schema; disabled: boolean; onChange(value: Schema): void; forceOpen?: boolean; platform: string }) {
+export function SchemaOptions({ schema, value, disabled, onChange, forceOpen = false, platform, accountId }: { schema?: Schema; value: Schema; disabled: boolean; onChange(value: Schema): void; forceOpen?: boolean; platform: string; accountId: string }) {
   const [open, setOpen] = useState(false);
   const policy = genericPublishingFieldPolicy(platform);
   if (!schema) return null;
@@ -47,7 +49,18 @@ export function SchemaOptions({ schema, value, disabled, onChange, forceOpen = f
   const requiredFields = visible.filter(([key]) => required.includes(key));
   const optionalFields = visible.filter(([key]) => !required.includes(key));
   const remove = (key: string) => { const updated = { ...value }; delete updated[key]; onChange(updated); };
-  const field = ([key, raw]: [string, unknown]) => policy.blockedFields[key] ? <div key={key} className={styles.blockedOption} data-testid={`studio-option-blocked-${key}`}><strong>{fieldTitles[key] || titleOf(object(raw)) || "平台设置"}</strong><p>{memberFieldRestriction(platform, key)}</p>{value[key] !== undefined && <><span>原有设置已保留；处理后才能继续发布。</span><button type="button" className={styles.smallButton} data-testid={`studio-option-clear-${key}`} disabled={disabled} onClick={() => remove(key)}>移除这一项设置</button></>}</div> : <SchemaField key={key} schema={{ ...object(raw), ...(policy.allowedValues[key] ? { "x-studio-allowed": policy.allowedValues[key] } : {}) }} value={value[key]} required={required.includes(key)} disabled={disabled} path={key} depth={0} onChange={next => { const updated = { ...value }; if (next === undefined) delete updated[key]; else updated[key] = next; onChange(updated); }} />;
+  const field = ([key, raw]: [string, unknown]) => {
+    const dynamic = PublishingDynamicFieldSchema.safeParse(key);
+    const update = (next: unknown) => {
+      if (next === undefined) remove(key);
+      else onChange({ ...value, [key]: next });
+    };
+    if (policy.blockedFields[key]) return <div key={key} className={styles.blockedOption} data-testid={`studio-option-blocked-${key}`}><strong>{fieldTitles[key] || titleOf(object(raw)) || "平台设置"}</strong><p>{memberFieldRestriction(platform, key)}</p>{value[key] !== undefined && <><span>原有设置已保留；处理后才能继续发布。</span><button type="button" className={styles.smallButton} data-testid={`studio-option-clear-${key}`} disabled={disabled} onClick={() => remove(key)}>移除这一项设置</button></>}</div>;
+    if (dynamic.success && publishingDynamicFieldPlatform[dynamic.data] === platform) {
+      return <StudioDynamicOption key={`${accountId}:${key}`} accountId={accountId} field={dynamic.data} label={key === "community_id" ? "社区" : fieldTitles[key]} value={value[key]} required={required.includes(key)} disabled={disabled} onChange={update} />;
+    }
+    return <SchemaField key={key} schema={{ ...object(raw), ...(policy.allowedValues[key] ? { "x-studio-allowed": policy.allowedValues[key] } : {}) }} value={value[key]} required={required.includes(key)} disabled={disabled} path={key} depth={0} onChange={update} />;
+  };
   return <div className={styles.schemaOptions} data-testid="studio-platform-fields">{discriminator && <label className={styles.field}><span className={styles.fieldLabel}>内容来源</span><select className={styles.input} data-testid={`studio-option-${discriminator}`} disabled={disabled} value={selectedBranch < 0 ? "" : String(selectedBranch)} onChange={event => { if (event.target.value !== "") onChange({ ...value, [discriminator]: object(object(alternatives[Number(event.target.value)].properties)[discriminator]).const }); }}><option value="">请选择内容来源</option>{alternatives.map((item, index) => <option key={index} value={index}>{discriminator === "copyright" ? object(object(item.properties)[discriminator]).const === 1 ? "原创" : object(object(item.properties)[discriminator]).const === 2 ? "转载" : `来源方式 ${index + 1}` : titleOf(object(object(item.properties)[discriminator])) || `来源方式 ${index + 1}`}</option>)}</select></label>}{!!requiredFields.length && <><h3>平台必填设置</h3>{requiredFields.map(field)}</>}{!!optionalFields.length && <details className={styles.advancedSettings} open={open || forceOpen} onToggle={event => { if (!forceOpen) setOpen(event.currentTarget.open); }}><summary>更多平台设置</summary>{optionalFields.map(field)}</details>}</div>;
 }
 

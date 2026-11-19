@@ -24,7 +24,7 @@ assert.ok(dialog.includes("reportPaymentCallbackMissing(tradeOrderId, type)"), "
 assert.ok(manual.includes('data.order?.status === "paid" && data.order?.balance_credited === true'), "manual confirmation requires paid plus credited evidence");
 assert.ok(!manual.includes("/api/credits?user_id="), "manual confirmation never infers payment from a wallet snapshot");
 assert.ok(!manual.includes("newCredits > oldCredits") && !manual.includes("newCash > oldCash"), "unrelated balance increases cannot mark an order paid");
-assert.ok(manual.includes("startPolling(qrcodeData.tradeOrderId, qrcodeData.payType)"), "pending manual checks resume order polling");
+assert.ok(manual.includes("startPolling(qrcodeData.tradeOrderId, qrcodeData.payType, qrcodeData.idempotencyKey)"), "pending manual checks resume order polling");
 
 assert.ok(status.includes("payment_provider"), "status query reads the order provider");
 assert.ok(status.includes("normalizedProvider === 'xunhupay'"), "active Xunhu reconciliation is provider scoped");
@@ -59,6 +59,7 @@ const paidOrder = {
   provider_confirmed_at: "2026-10-04T00:00:00.000Z",
 };
 const walletOperation = {
+  wallet: "cash", delta: 10,
   id: "wallet-operation-fixture",
   user_id: "fixture-user",
   status: "completed",
@@ -69,6 +70,7 @@ const walletOperation = {
   balance_after: 15,
 };
 const ledgerEntry = {
+  wallet: "cash",
   operation_id: "wallet-operation-fixture",
   user_id: "fixture-user",
   operation_kind: "cash_topup",
@@ -98,4 +100,15 @@ assert.equal(
   "wallet operation without immutable ledger cannot display credited",
 );
 
-console.log("Payment recharge evidence contract: 33/33 checks passed; network/provider/database calls: 0.");
+for (const [op, entry, order] of [
+  [walletOperation, ledgerEntry, { ...paidOrder, provider_paid_amount: 9.99 }],
+  [{ ...walletOperation, balance_after: 14 }, { ...ledgerEntry, balance_after: 14 }, paidOrder],
+  [{ ...walletOperation, wallet: "credits" }, ledgerEntry, paidOrder],
+  [walletOperation, { ...ledgerEntry, user_id: "another-member" }, paidOrder],
+  [{ ...walletOperation, balance_before: null }, { ...ledgerEntry, balance_before: null }, paidOrder],
+  [{ ...walletOperation, delta: -10 }, ledgerEntry, paidOrder],
+]) {
+  assert.equal(evaluatePaidOrderSettlement({ order, walletOperations: [op], ledgerEntries: [entry] }).balanceCredited, false);
+}
+
+console.log("Payment recharge evidence contract: settlement and discrepancy checks passed; network/provider/database calls: 0.");
