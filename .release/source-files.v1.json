@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "76c33de2b5f755ceaa211c76bb777dd4a100bfb5187538b9b6e416165b74c1dd",
-  "sourceFingerprint": "1364f5f07fa92fc94612bc1d376ed0b70b00c286235120bf20781951f037895a",
+  "sourceFingerprint": "180ccebc2317013788b81773b5536bf6cc105fff8d2528f2b8c553a2e094491f",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5289,
-  "totalBytes": 86247466,
+  "totalBytes": 86249469,
   "files": [
     {
       "path": ".cnb.yml",
@@ -2024,7 +2024,7 @@
     {
       "path": "public/version.json",
       "bytes": 303,
-      "sha256": "8858fd99f451a697cba0fbc963d6ea0468f0f2707f68bd4297f48a9942daab37"
+      "sha256": "baac2cee83219680484d48457d378d5df0d7d4d129d80fb544e36803fdae839c"
     },
     {
       "path": "public/youcai-media/v1/source-manifest.json",
@@ -11988,8 +11988,8 @@
     },
     {
       "path": "scripts/verify-video-page-chain-safety.ts",
-      "bytes": 9194,
-      "sha256": "c3145b707482c886b1ba2454cb1127638121b22eea28cbdeea477c0cb410e3c7"
+      "bytes": 9343,
+      "sha256": "675d8269469e7cec8bae68dafec2c43006068bcd75660464c3de9af6b174b3d1"
     },
     {
       "path": "scripts/verify-video-paper-history-ui.mjs",
@@ -15858,8 +15858,8 @@
     },
     {
       "path": "src/app/video/page.tsx",
-      "bytes": 258479,
-      "sha256": "9cd60e23696a787554d04ba5ca6c66bda9cf4476a84d6aa37c8937d797224af8"
+      "bytes": 260333,
+      "sha256": "072a4b18ea320cf46d37866949232617b009dc5a8e028b8a8b4bbfec382c92db"
     },
     {
       "path": "src/app/video/paired-layout.module.css",
