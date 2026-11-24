@@ -196,15 +196,12 @@ function normalizeCanvasVoicePricing(value: unknown): CanvasVoicePricing | null 
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   const modelId = String(record.modelId || "").trim();
-  const sellPrice = Number(record.sellPrice);
-  if (!modelId || !Number.isFinite(sellPrice) || sellPrice <= 0) return null;
+  if (!modelId || record.priceReady !== true) return null;
   return {
     modelId,
     name: String(record.name || modelId),
-    costPrice: Math.max(0, Number(record.costPrice) || 0),
     unit: String(record.unit || "次"),
-    profitMargin: Math.max(0, Number(record.profitMargin) || 0),
-    sellPrice,
+    priceReady: true,
   };
 }
 

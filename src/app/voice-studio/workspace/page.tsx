@@ -142,7 +142,7 @@ function loadEnabledPricingModels(revision: number) {
     .then(async response => {
       const data = await response.json();
       if (!response.ok || data.success !== true || !Array.isArray(data.data)) throw new Error('MODEL_LIST_UNAVAILABLE');
-      return data.data.flatMap((item: { modelId?: unknown }) => typeof item.modelId === 'string' ? [item.modelId] : []);
+      return data.data.flatMap( (item: { modelId?: unknown; priceReady?: boolean }) => item.priceReady === true && typeof item.modelId === 'string' ? [item.modelId] : []);
     })
     .catch(error => {
       if (pricingRequest?.promise === promise) pricingRequest = null;
@@ -1914,7 +1914,7 @@ function UserVoiceWorkspace({ identity }: { identity: WorkbenchIdentity }) {
                   {Number(result.quotedCredits || 0) !== Number(result.cost || 0) && (
                     <span>应付 {Number(result.quotedCredits || 0)} 积分</span>
                   )}
-                  {Number(result.retailPrice || 0) > 0 && <span>公开价 ¥{Number(result.retailPrice).toFixed(2)}</span>}
+
                   {result.asset?.size ? <span>资产 {(result.asset.size / 1024).toFixed(1)} KB</span> : null}
                   <AudioDownloadButton
                     audioUrl={result.audioUrl} assetId={result.asset?.id} token={auth.token}

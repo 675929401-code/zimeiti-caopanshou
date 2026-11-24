@@ -11,7 +11,7 @@ export type CanvasEdge={id:string;source:string;target:string;label?:string;data
 export type CanvasGroup={id:string;title:string;nodeIds:string[];position:{x:number;y:number};size:{width:number;height:number}};
 export type CanvasViewport={x:number;y:number;zoom:number};
 export type CanvasGraph={nodes:CanvasNode[];edges:CanvasEdge[];groups:CanvasGroup[];viewport:CanvasViewport};
-export type CanvasDocument=CanvasGraph&{schemaVersion:2;id:string;title:string;revision:number;createdAt:number;updatedAt:number;importReview?:CanvasImportReview};
+export type CanvasDocument=CanvasGraph&{schemaVersion:2;id:string;title:string;revision:number;createdAt:number;updatedAt:number;importReview?:CanvasImportReview;scriptSource?:{sessionId:string;versionId:string;analysisJobId:string;breakdownJobId?:string;scriptJobId:string}};
 export function canvasAssetIds(graph:Pick<CanvasGraph,'nodes'>):string[]{return [...new Set(graph.nodes.flatMap(n=>[...(n.data.assetIds||[]),...(n.data.resultAssetIds||[]),...(n.data.thumbnailAssetId?[n.data.thumbnailAssetId]:[]),...(n.data.mention_document?.mentions.filter(m=>m.status==='resolved'&&m.assetId).map(m=>m.assetId!)||[])]))];}
 export const defaultCanvasViewport=():CanvasViewport=>({x:0,y:0,zoom:1});
 const object=(value:unknown):Record<string,any>=>{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('画布对象格式无效');return value as Record<string,any>;};

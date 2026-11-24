@@ -119,12 +119,14 @@ export default function PlatformConfigurationReleasePanel({
   refreshKey = 0,
   onPublished,
   focusReleaseId,
+  expandSignal = 0,
 }: {
   token: string;
   kind: ReleaseKind;
   refreshKey?: number;
   onPublished?: () => void;
   focusReleaseId?: string | null;
+  expandSignal?: number;
 }) {
   const endpoint = kind === "model-pool" ? "/api/admin/model-pool-releases" : "/api/admin/workspace-model-releases";
   const label = kind === "model-pool" ? "模型资源池" : "工作台模型";
@@ -190,6 +192,12 @@ export default function PlatformConfigurationReleasePanel({
     setExpanded(true);
     panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [focusReleaseId, refreshKey]);
+
+  useEffect(() => {
+    if (expandSignal <= 0) return;
+    setExpanded(true);
+    panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [expandSignal]);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -311,6 +319,29 @@ export default function PlatformConfigurationReleasePanel({
     }
   };
 
+  const discard = async (row: Row) => {
+    const releaseId = String(row.id || "");
+    if (!releaseId) return;
+    if (!window.confirm(`确认丢弃${label}候选 v${version(row)}？丢弃后该候选不会发布，也无法恢复。`)) return;
+    setBusy(`discard:${releaseId}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "discard", releaseId }),
+      });
+      await json(response);
+      setNotice(`候选 v${version(row)} 已丢弃`);
+      await load();
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setBusy("");
+    }
+  };
+
   const runtime = overview?.runtimeEnforcement;
   const renderCredentialChanges = (row: Row, changes: CredentialChange[] | undefined, showEmpty = false) => {
     const credentials = credentialChangeRows({ kind, credentialChanges: changes }, row, overview?.current || null);
@@ -396,6 +427,7 @@ export default function PlatformConfigurationReleasePanel({
                     <button type="button" disabled={Boolean(busy)} onClick={() => void mutate("validate", row)} className="rounded-md border border-[#d0d5dd] px-3 py-1.5 text-xs font-semibold text-[#344054] disabled:opacity-50">重新校验</button>
                     <button type="button" disabled={Boolean(busy)} onClick={() => void previewRelease(releaseId)} className="rounded-md border border-[#84adff] px-3 py-1.5 text-xs font-semibold text-[#175cd3] disabled:opacity-50">查看差异</button>
                     <button type="button" disabled={Boolean(busy) || row.status !== "validated" || !isPreviewed || runtime?.ready !== true} onClick={() => void mutate("publish", row)} className="rounded-md bg-[#2563eb] px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">按预览发布</button>
+                    <button type="button" disabled={Boolean(busy)} onClick={() => void discard(row)} className="rounded-md border border-[#fecdca] px-3 py-1.5 text-xs font-semibold text-[#b42318] disabled:opacity-50">丢弃</button>
                   </div>
                 </div>
                 {issues.length > 0 && <p className="mt-2 text-xs text-[#b42318]">阻断：{issues.join("；")}</p>}

@@ -7,6 +7,7 @@ async function main() {
   process.env.COMMERCE_DATA_DIR = fixture;
   Reflect.set(process.env, 'NODE_ENV', 'development');
   process.env.SHARED_CONFIGURATION_ENABLED = '1';
+  process.env.SHARED_CONFIGURATION_ID = 'canary-fixture';
   process.env.SHARED_CONFIGURATION_SUPABASE_URL = 'https://shared-config.invalid/';
   process.env.SHARED_CONFIGURATION_SERVICE_ROLE_KEY = 'fixture-shared-role';
   process.env.COZE_SUPABASE_URL = 'https://business-data.invalid/';
@@ -48,7 +49,12 @@ async function main() {
   assert.equal(created.model.id, 'fixture-agent-model');
   assert.equal(created.route?.id, 'commerce-canary.agent');
   assert.equal(created.route?.selection, 'admin-canary');
-  assert.equal(created.configurationSnapshot, undefined, 'pre-publish canary must not invent a published configuration snapshot');
+  const snapshot = created.configurationSnapshot;
+  assert.equal(snapshot?.configurationSource, 'legacy-local');
+  assert.equal(snapshot.releaseId, undefined);
+  assert.equal(snapshot.releaseVersion, undefined);
+  assert.equal(snapshot.manifestSha256, undefined);
+  assert.equal(snapshot.promptPackage?.authority, 'legacy-local');
   assert.match(created.compiledPrompt, /电商视觉制作助手/u);
   assert.ok(calls.some((url) => url.includes('shared-config.invalid')), 'the test must exercise the missing shared release path');
   assert.equal(calls.filter((url) => url.includes('commerce-model-gateway')).length, 1, 'create only reads the model catalog and never dispatches the provider');

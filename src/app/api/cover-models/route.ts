@@ -1,3 +1,4 @@
+import { catalogRatesForMember, withoutCatalogRates } from "@/lib/server/member-model-catalog";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { verifyAdminToken } from "@/lib/admin-auth";
 import { readImagePublicationStates } from "@/lib/image-model-availability";
@@ -103,9 +104,10 @@ export async function GET(request: Request) {
     // and display metadata, so an authenticated administrator gets a separate
     // read-only projection here. This route is outside /api/admin and is not a
     // step-up mutation endpoint; it never returns api_key values.
+    const surface = new URL(request.url).searchParams.get("surface");
     const authorization = request.headers.get("authorization") || "";
     const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-    const admin = bearer ? await verifyAdminToken(bearer) : null;
+    const admin = bearer && !surface ? await verifyAdminToken(bearer) : null;
     if (admin?.role === "admin") {
       const { data, error } = await getSupabaseClient()
         .from("cover_models")
@@ -124,7 +126,6 @@ export async function GET(request: Request) {
       }, { headers: noStoreHeaders });
     }
 
-    const surface = new URL(request.url).searchParams.get("surface");
     const nativeCatalog = surface === "publish-center-image";
     const includeAutodlH3Selfhost = nativeCatalog || surface === "image-workbench"
       || surface === "storyboard-workbench";
@@ -256,6 +257,7 @@ export async function GET(request: Request) {
         maxCharacterReferences: Number(model.maxCharacterReferences) || 0,
         referenceCapabilityLabel: String(model.referenceCapabilityLabel || "仅文本生图"),
         resolutionPrices: publicImageResolutionPrices(model),
+        referenceImageUnitPrice: Number(imageProtocolConfig(model).reference_image_unit_price ?? 0),
         ...(model.provider === AUTODL_H3_SELFHOST_PROVIDER
           ? {
               aspectRatios: [...AUTODL_H3_SELFHOST_IMAGE_VERIFIED_ASPECT_RATIOS],
@@ -267,7 +269,8 @@ export async function GET(request: Request) {
           : {}),
         });
       });
-    return NextResponse.json({ models }, { headers: noStoreHeaders });
+    const visibleModels = await catalogRatesForMember(request) ? models : models.map(withoutCatalogRates);
+    return NextResponse.json({ models: visibleModels }, { headers: noStoreHeaders });
   } catch (error) {
     console.error("[CoverModels/Public] GET error:", error);
     return NextResponse.json({

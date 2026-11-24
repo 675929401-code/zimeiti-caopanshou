@@ -4,56 +4,31 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import {
   ArrowDown,
   ArrowUp,
-  Boxes,
   ExternalLink,
-  Film,
   GripVertical,
-  ImageIcon,
-  LayoutGrid,
-  Megaphone,
-  Mic2,
-  MonitorPlay,
   PackageSearch,
   Pin,
   Plus,
-  Plug,
   RefreshCw,
   Search,
   ShieldCheck,
-  ShoppingCart,
   Video,
-  WandSparkles,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import PlatformConfigurationReleasePanel from "./PlatformConfigurationReleasePanel";
 import { ModelBadge } from "@/components/model-badge";
 import { isVideoCatalogDisplaySurface } from "@/lib/video-workspace-catalog";
 import { publicVideoModelCompatibilityMessage } from "@/lib/video-model-public-status";
 import type { WorkspaceModelKind, WorkspaceModelSurface } from "@/lib/workspace-model-policy";
+import {
+  WORKSPACE_PROJECT_NAVIGATION,
+  type WorkspaceEmbeddedTab,
+  type WorkspaceProjectId,
+  type WorkspaceSpecializedTarget,
+} from "@/lib/workspace-project-navigation";
 
 type ModelKind = WorkspaceModelKind;
 type SurfaceId = WorkspaceModelSurface;
-
-export type WorkspaceSpecializedTarget =
-  | "digital-human"
-  | "voice-studio"
-  | "commerce"
-  | "manju-workbench"
-  | "plugins";
-
-export type WorkspaceProjectId =
-  | "image"
-  | "cover"
-  | "storyboard"
-  | "video"
-  | "film"
-  | "publish-center"
-  | "digital-human"
-  | "voice"
-  | "commerce"
-  | "manju"
-  | "tools";
 
 type ModelIssue = { code: string; message: string };
 type WorkspaceModel = {
@@ -97,29 +72,6 @@ type WorkspaceSurface = {
 
 type Catalog = { surfaces: WorkspaceSurface[] };
 type OrderSaveState = "idle" | "dirty" | "saving" | "saved" | "failed";
-type ProjectGroup = "内容生产" | "专项能力";
-type NavItem = {
-  id: WorkspaceProjectId;
-  label: string;
-  description: string;
-  group: ProjectGroup;
-  icon: LucideIcon;
-  surfaceIds?: SurfaceId[];
-  adminTarget?: WorkspaceSpecializedTarget;
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { id: "image", label: "图片创作", description: "生图模型", group: "内容生产", icon: ImageIcon, surfaceIds: ["image-workbench"] },
-  { id: "cover", label: "封面制作", description: "画面与标题", group: "内容生产", icon: WandSparkles, surfaceIds: ["cover-studio"] },
-  { id: "storyboard", label: "AI 分镜工作台", description: "分镜图与图生视频", group: "内容生产", icon: LayoutGrid, surfaceIds: ["storyboard-image", "storyboard-video"] },
-  { id: "video", label: "AI 视频创作", description: "主站视频制作", group: "内容生产", icon: MonitorPlay, surfaceIds: ["video-page"] },
-  { id: "film", label: "影视工坊", description: "关键帧与镜头视频", group: "内容生产", icon: Film, surfaceIds: ["film-studio-image", "film-studio-video"] },
-  { id: "publish-center", label: "发布中心", description: "发布配图与视频", group: "内容生产", icon: Megaphone, surfaceIds: ["publish-center-image", "publish-center-video"] },
-  { id: "commerce", label: "带货 Agent", description: "多参考视频复刻", group: "专项能力", icon: ShoppingCart, surfaceIds: ["commerce-video"] },
-  { id: "voice", label: "智音工坊", description: "音色与 TTS 引擎", group: "专项能力", icon: Mic2, adminTarget: "voice-studio" },
-  { id: "manju", label: "漫剧工作台", description: "漫剧生产能力", group: "专项能力", icon: Film, adminTarget: "manju-workbench" },
-  { id: "tools", label: "内容工具箱", description: "提取与插件能力", group: "专项能力", icon: Plug, adminTarget: "plugins" },
-];
 
 const SPECIALIZED_COPY: Record<WorkspaceSpecializedTarget, { title: string; body: string }> = {
   "digital-human": { title: "数字人能力配置", body: "照片说话、视频换口型、音频和源视频要求在这里按能力校验，普通视频模型不会混入。" },
@@ -129,7 +81,16 @@ const SPECIALIZED_COPY: Record<WorkspaceSpecializedTarget, { title: string; body
   plugins: { title: "内容工具箱配置", body: "视频提取、格式处理和第三方能力按插件协议及输入合同管理。" },
 };
 
-const PROJECT_GROUPS: ProjectGroup[] = ["内容生产", "专项能力"];
+const SURFACE_TAB_LABELS: Partial<Record<SurfaceId, string>> = {
+  "storyboard-image": "生图",
+  "storyboard-video": "生视频",
+  "film-studio-image": "生图",
+  "film-studio-video": "生视频",
+  "publish-center-image": "生图",
+  "publish-center-video": "生视频",
+  "commerce-generation-video": "普通视频生成",
+  "commerce-video": "爆款视频复刻",
+};
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : "操作失败";
@@ -172,18 +133,20 @@ export function WorkspaceModelsAdminTab({
   visibleProjectIds,
   canManage = false,
   onProjectChange,
-  onOpenModels,
   onOpenAdmin,
   renderAdminTarget,
+  renderEmbeddedTab,
+  renderCommerceAdmin,
 }: {
   token: string;
   selectedProject?: WorkspaceProjectId;
   visibleProjectIds?: readonly WorkspaceProjectId[];
   canManage?: boolean;
   onProjectChange?: (project: WorkspaceProjectId) => void;
-  onOpenModels: () => void;
   onOpenAdmin: (target: WorkspaceSpecializedTarget) => void;
   renderAdminTarget?: (target: WorkspaceSpecializedTarget) => ReactNode;
+  renderEmbeddedTab?: (tab: WorkspaceEmbeddedTab) => ReactNode;
+  renderCommerceAdmin?: () => ReactNode;
 }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [loading, setLoading] = useState(true);
@@ -194,19 +157,27 @@ export function WorkspaceModelsAdminTab({
   const [pickerQuery, setPickerQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [navItem, setNavItem] = useState<WorkspaceProjectId>(selectedProject);
+  const [activeView, setActiveView] = useState<string>("");
   const [surfaceId, setSurfaceId] = useState<SurfaceId>("storyboard-image");
   const [draggedModelId, setDraggedModelId] = useState("");
   const [dragOver, setDragOver] = useState<{ id: string; position: "before" | "after" } | null>(null);
   const [draftOrders, setDraftOrders] = useState<Partial<Record<SurfaceId, string[]>>>({});
   const [orderSaveStates, setOrderSaveStates] = useState<Partial<Record<SurfaceId, OrderSaveState>>>({});
   const [workspaceReleaseRefreshKey, setWorkspaceReleaseRefreshKey] = useState(0);
+  const [releasePanelExpandSignal, setReleasePanelExpandSignal] = useState(0);
 
   const visibleNavItems = useMemo(() => {
-    if (!visibleProjectIds) return NAV_ITEMS;
+    if (!visibleProjectIds) return WORKSPACE_PROJECT_NAVIGATION;
     const allowedProjects = new Set<WorkspaceProjectId>(visibleProjectIds);
-    return NAV_ITEMS.filter((item) => allowedProjects.has(item.id));
+    return WORKSPACE_PROJECT_NAVIGATION.filter((item) => allowedProjects.has(item.id));
   }, [visibleProjectIds]);
   const activeNav = visibleNavItems.find((item) => item.id === navItem) || visibleNavItems[0] || null;
+  const surfaceTabs = (activeNav?.surfaceIds || []).map((id) => ({
+    id,
+    label: SURFACE_TAB_LABELS[id] || catalog?.surfaces.find((surface) => surface.id === id)?.label.split(" · ").pop() || id,
+  }));
+  const effectiveView = activeNav?.id === "commerce" && (!activeView || activeView === "commerce-admin") ? "commerce-admin" : activeView;
+  const commerceAdminView = effectiveView === "commerce-admin";
 
   useEffect(() => {
     const nextProject = visibleNavItems.some((item) => item.id === selectedProject)
@@ -217,14 +188,20 @@ export function WorkspaceModelsAdminTab({
     if (nextProject !== selectedProject) onProjectChange?.(nextProject);
   }, [onProjectChange, selectedProject, visibleNavItems]);
 
-  const selectProject = (project: WorkspaceProjectId) => {
-    if (!visibleNavItems.some((item) => item.id === project)) return;
-    setNavItem(project);
-    setQuery("");
-    setNotice("");
-    setError("");
-    onProjectChange?.(project);
-  };
+  useEffect(() => {
+    if (!activeNav) return;
+    const surfaces = activeNav.surfaceIds || [];
+    setActiveView((current) => {
+      if (activeNav.id === "commerce") {
+        return current === "commerce-admin" || surfaces.includes(current as SurfaceId) ? current : "commerce-admin";
+      }
+      return surfaces.includes(current as SurfaceId) ? current : (surfaces[0] || "");
+    });
+  }, [activeNav]);
+
+  useEffect(() => {
+    if (activeView && activeView !== "commerce-admin") setSurfaceId(activeView as SurfaceId);
+  }, [activeView]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -292,18 +269,6 @@ export function WorkspaceModelsAdminTab({
     ].join(" ").toLowerCase().includes(normalized));
   }, [currentSurface, pickerQuery]);
 
-  const projectCount = useCallback((item: NavItem) => {
-    if (!item.surfaceIds || !catalog) return null;
-    const counts = item.surfaceIds.map((id) => {
-      const surface = catalog.surfaces.find((entry) => entry.id === id);
-      return { kind: surface?.kind, count: surface?.models.filter((model) => model.assigned).length || 0 };
-    });
-    if (counts.length === 1) return String(counts[0].count);
-    const image = counts.find((entry) => entry.kind === "image")?.count || 0;
-    const video = counts.find((entry) => entry.kind === "video")?.count || 0;
-    return `图${image} / 视${video}`;
-  }, [catalog]);
-
   const mutate = useCallback(async (body: Record<string, unknown>, key: string, success: string) => {
     if (!canManage) return;
     setBusyKey(key);
@@ -318,6 +283,7 @@ export function WorkspaceModelsAdminTab({
       await responseJson(response);
       setWorkspaceReleaseRefreshKey((value) => value + 1);
       await load();
+      if (key.startsWith("assign:")) setReleasePanelExpandSignal((value) => value + 1);
       setNotice(success);
     } catch (cause) {
       setError(messageOf(cause));
@@ -334,7 +300,7 @@ export function WorkspaceModelsAdminTab({
     surface: surfaceId,
     modelId: model.id,
     enabled,
-    }, `assign:${model.id}`, enabled ? `${model.name} 的加入候选已保存，预览发布后生效` : `${model.name} 的移除候选已保存，预览发布后生效`);
+    }, `assign:${model.id}`, enabled ? `${model.name} 已加入候选；请在发布闭环完成校验、预览和发布后生效` : `${model.name} 已加入移除候选；请在发布闭环完成校验、预览和发布后生效`);
   };
 
   const stageOrder = (models: WorkspaceModel[], success: string) => {
@@ -451,7 +417,7 @@ export function WorkspaceModelsAdminTab({
     }
   }, [canManage, currentOrderSaveState, currentSurface, draftOrders, load, token]);
 
-  const specializedPanel = activeNav?.adminTarget ? renderAdminTarget?.(activeNav.adminTarget) : null;
+  const specializedPanel = activeNav?.specializedTarget ? renderAdminTarget?.(activeNav.specializedTarget) : null;
 
   if (!activeNav) {
     return (
@@ -462,70 +428,34 @@ export function WorkspaceModelsAdminTab({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-sm">
-      <div className="grid min-h-[680px] min-w-0 lg:grid-cols-[228px_minmax(0,1fr)]">
-        <aside className="border-b border-[var(--border)] bg-[#f8fafc] lg:border-b-0 lg:border-r" aria-label="工作台项目">
-          <div className="border-b border-[var(--border)] p-4">
-            <p className="text-base font-bold text-[#172033]">工作台配置</p>
-            <p className="mt-1 text-xs leading-5 text-[#667085]">选择一个项目，在右侧完成模型和专项能力配置。</p>
-          </div>
-          <nav className="max-h-[calc(100vh-190px)] overflow-y-auto p-2.5">
-            {PROJECT_GROUPS.map((group) => {
-              const groupItems = visibleNavItems.filter((item) => item.group === group);
-              if (groupItems.length === 0) return null;
-              return (
-              <div key={group} className="mb-4 last:mb-0">
-                <p className="px-2 pb-1.5 pt-1 text-xs font-semibold text-[#98a2b3]">{group}</p>
-                <div className="space-y-1">
-                  {groupItems.map((item) => {
-                    const Icon = item.icon;
-                    const count = projectCount(item);
-                    const selected = navItem === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        data-workspace-project-button={item.id}
-                        aria-current={selected ? "page" : undefined}
-                        onClick={() => selectProject(item.id)}
-                        className={`flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors ${selected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#344054] hover:bg-[#eef2f6]"}`}
-                      >
-                        <Icon className="h-4.5 w-4.5 shrink-0" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold">{item.label}</span>
-                          <span className={`mt-0.5 block truncate text-xs ${selected ? "text-[#4c73a9]" : "text-[#667085]"}`}>{item.description}</span>
-                        </span>
-                        {count !== null && <span className="min-w-6 whitespace-nowrap rounded bg-white px-1.5 py-0.5 text-center text-xs font-semibold text-[#475467] shadow-sm">{count}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              );
-            })}
-          </nav>
-        </aside>
+    <div className="min-w-0" data-workspace-config-root data-workspace-project={activeNav.id}>
+      <nav aria-label="工作台面包屑" className="flex flex-wrap items-center gap-1.5 text-xs text-[#667085]">
+        <span>工作台配置</span>
+        <span aria-hidden="true">/</span>
+        <span className="font-semibold text-[#344054]">{activeNav.label}</span>
+      </nav>
 
-        <div className="min-w-0 bg-white" data-workspace-project={activeNav.id}>
-          <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4 sm:px-6">
+      {activeNav.embeddedTab ? (
+        <section className="mt-4 min-w-0" data-workspace-embedded-tab={activeNav.embeddedTab}>
+          {renderEmbeddedTab?.(activeNav.embeddedTab) ?? (
+            <div className="rounded-lg border border-dashed border-[#d0d5dd] bg-[#f9fafb] px-6 py-12 text-center text-sm text-[#667085]">
+              当前账号暂无该项配置的读取权限。
+            </div>
+          )}
+        </section>
+      ) : (
+        <>
+          <header className="mt-3 flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e7ec] pb-4">
             <div className="min-w-0">
               <h2 className="text-xl font-bold text-[#172033]">{activeNav.label}</h2>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-[#667085]">
+              <p className="mt-1 max-w-4xl text-sm leading-6 text-[#667085]">
                 {canManage
-                  ? `${activeNav.description}。资源池负责接口、密钥、价格和验收；本页只负责当前项目的选用、顺序与能力匹配。`
+                  ? `${activeNav.description}。资源池负责接口、密钥、价格和验收；本页只决定该功能可选哪些模型、默认顺序，不保存提示词——提示词与业务在「卡片中心 / 提示词与知识」。`
                   : `${activeNav.description}。当前为只读视图，仅展示已开放模型的公开能力、状态和用户价格。`}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <button type="button" onClick={onOpenModels} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-[#d0d5dd] bg-white px-3 py-2 text-sm font-semibold text-[#344054] hover:bg-[#f9fafb]">
-                <Boxes className="h-4 w-4" />模型资源池
-              </button>
-              {activeNav.id === "commerce" && (
-                <button type="button" onClick={() => onOpenAdmin("commerce")} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-[#d0d5dd] bg-white px-3 py-2 text-sm font-semibold text-[#344054] hover:bg-[#f9fafb]">
-                  <ShoppingCart className="h-4 w-4" />专项路由配置
-                </button>
-              )}
-              {!activeNav.adminTarget && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {!activeNav.specializedTarget && (
                 <button type="button" onClick={() => void load()} disabled={loading} title="重新读取当前配置" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[#d0d5dd] bg-white text-[#475467] hover:bg-[#f9fafb] disabled:opacity-50">
                   <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                 </button>
@@ -533,47 +463,72 @@ export function WorkspaceModelsAdminTab({
             </div>
           </header>
 
-          {!activeNav.adminTarget && canManage && (
-            <div className="px-4 pt-4 sm:px-6 sm:pt-5">
+          {!activeNav.specializedTarget && (surfaceTabs.length > 1 || activeNav.id === "commerce") && (
+            <div role="tablist" aria-label="工作台视图" className="mt-4 inline-flex flex-wrap gap-1 rounded-lg bg-[#f2f4f7] p-1">
+              {activeNav.id === "commerce" && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={commerceAdminView}
+                  data-testid="workspace-tab-commerce-admin"
+                  onClick={() => setActiveView("commerce-admin")}
+                  className={`inline-flex min-h-9 items-center rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${commerceAdminView ? "bg-white text-[#175cd3] shadow-sm" : "text-[#667085] hover:text-[#344054]"}`}
+                >
+                  带货创作后台
+                </button>
+              )}
+              {surfaceTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={!commerceAdminView && effectiveView === tab.id}
+                  data-testid={`workspace-tab-surface-${tab.id}`}
+                  onClick={() => setActiveView(tab.id)}
+                  className={`inline-flex min-h-9 items-center rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${!commerceAdminView && effectiveView === tab.id ? "bg-white text-[#175cd3] shadow-sm" : "text-[#667085] hover:text-[#344054]"}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!activeNav.specializedTarget && canManage && !commerceAdminView && (
+            <div className="mt-4">
               <PlatformConfigurationReleasePanel
                 token={token}
                 kind="workspace-models"
                 refreshKey={workspaceReleaseRefreshKey}
+                expandSignal={releasePanelExpandSignal}
                 onPublished={() => void load()}
               />
             </div>
           )}
 
-          {activeNav.adminTarget ? (
-            <section className="min-w-0 p-4 sm:p-6">
+          {activeNav.specializedTarget ? (
+            <section className="mt-4 min-w-0">
               <div className="mb-5 border-b border-[#eaecf0] pb-4">
-                <h3 className="text-base font-bold text-[#172033]">{SPECIALIZED_COPY[activeNav.adminTarget].title}</h3>
-                <p className="mt-1 text-sm leading-6 text-[#667085]">{SPECIALIZED_COPY[activeNav.adminTarget].body}</p>
+                <h3 className="text-base font-bold text-[#172033]">{SPECIALIZED_COPY[activeNav.specializedTarget].title}</h3>
+                <p className="mt-1 text-sm leading-6 text-[#667085]">{SPECIALIZED_COPY[activeNav.specializedTarget].body}</p>
               </div>
               {specializedPanel || (
                 <div className="flex min-h-56 flex-col items-center justify-center rounded-md border border-dashed border-[#d0d5dd] bg-[#f9fafb] px-6 text-center">
                   <PackageSearch className="h-7 w-7 text-[#667085]" />
                   <p className="mt-3 text-sm text-[#667085]">当前专项配置仍使用原有业务页面。</p>
-                  <button type="button" onClick={() => onOpenAdmin(activeNav.adminTarget!)} className="mt-4 rounded-md bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]">打开配置</button>
+                  <button type="button" onClick={() => onOpenAdmin(activeNav.specializedTarget!)} className="mt-4 rounded-md bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]">打开配置</button>
+                </div>
+              )}
+            </section>
+          ) : commerceAdminView ? (
+            <section className="mt-4 min-w-0" data-workspace-commerce-admin>
+              {renderCommerceAdmin?.() ?? (
+                <div className="rounded-lg border border-dashed border-[#d0d5dd] bg-[#f9fafb] px-6 py-12 text-center text-sm text-[#667085]">
+                  当前账号没有带货创作后台的管理权限。
                 </div>
               )}
             </section>
           ) : (
-            <section className="min-w-0 p-4 sm:p-6">
-              {(activeNav.surfaceIds?.length || 0) > 1 && (
-                <div className="mb-4 inline-flex rounded-md border border-[#d0d5dd] bg-[#f9fafb] p-1" aria-label="模型类型">
-                  {activeNav.surfaceIds!.map((id) => {
-                    const surface = catalog?.surfaces.find((entry) => entry.id === id);
-                    const image = surface?.kind === "image";
-                    return (
-                      <button key={id} type="button" onClick={() => setSurfaceId(id)} className={`inline-flex min-h-9 items-center gap-2 rounded px-3 py-2 text-sm font-semibold ${surfaceId === id ? "bg-white text-[#175cd3] shadow-sm" : "text-[#667085] hover:text-[#344054]"}`}>
-                        {image ? <ImageIcon className="h-4 w-4" /> : <Video className="h-4 w-4" />}{image ? "生图模型" : "生视频模型"}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
+            <section className="mt-4 min-w-0">
               <div className="overflow-hidden rounded-md border border-[#d0d5dd] bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eaecf0] px-4 py-3.5">
                   <div>
@@ -588,14 +543,15 @@ export function WorkspaceModelsAdminTab({
                       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98a2b3]" />
                       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索已添加模型" className="h-10 w-full rounded-md border border-[#d0d5dd] bg-white py-2 pl-9 pr-3 text-sm text-[#344054] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/10" />
                     </div>
-                    {canManage && <button
+                    <button
                       type="button"
                       onClick={() => { setPickerQuery(""); setPickerOpen(true); }}
-                      disabled={!currentSurface || loading}
-                      className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!canManage || !currentSurface || loading}
+                      title={canManage ? "从模型池选择并添加到当前项目" : "解锁敏感操作后可添加模型"}
+                      className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       <Plus className="h-4 w-4" />从模型池添加
-                    </button>}
+                    </button>
                   </div>
                 </div>
 
@@ -656,9 +612,9 @@ export function WorkspaceModelsAdminTab({
                       <thead className="bg-[#f9fafb] text-xs font-semibold text-[#475467]">
                         <tr>
                           <th className="w-[150px] px-4 py-3">当前页面</th>
-                          <th className="w-[330px] px-4 py-3">{canManage ? "模型与渠道" : "模型信息"}</th>
-                          <th className="px-4 py-3">能力与兼容性</th>
-                          <th className="w-[235px] px-4 py-3">发布状态</th>
+                          <th className="w-[330px] px-4 py-3">{canManage ? "模型 / 渠道 / 价格" : "模型信息"}</th>
+                          <th className="px-4 py-3" title="标签来自模型协议声明的能力与限制，不是提示词">能力与限制</th>
+                          <th className="w-[235px] px-4 py-3">状态</th>
                           <th className="w-[230px] px-4 py-3">顺序</th>
                         </tr>
                       </thead>
@@ -729,7 +685,7 @@ export function WorkspaceModelsAdminTab({
                               </td>
                               <td className="px-4 py-3">
                                 {model.publishable ? (
-                                  <p className="flex items-center gap-1.5 text-xs font-semibold text-[#067647]"><ShieldCheck className="h-4 w-4" />已添加到当前页面</p>
+                                  <p className="flex items-center gap-1.5 text-xs font-medium text-[#475467]"><ShieldCheck className="h-3.5 w-3.5 text-[#067647]" />已加入本页</p>
                                 ) : (
                                   <div className="rounded-md border border-[#fedf89] bg-[#fffaeb] px-3 py-2 text-xs leading-5 text-[#93370d]">
                                     <p className="font-semibold">已添加，但当前不可提交</p>
@@ -789,8 +745,8 @@ export function WorkspaceModelsAdminTab({
               </div>
             </section>
           )}
-        </div>
-      </div>
+        </>
+      )}
       {canManage && pickerOpen && currentSurface && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#101828]/45 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPickerOpen(false); }}>
           <div className="flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-[#d0d5dd] bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label={`从模型池添加到${currentSurface.label}`}>

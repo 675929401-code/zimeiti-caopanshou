@@ -54,11 +54,6 @@ function ToolCard({ tool }: { tool: ToolDirectoryCard }) {
     : undefined;
   const modelBindingPending = tool.availability === "available" && MODEL_BINDING_PENDING_SLUGS.has(slug);
   const localExtension = tool.availability === "available" && LOCAL_EXTENSION_SLUGS.has(slug);
-  const displayedPrice = modelBindingPending
-    ? "工作台内确认"
-    : slug === "aliyun-erase-subtitles" || slug === "video-edit"
-      ? "本地处理"
-      : tool.price;
   const content = (
     <>
       <div className={styles.cardVisual} style={{ background: tool.accent }}>
@@ -82,7 +77,6 @@ function ToolCard({ tool }: { tool: ToolDirectoryCard }) {
         </div>
         <p>{tool.description}</p>
         <div className={styles.cardFooter}>
-          <span className={styles.price}>{displayedPrice}</span>
           {tool.promotion ? <span className={styles.promotion}>{tool.promotion}</span> : null}
           <span className={styles.tags}>
             {tool.tags.map((tag) => <small key={tag}>{TAG_ICONS[tag]} {tag}</small>)}

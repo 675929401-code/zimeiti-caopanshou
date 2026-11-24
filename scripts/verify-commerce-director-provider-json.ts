@@ -23,7 +23,7 @@ async function main(){
   assert.match(gateway,/input\.responseFormat!==undefined.*INVALID_RESPONSE_FORMAT/);
   assert.match(gateway,/input\.responseFormat==='json_object'.*response_format:\{type:'json_object'\}/);
   assert.match(jobs,/stream:value\.input\.kind==='agent'&&!responseFormat,responseFormat/);
-  assert.match(jobs,/value\.input\.kind==='agent'&&!responseFormat\?text=>/);
+  assert.match(jobs,/value\.input\.kind==='agent'&&!prepared\.responseFormat\?text=>/);
   console.log(JSON.stringify({passed:13,networkCalls:0,paidCalls:0,checks:['plain-chat-unchanged','openai-json-object','structured-non-stream','plain-stream','structured-stream-disabled','anthropic-structured-stream-disabled','director-json-selected','blank-director-ignored','non-agent-ignored','gateway-validation','gateway-forwarding','main-route-non-stream','custom-route-non-stream']}));
 }
 

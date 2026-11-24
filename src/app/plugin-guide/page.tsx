@@ -25,7 +25,7 @@ export default function PluginGuidePage() {
         <article className={styles.article}>
           <p className={styles.eyebrow}>发布工作台 · 浏览器插件</p>
           <h1>发布插件安装教程</h1>
-          <p className={styles.meta}>适用于插件 v{PUBLISHING_PLUGIN_DOWNLOADS.version} · 更新于 2026-11-11</p>
+          <p className={styles.meta}>本站核验安装包 v{PUBLISHING_PLUGIN_DOWNLOADS.version}</p>
 
           <section id="overview">
             <h2>教程概览</h2>
@@ -41,7 +41,7 @@ export default function PluginGuidePage() {
             </div>
             <div className={styles.downloadBox}>
               <div>
-                <h3>下载最新版插件</h3>
+                <h3>下载已核验的安装包</h3>
                 <p>v{PUBLISHING_PLUGIN_DOWNLOADS.version} · Windows / Chrome / Edge · CRX 安装包</p>
               </div>
               <a href={PUBLISHING_PLUGIN_DOWNLOADS.direct} download={`aitoearn-extension-v${PUBLISHING_PLUGIN_DOWNLOADS.version}.crx`}>
@@ -49,6 +49,7 @@ export default function PluginGuidePage() {
                 下载插件 v{PUBLISHING_PLUGIN_DOWNLOADS.version}
               </a>
             </div>
+            <p><a href={PUBLISHING_PLUGIN_DOWNLOADS.chrome} target="_blank" rel="noopener noreferrer">Chrome 网上应用店</a> · <a href="https://aitoearn.cn/zh-CN/websit/plugin-guide" target="_blank" rel="noopener noreferrer">AiToEarn 官方安装教程</a></p>
             <p className={styles.hash}>SHA-256：{PUBLISHING_PLUGIN_DOWNLOADS.sha256}</p>
           </section>
 
@@ -66,7 +67,7 @@ export default function PluginGuidePage() {
             <h2>第一步：安装插件</h2>
             <ol>
               <li>
-                <strong>下载安装包。</strong> 点击本页的“下载插件”按钮，保存 <code>aitoearn-extension-v{PUBLISHING_PLUGIN_DOWNLOADS.version}.crx</code>。
+                <strong>优先从应用店安装。</strong> 已通过应用店安装可直接进行下一步。若应用店不可访问，可下载本页核验过的 <code>aitoearn-extension-v{PUBLISHING_PLUGIN_DOWNLOADS.version}.crx</code>，按下方步骤安装。
               </li>
               <li>
                 <strong>打开扩展管理页。</strong> Chrome 地址栏输入 <code>chrome://extensions</code>；Edge 输入 <code>edge://extensions</code>。

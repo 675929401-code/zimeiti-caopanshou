@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { PublishingProviderEnvironment } from '@/lib/publishing-regions'
 import { NativeMainMediaBridgeDtoSchema, NativeMainMediaBridgeMutationSchema, NativeMainMediaBridgeRequestSchema, type NativeMainMediaBridgeDto } from '@/lib/native-main-media-bridge-contract'
 import { nativeMainMediaIdentity, nativeMainMediaReference, nativeMainMediaUuid, NativeOwnedMediaRefSchema, type NativeOwnedMediaRef } from '@/lib/native-main-media-contract'
 import type { StudioPlanItem as PubItem } from './types'
@@ -11,20 +12,20 @@ const markerSchema = z.object({ version: z.literal(1), requestKey: z.string().mi
 type Marker = z.infer<typeof markerSchema>
 export interface NativeMainBridgeSelection { reference: NativeOwnedMediaRef, mediaId: string, file: { mime: string, size: number, sha256: string } }
 interface Selected extends NativeMainBridgeSelection { fileName: string, accounts: string[] }
-interface ClientDependencies { assertCurrent?: () => void; confirm: (options: StudioBridgeConfirmation) => Promise<boolean> }
+interface ClientDependencies { environment?: PublishingProviderEnvironment; assertCurrent?: () => void; confirm: (options: StudioBridgeConfirmation) => Promise<boolean> }
 function failure(code: string, message: string): never { throw Object.assign(new Error(message), { code }) }
 const exactReference = (left: NativeOwnedMediaRef, right: NativeOwnedMediaRef) => left.kind === right.kind && left.id === right.id
-const key = (mediaId: string) => { const value = hostStorageKey(`main-media-bridge:${mediaId}`); if (!value) return failure('NATIVE_MAIN_BRIDGE_SESSION_REQUIRED', '请先进入当前主站会员会话'); return value }
-function marker(mediaId: string): Marker | null {
+const key = (mediaId: string, environment?: PublishingProviderEnvironment) => { const value = hostStorageKey(`main-media-bridge:${environment === 'international' ? 'international:' : ''}${mediaId}`); if (!value) return failure('NATIVE_MAIN_BRIDGE_SESSION_REQUIRED', '请先进入当前主站会员会话'); return value }
+function marker(mediaId: string, environment?: PublishingProviderEnvironment): Marker | null {
   let value: string | null
-  try { value = localStorage.getItem(key(mediaId)) } catch { return failure('NATIVE_MAIN_BRIDGE_STORAGE_UNAVAILABLE', '无法读取原素材上传记录，已停止上传；请恢复浏览器存储后核对原记录') }
+  try { value = localStorage.getItem(key(mediaId, environment)) } catch { return failure('NATIVE_MAIN_BRIDGE_STORAGE_UNAVAILABLE', '无法读取原素材上传记录，已停止上传；请恢复浏览器存储后核对原记录') }
   if (!value) return null
   try { return markerSchema.parse(JSON.parse(value)) } catch { return failure('NATIVE_MAIN_BRIDGE_STORAGE_INVALID', '原素材上传记录格式待核对，不能自动另建请求') }
 }
-function save(value: Marker) {
+function save(value: Marker, environment?: PublishingProviderEnvironment) {
   let normalized = markerSchema.parse(value)
   try {
-    const storage = key(value.mediaId), existing = localStorage.getItem(storage)
+    const storage = key(value.mediaId, environment), existing = localStorage.getItem(storage)
     if (existing) {
       const previous = markerSchema.parse(JSON.parse(existing))
       if (previous.requestKey !== normalized.requestKey || previous.mediaId !== normalized.mediaId || !exactReference(previous.reference, normalized.reference) || previous.bridgeId && normalized.bridgeId && previous.bridgeId !== normalized.bridgeId) throw new Error('ORIGINAL_MARKER_CHANGED')
@@ -39,10 +40,10 @@ function verify(bridge: NativeMainMediaBridgeDto, selected: NativeMainBridgeSele
   if (bridge.requestKey !== request.requestKey || bridge.mediaId !== selected.mediaId || !exactReference(bridge.reference, selected.reference)) return failure('NATIVE_MAIN_BRIDGE_RECEIPT_INVALID', '原素材上传回执与当前作品不一致，已停止发布')
   if (bridge.file.mime !== selected.file.mime || bridge.file.size !== selected.file.size || bridge.file.sha256 !== selected.file.sha256) return failure('NATIVE_MAIN_BRIDGE_FILE_CHANGED', '实际文件与原上传快照不一致，请保留原记录并重新核对素材')
 }
-async function lookup(selected: NativeMainBridgeSelection, request: Marker): Promise<NativeMainMediaBridgeDto | null> {
+async function lookup(selected: NativeMainBridgeSelection, request: Marker, environment?: PublishingProviderEnvironment): Promise<NativeMainMediaBridgeDto | null> {
   const owner = assertHostSession().user.id, revision = getHostSessionRevision()
   const query = request.bridgeId ? `bridgeId=${request.bridgeId}` : `requestKey=${encodeURIComponent(request.requestKey)}`
-  const response = await nativeBffFetch(`media-bridge?${query}`, { method: 'GET', cache: 'no-store' })
+  const response = await nativeBffFetch(`media-bridge?${query}${environment ? `&region=${environment}` : ''}`, { method: 'GET', cache: 'no-store' })
   if (response.status === 404) { await response.body?.cancel(); assertHostSession(owner, revision); return null }
   const envelope: unknown = await response.json(); assertHostSession(owner, revision)
   if (!response.ok || !envelope || typeof envelope !== 'object' || !('code' in envelope) || envelope.code !== 0 || !('data' in envelope)) return failure('NATIVE_MAIN_BRIDGE_LOOKUP_UNAVAILABLE', '原素材上传状态暂不可读取，请只核对原记录，不会另建请求')
@@ -50,16 +51,16 @@ async function lookup(selected: NativeMainBridgeSelection, request: Marker): Pro
   if (!value || typeof value !== 'object' || !('bridge' in value)) return failure('NATIVE_MAIN_BRIDGE_RECEIPT_INVALID', '原素材上传回执格式待核对')
   if (value.bridge === null) return null
   const bridge = NativeMainMediaBridgeDtoSchema.parse(value.bridge); verify(bridge, selected, request)
-  save({ ...request, bridgeId: bridge.id }); return bridge
+  save({ ...request, bridgeId: bridge.id }, environment); return bridge
 }
-async function submit(selected: NativeMainBridgeSelection, request: Marker) {
+async function submit(selected: NativeMainBridgeSelection, request: Marker, environment?: PublishingProviderEnvironment) {
   const owner = assertHostSession().user.id, revision = getHostSessionRevision()
-  save(request)
+  save(request, environment)
   const body = NativeMainMediaBridgeRequestSchema.parse({ requestKey: request.requestKey, reference: selected.reference, mediaId: selected.mediaId })
-  const response = await nativeBffFetch('media-bridge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const response = await nativeBffFetch(environment ? `media-bridge?region=${environment}` : 'media-bridge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const envelope: unknown = await response.json(); assertHostSession(owner, revision)
   if (!response.ok || !envelope || typeof envelope !== 'object' || !('code' in envelope) || envelope.code !== 0 || !('data' in envelope)) return failure('NATIVE_MAIN_BRIDGE_OUTCOME_UNKNOWN', '原素材上传结果尚未确认，已保留原请求标识；请点击发布后只核对原记录')
-  const result = NativeMainMediaBridgeMutationSchema.parse(envelope.data); verify(result.bridge, selected, request); save({ ...request, bridgeId: result.bridge.id }); return result.bridge
+  const result = NativeMainMediaBridgeMutationSchema.parse(envelope.data); verify(result.bridge, selected, request); save({ ...request, bridgeId: result.bridge.id }, environment); return result.bridge
 }
 function ready(bridge: NativeMainMediaBridgeDto | null) { return !!bridge && bridge.state === 'ready' && bridge.connectionCurrent && bridge.resultReference?.kind === 'provider_asset' && bridge.resultReference.mediaId === bridge.mediaId }
 const resumable = (bridge: NativeMainMediaBridgeDto) => bridge.connectionCurrent && (bridge.state === 'prepared' && bridge.phase === null || ['uploading', 'confirming'].includes(bridge.state) && bridge.phase === 'put')
@@ -98,10 +99,11 @@ export async function confirmNativeOfficialMainMedia(items: PubItem[], dependenc
     }
   }
   if (!chosen.size) return
+  const { environment } = dependencies
   const execute = async (mayWrite: boolean) => {
     const show = dependencies.confirm
     const states: { selected: Selected, request: Marker | null, bridge: NativeMainMediaBridgeDto | null }[] = []
-    for (const selected of chosen.values()) { const request = marker(selected.mediaId); if (request) matches(request, selected); states.push({ selected, request, bridge: request ? await lookup(selected, request) : null }) }
+    for (const selected of chosen.values()) { const request = marker(selected.mediaId, environment); if (request) matches(request, selected); states.push({ selected, request, bridge: request ? await lookup(selected, request, environment) : null }) }
     assertHostSession(owner, revision); dependencies.assertCurrent?.()
     const pending = states.filter(state => !ready(state.bridge))
     if (!pending.length) return
@@ -115,7 +117,7 @@ export async function confirmNativeOfficialMainMedia(items: PubItem[], dependenc
     assertHostSession(owner, revision); dependencies.assertCurrent?.()
     if (!approved) return failure('NATIVE_MAIN_BRIDGE_CANCELLED', '已返回编辑，素材导入没有继续')
     if (blocked) {
-      for (const state of pending) if (state.request) state.bridge = await lookup(state.selected, state.request)
+      for (const state of pending) if (state.request) state.bridge = await lookup(state.selected, state.request, environment)
       if (states.every(state => ready(state.bridge))) return
       if (!mayWrite) return failure('NATIVE_MAIN_BRIDGE_LOCK_UNAVAILABLE', '当前浏览器只能核对原上传记录，不能安全提交新的素材导入')
       return failure('NATIVE_MAIN_BRIDGE_PENDING', '原素材上传仍未确认完成，请保留原请求继续核对；发布准备已暂停')
@@ -123,7 +125,7 @@ export async function confirmNativeOfficialMainMedia(items: PubItem[], dependenc
     for (const state of pending) {
       assertHostSession(owner, revision); dependencies.assertCurrent?.()
       const request: Marker = state.request ?? { version: 1, requestKey: `native-media-import:${crypto.randomUUID()}`, reference: state.selected.reference, mediaId: state.selected.mediaId }
-      const bridge = await submit(state.selected, request)
+      const bridge = await submit(state.selected, request, environment)
       if (!ready(bridge)) return failure('NATIVE_MAIN_BRIDGE_PENDING', '原素材上传结果待核对，已停止后续素材与发布准备；请保留原请求标识')
     }
   }

@@ -1,3 +1,4 @@
+import {imageKeys} from '@/features/commerce-studio/routes';
 // Public catalogue + inspected SVG paths, 2026-09-08. No server dependencies.
 export const IMAGE_RAIL_GROUPS = [
   {
@@ -111,13 +112,14 @@ export const IMAGE_RAIL_ITEMS = IMAGE_RAIL_GROUPS.flatMap(group=>[...group.items
 export function imageRailHref(sourceId:string){
  const skill=IMAGE_RAIL_ITEMS.find(value=>value.sourceId===sourceId);
  if(!skill)throw Error('未知图片技能入口');
- return '/toolbox/image-generation?skill_pack='+encodeURIComponent(skill.sourceId);
+ return '/toolbox/image-generation?tool='+encodeURIComponent(imageKeys[skill.localId]);
 }
 export function imageRailSkillFromPath(path:string){
  const url=new URL(path,'http://local.invalid');
- if(url.pathname!=='/toolbox/image-generation'||!url.searchParams.has('skill_pack'))return undefined;
+ if(url.pathname!=='/toolbox/image-generation'||(!url.searchParams.has('skill_pack')&&!url.searchParams.has('tool')))return undefined;
  const sourceId=url.searchParams.get('skill_pack');
- const skill=IMAGE_RAIL_ITEMS.find(value=>value.sourceId===sourceId);
+ const publicKey=url.searchParams.get('tool');
+ const skill=IMAGE_RAIL_ITEMS.find(value=>publicKey?imageKeys[value.localId]===publicKey:value.sourceId===sourceId);
  if(!skill)throw Error('此图片技能入口不可用，请从 AI 图片菜单重新选择');
  return skill;
 }

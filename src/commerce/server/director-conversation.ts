@@ -2,20 +2,26 @@ import {db,get,put,transaction} from './store';
 import {createJob,type JobInput,type Job,type Conversation} from './jobs';
 import {createCommerceJobQuote} from './quotes';
 import {findDirectorCard} from './director-catalog';
+import {directorScenes,isDirectorScene} from '../shared/director-scenarios';
 import {readAsset} from './assets';
 import {DIRECTOR_OUTPUT_PROTOCOL} from './director-output';
 import {DirectorConflict,directorSourceConfigurationHash,requireDirector,synchronizeDirector,inspectDirectorMessage,validateDirectorReferences,validateDirectorSelections,verifyDirectorAudioReferences} from './director-turn-claim';
 import type {DirectorApplication,DirectorConversation,DirectorPage,DirectorReference,DirectorSettings,DirectorTurnContext,DirectorVideoSettings} from './director-conversation-schema';
+import {DIRECTOR_SCRIPT_MIN,DIRECTOR_SCRIPT_MAX,DIRECTOR_LANGUAGES} from '../shared/director-parameters';
 import {COMMERCE_VIDEO_MAX_TOTAL_DURATION} from '../shared/video-generation-capabilities';
 
 const uuid=(value:unknown)=>typeof value==='string'&&/^[a-f0-9-]{36}$/i.test(value);
 export function directorSettings(value:unknown):DirectorSettings {
+  return readDirectorSettings(value,DIRECTOR_SCRIPT_MAX);
+}
+function readDirectorSettings(value:unknown,maximum:number):DirectorSettings {
   const raw=value as Partial<DirectorSettings>|null;
   const spec=findDirectorCard(raw?.skillKey||'');
-  if(!raw||!spec||!Number.isInteger(raw.durationSeconds)||Number(raw.durationSeconds)<4||Number(raw.durationSeconds)>COMMERCE_VIDEO_MAX_TOTAL_DURATION||!['中文','英文','泰国','马来西亚','巴西','不限'].includes(raw.spokenLanguage||'')||typeof raw.generateAudio!=='boolean')throw new DirectorConflict(`请选择有效的编导场景、语言、声音和4–${COMMERCE_VIDEO_MAX_TOTAL_DURATION}秒时长`,'DIRECTOR_SETTINGS_INVALID',400);
+  if(!raw||!spec||!Number.isInteger(raw.durationSeconds)||Number(raw.durationSeconds)<DIRECTOR_SCRIPT_MIN||Number(raw.durationSeconds)>maximum||!DIRECTOR_LANGUAGES.some(lang=>lang===raw.spokenLanguage)||typeof raw.generateAudio!=='boolean')throw new DirectorConflict(`请选择有效的编导场景、语言、声音和${DIRECTOR_SCRIPT_MIN}–${maximum}秒时长`,'DIRECTOR_SETTINGS_INVALID',400);
   const selections=raw.selections||{};
   if(typeof selections!=='object'||Array.isArray(selections)||Object.keys(selections).length>20||JSON.stringify(selections).length>8000||Object.entries(selections).some(([k,v])=>!k||k.length>80||!['string','boolean','number'].includes(typeof v)&&!(Array.isArray(v)&&v.every(x=>typeof x==='string'))||typeof v==='number'&&!Number.isFinite(v)))throw new DirectorConflict('编导选择项格式不正确','DIRECTOR_SELECTIONS_INVALID',400);
-  const settings={skillKey:spec.key,selections,spokenLanguage:raw.spokenLanguage!,durationSeconds:raw.durationSeconds!,generateAudio:raw.generateAudio};
+  if(raw.sceneTask!==undefined&&(!isDirectorScene(raw.sceneTask)||spec.key!=='default-director'))throw new DirectorConflict('创作场景与执行编导不匹配','DIRECTOR_SETTINGS_INVALID',400);
+  const settings={skillKey:spec.key,...(raw.sceneTask?{sceneTask:raw.sceneTask}:{}),selections,spokenLanguage:raw.spokenLanguage!,durationSeconds:raw.durationSeconds!,generateAudio:raw.generateAudio};
   validateDirectorSelections(settings,spec);
   return settings;
 }
@@ -24,13 +30,13 @@ export function openDirector(owner:string,id:string,settings:unknown) {
   const normalized=directorSettings(settings);
   return transaction(()=>{
     const current=get<DirectorConversation>('director-conversations',id,owner);
-    if(current)return synchronizeDirector(owner,current);
+    if(current){if(current.settings.sceneTask!==normalized.sceneTask)throw new DirectorConflict('请为不同创作场景新建会话','DIRECTOR_SKILL_CHANGED');return synchronizeDirector(owner,current);}
     if(db().prepare("SELECT id FROM records WHERE bucket='director-conversations' AND id=?").get(id))throw new DirectorConflict('会话不存在','DIRECTOR_NOT_FOUND',404);
     const now=Date.now();const value:DirectorConversation={id,createdAt:now,updatedAt:now,latestScriptMessageId:null,activeJobId:null,settings:normalized,messages:[]};
     // Existing same-owner conversations can be reopened; their actual completed jobs remain the source of truth.
     const legacy=get<Conversation>('conversations',id,owner);
     for(const m of legacy?.messages||[]){if(!m.jobId)continue;const j=get<Job>('jobs',m.jobId,owner);if(!j||j.input.purpose!=='director')continue;
-      const settings=directorSettings({skillKey:j.input.director||normalized.skillKey,selections:{},spokenLanguage:j.input.spokenLanguage||normalized.spokenLanguage,durationSeconds:j.input.scriptDuration||normalized.durationSeconds,generateAudio:j.input.generateAudio??true});
+      const settings=readDirectorSettings({skillKey:j.input.director||normalized.skillKey,selections:{},spokenLanguage:j.input.spokenLanguage||normalized.spokenLanguage,durationSeconds:j.input.scriptDuration||normalized.durationSeconds,generateAudio:j.input.generateAudio??true},COMMERCE_VIDEO_MAX_TOTAL_DURATION);
       const refs=(j.input.references||[]).map(r=>{const a=readAsset(r.id,owner);return {...r,instanceId:r.id,name:a?.name||'已失效素材',type:a?.type||''};});
       if(m.role==='assistant'&&j.status!=='succeeded')continue;
       value.messages.push({id:m.id,sequence:value.messages.length,role:m.role,content:m.content,status:'completed',jobId:j.id,operationId:j.input.requestId,baseMessageId:value.latestScriptMessageId,createdAt:j.createdAt,settings,references:refs,billing:{status:'unconfirmed'}});
@@ -51,17 +57,29 @@ export function directorPage(value:DirectorConversation,before?:string|null,limi
   const start=Math.max(0,end-limit),messages=value.messages.slice(start,end);
   return {...value,messages,hasMore:start>0,nextCursor:start>0?messages[0]?.id||null:null};
 }
-function directorTurnInput(owner:string,body:Record<string,unknown>) {
+function directorTurnInput(owner:string,body:Record<string,unknown>,preflight=false) {
   if(!uuid(body.id)||!uuid(body.operationId)||!(body.expectedScriptMessageId===null||uuid(body.expectedScriptMessageId))||typeof body.message!=='string'||body.message.length>8000)throw new DirectorConflict('编导消息参数无效','DIRECTOR_TURN_INVALID',400);
   const settings=directorSettings(body.settings),references=validateDirectorReferences(owner,settings,body.references);
   const spec=findDirectorCard(settings.skillKey)!;
   const current=readDirector(owner,String(body.id));
-  if(current.settings.skillKey!==settings.skillKey)throw new DirectorConflict('请为不同编导场景新建会话','DIRECTOR_SKILL_CHANGED');
+  if(preflight){
+    if(current.activeJobId)throw new DirectorConflict('此编导会话仍有未结束任务，请查看原任务','DIRECTOR_ACTIVE');
+    if(current.latestScriptMessageId!==body.expectedScriptMessageId)throw new DirectorConflict('脚本已更新，请读取最新版本后再修改','DIRECTOR_STALE_SCRIPT');
+  }
+  if(current.settings.skillKey!==settings.skillKey||current.settings.sceneTask!==settings.sceneTask)throw new DirectorConflict('请为不同编导场景新建会话','DIRECTOR_SKILL_CHANGED');
   const context:DirectorTurnContext={conversationId:String(body.id),expectedScriptMessageId:body.expectedScriptMessageId as string|null,operationId:String(body.operationId),settings,references,outputProtocol:DIRECTOR_OUTPUT_PROTOCOL};
   const input:JobInput&{directorTurn:DirectorTurnContext}={requestId:String(body.operationId),kind:'agent',modelId:'',prompt:body.message,purpose:'director',director:spec.name==='默认'?'默认编导':spec.name,conversationId:String(body.id),spokenLanguage:settings.spokenLanguage,scriptDuration:settings.durationSeconds,generateAudio:settings.generateAudio,references:references.map(r=>({id:r.id,slot:r.slot})),directorTurn:context};
   return input;
 }
-export async function quoteDirectorTurn(owner:string,body:Record<string,unknown>){const input=directorTurnInput(owner,body);await verifyDirectorAudioReferences(owner,input.directorTurn.settings,input.directorTurn.references);return createCommerceJobQuote(owner,input);}
+export function prepareDirectorScene(owner:string,body:Record<string,unknown>){
+  const input=directorTurnInput(owner,{...body,operationId:crypto.randomUUID()},true);
+  const {settings,references,expectedScriptMessageId}=input.directorTurn;
+  const spec=findDirectorCard(settings.skillKey)!;
+  const scene=settings.sceneTask?directorScenes[settings.sceneTask]:undefined;
+  return {scene:scene?.name||spec.name,executor:settings.skillKey,stages:scene?.fields||[],duration:settings.durationSeconds,revision:expectedScriptMessageId,
+    question:input.prompt.trim()?'':scene?.question||'',references:references.map((r,i)=>({number:i+1,name:r.name||'参考素材',role:r.sceneRole==='character'?'角色':r.type?.startsWith('audio/')?'声音':'图片'}))};
+}
+export async function quoteDirectorTurn(owner:string,body:Record<string,unknown>){const input=directorTurnInput(owner,body,true);await verifyDirectorAudioReferences(owner,input.directorTurn.settings,input.directorTurn.references);return createCommerceJobQuote(owner,input);}
 /** Legacy server-only compatibility. New browser clients must quote and confirm through /api/commerce/jobs. */
 export async function submitDirectorTurn(owner:string,body:Record<string,unknown>) {const input=directorTurnInput(owner,body);await verifyDirectorAudioReferences(owner,input.directorTurn.settings,input.directorTurn.references);return createJob(owner,input);}
 export function applyDirector(owner:string,body:Record<string,unknown>):DirectorApplication {
@@ -76,8 +94,8 @@ export function applyDirector(owner:string,body:Record<string,unknown>):Director
     const source=get<Job>('jobs',message.jobId,owner);
     if(!source||source.status!=='succeeded'||source.input.purpose!=='director'||source.input.conversationId!==value.id||source.text!==message.content)throw new DirectorConflict('来源脚本任务不存在或已经变化','DIRECTOR_APPLICATION_CHANGED');
     const supplied=validateDirectorReferences(owner,message.settings,body.references);
-    const fingerprint=(refs:DirectorReference[])=>JSON.stringify(refs.map(r=>({id:r.id,slot:r.slot,instanceId:r.instanceId||r.id})));
-    if(fingerprint(supplied)!==fingerprint(message.references)||JSON.stringify(directorSettings(body.settings))!==JSON.stringify(message.settings))throw new DirectorConflict('素材或脚本设置已经改变，请先重新创作脚本','DIRECTOR_APPLICATION_CHANGED');
+    const fingerprint=(refs:DirectorReference[])=>JSON.stringify(refs.map(r=>[r.id,r.slot,r.instanceId||r.id,r.sceneRole]));
+    if(fingerprint(supplied)!==fingerprint(message.references)||JSON.stringify(readDirectorSettings(body.settings,Math.max(DIRECTOR_SCRIPT_MAX,message.settings.durationSeconds)))!==JSON.stringify(message.settings))throw new DirectorConflict('素材或脚本设置已经改变，请先重新创作脚本','DIRECTOR_APPLICATION_CHANGED');
     const suppliedVideo=body.videoSettings as Partial<DirectorVideoSettings>|null;
     if(!suppliedVideo||typeof suppliedVideo.aspectRatio!=='string'||!/^\d{1,3}:\d{1,3}$/.test(suppliedVideo.aspectRatio)||typeof suppliedVideo.resolution!=='string'||suppliedVideo.resolution.length>40)throw new DirectorConflict('视频画幅或分辨率设置无效','DIRECTOR_VIDEO_SETTINGS_INVALID',400);
     const videoSettings:DirectorVideoSettings={aspectRatio:suppliedVideo.aspectRatio,resolution:suppliedVideo.resolution,duration:message.settings.durationSeconds,generateAudio:message.settings.generateAudio};

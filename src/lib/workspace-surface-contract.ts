@@ -10,6 +10,7 @@ export const WORKSPACE_SURFACE_KIND = {
   "free-canvas-video": "video",
   "film-studio-video": "video",
   "commerce-video": "video",
+  "commerce-generation-video": "video",
   "publish-center-image": "image",
   "publish-center-video": "video",
 } as const;

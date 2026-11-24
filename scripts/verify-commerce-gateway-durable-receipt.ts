@@ -37,11 +37,11 @@ const base:Receipt={id:'00000000-0000-4000-8000-000000000001',fingerprint:'f',ki
 const pure=evaluate<{
   terminalReceipt:(value:Pick<Receipt,'status'>)=>boolean;
   receiptStateRank:(value:Pick<Receipt,'status'>)=>number;
-  mergeReceiptObservation:(current:Receipt,candidate:Receipt,expectedRevision:number)=>Receipt;
+  mergeReceiptObservation:(current:Receipt,candidate:Receipt,expectedRevision:number,purpose?:string)=>Receipt;
   reconciliation:(reason:string,since?:number)=>Record<string,unknown>;
   endpointHost:(endpoint:string)=>string;
   providerAttestation:(receipt:Receipt,model:Record<string,unknown>,endpoint:string,reported?:unknown,taskId?:unknown)=>Record<string,unknown>;
-}>(['terminalReceipt','receiptStateRank','mergeReceiptObservation','reconciliation','endpointHost','providerAttestation']);
+}>(['terminalReceipt','receiptStateRank','acknowledgedVideoNeedsReadback','mergeReceiptObservation','reconciliation','endpointHost','providerAttestation']);
 
 const checks:Array<{name:string;evidence:unknown}>=[];
 function check(name:string,condition:unknown,evidence:unknown){assert.ok(condition,name);checks.push({name,evidence});}
@@ -56,6 +56,12 @@ check('late failure cannot regress success',lateFailure.status==='success'&&late
 const lateCancel=pure.mergeReceiptObservation(success,{...base,status:'manual_reconciliation'},4);
 check('late SSE cancel cannot regress success',lateCancel.status==='success'&&lateCancel.revision===4,{status:lateCancel.status,revision:lateCancel.revision});
 
+const ambiguousVideo:Receipt={...base,status:'manual_reconciliation',error:'PROVIDER_RESULT_UNCONFIRMED',providerAttestation:{taskId:'task-1',configHash:'cfg'}};
+const originalVideo={...base,status:'success',result:{taskId:'task-1',videoUrl:'https://example.invalid/original.mp4'}};
+check('confirmed output can close an acknowledged original ID',pure.mergeReceiptObservation(ambiguousVideo,originalVideo,3,'reconcile').status==='success',true);
+check('normal poll cannot overwrite an ambiguous receipt',pure.mergeReceiptObservation(ambiguousVideo,originalVideo,3,'poll')===ambiguousVideo,true);
+check('wrong provider task cannot settle the original',pure.mergeReceiptObservation(ambiguousVideo,{...originalVideo,result:{...originalVideo.result,taskId:'other'}},3,'reconcile')===ambiguousVideo,true);
+check('unacknowledged work cannot be recovered by guessing',pure.mergeReceiptObservation({...ambiguousVideo,dispatchPhase:'submission_unknown'},originalVideo,3,'reconcile').status==='manual_reconciliation',true);
 const staleTerminal=pure.mergeReceiptObservation(base,{...base,status:'success',revision:2},2);
 check('terminal observation may close a newer nonterminal revision',staleTerminal.status==='success'&&staleTerminal.revision===4,{status:staleTerminal.status,revision:staleTerminal.revision});
 
@@ -134,7 +140,7 @@ try{
     const DISPATCH_INTENT_TIMEOUT_MS=90000;
     const PROVIDER_ACK_TIMEOUT_MS=360000;
   `;
-  const stateNames=['atomicWriteJson','normalizeReceipt','writeReceipt','load','readLease','acquireReceiptLease','assertLeaseOwner','releaseReceiptLease','terminalReceipt','receiptStateRank','mergeReceiptObservation','commitReceiptObservation','reconciliation','reconcileStaleReceipt'];
+  const stateNames=['atomicWriteJson','normalizeReceipt','writeReceipt','load','readLease','acquireReceiptLease','assertLeaseOwner','releaseReceiptLease','terminalReceipt','receiptStateRank','acknowledgedVideoNeedsReadback','mergeReceiptObservation','commitReceiptObservation','reconciliation','reconcileStaleReceipt'];
   const stateTypescript=`${statePrelude}\n${stateNames.map(declaration).join('\n')}\n;(globalThis as any).__contract={${stateNames.join(',')}};`;
   const stateJavascript=ts.transpileModule(stateTypescript,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
   const stateSandbox:Record<string,unknown>={Date,setTimeout,clearTimeout,console,__deps:{fs,path,crypto:{randomUUID},process:{pid:1000},root:temporaryRoot}};

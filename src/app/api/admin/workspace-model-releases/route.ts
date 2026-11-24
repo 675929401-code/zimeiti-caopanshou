@@ -3,6 +3,7 @@ import { requireCommerceAdmin } from "@/lib/commerce-admin-auth";
 import {
   createPlatformConfigurationCandidate,
   createPlatformConfigurationRollbackCandidate,
+  discardPlatformConfigurationCandidate,
   platformConfigurationOverview,
   PlatformConfigurationError,
   previewPlatformConfigurationRelease,
@@ -54,7 +55,9 @@ export async function POST(request: NextRequest) {
           ? await publishPlatformConfigurationRelease(auth.actor.userId, kind, String(body.releaseId || ""), String(body.previewSha256 || ""))
           : action === "rollback"
             ? await createPlatformConfigurationRollbackCandidate(auth.actor.userId, kind, String(body.targetId || ""), body.changeNote)
-            : null;
+            : action === "discard"
+              ? await discardPlatformConfigurationCandidate(auth.actor.userId, kind, String(body.releaseId || ""))
+              : null;
     if (!release) return failure(new PlatformConfigurationError("PLATFORM_CONFIGURATION_ACTION_INVALID", "未知工作台模型版本操作"), "操作无效", 400);
     return NextResponse.json({ ok: true, release }, { status: action === "bootstrap" || action === "draft" || action === "rollback" ? 201 : 200, headers: noStore });
   } catch (error) {

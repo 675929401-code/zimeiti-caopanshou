@@ -72,8 +72,8 @@ assert.equal(health.overallComplete, false);
 const catalogResponse = await fetch(`${baseUrl}/api/commerce/v1/director-catalog`, { cache: 'no-store' });
 assert.equal(catalogResponse.status, 200);
 const catalog = await catalogResponse.json() as { directors: Array<Record<string, any>> };
-assert.equal(catalog.directors.length, 19);
-assert.equal(new Set(catalog.directors.map((card) => card.key)).size, 19);
+assert.equal(catalog.directors.length, 28);
+assert.equal(new Set(catalog.directors.map((card) => card.key)).size, 28);
 for (const key of ['ecommerce-function-demo', 'local-store-signature-experience']) {
   const card = catalog.directors.find((item) => item.key === key);
   assert.ok(card, `${key} must remain public`);
@@ -140,14 +140,14 @@ assert.equal(retiredBody.code, 'COMMERCE_ADMIN_MOVED');
 
 const settings = await fetch(`${baseUrl}/commerce/settings`, { cache: 'no-store', redirect: 'manual' });
 assert.ok([307, 308].includes(settings.status));
-assert.equal(new URL(String(settings.headers.get('location')), baseUrl).href, `${baseUrl}/admin?tab=commerce`);
+assert.equal(new URL(String(settings.headers.get('location')), baseUrl).href, `${baseUrl}/commerce`);
 
 console.log(JSON.stringify({
   suite: 'commerce-migration-baseline-runtime',
   passed: 31,
   runtime: { revision: version.revision, buildId: version.buildId, port: 5000 },
   configuration: { releaseId: release.id, releaseVersion: release.release_version, mode: health.configurationMode, readyForPaidJobs: false },
-  directorCards: 19,
+  directorCards: 28,
   protectedAdmin: { anonymous: 401, ordinaryMember: 403, retiredEndpoint: 410 },
   blockedPaidQuote: { status: paidProbe.status, code: paidProbeBody.code, quoteRowsCreated: 0 },
   providerRequests: 0,

@@ -1,3 +1,4 @@
+import { wholeWalletCredits } from "../wallet-credit-conversion";
 /**
  * 智音工坊定价模块
  * 
@@ -190,7 +191,7 @@ export function calculateVoiceCost(
   costPriceRmb = roundVoiceAccounting(costPriceRmb);
 
   const profitRmb = roundVoiceAccounting(sellPriceRmb - costPriceRmb);
-  const creditsToCharge = Math.ceil(sellPriceRmb * creditsPerYuan);
+  const creditsToCharge = wholeWalletCredits(sellPriceRmb, creditsPerYuan, "ceil");
 
   return {
     charCount,

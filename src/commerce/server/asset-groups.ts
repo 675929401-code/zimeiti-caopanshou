@@ -2,15 +2,16 @@ import crypto from 'node:crypto';
 import {get,put,list,remove} from './store';
 import {readAsset} from './assets';
 
-export type AssetGroup={id:string;owner:string;name:string;assetIds:string[];createdAt:number;updatedAt:number};
+export type AssetGroup={id:string;owner:string;name:string;kind?:string;assetIds:string[];createdAt:number;updatedAt:number};
 
 export function assetGroups(owner:string){return list<AssetGroup>('asset-groups',owner).sort((a,b)=>b.updatedAt-a.updatedAt);}
 export function assetGroup(id:string,owner:string){return get<AssetGroup>('asset-groups',id,owner);}
-export function createAssetGroup(owner:string,name:string,assetIds:string[]=[]){
+export function createAssetGroup(owner:string,name:string,assetIds:string[]=[],kind:unknown='普通'){
+  if(typeof kind!=='string'||!['普通','虚拟人','真人'].includes(kind))throw Error('资产库类型无效');
   const clean=name.trim();if(!clean)throw Error('分组名称必填');
   for(const aid of assetIds){if(!readAsset(aid,owner))throw Error('素材不存在或不属于当前账号: '+aid.slice(0,8));}
   if(clean.length>60)throw Error('分组名称过长');
-  const group:AssetGroup={id:crypto.randomUUID(),owner,name:clean,assetIds:[...new Set(assetIds)],createdAt:Date.now(),updatedAt:Date.now()};
+  const group:AssetGroup={id:crypto.randomUUID(),owner,name:clean,kind,assetIds:[...new Set(assetIds)],createdAt:Date.now(),updatedAt:Date.now()};
   put('asset-groups',group.id,owner,group);return group;
 }
 export function updateAssetGroup(id:string,owner:string,patch:{name?:string;attachAssetIds?:string[];removeAssetIds?:string[]}){

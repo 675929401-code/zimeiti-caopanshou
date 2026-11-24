@@ -1,12 +1,14 @@
 import { PublishingV2WxOptionsSchema, PublishingV2XhsOptionsSchema } from '@/lib/publishing-v2-contract'
 import { PublishingV3OptionsSchema, preparePublishingV3Content, validatePublishingV3Media } from '@/lib/publishing-v3-contract'
 import { prepareNativePluginContent, validateNativePublishingMedia } from '@/lib/publishing-native'
+import type { PublishingProviderEnvironment } from '@/lib/publishing-regions'
 import type { PublishingStudioBootstrap } from '@/lib/publishing-studio-contract'
 import { effectiveGenericPublishingContent, validateGenericPublishingContent, validateGenericPublishingPolicy } from '@/lib/publishing-generic-validation'
 import { validatePublishingProviderOptions } from '@/lib/publishing-option-schema'
 import { nativeSha256, uploadNativeAsset } from './native-assets'
 import { probeNativePublishingFile, readNativePublishingMedia } from './native-readable-media'
 import type { StudioAccount, StudioDraft, StudioMedia, StudioPlanItem, StudioPlatform } from './types'
+import { studioTargetBlock } from './studio-routing'
 
 export const emptyStudioDraft = (): StudioDraft => ({ contentType: 'image', title: '', body: '', topics: [], media: [], targetOverrides: {} })
 export function effectiveStudioTargetContent(draft: StudioDraft, account: StudioAccount, platform?: StudioPlatform) {
@@ -76,48 +78,65 @@ export function assertStudioPreflight(draft: StudioDraft, accounts: StudioAccoun
   if (draft.contentType !== 'text' && !draft.media.length || draft.contentType === 'video' && draft.media.some(value => value.kind !== 'video')) throw new Error('请选择图片素材，或完整的视频成片')
   if (draft.contentType === 'image' && draft.media.some(media => media.kind !== 'image')) throw new Error('图文内容只能选择图片')
   if (draft.publishAt && (!Number.isFinite(Date.parse(draft.publishAt)) || Date.parse(draft.publishAt) <= Date.now())) throw new Error('请重新选择未来的发布时间')
-  for (const account of accounts) {
-    const platform = platforms.find(value => value.key === account.platform)
-    if (!platform?.available || account.status !== 'ready') throw new Error(`${account.name}：${platform?.reason || '账号尚不可发布'}`)
-    const channel = platform.channels?.find(value => value.transport === (account.kind === 'browser' ? 'browser_plugin' : 'official_api'))
-    if (channel && !channel.publishAllowed) throw new Error(`${account.name}：${channel.reason}`)
-    const override = draft.targetOverrides[account.id] || {}, cover = override.cover || draft.cover, selectedMedia = targetStudioMedia(draft, account.id)
-    if (draft.contentType !== 'text' && (!selectedMedia.length || draft.contentType === 'video' && selectedMedia.length !== 1)) throw new Error(`${account.name}需要选择一份视频，或至少一张图片`)
-    const facts = selectedMedia.map(item => ({ role: item.kind, fileName: item.name, type: item.file?.type || '', size: item.size, width: item.width, height: item.height, duration: item.duration }))
-    const coverFact = cover ? { role: 'cover', fileName: cover.name, type: cover.file?.type || '', size: cover.size, width: cover.width, height: cover.height } : undefined
-    const { title, body, topics } = effectiveStudioTargetContent(draft, account, platform)
-    const publishAt = override.publishAt ?? draft.publishAt
-    if (publishAt && (!Number.isFinite(Date.parse(publishAt)) || Date.parse(publishAt) <= Date.now())) throw new Error(`${account.name}的计划时间已过，请重新选择`)
-    let errors: string[]
-    if (account.kind === 'generic') {
-      errors = validateGenericPublishingContent(platform, draft.contentType, { title, body, topics, mediaIds: selectedMedia.map(m => m.id), coverMediaId: cover?.id }, [...selectedMedia, ...(cover ? [cover] : [])].map(m => ({ id: m.id, fileName: m.name, type: m.file?.type ?? '', size: m.size, width: m.width, height: m.height, duration: m.duration })))
-      if (!platform.optionSchema || !validatePublishingProviderOptions(platform.optionSchema, override.providerOptions ?? platform.defaultOption ?? {})) errors.push('请补齐当前平台要求的发布参数')
-      errors.push(...validateGenericPublishingPolicy(account.platform, override.providerOptions ?? platform.defaultOption ?? {}))
-      if (draft.contentType === 'video' && ['KWAI', 'pinterest'].includes(account.platform) && !cover) errors.push('此平台视频发布需要上传封面')
-    } else if (draft.contentType === 'text') {
-      errors = ['此通道当前不支持纯文字内容']
-    } else if (account.platform === 'douyin' && account.kind === 'official') {
-      const options = PublishingV3OptionsSchema.parse(override.options?.douyin || {})
-      errors = [...preparePublishingV3Content({ title, body, topics, options }).errors, ...validatePublishingV3Media(draft.contentType, facts, coverFact)]
-    } else {
-      const platformKey = account.platform as 'xhs' | 'wxSph' | 'douyin'
-      if (platformKey === 'xhs') PublishingV2XhsOptionsSchema.parse(override.options?.xhs?.userDeclarationBind ? { declaration: override.options.xhs.userDeclarationBind.origin } : {})
-      else if (platformKey === 'wxSph') { const option = override.options?.wxSph; PublishingV2WxOptionsSchema.parse({ ...(option?.poiInfo ? { poiInfo: option.poiInfo } : {}), ...(option?.activity ? { event: option.activity } : {}), ...(option?.extLink ? { extLink: option.extLink } : {}), postFlag: option?.isOriginal ? 1 : 0 }) }
-      errors = [...prepareNativePluginContent(platformKey, title, body, topics).errors, ...validateNativePublishingMedia(platformKey, draft.contentType, facts, coverFact, publishAt)]
-      if (platformKey === 'douyin') { const option = override.options?.douyin; if (option && (option.short_title || option.cover_tsp || option.private_status || option.download_type !== undefined && option.download_type !== 1)) errors.push('所选抖音参数仅官方接口通道使用，请清除或切换通道；浏览器发布当前仅支持公开作品') }
-    }
-    if (errors.length) throw new Error(`${account.name}：${errors.join('；')}`)
+  for (const account of accounts) assertStudioTargetPreflight(draft, account, platforms.find(value => value.key === account.platform))
+}
+
+export function assertStudioTargetPreflight(draft: StudioDraft, account: StudioAccount, platform: StudioPlatform | undefined, validateSchedule = true) {
+  const targetBlock = studioTargetBlock(account, platform)
+  if (!platform || targetBlock) throw new Error(`${account.name}：${targetBlock || '账号尚不可发布'}`)
+  const override = draft.targetOverrides[account.id] || {}, cover = override.cover || draft.cover, selectedMedia = targetStudioMedia(draft, account.id)
+  if (draft.contentType !== 'text' && (!selectedMedia.length || draft.contentType === 'video' && selectedMedia.length !== 1)) throw new Error(`${account.name}需要选择一份视频，或至少一张图片`)
+  const facts = selectedMedia.map(item => ({ role: item.kind, fileName: item.name, type: item.file?.type || '', size: item.size, width: item.width, height: item.height, duration: item.duration }))
+  const coverFact = cover ? { role: 'cover', fileName: cover.name, type: cover.file?.type || '', size: cover.size, width: cover.width, height: cover.height } : undefined
+  const { title, body, topics } = effectiveStudioTargetContent(draft, account, platform)
+  const media = cover ? [...selectedMedia, cover] : selectedMedia
+  if (account.kind !== 'browser') for (const item of media) {
+    if (item.stage === 'main' && item.file?.type === 'image/webp') throw new Error(`${account.name}：主站 WebP 作品请先转成 JPG 或 PNG 后再导入官方素材库`)
+    const needsUpload = item.stage !== 'main' && (item.stage === 'local' || account.kind === 'generic')
+    if (needsUpload && item.size > (item.kind === 'video' ? 100 : 20) * 1024 ** 2) throw new Error(`${account.name}：当前素材上传支持 100 MiB 以内的 MP4 和 20 MiB 以内的图片`)
   }
+  const publishAt = override.publishAt ?? draft.publishAt
+  if (validateSchedule && publishAt && (!Number.isFinite(Date.parse(publishAt)) || Date.parse(publishAt) <= Date.now())) throw new Error(`${account.name}的计划时间已过，请重新选择`)
+  let errors: string[]
+  if (account.kind === 'generic') {
+    errors = validateGenericPublishingContent(platform, draft.contentType, { title, body, topics, mediaIds: selectedMedia.map(m => m.id), coverMediaId: cover?.id }, [...selectedMedia, ...(cover ? [cover] : [])].map(m => ({ id: m.id, fileName: m.name, type: m.file?.type ?? '', size: m.size, width: m.width, height: m.height, duration: m.duration })))
+    if (!platform.optionSchema || !validatePublishingProviderOptions(platform.optionSchema, override.providerOptions ?? platform.defaultOption ?? {})) errors.push('请补齐当前平台要求的发布参数')
+    errors.push(...validateGenericPublishingPolicy(account.platform, override.providerOptions ?? platform.defaultOption ?? {}))
+    if (draft.contentType === 'video' && ['KWAI', 'pinterest'].includes(account.platform) && !cover) errors.push('此平台视频发布需要上传封面')
+  } else if (draft.contentType === 'text') {
+    errors = ['此通道当前不支持纯文字内容']
+  } else if (account.platform === 'douyin' && account.kind === 'official') {
+    const options = PublishingV3OptionsSchema.parse(override.options?.douyin || {})
+    errors = [...preparePublishingV3Content({ title, body, topics, options }).errors, ...validatePublishingV3Media(draft.contentType, facts, coverFact)]
+  } else {
+    const platformKey = account.platform as 'xhs' | 'wxSph' | 'douyin'
+    if (platformKey === 'xhs') PublishingV2XhsOptionsSchema.parse(override.options?.xhs?.userDeclarationBind ? { declaration: override.options.xhs.userDeclarationBind.origin } : {})
+    else if (platformKey === 'wxSph') { const option = override.options?.wxSph; PublishingV2WxOptionsSchema.parse({ ...(option?.poiInfo ? { poiInfo: option.poiInfo } : {}), ...(option?.activity ? { event: option.activity } : {}), ...(option?.extLink ? { extLink: option.extLink } : {}), postFlag: option?.isOriginal ? 1 : 0 }) }
+    errors = [...prepareNativePluginContent(platformKey, title, body, topics).errors, ...validateNativePublishingMedia(platformKey, draft.contentType, facts, coverFact, publishAt)]
+    if (platformKey === 'douyin') { const option = override.options?.douyin; if (option && (option.short_title || option.cover_tsp || option.private_status || option.download_type !== undefined && option.download_type !== 1)) errors.push('所选抖音参数仅官方接口通道使用，请清除或切换通道；浏览器发布当前仅支持公开作品') }
+  }
+  if (errors.length) throw new Error(`${account.name}：${errors.join('；')}`)
 }
 /** This function is called only after the user confirms the frozen content. */
-export async function materializeStudioDraft(input: StudioDraft, current: () => void) {
+export function scopeStudioDraft(draft: StudioDraft, accounts: StudioAccount[]): StudioDraft {
+  const selected = new Set(accounts.flatMap(account => targetStudioMedia(draft, account.id).map(media => media.id)))
+  return {
+    ...draft,
+    media: draft.media.filter(media => selected.has(media.id)),
+    cover: accounts.some(account => !draft.targetOverrides[account.id]?.cover) ? draft.cover : undefined,
+    targetOverrides: Object.fromEntries(accounts.flatMap(account => draft.targetOverrides[account.id] ? [[account.id, draft.targetOverrides[account.id]]] : [])),
+  }
+}
+
+export async function materializeStudioDraft(input: StudioDraft, current: () => void, environment?: PublishingProviderEnvironment) {
   const draft = copyStudioDraft(input), completed = new Map<string, StudioMedia>(), identities = new Map<string, string>()
   const upload = async (media: StudioMedia) => {
     const existing = completed.get(media.id); if (existing) return existing
-    if (media.stage !== 'local') { identities.set(media.id, media.id); return media }
+    if (media.stage === 'main' || (media.stage !== 'local' && !environment)) { identities.set(media.id, media.id); return media }
     current(); if (!media.file) throw new Error('本地文件已不可读取，请重新选择')
-    const url = await uploadNativeAsset(media.file, { assertCurrent: current }); current()
-    const value = await readStudioMedia({ ...media, url, stage: 'provider' }); current(); completed.set(media.id, value); identities.set(media.id, value.id); return value
+    const url = await uploadNativeAsset(media.file, { assertCurrent: current, environment }); current()
+    const value = await readStudioMedia({ ...media, url, stage: 'provider', nativeMediaEntryId: url === media.url ? media.nativeMediaEntryId : undefined }); current()
+    completed.set(media.id, value); identities.set(media.id, value.id); return value
   }
   // Sequential uploads make an uncertain first upload stop later side effects.
   for (let index = 0; index < draft.media.length; index++) draft.media[index] = await upload(draft.media[index])

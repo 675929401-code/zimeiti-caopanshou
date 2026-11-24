@@ -121,25 +121,38 @@ function modelPresentation(kind: WorkspaceModelKind, model: Record<string, unkno
   const channelLabel = [connection.provider, connection.group]
     .filter((value, index, values) => value && value !== "分组待核对" && values.indexOf(value) === index)
     .join(" · ");
+  const channel = { provider: String(model.provider || ""), providerUrl, providerHost: connection.host, channelLabel };
   if (kind === "image") {
     const capabilities = getImageModelCapabilities(model);
     return {
-      provider: String(model.provider || ""),
-      providerUrl,
-      providerHost: connection.host,
-      channelLabel,
+      ...channel,
       priceLabels: capabilities.resolutionOptions.map((resolution) => `${resolution} 售 ¥${formatModelPrice(resolveImageResolutionPrice(model, resolution, "selling"))}`),
       costLabels: capabilities.resolutionOptions.map((resolution) => `${resolution} 成本 ¥${formatModelPrice(resolveImageResolutionPrice(model, resolution, "cost"))}`),
     };
   }
   const capabilities = getVideoResolutionCapabilities(model);
-  const unit = getVideoBillingUnit(model) === "output_second" ? "/输出秒" : "/次";
+  const billingUnit = getVideoBillingUnit(model);
+  if (billingUnit === "token" || config.provider_billing_unit === "token") {
+    const pricing = getVideoTokenPublicPricing(model);
+    const costs = record(config.token_cost_prices_per_million);
+    const priceLabels: string[] = [], costLabels: string[] = [];
+    for (const [key, sale] of Object.entries(pricing?.salePricesPerMillion || {})) {
+      const [resolution, reference] = key.split(":");
+      const label = resolution + (reference === "reference_video" ? " 含参考视频" : " 无参考视频");
+      priceLabels.push(label + " 售 ¥" + formatModelPrice(sale) + "/百万 Token");
+      const cost = costs[key];
+      costLabels.push(label + (typeof cost === "number" && Number.isFinite(cost) && cost > 0
+        ? " 成本 ¥" + formatModelPrice(cost) + "/百万 Token" : " 成本待配置"));
+    }
+    return { ...channel,
+      priceLabels: priceLabels.length ? priceLabels : ["按实际 Token 结算 · 售价待配置"],
+      costLabels: costLabels.length ? costLabels : ["按实际 Token 结算 · 成本待配置"],
+    };
+  }
+  const unit = billingUnit === "output_second" ? "/输出秒" : "/次";
   const options = capabilities.options.length > 0 ? capabilities.options : [""];
   return {
-    provider: String(model.provider || ""),
-    providerUrl,
-    providerHost: connection.host,
-    channelLabel,
+    ...channel,
     priceLabels: options.map((resolution) => `${resolution ? `${resolution} ` : ""}售 ¥${formatModelPrice(capabilities.publicPrices[resolution] ?? model.price_per_use)}${unit}`),
     costLabels: options.map((resolution) => `${resolution ? `${resolution} ` : ""}成本 ¥${formatModelPrice(capabilities.costPrices[resolution] ?? model.cost_price)}${unit}`),
   };
@@ -175,6 +188,7 @@ function videoOrderKey(surface: WorkspaceModelSurface): VideoModelOrderSurface |
   if (surface === "storyboard-video") return "storyboard";
   if (surface === "free-canvas-video") return "free-canvas";
   if (surface === "film-studio-video") return "film-studio";
+  if (surface === "commerce-generation-video") return surface;
   if (surface === "commerce-video") return "commerce-agent";
   return null;
 }

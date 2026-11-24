@@ -1114,9 +1114,9 @@ export function useCoverWorkbench(identity: WorkbenchIdentity, mainWorkspace = f
   else if (!originalLayout && referenceCount && activeModel && activeModel.maxReferences !== null && referenceCount > activeModel.maxReferences) blockedReason = "参考图片数量超过当前模型限制，请调整图片用途或数量。";
   else if (freshBinding && ["needs_input", "failed"].includes(freshBinding.result.status)) blockedReason = freshBinding.result.error || "请补充或调整材料后重新准备方案。";
   const fee = confirmed?.quote || freshBinding?.result.quote;
-  const imageAmount = fee?.image?.amount ?? activeModel?.prices[resolution] ?? (activeModel?.defaultResolution === resolution ? activeModel.price : null);
+  const imageAmount = fee?.image?.amount;
   const feeText = originalLayout && referenceCount === 0 && manualTitle && title.trim() ? "仅保存排版，无模型调用费用" : originalLayout ? "不生成新图片；分析费用以确认方案为准"
-    : fee?.image?.unit === "credits" ? `图片 ${imageAmount ?? "待确认"} 积分` : imageAmount != null ? `图片${freshBinding ? "" : "预计"} ¥${Number(imageAmount).toFixed(2)}` : "图片费用待确认";
+    : fee?.image?.unit === "credits" ? `图片 ${imageAmount ?? "待确认"} 积分` : imageAmount != null ? `图片${freshBinding ? "" : "预计"} ¥${Number(imageAmount).toFixed(2)}` : "准备方案后确认生成";
   const chargedAnalysis = freshBinding?.result.analysisBilling?.creditsCharged;
   const analysisFeeText = typeof chargedAnalysis === "number" && chargedAnalysis > 0 ? `内容分析已计费 ${chargedAnalysis} 积分；编辑方案不重复收费`
     : originalLayout && referenceCount === 0 && manualTitle && title.trim() ? "直接使用已填写的标题"

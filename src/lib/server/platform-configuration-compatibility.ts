@@ -287,7 +287,7 @@ export async function stageInitialModelPoolCandidate(input: { actorId: string; c
 type ImageBusinessDelta = { path: string[]; remove: boolean; value?: unknown };
 const IMAGE_BINDING_IDENTITY = ["provider", "protocol", "modelName", "endpoint"] as const;
 const IMAGE_REQUEST_BINDING_FIELDS = ["provider_contract", "submit_path", "poll_path"] as const;
-const IMAGE_NON_EXECUTION_PROTOCOL_FIELDS = new Set(["admin_notes", "resolution_prices", "resolution_cost_prices"]);
+const IMAGE_NON_EXECUTION_PROTOCOL_FIELDS = new Set(["admin_notes", "resolution_prices", "resolution_cost_prices", "reference_image_unit_cost", "reference_image_unit_price"]);
 const IMAGE_DELTA_UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function assertImageDeltaJson(value: unknown, depth = 0): void {
@@ -560,6 +560,7 @@ async function bootstrapWorkspaceSnapshot(): Promise<WorkspaceModelSnapshot> {
     if (surface === "storyboard-video") return videoOrders.storyboard;
     if (surface === "free-canvas-video") return videoOrders["free-canvas"];
     if (surface === "film-studio-video") return videoOrders["film-studio"];
+    if (surface === "commerce-generation-video") return videoOrders[surface];
     return videoOrders["commerce-agent"];
   };
   const surfaces = Object.fromEntries((Object.keys(WORKSPACE_SURFACE_KIND) as WorkspaceSurface[]).map((surface) => {

@@ -1,10 +1,14 @@
+import { catalogRatesForMember, withoutCatalogRates } from "@/lib/server/member-model-catalog";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { resolve } from "node:path";
 import ts from "typescript";
 import { NextResponse } from "next/server";
-import { calculateCredits, type BillingConfig } from "@/lib/billing";
+import { readChatTokenUsage } from "@/lib/reported-token-usage";
+import { normalizeRechargeAmount, rechargeCreditsForAmount } from "@/lib/recharge-amount";
+import { costMarkupFromMargin, marginFromCostMarkup } from "@/lib/text-model-pricing";
+import { billingConfigFromSettingsRows, calculateCredits, type BillingConfig } from "@/lib/billing";
 import { publicTextModelBillingCapabilities, toSelectedModelBillingConfig } from "@/lib/text-model-pricing";
 import * as publicBilling from "@/lib/public-billing-explanation";
 import { findModelByPublicId, publicModelDisplayName, toPublicModelDto, toPublicModelId } from "@/lib/public-model-dto";
@@ -32,11 +36,27 @@ const model: Record<string, unknown> = {
 };
 const config = toSelectedModelBillingConfig(model, globalConfig)!;
 const rules = publicBilling.buildPublicBillingRules(globalConfig, model);
-assert.equal(rules.price?.tokenRoundingUnit, 0);
-assert.equal(rules.price?.inputCreditsPerMillion, 1000);
-assert.equal(rules.price?.outputCreditsPerMillion, 2000);
-assert.equal(rules.price?.cachedCreditsPerMillion, 200);
+assert.equal(publicBilling.toPublicTokenPrice(config)?.tokenRoundingUnit, 0);
+assert.equal(publicBilling.toPublicTokenPrice(config)?.inputCreditsPerMillion, 1000);
+assert.equal(publicBilling.toPublicTokenPrice(config)?.outputCreditsPerMillion, 2000);
+assert.equal(publicBilling.toPublicTokenPrice(config)?.cachedCreditsPerMillion, 200);
 assert.match(rules.roundingDescription, /不取整/u);
+const zero = billingConfigFromSettingsRows(["input_cost_per_million", "output_cost_per_million", "cached_cost_per_million", "profit_margin", "credits_per_yuan"].map(setting_key => ({ setting_key, setting_value: "0" })));
+assert.equal(calculateCredits(zero, 10000, 10000, 500).creditsCharged, 0);
+assert.equal(zero.profitMargin, 0);
+assert.equal(zero.creditsPerYuan, 50);
+assert.ok(Math.abs(costMarkupFromMargin(marginFromCostMarkup(10)) - 10) < 1e-10);
+assert.deepEqual(readChatTokenUsage({ prompt_tokens: 4, completion_tokens: 2, prompt_cache_hit_tokens: 3 }), { prompt_tokens: 4, completion_tokens: 2, cached_tokens: 3 });
+assert.equal(readChatTokenUsage({ prompt_tokens: 4, completion_tokens: 2, prompt_cache_hit_tokens: 5 }), undefined);
+assert.equal(normalizeRechargeAmount(100.001), null);
+assert.equal(rechargeCreditsForAmount(100.01, 50), 5000);
+assert.equal(rechargeCreditsForAmount(100.02, 50), 5001);
+const costlyCache = { ...config, cachedCostPerMillion: 12.5, profitMargin: 0, tokenRoundingUnit: 0, tokenRoundingEnabled: true };
+assert.equal(publicBilling.toPublicTokenPrice(costlyCache)?.cachedCreditsPerMillion, 500);
+assert.equal(publicBilling.toPublicTokenPrice(costlyCache)?.tokenRoundingUnit, 0);
+const capped = calculateCredits(costlyCache, 1000000, 0, 1000000);
+assert.equal(capped.actualCostRmb, 12.5);
+assert.equal(capped.creditsCharged, 500);
 const actual = calculateCredits(config, 1200, 300, 200);
 assert.equal(actual.creditsCharged, 1.64, "Cached tokens are removed from ordinary input before charging");
 assert.equal(actual.rounding, undefined);
@@ -70,8 +90,8 @@ const metadata = { price_snapshot: snapshot, wallet_operation_id: "101", prompt_
 const explanation = publicBilling.buildPublicTransactionBillingExplanation(metadata, "credits");
 assert.equal(explanation.status, "snapshot");
 assert.equal(explanation.walletLink.status, "linked");
-assert.equal(explanation.price?.outputCreditsPerMillion, 2000);
-assert.equal(explanation.baseFeeCredits, 3);
+assert.equal("price" in explanation, false);
+assert.equal("baseFeeCredits" in explanation, false);
 const publicMetadata = publicBilling.toPublicTransactionMetadata(metadata);
 assert.deepEqual(publicMetadata, { agent_name: "测试智能体", prompt_tokens: 1200, completion_tokens: 0, cached_tokens: 200 });
 for (const forbidden of ["fixture-private", "fixture-secret", "profit", "CostPerMillion", "api_key", "price_snapshot", "internalModelId", "wallet_operation_id"]) {
@@ -89,7 +109,8 @@ checks.push("historical-snapshot-only-missing-and-invalid-evidence-explicit-no-p
 const markup = renderToStaticMarkup(createElement(TransactionBillingExplanation, { explanation, metadata: publicMetadata }));
 assert.match(markup, /输入（含缓存）/u);
 assert.match(markup, /输出 0 Token/u);
-assert.match(markup, /缓存输入/u);
+assert.match(markup, /缓存命中/u);
+assert.doesNotMatch(markup, /积分 \/ 百万 Token/u);
 assert.match(markup, /不代表已完成账务对账/u);
 assert.equal(markup.includes("fixture-private"), false);
 assert.equal(markup.includes("成本"), false);
@@ -110,6 +131,7 @@ const models = [model, hiddenModel, pendingModel, incompleteModel];
 let modelReads = 0;
 let failModelRead = false;
 const dependencies: Record<string, unknown> = {
+  "@/lib/server/member-model-catalog": { catalogRatesForMember, withoutCatalogRates },
   "next/server": { NextResponse },
   "@/lib/billing": { getBillingConfig: async () => globalConfig },
   "@/lib/public-billing-explanation": publicBilling,
@@ -171,7 +193,7 @@ for (const [catalogPath, namespace] of [["chat-models", "chat"], ["llm-models", 
   const result = await runRules(`?modelId=${catalogId}`);
   assert.equal(result.status, 200, `${catalogPath} catalog ID must resolve in pricing rules`);
   assert.equal(result.body.modelId, catalogId);
-  assert.deepEqual(result.body.price, currentPublicPrice());
+  assert.equal("price" in result.body, false);
   const unavailablePrice = await runRules(`?modelId=${catalog.unavailableModels[0].id}`);
   assert.equal(unavailablePrice.status, 200);
   assert.equal(unavailablePrice.body.priceReady, false);
@@ -180,12 +202,12 @@ for (const [catalogPath, namespace] of [["chat-models", "chat"], ["llm-models", 
     assert.equal((await runRules(`?modelId=${toPublicModelDto(namespace, hidden, 0).id}`)).status, 404);
   }
 }
-function currentPublicPrice() { return JSON.parse(JSON.stringify(rules.price)); }
+
 checks.push("actual-chat-and-llm-catalog-routes-to-rules-share-public-id-generation-and-publication-gates");
 const currentRoute = await runRules(`?modelId=${publicId}`);
 assert.equal(currentRoute.status, 200);
-assert.equal(currentRoute.body.price.tokenRoundingUnit, 0);
-assert.equal(currentRoute.body.price.cachedCreditsPerMillion, 200);
+assert.equal(currentRoute.body.priceReady, true);
+assert.equal("price" in currentRoute.body, false);
 assert.equal(JSON.stringify(currentRoute.body).includes("fixture-private"), false);
 assert.equal(JSON.stringify(currentRoute.body).includes("profit"), false);
 assert.equal((await runRules("?modelId=private-internal-id")).status, 400);

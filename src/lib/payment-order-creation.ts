@@ -219,9 +219,10 @@ export function paymentCreationTradeOrderId(input: {
   userId: string;
   idempotencyKey: string;
   type: "credits" | "cash";
+  localPreview?: boolean;
 }): string {
   const suffix = sha256(`${input.userId}\u0000${input.idempotencyKey}`).slice(0, 32).toUpperCase();
-  return `PAY_${input.type}_${suffix}`;
+  return `${input.localPreview ? "LPT" : "PAY"}_${input.type}_${suffix}`;
 }
 
 export function paymentOrderCreationFingerprint(input: {

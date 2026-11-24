@@ -76,8 +76,8 @@ assert.ok(jobs.split('generateAudio:value.input.generateAudio').length-1>=2,'自
 
 const adapter=source('src/lib/video-adapter.ts');
 const newApi=compact(section(adapter,'async function generateNewApiVideo','async function pollNewApiVideo'));
-assert.match(newApi,/if\(audioUrls\.length>0\)body\.audios=audioUrls;/u,'NewAPI 必须保留参考音频');
-assert.match(newApi,/if\(params\.generateAudio!==undefined\)body\.generate_audio=params\.generateAudio;/u,'NewAPI 必须保留显式 false');
+assert.match(newApi,/if\(audioUrls\.length>0\)body\[String\(proto\.audio_field\|\|"audios"\)\]=audioUrls;/u,'NewAPI 必须保留参考音频');
+assert.match(newApi,/constgenerateAudio=params\.generateAudio\?\?proto\.generate_audio;if\(generateAudio!==undefined\)body\.generate_audio=generateAudio;/u,'NewAPI 必须保留显式 false');
 
 const doubaoSource=compact(source('src/lib/video-doubao-seedance-relay.ts'));
 assert.match(doubaoSource,/for\(consturlofaudioUrls\)content\.push\(mediaItem\("audio_url",url,"reference_audio"\)\)/u,'Doubao 必须保留参考音频');

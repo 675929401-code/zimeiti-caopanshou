@@ -55,6 +55,12 @@ export type ImageInputShape={skillId?:unknown;prompt:unknown;references?:unknown
 export type NormalizedImageInput={skillId:string;prompt:string;references:ImageReference[];format?:ImageOutputFormat};
 export type ResolvedImageAsset={id:string;type:string};
 
+export function validateImageOutputSettings(caps:Readonly<Record<string,unknown>>,aspectRatio?:string,resolution?:string){
+ const ratios=caps.aspectRatios,resolutions=caps.resolutionOptions;
+ if(aspectRatio!=='auto'&&aspectRatio!=='自适应'&&Array.isArray(ratios)&&ratios.length&&!ratios.includes(aspectRatio))throw Error('模型不支持该画幅');
+ if(Array.isArray(resolutions)&&resolutions.length&&!resolutions.some(r=>String(r).toLowerCase()===String(resolution).toLowerCase()))throw Error('模型不支持该分辨率');
+}
+
 export function validateImageInputShape(input:ImageInputShape):NormalizedImageInput {
  if(!input||typeof input!=='object')fail('INVALID_IMAGE_INPUT','图片创作参数无效');
  const contract=getImageInputContract(input.skillId),format=normalizeImageFormat(input.format);

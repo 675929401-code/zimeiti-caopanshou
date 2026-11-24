@@ -1,0 +1,301 @@
+[
+  {
+    "id": "video-mix",
+    "route": "/toolbox/hot-video-remix?mode=batch",
+    "name": "视频混剪",
+    "description": "组合多段视频素材，编排混剪成片。",
+    "referenceVersion": "1.0.0",
+    "category": "视频",
+    "sort": 0,
+    "detail": "从素材库选取视频，在剪辑台安排开场、正文和结尾，调整片段顺序与保留时长后导出成片。自动批量裂变、重点词字幕和混合配乐仍待验收。",
+    "icon": "7c8b2bd47122fe27c8d06076c913200d125c78dc7d9f5475129768bd11fdaeb4.webp"
+  },
+  {
+    "id": "detail-set",
+    "name": "商品详情图工厂",
+    "description": "为商品规划详情页，整理套图与平台交付切片。",
+    "referenceVersion": "1.0.1",
+    "route": "/toolbox/ecommerce-image-set",
+    "category": "图片",
+    "sort": 17,
+    "icon": "cf908462939d4e6278ddc43b1bc4001d52f4599340a114b8df675705186f8469.webp"
+  },
+  {
+    "id": "ad-spec",
+    "name": "千川素材规格适配",
+    "description": "检查千川素材的画幅、编码与码率。",
+    "referenceVersion": "1.0.0",
+    "category": "视频",
+    "sort": 6,
+    "detail": "先检查原片的画幅、尺寸、视频码率、时长、文件大小与编码。竖版素材通过标准时保留原文件。横版、低分辨率或低码率素材会等比缩放、补边并转码，保存前再次核对六项。也可手动选择导出尺寸和目标码率，下载成片或回到资产库继续使用。",
+    "icon": "2793478596cf4d02ba2c3bf61c99d34eb478b15d156ea9937daf74a2f7178889.webp"
+  },
+  {
+    "id": "douyin-download",
+    "name": "抖音无水印下载器",
+    "description": "按指定作品提取视频或图集。",
+    "referenceVersion": "1.0.0",
+    "category": "视频",
+    "sort": 8,
+    "detail": "输入有使用权限的抖音视频链接或作品号，核对原作品编号，下载视频并保存到素材库。当前支持单条视频。",
+    "icon": "4abf6300feda9961e9980aefceb142d46d904e65359db36d06cdc64da24c5bf5.webp"
+  },
+  {
+    "id": "speech-correction",
+    "name": "口播错词修正",
+    "description": "核对口播错词与修正片段。",
+    "referenceVersion": "2.0.1",
+    "category": "视频",
+    "sort": 10,
+    "detail": "以原始口播视频和确认过的文稿为依据，定位读错、漏读或需要替换的词句，列出对应的时间位置。修改前先核对人名、商品名称与品牌用词，再检查修正后画面与声音是否同步。",
+    "icon": "421c6bdee99cfcda6f17741705cada400fe4985d4385439b395ffa00ecc38930.webp"
+  },
+  {
+    "id": "reverse-video",
+    "name": "视频逆向拆解",
+    "description": "抽取镜头证据，拆解参考片，再针对新商品编写脚本。",
+    "referenceVersion": "1.0.0",
+    "route": "/toolbox/hot-video-remix",
+    "category": "视频",
+    "sort": 1,
+    "icon": "176363076971ee2916e8e733e23fc446591e91835d36dea39803a747b1965090.webp"
+  },
+  {
+    "id": "demux",
+    "name": "音视频分离",
+    "description": "分离原视频的声音与画面。",
+    "referenceVersion": "1.0.0",
+    "category": "视频",
+    "sort": 2,
+    "icon": "c8bd99e2eacc1edfd22952183fb90b8f4a848b8c8c54df84c0566d7b56ebcbcf.webp"
+  },
+  {
+    "id": "multi-download",
+    "name": "抖音红书视频下载器",
+    "description": "获取指定作品的媒体文件。",
+    "referenceVersion": "1.0.1",
+    "category": "视频",
+    "sort": 3,
+    "icon": "dfde4a653667939f7a8daf3123f16478080a133678f9a20a463e7493a1bf8586.webp"
+  },
+  {
+    "id": "video-frame",
+    "name": "视频截帧",
+    "description": "按时间从视频提取静帧或缩略图。",
+    "referenceVersion": "1.0.0",
+    "category": "视频",
+    "sort": 4,
+    "detail": "从会员素材库选取视频或上传原片，预览并指定截帧时间，生成静帧图片。图片保存到本站资产库，可下载，也可用于封面设计或继续制作分镜。",
+    "icon": "84e697f216e2d166d93ddb8b4cf3741f2fbfb71d92f1c58ac49f4539c8e9b5d8.webp"
+  },
+  {
+    "id": "remotion",
+    "name": "Remotion 视频创作",
+    "description": "用 Remotion 制作和渲染视频。",
+    "referenceVersion": "1.0.0",
+    "category": "视频",
+    "sort": 5,
+    "detail": "用可编程的画面、文字和时间线组织镜头，先查看编排行为，再将确认好的内容渲染成视频。",
+    "icon": "84e697f216e2d166d93ddb8b4cf3741f2fbfb71d92f1c58ac49f4539c8e9b5d8.webp"
+  },
+  {
+    "id": "douyin-collect",
+    "name": "抖音视频采集",
+    "description": "采集指定的抖音视频。",
+    "referenceVersion": "1.0.0",
+    "category": "视频",
+    "sort": 7,
+    "detail": "按指定抖音作品采集视频、口播与点赞数，核对原作品编号后保存原片。",
+    "icon": "709134c6583db717902532dede9274633eb3e21fb87533546580818e03484263.webp"
+  },
+  {
+    "id": "voice-localize",
+    "name": "原音色多语配音",
+    "description": "用参考音色制作其他语言的配音。",
+    "referenceVersion": "1.0.1",
+    "category": "视频",
+    "sort": 9,
+    "detail": "提供有权使用的音色和配音文本，指定目标语言，重点核对译文发音、停顿与参考声音的一致性。",
+    "icon": "527fc0b47d61309c4ad5900c883d28e7ea50c2fb855ce6ee31d60748792e3086.webp"
+  },
+  {
+    "id": "video-dub",
+    "name": "视频多语配音",
+    "description": "为视频制作其他语言的配音。",
+    "referenceVersion": "1.0.1",
+    "category": "视频",
+    "sort": 11,
+    "detail": "选择原始视频及目标语言，为原有画面制作相应语言的配音，并按片段核对声音与镜头时长。",
+    "icon": "4a0828d61208c35ba425ff47f264e62be4fb6b498114e2c575302dd276de5156.webp"
+  },
+  {
+    "id": "speech-cut",
+    "name": "口播精剪",
+    "description": "整理口播片段，删减冗余。",
+    "referenceVersion": "1.0.1",
+    "category": "视频",
+    "sort": 12,
+    "detail": "上传口播视频，试听自动标记的长停顿，也可以手动指定或取消删减区间。确认后生成并保存剪辑成片。口头禅识别、重复试录分析和自动字幕仍在开发。",
+    "icon": "7fcf4715770832289b41ac73e7671d82c6c678c91402d5ddddf2715dbbce6218.webp"
+  },
+  {
+    "id": "speech-pace",
+    "name": "口播节奏优化",
+    "description": "调整停顿和语速。",
+    "referenceVersion": "1.0.1",
+    "category": "视频",
+    "sort": 13,
+    "detail": "分析并缩短长停顿，保留句间呼吸。可勾选删减区间、试听原片和调整播放速度，导出处理后的视频。词边界识别和新时间轴字幕仍在开发。",
+    "icon": "7e0fe626e2b20dced4d048950833224ad41deada5a0039297d95d81f047bb7b2.webp"
+  },
+  {
+    "id": "captions",
+    "name": "智能字幕",
+    "description": "为视频识别并制作字幕。",
+    "referenceVersion": "1.0.1",
+    "category": "视频",
+    "sort": 14,
+    "detail": "从视频声音中识别讲话内容，按时间轴排列字幕，逐句核对商品名、数字、标点和显示时间。",
+    "icon": "aa7644597dd2476413c789404ba658d5d66bd6d0c23bcf669159918caad6d7df.webp"
+  },
+  {
+    "id": "content-clips",
+    "route": "/toolbox/video-editor",
+    "name": "内容切片",
+    "description": "选取片段，拆分长视频。",
+    "referenceVersion": "1.0.1",
+    "category": "视频",
+    "sort": 15,
+    "detail": "选择已有视频，标记可独立表达内容的片段，按起止时间剪出短片并保留原声。可从本站资产库继续使用导出的片段，自动判断语义边界仍待验收。",
+    "icon": "f8377071b664a99ecd48b017eb13e75fd8425a3fc89848bf7a75d3e368ceea61.webp"
+  },
+  {
+    "id": "subtitle-translate",
+    "name": "多语字幕翻译",
+    "description": "把字幕翻译为其他语言。",
+    "referenceVersion": "1.0.1",
+    "category": "视频",
+    "sort": 16,
+    "detail": "提供带时间信息的原字幕与目标语言，翻译时保留原有顺序，核对每条字幕的长度和专有名词。",
+    "icon": "40f3311058ff74a706049fa8b1325d79dea29f96109af1e66737a2bbd53012d2.webp"
+  },
+  {
+    "id": "douyin-stream",
+    "name": "抖音推流大师",
+    "description": "诊断账号流量，制定内容、直播和投流方案。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 18,
+    "detail": "结合账号现状、目标和预算，给出起号、内容策划、直播和投放试验建议。",
+    "icon": "22ec43305d4d58a0354fef03f1d89e868e8943c2781f90fd8a4b1aed7df6e8b4.webp"
+  },
+  {
+    "id": "titles",
+    "name": "爆款标题生成器",
+    "description": "为内容编写标题方案。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 19,
+    "icon": "499b1c7e45627926bde4c4b9bfc5365a003eaea997c1ebea1133906e89b4c5d7.webp"
+  },
+  {
+    "id": "markdown-docx",
+    "name": "Markdown 转 Word",
+    "description": "把 Markdown 文本转换为 Word 文档。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 20,
+    "detail": "导入包含标题、列表和段落的 Markdown 内容，转换成可以继续编辑的 Word 文档，并检查排版。",
+    "icon": "d8cde315e6a4e894ca45ce51820e54e725fcf4050a9c2d9804e350b5027abd08.webp"
+  },
+  {
+    "id": "slides",
+    "name": "PPT 演示文稿",
+    "description": "制作演示文稿。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 21,
+    "detail": "根据 JSON 制作可编辑的 PowerPoint 演示稿。支持文字要点、表格、含源数据的柱形图／折线图／饼图和时间线。可载入四页示例修改，生成后从文档资产下载。",
+    "icon": "2b169ca568fbb1f7bae1ba8ea38627e9788e46a48eaee931a708e39412f70181.webp"
+  },
+  {
+    "id": "pdf-ocr",
+    "name": "PDF 文本提取 OCR",
+    "description": "从 PDF 页面识别文字。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 22,
+    "detail": "从扫描件或图片型 PDF 页面识别文字，按页核对识别结果，方便后续校对、复制和编辑。",
+    "icon": "3331dec3640ae2301065087a9989a97a704d169e695c72af01c7a283893ef74a.webp"
+  },
+  {
+    "id": "pdf-tools",
+    "name": "PDF 文档处理",
+    "description": "处理 PDF 文档。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 23,
+    "detail": "添加一个或多个 PDF，按页码范围选择页面，调整文档先后顺序，合并或拆分并下载新文件。表单填写、文本与表格提取需要分别验收。",
+    "icon": "3331dec3640ae2301065087a9989a97a704d169e695c72af01c7a283893ef74a.webp"
+  },
+  {
+    "id": "spreadsheets",
+    "name": "Excel 表格处理",
+    "description": "整理和处理工作表。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 24,
+    "detail": "根据给定的工作簿整理表头、数据行与单元格格式，处理完成后核对原始数据与结果表的对应关系。",
+    "icon": "fa1621a21d764a7cac7ba7ed8823bc085e858e1c73227efd1320f511ff9edb30.webp"
+  },
+  {
+    "id": "sheet-analysis",
+    "name": "Excel 表格处理与数据分析助手",
+    "description": "分析工作簿中的数据。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 25,
+    "detail": "先了解工作表的字段和数据范围，再按问题汇总或比较指标，检查所得结论是否有原始数据支持。",
+    "icon": "fa1621a21d764a7cac7ba7ed8823bc085e858e1c73227efd1320f511ff9edb30.webp"
+  },
+  {
+    "id": "word-tools",
+    "name": "Word 文档处理",
+    "description": "编辑 Word 文档。",
+    "referenceVersion": "1.0.0",
+    "category": "文档",
+    "sort": 26,
+    "detail": "对现有 Word 文档进行内容整理与排版，核对标题层级、段落、表格等元素，便于继续编辑或交付。",
+    "icon": "a12c40e9bdaad74d79b4707b27b4aa357f40ab10249986e187d4c0979249fb16.webp"
+  },
+  {
+    "id": "wechat-editor",
+    "name": "公众号文章 图文生成 排版投稿",
+    "description": "为公众号制作并排版图文稿。",
+    "referenceVersion": "1.0.0",
+    "category": "其他",
+    "sort": 27,
+    "detail": "把文章主题、正文与配图整理成适合公众号阅读的版式，投稿前核对标题、段落、图注及素材顺序。",
+    "icon": "9fbe89d25e5f91250e3f99d0eab86e8c2a0c3db4f50fcfc87501938c022db7f6.webp"
+  },
+  {
+    "id": "wechat-docx",
+    "name": "公众号文章转Word",
+    "description": "将公众号文章转换为 Word 文档。",
+    "referenceVersion": "1.0.0",
+    "category": "其他",
+    "sort": 28,
+    "detail": "针对有权使用的公众号文章提取正文和图文顺序，整理成可编辑的 Word 文档，便于校对与留存。",
+    "icon": "b4c54f5cb1df850e22aedbea7c2ba5495f014f768a65c9e8676bd3e4a687a1a0.webp"
+  },
+  {
+    "id": "site-design",
+    "name": "网站设计与排版美化",
+    "description": "设计网页及页面排版。",
+    "referenceVersion": "1.0.0",
+    "category": "开发",
+    "sort": 29,
+    "detail": "根据页面内容与展示目标整理版面，调整标题层级、文字间距、图片位置和颜色，检查不同宽度的阅读效果。",
+    "icon": "7b0a6de7aac4969340bfc588c7b478165b1634b8852ce3d532485ec29e2a9af7.webp"
+  }
+]

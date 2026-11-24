@@ -1,0 +1,29 @@
+/* Shared by the two member composers. Each composer owns its trigger and draft. */
+.commerce-root.cs-studio :is(.cs-plus,.cs-chat-attach) .cs-composer-add {
+  box-sizing:border-box;position:absolute;inset:auto auto calc(100% + 3px) 0;z-index:45;
+  width:210px;min-width:210px;padding:8px;border:1px solid #ebebeb;border-radius:10px;
+  background:#fff;color:#171717;box-shadow:0 2px 10px #00000008;font-size:14px;text-align:left;
+}
+.commerce-root.cs-studio .cs-composer-add button {
+  display:flex;align-items:center;justify-content:flex-start;gap:10px;box-sizing:border-box;width:100%;height:36px;
+  padding:0 8px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;
+}
+.commerce-root.cs-studio .cs-composer-add button:is(:hover,[aria-expanded=true]){background:#f1f1f1}
+.cs-composer-add svg{width:16px;height:16px;flex:none;stroke-width:1.5}
+.cs-add-rows>button[aria-haspopup] svg:last-child{margin-left:auto}
+.cs-add-rows>hr{height:1px;border:0;margin:8px;background:#eee}
+.cs-add-sub{box-sizing:border-box;position:absolute;width:min(356px,calc(100vw - 230px));max-height:calc(100dvh - 16px);overflow:auto;background:white;border:1px solid #eee;border-radius:10px;color:#171717;box-shadow:0 2px 8px #00000006}
+.cs-add-sub>header,.cs-add-sub>.cs-add-list{padding:8px}
+.cs-add-sub>header{border-bottom:1px solid #eee}
+.cs-add-sub>.cs-add-list{max-height:min(320px,42vh);overflow-y:auto}
+.commerce-root.cs-studio .cs-add-sub .cs-add-skill{height:56px}
+.cs-add-skill>span{min-width:0;display:grid;gap:2px}
+.cs-add-skill b,.cs-add-skill small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-add-skill b{font-size:14px;font-weight:500}.cs-add-skill small,.cs-add-list p{font-size:12px;color:#666}
+.cs-add-list p{margin:10px}
+.commerce-root.cs-studio .cs-add-sub .cs-add-service{height:44px}
+.cs-add-service i{margin-left:auto;display:block;border-radius:16px;width:36px;height:20px;padding:2px;background:#a5a5a5;box-sizing:border-box}
+.cs-add-service i::before{display:block;content:'';width:16px;height:16px;border-radius:50%;background:#fff}
+.cs-add-sub>label{display:flex;align-items:center;gap:10px;height:45px;box-sizing:border-box;padding:0 16px;border-top:1px solid #eee}
+.cs-add-sub input{border:0;outline:0;min-width:0;flex:1;background:transparent;color:inherit;font:inherit;padding:0}
+.cs-studio .cs-home .cs-composer .cs-home-skill{display:flex;width:auto;max-width:38%;gap:5px;border-radius:7px;padding:0 8px;background:#f1f4fa;font-size:13px;white-space:nowrap;overflow:hidden}

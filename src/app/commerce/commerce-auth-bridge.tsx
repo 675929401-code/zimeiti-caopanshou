@@ -8,6 +8,7 @@
  * 绑定一次，cookie 7 天有效；过期后本组件随布局挂载自动重绑。
  */
 import { useEffect } from "react";
+import { readCommerceSession } from "./session-read";
 
 const MAIN_TOKEN_KEY = "auth_token";
 export const COMMERCE_SESSION_READY_EVENT = "commerce-session-ready";
@@ -24,14 +25,12 @@ export function CommerceAuthBridge() {
       if (!mainToken) return;
       running = true;
       try {
-        const current = await fetch("/api/commerce/session", {
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${mainToken}` },
-        });
-        if (current.ok) {
+        const current = await readCommerceSession(mainToken);
+        if (current.status === 200) {
           if (active) window.dispatchEvent(new Event(COMMERCE_SESSION_READY_EVENT));
           return;
         }
+        if (current.status !== 401) return;
         const r = await fetch("/api/commerce/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -43,7 +42,7 @@ export function CommerceAuthBridge() {
     };
     const retry = () => { if (document.visibilityState !== "hidden") void connect(); };
     void connect();
-    const timer = window.setInterval(retry, 10_000);
+    const timer = window.setInterval(retry, 30_000);
     window.addEventListener("focus", retry);
     document.addEventListener("visibilitychange", retry);
     return () => {

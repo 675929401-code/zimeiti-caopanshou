@@ -21,16 +21,30 @@ script对象字段固定为：title、creativeDirection、factLedger、story、s
 shots每项固定为{id:不重复镜头编号,start:起始秒数,end:结束秒数,visual:具体主体与商品动作/空间关系,camera:景别机位与运动,referenceNumbers:[本镜头实际引用的整数],speech:带说话人归属的台词字符串,ambient:环境声字符串,foley:拟音字符串,music:背景音乐字符串}。无某种声音就写空字符串，generateAudio=false时四个声音字段必须全为空字符串。
 镜头id严格按顺序使用「镜头N｜本镜功能标题」。从0秒连续写到本轮durationSeconds，每段end大于start，不得空隙、重叠或超过总长。素材编号严格按本轮参考素材绑定的1开始顺序；materials覆盖每个编号，各镜头只用已有编号。保留身份、服装、品牌文字、商品结构、连续动作和空间关系。没有参考时materials与镜头referenceNumbers都为空数组。generateAudio=true时全片至少要有一项明确的台词、环境声、拟音或音乐计划。
 observation只列看得见且能对应到该参考的内容，不能凭外观推断功效、材质、价格、认证。creativeDirection可以提出建议，但story/setting/shots只使用确认事实与明确允许的创意，不把待确认推断写成承诺。白底、原图静止姿态和背景只有明确指定才继承到动态镜头。无字幕不意味着去掉商品标签或实体店招。
+先逐项核验 factLedger。无论 source 是 user、reference 还是 creative，每一项都必须同时填写 fact、source、evidence 三个字段。user 的 evidence 摘出本轮用户原话中的依据，reference 的 evidence 写明素材编号和实际看见的特征，creative 的 evidence 说明这是哪项拍摄选择。找不到来源的说法删除。不得向只有 fact 和 source 的条目空填 evidence 或省略 evidence。
 factLedger必须把用户明确事实、素材可见事实和创意设定分开；characters必须锁定每个角色身份、外观、服装、关系和跨镜连续性；productContinuity逐项锁定商品结构、包装、文字、色彩、比例和使用状态；conversionClose必须写明最终可见动作与合规转化收尾。多轮修订保留历史已确认但本轮未要求改动的条件，返回一份完整新稿，不能只返回“已修改”或差异清单。关掉配乐不等于关闭全部声音。短口播留出自然停顿。字段中不写模型ID、费用、任务ID、JSON协议说明或自评分数。
 用户未明确提供的方位、材质、性能、开合难易、比例、文字细节与体验，不得标成user或reference事实，也不得在商品一致性或镜头动作中写成既定商品属性。逐镜头必须给出唯一可执行的动作和状态，不能使用“二选一”“任选”“盖回或搭在”等让下游自行选择的描述。每个镜头的口播正文按每秒最多5个汉字或等量音节编排，并为商品动作和自然停顿留出时间。
+逐镜回查 visual、camera、台词和声音是否引入了事实台账以外的商品物理属性。颜色和反光不能证明材质，未展示的内页版式、配件和背面结构保持未知，直接描写纸面、边缘或动作。镜头中发生交接时，递出者先拿着物件，接收者接稳后递出者才松手；后续镜头沿用最后一位持有人，换手或放下须有画面动作。
+最后按成片时长试读台词。三秒镜头的一句中文口播以十至十二字为宜，把观众已经看见的动作留给画面。每个角色选定一种外观、每场选定一个地点；没有业务影响的造型细节可留白，人物和场景字段不列备选。原话、地点或造型已由用户指定时予以保留。
 应用时服务器只编译素材职责、创意/剧情/全片设定、逐秒镜头和保持/禁止为生成正文；观察分析单独展示。它不等于已经生成视频。
 `;
 export class DirectorOutputError extends Error {constructor(message:string){super(message);this.name='DirectorOutputError';}}
 const fail=(text:string):never=>{throw new DirectorOutputError(text);};
-function record(v:unknown,keys:string[],label:string):Record<string,unknown>{
+const emptyAudioPlaceholder=/^[\s（(]*(?:无(?:台词|对白|旁白|人声|环境声|拟音|音效|音乐|配乐|声音)?|无声|静音|none|n\/?a|not\s+applicable)[\s）)]*$/iu;
+function record(v:unknown,keys:string[],label:string,annotations?:Readonly<Record<string,unknown>>):Record<string,unknown>{
  if(!v||typeof v!=='object'||Array.isArray(v))return fail(label+'必须为对象');
- const r=v as Record<string,unknown>;
- if(Object.keys(r).some(k=>!keys.includes(k))||keys.some(k=>!Object.hasOwn(r,k)))return fail(label+'字段不完整或含未知字段');return r;
+ const result:Record<string,unknown>=Object.create(null);
+ for(const [rawKey,value] of Object.entries(v)){
+  const key=rawKey.replace(/[\u200B\uFEFF]/gu,'');
+  if(annotations&&rawKey===key&&Object.hasOwn(annotations,key)){
+   const expected=annotations[key];
+   if(value===expected||(expected===null&&value===''))continue;
+  }
+  if(!keys.includes(key)||Object.hasOwn(result,key))return fail(label+'字段不完整或含未知字段');
+  result[key]=value;
+ }
+ if(keys.some(key=>!Object.hasOwn(result,key)))return fail(label+'字段不完整或含未知字段');
+ return result;
 }
 function text(v:unknown,label:string,max=4000,empty=false):string{if(typeof v!=='string'||v.length>max||(!empty&&!v.trim()))return fail(label+'缺少完整正文或超过长度限制');return v;}
 function array(v:unknown,label:string,max:number,min=0):unknown[]{if(!Array.isArray(v)||v.length<min||v.length>max)return fail(label+'数量无效');return v;}
@@ -39,12 +53,54 @@ function number(v:unknown,label:string){if(typeof v!=='number'||!Number.isFinite
 function referenceNumber(v:unknown,count:number){const n=number(v,'素材编号');if(!Number.isInteger(n)||n<1||n>count)return fail('脚本引用了不存在的素材编号');return n;}
 export function isStructuredDirectorOutput(raw:string){return /^\s*(?:\{|\[|```(?:json)?)/i.test(raw);}
 
+// The provider occasionally adds a delimiter at a shot boundary. Only discard it
+// at the parser's reported failure, then validate the entire document normally.
+function parseDirectorJson(source:string,protocol?:DirectorOutputProtocol):unknown {
+ let candidate=source;
+ for(let attempt=0;attempt<=6;attempt++){
+  try{return JSON.parse(candidate);}catch(error){
+   if(protocol!==DIRECTOR_OUTPUT_PROTOCOL||!(error instanceof SyntaxError))break;
+   const offset=error.message.match(/\bposition (\d+)\b/)?.[1];
+   if(offset===undefined)break;
+   const index=Number(offset),left=candidate.slice(0,index),right=candidate.slice(index);
+   if(/^\}\s*$/u.test(right)&&/\}\s*$/u.test(left)){
+    candidate=left;
+    continue;
+   }
+   if(/[\]}]\s*$/u.test(left)&&/^[。，]\s*"\w+"\s*:/u.test(right)){
+    candidate=left+','+right.slice(1);
+    continue;
+   }
+   if(/\}\s*$/u.test(left)&&/^\}\s*\]/u.test(right)){
+    candidate=left+right.slice(1);
+    continue;
+   }
+   // A stray comma and opening quote after the final field of an object
+   // makes its delimiters look like a property name. Remove only that pair.
+   const boundary=left.match(/,\s*"(\s*\}\s*(?:,\s*\{|\]\s*,)\s*")$/u);
+   if(!boundary||!/^[$\w]+"\s*:/u.test(right))break;
+   candidate=left.slice(0,-boundary[0].length)+boundary[1]+right;
+  }
+ }
+ return fail('回复不是完整的编导 JSON；原文已保留，请要求编导按新协议输出完整脚本');
+}
+
 /** Pure validation against the server's actual turn context, never model-declared authority. */
 export function parseDirectorOutput(raw:string,settings:DirectorSettings,references:DirectorReference[],expectedProtocol?:DirectorOutputProtocol):DirectorReply{
  if(typeof raw!=='string'||raw.length>100000)return fail('脚本回复为空或过长');
  let clean=raw.trim();if(/^```json\s/i.test(clean)&&clean.endsWith('```'))clean=clean.replace(/^```json\s*/i,'').slice(0,-3).trim();
- let parsed:unknown;try{parsed=JSON.parse(clean);}catch{return fail('回复不是完整的编导 JSON；原文已保留，请要求编导按新协议输出完整脚本');}
- const r=record(parsed,['schema','replyType','skillKey','durationSeconds','spokenLanguage','generateAudio','questions','script'],'编导回复');
+ const parsed=parseDirectorJson(clean,expectedProtocol);
+ // A provider may repeat the script's constraint lists at the envelope level.
+ // Elide only identical copies. Conflicting lists still fail strict validation.
+ if(expectedProtocol===DIRECTOR_OUTPUT_PROTOCOL && parsed && typeof parsed==='object' && 'script' in parsed && parsed.script && typeof parsed.script==='object'){
+  const envelope=parsed as Record<string,unknown>,script=parsed.script as Record<string,unknown>;
+  for(const key of ['preserve','forbid']){
+   const copy=envelope[key],original=script[key];
+   if(Array.isArray(copy)&&Array.isArray(original)&&copy.length===original.length&&copy.every((value,i)=>typeof value==='string'&&value===original[i]))delete envelope[key];
+  }
+ }
+ // Provider annotations cannot grant script application or change references.
+ const r=record(parsed,['schema','replyType','skillKey','durationSeconds','spokenLanguage','generateAudio','questions','script'],'编导回复',expectedProtocol===DIRECTOR_OUTPUT_PROTOCOL?{referenceNumbersNote:null,applicationRequired:true,revisionTarget:null}:undefined);
  const protocol=String(r.schema) as DirectorOutputProtocol;
  if(![LEGACY_DIRECTOR_OUTPUT_PROTOCOL,DIRECTOR_OUTPUT_PROTOCOL].includes(protocol)||expectedProtocol&&protocol!==expectedProtocol||!['needs_input','script'].includes(String(r.replyType)))return fail('编导回复协议或业务类型无效');
  if(r.skillKey!==settings.skillKey||r.durationSeconds!==settings.durationSeconds||r.spokenLanguage!==settings.spokenLanguage||r.generateAudio!==settings.generateAudio)return fail('回复的编导场景、时长、语言或声音与本轮设置不一致');
@@ -56,7 +112,12 @@ export function parseDirectorOutput(raw:string,settings:DirectorSettings,referen
  if(questions.length)return fail('完整脚本不能夹带尚未解决的追问');
  const v2=protocol===DIRECTOR_OUTPUT_PROTOCOL;
  const s=record(r.script,v2?['title','creativeDirection','factLedger','story','setting','characters','materials','productContinuity','shots','conversionClose','preserve','forbid']:['title','creativeDirection','story','setting','materials','shots','preserve','forbid'],'脚本');
- const factLedger=v2?array(s.factLedger,'事实台账',50,1).map(value=>{const row=record(value,['fact','source','evidence'],'事实台账');if(!['user','reference','creative'].includes(String(row.source)))return fail('事实台账来源无效');return {fact:text(row.fact,'事实台账',2000),source:row.source as 'user'|'reference'|'creative',evidence:text(row.evidence,'事实证据',2000)};}):undefined;
+ const factLedger=v2?array(s.factLedger,'事实台账',50,1).map(value=>{
+  const row=record(value,['fact','source','evidence'],'事实台账');
+  const source=row.source==='用户'?'user':row.source==='参考素材'?'reference':row.source==='创意'?'creative':row.source;
+  if(source!=='user'&&source!=='reference'&&source!=='creative')return fail('事实台账来源无效');
+  return {fact:text(row.fact,'事实台账',2000),source:source as 'user'|'reference'|'creative',evidence:text(row.evidence,'事实证据',2000)};
+ }):undefined;
  const characters=v2?array(s.characters,'人物关系',10).map(value=>{const row=record(value,['id','identity','appearance','wardrobe','relationships','continuity'],'人物关系');return {id:text(row.id,'人物编号',80),identity:text(row.identity,'人物身份',1000),appearance:text(row.appearance,'人物外观',1000),wardrobe:text(row.wardrobe,'人物服装',1000),relationships:text(row.relationships,'人物关系',1000),continuity:text(row.continuity,'人物连续性',1000)};}):undefined;
  const productContinuity=v2?lines(s.productContinuity,'商品一致性',1):undefined;
  const conversionClose=v2?text(s.conversionClose,'转化收尾',2000):undefined;
@@ -67,13 +128,18 @@ export function parseDirectorOutput(raw:string,settings:DirectorSettings,referen
  });
  if(seen.size!==references.length)return fail('脚本遗漏了本轮参考素材职责');
  let previous=0;const ids=new Set<string>();const shots=array(s.shots,'分镜',30,1).map((v,index)=>{
-  const q=record(v,['id','start','end','visual','camera','referenceNumbers','speech','ambient','foley','music'],'分镜');
+  const q=record(v,['id','start','end','visual','camera','referenceNumbers','speech','ambient','foley','music'],'分镜',v2?{referenceNumbersNote:null,cameraNote:null,speechLanguage:settings.spokenLanguage}:undefined);
   const id=text(q.id,'镜头编号',60);if(v2&&!new RegExp(`^镜头${index+1}｜\\S+`,'u').test(id))return fail('镜头编号必须按「镜头N｜本镜功能标题」连续排列');if(ids.has(id))return fail('分镜编号重复');ids.add(id);
   const start=number(q.start,'起始时间'),end=number(q.end,'结束时间');
   if(start<0||Math.abs(start-previous)>0.000001||end<=start||end>settings.durationSeconds+0.000001)return fail('分镜时间必须从0连续到目标时长，不可空隙、重叠或超时');previous=end;
   const referenceNumbers=array(q.referenceNumbers,'分镜参考',DIRECTOR_REFERENCE_LIMIT).map(x=>referenceNumber(x,references.length));
   if(new Set(referenceNumbers).size!==referenceNumbers.length)return fail('镜头中的素材编号重复');
   const audio={speech:text(q.speech,'台词',4000,true),ambient:text(q.ambient,'环境声',2000,true),foley:text(q.foley,'拟音',2000,true),music:text(q.music,'背景音乐',2000,true)};
+  if(v2&&settings.generateAudio){
+   for(const key of ['ambient','foley','music'] as const){
+    if(emptyAudioPlaceholder.test(audio[key]))audio[key]='';
+   }
+  }
   if(!settings.generateAudio&&Object.values(audio).some(x=>x.trim()))return fail('无声脚本不能包含台词、环境声、拟音或音乐');
   return {id,start,end,visual:text(q.visual,'镜头动作'),camera:text(q.camera,'机位运镜'),referenceNumbers,...audio};
  });
@@ -97,18 +163,20 @@ function spokenUnits(value:string){
 export function directorCanaryQualityIssues(reply:DirectorReply){
  if(reply.replyType!=='script'||!reply.script)return ['编导没有返回可应用完整脚本'];
  const issues:string[]=[];
- const unresolved=/(?:待确认|无法确认|不能确定|二选一|任选其一|任选|或(?:者)?(?:放|搭|盖|置|用|使用|选择|保持|改|换))/u;
- const emptyAudioPlaceholder=/^[\s（(]*(?:无(?:台词|对白|旁白|人声|环境声|拟音|音效|音乐|配乐|声音)?|无声|静音|none|n\/?a|not\s+applicable)[\s）)]*$/iu;
- const hasBranching=(value:string)=>value.split(/[。；;\n]/u).some((clause)=>{
+ const actionAlternative=/或(?:者)?(?:放|搭|盖|置|用|使用|选择|保持|改|换)/u;
+ const hasBranching=(value:string,actionOnly=false)=>value.split(/[。，,；;！？\n]/u).some((clause)=>{
   if(/(?:待确认|无法确认|不能确定|二选一|任选其一|任选)/u.test(clause))return true;
-  if(!/或(?:者)?/u.test(clause))return false;
-  return !/(?:不|禁止|避免|无(?:需|须|任何)?)/u.test(clause);
+  const alternative=(actionOnly?actionAlternative:/或/u).exec(clause);
+  if(!alternative)return false;
+  const before=clause.slice(0,alternative.index);
+  const prohibition=actionOnly?/(?:禁止|避免|不得|不要|不能|不可|不在|不被)/u:/(?:禁止|避免|不|无|没有)/u;
+  return !prohibition.test(before);
  });
  for(const shot of reply.script.shots){
   const seconds=shot.end-shot.start;
   const units=spokenUnits(shot.speech);
   if(units>Math.max(1,Math.floor(seconds*5)))issues.push(`${shot.id}口播约${units}个音节，超过${seconds}秒镜头的自然口播上限`);
-  if(unresolved.test(`${shot.visual}\n${shot.camera}`))issues.push(`${shot.id}含二选一或待确认的生成动作`);
+  if(hasBranching(shot.visual,true)||hasBranching(shot.camera,true))issues.push(`${shot.id}含二选一或待确认的生成动作`);
   for(const [label,value] of [['台词',shot.speech],['环境声',shot.ambient],['拟音',shot.foley],['背景音乐',shot.music]] as const){
    if(value.trim()&&emptyAudioPlaceholder.test(value))issues.push(`${shot.id}${label}使用无内容占位词，必须改为空字符串`);
   }
@@ -117,7 +185,7 @@ export function directorCanaryQualityIssues(reply:DirectorReply){
  for(const character of reply.script.characters||[]){deterministicFields.push([`${character.id}外观`,character.appearance],[`${character.id}服装`,character.wardrobe],[`${character.id}关系`,character.relationships],[`${character.id}连续性`,character.continuity]);}
  for(const [label,value] of deterministicFields){if(hasBranching(value))issues.push(`${label}含二选一或待确认状态`);}
  for(const [label,values] of [['商品一致性',reply.script.productContinuity||[]],['保持约束',reply.script.preserve]] as const){
-  if(values.some(value=>unresolved.test(value)))issues.push(`${label}含二选一或待确认状态`);
+  if(values.some(value=>hasBranching(value,true)))issues.push(`${label}含二选一或待确认状态`);
  }
  return issues;
 }
@@ -169,7 +237,24 @@ export function directorGenerationText(reply:DirectorReply,references:DirectorRe
  return assertDirectorVisibleOutputFormat(output);
 }
 
-export function directorDisplayText(reply:DirectorReply,references:DirectorReference[]=[]){
+export function directorDisplayText(reply:DirectorReply,references:DirectorReference[]=[],currentScene=false){
  if(reply.replyType==='needs_input')return '请补充以下信息：\n\n'+reply.questions.map((question,index)=>`${index+1}. ${question}`).join('\n');
- return directorGenerationText(reply,references);
+ const script=reply.script;
+ if(!currentScene||!script||reply.schema!=='director-script/v2')return directorGenerationText(reply,references);
+ const materials=script.materials.map(m=>[directorReferenceLabel(m.referenceNumber,references),m.observation,'采用 '+m.inherit.join('、'),m.exclude.length?'不采用 '+m.exclude.join('、'):''].filter(Boolean).join(' · '));
+ const cast=(script.characters||[]).map(c=>[c.identity,c.appearance,c.wardrobe,c.relationships,c.continuity].filter(Boolean).join('，'));
+ const shots=script.shots.map((s,i)=>{
+  const labels=s.referenceNumbers.map(n=>directorReferenceLabel(n,references));
+  const audio=reply.generateAudio?[s.ambient,s.foley,s.music].filter(Boolean).join('；'):'全片无声';
+  return [`**[镜头${i+1}｜${s.start}-${s.end}s｜${directorShotTitle(s.id,i)}]**`,
+   '表演与台词：'+[s.visual,labels.join('、'),reply.generateAudio?s.speech:''].filter(Boolean).join('\n'),
+   '摄影设计：'+s.camera,audio?'转场与配乐：'+audio:''].filter(Boolean).join('\n\n');
+ });
+ return ['## 剧情概述',script.story,'## 素材与主体',
+  materials.length?'素材与职责：\n'+materials.join('\n'):'使用用户确认的文字设定。',
+  cast.length?'主体与关系：\n'+cast.join('\n'):'',
+  '## 场景与视觉设定',[script.setting,script.creativeDirection].filter(Boolean).join('\n'),
+  '## 镜头/时间轴',...shots,'## 保持与禁止',
+  '始终保持\n'+[...(script.productContinuity||[]),...script.preserve].join('\n'),
+  '始终禁止\n'+script.forbid.join('\n'),script.conversionClose?'收尾要求：'+script.conversionClose:''].filter(Boolean).join('\n\n');
 }

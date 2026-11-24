@@ -14,6 +14,8 @@ export type VideoModelCatalogContext={
  aspectRatio:string;
  resolution:string;
  requireAudioToggle:boolean;
+ firstFrame?:boolean;
+ lastFrame?:boolean;
 };
 
 /**
@@ -33,5 +35,7 @@ export function videoModelCatalogUrl(context:VideoModelCatalogContext){
   resolution:context.resolution,
   generateAudioToggle:context.requireAudioToggle?'1':'0',
  });
+ if(context.firstFrame)params.set('firstFrame','1');
+ if(context.lastFrame)params.set('lastFrame','1');
  return `/api/commerce/models?${params.toString()}`;
 }

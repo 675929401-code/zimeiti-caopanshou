@@ -18,7 +18,8 @@ function numbers(value: unknown) {
     : [];
 }
 
-function publicModel(model: Model): ModelCapabilityProfile {
+type FixedPriceModel = Model & { billingUnit: 'per_use' | 'output_second' };
+function publicModel(model: FixedPriceModel): ModelCapabilityProfile {
   const capabilities = model.capabilities || {};
   const available = capabilities.available !== false;
   const executionReady = available
@@ -56,5 +57,5 @@ function publicModel(model: Model): ModelCapabilityProfile {
 }
 
 export async function commerceV2Models(kind: Kind) {
-  return (await models(kind)).map(publicModel);
+  return (await models(kind)).filter((model): model is FixedPriceModel => model.billingUnit !== 'token').map(publicModel);
 }

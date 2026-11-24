@@ -1,51 +1,35 @@
 import "server-only";
 
-import { baselineDirectorCatalog } from "../../commerce/server/director-catalog";
-import { directorTemplates } from "../../commerce/server/director-prompts";
+import { directorCatalog } from "../../commerce/server/director-catalog";
+import { operations } from "../../commerce/server/operation-routing";
+import { primePublishedCommerceConfiguration } from "../../commerce/server/configuration-platform";
+import { resolveOperationPrompt } from "../../commerce/server/prompts";
 import { commerceV2Sha256 } from "./hash";
 
-const SHARED_DIRECTOR_AUTHORITY = "带货 Agent v2 共享商业导演核心。事实优先，素材职责明确，输出必须可执行、可局部修订并能应用到生产计划。";
-
-export type CommerceV2DirectorDefinition = {
-  key: string;
-  name: string;
-  description: string;
-  category: string;
-  recommended: boolean;
-  isDefault: boolean;
-  icon: string;
-  slots: Array<{
-    key: string;
-    label: string;
-    min: number;
-    max: number;
-    kinds: string[];
-  }>;
-  registryVersion: string;
-  promptVersion: string;
-  prompt: string;
-  outputProtocol: "director-script/v2";
-};
-
-let cached: CommerceV2DirectorDefinition[] | null = null;
-
-export function commerceV2DirectorRegistry() {
-  if (cached) return cached.map((item) => ({ ...item, slots: item.slots.map((slot) => ({ ...slot, kinds: [...slot.kinds] })) }));
-  const cards = baselineDirectorCatalog();
-  const templates = new Map(directorTemplates(SHARED_DIRECTOR_AUTHORITY).map((template) => [template.id.replace(/^director\./u, ""), template]));
-  const identities = cards.map((card) => {
-    const template = templates.get(card.key);
-    if (!template) throw new Error(`编导 ${card.key} 缺少提示词版本`);
-    const promptVersion = commerceV2Sha256({ key: card.key, version: template.version, content: template.content });
-    return {
-      card,
-      template,
-      promptVersion,
-    };
+export async function commerceV2DirectorRegistry() {
+  const published = await primePublishedCommerceConfiguration();
+  const cards = directorCatalog();
+  const routes = new Map(operations().map(route => [route.id, route]));
+  const seen = new Set<string>();
+  const identities = cards.map(card => {
+    if (seen.has(card.key)) throw new Error(`编导标识重复：${card.key}`);
+    seen.add(card.key);
+    const route = routes.get(`director.${card.key}`);
+    const binding = published?.cards.find(item => item.stableKey === card.key);
+    try {
+      if (!route || route.kind !== "agent") throw new Error("对话模型路由未配置");
+      const {prompt, publishedPrompt} = resolveOperationPrompt(route.promptId, binding?.promptVersionId, published);
+      if ((!binding?.promptVersionId && prompt.id !== route.promptId) || !prompt.content.trim()) throw new Error("提示词版本未配置");
+      const promptVersion = commerceV2Sha256({ key: prompt.id, id: publishedPrompt?.id, version: prompt.version, content: prompt.content });
+      return {card, prompt:prompt.content, promptVersion, routeVersion:route.revision, configurationIssue:""};
+    } catch {
+      return {card, prompt:"", promptVersion:"", routeVersion:route?.revision, configurationIssue:"请在后台核对编导的模型路由和提示词版本"};
+    }
   });
-  if (identities.length !== 19 || new Set(identities.map((item) => item.card.key)).size !== 19) throw new Error("带货 Agent v2 必须固定装载 19 个唯一编导");
-  const registryVersion = commerceV2Sha256(identities.map(({ card, promptVersion }) => ({ key: card.key, catalogVersion: card.catalogVersion, promptVersion })));
-  cached = identities.map(({ card, template, promptVersion }) => ({
+  const registryVersion = commerceV2Sha256(identities.map(({card,promptVersion,routeVersion}) =>
+    ({key:card.key, catalogVersion:card.catalogVersion, promptVersion, routeVersion})
+  ));
+  return identities.map(({card,prompt,promptVersion,configurationIssue}) => ({
     key: card.key,
     name: card.default ? "通用编导" : card.name,
     description: card.description,
@@ -53,32 +37,33 @@ export function commerceV2DirectorRegistry() {
     recommended: card.recommended,
     isDefault: card.default === true,
     icon: card.icon,
-    slots: card.slots.map((slot) => ({ key: slot.key, label: slot.label, min: slot.min, max: slot.max, kinds: [...slot.kinds] })),
+    slots: card.slots.map(slot => ({key:slot.key,label:slot.label,min:slot.min,max:slot.max,kinds:[...slot.kinds]})),
     registryVersion,
     promptVersion,
-    prompt: template.content,
-    outputProtocol: "director-script/v2",
+    prompt,
+    configurationIssue,
+    outputProtocol: "director-script/v2" as const,
   }));
-  return commerceV2DirectorRegistry();
 }
 
-export function publicCommerceV2DirectorCatalog() {
-  return commerceV2DirectorRegistry().map(({ prompt, ...director }) => {
-    if (!prompt.trim()) throw new Error(`编导 ${director.key} 的提示词为空`);
-    return director;
-  });
+export type CommerceV2DirectorDefinition = Awaited<ReturnType<typeof commerceV2DirectorRegistry>>[number];
+
+export async function publicCommerceV2DirectorCatalog() {
+  return (await commerceV2DirectorRegistry()).map(({prompt: _privatePrompt, ...director}) => director);
 }
 
-export function commerceV2DirectorPrompt(skillKey: string, promptVersion: string) {
-  const director = commerceV2DirectorRegistry().find((item) => item.key === skillKey);
+export async function commerceV2DirectorPrompt(skillKey: string, promptVersion: string) {
+  const director = (await commerceV2DirectorRegistry()).find(item => item.key === skillKey);
   if (!director) throw new Error("编导不存在");
+  if (director.configurationIssue) throw new Error(director.configurationIssue);
   if (director.promptVersion !== promptVersion) throw new Error("编导提示词版本已经变化，请重新应用");
   return director.prompt;
 }
 
-export function commerceV2DirectorDefinition(skillKey: string, registryVersion: string, promptVersion: string) {
-  const director = commerceV2DirectorRegistry().find((item) => item.key === skillKey);
+export async function commerceV2DirectorDefinition(skillKey: string, registryVersion: string, promptVersion: string) {
+  const director = (await commerceV2DirectorRegistry()).find(item => item.key === skillKey);
   if (!director) throw new Error("编导不存在");
+  if (director.configurationIssue) throw new Error(director.configurationIssue);
   if (director.registryVersion !== registryVersion) throw new Error("编导目录版本已经变化，请重新选择");
   if (director.promptVersion !== promptVersion) throw new Error("编导提示词版本已经变化，请重新应用");
   return director;

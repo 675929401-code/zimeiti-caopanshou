@@ -221,7 +221,7 @@ export default function AdminVideoValidationDialog({ modelId, modelName, listedP
       {uploading === slot && <span className="text-xs" role="status">正在上传…</span>}
     </div>
   );
-  const price = dto?.minimumPrice ?? listedPrice;
+  const price = dto?.billingUnit === "token" ? null : dto?.minimumPrice ?? listedPrice;
   const minimum = dto?.minimumInput;
   const durationDisplay = videoDurationDisplay({ workflowInputMode: dto?.capabilities.mode, billingUnit: dto?.billingUnit, requiresSourceVideo: minimum?.sourceVideoRequired });
   return (
@@ -255,6 +255,7 @@ export default function AdminVideoValidationDialog({ modelId, modelName, listedP
           {inputs.audios.map((value, index) => assetField(`参考音频 ${index + 1}${minimum.audioCount > index ? "（必填）" : "（可选）"}`, "audio", value, `audio-${index}`, url => setInputs(current => ({ ...current, audios: current.audios.map((item, itemIndex) => itemIndex === index ? url : item) }))))}
           {minimum.sourceVideoRequired && assetField("源视频（必填）", "video", inputs.sourceVideo, "source-video", value => setInputs(current => ({ ...current, sourceVideo: value })))}
           {minimum.requiresComputeLifecycle && <p className="text-xs text-[var(--muted-foreground)]">此模型需要算力启动；提交后会跟踪同一任务。</p>}
+          {dto.billingUnit === "token" && <label className="block space-y-1 text-sm"><span>本次最高扣款（元）</span><input className={fieldClass} type="number" min="0.01" step="0.01" value={inputs.maxChargeYuan || ""} onChange={event=>setInputs(current=>({...current,maxChargeYuan:event.target.value}))}/><small>按任务回执的实际 Token 数结算。</small></label>}
           {(!dto.readiness.credentialReady || !dto.readiness.endpointConfigured || dto.busy) && <p className="text-sm text-amber-600">{dto.busy ? "该配置已有验证正在进行，请稍后检查。" : "请先补齐当前模型的 API 地址和密钥配置。"}</p>}
           <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-1" /><span>确认使用此模型生成一次验证视频{typeof price === "number" && Number.isFinite(price) ? `（本次按 ¥${price.toFixed(2)}${dto.billingUnit === "output_second" ? `，${durationDisplay.quoteBasis}` : ""} 结算）` : "，费用按当前模型配置计算"}；成功交付后写入钱包与收益账务。</span></label>
           <button type="button" onClick={() => void submit()} disabled={!confirmed || busy || !!uploading || dto.busy || !dto.readiness.credentialReady || !dto.readiness.endpointConfigured} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm text-white disabled:opacity-50">{busy ? "正在提交…" : "提交一次真实验证"}</button>

@@ -1,5 +1,7 @@
 "use client";
 
+import { readConfirmedSessionEnd } from "./auth-session-notice";
+
 /**
  * Page-local request coalescing for root client bootstrap data.
  *
@@ -165,11 +167,18 @@ export function getClientBootstrapAuthMe(
   return readResponse(
     authMeEntry,
     token,
-    () => fetch("/api/auth/me", {
-      cache: "no-store",
-      credentials: "same-origin",
-      headers: { Authorization: `Bearer ${token}` },
-    }),
+    async () => {
+      const response = await fetch("/api/auth/me", {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Only a confirmed auth response may clear the saved login.
+      if (!response.ok && response.status < 500 && !(await readConfirmedSessionEnd(response.clone()))) {
+        throw new Error("The session check could not be confirmed.");
+      }
+      return response;
+    },
     options,
   );
 }

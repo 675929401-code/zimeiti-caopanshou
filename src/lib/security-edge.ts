@@ -61,12 +61,22 @@ export function normalizeRateLimitPath(method: string, path: string): string {
   const normalizedMethod = method.toUpperCase();
   const canonicalPath = path.length > 1 ? path.replace(/\/+$/u, "") : path;
   if (RATE_LIMITS[`${normalizedMethod}:${canonicalPath}`]) return canonicalPath;
+  // Asset previews, thumbnails and byte ranges share one read budget across all files.
+  if (normalizedMethod === "GET" && /^\/api\/commerce\/assets\/[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/iu.test(canonicalPath)) {
+    return "/api/commerce/assets/:id";
+  }
   const segments = canonicalPath.split("/").filter(Boolean);
   if (segments[0] !== "api" || !segments[1]) return canonicalPath;
   return `/api/${segments[1]}`;
 }
 
 export const RATE_LIMITS: Record<string, RateLimitConfig> = {
+  // Browsing gallery cards and loading their model options are independent of polling jobs and assets.
+  "GET:/api/commerce/v1/discover/home": { windowMs: 60_000, maxRequests: 240 },
+  "GET:/api/commerce/v1/director-catalog": { windowMs: 60_000, maxRequests: 240 },
+  "GET:/api/commerce/models": { windowMs: 60_000, maxRequests: 240 },
+  "GET:/api/commerce/assets": { windowMs: 60_000, maxRequests: 240 },
+  "GET:/api/commerce/assets/:id": { windowMs: 60_000, maxRequests: 240 },
   "POST:/api/auth/register": { windowMs: 60 * 60 * 1000, maxRequests: 5 },
   "POST:/api/auth/login": { windowMs: 5 * 60 * 1000, maxRequests: 20 },
   "POST:/api/auth/login-email": { windowMs: 5 * 60 * 1000, maxRequests: 20 },

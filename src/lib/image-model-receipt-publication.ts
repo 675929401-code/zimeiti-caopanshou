@@ -67,7 +67,14 @@ export async function publishImageModelReceipt(input:Input,dependencies:Dependen
       bytes=await input.readInline();
     } else {
       if(input.readInline)imageValidationFailure("IMAGE_PUBLICATION_INPUT_INVALID","链接交付只允许服务端读取原归属图片",400);
-      bytes=await (dependencies.readProvider||readGeneratedImageMaterial)({userId:context.userId,reference:{schema:"generated_image_ref.v1",recordId:identity.recordId},maxBytes:MAX});
+      try {
+        bytes=await (dependencies.readProvider||readGeneratedImageMaterial)({userId:context.userId,reference:{schema:"generated_image_ref.v1",recordId:identity.recordId},maxBytes:MAX});
+      } catch (error) {
+        if (["FETCH_ABORTED","FETCH_FAILED","DNS_LOOKUP_FAILED"].includes(String(object(error).code))) {
+          imageValidationFailure("IMAGE_PUBLICATION_SOURCE_UNAVAILABLE","原验证图片暂时无法取回，请稍后用同一原单重试存证",503);
+        }
+        throw error;
+      }
     }
     evidence={};
   }

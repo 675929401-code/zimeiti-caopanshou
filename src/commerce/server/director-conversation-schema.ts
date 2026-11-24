@@ -6,15 +6,18 @@
  * usually smaller, generation-reference limits when the script is executed.
  */
 export const DIRECTOR_REFERENCE_LIMIT = 40;
+export const DIRECTOR_MEDIA_LIMITS = {image:30,video:10,audio:10} as const;
 export const DIRECTOR_AUDIO_MAX_SECONDS = 15;
 export type DirectorSettings = {
   skillKey: string;
+  sceneTask?: import('../shared/director-scenarios').DirectorScene;
   selections: Record<string, string | string[] | boolean | number>;
   spokenLanguage: string;
   durationSeconds: number;
   generateAudio: boolean;
 };
-export type DirectorReference = { id: string; slot: string; instanceId?: string; name?: string; type?: string };
+export type DirectorReference = { id: string; slot: string; sceneRole?: 'character'; instanceId?: string; name?: string; type?: string };
+export type DirectorPreparation={scene:string;executor:string;stages:readonly string[];question:string;references:{number:number;name:string;role:string}[];duration:number;revision:string|null};
 export type DirectorOutputProtocol = 'director-script/v1' | 'director-script/v2';
 export type DirectorTurnContext = {
   conversationId: string;

@@ -1,0 +1,11 @@
+.cs-prompt-drawer[open]{position:fixed;inset:0 0 0 auto;margin:0;width:min(440px,100%);height:100dvh;max-height:100dvh;border:1px solid var(--border);background:var(--card);color:var(--foreground);padding:24px;overflow:auto}.cs-prompt-drawer::backdrop{background:#0005}.cs-prompt-drawer header{display:flex;align-items:center;justify-content:space-between}.cs-prompt-drawer label{display:grid;gap:6px;margin:16px 0}.cs-prompt-drawer :is(input,textarea,button){padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--background)}.cs-prompt-drawer footer{position:sticky;bottom:0;padding-top:12px;background:var(--card)}
+.cs-commerce-admin{padding:24px;min-width:0}.cs-commerce-admin h2{font-size:20px;line-height:28px}.cs-commerce-admin th,.cs-commerce-admin td{height:44px}.cs-commerce-admin :is(th,td){padding-inline:8px}
+.cs-commerce-admin table{border-collapse:collapse}
+.cs-commerce-admin thead th{font-size:12px;font-weight:500;letter-spacing:.02em;color:var(--muted-foreground)}
+.cs-commerce-admin tbody tr{transition:background-color .15s ease}
+.cs-commerce-admin tbody tr:hover{background:var(--accent)}
+.cs-commerce-admin>div:first-child>div:last-child:has(>button){flex-wrap:nowrap;overflow-x:auto;min-height:40px}.cs-commerce-admin>div:first-child>div:last-child>button{white-space:nowrap}
+.cs-admin-replay{border:1px solid var(--border);background:var(--card);padding:20px;border-radius:16px;color:var(--foreground);font-size:14px}
+.cs-admin-replay h3{font-size:18px;font-weight:600}.cs-replay-select{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:16px 0}
+.cs-replay-select label{display:grid;gap:4px}.cs-admin-replay select,.cs-admin-replay button{border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:var(--background)}
+.cs-replay-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.cs-replay-columns>div{border:1px solid var(--border);border-radius:12px;padding:16px;min-height:180px}.cs-replay-columns h4{font-weight:600}.cs-replay-columns p{margin:8px 0}.cs-replay-columns small,.cs-admin-replay footer{display:block;color:var(--muted-foreground);overflow-wrap:anywhere}.cs-replay-columns article{border-top:1px solid var(--border);padding:8px 0}.cs-admin-replay footer{margin-top:12px}

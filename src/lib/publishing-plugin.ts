@@ -68,6 +68,13 @@ declare global { interface Window { AIToEarnPlugin?: unknown } }
 const record = (value: unknown): Record<string, unknown> | null => typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const text = (value: unknown, max: number) => typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, max) : "";
 
+function boundedPluginCheck(read: () => Promise<unknown>, issue: PluginIssueCode): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new PublishingPluginError(issue)), 3000);
+    void Promise.resolve().then(read).then(resolve, () => reject(new PublishingPluginError(issue))).finally(() => clearTimeout(timer));
+  });
+}
+
 function safeUrl(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > 2048 || !isPublishingSafeHttps(value)) return;
   const url = new URL(value);
@@ -83,12 +90,10 @@ function getPlugin(source?: unknown): PluginApi {
   return candidate as PluginApi;
 }
 async function verify(plugin: PluginApi): Promise<string> {
-  let result: unknown;
-  try { result = await plugin.getVersion(); } catch { throw new PublishingPluginError("version_invalid"); }
+  const result = await boundedPluginCheck(() => plugin.getVersion(), "version_invalid");
   const version = record(result)?.version;
   if (typeof version !== "string" || version.length > 80 || !/^v?\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new PublishingPluginError("version_invalid");
-  let permission: unknown;
-  try { permission = await plugin.checkPermission(); } catch { throw new PublishingPluginError("not_authorized"); }
+  const permission = await boundedPluginCheck(() => plugin.checkPermission(), "invalid_plugin");
   const granted = record(permission);
   if (granted?.granted !== true || granted.hostAccess === false) throw new PublishingPluginError("not_authorized");
   return version;

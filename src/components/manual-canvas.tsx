@@ -798,7 +798,7 @@ function canvasAudioPricing(
   const modelId = mode === "seed-audio"
     ? "seed-audio-1.0"
     : canvasVoiceModelId(voices.find((voice) => voice.id === voiceId));
-  return pricing.find((item) => item.modelId === modelId && item.sellPrice > 0);
+  return pricing.find((item) => item.modelId === modelId && item.priceReady);
 }
 
 function stableCanvasMediaIdentity(url: string, runtimeNodes: WorkflowFlowNode[]) {
@@ -965,7 +965,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                       audioMode: "seed-audio",
                       modelId: pricing?.modelId || "seed-audio-1.0",
                       publicModelName: pricing?.name,
-                      estimatedCost: pricing?.sellPrice,
+
                       status: "idle",
                       error: undefined,
                     });
@@ -982,7 +982,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                       voiceId: voice?.id,
                       modelId: pricing?.modelId || canvasVoiceModelId(voice),
                       publicModelName: pricing?.name,
-                      estimatedCost: pricing?.sellPrice,
+
                       status: "idle",
                       error: undefined,
                     });
@@ -1330,7 +1330,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
               <div className={`free-protocol-note ${selectedAudioPricing ? "" : "warn"}`}>
                 <strong>{selectedAudioPricing ? `主站发布模型 · ${selectedAudioPricing.name}` : "音频模型价格未配置"}</strong>
                 <span>{selectedAudioPricing
-                  ? `售价 ¥${selectedAudioPricing.sellPrice.toFixed(2)}/${selectedAudioPricing.unit}；提交成功后按主站共享钱包实际扣费，失败不建立假资产。`
+                  ? "生成结果和实扣金额可在记录中查看。"
                   : "当前模式暂不可用，请稍后重试。"}</span>
               </div>
               <div className="free-parameter-row">
@@ -1345,7 +1345,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                         voiceId: event.target.value,
                         modelId: pricing?.modelId || canvasVoiceModelId(voice),
                         publicModelName: pricing?.name,
-                        estimatedCost: pricing?.sellPrice,
+
                         status: "idle",
                         error: undefined,
                       });
@@ -1387,7 +1387,7 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                   const disabled = Boolean(admissionIssue) || imageModelNeedsReferenceInput && !capabilities.supportsReferenceInput;
                   return (
                     <option key={model.id} value={model.id} disabled={disabled}>
-                      {model.name} · ¥{Number(model.selling_price ?? 0).toFixed(2)}/张 · {capabilities.referenceCapabilityLabel}{admissionIssue ? ` · ${admissionIssue}` : disabled ? " · 当前不可选" : ""}
+                      {model.name} · {capabilities.referenceCapabilityLabel}{admissionIssue ? ` · ${admissionIssue}` : disabled ? " · 当前不可选" : ""}
                     </option>
                   );
                 })}
@@ -1407,14 +1407,14 @@ function WorkflowNode({ id, data }: NodeProps<WorkflowFlowNode>) {
                 const model = context.videoModels.find((item) => item.id === event.target.value);
                 context.updateNode(id, { modelId: event.target.value, durationSeconds: coerceVideoTargetDuration(model, data.durationSeconds), resolution: coerceCanvasVideoResolution(model, data.resolution), status: "idle", taskId: "", modelLocked: false, lockedModelId: "" });
               }}>{!selectedVideoModel && <option value={data.modelId} disabled>已选视频模型暂不可读取，请手动选择</option>}{context.videoModels.map((model) => {
-                const modelCharge = resolveVideoCharge(model, data.resolution, coerceVideoTargetDuration(model, data.durationSeconds));
+
                 const exactTimingBlocked = Boolean(data.requiresExactDuration) && !model.supportsImageInput;
                 const admissionIssue = canvasModelAdmissionIssue(model, "video");
                 const disabled = Boolean(admissionIssue) || (videoModelNeedsImageInput && !model.supportsImageInput) || exactTimingBlocked;
                 const modeLabel = model.requiresImage ? "关键帧驱动" : model.supportsImageInput ? "支持关键帧" : "纯文生视频";
                 return (
                   <option key={model.id} value={model.id} disabled={disabled}>
-                    {model.name} · ¥{modelCharge.publicPrice.toFixed(2)}{modelCharge.billingUnit === "output_second" ? `/${modelCharge.billingQuantity}秒` : "/次"} · {modeLabel}{admissionIssue ? ` · ${admissionIssue}` : exactTimingBlocked ? " · 当前模型不支持参考图" : disabled ? " · 当前不可选" : ""}
+                    {model.name} · {modeLabel}{admissionIssue ? ` · ${admissionIssue}` : exactTimingBlocked ? " · 当前模型不支持参考图" : disabled ? " · 当前不可选" : ""}
                   </option>
                 );
               })}</select>
@@ -3658,7 +3658,7 @@ export function ManualCanvas({
             clientRequestFingerprint: requestFingerprint,
             modelId: pricing.modelId,
             publicModelName: pricing.name,
-            estimatedCost: pricing.sellPrice,
+
             status: "running",
             progressMessage: audioMode === "tts" ? "正在使用主站音色生成语音" : "正在使用主站模型生成音频",
           });
@@ -3707,10 +3707,16 @@ export function ManualCanvas({
           outputUrl = generated.audioUrl;
           taskId = generated.providerTaskId || generated.generationId;
           publicModelName = generated.billing?.modelName || pricing.name;
-          estimatedCost = pricing.sellPrice;
-          retailPriceRmb = Number(generated.retailPrice ?? generated.billing?.sellPriceRmb ?? pricing.sellPrice);
-          actualCost = retailPriceRmb;
-          creditsCharged = Number(generated.cost ?? generated.billing?.creditsCharged ?? 0);
+          const receiptAmount = generated.retailPrice ?? generated.billing?.sellPriceRmb;
+          const receiptCredits = generated.cost ?? generated.billing?.creditsCharged;
+          if (typeof receiptAmount !== "number" || !Number.isFinite(receiptAmount) || receiptAmount < 0 ||
+              typeof receiptCredits !== "number" || !Number.isSafeInteger(receiptCredits) || receiptCredits < 0) {
+            throw new Error("音频已生成，扣费回执待核对。请在声音记录中查看原任务。");
+          }
+          estimatedCost = undefined;
+          retailPriceRmb = receiptAmount;
+          actualCost = receiptAmount;
+          creditsCharged = receiptCredits;
           billingUnit = generated.billing?.unit || pricing.unit;
           billingReferenceId = `voice:${generated.generationId}`;
           assetId = generated.asset.id;
@@ -7821,7 +7827,7 @@ export function ManualCanvas({
                       {!selectedCanvasImageModel && <option value={canvasImageModelId} disabled>已选图片模型暂不可读取，请手动选择</option>}
                       {imageModels.map((model) => (
                         <option key={model.id} value={model.id} disabled={Boolean(canvasModelAdmissionIssue(model, "image"))}>
-                          {model.name} · ¥{Number(model.selling_price ?? 0).toFixed(2)}/张 · {getImageModelCapabilities(model).referenceCapabilityLabel}{canvasModelAdmissionIssue(model, "image") ? ` · ${canvasModelAdmissionIssue(model, "image")}` : ""}
+                          {model.name} · {getImageModelCapabilities(model).referenceCapabilityLabel}{canvasModelAdmissionIssue(model, "image") ? ` · ${canvasModelAdmissionIssue(model, "image")}` : ""}
                         </option>
                       ))}
                     </select>
@@ -7856,12 +7862,12 @@ export function ManualCanvas({
                       {!selectedCanvasVideoModel && <option value={canvasVideoModelId} disabled>已选视频模型暂不可读取，请手动选择</option>}
                       {selectableCanvasVideoModels.map((model) => {
                         const modelTiming = getVideoDurationCapabilities(model);
-                        const previewDuration = coerceVideoTargetDuration(model, storyTargetDurationSeconds);
-                        const modelCharge = resolveVideoCharge(model, canvasVideoResolution, previewDuration);
+
+
                         const admissionIssue = canvasModelAdmissionIssue(model, "video") || (!model.supportsImageInput ? "当前流程需要图生视频模型" : "");
                         return (
                           <option key={model.id} value={model.id} disabled={Boolean(admissionIssue)}>
-                            {model.name} · ¥{modelCharge.publicPrice.toFixed(2)}{modelCharge.billingUnit === "output_second" ? `/${modelCharge.billingQuantity}秒` : "/次"} · {modelTiming.mode === "fixed" ? `${modelTiming.defaultDuration}秒固定` : `可变时长（最长${modelTiming.maxDuration}秒）`}{admissionIssue ? ` · ${admissionIssue}` : ""}
+                            {model.name} · {modelTiming.mode === "fixed" ? `${modelTiming.defaultDuration}秒固定` : `可变时长（最长${modelTiming.maxDuration}秒）`}{admissionIssue ? ` · ${admissionIssue}` : ""}
                           </option>
                         );
                       })}

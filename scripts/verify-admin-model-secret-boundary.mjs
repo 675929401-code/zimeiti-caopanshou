@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const files = {
+  paymentUi: fs.readFileSync("src/components/admin/payment-config-admin-tab.tsx", "utf8"),
   unified: fs.readFileSync("src/app/api/admin/models/route.ts", "utf8"),
   video: fs.readFileSync("src/app/api/admin/video-models/route.ts", "utf8"),
   chat: fs.readFileSync("src/app/api/admin/chat-models/route.ts", "utf8"),
@@ -49,14 +50,14 @@ assert.doesNotMatch(files.videoDialog, /api_key:\s*\(model\.api_key/u,
   "video edit dialog must never hydrate stored credentials into browser state");
 assert.doesNotMatch(files.chatUi, /api_key:\s*model\.api_key/u,
   "chat edit dialog must never hydrate stored credentials into browser state");
-assert.match(files.llmTest, /body\.model_id[\s\S]*?select\("id,model_name,name,api_endpoint,proxy_url,api_key,[^"]+"\)[\s\S]*?resolveProviderSecret\(draft\.apiKey\)/u,
+assert.match(files.llmTest, /body\.model_id[\s\S]*?select\(MODEL_CONFIGURATION_COLUMNS\)\s*\.eq\("id", modelId\)[\s\S]*?resolveProviderSecret\(draft\.apiKey\)/u,
   "connection tests for existing models must resolve credentials server-side by model identity");
 assert.match(files.llmTest, /llm_model_validation_evidence/u,
   "successful existing-model probes must persist server-side activation evidence");
 
 assert.match(files.agents, /function publicAgent/u);
 assert.match(files.agents, /coze_coding_api_token_configured:/u);
-assert.match(files.agents, /agents:\s*\(data \|\| \[\]\)\.map\(\(agent:[^)]*\)\s*=>\s*publicAgent\(agent,\s*\{\s*includePrompt\s*\}\)\)/u);
+assert.match(files.agents, /agents:\s*visibleAgents\.map\(\(agent:[^)]*\)\s*=>\s*publicAgent\(agent,\s*\{\s*(?:includeConfiguration,\s*)?includePrompt,?\s*\}\)\)/u);
 assert.match(files.agents, /credential_source_agent_id/u,
   "agent duplication must inherit credentials on the server");
 assert.doesNotMatch(files.adminUi, /coze_coding_api_token:\s*agent\.coze_coding_api_token/u,
@@ -92,11 +93,11 @@ assert.doesNotMatch(files.secretSettings, /["']restore_token["']/u,
   "retired browser restore token must not remain a writable platform secret");
 assert.match(files.adminSettings, /redactPlatformSettings\(data \|\| \[\]\)/u);
 assert.match(files.adminSettings, /isPlatformSecretSettingKey\(key\).*isBlankOrMaskedSecret\(value\)/su);
-assert.match(files.settings, /isAdmin && isPlatformSecretSettingKey\(item\.setting_key\)/u);
+assert.match(files.settings, /!PUBLIC_DATABASE_SETTING_KEY_SET\.has\(item\.setting_key\)\s*\|\| isSensitiveKey\(item\.setting_key\)\s*\) continue/u);
 assert.match(files.settings, /isPlatformSecretSettingKey\(key\).*isBlankOrMaskedSecret\(value\)/su);
-assert.doesNotMatch(files.adminUi, /xunhu_secret:\s*data\.settings\?\.xunhu_secret/u);
-assert.doesNotMatch(files.adminUi, /epay_key:\s*data\.settings\?\.epay_key/u);
-assert.match(files.adminUi, /已配置；留空保留原密钥/u);
+assert.doesNotMatch(files.paymentUi, /xunhu_secret:\s*data\.settings\?\.xunhu_secret/u);
+assert.doesNotMatch(files.paymentUi, /epay_key:\s*data\.settings\?\.epay_key/u);
+assert.match(files.paymentUi, /已配置；留空保留原密钥/u);
 
 assert.match(files.coverModels, /models:\s*\(data \|\| \[\]\)[\s\S]*?\.map\(publicModel\)/u);
 assert.match(files.coverModels, /success:\s*true,\s*staged:\s*true,\s*published:\s*false,\s*result/u);

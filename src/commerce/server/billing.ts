@@ -1,3 +1,4 @@
+import {commerceUnitRate} from './main-site-model-pricing';
 /**
  * 带货 Agent 的主站钱包权威层。
  *
@@ -17,7 +18,7 @@ export type CommerceBillingState={
   jobId:string;
   owner:string;
   fingerprint:string;
-  status:'charge_pending'|'exempt'|'zero_price'|'charged'|'refund_pending'|'refunded'|'revenue_pending'|'revenue_recorded'|'reconciliation_required';
+  status:'awaiting_result'|'not_charged'|'charge_pending'|'exempt'|'zero_price'|'charged'|'refund_pending'|'refunded'|'revenue_pending'|'revenue_recorded'|'reconciliation_required';
   amount:number;
   costAmount:number;
   profitAmount:number;
@@ -117,16 +118,22 @@ function bindingFor(owner:string):{mainUserId?:string;mainRole?:'admin'|'student
   return {};
 }
 
+export function fixedQuoteUnit(model:Pick<Model,'billingUnit'>):'per_use'|'output_second' {
+  if(model.billingUnit==='token')throw Error('Token 视频需要按实际用量结算，不能按次报价');
+  return model.billingUnit;
+}
+
 export function billingQuantity(input:Pick<JobInput,'kind'|'duration'|'rollingPlan'>,model:Pick<Model,'billingUnit'>):number{
+  const unit=fixedQuoteUnit(model);
   if(input.kind!=='video')return 1;
-  if(model.billingUnit==='output_second')return Number(input.duration||0);
+  if(unit==='output_second')return Number(input.duration||0);
   return input.rollingPlan?.segments.length||1;
 }
 
-export function quotePrice(input:Pick<JobInput,'kind'|'duration'|'rollingPlan'>,model:Pick<Model,'publicPrice'|'billingUnit'>):number{
-  const unit=Number(model.publicPrice||0);
-  if(!(unit>0))return 0;
+export function quotePrice(input:Pick<JobInput,'kind'|'duration'|'rollingPlan'|'resolution'|'references'>,model:Pick<Model,'publicPrice'|'billingUnit'|'secondRates'|'imageRates'>):number{
   const quantity=billingQuantity(input,model);
+  const unit=commerceUnitRate(input,model,'sale');
+  if(!(unit>0))return 0;
   if(!Number.isFinite(quantity)||quantity<=0)throw Error('模型计费数量无效，已停止报价');
   // The authoritative cash wallet is denominated in CNY cents. Persisting a
   // finer-grained payable amount lets PostgreSQL round at mutation time, so
@@ -136,8 +143,8 @@ export function quotePrice(input:Pick<JobInput,'kind'|'duration'|'rollingPlan'>,
   return Math.max(0.01,Math.round((raw+Number.EPSILON)*100)/100);
 }
 
-export function quoteCost(input:Pick<JobInput,'kind'|'duration'|'rollingPlan'>,model:Pick<Model,'costPrice'|'billingUnit'>):number{
-  const unit=model.costPrice;
+export function quoteCost(input:Pick<JobInput,'kind'|'duration'|'rollingPlan'|'resolution'|'references'>,model:Pick<Model,'costPrice'|'billingUnit'|'secondRates'|'imageRates'>):number{
+  const unit=commerceUnitRate(input,model,'cost');
   if(unit===null||!Number.isFinite(unit)||unit<0)throw Error('模型成本未完成可信配置，已停止派发');
   const quantity=billingQuantity(input,model);
   if(!Number.isFinite(quantity)||quantity<=0)throw Error('模型计费数量无效，已停止派发');
@@ -396,6 +403,7 @@ async function resolvePendingJobCharge(job:Job,pending:CommerceBillingState):Pro
   if(pending.status!=='charge_pending'||!pending.mainUserId)throw Error('任务预扣意图缺少原用户快照，已停止钱包操作');
   const result=await deductCash(pending.mainUserId,pending.amount,`带货Agent ${kindLabel(job.input.kind)} · ${job.model.displayName}`,pending.chargeKey);
   if(!result.success){
+    if(job.directorResultToSettle)throw Error('合格拆解稿已保存，原单尚待结算：'+(result.error||'主站钱包暂不可用'));
     transaction(()=>{const current=stateFor(job);if(current?.status==='charge_pending'&&current.fingerprint===pending.fingerprint)remove('billing',job.id,job.owner);});
     throw Error(`钱包扣费失败（余额不足或账户异常）：${result.error||'请检查主站钱包'}。本次未提交生成。`);
   }
@@ -412,8 +420,27 @@ async function resolvePendingJobCharge(job:Job,pending:CommerceBillingState):Pro
   }
 }
 
-/** 派发前预扣；未绑定的普通身份直接失败，绝不以免费模式继续派发。 */
-export async function chargeJobAtDispatch(job:Job):Promise<CommerceBillingState>{
+function directorCashHold(owner:string, availableCents:number, amount:number, excludeJobId=''){
+  const pending=db().prepare(`SELECT COALESCE(sum(round(json_extract(b.value,'$.amount')*100)),0) AS cents
+    FROM records b JOIN records j ON j.bucket='jobs' AND j.id=b.id AND j.owner=b.owner
+    WHERE b.bucket='billing' AND b.owner=? AND b.id<>?
+      AND json_extract(b.value,'$.status')='awaiting_result'
+      AND json_extract(j.value,'$.status') IN ('queued','running','processing','saving')`).get(owner,excludeJobId);
+  const spendable=Math.max(0,availableCents-Number(pending?.cents||0));
+  if(spendable<Math.round(amount*100))return '可用余额 ¥'+(spendable/100).toFixed(2)+'，本次拆解需 ¥'+amount.toFixed(2)+'。未提交，未扣款。';
+}
+
+export async function directorQuoteCashHold(owner:string, amount:number){
+  if(amount<=0)return;
+  const {mainUserId}=bindingFor(owner);
+  if(!mainUserId)return '请先绑定主站账号，再提交编导任务。';
+  const {availableCashForCharge}=await import('@/lib/available-cash-for-charge');
+  const available=await availableCashForCharge(mainUserId);
+  return directorCashHold(owner,available,amount);
+}
+
+/** 普通生成按既有报价扣款。编导先核可用余额，保存可应用脚本之后复用同一任务号结算。 */
+export async function chargeJobAtDispatch(job:Job, prepareOnly = false):Promise<CommerceBillingState>{
   const configuredPrice=Number(job.model.publicPrice);
   if(!Number.isFinite(configuredPrice)||configuredPrice<0||(configuredPrice===0&&job.model.capabilities?.explicitlyFree!==true))throw Error('模型售价未完成可信配置：0 元模型必须由管理员显式标记 explicitlyFree=true，已停止派发');
   const amount=jobPrice(job);
@@ -421,6 +448,11 @@ export async function chargeJobAtDispatch(job:Job):Promise<CommerceBillingState>
   const previous=stateFor(job);
   if(previous){
     assertSameJob(job,previous,amount);
+    if(previous.status==='awaiting_result'){
+      if(prepareOnly)return previous;
+      if(!job.directorResultToSettle)throw Error('编导稿尚未通过校验');
+      return resolvePendingJobCharge(job,saveState({...previous,status:'charge_pending'}));
+    }
     if(['exempt','zero_price','charged'].includes(previous.status))return previous;
     if(previous.status==='charge_pending'){const resolved=await resolvePendingJobCharge(job,previous);if(!['exempt','zero_price','charged'].includes(resolved.status))throw Error(`任务预扣恢复后状态为 ${resolved.status}，已停止派发`);return resolved;}
     throw Error(`任务账务状态为 ${previous.status}，已拒绝再次派发；请先完成对账`);
@@ -432,8 +464,24 @@ export async function chargeJobAtDispatch(job:Job):Promise<CommerceBillingState>
   };
   if(!binding.mainUserId)throw Error('带货身份尚未绑定主站账号，已拒绝派发和扣费');
   if(amount<=0)return saveState({...base,mainUserId:binding.mainUserId,mainRole:binding.mainRole});
+  if(prepareOnly){
+    const {availableCashForCharge}=await import('@/lib/available-cash-for-charge');
+    const available=await availableCashForCharge(binding.mainUserId);
+    return transaction(()=>{
+      const hold=directorCashHold(job.owner,available,amount,job.id);
+      if(hold)throw Error(hold);
+      return saveState({...base,status:'awaiting_result',mainUserId:binding.mainUserId,mainRole:binding.mainRole});
+    });
+  }
   const pending=saveState({...base,status:'charge_pending',mainUserId:binding.mainUserId,mainRole:binding.mainRole});
   return resolvePendingJobCharge(job,pending);
+}
+
+export function closeDirectorWithoutCharge(job:Job){
+  const state=stateFor(job);
+  if(!state||state.status==='not_charged'||state.status==='zero_price')return state;
+  if(state.status!=='awaiting_result')throw Error('原单存在其他结算状态');
+  return saveState({...state,status:'not_charged'});
 }
 
 /** 仅确认失败的任务可调用；unknown 与 save_failed 都不得自动退款。 */
@@ -442,6 +490,7 @@ export async function refundFailedJob(job:Job):Promise<CommerceBillingState|unde
   let state=stateFor(job);
   if(!state)return undefined;
   assertSameJob(job,state,jobPrice(job));
+  if(state.status==='awaiting_result'||state.status==='not_charged')return closeDirectorWithoutCharge(job);
   if(state.status==='charge_pending')state=await resolvePendingJobCharge(job,state);
   if(['exempt','zero_price','refunded'].includes(state.status))return state;
   const pending=transaction(()=>{
@@ -481,7 +530,7 @@ export async function recordJobRevenue(job:Job):Promise<CommerceBillingState|und
   if(!state)return undefined;
   assertSameJob(job,state,jobPrice(job));
   if(state.status==='charge_pending')state=await resolvePendingJobCharge(job,state);
-  if(state.status==='revenue_recorded')return state;
+  if(state.status==='revenue_recorded'||state.status==='not_charged')return state;
   const revenueTaskId=`commerce-job-${job.id}`;
   const actual=providerCost(job,state.costAmount);const profitAmount=Math.round((state.amount-actual.amount)*10000)/10000;
   const pending=transaction(()=>{

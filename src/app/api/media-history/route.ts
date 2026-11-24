@@ -8,7 +8,6 @@ import { canRetryVideoHistoryTask, videoTokenBillingMessage } from "@/lib/video-
 import { correctVideoModelBindingDisplayName, stripVideoModelOperationalAnnotation } from "@/lib/video-model-display-name";
 
 import {
-  loadCommerceMediaHistory,
   type MediaHistoryCommerceRole,
   type MediaHistoryCommercePreview,
 } from "@/lib/media-history-commerce";
@@ -219,7 +218,6 @@ type SourcePages = {
   videoExcludedPage: Awaited<ReturnType<typeof loadExpiredVideoCount>>;
   imagePage: Awaited<ReturnType<typeof loadImageMessages>>;
   deliveredImagePage: Awaited<ReturnType<typeof loadDeliveredImageRows>>;
-  commercePage: ReturnType<typeof loadCommerceMediaHistory>;
 };
 
 type IndexedMediaHistoryItem = {
@@ -527,29 +525,26 @@ async function settleHistoryLookups<const T extends readonly unknown[]>(lookups:
 async function buildMediaHistoryAccountSnapshot(
   db: MediaDb,
   userId: string,
-  role: MediaHistoryCommerceRole,
 ): Promise<MediaHistoryAccountSnapshot> {
-  const [videoPage, videoExcludedPage, imagePage, deliveredImagePage, commercePage]: [
+  const [videoPage, videoExcludedPage, imagePage, deliveredImagePage]: [
     SourcePages["videoPage"],
     SourcePages["videoExcludedPage"],
     SourcePages["imagePage"],
     SourcePages["deliveredImagePage"],
-    SourcePages["commercePage"],
   ] = await settleHistoryLookups([
     loadVideoRows(db, userId),
     loadExpiredVideoCount(db, userId),
     loadImageMessages(db, userId),
     loadDeliveredImageRows(db, userId),
-    Promise.resolve().then(() => loadCommerceMediaHistory(userId, role)),
   ]);
-  const sourceEnumerationFailed = videoPage.failed || imagePage.failed || deliveredImagePage.failed || commercePage.failed;
-  const allSourcesFailed = videoPage.failed && imagePage.failed && deliveredImagePage.failed && commercePage.failed;
+  const sourceEnumerationFailed = videoPage.failed || imagePage.failed || deliveredImagePage.failed;
+  const allSourcesFailed = videoPage.failed && imagePage.failed && deliveredImagePage.failed;
   if (allSourcesFailed) {
     return {
       rows: [],
       facets: unavailableFacets(),
-      sourceFailures: ["视频任务", "聊天图片记录", "生图交付记录", "带货 Agent 媒体记录"],
-      countFailures: ["视频任务", "聊天图片记录", "生图交付记录", "带货 Agent 媒体记录"],
+      sourceFailures: ["视频任务", "聊天图片记录", "生图交付记录"],
+      countFailures: ["视频任务", "聊天图片记录", "生图交付记录"],
       enumerationFailed: true,
       allSourcesFailed: true,
       expiredCount: null,
@@ -814,19 +809,16 @@ async function buildMediaHistoryAccountSnapshot(
     .filter(entry => !entry.expired)
     .map(entry => entry.item);
 
-  const retainedCommerce = commercePage.items.map(item => retainedMediaHistoryItem(item));
-  const commerceItems = retainedCommerce.filter(entry => !entry.expired).map(entry => entry.item);
-  const retainedExpiredCount = [...retainedVideos, ...retainedImages, ...retainedDeliveredImages, ...retainedCommerce]
+  const retainedExpiredCount = [...retainedVideos, ...retainedImages, ...retainedDeliveredImages]
     .filter(entry => entry.expired).length;
   const expiredCount = sourceEnumerationFailed || videoExcludedPage.failed
     ? null
     : videoExcludedPage.count + retainedExpiredCount;
-  const merged = stableDedupe([...videos, ...images, ...commerceItems]);
+  const merged = stableDedupe([...videos, ...images]);
   const sourceFailures = [
     ...(videoPage.failed ? ["视频任务"] : []),
     ...(imagePage.failed ? ["聊天图片记录"] : []),
     ...(deliveredImagePage.failed ? ["生图交付记录"] : []),
-    ...(commercePage.failed ? ["带货 Agent 媒体记录"] : []),
     ...(imageAssetLookupFailed ? ["图片资产归属"] : []),
     ...(imageProvenance.failed ? ["图片来源与费用"] : []),
     ...(shortDramaLookupFailed ? ["影视工坊视频来源"] : []),
@@ -837,7 +829,6 @@ async function buildMediaHistoryAccountSnapshot(
     ...(videoPage.failed ? ["视频任务"] : []),
     ...(imagePage.failed ? ["聊天图片记录"] : []),
     ...(deliveredImagePage.failed ? ["生图交付记录"] : []),
-    ...(commercePage.failed ? ["带货 Agent 媒体记录"] : []),
     ...(videoExcludedPage.failed ? ["视频已确认过期统计"] : []),
   ];
   const facets = sourceEnumerationFailed ? unavailableFacets() : exactFacets(merged);
@@ -859,7 +850,7 @@ function loadMediaHistoryAccountSnapshot(
 ): Promise<MediaHistoryAccountSnapshot> {
   return loadCachedMediaHistorySnapshot(
     mediaHistorySnapshotCacheKey(userId, role),
-    () => buildMediaHistoryAccountSnapshot(db, userId, role),
+    () => buildMediaHistoryAccountSnapshot(db, userId),
   );
 }
 

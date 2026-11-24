@@ -19,7 +19,52 @@ async function main(){
  const generateQuote=await detail.quoteDetailSet(owner,generation.id,generation.revision,'generate');assert.equal(generateQuote.imageCount,2);assert.equal(generateQuote.unitPrice,2);assert.equal(generateQuote.estimatedPrice,4);assert.equal('estimatedCost' in generateQuote,false);assert.equal('modelId' in generateQuote,false);
  const storedGenerate=store.get<Record<string,any>>('detail-set-quotes',generateQuote.id,owner)!;assert.equal(storedGenerate.quantity,2);assert.equal(storedGenerate.estimatedCost,2.4);assert.equal(storedGenerate.profitAmount,1.6);assert.equal(storedGenerate.modelConfigHash,imageModel.configHash);
  const confirmed=await detail.confirmDetailSet(owner,generateQuote.id);assert.ok(confirmed.runId);const run=store.get<Record<string,any>>('detail-set-runs',confirmed.runId!,owner)!;assert.equal(run.rows.length,2);assert.equal(run.rows.some((row:any)=>row.jobId),false);assert.equal(store.list('jobs',owner).length,2);
+ const capacity=await import('../src/commerce/server/job-capacity');
+ const pendingIds=['waiting-A','waiting-B','waiting-C'];
+ for(const id of pendingIds)store.put('jobs',id,owner,{id,owner,status:'unknown'});
+ store.transaction(()=>{for(let i=0;i<505;i++)store.put('jobs','old-screen-'+i,owner,{status:'succeeded'});});
+ assert.equal(capacity.memberJobCapacity(owner).requiresReconciliation,true);
+ assert.equal(capacity.memberJobCapacity('other-member').full,false);
+ assert.deepEqual(await detail.confirmDetailSet(owner,generateQuote.id),confirmed);
+ await detail.advanceDetailSet(owner,generation.id);
+ const paused=detail.readDetailSet(owner,generation.id);
+ assert.equal(paused.activeRunId,confirmed.runId);
+ const held=store.get<typeof run>('detail-set-runs',confirmed.runId!,owner)!;
+ assert.equal(held.status,'paused');
+ assert.equal(held.rows.some((row:any)=>row.jobId),false);
+ const released=detail.releasePausedDetailRun(owner,generation.id,paused.revision);
+ assert.equal(released.activeRunId,undefined);
+ assert.deepEqual(released.rows,paused.rows);
+ assert.deepEqual(released.references,paused.references);
+ assert.equal(detail.publicDetailSet(released).runs[0].status,'ended');
+ const nextQuote=await detail.quoteDetailSet(owner,generation.id,released.revision,'generate');
+ assert.match(nextQuote.submissionHold||'',/待核对/);
+ await assert.rejects(detail.confirmDetailSet(owner,nextQuote.id),/待核对/);
+ assert.equal(detail.readDetailSet(owner,generation.id).activeRunId,undefined);
+ for(const id of pendingIds)assert.equal(store.get<{status:string}>('jobs',id,owner)?.status,'unknown');
+ for(const id of pendingIds)store.put('jobs',id,owner,{id,owner,status:'processing'});
+ assert.deepEqual(capacity.memberJobCapacity(owner),{full:true,requiresReconciliation:false});
+ assert.throws(()=>capacity.assertMemberJobCapacity(owner,'new-request'),/未结束/);
+ assert.doesNotThrow(()=>capacity.assertMemberJobCapacity(owner,analysisJob.input.requestId));
+ const adminOwner='member-with-admin-tests';
+ for(const [index,id] of pendingIds.entries()){
+   const quoteId='admin-test-'+id, fingerprint='fingerprint-'+id;
+   store.put('jobs',quoteId,adminOwner,{status:'unknown',configurationSnapshot:{quoteId,inputFingerprint:fingerprint}});
+   store.put(index===0?'card-canary-quotes':'model-canary-quotes',quoteId,adminOwner,{jobId:quoteId,inputFingerprint:fingerprint});
+ }
+ assert.equal(capacity.memberJobCapacity(adminOwner).full,false);
+ assert.equal(capacity.memberJobCapacity(adminOwner,'admin-canary').requiresReconciliation,true);
+ for(const id of pendingIds){
+   const quoteId='admin-test-'+id;
+   store.put('jobs',quoteId,adminOwner,{status:'running',configurationSnapshot:{quoteId,inputFingerprint:'fingerprint-'+id}});
+ }
+ assert.equal(capacity.memberJobCapacity(adminOwner).full,true);
+ for(const id of pendingIds){
+   const quoteId='admin-test-'+id;
+   store.put('jobs',quoteId,adminOwner,{status:'unknown',input:{purpose:'commerce-canary'},configurationSnapshot:{quoteId,inputFingerprint:'unmatched'}});
+ }
+ assert.equal(capacity.memberJobCapacity(adminOwner).requiresReconciliation,true);
  const ui=await fs.readFile(new URL('../src/commerce/components/commerce-agent/detail-set-studio.tsx',import.meta.url),'utf8');assert.doesNotMatch(ui,/modelId/);
- console.log(JSON.stringify({passed:22,networkCalls:0,paidCalls:0,checks:['analysis-price','analysis-unit-price','analysis-public-cost-hidden','analysis-public-model-hidden','analysis-unit-cost-snapshot','analysis-total-cost-snapshot','analysis-profit-snapshot','analysis-config-hash','analysis-quote-bound-to-job','analysis-fingerprint-bound-to-job','generate-count','generate-unit-price','generate-total-price','generate-public-cost-hidden','generate-public-model-hidden','generate-quantity','generate-total-cost','generate-profit','generate-config-hash','parent-run-confirmed','no-child-created-before-scheduling','hidden-client-model-absent'],fixture}));
+ console.log(JSON.stringify({quoteChecks:22,capacityAndRecovery:'passed',networkCalls:0,paidCalls:0,checks:['analysis-price','analysis-unit-price','analysis-public-cost-hidden','analysis-public-model-hidden','analysis-unit-cost-snapshot','analysis-total-cost-snapshot','analysis-profit-snapshot','analysis-config-hash','analysis-quote-bound-to-job','analysis-fingerprint-bound-to-job','generate-count','generate-unit-price','generate-total-price','generate-public-cost-hidden','generate-public-model-hidden','generate-quantity','generate-total-cost','generate-profit','generate-config-hash','parent-run-confirmed','no-child-created-before-scheduling','hidden-client-model-absent'],fixture}));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

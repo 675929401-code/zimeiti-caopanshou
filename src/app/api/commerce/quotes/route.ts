@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   try {
     const user = requireIdentity(request);
     const id = new URL(request.url).searchParams.get('id') || '';
-    const quote = readCommerceQuote(user.id, id);
+    const quote = await readCommerceQuote(user.id, id);
     if (!quote) return json({ error: '报价不存在' }, 404);
     return json({ quote });
   } catch (error) {
@@ -23,8 +23,9 @@ export async function POST(request: Request) {
     sameOrigin(request);
     const user = requireIdentity(request);
     await authorizeCurrentCommerceIdentity(user);
-    const quote = await createCommerceQuote(user.id, await request.json());
-    return json({ quote }, 201);
+    const estimateOnly = new URL(request.url).searchParams.get('estimate') === '1';
+    const quote = await createCommerceQuote(user.id, await request.json(), {}, { persist: !estimateOnly });
+    return json({ quote }, estimateOnly ? 200 : 201);
   } catch (error) {
     return errorResponse(error);
   }

@@ -27,7 +27,8 @@ export type VideoValidationDto = VideoValidationProof & {
     durationSeconds: number; resolution: string | null; aspectRatio: string; requiresComputeLifecycle: boolean;
   };
   minimumPrice?: number | null;
-  billingUnit?: "per_use" | "output_second";
+  billingUnit?: "per_use" | "output_second" | "token";
+  tokenPricing?: {priceVersion:string; salePricesPerMillion:Record<string,number>} | null;
   administratorCharge?: number;
   existingTask?: VideoValidationReceipt | null;
   busy?: boolean;
@@ -35,6 +36,7 @@ export type VideoValidationDto = VideoValidationProof & {
 export type VideoValidationInputs = {
   prompt: string; firstFrame: string; lastFrame: string;
   images: string[]; audios: string[]; sourceVideo: string;
+  maxChargeYuan?: string;
 };
 export function videoValidationInputsForDto(dto: VideoValidationDto): VideoValidationInputs {
   const minimum = dto.minimumInput, capabilities = dto.capabilities;
@@ -99,6 +101,8 @@ export function buildVideoValidationRequest(dto: VideoValidationDto, fields: Vid
   const prompt = fields.prompt.trim(), first = fields.firstFrame.trim(), last = fields.lastFrame.trim();
   const images = fields.images.map(value => value.trim()).filter(Boolean), audios = fields.audios.map(value => value.trim()).filter(Boolean);
   const source = fields.sourceVideo.trim();
+  const maxChargeYuan = Number(fields.maxChargeYuan);
+  if (dto.billingUnit === "token" && (!dto.tokenPricing?.priceVersion || !Number.isFinite(maxChargeYuan) || maxChargeYuan <= 0 || !/^\d+(?:\.\d{1,2})?$/.test(fields.maxChargeYuan || ""))) throw new Error("请填写本次验证的最高扣款金额，精确到分");
   if (minimum.promptRequired && !prompt) throw new Error("请填写本次验证的视频描述");
   if (prompt.length > 10000) throw new Error("视频描述不能超过 10000 字");
   if (minimum.firstFrameRequired && !first) throw new Error("当前模型需要首帧图片");
@@ -114,6 +118,7 @@ export function buildVideoValidationRequest(dto: VideoValidationDto, fields: Vid
     duration: minimum.durationSeconds, aspect_ratio: minimum.aspectRatio,
     resolution: minimum.resolution || "", resolution_tier: minimum.resolution || "",
     surface: "video-page", task_label: `管理员验证 · ${proof.model.displayName}`,
+    ...(dto.billingUnit === "token" && dto.tokenPricing ? {tokenBilling:{maxChargeYuan,priceVersion:dto.tokenPricing.priceVersion}} : {}),
     admin_validation: true, admin_validation_key: proof.validationKey,
     admin_validation_confirmation: proof.confirmation, client_request_id: proof.validationKey,
   };

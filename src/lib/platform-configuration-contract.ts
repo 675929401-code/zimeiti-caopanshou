@@ -37,14 +37,19 @@ export type WorkspaceSurfaceConfiguration = {
   orderedModelIds: string[];
 };
 
+type OptionalWorkspaceSurface = "publish-center-image" | "publish-center-video" | "commerce-generation-video";
+function optionalWorkspaceSurface(surface: WorkspaceSurface) {
+  return surface === "publish-center-image" || surface === "publish-center-video" || surface === "commerce-generation-video";
+}
+
 export type WorkspaceModelSnapshot = {
   schema: "workspace-model-config/v1";
   modelPoolRelease: {
     releaseId: string;
     snapshotSha256: string;
   };
-  surfaces: Record<Exclude<WorkspaceSurface, "publish-center-image" | "publish-center-video">, WorkspaceSurfaceConfiguration>
-    & Partial<Record<"publish-center-image" | "publish-center-video", WorkspaceSurfaceConfiguration>>;
+  surfaces: Record<Exclude<WorkspaceSurface, OptionalWorkspaceSurface>, WorkspaceSurfaceConfiguration>
+    & Partial<Record<OptionalWorkspaceSurface, WorkspaceSurfaceConfiguration>>;
 };
 
 export type PlatformConfigurationSnapshot = ModelPoolSnapshot | WorkspaceModelSnapshot;
@@ -273,7 +278,7 @@ export function normalizeWorkspaceModelSnapshot(value: unknown): WorkspaceModelS
   assertOnlyKeys(rawSurfaces, Object.keys(WORKSPACE_SURFACE_KIND), "surfaces");
   const surfaces = {} as WorkspaceModelSnapshot["surfaces"];
   for (const surface of Object.keys(WORKSPACE_SURFACE_KIND) as WorkspaceSurface[]) {
-    if ((surface === "publish-center-image" || surface === "publish-center-video") && rawSurfaces[surface] === undefined) continue;
+    if (optionalWorkspaceSurface(surface) && rawSurfaces[surface] === undefined) continue;
     const source = record(rawSurfaces[surface], `surfaces.${surface}`);
     assertOnlyKeys(source, ["kind", "assignedModelIds", "orderedModelIds"], `surfaces.${surface}`);
     const kind = WORKSPACE_SURFACE_KIND[surface];
@@ -347,7 +352,7 @@ export function applyWorkspaceModelCompatibilityMutation(
   current: WorkspaceModelSnapshot,
   mutation: WorkspaceModelCompatibilityMutation,
 ): WorkspaceModelSnapshot {
-  const surface = current.surfaces[mutation.surface] || ((mutation.surface === "publish-center-image" || mutation.surface === "publish-center-video") ? { kind: WORKSPACE_SURFACE_KIND[mutation.surface], assignedModelIds: [], orderedModelIds: [] } : undefined);
+  const surface = current.surfaces[mutation.surface] || (optionalWorkspaceSurface(mutation.surface) ? { kind: WORKSPACE_SURFACE_KIND[mutation.surface], assignedModelIds: [], orderedModelIds: [] } : undefined);
   if (!surface) throw new Error(`未知工作台 ${mutation.surface}`);
   if (mutation.action === "assign") {
     const id = modelId(mutation.modelId, "mutation.modelId");
@@ -401,7 +406,7 @@ export function validateWorkspaceModelSnapshot(snapshot: WorkspaceModelSnapshot,
   for (const surface of Object.keys(WORKSPACE_SURFACE_KIND) as WorkspaceSurface[]) {
     const configuration = snapshot.surfaces[surface];
     if (!configuration) continue;
-    if (configuration.assignedModelIds.length === 0 && surface !== "publish-center-image" && surface !== "publish-center-video") issues.push(`${surface} 没有分配模型`);
+    if (configuration.assignedModelIds.length === 0 && !optionalWorkspaceSurface(surface)) issues.push(`${surface} 没有分配模型`);
     for (const id of configuration.assignedModelIds) {
       const model = index.get(`${configuration.kind}:${id}`);
       if (!model) issues.push(`${surface} 引用了不存在或类型不匹配的模型 ${id}`);

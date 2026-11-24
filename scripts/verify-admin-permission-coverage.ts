@@ -156,6 +156,13 @@ for (const file of routes) {
   assert.ok(methods.length > 0, `${pathname}:no exported HTTP method found`);
   for (const method of methods) {
     const requirement = adminRequirementForRequest(pathname, method, new URLSearchParams());
+    if (pathname === "/api/admin/cover-styles" && method === "POST") {
+      assert.equal(requirement, null);
+      const handler = readFileSync(file, "utf8").split("export async function POST")[1];
+      assert.match(handler, /authorizeAdminCapability\(request, preview \? "prompts.view" : "prompts.edit"/u);
+      assert.match(handler, /requireStepUp: true/u);
+      continue;
+    }
     if (policyExemptions.has(pathname)) {
       assert.equal(requirement, null, `${pathname}:expected route-local exemption`);
       continue;

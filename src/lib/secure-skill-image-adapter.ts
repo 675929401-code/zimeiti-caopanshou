@@ -15,7 +15,7 @@ export type SecureSkillImageRequestInput = {
 export const SECURE_SKILL_GPT25_SYNC_CONTRACT = "secure_skill_gpt_image_2_5_sync.v1";
 /** Explicit current provider contract; do not infer it from a display/model name. */
 export const SECURE_SKILL_GPT25_SYNC_V2_CONTRACT = "secure_skill_gpt_image_2_5_sync.v2";
-const GPT25_V2_MODELS = new Set(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
+const GPT25_V2_MODELS = new Set(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2.6-sunburst"]);
 const GPT25_V2_RESOLUTIONS = new Set(["1K", "2K", "4K"]);
 const GPT25_V2_ASPECT_RATIOS = new Set(["auto", "1:1", "2:1", "3:1", "16:9", "3:2", "4:3", "5:4", "4:5", "3:4", "2:3", "9:16", "1:2", "1:3", "21:9"]);
 const GPT25_V2_QUALITIES = new Set(["low", "medium", "high", "xhigh", "max"]);

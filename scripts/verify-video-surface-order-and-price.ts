@@ -24,9 +24,11 @@ const encoded = serializeVideoModelSurfaceOrders({
   "free-canvas": {},
   "film-studio": {},
   "commerce-agent": {},
+  "commerce-generation-video": { seedance: 12 },
   "publish-center-video": {},
 });
 const orders = parseVideoModelSurfaceOrders(encoded);
+assert.equal(videoModelSurfaceSortOrder(orders, "commerce-generation-video", "seedance"), 12);
 assert.equal(videoModelSurfaceSortOrder(orders, "ai-video", "omni"), 10);
 assert.equal(videoModelSurfaceSortOrder(orders, "storyboard", "omni"), 20);
 assert.equal(videoModelSurfaceSortOrder(orders, "ai-video", "missing"), null);

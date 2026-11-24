@@ -1,5 +1,5 @@
 {
-  "observedAt": "2026-09-25T05:15:13.385Z",
+  "observedAt": "2026-11-23T17:20:00+08:00",
   "images": [
     {
       "key": "character-face-turnaround",
@@ -726,6 +726,16 @@
           "cover": "/commerce/reference/0baf8d3046981003.png"
         },
         {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
           "key": "reference_4",
           "label": "声音",
           "min": 0,
@@ -736,7 +746,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "67574e6db01c625282b0b20b93d35836542b7b20f17adc42b0ed44596f6f6247",
+      "benchmarkConfigVersion": "e10f81c754919bb307c3f227a4864af87159c6de02f0f2c54a01e52c5d5811d7",
       "sortOrder": 10,
       "recommendationOrder": 100
     },
@@ -762,6 +772,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -771,7 +791,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "fb9bb6737d856132367173ed8ec252d87a085146de2985299d3e15fbd10863e6",
+      "benchmarkConfigVersion": "42585077aff87eaffacd4bbedc8cb79d9c05377907d62df45ebfb54b3ae85334",
       "sortOrder": 20,
       "recommendationOrder": 100
     },
@@ -797,6 +817,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -806,7 +836,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "2f71f106e9d2c9b4cea3cadf399764d44fd3ffc3aa1c05dc56c1010eb865c982",
+      "benchmarkConfigVersion": "45911e7e97817a3f8549ea92752d41370e9567f6796a89455be382e3c00ae9ab",
       "sortOrder": 30,
       "recommendationOrder": 100
     },
@@ -832,6 +862,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -841,7 +881,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "2f81ae1c952035337785997ff7591a5add2ab3adba3471cf818173599cf4c650",
+      "benchmarkConfigVersion": "3e5691fa75b5693cdc2c97f6774b05b202bcf6999b4c11f9c4185fdeb9699a26",
       "sortOrder": 40,
       "recommendationOrder": 100
     },
@@ -867,6 +907,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -876,7 +926,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "255b48fb754f818a25e4ad5e56a19b0967b817c08d5cae250987ea5684a58a7a",
+      "benchmarkConfigVersion": "eaf69d67e47871c61d4a0d732028f98cb951ffa3d51c158287d55a0559e02a0b",
       "sortOrder": 50,
       "recommendationOrder": 100
     },
@@ -902,6 +952,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -911,7 +971,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "04ee39fb12fb66672a3cbdc092c64cbd1a989970a0186bbceacd107f5ad19dc0",
+      "benchmarkConfigVersion": "f1241a792752655b85d8d68b5f40175974a283df4017c2a2e2858e2e6157c8ef",
       "sortOrder": 10,
       "recommendationOrder": 100
     },
@@ -937,6 +997,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -946,7 +1016,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "6c64d19e057a100a00c795fe5715ea599bfa70aa94da9ccfa651778945fa5cf0",
+      "benchmarkConfigVersion": "a2aeebaef3dc7c36f1a0ec3972d69566ef2a307c126ca87e058a2e0b4c73d064",
       "sortOrder": 21,
       "recommendationOrder": 100
     },
@@ -972,6 +1042,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -981,7 +1061,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "e77770b54b9a6f2359e273bb69dfcf82583581d4e1cf816ba68f055e95042a3b",
+      "benchmarkConfigVersion": "c949b83b7ba38bcf9039ea00114d51946a0f35a0d9b9311a975a2473feaa0547",
       "sortOrder": 30,
       "recommendationOrder": 100
     },
@@ -1007,6 +1087,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -1016,14 +1106,59 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "62d80b92ec1151dd654612a558019f6587da61d553b004ba7fb6a108047ff108",
+      "benchmarkConfigVersion": "9559fee2a29779c513e9680d2b9f2ec64aee1e9eb9cda01b8e6cb4fbe7b5e83b",
       "sortOrder": 50,
       "recommendationOrder": 100
     },
     {
+      "key": "face-slap-reversal",
+      "name": "反转打脸",
+      "description": "反转局势，释放打脸爽感",
+      "category": "短剧编导",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/drama.jpg",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 0,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "187697232e37bba64f1ab0e0a43e6f3d4943bd8dd57f9aa3b2818c429095df38",
+      "sortOrder": 50,
+      "recommendationOrder": 200
+    },
+    {
       "key": "advertising-brand-proposition",
-      "name": "品牌主张",
-      "description": "传递理念，建立价值认同",
+      "name": "商品展示",
+      "description": "呈现细节，展现商品质感",
       "category": "品牌广告",
       "recommended": false,
       "default": false,
@@ -1042,6 +1177,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -1051,14 +1196,14 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "a97e73676f20fc86c6539c85d3dc87f2cfc648af935f3c3d09981c95ce24906c",
+      "benchmarkConfigVersion": "678bc2247966aa4571e62cd61a0d39d9d21c92de47c804845c2ddf54c6efd4cb",
       "sortOrder": 10,
       "recommendationOrder": 100
     },
     {
       "key": "advertising-brand-story",
-      "name": "品牌故事",
-      "description": "讲述故事，强化品牌信任",
+      "name": "卖点广告",
+      "description": "聚焦卖点，凸显商品价值",
       "category": "品牌广告",
       "recommended": false,
       "default": false,
@@ -1077,6 +1222,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -1086,14 +1241,14 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "caad8efddff20e5e3bf7549dbfdd546adcb18497c5eb035a6b1805e89713b33b",
+      "benchmarkConfigVersion": "abc1b40718bc5ebd69ce3f85c6dc642848ebfbaa057b4c950e82abcd1ee69620",
       "sortOrder": 30,
       "recommendationOrder": 100
     },
     {
       "key": "advertising-lifestyle",
-      "name": "生活方式",
-      "description": "塑造场景，建立品牌向往",
+      "name": "创意广告",
+      "description": "巧妙构思，演绎商品魅力",
       "category": "品牌广告",
       "recommended": false,
       "default": false,
@@ -1112,6 +1267,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -1121,7 +1286,7 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "ecacb1ff3ff5ab82314c4026bdeb30d05d3adbc0e30b7df5b55532480918cf51",
+      "benchmarkConfigVersion": "7d568ac93365de4c46e68b20ed4e3cac0c78186929279fffbb24c3b1a1d6c468",
       "sortOrder": 40,
       "recommendationOrder": 100
     },
@@ -1137,7 +1302,7 @@
       "slots": [
         {
           "key": "reference_1",
-          "label": "图片",
+          "label": "图片 ",
           "min": 1,
           "max": 30,
           "kinds": [
@@ -1147,6 +1312,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -1156,24 +1331,24 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "cb3025d6d72a630d9f9f82ea1345e7ad0b2120cbf260e5cd4b9ea965f392260c",
+      "benchmarkConfigVersion": "5c887387596fa7d950467b4844a52c4039a8b1b1e6e63971d2cb1e09f08b30c4",
       "sortOrder": 50,
       "recommendationOrder": 100
     },
     {
-      "key": "short-drama-dialogue",
-      "name": "对话短剧",
-      "description": "人物冲突，推动剧情发展",
-      "category": "剧情短片",
+      "key": "pcc62f09b-6a69c3",
+      "name": "剧情带货",
+      "description": "牵引情绪，期待反转兑现",
+      "category": "茂隆掌柜",
       "recommended": false,
       "default": false,
-      "icon": "/commerce/reference/4519d065fa8bbe3d.png",
+      "icon": "/commerce/reference/pcc-drama-selling.png",
       "options": [],
       "slots": [
         {
           "key": "reference_1",
           "label": "图片",
-          "min": 1,
+          "min": 0,
           "max": 30,
           "kinds": [
             "image"
@@ -1182,139 +1357,9 @@
         },
         {
           "key": "reference_2",
-          "label": "声音",
+          "label": "角色",
           "min": 0,
           "max": 10,
-          "kinds": [
-            "audio"
-          ],
-          "cover": "/commerce/reference/050cec83605f5db4.png"
-        }
-      ],
-      "benchmarkConfigVersion": "67be5e884acbf3ba61650d1fcb8f408fda62a8e396aa669e916f93497c0a6415",
-      "sortOrder": 10,
-      "recommendationOrder": 100
-    },
-    {
-      "key": "short-drama-reversal",
-      "name": "反转短剧",
-      "description": "剧情反转，制造传播记忆",
-      "category": "剧情短片",
-      "recommended": true,
-      "default": false,
-      "icon": "/commerce/reference/bd49a3004bcfa924.png",
-      "options": [],
-      "slots": [
-        {
-          "key": "reference_1",
-          "label": "图片",
-          "min": 1,
-          "max": 30,
-          "kinds": [
-            "image"
-          ],
-          "cover": "/commerce/reference/0baf8d3046981003.png"
-        },
-        {
-          "key": "reference_2",
-          "label": "声音",
-          "min": 0,
-          "max": 10,
-          "kinds": [
-            "audio"
-          ],
-          "cover": "/commerce/reference/050cec83605f5db4.png"
-        }
-      ],
-      "benchmarkConfigVersion": "c8bf2392113cd3fdf2ab7b6800122448503efdb0918209fc9599ef190ceeadf5",
-      "sortOrder": 20,
-      "recommendationOrder": 200
-    },
-    {
-      "key": "short-drama-suspense",
-      "name": "悬念短剧",
-      "description": "设置悬念，持续吸引观看",
-      "category": "剧情短片",
-      "recommended": false,
-      "default": false,
-      "icon": "/commerce/reference/39fca0ff3fbbe129.png",
-      "options": [],
-      "slots": [
-        {
-          "key": "reference_1",
-          "label": "图片",
-          "min": 1,
-          "max": 30,
-          "kinds": [
-            "image"
-          ],
-          "cover": "/commerce/reference/0baf8d3046981003.png"
-        },
-        {
-          "key": "reference_2",
-          "label": "声音",
-          "min": 0,
-          "max": 10,
-          "kinds": [
-            "audio"
-          ],
-          "cover": "/commerce/reference/050cec83605f5db4.png"
-        }
-      ],
-      "benchmarkConfigVersion": "daf7051568d156d5b43ce6bce52003f29abc3021f9f5e7eaf894159f910da37a",
-      "sortOrder": 30,
-      "recommendationOrder": 100
-    },
-    {
-      "key": "short-drama-emotional",
-      "name": "情绪短片",
-      "description": "情绪共鸣，强化内容感染",
-      "category": "剧情短片",
-      "recommended": true,
-      "default": false,
-      "icon": "/commerce/reference/7aff4082badd4a3b.png",
-      "options": [],
-      "slots": [
-        {
-          "key": "reference_1",
-          "label": "图片",
-          "min": 1,
-          "max": 30,
-          "kinds": [
-            "image"
-          ],
-          "cover": "/commerce/reference/0baf8d3046981003.png"
-        },
-        {
-          "key": "reference_2",
-          "label": "声音",
-          "min": 0,
-          "max": 10,
-          "kinds": [
-            "audio"
-          ],
-          "cover": "/commerce/reference/050cec83605f5db4.png"
-        }
-      ],
-      "benchmarkConfigVersion": "f9595c0712cc36202dd0766302b5f81629aaeb1718a32b27e38291aaadaf3af5",
-      "sortOrder": 40,
-      "recommendationOrder": 200
-    },
-    {
-      "key": "short-drama-product-placement",
-      "name": "产品植入",
-      "description": "融入剧情，自然传递价值",
-      "category": "剧情短片",
-      "recommended": false,
-      "default": false,
-      "icon": "/commerce/reference/f7c97a6046a11b55.png",
-      "options": [],
-      "slots": [
-        {
-          "key": "reference_1",
-          "label": "图片",
-          "min": 0,
-          "max": 30,
           "kinds": [
             "image"
           ],
@@ -1331,8 +1376,323 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "2c145382decf80eb2cdc4c3fac03f327db63ea767f5840dbabdfcd8111b5f035",
-      "sortOrder": 50,
+      "benchmarkConfigVersion": "28e30b82fff7d044ec79f8c0d66c0fbf04bbae82b0f1e2a4b8ab67e93658070a",
+      "sortOrder": 100,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "pcc62f09b-6d3d7e",
+      "name": "泰式带货",
+      "description": "反向因果，喜剧广告引擎",
+      "category": "茂隆掌柜",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/pcc-thai-selling.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 0,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "8c792bf00588509e3c1a4eea61e164456600fa2a5fa95e65ee52412d24f04779",
+      "sortOrder": 100,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "pcc62f09b-c92a82",
+      "name": "脑洞带货",
+      "description": "夸张荒谬，离谱顺滑发生",
+      "category": "茂隆掌柜",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/pcc-absurd-selling.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 0,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "6bf2f928279fa8fc173e24080ebd75c63a4533e0bd1b03518f275dd2d3badaec",
+      "sortOrder": 100,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "pcc62f09b-d5eb08",
+      "name": "创意广告",
+      "description": "倒着归因，反推出好创意",
+      "category": "茂隆掌柜",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/pcc-creative-ad.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 0,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "ad3dc2a655520c0dba7ec5cef42975b6d81a948447ecd6e00d89ba3995adaf1d",
+      "sortOrder": 100,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "test-characterstories",
+      "name": "个人故事",
+      "description": "回顾往事，讲述亲身经历",
+      "category": "个人IP",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/personal-story.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "f04327f5c2e6f3d580dc6fa947f4c0aad3a61870e1bf836c34f9604446ab29be",
+      "sortOrder": 100,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "test-dailydocumentary",
+      "name": "日常记录",
+      "description": "记录日常，展现真实生活",
+      "category": "个人IP",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/personal-diary.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "6680453232bae1ecaa07efe253f1520e5eaba7b6541dbc7b3017b39727683c06",
+      "sortOrder": 100,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "test-experience",
+      "name": "经验分享",
+      "description": "拆解做法，分享实用技巧",
+      "category": "个人IP",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/personal-advice.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "9dcfe312fc29b281143ae8dbf435e888c7d873e550fcb48b0d5373f76da257fd",
+      "sortOrder": 100,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "test-opinion",
+      "name": "观点表达",
+      "description": "围绕话题，分享个人看法",
+      "category": "个人IP",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/personal-opinion.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "d998685e9babdf4b30975feba451e5464ba294ae7529badb7ef426c9963a4680",
+      "sortOrder": 100,
       "recommendationOrder": 100
     },
     {
@@ -1357,6 +1717,16 @@
         },
         {
           "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
           "label": "声音",
           "min": 0,
           "max": 10,
@@ -1366,8 +1736,233 @@
           "cover": "/commerce/reference/050cec83605f5db4.png"
         }
       ],
-      "benchmarkConfigVersion": "e4a4f1ec69194aec6cf3a117f59392e70baf5131677b0ed94f94686e99f7b77a",
+      "benchmarkConfigVersion": "abcfcb5c0bab7748e980881ef3f7882a779eae7ce614ab0abbf98cd20722756b",
       "sortOrder": 10,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "short-drama-dialogue",
+      "name": "对话短剧",
+      "description": "人物冲突，推动剧情发展",
+      "category": "短剧编导",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/4519d065fa8bbe3d.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "c01cac594f9f1add5c9b54398dfd1147ebe80f89e2e3571263248b798337cdd2",
+      "sortOrder": 10,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "short-drama-reversal",
+      "name": "反转打脸",
+      "description": "反转局势，释放打脸爽感",
+      "category": "短剧编导",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/reference/bd49a3004bcfa924.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "f381f1fbadbf5129d0557a53313311805b0ced296cbccb63b9a5257f9b9d694a",
+      "sortOrder": 9,
+      "recommendationOrder": 200
+    },
+    {
+      "key": "short-drama-suspense",
+      "name": "悬念短剧",
+      "description": "设置悬念，持续吸引观看",
+      "category": "短剧编导",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/39fca0ff3fbbe129.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "cb5de85dce8c65b26c925dd5bb021eb590b284fef104e2dfcbbd69c2a11ccb0d",
+      "sortOrder": 30,
+      "recommendationOrder": 100
+    },
+    {
+      "key": "short-drama-emotional",
+      "name": "情绪短片",
+      "description": "情绪共鸣，强化内容感染",
+      "category": "短剧编导",
+      "recommended": true,
+      "default": false,
+      "icon": "/commerce/reference/7aff4082badd4a3b.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 1,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_4",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "8e32c6ac8c2c4ddcb6d1f2129fbb9bc952aff4d3de93eed14d091abaffb95ed0",
+      "sortOrder": 40,
+      "recommendationOrder": 200
+    },
+    {
+      "key": "short-drama-product-placement",
+      "name": "产品植入",
+      "description": "融入剧情，自然传递价值",
+      "category": "剧情短片",
+      "recommended": false,
+      "default": false,
+      "icon": "/commerce/reference/f7c97a6046a11b55.png",
+      "options": [],
+      "slots": [
+        {
+          "key": "reference_1",
+          "label": "图片",
+          "min": 0,
+          "max": 30,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_2",
+          "label": "角色",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "image"
+          ],
+          "cover": "/commerce/reference/0baf8d3046981003.png"
+        },
+        {
+          "key": "reference_3",
+          "label": "声音",
+          "min": 0,
+          "max": 10,
+          "kinds": [
+            "audio"
+          ],
+          "cover": "/commerce/reference/050cec83605f5db4.png"
+        }
+      ],
+      "benchmarkConfigVersion": "f06cf453f4b85f85f1d23aa821b513ffcc3a7b2932f9afe8c44015a3f5d60457",
+      "sortOrder": 50,
       "recommendationOrder": 100
     }
   ],

@@ -21,16 +21,24 @@ export async function probeFrameTimeline(source:string):Promise<FrameProbe>{
  if(!frames.length||!timeBase)throw Error('视频没有可读取的画面');const last=frames[frames.length-1];if(last.duration<=0)throw Error('无法精确确定最后一帧持续时间，请重新编码视频后抽帧');const durationTicks=last.pts+last.duration-frames[0].pts;if(!Number.isSafeInteger(durationTicks)||durationTicks<=0||!within60(durationTicks,timeBase))throw Error('当前抽帧支持视频画面时长不超过 60 秒');
  const byPts=new Map(frames.map(f=>[f.pts,f.decodeIndex]));return {frames,cutIndices:[...new Set([0,...cutPts.map(pts=>byPts.get(pts)).filter((index):index is number=>index!==undefined)])].sort((a,b)=>a-b),timeBase,duration:durationTicks*timeBase.numerator/timeBase.denominator,durationTicks,startPts:frames[0].pts};
 }
-export function planFrameTimeline(probe:FrameProbe,mode:FrameMode,remainingSlots:number):PlannedFrame[]{
+export function planFrameTimeline(probe:FrameProbe,mode:FrameMode,remainingSlots:number,requestedMs?:number):PlannedFrame[]{
  const planned:PlannedFrame[]=[],{frames,timeBase,startPts}=probe;
  const add=(frame:DecodedFrame,role:PlannedFrame['role'],extra:Partial<Pick<PlannedFrame,'shotIndex'|'requestedTime'>>={})=>planned.push({index:planned.length+1,time:(frame.pts-startPts)*timeBase.numerator/timeBase.denominator,sourceTime:frame.pts*timeBase.numerator/timeBase.denominator,sourcePts:String(frame.pts),timeBase,decodeIndex:frame.decodeIndex,role,...extra});
  if(mode==='first')add(frames[0],'first');else if(mode==='last')add(frames[frames.length-1],'last');else if(mode==='seconds'){let cursor=0;for(let second=0;BigInt(second)*BigInt(timeBase.denominator)<BigInt(probe.durationTicks)*BigInt(timeBase.numerator);second++){while(cursor+1<frames.length&&BigInt(frames[cursor+1].pts-startPts)*BigInt(timeBase.numerator)<=BigInt(second)*BigInt(timeBase.denominator))cursor++;add(frames[cursor],'sample',{requestedTime:second});}}
+ else if(mode==='timestamp'){
+  if(requestedMs===undefined||!Number.isSafeInteger(requestedMs)||requestedMs<0)throw Error('截帧时间无效');
+  const point=BigInt(requestedMs)*BigInt(timeBase.denominator),tick=BigInt(1000)*BigInt(timeBase.numerator);
+  if(point>=BigInt(probe.durationTicks)*tick)throw Error('截帧时间必须早于视频画面结束时间');
+  const next=frames.findIndex(frame=>BigInt(frame.pts-startPts)*tick>point);
+  add(frames[next===-1?frames.length-1:next-1],'sample',{requestedTime:requestedMs/1000});
+ }
  else for(const [index,start] of probe.cutIndices.entries()){add(frames[start],'shot-start',{shotIndex:index+1});if(mode==='shot-boundaries')add(frames[(probe.cutIndices[index+1]??frames.length)-1],'shot-end',{shotIndex:index+1});}
  if(planned.length>Math.min(100,remainingSlots))throw new FrameCapacityError(planned.length,Math.min(100,remainingSlots));return planned;
 }
-export async function extractPlannedFiles(source:string,folder:string,plan:PlannedFrame[]):Promise<Map<number,string>>{
+export async function extractPlannedFiles(source:string,folder:string,plan:PlannedFrame[],originalSize=false):Promise<Map<number,string>>{
+ const extension=originalSize?'png':'jpg';
  const unique=[...new Map(plan.map(frame=>[frame.decodeIndex,frame])).values()].sort((a,b)=>a.decodeIndex-b.decodeIndex),actual:{pts:string;timeBase?:FrameProbe['timeBase']}[]=[];let timeBase:FrameProbe['timeBase']|undefined;
  await fs.mkdir(folder,{recursive:true});const expression=unique.map(frame=>'eq(n\\,'+frame.decodeIndex+')').join('+');
- await command(['-hide_banner','-nostdin','-y','-copyts','-protocol_whitelist','file,pipe','-i',source,'-map','0:v:0','-an','-sn','-dn','-vf',`select=${expression},scale=min(1280\\,iw):-2,showinfo@picked`,'-fps_mode','passthrough','-frames:v',String(unique.length),'-q:v','2',path.join(folder,'%06d.jpg')],line=>{if(!line.includes('showinfo@picked'))return;const base=line.match(/config in time_base:\s*(\d+)\/(\d+)/);if(base)timeBase={numerator:safeInteger(base[1]),denominator:safeInteger(base[2])};const frame=line.match(/\bn:\s*\d+\s+pts:\s*(-?\d+)/);if(frame)actual.push({pts:frame[1],timeBase});});
- if(actual.length!==unique.length)throw Error('实际抽帧数量不匹配，未保存不完整的帧');const result=new Map<number,string>();for(let i=0;i<unique.length;i++){const expected=unique[i];if(actual[i].pts!==expected.sourcePts||actual[i].timeBase?.numerator!==expected.timeBase.numerator||actual[i].timeBase?.denominator!==expected.timeBase.denominator)throw Error('抽取画面时间戳与计划不一致，已停止保存');result.set(expected.decodeIndex,path.join(folder,String(i+1).padStart(6,'0')+'.jpg'));}return result;
+ await command(['-hide_banner','-nostdin','-y','-copyts','-protocol_whitelist','file,pipe','-i',source,'-map','0:v:0','-an','-sn','-dn','-vf',[ `select=${expression}`, ...(originalSize?[]:['scale=min(1280\\,iw):-2']), 'showinfo@picked' ].join(','),'-fps_mode','passthrough','-frames:v',String(unique.length),...(originalSize?['-compression_level','5']:['-q:v','2']),path.join(folder,'%06d.'+extension)],line=>{if(!line.includes('showinfo@picked'))return;const base=line.match(/config in time_base:\s*(\d+)\/(\d+)/);if(base)timeBase={numerator:safeInteger(base[1]),denominator:safeInteger(base[2])};const frame=line.match(/\bn:\s*\d+\s+pts:\s*(-?\d+)/);if(frame)actual.push({pts:frame[1],timeBase});});
+ if(actual.length!==unique.length)throw Error('实际抽帧数量不匹配，未保存不完整的帧');const result=new Map<number,string>();for(let i=0;i<unique.length;i++){const expected=unique[i];if(actual[i].pts!==expected.sourcePts||actual[i].timeBase?.numerator!==expected.timeBase.numerator||actual[i].timeBase?.denominator!==expected.timeBase.denominator)throw Error('抽取画面时间戳与计划不一致，已停止保存');result.set(expected.decodeIndex,path.join(folder,String(i+1).padStart(6,'0')+'.'+extension));}return result;
 }

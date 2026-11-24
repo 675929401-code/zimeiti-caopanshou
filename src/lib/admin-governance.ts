@@ -343,7 +343,7 @@ export function adminRequirementForRequest(
   }
   if (pathname.startsWith("/api/admin/credits") || pathname.startsWith("/api/admin/cash")) return { permission: write ? "wallet.adjust" : "billing.view", requireStepUp: write, operation: "wallet" };
   if (pathname.startsWith("/api/admin/offline-payments")) return { permission: write ? "wallet.adjust" : "billing.view", requireStepUp: write, operation: "offline_payment" };
-  if (/^\/api\/admin\/(balance-audit|revenue|user-transactions|reconciliation|payment-orders|payment-reconcile)/u.test(pathname)) {
+  if (/^\/api\/admin\/(billing-preview|balance-audit|revenue|user-transactions|reconciliation|payment-orders|payment-reconcile)/u.test(pathname)) {
     const exporting = searchParams?.get("format") === "csv" || pathname.includes("export");
     return { permission: exporting ? "billing.export" : "billing.view", requireStepUp: exporting || write, operation: exporting ? "billing_export" : "billing" };
   }
@@ -452,6 +452,13 @@ export function adminRequirementForRequest(
   if (pathname.startsWith("/api/admin/consistency-check")) return { permission: "billing.view", requireStepUp: write, operation: "billing_consistency" };
   if (/^\/api\/admin\/(backup|sync|storage)/u.test(pathname)) return { permission: "backups.manage", requireStepUp: write || pathname.includes("export"), operation: "backup_sync" };
   if (/^\/api\/admin\/(payment-config|payment-methods)/u.test(pathname)) return { permission: "payment.settings.manage", requireStepUp: true, operation: "payment_settings" };
+  // Publishing handlers enforce the additional package and billing scopes for each view.
+  if (pathname === "/api/admin/publishing" || pathname === "/api/admin/publishing/native") {
+    return { permission: "integrations.manage", requireStepUp: write, operation: "publishing_settings" };
+  }
+  if (pathname === "/api/admin/publishing/connection") return { permission: "integrations.manage", requireStepUp: true, operation: "publishing_provider_probe" };
+  // The pricing POST also serves quotes. Its save branch requires step-up in the handler.
+  if (pathname === "/api/admin/publishing/pricing") return { permission: "integrations.manage", requireStepUp: false, operation: "publishing_pricing" };
   if (pathname.startsWith("/api/admin/plugins")) return { permission: "integrations.manage", requireStepUp: true, operation: "integrations" };
   if (pathname.startsWith("/api/admin/shortcuts")) return { permission: "brand.settings.manage", requireStepUp: true, operation: "brand_shortcuts" };
   if (/^\/api\/admin\/(config|services)/u.test(pathname)) return { permission: "models.manage", requireStepUp: true, operation: "model_engine_config" };

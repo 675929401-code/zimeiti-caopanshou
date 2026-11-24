@@ -1,7 +1,8 @@
 import type {Model} from './models';
+import {toPublicModelId} from '../../lib/public-model-dto';
 
-export type DepthCloneProfileId='benchmark-seedance-2-5'|'value-minimax-h3-ref2va';
-export type DepthCloneProfileRole='benchmark'|'value';
+export type DepthCloneProfileId='benchmark-seedance-2-5'|'value-minimax-h3-ref2va'|'seedance-2-0-fast';
+export type DepthCloneProfileRole='benchmark'|'value'|'alternative';
 
 export type DepthCloneDurationExample={
   sourceSeconds:20|30|60|70|80;
@@ -64,7 +65,7 @@ function supportsReplacementImages(capabilities:Record<string,unknown>):boolean{
 }
 
 /**
- * Classifies only the two reviewed deep-clone families. Capabilities are a
+ * Checks reviewed families or the explicitly assigned channel. Capabilities are a
  * mandatory second gate, so a familiar display name cannot make an ordinary
  * image-to-video model selectable.
  */
@@ -72,6 +73,7 @@ export function classifyDepthCloneModel(model:DepthCloneModelLike):DepthClonePro
   if(model.kind!=='video')return null;
   const capabilities=model.capabilities||{};
   if(capabilities.supportsSourceVideoInput!==true||!supportsReplacementImages(capabilities))return null;
+  if(model.id===toPublicModelId('video','gaorui-seedance-2-0-fast-video')&&capabilities.supportsAudioInput===true&&capabilities.supportsGenerateAudioToggle===true&&Number(capabilities.maxReferenceImages)>=1&&Number(capabilities.maxReferenceAudios)>=1)return 'seedance-2-0-fast';
   const identity=identityText(model);
   if(SEEDANCE_25_FAMILY.test(identity)&&Number(capabilities.maxReferenceImages||0)>=1)return 'benchmark-seedance-2-5';
   if(MINIMAX_H3_REF2VA_FAMILY.test(identity)
@@ -117,6 +119,11 @@ const PROFILE_SPECS:ReadonlyArray<Omit<DepthCloneProfilePublic,'status'|'boundMo
       ],
       note:'这里只给出分段编排建议；分段提交、失败重试与合并链路尚需单独接通和验收。',
     },
+  },
+  {
+    id:'seedance-2-0-fast',label:'Seedance 2.0 Fast · 高瑞',role:'alternative',
+    officialBoundary:{supportsSourceVideo:true,outputSeconds:{min:4,max:15},referenceImages:{recommendedMin:1,recommendedMax:5,extendedMax:9,technicalMax:9,extendedStabilityNotice:'参考图按商品、人物和背景职责提交。'},notes:['该渠道支持源视频、参考图片与独立声音参考。'],sourceUrl:'/api/video/models?surface=commerce-agent'},
+    durationPolicy:{singleRequestMaxSeconds:15,recommendedSegmentMaxSeconds:15,requiresOrchestrationAboveSeconds:15,executionConnected:false,examples:[],note:'单次生成支持 4–15 秒，超过原生长度请分段处理。'},
   },
   {
     id:'value-minimax-h3-ref2va',
@@ -165,8 +172,18 @@ function isGenerationReady(model:DepthCloneModelLike):boolean{
   return model.generationReady===true;
 }
 
+export function validateSourceVideoDimensions(profile:DepthCloneProfileId|null,width:number,height:number) {
+  if (profile !== 'seedance-2-0-fast') return;
+  const pixels = width * height;
+  const ratio = width / height;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || Math.min(width,height) < 300 ||
+      Math.max(width,height) > 6000 || ratio < 0.4 || ratio > 2.5 || pixels < 407696 || pixels > 8295044) {
+    throw Error(`参考视频为 ${width}×${height}，不符合 Seedance 2.0 Fast 输入规格。请使用宽高均在 300–6000 像素、宽高比在 0.4–2.5、总像素在 407696–8295044 的视频，例如 1280×720。`);
+  }
+}
+
 export function depthCloneProfilesForModels(models:ReadonlyArray<DepthCloneModelLike>):DepthCloneProfilePublic[]{
-  return PROFILE_SPECS.map(spec=>{
+  return PROFILE_SPECS.filter(spec=>spec.role!=='alternative'||models.some(model=>classifyDepthCloneModel(model)===spec.id)).map(spec=>{
     const matches=models.filter(model=>classifyDepthCloneModel(model)===spec.id);
     const bound=matches.find(isGenerationReady)||matches[0]||null;
     const ready=Boolean(bound&&isGenerationReady(bound));

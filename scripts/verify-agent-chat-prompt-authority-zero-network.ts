@@ -15,6 +15,7 @@ async function verifyActualStreamHandler(persistenceError: boolean, leak = false
   const settlementGate = new Promise<void>(resolve => { releaseSettlement = resolve; });
   const imports: Record<string, unknown> = {
     '@/lib/sse-stream-decoder': require('../src/lib/sse-stream-decoder'),
+    '@/lib/reported-token-usage': require('../src/lib/reported-token-usage'),
     '@/lib/llm-proxy/stream-error': require('../src/lib/llm-proxy/stream-error'),
     '@/lib/llm-billing': { settleLlmUsage: async () => { await settlementGate; settled = true; return { billing: {}, operationId: 'fixture-operation' }; } },
     '@/lib/llm-proxy/zhipu-proxy': {},
@@ -38,8 +39,10 @@ async function verifyActualStreamHandler(persistenceError: boolean, leak = false
   });
   let upstream!: ReadableStreamDefaultController<Uint8Array>;
   let contentCallback!: (text: string) => void;
-  const provider = { chatStream: async (_request: unknown, callbacks: { onContent: (text: string) => void }) => {
+  let usageCallback!: (usage: import('../src/lib/reported-token-usage').ReportedTokenUsage) => void;
+  const provider = { chatStream: async (_request: unknown, callbacks: { onContent: (text: string) => void; onUsage: typeof usageCallback }) => {
     contentCallback = callbacks.onContent;
+    usageCallback = callbacks.onUsage;
     return new ReadableStream<Uint8Array>({ start(controller) { upstream = controller; } });
   } };
   const hidden = '仅内部系统指令'.repeat(30);
@@ -73,6 +76,7 @@ async function verifyActualStreamHandler(persistenceError: boolean, leak = false
     assert.equal(settled, false, 'leaked output never reaches settlement');
     return;
   }
+  usageCallback({ prompt_tokens: 30, completion_tokens: 60, cached_tokens: 0 });
   upstream.close();
   await tick();
   assert.ok(!visible.includes(tail), 'terminal tail remains held while settlement waits');

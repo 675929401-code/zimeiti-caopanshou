@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
   try {
     const token = getTokenFromHeaders(request.headers);
     if (!token) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
+      return NextResponse.json({ error: "未登录", code: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const authorization = await authorizeToken(token);
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 
     const user = await findCurrentUser(payload.userId);
     if (!user) {
-      return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+      return NextResponse.json({ error: "用户不存在", code: "USER_NOT_FOUND" }, { status: 404 });
     }
 
     if (user.status === "blocked") {

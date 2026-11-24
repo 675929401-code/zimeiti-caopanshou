@@ -48,7 +48,8 @@ async function verifyFrontendContracts() {
   assert.match(page, /正在核对通道配置与价格/u);
   assert.match(page, /无法读取通道配置，提交已暂停/u);
   assert.match(page, /通道未就绪，提交已暂停/u);
-  assert.match(page, /计费：/u, "customer tools must show the configured public price");
+  assert.doesNotMatch(page.slice(page.indexOf("function RuntimeQuoteCard"), page.indexOf("function confirmLoadedRetry")), /publicRuntimePriceLabel/u, "browsing does not display a tariff");
+  assert.match(page, /确认按本次价格/u, "retry requires order-specific confirmation");
   assert.doesNotMatch(page, /管理员免收/u, "customer tools must not replace the public price with an administrator exemption");
   assert.doesNotMatch(page, /当前通道：/u, "customer tools must not expose the internal provider channel");
   assert.doesNotMatch(page, /模型\/工作流：/u, "customer tools must not expose the internal workflow binding");

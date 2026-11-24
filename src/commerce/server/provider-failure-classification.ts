@@ -54,5 +54,6 @@ export function isExplicitProviderRejection(error: unknown) {
 }
 
 export function confirmedFailureProviderCost(error: unknown, configuredCost: number) {
+  if (error === 'PROVIDER_VERIFIED_ZERO_CHARGE' || error === 'VIDEO_MEDIA_CONTRACT_REJECTED_BEFORE_DISPATCH') return 0;
   return isExplicitProviderRejection(error) ? 0 : configuredCost;
 }

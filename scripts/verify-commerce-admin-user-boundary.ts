@@ -58,18 +58,19 @@ assert.equal(admin.ok ? admin.actor.role : '', 'admin');
 
 const read = (relative: string) => fs.readFileSync(path.resolve(relative), 'utf8');
 const settingsPage = read('src/app/commerce/settings/page.tsx');
-const authorizationPosition = settingsPage.indexOf('authorizeAdminToken(');
-const rejectionPosition = settingsPage.indexOf('if(!authorization.ok)notFound()');
-const redirectPosition = settingsPage.indexOf("redirect('/admin?tab=commerce')");
-assert.ok(settingsPage.includes("import { headers } from 'next/headers'"));
-assert.ok(settingsPage.includes('getTokenFromHeaders(new Headers(await headers()))'));
-assert.ok(authorizationPosition >= 0 && rejectionPosition > authorizationPosition && redirectPosition > rejectionPosition);
+assert.ok(settingsPage.includes("redirect('/commerce')"));
+assert.ok(!settingsPage.includes('/admin'));
 
 const adminPage = read('src/app/admin/page.tsx');
 assert.match(adminPage, /type Tab = [^\n]*"workspace-models"/u);
 assert.match(adminPage, /const WORKSPACE_PROJECT_IDS:[\s\S]*"commerce"/u);
 assert.match(adminPage, /projects\.push\("commerce"\)/u);
-assert.match(adminPage, /CommerceAgentAdminTab/u);
+assert.ok(adminPage.includes('href="/commerce/manage"'));
+assert.match(read('src/app/commerce/manage/page.tsx'), /<CommerceManagement/u);
+const management = read('src/features/commerce-studio/commerce-management.tsx');
+assert.ok(management.includes('/api/admin/access-control/self'));
+assert.ok(management.includes('/api/admin/access-control/unlock'));
+assert.match(management, /<CommerceAgentAdminTab/u);
 assert.match(adminPage, /searchParams\.get\("tab"\)/u);
 
 const adminApiRoot = path.resolve('src/app/api/admin/commerce');
@@ -82,7 +83,7 @@ function collect(directory: string) {
   }
 }
 collect(adminApiRoot);
-assert.equal(adminRoutes.length, 10);
+assert.equal(adminRoutes.length, 13);
 for (const route of adminRoutes) {
   const source = fs.readFileSync(route, 'utf8');
   assert.match(source, /requireCommerceAdmin\(request/u, `${path.relative(process.cwd(), route)} must authorize before business access`);
@@ -109,7 +110,7 @@ const operationsRoute = read('src/app/api/commerce/operations/route.ts');
 assert.match(operationsRoute, /\{modelId:_,promptId:__,fallbackModelIds:___,capabilityRequirements:____,/u);
 
 const jobsSource = read('src/commerce/server/jobs.ts');
-assert.match(jobsSource, /const \{compiledPrompt:_,providerUrl:__,owner:___,pollPath:____,/u);
+assert.match(jobsSource, /const \{[^}]*compiledPrompt:_,providerUrl:__,owner:___,pollPath:____,[^}]*\}=value/u);
 assert.match(jobsSource, /model\.kind==='video'\?\{id:model\.id\}:\{\}/u);
 
 const ordinaryUiFiles = [
@@ -132,7 +133,7 @@ console.log(JSON.stringify({
   passed: 58,
   adminRoutes: adminRoutes.length,
   identities: { anonymous: 401, invalid: 401, ordinary: 403, disabledAdmin: 403, authUnavailable: 503, currentAdmin: 200 },
-  settings: { unauthorized: 'server-not-found', currentAdmin: '/admin?tab=commerce' },
+  settings: { retired: '/commerce', management: '/commerce/manage', adminStepUp: true },
   ordinaryUi: { internalModelDetailsVisible: false, selectableCatalogKinds: ['agent', 'image', 'video'] },
   networkCalls: 0,
   paidCalls: 0,

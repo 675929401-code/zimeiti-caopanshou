@@ -11,7 +11,11 @@ import { renderMarkdown, parseThinkTags } from "@/lib/markdown-renderer";
 import type {
   WorkspaceProjectId,
   WorkspaceSpecializedTarget,
-} from "@/components/admin/WorkspaceModelsAdminTab";
+} from "@/lib/workspace-project-navigation";
+import {
+  WORKSPACE_PROJECT_GROUPS,
+  WORKSPACE_PROJECT_NAVIGATION,
+} from "@/lib/workspace-project-navigation";
 import {
   AdminMaintenanceModeBanner,
   AdminSensitiveUnlockControl,
@@ -67,7 +71,6 @@ import {
 import {
   type AdminAccessClientState,
 } from "@/lib/admin-governance";
-import { visibleCommandCenterViews } from "@/lib/admin-command-center-domain";
 import {
   adminPlatformSettingKeysForScope,
   adminPlatformSettingPermission,
@@ -78,9 +81,9 @@ const SuperAdminGovernancePanel = dynamic(
   () => import("@/components/admin/super-admin-governance-panel").then((module) => module.SuperAdminGovernancePanel),
   { ssr: false, loading: () => <div className="rounded-2xl border border-[#d0d5dd] bg-white p-8 text-sm text-[#667085]">正在加载授权模块…</div> },
 );
-const CommandCenterPanel = dynamic(
-  () => import("@/components/admin/command-center-panel").then((module) => module.CommandCenterPanel),
-  { ssr: false, loading: () => <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 text-sm text-[var(--muted-foreground)]">正在加载平台指挥中心…</div> },
+const OpsPatrolPanel = dynamic(
+  () => import("@/components/admin/OpsPatrolPanel").then((module) => module.OpsPatrolPanel),
+  { ssr: false, loading: () => <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 text-sm text-[var(--muted-foreground)]">正在加载运营巡检…</div> },
 );
 const WorkspaceModelsAdminTab = dynamic(
   () => import("@/components/admin/WorkspaceModelsAdminTab").then((module) => module.WorkspaceModelsAdminTab),
@@ -94,14 +97,14 @@ const CoverStylesAdminTab = dynamic(
   () => import("@/components/admin/CoverStylesAdminTab").then((module) => module.CoverStylesAdminTab),
   { ssr: false, loading: () => <div className="p-6 text-sm text-[var(--muted-foreground)]">正在加载封面风格…</div> },
 );
+const CommerceAgentAdminTab = dynamic(
+  () => import("@/components/admin/CommerceAgentAdminTab").then((module) => module.CommerceAgentAdminTab),
+  { ssr: false, loading: () => <div className="p-6 text-sm text-[#667085]">正在加载带货创作后台…</div> },
+);
 const NativeAgentRuntimeAdmin = dynamic(() => import("@/components/admin/NativeAgentRuntimeAdmin").then(module => module.NativeAgentRuntimeAdmin), { ssr: false });
 const PublishingAdminTab = dynamic(
   () => import("@/components/admin/PublishingAdminTab"),
   { ssr: false, loading: () => <div className="p-6 text-sm text-[var(--muted-foreground)]">正在加载发布管理…</div> },
-);
-const CommerceAgentAdminTab = dynamic(
-  () => import("@/components/admin/CommerceAgentAdminTab").then((module) => module.CommerceAgentAdminTab),
-  { ssr: false, loading: () => <div className="rounded-2xl border border-[#d0d5dd] bg-white p-8 text-sm text-[#667085]">正在加载授权模块…</div> },
 );
 const ManjuWorkbenchAdminTab = dynamic(
   () => import("@/components/admin/ManjuWorkbenchAdminTab").then((module) => module.ManjuWorkbenchAdminTab),
@@ -522,7 +525,7 @@ function normalizePlatformThemeMode(themeValue: string, _themeModeValue: string)
   return modeForTheme(normalizeTheme(themeValue));
 }
 
-type Tab = "super-admin" | "workspace-models" | "storyboard-presets" | "cover-styles" | "publishing" | "dashboard" | "agents" | "trash" | "users" | "invitations" | "credits" | "offline-payments" | "general" | "theme" | "connection" | "layout" | "models" | "announcements" | "health" | "security" | "guard-logs" | "login-logs" | "sync" | "backup" | "benefit-packages" | "cami" | "aiweb-import" | "payment" | "billing-audit" | "white-label";
+type Tab = "super-admin" | "workspace-models" | "publishing" | "dashboard" | "agents" | "trash" | "users" | "invitations" | "credits" | "offline-payments" | "general" | "theme" | "connection" | "layout" | "models" | "announcements" | "health" | "security" | "guard-logs" | "login-logs" | "sync" | "backup" | "benefit-packages" | "cami" | "aiweb-import" | "payment" | "billing-audit" | "white-label";
 type UserSubTab = "members" | "recharge" | "consumption" | "chats";
 type MemberFilter = "all" | "inactive" | "trial" | "active" | "expired" | "test";
 
@@ -572,7 +575,7 @@ function getUserAllowedNavigationKeys(user: UserInfo): string[] {
 }
 
 /** 有效 Tab 列表 — 与 Tab 类型保持同步，用于运行时校验 sessionStorage 脏数据 */
-const VALID_TABS: Tab[] = ["super-admin", "workspace-models", "storyboard-presets", "cover-styles", "publishing", "dashboard", "agents", "trash", "users", "invitations", "credits", "offline-payments", "general", "theme", "connection", "layout", "models", "announcements", "health", "security", "guard-logs", "login-logs", "sync", "backup", "benefit-packages", "cami", "aiweb-import", "payment", "billing-audit", "white-label"];
+const VALID_TABS: Tab[] = ["super-admin", "workspace-models", "publishing", "dashboard", "agents", "trash", "users", "invitations", "credits", "offline-payments", "general", "theme", "connection", "layout", "models", "announcements", "health", "security", "guard-logs", "login-logs", "sync", "backup", "benefit-packages", "cami", "aiweb-import", "payment", "billing-audit", "white-label"];
 
 /** 校验 sessionStorage 恢复的 activeTab 是否为合法值 */
 function isValidTab(v: unknown): v is Tab {
@@ -581,7 +584,7 @@ function isValidTab(v: unknown): v is Tab {
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "super-admin", label: "超级管理", icon: "M12 2.25c-2.25 1.875-5.25 2.25-7.5 2.25v5.625c0 4.875 3.375 9.375 7.5 11.625 4.125-2.25 7.5-6.75 7.5-11.625V4.5c-2.25 0-5.25-.375-7.5-2.25zm0 5.25a2.25 2.25 0 110 4.5 2.25 2.25 0 010-4.5zm-3.375 8.25a3.375 3.375 0 016.75 0" },
-  { key: "dashboard", label: "指挥中心", icon: "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" },
+  { key: "dashboard", label: "运营巡检", icon: "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" },
   { key: "agents", label: "智能体管理", icon: "M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3" },
   { key: "trash", label: "回收站", icon: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" },
   { key: "users", label: "会员管理", icon: "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" },
@@ -594,11 +597,9 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "layout", label: "卡片布局", icon: "M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" },
   { key: "models", label: "模型资源池", icon: "M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.5 6.75l.75-.75M19.5 6.75H16.5M19.5 6.75V3.75M6.75 21h10.5a2.25 2.25 0 002.25-2.25V15a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 15v3.75A2.25 2.25 0 006.75 21z" },
   { key: "workspace-models", label: "工作台配置", icon: "M4.5 6.75h15M4.5 12h15m-15 5.25h15M8.25 4.5v4.5m7.5-4.5v4.5m-4.5.75v4.5m-3 0v4.5m7.5-4.5v4.5" },
-  { key: "storyboard-presets", label: "角色预设", icon: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m11-3v6m-3-3h6" },
-  { key: "cover-styles", label: "封面制作管理", icon: "M4 5h16v14H4zM7 9h10M7 13h6" },
   { key: "publishing", label: "发布管理", icon: "m3 11 18-7-7 18-3-8-8-3Zm8 3L21 4" },
   { key: "announcements", label: "公告管理", icon: "M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46" },
-  { key: "health", label: "系统运维", icon: "M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" },
+  { key: "health", label: "系统健康", icon: "M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" },
   { key: "security", label: "安全中心", icon: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" },
   { key: "guard-logs", label: "提示词拦截", icon: "M12 9v3.75m0-10.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.75c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" },
   { key: "login-logs", label: "登录日志", icon: "M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" },
@@ -613,7 +614,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 ];
 
 const ADMIN_PRIMARY_NAVIGATION: Array<{ root: Tab; title: string; tabs: Tab[] }> = [
-  { root: "dashboard", title: "平台指挥中心", tabs: ["dashboard"] },
+  { root: "dashboard", title: "运营巡检", tabs: ["dashboard", "health", "sync", "backup"] },
   { root: "users", title: "会员管理", tabs: ["users", "invitations"] },
   { root: "benefit-packages", title: "权益与卡密", tabs: ["benefit-packages", "cami"] },
   { root: "credits", title: "财务与账单", tabs: ["credits", "offline-payments", "billing-audit"] },
@@ -621,12 +622,11 @@ const ADMIN_PRIMARY_NAVIGATION: Array<{ root: Tab; title: string; tabs: Tab[] }>
   { root: "announcements", title: "公告与通知", tabs: ["announcements"] },
   { root: "agents", title: "智能体管理", tabs: ["agents", "aiweb-import", "trash"] },
   { root: "models", title: "模型与服务", tabs: ["models", "connection"] },
-  { root: "workspace-models", title: "工作台配置", tabs: ["workspace-models", "storyboard-presets", "cover-styles"] },
+  { root: "workspace-models", title: "工作台配置", tabs: ["workspace-models"] },
   { root: "publishing", title: "发布管理", tabs: ["publishing"] },
   { root: "general", title: "品牌与界面", tabs: ["general", "theme", "layout"] },
   { root: "white-label", title: "域名与贴牌", tabs: ["white-label"] },
   { root: "security", title: "安全审计", tabs: ["security", "guard-logs", "login-logs"] },
-  { root: "health", title: "系统运维", tabs: ["health", "sync", "backup"] },
   { root: "super-admin", title: "权限管理", tabs: ["super-admin"] },
 ];
 
@@ -640,22 +640,19 @@ const ADMIN_SECONDARY_LABELS: Partial<Record<Tab, string>> = {
   security: "安全总览",
   health: "系统健康",
   backup: "灾备证据",
+  "workspace-models": "工作台配置",
 };
-
-function adminModuleForTab(tab: Tab) {
-  return ADMIN_PRIMARY_NAVIGATION.find((module) => module.tabs.includes(tab));
-}
 
 function canExposeAdminTab(state: AdminAccessClientState | null, tab: Tab): boolean {
   if (!state) return false;
-  if (tab === "super-admin") return state.access.authorityStatus === "ready"
+  if (tab === "super-admin") return state.access.adminLevel === "super_admin"
+    && state.access.authorityStatus === "ready"
     && state.access.integrityValid && state.tabAccess[tab] === true;
   if (tab === "aiweb-import" && !state.access.permissionKeys.includes("prompts.edit")) return false;
   return state.tabAccess[tab] === true;
 }
 
 const BASE_WORKSPACE_PROJECT_IDS: readonly WorkspaceProjectId[] = [
-  "image",
   "cover",
   "storyboard",
   "video",
@@ -670,22 +667,33 @@ const LEGACY_WORKSPACE_TAB_PROJECT: Readonly<Record<string, WorkspaceProjectId>>
   "voice-studio": "voice",
   "manju-workbench": "manju",
   plugins: "tools",
+  // 角色预设与封面模板已并入工作台配置，保留旧 tab 深链的落点。
+  "storyboard-presets": "presets",
+  "cover-styles": "cover-templates",
   // The legacy editor and API are retired. Keep its stable deep link useful by
   // taking administrators to the live storyboard workspace configuration.
   "canvas-prompts": "storyboard",
 };
 
 const WORKSPACE_PROJECT_IDS: WorkspaceProjectId[] = [
-  "image", "cover", "storyboard", "video", "film", "publish-center",
-  "voice", "commerce", "manju", "tools",
+  "cover", "storyboard", "video", "film", "publish-center",
+  "voice", "commerce", "manju", "tools", "presets", "cover-templates",
 ];
+
+const WORKSPACE_SETTINGS_PROJECT_IDS: readonly WorkspaceProjectId[] = ["presets", "cover-templates"];
 
 function isWorkspaceProjectId(value: unknown): value is WorkspaceProjectId {
   return typeof value === "string" && WORKSPACE_PROJECT_IDS.includes(value as WorkspaceProjectId);
 }
 
+function isModelWorkspaceProject(project: WorkspaceProjectId): boolean {
+  return !WORKSPACE_SETTINGS_PROJECT_IDS.includes(project);
+}
+
 function normalizeWorkspaceProject(value: unknown): WorkspaceProjectId | null {
   if (value === "digital-human") return "video";
+  // 独立生图工作台已下线（/image-workbench 重定向首页），旧配置链接落到封面制作。
+  if (value === "image") return "cover";
   return isWorkspaceProjectId(value) ? value : null;
 }
 
@@ -2750,6 +2758,7 @@ export default function AdminPage() {
   }, []);
 
   const [activeTab, setActiveTab] = useState<Tab>("users");
+  const [moduleExpandOverride, setModuleExpandOverride] = useState<Record<string, boolean>>({});
   const [hasUnsavedCoverConfiguration, setHasUnsavedCoverConfiguration] = useState(false);
   const [hasUnsavedPublishingConfiguration, setHasUnsavedPublishingConfiguration] = useState(false);
   const [memberContextId, setMemberContextId] = useState("");
@@ -2770,13 +2779,6 @@ export default function AdminPage() {
     () => new Set(adminAccess?.access.permissionKeys || []),
     [adminAccess?.access.permissionKeys],
   );
-  const allowedCommandCenterViews = useMemo(
-    () => visibleCommandCenterViews(
-      adminAccess?.access.permissionKeys || [],
-      adminAccess?.access.adminLevel === "super_admin",
-    ),
-    [adminAccess?.access.adminLevel, adminAccess?.access.permissionKeys],
-  );
   const visibleAdminTabs = useMemo(
     () => ADMIN_PRIMARY_NAVIGATION
       .flatMap((module) => module.tabs)
@@ -2791,6 +2793,8 @@ export default function AdminPage() {
     if (grantedPermissionKeys.has("agents.view") && grantedPermissionKeys.has("prompts.view") && grantedPermissionKeys.has("models.view")) projects.push("commerce");
     if (grantedPermissionKeys.has("agents.manage") && grantedPermissionKeys.has("prompts.view")) projects.push("manju");
     if (grantedPermissionKeys.has("integrations.manage")) projects.push("tools");
+    if (grantedPermissionKeys.has("platform.settings.manage")) projects.push("presets");
+    if (grantedPermissionKeys.has("prompts.view")) projects.push("cover-templates");
     return projects;
   }, [grantedPermissionKeys]);
   const visibleWorkspaceProjectSet = useMemo(
@@ -2907,7 +2911,7 @@ export default function AdminPage() {
   const openAdminTab = useCallback((tab: Tab, historyMode: "push" | "replace" = "push") => {
     const nextTab = visibleAdminTabSet.has(tab) ? tab : firstAllowedTab;
     if (!nextTab) return;
-    if (nextTab !== "cover-styles" && hasUnsavedCoverConfiguration && !window.confirm("封面制作管理有尚未保存的修改，是否离开？")) return;
+    if (hasUnsavedCoverConfiguration && !window.confirm("封面模板管理有尚未保存的修改，是否离开？")) return;
     if (nextTab !== "publishing" && hasUnsavedPublishingConfiguration && !window.confirm("发布管理有尚未保存的修改，是否离开？")) return;
     setActiveTab(nextTab);
     if (nextTab === "users") setUserSubTab("members");
@@ -2944,7 +2948,7 @@ export default function AdminPage() {
 
   const openWorkspaceProject = useCallback((project: WorkspaceProjectId, historyMode: "push" | "replace" = "push") => {
     if (!visibleAdminTabSet.has("workspace-models")) return;
-    if (hasUnsavedCoverConfiguration && !window.confirm("封面制作管理有尚未保存的修改，是否离开？")) return;
+    if (hasUnsavedCoverConfiguration && !window.confirm("封面模板管理有尚未保存的修改，是否离开？")) return;
     if (hasUnsavedPublishingConfiguration && !window.confirm("发布管理有尚未保存的修改，是否离开？")) return;
     const requestedProject = normalizeWorkspaceProject(project);
     const nextProject = requestedProject && visibleWorkspaceProjectSet.has(requestedProject)
@@ -2979,10 +2983,9 @@ export default function AdminPage() {
       const nextTab = candidateTab && visibleAdminTabSet.has(candidateTab)
         ? candidateTab
         : firstAllowedTab;
-      if (nextTab !== "cover-styles" && hasUnsavedCoverConfiguration && visibleAdminTabSet.has("cover-styles")
-        && !window.confirm("封面制作管理有尚未保存的修改，是否离开？")) {
-        url.searchParams.set("tab", "cover-styles");
-        url.searchParams.delete("project");
+      if (hasUnsavedCoverConfiguration && !window.confirm("封面模板管理有尚未保存的修改，是否离开？")) {
+        url.searchParams.set("tab", "workspace-models");
+        url.searchParams.set("project", "cover-templates");
         url.searchParams.delete("member");
         window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
         return;
@@ -3492,6 +3495,78 @@ export default function AdminPage() {
   const [batchAvatarResults, setBatchAvatarResults] = useState<Array<{
     id: string; name: string; avatarUrl: string; success: boolean; saved?: boolean; error?: string;
   }> | null>(null);
+
+  // ── 批量设置对话模型 ──
+  const [batchModelSelectedIds, setBatchModelSelectedIds] = useState<string[]>([]);
+  const [batchModelId, setBatchModelId] = useState("");
+  const [batchModelConfirmOpen, setBatchModelConfirmOpen] = useState(false);
+  const [batchModelBusy, setBatchModelBusy] = useState(false);
+  const [batchModelResult, setBatchModelResult] = useState<{
+    success: boolean;
+    requested: number;
+    changed: number;
+    failed: number;
+    modelName: string;
+    results: Array<{ agentId: string; name: string; ok: boolean; changed?: boolean; error?: string }>;
+  } | null>(null);
+
+  const toggleBatchModelAgent = (agentId: string) => {
+    setBatchModelSelectedIds((current) => current.includes(agentId)
+      ? current.filter((id) => id !== agentId)
+      : [...current, agentId]);
+    setBatchModelResult(null);
+  };
+  const toggleBatchModelSelectAll = (agentIds: string[]) => {
+    setBatchModelSelectedIds((current) => agentIds.every((id) => current.includes(id)) ? [] : [...agentIds]);
+    setBatchModelResult(null);
+  };
+  const clearBatchModelSelection = () => {
+    setBatchModelSelectedIds([]);
+    setBatchModelId("");
+    setBatchModelResult(null);
+  };
+  const submitBatchModel = async () => {
+    if (batchModelBusy || !batchModelId || batchModelSelectedIds.length === 0) return;
+    setBatchModelBusy(true);
+    try {
+      const response = await fetch("/api/admin/agents/batch-model", {
+        method: "POST",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ agentIds: batchModelSelectedIds, modelId: batchModelId }),
+      });
+      const body = await response.json().catch(() => ({})) as {
+        success?: boolean;
+        requested?: number;
+        changed?: number;
+        failed?: number;
+        model?: { modelName?: string };
+        results?: Array<{ agentId: string; name: string; ok: boolean; changed?: boolean; error?: string }>;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(body.error || "批量设置失败");
+      const next = {
+        success: Boolean(body.success),
+        requested: Number(body.requested) || 0,
+        changed: Number(body.changed) || 0,
+        failed: Number(body.failed) || 0,
+        modelName: String(body.model?.modelName || ""),
+        results: Array.isArray(body.results) ? body.results : [],
+      };
+      setBatchModelResult(next);
+      setBatchModelConfirmOpen(false);
+      await loadAgents();
+      if (next.failed === 0) {
+        showMessage("success", `已为 ${next.requested} 个智能体设置对话模型`);
+        setBatchModelSelectedIds([]);
+      } else {
+        showMessage("error", `${next.failed} 个智能体设置失败，请在列表下方查看原因`);
+      }
+    } catch (error) {
+      showMessage("error", error instanceof Error ? error.message : "批量设置失败");
+    } finally {
+      setBatchModelBusy(false);
+    }
+  };
 
   const AVATAR_STYLES = ["主站3D卡通", "3D风", "卡通风", "科技风", "简约风", "渐变风", "国风"];
 
@@ -6392,22 +6467,115 @@ const handleDeleteCategory = async () => {
                 const tab = ADMIN_TABS_BY_KEY.get(targetTab);
                 if (!tab) return null;
                 const selected = allowedTabs.includes(activeTab);
-                const label = targetTab === module.root
-                  ? module.title
-                  : (ADMIN_SECONDARY_LABELS[targetTab] || tab.label);
+                const collapsible = allowedTabs.length > 1;
+                const expanded = moduleExpandOverride[module.root] ?? selected;
+                if (module.root === "workspace-models") {
+                  const activeProject = activeTab === "workspace-models" ? workspaceProject : null;
+                  return (
+                    <div key={module.root}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!selected) openWorkspaceProject(workspaceProject);
+                          setModuleExpandOverride((current) => ({ ...current, [module.root]: !(current[module.root] ?? selected) }));
+                        }}
+                        aria-expanded={expanded}
+                        aria-current={selected ? "page" : undefined}
+                        title={module.title}
+                        data-testid="admin-primary-nav-workspace-models"
+                        className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors ${selected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#172033]"}`}
+                      >
+                        <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} /></svg>
+                        <span className="truncate">{module.title}</span>
+                        <svg className={`ml-auto h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+                      {expanded && (
+                        <div className="ml-[22px] mt-0.5 space-y-1 border-l border-[#eaecf0] pl-2">
+                          {WORKSPACE_PROJECT_GROUPS.map((group, groupIndex) => {
+                            const items = WORKSPACE_PROJECT_NAVIGATION.filter((entry) => entry.group === group && visibleWorkspaceProjectSet.has(entry.id));
+                            if (items.length === 0) return null;
+                            return (
+                              <div key={group} className={groupIndex > 0 ? "mt-1 border-t border-[#f2f4f7] pt-2" : ""}>
+                                {items.map((entry) => {
+                                  const itemSelected = activeProject === entry.id;
+                                  return (
+                                    <button
+                                      key={entry.id}
+                                      type="button"
+                                      data-testid={`admin-workspace-project-${entry.id}`}
+                                      aria-current={itemSelected ? "page" : undefined}
+                                      title={entry.description}
+                                      onClick={() => openWorkspaceProject(entry.id)}
+                                      className={`flex min-h-9 w-full items-center rounded-md px-3 py-1.5 text-left text-[13px] font-medium transition-colors ${itemSelected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#667085] hover:bg-[#f2f4f7] hover:text-[#172033]"}`}
+                                    >
+                                      <span className="truncate">{entry.label}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                if (!collapsible) {
+                  return (
+                    <button
+                      key={targetTab}
+                      type="button"
+                      onClick={() => openAdminTab(targetTab)}
+                      aria-current={selected ? "page" : undefined}
+                      title={module.title}
+                      data-testid={`admin-primary-nav-${targetTab}`}
+                      className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors ${selected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#172033]"}`}
+                    >
+                      <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} /></svg>
+                      <span className="truncate">{module.title}</span>
+                    </button>
+                  );
+                }
                 return (
-                  <button
-                    key={targetTab}
-                    type="button"
-                    onClick={() => openAdminTab(targetTab)}
-                    aria-current={selected ? "page" : undefined}
-                    title={label}
-                    data-testid={`admin-primary-nav-${targetTab}`}
-                    className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors ${selected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#172033]"}`}
-                  >
-                    <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} /></svg>
-                    <span className="truncate">{label}</span>
-                  </button>
+                  <div key={module.root}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!selected) openAdminTab(targetTab);
+                        setModuleExpandOverride((current) => ({ ...current, [module.root]: !(current[module.root] ?? selected) }));
+                      }}
+                      aria-expanded={expanded}
+                      aria-current={selected ? "page" : undefined}
+                      title={module.title}
+                      data-testid={`admin-primary-nav-${module.root}`}
+                      className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors ${selected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#172033]"}`}
+                    >
+                      <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} /></svg>
+                      <span className="truncate">{module.title}</span>
+                      <svg className={`ml-auto h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    {expanded && (
+                      <div className="ml-[22px] mt-0.5 space-y-0.5 border-l border-[#eaecf0] pl-2">
+                        {allowedTabs.map((tabKey) => {
+                          const subTab = ADMIN_TABS_BY_KEY.get(tabKey);
+                          if (!subTab) return null;
+                          const subSelected = activeTab === tabKey;
+                          return (
+                            <button
+                              key={tabKey}
+                              type="button"
+                              onClick={() => openAdminTab(tabKey)}
+                              aria-current={subSelected ? "page" : undefined}
+                              data-testid={`admin-subnav-${tabKey}`}
+                              className={`flex min-h-9 w-full items-center rounded-md px-3 py-1.5 text-left text-[13px] font-medium transition-colors ${subSelected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#667085] hover:bg-[#f2f4f7] hover:text-[#172033]"}`}
+                            >
+                              <span className="truncate">{ADMIN_SECONDARY_LABELS[tabKey] || subTab.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -6417,46 +6585,13 @@ const handleDeleteCategory = async () => {
         <main className="min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1680px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
             <nav aria-label="移动端管理后台功能导航" className="mb-4 flex gap-2 overflow-x-auto border-b border-[#e4e7ec] bg-white p-2 lg:hidden">
-              {ADMIN_PRIMARY_NAVIGATION.map((module) => {
-                const allowedTabs = module.tabs.filter((tabKey) => visibleAdminTabSet.has(tabKey));
-                const targetTab = allowedTabs[0];
-                if (!targetTab) return null;
-                const tab = ADMIN_TABS_BY_KEY.get(targetTab);
+              {visibleAdminTabs.map((tabKey) => {
+                const tab = ADMIN_TABS_BY_KEY.get(tabKey);
                 if (!tab) return null;
-                const selected = allowedTabs.includes(activeTab);
-                const label = targetTab === module.root
-                  ? module.title
-                  : (ADMIN_SECONDARY_LABELS[targetTab] || tab.label);
-                return <button key={targetTab} type="button" onClick={() => openAdminTab(targetTab)} aria-current={selected ? "page" : undefined} className={`shrink-0 rounded-md px-3 py-2 text-sm font-semibold ${selected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#475467]"}`}>{label}</button>;
+                const selected = activeTab === tabKey;
+                return <button key={tabKey} type="button" onClick={() => openAdminTab(tabKey)} aria-current={selected ? "page" : undefined} className={`shrink-0 rounded-md px-3 py-2 text-sm font-semibold ${selected ? "bg-[#eaf2ff] text-[#175cd3]" : "text-[#475467]"}`}>{ADMIN_SECONDARY_LABELS[tabKey] || tab.label}</button>;
               })}
             </nav>
-
-            {(() => {
-              const activeModule = adminModuleForTab(activeTab);
-              const allowedTabs = activeModule?.tabs.filter((tabKey) => visibleAdminTabSet.has(tabKey)) || [];
-              if (!activeModule || allowedTabs.length <= 1) return null;
-              return (
-                <div className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-2 shadow-sm" data-testid={`admin-module-${activeModule.root}`}>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {visibleAdminTabSet.has(activeModule.root) && (
-                      <>
-                        <span className="px-2 text-xs font-black text-[var(--foreground)]">{activeModule.title}</span>
-                        <span className="h-5 w-px bg-[var(--border)]" />
-                      </>
-                    )}
-                    {allowedTabs.map((tabKey) => {
-                      const tab = ADMIN_TABS_BY_KEY.get(tabKey);
-                      if (!tab) return null;
-                      return (
-                        <button key={tabKey} type="button" onClick={() => openAdminTab(tabKey)} aria-current={activeTab === tabKey ? "page" : undefined} className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${activeTab === tabKey ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--secondary-foreground)] hover:bg-[var(--muted)]"}`}>
-                          {ADMIN_SECONDARY_LABELS[tabKey] || tab.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
 
         {!activeTabAllowed ? (
           <section data-testid="admin-access-empty" className="rounded-2xl border border-[#eaecf0] bg-white p-8 shadow-sm">
@@ -6477,10 +6612,10 @@ const handleDeleteCategory = async () => {
           />
         )}
 
-        {/* ========= Platform Command Center ========= */}
+        {/* ========= Ops Patrol ========= */}
         {activeTab === "dashboard" && (
-          <div className="min-w-0" data-testid="admin-command-center-surface">
-            <CommandCenterPanel token={token} allowedViews={allowedCommandCenterViews} allowedAdminTabs={visibleAdminTabs} />
+          <div className="min-w-0" data-testid="admin-ops-patrol-surface">
+            <OpsPatrolPanel token={token} onRequestUnlock={() => setUnlockDialogRequested(true)} />
           </div>
         )}
         {/* ========= Agents Tab ========= */}
@@ -7948,10 +8083,82 @@ const handleDeleteCategory = async () => {
                   </div>
                 </div>
               )}
+              {canManageAgentConfiguration && batchModelSelectedIds.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-500/20 bg-blue-500/10 px-4 py-2" data-testid="agent-batch-model-bar">
+                  <span className="text-xs font-medium text-blue-700">已选 {batchModelSelectedIds.length} 个智能体</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label="批量设置对话模型"
+                      data-testid="agent-batch-model-select"
+                      value={batchModelId}
+                      onChange={(event) => { setBatchModelId(event.target.value); setBatchModelResult(null); }}
+                      className={inputCls + " h-9 w-64 text-sm"}
+                    >
+                      <option value="">选择对话模型</option>
+                      {llmModels.filter((model) => model.is_active !== false).map((model) => (
+                        <option key={model.id} value={model.id}>{model.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!batchModelId || batchModelBusy}
+                      onClick={() => setBatchModelConfirmOpen(true)}
+                      data-testid="agent-batch-model-apply"
+                      className="rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    >批量设置</button>
+                    <button type="button" onClick={clearBatchModelSelection} className="px-2 py-1.5 text-xs text-blue-700">清除选择</button>
+                  </div>
+                </div>
+              )}
+              {batchModelResult && (
+                <div role="status" data-testid="agent-batch-model-result" className={`border-b px-4 py-2 text-xs ${batchModelResult.failed > 0 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+                  <p className="font-semibold">
+                    批量设置完成：成功 {batchModelResult.requested - batchModelResult.failed} / 共 {batchModelResult.requested}
+                    {batchModelResult.failed > 0 ? `，失败 ${batchModelResult.failed}` : ""}
+                    {batchModelResult.modelName ? ` · 目标模型 ${batchModelResult.modelName}` : ""}
+                  </p>
+                  {batchModelResult.results.some((item) => !item.ok) && (
+                    <ul className="mt-1 space-y-0.5">
+                      {batchModelResult.results.filter((item) => !item.ok).slice(0, 5).map((item) => (
+                        <li key={item.agentId}>{item.name}：{item.error || "设置失败"}</li>
+                      ))}
+                      {batchModelResult.results.filter((item) => !item.ok).length > 5 && <li>其余失败项请重试后查看。</li>}
+                    </ul>
+                  )}
+                </div>
+              )}
+              {batchModelConfirmOpen && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[#101828]/45 p-4" role="presentation">
+                  <div role="dialog" aria-modal="true" aria-label="确认批量设置对话模型" className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-xl">
+                    <h3 className="text-lg font-semibold text-[var(--foreground)]">批量设置对话模型</h3>
+                    <p className="mt-2 text-sm text-[var(--muted-foreground)]">将把 <span className="font-bold text-[var(--foreground)]">{batchModelSelectedIds.length}</span> 个智能体的对话模型设置为：</p>
+                    <p className="mt-2 rounded-lg bg-[var(--secondary)] px-3 py-2 text-sm font-semibold text-[var(--foreground)]">{llmModels.find((model) => model.id === batchModelId)?.name || "未选择模型"}</p>
+                    <p className="mt-3 text-xs leading-5 text-[var(--muted-foreground)]">只修改对话模型与模型名称，不改提示词、头像、计费与分类；每个智能体按当前配置版本校验，冲突项会单独失败并列出原因。</p>
+                    <div className="mt-5 flex justify-end gap-2">
+                      <button type="button" onClick={() => setBatchModelConfirmOpen(false)} disabled={batchModelBusy} className={btnGhost}>取消</button>
+                      <button type="button" onClick={() => void submitBatchModel()} disabled={batchModelBusy} data-testid="agent-batch-model-confirm" className={btnPrimary + " disabled:cursor-not-allowed disabled:opacity-50"}>{batchModelBusy ? "设置中…" : "确认设置"}</button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <table className="w-full">
                 <thead className="bg-[var(--card)] border-b border-[var(--border)]">
                   <tr>
-                    <th className="text-left px-2 py-3 text-xs font-medium text-[var(--muted-foreground)] w-8"></th>
+                    <th className="text-left px-2 py-3 text-xs font-medium text-[var(--muted-foreground)] w-20">
+                      {canManageAgentConfiguration ? (
+                        <label className="flex items-center gap-1.5" title="全选当前列表中的智能体">
+                          <input
+                            type="checkbox"
+                            aria-label="全选当前列表智能体"
+                            data-testid="agent-batch-model-select-all"
+                            checked={getFilteredAndSortedAgents().length > 0 && getFilteredAndSortedAgents().every((agent) => batchModelSelectedIds.includes(agent.id))}
+                            onChange={() => toggleBatchModelSelectAll(getFilteredAndSortedAgents().map((agent) => agent.id))}
+                            className="rounded border-[var(--border)]"
+                          />
+                          <span className="text-[10px] font-normal">批量</span>
+                        </label>
+                      ) : null}
+                    </th>
                     {["头像", "名称", "前台分类 / 原始分类", "来源", "模型", "计费模式", "状态", "操作"].map((h) => (
                       <th key={h} className={`text-left px-4 py-3 text-xs font-medium text-[var(--muted-foreground)] uppercase ${h === "操作" ? "text-right" : ""}`}>{h}</th>
                     ))}
@@ -8007,7 +8214,20 @@ const handleDeleteCategory = async () => {
                       >
                         {/* 拖拽手柄列 + 插入指示线 */}
                         <td className="px-1 py-3 relative">
-                          {canDragAgentRows && <span className="cursor-grab active:cursor-grabbing text-[var(--muted-foreground)]/40 hover:text-[var(--muted-foreground)] select-none" title="拖拽排序">⠿</span>}
+                          <div className="flex items-center gap-1.5">
+                            {canManageAgentConfiguration && (
+                              <input
+                                type="checkbox"
+                                aria-label={`选择 ${agent.name}`}
+                                data-testid={`agent-batch-model-select-${agent.id}`}
+                                checked={batchModelSelectedIds.includes(agent.id)}
+                                onChange={() => toggleBatchModelAgent(agent.id)}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                className="rounded border-[var(--border)]"
+                              />
+                            )}
+                            {canDragAgentRows && <span className="cursor-grab active:cursor-grabbing text-[var(--muted-foreground)]/40 hover:text-[var(--muted-foreground)] select-none" title="拖拽排序">⠿</span>}
+                          </div>
                           {isDragTarget && dragOverPosition === "before" && !isDragged && (
                             <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--primary)] rounded-full z-20 shadow-[0_0_6px_var(--primary)]" />
                           )}
@@ -8932,7 +9152,7 @@ const handleDeleteCategory = async () => {
             <div className={cardCls}>
               <label className={labelCls}>全站发布主题</label>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">主题发布直接写入运行配置并完成公共启动接口读回校验，不需要重新部署代码。没有有效个人偏好的账号立即采用这里的主题；已有个人选择按七天租约继续生效。</p>
-              <div className="mt-3 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="mt-3 grid max-w-5xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {ADMIN_THEME_OPTIONS.map((t) => (
                   <button
                     key={t.id}
@@ -9356,6 +9576,8 @@ const handleDeleteCategory = async () => {
         {activeTab === "models" && (
           <ModelsAdminTab
             token={token}
+            onUnlock={() => setUnlockDialogRequested(true)}
+            onConfigureWorkspace={visibleAdminTabSet.has("workspace-models") && visibleWorkspaceProjectIds.length ? () => openWorkspaceProject(isModelWorkspaceProject(workspaceProject) ? workspaceProject : "storyboard") : undefined}
             canManageModelsPermission={hasModelSettingsPermission}
             sensitiveUnlocked={sensitiveUnlocked}
             canManagePlugins={hasIntegrationSettingsPermission}
@@ -9368,19 +9590,8 @@ const handleDeleteCategory = async () => {
           />
         )}
 
-        {activeTab === "cover-styles" && token && grantedPermissionKeys.has("prompts.view") && (
-          <CoverStylesAdminTab token={token} canEdit={canEditPrompts} unlocked={canReadPrompts} onDirtyChange={setHasUnsavedCoverConfiguration} />
-        )}
-
         {activeTab === "publishing" && token && grantedPermissionKeys.has("integrations.manage") && grantedPermissionKeys.has("packages.manage") && (
           <PublishingAdminTab onDirtyChange={setHasUnsavedPublishingConfiguration} accessEpoch={String(adminAccess?.stepUp.expiresAt || "")} />
-        )}
-
-        {activeTab === "storyboard-presets" && token && grantedPermissionKeys.has("platform.settings.manage") && (
-          <StoryboardPresetsAdminTab token={token} actorId={String(userInfo?.id || "")}
-            accessEpoch={String(adminAccess?.stepUp.expiresAt || "")}
-            ready={Boolean(userInfo?.id && adminAccess?.access.authorityStatus === "ready" && adminAccess.access.integrityValid && sensitiveUnlocked)}
-            onRequestUnlock={() => setUnlockDialogRequested(true)} />
         )}
 
         {activeTab === "workspace-models" && token && (
@@ -9392,8 +9603,42 @@ const handleDeleteCategory = async () => {
             visibleProjectIds={visibleWorkspaceProjectIds}
             canManage={grantedPermissionKeys.has("models.manage") && sensitiveUnlocked}
             onProjectChange={openWorkspaceProject}
-            onOpenModels={() => openAdminTab("models")}
             onOpenAdmin={openWorkspaceAdminTarget}
+            renderCommerceAdmin={() => {
+              if (!grantedPermissionKeys.has("agents.view") || !grantedPermissionKeys.has("prompts.view") || !grantedPermissionKeys.has("models.view")) return null;
+              if (!sensitiveUnlocked) {
+                return (
+                  <div className="rounded-lg border border-dashed border-[#d0d5dd] bg-[#f9fafb] px-6 py-12 text-center text-sm text-[#667085]">
+                    <p>带货创作后台需要完成敏感操作验证后读取。</p>
+                    <button type="button" onClick={() => setUnlockDialogRequested(true)} className="mt-4 rounded-md bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]">解锁敏感操作</button>
+                  </div>
+                );
+              }
+              return <CommerceAgentAdminTab token={token} permissionKeys={adminAccess?.access.permissionKeys || []} />;
+            }}
+            renderEmbeddedTab={(tab) => {
+              if (tab === "storyboard-presets") {
+                if (!grantedPermissionKeys.has("platform.settings.manage")) return null;
+                return (
+                  <StoryboardPresetsAdminTab
+                    token={token}
+                    actorId={String(userInfo?.id || "")}
+                    accessEpoch={String(adminAccess?.stepUp.expiresAt || "")}
+                    ready={Boolean(userInfo?.id && adminAccess?.access.authorityStatus === "ready" && adminAccess.access.integrityValid && sensitiveUnlocked)}
+                    onRequestUnlock={() => setUnlockDialogRequested(true)}
+                  />
+                );
+              }
+              if (!grantedPermissionKeys.has("prompts.view")) return null;
+              return (
+                <CoverStylesAdminTab
+                  token={token}
+                  canEdit={canEditPrompts}
+                  unlocked={canReadPrompts}
+                  onDirtyChange={setHasUnsavedCoverConfiguration}
+                />
+              );
+            }}
             renderAdminTarget={(target: WorkspaceSpecializedTarget) => {
               const protectedPanel = (
                 <div data-testid="workspace-protected-config" className="rounded-md border border-dashed border-[#d0d5dd] bg-[#f9fafb] px-6 py-12 text-center text-sm text-[#667085]">
@@ -9403,10 +9648,7 @@ const handleDeleteCategory = async () => {
               if (target === "commerce") {
                 if (!grantedPermissionKeys.has("agents.view") || !grantedPermissionKeys.has("prompts.view") || !grantedPermissionKeys.has("models.view")) return null;
                 return canReadPrompts ? (
-                  <CommerceAgentAdminTab
-                    token={token}
-                    permissionKeys={adminAccess?.access.permissionKeys || []}
-                  />
+                  <a className="inline-flex rounded-lg bg-neutral-900 px-5 py-3 text-white" href="/commerce/manage">进入带货创作管理后台</a>
                 ) : protectedPanel;
               }
               if (target === "digital-human") {

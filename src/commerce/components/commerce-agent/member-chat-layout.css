@@ -1,0 +1,231 @@
+.cs-studio .cs-member-chat{background:#fcfcfc}
+.cs-member-chat .ca-chat-history{box-sizing:border-box;background:var(--account-surface,#fcfcfc);margin-bottom:0;padding:0 6px 12px;border-right:1px solid #e5e7eb}
+.cs-member-chat .ca-chat-history header{height:52px;margin:0;padding:0 10px;font-size:17px;font-weight:500}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-history>button{box-sizing:border-box;justify-content:flex-start;height:36px;min-height:36px;margin:4px 0 0;padding:0 8px;gap:8px;border-radius:8px;font-size:14px;line-height:20px;color:var(--account-text,#181818)}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-history .ca-chat-new{margin-top:8px}
+.cs-member-chat .ca-chat-history header button{width:36px;height:36px;display:grid;place-content:center;margin-right:-6px}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-history h3{--ca-ink:var(--commerce-night-muted,#8f8f8f);width:fit-content;margin:28px 10px 8px;font-size:14px;line-height:20px;color:#8f8f8f;font-weight:500}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-history h3~button{margin-top:1px}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-history h3+button{margin-top:0}
+.cs-member-chat .ca-chat-history h3~button>svg{display:none}
+.cs-member-chat .ca-chat-history h3~button>span{width:100%;padding-right:10px;text-overflow:clip;mask-image:linear-gradient(to right,#000 calc(100% - 12px),transparent)}
+.cs-member-chat .ca-chat-main{padding:0 16px 16px}
+.cs-studio .cs-member-chat .ca-chat-composer{position:relative;box-sizing:border-box;width:min(768px,100%);min-height:130px;background:white;border:1px solid rgba(0,0,0,.06);border-radius:20px;padding:12px;box-shadow:0 1px 2px #0000000d}
+.commerce-root.cs-studio .cs-member-chat.cs-chat-empty .ca-chat-main .ca-chat-composer:not(:has(.ca-hero-materials > *),:has([role=alert])){height:130px}
+.cs-member-chat .ca-chat-input{display:flex;flex-direction:column;gap:4px;min-height:64px}
+.cs-agent-skill-selection{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cs-agent-skill-selection>span{display:inline-flex;align-items:center;gap:6px;border-radius:6px;background:#edf4ff;color:#1565c0;padding:3px 7px;font-size:13px}
+.cs-agent-skill-selection>span button{font-size:15px;padding:0 2px}
+.cs-agent-skill-selection>button,.cs-agent-skill-selection small{font-size:12px;color:#525252}
+.commerce-root.cs-studio .cs-member-chat.cs-chat-empty .ca-chat-main .ca-chat-composer:has(.cs-agent-skill-selection){height:auto}
+.cs-member-chat .ca-chat-input textarea{min-height:64px;font-size:16px;line-height:24px;padding:0}
+.cs-member-chat .ca-hero-materials:empty{display:none}
+.cs-studio .cs-member-chat .ca-chat-composer .ca-composer-bottom{box-sizing:border-box;display:flex;gap:4px;align-items:center;margin-top:8px;height:32px;min-height:32px}
+.cs-member-chat .ca-chat-model-control{position:relative;display:flex;align-items:center;min-height:32px}
+.cs-member-chat .ca-chat-model-control .ca-model-select>span{display:flex;align-items:center;gap:5px}
+.cs-member-chat .ca-chat-model-control small[role=status]{font-size:10px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-member-chat .cs-chat-mic{display:grid;place-items:center;margin-left:auto;padding:0;width:32px;height:32px;color:#727272}
+.cs-member-chat .ca-composer-bottom>.ca-send{margin:0;width:32px;height:32px}
+.cs-member-chat .cs-chat-attach{position:relative}
+.cs-member-chat .cs-chat-attach>button{display:grid;place-items:center;width:32px;height:32px}
+.cs-member-chat .cs-chat-attach .ca-anchored-panel{position:absolute;bottom:38px;left:0;min-width:170px;padding:6px}
+.cs-member-chat .cs-chat-attach .ca-anchored-panel button{width:100%;text-align:left;padding:7px 10px}
+.cs-chat-empty .ca-messages{display:none}
+.commerce-root.cs-studio .cs-chat-empty .ca-chat-main>.cs-chat-heading{display:block;color:var(--account-text,#181818);opacity:1;z-index:1;position:absolute;width:min(768px,calc(100% - 32px));left:50%;transform:translateX(-50%);top:calc(50% - 114px);font-weight:400;font-size:24px;line-height:36px;margin:0;text-align:center}
+.commerce-root.cs-studio .cs-member-chat.cs-chat-empty .ca-chat-main .ca-chat-composer{position:absolute;left:50%;top:calc(50% - 50px);transform:translateX(-50%);width:min(768px,calc(100% - 32px));margin:0}
+.commerce-root.cs-studio .cs-member-chat.cs-chat-empty .cs-chat-thread-head{position:absolute;top:8px;right:24px;width:36px;height:36px;z-index:2;padding:0}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-composer .ca-send{display:grid;place-content:center;background:#181818;color:#fcfcfc;border:0;border-radius:50%;padding:0;margin:0 0 0 4px;width:32px;height:32px}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-composer .ca-send:disabled{opacity:.35}
+.cs-studio .cs-member-chat .ca-chat-composer:has([aria-expanded=true],.ca-anchored-panel){z-index:5}
+.commerce-root.cs-studio .cs-member-chat .ca-composer-bottom :is(.cs-chat-attach>button,.cs-pref-trigger,.cs-chat-mic,.cs-chat-environment-trigger){border-radius:9999px}
+.commerce-root.cs-studio .cs-member-chat .ca-composer-bottom :is(.cs-pref-trigger>svg,.cs-chat-mic,.cs-chat-environment-trigger){color:var(--commerce-night-muted,#717171)}
+.cs-member-chat .cs-chat-environment{position:relative;color:var(--account-text,#181818)}
+.cs-studio .cs-member-chat .cs-chat-environment-trigger{display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:24px;background:transparent;color:inherit;font-size:12px;height:32px;width:118px;padding:0 8px}
+.cs-studio .cs-member-chat .cs-chat-environment-trigger[aria-expanded=true],.cs-studio .cs-member-chat .cs-chat-environment-trigger:hover{background:var(--account-hover,#f1f1f1)}
+.cs-chat-environment-menu{position:absolute;z-index:12;bottom:calc(100% + 4px);left:0;width:220px;padding:8px;box-sizing:border-box;background:var(--account-bg,#fff);border:1px solid var(--account-line,#ebebeb);border-radius:9px;box-shadow:0 4px 16px #0001}
+.cs-chat-environment-menu h3{margin:0;padding:2px 6px 6px;font-size:12px;font-weight:400;color:var(--commerce-night-muted,#737373)}
+.cs-studio .cs-chat-environment-menu>button{display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 8px;border-radius:6px;font-size:13px;color:inherit}
+.cs-chat-environment-menu>button[aria-pressed=true]{background:var(--account-hover,#f1f1f1)}
+.cs-chat-environment-menu>button small{margin-left:auto}
+.cs-chat-environment-model{border-top:1px solid var(--account-line,#eee);margin-top:5px;padding-top:5px}
+.cs-chat-environment-menu>button>svg:last-child:not(:first-child){margin-left:auto}
+.cs-chat-environment-model .ca-chat-model-control{flex-direction:column;align-items:flex-start;gap:3px}
+.cs-studio .cs-chat-environment-model .ca-model-select{display:flex;flex:none;min-width:0;width:100%;padding:4px;font-size:12px}
+.cs-studio .cs-chat-environment-model .ca-model-select>span{min-width:0;display:grid;text-align:left}
+.cs-studio .cs-chat-environment-model .ca-model-select strong{overflow:hidden;text-overflow:ellipsis}
+.cs-member-chat .cs-chat-environment-model small[role=status]{max-width:100%;white-space:normal}
+.cs-member-chat .ca-history-toggle{position:absolute;z-index:1;left:10px;top:8px}
+
+.cs-agent-flyout {position:fixed;inset-block:4px;width:248px;z-index:90;background:#fcfcfc;color:#171717;border:1px solid #ededed;box-sizing:border-box;border-radius:14px;box-shadow:0 4px 16px #0002;display:flex;flex-direction:column;font:14px/20px system-ui,sans-serif;}
+.cs-agent-flyout header {display:flex;align-items:center;justify-content:space-between;height:52px;flex:none;padding:0 16px;font-size:18px;}
+.cs-agent-flyout button {display:flex;align-items:center;gap:8px;border:0;background:none;color:inherit;font:inherit;cursor:pointer;text-align:left;}
+.cs-agent-flyout header button {padding:4px;color:#777;}
+.cs-agent-flyout>div {overflow:auto;padding:8px 6px 8px 10px;}
+.cs-agent-flyout>div button {width:100%;height:36px;padding:0 8px;border-radius:8px;}
+.cs-agent-flyout>div button+button {margin-top:4px;}
+.cs-agent-flyout>div button:hover,.cs-agent-flyout>div button:focus-visible {background:#ececec;}
+.cs-agent-flyout h3 {font:500 14px/20px system-ui;color:#888;margin:24px 10px 6px;}
+.cs-agent-flyout button span {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cs-studio .cs-chat-thread-head {position:relative;display:flex;align-items:center;gap:12px;height:52px;flex:none;width:100%;padding:0 8px;}
+.cs-chat-thread-head strong {margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cs-chat-thread-head nav {position:absolute;top:100%;right:10px;z-index:3;display:grid;max-height:45vh;overflow:auto;max-width:320px;padding:8px;background:white;border:1px solid #eee;border-radius:8px;}
+.cs-chat-thread-head nav button {text-align:left;padding:6px;}
+.cs-chat-verification {display:block;text-align:center;color:#777;font-size:11px;padding:4px;}
+.cs-studio .cs-member-chat:not(.cs-chat-empty) .ca-messages {width:min(100%,800px);margin:0 auto;}
+.cs-studio .cs-member-chat:not(.cs-chat-empty) .ca-chat-composer {margin:0 auto;}
+.cs-video-tools {position:relative;}
+.cs-video-tools summary {cursor:pointer;list-style:none;padding:2px 6px;}
+.cs-video-tools>div {position:absolute;bottom:100%;right:0;min-width:128px;display:grid;z-index:5;background:#fff;border:1px solid #ddd;border-radius:8px;padding:4px;}
+.cs-studio .ca-video-helper-actions .cs-video-tools>div button {display:block;width:100%;padding:6px;text-align:left;}
+
+.commerce-root .cs-agent-flyout {z-index:91;}
+.commerce-root .cs-agent-flyout>header {padding-right:10px}
+.commerce-root .cs-agent-flyout>header button {width:36px;height:36px;display:grid;place-content:center;background:none;border:0;color:#777;}
+.cs-studio .cs-agent-flyout:not(.cs-media-flyout)>div {flex:1;min-height:0;margin-left:4px;padding-left:6px;}
+.cs-studio .cs-agent-flyout:not(.cs-media-flyout)>div button {justify-content:flex-start;width:100%;padding:0 8px;min-height:36px;background:transparent;border:0;}
+.cs-studio .cs-agent-flyout:not(.cs-media-flyout)>div button:is(:hover,:focus-visible) {background:#ededed;}
+.cs-flyout-spacer {width:248px;flex:none;}
+/* 历史会话项：更多操作（重命名/删除），对齐对标站交互 */
+.cs-agent-flyout .cs-history-item {position:relative;display:flex;align-items:center;margin-top:4px;}
+.cs-agent-flyout .cs-history-item>button {flex:1;min-width:0;}
+.cs-agent-flyout .cs-history-item .cs-history-actions {flex:none;position:relative;}
+.cs-agent-flyout .cs-history-item .cs-history-actions>button {width:26px!important;height:26px!important;min-height:0!important;padding:0!important;display:grid;place-content:center;color:#9a9da4;margin-top:0!important;opacity:0;}
+.cs-agent-flyout .cs-history-item:hover .cs-history-actions>button,.cs-agent-flyout .cs-history-actions>button[aria-expanded=true] {opacity:1;}
+.cs-agent-flyout .cs-history-menu {position:absolute;right:0;top:100%;z-index:5;min-width:96px;background:#fff;border:1px solid #e6e6e9;border-radius:8px;box-shadow:0 6px 18px #10182814;padding:4px;}
+.cs-agent-flyout .cs-history-menu button {width:100%!important;height:30px!important;min-height:0!important;padding:0 8px!important;font-size:12px;margin-top:0!important;border-radius:6px;}
+.cs-agent-flyout .cs-history-menu .cs-history-danger {color:#c45563;}
+.cs-agent-flyout .cs-history-rename {flex:1;min-width:0;height:32px;border:1px solid #c9cdd4;border-radius:8px;padding:0 8px;font:13px system-ui;outline:none;background:#fff;}
+.cs-agent-flyout .cs-history-rename:focus {border-color:#22252a;}
+.cs-studio .cs-media-flyout>div {padding:0;display:flex;flex:1;overflow:hidden;min-height:0;}
+.cs-studio .cs-media-flyout .cs-scenes-nav {width:100%;flex:1;padding:0;background:transparent;border:0;}
+.cs-studio .cs-media-flyout .cs-scenes-nav>div {margin-left:4px;padding:0 6px 8px 6px;}
+.cs-studio .cs-media-flyout .cs-scenes-nav section>button {display:flex;margin:0 0 1px;height:48px;padding:6px 8px;gap:14px;}
+.cs-studio .cs-media-flyout .cs-scenes-nav section>button span {display:grid;white-space:normal;overflow:hidden;}
+.cs-studio .cs-scenes-nav h3 {--ca-ink:var(--commerce-night-muted,#8f8f8f);}
+.cs-studio .cs-media-flyout .cs-scenes-nav h3 {margin:18px 10px 6px;font-size:14px;line-height:20px;font-weight:500;}
+.cs-studio .cs-scenes-nav section>button small {font-size:10px;color:var(--commerce-night-muted,#717171);}
+.commerce-root.cs-studio .cs-scenes-nav section>button:hover:not(:disabled) {color:var(--account-text,#181818);background:var(--account-hover,rgba(0,0,0,.06));}
+.cs-studio .cs-media-flyout .cs-scenes-nav section+section h3 {margin-top:30px;}
+.cs-studio .cs-flyout-pinned {inset-block:0;border-radius:0;box-shadow:none;}
+
+/* The workspace navigation scrolls independently of the page, without a gutter. */
+.commerce-root.cs-studio :is(.cs-agent-flyout>div,.cs-scenes-nav>div,.ca-chat-history,.cs-market-side,.ca-canvas-gallery,.ca-task-queue,.cs-market-scroll){
+  scrollbar-width:none;
+}
+.commerce-root.cs-studio :is(.cs-agent-flyout>div,.cs-scenes-nav>div,.ca-chat-history,.cs-market-side,.ca-canvas-gallery,.ca-task-queue,.cs-market-scroll)::-webkit-scrollbar{
+  display:none;
+}
+.commerce-root.cs-studio :is(.ca-chat-history,.cs-market-side)>header{
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:inherit;
+}
+/* 主滚动区同样隐藏滚动条：统一带货工作室无滚动条约定（见 studio.css 滚动条统一规则） */
+
+.cs-studio .cs-rail-wallet {display:grid;gap:0;width:40px;margin-bottom:12px;text-align:center;font-size:10px;line-height:18px;}
+.cs-member-chat .cs-reply-document {display:flex;align-items:center;gap:14px;width:min(480px,100%);box-sizing:border-box;height:76px;margin:16px 0 0;padding:0 16px;border-radius:10px;background:#eee;color:#171717;font-size:14px;}
+.cs-reply-document>span:first-child {display:grid;place-items:center;width:26px;height:30px;flex:none;border:1px solid #c3d4f7;border-radius:5px;color:#4675d5;background:white;font-weight:700;}
+.cs-reply-document>span:nth-child(2) {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cs-studio .cs-reply-document button[aria-label="下载回复"] {box-sizing:border-box;width:62px;height:32px;justify-content:center;font-size:12px;line-height:16px;}
+.cs-studio .cs-reply-document button {display:flex;align-items:center;gap:6px;flex:none;margin-left:auto;padding:6px;background:none;border:0;color:inherit;}
+
+.cs-studio .cs-chat-text-export {display:inline-flex;align-items:center;gap:4px;background:transparent;border:none;color:#666;padding:4px 0;font-size:12px;}
+
+.commerce-root.cs-studio .cs-member-chat:not(.cs-chat-empty) .ca-chat-main .ca-messages {
+  box-sizing:border-box;
+  width:min(768px,100%);
+  padding:12px 0;
+  margin-inline:auto;
+}
+.commerce-root.cs-studio .cs-member-chat:not(.cs-chat-empty) .ca-chat-main .ca-chat-composer {
+  width:min(768px,100%);
+  margin-inline:auto;
+}
+.cs-member-chat .ca-message-assistant .ca-script-content {
+  font-size:16px;
+  line-height:26px;
+}
+.cs-member-chat .ca-message-assistant .ca-script-content p {margin:0 0 4px;}
+.cs-member-chat .ca-message-assistant .ca-script-content li {line-height:26px;}
+.cs-member-chat .ca-message-assistant .ca-script-content :is(ul,ol) {margin:0 0 4px;padding-left:24px;}
+
+.cs-studio .cs-reply-document button.cs-reply-file-name {display:block;flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0;padding:0;}
+.cs-chat-thread-head>button {display:grid;place-items:center;width:36px;height:36px;flex:none;}
+.cs-chat-thread-head .cs-conversation-summary {position:absolute;z-index:8;right:46px;top:100%;width:min(300px,calc(100% - 48px));max-height:55vh;overflow:auto;border:1px solid #e7e7e7;border-radius:10px;background:white;padding:10px 12px;box-shadow:0 5px 18px #0002;}
+.cs-conversation-summary h3,.cs-conversation-files h3 {margin:4px 0;font-size:14px;}
+.cs-conversation-summary section+section {margin-top:10px;}
+.cs-studio .cs-conversation-summary section button {width:100%;height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 6px;gap:6px;text-align:left;}
+.cs-conversation-summary button span,.cs-chat-file-grid button span {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cs-conversation-summary small {color:#767676;flex:none;}
+.cs-member-chat .ca-chat-main {min-width:0;}
+.cs-studio .cs-conversation-files {width:min(47vw,674px);flex:none;min-width:0;display:flex;flex-direction:column;border-left:1px solid #e8e8e8;background:#fcfcfc;color:#171717;}
+.cs-conversation-files>header {height:48px;display:flex;align-items:center;gap:6px;padding:4px 10px;flex:none;}
+.cs-conversation-files [role=tablist] {min-width:0;overflow:auto;display:flex;gap:4px;}
+.cs-conversation-files [role=tablist]>div {display:flex;align-items:center;border-radius:6px;background:#f1f1f1;}
+.cs-conversation-files [role=tab] {display:block;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cs-conversation-files>header>button:last-child {margin-left:auto;}
+.cs-conversation-files>section {flex:1;overflow:auto;padding:16px;}
+.cs-chat-file-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,148px));gap:12px;}
+.cs-chat-file-grid button {display:flex;flex-direction:column;gap:8px;align-items:stretch;text-align:left;font-size:12px;}
+.cs-chat-file-grid button>img,.cs-chat-file-grid button>video,.cs-chat-file-grid button>svg {width:100%;height:96px;object-fit:contain;background:#f1f1f1;border-radius:6px;}
+.cs-chat-file-grid button>svg {padding:32px;}
+.cs-chat-file-preview>header {display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 16px;}
+.cs-chat-file-preview>header :is(a,button) {display:inline-flex;align-items:center;gap:5px;flex:none;}
+.cs-chat-file-preview>img,.cs-chat-file-preview>video {width:100%;max-height:72vh;object-fit:contain;}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-input textarea:focus{outline:none;box-shadow:none}
+.cs-member-chat .ca-chat-composer:has(textarea:focus-visible){outline:1px solid var(--account-line,#bbb)}
+@media(min-width:1024px){
+  .commerce-root.cs-studio .cs-member-chat:has(>.cs-conversation-files){display:grid;grid-template-columns:auto 8px minmax(0,2fr) minmax(0,3fr) 8px}
+  .cs-member-chat:has(>.cs-conversation-files)>.ca-chat-history{grid-column:1}
+  .cs-member-chat:has(>.cs-conversation-files)>.ca-chat-main{grid-column:3;padding-inline:24px;container:chat-file-layout / inline-size}
+  .commerce-root.cs-studio .cs-member-chat>.cs-conversation-files{grid-column:4;width:auto}
+  .commerce-root.cs-studio .cs-member-chat.cs-chat-empty:has(>.cs-conversation-files) .ca-chat-main :is(.ca-chat-composer,.cs-chat-heading){width:min(768px,calc(100% - 48px))}
+  .cs-member-chat:has(>.cs-conversation-files) .cs-chat-thread-head>button[aria-label="关闭文件侧栏"]{visibility:hidden}
+}
+.commerce-root.cs-studio .cs-member-chat .ca-chat-input textarea::placeholder{color:var(--commerce-night-muted,#737373);opacity:1}
+@container chat-file-layout (max-width:364px){
+  .commerce-root.cs-studio .cs-member-chat.cs-chat-empty:has(>.cs-conversation-files) .ca-chat-main .ca-chat-composer:not(:has(.cs-agent-skill-selection),:has(.ca-hero-materials>*),:has([role=alert])){height:166px}
+  .commerce-root.cs-studio .cs-member-chat .ca-chat-composer .ca-composer-bottom{display:grid;grid-template-columns:32px 88px minmax(0,1fr) 32px 36px;grid-template-rows:32px 32px;gap:4px;height:68px;min-height:68px}
+  .cs-member-chat .cs-chat-attach{grid-area:1/1}
+  .cs-member-chat .cs-pref-trigger{grid-area:1/2}
+  .cs-member-chat .cs-chat-environment{grid-area:2/1/3/4;justify-self:start}
+  .cs-member-chat .cs-chat-mic{grid-area:2/4}
+  .cs-member-chat .ca-send{grid-area:2/5}
+}
+.cs-studio .cs-member-chat .cs-conversation-files>header{box-sizing:border-box;height:52px;padding:0 16px;border-bottom:1px solid var(--account-line,#eee)}
+.cs-member-chat .cs-conversation-files>header>button{display:grid;place-content:center;flex:none;width:36px;height:36px}
+.cs-member-chat .cs-conversation-files [role=tablist]>div{width:200px;height:36px;justify-content:space-between;padding:0 8px;border-radius:10px}
+.cs-member-chat .cs-conversation-files>section{padding:24px}
+.cs-member-chat .cs-conversation-files>section>h3{margin:0;font-size:18px;line-height:28px;font-weight:500}
+.cs-member-chat .cs-conversation-files>section>p{margin:16px 0 0;color:var(--commerce-night-muted,#737373);font-size:14px;line-height:20px}
+.cs-member-chat .cs-chat-file-grid:empty{display:none}
+@media(max-width:900px){.cs-studio .cs-conversation-files {position:absolute;inset:0 0 0 auto;width:min(90vw,674px);z-index:10;}}
+.cs-word-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.cs-word-actions input:not([hidden]) { width:130px; padding:5px 8px; border:1px solid #ddd; border-radius:6px; }
+.cs-word-actions a { color:#0471fe; overflow-wrap:anywhere; }
+.cs-slides-action{max-height:min(43vh,340px);overflow-y:auto;align-items:flex-start}
+.cs-slides-action>label{width:100%;display:grid;gap:5px;font-size:13px}
+.cs-studio .cs-slides-action textarea{width:100%;height:116px;min-height:64px;resize:vertical;padding:8px;border:1px solid #ddd;border-radius:7px;font:12px/1.4 monospace;color:#171717}
+
+
+.cs-pdf-pages {width:100%; min-width:0; color:#171717; font-size:14px}
+.cs-pdf-pages fieldset {min-width:0; border:0; margin:0; padding:0}
+.cs-pdf-pages ol {padding-left:24px; max-height:220px; overflow:auto}
+.cs-pdf-pages li {margin:8px 0}
+.cs-pdf-pages li strong {overflow-wrap:anywhere}
+.cs-pdf-pages small,.cs-pdf-pages p {color:#666}
+.cs-pdf-pages input,.cs-pdf-pages button,.cs-pdf-pages small {margin:3px}
+.cs-pdf-pages input:not([type=file]) {max-width:160px; border:1px solid #ddd; border-radius:6px; padding:4px 7px}
+.cs-pdf-pages [role=alert]{display:block;color:#a72b25}
+.cs-pdf-pages a{display:block;color:#0471fe}
+.cs-studio .ca-rail:not(:hover):not(:focus-within) .ca-rail-more:not(:has([aria-expanded="true"])) {opacity:0}
+@media (hover:none) {
+  .cs-studio .ca-rail:not(:hover):not(:focus-within) .ca-rail-more {opacity:1}
+}
+.cs-document-action {width:100%;max-height:42vh;overflow:auto}
+.cs-document-action fieldset {border:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px}
+.cs-document-action label {display:grid;gap:4px;min-width:0;font-size:12px}
+.cs-document-action input,.cs-document-action select,.cs-document-action textarea {width:100%;min-width:0;box-sizing:border-box;border:1px solid #dedede;border-radius:6px;padding:6px;font:inherit}
+.cs-document-action fieldset button {align-self:end}
+.cs-document-action pre {max-height:130px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}

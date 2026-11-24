@@ -7,6 +7,7 @@ import { modelMatchesIdentifier,models, type Kind } from './models';
 import { currentPublishedCommerceConfiguration } from './configuration-platform';
 import { sharedConfigurationEnabled } from '../../storage/database/configuration-source';
 import {isCuratedConfigurationSelectable,sameCuratedModelProfile} from './commerce-curated-model-profiles';
+import {fixedAssistBinding} from './fixed-assist-model';
 import {DIRECTOR_FALLBACK_MODEL_ID,DIRECTOR_PRIMARY_MODEL_ID,orderedModelCandidateIds} from './prequote-model-selection';
 
 export type Operation = {
@@ -109,7 +110,7 @@ export function resolveOperation(input: { kind: Kind; modelId?: string; skillId?
   }
   const modelId = ordered.candidateIds[0];
   if (!modelId) throw Error('此功能尚未发布默认模型，请联系管理员');
-  if((route.kind==='agent'||route.kind==='image')&&ordered.candidateIds.some(id=>!isCuratedConfigurationSelectable(route.kind,id)))throw Error('此功能绑定的模型候选不在带货 Agent 已审核白名单');
+  if((route.kind==='agent'||route.kind==='image')&&!(published&&fixedAssistBinding(route,published.cards))&&ordered.candidateIds.some(id=>!isCuratedConfigurationSelectable(route.kind,id)))throw Error('此功能绑定的模型候选不在带货 Agent 已审核白名单');
   return { ...route, modelId, modelCandidateIds:ordered.candidateIds, selection:ordered.selection };
 }
 

@@ -70,7 +70,21 @@ export function orderedModelCandidateIds(input: {
   return { candidateIds: kindDefault ? [kindDefault] : [], selection: 'kind-default' };
 }
 
-function priceReadiness(model: Model): { ready: boolean; reason: string } {
+/** Resolve route aliases against the catalog, retaining the first configured channel for each ID. */
+export function modelsInRouteOrder<T extends Pick<Model, 'id' | 'kind' | 'internalModelId'>>(
+  catalog: readonly T[],
+  identifiers: Iterable<string>,
+): T[] {
+  const ordered = new Map<string, T>();
+  for (const identifier of identifiers) {
+    const model = catalog.find(entry => modelMatchesIdentifier(entry, identifier));
+    if (model && !ordered.has(model.id)) ordered.set(model.id, model);
+  }
+  return [...ordered.values()];
+}
+
+export function priceReadiness(model: Model): { ready: boolean; reason: string } {
+  if (model.billingUnit === 'token') return { ready: false, reason: '此视频模型按实际 Token 用量结算，当前工作区仅支持按次或按秒报价' };
   const cost = Number(model.costPrice);
   const price = Number(model.publicPrice);
   if (model.costPrice == null || !Number.isFinite(cost) || cost < 0) return { ready: false, reason: '成本价尚未配置' };

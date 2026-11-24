@@ -35,6 +35,13 @@ for(const mutate of [f=>f.input.intent='legacy-publish',f=>f.request.user_id='an
  const f=fixture();mutate(f);await assert.rejects(core.publishImageModelReceipt(f.input,f.deps));check(f.counters.put===0&&f.counters.bodyReads===0&&f.counters.rpc===0);
 }
 const missing=fixture();missing.deps.readiness=async()=>({state:'migration-not-ready',missingRpcs:['publish_image_model_validation_receipt'],missingRpcArguments:[]});await assert.rejects(core.publishImageModelReceipt(missing.input,missing.deps));check(missing.counters.bodyReads===0&&missing.counters.put===0);
+const slowOriginal=fixture('provider_url');
+const originalReader=slowOriginal.deps.readProvider;
+slowOriginal.deps.readProvider=async()=>{throw Object.assign(new Error('source timed out'),{code:'FETCH_ABORTED'});};
+await assert.rejects(core.publishImageModelReceipt(slowOriginal.input,slowOriginal.deps),{code:'IMAGE_PUBLICATION_SOURCE_UNAVAILABLE'});
+check(slowOriginal.counters.put===0 && slowOriginal.counters.rpc===0 && slowOriginal.attempt.state==='completed');
+slowOriginal.deps.readProvider=originalReader;
+check((await core.publishImageModelReceipt(slowOriginal.input,slowOriginal.deps)).success && slowOriginal.counters.put===1);
 const corrupt=fixture();corrupt.input.readInline=async()=>({buffer:Buffer.from(png).fill(1),contentType:'image/png'});await assert.rejects(core.publishImageModelReceipt(corrupt.input,corrupt.deps));check(corrupt.counters.put===0);
 const zero=fixture();zero.model.selling_price=0;zero.attempt.quoted_price_yuan=0;zero.request.request_snapshot={quotedPriceYuan:0,billingExempt:true};Object.assign(zero.request.response,{cashCharged:0,billingOperationId:null});zero.tables.wallet_operations=[];check((await core.publishImageModelReceipt(zero.input,zero.deps)).success&&zero.counters.put===1);
 const collision=fixture();const collisionKey='admin-image-publication/'+hash(collision.input.authorization.user.id)+'/'+collision.attempt.validation_id+'/'+collision.request.record_id+'/'+hash(png);collision.objects.set(collisionKey,Buffer.alloc(png.length));await assert.rejects(core.publishImageModelReceipt(collision.input,collision.deps));check(collision.counters.put===0&&collision.counters.rpc===0);

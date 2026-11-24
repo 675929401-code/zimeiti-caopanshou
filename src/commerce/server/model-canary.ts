@@ -1,5 +1,6 @@
 import crypto, { createHash } from 'node:crypto';
 import { billingQuantity, getJobBillingState, quoteCost, quotePrice } from './billing';
+import {validateImageInput,validateImageOutputSettings} from '../image-input-contract';
 import { readAsset } from './assets';
 import { createJob, job, runJob, type JobInput } from './jobs';
 import { selectedModel, type Kind, type Model } from './models';
@@ -8,7 +9,9 @@ import { stableJson } from './configuration-platform';
 import { getSupabaseAdminClient } from '@/storage/database/supabase-client';
 import { invalidateCommerceModelAcceptance } from './model-acceptance';
 import { inspectSavedVideoAudioPolicy } from './video-audio-policy';
+import {assertCommerceVideoAudioSetting,commerceVideoSupportsAudioToggle} from '../shared/video-generation-capabilities';
 import { ensureProviderReference } from './media-reference';
+import {validateVideoReferenceDimensions} from './video-reference-dimensions';
 
 type CanaryQuote={
   schema:'commerce-model-canary-quote/v1';id:string;actorId:string;owner:string;marker:string;input:JobInput;inputFingerprint:string;
@@ -25,21 +28,31 @@ export async function createModelCanaryQuote(actorId:string,owner:string,raw:Rec
   const kind=String(raw.kind||'') as Kind;if(!['agent','image','video'].includes(kind))throw Error('请选择需要验收的模型类型');
   const model=await selectedModel(kind,String(raw.modelId||''));
   if(model.source!=='main'||model.capabilities.executionSupported===false)throw Error('该模型当前没有接通主站执行桥接');
+  if(model.billingUnit==='token')throw Error('当前带货工作区的按次、按秒报价不能用于 Token 视频模型');
   if(model.costPrice===null||!Number.isFinite(model.costPrice)||model.costPrice<0)throw Error('模型成本未配置，不能创建付费 canary');
   if(!Number.isFinite(model.publicPrice)||model.publicPrice<model.costPrice||(model.publicPrice===0&&model.capabilities.explicitlyFree!==true))throw Error('模型售价或利润配置不完整，不能创建 canary');
-  const ids=strings(raw.referenceAssetIds);
+  const ids=strings(raw.referenceAssetIds??[]);
   const referenceAssets=ids.map(id=>readAsset(id,owner));
   if(referenceAssets.some(asset=>!asset))throw Error('canary 素材不存在或不属于管理员工作区');
-  if(kind==='video')for(const asset of referenceAssets)await ensureProviderReference(asset!);
+  if(kind==='video'){
+    await validateVideoReferenceDimensions(model,referenceAssets);
+    for(const asset of referenceAssets)await ensureProviderReference(asset!);
+  }
   const marker=`COMMERCE-CANARY-${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}-${crypto.randomUUID().slice(0,8)}`;
   const quoteId=crypto.randomUUID();
   const base={requestId:quoteId,kind,modelId:model.id,purpose:'commerce-canary',prompt:`[${marker}] 只执行一次真实生成与持久化验收。生成内容使用中性虚构商品，不声明价格、功效、销量或认证。`} as JobInput;
   let input:JobInput=kind==='agent'?{...base,references:ids.map((id,index)=>({id,slot:`reference-${index+1}`}))}:base;
   if(kind==='image')input={...base,skillId:'default',aspectRatio:String(raw.aspectRatio||firstString(model.capabilities.aspectRatios,'1:1')),resolution:String(raw.resolution||firstString(model.capabilities.resolutionOptions,'1024x1024')),format:'PNG',references:ids.map((id)=>({id,slot:'reference'}))};
+  if(kind==='image'){
+    validateImageInput(input,referenceAssets.filter((asset):asset is NonNullable<typeof asset>=>!!asset),model.capabilities);
+    validateImageOutputSettings(model.capabilities,input.aspectRatio,input.resolution);
+  }
   if(kind==='video'){
     const durations=(Array.isArray(model.capabilities.nativeDurations)?model.capabilities.nativeDurations:Array.isArray(model.capabilities.durationOptions)?model.capabilities.durationOptions:[]).map(Number).filter((value)=>Number.isInteger(value)&&value>=1&&value<=60);
     const duration=Number(raw.duration||durations[0]||4);if(durations.length&&!durations.includes(duration))throw Error('canary 时长不在模型原生时长内');
-    input={...base,duration,aspectRatio:String(raw.aspectRatio||firstString(model.capabilities.aspectRatios,'9:16')),resolution:String(raw.resolution||firstString(model.capabilities.resolutionOptions,'720p')),generateAudio:raw.generateAudio===true,references:ids.map((id,index)=>({id,slot:`reference-${index+1}`}))};
+    const audio=commerceVideoSupportsAudioToggle(model.capabilities)?raw.generateAudio:raw.generateAudio===true?true:undefined;
+    assertCommerceVideoAudioSetting(model.capabilities,audio);
+    input={...base,duration,aspectRatio:String(raw.aspectRatio||firstString(model.capabilities.aspectRatios,'9:16')),resolution:String(raw.resolution||firstString(model.capabilities.resolutionOptions,'720p')),...(typeof audio==='boolean'?{generateAudio:audio}:{}),references:ids.map((id,index)=>({id,slot:`reference-${index+1}`}))};
   }
   const quantity=billingQuantity(input,model),estimatedProviderCost=quoteCost(input,model),ordinaryUserPrice=quotePrice(input,model);
   const now=Date.now();const quote:CanaryQuote={schema:'commerce-model-canary-quote/v1',id:quoteId,actorId,owner,marker,input,inputFingerprint:fingerprint(input),modelId:model.id,modelConfigHash:model.configHash,publicPrice:model.publicPrice,costPrice:model.costPrice,billingUnit:model.billingUnit,quantity,estimatedProviderCost,ordinaryUserPrice,createdAt:now,expiresAt:now+10*60_000,status:'quoted'};
@@ -73,6 +86,7 @@ export async function registerModelCanaryEvidence(actorId:string,owner:string,jo
       :await inspectSavedVideoAudioPolicy(owner,value.assetIds[0]);
   if(value.input.kind==='image'&&value.assetIds.some(id=>!readAsset(id,owner)?.type.startsWith('image/')))throw Error('图片 canary 的持久化结果类型不正确');
   if(value.input.kind==='video'&&value.input.generateAudio===false&&outputValidation.hasAudio===true)throw Error('视频 canary 违反无声输出合同，不能登记生产可用证据');
+  if(value.input.kind==='video'&&value.input.generateAudio===true&&outputValidation.hasAudio!==true)throw Error('视频 canary 要求生成声音，但持久化结果未检出音轨，不能登记生产可用证据');
   const row={model_kind:value.input.kind,model_id:value.model.id,model_config_hash:value.model.configHash,status:'passed',canary_job_id:value.id,quote_id:value.configurationSnapshot?.quoteId||value.input.requestId,evidence_asset_ids:value.assetIds,evidence_summary:{marker:value.input.prompt.match(/COMMERCE-CANARY-[0-9]+-[a-f0-9]+/)?.[0]||'',terminalStatus:value.status,dispatchedAt:value.dispatchedAt,completedAt:value.updatedAt,billingStatus:billing.status,costSource:billing.costSource,inputCoverage:{referenceImages:count('image/'),referenceVideos:count('video/'),referenceAudios:count('audio/'),duration:value.input.duration||null,aspectRatio:value.input.aspectRatio||null,resolution:value.input.resolution||null,generateAudio:value.input.generateAudio===true},outputValidation},provider_cost:billing.actualCostAmount??billing.costAmount,verified_by:actorId,verified_at:new Date().toISOString()};
   const db=getSupabaseAdminClient();const existing=await db.from('commerce_model_acceptance_evidence').select('*').eq('canary_job_id',value.id).order('verified_at',{ascending:false}).order('created_at',{ascending:false}).limit(1).maybeSingle();if(existing.error)throw Error(`核对模型 canary 证据失败：${existing.error.message}`);
   if(existing.data?.status==='invalidated')throw Error('失效后的模型必须用新的 canary 任务重新验收');

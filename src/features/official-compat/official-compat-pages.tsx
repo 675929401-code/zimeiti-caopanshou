@@ -7,7 +7,6 @@ import {
   Check,
   Clapperboard,
   Clock3,
-  Coins,
   Compass,
   Copy,
   Film,
@@ -29,7 +28,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LoginForm } from "@/components/login-form";
-import { RechargeDialog } from "@/components/recharge-dialog";
+import { readPaymentWallet, subscribePaymentWallet, type PaymentWallet } from "@/lib/payment-wallet-client";
 import { useApp } from "@/contexts/app-context";
 import { buildInvitationShareText } from "@/lib/invitation-share";
 import styles from "./official-compat.module.css";
@@ -289,82 +288,37 @@ function useCheckedAuth() {
 }
 
 export function RechargeCompatPage() {
-  const { state, dispatch, checked } = useCheckedAuth();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [loginVisible, setLoginVisible] = useState(false);
-  const authenticated = state.auth.isAuthenticated && Boolean(state.auth.user && state.auth.token);
-  const credits = Number(state.auth.user?.credits ?? state.credits.remaining ?? 0);
+  const { state, checked } = useCheckedAuth();
+  const { token, user } = state.auth;
+  const [wallet, setWallet] = useState<PaymentWallet | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => {
+    if (!token || !user?.id) return;
+    let active = true;
+    const refresh = async () => {
+      const latest = await readPaymentWallet(token);
+      if (!active) return;
+      setUnavailable(!latest);
+      if (latest?.userId === user.id) setWallet(latest);
+    };
+    void refresh();
+    const unsubscribe = subscribePaymentWallet(id => { if (id === user.id) void refresh(); });
+    window.addEventListener("focus", refresh);
+    return () => { active = false; unsubscribe(); window.removeEventListener("focus", refresh); };
+  }, [token, user?.id]);
 
-  const startRecharge = () => {
-    if (!authenticated) {
-      setLoginVisible(true);
-      return;
-    }
-    setDialogOpen(true);
-  };
-
+  const current = token && wallet?.userId === user?.id ? wallet : null;
+  const placeholder = !checked ? "查询中…" : !token ? "登录后查看" : unavailable ? "暂时无法读取" : "查询中…";
   return (
     <div className={styles.page} data-page="official-compat-recharge">
       <header className={styles.pageHeader}>
         <span className={styles.headerIcon} aria-hidden="true"><WalletCards size={26} /></span>
-        <div>
-          <span className={styles.eyebrow}>积分充值</span>
-          <h1>沿用主站真实支付与积分链路</h1>
-          <p>本页不虚构套餐价格；实际金额、支付方式、订单状态和到账结果均由主站现有支付组件与接口处理。</p>
-        </div>
+        <h1>我的余额</h1>
       </header>
-
-      <section className={styles.balanceStrip}>
-        <div><span>当前积分</span><strong>{authenticated ? credits.toLocaleString("zh-CN") : "登录后查看"}</strong></div>
-        <div><span>现金余额</span><strong>{authenticated ? `¥${Number(state.cashBalance || 0).toFixed(2)}` : "登录后查看"}</strong></div>
+      <section className={styles.balanceStrip} aria-label="账户余额" aria-live="polite">
+        <div><span>当前积分</span><strong>{current ? current.credits.toLocaleString("zh-CN") : placeholder}</strong></div>
+        <div><span>现金余额</span><strong>{current ? `¥${current.cashBalance.toFixed(2)}` : placeholder}</strong></div>
       </section>
-
-      <section className={styles.purchaseGrid}>
-        <article className={styles.purchaseCard}>
-          <span className={styles.purchaseIcon}><Coins size={24} /></span>
-          <h2>积分充值</h2>
-          <p>用于主站已上线且通过验收的文本、图片、视频和语音能力；最终扣费仍以各工具实际结算为准。</p>
-          <button type="button" onClick={startRecharge}>{authenticated ? "进入充值" : "登录后充值"}<ArrowRight size={16} /></button>
-        </article>
-        <article className={styles.purchaseCard}>
-          <span className={styles.purchaseIcon}><WalletCards size={24} /></span>
-          <h2>账户余额</h2>
-          <p>继续使用主站现有现金充值、支付订单、状态轮询和到账校验，不在兼容页复制资金逻辑。</p>
-          <button type="button" onClick={startRecharge}>{authenticated ? "打开支付组件" : "登录后查看"}<ArrowRight size={16} /></button>
-        </article>
-        <article className={styles.purchaseCard}>
-          <span className={styles.purchaseIcon}><Gift size={24} /></span>
-          <h2>卡密与会员</h2>
-          <p>卡密兑换、会员状态和充值记录继续由个人中心管理。</p>
-          <Link href="/profile?tab=cami">进入个人中心<ArrowRight size={16} /></Link>
-        </article>
-        <article className={styles.purchaseCard}>
-          <span className={styles.purchaseIcon}><WalletCards size={24} /></span>
-          <h2>发布套餐</h2>
-          <p>开通发布中心权限后，可使用本站现金余额购买发布次数；可用套餐、价格和有效期以发布中心为准。</p>
-          <Link href="/publish-center?tab=plans">查看发布套餐<ArrowRight size={16} /></Link>
-        </article>
-      </section>
-
-      {!checked && <div className={styles.loadingState}><Loader2 className={styles.spin} size={20} /> 正在核验登录状态...</div>}
-      {checked && loginVisible && !authenticated && (
-        <LoginPanel title="登录后继续充值" description="这里使用主站原有登录、注册和验证码流程；登录完成后仍停留在充值页。" />
-      )}
-
-      <RechargeDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        credits={credits}
-        cashBalance={Number(state.cashBalance || 0)}
-        mode="both"
-        onCreditsUpdated={(nextCredits) => {
-          dispatch({
-            type: "SET_CREDITS",
-            payload: { total: nextCredits, used: 0, remaining: nextCredits, costPerMessage: 0 },
-          });
-        }}
-        onCashUpdated={(nextCash) => dispatch({ type: "SET_CASH_BALANCE", payload: nextCash })}
-      />
     </div>
   );
 }

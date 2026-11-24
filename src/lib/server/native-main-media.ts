@@ -4,7 +4,7 @@ import { NativeOwnedMediaRefSchema, nativeMainMediaPath, type NativeMediaSource,
 import { isPublishingSafeHttps } from "@/lib/publishing-contract";
 import { nativeAssetPath } from "@/lib/native-operations-contract";
 import { PublishingError } from "./publishing-service";
-import { readPublishingProviderConfiguration } from "./publishing-provider-config";
+import { activePublishingProviderForNamespace } from "./publishing-provider-config";
 
 type DB = ReturnType<typeof getSupabase>;
 type Row = Record<string, unknown>;
@@ -61,11 +61,12 @@ export async function readNativeMediaSource(db: DB, owner: string, source: Nativ
   if (source.kind === "main_asset") return readNativeMainMedia(db, owner, source.reference);
   const asset = await one(db, "pub3_assets", "owner_id", owner, "id", source.assetId);
   if (asset.state !== "ready") unavailable();
-  const cfg = (dependencies.configuration ?? readPublishingProviderConfiguration)(), meta = row(asset.metadata);
+  const cfg = dependencies.configuration ? dependencies.configuration() : activePublishingProviderForNamespace(text(asset.connection_id));
+  const meta = row(asset.metadata);
   return {
     source, contentPath: nativeAssetPath(source.assetId), fileName: text(asset.file_name), mime: text(asset.mime), size: number(asset.size),
     ...(number(meta.width) ? { width: number(meta.width) } : {}), ...(number(meta.height) ? { height: number(meta.height) } : {}),
-    ...(number(meta.duration) ? { duration: number(meta.duration) } : {}), connectionCurrent: asset.connection_id === cfg.namespace, localMediaId: text(asset.local_media_id), hash: text(asset.sha256),
+    ...(number(meta.duration) ? { duration: number(meta.duration) } : {}), connectionCurrent: cfg !== undefined && asset.connection_id === cfg.namespace, localMediaId: text(asset.local_media_id), hash: text(asset.sha256),
   };
 }
 /** Native durable requests contain opaque references; temporary access URLs stay in memory. */

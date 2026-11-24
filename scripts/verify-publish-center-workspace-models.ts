@@ -53,6 +53,7 @@ const images = imageOrder.parseImageModelSurfaceOrders({ surfaces: {
 const videos = videoOrder.parseVideoModelSurfaceOrders({ surfaces: {
   "ai-video": { same: 11 }, storyboard: { same: 21 }, "free-canvas": { same: 31 },
   "film-studio": { same: 41 }, "commerce-agent": { same: 51 }, "publish-center-video": { same: 61 },
+  "commerce-generation-video": { same: 71 },
 } });
 assert.deepEqual(images["publish-center-image"], { same: 60, trim: 13 });
 assert.deepEqual(imageOrder.parseImageModelSurfaceOrders(imageOrder.serializeImageModelSurfaceOrders(images)), images);
@@ -79,6 +80,7 @@ const expectedOrders: Record<policy.WorkspaceModelSurface, number> = {
   "image-workbench": 10, "cover-studio": 20, "storyboard-image": 30, "free-canvas-image": 40, "film-studio-image": 50,
   "video-page": 11, "storyboard-video": 21, "free-canvas-video": 31, "film-studio-video": 41, "commerce-video": 51,
   "publish-center-image": 60, "publish-center-video": 61,
+  "commerce-generation-video": 71,
 };
 const bootstrapOrder = declaration(compatibilityTree, "orderFor") as ts.VariableDeclaration;
 const orderFor = evaluate<(surface: policy.WorkspaceModelSurface) => Record<string, number>>(
@@ -147,7 +149,7 @@ async function verifyPublicConsumers() {
     return evaluate<(request: Request) => Promise<{ status: number; body: { models: PublicModel[] } }>>(`${source}\nGET;`, {
       ...policy, ...assignments, ...imageOrder, ...videoOrder, ...videoCapabilities, ...videoInput,
       ...videoAvailability, ...videoPublicStatus, ...videoCatalog, getVideoTokenPublicPricing, isDigitalHumanWorkspaceModel, gaoruiVideoCreateContractAdmission,
-      getSupabaseClient: () => db, URL,
+      getSupabaseClient: () => db, URL, catalogRatesForMember: async () => true,
       NextResponse: { json: (body: unknown, options?: { status?: number }) => ({ status: options?.status || 200, body }) },
       toPublicModelDto: (_kind: string, row: Row, _index: number, capabilities: Row) => ({ id: String(row.id), capabilities }),
       publicMediaBillingCapabilities: () => ({}), publicImageResolutionPrices: () => ({}),

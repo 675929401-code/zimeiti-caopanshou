@@ -42,7 +42,8 @@ function withSession(user: { id: string; name: string; role: 'admin' | 'user' },
 export async function GET(request: NextRequest) {
   try {
     const user = identity(request);
-    if (user) {
+    const authorization = request.headers.get('authorization');
+    if (user && !authorization) {
       await authorizeCurrentCommerceIdentity(user);
       return json(sessionView(user));
     }
@@ -53,6 +54,10 @@ export async function GET(request: NextRequest) {
     sameOrigin(request);
     const mainPayload = await verifyToken(String(request.headers.get('authorization') || '').replace(/^Bearer /, ''));
     if (mainPayload?.userId) {
+      if (user?.mainUserId === mainPayload.userId) {
+        await authorizeCurrentCommerceIdentity(user);
+        return json(sessionView(user));
+      }
       const current = await authorizeCommerceMainAccount(mainPayload.userId);
       return withSession(await ensureSessionForMainUser({
         userId: current.mainUserId,

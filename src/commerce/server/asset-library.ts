@@ -11,7 +11,15 @@ export const publicLibraryAsset=(asset:LibraryAsset)=>publicAsset(asset);
 export function queryAssetLibrary(owner:string,params:URLSearchParams){
  const clauses=["bucket='assets'",'owner=?'];const args:unknown[]=[owner];
  if(params.has('ids')){const ids=[...new Set((params.get('ids')||'').split(','))];if(!ids.length||ids.length>100||ids.some(id=>!id||id.length>100))throw Error('素材 ID 列表无效');clauses.push('id IN ('+ids.map(()=>'?').join(',')+')');args.push(...ids);}
- const collection=params.get('collection');if(collection==='roles'){clauses.push("json_extract(value,'$.collection')='roles'");}else if(collection&&collection!=='assets')throw Error('素材库类型无效');
+ const collection=params.get('collection');if(collection==='roles'){clauses.push("json_extract(value,'$.collection')='roles'");if(params.get('profiles')==='1')clauses.push("json_extract(value,'$.characterProfile.consentAt')>0");}else if(collection==='faces'){
+   // Reference images must belong to this member and a consented role profile.
+   clauses.push(`json_extract(value,'$.type') LIKE 'image/%' AND id IN (
+     SELECT photo.value FROM records AS profile, json_each(profile.value,'$.characterProfile.images') AS photo
+     WHERE profile.bucket='assets' AND profile.owner=? AND json_extract(profile.value,'$.collection')='roles'
+       AND json_extract(profile.value,'$.characterProfile.consentAt')>0 AND photo.type='text'
+   )`);
+   args.push(owner);
+ }else if(collection&&collection!=='assets')throw Error('素材库类型无效');
  const folder=params.get('folder');if(folder==='ungrouped'){clauses.push("COALESCE(json_extract(value,'$.folderId'),'')=''");}else if(folder){if(!get('asset-folders',folder,owner))throw Error('文件夹不存在');clauses.push("json_extract(value,'$.folderId')=?");args.push(folder);}
  const kinds=params.get('kinds')?.split(',').filter(Boolean)||[];if(kinds.some(kind=>!['image','video','audio'].includes(kind)))throw Error('素材类型无效');if(kinds.length){clauses.push('('+kinds.map(()=>"json_extract(value,'$.type') LIKE ?").join(' OR ')+')');args.push(...kinds.map(kind=>kind+'/%'));}
  const query=(params.get('q')||'').trim();if(query.length>160)throw Error('搜索词过长');if(query){clauses.push("instr(lower(json_extract(value,'$.name')),lower(?))>0");args.push(query);}

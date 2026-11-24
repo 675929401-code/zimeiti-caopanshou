@@ -82,7 +82,7 @@ export const PublishingGenericQuerySchema = z.discriminatedUnion('resource', [
   z.object({ resource: z.literal('record'), id }).strict(),
   z.object({ resource: z.literal('profile'), draftId: id, draftVersion: revision }).strict(),
   z.object({ resource: z.literal('drafts'), page: z.coerce.number().int().min(1).max(1000000).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(30) }).strict(),
-  z.object({ resource: z.literal('options'), bindingId: id, option: z.string().min(1).max(100).optional(), query: z.string().max(500).optional() }).strict(),
+  z.object({ resource: z.literal('options'), bindingId: id, option: z.string().min(1).max(100).optional(), query: z.string().max(500).optional(), keyword: z.string().max(100).optional(), regionCode: z.string().max(2).optional() }).strict(),
 ])
 export type PublishingGenericQuery = z.infer<typeof PublishingGenericQuerySchema>
 export const PublishingGenericTargetStateSchema = z.enum(['prepared', 'queued', 'publishing', 'published', 'failed_known', 'cancelled', 'unknown', 'blocked'])

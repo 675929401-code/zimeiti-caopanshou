@@ -26,9 +26,16 @@ async function main(){
   const claude=fixture('agent','3a998bfc-aab4-4f8f-9128-b27498894a7b','Claude Sonnet 4.6','claude-sonnet-4-6');
   const sol=fixture('agent','9b177ccc-4afc-4d49-96bb-fdd01f09bf89','GPT-5.6-Sol','gpt-5.6-sol');
   const seedream=fixture('image','cover-model-seedream-5-pro','豆包 Seedream 5.0 Pro','doubao-seedream-5-0-pro-260628','volcengine');
+  const seedream55=fixture('image','pending-cover-model-7066e4fb-d986-4d6d-a173-3a7e94c34abc','豆包 Seedream 5.5','doubao-seedream-5-5-261028','lconai');
+  check('豆包 5.5 绑定到经过参考图实调的主站渠道，且保留与 5.0 分开的模型身份',()=>{
+    assert.equal(classifyCommerceCuratedModel(seedream55),'image-seedream-5-5');
+    assert.equal(classifyCommerceCuratedModel({...seedream55,modelName:seedream.modelName}),null);
+    assert.equal(classifyCommerceCuratedModel({...seedream55,provider:'volcengine'}),null);
+    assert.equal(curatedMainCatalogExecutionReadiness(seedream55).ready,true);
+  });
   const gpt2=fixture('image','gpt-image-2-chA-1','GPT Image 2','gpt-image-2','openai_compat');
-  const sunburst=fixture('image','gpt-image-25-sunburst-chA','GPT Image 2.5 Sunburst','gpt-image-2.5-sunburst','openai_compat');
-  const flare=fixture('image','gpt-image-25-flare-chA','GPT Image 2.5 Flare','gpt-image-2.5-flare','openai_compat');
+  const sunburst=fixture('image','pending-cover-model-1789125082114-2ea1a1e15b37','GPT Image 2.5 Sunburst','gpt-image-2.5-sunburst','openai_compat');
+  const flare=fixture('image','pending-cover-model-1789125219296-147da9a502d5','GPT Image 2.5 Flare','gpt-image-2.5-flare','openai_compat');
   const banana=fixture('image','gemini-3-1-flash-image-chA','Nano Banana 2','gemini-3.1-flash-image','secure_skill_chat');
 
   check('只识别标准 Claude 与 GPT-5.6-Sol 稳定身份',()=>{
@@ -42,6 +49,14 @@ async function main(){
       'image-seedream-5-pro','image-gpt-image-2','image-gpt-image-2-5','image-nano-banana-2',
     ]);
   });
+  check('已发布图片场景锁定的 Flash 图像模型须同时匹配目录身份、供应商和协议就绪状态',()=>{
+    const bound=fixture('image','pending-cover-model-1789087566193-f4a5f4f1190f','Gemini 3.1 Flash Image','gemini-3.1-flash-image','lconai');
+    assert.equal(classifyCommerceCuratedModel(bound),'image-gemini-3-1-flash');
+    assert.equal(isCuratedConfigurationSelectable('image',toPublicModelId('cover',bound.id)),true);
+    assert.equal(classifyCommerceCuratedModel({...bound,provider:'other'}),null);
+    assert.equal(classifyCommerceCuratedModel({...bound,modelName:'gemini-3-pro-image'}),null);
+    assert.equal(curatedMainCatalogExecutionReadiness({...bound,capabilities:{...bound.capabilities,protocolConfigured:false}}).ready,false);
+  });
   check('同族 Flare 只作内部候补且不可由用户选择',()=>{
     assert.equal(classifyCommerceCuratedModel(flare),'image-gpt-image-2-5-flare-fallback');
     assert.equal(isCuratedConfigurationSelectable('image',flare.id),false);
@@ -49,8 +64,11 @@ async function main(){
   check('Gemini 旗舰严格要求官方 gemini-3-pro-image 身份',()=>{
     assert.equal(classifyCommerceCuratedModel(fixture('image','legacy-gemini','Gemini 3.0','gemini-3.0-pro-image','lconai')),null);
     assert.equal(classifyCommerceCuratedModel(fixture('image','legacy-banana-pro','Nano Banana Pro','nano-banana-pro','lconai')),null);
-    assert.equal(classifyCommerceCuratedModel(fixture('image','future-official','Gemini 3 Pro','gemini-3-pro-image','lconai')),'image-gemini-3-pro-flagship');
+    assert.equal(classifyCommerceCuratedModel(fixture('image','future-official','Gemini 3 Pro','gemini-3-pro-image','lconai')),null);
     assert.equal(isCuratedConfigurationSelectable('image','future-official'),false);
+    assert.equal(classifyCommerceCuratedModel(fixture('image','pending-cover-model-1619d332-34dd-4628-9b5d-67d12f705b4a','gpt-image-2.6-sunburst','gpt-image-2.6-sunburst','toapis_images')),'image-gpt-image-2-6');
+    assert.equal(classifyCommerceCuratedModel(fixture('image','pending-cover-model-e66e3c23-68b3-4516-8c00-2b6aa682672d','gemini-nano-banana-2.1','gemini-nano-banana-2.1','secure_skill_images')),'image-nano-banana-2-1');
+    assert.equal(classifyCommerceCuratedModel(fixture('image','pending-cover-model-cfde692c-1f4a-4160-b8cd-9a4e8c8fbad5','gemini-3-pro-image','gemini-3-pro-image','secure_skill_images')),'image-gemini-3-pro-flagship');
   });
   check('公开模型 ID 由稳定内部 ID 动态派生而非硬编码',()=>{
     const publicClaude=toPublicModelId('llm',claude.id),publicSunburst=toPublicModelId('cover',sunburst.id);
@@ -67,7 +85,7 @@ async function main(){
     const profiles=commerceCuratedProfilesForModels('image',[seedream,gpt2,sunburst,flare,banana]);
     assert.equal(profiles.find(item=>item.id==='image-gpt-image-2-5')?.userVisible,true);
     assert.equal(profiles.find(item=>item.id==='image-gpt-image-2-5-flare-fallback')?.userVisible,false);
-    assert.equal(profiles.find(item=>item.id==='image-gemini-3-pro-flagship')?.status,'pending');
+    assert.equal(profiles.find(item=>item.id==='image-gemini-3-pro-flagship')?.status,'missing');
     assert.equal(profiles.find(item=>item.id==='image-gemini-3-pro-flagship')?.boundModelId,null);
     assert.doesNotMatch(profiles.filter(item=>item.userVisible).map(item=>item.statusMessage).join('\n'),/canary|验收/u);
   });
@@ -111,7 +129,7 @@ async function main(){
     assert.match(api,/selectionAvailable/u);assert.match(api,/configurationSelectable/u);assert.match(api,/generationReady/u);
     assert.match(api,/commerceCuratedProfilesForModels/u);assert.match(api,/internalModelId:________/u);
     assert.match(api,/curatedMainCatalogExecutionReadiness/u);
-    assert.match(api,/configurationReady:usesCuratedMainCatalogDirectExecution/u);
+    assert.match(api,/configurationReady:!lockedIssue&&!releaseIssue/u);assert.match(api,/lockedIds\.some\(id=>modelMatchesIdentifier\(model,id\)\)/u);assert.match(api,/const pricing=priceReadiness\(m\)/u);
     assert.match(api,/usesCuratedMainCatalogDirectExecution\(kind\)\?policy\?\.userSelectable!==false/u);
     assert.match(api,/:curatedCandidates;/u);
   });
@@ -120,15 +138,15 @@ async function main(){
     assert.match(routing,/所选模型不在带货 Agent 已审核白名单/u);
     assert.match(routing,/sameCuratedModelProfile/u);
     assert.match(quotes,/所选模型未通过带货 Agent 白名单身份核对/u);
-    assert.match(quotes,/model: \{ id: quote\.modelId/u);
+    assert.ok(quotes.includes("quote.input.kind==='video'?{id:quote.modelId}"));
     assert.match(quotes,/model\.id !== quote\.modelId/u);
-    assert.match(quotes,/required: !catalogDirect && process\.env\.SHARED_CONFIGURATION_ENABLED/u);
+    assert.match(quotes,/required: sharedConfigurationRequired/u);assert.match(quotes,/if\(sharedConfigurationRequired\)assertPublishedCommercePaidJobsReady/u);
     assert.match(quotes,/if \(published && !catalogDirect\) await requireCommerceModelAcceptance/u);
-    assert.match(quotes,/const published = catalogDirect \? null : currentPublishedCommerceConfiguration\(\)/u);
+    assert.match(quotes,/const published = currentPublishedCommerceConfiguration\(\)/u);
     assert.match(jobs,/classifyCommerceCuratedModel/u);
-    assert.match(jobs,/required:!adminCanary&&!catalogDirect&&process\.env\.SHARED_CONFIGURATION_ENABLED/u);
+    assert.match(jobs,/sharedConfigurationRequired=!adminCanary&&!cardCanary&&!input\.rollingChild/u);
     assert.match(jobs,/if\(catalogDirect\)assertCuratedMainCatalogExecutionReady\(model\)/u);
-    assert.match(jobs,/const published=catalogDirect\?null:currentPublishedCommerceConfiguration\(\)/u);
+    assert.match(jobs,/const published=currentPublishedCommerceConfiguration\(\)/u);
     assert.ok(quotes.indexOf('if(catalogDirect)assertCuratedMainCatalogExecutionReady(model)')<quotes.indexOf("put('commerce-quotes'"));
     assert.ok(jobCreate.indexOf('if(catalogDirect)assertCuratedMainCatalogExecutionReady(model)')<jobCreate.indexOf('return transaction(()=>'));
     assert.doesNotMatch(quotes,/if \(published && catalogDirect\) await requireCommerceModelAcceptance/u);
@@ -138,7 +156,7 @@ async function main(){
     assert.doesNotMatch(detailSets,/profitAmount:[^\r\n]*\.\.\.\(published\?/u);
     assert.match(agentPlans,/const needsPublishedVideo=value\.selected\.some/u);
     assert.match(agentPlans,/published=needsPublishedVideo\?currentPublishedCommerceConfiguration\(\):undefined/u);
-    assert.match(workflows,/const needsPublishedVideo=failed\.some/u);
+    assert.match(workflows,/needsPublishedVideo=candidates\.some/u);
     assert.match(workflows,/if\(catalogDirect\)assertCuratedMainCatalogExecutionReady\(model\)/u);
     assert.match(workflows,/if\(published&&!catalogDirect\)await requireCommerceModelAcceptance/u);
     assert.doesNotMatch(profilesSource,/pendingMessage:'[^']*(?:canary|验收)/u);

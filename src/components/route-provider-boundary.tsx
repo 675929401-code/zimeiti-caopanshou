@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { PaymentWalletSync } from "@/components/payment-wallet-sync";
 import { AppProvider } from "@/contexts/app-context";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { MemberFeatureBoundary, MemberPermissionProvider } from "@/components/member-permission-boundary";
@@ -27,12 +28,15 @@ export function RouteProviderBoundary({ children }: { children: ReactNode }) {
   // never mounts the main runtime, even briefly during the first client render.
   if (keepMainRuntime && !mainRuntimeMounted) setMainRuntimeMounted(true);
 
+  if (surface === "commerce") return <ErrorBoundary>{children}<Toaster position="top-center" richColors /></ErrorBoundary>;
+
   const page = surface === "pending" ? null : <ErrorBoundary>
     {surface === "main" ? <MemberFeatureBoundary>{children}</MemberFeatureBoundary> : children}
   </ErrorBoundary>;
 
   return <>
     {keepMainRuntime ? <AppProvider>
+      <PaymentWalletSync />
       <MemberPermissionProvider>
         {surface !== "pending" && <SecondaryPageReturnGuard />}
         {page}

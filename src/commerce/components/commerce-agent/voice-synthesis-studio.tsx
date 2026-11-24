@@ -72,7 +72,7 @@ export function VoiceSynthesisStudio({onBack,onNotice}:{onBack:()=>void;onNotice
    .then(([catalog,history])=>{
     if(!mounted.current)return;
     const rows=catalog.voices||[];setVoices(rows);
-    setVoiceId(current=>current||rows.find(voice=>voice.available&&voice.priceConfigured)?.voiceId||rows[0]?.voiceId||'');
+    setVoiceId(current=>current||rows.find(voice=>voice.generationReady)?.voiceId||rows.find(voice=>voice.available&&voice.priceConfigured)?.voiceId||rows[0]?.voiceId||'');
     setJobs(history.jobs||[]);setSelectedJob((history.jobs||[])[0]||null);setError('');
    })
    .catch(reason=>{if(mounted.current)setError((reason as Error).message);})

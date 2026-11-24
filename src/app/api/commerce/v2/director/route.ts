@@ -21,10 +21,10 @@ function settings(draft: ReturnType<typeof parseProductionDraft>) {
   };
 }
 
-function prepared(owner: string, rawDraft: unknown, enforceMaterials = true) {
+async function prepared(owner: string, rawDraft: unknown, enforceMaterials = true) {
   const draft = canonicalizeProductionMaterials(owner, parseProductionDraft(rawDraft));
   if (!draft.director?.conversationId) throw new Error("编导会话标识缺失");
-  const director = commerceV2DirectorDefinition(draft.director.skillKey, draft.director.registryVersion, draft.director.promptVersion);
+  const director = await commerceV2DirectorDefinition(draft.director.skillKey, draft.director.registryVersion, draft.director.promptVersion);
   const issues = validateDirectorMaterialContract(draft.materials, director.slots);
   if (enforceMaterials && issues.length) throw new Error(issues.join("；"));
   const references = draft.materials.flatMap((material) => {
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     sameOrigin(request);
     const identity = requireIdentity(request);
     const body = await request.json();
-    const value = prepared(identity.id, body?.draft, body.action !== "open");
+    const value = await prepared(identity.id, body?.draft, body.action !== "open");
     if (body.action === "open") {
       const conversation = directorPage(openDirector(identity.id, value.draft.director!.conversationId!, value.settings));
       return NextResponse.json({ conversation, sideEffects: { databaseWrites: 1, walletCalls: 0, providerCalls: 0, paidGenerationCalls: 0 } });

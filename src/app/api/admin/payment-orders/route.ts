@@ -3,6 +3,7 @@
 // 本文件是管理员订单查询 API。
 // 修改此文件需要用户明确同意，详见 AGENTS.md "🔒 锁定模块清单 #12 支付系统"。
 
+import { evaluatePaidOrderSettlement } from "@/lib/payment-settlement-status";
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeAdminCapability } from "@/lib/server/admin-governance-authority";
 import { getSupabaseAdminClient } from "@/storage/database/supabase-client";
@@ -88,6 +89,26 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
     const rows = (data || []) as unknown as Array<Record<string, unknown>>;
 
+    const paidKeys = rows.filter(row => row.status === "paid").map(row => `payment:${row.trade_order_id}`);
+    const operations = paidKeys.length ? await database.from("wallet_operations")
+      .select("id,user_id,wallet,operation_kind,idempotency_key,status,amount,delta,balance_before,balance_after")
+      .in("idempotency_key", paidKeys) : { data: [], error: null };
+    const operationRows: Array<Record<string, unknown>> = operations.data || [];
+    const ids = operationRows.map(operation => String(operation.id));
+    const entries = ids.length ? await database.from("wallet_ledger_entries")
+      .select("operation_id,user_id,wallet,operation_kind,idempotency_key,delta,balance_before,balance_after")
+      .in("operation_id", ids) : { data: [], error: null };
+    const ledgerRows: Array<Record<string, unknown>> = entries.data || [];
+    const orders = rows.map(order => {
+      if (order.status !== "paid") return order;
+      if (operations.error || entries.error) return { ...order, settlementStatus: "unavailable" };
+      const matches = operationRows.filter(item => item.idempotency_key === `payment:${order.trade_order_id}`);
+      const matchingIds = new Set(matches.map(item => String(item.id)));
+      const settlement = evaluatePaidOrderSettlement({ order, walletOperations: matches,
+        ledgerEntries: ledgerRows.filter(item => matchingIds.has(String(item.operation_id))) });
+      return { ...order, settlementStatus: settlement.status, settlementIssues: settlement.issueCodes };
+    });
+
     // The optional RPC is installed by the same forward migration as manual
     // refund reconciliation. Until that migration is deployed, return an
     // explicit page-scoped fallback rather than downloading the full table.
@@ -102,7 +123,7 @@ export async function GET(request: NextRequest) {
       : "page_fallback_migration_required";
 
     return noStore(NextResponse.json({
-      orders: rows,
+      orders,
       total: count || 0,
       page,
       pageSize,

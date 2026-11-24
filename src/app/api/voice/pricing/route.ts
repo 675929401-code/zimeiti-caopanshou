@@ -13,8 +13,7 @@ export async function GET() {
         modelId: p.modelId,
         name: p.name,
         unit: p.unit,
-        // 售价 = 成本 × (1 + 利润率)
-        sellPrice: Math.round(p.costPrice * (1 + p.profitMargin / 100) * 100) / 100,
+        priceReady: Number.isFinite(p.costPrice) && p.costPrice > 0 && Number.isFinite(p.profitMargin) && p.profitMargin > -100,
       })),
     }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error: unknown) {

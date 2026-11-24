@@ -1,3 +1,4 @@
+import { BillingCatalogRequest } from "@/lib/server/member-model-catalog";
 import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -18,11 +19,12 @@ import { mutatePublishingGeneric, readPublishingGeneric, readPublishingGenericSt
 import { PublishingStudioDraftSchema,PublishingStudioPlanSchema } from '@/lib/publishing-studio-contract';
 import { mutatePublishingV2,readPublishingV2,projectPublishingV2Mutation } from "./publishing-v2-service";
 import { mutatePublishingV3,readPublishingV3,type PublishingV3Result } from "./publishing-v3-service";
-import { readPublishingProviderConfiguration, readPublishingProviderConfigurations, readStaticPublishingPlatformCatalog, providerEnvironmentForPlatform, OVERSEAS_PUBLISHING_PLATFORMS } from "./publishing-provider-config";
+import { readPublishingProviderConfiguration, readPublishingProviderConfigurations, readStaticPublishingPlatformCatalog, providerEnvironmentForPlatform } from "./publishing-provider-config";
 import { PublishingProvider,validatePublishingProviderOptions } from "./publishing-provider";
 import { parsePublicImageResolutionPrices } from "@/lib/image-resolution-pricing";
 import { createNativeCsrfCodec,createNativeSelectionCodec } from "./native-operations-csrf";
 import { projectNativeGenericPlatform,readNativeGenericAccount,readNativeGenericAccounts } from "./native-generic-accounts";
+import { PublishingDynamicFieldSchema } from "@/lib/publishing-dynamic-options";
 import { readNativeProfile,readNativeProfileAvatar,updateNativeProfile } from "./native-profile-service";
 import { NativeMediaSourceSchema,nativeMainMediaPath,nativeMainMediaReference,nativeMainMediaIdentity,nativeMainMediaUuid,type NativeMediaSource } from "@/lib/native-main-media-contract";
 import { readNativeMediaSource } from "./native-main-media";
@@ -151,19 +153,23 @@ async function nativeRecords(db:DB,user:AuthUser,selection?:{attempts:string[];s
  return result.sort((a,b)=>Date.parse(string(b.createdAt))-Date.parse(string(a.createdAt)));
 }
 async function publicModelCatalog(kind:"chat"|"image"|"video"){
- const response=kind==="chat"?await(await import("@/app/api/chat-models/route")).GET():kind==="image"?await(await import("@/app/api/cover-models/route")).GET(new Request("http://native.internal/api/cover-models?surface=publish-center-image")):await(await import("@/app/api/video/models/route")).GET(new Request("http://native.internal/api/video/models?surface=publish-center-video"));
+ const response=kind==="chat"?await(await import("@/app/api/chat-models/route")).GET():kind==="image"?await(await import("@/app/api/cover-models/route")).GET(new BillingCatalogRequest("http://native.internal/api/cover-models?surface=publish-center-image")):await(await import("@/app/api/video/models/route")).GET(new BillingCatalogRequest("http://native.internal/api/video/models?surface=publish-center-video"));
  if(!response.ok)throw new PublishingError("NATIVE_MODEL_CATALOG_UNAVAILABLE","主站模型目录暂不可读取，请稍后刷新",503);const value=object(await response.json());return [...list(value.models),...list(value.unavailableModels)];
 }
 function nativeModelFacts(model:Row,kind:"chat"|"image"|"video"){const capabilities=object(model.capabilities),ready=capabilities.priceReady===true;const rate=kind==="chat"?null:ready&&typeof model.publicPrice==="number"&&Number.isFinite(model.publicPrice)?model.publicPrice:null;return {nativeModelId:model.id,displayName:model.displayName,logo:model.avatarUrl,capabilities,priceReady:ready,generationReady:ready&&capabilities.generationReady!==false,nativeBilling:{currency:kind==="chat"?"credits":"CNY",unit:capabilities.billingUnit??(kind==="chat"?"token":"per_use"),price:rate},readinessMessage:capabilities.readinessMessage??capabilities.availabilityMessage??""};}
 /** Closed native HTTP mapping. No provider path, owner or URL passthrough. */
 export async function executeNativeOperation(user:AuthUser,db:DB,method:string,path:string[],query:URLSearchParams,raw:unknown,origin:string,cookies:{get(name:string):string|undefined}):Promise<NativeOperationResult>{
  await assertNativeAccess(user);const route=path.join("/");const queryObject=Object.fromEntries(query);
+ const uploadRegion = z.enum(["domestic", "international"]).optional();
  if(route==="media-bridge"&&(method==="GET"||method==="POST")){
-  const bridge=await import("./native-main-media-bridge"),currentNamespace=()=>readPublishingProviderConfiguration().namespace;
-  if(method==="GET")return {data:{bridge:await bridge.readNativeMainMediaBridge(user,db,queryObject,{currentNamespace})}};
-  if(query.size)invalid();if(!readPublishingProviderConfiguration().configured)throw new PublishingError("PROVIDER_NOT_CONFIGURED","官方API尚未配置，未准备或上传本站素材，请联系管理员",409);
+  const bridge=await import("./native-main-media-bridge");
+  const { region, ...lookup } = queryObject;
+  const uploadEnvironment = input(uploadRegion, region);
+  const cfg = readPublishingProviderConfiguration(uploadEnvironment), currentNamespace = cfg.namespace;
+  if(method==="GET")return {data:{bridge:await bridge.readNativeMainMediaBridge(user,db,lookup,{currentNamespace})}};
+  if(Object.keys(lookup).length)invalid();if(!cfg.configured)throw new PublishingError("PROVIDER_NOT_CONFIGURED","官方API尚未配置，未准备或上传本站素材，请联系管理员",409);
   const session=cookies.get("auth_token");if(!session)throw new PublishingError("SESSION_EXPIRED","请先登录主站",401);
-  return {data:await bridge.prepareNativeMainMediaBridge(user,db,raw,{currentNamespace,cookies,headers:new Headers({cookie:`auth_token=${session}`})})};
+  return {data:await bridge.prepareNativeMainMediaBridge(user,db,raw,{currentNamespace,uploadEnvironment,cookies,headers:new Headers({cookie:`auth_token=${session}`})})};
  }
  if(path[0]==="ai"&&(["actions","batches"].includes(path[1])||path[1]==="draft-generation"&&path[2]!=="pricing"||path[1]==="video"&&path[2]==="generations")){
   const session=cookies.get("auth_token");if(!session)throw new PublishingError("SESSION_EXPIRED","请先登录主站",401);
@@ -252,8 +258,8 @@ export async function executeNativeOperation(user:AuthUser,db:DB,method:string,p
   const assets=object((await readPublishingV3(user,db,PublishingV3QuerySchema.parse({resource:'assets',id:op.subjectId,pageSize:1}))).body);
   return {data:{operation:op,asset:list(assets.items)[0]??null,uploadUrlRecoverable:false}};
  }
- if(route==="assets/upload-sign"&&method==="POST"){const action=PublishingV3ActionSchema.safeParse({...object(raw),action:"upload-sign"});if(!action.success)invalid();const result=await mutatePublishingV3(user,db,action.data,cookies);const body=object(result.body),upload=object(body.upload),asset=object(body.asset);if(!upload.url)throw new PublishingError("NATIVE_UPLOAD_RESULT_UNKNOWN","签名结果未返回，请核对原上传记录，勿重复申请",409,true);return {data:{id:asset.id,url:nativeAssetPath(string(asset.id)),uploadUrl:upload.url}};}
- if(path[0]==="assets"&&id.safeParse(path[1]).success){if(path.length===2&&method==="GET"){const page=object((await readPublishingV3(user,db,PublishingV3QuerySchema.parse({resource:"assets",id:path[1],pageSize:1}))).body);const asset=list(page.items)[0];if(!asset)throw new PublishingError("NATIVE_RECORD_NOT_FOUND","素材不存在或连接已变化",404);return {data:asset};}if(path.length===3&&path[2]==="confirm"&&method==="POST"){const parsed=z.object({id,requestKey:z.string()}).strict().safeParse(raw);if(!parsed.success||parsed.data.id!==path[1])invalid();const result=await mutatePublishingV3(user,db,PublishingV3ActionSchema.parse({action:"upload-confirm",assetId:path[1],requestKey:parsed.data.requestKey}),cookies);return {data:{url:nativeAssetPath(path[1]),asset:object(result.body).asset}};}}
+ if(route==="assets/upload-sign"&&method==="POST"){const { region } = input(z.object({ region: uploadRegion }).strict(), queryObject);const action=PublishingV3ActionSchema.safeParse({...object(raw),action:"upload-sign"});if(!action.success)invalid();const result=await mutatePublishingV3(user,db,action.data,cookies,undefined,region);const body=object(result.body),upload=object(body.upload),asset=object(body.asset);if(!upload.url)throw new PublishingError("NATIVE_UPLOAD_RESULT_UNKNOWN","签名结果未返回，请核对原上传记录，勿重复申请",409,true);return {data:{id:asset.id,url:nativeAssetPath(string(asset.id)),uploadUrl:upload.url}};}
+ if(path[0]==="assets"&&id.safeParse(path[1]).success){if(path.length===2&&method==="GET"){const page=object((await readPublishingV3(user,db,PublishingV3QuerySchema.parse({resource:"assets",id:path[1],pageSize:1}))).body);const asset=list(page.items)[0];if(!asset)throw new PublishingError("NATIVE_RECORD_NOT_FOUND","素材不存在或连接已变化",404);return {data:asset};}if(path.length===3&&path[2]==="confirm"&&method==="POST"){const parsed=z.object({id,requestKey:z.string()}).strict().safeParse(raw);if(!parsed.success||parsed.data.id!==path[1])invalid();const result=await mutatePublishingV3(user,db,PublishingV3ActionSchema.parse({action:"upload-confirm",assetId:path[1],requestKey:parsed.data.requestKey}),cookies);const asset=object(object(result.body).asset);if(asset.state!=="ready")throw new PublishingError("NATIVE_UPLOAD_RESULT_UNKNOWN","素材确认仍待回执，请核对原上传",409,true);return {data:{url:nativeAssetPath(path[1]),asset}};}}
  if(route==="v2/channels/platforms"&&method==="GET"){
   const configurations=readPublishingProviderConfigurations();
   const environments=[
@@ -261,22 +267,23 @@ export async function executeNativeOperation(user:AuthUser,db:DB,method:string,p
    {environment:"international" as const,cfg:configurations.international},
   ];
   const catalogs=await Promise.all(environments.map(async entry=>{
-   let catalog:Row[]=readStaticPublishingPlatformCatalog(),issue:string|undefined;
-   if(entry.cfg.apiKey){try{catalog=await new PublishingProvider({environment:entry.environment,apiKey:entry.cfg.apiKey,scope:{ownerId:user.id,accountIds:new Set(),flowIds:new Set(),recordIds:new Set(),taskIds:new Set(),authSessionIds:new Set()}}).readCapabilities();}catch{issue="PROVIDER_METADATA_UNAVAILABLE";}}
-   return {...entry,catalog,issue};
+   const catalog = entry.cfg.apiKey ? await new PublishingProvider({environment:entry.environment,apiKey:entry.cfg.apiKey,scope:{ownerId:user.id,accountIds:new Set(),flowIds:new Set(),recordIds:new Set(),taskIds:new Set(),authSessionIds:new Set()}}).readDirectoryCapabilities().catch(() => []) : [];
+   return {...entry,catalog};
   }));
-  const merged=new Map<string,Row>();
-  for(const entry of catalogs)for(const item of entry.catalog){const name=String(item.platform);if(providerEnvironmentForPlatform(name)!==entry.environment)continue;merged.set(name,{...item,providerEnvironment:entry.environment});}
+  const merged=new Map<string,Row>(readStaticPublishingPlatformCatalog().map(item=>[item.platform,{...item,providerEnvironment:providerEnvironmentForPlatform(item.platform)}]));
+  const verifiedPlatforms=new Set<string>();
+  for(const entry of catalogs)for(const item of entry.catalog){const name=String(item.platform);if(!merged.has(name)||providerEnvironmentForPlatform(name)!==entry.environment)continue;verifiedPlatforms.add(name);merged.set(name,{...item,providerEnvironment:entry.environment});}
   const configuration=await db.from("pub_config_versions").select("execution_enabled,enabled_platforms").order("version",{ascending:false}).limit(1).maybeSingle();if(configuration.error)dbError(configuration.error);const current=object(configuration.data),enabled=publishingRuntimeEnabled()&&current.execution_enabled===true,platforms=Array.isArray(current.enabled_platforms)?current.enabled_platforms:[];
   const officialStatus=object((await readPublishingV3(user,db,input(PublishingV3QuerySchema,{resource:"status"}))).body),genericStatus=await readPublishingGenericStatus(db);
   return {data:[...merged.values()].map(item=>{
    const environment=String(item.providerEnvironment) as "domestic"|"international",cfg=configurations[environment];
-   const generic=projectNativeGenericPlatform(item,{configured:cfg.configured&&Boolean(cfg.apiKey),schemaReady:genericStatus.schemaReady,executionEnabled:enabled,enabledPlatforms:environment==="international"?[...platforms.map(String),...OVERSEAS_PUBLISHING_PLATFORMS]:platforms.map(String)});
-   if(generic)return {...generic,providerEnvironment:environment};
+   const generic=projectNativeGenericPlatform(item,{configured:cfg.configured&&Boolean(cfg.apiKey),schemaReady:genericStatus.schemaReady,executionEnabled:enabled,enabledPlatforms:platforms.map(String)});
+   if(generic)return {...generic,providerEnvironment:environment,
+    ...(!verifiedPlatforms.has(String(item.platform)) && cfg.configured ? {nativeReason:"暂时无法读取该平台的发布能力，请稍后重新读取平台列表"} : {})};
    const name=String(item.platform),browser=environment==="domestic"&&(name==="xhs"||name==="wxSph"||name==="douyin"),browserReady=name!=="douyin"||genericStatus.schemaReady;
    const channels=[
     ...(browser?[{transport:"browser_plugin",connectionAllowed:browserReady,publishAllowed:browserReady&&enabled&&platforms.includes(name),reason:!browserReady?"浏览器发布数据升级尚未部署":name==="xhs"?"插件可以接收排期，但当前官方文档不建议小红书定时；请在平台核对实际结果":"在本浏览器登录平台，插件仅授权本站；实际发布前将再次核对账号"}]:[]),
-    ...(environment==="domestic"&&name==="douyin"?[{transport:"official_api",connectionAllowed:officialStatus.authorizationEnabled===true,publishAllowed:enabled&&platforms.includes(name)&&officialStatus.configured===true&&officialStatus.schemaReady===true,reason:officialStatus.configured===true?"官方接口发布受理后仍需手机接力确认":"本站官方接口尚未配置，可选择浏览器仅授权通道"}]:[])
+    ...(environment==="domestic"&&name==="douyin"?[{transport:"official_api",connectionAllowed:verifiedPlatforms.has(name)&&item.status==="available"&&officialStatus.authorizationEnabled===true,publishAllowed:verifiedPlatforms.has(name)&&item.status==="available"&&enabled&&platforms.includes(name)&&officialStatus.configured===true&&officialStatus.schemaReady===true,reason:officialStatus.configured===true?"官方接口发布受理后仍需手机接力确认":"本站官方接口尚未配置，可选择浏览器仅授权通道"}]:[])
    ];
    const connection=channels.some(c=>c.connectionAllowed),publish=channels.some(c=>c.publishAllowed);
    return {...item,providerEnvironment:environment,channels,nativeConnectionAllowed:connection,nativePublishAllowed:publish,nativeReason:!connection?"本站账号连接尚未就绪":!publish?"可以先连接账号并整理内容，发布执行尚未开放":"发布前核对账号、素材与主站权益"};
@@ -311,6 +318,9 @@ export async function executeNativeOperation(user:AuthUser,db:DB,method:string,p
   if(path.length===5&&method==="POST"){const action=input(PublishingV3ActionSchema,{...object(raw),action:"start-auth",platform:"douyin"});const result=await mutatePublishingV3(user,db,action,cookies);const session=object(object(result.body).session);return {data:{url:session.url,sessionId:session.id,expiresAt:session.expiresAt,nativeRevision:session.revision},continuation:result.continuation};}
   if(path[5]==="status"&&path.length===7&&method==="GET"){const session=object((await readPublishingV3(user,db,input(PublishingV3QuerySchema,{resource:"auth-session",id:path[6]}))).body);const accounts=await readPublishingV3(user,db,input(PublishingV3QuerySchema,{resource:"bindings",pageSize:100}));const bound=list(object(accounts.body).items).filter(item=>item.authSessionId===session.id).map(item=>({accountId:item.id,platform:"douyin",platformUid:item.platformUid,displayName:item.displayName,...(item.avatar?{avatarUrl:item.avatar}:{})}));return {data:{sessionId:session.id,status:session.state==="completed"?"completed":["failed","expired"].includes(string(session.state))?"failed":"pending",requiresSelection:session.state==="requires_selection",expiresAt:session.expiresAt,nativeRevision:session.revision,accounts:bound,accountIds:bound.map(item=>item.accountId),selectableAccounts:list(session.selectableAccounts).map(item=>({...item,platform:"douyin"}))}};}
   if(path[5]==="select"&&path.length===6&&method==="POST"){const result=await mutatePublishingV3(user,db,input(PublishingV3ActionSchema,{...object(raw),action:"select-auth"}),cookies);return {data:result.body,continuation:result.continuation};}
+ }
+ if(method==="GET"&&path.length===7&&path.slice(0,3).join("/")==="v2/channels/accounts"&&path[4]==="publish-options"&&path[6]==="values"){
+  return {data:await readPublishingGeneric(user,db,input(PublishingGenericQuerySchema,{...queryObject,resource:"options",bindingId:input(id,path[3]),option:input(PublishingDynamicFieldSchema,path[5])}))};
  }
  if(route==="v2/channels/accounts"&&method==="GET"){
   const cfg=readPublishingProviderConfiguration();const [browser,official,generic]=await Promise.all([all(db,"pub_accounts",user),all(db,"pub3_account_bindings",user,{connection_id:cfg.namespace,status:"active"}),readNativeGenericAccounts(db,user).catch(reason=>{console.warn("[accounts] generic directory degraded:",reason instanceof Error?reason.message:"unknown");return [];})]);const accounts=[...(await Promise.all([...browser.map(row=>accountProjection(db,user,row,"browser")),...official.map(row=>accountProjection(db,user,row,"official"))])).filter(row=>!row.nativeDisconnected),...generic];return {data:{list:accounts,total:accounts.length}};

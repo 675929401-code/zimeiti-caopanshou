@@ -89,6 +89,7 @@ export function commerceOrdinaryCandidates(limit=DEFAULT_BATCH_LIMIT,now=Date.no
  const cap=safeLimit(limit),rows:CommerceOrdinaryCandidate[]=[];
  const jobs=db().prepare(`SELECT id,owner,updated FROM records WHERE bucket='jobs'
    AND json_extract(value,'$.input.rollingPlan') IS NULL
+   AND coalesce(json_extract(value,'$.directorSettlementRetryAt'),0)<=?
    AND (
      (COALESCE(json_extract(value,'$.input.rollingChild'),0)=0 AND (
        json_extract(value,'$.status')='queued'
@@ -96,13 +97,14 @@ export function commerceOrdinaryCandidates(limit=DEFAULT_BATCH_LIMIT,now=Date.no
        OR (json_extract(value,'$.status') IN ('succeeded','failed') AND EXISTS (
          SELECT 1 FROM records AS billing
          WHERE billing.bucket='billing' AND billing.id=records.id AND billing.owner=records.owner
-           AND json_extract(billing.value,'$.status') IN ('charge_pending','refund_pending','revenue_pending','reconciliation_required')
+           AND (json_extract(billing.value,'$.status') IN ('charge_pending','refund_pending','revenue_pending','reconciliation_required')
+             OR (json_extract(records.value,'$.directorBillsOnResult')=1 AND json_extract(records.value,'$.status')='succeeded' AND json_extract(billing.value,'$.status')='charged'))
        ))
      ))
      OR (COALESCE(json_extract(value,'$.input.rollingChild'),0)=1
        AND json_extract(value,'$.status')='saving' AND updated<=?)
    )
-   ORDER BY updated ASC LIMIT ?`).all(now-POLLABLE_JOB_AGE_MS,now-POLLABLE_JOB_AGE_MS,cap);
+   ORDER BY updated ASC LIMIT ?`).all(now,now-POLLABLE_JOB_AGE_MS,now-POLLABLE_JOB_AGE_MS,cap);
  for(const row of jobs)rows.push({kind:'job',id:String(row.id),owner:String(row.owner),updatedAt:Number(row.updated||0)});
  const edits=db().prepare(`SELECT id,owner,updated FROM records WHERE bucket='media-edits'
    AND (json_extract(value,'$.status')='queued'

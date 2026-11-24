@@ -38,9 +38,12 @@ async function main() {
     for (const args of [
       { resolutionTier: "4k" }, { imageUrls: Array.from({ length: 11 }, (_, i) => `https://fixture.invalid/${i}.png`) },
       { imageUrl: "data:image/png;base64,offline" }, { aspectRatio: "auto" },
+      { sourceVideoUrl: "https://fixture.invalid/ref.mp4", audioUrl: "https://fixture.invalid/voice.mp3" },
+      { audioUrls: ["https://fixture.invalid/voice.mp3"] }, { generateAudio: true },
     ]) { count = 0; await assert.rejects(() => submitVideoTask(config, { prompt: "Offline", ...args })); assert.equal(count, 0); checks++; }
-    const mixed = secureSkillKlingBody(config, { prompt: "Offline", imageUrl: "https://fixture.invalid/a.png", referenceImageUrl: "https://fixture.invalid/a.png", sourceVideoUrl: "https://fixture.invalid/ref.mp4", audioUrl: "https://fixture.invalid/a.mp3", generateAudio: false });
-    assert.equal((mixed.media as unknown[]).length, 3); assert.equal(mixed.enable_audio, false); checks++;
+    const mixed = secureSkillKlingBody(config, { prompt: "Offline", imageUrl: "https://fixture.invalid/a.png", referenceImageUrl: "https://fixture.invalid/a.png", sourceVideoUrl: "https://fixture.invalid/ref.mp4", generateAudio: false });
+    assert.deepEqual(mixed.media, [{ type: "reference_image", url: "https://fixture.invalid/a.png" }, { type: "reference_video", url: "https://fixture.invalid/ref.mp4" }]);
+    assert.equal(mixed.enable_audio, false); checks++;
     reply = { id: "offline-task", status: "completed", output: [{ url: "https://fixture.invalid/result.mp4" }] };
     assert.equal((await pollVideoTask(config, "offline-task")).videoUrl, "https://fixture.invalid/result.mp4"); checks++;
     reply = { id: "offline-task", status: "completed" };

@@ -138,6 +138,13 @@ async function run({ upstream, provider = 'openai', live = true, before = false,
   return { ...env, text };
 }
 
+for (const provider of ["openai", "zhipu"]) {
+  const result = await run({ provider, upstream: chunks(frame(content("已输出")) + frame({ choices: [{ delta: {}, finish_reason: "stop" }] }) + "data: [DONE]\n\n") });
+  assert.equal(result.state.settlements, 0, "No character estimate may settle as reported usage");
+  assert.match(result.text, /供应商用量回执不完整/);
+  assert.match(result.text, /"reconciliation_required":true/);
+}
+
 function responseStartLogs(state) {
   return state.logs.flatMap(log => log.args.filter(arg => typeof arg === 'string' && arg.startsWith('{')).map(arg => {
     try { return { level: log.level, payload: JSON.parse(arg) }; } catch { return null; }

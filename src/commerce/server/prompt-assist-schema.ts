@@ -1,3 +1,4 @@
+import {referenceScenes,type ReferenceScene} from '../shared/reference-scenes';
 // Independent contract, mapped from the public prompt-assist UI and tutorial.
 export const BUSINESS_SCENES = ['电商带货', '同城到店', '上门服务', '教育培训'] as const;
 export const SPOKEN_LANGUAGES = ['中文', '英文', '泰国', '马来西亚', '巴西', '不限'] as const;
@@ -7,11 +8,12 @@ export type AssistReference = {id:string;slot:string};
 export type VideoSettings = {resolution:string;duration:number;aspectRatio:string;generateAudio:boolean};
 export type AssistApplication={id:string;sessionId:string;versionId:string;scriptJobId:string;sourceAnalysisJobId:string;sourceBreakdownJobId?:string;sourceVideoAssetId?:string;references:AssistReference[];videoSettings:VideoSettings;script:string};
 export type ProductAnalysis = {product:string;category:string;productFeatures:string[];sellingPoints:string[];audience:string[];scenes:string[];uncertainties:string[];references:{id:string;description:string}[]};
-export type AssistConfig = {businessScene:string;spokenLanguage:string;contentType:string;shootingMethod:string;extraInstruction:string};
+export type AssistConfig = {sceneKey?:ReferenceScene;businessScene:string;spokenLanguage:string;contentType:string;shootingMethod:string;extraInstruction:string};
 export const defaultAssistConfig:AssistConfig = {businessScene:'电商带货',spokenLanguage:'中文',contentType:'智能匹配',shootingMethod:'智能匹配',extraInstruction:''};
 export function assistConfig(value:AssistConfig):AssistConfig {
  if(!value||!BUSINESS_SCENES.includes(value.businessScene as never)||!SPOKEN_LANGUAGES.includes(value.spokenLanguage as never)||!CONTENT_TYPES.includes(value.contentType as never)||!SHOOTING_METHODS.includes(value.shootingMethod as never)||typeof value.extraInstruction!=='string'||value.extraInstruction.length>4000)throw Error('创作配置无效');
- return {businessScene:value.businessScene,spokenLanguage:value.spokenLanguage,contentType:value.contentType,shootingMethod:value.shootingMethod,extraInstruction:value.extraInstruction};
+ if(value.sceneKey!==undefined && !Object.hasOwn(referenceScenes,value.sceneKey))throw Error('改写场景无效');
+ return {...(value.sceneKey?{sceneKey:value.sceneKey}:{}),businessScene:value.businessScene,spokenLanguage:value.spokenLanguage,contentType:value.contentType,shootingMethod:value.shootingMethod,extraInstruction:value.extraInstruction};
 }
 export function productAnalysis(value:unknown,refs:AssistReference[]):ProductAnalysis {
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('素材分析没有返回有效结构');

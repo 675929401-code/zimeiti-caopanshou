@@ -57,6 +57,7 @@ check("旧十场景 v1 快照不补 native key 且保持原始哈希", () => {
   const legacy = rawWorkspace();
   delete legacy.surfaces["publish-center-image"];
   delete legacy.surfaces["publish-center-video"];
+  delete legacy.surfaces["commerce-generation-video"];
   const hash = configurationSha256(legacy);
   const normalized = normalizeWorkspaceModelSnapshot(legacy);
   assert.equal(Object.keys(normalized.surfaces).length, 10);

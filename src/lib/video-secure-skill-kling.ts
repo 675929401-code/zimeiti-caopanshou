@@ -18,21 +18,20 @@ export function secureSkillKlingBody(config: VideoModelConfig, params: VideoGene
   });
   const images = urls([params.imageUrl, params.referenceImageUrl, params.lastFrameUrl, ...(params.imageUrls || [])]);
   const videos = urls([params.sourceVideoUrl]);
-  const audios = urls([params.audioUrl, ...(params.audioUrls || [])]);
+  if (params.audioUrl || params.audioUrls?.some(Boolean)) throw new Error("可灵当前渠道不支持参考音频，请选择支持声音参考的渠道");
+  if (params.generateAudio === true) throw new Error("可灵当前渠道不支持主动开启声音生成");
   const imageLimit = Math.min(10, Number(protocol.max_reference_images) || 10);
-  const audioLimit = Math.min(3, Number(protocol.max_reference_audios) || 3);
-  if (images.length > imageLimit || audios.length > audioLimit || images.length + videos.length + audios.length > 15) throw new Error("KLING_REFERENCE_LIMIT_EXCEEDED");
+  if (images.length > imageLimit || images.length + videos.length > 15) throw new Error("KLING_REFERENCE_LIMIT_EXCEEDED");
   if (videos.length && protocol.supports_source_video === false) throw new Error("KLING_SOURCE_VIDEO_NOT_CONFIGURED");
   const ratio = params.aspectRatio || "16:9";
-  if (!["16:9", "9:16", "1:1", "21:9"].includes(ratio) && !(ratio === "auto" && (videos.length || audios.length))) throw new Error("KLING_RATIO_UNSUPPORTED");
+  if (!["16:9", "9:16", "1:1", "21:9"].includes(ratio) && !(ratio === "auto" && videos.length)) throw new Error("KLING_RATIO_UNSUPPORTED");
   const media = [
     ...images.map(url => ({ type: "reference_image", url })),
     ...videos.map(url => ({ type: "reference_video", url })),
-    ...audios.map(url => ({ type: "reference_audio", url })),
   ];
   return {
     model: config.model_name, prompt: params.prompt, duration, resolution, ratio,
     ...(media.length ? { media } : {}),
-    ...((videos.length || audios.length) && typeof params.generateAudio === "boolean" ? { enable_audio: params.generateAudio } : {}),
+    ...(videos.length && params.generateAudio === false ? { enable_audio: false } : {}),
   };
 }

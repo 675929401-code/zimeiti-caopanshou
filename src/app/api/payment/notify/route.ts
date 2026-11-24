@@ -6,6 +6,7 @@ import { verifyNotify as verifyXunhuNotify, XunhuNotifyParams } from "@/lib/xunh
 import { verifyNotify as verifyEPayNotify, EPayNotifyParams } from "@/lib/epay";
 import { fulfillPaymentOrder } from "@/lib/payment-fulfillment";
 import { createHash } from "node:crypto";
+import { localCallbackProbe } from "@/lib/local-payment-callback";
 
 const MAX_CALLBACK_BODY_BYTES = 64 * 1024;
 const MAX_CALLBACK_FIELDS = 64;
@@ -130,8 +131,17 @@ function callbackReference(value: string | null | undefined): string {
 
 // POST /api/payment/notify - asynchronous provider callback.
 export async function POST(request: NextRequest) {
+  const probe = localCallbackProbe(request);
+  if (probe) return probe;
   try {
     const params = await parseCallbackParams(request);
+
+    if (request.nextUrl.pathname === "/api/payment/preview-notify") {
+      const identifiers = [params.trade_order_id, params.out_trade_no].filter(Boolean);
+      if (!identifiers.length || identifiers.some(id => id !== identifiers[0] || !/^LPT_(cash|credits)_[0-9A-F]{32}$/u.test(id))) {
+        return new NextResponse("fail", { status: 400 });
+      }
+    }
 
     const hasEPaySignature = Boolean(params.trade_no && params.out_trade_no && params.trade_status);
     const hasXunhuSignature = Boolean(params.trade_order_id && params.transaction_id && params.hash);

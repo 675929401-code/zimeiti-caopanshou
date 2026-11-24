@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {IMAGE_SKILLS} from '../src/commerce/components/commerce-agent/catalog';
 import {baselineDirectorCatalog} from '../src/commerce/server/director-catalog';
-import {baselinePromptTemplates} from '../src/commerce/server/prompts';
+import {baselinePromptTemplates,resolveOperationPrompt} from '../src/commerce/server/prompts';
 import {commercePromptPackageCatalogCoverage,resolveCommercePromptPackageIdentity,sameCommercePromptPackageIdentity} from '../src/commerce/server/prompt-package-identity';
 
 const prompts=baselinePromptTemplates();
@@ -22,21 +22,21 @@ check('all 16 image packages freeze observed and independent identities',()=>{
  assert.ok(packages.every(item=>item.skillKind==='image-skill'&&item.benchmarkReference?.contractOnly===true&&/^[a-f0-9]{64}$/u.test(item.packageSha256)));
 });
 
-check('all 19 director packages freeze observed and independent identities',()=>{
+check('all 28 director packages freeze observed and independent identities',()=>{
  const cards=baselineDirectorCatalog();
- assert.equal(cards.length,19);
+ assert.equal(cards.length,28);
  const packages=cards.map(card=>{
   const prompt=prompts.find(item=>item.id===`director.${card.key}`);
   assert.ok(prompt,`missing prompt ${card.key}`);
   return resolveCommercePromptPackageIdentity({kind:'agent',purpose:'director',director:card.key},{prompt,authority:'curated-main-catalog'});
  });
- assert.equal(new Set(packages.map(item=>item.localSkillId)).size,19);
- assert.equal(new Set(packages.map(item=>item.benchmarkReference?.configVersion)).size,19);
+ assert.equal(new Set(packages.map(item=>item.localSkillId)).size,28);
+ assert.equal(new Set(packages.map(item=>item.benchmarkReference?.configVersion)).size,28);
  assert.ok(packages.every(item=>item.skillKind==='director-skill'&&item.benchmarkReference?.contractOnly===true&&/^[a-f0-9]{64}$/u.test(item.packageSha256)));
 });
 
 check('catalog coverage is exact',()=>{
- assert.deepEqual(commercePromptPackageCatalogCoverage(),{image:{local:16,benchmark:16,identified:16},director:{local:19,benchmark:19,identified:19}});
+ assert.deepEqual(commercePromptPackageCatalogCoverage(),{image:{local:16,benchmark:16,identified:16},director:{local:28,benchmark:28,identified:28}});
 });
 
 check('prompt mutation invalidates package identity',()=>{
@@ -70,6 +70,15 @@ check('quote job and public readback carry exact package snapshot',()=>{
  assert.match(jobs,/quotedPromptPackage\?:CommercePromptPackageIdentity/u);
  assert.match(jobs,/promptPackage:configurationSnapshot\.promptPackage/u);
  assert.match(jobs,/sameCommercePromptPackageIdentity\(internalContext\.quotedPromptPackage,promptPackage\)/u);
+});
+
+check('published director uses the exact pinned prompt and rejects a missing pin', () => {
+ const older = {id:'version-one',promptKey:'director.default-director',name:'已绑定旧版',version:1,content:'旧版正文',source:'independent-implementation',status:'published' as const};
+ const newer = {...older,id:'version-two',version:2,content:'新版正文'};
+ const configuration = {prompts:[newer,older]};
+ assert.equal(resolveOperationPrompt(older.promptKey, older.id, configuration).prompt.content, older.content);
+ assert.equal(resolveOperationPrompt(older.promptKey, null, configuration).publishedPrompt?.id, newer.id);
+ assert.throws(() => resolveOperationPrompt(older.promptKey, 'missing-version', configuration), /缺少提示词 missing-version/);
 });
 
 console.log(JSON.stringify({schemaVersion:'commerce-prompt-package-versioning-test/v1',passed:results.length,total:results.length,checks:results,effects:{databaseWrites:0,networkCalls:0,providerCalls:0,paidGeneration:0,deployment:0}},null,2));

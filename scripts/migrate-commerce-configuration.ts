@@ -30,7 +30,7 @@ async function main(){
   const all=new Map([...baselineDirectorCatalog(),...overlay.custom].map((card)=>[card.key,active.get(card.key)||card]));
   const promptRows=templates().map((prompt)=>({
     id:uuid(`prompt:${prompt.id}:v${prompt.version}`),prompt_key:prompt.id,version:prompt.version,name:prompt.name,content:prompt.content,
-    source:'independent-implementation',change_note:'从带货业务 SQLite 迁入首个共享配置草稿',status:'draft',
+    source:prompt.source,change_note:'从带货业务 SQLite 迁入首个共享配置草稿',status:'draft',
   }));
   const promptIds=new Map(promptRows.map((row)=>[row.prompt_key,row.id]));
   const directorCards=[...all.values()].map((card,index)=>{

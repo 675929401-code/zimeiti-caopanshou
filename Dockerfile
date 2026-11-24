@@ -10,6 +10,7 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
     PUPPETEER_SKIP_DOWNLOAD=true
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY integrations/commerce-pptx/package.json ./integrations/commerce-pptx/package.json
 COPY scripts/enforce-pnpm.mjs ./scripts/enforce-pnpm.mjs
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
@@ -22,10 +23,18 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
     NODE_ENV=production
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/integrations/commerce-pptx/node_modules ./integrations/commerce-pptx/node_modules
 COPY . .
 RUN pnpm exec next build \
     && test -f .next/standalone/server.js \
     && test -s .next/BUILD_ID
+
+FROM ${NODE_IMAGE} AS remotion
+WORKDIR /opt/commerce-remotion
+COPY integrations/commerce-remotion/package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY integrations/commerce-remotion/*.cjs integrations/commerce-remotion/*.jsx ./
+RUN npm run bundle
 
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
@@ -35,7 +44,7 @@ RUN apt-get update \
        ca-certificates \
        chromium \
        ffmpeg \
-       fonts-liberation \
+       fonts-liberation python3-venv libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1001 nodejs \
     && useradd --system --uid 1001 --gid nodejs --home-dir /app nextjs
@@ -47,6 +56,14 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
+COPY integrations/commerce-documents/requirements.txt /tmp/commerce-documents-requirements.txt
+RUN python3 -m venv /opt/commerce-documents && /opt/commerce-documents/bin/pip install --no-cache-dir -r /tmp/commerce-documents-requirements.txt
+COPY integrations/commerce-captions/requirements.txt /tmp/commerce-captions-requirements.txt
+COPY integrations/commerce-captions/install_model.py /tmp/install-commerce-asr.py
+RUN /opt/commerce-documents/bin/pip install --no-cache-dir -r /tmp/commerce-captions-requirements.txt && /opt/commerce-documents/bin/python /tmp/install-commerce-asr.py /opt/commerce-asr
+COPY --from=remotion /opt/commerce-remotion /opt/commerce-remotion
+ENV COMMERCE_REMOTION_DIR=/opt/commerce-remotion
+ENV COMMERCE_DOCUMENT_PYTHON=/opt/commerce-documents/bin/python COMMERCE_WHISPER_MODEL=/opt/commerce-asr
 COPY --chown=nextjs:nodejs --from=builder /app/.next/standalone ./
 COPY --chown=nextjs:nodejs --from=builder /app/.next/static ./.next/static
 # The clean Git source contains only explicitly allowlisted public metadata.

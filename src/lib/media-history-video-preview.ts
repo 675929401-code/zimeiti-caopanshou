@@ -24,15 +24,10 @@ export async function requestMediaHistoryVideoUrl(
 ): Promise<string> {
   if (!token) throw new Error("请先登录后查看视频");
   const mainVideo = /^\/api\/video\/storage\/([A-Za-z0-9_.-]+)$/.exec(previewPath);
-  const commerceVideo = /^\/api\/media-history\/commerce\/content\/([A-Za-z0-9_.-]+)$/.exec(previewPath);
-  if (!mainVideo && !commerceVideo) throw new Error("视频记录缺少有效的播放入口");
-  const params = new URLSearchParams(mainVideo
-    ? { taskId: mainVideo[1], scope: options.download ? "download" : "playback" }
-    : { assetId: commerceVideo![1], scope: options.download ? "download" : "playback" });
-  if (mainVideo && options.filename) params.set("name", options.filename);
-  const ticketEndpoint = mainVideo
-    ? "/api/video/access-ticket"
-    : "/api/media-history/commerce/access-ticket";
+  if (!mainVideo) throw new Error("视频记录缺少有效的播放入口");
+  const params = new URLSearchParams({taskId: mainVideo[1], scope: options.download ? "download" : "playback"});
+  if (options.filename) params.set("name", options.filename);
+  const ticketEndpoint = "/api/video/access-ticket";
   const authVersions = options.userId && mainVideo ? captureOfflineAuthVersions(options.userId, token, mainVideo[1]) : null;
   let response: Response;
   try {
@@ -59,17 +54,11 @@ export async function requestMediaHistoryVideoUrl(
   }
   const result = await response.json().catch(() => ({}));
   const target = new URL(String(result.url || ""), window.location.origin);
-  const expectedPath = mainVideo
-    ? (options.download ? "/api/video/proxy-download" : "/api/video/proxy")
-    : `/api/media-history/commerce/content/${commerceVideo![1]}`;
-  const validDownloadShape = Boolean(mainVideo) || options.download
-    ? (Boolean(mainVideo) || target.searchParams.get("download") === "1")
-    : !target.searchParams.has("download");
+  const expectedPath = options.download ? "/api/video/proxy-download" : "/api/video/proxy";
   if (
     target.origin !== window.location.origin
     || target.pathname !== expectedPath
     || !target.searchParams.get("media_ticket")
-    || !validDownloadShape
   ) {
     throw new Error("视频播放入口无效，请刷新后重试");
   }

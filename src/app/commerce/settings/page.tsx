@@ -1,10 +1,5 @@
-import { headers } from 'next/headers';
-import { notFound, redirect } from 'next/navigation';
-import { authorizeAdminToken } from '@/lib/admin-auth';
-import { getTokenFromHeaders } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 
-export default async function RetiredCommerceSettingsPage(){
-  const authorization=await authorizeAdminToken(getTokenFromHeaders(new Headers(await headers())));
-  if(!authorization.ok)notFound();
-  redirect('/admin?tab=commerce');
+export default function SettingsPage() {
+  redirect('/commerce');
 }

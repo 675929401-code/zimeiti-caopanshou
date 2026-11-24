@@ -52,7 +52,7 @@ assert.deepEqual(WORKSPACE_MODEL_SURFACES.slice(0, 10).map((entry) => entry.id),
   "commerce-video",
   "video-page",
 ]);
-assert.deepEqual(WORKSPACE_MODEL_SURFACES.slice(10).map((entry) => entry.id), ["publish-center-image", "publish-center-video"]);
+assert.deepEqual(WORKSPACE_MODEL_SURFACES.slice(10).map((entry) => entry.id), ["publish-center-image", "publish-center-video", "commerce-generation-video"]);
 assert.equal(imageWorkspaceSurfaceFromRequest("publish-center-image"), "publish-center-image");
 assert.equal(videoWorkspaceSurfaceFromRequest("publish-center-video"), "publish-center-video");
 
@@ -64,6 +64,7 @@ assert.equal(imageWorkspaceSurfaceFromRequest("short-drama-film-studio"), "film-
 assert.equal(videoWorkspaceSurfaceFromRequest("storyboard-workbench"), "storyboard-video");
 assert.equal(videoWorkspaceSurfaceFromRequest("video-page"), "video-page");
 assert.equal(videoWorkspaceSurfaceFromRequest("commerce-agent"), "commerce-video");
+assert.equal(videoWorkspaceSurfaceFromRequest("commerce-generation-video"), "commerce-generation-video");
 assert.equal(videoWorkspaceSurfaceFromRequest("free-canvas"), "free-canvas-video");
 assert.equal(videoWorkspaceSurfaceFromRequest("short-drama-film-studio"), "film-studio-video");
 assert.deepEqual(normalizeWorkspaceModelAssignments("video", ["video-page", "storyboard-workbench", "storyboard"]), ["ai-video", "storyboard"]);

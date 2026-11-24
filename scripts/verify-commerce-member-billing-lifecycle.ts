@@ -23,6 +23,7 @@ async function main(){
     const productionSource=await fs.readFile(path.join(root,'src/commerce/server/billing.ts'),'utf8');
     const isolatedSource=productionSource
       .replace("from '@/lib/billing'","from './wallet-stub.ts'")
+      .replace("import('@/lib/available-cash-for-charge')","import('./wallet-stub.ts')")
       .replace("from '@/lib/revenue'","from './revenue-stub.ts'")
       .replace("from './store'","from './store-stub.ts'");
     assert.notEqual(isolatedSource,productionSource,'隔离模块替换没有生效');
@@ -43,6 +44,7 @@ async function main(){
         const row=rows.get(key(bucket,id));return row?.owner===owner?structuredClone(row.value) as T:undefined;
       }
       export function remove(bucket:string,id:string,owner:string){const row=rows.get(key(bucket,id));if(row?.owner===owner)rows.delete(key(bucket,id));}
+      export function db(){return {prepare:()=>({get:()=>({cents:0})})};}
       export function transaction<T>(work:()=>T){return work();}
       export function __reset(){rows.clear();failChargedWrites={bucket:'billing',count:0};}
       export function __failNextChargedWrite(bucket='billing',count=1){failChargedWrites={bucket,count};}
@@ -66,6 +68,7 @@ async function main(){
         operations.set(stable,row);
         return {success:true,balanceAfter,alreadyFulfilled:false,operationId:row.operationId};
       }
+      export async function availableCashForCharge(userId:string){return Math.round((balances.get(userId)??0)*100);}
       export async function deductCash(userId:string,amount:number,_description:string,key:string){const result=await apply('cash_charge',userId,amount,key);return {...result,deductedAmount:result.success&&!result.alreadyFulfilled?amount:0};}
       export async function refundCash(userId:string,amount:number,_description:string,key:string){return apply('cash_refund',userId,amount,key);}
     `,'utf8');
@@ -123,6 +126,34 @@ async function main(){
     ]);
     check('concurrent-revenue-uses-frozen-pending-cost',()=>{assert.ok(concurrentRevenue.every((row:JsonRecord)=>row.status==='revenue_recorded'));const rows=revenue.__snapshot();assert.equal(rows.length,1);assert.equal(rows[0].costPrice,0.4);});
 
+    reset();
+    const director=makeJob('director-outcome-billing','running',{directorBillsOnResult:true});
+    await checkAsync('director-admission-has-no-wallet-debit',async()=>{
+      const state=await billing.chargeJobAtDispatch(director,true);
+      assert.equal(state.status,'awaiting_result');assert.equal(wallet.__snapshot().operations.length,0);
+      await assert.rejects(()=>billing.chargeJobAtDispatch(director),/尚未通过校验/);
+    });
+    await checkAsync('director-invalid-output-never-debits',async()=>{
+      assert.equal((await billing.refundFailedJob({...director,status:'failed'})).status,'not_charged');
+      assert.equal(wallet.__snapshot().operations.length,0);
+    });
+    reset();
+    await billing.chargeJobAtDispatch(director,true);
+    await checkAsync('director-clarification-has-no-debit',async()=>{
+      assert.equal(billing.closeDirectorWithoutCharge(director).status,'not_charged');
+      assert.equal(wallet.__snapshot().operations.length,0);
+    });
+    reset();
+    await billing.chargeJobAtDispatch(director,true);
+    const approved={...director,directorResultToSettle:'validated script'};
+    await checkAsync('director-captures-valid-output-once-after-crash',async()=>{
+      store.__failNextChargedWrite();
+      await assert.rejects(()=>billing.chargeJobAtDispatch(approved),/回执保存失败/);
+      await billing.chargeJobAtDispatch(approved);
+      await billing.chargeJobAtDispatch(approved);
+      assert.equal(wallet.__snapshot().operations.length,1);
+      assert.equal(wallet.__snapshot().balances[mainUserId],96.8);
+    });
     reset();
     const failedJob=makeJob('20000000-0000-4000-8000-000000000002','running');
     await billing.chargeJobAtDispatch(failedJob);

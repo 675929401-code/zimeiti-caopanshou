@@ -3,7 +3,7 @@ import { resolveAiVideoInputAspectRatio } from "@/lib/ai-video-page-capabilities
 import { readVideoDurationBehavior, type VideoDurationBehavior } from "@/lib/video-duration-behavior";
 import { VideoDurationBehaviorNotice } from "@/components/video-duration-behavior-notice";
 import { resolveStoryboardExecutionMode, storyboardChainFingerprint, StoryboardChainRequestSchema, storyboardChainInputFingerprint, type StoryboardExecutionMode, type StoryboardChainRequest, type StoryboardChainAnchorConfirmation } from "@/lib/storyboard-chain-contract";
-import { storyboardChainContext, storyboardChainSnapshotMatches, storyboardChainManualReferences, storyboardChainPlanFingerprint, runStoryboardChainQueue } from "@/lib/storyboard-chain-controller";
+import { storyboardChainReferences, storyboardChainContext, storyboardChainSnapshotMatches, storyboardChainManualReferences, storyboardChainPlanFingerprint, runStoryboardChainQueue } from "@/lib/storyboard-chain-controller";
 
 import { adoptInitialStoryboardReferences } from "@/lib/storyboard-initial-reference-adoption";
 import { adoptFirstStoryboardReference } from "@/lib/storyboard-first-reference-adoption";
@@ -70,7 +70,7 @@ import { getImageModelCapabilities, IMAGE_RESOLUTION_ORDER, type ImageModelIdent
 import { imageDimensionsMatchAspectRatio } from "@/lib/image-output-contract";
 import { readStoryboardProtectedPreview, StoryboardImagePreviewError } from "@/lib/storyboard-image-preview";
 import { isCompletedProviderImageReceipt, isUnavailableCompletedStoryboardImage, storyboardImageUnavailablePatch, storyboardImageUnavailablePresentation, type StoryboardImageMediaState } from "@/lib/storyboard-image-result-state";
-import { parsePublicImageResolutionPrices } from "@/lib/image-resolution-pricing";
+import { parsePublicImageResolutionPrices, resolveImageResolutionPrice } from "@/lib/image-resolution-pricing";
 import { normalizeStoryboardVideoInputs, isStoryboardImageWorkflow, type StoryboardVideoInputs } from "@/lib/storyboard-video-inputs";
 import { resolveStoryboardAutomaticVideoInputs, storyboardAutomaticVideoProductionFingerprint, storyboardAutomaticVideoProductionBlocker } from "@/lib/storyboard-automatic-video-inputs";
 import {
@@ -141,7 +141,6 @@ import {
   readVideoTokenPublicPricing,
   resolveVideoTokenBillingConsent,
   videoTokenBudgetTotal,
-  videoTokenRateLabel,
   type VideoTokenBillingRequest,
   type VideoTokenPublicPricing,
   getVideoResolutionCapabilities,
@@ -162,10 +161,10 @@ import { isRestorableImageExactText } from "@/lib/storyboard-annotation-layout";
 
 type TaskStatus = "idle" | "queued" | "running" | "done" | "failed" | "cancelled";
 type BatchMode = "" | "images" | "videos";
-type StoryboardBatchAuthorization = { isCurrent?: () => boolean; kind: "images" | "videos"; runId: string; settings: string; price: number; tokenBilling?: VideoTokenBillingRequest; inputs: Map<string, string>; started: Set<string> };
+type StoryboardBatchAuthorization = { isCurrent?: () => boolean; kind: "images" | "videos"; runId: string; settings: string; price: number; referenceUnitPrice: number; tokenBilling?: VideoTokenBillingRequest; inputs: Map<string, string>; started: Set<string> };
 type ContinuousProductionAuthorization = {
   owner: string; runId: string; planFingerprint: string; assetFingerprint?: string;
-  referencePrice: number; imagePrice: number; videoPrice: number; tokenBilling?: VideoTokenBillingRequest;
+  referencePrice: number; imagePrice: number; imageReferenceRate: number; assetReferenceRate: number; videoPrice: number; tokenBilling?: VideoTokenBillingRequest;
   referenceInputs: Map<string, string>; stage: "references" | "images" | "videos";
 };
 type ContinuousProductionStatus = "idle" | "running" | "waiting" | "paused" | "stopped" | "done";
@@ -173,7 +172,7 @@ const WORKBENCH_RATIOS = ["16:9", "9:16", "1:1"] as const;
 type WorkbenchRatio = (typeof WORKBENCH_RATIOS)[number];
 type VisualAssetRole = "character" | "pet" | "environment" | "prop";
 type OwnedVisualAsset = DrawerVisualAsset;
-type VisualAssetBatchAuthorization = { isCurrent?: () => boolean; runId: string; modelId: string; resolution: string; ratio: WorkbenchRatio; price: number; inputs: Map<string, string>; started: Set<string> };
+type VisualAssetBatchAuthorization = { isCurrent?: () => boolean; runId: string; modelId: string; resolution: string; ratio: WorkbenchRatio; price: number; referenceUnitPrice: number; inputs: Map<string, string>; started: Set<string> };
 
 type StoryboardImageRequestSnapshot = {
   chainContext?: StoryboardChainRequest;
@@ -484,6 +483,7 @@ type ImageModel = ImageModelIdentity & {
   resolution_options?: string[];
   default_resolution?: string;
   resolution_prices?: Record<string, number>;
+  referenceImageUnitPrice?: number;
   aspectRatios?: WorkbenchRatio[];
   family?: "gpt" | "gemini" | "qwen" | "other";
   available: boolean;
@@ -635,6 +635,7 @@ function normalizeImageModel(record: ModelApiRecord): ImageModel {
     resolution_options: resolutionOptions,
     default_resolution: firstText(capabilities.defaultResolution, record.defaultResolution, record.default_resolution),
     resolution_prices: resolutionPrices,
+    referenceImageUnitPrice: Number(capabilities.referenceImageUnitPrice ?? 0),
     aspectRatios: stringList(capabilities.aspectRatios, record.aspectRatios).filter(isWorkbenchRatio),
     family: normalizeImageFamily(firstText(capabilities.family), displayName, firstText(record.model_name), firstText(record.provider)),
     available: firstBoolean(true, capabilities.available, record.available),
@@ -1630,11 +1631,14 @@ function preferredStoryboardImageResolution(model?: ImageModel) {
   return capabilities.defaultResolution;
 }
 
-function storyboardImagePrice(model: ImageModel | null | undefined, resolution: string) {
-  const resolutionPrice = model?.resolution_prices?.[resolution.toUpperCase()];
-  if (Number.isFinite(resolutionPrice)) return Number(resolutionPrice);
-  const basePrice = Number(model?.selling_price);
-  return Number.isFinite(basePrice) ? basePrice : Number.NaN;
+function storyboardImagePrice(model: ImageModel | null | undefined, resolution: string, referenceCount = 0) {
+  return resolveImageResolutionPrice({
+    selling_price: model?.selling_price,
+    api_protocol_config: {
+      resolution_prices: model?.resolution_prices,
+      reference_image_unit_price: model?.referenceImageUnitPrice ?? 0,
+    },
+  }, resolution, "selling", referenceCount);
 }
 
 function effectiveImageResolution(model?: ImageModel, requested = "") {
@@ -1654,13 +1658,6 @@ function effectiveVideoCharge(model?: VideoModel, requested = "", duration?: num
   return model.billingUnit === "output_second"
     ? unitPrice * effectiveVideoDuration(model, duration)
     : unitPrice;
-}
-
-function videoResolutionPriceLabel(model: VideoModel, resolution: string, duration: number) {
-  if (model.billingUnit === "token") return videoTokenRateLabel(model, resolution);
-  const charge = effectiveVideoCharge(model, resolution, duration);
-  if (!model.priceReady || !Number.isFinite(charge)) return "价格待配置";
-  return `¥${charge.toFixed(2)}${model.billingUnit === "output_second" ? `/${duration}秒` : "/次"}`;
 }
 
 function videoResolutionDisplayLabel(model: VideoModel | undefined, resolution: string) {
@@ -1790,7 +1787,7 @@ function UserStoryboardWorkbench({
   const batchAuthorizationRef = useRef<StoryboardBatchAuthorization | null>(null);
   const continuousAuthorizationRef = useRef<ContinuousProductionAuthorization | null>(null);
   const continuousBusyRef = useRef(false);
-  const chainAuthorizationRef = useRef<{ runId: string; fingerprint: string; owner: string; price: number } | null>(null);
+  const chainAuthorizationRef = useRef<{ runId: string; fingerprint: string; owner: string; price: number; referenceUnitPrice: number } | null>(null);
   const chainBusyRef = useRef(false);
   const chainStartBusyRef = useRef(false);
   const chainAnchorSavingRef = useRef(false);
@@ -3209,7 +3206,8 @@ function UserStoryboardWorkbench({
     if (!model || visualAssetGenerationIssue || !input.prompt.trim()) {
       setVisualAssetError(visualAssetGenerationIssue || "请先选择可用的生图模型并填写资产提示词"); return null;
     }
-    const price = storyboardImagePrice(model, referenceImageResolution);
+    const referenceCount = input.threeView?.sourceAssetId ? 1 : 0;
+    const price = storyboardImagePrice(model, referenceImageResolution, referenceCount);
     if (!Number.isFinite(price) || price < 0) { setVisualAssetError("资产生成报价尚未确认，本次未提交"); return null; }
     const requestedResolution = readReferenceImageSettings(runRef.current).resolution;
     if (requestedResolution !== referenceImageResolution) { setVisualAssetError(`当前模型不支持所选${requestedResolution}，请选择兼容模型或清晰度；本次未提交。`); return null; }
@@ -3231,7 +3229,7 @@ function UserStoryboardWorkbench({
     if (batch) {
       if (visualAssetBatchRef.current !== batch || batch.runId !== runRef.current.id || batch.modelId !== readReferenceImageSettings(runRef.current).modelId
         || batch.resolution !== effectiveImageResolution(model, readReferenceImageSettings(runRef.current).resolution) || batch.ratio !== readReferenceImageSettings(runRef.current).ratio
-        || batch.isCurrent && !batch.isCurrent() || batch.price !== price || batch.inputs.get(input.planId) !== JSON.stringify(input) || batch.started.has(input.planId)) {
+        || batch.isCurrent && !batch.isCurrent() || Number((batch.price + batch.referenceUnitPrice * referenceCount).toFixed(8)) !== price || batch.inputs.get(input.planId) !== JSON.stringify(input) || batch.started.has(input.planId)) {
         setVisualAssetError("资产批次参数已变化，剩余资产未提交，请重新确认"); return null;
       }
       batch.started.add(input.planId);
@@ -3250,7 +3248,7 @@ function UserStoryboardWorkbench({
       if (!await saveVisualAssetContext(createStoryboardPersistenceSnapshot(runRef.current), true)) throw new Error("当前项目未保存确认，本次未提交资产生成");
       if (batch?.isCurrent && !batch.isCurrent()) throw new Error("连续制作已暂停或输入已改变，本项未提交。");
       if (!scopeMountedRef.current || !contextReadyRef.current || runRef.current.id !== runId || readReferenceImageSettings(runRef.current).modelId !== model.id || readReferenceImageSettings(runRef.current).ratio !== frozenRatio
-        || effectiveImageResolution(model, readReferenceImageSettings(runRef.current).resolution) !== frozenResolution || storyboardImagePrice(model, frozenResolution) !== price
+        || effectiveImageResolution(model, readReferenceImageSettings(runRef.current).resolution) !== frozenResolution || storyboardImagePrice(model, frozenResolution, referenceCount) !== price
         || sourceAsset && JSON.stringify(runRef.current.visualAssetPlan?.assets.find(asset => asset.id === input.planId)?.source) !== sourceIdentity) {
         throw new Error("项目、模型、画幅或报价已改变，本次未提交资产生成，请重新确认");
       }
@@ -3309,7 +3307,7 @@ function UserStoryboardWorkbench({
     const price = storyboardImagePrice(referenceImageModel, referenceImageResolution);
     if (!Number.isFinite(price) || price < 0) return [];
     const batch: VisualAssetBatchAuthorization = { runId: runRef.current.id, modelId: referenceImageModel.id, resolution: referenceImageResolution,
-      ratio: readReferenceImageSettings(runRef.current).ratio, price, inputs: new Map(frozen.map(item => [item.planId, JSON.stringify(item)])), started: new Set() };
+      ratio: readReferenceImageSettings(runRef.current).ratio, price, referenceUnitPrice: referenceImageModel.referenceImageUnitPrice ?? 0, inputs: new Map(frozen.map(item => [item.planId, JSON.stringify(item)])), started: new Set() };
     visualAssetBatchRef.current = batch; setVisualAssetGenerating(true);
     const results: (DrawerVisualAsset | null)[] = [];
     try {
@@ -4837,9 +4835,10 @@ function UserStoryboardWorkbench({
           return null;
         }
         modelName = storyboardImageModelName(model);
-        const quote = storyboardImagePrice(model, effectiveImageResolution(model, current.imageResolution));
+        const referenceCount = chainContext ? storyboardChainReferences(chainContext).length : refreshed.referenceImageUrls.length;
+        const quote = storyboardImagePrice(model, effectiveImageResolution(model, current.imageResolution), referenceCount);
         if (!Number.isFinite(quote) || quote < 0) throw new Error("生图报价尚未确认，本次未提交");
-        if (batchAuthorization && quote !== batchAuthorization.price) throw new Error("批量生图报价已改变，本段未提交");
+        if (batchAuthorization && quote !== Number((batchAuthorization.price + referenceCount * batchAuthorization.referenceUnitPrice).toFixed(8))) throw new Error("批量生图报价已改变，本段未提交");
         requestSnapshot = {
           runId: current.id,
           cardId: card.id,
@@ -4914,6 +4913,7 @@ function UserStoryboardWorkbench({
         imageQuotedPrice: storyboardImagePrice(
           imageModels.find((item) => item.id === requestSnapshot!.modelId),
           requestSnapshot.resolution,
+          requestSnapshot.chainContext ? storyboardChainReferences(requestSnapshot.chainContext).length : requestSnapshot.referenceImageUrls.length,
         ),
         imagePriceCharged: undefined,
         imageBillingState: "pending",
@@ -6349,6 +6349,7 @@ function UserStoryboardWorkbench({
       kind,
       runId: runRef.current.id,
       settings: batchSettings(runRef.current, kind),
+      referenceUnitPrice: kind === "images" ? activeImageModel?.referenceImageUnitPrice ?? 0 : 0,
       price,
       ...(tokenBilling ? { tokenBilling } : {}),
       inputs: new Map(cardIds.map((cardId) => {
@@ -6492,7 +6493,7 @@ function UserStoryboardWorkbench({
           const card = runRef.current.cards.find(item => item.id === id);
           if (!card || card.imageRecoveryReady || card.imageRetryBlocked || ["queued", "running"].includes(card.imageStatus) || card.imageClientRequestId && card.imageStatus !== "done") throw new Error("存在原任务待核验；串联不会重复提交，请先查询原任务。");
           const authorization = buildBatchAuthorization("images", [id]);
-          if (!authorization || authorization.price !== session.price) throw new Error("报价已改变，串联已停止。");
+          if (!authorization || (authorization.price !== session.price || authorization.referenceUnitPrice !== session.referenceUnitPrice)) throw new Error("报价已改变，串联已停止。");
           authorization.isCurrent = current; batchAuthorizationRef.current = authorization; setBatchMode("images");
           try {
             await generateImage(id, authorization); await delay(0);
@@ -6546,7 +6547,7 @@ function UserStoryboardWorkbench({
     const saved = normalizeRun(await cloud.restore(before.id));
     if (!sameScope()) return;
     if (!saved || storyboardChainPlanFingerprint(saved) !== expectedPlan) { setNotice("串联参数回读未确认，本次未提交。"); return; }
-    chainAuthorizationRef.current = { runId: runRef.current.id, fingerprint: storyboardChainPlanFingerprint(runRef.current), owner: userId + "\0" + token, price };
+    chainAuthorizationRef.current = { runId: runRef.current.id, fingerprint: storyboardChainPlanFingerprint(runRef.current), owner: userId + "\0" + token, price, referenceUnitPrice: activeImageModel?.referenceImageUnitPrice ?? 0 };
     await processChainedImages();
   };
   const startChainedImages = async () => {
@@ -6690,6 +6691,8 @@ function UserStoryboardWorkbench({
         && !navigationRef.current && imageDownloadOwnerRef.current === session.owner && latest.id === session.runId
         && storyboardProductionPlanFingerprint(latest) === session.planFingerprint
         && (!session.assetFingerprint || storyboardProductionAssetFingerprint(latest) === session.assetFingerprint)
+        && (imageModel?.referenceImageUnitPrice ?? 0) === session.imageReferenceRate
+        && (referenceModel?.referenceImageUnitPrice ?? 0) === session.assetReferenceRate
         && storyboardImagePrice(imageModel, effectiveImageResolution(imageModel, latest.imageResolution)) === session.imagePrice
         && (resolveStoryboardExecutionMode(latest) !== "reference" || storyboardImagePrice(referenceModel, effectiveImageResolution(referenceModel, settings.resolution)) === session.referencePrice)
         && (tokenBilling?.maxChargeYuan ?? effectiveVideoCharge(videoModel, effectiveVideoResolution(videoModel, latest.videoResolution), effectiveVideoDuration(videoModel, latest.videoDuration))) === session.videoPrice
@@ -6713,7 +6716,7 @@ function UserStoryboardWorkbench({
             if (!assets.length) throw new Error("完整参考计划至少需要一项人物或宠物的角色三视图位置。");
             const settings = readReferenceImageSettings(runRef.current);
             const referenceBatch: VisualAssetBatchAuthorization = { runId: session.runId, modelId: settings.modelId, resolution: referenceImageResolution,
-              ratio: settings.ratio, price: session.referencePrice, inputs: session.referenceInputs, started: new Set(), isCurrent: current };
+              ratio: settings.ratio, price: session.referencePrice, referenceUnitPrice: session.assetReferenceRate, inputs: session.referenceInputs, started: new Set(), isCurrent: current };
             visualAssetBatchRef.current = referenceBatch;
             try {
               for (const asset of assets) {
@@ -6832,7 +6835,7 @@ function UserStoryboardWorkbench({
       if (!referenceCount && !images && !videos) { setContinuousStatus("done"); setContinuousMessage("本项目的分镜图与视频已完成。"); return; }
       if (runRef.current !== current) throw new Error("项目已变化，请重新确认本次制作。");
       continuousAuthorizationRef.current = { owner: userId + "\0" + token, runId: current.id, planFingerprint: storyboardProductionPlanFingerprint(current),
-        referencePrice, imagePrice, videoPrice, tokenBilling, referenceInputs, stage: "references" };
+        referencePrice, imagePrice, imageReferenceRate: activeImageModel?.referenceImageUnitPrice ?? 0, assetReferenceRate: referenceImageModel?.referenceImageUnitPrice ?? 0, videoPrice, tokenBilling, referenceInputs, stage: "references" };
       setContinuousStatus("running"); void processContinuousProduction();
     } catch (error) { setContinuousStatus("stopped"); setContinuousMessage(error instanceof Error ? error.message : "制作报价未确认，本次未提交。"); }
   }, [activeImageModel, activeImageRatioIssue, activeImageResolution, activeImageSelectionIssue, activeVideoDuration, activeVideoModel, activeVideoResolution,
@@ -7104,9 +7107,7 @@ function UserStoryboardWorkbench({
     }
     return success;
   };
-  const referenceImagePrice = storyboardImagePrice(referenceImageModel, referenceImageResolution);
-  const referenceImageSummary = referenceImageModel && !referenceImageSelectionIssue && Number.isFinite(referenceImagePrice)
-    ? `图 ${referenceImageResolution} ¥${referenceImagePrice.toFixed(2)}` : "参考图价格待确认";
+  const referenceImageSummary = referenceImageModel && !referenceImageSelectionIssue ? `参考图 ${referenceImageResolution}` : "请选择可用模型";
   // 只给独立的「角色参考」页面用：那里没有顶部工具栏，需要就地选择模型/清晰度/比例。
   // 工作台内不再渲染这套控件，避免与顶部参数重复。
   const modelControls = <section className="sbw-asset-model-controls" aria-label="参考图生成设置">
@@ -7207,18 +7208,11 @@ function UserStoryboardWorkbench({
                 const brand = resolveModelBrand(displayName, model.display_name, model.name, model.model_name, model.provider) || "generic";
                 const preferredResolution = preferredStoryboardImageResolution(model);
                 const selectionIssue = storyboardImageModelSelectionIssue(model);
-                const preferredPrice = storyboardImagePrice(model, preferredResolution);
                 // Show every tier the catalog actually allows, not just the default,
                 // so a model that supports 1K/2K/4K never looks like a 1K-only model.
                 const resolutionSummary = capabilities.resolutionOptions.length
                   ? capabilities.resolutionOptions.join("/")
                   : preferredResolution;
-                const imagePriceLabel = model.priceReady && Number.isFinite(preferredPrice)
-                  ? `${resolutionSummary} ¥${preferredPrice.toFixed(2)}/张`
-                  : `${resolutionSummary} · 价格待配置`;
-                const imagePriceChip = model.priceReady && Number.isFinite(preferredPrice)
-                  ? `¥${preferredPrice.toFixed(2)}`
-                  : "待配置";
                 return (
                   <button
                     key={model.id}
@@ -7250,9 +7244,7 @@ function UserStoryboardWorkbench({
                       <small className="sbw-model-meta" title={`默认 ${capabilities.defaultResolution} · ${capabilities.referenceCapabilityLabel}`}>
                         <span className="sbw-model-tier">{resolutionSummary}</span>
                         {!compactEditor && <span className="sbw-model-cap">{capabilities.referenceCapabilityLabel}</span>}
-                        <span className={`sbw-model-price${model.priceReady ? "" : " is-pending"}`} title={imagePriceLabel}>
-                          {imagePriceChip}{model.priceReady && <em>/张</em>}
-                        </span>
+
                       </small>
                       {compactEditor && <span className="sbw-model-cap" title={capabilities.referenceCapabilityLabel}>{capabilities.referenceCapabilityLabel}</span>}
                       {showAdminModelIds && (
@@ -7304,18 +7296,7 @@ function UserStoryboardWorkbench({
                 const brand = resolveModelBrand(displayName, model.display_name, model.name, model.id) || "generic";
                 const channelCode = modelChannelCode(model);
                 const channelLabel = channelCode ? `渠道${channelCode}` : "";
-                const defaultDuration = effectiveVideoDuration(model);
                 const preferredResolution = effectiveVideoResolution(model);
-                const defaultCharge = effectiveVideoCharge(model, preferredResolution, defaultDuration);
-                const outputSecondPrice = model.billingUnit === "output_second" && defaultDuration > 0
-                  ? defaultCharge / defaultDuration
-                  : 0;
-                const priceLabel = model.generationReady === false
-                  ? model.billingUnit === "token" ? "Token 计价" : model.priceReady && Number.isFinite(model.pricePerUse)
-                    ? `¥${Number(model.pricePerUse).toFixed(2)}/${model.billingUnit === "output_second" ? "秒" : "次"}` : "—"
-                  : model.billingUnit === "token" ? videoTokenRateLabel(model, preferredResolution) : model.priceReady && Number.isFinite(defaultCharge) && Number.isFinite(outputSecondPrice)
-                  ? `¥${model.billingUnit === "output_second" ? outputSecondPrice.toFixed(2) : defaultCharge.toFixed(2)}/${model.billingUnit === "output_second" ? "秒" : "次"}`
-                  : "—";
                 const isPreferredContractModel = run.videoContract?.modelId === model.id;
                 const selectionTarget = {
                   ratio: isPreferredContractModel ? run.videoContract!.ratio : run.ratio,
@@ -7380,13 +7361,11 @@ function UserStoryboardWorkbench({
                     />
                     <span className="sbw-model-copy">
                       <strong title={fullDisplayName}><span className="sbw-model-name">{displayName}</span></strong>
-                      <small className="sbw-model-meta" title={[channelLabel, priceLabel, videoModelInputHint(model)].filter(Boolean).join(" · ")}>
+                      <small className="sbw-model-meta" title={[channelLabel, videoModelInputHint(model)].filter(Boolean).join(" · ")}>
                         {channelLabel && <span className="sbw-model-channel">{channelLabel}</span>}
                         {model.generationReady !== false && <span className="sbw-model-tier">{videoResolutionDisplayLabel(model, preferredResolution)}</span>}
                         {!compactEditor && inputLabel && <span className="sbw-model-need">{inputLabel}</span>}
-                        <span className={`sbw-model-price${model.priceReady ? "" : " is-pending"}`} title={priceLabel} aria-label={priceLabel}>
-                          {model.billingUnit === "token" ? priceLabel.replace(" · 按实际用量结算", "") : priceLabel}
-                        </span>
+
                       </small>
                       {compactEditor && <span className="sbw-model-need" title={inputLabel}>{inputLabel.split(" · ", 1)[0]}</span>}
                       {showAdminModelIds && (
@@ -7562,7 +7541,7 @@ function UserStoryboardWorkbench({
                 <div className="sbw-ratio-control" aria-label="视频比例">
                   {WORKBENCH_RATIOS.map(value => <button key={value} type="button" aria-pressed={run.ratio === value} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || !activeVideoRatioOptions.includes(value)} title={preferredVideoPresetActive ? `当前预设视频比例 ${run.videoContract!.ratio}` : `视频比例 ${value}`} className={run.ratio === value ? "is-active" : ""} onClick={() => patchRun({ ratio: value })}>{value}</button>)}
                 </div>
-                <select className="sbw-resolution-select" aria-label="视频分辨率" value={activeVideoResolution} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || (activeVideoModel?.resolutionOptions.length || 0) <= 1} title={activeVideoModel?.resolutionOptions.length ? `${videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)} · ${videoResolutionPriceLabel(activeVideoModel, activeVideoResolution, activeVideoDuration)}` : "清晰度由模型自动确定"} onChange={(event) => patchRun({ videoResolution: event.target.value })}>
+                <select className="sbw-resolution-select" aria-label="视频分辨率" value={activeVideoResolution} disabled={Boolean(batchMode) || activeVideoModel?.generationReady === false || preferredVideoPresetActive || (activeVideoModel?.resolutionOptions.length || 0) <= 1} title={activeVideoModel?.resolutionOptions.length ? `${videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution)} · ` : "清晰度由模型自动确定"} onChange={(event) => patchRun({ videoResolution: event.target.value })}>
                   {activeVideoModel?.resolutionOptions.length ? activeVideoModel.resolutionOptions.map((value) => (
                     <option key={value} value={value}>{videoResolutionDisplayLabel(activeVideoModel, value)}</option>
                   )) : <option value={activeVideoResolution}>自动</option>}
@@ -7596,7 +7575,7 @@ function UserStoryboardWorkbench({
                 <div className="sbw-parameter-info-panel">
                   {activeImageRatioIssue && <p role="status" className="sbw-image-ratio-notice">{activeImageRatioIssue}</p>}
                   <p>视频清晰度：{activeVideoModel?.resolutionOptions.length ? videoResolutionDisplayLabel(activeVideoModel, activeVideoResolution) : "由模型自动确定"} · {activeVideoDurationOptions.length <= 1 ? "固定 " : "所选 "}{activeVideoDuration} 秒</p>
-                  {activeVideoModel && <p>{videoResolutionPriceLabel(activeVideoModel, activeVideoResolution, activeVideoDuration)}</p>}
+
                   <VideoDurationBehaviorNotice durationBehavior={activeVideoModel?.durationBehavior} />
                   {activeVideoModel?.billingUnit === "token" && <label className="sbw-token-budget-label">
                     每条视频本次最多自动扣款金额（元）

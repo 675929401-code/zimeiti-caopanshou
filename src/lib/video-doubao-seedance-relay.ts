@@ -1,9 +1,12 @@
 import type { VideoGenerateParams, VideoModelConfig } from "./video-adapter";
 
 const MODEL_LIMITS: Record<string, { maxDuration: number; resolutions: readonly string[] }> = {
+  "dreamina-seedance-2-0-fast": { maxDuration: 15, resolutions: ["480p", "720p"] },
+  "dreamina-seedance-2-0-mini": { maxDuration: 15, resolutions: ["480p", "720p"] },
   "doubao-seedance-2-0-260128": { maxDuration: 15, resolutions: ["720p"] },
   "doubao-seedance-2-0-fast-260128": { maxDuration: 15, resolutions: ["720p"] },
   "doubao-seedance-2-5-260628": { maxDuration: 30, resolutions: ["720p"] },
+  "doubao-seedance-2-5-flash-261115": { maxDuration: 30, resolutions: ["720p"] },
 };
 
 function uniqueUrls(values: Array<string | undefined>): string[] {
@@ -22,12 +25,16 @@ function uniqueUrls(values: Array<string | undefined>): string[] {
   return urls;
 }
 
+export function doubaoSeedanceResolutions(model: string): readonly string[] {
+  return MODEL_LIMITS[model]?.resolutions || [];
+}
+
 function mediaItem(type: "image_url" | "video_url" | "audio_url", url: string, role: string) {
   return { type, [type]: { url }, role };
 }
 
 /**
- * Secure Skill 分组 37 的 Doubao 原生任务协议。
+ * Secure Skill 分组 37 和海外分组 60 的原生任务协议。
  * 该协议和分组 42 的 seedance-2.5 /v1/videos 协议相互独立，不能共用密钥或请求体。
  */
 export function doubaoSeedanceTaskBody(
@@ -55,7 +62,8 @@ export function doubaoSeedanceTaskBody(
 
   const ratio = String(params.aspectRatio || "16:9");
   const ratios = ["16:9", "9:16", "1:1", "21:9", "4:3", "3:4"];
-  if (!ratios.includes(ratio)) throw new Error(`Seedance 渠道任务协议不支持画幅 ${ratio}`);
+  const flash = model === "doubao-seedance-2-5-flash-261115";
+  if (!ratios.includes(ratio) && !(flash && ratio === "adaptive")) throw new Error(`Seedance 渠道任务协议不支持画幅 ${ratio}`);
 
   const imageUrls = uniqueUrls([
     params.imageUrl,
@@ -65,6 +73,12 @@ export function doubaoSeedanceTaskBody(
   const videoUrls = uniqueUrls([params.sourceVideoUrl]);
   const audioUrls = uniqueUrls([params.audioUrl, ...(params.audioUrls || [])]);
   const lastFrameUrl = uniqueUrls([params.lastFrameUrl])[0];
+  if (flash) {
+    if (imageUrls.length > 10 || audioUrls.length > 5) {
+      throw new Error("Seedance 2.5 Flash 最多支持 10 张参考图和 5 段参考音频");
+    }
+    if (lastFrameUrl && ratio !== "adaptive") throw new Error("Seedance 2.5 Flash 首尾帧生成需要选择自适应画幅");
+  }
   if (lastFrameUrl && videoUrls.length > 0) {
     throw new Error("Seedance 首尾帧模式不能同时传入参考视频");
   }

@@ -1,0 +1,30 @@
+.cs-member-assets .cs-role-entry{position:relative}
+.cs-role-methods{position:absolute;top:50%;left:50%;z-index:4;display:grid;min-width:152px;gap:3px;padding:6px;background:white;border:1px solid #e5e7eb;border-radius:9px;box-shadow:0 8px 26px #0002}
+.cs-role-methods small{padding:3px 8px}.cs-role-methods button{background:white;border:0;border-radius:5px;padding:7px 8px;font-size:13px;text-align:left}.cs-role-methods button:hover,.cs-role-methods button:focus-visible{background:#f4f4f5}
+.cs-character-dialog[open]{box-sizing:border-box;position:fixed;inset:0;margin:auto;width:min(576px,94vw);height:min(629px,94vh);max-height:none;max-width:none;padding:22px 24px;overflow:auto;border:1px solid #eee;border-radius:14px;background:white;color:#171717;display:flex;flex-direction:column}
+.cs-character-dialog::backdrop{background:#0005;backdrop-filter:blur(5px)}
+.cs-character-dialog header,.cs-character-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.cs-character-dialog h2{margin:0;font-size:16px;font-weight:600;line-height:25px}
+.cs-character-dialog header>button{display:grid;place-items:center;background:none;border:0;color:#777;width:28px;height:28px}
+.cs-character-slots{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 12px;margin:10px 0 14px}
+.cs-character-slots>div{display:flex;flex-direction:column;align-items:center;gap:6px}
+.cs-character-slots button{position:relative;width:min(132px,100%);aspect-ratio:1;display:grid;place-items:center;overflow:hidden;padding:0;border:1px solid #e3e3e3;border-radius:11px;background:#f8f8f8;color:#b1b1b1}
+.cs-character-slots img{width:100%;height:100%;object-fit:cover}
+.cs-character-slots small{font-size:11px;color:#727272;line-height:16px}
+.cs-character-upload{position:absolute;bottom:10%;right:11%;background:#555;color:white;border-radius:50%;padding:3px;box-sizing:content-box}
+.cs-character-audio{display:flex;align-items:stretch;min-height:38px;border-radius:7px;overflow:hidden;border:1px solid #e5e7eb}
+.cs-character-audio button{display:flex;align-items:center;gap:5px;padding:0 12px;font-size:12px;background:white;border:0}
+.cs-character-audio button:first-child{flex:1;border-right:1px solid #e5e7eb}
+.cs-character-dialog>audio{width:100%;height:30px;margin-top:3px}
+.cs-character-consent{display:flex;align-items:flex-start;gap:8px;color:#a3332c;border:1px solid #e5e7eb;border-radius:7px;padding:12px;margin-top:15px;font-size:12px;font-weight:500;line-height:19px}
+.cs-character-consent input{margin-top:3px;accent-color:#272727}
+.cs-character-dialog footer{margin-top:auto;padding-top:12px}
+.cs-character-dialog footer small{font-size:11px;color:#737373}
+.cs-character-dialog footer button,.cs-camera-controls button{display:flex;align-items:center;gap:5px;justify-content:center;padding:0 14px;height:38px;border:0;background:#272727;color:white;border-radius:8px;font-size:13px}
+.cs-character-dialog .ca-library-backdrop{background:#0004}
+.cs-character-dialog[open].cs-character-camera{border:0;border-radius:0;width:100vw;height:100dvh;background:#101010;color:#fff;align-items:center;justify-content:center}
+.cs-character-camera video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.cs-camera-controls{position:relative;display:grid;justify-items:center;font-size:15px}.cs-camera-controls button{background:white;color:#171717}
+.cs-camera-exit{position:absolute;left:20px;top:18px;z-index:1;color:white;background:#333;border:0;border-radius:50%;width:38px;height:38px;display:grid;place-items:center}
+.cs-recorded-character{display:grid;gap:8px;padding:6px 0}.cs-recorded-character>div{display:flex;gap:8px;overflow:auto}.cs-recorded-character figure{margin:0;font-size:11px;color:#525252}.cs-recorded-character figure img{width:74px;height:74px;object-fit:cover;border-radius:7px}.cs-recorded-character audio,.cs-recorded-character video{width:100%;max-height:200px}
+@media(max-height:720px){.cs-character-slots button{max-width:94px}.cs-character-slots{gap:8px}}

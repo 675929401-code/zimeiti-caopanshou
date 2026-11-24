@@ -35,11 +35,11 @@ let networkAttempts = 0; const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => { networkAttempts++; throw new Error('REAL_NETWORK_FORBIDDEN'); };
 const consumers = await resolveWorkspaceCatalogConsumers();
 globalThis.fetch = originalFetch;
-assert.equal(networkAttempts, 0); assert.equal(consumers.length, 7);
-assert.equal(new Set(consumers.map(row => row.surface)).size, 7);
+assert.equal(networkAttempts, 0); assert.equal(consumers.length, 8);
+assert.equal(new Set(consumers.map(row => row.surface)).size, 8);
 assert.ok(consumers.every(row => row.path.startsWith('/api/cover-models?surface=') || row.path.startsWith('/api/video/models?surface=')));
 assert.ok(consumers.every(row => /^[a-f0-9]{64}$/u.test(row.sourceSha256)));
-checks.push('seven-surfaces-derived-from-formal-policy-and-actual-consumer-urls');
+checks.push('eight-surfaces-derived-from-formal-policy-and-actual-consumer-urls');
 
 const file = 'scripts/verify-admin-model-closed-loop-local.mjs'; const source = await fs.readFile(file, 'utf8');
 const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);

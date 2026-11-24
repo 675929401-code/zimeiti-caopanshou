@@ -21,7 +21,7 @@ const checks: Array<[string, boolean]> = [
   ["application verifies evidence echoed by RPC", fulfillment.includes("Atomic payment fulfillment evidence was not confirmed")],
   ["Xunhu query does not read unverified nested payment data", !xunhu.slice(xunhu.indexOf("export async function queryOrderStatus")).includes("data.total_amount")],
   ["Xunhu query fails closed without complete data authentication", xunhu.includes("查询成功响应的数据签名范围尚未确认，不能据此确认到账")],
-  ["Xunhu query refuses redirecting the signed query", xunhu.slice(xunhu.indexOf("export async function queryOrderStatus")).includes("redirect: 'error'")],
+  ["Xunhu query refuses redirecting the signed query", xunhu.slice(xunhu.indexOf("async function readQueryEnvelope"),xunhu.indexOf("function orderHint")).includes("redirect: 'error'")],
   ["status route forwards all provider evidence", statusRoute.includes("providerTradeOrderId") && statusRoute.includes("providerTransactionId")],
   ["Xunhu callback forwards signed transaction id", notifyRoute.includes("providerTransactionId: transaction_id")],
   ["EPay callback forwards signed transaction id", notifyRoute.includes("providerTransactionId: trade_no")],

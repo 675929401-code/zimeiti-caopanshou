@@ -44,7 +44,8 @@ export function createFrameExtraction(owner:string,value:unknown):{job:FrameExtr
 export function frameAssetId(jobId:string,decodeIndex:number){const h=createHash('sha256').update('frame-asset-v1:'+jobId+':'+decodeIndex).digest('hex');return h.slice(0,8)+'-'+h.slice(8,12)+'-5'+h.slice(13,16)+'-a'+h.slice(17,20)+'-'+h.slice(20,32);}
 async function storeFrameOnce(job:StoredJob,frame:ExtractedFrame,bytes:Buffer,source:Asset,isCurrent:()=>boolean){
  const hash=createHash('sha256').update(bytes).digest('hex'),old=readAsset(frame.assetId,job.owner);if(old&&(old.jobId!==job.id||old.sha256!==hash))throw Error('原抽帧图片与任务不匹配');
- const value:Asset={id:frame.assetId,owner:job.owner,name:`${source.name.replace(/\.[^.]+$/,'')}-${job.input.mode}-${frame.decodeIndex+1}-${frame.time.toFixed(3)}s.jpg`.slice(0,160),type:'image/jpeg',size:bytes.length,sha256:hash,createdAt:old?.createdAt||Date.now(),source:'generated',jobId:job.id};
+ const original=job.input.mode==='timestamp';
+ const value:Asset={id:frame.assetId,owner:job.owner,name:`${source.name.replace(/\.[^.]+$/,'')}-${job.input.mode}-${frame.decodeIndex+1}-${frame.time.toFixed(3)}s.${original?'png':'jpg'}`.slice(0,160),type:original?'image/png':'image/jpeg',size:bytes.length,sha256:hash,createdAt:old?.createdAt||Date.now(),source:'generated',jobId:job.id};
  await materializeAsset(value,bytes,isCurrent);
 }
 export async function runFrameExtraction(id:string,owner:string){
@@ -55,9 +56,9 @@ export async function runFrameExtraction(id:string,owner:string){
  const isCurrent=()=>leaseCurrent&&recordLeaseIsCurrent(lease)&&(()=>{const job=rawJob(id,owner);return Boolean(job&&job.status==='running'&&job.workerId===holder&&job.executionToken===lease.token);})();
  const current=()=>{const job=rawJob(id,owner);if(!job||!isCurrent())throw Error('原抽帧任务已中断，未重新执行');return job;};
  try{
-  let job=current();const asset=readAsset(job.sourceAssetId,owner);if(!asset)throw Error('原视频已删除');if(asset.sha256!==job.sourceSha256)throw Error('原视频内容已变化，请重新发起抽帧');await assertAssetIntegrity(asset);const source=path.join(runtimeDir(),'assets',asset.id),probe=await probeFrameTimeline(source),planned=planFrameTimeline(probe,job.input.mode,job.input.remainingSlots);
+  let job=current();const asset=readAsset(job.sourceAssetId,owner);if(!asset)throw Error('原视频已删除');if(asset.sha256!==job.sourceSha256)throw Error('原视频内容已变化，请重新发起抽帧');await assertAssetIntegrity(asset);const source=path.join(runtimeDir(),'assets',asset.id),probe=await probeFrameTimeline(source),planned=planFrameTimeline(probe,job.input.mode,job.input.remainingSlots,job.input.requestedMs);
   job=current();job.duration=probe.duration;job.sourceStartTime=probe.startPts*probe.timeBase.numerator/probe.timeBase.denominator;job.plan=planned.map(frame=>({...frame,assetId:frameAssetId(job.id,frame.decodeIndex),sourceAssetId:asset.id}));job.plannedCount=planned.length;job.phase='extracting';save(job);
-  const files=await extractPlannedFiles(source,folder,planned);job=current();job.phase='saving';save(job);
+  const files=await extractPlannedFiles(source,folder,planned,job.input.mode==='timestamp');job=current();job.phase='saving';save(job);
   for(const [decodeIndex,file] of files){job=current();const frame=job.plan!.find(frame=>frame.decodeIndex===decodeIndex)!;await storeFrameOnce(job,frame,await fs.readFile(file),asset,isCurrent);job=current();reconcile(job);save(job);}
   job=current();reconcile(job);if(job.frames.length!==job.plannedCount)throw Error('抽帧结果未保存完整');job.status='succeeded';job.phase='complete';save(job);
  }catch(error){const job=rawJob(id,owner);if(job?.status==='running'&&job.workerId===holder&&job.executionToken===lease.token&&recordLeaseIsCurrent(lease)){reconcile(job);job.status='failed';job.error=error instanceof Error?error.message:'抽帧失败';job.errorCode=error instanceof FrameCapacityError?error.code:'FRAME_EXTRACTION_FAILED';if(error instanceof FrameCapacityError){job.requiredSlots=error.requiredSlots;job.availableSlots=error.availableSlots;}save(job);}}

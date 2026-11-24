@@ -45,7 +45,6 @@ import {
   getVideoBillingUnit,
   readVideoTokenPublicPricing,
   resolveVideoTokenBillingConsent,
-  videoTokenRateLabel,
   getVideoResolutionCapabilities,
   getVideoTargetDurationOptions,
   resolveVideoCharge,
@@ -714,6 +713,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
   const [models, setModels] = useState<VideoPageModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsLoadError, setModelsLoadError] = useState("");
+  const [modelsReadAttempt, setModelsReadAttempt] = useState(0);
   const [selectedModelId, setSelectedModelId] = useState(() => {
     try {
       return localStorage.getItem(workbenchUserStorageKey(VIDEO_SELECTED_MODEL_PREFERENCE_KEY, identity.userId))?.trim() || "";
@@ -1154,35 +1154,58 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
     setEditText("");
   };
 
-  /* ── Load models, notifications & cash balance ── */
+  /* ── Load the catalog without refreshing the workspace or discarding its draft ── */
   useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    const timeout = window.setTimeout(() => controller.abort(), 12_000);
     setModelsLoading(true);
     setModelsLoadError("");
-    fetch("/api/video/models?surface=video-page")
-      .then((r) => {
-        if (!r.ok) throw new Error("视频模型目录暂时无法读取");
-        return r.json();
+    fetch("/api/video/models?surface=video-page", { signal: controller.signal, cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("视频模型目录暂时无法读取");
+        return response.json();
       })
       .then((data) => {
-        const rawModels: unknown[] = Array.isArray(data.models) ? data.models : [];
+        if (!active) return;
+        if (!Array.isArray(data?.models)) throw new Error("视频模型目录响应无效");
+        const rawModels: unknown[] = data.models;
         const list = rawModels
           .map(normalizePublicVideoModel)
           .filter((model): model is VideoPageModel => Boolean(model));
+        if (rawModels.length && !list.length) throw new Error("视频模型目录响应无效");
         setModels(list);
         setSelectedModelId((currentId) => reconcileVideoModelSelection(currentId, list));
       })
-      .catch(() => setModelsLoadError("视频模型目录加载失败，请刷新页面重试"))
-      .finally(() => setModelsLoading(false));
-    if (auth?.token) {
-      fetch("/api/cash/balance", {
-        headers: { Authorization: `Bearer ${auth.token}` },
+      .catch(() => {
+        if (!active) return;
+        setModels([]);
+        setModelsLoadError("视频模型目录加载失败，当前编辑内容已保留。");
       })
-        .then((r) => r.json())
-        .then((data) => {
-          setCashBalance(data.balance ?? 0);
-        })
-        .catch(() => {});
-    }
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (active) setModelsLoading(false);
+      });
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [modelsReadAttempt]);
+
+  useEffect(() => {
+    if (!auth?.token) return;
+    const controller = new AbortController();
+    fetch("/api/cash/balance", {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      signal: controller.signal,
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (!controller.signal.aborted && typeof data?.balance === "number") setCashBalance(data.balance);
+      })
+      .catch(() => {});
+    return () => controller.abort();
   }, [auth?.token]);
 
   /* ── Recover only server-owned active jobs after refresh ── */
@@ -3842,7 +3865,14 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
             /* ── Creator View ── */
             <>
               {modelsLoading && <p role="status" aria-live="polite" className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--text-secondary)]">视频模型目录加载中，可先填写提示词和准备素材…</p>}
-              {modelsLoadError && <p role="alert" className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">{modelsLoadError}</p>}
+              {modelsLoadError && (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+                  <span role="alert">{modelsLoadError}</span>
+                  <Button data-workbench-action="secondary" variant="outline" size="sm" onClick={() => setModelsReadAttempt((attempt) => attempt + 1)} className="h-7 gap-1 text-xs">
+                    <RefreshCw className="h-3.5 w-3.5" />重新读取模型
+                  </Button>
+                </div>
+              )}
               {historyRetryNotice && <p role="status" aria-live="polite" className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">{historyRetryNotice}</p>}
               {taskRecoveryNotice && <p role="status" aria-live="polite" className="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-300">{taskRecoveryNotice}</p>}
               {taskRecoveryError && (
@@ -3864,10 +3894,15 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   <div className="max-h-72 space-y-1.5 overflow-y-auto p-2.5 xl:max-h-[calc(100vh-190px)]">
                     {modelsLoading ? (
                       <p role="status" className="px-2 py-4 text-center text-xs text-[var(--text-secondary)]">模型目录加载中…</p>
+                    ) : modelsLoadError ? (
+                      <p className="px-2 py-4 text-center text-xs text-[var(--text-secondary)]">模型目录未读取，重新读取后可选择模型</p>
                     ) : models.length === 0 ? (
-                      <p className="px-2 py-4 text-center text-xs text-[var(--text-secondary)]">当前暂无可用视频模型，请稍后刷新重试</p>
+                      <div className="space-y-2 px-2 py-4 text-center text-xs text-[var(--text-secondary)]">
+                        <p>当前暂无可用视频模型</p>
+                        <Button data-workbench-action="secondary" variant="outline" size="sm" onClick={() => setModelsReadAttempt((attempt) => attempt + 1)}>重新读取模型</Button>
+                      </div>
                     ) : models.map((model) => {
-                      const modelPrice = model.generationReady === false ? model.pricePerUse : resolveVideoResolution(model, model.defaultResolution).publicPrice;
+
                       const selected = model.id === selectedModelId;
                       const selectable = model.available && model.generationReady;
                       const inputLabel = videoModelInputLabel(model);
@@ -3899,9 +3934,6 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                                 </span>
                               )}
                             </span>
-                            <span data-video-model-price className="col-start-2 min-w-0 max-w-full justify-self-start whitespace-normal break-words rounded border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[12px] font-semibold leading-4 text-[var(--foreground)] [overflow-wrap:anywhere]">
-                              {getVideoBillingUnit(model) === "token" ? model.generationReady === false ? "Token 计价" : videoTokenRateLabel(model, model.defaultResolution) : !model.priceReady ? "—" : modelPrice === 0 ? "免费" : `¥${modelPrice.toFixed(2)}${getVideoBillingUnit(model) === "output_second" ? "/秒" : "/次"}`}
-                            </span>
                           </span>
                         </button>
                       );
@@ -3927,7 +3959,6 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                   </div>
                   {selectedModel && !selectedModelSubmissionUnavailable && (
                     <div className="text-xs text-[var(--text-secondary)]">
-                      {getVideoBillingUnit(selectedModel) === "token" ? videoTokenRateLabel(selectedModel, selectedResolution) : <>单条预计：<span className="text-yellow-500 font-bold">¥{selectedPrice.toFixed(2)}</span></>}
                       {getVideoBillingUnit(selectedModel) !== "token" && cashBalance < selectedPrice && (
                         <span className="ml-2 text-red-500 font-medium">余额不足</span>
                       )}
@@ -3940,7 +3971,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                     value={tokenChargeConsent?.modelId === selectedModel.id && tokenChargeConsent.priceVersion === selectedModel.tokenPricing?.priceVersion ? tokenChargeConsent.amount : ""}
                     onChange={event => setTokenChargeConsent({ modelId: selectedModel.id, priceVersion: selectedModel.tokenPricing?.priceVersion || "", amount: event.target.value })} />
                   <p className="mt-1 text-[var(--muted-foreground)]">按实际 Token 用量结算；预留不是扣费，超额待确认。每次点击生成均使用当前额度。</p>
-                  {selectedInputCapabilities.supportsSourceVideoInput && <p className="mt-1 text-[var(--muted-foreground)]">使用源视频：{videoTokenRateLabel(selectedModel, selectedResolution, true)}；未使用源视频：{videoTokenRateLabel(selectedModel, selectedResolution, false)}</p>}
+
                 </div>}
                 {selectedModelSubmissionUnavailable ? null : <div className="flex flex-wrap items-start gap-4">
                   {/* Aspect ratio */}
@@ -4004,7 +4035,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
                           >
                             {resolutionCapabilities.options.map((value) => (
                               <SelectItem key={value} value={value}>
-                                {resolutionCapabilities.labels[value] || value} · {getVideoBillingUnit(selectedModel) === "token" ? videoTokenRateLabel(selectedModel, value) : `¥${resolveVideoResolution(selectedModel, value).publicPrice.toFixed(2)}${getVideoBillingUnit(selectedModel) === "output_second" ? "/秒" : ""}`}
+                                {resolutionCapabilities.labels[value] || value}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -4290,7 +4321,7 @@ function UserVideoPage({ identity }: { identity: WorkbenchIdentity }) {
 
                     <div className="p-4 space-y-3.5">
                       {cardCapabilitiesUnverified ? null : <fieldset disabled={requiresVideoTaskTracking(task)} className="min-w-0 space-y-3.5">
-                      {cardModel && getVideoBillingUnit(cardModel) === "token" && <p className="text-xs text-[var(--muted-foreground)]">本条费率：{videoTokenRateLabel(cardModel, selectedResolution, Boolean(cardInputCapabilities.supportsSourceVideoInput && task.sourceVideoUrl))}</p>}
+
                       {/* Prompt */}
                       <div>
                         <label className="text-xs text-[var(--text-secondary)] mb-1.5 block font-medium">

@@ -6,11 +6,30 @@ async function main(){
   const fixture=path.resolve('.codex-evidence/commerce-agent-plan-quote-'+Date.now());
   process.env.COMMERCE_DATA_DIR=fixture;
   process.env.SHARED_CONFIGURATION_ENABLED='0';
+  process.env.COZE_SUPABASE_URL = 'https://commerce-wallet-fixture.invalid';
+  process.env.COZE_SUPABASE_SERVICE_ROLE_KEY = 'isolated-wallet-fixture';
+  const walletRequests: Array<{ p_amount: number; p_idempotency_key: string }> = [];
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), 'https://commerce-wallet-fixture.invalid/rest/v1/rpc/apply_wallet_operation_atomic');
+    assert.equal(init?.method, 'POST');
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.p_user_id, 'main-admin-fixture');
+    assert.equal(body.p_operation_kind, 'cash_charge');
+    walletRequests.push(body);
+    return Response.json({ success: true, operation_id: 'fixture-wallet-operation', wallet: 'cash', operation_kind: 'cash_charge',
+      amount: body.p_amount, delta: -body.p_amount, balance_before: 20, balance_after: 20 - body.p_amount, already_fulfilled: false });
+  };
   await fs.mkdir(fixture,{recursive:true});
   const store=await import('../src/commerce/server/store');
   const plans=await import('../src/commerce/server/agent-plans');
   const workflows=await import('../src/commerce/server/workflows');
-  const imageModel={id:'image-fixture',displayName:'后台图片能力',kind:'image' as const,source:'custom' as const,enabled:true,publicPrice:2,costPrice:1,billingUnit:'per_use' as const,configHash:'image-v1',protocol:'openai-image',endpoint:'https://example.invalid',capabilities:{available:true,executionSupported:true,aspectRatios:['1:1'],resolutionOptions:['1K'],maxReferenceImages:9}};
+  const imageModel = {
+    id: 'gpt-image-2-chA-1', internalModelId: 'gpt-image-2-chA-1', modelName: 'gpt-image-2', provider: 'openai_compat',
+    displayName: '后台图片能力', kind: 'image' as const, source: 'main' as const, enabled: true, publicPrice: 2, costPrice: 1,
+    billingUnit: 'per_use' as const, configHash: 'a'.repeat(64), protocol: 'openai-image', endpoint: 'https://example.invalid',
+    capabilities: { available: true, executionSupported: true, credentialsConfigured: true, endpointConfigured: true, protocolConfigured: true,
+      aspectRatios: ['1:1'], resolutionOptions: ['1K'], maxReferenceImages: 9 },
+  };
   const videoModel={id:'video-fixture',displayName:'用户视频能力',kind:'video' as const,source:'custom' as const,enabled:true,publicPrice:0.5,costPrice:0.25,billingUnit:'output_second' as const,configHash:'video-v1',protocol:'secure-video',endpoint:'https://example.invalid',capabilities:{available:true,executionSupported:true,aspectRatios:['1:1'],resolutionOptions:['720p'],nativeDurations:[5],maxReferenceImages:1}};
   store.put('settings','main-model-source','system',{enabled:false});
   store.put('settings','defaults','system',{image:imageModel.id,video:videoModel.id});
@@ -39,7 +58,8 @@ async function main(){
   const clientRequestId='22222222-2222-4222-8222-222222222222';
   const run=await plans.confirmAgentPlan('plan-owner',sourceId,{quoteId:result.quote.id,clientRequestId,confirmationFingerprint:result.quote.previewFingerprint});
   const parentBilling=store.get<Record<string,any>>('aggregate-billing',result.quote.id,'plan-owner')!;
-  assert.equal(parentBilling.status,'exempt');
+  assert.equal(parentBilling.status,'charged');
+  assert.equal(parentBilling.walletOperationId, 'fixture-wallet-operation');
   assert.equal(parentBilling.amount,4.5);
   assert.equal(run.agentPlanExecution?.quoteId,result.quote.id);
   assert.equal(run.agentPlanExecution?.steps.hero.billingSnapshot?.modelConfigHash,imageModel.configHash);
@@ -50,13 +70,16 @@ async function main(){
   const replay=await plans.confirmAgentPlan('plan-owner',sourceId,{quoteId:result.quote.id,clientRequestId,confirmationFingerprint:result.quote.previewFingerprint});
   assert.equal(replay.id,run.id);
   await assert.rejects(()=>plans.confirmAgentPlan('plan-owner',sourceId,{quoteId:result.quote.id,clientRequestId:'33333333-3333-4333-8333-333333333333',confirmationFingerprint:result.quote.previewFingerprint}),/另一客户端请求/);
+  assert.equal(walletRequests.length, 1);
+  assert.equal(walletRequests[0].p_amount, result.quote.payableTotal);
+  assert.equal(walletRequests[0].p_idempotency_key, parentBilling.chargeKey);
   const agentUi=await fs.readFile(new URL('../src/commerce/components/commerce-agent/agent-execution.tsx',import.meta.url),'utf8');
   const runtimeUi=await fs.readFile(new URL('../src/commerce/components/commerce-agent/runtime-ui.tsx',import.meta.url),'utf8');
   assert.match(agentUi,/重新获取报价/);
   assert.match(agentUi,/重新报价\|报价已过期/);
   assert.match(runtimeUi,/重新报价\|报价已过期/);
   assert.match(runtimeUi,/requestKey\.current=\{key:crypto\.randomUUID\(\),fingerprint\}/);
-  console.log(JSON.stringify({passed:21,networkCalls:0,paidCalls:0,checks:['hidden-image-binding','video-binding-public','aggregate-price','image-price','video-duration-price','hidden-image-model-id','hidden-model-hash','hidden-cost','image-binding-rejected','parent-wallet-exempt-receipt','parent-wallet-total','quote-bound-workflow','step-config-snapshot','workflow-internals-hidden','hidden-node-model','video-node-model-public','idempotent-confirm-and-conflict','agent-plan-requote-control','agent-plan-stale-quote-reset','manual-submit-stale-quote-reset','manual-submit-new-request-id-after-stale'],fixture}));
+  console.log(JSON.stringify({passed:25,networkCalls:0,paidCalls:0,walletFixtureCalls:walletRequests.length,checks:['hidden-image-binding','video-binding-public','aggregate-price','image-price','video-duration-price','hidden-image-model-id','hidden-model-hash','hidden-cost','image-binding-rejected','parent-wallet-charged-receipt','parent-wallet-total','parent-wallet-idempotency','quote-bound-workflow','step-config-snapshot','workflow-internals-hidden','hidden-node-model','video-node-model-public','idempotent-confirm-and-conflict','agent-plan-requote-control','agent-plan-stale-quote-reset','manual-submit-stale-quote-reset','manual-submit-new-request-id-after-stale'],fixture}));
 }
 
 main().catch((error)=>{console.error(error);process.exitCode=1;});

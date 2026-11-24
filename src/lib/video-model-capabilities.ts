@@ -85,9 +85,11 @@ export type VideoTokenChargeConsent = { modelId: string; priceVersion: string; a
 export function readVideoTokenPublicPricing(value: unknown): VideoTokenPublicPricing | undefined {
   const input = objectValue(value);
   const rates = objectValue(input.salePricesPerMillion);
-  const keys = ["720p:no_reference_video", "720p:reference_video"];
+  const keys = Object.keys(rates);
   if (typeof input.priceVersion !== "string" || !input.priceVersion.trim()
-    || !keys.every(key => typeof rates[key] === "number" && Number.isFinite(rates[key]) && Number(rates[key]) > 0)) return undefined;
+    || !keys.includes("720p:no_reference_video") || !keys.includes("720p:reference_video")
+    || !keys.every(key => /^(480p|720p|1080p|4k):(no_reference_video|reference_video)$/.test(key)
+      && typeof rates[key] === "number" && Number.isFinite(rates[key]) && Number(rates[key]) > 0)) return undefined;
   return { salePricesPerMillion: Object.fromEntries(keys.map(key => [key, Number(rates[key])])), priceVersion: input.priceVersion };
 }
 

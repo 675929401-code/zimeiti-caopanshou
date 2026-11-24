@@ -44,6 +44,15 @@
       "previousSha256": "c467430ca47e1d043091fb074eaff6d1c46170333b1b425678c8e6151d275277",
       "newSha256": "3f5da97a8a55ef76d2562af5144642d1240b6e012ecf1c35dc237068a9c2c316",
       "review": "Single-constant diff reviewed. Extraction lock verifier, extraction zero-network contracts and extraction UI source checks rerun after resealing; browser/build acceptance recorded separately by the release pipeline."
+    },
+    {
+      "date": "2026-11-19",
+      "session": "1f413c25-81b9-4ea7-acfc-a24f58f6cd38",
+      "userRequest": "价格暂时不对外显示。",
+      "scope": "Only remove the browsing tariff in RuntimeQuoteCard and update the order-specific retry confirmation label.",
+      "previousSha256": "928e99fcd5fed26f464ab708473d7fd333f743add3f2f52c9d043b7bfc1d1759",
+      "newSha256": "4e10de15af10b39ac88b813da734990578b929fdbf3fce59303773deea18edd8",
+      "review": "Reviewed exact UI diff. Existing handlers, submission and retry consent retained; commercial closure checks passed."
     }
   ],
   "configurationBaseline": {
@@ -128,7 +137,7 @@
     },
     {
       "path": "src/app/extract/page.tsx",
-      "sha256": "928e99fcd5fed26f464ab708473d7fd333f743add3f2f52c9d043b7bfc1d1759"
+      "sha256": "4e10de15af10b39ac88b813da734990578b929fdbf3fce59303773deea18edd8"
     },
     {
       "path": "src/hooks/use-extraction-attempt-status.ts",

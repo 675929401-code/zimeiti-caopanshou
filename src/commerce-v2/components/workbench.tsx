@@ -17,6 +17,7 @@ import { compileProductionPlan } from "../domain/production-plan";
 import "./workbench.css";
 
 type PublicDirector = {
+  configurationIssue?: string;
   key: string;
   name: string;
   description: string;
@@ -440,7 +441,7 @@ export function CommerceV2Workbench() {
         <div className="cv2-toolbar">
           <div className="cv2-popover-anchor">
             <button type="button" aria-expanded={directorOpen} onClick={() => { setDirectorOpen((value) => !value); setModelOpen(false); setSettingsOpen(false); }}><WandSparkles size={17}/><span>创作方式<strong>{selectedDirector?.name || "直接创作"}</strong></span><ChevronDown size={15}/></button>
-            {directorOpen && <div className="cv2-popover cv2-directors" role="dialog" aria-label="选择超级编导"><button className={!selectedDirector ? "selected" : ""} onClick={() => chooseDirector(null)}><strong>直接创作</strong><small>不经过编导对话，直接核对视频提示词</small></button>{catalog?.directors.map((director) => <button key={director.key} className={selectedDirector?.key === director.key ? "selected" : ""} onClick={() => chooseDirector(director)}><strong>{director.name}</strong><small>{director.category} · {director.description}</small></button>)}</div>}
+            {directorOpen && <div className="cv2-popover cv2-directors" role="dialog" aria-label="选择超级编导"><button className={!selectedDirector ? "selected" : ""} onClick={() => chooseDirector(null)}><strong>直接创作</strong><small>不经过编导对话，直接核对视频提示词</small></button>{catalog?.directors.map((director) => <button key={director.key} disabled={!!director.configurationIssue} className={selectedDirector?.key === director.key ? "selected" : ""} onClick={() => chooseDirector(director)}><strong>{director.name}</strong><small>{director.category} · {director.configurationIssue || director.description}</small></button>)}</div>}
           </div>
           <button className="cv2-new" onClick={() => { setDraft({ ...newVideoDraft(), modelId: catalog?.models.video.find((item) => item.available)?.id || null }); setPlan(null); setQuote(null); }}>新建</button>
         </div>

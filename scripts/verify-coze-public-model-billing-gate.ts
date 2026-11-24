@@ -21,7 +21,7 @@ requireSource(/baseFeeRmb[\s\S]*?serverAgent\.base_fee[\s\S]*?baseFeeCredits/u, 
 requireSource(/fingerprintLlmRequest\([\s\S]*?publicModelId:[\s\S]*?baseFeeCredits/u, "claim fingerprint binds price identity");
 requireSource(/const terminalFrames: string\[\][\s\S]*?terminalFrames\.push\(frame\)/u, "terminal SSE frames are buffered");
 requireSource(/COZE_UPSTREAM_INCOMPLETE[\s\S]*?LLM_BILLING_FAILED/u, "upstream and settlement failures are fail-closed");
-requireSource(/settle:\s*async \(\{ usage, fullContent \}\) => settleLlmUsage\([\s\S]*?isAdmin:\s*userRole === "admin"/u, "Coze settlement records the authenticated audit role without a billing exemption");
+requireSource(/settle:\s*async \(\{ usage \}\) => settleLlmUsage\([\s\S]*?isAdmin:\s*userRole === "admin"/u, "Coze settlement records the authenticated audit role without a billing exemption");
 forbidSource(/const \{[^\n]*\bbaseFee\b/u, "client baseFee destructuring");
 forbidSource(/\bdeductCredits(?:WithAgentBilling)?\s*\(/u, "route-level wallet bypass");
 forbidSource(/\brecordRevenue\s*\(/u, "route-level revenue side channel");

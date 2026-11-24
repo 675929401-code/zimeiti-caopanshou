@@ -96,8 +96,7 @@ export async function main() {
       await page.waitForFunction(theme => document.documentElement.getAttribute('data-theme') === theme, theme);
       const colors = await root.evaluate(el => { const c = getComputedStyle(el); const h = el.querySelector('h1'), hc = getComputedStyle(h); return { theme: document.documentElement.getAttribute('data-theme'), colorScheme: c.colorScheme, backgroundImage: c.backgroundImage, ink: c.color, heading: hc.color, headingFill: hc.webkitTextFillColor, headingBackground: hc.backgroundImage, width: el.getBoundingClientRect().width, overflow: document.documentElement.scrollWidth > innerWidth }; });
       check(`Studio fixed light palette under ${theme}`, colors.colorScheme === 'light' && colors.backgroundImage.includes('radial-gradient') && colors.backgroundImage.includes('linear-gradient') && colors.ink === 'rgb(24, 24, 27)' && colors.heading === 'rgba(0, 0, 0, 0)' && colors.headingFill === 'rgba(0, 0, 0, 0)' && colors.headingBackground.includes('linear-gradient') && !colors.overflow, colors);
-      const notice = page.getByTestId('studio-publish-notice');
-      check(`closed runtime has accurate execution notice under ${theme}`, await notice.getAttribute('data-execution') === 'disabled' && /发布执行已关闭/u.test(await notice.innerText()) && !/执行已开启|仅限本机测试/u.test(await notice.innerText()));
+      check(`overview keeps draft-only guidance out of the catalog under ${theme}`, await page.getByTestId('studio-publish-notice').count() === 0);
       check(`overview has no premature publish action under ${theme}`, await page.getByTestId('studio-publish-button').count() === 0);
       await snap(page, `publish-${theme}`);
       if (theme === 'soft-white') {
@@ -112,6 +111,8 @@ export async function main() {
       if (theme === 'soft-white') {
         await snap(page, 'publish-accounts');
         await page.goto(origin+'/publish-center?tab=compose', { waitUntil: 'networkidle' });
+        const notice = page.getByTestId('studio-publish-notice');
+        check('closed runtime has draft-only guidance in the composer', await notice.getAttribute('data-execution') === 'disabled' && /当前仅可保存草稿/u.test(await notice.innerText()));
         await page.getByTestId('studio-type-text').click();
         await page.getByTestId('studio-title').fill('本地验收临时草稿');
         await page.getByTestId('studio-body').fill('仅保存到隔离本地发布服务，不连接账号、不提交外部平台。');

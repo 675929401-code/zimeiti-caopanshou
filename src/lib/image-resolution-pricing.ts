@@ -32,13 +32,17 @@ export function resolveImageResolutionPrice(
   model: ImageResolutionPricingModel | null | undefined,
   resolution: string,
   kind: ImagePriceKind,
+  referenceCount = 0,
 ): number {
   const normalized = resolution.trim().toUpperCase();
   const entries = Object.entries(configuredPriceMap(model, kind));
   const configured = entries.find(([key]) => key.trim().toUpperCase() === normalized)?.[1];
   const resolved = configuredMoney(configured);
-  if (Number.isFinite(resolved)) return resolved;
-  return configuredMoney(kind === "cost" ? model?.cost_price : model?.selling_price);
+  const base = Number.isFinite(resolved) ? resolved : configuredMoney(kind === "cost" ? model?.cost_price : model?.selling_price);
+  const extra = protocolConfig(model)[kind === "cost" ? "reference_image_unit_cost" : "reference_image_unit_price"];
+  if (extra == null || !referenceCount) return base;
+  if (!Number.isSafeInteger(referenceCount) || referenceCount < 0) return NaN;
+  return Number((base + referenceCount * configuredMoney(extra)).toFixed(8));
 }
 
 export function publicImageResolutionPrices(model: ImageResolutionPricingModel | null | undefined): string[] {

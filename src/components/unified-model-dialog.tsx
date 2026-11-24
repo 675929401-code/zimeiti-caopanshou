@@ -1,7 +1,9 @@
 "use client";
+import { billableCacheReadRate, costMarkupFromMargin, marginFromCostMarkup } from "@/lib/text-model-pricing";
 import { createPortal } from "react-dom";
 import { modelEndpointError, modelStationLabel } from "@/lib/model-endpoint";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { TokenBillingPreview } from "./admin/token-billing-preview";
 import { formatModelPrice, modelConnectionSummary } from "@/lib/model-connection-summary";
 import { getVideoBillingUnit } from "@/lib/video-model-capabilities";
 import { displayModelAvatar, MODEL_BRAND_OPTIONS } from "@/lib/model-brand";
@@ -281,6 +283,8 @@ export function preserveUnchangedVideoEditPayload(
 export default function UnifiedModelDialog({
   model, modelType, initialDraft, onSave, onClose, token, saving = false, saveBlocked = false, saveError = "",
 }: UnifiedModelDialogProps) {
+  const [mediaMarkup, setMediaMarkup] = useState("10");
+  const [markupDraft, setMarkupDraft] = useState<string | null>(null);
   const isEdit = !!model?.id;
   const apiKeyConfigured = model?.api_key_configured === true;
   const editBaseline = useRef<Record<string, unknown> | null>(null);
@@ -311,8 +315,8 @@ export default function UnifiedModelDialog({
     token_billing_enabled: false,
     input_cost_per_million: "" as string,
     output_cost_per_million: "" as string,
-    cached_cost_per_million: "0" as string,
-    profit_margin: "16.666667" as string,
+    cached_cost_per_million: "" as string,
+    profit_margin: String(marginFromCostMarkup(10)),
     token_rounding_unit: 0,
     // API
     api_endpoint: "",
@@ -443,6 +447,7 @@ export default function UnifiedModelDialog({
         is_active: model.is_active !== false,
         sort_order: Number(model.sort_order) || 0,
       };
+      setMarkupDraft(null);
       editBaseline.current = structuredClone(editValues);
       setForm(prev => ({ ...prev, ...editValues }));
     } else if (initialDraft) {
@@ -572,6 +577,18 @@ export default function UnifiedModelDialog({
   const connection = modelConnectionSummary(form.api_endpoint || form.proxy_url, form.api_protocol_config);
   const profit = Number(form.cost_per_use) - Number(form.cost_price);
   const profitMargin = Number(form.cost_price) > 0 ? ((profit / Number(form.cost_price)) * 100).toFixed(1) : "—";
+  const fillMediaSale = () => {
+    if (form.cost_price === "" || !mediaMarkup.trim()) return;
+    const markup = Number(mediaMarkup);
+    if (!Number.isFinite(markup) || markup < 0 || form.cost_price < 0) return;
+    setForm({ ...form, cost_per_use: Number((form.cost_price * (1 + markup / 100)).toFixed(8)) });
+  };
+  const setResolutionPrice = (key: "resolution_cost_prices" | "resolution_prices", resolution: string, raw: string) => {
+    const prices = { ...form[key] };
+    if (raw === "") delete prices[resolution];
+    else prices[resolution] = Number(raw);
+    setForm({ ...form, [key]: prices });
+  };
   const liveTest = detectResult?.liveTest;
   const liveTestPassed = liveTest?.tested && liveTest.passed;
   const detectConfirmed = detectResult?.success === true && detectResult.keyValid === true && detectResult.modelExists === true;
@@ -590,7 +607,8 @@ export default function UnifiedModelDialog({
   const calcMargin = parseFloat(form.profit_margin) || 0;
   const inputSellPerMillion = calcMargin < 100 && calcInput > 0 ? calcInput / (1 - calcMargin / 100) : calcInput;
   const outputSellPerMillion = calcMargin < 100 && calcOutput > 0 ? calcOutput / (1 - calcMargin / 100) : calcOutput;
-  const cachedSellPerMillion = calcMargin < 100 && calcCached > 0 ? calcCached / (1 - calcMargin / 100) : calcCached;
+  const cachedSellPerMillion = billableCacheReadRate(inputSellPerMillion, calcMargin < 100 ? calcCached / (1 - calcMargin / 100) : calcCached);
+  const displayedMarkup = markupDraft ?? (form.profit_margin !== "" && calcMargin < 100 ? String(Number(costMarkupFromMargin(calcMargin).toFixed(6))) : "");
 
   const inputCls = "w-full px-3 py-2.5 rounded-lg border bg-[var(--background)] text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none text-sm";
   const labelCls = "block text-sm font-bold mb-1.5";
@@ -790,25 +808,30 @@ export default function UnifiedModelDialog({
             <label className={labelCls}>缓存成本 <span className="text-red-500">*</span></label>
             <input aria-label="缓存成本" type="number" step="0.000001" min="0" value={form.cached_cost_per_million}
               onChange={event => setForm({ ...form, cached_cost_per_million: event.target.value })}
-              placeholder="无缓存价填 0" className={inputCls} />
+              placeholder="元/百万缓存命中 Token" className={inputCls} />
           </div>
         </div>
 
         <div>
-          <label className={labelCls}>利润率(%) <span className="text-red-500">*</span></label>
-          <input aria-label="利润率" type="number" step="0.000001" min="0" max="99.999999" value={form.profit_margin}
-            onChange={event => setForm({ ...form, profit_margin: event.target.value })}
-            placeholder="16.666667" className={inputCls} />
-          <p className="mt-1 text-xs text-[var(--muted-foreground)]">默认 16.666667% 对应真实成本加价 20%；售价 = 成本 ÷ (1 - 利润率)。</p>
+          <label className={labelCls}>成本加价率 (%) <span className="text-red-500">*</span></label>
+          <input aria-label="成本加价率" type="number" step="any" min="0" value={displayedMarkup}
+            onChange={event => {
+              const raw = event.target.value;
+              const markup = Number(raw);
+              setMarkupDraft(raw);
+              setForm({ ...form, profit_margin: raw !== "" && Number.isFinite(markup) && markup >= 0 ? String(marginFromCostMarkup(markup)) : "" });
+            }} className={inputCls} />
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">按进货成本加价。{displayedMarkup && <>每 100 元成本售价 {(100 + Number(displayedMarkup)).toLocaleString("zh-CN", { maximumFractionDigits: 4 })} 元，对应毛利率 {Number(calcMargin.toFixed(4))}%。</>}</p>
         </div>
 
-        {(calcInput > 0 || calcOutput > 0 || calcCached > 0) && (
+        {[form.input_cost_per_million, form.output_cost_per_million, form.cached_cost_per_million, form.profit_margin].every(value => value !== "" && Number(value) >= 0) && (
           <div className="grid grid-cols-3 gap-3 rounded-lg bg-[var(--muted)]/20 p-3 text-xs">
             <div>输入售价：¥{inputSellPerMillion.toFixed(6)} / 百万Token</div>
             <div>输出售价：¥{outputSellPerMillion.toFixed(6)} / 百万Token</div>
-            <div>缓存售价：¥{cachedSellPerMillion.toFixed(6)} / 百万Token</div>
+            <div>缓存命中售价：¥{cachedSellPerMillion.toFixed(6)} / 百万Token{calcCached > calcInput && "（按输入价封顶）"}</div>
           </div>
         )}
+        <TokenBillingPreview token={token} input={String(form.input_cost_per_million)} cache={String(form.cached_cost_per_million)} output={String(form.output_cost_per_million)} margin={String(form.profit_margin)} />
       </section>
 
       <section className="rounded-xl border border-[var(--border)] p-4 space-y-4">
@@ -854,7 +877,7 @@ export default function UnifiedModelDialog({
           <RadioGroup
             options={DEEP_THINKING_OPTIONS.filter(option => option.value !== 1)}
             value={form.deep_thinking_type === 2 ? 2 : 0}
-            onChange={value => setForm({ ...form, deep_thinking_type: value, deduct_deep_think: value === 2 ? 2 : 1 })}
+            onChange={value => setForm({ ...form, deep_thinking_type: value, deduct_deep_think: 1 })}
             color="var(--primary)"
           />
           <p className="mt-1 text-xs text-[var(--muted-foreground)]">只有中转站明确支持该模型原生推理时才选择“自带思考”。</p>
@@ -1013,6 +1036,10 @@ export default function UnifiedModelDialog({
                         className={`${inputCls} opacity-70`} />
                     </div>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <label>按成本加价 (%) <input aria-label="基础售价加价率" type="number" min="0" step="any" className="w-20 rounded border px-2 py-1" value={mediaMarkup} onChange={e => setMediaMarkup(e.target.value)} /></label>
+                    <button type="button" onClick={fillMediaSale} disabled={form.cost_price === "" || !mediaMarkup.trim() || Number(mediaMarkup) < 0} className="text-[var(--primary)] font-semibold disabled:opacity-50">填入基础售价</button>
+                  </div>
                   {Number(form.cost_per_use) > 0 && Number(form.cost_price) > 0 && (
                     <div className="bg-amber-500/8 rounded-lg p-2.5 border border-amber-500/15 flex items-center justify-between text-xs">
                       <span className="text-[var(--muted-foreground)]">{isProviderTokenBilling ? "每百万Token利润" : videoPriceUnit.includes("输出秒") ? "每输出秒利润" : "单次利润"}</span>
@@ -1026,7 +1053,7 @@ export default function UnifiedModelDialog({
                   )}
                   <p className="text-xs text-[var(--muted-foreground)]">多规格模型的实际价格以高级参数内的分档配置为准；这里只显示基础价格。</p>
                   <p className="text-xs text-[var(--primary)]">
-                    视频售价按供应商或运营价格表逐项填写，系统不会按统一百分比自动改价。
+                    分辨率档位可单独定价。填写基础售价后，请核对各档位的成本与售价。
                   </p>
                 </div>
               </div>
@@ -1378,14 +1405,14 @@ export default function UnifiedModelDialog({
                               成本 ¥{form.protocol_type === "autodl_comfyui_h3" || form.protocol_type === "autodl_comfyui_workflow" ? "/秒" : ""}
                               <input type="number" min="0" step="any" disabled={!enabled}
                                 value={form.resolution_cost_prices[resolution] ?? ""}
-                                onChange={e => setForm({ ...form, resolution_cost_prices: { ...form.resolution_cost_prices, [resolution]: Math.max(0, Number(e.target.value) || 0) } })}
+                                onChange={e => setResolutionPrice("resolution_cost_prices", resolution, e.target.value)}
                                 className={`${inputCls} py-1.5`} />
                             </label>
                             <label className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
                               售价 ¥{form.protocol_type === "autodl_comfyui_h3" || form.protocol_type === "autodl_comfyui_workflow" ? "/秒" : ""}
                               <input type="number" min="0" step="any" disabled={!enabled}
                                 value={form.resolution_prices[resolution] ?? ""}
-                                onChange={e => setForm({ ...form, resolution_prices: { ...form.resolution_prices, [resolution]: Math.max(0, Number(e.target.value) || 0) } })}
+                                onChange={e => setResolutionPrice("resolution_prices", resolution, e.target.value)}
                                 className={`${inputCls} py-1.5`} />
                             </label>
                             <label className="flex items-center gap-2 text-xs font-medium">
@@ -1477,12 +1504,12 @@ export default function UnifiedModelDialog({
               if (form.model_type === "text") {
                 const prices = [form.input_cost_per_million, form.output_cost_per_million, form.cached_cost_per_million];
                 if (prices.some(value => value === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) {
-                  alert("请完整填写输入、输出和缓存 Token 成本；没有缓存价时填 0");
+                  alert("请填写输入、输出和缓存命中成本。按供应商合同填写，免费项填 0。");
                   return;
                 }
                 const margin = Number(form.profit_margin);
                 if (form.profit_margin === "" || !Number.isFinite(margin) || margin < 0 || margin >= 100) {
-                  alert("利润率必须在 0（含）到 100（不含）之间");
+                  alert("请填写有效的非负成本加价率");
                   return;
                 }
                 if (!Number.isInteger(form.max_context_tokens) || form.max_context_tokens <= 0) {
@@ -1513,10 +1540,10 @@ export default function UnifiedModelDialog({
                 return;
               }
               const resolutionCostPrices = Object.fromEntries(
-                form.resolution_options.map(resolution => [resolution, Number(form.resolution_cost_prices[resolution]) || 0]),
+                form.resolution_options.filter(resolution => Object.hasOwn(form.resolution_cost_prices, resolution)).map(resolution => [resolution, form.resolution_cost_prices[resolution]]),
               );
               const resolutionPrices = Object.fromEntries(
-                form.resolution_options.map(resolution => [resolution, Number(form.resolution_prices[resolution]) || 0]),
+                form.resolution_options.filter(resolution => Object.hasOwn(form.resolution_prices, resolution)).map(resolution => [resolution, form.resolution_prices[resolution]]),
               );
               const baseVideoProtocolConfig = {
                 ...form.api_protocol_config,
@@ -1606,12 +1633,12 @@ export default function UnifiedModelDialog({
                 saveData.cost_per_use = 0;
                 saveData.cost_price = 0;
                 saveData.token_rounding_unit = 0;
-                saveData.enable_web_search = false;
+                saveData.enable_web_search = isEdit ? model?.enable_web_search : false;
                 // These capabilities may be configured outside the compact text
                 // form. Editing a name or price must preserve their saved values.
                 saveData.image_parsing = form.image_parsing || "none";
                 saveData.file_parsing = form.file_parsing || "none";
-                saveData.max_context_rounds = 0;
+                saveData.max_context_rounds = isEdit ? model?.max_context_rounds : 0;
                 saveData.api_protocol_config = {
                   ...form.api_protocol_config,
                   provider: getLlmProviderPreset(form.provider)?.provider || form.provider || "custom",

@@ -40,6 +40,10 @@ export const DIRECTOR_PROMPT_PROVENANCE={
   benchmarkOriginal:false,
   note:'包含 skill_key、版本、分类、选项、素材槽和结果示例，不含 prompt。'
  },
+ 'benchmark-current-skill-metadata':{
+  id:'benchmark-current-skill-metadata',label:'现版视频编导公开目录',kind:'benchmark-observed',status:'verified',benchmarkOriginal:false,
+  note:'2026-11-20 公开目录共 20 条配置；19 张具名卡及 1 张默认卡。'
+ },
  'benchmark-director-output-contract':{
   id:'benchmark-director-output-contract',
   label:'对标站超级编导真实输出格式',

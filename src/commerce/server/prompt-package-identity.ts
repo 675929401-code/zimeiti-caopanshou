@@ -1,3 +1,4 @@
+import {memberChatInstruction} from './member-chat-skills';
 import {createHash} from 'node:crypto';
 import observedCatalog from '../components/commerce-agent/observed-catalog.json';
 import {IMAGE_SKILLS} from '../components/commerce-agent/catalog';
@@ -44,7 +45,10 @@ export function resolveCommercePromptPackageIdentity(input:PromptPackageInput,op
  let localSkillId=options.prompt.id;
  let skillContractSha256=hash({kind:'generic',promptId:options.prompt.id});
  let benchmarkReference:CommercePromptPackageIdentity['benchmarkReference'];
- if(input.kind==='image'){
+ const skillInstruction=memberChatInstruction(input);
+ if(skillInstruction && input.skillId){
+  localSkillId=input.skillId;skillContractSha256=hash({skillId:localSkillId,instruction:skillInstruction});
+ }else if(input.kind==='image'){
   const {skill,benchmark}=imageContract(input.skillId||'default');
   skillKind='image-skill';localSkillId=skill.id;skillContractSha256=hash(skill);
   benchmarkReference={source:'benchmark-observed-catalog',contractOnly:true,skillId:benchmark.key,configVersion:benchmark.benchmarkConfigVersion,versionId:benchmark.benchmarkSkillPackVersionId,version:benchmark.version};
