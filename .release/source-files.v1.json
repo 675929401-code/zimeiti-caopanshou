@@ -4,12 +4,12 @@
   "kind": "clean-source-snapshot",
   "canonicalTextEol": "lf",
   "policySha256": "f124dabe55a6b8f5f6b1a4c95abe11b49097ce474f44248d3374d7382b0ef9a7",
-  "sourceFingerprint": "219d06204874761caa60c02b5c0e9166e03fbb31d9912e915fb0357911aab154",
+  "sourceFingerprint": "3bb0d28eb7930f28b68071ce7ef8fa1c8bebbf8ad67b492d7e55685f72af6a8b",
   "assetManifestSha256": "b8e965526a54751a3f1aaf90296c1c841c48fe2f95463ee91a90e39b7a5c27fb",
   "assetDigest": "7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "assetVersion": "sha256-7cd4c0426905882d9d56edd514338e0efc56b408fbd67e946c8b81aa146740a8",
   "fileCount": 5597,
-  "totalBytes": 113036004,
+  "totalBytes": 113036402,
   "files": [
     {
       "path": ".cnb.yml",
@@ -5803,8 +5803,8 @@
     },
     {
       "path": "scripts/run-release-browser-acceptance.mjs",
-      "bytes": 83309,
-      "sha256": "37c151cb46e951face0d8f910b05c298820a4797cb080ceb95e7e70c820fd5fa"
+      "bytes": 83707,
+      "sha256": "25dd4a035a9466736ea10f57326c2be0971b1804f214968fd9cf44c04c31ccf2"
     },
     {
       "path": "scripts/run-release-targeted-regressions.mjs",
