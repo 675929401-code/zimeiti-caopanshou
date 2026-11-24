@@ -76,7 +76,9 @@ const CANDIDATE_BROWSER_ASSETS = Object.freeze([
 // on the service that actually owns it. Retired bookmarks are accepted only
 // when they land on their reviewed canonical destination.
 const BROWSER_ROUTE_TARGETS = Object.freeze({
-  "/admin": Object.freeze({ service: "web", expectedRoute: "/admin?tab=dashboard&view=overview" }),
+  "/admin": Object.freeze({ service: "web", expectedRoute: "/admin?tab=dashboard" }),
+  "/commerce/settings": Object.freeze({ service: "web", expectedRoute: "/commerce" }),
+  "/commerce/toolbox/digital-human": Object.freeze({ service: "web", expectedRoute: "/commerce/toolbox/video-generation" }),
   "/extract": Object.freeze({ service: "web", expectedRoute: "/tools?tab=text" }),
   "/formatter": Object.freeze({ service: "web", expectedRoute: "/tools?tab=format" }),
   "/segmenter": Object.freeze({ service: "web", expectedRoute: "/tools?tab=segment", expectedTool: "segment" }),
