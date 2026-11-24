@@ -650,7 +650,7 @@ function CommerceBody({ ownerKey }: { ownerKey: string }) {
     catch(error){showNotice((error as Error).message);return false;}
     finally{preferenceWrite.current=false;setPrefsSaving(false);}
   }
-  function useMediaPreferences(kind:PreferenceMedia){
+  function applyMediaPreferences(kind:PreferenceMedia){
     const pref=agentPrefs[kind],choice=preferenceModels[kind].find(m=>m.available&&m.id===pref.model);
     if(choice)setModelIds(old=>({...old,[kind]:choice.id}));
     const target=models[kind].find(m=>modelSelectionId(m)===(choice?.id||modelIds[kind])),caps=target?.capabilities||{};
@@ -669,8 +669,8 @@ function CommerceBody({ ownerKey }: { ownerKey: string }) {
     snapshot.materials=(input.references||[]).map(ref=>({id:kind==='image'?ref.instanceId||crypto.randomUUID():crypto.randomUUID(),serverId:ref.id,name:ref.id,type:'',slot:ref.slot}));if(kind==='image')snapshot.imageReferenceDocument=input.imageReferenceDocument;
     if(startEditorRecovery(snapshot)){setSelectedDraft('');void navigate(kind);}
   }
-  function useAsset(asset:UIAsset){const kind=asset.type.startsWith('image/')?'image':'video';if(blockPendingReferences(kind))return;setMaterialsFor(kind,current=>[...current.filter(m=>m.serverId!==asset.id),{...asset,id:crypto.randomUUID(),slot:asset.type.startsWith('audio/')?'sound':'reference',serverId:asset.id}]);navigate(kind);}
-  function useChat(text:string,kind:'image'|'video'|'canvas'){if(kind==='video'){setScriptSourceJobId('');setHelperConversationId(crypto.randomUUID());}if(kind==='canvas'){workspaceInputs.set(ownerKey+':canvas-brief',text);setDetailTemplate(v=>v+1);navigate('canvas');}else{if(tab==='agent'&&prefsLoaded)useMediaPreferences(kind);setPrompts(current=>({...current,[kind]:text}));navigate(kind);}setHelperMode(false);}
+  function applyAsset(asset:UIAsset){const kind=asset.type.startsWith('image/')?'image':'video';if(blockPendingReferences(kind))return;setMaterialsFor(kind,current=>[...current.filter(m=>m.serverId!==asset.id),{...asset,id:crypto.randomUUID(),slot:asset.type.startsWith('audio/')?'sound':'reference',serverId:asset.id}]);navigate(kind);}
+  function applyChat(text:string,kind:'image'|'video'|'canvas'){if(kind==='video'){setScriptSourceJobId('');setHelperConversationId(crypto.randomUUID());}if(kind==='canvas'){workspaceInputs.set(ownerKey+':canvas-brief',text);setDetailTemplate(v=>v+1);navigate('canvas');}else{if(tab==='agent'&&prefsLoaded)applyMediaPreferences(kind);setPrompts(current=>({...current,[kind]:text}));navigate(kind);}setHelperMode(false);}
   const selectedAgentModel=models.agent.find(item=>modelSelectionId(item)===modelIds.agent||item.id===modelIds.agent);
   const agentExecutionIssue=modelCatalogs.agent.error||(!modelCatalogs.agent.configurationReady?modelCatalogs.agent.configurationMessage||'对话模型配置尚未发布，暂不可执行。':selectedAgentModel?.generationReady!==true?selectedAgentModel?.readinessMessage||'当前对话模型待验收，暂不可执行。':'');
   const agentReadinessText=modelsLoading.agent?'正在读取模型…':!selectedAgentModel?'暂无可选择模型':agentExecutionIssue?`可选择配置 · ${agentExecutionIssue} · 暂不可执行`:'主站配置已启用，可执行';
@@ -919,7 +919,7 @@ function CommerceBody({ ownerKey }: { ownerKey: string }) {
     openUpload({id:'reference',label:'参考素材',min:0,max:12,kinds:['image','video','audio']});
   }
   function openConnector(name:string){void navigatePath('/skills?view=connectors&service='+encodeURIComponent(name))}
-  function useChatSkill(skill:MemberSkill,thread=conversationId){
+  function openChatSkill(skill:MemberSkill,thread=conversationId){
     const query=new URLSearchParams();
     if(thread)query.set('conversation',thread);
     if(!skill.instruction)query.set('skill',skill.id);
@@ -936,7 +936,7 @@ function CommerceBody({ ownerKey }: { ownerKey: string }) {
         if(!homeInputReady()||!transferHome('agent'))return;
         if(!prompt.trim())setPrompts(v=>({...v,agent:''}));
         if(!materials.length)clearMaterials('agent');
-        useChatSkill(skill,crypto.randomUUID());
+        openChatSkill(skill,crypto.randomUUID());
       }catch(e){showNotice((e as Error).message)}
       return;
     } if (!prompt.trim() && !materials.length) { showNotice('描述一下你想创作的内容，或先添加参考素材。'); return; } if(!homeInputReady()||!transferHome(homeMode))return;if(homeMode==='video'){setScriptSourceJobId('');setHelperMode(false);setHelperConversationId(crypto.randomUUID());}void navigate(homeMode); }
@@ -1041,11 +1041,11 @@ function CommerceBody({ ownerKey }: { ownerKey: string }) {
 
       {tab === 'agent' && recoveryPanel}
       {tab === 'agent' && extraView===''&&skillView==='create-skill'&&<button className="cs-save-skill" onClick={()=>openSkillDraft(prompts.agent)}>填写并保存技能</button>}
-      {tab === 'agent' && <ChatPanel selectedSkill={agentSkill} removeSkill={()=>void navigate('agent')} openSkillWorkspace={path=>void navigatePath(path)} onSkills={()=>void navigatePath('/skills?view=market')} onConnectors={openConnector} chooseSkill={useChatSkill} loadLibrary={loadComposerLibrary} onAttach={openComposerLibrary} onUpload={uploadComposerFile} onMic={()=>toggleVoiceInput()} listening={listening} onSaveSkill={openSkillDraft} runtime={runtime} prompt={prompt} setPrompt={setPrompt} modelSelect={<><AgentPreferencePanel preferences={agentPrefs} models={preferenceModels} ready={prefsLoaded} pending={prefsSaving} onChange={changeAgentPreference}/><ChatWorkspaceMenu onCloseModel={closeChatModel}>{chatModelSelect}</ChatWorkspaceMenu></>} onSend={()=>void sendChat()} materials={materials.map(renderMaterial)} onNew={()=>void openMemberChat()} conversationId={conversationId} setConversationId={id=>void openMemberChat(id)} onUse={useChat}/>}
+      {tab === 'agent' && <ChatPanel selectedSkill={agentSkill} removeSkill={()=>void navigate('agent')} openSkillWorkspace={path=>void navigatePath(path)} onSkills={()=>void navigatePath('/skills?view=market')} onConnectors={openConnector} chooseSkill={openChatSkill} loadLibrary={loadComposerLibrary} onAttach={openComposerLibrary} onUpload={uploadComposerFile} onMic={()=>toggleVoiceInput()} listening={listening} onSaveSkill={openSkillDraft} runtime={runtime} prompt={prompt} setPrompt={setPrompt} modelSelect={<><AgentPreferencePanel preferences={agentPrefs} models={preferenceModels} ready={prefsLoaded} pending={prefsSaving} onChange={changeAgentPreference}/><ChatWorkspaceMenu onCloseModel={closeChatModel}>{chatModelSelect}</ChatWorkspaceMenu></>} onSend={()=>void sendChat()} materials={materials.map(renderMaterial)} onNew={()=>void openMemberChat()} conversationId={conversationId} setConversationId={id=>void openMemberChat(id)} onUse={applyChat}/>}
 
       {tab === 'canvas' && <CommerceCanvas runtime={runtime} ownerKey={ownerKey} detailTemplate={detailTemplate} panelTitles={panels} onReferenceProject={()=>void navigatePath('/toolbox/hot-video-remix')} onNotice={showNotice} />}
 
-      {tab === 'assets' && <StudioLibrary view={libraryView} runtime={runtime} favorites={favoriteIds} useAsset={useAsset} go={path=>void navigatePath(path)} discovery={<DiscoveryGallery favoritesOnly ownerKey={ownerKey} onApply={applyUserPrompt} onNavigateCanvas={id=>navigatePath('/canvas?open='+encodeURIComponent(id))} onNotice={showNotice}/>} materials={<MemberAssets runtime={runtime} roles={libraryView==='roles'} onUse={useAsset} onNotice={showNotice} go={path=>void navigatePath(path)} manage={roles=>{setPickerCollection(roles?'roles':'assets');openUpload({id:'reference',label:roles?'角色':'参考素材',min:0,max:9,kinds:roles?['image']:['image','video','audio']});}}/>}/>}
+      {tab === 'assets' && <StudioLibrary view={libraryView} runtime={runtime} favorites={favoriteIds} useAsset={applyAsset} go={path=>void navigatePath(path)} discovery={<DiscoveryGallery favoritesOnly ownerKey={ownerKey} onApply={applyUserPrompt} onNavigateCanvas={id=>navigatePath('/canvas?open='+encodeURIComponent(id))} onNotice={showNotice}/>} materials={<MemberAssets runtime={runtime} roles={libraryView==='roles'} onUse={applyAsset} onNotice={showNotice} go={path=>void navigatePath(path)} manage={roles=>{setPickerCollection(roles?'roles':'assets');openUpload({id:'reference',label:roles?'角色':'参考素材',min:0,max:9,kinds:roles?['image']:['image','video','audio']});}}/>}/>}
 
       {detailOpen && <DetailSetStudio runtime={runtime} onBeforeLeaveReady={registerDetailLeave} onClose={()=>navigate('home')} onNotice={showNotice}/>}
       {depthOpen && <DepthVideoCloneStudio key={studioMode==='elements'?'elements':'depth'} elementMode={studioMode==='elements'} ownerKey={ownerKey} go={path=>void navigatePath(path)} runtime={runtime} initialSessionId={depthSessionId||undefined} onBeforeLeaveReady={registerDepthLeave} onNotice={showNotice} onBack={()=>void navigate('home')} onOpenEditor={assetId=>void navigatePath('/toolbox/video-editor?assetId='+encodeURIComponent(assetId))}/>}

@@ -34,10 +34,12 @@ export function TranslatedSubtitles({request,text,apply}:{request:string;text:st
   if(start<0)return null;
   const match=/```srt\s*\r?\n([\s\S]+?)\r?\n```/i.exec(text);
   if(!match)return <small>回复中缺少 SRT 文件，可在当前对话要求重新输出。</small>;
+  let value:string|null=null;
   try{
     const original=parseSubtitles(request.slice(start+mark.length).split('\n\n创作偏好')[0]),translated=parseSubtitles(match[1]);
     if(original.length!==translated.length||original.some((row,i)=>row.start!==translated[i].start||row.end!==translated[i].end))throw Error();
-    const value=renderSrt(translated);
+    value=renderSrt(translated);
+  }catch{value=null;}
+  if(value===null)return <small>译文与原字幕时间轴不一致，请修正后导出。</small>;
     return <><button type="button" onClick={()=>{const url=URL.createObjectURL(new Blob([value],{type:'text/plain;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='译文.srt';link.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}}>下载译文 SRT</button>{apply&&<button type="button" onClick={()=>apply(value)}>使用已核对时间轴的译文</button>}</>;
-  }catch{return <small>译文与原字幕时间轴不一致，请修正后导出。</small>;}
 }

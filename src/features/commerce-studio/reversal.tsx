@@ -20,7 +20,7 @@ function loadDraft(key:string):Draft{
    ...(raw.id&&/^[a-f0-9-]{36}$/i.test(raw.id)&&Number.isInteger(raw.revision)&&raw.revision>=0?{id:raw.id,revision:raw.revision}:{})};
  }catch{return empty;}
 }
-export function SceneStoryboard({scene,ownerKey,go,useScript,recovery,ready}:{scene:DirectorScene;ownerKey:string;recovery:React.ReactNode;ready:boolean;go:(path:string)=>void;useScript:(script:string,seconds:number)=>void}){
+export function SceneStoryboard({scene,ownerKey,go,useScript:onUseScript,recovery,ready}:{scene:DirectorScene;ownerKey:string;recovery:React.ReactNode;ready:boolean;go:(path:string)=>void;useScript:(script:string,seconds:number)=>void}){
  const {name,fields}=storyboards[scene],storageKey=ownerKey+':storyboard:'+scene;
  const [draft,setDraft]=useState(()=>loadDraft(storageKey)),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [saved,setSaved]=useState(false),[conflict,setConflict]=useState(false),pending=useRef(false);
@@ -50,6 +50,6 @@ export function SceneStoryboard({scene,ownerKey,go,useScript,recovery,ready}:{sc
  return <div className="cs-group-grid"><section className="cs-group-editor"><header><h2>{name}</h2><button onClick={()=>go(videoPath+'?scene='+scene+'&mode=director')}>返回编导</button></header>
  <div className="cs-group-scroll">{fields.map((label,i)=><label key={label}>{label}<textarea aria-label={label} rows={3} maxLength={2000} disabled={busy} value={draft.facts[i]} onChange={e=>update({facts:draft.facts.map((v,j)=>i===j?e.target.value:v)})}/></label>)}<label>脚本时长<select value={draft.duration} disabled={busy} onChange={e=>update({duration:Number(e.target.value)})}>{[8,15,25,30,60].map(s=><option key={s} value={s}>{s} 秒</option>)}</select></label></div>
  <footer>{error&&<p role="alert">{error}</p>}{saved&&<p role="status">已保存第 {draft.revision} 版</p>}<button className="cs-primary" disabled={busy} onClick={()=>void save()}>保存分镜画布</button>{conflict&&<button disabled={busy} onClick={()=>void save(true)}>另存为新画布</button>}</footer></section>
- <section className="cs-group-preview"><h2>分镜预览</h2>{recovery}{shots.map(shot=><article key={shot.id}><h3>{shot.start}–{shot.end}秒 · {shot.label}</h3><p>{shot.fact||'待填写'}</p><small>{shot.camera}</small></article>)}<button disabled={busy||!ready} onClick={()=>{if(complete())useScript(shots.map(shotText).join('\n\n'),draft.duration);}}>应用到视频创作</button></section>
+ <section className="cs-group-preview"><h2>分镜预览</h2>{recovery}{shots.map(shot=><article key={shot.id}><h3>{shot.start}–{shot.end}秒 · {shot.label}</h3><p>{shot.fact||'待填写'}</p><small>{shot.camera}</small></article>)}<button disabled={busy||!ready} onClick={()=>{if(complete())onUseScript(shots.map(shotText).join('\n\n'),draft.duration);}}>应用到视频创作</button></section>
  <aside className="cs-group-recent"><h2>我的创作</h2>{draft.revision>0&&<button onClick={()=>go('/canvas?open='+draft.id)}>打开可编辑画布</button>}<button onClick={()=>go('/canvas')}>查看已存画布</button></aside></div>;
 }

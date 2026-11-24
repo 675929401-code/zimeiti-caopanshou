@@ -23,7 +23,7 @@ const chain=load('src/lib/storyboard-chain-contract.ts',{zod:{z},'@/lib/generate
 const chainController=load('src/lib/storyboard-chain-controller.ts',{'./generated-image-reference':refs,'./storyboard-chain-contract':chain});
 const annotation=load('src/lib/storyboard-annotation-layout.ts');
 const failureHistory=load('src/lib/image-failure-history.ts',{'node:crypto':crypto,'@/lib/storyboard-chain-contract':chain,
-  '@/lib/image-output-contract':load('src/lib/image-output-contract.ts'),
+  '@/lib/image-output-contract':load('src/lib/image-output-contract.ts',{'./toapis-image-contract':load('src/lib/toapis-image-contract.ts')}),
   '@/lib/image-request-rejection':load('src/lib/image-request-rejection.ts'),
   '@/lib/storyboard-annotation-layout':annotation});
 const forbiddenStorage=new Proxy({},{get:()=>()=>{throw Error('COS forbidden')}});
