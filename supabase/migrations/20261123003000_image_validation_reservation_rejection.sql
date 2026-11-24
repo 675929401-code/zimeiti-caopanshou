@@ -69,4 +69,3 @@ BEGIN
   RETURN jsonb_build_object('record',to_jsonb(v_row));
 END;
 $$;
-

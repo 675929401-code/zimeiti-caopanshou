@@ -25,4 +25,3 @@ export function DubbingAction({skill,runtime,thread,onTranslate}:{skill:DubSkill
  {job.error&&<p role="status">{job.error}</p>}{job.video&&<><video controls preload="metadata" src={job.video.url} style={{maxHeight:260,maxWidth:'100%'}}/><a href={job.video.url+'?download=1'} download={job.video.name}>下载配音 MP4</a></>}{job.subtitles&&<a href={job.subtitles.url+'?download=1'} download={job.subtitles.name}>下载配音 SRT</a>}</div>}
  {error&&<p role="alert">{error}</p>}{history.length>0&&<details><summary>配音任务记录</summary>{history.map(j=><button key={j.id} disabled={busy} onClick={()=>{setJob(j);setError('');}}>{j.id.slice(0,8)} · {statuses[j.status]}</button>)}</details>}</section>;
 }
-

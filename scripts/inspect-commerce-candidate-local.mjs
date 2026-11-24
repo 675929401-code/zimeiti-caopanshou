@@ -20,7 +20,7 @@ export async function main(args=process.argv.slice(2)) {
   if(overview.status===200){
     const models=overview.data.models||[];
     const rows=Array.isArray(models)?models:Object.values(models).flat();
-    report.models=rows.map(m=>({id:m.id,name:m.name||m.displayName,kind:m.kind,publicPrice:m.publicPrice,costPrice:m.costPrice,unit:m.billingUnit,enabled:m.enabled})); 
+    report.models=rows.map(m=>({id:m.id,name:m.name||m.displayName,kind:m.kind,publicPrice:m.publicPrice,costPrice:m.costPrice,unit:m.billingUnit,enabled:m.enabled}));
     const current=overview.data.current;report.currentVersion=current?.release_version||overview.data.runtime?.releaseVersion;
     const target=arg('--model');
     if(target){

@@ -29,4 +29,3 @@ export function SocialVideoAction({skill}:{skill:string}){
  {typeof job.likes==='number'&&<p>采集时点赞数 {job.likes}</p>}{job.caption&&<details open={skill==='douyin-collect'}><summary>口播文案</summary><p>{job.caption}</p></details>}</>}</div>}
  {error&&<p role="alert">{error}</p>}{history.length>0&&<details><summary>作品解析记录</summary>{history.map(h=><button key={h.id} disabled={busy} onClick={()=>{setError('');setJob(h);}}>{h.title||h.workId} · {captions[h.status]}</button>)}</details>}</section>;
 }
-

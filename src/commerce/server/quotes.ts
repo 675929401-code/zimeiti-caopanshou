@@ -196,7 +196,7 @@ export async function confirmCommerceQuote(owner: string, raw: { quoteId?: unkno
     return previous;
   }
   if (quote.expiresAt < Date.now()) { put('commerce-quotes', quote.id, owner, { ...quote, status: 'expired' }); throw Error('报价已过期，请重新报价'); }
-  
+
   const sharedConfigurationRequired=process.env.SHARED_CONFIGURATION_ENABLED === '1';
   await primePublishedCommerceConfiguration({ force: Boolean(quote.releaseId), required: sharedConfigurationRequired });
   if(sharedConfigurationRequired)assertPublishedCommercePaidJobsReady();

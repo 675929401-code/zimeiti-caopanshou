@@ -5,4 +5,3 @@ export function memberHtmlDocument(text:string):string|undefined {
     /^(?:<!doctype\s+html\s*>\s*)?<html\b/i.test(source) && /<body\b[\s\S]*<\/body>\s*<\/html>\s*$/i.test(source)
   );
 }
-

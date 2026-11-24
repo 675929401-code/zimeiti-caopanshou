@@ -11,4 +11,3 @@ export async function POST(req:Request){try{sameOrigin(req);const user=requireId
  if(['confirm','refresh'].includes(data.action)&&typeof data.id==='string'&&/^[\da-f-]{36}$/.test(data.id))return json({job:await advanceSocialVideo(user.id,account,data.id,data.action==='confirm')});
  return json({error:'作品解析操作无效'},400);
 }catch(e){return errorResponse(e);}}
-

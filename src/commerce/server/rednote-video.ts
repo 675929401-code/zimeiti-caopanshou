@@ -122,4 +122,3 @@ export async function downloadRedNoteMedia(media:string){
   try{assertCompleteVideoMp4(file.buffer);}catch{throw Error('小红书视频文件不完整');}
   return file.buffer;
 }
-

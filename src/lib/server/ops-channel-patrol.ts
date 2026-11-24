@@ -519,7 +519,3 @@ export async function probeChannelArrears(): Promise<{ checkedAt: string; result
   }));
   return { checkedAt: new Date().toISOString(), results: results.sort((left, right) => left.host.localeCompare(right.host)) };
 }
-
-
-
-

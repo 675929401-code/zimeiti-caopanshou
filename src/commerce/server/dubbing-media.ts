@@ -27,4 +27,3 @@ export async function renderDub(work:string,rows:Caption[],duration:number,keepO
  await runFFmpeg([...args,'-filter_complex',filters.join(';'),'-map','0:v:0','-map','[mix]','-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-t',duration.toFixed(3),'-movflags','+faststart','result.mp4'],240000,12000,work);
  return fs.readFile(path.join(work,'result.mp4'));
 }
-

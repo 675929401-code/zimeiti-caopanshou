@@ -252,8 +252,3 @@ export async function readPatrolHistory(): Promise<{ history: PatrolHistoryEntry
   })) : [];
   return { history, alerts, faults: latestFaults };
 }
-
-
-
-
-

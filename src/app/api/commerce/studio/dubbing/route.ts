@@ -11,4 +11,3 @@ export async function POST(request:Request){try{sameOrigin(request);const u=requ
  if(['confirm','refresh'].includes(b.action)&&typeof b.id==='string'&&/^[\da-f-]{36}$/.test(b.id))return json({job:await advanceDub(u.id,acct,b.id,b.action==='confirm')});
  return json({error:'配音请求无效'},400);
 }catch(e){return errorResponse(e);}}
-

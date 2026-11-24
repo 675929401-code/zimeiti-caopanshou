@@ -492,6 +492,3 @@ export function OpsPatrolPanel({ token, onRequestUnlock }: { token: string | nul
     </section>
   );
 }
-
-
-

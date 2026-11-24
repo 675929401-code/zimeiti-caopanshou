@@ -152,4 +152,3 @@ export async function advanceSocialVideo(owner:string,account:AuthorizedCommerce
   return pub(j);
  }finally{releaseRecordLease(lease);}
 }
-

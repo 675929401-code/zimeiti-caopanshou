@@ -65,4 +65,3 @@ export async function readPublicRedNoteDocument(source: URL): Promise<string | u
     finally { readers--; }
   }
 }
-

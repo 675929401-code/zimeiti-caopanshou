@@ -47,4 +47,3 @@ export function SocialCandidates({history,choose}:{history:SocialVideoResult[];c
  <button onClick={filter}>筛选候选作品</button>{error&&<p role="alert">{error}</p>}
  {result&&<div aria-live="polite"><p>符合条件 {result.length} 项</p>{result.map(r=><button key={r.workId} onClick={()=>choose(r.workId)}>{r.title} · {r.likes} 赞</button>)}</div>}</details>;
 }
-
